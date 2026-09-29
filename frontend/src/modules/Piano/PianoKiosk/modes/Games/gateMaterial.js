@@ -25,6 +25,7 @@
  * those decisions queryable. Nothing here throws on a bad config.
  */
 import { DaylightAPIText } from '../../../../../lib/api.mjs';
+import getLogger from '../../../../../lib/logging/Logger.js';
 import { pianoLearningApi } from '../Exercises/pianoLearningApi.js';
 import { pickMaterial } from './gateRepertoire.js';
 import { MAX_ASK_SPAN } from '../../../ask/stagecraft.js';
@@ -344,8 +345,34 @@ export const scaleInstanceId = (root, spec = {}, hand = null) => {
  */
 const SEED_ATTEMPTS = 3;
 
-/** The roots a level names, filtered to the strings the bank could address. */
-export const rootsOf = (spec) => (Array.isArray(spec?.roots) ? spec.roots : []).filter((r) => typeof r === 'string' && r);
+/**
+ * The roots `scales/modes` publishes: its `root` axis is `values: all`, which
+ * `shared/music/exerciseBank.mjs` expands to SHARP spellings only.
+ */
+export const SCALE_ROOTS = Object.freeze(['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']);
+
+const warnedRoots = new Set();
+
+/**
+ * The roots a level names, filtered to the ones the bank can address.
+ *
+ * Checked for the same reason mode and direction are: an id naming a root the
+ * bank lacks resolves to nothing, comes back `instance-unavailable`, is read as
+ * an outage, and outages fail OPEN — a free match. On 2026-09-27 a config edit
+ * wrote `roots: [A, Eb, E, Ab, B, Bb, Db]`; four of the seven would have waved
+ * a child straight into the game. An unknown root is dropped, loudly.
+ */
+export const rootsOf = (spec) => (Array.isArray(spec?.roots) ? spec.roots : []).filter((r) => {
+  if (typeof r !== 'string' || !r) return false;
+  if (SCALE_ROOTS.includes(r)) return true;
+  if (!warnedRoots.has(r)) {
+    warnedRoots.add(r);
+    try {
+      getLogger().child({ component: 'piano-game-gate' }).warn('gate.config.unknown-root', { root: r, known: SCALE_ROOTS });
+    } catch { /* never let observability change what the gate serves */ }
+  }
+  return false;
+});
 
 async function loadInstance(instanceId) {
   const res = await pianoLearningApi.instance(instanceId);

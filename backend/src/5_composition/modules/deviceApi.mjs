@@ -12,10 +12,35 @@ import { DeviceSessionApiService } from '#apps/devices/services/DeviceSessionApi
 import { DeviceScreenControlService } from '#apps/devices/services/DeviceScreenControlService.mjs';
 import { DeviceContentDispatchService } from '#apps/devices/services/DeviceContentDispatchService.mjs';
 import { DeviceRecoveryService } from '#apps/devices/services/DeviceRecoveryService.mjs';
+import { AndroidExcursionGuard } from '#apps/devices/services/AndroidExcursionGuard.mjs';
+import { AdbAdapter } from '#adapters/devices/AdbAdapter.mjs';
+import { AndroidForegroundProbe } from '#adapters/devices/AndroidForegroundProbe.mjs';
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
 import { ConfigDeviceConfiguration } from '#adapters/devices/ConfigDeviceConfiguration.mjs';
 import { ConfigKeyboardBindingCatalog } from '#adapters/devices/ConfigKeyboardBindingCatalog.mjs';
 import { ScreenAddressResolver } from '#adapters/devices/ScreenAddressResolver.mjs';
+
+// Which screens a kiosk-launched excursion may reach before the guard sends the
+// device home. Settings is the one that needs it: opening its pairing screen
+// otherwise opens all of Settings (see AndroidExcursionGuard).
+const EXCURSION_POLICIES = Object.freeze({
+  'com.android.tv.settings': { allow: ['.accessories.'], maxMs: 10 * 60_000 },
+});
+
+/** A foreground probe per ADB-reachable Fully Kiosk device, built on first use. */
+function createExcursionProbes({ configService, logger }) {
+  const probes = new Map();
+  return (deviceId) => {
+    if (probes.has(deviceId)) return probes.get(deviceId);
+    const control = configService?.getDeviceConfig?.(deviceId)?.content_control;
+    const fallback = control?.provider === 'fully-kiosk' ? control.fallback : null;
+    const probe = fallback?.provider === 'adb' && fallback.host
+      ? new AndroidForegroundProbe({ adbAdapter: new AdbAdapter({ host: fallback.host, port: fallback.port }, { logger }), logger })
+      : null;
+    probes.set(deviceId, probe);
+    return probe;
+  };
+}
 
 /**
  * Create device API router
@@ -80,5 +105,12 @@ export function createDeviceApiRouter(config) {
       scheduler: new NodeApplicationScheduler(), logger,
     }),
     kioskFrictionTracker,
+    excursionGuard: new AndroidExcursionGuard({
+      probeFor: createExcursionProbes({ configService, logger }),
+      policies: EXCURSION_POLICIES,
+      kioskPackage: 'de.ozerov.fully',
+      scheduler: new NodeApplicationScheduler(),
+      logger,
+    }),
   });
 }

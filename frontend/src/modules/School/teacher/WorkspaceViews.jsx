@@ -41,6 +41,8 @@ import { teacherBaseFor, teacherDayPath } from './teacherUrl.js';
 import { curriculumTitles } from './curriculumTitles.js';
 import { localDay, humanDate, humanDateTime } from './teacherDates.js';
 import { presentSessionState } from './sessionPresentation.js';
+import CoinsPanel from './panels/CoinsPanel.jsx';
+import CoinsRosterPanel from './panels/CoinsRosterPanel.jsx';
 
 const sessionIdOf = (session) => session?.sessionId ?? session?.id ?? null;
 const dateOf = (session) => session?.updatedAt ?? session?.closedAt ?? session?.createdAt ?? session?.issuedAt ?? null;
@@ -440,6 +442,24 @@ export function WordsView({ learnerId, learnerName }) {
           <CardLadderWordsPanel key={entry.deckId} learnerId={learnerId} deckId={entry.deckId} title={entry.title ?? entry.deckId} />
         ))}
       </PanelFrame>
+    </div>
+  );
+}
+
+export function CoinsView({ learnerId, learnerName }) {
+  return (
+    <div className="teacher-view">
+      <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Coins</p><h2>{learnerName}’s week in silver</h2><p>What this week’s work is worth under the household earn rules, and this learner’s own rates. A preview — nothing is paid until the bank opens.</p></div></div>
+      <CoinsPanel learnerId={learnerId} learnerName={learnerName} />
+    </div>
+  );
+}
+
+export function CoinsRosterView({ onSelectLearner }) {
+  return (
+    <div className="teacher-view">
+      <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Coins</p><h2>Where everyone’s week stands</h2><p>Silver earned this week, side by side in roster order — never ranked. Open a learner for the detail and their rates.</p></div></div>
+      <CoinsRosterPanel onSelectLearner={onSelectLearner} />
     </div>
   );
 }

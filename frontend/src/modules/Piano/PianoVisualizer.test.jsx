@@ -12,7 +12,8 @@ vi.mock('./useMidiSubscription', () => ({
 }));
 
 let gamesConfig = {};
-vi.mock('./usePianoConfig.js', () => ({ usePianoConfig: () => ({ gamesConfig }) }));
+let appConfig; // undefined = no household config; null would mean "still loading"
+vi.mock('./usePianoConfig.js', () => ({ usePianoConfig: () => ({ gamesConfig, appConfig }) }));
 
 // The launcher state machine has its own suite (useNoteLauncher.test.js). Here
 // we drive it as a fixture so each wiring question can be asked on its own.
@@ -135,6 +136,7 @@ beforeEach(() => {
   gameShouldThrow = false;
   extraGames = [];
   gamesConfig = {};
+  appConfig = undefined;
   midiSessionInfo = null;
   selectionArgs = null;
   registerEscapeInterceptor.mockClear();
@@ -233,6 +235,33 @@ describe('PianoVisualizer game launcher', () => {
     expect(queryByTestId('game-stub')).toBeNull();
     expect(container.querySelector('.waterfall-container')).toBeTruthy();
     expect(launcherState.exitGame).toHaveBeenCalledWith('school-locked');
+  });
+
+  // 2026-09-27: a player games are disabled for re-picked himself and played
+  // chess. The school verdict was `complete`; `disabledFor` reached only the
+  // panel copy, so the launcher still took game keys and nothing ended a game.
+  it('pauses game selection for a player games are disabled for, even with school complete', () => {
+    appConfig = { gameAccess: { disabledFor: ['kid1'] } };
+    launcherUserState = {
+      ...launcherUserState,
+      users: [{ id: 'kid1', name: 'Kid One' }], currentUser: 'kid1', identityStale: false,
+    };
+    launcherState = { ...launcherState, isOpen: true };
+    const { container } = render(<PianoVisualizer />);
+
+    expect(container.textContent).toContain('Games are off');
+    expect(container.querySelectorAll('.nl-key')).toHaveLength(0);
+    expect(launcherArgs.selectionPaused).toBe(true);
+  });
+
+  it('exits and never mounts a game for a player games are disabled for', () => {
+    appConfig = { gameAccess: { disabledFor: ['kid1'] } };
+    launcherUserState = { ...launcherUserState, currentUser: 'kid1' };
+    launcherState = { ...launcherState, activeGameId: 'tetris' };
+    const { queryByTestId } = render(<PianoVisualizer />);
+
+    expect(queryByTestId('game-stub')).toBeNull();
+    expect(launcherState.exitGame).toHaveBeenCalledWith('games-off');
   });
 
   it('builds one key per released registry game, and omits unreleased ones', () => {

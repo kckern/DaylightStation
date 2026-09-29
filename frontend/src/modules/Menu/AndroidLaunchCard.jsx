@@ -1,20 +1,41 @@
 // frontend/src/modules/Menu/AndroidLaunchCard.jsx
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import getLogger from '../../lib/logging/Logger.js';
-import { isFKBAvailable, launchApp, onResume } from '../../lib/fkb.js';
-import { DaylightMediaPath } from '../../lib/api.mjs';
+import { isFKBAvailable, launchApp, launchAndroidTarget, onResume } from '../../lib/fkb.js';
+import { DaylightAPI, DaylightMediaPath } from '../../lib/api.mjs';
 import './AndroidLaunchCard.scss';
 
 const VERIFY_DELAY_MS = 2500;
 const MAX_RETRIES = 2;
+// Upper bound on holding the launch for the excursion notice. The page's JS is
+// suspended the moment the app takes the foreground, so the notice has to land
+// first — but a slow or absent backend must never keep the app from opening.
+const EXCURSION_NOTICE_MS = 1500;
+
+/**
+ * Tell the backend this kiosk is about to leave for another app, so it can
+ * guard the trip (see backend AndroidExcursionGuard). Resolves either way.
+ */
+function announceExcursion(android, logger) {
+  const deviceId = window.__DAYLIGHT_DEVICE_ID;
+  if (!deviceId) return Promise.resolve();
+  const notice = DaylightAPI(`api/v1/device/${encodeURIComponent(deviceId)}/excursion`,
+    { package: android.package, activity: android.activity || '' }, 'POST')
+    .then((result) => logger.info('android-launch.excursion-announced', { package: android.package, guarded: !!result?.guarded, reason: result?.reason }))
+    .catch((err) => logger.warn('android-launch.excursion-announce-failed', { package: android.package, error: err.message }));
+  return Promise.race([notice, new Promise((resolve) => setTimeout(resolve, EXCURSION_NOTICE_MS))]);
+}
 
 const AndroidLaunchCard = ({ android, title, image, onClose }) => {
   const logger = useMemo(() => getLogger().child({ component: 'AndroidLaunchCard' }), []);
   const [status, setStatus] = useState('checking'); // checking | launching | success | failed | unavailable
   const [retryCount, setRetryCount] = useState(0);
   const verifyTimerRef = useRef(null);
+  // Bumped when an attempt is abandoned (unmount / retry), so a launch still
+  // waiting on the excursion notice does not fire after Back closed the card.
+  const attemptRef = useRef(0);
 
-  const attemptLaunch = useCallback(() => {
+  const attemptLaunch = useCallback(async () => {
     if (!android?.package) {
       setStatus('unavailable');
       return;
@@ -27,10 +48,22 @@ const AndroidLaunchCard = ({ android, title, image, onClose }) => {
     }
 
     setStatus('launching');
-    const launched = launchApp(android.package);
+    const attempt = attemptRef.current;
+    await announceExcursion(android, logger);
+    if (attempt !== attemptRef.current) {
+      logger.info('android-launch.abandoned', { package: android.package });
+      return;
+    }
+    // An entry that names an activity opens exactly that screen (e.g. Settings'
+    // pairing screen); one that names only a package opens the app's front door.
+    const via = android.activity ? 'component' : 'package';
+    logger.info('android-launch.attempt', { package: android.package, activity: android.activity || null, via });
+    const launched = via === 'component'
+      ? launchAndroidTarget({ package: android.package, activity: android.activity })
+      : launchApp(android.package);
 
     if (!launched) {
-      logger.error('android-launch.launchApp-returned-false', { package: android.package });
+      logger.error('android-launch.launch-returned-false', { package: android.package, via });
       setStatus('failed');
       return;
     }
@@ -51,7 +84,7 @@ const AndroidLaunchCard = ({ android, title, image, onClose }) => {
   // Launch on mount and on retry
   useEffect(() => {
     attemptLaunch();
-    return () => { clearTimeout(verifyTimerRef.current); };
+    return () => { attemptRef.current += 1; clearTimeout(verifyTimerRef.current); };
   }, [attemptLaunch]);
 
   // If FKB fires onResume, the user came back from the launched app — dismiss

@@ -65,7 +65,7 @@ function requireSessions(service, res) {
 }
 
 export function createDeviceRouter({ fleetService, presenceService, sessionService, screenService,
-  dispatchService, recoveryService, kioskFrictionTracker } = {}) {
+  dispatchService, recoveryService, kioskFrictionTracker, excursionGuard } = {}) {
   const router = express.Router();
 
   router.get('/config', (req, res) => res.json(fleetService.configuration(req.query.householdId)));
@@ -119,6 +119,21 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
     const result = presenceService.record(req.params.deviceId, body);
     if (!result) return res.status(403).json({ error: 'device not allowed' });
     return res.json(result);
+  });
+
+  // The kiosk just opened another Android app itself (e.g. the menu's Settings
+  // pairing screen). Fully lets the rest of that app's package through while it
+  // is in front, so the backend watches the foreground until the kiosk is back
+  // and pulls it home if the trip wanders. Only packages with a policy are
+  // guarded; for anything else this answers `guarded: false` and does nothing.
+  router.post('/:deviceId/excursion', (req, res) => {
+    if (!excursionGuard) return res.status(503).json({ error: 'excursion guard not configured' });
+    const { package: pkg, activity } = req.body || {};
+    if (!nonEmpty(pkg)) return res.status(400).json({ error: 'package is required' });
+    const result = excursionGuard.start({
+      deviceId: req.params.deviceId, package: pkg, activity: nonEmpty(activity) ? activity : '',
+    });
+    return res.status(result.guarded ? 202 : 200).json({ ok: true, ...result });
   });
 
   router.get('/:deviceId/presence', (req, res) => {

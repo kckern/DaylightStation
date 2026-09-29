@@ -112,6 +112,7 @@ export function createApiRouter(config) {
     '/gratitude': 'gratitude',
     '/fitness': 'fitness',
     '/media': 'media',
+    '/media-source': 'media-source',  // Plex file readability check + repair ladder (Player waits on it)
     '/home': 'home',
     '/home-automation': 'home',  // alias — matches the router's own docstrings and external callers (e.g. playback-hub)
     '/home-dashboard': 'home-dashboard',
@@ -150,6 +151,7 @@ export function createApiRouter(config) {
     '/camera': 'camera',
     '/piano': 'piano',
     '/economy': 'economy',
+    '/earnings': 'earnings',  // Weekly earnings preview + earn rules (read-only) — see economy reference
     '/state-gates': 'stateGates',
     '/entitlements': 'entitlements',
     '/automotive': 'automotive',  // Vehicle record system — see _extensions/obd-relay

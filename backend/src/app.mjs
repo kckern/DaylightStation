@@ -1648,6 +1648,35 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'media-api' }),
   });
 
+  // Media source healing — when Plex refuses a file (the NAS zeroing modes,
+  // 2026-09-28), the Player asks here, waits, and resumes. system config
+  // media-source-heal.yml holds the host SSH target and the Plex→host path map
+  // (not media.yml: that one is infrastructure and getAppConfig never serves it).
+  // See docs/reference/player/media-source-healing.md.
+  {
+    const { createMediaSourceRouter } = await import('./4_api/v1/routers/mediaSource.mjs');
+    const { MediaSourceHealer } = await import('./3_applications/media/MediaSourceHealer.mjs');
+    const { PlexSourceProbe } = await import('./1_adapters/content/media/plex/PlexSourceProbe.mjs');
+    const { SshMediaHostHealer } = await import('./1_adapters/media/SshMediaHostHealer.mjs');
+    const plexClient = contentRegistry?.get?.('plex')?.client ?? null;
+    const sourceHealConfig = configService.getAppConfig('media-source-heal') || {};
+    const healLogger = rootLogger.child({ module: 'media-source-heal' });
+    const hostHealer = new SshMediaHostHealer(sourceHealConfig.host || {}, { logger: healLogger });
+    const mediaSourceHealer = plexClient
+      ? new MediaSourceHealer({
+        sourceProbe: new PlexSourceProbe({ client: plexClient }),
+        hostHealer: hostHealer.isConfigured() ? hostHealer : null,
+        notifier: notificationStack?.notificationService ?? null,
+        logger: healLogger,
+        config: sourceHealConfig.timing || {},
+      })
+      : null;
+    healLogger.info('media.source.heal.configured', {
+      plex: Boolean(plexClient), hostHealer: hostHealer.isConfigured(),
+    });
+    v1Routers['media-source'] = createMediaSourceRouter({ mediaSourceHealer, logger: healLogger });
+  }
+
   // Livestream engine — concrete adapters composed here, injected as factories
   const { ChannelManager } = await import('./3_applications/livestream/ChannelManager.mjs');
   const { FFmpegStreamAdapter } = await import('./1_adapters/livestream/FFmpegStreamAdapter.mjs');
@@ -4708,6 +4737,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { YamlAttestationLog } = await import('#adapters/persistence/yaml/YamlAttestationLog.mjs');
   const { YamlTeacherNotes } = await import('#adapters/persistence/yaml/YamlTeacherNotes.mjs');
   const { RecordAttestation } = await import('#apps/school/usecases/RecordAttestation.mjs');
+  const { ManageEarnRules } = await import('#apps/school/usecases/ManageEarnRules.mjs');
   const { RecordTeacherNote } = await import('#apps/school/usecases/RecordTeacherNote.mjs');
   const { ReassignEvidence } = await import('#apps/school/usecases/ReassignEvidence.mjs');
   const { YamlReassignmentLog } = await import('#adapters/persistence/yaml/YamlReassignmentLog.mjs');
@@ -4957,6 +4987,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     reprintResultReceiptArtifact: schoolLifecycle.useCases?.reprintResultReceiptArtifact ?? null,
     manageCurriculumException: schoolLifecycle.useCases?.manageCurriculumException ?? null,
     manageProgramDayBypass: schoolLifecycle.useCases?.manageProgramDayBypass ?? null,
+    // What school work pays: the economy's earn rules, edited from the
+    // teacher console behind the TeacherGate (reads: /api/v1/earnings).
+    manageEarnRules: new ManageEarnRules({
+      teacherGate: schoolTeacherGate,
+      earnRules: economyApi.earnRulesService,
+      learnerIds: async () => (await schoolLearnerDirectory.listLearners()).map((l) => l.id ?? l.learnerId).filter(Boolean),
+      logger: rootLogger.child({ module: 'school-earn-rules' }),
+    }),
     teacherCapabilitySessions,
     teacherGate: schoolTeacherGate,
     // Read per request, never snapshotted — clearing the PIN in school.yml
@@ -5588,7 +5626,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { createMeasuresRouter } = await import('#api/v1/routers/measures.mjs');
   const { GetWeeklyMeasures } = await import('#apps/measures/GetWeeklyMeasures.mjs');
   const measuresTimezone = configService.getHouseholdTimezone?.(householdId) || 'UTC';
-  const measureRegistry = new MeasureRegistry().register(createFitnessRingsProvider({
+  const fitnessRings = createFitnessRingsProvider({
     timezone: measuresTimezone,
     sessions: {
       // The provider asks in study days; SessionService speaks the same
@@ -5596,7 +5634,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       listSessions: ({ from, to }) => fitnessServices.sessionService
         .listSessionsInRange(from, to, householdId),
     },
-  }));
+  });
+  const measureRegistry = new MeasureRegistry().register(fitnessRings);
   const weeklyMeasures = new GetWeeklyMeasures({
     registry: measureRegistry,
     learners: async () => schoolLearnerDirectory.listLearners(),
@@ -5606,6 +5645,49 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.measures = createMeasuresRouter({
     weeklyMeasures,
   });
+
+  // Weekly earnings preview — what each learner's week is worth in silver
+  // under the household earn rules. Read-only (no ledger writes); evidence
+  // through ports School and Fitness implement. Reads at /api/v1/earnings;
+  // the teacher console's rate edits go through the school router's gate.
+  {
+    const { EarningsPreviewService } = await import('#apps/economy/EarningsPreviewService.mjs');
+    const { SchoolEarningEvidence } = await import('#apps/school/SchoolEarningEvidence.mjs');
+    const { createEarningsRouter } = await import('#api/v1/routers/earnings.mjs');
+    const termVerdicts = schoolLifecycle?.termVerdicts ?? null;
+    const learnerSessions = schoolLifecycle?.listLearnerSessions ?? null;
+    const curriculum = schoolLifecycle?.stores?.curriculum ?? null;
+    const unavailableSchool = {
+      schoolWeek: async () => { throw new Error('school term verdicts are not wired'); },
+    };
+    const earningsPreview = new EarningsPreviewService({
+      rules: economyApi.earnRulesService,
+      schoolEvidence: termVerdicts && learnerSessions
+        ? new SchoolEarningEvidence({
+          termVerdicts,
+          sessions: learnerSessions,
+          unitInfo: curriculum?.getUnitSummary
+            ? async (unitId) => {
+              const unit = await curriculum.getUnitSummary(unitId);
+              return unit ? { subject: unit.subject ?? null, courseId: unit.courseId ?? null } : null;
+            }
+            : null,
+          logger: rootLogger.child({ module: 'school-earning-evidence' }),
+        })
+        : unavailableSchool,
+      // The same provider the board's weekly ring figure uses.
+      ringEvidence: fitnessRings,
+      learners: async () => schoolLearnerDirectory.listLearners(),
+      clock: () => new Date(),
+      timezone: measuresTimezone,
+      logger: rootLogger.child({ module: 'economy-earnings' }),
+    });
+    v1Routers.earnings = createEarningsRouter({
+      earningsPreview,
+      earnRules: economyApi.earnRulesService,
+      logger: rootLogger.child({ module: 'economy-earnings-api' }),
+    });
+  }
   try {
     const { WeeklyMeasuresStateGatesProducer } = await import('#apps/measures/WeeklyMeasuresStateGatesProducer.mjs');
     fitnessStateGatesProducer = new WeeklyMeasuresStateGatesProducer({

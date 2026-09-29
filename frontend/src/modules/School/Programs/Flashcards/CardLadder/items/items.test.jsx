@@ -373,4 +373,17 @@ describe('SummaryItem', () => {
     fireEvent.keyDown(window, { key: ' ' });
     expect(onExit).toHaveBeenCalled();
   });
+  // 2026-09-26: new words were promised and none came; the summary was silent.
+  it('says new words come next time, and points at Learn more when it is on offer', () => {
+    render(<SummaryItem item={{ quizzed: 5, newWordsHeld: true, learnMore: 2 }} onExit={() => {}} onLearnMore={() => {}} />);
+    expect(screen.getByText('New words next time — or tap Learn more words.')).toBeInTheDocument();
+  });
+  it('says only "next time" when Learn more is not on offer', () => {
+    render(<SummaryItem item={{ quizzed: 5, newWordsHeld: true, learnMore: 0 }} onExit={() => {}} />);
+    expect(screen.getByText('New words next time.')).toBeInTheDocument();
+  });
+  it('says nothing about new words when none were held', () => {
+    render(<SummaryItem item={{ quizzed: 5, newWordsHeld: false, learnMore: 2 }} onExit={() => {}} onLearnMore={() => {}} />);
+    expect(screen.queryByText(/New words next time/)).toBeNull();
+  });
 });

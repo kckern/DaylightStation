@@ -42,6 +42,15 @@ describe('computeDailyEnergy', () => {
   it('the floor raises the budget, never break-even', () => {
     expect(computeDailyEnergy({ ...base, weightLbs: 100, weeklyRateLbs: 3 })).toEqual({ maintenance: 1849, budget: 1200 });
   });
+
+  it('a fixed maintenanceKcal replaces the formula; the deficit still comes off it', () => {
+    expect(computeDailyEnergy({ ...base, maintenanceKcal: 2000, weeklyRateLbs: 0.8 })).toEqual({ maintenance: 2000, budget: 1600 });
+    expect(computeDailyEnergy({ ...base, maintenanceKcal: 2000, deficit: 0 })).toEqual({ maintenance: 2000, budget: 2000 });
+  });
+
+  it('rejects a non-finite maintenanceKcal', () => {
+    expect(() => computeDailyEnergy({ ...base, maintenanceKcal: '2000' })).toThrow(/maintenanceKcal/);
+  });
 });
 
 describe('daysBetween', () => {

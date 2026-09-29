@@ -61,6 +61,19 @@ export const schoolApi = {
     `/api/v1/measures/weekly${week ? `?${new URLSearchParams({ week })}` : ''}`,
   ),
 
+  // Weekly earnings (economy): what a week's work is worth in silver under
+  // the household earn rules. Read-only; rate edits go through the teacher
+  // gate below. `week` is any study day inside the Monday→Sunday week.
+  earningsPreview: (learnerId, week = null) => reqAbsolute(
+    `/api/v1/earnings/preview/${encodeURIComponent(learnerId)}${week ? `?${new URLSearchParams({ week })}` : ''}`,
+  ),
+  earningsRoster: (week = null) => reqAbsolute(
+    `/api/v1/earnings/preview${week ? `?${new URLSearchParams({ week })}` : ''}`,
+  ),
+  earnRules: () => reqAbsolute('/api/v1/earnings/rules'),
+  putEarnRates: (learnerId, body) => req(`/teacher/economy/earn-rates/${encodeURIComponent(learnerId)}`, body, 'PUT'),
+  putEarnRules: (body) => req('/teacher/economy/earn-rules', body, 'PUT'),
+
   rubiksCubePreview: () => req('/rubiks-cube/preview'),
   rubiksCubeOpen: ({ userId, courseId, grant, lessonId = null }) => req(
     `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}${lessonId ? '/open' : ''}`,

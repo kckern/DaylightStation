@@ -126,9 +126,27 @@ if ! "$(dirname "$0")/livingroom-reading-idle.sh"; then
   blocked=1
 fi
 
+# ── 6. A game in progress, on either surface ───────────────────────────────
+# Added 2026-09-26. RetroArch on the living-room Shield and the browser arcade
+# in the garage are both metered, and neither is visible to sections 1-5: a game
+# with no workout roster passes section 1, and RetroArch is not a Player video.
+# A restart mid-game blanks the timer film and, past the 60s liveness window,
+# settles the session `lost` — the next observation opens a fresh one, so the
+# child's clock restarts at 00:00. Asked of the server, which owns the sessions.
+ARCADE_URL="${DAYLIGHT_ARCADE_URL:-http://localhost:3111/api/v1/arcade-game-sessions/open}"
+arcade="$(curl -s --max-time 5 "$ARCADE_URL" 2>/dev/null)"
+if ! printf '%s' "$arcade" | grep -q '"sessions"'; then
+  echo "BLOCKED: cannot read open arcade sessions ($ARCADE_URL unreachable)"
+  blocked=1
+elif ! printf '%s' "$arcade" | grep -qE '"sessions":[[:space:]]*\[[[:space:]]*\]'; then
+  where="$(printf '%s' "$arcade" | grep -oE '"deviceId":"[^"]*"' | cut -d'"' -f4 | sort -u | tr '\n' ' ')"
+  echo "BLOCKED: an arcade game is being played (${where% })"
+  blocked=1
+fi
+
 if [ "$blocked" -ne 0 ]; then
   echo "GATE BLOCKED — do not deploy. Wait and re-run."
   exit 1
 fi
-echo "GATE CLEAR (garage idle; Portal idle; piano kiosk idle; no emergency lock; living room idle)"
+echo "GATE CLEAR (garage idle; Portal idle; piano kiosk idle; no emergency lock; living room idle; no arcade game)"
 exit 0

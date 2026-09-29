@@ -213,9 +213,10 @@ describe('resolveGateDrill', () => {
 
 describe('describeDrillStep — what the coach calls the next rep', () => {
   it('names a rung step from its root and the instance it asks for', () => {
-    const step = rungDrillProgram({ kind: 'exercise', collection: 'scales', roots: ['F#', 'Bb'], sets: 2, reps: 3 }, 'L9').steps;
+    // Sharp spellings only — the scales bank publishes no flats (see rootsOf).
+    const step = rungDrillProgram({ kind: 'exercise', collection: 'scales', roots: ['F#', 'G'], sets: 2, reps: 3 }, 'L9').steps;
     expect(describeDrillStep(step[0])).toEqual({ key: 'F♯ major', hand: null });
-    expect(describeDrillStep(step[1])).toEqual({ key: 'B♭ major', hand: null });
+    expect(describeDrillStep(step[1])).toEqual({ key: 'G major', hand: null });
   });
 
   it('prefers what a program step says about itself, hand included', () => {
@@ -253,6 +254,27 @@ describe('a scale rung deals a different key at consecutive gates', () => {
     expect(rungDrillProgram(spec, 'L2', 1).steps.map((s) => s.display.root)).toEqual(['D', 'F', 'G']);
     expect(rungDrillProgram(spec, 'L2', 2).steps.map((s) => s.display.root)).toEqual(['F', 'G', 'D']);
     expect(rungDrillProgram(spec, 'L2', 3).steps.map((s) => s.display.root)).toEqual(['G', 'D', 'F']);
+  });
+
+  // 2026-09-27: at seven roots and three sets, a one-root step meant back-to-back
+  // gates shared two of their three keys. A rung with more roots than sets now
+  // advances a whole set's worth, so consecutive gates deal fresh keys.
+  it('deals fresh keys at consecutive gates when the rung has more roots than sets', () => {
+    const wide = { ...spec, roots: ['A', 'E', 'B', 'F#', 'D', 'G', 'F'] };
+    const at = (pick) => rungDrillProgram(wide, 'L3', pick).steps.map((s) => s.display.root);
+    expect(at(0)).toEqual(['A', 'E', 'B']);
+    expect(at(1)).toEqual(['F#', 'D', 'G']);
+    expect(at(2)).toEqual(['F', 'A', 'E']);
+  });
+
+  it('walks the key/hand pairing when roots and hands both rotate', () => {
+    const wide = { ...spec, roots: ['A', 'E', 'B', 'F#', 'D', 'G', 'F'], hands: ['R', 'L', 'RL'] };
+    const pairings = new Set();
+    for (let pick = 0; pick < 21; pick += 1) {
+      for (const s of rungDrillProgram(wide, 'L3', pick).steps) pairings.add(`${s.display.root}/${s.display.hand}`);
+    }
+    // Every root meets every hand — none is pinned to one.
+    expect(pairings.size).toBe(21);
   });
 
   it('keeps the authored order when no rotation is given, so every existing caller is unmoved', () => {

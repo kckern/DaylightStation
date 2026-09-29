@@ -34,7 +34,10 @@ export function PlayerOverlayLoading({
   suppressForBlackout = false,
   showPauseIcon = false,
   isExhausted = false,
-  onRetryFromExhausted
+  onRetryFromExhausted,
+  // "Video file unavailable — retrying · 2:05" while the Player waits out a
+  // file the server refuses to read (useSourceAvailability). Null otherwise.
+  sourceNotice = null
 }) {
   // Removed on 2026-08-16, all for the same reason: no caller anywhere in the
   // repo supplied them, so every value they ever reported came from the default
@@ -247,6 +250,7 @@ export function PlayerOverlayLoading({
   const isStartupPhase = status === 'startup';
   const statusLabel = (() => {
     if (isExhausted) return 'Tap to Retry';
+    if (sourceNotice) return 'Source unavailable';
     if (isStartupPhase) return 'Starting…';
     if (status === 'seeking') return 'Seeking…';
     if (stalled) return 'Recovering…';
@@ -266,6 +270,7 @@ export function PlayerOverlayLoading({
     }
     emitManualReset('overlay-spinner-manual', { eventType: event?.type });
   }, [emitManualReset, isExhausted, onRetryFromExhausted]);
+
 
   const spinnerInteractionProps = {
     onClick: handleSpinnerInteraction,
@@ -428,6 +433,9 @@ export function PlayerOverlayLoading({
               </div>
             </div>
           </div>
+          {sourceNotice ? (
+            <div className="loading-notice" data-testid="player-source-notice">{sourceNotice}</div>
+          ) : null}
         </div>
       </div>
     </div>
@@ -466,7 +474,8 @@ PlayerOverlayLoading.propTypes = {
   suppressForBlackout: PropTypes.bool,
   showPauseIcon: PropTypes.bool,
   isExhausted: PropTypes.bool,
-  onRetryFromExhausted: PropTypes.func
+  onRetryFromExhausted: PropTypes.func,
+  sourceNotice: PropTypes.string
 };
 
 export default PlayerOverlayLoading;

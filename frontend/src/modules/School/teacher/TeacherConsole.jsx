@@ -20,7 +20,7 @@ import { humanDate, localDay } from './teacherDates.js';
 import TabErrorBoundary from './TabErrorBoundary.jsx';
 import {
   CoursesView, CurriculumView, DashboardView, HistoryView, LearnerDayScreen, LearnerOperationsView,
-  OperationsView, QueueView, ReadingView, ReportsView, SessionInspector, WordsView,
+  OperationsView, QueueView, ReadingView, ReportsView, SessionInspector, WordsView, CoinsView, CoinsRosterView,
 } from './WorkspaceViews.jsx';
 import './Teacher.scss';
 
@@ -31,6 +31,7 @@ const GLOBAL_NAV = [
   { id: 'dashboard', label: 'Dashboard', short: 'Home' },
   { id: 'queue', label: 'Action queue', short: 'Queue' },
   { id: 'curriculum', label: 'Curriculum', short: 'Curric.' },
+  { id: 'coins', label: 'Coins', short: 'Coins' },
   { id: 'operations', label: 'Operations', short: 'Ops' },
 ];
 const LEARNER_NAV = [
@@ -39,6 +40,7 @@ const LEARNER_NAV = [
   { id: 'history', label: 'History' },
   { id: 'reading', label: 'Reading' },
   { id: 'words', label: 'Cards' }, // id kept: console links name the tab `words`
+  { id: 'coins', label: 'Coins' },
   { id: 'reports', label: 'Reports' },
   { id: 'operations', label: 'Operations' },
 ];
@@ -148,6 +150,7 @@ function TeacherShell() {
         onOpenSession={(sessionId) => goSession(sessionId, { from: 'history' })} />,
       reading: <ReadingView learnerId={learner.id} learnerName={learner.name} kids={kids} />,
       words: <WordsView learnerId={learner.id} learnerName={learner.name} />,
+      coins: <CoinsView learnerId={learner.id} learnerName={learner.name} />,
       reports: <ReportsView learnerId={learner.id} kids={kids} />,
       operations: <LearnerOperationsView learnerId={learner.id} learnerName={learner.name} kids={kids} />,
     };
@@ -157,6 +160,7 @@ function TeacherShell() {
       dashboard: <DashboardView kids={kids} onSelectLearner={(id) => goLearner(id)} onOpenQueue={() => goGlobal('queue')} />,
       queue: <QueueView kids={kids} />,
       curriculum: <CurriculumView kids={kids} courseId={route.courseId} lessonId={route.lessonId} />,
+      coins: <CoinsRosterView onSelectLearner={(id) => goLearner(id, 'coins')} />,
       operations: <OperationsView kids={kids} />,
     };
     view = views[route.section] ?? views.dashboard;

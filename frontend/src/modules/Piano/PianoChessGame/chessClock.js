@@ -69,7 +69,8 @@ function stamp(value) {
  */
 export function moveDurations(history, startedAt) {
   const durations = [];
-  let previous = stamp(startedAt);
+  const start = stamp(startedAt);
+  let previous = start;
   for (const entry of history) {
     const at = stamp(entry?.at);
     if (at == null || previous == null) {
@@ -79,7 +80,12 @@ export function moveDurations(history, startedAt) {
       previous = at ?? previous;
       continue;
     }
-    durations.push(Math.max(0, at - previous));
+    // A RESUMED GAME'S FIRST NEW MOVE IS MEASURED FROM THE RESUME, not from
+    // the last move before it. The board was not open in between — the child
+    // was at dinner, or (2026-09-27) the game sat in a screen's storage for a
+    // month and the clock read 739 hours.
+    const from = start != null && previous < start && at >= start ? start : previous;
+    durations.push(Math.max(0, at - from));
     previous = at;
   }
   return durations;
@@ -117,7 +123,11 @@ export function clockState({
   // A finished game freezes: the loser's clock must not keep climbing on the
   // result screen, which would make the archived total disagree with the board.
   if (!gameOver && now != null) {
-    const lastAt = history.length ? stamp(history[history.length - 1]?.at) : stamp(startedAt);
+    // Never earlier than this board opened: time a resumed game spent closed is
+    // nobody's think (see moveDurations).
+    const lastMove = history.length ? stamp(history[history.length - 1]?.at) : null;
+    const start = stamp(startedAt);
+    const lastAt = lastMove == null ? start : (start == null ? lastMove : Math.max(lastMove, start));
     if (lastAt != null && (turn === 'w' || turn === 'b')) {
       spent[turn] += Math.max(0, now - lastAt);
     }
