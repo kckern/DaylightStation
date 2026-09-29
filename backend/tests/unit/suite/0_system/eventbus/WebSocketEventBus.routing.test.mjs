@@ -384,4 +384,50 @@ describe('WebSocketEventBus — device-state replay on subscribe', () => {
     expect(liveness.getLastSnapshot).not.toHaveBeenCalled();
     expect(client.ws.send).not.toHaveBeenCalled();
   });
+
+  it('replays a cached device that liveness already marked offline as offline, not as live', () => {
+    const liveness = {
+      getLastSnapshot: vi.fn(() => ({
+        snapshot: { status: 'playing' },
+        lastSeenAt: '2026-04-17T00:00:00.000Z',
+        online: false,
+      })),
+    };
+    const { bus } = makeBus();
+    bus.setLivenessService(liveness);
+    const client = makeClient();
+    installClient(bus, 'phone-1', client);
+
+    bus.subscribeClient('phone-1', [DEVICE_STATE_TOPIC('tv-1')]);
+
+    const parsed = JSON.parse(client.ws.send.mock.calls[0][0]);
+    expect(parsed.reason).toBe('offline');
+    expect(parsed.snapshot).toMatchObject({ status: 'playing' });
+  });
+
+  it('carries the replayed snapshot\'s real age, measured on the server clock', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-04-17T00:10:00.000Z'));
+      const liveness = {
+        getLastSnapshot: vi.fn(() => ({
+          snapshot: { status: 'playing' },
+          lastSeenAt: '2026-04-17T00:00:00.000Z',
+          online: true,
+        })),
+      };
+      const { bus } = makeBus();
+      bus.setLivenessService(liveness);
+      const client = makeClient();
+      installClient(bus, 'phone-1', client);
+
+      bus.subscribeClient('phone-1', [DEVICE_STATE_TOPIC('tv-1')]);
+
+      const parsed = JSON.parse(client.ws.send.mock.calls[0][0]);
+      expect(parsed.reason).toBe('initial');
+      expect(parsed.ageMs).toBe(600_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

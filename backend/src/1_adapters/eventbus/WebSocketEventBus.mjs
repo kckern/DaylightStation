@@ -660,15 +660,24 @@ export class WebSocketEventBus {
     }
 
     try {
+      // A device liveness already considers offline replays AS offline —
+      // otherwise a fresh subscriber sees its last `playing` snapshot as a
+      // live, controllable screen.
       const envelope = buildDeviceStateBroadcast({
         deviceId: parsed.deviceId,
         snapshot: cached.snapshot,
-        reason: 'initial',
+        reason: cached.online === false ? 'offline' : 'initial',
         ts: cached.lastSeenAt,
       });
+      // `ageMs`: how long ago the device was last heard, measured entirely
+      // on THIS server's clock (lastSeenAt is recorded at receipt here).
+      // Clients age silence from their own receipt time, so without this a
+      // replay of an hours-old snapshot would look freshly heard.
+      const lastSeenMs = Date.parse(cached.lastSeenAt);
+      const ageMs = Number.isFinite(lastSeenMs) ? Math.max(0, Date.now() - lastSeenMs) : undefined;
       // Envelope sets `topic: 'device-state'` (kind), but on the wire we
       // want the full topic string `device-state:<id>` so clients route it.
-      const message = { ...envelope, topic, timestamp: nowTs() };
+      const message = { ...envelope, topic, timestamp: nowTs(), ...(ageMs !== undefined ? { ageMs } : {}) };
 
       if (client.ws?.readyState === client.ws?.OPEN) {
         client.ws.send(JSON.stringify(message));

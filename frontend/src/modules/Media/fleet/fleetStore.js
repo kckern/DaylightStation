@@ -25,14 +25,15 @@ export function createFleetStore({ timing = TIMING, setTimeoutFn = setTimeout, c
     notify(deviceId);
   }
 
-  // Armed from RECEIPT time (now): staleness is how long WE have gone
-  // without hearing from the device. The sender's own `ts`/`lastHeardAt` is
-  // on its clock — a kiosk even 15s behind would otherwise be marked stale
-  // on every heartbeat.
-  function armStaleTimer(deviceId, staleAfterMs = timing.DEVICE_STALE_AFTER_MS) {
+  // Armed from RECEIPT time (backdated only by a server replay's own
+  // server-clock `ageMs`): staleness is how long WE have gone without
+  // hearing from the device. The sender's own `ts`/`lastHeardAt` is on its
+  // clock — a kiosk even 15s behind would otherwise be marked stale on
+  // every heartbeat.
+  function armStaleTimer(deviceId, remainingMs = timing.DEVICE_STALE_AFTER_MS) {
     const existing = staleTimers.get(deviceId);
     if (existing) clearTimeoutFn(existing);
-    const delay = Math.max(0, staleAfterMs);
+    const delay = Math.max(0, remainingMs);
     staleTimers.set(deviceId, setTimeoutFn(() => {
       staleTimers.delete(deviceId);
       const entry = byDevice.get(deviceId);
@@ -58,14 +59,20 @@ export function createFleetStore({ timing = TIMING, setTimeoutFn = setTimeout, c
     },
 
     /** Ingest a DeviceStateBroadcast (§9.7). */
-    receive({ deviceId, snapshot, reason, ts, identity, connected, lastHeardAt, staleAfterMs }) {
+    receive({ deviceId, snapshot, reason, ts, identity, connected, lastHeardAt, staleAfterMs, ageMs }) {
       if (typeof deviceId !== 'string' || deviceId.length === 0) return;
       const prev = byDevice.get(deviceId) ?? {};
       const offline = reason === 'offline';
       // `receivedAt` is this observer's clock; every elapsed-silence
       // computation (stale timer, two-minute uncertainty) uses it.
       // `lastSeenAt` stays the sender's own timestamp, for display.
-      const receivedAt = new Date().toISOString();
+      // A server replay of a cached snapshot carries `ageMs` — how long ago
+      // the device was last heard, measured wholly on the server's clock —
+      // so it is backdated by that much rather than looking freshly heard.
+      // A live message has no age: it was heard just now.
+      const age = Number.isFinite(ageMs) ? Math.max(0, ageMs) : 0;
+      const staleAfter = staleAfterMs ?? timing.DEVICE_STALE_AFTER_MS;
+      const receivedAt = new Date(Date.now() - age).toISOString();
       const heardAt = lastHeardAt ?? ts ?? receivedAt;
       setEntry(deviceId, {
         snapshot: snapshot ?? prev.snapshot ?? null,
@@ -74,14 +81,14 @@ export function createFleetStore({ timing = TIMING, setTimeoutFn = setTimeout, c
         reason: reason ?? 'change',
         lastSeenAt: heardAt,
         receivedAt,
-        isStale: false,
+        isStale: !offline && age >= staleAfter,
         offline,
       });
       if (offline) {
         const t = staleTimers.get(deviceId);
         if (t) { clearTimeoutFn(t); staleTimers.delete(deviceId); }
       } else {
-        armStaleTimer(deviceId, staleAfterMs);
+        armStaleTimer(deviceId, staleAfter - age);
       }
     },
 
