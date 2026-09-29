@@ -28,7 +28,9 @@ function SessionSideEffects() {
   const { controller, snapshot } = useSessionController('local');
   useUrlCommand(controller);
   useExternalControl(controller);
-  usePlaybackStateBroadcast({ send: publish, identity, snapshot });
+  // Frames wait for this connection's identify (controlReady); the hook
+  // projects the identity to its wire contract fields.
+  usePlaybackStateBroadcast({ send: publish, identity, snapshot, ready: identity.controlReady === true });
   return null;
 }
 
