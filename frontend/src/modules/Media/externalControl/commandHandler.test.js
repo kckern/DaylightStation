@@ -115,4 +115,22 @@ describe('applyCommandEnvelope', () => {
 
     expect(controller.getSnapshot().meta.origin).toEqual({ kind: 'device', id: 'browser:origin-owner' });
   });
+
+  it('stamps a successful synchronous routine transport with the routine origin', () => {
+    const controller = createLocalSessionController({ clientId: 'origin-owner' });
+    const origin = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
+    expect(applyCommandEnvelope(controller, { ...env('config', { setting: 'volume', value: 30 }), origin }).ok).toBe(true);
+    expect(controller.getSnapshot().meta.origin).toEqual(origin);
+  });
+
+  it('stamps a successful async routine item action with the routine origin', async () => {
+    const controller = createLocalSessionController({ clientId: 'origin-owner' });
+    const origin = { kind: 'routine', name: 'Breakfast', triggerId: 'daily-0700' };
+    const realExecute = controller.execute;
+    controller.execute = vi.fn(async (p) => { await Promise.resolve(); return realExecute(p); });
+    await applyCommandEnvelope(controller, { ...env('queue', {
+      op: 'item-action', operationId: 'ok-1', kind: 'playNow', item: { contentId: 'plex:1' }, tappedAt: Date.now(),
+    }), origin });
+    expect(controller.getSnapshot().meta.origin).toEqual(origin);
+  });
 });
