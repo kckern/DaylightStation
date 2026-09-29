@@ -1,13 +1,18 @@
 import React, { useContext } from 'react';
 import { act, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const playbackSubscribers = [];
 const playbackUnsubscribes = [];
+const deviceStateSubscribers = [];
+const statusSubscribers = [];
 const observerSnapshot = { sessionId: 'observer-session', state: 'idle', currentItem: null };
 
 vi.mock('./useDevices.js', () => ({
-  useDevices: () => ({ devices: [], loading: false, error: null, refresh: vi.fn() }),
+  // A configured (physical) device row for the liveness/re-render tests
+  // below — round-0's browser test only ever asserted absence/shape of
+  // browser rows via `some`/`find`/`filter`, unaffected by this extra entry.
+  useDevices: () => ({ devices: [{ id: 'tv-1', name: 'Living Room TV' }], loading: false, error: null, refresh: vi.fn() }),
 }));
 vi.mock('../identity/useClientIdentity.js', () => ({
   useClientIdentity: () => ({ clientId: 'observer-browser', displayName: 'Observer browser' }),
@@ -23,12 +28,25 @@ vi.mock('../net/ws.js', () => ({
     playbackUnsubscribes.push(unsubscribe);
     return unsubscribe;
   }),
-  subscribeTopicKind: vi.fn(() => vi.fn()),
-  onStatus: vi.fn(() => vi.fn()),
+  subscribeTopicKind: vi.fn((kind, callback) => {
+    deviceStateSubscribers.push({ kind, callback });
+    return vi.fn();
+  }),
+  onStatus: vi.fn((callback) => {
+    statusSubscribers.push(callback);
+    return vi.fn();
+  }),
 }));
 vi.mock('../logging/mediaLog.js', () => ({ default: new Proxy({}, { get: () => vi.fn() }) }));
 
 import { FleetContext, FleetProvider } from './FleetProvider.jsx';
+
+afterEach(() => {
+  // Always restore real timers, even if a test threw before reaching its
+  // own `vi.useRealTimers()` — fake timers left active otherwise hang the
+  // pool's teardown.
+  vi.useRealTimers();
+});
 
 function Probe() {
   const { devices, store } = useContext(FleetContext);
@@ -65,5 +83,59 @@ describe('FleetProvider browser session feed', () => {
     unmount();
     expect(playbackUnsubscribes).toContainEqual(expect.any(Function));
     expect(playbackUnsubscribes.at(-1)).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('FleetProvider configured-device liveness re-render', () => {
+  it('trusts a silent configured device for two minutes, then flips to uncertain and re-renders to show it', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-22T12:00:00.000Z'));
+    const { unmount } = render(<FleetProvider><Probe /></FleetProvider>);
+    const feed = [...deviceStateSubscribers].reverse().find(({ kind }) => kind === 'device-state');
+    expect(feed).toBeTruthy();
+
+    act(() => {
+      feed.callback({ deviceId: 'tv-1', snapshot: { state: 'playing' }, reason: 'change', ts: '2026-09-22T12:00:00.000Z' });
+    });
+    let result = JSON.parse(screen.getByRole('status').textContent);
+    expect(result.devices.find(({ id }) => id === 'tv-1')).toMatchObject({ state: 'playing' });
+
+    // No further broadcasts arrive — the device just went quiet. Nothing
+    // else would re-render this provider without the boundary timer.
+    act(() => { vi.advanceTimersByTime(119_999); });
+    result = JSON.parse(screen.getByRole('status').textContent);
+    expect(result.devices.find(({ id }) => id === 'tv-1')).toMatchObject({ state: 'playing' });
+
+    act(() => { vi.advanceTimersByTime(2); }); // crosses the 120_000ms boundary
+    result = JSON.parse(screen.getByRole('status').textContent);
+    expect(result.devices.find(({ id }) => id === 'tv-1')).toMatchObject({ state: 'uncertain' });
+
+    unmount();
+    vi.useRealTimers();
+  });
+
+  it('still flips to uncertain at the two-minute boundary even while the WS itself is down', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-22T12:00:00.000Z'));
+    const { unmount } = render(<FleetProvider><Probe /></FleetProvider>);
+    const feed = [...deviceStateSubscribers].reverse().find(({ kind }) => kind === 'device-state');
+    act(() => {
+      feed.callback({ deviceId: 'tv-1', snapshot: { state: 'playing' }, reason: 'change', ts: '2026-09-22T12:00:00.000Z' });
+    });
+
+    // The WS drops shortly after — markAllStale marks every non-browser
+    // entry stale immediately, but must not itself claim 'uncertain' this
+    // early, and must not prevent the boundary re-render from happening.
+    act(() => { vi.advanceTimersByTime(5_000); });
+    act(() => { statusSubscribers.at(-1)({ connected: false }); });
+    let result = JSON.parse(screen.getByRole('status').textContent);
+    expect(result.devices.find(({ id }) => id === 'tv-1')).toMatchObject({ state: 'playing' });
+
+    act(() => { vi.advanceTimersByTime(120_000 - 5_000 + 2); }); // total elapsed since last heard now past 2 minutes
+    result = JSON.parse(screen.getByRole('status').textContent);
+    expect(result.devices.find(({ id }) => id === 'tv-1')).toMatchObject({ state: 'uncertain' });
+
+    unmount();
+    vi.useRealTimers();
   });
 });

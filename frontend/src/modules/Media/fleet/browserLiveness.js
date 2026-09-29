@@ -52,7 +52,9 @@ export function mergeCanonicalFleetState(devices, entries, { now = Date.now } = 
     const lastHeardMs = entry.lastSeenAt != null
       ? Math.max(0, now() - new Date(entry.lastSeenAt).getTime())
       : 0;
-    const state = lastHeardMs > BROWSER_UNCERTAIN_AFTER_MS ? 'uncertain' : rawState;
+    // `>=` (not `>`): a re-render timer firing exactly at the boundary must
+    // flip this, not wait for a strictly-later tick.
+    const state = lastHeardMs >= BROWSER_UNCERTAIN_AFTER_MS ? 'uncertain' : rawState;
     return { ...device, state, displayState: state };
   });
 }
