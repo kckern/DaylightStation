@@ -157,6 +157,7 @@ export function MediaContentSearch() {
             scopeKey={currentScopeKey}
             scopeLabel={currentScope?.label ?? null}
             logApp="media"
+            dropdownClassName="media-search-dropdown"
             appResults
             allowFreeform={false}
             retainQueryOnEscape

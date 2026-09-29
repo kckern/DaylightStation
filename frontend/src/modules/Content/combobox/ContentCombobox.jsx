@@ -86,6 +86,9 @@ function optionTopIn(viewport, option) {
  *   rendered here once the hook reports `fellBackToAll`. Optional.
  * @param {boolean} [props.appResults] - passthrough: merge app-registry matches
  * @param {string} [props.logApp] - app name stamped on this combobox's log events
+ * @param {string} [props.dropdownClassName] - extra class on the dropdown. It is
+ *   portaled to <body>, so this is the only way a consumer can style it (e.g.
+ *   Media's dock gives it a minimum width beside a narrow input).
  * @param {(args: {onStartEdit: () => void, value: string, resolvedTitle: ?string}) => JSX} [props.renderValue]
  *   - when provided, rendered INSTEAD of the TextInput while in DISPLAY mode
  *     (lets callers keep rich display cards; clicking must call onStartEdit)
@@ -114,6 +117,7 @@ export function ContentCombobox({
   allowFreeform = true,
   onClose = null,
   logApp = 'admin',
+  dropdownClassName = null,
   onPlayAll = null,
   onMore = null,
   onAction = null,
@@ -711,7 +715,7 @@ export function ContentCombobox({
           admin `.admin` color scope — so uncolored header/crumb Text would
           inherit the body default (dark) and read dark-on-dark. Pin a bright
           base color here; dimmed/white-on-highlight states still override. */}
-      <Combobox.Dropdown className="content-combobox-dropdown">
+      <Combobox.Dropdown className={dropdownClassName ? `content-combobox-dropdown ${dropdownClassName}` : 'content-combobox-dropdown'}>
         {/* Orientation header (BROWSE mode): the committed value isn't among the
             rendered siblings, so nothing is highlighted — surface it here. */}
         {isBrowse && value && !items.some((it) => normalizeValue(it.id) === normalizedValue) && (

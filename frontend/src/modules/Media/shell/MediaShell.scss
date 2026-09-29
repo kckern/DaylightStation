@@ -554,6 +554,15 @@ $amber-ink: #1a1300;
   .media-search-input-wrap { flex: 1 1 160px; min-width: 120px; }
 }
 
+// The results dropdown is portaled to <body> and Mantine sizes it to the input,
+// which in the dock row is ~210px wide. A result row needs more: at that width
+// its badge and ⋮ actions sat past the right edge, and opening them scrolled
+// the whole list sideways, hiding every title. Mantine's shift keeps the wider
+// dropdown on screen; the phone uses the full-screen SearchMode instead.
+.media-search-dropdown {
+  min-width: min(520px, calc(100vw - 32px));
+}
+
 // Portrait/mobile note (spec D1-D2, Task 13): the old fix-in-place here was
 // an idle/focus width contest between the scope control, the search input,
 // and a 168px icon cluster on a ~336px row — culminating in a
