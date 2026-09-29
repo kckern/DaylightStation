@@ -272,6 +272,23 @@ export function toListItem(item) {
  * @param {Object} config.listBrowse - Semantic list browsing facade
  * @returns {express.Router}
  */
+/**
+ * Optional `?take=N&skip=M` window over a container's items. Only a valid
+ * positive `take` pages; without one (every caller but the Media browse hook)
+ * the whole list goes out as before. An invalid `skip` reads as 0.
+ * @returns {{ items: object[], total: number }}
+ */
+export function pageListItems(items, query = {}) {
+  const total = items.length;
+  const take = Number.parseInt(query.take, 10);
+  if (!Number.isInteger(take) || take < 1 || String(take) !== String(query.take).trim()) {
+    return { items, total };
+  }
+  const rawSkip = query.skip === undefined ? 0 : Number.parseInt(query.skip, 10);
+  const skip = Number.isInteger(rawSkip) && rawSkip >= 0 && String(rawSkip) === String(query.skip ?? 0).trim() ? rawSkip : 0;
+  return { items: items.slice(skip, skip + take), total };
+}
+
 export function createListRouter(config) {
   const { browseCatalog, listBrowse, recordMenuSelection, logger = console } = config;
   const router = express.Router();
@@ -467,6 +484,10 @@ export function createListRouter(config) {
         }
       }
 
+      // Page AFTER wrapping and parents (both read the whole container) and
+      // BEFORE toListItem, so an unrequested title is never mapped or sent.
+      const page = pageListItems(items, req.query);
+
       // Note: v1 includes additional fields (id, itemType, metadata, etc.) beyond prod format.
       // This is intentional - extra fields don't break frontend, and provide richer data.
       // Critical parity requirements: plex, type, image, rating, title, label must match prod.
@@ -482,7 +503,8 @@ export function createListRouter(config) {
         image: containerInfo?.thumbnail,
         info,
         parents,
-        items: items.map(toListItem)
+        total: page.total,
+        items: page.items.map(toListItem)
       };
 
       const totalMs = Math.round(performance.now() - requestStart);
@@ -490,6 +512,7 @@ export function createListRouter(config) {
         source, localId,
         title: response.title,
         itemCount: response.items?.length ?? 0,
+        total: page.total,
         hasParents: !!response.parents,
         totalMs,
         items: (response.items || []).slice(0, 10).map(i => ({ id: i.id, title: i.title, type: i.type }))
