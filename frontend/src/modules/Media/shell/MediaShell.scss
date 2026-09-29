@@ -559,31 +559,10 @@ $amber-ink: #1a1300;
 // its badge and ⋮ actions sat past the right edge, and opening them scrolled
 // the whole list sideways, hiding every title. Mantine's shift keeps the wider
 // dropdown on screen; the phone uses the full-screen SearchMode instead.
+// Rows shrinking to the dropdown (instead of to the widest row) is fixed for
+// every consumer in ContentCombobox.scss; this only widens the dock's.
 .media-search-dropdown {
   min-width: min(520px, calc(100vw - 32px));
-
-  // Width alone is not enough. Mantine 7's ScrollArea wraps the options in an
-  // inline `display: table; min-width: 100%`, and a table is as wide as its
-  // WIDEST row — one long subtitle ("…Original Motion Picture Soundtrack")
-  // made every row 641px in a 520px dropdown, so no title could shrink and
-  // every ⋮ sat past the edge. As a block, rows take the dropdown's width and
-  // their titles truncate. Scoped to Media's dropdown; other ContentCombobox
-  // consumers keep Mantine's default.
-  .mantine-ScrollArea-viewport > div {
-    display: block !important;
-  }
-
-  // ...and the flex wrapper around the ScrollArea has `min-width: auto`, i.e.
-  // "never narrower than my min-content" — which counts each title's FULL
-  // nowrap text even though the title itself truncates. That alone held every
-  // row at the longest title's width. Let the scroll area take the dropdown's
-  // width instead.
-  :has(> .mantine-ScrollArea-root),
-  .mantine-ScrollArea-root,
-  .mantine-ScrollArea-viewport {
-    min-width: 0;
-    max-width: 100%;
-  }
 }
 
 // Portrait/mobile note (spec D1-D2, Task 13): the old fix-in-place here was
