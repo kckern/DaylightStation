@@ -73,6 +73,9 @@ export function FleetProvider({ children }) {
         snapshot: msg.snapshot ?? null,
         reason: msg.reason ?? 'change',
         ts: msg.ts,
+        // Present only on a server replay of a cached snapshot (server-clock
+        // age); keeps a long-silent screen from looking freshly heard.
+        ageMs: msg.ageMs,
       });
     });
   }, [store]);

@@ -160,4 +160,38 @@ describe('FleetProvider configured-device liveness re-render', () => {
     expect(result.devices.find(({ id }) => id === 'tv-1')).toMatchObject({ state: 'uncertain' });
     unmount();
   });
+
+  it('shows a ten-minute-old replayed snapshot as uncertain at once, and an offline replay as off', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-22T12:10:00.000Z'));
+    const { unmount } = render(<FleetProvider><Probe /></FleetProvider>);
+    const feed = [...deviceStateSubscribers].reverse().find(({ kind }) => kind === 'device-state');
+    act(() => {
+      feed.callback({ deviceId: 'tv-1', snapshot: { state: 'playing' }, reason: 'initial', ts: '2026-09-22T12:00:00.000Z', ageMs: 600_000, timestamp: '2026-09-22 05:10:00 am' });
+    });
+    let result = JSON.parse(screen.getByRole('status').textContent);
+    expect(result.devices.find(({ id }) => id === 'tv-1')).toMatchObject({ state: 'uncertain' });
+    expect(result.entries.find(([id]) => id === 'tv-1')[1].isStale).toBe(true);
+
+    act(() => {
+      feed.callback({ deviceId: 'tv-1', snapshot: { state: 'playing' }, reason: 'offline', ts: '2026-09-22T12:00:00.000Z', ageMs: 600_000 });
+    });
+    result = JSON.parse(screen.getByRole('status').textContent);
+    expect(result.devices.find(({ id }) => id === 'tv-1')).toMatchObject({ state: 'off' });
+    unmount();
+  });
+
+  it('keeps a live message from a device whose clock is 20s behind fresh and playing', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-22T12:00:00.000Z'));
+    const { unmount } = render(<FleetProvider><Probe /></FleetProvider>);
+    const feed = [...deviceStateSubscribers].reverse().find(({ kind }) => kind === 'device-state');
+    act(() => {
+      feed.callback({ deviceId: 'tv-1', snapshot: { state: 'playing' }, reason: 'heartbeat', ts: '2026-09-22T11:59:40.000Z', timestamp: '2026-09-22 05:00:00 am' });
+    });
+    const result = JSON.parse(screen.getByRole('status').textContent);
+    expect(result.devices.find(({ id }) => id === 'tv-1')).toMatchObject({ state: 'playing' });
+    expect(result.entries.find(([id]) => id === 'tv-1')[1].isStale).toBe(false);
+    unmount();
+  });
 });

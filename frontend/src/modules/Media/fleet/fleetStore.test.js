@@ -118,4 +118,21 @@ describe('fleetStore', () => {
     vi.advanceTimersByTime(2);
     expect(store.getEntry('tv').isStale).toBe(true);
   });
+
+  it('ages a replayed snapshot by its server-measured age: ten minutes old is stale on arrival', () => {
+    vi.setSystemTime(new Date('2026-09-22T12:10:00.000Z'));
+    const store = createFleetStore();
+    store.receive({ deviceId: 'tv', snapshot: snap('playing'), reason: 'initial', ts: '2026-09-22T12:00:00.000Z', ageMs: 600_000 });
+    expect(store.getEntry('tv').isStale).toBe(true);
+    expect(store.getEntry('tv').receivedAt).toBe('2026-09-22T12:00:00.000Z');
+  });
+
+  it('a live message from a skewed device clock (no server age) is not stale on arrival', () => {
+    vi.setSystemTime(new Date('2026-09-22T12:00:00.000Z'));
+    const store = createFleetStore();
+    store.receive({ deviceId: 'tv', snapshot: snap('playing'), reason: 'heartbeat', ts: '2026-09-22T11:59:40.000Z' });
+    expect(store.getEntry('tv').isStale).toBe(false);
+    vi.advanceTimersByTime(14_999);
+    expect(store.getEntry('tv').isStale).toBe(false);
+  });
 });
