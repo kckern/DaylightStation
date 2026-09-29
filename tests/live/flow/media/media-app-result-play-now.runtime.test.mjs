@@ -391,6 +391,9 @@ for (const [surface, viewport, isPhone] of surfaces) {
     await assertSearchIdentity(sender, input, isPhone, addId, 'disclosure day');
 
     await input.fill('arrival');
+    // A new query re-searches every source; wait for it like the other two
+    // fills do (the identity check alone has only the default 5s).
+    await expect(sender.getByTestId(`result-more-${id}`)).toBeVisible({ timeout: 30000 });
     await assertSearchIdentity(sender, input, isPhone, id);
     await setDestination(sender, isPhone, null);
     await expect(searchSurface(sender, isPhone).getByTestId('destination-line-name')).toHaveText(/^Aim: This device/);
