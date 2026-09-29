@@ -4,6 +4,7 @@ import { playbackLog } from '../lib/playbackLogger.js';
 import {
   decideSourceCheck,
   isSourceRefusal,
+  isSuspectedRefusal,
   sourcePollDelayMs,
   toHealableContentId,
   SOURCE_UNAVAILABLE_MAX_MS,
@@ -57,7 +58,9 @@ export function useSourceAvailability({
     setUnavailableSince(null);
   }, []);
 
-  const checkNow = useCallback((reason) => {
+  // `suspected`: the error never named a refusal, so a readable answer hands
+  // back to the stall ladder (`normal`) instead of reloading outside it.
+  const checkNow = useCallback((reason, { suspected = false } = {}) => {
     const id = idRef.current;
     if (!id) return Promise.resolve('normal');
     if (inflightRef.current) return inflightRef.current;
@@ -76,7 +79,7 @@ export function useSourceAvailability({
       if (!aliveRef.current || idRef.current !== id) return 'normal';
 
       const waiting = sinceRef.current !== null;
-      const decision = decideSourceCheck({ state, waiting });
+      const decision = decideSourceCheck({ state, waiting, suspected });
 
       if (decision === 'wait') {
         if (!waiting) {
@@ -128,6 +131,14 @@ export function useSourceAvailability({
     if (sinceRef.current !== null) return; // already waiting; the poll owns it
     if (isSourceRefusal({ errorCode, errorMessage })) {
       checkNow('media-error');
+    } else if (isSuspectedRefusal({ errorCode, errorMessage })) {
+      // Mid-playback a refused part arrives as "Format error" or
+      // "PIPELINE_ERROR_READ" with no status (2026-09-29). Ask; the answer decides.
+      checkNow('media-error-suspected', { suspected: true }).then((decision) => {
+        playbackLog('source-refusal-suspected', {
+          contentId: healableId, errorCode, errorMessage: String(errorMessage ?? '').slice(0, 80), decision,
+        }, { level: decision === 'wait' ? 'warn' : 'info' });
+      });
     }
   }, [healableId, errorCode, errorMessage, checkNow]);
 

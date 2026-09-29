@@ -29,6 +29,18 @@ export function isSourceRefusal({ errorCode, errorMessage } = {}) {
   return REFUSAL_MESSAGE.test(String(errorMessage ?? ''));
 }
 
+/**
+ * A media error that COULD be a refusal but does not say so. Mid-playback,
+ * Chromium reports a refused part without the HTTP status: "Format error" after
+ * a URL refresh, "PIPELINE_ERROR_READ" after a remount (2026-09-29, a Bluey
+ * episode Plex refused during a library scan — the ladder skipped it at 90%).
+ * A suspicion only earns a backend check; the check decides.
+ */
+export function isSuspectedRefusal({ errorCode, errorMessage } = {}) {
+  if (!REFUSAL_ERROR_CODES.includes(errorCode)) return false;
+  return !isSourceRefusal({ errorCode, errorMessage });
+}
+
 /** Only Plex files go through the healer: `plex:123` or a bare rating key. */
 export function toHealableContentId(contentId, plexId = null) {
   const raw = contentId ?? (plexId != null ? `plex:${plexId}` : null);
@@ -63,10 +75,17 @@ export const SOURCE_UNAVAILABLE_MAX_MS = 30 * 60_000;
  *
  * A failed check or an `unknown` answer DURING a wait keeps waiting: the
  * backend restarting mid-outage says nothing about the file.
+ *
+ * `suspected` (the error never named a refusal): a readable answer means the
+ * file is fine and the stream is the problem — that is the stall ladder's job,
+ * so `normal`, never an extra reload outside the ladder's budget.
  */
-export function decideSourceCheck({ state, waiting }) {
+export function decideSourceCheck({ state, waiting, suspected = false }) {
   if (state === 'unreadable') return 'wait';
-  if (state === 'readable') return waiting ? 'resume' : 'retry';
+  if (state === 'readable') {
+    if (waiting) return 'resume';
+    return suspected ? 'normal' : 'retry';
+  }
   if (state === 'missing') return 'normal';
   return waiting ? 'wait' : 'normal';
 }
