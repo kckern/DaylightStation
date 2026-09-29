@@ -5,6 +5,11 @@ export class IContentCatalogGateway {
   hasSource() { throw new Error('hasSource must be implemented'); }
   getItem() { throw new Error('getItem must be implemented'); }
   getList() { throw new Error('getList must be implemented'); }
+  /**
+   * Optional: one `{ skip, take }` window of a container as `{ items, total }`,
+   * or null when the source cannot page it (the caller then uses getList).
+   */
+  async getListPage() { return null; }
   resolvePlayables() { throw new Error('resolvePlayables must be implemented'); }
   resolveLaunchables() { throw new Error('resolveLaunchables must be implemented'); }
   sourceNames() { throw new Error('sourceNames must be implemented'); }

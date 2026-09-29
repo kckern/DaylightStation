@@ -278,15 +278,18 @@ export function toListItem(item) {
  * the whole list goes out as before. An invalid `skip` reads as 0.
  * @returns {{ items: object[], total: number }}
  */
-export function pageListItems(items, query = {}) {
-  const total = items.length;
+export function parseListPage(query = {}) {
   const take = Number.parseInt(query.take, 10);
-  if (!Number.isInteger(take) || take < 1 || String(take) !== String(query.take).trim()) {
-    return { items, total };
-  }
+  if (!Number.isInteger(take) || take < 1 || String(take) !== String(query.take).trim()) return null;
   const rawSkip = query.skip === undefined ? 0 : Number.parseInt(query.skip, 10);
   const skip = Number.isInteger(rawSkip) && rawSkip >= 0 && String(rawSkip) === String(query.skip ?? 0).trim() ? rawSkip : 0;
-  return { items: items.slice(skip, skip + take), total };
+  return { skip, take };
+}
+
+export function pageListItems(items, query = {}) {
+  const page = parseListPage(query);
+  if (!page) return { items, total: items.length };
+  return { items: items.slice(page.skip, page.skip + page.take), total: items.length };
 }
 
 export function createListRouter(config) {
@@ -375,7 +378,7 @@ export function createListRouter(config) {
 
       logger.info?.('list.request', { source, localId, modifiers, ip: req.ip });
 
-      const browseResult = await listBrowse.browse({ source, localId, modifiers });
+      const browseResult = await listBrowse.browse({ source, localId, modifiers, page: parseListPage(req.query) });
       if (browseResult.kind === 'category') {
         return res.json({
           [source]: '',
@@ -484,9 +487,14 @@ export function createListRouter(config) {
         }
       }
 
-      // Page AFTER wrapping and parents (both read the whole container) and
-      // BEFORE toListItem, so an unrequested title is never mapped or sent.
-      const page = pageListItems(items, req.query);
+      // A source that paged already returned just the window, with its own
+      // total. Otherwise page AFTER wrapping and parents (both read the whole
+      // container) and BEFORE toListItem, so an unrequested title is never
+      // mapped or sent. (Sources never page playlists/seasons — see
+      // PlexAdapter.getListPage — so wrapping always sees whole containers.)
+      const page = browseResult.paged
+        ? { items, total: browseResult.total }
+        : pageListItems(items, req.query);
 
       // Note: v1 includes additional fields (id, itemType, metadata, etc.) beyond prod format.
       // This is intentional - extra fields don't break frontend, and provide richer data.
