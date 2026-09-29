@@ -540,3 +540,7 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-26 | fix/status-board-rest-day | aad08cdaa | Status board 'No school today' on rest days; card-ladder choice text fills buttons; gate ignores test-mode sittings (merged) |
 | 2026-09-26 | worktree-card-ladder-new-words-promise | 0c32412f8 | Card ladder 'up to N new words', catch-up hint, summary 'New words next time' (merged) |
 | 2026-09-26 | feature/school-economy-earnings | 6d38a04f4 | Weekly earnings preview (silver): earn rules, /api/v1/earnings, teacher Coins tab + roster (merged) |
+| 2026-09-29 | feat/media-redesign | 886249e34 | Media redesign working branch; worktree had 23 uncommitted files, committed as `wip(archive)` then tagged `archive/media/media-redesign-2026-09-29` (merged history + archive commit) |
+| 2026-09-29 | release/media-stable-core | 25ebdcd52 | Media stable-core release candidate (merged) |
+| 2026-09-29 | feat/media-redesign-batch-1 | 59361add1 | Media steer2a candidate (2 unmerged commits + archived uncommitted state); tag `archive/media/branch-feat-media-redesign-batch-1-2026-09-29` |
+| 2026-09-29 | media/p0-remaining | d152a416d | Original Task 6 attempt (rejected by review; salvaged on media/task6-salvage). 3 unmerged commits + the unfinished repair archived; tag `archive/media/branch-media-p0-remaining-2026-09-29` |
