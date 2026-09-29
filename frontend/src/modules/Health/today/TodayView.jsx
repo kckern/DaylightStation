@@ -24,6 +24,7 @@ import { useIsWideViewport } from './layout.js';
 import { LogTable } from './LogTable.jsx';
 import { MealAddRow } from './MealAddRow.jsx';
 import { useMealMoves, mealEntries } from './mealDrag.jsx';
+import { MoveDayItems } from './MoveDayControl.jsx';
 import { NeedsReviewSection } from './NeedsReviewSection.jsx';
 import { DayClosePill } from './DayClosePill.jsx';
 import { FollowUpTray } from './FollowUpTray.jsx';
@@ -396,6 +397,9 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
         {date !== todayISO() ? <Menu.Item onClick={() => copyMealToToday(rows, bucketId, label)}>Copy to today</Menu.Item> : null}
         <Menu.Item onClick={() => saveBucketAsMeal(rows, label)}>Save as meal</Menu.Item>
         <Menu.Divider />
+        <Menu.Label>Move all to day</Menu.Label>
+        <MoveDayItems date={date} today={todayISO()} onPick={iso => moves.moveToDay(mealEntries(rows), iso, bucketId)} />
+        <Menu.Divider />
         <Menu.Label>Move all to</Menu.Label>
         {BUCKETS.filter(bucket => bucket.id !== bucketId).map(bucket => <Menu.Item key={bucket.id}
           aria-label={`Move all of ${label} to ${bucket.label}`} onClick={() => moves.moveMeal(mealEntries(rows), bucket.id, bucketId)}>{bucket.label}</Menu.Item>)}
@@ -485,7 +489,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
         bucketHeaderAction={bucketHeaderAction}
         onVoiceCapture={onVoiceCapture} onTextCapture={onTextCapture}
         onMealChanged={result=>handleCaptureResult(result)} captureTasks={[...capturePending.values()]}
-        measuredByUuid={measuredByUuid} addedIds={addedIds} onMoveEntry={moves.move} onMoveMeal={moves.moveMeal}
+        measuredByUuid={measuredByUuid} addedIds={addedIds} onMoveEntry={moves.move} onMoveMeal={moves.moveMeal} onMoveToDay={moves.moveToDay}
         renderAddRow={(bucket, label, meal) => <MealAddRow bucket={bucket} label={label} date={date} active={active}
           onVoiceCapture={meal?.onVoiceCapture} selectedCount={meal?.selectedIds?.length || 0} busy={nutrition.busy} onOrphanedRetry={keepOrphanedRecording}
           onAdded={() => day.reload()} onSentencePending={text => beginSentencePending(bucket, text)} onPhotoCapture={onPhotoCapture} onOpenBarcode={openBarcode}

@@ -37,3 +37,17 @@ it('marks just-added rows for the highlight',()=>{
  expect(lines).toHaveLength(1);
  expect(lines[0].textContent).toContain('Tomatoes');
 });
+it('moves every ticked food to another day in one step, and leaves the rest', async()=>{
+ const onMoveToDay=vi.fn(async()=>{});
+ renderLog({onMoveToDay});
+ fireEvent.click(screen.getByRole('button',{name:'Select foods'}));
+ expect(screen.queryByRole('button',{name:/to another day/})).toBeNull();
+ fireEvent.click(screen.getByRole('checkbox',{name:'Select Beef broth'}));
+ fireEvent.click(screen.getByRole('checkbox',{name:'Select Tomatoes'}));
+ fireEvent.click(screen.getByRole('button',{name:'Move 2 selected to another day'}));
+ fireEvent.click(await screen.findByText('Yesterday'));
+ const yesterday=new Date();yesterday.setDate(yesterday.getDate()-1);
+ const iso=`${yesterday.getFullYear()}-${String(yesterday.getMonth()+1).padStart(2,'0')}-${String(yesterday.getDate()).padStart(2,'0')}`;
+ await waitFor(()=>expect(onMoveToDay).toHaveBeenCalledWith([expect.objectContaining({uuid:'broth'}),expect.objectContaining({uuid:'tomato'})],iso,'evening'));
+ await waitFor(()=>expect(screen.queryByRole('checkbox',{name:'Select Beef broth'})).toBeNull()); // selection mode closes
+});

@@ -439,6 +439,24 @@ not the current hour. The resolved bucket is stored on each entry.
   versions the move returned. A failure part-way keeps what moved and puts the rest
   back. Logs: `entry.move`, `meal.move`, `*.undo`, `entry.move.failed`.
 
+### Moving food to another day
+
+Same rows, different `date` (the meal is kept; a dish's PUT cascades `date` to its
+ingredients). Three routes, one command (`useMealMoves().moveToDay`, `mealDrag.jsx`):
+
+- **Drag:** while a food or a meal header is being dragged, the week ending today
+  docks at the right edge (`DayDropDock`, `MoveDayControl.jsx`; fixed-position, only
+  exists during a drag, so it cannot shift the page). Drop on a day chip.
+- **Select foods:** tick foods, then "Move N to another day…" (recent days, or a date
+  picker for anything older). A dish moves whole, so it counts only when every one of
+  its ingredients is ticked; a partly-ticked dish is skipped with a note.
+- **Meal ⋯ menu:** "Move all to day" moves the whole meal.
+
+The rows leave the viewed day at once (`gone`), each PUT follows, a failure brings back
+the rows it did not reach, and one Undo sends the moved rows home. Logs:
+`entry.move-day`, `entry.move-day.undo`, `entry.move-day.failed`. Day choices live in
+`moveDays.js`.
+
 ### Calorie bars under each kcal figure
 
 One absolute scale for the whole day (`dayCalorieScale`, `groupRows.js`): the
@@ -912,6 +930,14 @@ land them mid-list. Both come from `today/addFlow.js`, which matches the add res
 row ids (`item.uuid` for a quick-add, `entryIds` for a sentence) against the day's rows and
 logs `add.flow` (`submitToCommittedMs`, `committedToVisibleMs`).
 
+**An inline pick is optimistic.** The row appears and the field clears at once, with no
+spinner: the client builds a provisional row from the suggestion (`provisionalFoodRow`,
+id prefixed `pending-`) and puts it on the day, then saves behind it. The server's row
+replaces it (`settleProvisionalRow`); a failed save removes it, restores the typed text
+and shows the error. `onDone` (the day reload) waits for the save, because a reload that
+beat it would drop a row the server has not seen yet. Logs: `quickadd.optimistic`,
+`quickadd.done` (`saveMs`), `quickadd.failed`. The sheet surface still waits.
+
 `pick(entry)` is the fast path: **one** request, `POST /nutrition/catalog/quickadd
 { catalogEntryId, mealTime }`, then done — no pending state, no confirmation step. The
 meal travels with the quick-add; there is no follow-up `PUT` to move the row afterwards.
@@ -951,6 +977,16 @@ note, or a barcode scan — goes through the **same unified endpoint**,
 which is the web transport onto the pre-existing Telegram nutrition-bot pipeline
 (`WebNutribotAdapter` → `NutribotInputRouter.handleText/handleImage/handleVoice/handleUpc`
 → `LogFoodFromText`/`LogFoodFromImage`/`LogFoodFromVoice`/`LogFoodFromUPC`).
+
+**Which day a sentence or a voice note lands on.** The viewed day (`date` on the request) is
+the answer unless the person NAMES a day. The prompt's "today" is the viewed day (the live
+clock when that is today; a fixed 12:00 PM only for a past day), and the model's `date` is
+honoured only when it also returns `dateExplicit: true` ("yesterday", "last night", "on
+Wednesday"). A meal word or a time of day is not a day: before this rule a pinned noon
+clock made "for dinner I had…" a future meal, and the model filed it under the day
+before (2026-09-28, spoken at 23:40 while viewing today). The same flag rule applies with
+no viewed day (Telegram): the wall clock decides. `LogFoodFromText.mjs`,
+`usecases/viewedDate.test.mjs`.
 
 An optional `bucket` field on that same request declares the meal the capture was
 launched from — a meal section's own header trigger sends that meal's id, the

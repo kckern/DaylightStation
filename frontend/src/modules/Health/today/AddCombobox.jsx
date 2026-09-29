@@ -30,7 +30,8 @@ function portionLabel(entry) {
   return serving?.amount > 0 && serving.unit ? `${Math.round(serving.amount)} ${serving.unit} · ` : '';
 }
 import { peekApiResource, primeApiResource } from '../../../lib/hooks/useApiResource.js';
-import { shortlistPath, showCommittedFoodRows } from '../healthResources.js';
+import { shortlistPath, showCommittedFoodRows, provisionalFoodRow, settleProvisionalRow } from '../healthResources.js';
+import { localTodayISO, currentMealBucketId } from './mealBuckets.js';
 import { addedRowIds, trackAddFlow } from './addFlow.js';
 
 const logger = createAppLogger('health').child('add-combobox');
@@ -182,7 +183,38 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
     onDone?.(result);
   };
 
+  // An inline pick shows its row and clears the field at once; the save runs
+  // behind it. A pick is a deliberate choice of a known food, so the row that
+  // the server will write is predictable from the suggestion. If the save
+  // fails the row comes back out, the typed text returns, and the error shows.
+  // The day reload (onDone) waits for the save: a reload that beat it would
+  // wipe the row it has never heard of.
+  const pickOptimistically = async (entry) => {
+    const typed = text;
+    const targetDate = date || localTodayISO();
+    const provisional = provisionalFoodRow(entry, { date: targetDate, mealTime: bucketId || currentMealBucketId() });
+    const request = operationRequest(requestRef,
+      { catalogEntryId: entry.id, ...(bucketId ? { mealTime: bucketId } : {}), ...(date ? { date } : {}) });
+    requestRef.current = null; // the next pick is a new intent, even for the same food
+    setText(''); setHighlight(-1); setError(null);
+    showCommittedFoodRows([provisional]);
+    logger.info('quickadd.optimistic', { entry: entry.name, bucket: bucketId, surface });
+    const submittedAt = performance.now();
+    try {
+      const response = await DaylightAPI('api/v1/health/nutrition/catalog/quickadd', request, 'POST');
+      logger.info('quickadd.done', { entry: entry.name, bucket: bucketId, surface, saveMs: Math.round(performance.now() - submittedAt) });
+      settleProvisionalRow(provisional, response?.item ?? null);
+      trackAddFlow({ ids: addedRowIds(response), bucket: bucketId ?? null, surface, kind: 'pick', submitToCommittedMs: performance.now() - submittedAt });
+      onDone?.();
+    } catch (err) {
+      logger.error('quickadd.failed', { error: err?.message });
+      settleProvisionalRow(provisional, null);
+      setText(typed); setError(err);
+    }
+  };
+
   const pick = async (entry) => {
+    if (inline && entry?.type !== 'template') return pickOptimistically(entry);
     if (submitting.current) return;
     // A template is not a quick-add: it can carry variants, and PRD F6.1 says
     // instantiating OFFERS them. So the picker takes over from here rather

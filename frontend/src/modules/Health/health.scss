@@ -702,6 +702,20 @@ $health-aside-gap: 1.5rem;
   &__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 @media (prefers-reduced-motion: reduce) { .health-meal { transition: none; } }
+// The recent days, docked at the right edge for the length of a drag. Fixed,
+// so it takes no room and cannot shift the page; vertically centred, clear of
+// the scroll bands at the top and bottom of the viewport.
+.health-day-dock {
+  position: fixed; right: 12px; top: 50%; transform: translateY(-50%); z-index: 1200;
+  display: flex; flex-direction: column; gap: 0.35rem; width: 8.5rem; padding: 0.5rem;
+  border: 1px solid var(--ds-border); border-radius: 10px; background: var(--ds-surface);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ds-text-high) 18%, transparent);
+  &__title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ds-text-low); }
+  &__chip { padding: 0.45rem 0.6rem; border-radius: 8px; border: 1px dashed var(--ds-border); font-size: 0.85rem; text-align: center; color: var(--ds-text-high); }
+  &__chip--over { border-style: solid; border-color: var(--ds-accent); background: color-mix(in srgb, var(--ds-accent) 12%, transparent); }
+}
+.health-meal-move-day { display: flex; align-items: center; gap: 0.6rem; padding: 0.25rem 0; }
+.health-meal-move-day__note { font-size: 0.75rem; color: var(--ds-text-low); }
 // A meal entry gliding to its new place after a reorder (sectionOrder.js,
 // FLIP): the inline translate is set by the hook, this class animates it home.
 .health-flip-moving {

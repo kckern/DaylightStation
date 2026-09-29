@@ -323,6 +323,7 @@ describe('Telegram copy for a committed capture (task 1.4)', () => {
           { name: 'Toast', grams: 40, calories: 120, noom_color: 'yellow' },
         ],
         date: '2026-09-02',
+        dateExplicit: true,
         time: 'morning',
       })),
     };
