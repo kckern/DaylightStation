@@ -1,6 +1,6 @@
 //
-// Daily calorie budget: Mifflin-St Jeor BMR x activity baseline minus the
-// day's planned deficit (solved from a target date, or the weekly rate), floored. Pure and deterministic — age arrives as a
+// Daily calorie budget: Mifflin-St Jeor BMR x activity baseline (or a fixed
+// break-even the user set) minus the day's planned deficit (solved from a target date, or the weekly rate), floored. Pure and deterministic — age arrives as a
 // number (domains carry no clock).
 
 const LB_TO_KG = 0.45359237;
@@ -53,11 +53,13 @@ export function computeDailyBudget(input) {
 /**
  * The same equation with its break-even kept: `maintenance` is the day's
  * estimated burn (BMR x activity baseline) — eating exactly that holds weight —
- * and `budget` is maintenance less the weekly-rate deficit, floored.
+ * and `budget` is maintenance less the weekly-rate deficit, floored. A set
+ * `maintenanceKcal` replaces the formula outright: the user's own break-even,
+ * for when the formula disagrees with what their scale does.
  */
 export function computeDailyEnergy({
   weightLbs, heightIn, ageYears, sex,
-  activityBaseline = 1.35, weeklyRateLbs = 1, budgetFloor = 1200, deficit = null,
+  activityBaseline = 1.35, weeklyRateLbs = 1, budgetFloor = 1200, deficit = null, maintenanceKcal = null,
 }) {
   finite(weightLbs, 'weightLbs');
   finite(heightIn, 'heightIn');
@@ -74,7 +76,7 @@ export function computeDailyEnergy({
   const kg = weightLbs * LB_TO_KG;
   const cm = heightIn * IN_TO_CM;
   const bmr = 10 * kg + 6.25 * cm - 5 * ageYears + (sex === 'male' ? 5 : -161);
-  const tdee = bmr * activityBaseline;
+  const tdee = maintenanceKcal == null ? bmr * activityBaseline : finite(maintenanceKcal, 'maintenanceKcal');
   // A solved deficit (solveDailyDeficit) replaces the fixed weekly rate.
   const daily = deficit == null ? (weeklyRateLbs * KCAL_PER_LB) / 7 : finite(deficit, 'deficit');
   const budget = Math.round(tdee - daily);

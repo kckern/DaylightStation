@@ -211,6 +211,7 @@ describe('AgendaStatusBoard model', () => {
         state: 'passed',
         extraCount: 7,
       }],
+      restDay: null,
     });
   });
 
@@ -704,6 +705,80 @@ describe('physical education acknowledgment', () => {
   });
 });
 
+describe('rest day', () => {
+  const off = (subject, next = { unitId: `${subject}.next` }) => ({
+    subject, next, obligation: { state: 'excused', reason: 'not_a_school_day' },
+  });
+
+  it('marks a day where every section is excused as not_a_school_day', () => {
+    const summary = summarize([off('math'), off('language')], []);
+    expect(summary.total).toBe(0);
+    expect(summary.segments).toEqual([]);
+    expect(summary.restDay).toEqual({ optionalCount: 2 });
+  });
+
+  it('still counts it as a rest day beside optional_backlog / elective_only sections', () => {
+    // The real 2026-09-26 shape: scripture was optional_backlog, science elective_only.
+    const summary = summarize([
+      off('math'),
+      { subject: 'scripture', next: { unitId: 'cfm.1' }, obligation: { state: 'excused', reason: 'optional_backlog' } },
+      { subject: 'science', next: { unitId: 'sci.1' }, obligation: { state: 'excused', reason: 'elective_only' } },
+    ], []);
+    // Every offered lesson counts toward the hint: the scan prints them all.
+    expect(summary.restDay).toEqual({ optionalCount: 3 });
+  });
+
+  it('keeps the hint on a holiday whose only offer is an optional_backlog lesson', () => {
+    const summary = summarize([
+      off('math', null),
+      { subject: 'scripture', next: { unitId: 'cfm.1' }, obligation: { state: 'excused', reason: 'optional_backlog' } },
+    ], []);
+    expect(summary.restDay).toEqual({ optionalCount: 1 });
+  });
+
+  it('is not a rest day when any section is still obligated', () => {
+    const summary = summarize([off('math'), { subject: 'language', next: { unitId: 'fc.1' }, obligation: { state: 'obligated' } }], []);
+    expect(summary.restDay).toBeNull();
+    expect(summary.total).toBe(1);
+  });
+
+  it('is not a rest day when nothing is excused as not_a_school_day', () => {
+    const summary = summarize([
+      { subject: 'scripture', next: { unitId: 'cfm.1' }, obligation: { state: 'excused', reason: 'optional_backlog' } },
+      { subject: 'math', next: { unitId: 'm.1' }, obligation: { state: 'excused', reason: 'suppressed_by_focus' } },
+    ], []);
+    expect(summary.restDay).toBeNull();
+  });
+
+  it('is not a rest day with no sections at all (plan failed or empty)', () => {
+    expect(summarize([], []).restDay).toBeNull();
+    expect(summarize(undefined, undefined).restDay).toBeNull();
+  });
+
+  it('ignores suppressed sections when deciding', () => {
+    const summary = summarize([off('math'), { subject: 'art', suppressed: 'focus', obligation: { state: 'obligated' } }], []);
+    expect(summary.restDay).toEqual({ optionalCount: 1 });
+  });
+
+  it('reports zero optional work on a holiday with nothing offered', () => {
+    const summary = summarize([off('math', null), off('language', {})], []);
+    expect(summary.restDay).toEqual({ optionalCount: 0 });
+  });
+
+  it('keeps drawing work the child already did on a rest day', () => {
+    const summary = summarize([off('language', { unitId: 'fc.1' })],
+      [{ unitId: 'fc.1', subject: 'language', state: 'issued', outcome: null }]);
+    expect(summary.segments.map((s) => s.state)).toEqual(['in-progress']);
+    expect(summary.total).toBe(1);
+    expect(summary.restDay).toEqual({ optionalCount: 1 });
+  });
+
+  it('survives a JSON round-trip (the board caches summaries in localStorage)', () => {
+    const summary = summarize([off('math')], []);
+    expect(JSON.parse(JSON.stringify(summary)).restDay).toEqual({ optionalCount: 1 });
+  });
+});
+
 describe('persisted reading on the board', () => {
   const kids = [KIDS[0]];
   const digest = (activity = READING_ACTIVITY) => ({ ok: true, data: { studyDay: '2026-09-07', learners: [{ learnerId: 'learner1', sessions: [], readingActivity: activity }] } });
@@ -1035,5 +1110,73 @@ describe('AgendaStatusBoard — cached, in-place refresh', () => {
     schoolApi.agendaPreview.mockRejectedValue(new Error('offline'));
     await act(async () => wsHandlers.filter((h) => h.topic === 'school').at(-1).cb({ event: 'session-issued', learnerId: 'learner1' }));
     expect(screen.getAllByLabelText('0 of 1 done')).toHaveLength(2);
+  });
+});
+
+describe('rest day on the board', () => {
+  const kids = [{ id: 'learner1', name: 'Learner One' }];
+  const off = (subject, next = { unitId: `${subject}.next` }) => ({
+    subject, next, obligation: { state: 'excused', reason: 'not_a_school_day' },
+  });
+  const digest = (extra = {}) => ({ ok: true, data: { studyDay: '2026-09-26', learners: [{ learnerId: 'learner1', sessions: [], ...extra }] } });
+  beforeEach(() => {
+    vi.clearAllMocks(); wsHandlers.length = 0;
+    schoolApi.stateGates.mockResolvedValue({ ok: false });
+    schoolApi.teacherDay.mockResolvedValue(digest());
+  });
+
+  it('says No school today and how to get extra work, never No plan to show', async () => {
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: { sections: [off('math'), off('language')], entries: [] } });
+    render(<AgendaStatusBoard kids={kids} />);
+    expect(await screen.findByText('No school today')).toBeInTheDocument();
+    expect(screen.getByText('Scan your card for extra work')).toBeInTheDocument();
+    expect(screen.queryByText('No plan to show')).toBeNull();
+    expect(document.querySelector('.school-status-board__pill')).toBeNull();
+  });
+
+  it('drops the hint on a holiday with nothing offered', async () => {
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: { sections: [off('math', null)], entries: [] } });
+    render(<AgendaStatusBoard kids={kids} />);
+    expect(await screen.findByText('No school today')).toBeInTheDocument();
+    expect(screen.queryByText('Scan your card for extra work')).toBeNull();
+  });
+
+  it('on a pinned past day says No school, with no scan hint', async () => {
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: { sections: [off('math')], entries: [] } });
+    render(<AgendaStatusBoard kids={kids} day="2026-09-19" />);
+    expect(await screen.findByText('No school')).toBeInTheDocument();
+    expect(screen.queryByText('No school today')).toBeNull();
+    expect(screen.queryByText('Scan your card for extra work')).toBeNull();
+  });
+
+  it('never claims a day off when the plan read fails', async () => {
+    schoolApi.agendaPreview.mockRejectedValue(new Error('offline'));
+    schoolApi.teacherDay.mockResolvedValue(digest({
+      readingActivity: { status: 'ok', studyDay: '2026-09-26', hasActivity: false },
+    }));
+    render(<AgendaStatusBoard kids={kids} />);
+    // Plan-less and activity-less: the card settles to null and the board
+    // steps off the panel entirely, so assert the rest-day copy never appears.
+    await waitFor(() => expect(schoolApi.agendaPreview).toHaveBeenCalled());
+    expect(screen.queryByText('No school today')).toBeNull();
+  });
+
+  it('shows the rest-day copy under supplemental pins (reading done on a Saturday)', async () => {
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: { sections: [off('math')], entries: [] } });
+    schoolApi.teacherDay.mockResolvedValue(digest({
+      readingActivity: { status: 'ok', studyDay: '2026-09-26', hasActivity: true, bookCount: 1, finishedCount: 0, progressCount: 1 },
+    }));
+    render(<AgendaStatusBoard kids={kids} />);
+    expect(await screen.findByRole('img', { name: /Reading: done/ })).toBeInTheDocument();
+    expect(screen.getByText('No school today')).toBeInTheDocument();
+    expect(screen.queryByText('No plan to show')).toBeNull();
+  });
+
+  it('draws the meter, not the rest copy, once a Saturday lesson is under way', async () => {
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: { sections: [off('language', { unitId: 'fc.1' })], entries: [] } });
+    schoolApi.teacherDay.mockResolvedValue(digest({ sessions: [{ unitId: 'fc.1', subject: 'language', state: 'issued', outcome: null }] }));
+    render(<AgendaStatusBoard kids={kids} />);
+    expect(await screen.findByRole('progressbar')).toBeInTheDocument();
+    expect(screen.queryByText('No school today')).toBeNull();
   });
 });

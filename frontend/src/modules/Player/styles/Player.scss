@@ -387,6 +387,18 @@
     margin-bottom: -1ex;
 }
 
+// Shown under the spinner while the Player waits out a media file the server
+// refuses to read (useSourceAvailability). Plain status text, not a banner.
+.loading-overlay .loading-notice{
+    max-width: 90%;
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #FFFFFFCC;
+    text-align: center;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+    font-variant-numeric: tabular-nums;
+}
+
 .loading-overlay .loading-timer{
     font-size: 2rem;
     font-weight: 700;

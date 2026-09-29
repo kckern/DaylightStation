@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { emptyWordV3 } from './mastery.mjs';
 import { emptyDay, emptyStatusV3 } from './statusV3.mjs';
-import { addActiveTime, currentItem, openDay, respond, startPractice, wordTransitions } from './engine.mjs';
+import { addActiveTime, currentItem, newWordsHeld, openDay, respond, startPractice, wordTransitions } from './engine.mjs';
 
 const D = '2026-09-22';
 const SET = {
@@ -588,6 +588,45 @@ describe('engine — practice', () => {
     expect(() => startPractice(start(), { mode: 'match' })).toThrow(/after today/);
     expect(currentItem(doneCtx())).toMatchObject({ type: 'menu' });
   });
+  // 2026-09-26: a day planned 3 new words, Review misses filled the working
+  // set, and the day ended with none met — the summary said nothing about it.
+  describe('newWordsHeld — the day planned new words and met none', () => {
+    const summaryOf = (dayOver = {}, ctxOver = {}) => {
+      const base = doneCtx();
+      return currentItem({ ...base, ...ctxOver, dayFile: { ...base.dayFile, summarySeen: false, ...dayOver } });
+    };
+    it('is true on the summary when new words were planned but none came', () => {
+      expect(summaryOf({ atOpen: { ...doneCtx().dayFile.atOpen, newAllowance: 3 } })).toMatchObject({ type: 'summary', newWordsHeld: true });
+    });
+    it('is false once any round met new words (goal or Learn more)', () => {
+      const met = [{ id: 'r1', kind: 'new', extra: true, words: ['gawi', 'pul'], newWords: ['gawi', 'pul'], phase: 'done', stream: { queue: [], latest: {} }, quiz: { queue: [], index: 0, passed: [], failed: [] } }];
+      expect(summaryOf({ atOpen: { ...doneCtx().dayFile.atOpen, newAllowance: 3 }, rounds: met }).newWordsHeld).toBe(false);
+    });
+    it('is false when the day never planned new words', () => {
+      expect(summaryOf({ atOpen: { ...doneCtx().dayFile.atOpen, newAllowance: 0 } }).newWordsHeld).toBe(false);
+    });
+    it('is false when the deck has no new words left', () => {
+      const learned = Object.fromEntries(pool.map((id) => [id, { ...emptyWordV3(), state: 'mastered', stage: 2, introducedDay: '2026-09-01', dueDay: '2026-10-30' }]));
+      const base = doneCtx();
+      expect(summaryOf({ atOpen: { ...base.dayFile.atOpen, newAllowance: 3 } }, { status: { ...base.status, words: learned } }).newWordsHeld).toBe(false);
+    });
+    it('is false when only one new word is left: no round of one, and the agenda promised none', () => {
+      const base = doneCtx();
+      const learned = { ...emptyWordV3(), state: 'mastered', stage: 2, introducedDay: '2026-09-01', dueDay: '2026-10-30' };
+      const oneLeft = { gawi: learned, pul: learned }; // chaek still new
+      expect(summaryOf({ atOpen: { ...base.dayFile.atOpen, newAllowance: 3 } }, { status: { ...base.status, words: oneLeft } }).newWordsHeld).toBe(false);
+    });
+    it('is false when the allowance itself is below two, however many words are fresh', () => {
+      const base = doneCtx();
+      expect(newWordsHeld({ ...base, dayFile: { ...base.dayFile, atOpen: { ...base.dayFile.atOpen, newAllowance: 1 } } })).toBe(false);
+    });
+    it('is exported for the sitting progress', () => {
+      const base = doneCtx();
+      expect(newWordsHeld({ ...base, dayFile: { ...base.dayFile, atOpen: { ...base.dayFile.atOpen, newAllowance: 3 } } })).toBe(true);
+      expect(newWordsHeld({ ...base, dayFile: { ...base.dayFile, atOpen: undefined } })).toBe(false);
+    });
+  });
+
   it('the summary shows once, then the menu', () => {
     let ctx = { ...doneCtx(), dayFile: { ...doneCtx().dayFile, summarySeen: false } };
     expect(currentItem(ctx)).toMatchObject({ id: 'summary', type: 'summary' });

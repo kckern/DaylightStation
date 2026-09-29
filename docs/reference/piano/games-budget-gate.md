@@ -22,11 +22,12 @@ count. The current value is exposed at
 ## The gate stack
 
 Three gates stand between the Games tile and a running match, in this order. The first
-that blocks wins, and each carries its own copy.
+that blocks wins, and each carries its own copy. Above all three sits a switch that is not
+a gate — [Games off](#games-off-gameaccessdisabledfor) — which no player action opens.
 
 | # | Gate | Opens on | Fails |
 |---|---|---|---|
-| 1 | School completion | today's schoolwork is `complete` or `no_work_today`, **or the player is not a learner School tracks** | closed |
+| 1 | School completion | the `piano.games` entitlement is `granted` for today's school day (School grants it on `complete` or `no_work_today`), **or the player is not a learner School tracks** | closed |
 | 2 | Match gate | a played challenge scores at or above the bar | open on infrastructure; the ladder floor cannot fail on verdict |
 | 3 | Budget | minutes remain in the learner's allowance *and* the device's | open |
 
@@ -44,6 +45,41 @@ before the day's balance is read. It is worth knowing when reading a log where
 
 The curfew window and the Games tile's own school lock are documented in
 [README.md](./README.md); neither is part of this feature.
+
+**The kiosk never sees `no_work_today`.** `useSchoolGameAccess` reads the entitlement, not
+School's three-state answer, and maps every `granted` decision to state `complete`. A
+`piano.school-access.verdict` line reading `complete` therefore means "granted", and says
+nothing about whether work was done. To tell the two apart, ask School directly:
+`GET /api/v1/school/lifecycle/learners/:id/completion` returns the day's `state` plus the
+per-subject `sections` (`served` = done, `excused` with a reason such as
+`not_a_school_day`). Only today is answerable there; for a past day see
+[State Gates: auditing a past day](../state-gates/integration-and-operations.md#auditing-a-past-day).
+
+### Games off (`gameAccess.disabledFor`)
+
+```yaml
+# household/piano/config.yml
+gameAccess:
+  disabledFor: [learner-id]
+```
+
+Not a lock: it says the games are not for this player and renders no route to unlock.
+Absent config means everyone may play. It must be enforced on **every surface that can
+start a game**, and each surface enforces it at both ends — it refuses to start a game and
+it ends one already running when the player switches to a disabled profile:
+
+| Surface | Where |
+|---|---|
+| Tablet menu tile | `PianoMenu.jsx` |
+| Tablet Games route (incl. deep links) | `Games.jsx` — checked before the school lock |
+| Office display launcher | `PianoVisualizer.jsx` — folded into `gamesAllowed`, which pauses game-key selection, withholds the fullscreen game, and exits a running one with `launcher.game-exited {reason: "games-off"}` |
+
+The office display did not always do the last part. Until 2026-09-27 `gamesOff` there only
+chose the panel copy: the launcher kept taking game keys behind "Games are off", and a
+running game was ended only by the school verdict. A disabled player whose school day was
+`complete` was bounced once (by the verdict's momentary `loading` on the profile switch),
+re-picked himself, and played chess. A new surface that hosts games must take the same
+single `gamesAllowed` answer rather than re-deriving it.
 
 ### Gate 1 covers learners, and only learners
 
@@ -324,6 +360,23 @@ served a different scale each gate, the drill form of the same level served the 
 in the same order forever: a child on `roots: ['A','E']` met A, E, A at every gate they
 ever played, and said so. The rung program now takes the same rotation counter, so set one
 starts on a different root each gate and the sets walk on from there.
+
+**A rung with more roots than sets steps a whole set per gate.** With seven roots and
+three sets, a one-root step meant back-to-back gates shared two of their three keys; the
+drill now advances `sets` roots per gate when it has more roots than sets, so consecutive
+gates deal fresh keys and every root is reached within a few gates. A rung with no more
+roots than sets keeps the one-root step — it plays every root every gate regardless.
+
+**Roots and hands rotate on the same counter, so their counts matter.** Three roots with
+three hands pins each key to one hand forever (A was always right hand). Give a handed
+rung a root count that shares no factor with its hand count — seven roots over
+`[R, L, RL]` walks every key through every hand.
+
+**Roots are sharp spellings only.** `scales/modes` expands `root: values: all` to
+`C C# D D# E F F# G G# A A# B`. A flat name (`Eb`, `Bb`) addresses nothing, and an ask
+that resolves to nothing is an outage, which fails **open** — a free match. `rootsOf`
+drops an unknown root and logs `gate.config.unknown-root`; check for it after any
+repertoire edit.
 
 **"Try again" holds the material.** It is a second go at the same thing, so a retry
 reuses the attempt already on screen rather than re-picking — otherwise a child who
@@ -699,10 +752,10 @@ per-measure grades. It is a few bars, on one screen, over in seconds.
 
 ## Where the gate is not
 
-**The office screen is ungated and unmetered by construction.** The screen-framework
-`piano` widget mounts games directly, with no gate provider and no meter, so nothing
-there asks for a challenge or spends a budget. It does enforce the school lock. The
-budget and the gate are kiosk-surface features.
+**The office screen is unmetered.** The screen-framework `piano` widget mounts games
+with no budget meter, so nothing there spends a budget. It does enforce Games off, the
+school lock, and the match gate (`PianoVisualizer` arms a `GameGate` for gate-enabled
+games). The budget is a kiosk-surface feature.
 
 **Battle Stadium's rematch is not gated.** Eight of the nine registered games route
 "play again" through the shared match-boundary context and so meet the gate on every

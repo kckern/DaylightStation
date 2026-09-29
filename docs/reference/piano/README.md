@@ -192,7 +192,7 @@ does not track as a learner is not gated at all — see
 [games-budget-gate.md](./games-budget-gate.md) for why "not a learner" and "a learner
 whose day cannot be judged" must not collapse into one answer. The kiosk refreshes the derived state while mounted and when
 the tab becomes visible, so finishing work unlocks the tile without a reload. Guest has no
-School identity and follows the `no_work_today` branch. Their engines and rules are
+School identity and stays locked: the kiosk asks Guest to choose their own profile. Their engines and rules are
 documented separately in [piano-games.md](./piano-games.md). Two further gates sit below
 that School check when the household enables them — a daily game-time budget and a short
 played challenge at every match boundary — and are documented in

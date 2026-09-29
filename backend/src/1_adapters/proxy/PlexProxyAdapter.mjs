@@ -165,9 +165,15 @@ export class PlexProxyAdapter {
    * @param {number} attempt
    * @returns {boolean}
    */
-  shouldRetry(statusCode, attempt) {
+  shouldRetry(statusCode, attempt, path = '') {
     // Retry on rate limiting
     if (statusCode === 429) return true;
+
+    // A media file Plex cannot open answers 404 — but on 2026-09-28 that was
+    // the NAS transiently zeroing modes, not a missing file, and the refusals
+    // came and went. A short retry (3 × the 500ms delay) rides out the briefest
+    // ones before the player ever sees an error.
+    if (statusCode === 404 && isMediaPartFile(path)) return attempt < MEDIA_PART_404_RETRIES;
     
     // Retry on server errors (5xx) - these are typically transient
     if (statusCode >= 500 && statusCode < 600) return true;
@@ -217,12 +223,43 @@ export class PlexProxyAdapter {
   }
 
   /**
+   * A media file that still 404s after the retries answers 503 instead.
+   *
+   * Plex says 404 both for "no such part" and for "the part exists but I could
+   * not open it" (`Permission denied (13)` in its log). The second is what the
+   * NAS produces when it zeroes a file's mode, and it is temporary. 503 tells
+   * the Player to ask /api/v1/media-source/check and wait rather than treat the
+   * file as gone; that check is also what tells a genuinely missing file apart.
+   * Every other 404 passes through untouched.
+   *
+   * @param {string} path - Upstream path that was requested
+   * @param {number} statusCode - Upstream status code
+   * @returns {{status: number, headers?: Object, body: Object}|null}
+   */
+  getErrorReplacement(path, statusCode) {
+    if (statusCode !== 404 || !isMediaPartFile(path)) return null;
+    return {
+      status: 503,
+      headers: { 'retry-after': '5', 'cache-control': 'no-store' },
+      body: { error: 'Media file temporarily unreadable', reason: 'source-unreadable' },
+    };
+  }
+
+  /**
    * Longer timeout for media operations
    * @returns {number}
    */
   getTimeout() {
     return 60000; // 60 seconds
   }
+}
+
+const MEDIA_PART_404_RETRIES = 3;
+
+/** `/library/parts/{id}/{ts}/file.{ext}` — a direct-play media file, with or without the proxy prefix. */
+function isMediaPartFile(path) {
+  const pathname = String(path || '').split('?')[0];
+  return /\/library\/parts\/\d+\/\d+\/file\.[A-Za-z0-9]+$/.test(pathname);
 }
 
 export default PlexProxyAdapter;

@@ -348,10 +348,12 @@ describe('CardLadderSittingService', () => {
       const { service } = make({ store, decks });
       const opened = await service.open({ userId: 'test-learner', deckId: DECK });
       expect(opened.progress).toMatchObject({ phase: 'rechecks', rechecksLeft: 1, learnToday: true, doneToday: false });
+      // New words planned, none met yet: held (the catch-up hint and summary read it).
+      expect(opened.progress.newWordsHeld).toBe(true);
       const { item } = opened;
       const right = item.task === '2.2' ? 'Scissors' : '가위';
       const next = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response: { choice: right } });
-      expect(next.progress).toMatchObject({ phase: 'round', learnToday: true, round: { phase: 'intro', hasMatch: true } });
+      expect(next.progress).toMatchObject({ phase: 'round', learnToday: true, newWordsHeld: false, round: { phase: 'intro', hasMatch: true } });
     } finally {
       lexicon.entries.delete('chaek');
     }
@@ -406,7 +408,7 @@ describe('CardLadderSittingService', () => {
       course: { id: 'program:card-ladder:korean-vocab', title: 'Korean words' },
       unit: { id: DECK, title: 'Week 1: Classroom' },
       poster: { kind: 'curriculum-poster', scope: 'selfservice', courseId: 'program:card-ladder:korean-vocab' },
-      today: { newCount: 2, reviewCount: 0, estimatedMinutes: 5, doneToday: false, label: '2 new words', line: '2 new words · about 5 minutes' },
+      today: { newCount: 2, reviewCount: 0, estimatedMinutes: 5, doneToday: false, label: 'up to 2 new words', line: 'up to 2 new words · about 5 minutes' },
       progress: { learned: 0, recognised: 0, total: 2 },
     });
     expect(store.s.writes).toBe(0);

@@ -77,6 +77,38 @@ describe('fitnessRingsProvider', () => {
   });
 });
 
+describe('fitnessRingsProvider.standings — the ring award week (Mon 04:00 → Sat 12:00)', () => {
+  // Mon 04:00 PDT = 11:00Z; Sat 12:00 PDT = 19:00Z.
+  const FROM = Date.parse('2026-08-24T11:00:00Z');
+  const TO = Date.parse('2026-08-29T19:00:00Z');
+
+  it('sums each asked learner\'s rings from sessions STARTED inside the window, zero for none', async () => {
+    const asked = [];
+    const p = createFitnessRingsProvider({
+      timezone: TZ,
+      sessions: { listSessions: async (args) => { asked.push(args); return [
+        session('2026-08-24T10:59:00Z', { user_4: { rings: 99 } }), // Mon 03:59 — the week before's study day
+        session('2026-08-24T16:00:00Z', { user_4: { rings: 20 }, user_3: { rings: 5 } }),
+        session('2026-08-29T18:59:00Z', { user_4: { rings: 3 } }), // Sat 11:59 — counts
+        session('2026-08-29T19:00:00Z', { user_4: { rings: 50 } }), // Sat 12:00 — contest closed
+        session('2026-08-26T16:00:00Z', { kckern: { rings: 70 } }), // not asked about
+      ]; } },
+    });
+    const out = await p.standings({ learnerIds: ['user_4', 'user_3', 'user_2'], fromMs: FROM, toMs: TO });
+    expect(out).toEqual([{ learnerId: 'user_4', rings: 23 }, { learnerId: 'user_3', rings: 5 }, { learnerId: 'user_2', rings: 0 }]);
+    // It lists the study days the window touches, and filters to the instant.
+    expect(asked[0]).toEqual({ from: '2026-08-23', to: '2026-08-29' });
+  });
+
+  it('a session with no start time cannot be placed in the award week, so it is not counted', async () => {
+    const p = createFitnessRingsProvider({
+      timezone: TZ,
+      sessions: sourceOf([{ date: '2026-08-25', participants: { user_4: { rings: 9 } } }]),
+    });
+    expect(await p.standings({ learnerIds: ['user_4'], fromMs: FROM, toMs: TO })).toEqual([{ learnerId: 'user_4', rings: 0 }]);
+  });
+});
+
 describe('MeasureRegistry', () => {
   const stub = (id, value) => ({ id, label: id, unit: 'x', total: async () => value });
 

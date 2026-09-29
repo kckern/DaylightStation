@@ -10,6 +10,7 @@ import { usePersistentVolume } from '@/modules/Fitness/nav/usePersistentVolume.j
 import { durationFromSeconds } from '@/modules/Player/utils/mediaIdentity.js';
 import { guid } from '@/modules/Player/lib/helpers.js';
 import getLogger from '@/lib/logging/Logger.js';
+import { musicShouldPause } from './musicVideoSync.js';
 import { useMusicRecovery } from './useMusicRecovery.js';
 import { formatMusicErrorMessage, isRecoverableMusicError } from './musicPlayerErrorFormat.js';
 
@@ -36,7 +37,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
   const interactionLockRef = useRef(0); // stores timestamp of last major UI transition
   
   const fitnessContext = useFitnessContext();
-  const { videoPlayerPaused, voiceMemoOverlayState } = fitnessContext || {};
+  const { videoPlayerPaused, videoLoading, emergencyPlaybackHold, voiceMemoOverlayState } = fitnessContext || {};
   const voiceMemoOpen = Boolean(voiceMemoOverlayState?.open);
   const playlists = useMemo(
     () => fitnessContext?.plexConfig?.music_playlists || [],
@@ -118,12 +119,24 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
   }, [isPlaying]);
 
   // Sync music player with video player pause state AND voice memo overlay
-  // Music pauses when: video pauses OR voice memo opens
+  // Music pauses when: the video is PAUSED (a press, a governance lock, an
+  // emergency) OR voice memo opens
   // Music resumes when: video resumes AND voice memo is closed (if was playing before)
+  //
+  // A video that is loading, recovering or waiting on an unreadable file also
+  // reads as paused (videoPlayerPaused mirrors the element), but nobody chose
+  // that — so it does NOT take the music down. On 2026-09-28 every video
+  // failure silenced the workout music with it.
+  const shouldPauseForVideo = musicShouldPause({
+    videoPlayerPaused, videoLoading, voiceMemoOpen, emergencyHold: Boolean(emergencyPlaybackHold),
+  });
   useEffect(() => {
     if (!audioPlayerRef.current) return;
 
-    const shouldPause = videoPlayerPaused || voiceMemoOpen;
+    const shouldPause = shouldPauseForVideo;
+    getLogger().debug('fitness.music.video_sync', {
+      shouldPause, videoPlayerPaused: Boolean(videoPlayerPaused), videoLoading: Boolean(videoLoading), voiceMemoOpen,
+    });
 
     if (shouldPause) {
       // Store playing state before pausing (only if currently playing)
@@ -138,7 +151,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
       setIsPlaying(true);
       wasPlayingBeforePauseRef.current = false;
     }
-  }, [videoPlayerPaused, voiceMemoOpen]);
+  }, [shouldPauseForVideo]);
 
   useEffect(() => {
     if (!selectedPlaylistId) {
@@ -382,9 +395,26 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     }
 
     if (audioPlayerRef.current) {
+      const el = audioPlayerRef.current.getMediaElement?.();
+      const elPausedBefore = el ? el.paused : null;
       audioPlayerRef.current.toggle();
-      // Update local state to reflect the toggle
-      setIsPlaying(prev => !prev);
+      // Show what the element actually did, not a guess: play()/pause() update
+      // `paused` synchronously. The old blind flip drifted from reality whenever
+      // the element was stalled or remounting (2026-09-28 postmortem).
+      const elPausedAfter = el ? el.paused : null;
+      setIsPlaying(elPausedAfter === null ? (prev) => !prev : !elPausedAfter);
+      // A deliberate press also releases any hold the video coupling placed, so
+      // the next video transition does not undo it.
+      wasPlayingBeforePauseRef.current = false;
+      getLogger().info('fitness.control.press', {
+        control: 'music-play-pause',
+        elPausedBefore,
+        elPausedAfter,
+        readyState: el?.readyState ?? null,
+        currentTime: Number.isFinite(el?.currentTime) ? Math.round(el.currentTime) : null,
+        videoPlayerPaused: Boolean(videoPlayerPaused),
+        videoLoading: Boolean(videoLoading),
+      });
     }
   };
 

@@ -111,7 +111,7 @@ export function ProgressView() {
     <div className="health-progress" ref={containerRef}>
       <SectionCard title="Goals">
         <div className="health-goals-summary"><Text size="sm">{goalsRes.data?.goals
-          ? `Target ${goalsRes.data.goals.targetWeightLbs ?? '—'} lb · ${goalsRes.data.goals.weeklyRateLbs ?? '—'} lb/week · Floor ${goalsRes.data.goals.budgetFloor ?? '—'} kcal`
+          ? `Target ${goalsRes.data.goals.targetWeightLbs ?? '—'} lb · ${goalsRes.data.goals.weeklyRateLbs ?? '—'} lb/week · Floor ${goalsRes.data.goals.budgetFloor ?? '—'} kcal${goalsRes.data.goals.maintenanceKcal ? ` · Break even ${goalsRes.data.goals.maintenanceKcal} kcal` : ''}`
           : 'Set your goals to calculate a daily budget.'}</Text>
           <Button variant="light" onClick={() => { setForm(goalsRes.data?.goals || emptyGoals()); setSaveError(null); setEditingGoals(true); }}>Edit goals</Button></div>
       </SectionCard>
@@ -176,7 +176,11 @@ export function ProgressView() {
               placeholder={String(DEFAULT_TARGET_BODY_FAT_PCT)} value={form.targetBodyFatPct}
               onChange={(v) => setForm({ ...form, targetBodyFatPct: v })} />
             <NumberInput label="Activity baseline" step={0.05} decimalScale={2} value={form.activityBaseline}
+              disabled={form.maintenanceKcal !== '' && form.maintenanceKcal != null}
               onChange={(v) => setForm({ ...form, activityBaseline: v })} />
+            {/* A fixed break-even replaces BMR x activity baseline; blank uses the formula. */}
+            <NumberInput label="Break even" suffix=" kcal" placeholder="From formula" value={form.maintenanceKcal ?? ''}
+              onChange={(v) => setForm({ ...form, maintenanceKcal: v })} />
             <NumberInput label="Budget floor" suffix=" kcal" value={form.budgetFloor}
               onChange={(v) => setForm({ ...form, budgetFloor: v })} />
             <NumberInput label="Height" suffix=" in" value={form.heightIn}

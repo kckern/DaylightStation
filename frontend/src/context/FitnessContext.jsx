@@ -177,6 +177,16 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const [musicOverride, setMusicOverride] = useState(null);
   const [lastPlaylistId, setLastPlaylistId] = useState(null);
   const [videoPlayerPaused, setVideoPlayerPaused] = useState(false);
+  // True while the workout video is loading, recovering, or waiting on a file
+  // the server refuses to read — i.e. NOT playing, but not because anyone chose
+  // to pause it. videoPlayerPaused mirrors the element's paused flag (and feeds
+  // the governance freeze), so it also reads true in those states; the music
+  // player uses this to tell "the video is struggling" from "the video was
+  // paused", and keeps playing through the former (2026-09-28 postmortem).
+  const [videoLoading, setVideoLoading] = useState(false);
+  // An emergency (shutdown ceremony / lockdown) holds ALL session playback,
+  // whatever the video is doing — set by EmergencyPlaybackController only.
+  const [emergencyPlaybackHold, setEmergencyPlaybackHold] = useState(false);
   const [sidebarSizeMode, setSidebarSizeMode] = useState('regular');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [voiceMemoOverlayState, setVoiceMemoOverlayState] = useState(VOICE_MEMO_OVERLAY_INITIAL);
@@ -2835,6 +2845,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // Voice memo video pause/resume control (BUG-08 fix)
     videoPlayerPaused,
     setVideoPlayerPaused,
+    videoLoading,
+    setVideoLoading,
+    emergencyPlaybackHold,
+    setEmergencyPlaybackHold,
     
     registerVideoPlayer,
     videoPlayerRef,

@@ -1,4 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ARCADE_SESSION_EVENTS } from '@shared-contracts/media/topics.mjs';
+import getLogger from '../../../../lib/logging/Logger.js';
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'arcade-clock' });
+  return _logger;
+}
+
+/** Legacy `play.session.*` names still map across (see ARCADE_SESSION_EVENTS). */
+export function arcadeSessionEvent(payload) {
+  return String(payload?.event ?? '').replace(/^play\.session\./, 'arcade.session.');
+}
 
 /**
  * Follows this surface's own play session so the console can show its own
@@ -21,6 +34,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
  */
 
 export const STALE_AFTER_MS = 45_000;
+export const MAX_DRIFT_MS = 25_000;
 
 export function deriveArcadeGameBudget({ message, receivedAt, now }) {
   const systemLabel = message?.systemLabel ?? null;
@@ -30,13 +44,16 @@ export function deriveArcadeGameBudget({ message, receivedAt, now }) {
   const age = now - receivedAt;
   const stale = age > STALE_AFTER_MS;
   // A stale feed freezes the number rather than extrapolating from it.
-  const drift = stale || message.state === 'paused' ? 0 : age;
+  // Only PLAYING advances between messages, and never further than one missed
+  // report or two — a silent backend is not extrapolated into time played.
+  const frozen = message.state === 'paused' || message.state === 'unknown';
+  const drift = stale || frozen ? 0 : Math.min(age, MAX_DRIFT_MS);
 
   if (message.remainingMs == null) {
     return {
       visible: true, stale, mode: 'elapsed',
       ms: Math.max(0, (message.playedMs ?? 0) + drift),
-      label: 'played', warning: message.warning ?? null,
+      label: message.state === 'paused' ? 'paused' : 'played', warning: message.warning ?? null,
       systemLabel, overlayConfig,
     };
   }
@@ -51,10 +68,12 @@ export function deriveArcadeGameBudget({ message, receivedAt, now }) {
 }
 
 export function formatClock(ms) {
-  const total = Math.max(0, Math.round(ms / 1000));
-  const minutes = Math.floor(total / 60);
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
   const seconds = total % 60;
-  return `${minutes < 10 ? '0' : ''}${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+  const two = (n) => `${n < 10 ? '0' : ''}${n}`;
+  return hours ? `${hours}:${two(minutes)}:${two(seconds)}` : `${two(minutes)}:${two(seconds)}`;
 }
 
 /**
@@ -69,12 +88,41 @@ export function useArcadeGameBudget({ deviceId, subscribe, tickMs = 1000 }) {
 
   useEffect(() => {
     if (!deviceId || typeof subscribe !== 'function') return undefined;
-    return subscribe(`arcade-session:${deviceId}`, (payload) => {
-      if (payload?.event === 'play.session.ended') { setMessage(null); return; }
-      if (payload?.event !== 'play.session.started' && payload?.event !== 'play.session.progress') return;
+    let shownSession = null;
+    const unknown = new Set();
+    logger().info('arcade.clock.subscribed', { deviceId });
+    const unsubscribe = subscribe(`arcade-session:${deviceId}`, (payload) => {
+      const event = arcadeSessionEvent(payload);
+      if (event === ARCADE_SESSION_EVENTS.ENDED) {
+        logger().info('arcade.clock.ended', { deviceId, sessionId: payload?.sessionId ?? null, playedMs: payload?.playedMs ?? null, reason: payload?.reason ?? null });
+        shownSession = null;
+        setMessage(null);
+        return;
+      }
+      if (event !== ARCADE_SESSION_EVENTS.STARTED && event !== ARCADE_SESSION_EVENTS.PROGRESS) {
+        // The clock going silent for a week because of a renamed event is what
+        // this line exists to prevent.
+        if (payload?.event && !unknown.has(payload.event)) {
+          unknown.add(payload.event);
+          logger().warn('arcade.clock.unknown-event', { deviceId, event: payload.event });
+        }
+        return;
+      }
       receivedAt.current = Date.now();
+      if (shownSession !== payload.sessionId) {
+        shownSession = payload.sessionId;
+        logger().info('arcade.clock.first-message', {
+          deviceId, sessionId: payload.sessionId ?? null, event: payload.event, replay: !!payload.replay,
+          state: payload.state ?? null, playedMs: payload.playedMs ?? null,
+          remainingMs: payload.remainingMs ?? null, fields: payload.overlay?.fields ?? null,
+        });
+      }
       setMessage(payload);
     });
+    return () => {
+      logger().info('arcade.clock.unsubscribed', { deviceId });
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
   }, [deviceId, subscribe]);
 
   useEffect(() => {
@@ -83,11 +131,24 @@ export function useArcadeGameBudget({ deviceId, subscribe, tickMs = 1000 }) {
     return () => clearInterval(id);
   }, [message, tickMs]);
 
-  return useMemo(
+  const budget = useMemo(
     () => deriveArcadeGameBudget({ message, receivedAt: receivedAt.current, now: Date.now() }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [message, Math.floor(Date.now() / tickMs)],
   );
+
+  // Going stale and recovering are the moments a clock stops telling the truth
+  // and starts again — both belong in the store.
+  const wasStale = useRef(false);
+  useEffect(() => {
+    if (budget.stale === wasStale.current) return;
+    wasStale.current = budget.stale;
+    logger()[budget.stale ? 'warn' : 'info'](budget.stale ? 'arcade.clock.stale' : 'arcade.clock.fresh', {
+      deviceId, sessionId: message?.sessionId ?? null, shownMs: budget.ms,
+    });
+  }, [budget.stale, budget.ms, deviceId, message?.sessionId]);
+
+  return budget;
 }
 
 export default useArcadeGameBudget;

@@ -691,6 +691,10 @@ composition loader resolves it and injects a semantic policy loader/source.
 
 ### 7.1 Schema sketch
 
+Illustrative only — ids and period kinds here are not the installed policy. The live
+School→Piano gate is `piano.games` on `school.day-complete` with `interval` periods
+`school-day:YYYY-MM-DD` (`installedStateGatesPolicy.mjs`).
+
 ```yaml
 schema: daylight.state-gates-policy/v1
 

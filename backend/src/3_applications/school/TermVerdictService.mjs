@@ -107,7 +107,7 @@ export class TermVerdictService {
    * @returns {Promise<{term: object|null, today: string, version: number,
    *   days: object[], weeks: object[], pending: number}>}
    */
-  async read(learnerId, { termId = null } = {}) {
+  async read(learnerId, { termId = null, detail = false } = {}) {
     const today = this.today();
     const term = this.termFor({ today, termId });
     if (!term) return { term: null, today, version: VERDICT_VERSION, days: [], weeks: [], pending: 0 };
@@ -145,7 +145,7 @@ export class TermVerdictService {
         this.#logger.warn?.('school.term-verdicts.backfill-failed', { learnerId, error: err?.message ?? String(err) });
       });
     }
-    return this.#present({ term, today, rows });
+    return this.#present({ term, today, rows, detail });
   }
 
   /**
@@ -224,11 +224,15 @@ export class TermVerdictService {
     });
   }
 
-  #present({ term, today, rows }) {
+  // `detail` keeps each day's per-subject `sections` and `weekly` rows —
+  // what a subject-scoped reader (the earnings preview) needs; the board's
+  // grid reads the roll-up only, so the default stays lean.
+  #present({ term, today, rows, detail = false }) {
     const days = Object.entries(rows).sort(([a], [b]) => (a < b ? -1 : 1)).map(([studyDay, row]) => ({
       studyDay, state: row.state, reason: row.reason ?? null,
       served: row.served ?? 0, asked: row.asked ?? 0, weekday: row.weekday,
       computedAt: row.computedAt ?? null,
+      ...(detail ? { sections: row.sections ?? [], weekly: row.weekly ?? [] } : {}),
     }));
     const byWeek = new Map();
     for (const [studyDay, row] of Object.entries(rows)) {
