@@ -71,9 +71,11 @@ function findScrollHost(node) {
 
 export function BrowseView({
   path, label, modifiers, containerItem = null, take = 50,
-  breadcrumbs = [], scrollTop = 0, focusedId = null,
+  breadcrumbs = [], scrollTop = 0, focusedId = null, loadedCount = 0,
 }) {
-  const { items: rawItems, total, loading, loadingMore = false, error, loadMore } = useListBrowse(path, { modifiers, take });
+  const { items: rawItems, total, loading, loadingMore = false, error, loadMore } = useListBrowse(
+    path, { modifiers, take, initialTake: loadedCount },
+  );
   const items = useMemo(() => naturalBrowseOrder(rawItems), [rawItems]);
   const [oneShot, setOneShot] = useState(null);
   const { push, replace, pop, depth, backDestination } = useNav();
@@ -122,7 +124,9 @@ export function BrowseView({
 
   const pushFromBrowse = (view, params, focusedId) => {
     const host = findScrollHost(rootRef.current);
-    const currentPatch = { path, scrollTop: host?.scrollTop ?? 0, focusedId };
+    // loadedCount: pages past the first exist only because the person scrolled
+    // to them; Back must re-fetch that many or the focused row never returns.
+    const currentPatch = { path, scrollTop: host?.scrollTop ?? 0, focusedId, loadedCount: rawItems.length };
     push(view, params, { currentPatch });
   };
 

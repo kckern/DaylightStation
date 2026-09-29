@@ -186,6 +186,7 @@ export function NavProvider({ children }) {
         const routeParams = { ...(entry.params ?? {}) };
         delete routeParams.scrollTop;
         delete routeParams.focusedId;
+        delete routeParams.loadedCount;
         return entry.view === top.view
           && JSON.stringify(routeParams) === JSON.stringify(top.params);
       });
