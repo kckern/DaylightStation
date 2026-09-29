@@ -202,8 +202,18 @@ describe('useExternalControl', () => {
     const msg = id => ({ topic: 'client-control:live-1', replyToControlClientId: 'c', commandId: id,
       command: 'transport', params: { action: 'pause' } });
     act(() => { for (let i = 0; i <= 256; i += 1) capturedCallback(msg(`c-${i}`)); });
+
+    // c-1 (the SECOND command sent) is still within the 256-entry cache —
+    // checked BEFORE resending c-0 below, since a replay never re-inserts
+    // into the Map (no `.set()` call at all), so it cannot itself trigger a
+    // second eviction; resending the already-evicted c-0 does insert fresh,
+    // which — if checked first — would itself evict the new oldest entry
+    // (c-1) and mask what this assertion means to prove.
+    act(() => capturedCallback(msg('c-1')));
+    expect(controller.transport.pause).toHaveBeenCalledTimes(257); // replayed from cache — no new execution
+
     act(() => capturedCallback(msg('c-0')));
-    expect(controller.transport.pause).toHaveBeenCalledTimes(258);
+    expect(controller.transport.pause).toHaveBeenCalledTimes(258); // c-0 was evicted — replayed as a fresh execution
   });
 
   it('acks a rejected command replay with the same failure, not success', () => {
@@ -213,6 +223,9 @@ describe('useExternalControl', () => {
       command: 'transport', params: { action: 'pause' } };
     act(() => { capturedCallback(msg); capturedCallback(msg); });
     expect(sendFn.mock.calls.map(([m]) => m.ok)).toEqual([false, false]);
+    // The second (identical commandId) delivery must replay the cached
+    // rejection, not call through to the controller again.
+    expect(controller.transport.pause).toHaveBeenCalledOnce();
   });
 
   it('logs externalControlRejected with the commandId and reason on a thrown command', () => {
