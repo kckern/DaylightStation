@@ -34,8 +34,7 @@ import { createConfiguredLibbyRuntime } from '#composition/modules/libby.mjs';
 import { getDispatcher } from './0_system/logging/dispatcher.mjs';
 import { createLogger } from './0_system/logging/logger.mjs';
 import { ingestFrontendLogs } from '#adapters/logging/FrontendLogIngestion.mjs';
-import { shouldRelayBtTopic, shouldRelayKioskLaunchTopic } from '#apps/eventbus/ClientRelayPolicy.mjs';
-import { EventBusPlaybackStateRelay } from '#adapters/eventbus/EventBusMediaClientIngress.mjs';
+import { registerClientIngress } from '#composition/modules/clientIngress.mjs';
 import { loadLoggingConfig, resolveLoggerLevel } from './0_system/logging/config.mjs';
 
 // Bootstrap functions
@@ -775,13 +774,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   let donowModule = null;
   let callLeaseService = null;
 
-  eventBus.setClientSubscriptionAuthorizer((clientId, topic) =>
-    !String(topic).startsWith('homeline-call:') || callLeaseService?.canSubscribe(clientId, topic) === true);
-  eventBus.setClientMessageAuthorizer((clientId, message) =>
-    message?.type !== 'homeline-authorize' && String(message?.topic).startsWith('homeline-call:')
-      ? (callLeaseService?.validateSignal(clientId, message) || { ok: false, code: 'LEASES_NOT_READY' })
-      : { ok: true, message });
-  eventBus.onClientDisconnection(clientId => callLeaseService?.disconnect(clientId));
+  // The one production client-ingress path (subscription/message authorizers,
+  // the inline message router, the BT + kiosk-launch relays, and the playback-
+  // state relay) — shared with the acceptance fixture via
+  // backend/src/5_composition/modules/clientIngress.mjs so fixture success
+  // proves production. See ClientIngressService for the routing policy.
+  registerClientIngress({
+    eventBus,
+    getCallLeaseService: () => callLeaseService,
+    frontendLogIngestion: { ingest: ingestFrontendLogs },
+    getFitnessPresence: () => donowModule?.presence?.fitness,
+    logger: rootLogger,
+  });
 
   // DeviceLivenessService — caches last-known device-state snapshots and
   // synthesizes `offline` broadcasts when heartbeats stop. Also wires
@@ -809,121 +813,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     transportGateway: devicePresenceGateway,
     livenessService: deviceLivenessService,
     logger: rootLogger.child({ module: 'session-control' })
-  });
-
-  // Register message handlers for incoming client messages
-  // These handlers rebroadcast messages to subscribed clients
-  eventBus.onClientMessage((clientId, message) => {
-    if (message.type === 'homeline-authorize') {
-      const result = callLeaseService?.authorize({ ...message, clientId }) || { ok: false, code: 'LEASES_NOT_READY' };
-      eventBus.sendToClient(clientId, { type: 'homeline-authorize-ack', topic: message.topic, ...result });
-      return;
-    }
-
-    if (message.topic?.startsWith('homeline-call:')) {
-      eventBus.broadcast(message.topic, message);
-      return;
-    }
-
-    // Fitness controller messages - rebroadcast to all fitness subscribers
-    if (message.source === 'fitness' || message.source === 'fitness-simulator') {
-      eventBus.broadcast('fitness', message);
-      rootLogger.debug?.('eventbus.fitness.broadcast', { source: message.source });
-      return;
-    }
-
-    // Piano MIDI messages
-    if (message.source === 'piano' && message.topic === 'midi') {
-      if (!message.type || !message.timestamp) {
-        rootLogger.warn?.('eventbus.midi.invalid', { clientId });
-        return;
-      }
-      eventBus.broadcast('midi', {
-        source: message.source,
-        type: message.type,
-        timestamp: message.timestamp,
-        sessionId: message.sessionId,
-        data: message.data
-      });
-      return;
-    }
-
-    // The legacy homeline device topic remains wake/load progress only. Call
-    // signaling is accepted exclusively on authorized homeline-call topics.
-    if (message.topic?.startsWith('homeline:')) {
-      eventBus.broadcast(message.topic, message);
-      return;
-    }
-
-    // Screen session-state publishes (SessionStatePublisher sends the bare
-    // 'device-state' topic per buildDeviceStateBroadcast). Normalize to the
-    // per-device topic so DeviceLivenessService and /media fleet subscribers
-    // receive it — without this relay a screen's state never leaves the
-    // socket and the fleet shows "unknown" forever.
-    if (message.topic === 'device-state' && typeof message.deviceId === 'string' && message.deviceId) {
-      eventBus.broadcast(`device-state:${message.deviceId}`, {
-        deviceId: message.deviceId,
-        snapshot: message.snapshot ?? null,
-        reason: message.reason ?? 'change',
-        ts: message.ts,
-      });
-      return;
-    }
-
-    // Screen command acks (buildCommandAck sends the bare 'device-ack'
-    // topic). Republish on the per-device topic SessionControlService
-    // awaits — without this every WS command "times out" and dispatch
-    // steamrolls through the slow FKB-URL fallback. (Returning here is safe:
-    // CommandHandlerLivenessService reads acks via its own onClientMessage
-    // dispatcher, which runs independently of this handler.)
-    if (message.topic === 'device-ack' && typeof message.deviceId === 'string' && message.deviceId) {
-      eventBus.broadcast(`device-ack:${message.deviceId}`, message);
-      return;
-    }
-
-    // Frontend logging messages - ingest to backend log system
-    if (message.source === 'playback-logger' || message.topic === 'logging') {
-      const clientMeta = eventBus.getClientMeta(clientId);
-      ingestFrontendLogs(message, {
-        ip: clientMeta?.ip,
-        userAgent: clientMeta?.userAgent
-      }, {
-        // DoNow's garage-fitness soft-occupancy tap (Task 7 discovery, Task 13
-        // wiring): `FitnessPresenceTracker.observe` guards on event name/shape
-        // itself, so every normalized event is safe to hand it unconditionally.
-        // `donowModule` is null until `createDonow` resolves later in boot —
-        // before that, this is a no-op (nothing observed yet, occupancy reads
-        // `unknown`, fail-closed).
-        onEvent: (normalized) => donowModule?.presence?.fitness?.observe(normalized)
-      });
-      return;
-    }
-  });
-
-  // Bluetooth controller management relay (browser ⇄ garage fitness extension).
-  // The bus does not relay client→client by default; whitelist the bt.* control
-  // topics so pairing/inventory/remove flow both ways. Whitelist only — never blanket.
-  eventBus.onClientMessage((clientId, message) => {
-    if (message && shouldRelayBtTopic(message.topic)) {
-      eventBus.broadcast(message.topic, message);
-      rootLogger.debug?.('eventbus.bt.relay', { clientId, topic: message.topic });
-    }
-  });
-
-  // Kiosk app-launch relay (admin ⇒ kiosk SPA, and the result back). The launch
-  // must execute inside the kiosk page — intent extras need FKB's in-page
-  // startIntent — so the command is relayed to the page rather than issued from
-  // the backend. Whitelist only. The kiosk drops anything not addressed to its
-  // own deviceId.
-  eventBus.onClientMessage((clientId, message) => {
-    if (message && shouldRelayKioskLaunchTopic(message.topic)) {
-      eventBus.broadcast(message.topic, message);
-      rootLogger.debug?.('eventbus.kiosk.relay', {
-        clientId,
-        topic: message.topic,
-        deviceId: message.deviceId
-      });
-    }
   });
 
   // Food-scale relay — ingests the ESP32 BLE-scale bridge's weight/button
@@ -1538,10 +1427,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       }
     })();
   });
-
-  // Playback state is one shared Fleet feed. The relay owns its topic contract
-  // so browser sessions and configured devices receive the same envelope.
-  new EventBusPlaybackStateRelay({ eventBus, logger: rootLogger }).attach();
 
   // Pose frame logging — streams raw keypoints to JSONL files
   const poseLogHandler = createPoseLogHandler(configService, rootLogger.child({ module: 'pose-log' }));
