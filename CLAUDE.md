@@ -241,6 +241,7 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 | Teacher flows (what a grown-up can do, from which state) | `docs/reference/school/teacher.md` |
 | School print documents (worksheets/quizzes + OMR card grading) | `docs/reference/school/print-documents.md` |
 | Reading log (physical books: child shelf, printed card, teacher admin, v2 store) | `docs/reference/school/reading-log.md` |
+| Living-room reading sessions (card → launch card → book → credit; cold-wake delivery, mid-story adoption) | `docs/reference/school/reading-sessions.md` |
 | School term grid (per-day verdicts, past-day replay, weekly cadence, household calendar) | `docs/reference/school/term-grid.md` |
 | School media lessons (living-room video/audio with hard comprehension checkpoints) | `docs/reference/school/media-lessons.md` |
 | School card ladder (two-sided card packages — target/anchor, any language or subject; Korean is the example: lexicon decks, per-card ladder, review run, printed quiz fold; formerly "word ladder") | `docs/reference/school/card-ladder.md` |

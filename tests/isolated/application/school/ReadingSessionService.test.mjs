@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ReadingSessionService as ProductionReadingSessionService } from '#apps/school/ReadingSessionService.mjs';
+import { ReadingSessionService as ProductionReadingSessionService, ADOPTABLE_PLAY_MS } from '#apps/school/ReadingSessionService.mjs';
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
 const TEST_SCHEDULER = {
@@ -601,5 +601,182 @@ describe('ReadingSessionService — the learner who just left this room', () => 
     expect(record.reason).toBe('day-done');
     expect(Object.isFrozen(record)).toBe(true);
     expect(record).toBe(sessions.recentlyClosed('livingroom'));
+  });
+});
+
+describe('ReadingSessionService — a book tapped before the launch card was seen (2026-09-30)', () => {
+  const pickFor = (over = {}) => ({
+    pickId: 'pick_1', learnerId: 'user_5', contentId: 'plex:674736', target: 'livingroom-tv',
+    studyDay: '2026-09-30', at: '2026-09-30T18:31:00.824Z', ...over,
+  });
+  const presenting = (sent = []) => {
+    const s = new ReadingSessionService({ logger: silent, realtime: realtimeFor(sent) });
+    const reserved = s.open({ location: 'livingroom', learnerId: 'user_5', target: 'livingroom-tv', state: 'starting' });
+    const active = s.activate('livingroom', reserved.sessionId);
+    return { s, sent, active };
+  };
+
+  it('holds a book while the INITIAL presentation is pending, latest tap wins', () => {
+    const { s } = presenting();
+    s.holdBook('livingroom', pickFor({ pickId: 'pick_1', contentId: 'plex:1' }));
+    s.holdBook('livingroom', pickFor({ pickId: 'pick_2', contentId: 'plex:674736' }));
+    expect(s.current('livingroom').heldPick).toMatchObject({ pickId: 'pick_2', contentId: 'plex:674736' });
+  });
+
+  it('holds a book while the reservation is still STARTING (the wake has not returned)', () => {
+    const s = new ReadingSessionService({ logger: silent });
+    s.open({ location: 'livingroom', learnerId: 'user_5', state: 'starting' });
+    expect(s.holdBook('livingroom', pickFor())).not.toBeNull();
+  });
+
+  it('does not hold during a switch or a return — those keep refusing', () => {
+    const s = new ReadingSessionService({ logger: silent });
+    s.open({ location: 'livingroom', learnerId: 'user_5' });
+    s.beginSwitch({ location: 'livingroom', learnerId: 'user_3' });
+    expect(s.holdBook('livingroom', pickFor())).toBeNull();
+    s.open({ location: 'livingroom', learnerId: 'user_5' });
+    s.beginReturn('livingroom');
+    expect(s.holdBook('livingroom', pickFor())).toBeNull();
+  });
+
+  it('the ACK applies the held book: confirm + pick, session-open THEN book-selected', () => {
+    const { s, sent, active } = presenting();
+    s.holdBook('livingroom', pickFor());
+    s.acknowledge('livingroom', active.pendingPresentation);
+    expect(s.current('livingroom')).toMatchObject({ state: 'confirm', heldPick: null, pick: { pickId: 'pick_1', contentId: 'plex:674736' } });
+    const events = sent.map((m) => m.payload.event);
+    const openAt = events.lastIndexOf('session-open');
+    const selectedAt = events.lastIndexOf('book-selected');
+    expect(openAt).toBeGreaterThanOrEqual(0);
+    expect(selectedAt).toBeGreaterThan(openAt);
+    expect(sent[selectedAt].payload).toMatchObject({ learnerId: 'user_5', contentId: 'plex:674736', pickId: 'pick_1', sessionId: active.sessionId });
+  });
+
+  it('an ACK with nothing held commits the plain prompt as before', () => {
+    const { s, active } = presenting();
+    s.acknowledge('livingroom', active.pendingPresentation);
+    expect(s.current('livingroom')).toMatchObject({ state: 'prompt' });
+    expect(s.current('livingroom').pick ?? null).toBeNull();
+  });
+});
+
+describe('ReadingSessionService — adopting a book already playing (2026-09-30)', () => {
+  const rig = () => {
+    const state = { now: Date.parse('2026-09-30T18:31:36Z') };
+    const sent = [];
+    const s = new ReadingSessionService({ logger: silent, realtime: realtimeFor(sent), clock: () => new Date(state.now) });
+    return { s, sent, tick: (ms) => { state.now += ms; } };
+  };
+
+  it('remembers the last book dispatched unclaimed at a reader, latest wins', () => {
+    const { s } = rig();
+    s.noteUnclaimedPlay('livingroom', { contentId: 'plex:1', target: 'livingroom-tv' });
+    s.noteUnclaimedPlay('livingroom', { contentId: 'plex:674736', target: 'livingroom-tv' });
+    expect(s.unclaimedPlay('livingroom')).toMatchObject({ contentId: 'plex:674736', target: 'livingroom-tv' });
+    expect(s.unclaimedPlay('study')).toBeNull();
+  });
+
+  it('forgets it after ADOPTABLE_PLAY_MS', () => {
+    const { s, tick } = rig();
+    s.noteUnclaimedPlay('livingroom', { contentId: 'plex:674736', target: 'livingroom-tv' });
+    tick(ADOPTABLE_PLAY_MS + 1);
+    expect(s.unclaimedPlay('livingroom')).toBeNull();
+  });
+
+  it('beginAdoption publishes an adopt presentation carrying a SERVER-minted pick', () => {
+    const { s, sent } = rig();
+    const session = s.beginAdoption({ location: 'livingroom', learnerId: 'user_7', target: 'livingroom-tv', contentId: 'plex:674736', studyDay: '2026-09-30' });
+    expect(session).toMatchObject({ state: 'presenting', learnerId: 'user_7' });
+    expect(session.pendingPresentation).toMatchObject({
+      reason: 'adopt', learnerId: 'user_7',
+      adopt: { contentId: 'plex:674736', studyDay: '2026-09-30', pickId: expect.any(String) },
+    });
+    const present = sent.find((m) => m.payload.event === 'session-present');
+    expect(present.payload).toMatchObject({ reason: 'adopt', adopt: { contentId: 'plex:674736' } });
+  });
+
+  it('beginAdoption refuses when a session is already open', () => {
+    const { s } = rig();
+    s.open({ location: 'livingroom', learnerId: 'user_3' });
+    expect(s.beginAdoption({ location: 'livingroom', learnerId: 'user_7', contentId: 'plex:674736' })).toBeNull();
+  });
+
+  it('the ACK commits confirm with the adopted pick and consumes the unclaimed record', () => {
+    const { s } = rig();
+    s.noteUnclaimedPlay('livingroom', { contentId: 'plex:674736', target: 'livingroom-tv' });
+    const session = s.beginAdoption({ location: 'livingroom', learnerId: 'user_7', target: 'livingroom-tv', contentId: 'plex:674736', studyDay: '2026-09-30' });
+    const { pickId } = session.pendingPresentation.adopt;
+    s.acknowledge('livingroom', session.pendingPresentation);
+    expect(s.current('livingroom')).toMatchObject({
+      state: 'confirm',
+      pick: { pickId, learnerId: 'user_7', contentId: 'plex:674736', studyDay: '2026-09-30', adopted: true },
+    });
+    expect(s.unclaimedPlay('livingroom')).toBeNull();
+  });
+
+  it('declineAdoption closes ONLY the matching pending adoption, as adopt-declined', () => {
+    const { s, sent } = rig();
+    s.noteUnclaimedPlay('livingroom', { contentId: 'plex:674736', target: 'livingroom-tv' });
+    const session = s.beginAdoption({ location: 'livingroom', learnerId: 'user_7', contentId: 'plex:674736' });
+    expect(s.declineAdoption('livingroom', 'rp_wrong', 'content-mismatch')).toBeNull();
+    expect(s.declineAdoption('livingroom', session.pendingPresentation.presentationId, 'content-mismatch')).not.toBeNull();
+    expect(s.current('livingroom')).toBeNull();
+    expect(s.recentlyClosed('livingroom')).toMatchObject({ reason: 'adopt-declined' });
+    expect(s.unclaimedPlay('livingroom')).toBeNull();
+    expect(sent.at(-1).payload).toMatchObject({ event: 'session-close', reason: 'adopt-declined' });
+  });
+});
+
+describe('ReadingSessionService — a failed adoption gives the room back (review I1)', () => {
+  const rig = () => {
+    const state = { now: Date.parse('2026-09-30T18:31:36Z') };
+    const s = new ReadingSessionService({ logger: silent, clock: () => new Date(state.now) });
+    return { s, tick: (ms) => { state.now += ms; } };
+  };
+  const lostRoom = (s) => {
+    s.open({ location: 'livingroom', learnerId: 'user_7', target: 'livingroom-tv' });
+    s.close('livingroom', { reason: 'presentation-unacknowledged' });
+  };
+
+  it('a DECLINED adoption restores the departure it displaced — the own-room exemption survives', () => {
+    const { s } = rig();
+    lostRoom(s);
+    s.noteUnclaimedPlay('livingroom', { contentId: 'plex:674736', target: 'livingroom-tv' });
+    const adopting = s.beginAdoption({ location: 'livingroom', learnerId: 'user_7', contentId: 'plex:674736' });
+    s.declineAdoption('livingroom', adopting.pendingPresentation.presentationId, 'content-mismatch');
+    expect(s.recentlyDeparted('livingroom')).toMatchObject({ reason: 'presentation-unacknowledged', session: { learnerId: 'user_7' } });
+  });
+
+  it('an UNACKNOWLEDGED adoption does the same', () => {
+    const { s } = rig();
+    lostRoom(s);
+    const adopting = s.beginAdoption({ location: 'livingroom', learnerId: 'user_7', contentId: 'plex:674736' });
+    expect(s.abandonAdoption('livingroom', adopting.pendingPresentation.presentationId)).not.toBeNull();
+    expect(s.current('livingroom')).toBeNull();
+    expect(s.recentlyDeparted('livingroom')).toMatchObject({ reason: 'presentation-unacknowledged' });
+  });
+
+  it('with nothing displaced, the close records the adoption reason as before', () => {
+    const { s } = rig();
+    const adopting = s.beginAdoption({ location: 'livingroom', learnerId: 'user_7', contentId: 'plex:674736' });
+    s.abandonAdoption('livingroom', adopting.pendingPresentation.presentationId);
+    expect(s.recentlyClosed('livingroom')).toMatchObject({ reason: 'adopt-unacknowledged' });
+  });
+
+  it('an UNVERIFIED decline keeps the unclaimed record so the next tap can retry', () => {
+    const { s } = rig();
+    s.noteUnclaimedPlay('livingroom', { contentId: 'plex:674736', target: 'livingroom-tv' });
+    const adopting = s.beginAdoption({ location: 'livingroom', learnerId: 'user_7', contentId: 'plex:674736' });
+    s.declineAdoption('livingroom', adopting.pendingPresentation.presentationId, 'unverified');
+    expect(s.unclaimedPlay('livingroom')).toMatchObject({ contentId: 'plex:674736' });
+  });
+
+  it('a COMMITTED adoption does not resurrect the old departure', () => {
+    const { s } = rig();
+    lostRoom(s);
+    const adopting = s.beginAdoption({ location: 'livingroom', learnerId: 'user_7', contentId: 'plex:674736' });
+    s.acknowledge('livingroom', adopting.pendingPresentation);
+    s.close('livingroom', { reason: 'day-done' });
+    expect(s.recentlyClosed('livingroom')).toMatchObject({ reason: 'day-done' });
   });
 });

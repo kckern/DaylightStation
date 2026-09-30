@@ -127,6 +127,14 @@ const RECLAIMABLE_CLOSE_REASONS = new Set([
  * screen, and `RECLAIMABLE_CLOSE_REASONS` is its whole scope; see the guard for
  * the 2026-09-11 incident that bought it.
  *
+ * AND ONE SCREEN IT MAY ADOPT RATHER THAN TAKE. When the content playing is
+ * the book last tapped at this reader with no session to claim it, the card is
+ * the other half of that child's act (2026-09-30: seventeen seconds apart), so
+ * it asks the TV to ADOPT the running story — same position, credited to them —
+ * instead of refusing or re-opening over it. The server only remembers what was
+ * tapped; the TV, which knows what it is actually playing, proves it or declines
+ * (`resolveAdoptablePlayback`), and a decline restores D2.
+ *
  * EVERY DEGRADED PATH OPENS THE SESSION. No playback source wired, a source
  * that throws, a TV that will not wake — all of them let the child in. The only
  * thing that refuses is a POSITIVE answer that content is playing: refusing a
@@ -146,8 +154,16 @@ const RECLAIMABLE_CLOSE_REASONS = new Set([
  */
 export function makeReadingSessionHandler({
   sessions, isPlaying = null, wakeScreen = null, alertAdult = null, realtime = null,
+  studyDay = () => null,
   clock = () => new Date(), logger = console,
   ackTimeoutMs = 8_000, maxDeliveryAttempts = 2,
+  // How long a COLD reader gets to paint its first launch card. On 2026-09-30
+  // the Shield's page loaded 11s after the wake call returned and received
+  // the card 0.5s before a 2 x 8s budget closed the session as unseen; the
+  // child's book, tapped in that window, was refused with nothing on screen.
+  // Time-shaped rather than attempt-shaped, because what varies is how long
+  // the WebView takes to come up, not how many replays it needs.
+  initialDeliveryBudgetMs = 60_000,
 } = {}) {
   if (!sessions) throw new Error('makeReadingSessionHandler requires a sessions store');
 
@@ -223,6 +239,58 @@ export function makeReadingSessionHandler({
         // credited pick instead of ordinary content. Whether the launch card
         // wins the screen back from a fullscreen player is unverified on the
         // real set — see the reading-sessions doc's open questions.
+        // THE CHILD'S OWN BOOK IS ALREADY PLAYING (2026-09-30). The last
+        // thing dispatched at this reader was a book that no session claimed,
+        // so the content playing is most likely that story — and the child
+        // scanning now is claiming it. Adopt it in place: no launch card, no
+        // picker, no restart. The TV proves it is really playing that book
+        // before it ACKs; if it cannot, it declines and D2 applies as before.
+        const unclaimed = sessions.unclaimedPlay?.(location) ?? null;
+        if (unclaimed && typeof sessions.beginAdoption === 'function') {
+          const adopting = sessions.beginAdoption({
+            location, learnerId, target, contentId: unclaimed.contentId, studyDay: studyDay?.() ?? null,
+          });
+          if (adopting) {
+            const presentation = adopting.pendingPresentation;
+            log('info', 'school.reading.adoption-offered', {
+              location, learnerId, target, contentId: unclaimed.contentId,
+              sessionId: adopting.sessionId, presentationId: presentation.presentationId,
+              sinceDispatchMs: clock().getTime() - unclaimed.at,
+            });
+            void (async () => {
+              const stillPending = () => sessions.current(location)?.pendingPresentation?.presentationId
+                === presentation.presentationId;
+              for (let attempt = 1; attempt <= maxDeliveryAttempts; attempt += 1) {
+                if (await sessions.waitForAcknowledgement(presentation.presentationId, ackTimeoutMs)) {
+                  log('info', 'school.reading.adoption-acknowledged', {
+                    location, sessionId: adopting.sessionId, presentationId: presentation.presentationId, attempt,
+                  });
+                  return;
+                }
+                // Declined (or otherwise closed) while we waited: the TV has
+                // answered, and replaying into a closed room would only end
+                // in an error line for an adoption that was refused correctly.
+                if (!stillPending()) return;
+                if (attempt < maxDeliveryAttempts) sessions.reannounce(location, presentation.presentationId);
+              }
+              // The story keeps playing either way — nothing on the TV was
+              // touched until the ACK. Abandoning frees the reader and gives
+              // back whatever departure it displaced; the unclaimed record is
+              // kept, so the child's next tap tries again.
+              if (!stillPending()) return;
+              sessions.abandonAdoption?.(location, presentation.presentationId, { reason: 'adopt-unacknowledged' });
+              log('error', 'school.reading.adoption-unacknowledged', {
+                location, learnerId, sessionId: adopting.sessionId,
+                presentationId: presentation.presentationId, attempts: maxDeliveryAttempts,
+              });
+            })();
+            return {
+              status: 'reading_session_adopting', learnerId, location,
+              sessionId: adopting.sessionId, presentationId: presentation.presentationId,
+              contentId: unclaimed.contentId,
+            };
+          }
+        }
         const departed = sessions.recentlyDeparted?.(location) ?? null;
         const ownRoom = Boolean(learnerId)
           && departed?.session?.learnerId === learnerId
@@ -389,9 +457,13 @@ export function makeReadingSessionHandler({
     // bounded number of times. The card tap has already received its answer;
     // delivery continues without holding the trigger request open.
     if (active?.pendingPresentation?.presentationId) {
+      const attempts = Math.max(
+        maxDeliveryAttempts,
+        ackTimeoutMs > 0 ? Math.ceil(Math.max(0, initialDeliveryBudgetMs) / ackTimeoutMs) : 0,
+      );
       void (async () => {
         const presentation = active.pendingPresentation;
-        for (let attempt = 1; attempt <= maxDeliveryAttempts; attempt += 1) {
+        for (let attempt = 1; attempt <= attempts; attempt += 1) {
           if (await sessions.waitForAcknowledgement(presentation.presentationId, ackTimeoutMs)) {
             log('info', 'school.reading.delivery-acknowledged', {
               location, sessionId: presentation.sessionId,
@@ -399,28 +471,27 @@ export function makeReadingSessionHandler({
             });
             return;
           }
-          if (attempt === maxDeliveryAttempts) break;
-          try { await wakeScreen?.({ target, location, prepareOnly: true }); } catch (err) {
-            log('warn', 'school.reading.delivery-replay-wake-failed', { location, attempt: attempt + 1, error: err?.message ?? String(err) });
+          if (attempt === attempts) break;
+          // Re-foreground only as often as before the budget grew. A cold
+          // WebView is not helped by `toForeground` every eight seconds, and
+          // the page reload seen at 18:31:07 on 2026-09-30 is not a thing to
+          // provoke more of. Later attempts only replay the presentation.
+          if (attempt < maxDeliveryAttempts) {
+            try { await wakeScreen?.({ target, location, prepareOnly: true }); } catch (err) {
+              log('warn', 'school.reading.delivery-replay-wake-failed', { location, attempt: attempt + 1, error: err?.message ?? String(err) });
+            }
           }
-          // Foreground first, replay second. A cold/reconnecting WebView can
-          // miss a message sent just before it becomes runnable; the current
-          // snapshot is still authoritative if foregrounding itself fails.
           sessions.reannounce(location, presentation.presentationId);
         }
         log('error', 'school.reading.delivery-unacknowledged', {
           location, learnerId, sessionId: presentation.sessionId,
-          presentationId: presentation.presentationId, attempts: maxDeliveryAttempts,
+          presentationId: presentation.presentationId, attempts, budgetMs: initialDeliveryBudgetMs,
         });
-        // An initial session nobody ever saw is not allowed to linger as a
-        // hidden authority. Close only if this exact presentation is current.
         const current = sessions.current(location);
         let closed = null;
         if (current?.pendingPresentation?.presentationId === presentation.presentationId) {
           closed = sessions.close(location, { reason: 'presentation-unacknowledged' });
         }
-        // A late ACK may have committed between the deadline and this guard.
-        // In that case there is no delivery failure left to alert about.
         if (!closed) return;
         try { await alertAdult?.({ location, target, learnerId, sessionId: presentation.sessionId }); } catch (err) {
           log('warn', 'school.reading.delivery-alert-failed', { location, error: err?.message ?? String(err) });

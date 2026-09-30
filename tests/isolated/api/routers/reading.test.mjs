@@ -868,3 +868,44 @@ describe('reading sessions survive a restart', () => {
     expect(sessions.open({ location: 'livingroom', learnerId: 'test-learner' })).toMatchObject({ learnerId: 'test-learner' });
   });
 });
+
+describe('POST /session/adopt-decline — the TV could not prove it is playing the book', () => {
+  it('closes the pending adoption and answers ok', async () => {
+    const { app, sessions } = build();
+    sessions.noteUnclaimedPlay('livingroom', { contentId: 'plex:674736', target: 'livingroom-tv' });
+    const adopting = sessions.beginAdoption({ location: 'livingroom', learnerId: 'user_7', contentId: 'plex:674736' });
+    const res = await request(app).post('/api/v1/school/reading/session/adopt-decline')
+      .send({ location: 'livingroom', presentationId: adopting.pendingPresentation.presentationId, reason: 'content-mismatch' });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+    expect(sessions.current('livingroom')).toBeNull();
+  });
+
+  it('answers ok:false for a presentation that is not the pending adoption', async () => {
+    const { app } = build();
+    const res = await request(app).post('/api/v1/school/reading/session/adopt-decline')
+      .send({ location: 'livingroom', presentationId: 'rp_nope', reason: 'no-owner' });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: false });
+  });
+
+  it('400s without location or presentationId, and on a reason outside the allowlist', async () => {
+    const { app } = build();
+    const base = '/api/v1/school/reading/session/adopt-decline';
+    expect((await request(app).post(base).send({ presentationId: 'rp_1', reason: 'no-owner' })).status).toBe(400);
+    expect((await request(app).post(base).send({ location: 'livingroom', reason: 'no-owner' })).status).toBe(400);
+    expect((await request(app).post(base).send({ location: 'livingroom', presentationId: 'rp_1', reason: 'because' })).status).toBe(400);
+  });
+});
+
+describe('POST /session/adopt-decline — unverified (review M4)', () => {
+  it('accepts unverified and keeps the unclaimed record for the next tap', async () => {
+    const { app, sessions } = build();
+    sessions.noteUnclaimedPlay('livingroom', { contentId: 'plex:674736', target: 'livingroom-tv' });
+    const adopting = sessions.beginAdoption({ location: 'livingroom', learnerId: 'user_7', contentId: 'plex:674736' });
+    const res = await request(app).post('/api/v1/school/reading/session/adopt-decline')
+      .send({ location: 'livingroom', presentationId: adopting.pendingPresentation.presentationId, reason: 'unverified' });
+    expect(res.body).toEqual({ ok: true });
+    expect(sessions.unclaimedPlay('livingroom')).toMatchObject({ contentId: 'plex:674736' });
+  });
+});

@@ -9,7 +9,11 @@
 import { render, screen, act, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 
-const h = vi.hoisted(() => ({ handler: null, overlay: { shown: [], dismissed: 0 }, cues: [] }));
+const h = vi.hoisted(() => ({ handler: null, overlay: { shown: [], dismissed: 0 }, cues: [], capture: null }));
+
+vi.mock('../../../screen-framework/publishers/useSessionSourceContext.js', () => ({
+  useSessionSourceContext: () => ({ capture: () => h.capture }),
+}));
 
 vi.mock('../../../hooks/useWebSocket.js', () => ({
   useWebSocketSubscription: (_topic, cb) => { h.handler = cb; },
@@ -58,6 +62,10 @@ function stubFetch({ summary = SUMMARY, info = { title: 'Frog and Toad', image: 
     const href = String(url);
     if (href.includes('/reading/summary')) return Promise.resolve({ ok: true, status: 200, json: async () => summary });
     if (href.includes('/api/v1/info/')) return Promise.resolve({ ok: true, status: 200, json: async () => info });
+    if (href.includes('/api/v1/queue/') && href.includes('674736')) {
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ items: [{ contentId: 'plex:674737', mediaType: 'audio' }] }) });
+    }
+    if (href.includes('/reading/session/ack')) return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true }) });
     return Promise.resolve({ ok: true, status: 200, json: async () => ({}) });
   });
 }
@@ -486,5 +494,61 @@ describe('recentDayLabel', () => {
   it('still prefers the words for the two days that have them', () => {
     expect(recentDayLabel('2026-09-11', '2026-09-11')).toBe('Today');
     expect(recentDayLabel('2026-09-10', '2026-09-11')).toBe('Yesterday');
+  });
+});
+
+describe('ReadingSessionScreen — adopting the story already playing', () => {
+  const ADOPT = {
+    event: 'session-present', reason: 'adopt', location: 'livingroom', learnerId: 'user_7',
+    sessionId: 'rs_1', presentationId: 'rp_1', revision: 4, serverEpoch: 'reading_1',
+    adopt: { contentId: 'plex:674736', pickId: 'pick_adopt_1', studyDay: '2026-09-30' },
+  };
+
+  beforeEach(() => {
+    h.handler = null;
+    h.overlay.shown.length = 0;
+    h.overlay.dismissed = 0;
+    h.capture = { state: 'playing', currentItem: { contentId: 'plex:674737' }, position: 280, queue: { items: [], currentIndex: 0 } };
+    vi.stubGlobal('fetch', stubFetch());
+  });
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  const adoptNow = async () => {
+    render(<ReadingSessionScreen location="livingroom" />);
+    await deliver(ADOPT);
+    await waitFor(() => expect(h.overlay.shown.some((o) => o.Component?.name === 'ReadingStage')).toBe(true));
+    return h.overlay.shown.find((o) => o.Component?.name === 'ReadingStage');
+  };
+
+  it('mounts the reading stage with the book queue from the playing track', async () => {
+    const stage = await adoptNow();
+    expect(stage.props.play).toEqual([{ contentId: 'plex:674737', mediaType: 'audio' }]);
+  });
+
+  it('does not dismiss the stage it just mounted on the idle → playing jump', async () => {
+    // `onPlay` dismisses ONCE (whatever held the slot — the foreign player),
+    // then mounts the stage. The idle→playing effect runs AFTER that render,
+    // so a count taken after the mount would already include a bad second
+    // dismissal; assert the absolute count once everything has settled.
+    await adoptNow();
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    expect(h.overlay.dismissed).toBe(1);
+    const lastStage = h.overlay.shown.at(-1);
+    expect(lastStage.Component?.name).toBe('ReadingStage');
+  });
+
+  it('seeks the element to the proved position on its FIRST frame — even near the end of a short book', async () => {
+    // 280 s of a 292 s audiobook: the Player's controller would ignore a start
+    // offset here (audio < 12 min, < 30 s left), which is why the stage seeks.
+    const stage = await adoptNow();
+    const el = new EventTarget();
+    el.tagName = 'AUDIO';
+    el.currentTime = 0;
+    await act(async () => { stage.props.onMediaRef(el); });
+    await act(async () => { el.dispatchEvent(new Event('playing')); });
+    expect(el.currentTime).toBe(280);
+    el.currentTime = 281;
+    await act(async () => { el.dispatchEvent(new Event('playing')); });
+    expect(el.currentTime).toBe(281); // once, not on every resume
   });
 });

@@ -5389,6 +5389,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // the media-lesson dispatch, which needs it for the same reason — see
       // `wakeScreenForBroadcast` above.
       wakeScreen: wakeScreenForBroadcast,
+      // An ADOPTED story is a pick minted at card time, so it needs the same
+      // study day the interceptor stamps on a book-time pick — from the same
+      // launcher, so the two can never disagree about which day a read counts.
+      studyDay: () => schoolLifecycle.storyTimeLauncher?.studyDay?.() ?? null,
       // The one story-time failure push. With no HA gateway `notifier` is
       // null and the use case sends nothing, as the inline copy it replaced did.
       alertAdult: (args) => notifyReadingSessionFailure.execute(args),
