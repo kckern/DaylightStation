@@ -67,6 +67,17 @@ node cli/plex.cli.mjs verify 606037 --json
 Exit code is `0` even if some IDs are missing — check the output. Use `--json`
 and parse `.[].exists` for scripting.
 
+### `refresh (--section <id> | --path <folder> | --all)`
+
+Ask Plex to scan a library section, or just one folder (the section is the library whose
+location contains the folder). Requires exactly one target so it never triggers an accidental
+full scan. `--dry-run` shows what would be scanned; `--json` prints `{"refreshed":[...],"dryRun":bool}`.
+
+```bash
+node cli/plex.cli.mjs refresh --path "/data/media/video/movies/Forrest Gump (1994)"
+node cli/plex.cli.mjs refresh --section 6
+```
+
 ## Flags
 
 | Flag | Applies to | Effect |
