@@ -17,7 +17,9 @@ reading it; a reading icon beside the panel's day board asks who they are and
 opens that learner's shelf directly on the ISBN pad, with no code and no
 scanned book. A scan arriving while the panel is busy defers to a corner offer
 rather than interrupting, and taking that offer clears the panel and asks the
-same "who's reading this?" question an idle scan asks.
+same "who's reading this?" question an idle scan asks. A scan arriving while a child's own
+shelf is open is the exception: it is claimed for that child at once (see
+`reading-log.md`, "Except on the child's own shelf").
 
 A successfully resolved reading code opens the shelf through the existing
 self-service program action immediately. If the server requires identity

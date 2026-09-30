@@ -514,3 +514,31 @@ describe('BookShelf', () => {
     });
   });
 });
+
+describe('BookShelf — says when it is waiting for a scan (2026-09-30)', () => {
+  // SchoolApp claims an incoming scan for this child ONLY while the shelf is
+  // asking for one. Mid-entry, a scan must not remount the shelf and throw the
+  // child's half-entered book away.
+  it.each([
+    ['the shelf', { view: 'shelf' }, true],
+    ['the add flow asking for the barcode', { view: 'add', step: 'number' }, true],
+    ['a finished book ("scan its barcode")', { view: 'completed' }, true],
+    ['the add flow past the barcode', { view: 'add', step: 'cover' }, false],
+    ['updating a book', { view: 'update' }, false],
+    ['a save in flight', { view: 'shelf', busy: true }, false],
+    ['loading', { view: 'loading' }, false],
+  ])('%s → ready %s', (_label, state, ready) => {
+    arm(state);
+    const onScanReadyChange = vi.fn();
+    mount({ onScanReadyChange });
+    expect(onScanReadyChange).toHaveBeenLastCalledWith(ready);
+  });
+
+  it('stops accepting when it unmounts', () => {
+    arm({ view: 'shelf' });
+    const onScanReadyChange = vi.fn();
+    const r = mount({ onScanReadyChange });
+    r.unmount();
+    expect(onScanReadyChange).toHaveBeenLastCalledWith(false);
+  });
+});

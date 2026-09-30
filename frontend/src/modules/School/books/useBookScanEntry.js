@@ -5,14 +5,26 @@ import { schoolApi } from '../schoolApi.js';
 import { schoolLog } from '../schoolLog.js';
 import { isPanelSurface } from '../schoolPathModel.js';
 
-/** Retained anonymous preview. Busy work can defer it, never inherit its authority. */
-export function useBookScanEntry({ screenId, safe, onLaunch }) {
+/**
+ * Retained anonymous preview. Busy work can defer it, never inherit its authority.
+ *
+ * `scopeLearnerId` — THE ONE PLACE A SCAN IS ALREADY SOMEBODY'S (2026-09-30).
+ * While a child's reading shelf is open, the shelf itself says "scan the
+ * barcode": the learner is known, and asking "who's reading?" again — after
+ * sending them home to be asked — was the bug. A scan that arrives then is
+ * claimed for that child at once, once, when its lookup settles. Nothing else
+ * about an anonymous scan changes: without a scope it still waits for `safe`.
+ */
+export function useBookScanEntry({ screenId, safe, onLaunch, scopeLearnerId = null }) {
   const enabled = isPanelSurface(screenId);
   const [intent, setIntent] = useState(null);
   const [claiming, setClaiming] = useState(false);
   const [error, setError] = useState(null);
-  const state = useRef({ safe, screenId, onLaunch });
-  state.current = { safe, screenId, onLaunch };
+  const state = useRef({ safe, screenId, onLaunch, scopeLearnerId });
+  state.current = { safe, screenId, onLaunch, scopeLearnerId };
+  // Intent ids a scoped claim has already been attempted for: a failed claim
+  // says so once and is not retried on every poll.
+  const scopedAttempts = useRef(new Set());
   const current = useRef(null);
   const seen = useRef(new Set());
   const generation = useRef(0);
@@ -92,22 +104,30 @@ export function useBookScanEntry({ screenId, safe, onLaunch }) {
   }, [screenId, refresh]);
   const claim = useCallback(async learnerId => {
     const selected = current.current;
-    if (!state.current.safe || !selected || claimLock.current || !['ready', 'not-found'].includes(selected.status)) return;
+    const allowed = () => state.current.safe || (learnerId && state.current.scopeLearnerId === learnerId);
+    if (!allowed() || !selected || claimLock.current || !['ready', 'not-found'].includes(selected.status)) return;
     const gen = generation.current;
     const claimToken = Symbol();
     claimLock.current = claimToken; setClaiming(true); setError(null);
     const result = await schoolApi.bookScans.claim(selected.id, { screenId, learnerId });
     if (claimLock.current !== claimToken) return;
     claimLock.current = false; setClaiming(false);
-    if (gen !== generation.current || !state.current.safe || current.current?.id !== selected.id) return;
+    if (gen !== generation.current || !allowed() || current.current?.id !== selected.id) return;
     if (!result.ok || result.data?.intentId !== selected.id || !result.data?.launchTarget?.bookGrant) {
       setError(result.data?.error?.message ?? 'Could not open this scan. Try again or rescan the book.');
       schoolLog.bookShelfError('scan.claim-failed', { status: result.status }); return;
     }
     remember(selected.id); current.current = null; setIntent(null);
-    schoolLog.bookShelf('scan.launch', { screenId });
+    schoolLog.bookShelf('scan.launch', { screenId, scoped: state.current.scopeLearnerId === learnerId && !state.current.safe });
     state.current.onLaunch({ ...result.data.launchTarget, bookEntry: { ...result.data.bookEntry, intentId: selected.id } }, learnerId);
     void refresh();
   }, [screenId, refresh]);
+  useEffect(() => {
+    if (!scopeLearnerId || !intent || claiming || !['ready', 'not-found'].includes(intent.status)) return;
+    if (scopedAttempts.current.has(intent.id)) return;
+    scopedAttempts.current.add(intent.id);
+    schoolLog.bookShelf('scan.scoped-claim', { screenId, learnerId: scopeLearnerId, status: intent.status });
+    void claim(scopeLearnerId);
+  }, [scopeLearnerId, intent, claiming, claim, screenId]);
   return { intent, claiming, error, claim, dismiss, enabled };
 }

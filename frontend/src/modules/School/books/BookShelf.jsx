@@ -1,4 +1,5 @@
 /** Learner reading workspace: bounded collections, focused editors, and inline save results. */
+import { useEffect, useRef } from 'react';
 import { useBookShelf } from './useBookShelf.js';
 import BookHistory from './BookHistory.jsx';
 import ReadingPips from '../reading/ReadingPips.jsx';
@@ -149,9 +150,20 @@ function Shelf({ shelf, error, actions, receipt, busy, needsRefresh, today, manu
  * @param {string} props.grant - the `bookGrant` the mount effect carried.
  * @param {number} [props.idleTimeoutSeconds]
  * @param {(reason: 'done'|'idle') => void} [props.onExit]
+ * @param {(ready: boolean) => void} [props.onScanReadyChange] - whether this
+ *   shelf is ASKING for a barcode right now (its shelf view, the add flow's
+ *   barcode step, a finished book's "scan its barcode"). SchoolApp claims an
+ *   incoming scan for this child only then; mid-entry a scan must not remount
+ *   the shelf and throw the child's half-entered book away.
  */
-export default function BookShelf({ learnerId, grant, idleTimeoutSeconds, onExit, initialBookEntry, openAdd = false }) {
+export default function BookShelf({ learnerId, grant, idleTimeoutSeconds, onExit, initialBookEntry, openAdd = false, onScanReadyChange = null }) {
   const { view, step, shelf, studyDay, earliestFinishDay, manualEntry, scannedBookId, learner, error, busy, needsRefresh = false, current, receipt, add, actions } = useBookShelf({ learnerId, grant, idleTimeoutSeconds, onExit, initialBookEntry, openAdd });
+  const scanReady = !busy && !needsRefresh
+    && (view === 'shelf' || view === 'completed' || (view === 'add' && step === 'number'));
+  const reportRef = useRef(onScanReadyChange);
+  reportRef.current = onScanReadyChange;
+  useEffect(() => { reportRef.current?.(scanReady); }, [scanReady]);
+  useEffect(() => () => reportRef.current?.(false), []);
 
   if (view === 'closed') return null;
   // The server's study day, re-read on every shelf fetch; the DayPickers are
