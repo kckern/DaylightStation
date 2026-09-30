@@ -121,6 +121,19 @@ button behind it, while the claim path refused outright whenever the panel was
 busy; a child's only recovery was to finish what they were doing and scan the
 book again.
 
+**Except on the child's own shelf, where the scan is already theirs.** The
+shelf's add step says "scan the barcode" (and a finished book says "scan its
+barcode"), so while a child's shelf is open the panel knows exactly who is
+reading. A scan that lands then is claimed for that child at once — no corner
+card, no trip home, no second "who's reading?" — and the shelf reopens on that
+book. On 2026-09-30 a learner did exactly what the add screen asked; the scan
+became a corner card, "Open it" sent him home, and he had to pick himself again.
+`SchoolApp` passes the open shelf's learner to `BookScanEntry` as
+`scopeLearnerId`; `useBookScanEntry` claims once per scan when its lookup
+settles (logging `scan.scoped-claim`), and only a failed claim is drawn. The
+shelf is keyed on the scan's `intentId`, because it seeds a scanned entry once
+per mount.
+
 **The panel door is the mirror of a scan.** A reading icon beside the day board
 asks who is reading, takes one tap on a face, and opens that child's shelf at
 the ISBN pad. It is a door beside the board rather than a row on it: the board
