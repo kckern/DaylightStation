@@ -58,7 +58,7 @@ describe('plex.cli refresh', () => {
     const r = await cli('refresh', '--section', '12', '--json');
     expect(r.code).toBe(0);
     expect(refreshHits()).toEqual(['/library/sections/12/refresh?X-Plex-Token=t']);
-    expect(JSON.parse(r.stdout)).toEqual({ refreshed: [{ section: '12', path: null }], dryRun: false });
+    expect(JSON.parse(r.stdout)).toEqual({ refreshed: [{ section: '12', title: 'Documentaries', path: null }], dryRun: false });
   });
 
   it('--all refreshes every section', async () => {
@@ -72,6 +72,24 @@ describe('plex.cli refresh', () => {
     expect(r.code).toBe(0);
     expect(refreshHits()).toEqual([]);
     expect(r.stdout).toContain('[dry-run] would refresh');
+  });
+
+  it('--dry-run --json reports dryRun true and makes no refresh request', async () => {
+    const r = await cli('refresh', '--path', '/data/media/video/movies/X (2000)', '--dry-run', '--json');
+    expect(r.code).toBe(0);
+    expect(refreshHits()).toEqual([]);
+    expect(JSON.parse(r.stdout)).toEqual({
+      refreshed: [{ section: '6', title: 'Movies', path: '/data/media/video/movies/X (2000)' }], dryRun: true
+    });
+  });
+
+  it('combining targets is an error and refreshes nothing', async () => {
+    for (const combo of [['--section', '6', '--all'], ['--path', '/data/media/video/movies/X', '--section', '6'], ['--path', '/data/media/video/movies/X', '--all']]) {
+      const r = await cli('refresh', ...combo);
+      expect(r.code).toBe(1);
+      expect(r.stderr).toContain('exactly one');
+    }
+    expect(refreshHits()).toEqual([]);
   });
 
   it('requires a target', async () => {
