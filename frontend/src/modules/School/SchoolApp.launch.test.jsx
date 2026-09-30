@@ -654,6 +654,18 @@ it('Portal scan waits for keypad digits, hands returned grant to the shelf, and 
     // A SCAN WHILE A CHILD'S SHELF IS OPEN IS THAT CHILD'S (2026-09-30). The
     // shelf itself says "scan the barcode", and the learner is already known —
     // asking "who's reading?" again (after sending them home) was the bug.
+    // Mid-entry (the shelf is NOT asking for a scan) the old offer stands: a
+    // scan must not remount the shelf over a half-entered book.
+    await act(async () => bookShelfProps.mock.calls.at(-1)[0].onScanReadyChange(false));
+    const midEntry = { ...scan, id: 'mid-entry-scan', book: { title: 'Mid entry book' } };
+    schoolApi.bookScans.pending.mockResolvedValue({ ok: true, data: { intent: midEntry } });
+    const claimsBefore = schoolApi.bookScans.claim.mock.calls.length;
+    await act(async () => h.byTopic.school({ type: 'school.book-scan', screenId: 'portal', intentId: midEntry.id }));
+    expect(screen.getByText('Mid entry book was scanned')).toBeInTheDocument();
+    expect(schoolApi.bookScans.claim.mock.calls.length).toBe(claimsBefore);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Dismiss' })); });
+    // Asking for a barcode: the scan is this child's.
+    await act(async () => bookShelfProps.mock.calls.at(-1)[0].onScanReadyChange(true));
     const next = { ...scan, id: 'next-scan', isbn13: '9780439023528', book: { isbn13: '9780439023528', title: 'Next book' } };
     schoolApi.bookScans.claim.mockResolvedValue({ ok: true, data: { intentId: next.id, launchTarget: { kind: 'program', program: 'book-log', learnerId: 'kid1', bookGrant: 'scoped-grant' }, bookEntry: { isbn13: next.isbn13, book: next.book } } });
     schoolApi.bookScans.pending.mockResolvedValue({ ok: true, data: { intent: next } });

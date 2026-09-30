@@ -227,6 +227,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   const screenId = useMemo(() => screenIdFromUrlBase(urlBase), [urlBase]);
   const initialLink = useMemo(() => parseSchoolPath(urlBase), [urlBase]);
   const [section, setSection] = useState(initialLink.section); // a sections id, or null = home grid
+  // Whether the open reading shelf is ASKING for a barcode right now (see
+  // BookShelf `onScanReadyChange`); only then is a scan claimed for its child.
+  const [shelfScanReady, setShelfScanReady] = useState(false);
   const [queryPreviewLink, setQueryPreviewLink] = useState(() => {
     try { return new URLSearchParams(window.location.search).get('preview'); } catch { return null; }
   });
@@ -1005,7 +1008,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
           confirmExit={gradedRunInFlight}
           // A child's reading shelf is open and says "scan the barcode": the
           // scan is theirs, claimed for them without a detour home (2026-09-30).
-          scopeLearnerId={section === 'book-shelf' && !active && bookLaunch?.learnerId && bookLaunch.learnerId === currentUser?.id ? bookLaunch.learnerId : null}
+          scopeLearnerId={section === 'book-shelf' && shelfScanReady && !active && bookLaunch?.learnerId && bookLaunch.learnerId === currentUser?.id ? bookLaunch.learnerId : null}
           onLaunch={(target, learnerId) => { claim(learnerId); return onPortalLaunch(target, learnerId); }} />}
         {ceremony.current && <ScanCeremony {...ceremony.current} onDismiss={ceremony.clear} />}
         {/* Launch-card preview (teacher-only deep link). A sibling of the lock
@@ -1336,6 +1339,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             initialBookEntry={bookLaunch.bookEntry}
             openAdd={bookLaunch.openAdd}
             idleTimeoutSeconds={lock.idleTimeoutSeconds}
+            onScanReadyChange={setShelfScanReady}
             onExit={goHome}
           />
         )}

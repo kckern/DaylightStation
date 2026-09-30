@@ -132,7 +132,11 @@ became a corner card, "Open it" sent him home, and he had to pick himself again.
 `scopeLearnerId`; `useBookScanEntry` claims once per scan when its lookup
 settles (logging `scan.scoped-claim`), and only a failed claim is drawn. The
 shelf is keyed on the scan's `intentId`, because it seeds a scanned entry once
-per mount.
+per mount. Only while the shelf is ASKING for a barcode — its shelf view, the
+add flow's barcode step, a finished book's "scan its barcode" — does it report
+`onScanReadyChange(true)`. Mid-entry (cover, where, page, when, an update, a
+save in flight) a scan gets the ordinary corner offer instead, because the
+remount it causes would throw the child's half-entered book away.
 
 **The panel door is the mirror of a scan.** A reading icon beside the day board
 asks who is reading, takes one tap on a face, and opens that child's shelf at
