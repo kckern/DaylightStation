@@ -31,6 +31,20 @@ public class BootReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         final String action = intent == null ? null : intent.getAction();
+        // Open the durable log first. Before v31 this receiver noted BOOT before any
+        // service had called install(), so the note went to logcat only and shell.log
+        // never recorded a single boot, which made "did the boot receiver fire?"
+        // unanswerable after the fact.
+        ShellLog.install(context);
+        if (ShellKeepAlive.ACTION.equals(action)) {
+            // Keep-alive alarm: start only when the service is not already up, and
+            // record it, because a revival is the event worth knowing about.
+            if (!PianoBridgeService.isRunning()) {
+                ShellLog.note("KEEPALIVE", "service not running — starting it");
+                context.startForegroundService(new Intent(context, PianoBridgeService.class));
+            }
+            return;
+        }
         if (Intent.ACTION_BOOT_COMPLETED.equals(action)
                 || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
             Log.i(TAG, action + " — starting PianoBridgeService (foreground)");

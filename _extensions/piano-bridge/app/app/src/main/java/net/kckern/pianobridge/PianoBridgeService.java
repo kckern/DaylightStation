@@ -43,6 +43,9 @@ public class PianoBridgeService extends Service {
     /** For PianoTouchService to reach the loader (a11y forwarding). */
     static PayloadLoader loader() { PianoBridgeService s = INSTANCE; return s == null ? null : s.loader; }
 
+    /** True while a service instance exists in this process (keep-alive and a11y use it). */
+    static boolean isRunning() { return INSTANCE != null; }
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -50,6 +53,25 @@ public class PianoBridgeService extends Service {
         ShellLog.install(this);
         createNotificationChannel();
         ShellLog.note("SHELL", "service created, versionCode=" + versionCode());
+        installRestartOnCrash();
+        ShellKeepAlive.schedule(this);
+    }
+
+    /**
+     * Before the default handler kills the process, set a one-shot alarm that starts
+     * the service again. Chains to whatever handler was there (the system's), and the
+     * payload's CrashLog chains to this one, so every handler still runs.
+     */
+    private void installRestartOnCrash() {
+        final Thread.UncaughtExceptionHandler prev = Thread.getDefaultUncaughtExceptionHandler();
+        final android.content.Context app = getApplicationContext();
+        Thread.setDefaultUncaughtExceptionHandler((thread, ex) -> {
+            try {
+                ShellLog.note("CRASH", "uncaught on " + thread.getName() + ": " + ex + " — restart alarm set");
+                ShellKeepAlive.soon(app, 3_000L);
+            } catch (Throwable ignored) { }
+            if (prev != null) prev.uncaughtException(thread, ex);
+        });
     }
 
     @Override
