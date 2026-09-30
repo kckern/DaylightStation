@@ -229,9 +229,23 @@
 
 .wl-verdict { margin: 0; font-size: 1.5rem; text-align: center; }
 .wl-say__notice { margin: 0; font-size: 1.25rem; text-align: center; color: var(--ds-warning); }
-.wl-summary h2 { margin: 0; font-size: 2.5rem; }
-.wl-summary p { margin: 0; font-size: 1.5rem; color: var(--ds-text-mid); }
-.wl-summary .wl-summary__held { color: var(--ds-accent); font-weight: 600; }
+// The day-done moment (2026-09-30). One memorable thing — a word card that
+// cheers in the learner's language and turns to English — and everything else
+// quiet: one line of what they did, ONE big Done, the other choices small.
+// The card reuses the flashcard flip (.wl-card*), sized down: it is a moment,
+// not a word to study. The cheer is the one place the success colour is spent.
+.wl-item.wl-summary { gap: 1.5rem; }
+.wl-card.wl-summary__card {
+  flex: none; width: min(560px, 100%); height: 240px; max-height: none; cursor: default;
+  .wl-card__side { border-color: var(--ds-success); border-width: 3px; }
+}
+.wl-summary__face { justify-content: center; }
+.wl-summary__cheer { margin: 0; font-size: 4.5rem; font-weight: 800; line-height: 1.1; color: var(--ds-success); text-align: center; }
+.wl-summary__tally { margin: 0; font-size: 1.75rem; color: var(--ds-text-high); }
+.wl-summary .wl-summary__held { margin: 0; font-size: 1.25rem; color: var(--ds-accent); font-weight: 600; }
+// The call to action: wider and taller than any other control on the screen,
+// so there is no question which one ends the day.
+.ds-touch.wl-summary__done { min-width: 320px; min-height: 80px; font-size: 1.75rem; }
 
 // --- Start screen: the launch card -----------------------------------------
 // Poster (2:3) left, copy right, centred in the stage. Sized from the stage's

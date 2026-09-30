@@ -473,7 +473,7 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
           langs={session.langs} onPractice={practiceStarted} onLearnMore={learnMore} onExit={done}
         />
       );
-    } else body = <SummaryItem key={key} item={item} onRespond={respond} onLearnMore={learnMore} busy={busy} onExit={done} />;
+    } else body = <SummaryItem key={key} item={item} langs={session.langs} onRespond={respond} onLearnMore={learnMore} busy={busy} onExit={done} />;
   }
   const pct = progress?.capMs ? Math.min(100, Math.round((progress.activeMs / progress.capMs) * 100)) : 0;
   const remaining = remainingLabel(progress);

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import FlashcardItem from './FlashcardItem.jsx';
 import ChoiceItem from './ChoiceItem.jsx';
@@ -10,6 +10,8 @@ import { modeForLanguage } from '../../../../ime/languages.js';
 import HangulTypingProvider from '../../../../ime/HangulTypingProvider.jsx';
 
 vi.mock('../cardLadderAudio.js', () => ({ playClip: vi.fn(async () => true) }));
+const h = vi.hoisted(() => ({ tones: [] }));
+vi.mock('../../../../selfService/scanCeremonySound.js', () => ({ playScanCeremonyTone: (tone) => { h.tones.push(tone); return true; } }));
 // The keyboard-presence signal is module state that a keydown in one test
 // would leak into the next; these tests are about the keypad itself, so the
 // device is a touch panel with no keyboard known (see keypadToggle.test.jsx
@@ -366,21 +368,49 @@ describe('TypedItem — busy keeps the keypad, Show me', () => {
 });
 
 describe('SummaryItem', () => {
-  it('shows the quizzed count and calls onExit on Space', () => {
+  it('says what the child did today and calls onExit on Space', () => {
     const onExit = vi.fn();
     render(<SummaryItem item={{ quizzed: 5 }} onExit={onExit} />);
-    expect(screen.getByText('5 words quizzed')).toBeInTheDocument();
+    expect(screen.getByText('You practised 5 words today')).toBeInTheDocument();
     fireEvent.keyDown(window, { key: ' ' });
     expect(onExit).toHaveBeenCalled();
   });
-  // 2026-09-26: new words were promised and none came; the summary was silent.
-  it('says new words come next time, and points at Learn more when it is on offer', () => {
-    render(<SummaryItem item={{ quizzed: 5, newWordsHeld: true, learnMore: 2 }} onExit={() => {}} onLearnMore={() => {}} />);
-    expect(screen.getByText('New words next time — or tap Learn more words.')).toBeInTheDocument();
+  it('says one word, not one words', () => {
+    render(<SummaryItem item={{ quizzed: 1 }} onExit={() => {}} />);
+    expect(screen.getByText('You practised 1 word today')).toBeInTheDocument();
   });
-  it('says only "next time" when Learn more is not on offer', () => {
-    render(<SummaryItem item={{ quizzed: 5, newWordsHeld: true, learnMore: 0 }} onExit={() => {}} />);
-    expect(screen.getByText('New words next time.')).toBeInTheDocument();
+  // 2026-09-30: finishing the day ended on a plain line and a Done button —
+  // "no ceremony, no celebration, no obvious call to action". The day ends on
+  // a card now: the learner's own language cheers them, then turns to English.
+  it('celebrates in the target language, and turns the card over to the anchor', () => {
+    vi.useFakeTimers();
+    try {
+      render(<SummaryItem item={{ quizzed: 7 }} langs={{ target: 'ko', anchor: 'en' }} onExit={() => {}} />);
+      const card = screen.getByTestId('summary-card');
+      expect(within(card).getByText('잘했어요!')).toHaveAttribute('lang', 'ko');
+      expect(within(card).getByText('Great job!')).toBeInTheDocument();
+      expect(card).not.toHaveClass('is-flipped');
+      act(() => { vi.advanceTimersByTime(1500); });
+      expect(card).toHaveClass('is-flipped');
+    } finally { vi.useRealTimers(); }
+  });
+  it('shows one plain English side, with no flip, for a language it has no cheer for', () => {
+    render(<SummaryItem item={{ quizzed: 7 }} langs={{ target: 'xx', anchor: 'en' }} onExit={() => {}} />);
+    const card = screen.getByTestId('summary-card');
+    expect(within(card).getByText('Great job!')).toBeInTheDocument();
+    expect(card.querySelector('.wl-card__side--down')).toBeNull();
+  });
+  it('plays the success tone once when the day is done', () => {
+    h.tones.length = 0;
+    const r = render(<SummaryItem item={{ quizzed: 7 }} onExit={() => {}} />);
+    r.rerender(<SummaryItem item={{ quizzed: 7 }} onExit={() => {}} />);
+    expect(h.tones).toEqual(['success']);
+  });
+  it('makes Done the one primary action, and the others secondary', () => {
+    render(<SummaryItem item={{ quizzed: 7, learnMore: 2 }} onExit={() => {}} onLearnMore={() => {}} onRespond={() => {}} />);
+    expect(screen.getByRole('button', { name: /^done/i })).toHaveClass('ds-touch--primary');
+    expect(screen.getByRole('button', { name: /practise more/i })).toHaveClass('ds-touch--secondary');
+    expect(screen.getByRole('button', { name: /learn more words/i })).toHaveClass('ds-touch--secondary');
   });
   it('says nothing about new words when none were held', () => {
     render(<SummaryItem item={{ quizzed: 5, newWordsHeld: false, learnMore: 2 }} onExit={() => {}} onLearnMore={() => {}} />);
