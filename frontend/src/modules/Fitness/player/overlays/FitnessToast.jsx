@@ -170,22 +170,42 @@ export default function FitnessToast({ toast, onDone }) {
   // source unchanged, leaving the gif's black background as an opaque square.
   // Portalled to <body> it blends against the page and the black drops out.
   // Confirmed visually with an A/B capture, 2026-09-15.
+  //
+  // Being outside the toast, the fireball does not move with it, so it must
+  // FOLLOW the avatar every frame rather than measure it once. The toast is
+  // centred with translate(-50%, -50%) on a box whose height includes the name
+  // and label, and that box animates: a fire toast arriving after any earlier
+  // toast mounts in the collapsed --exiting state (max-height 0, scale 0.92) and
+  // grows in, and on exit it collapses again. Measured 2026-09-30 in Chromium:
+  // the avatar centre sits 77px lower on the mount frame than when settled, so a
+  // one-shot measurement parked the flame below the face; during the exit the
+  // avatar slid down under a flame that stayed put, so it ended up above.
   useLayoutEffect(() => {
     if (toast?.kind !== 'fire') {
       setFireBox(null);
       return undefined;
     }
+    let raf = null;
     const measure = () => {
       const el = fireAnchorRef.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
       const size = (r.width || 0) * 2; // twice the avatar's bounding box
       if (size <= 0) return;
-      setFireBox({ left: r.left + r.width / 2 - size / 2, top: r.top + r.height / 2 - size / 2, size });
+      const next = { left: r.left + r.width / 2 - size / 2, top: r.top + r.height / 2 - size / 2, size };
+      // Re-render only when the avatar actually moved — steady state is free.
+      setFireBox((prev) => (prev
+        && Math.abs(prev.left - next.left) < 0.5
+        && Math.abs(prev.top - next.top) < 0.5
+        && Math.abs(prev.size - next.size) < 0.5 ? prev : next));
+    };
+    const follow = () => {
+      measure();
+      raf = window.requestAnimationFrame(follow);
     };
     measure();
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
+    if (typeof window.requestAnimationFrame === 'function') raf = window.requestAnimationFrame(follow);
+    return () => { if (raf != null) window.cancelAnimationFrame(raf); };
   }, [toast?.kind, timerKey]);
 
   const handleDismiss = useCallback(() => {
@@ -237,7 +257,9 @@ export default function FitnessToast({ toast, onDone }) {
               className="fitness-toast__fire-ball"
               src={fireballUrl}
               alt=""
-              style={{ ...fireballStyle, mixBlendMode: 'screen', zIndex: 2199, pointerEvents: 'none' }}
+              // Leaves with the toast: it is portalled out, so the toast's own
+              // fade would otherwise leave a full-strength flame over nothing.
+              style={{ ...fireballStyle, mixBlendMode: 'screen', zIndex: 2199, pointerEvents: 'none', opacity: exiting ? 0 : 1, transition: `opacity ${TOAST_EXIT_MS}ms ease` }}
               onError={() => setFireballFailed(true)}
             />,
             document.body
