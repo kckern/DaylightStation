@@ -82,7 +82,7 @@ async function validateFlashcards(raw, service) {
  * EXPLICIT, never inferred from season order: the learner skipped a season,
  * and a guessed successor would have assigned the wrong one.
  */
-function validateCourseSequence(then, courseId) {
+export function validateCourseSequence(then, courseId) {
   if (then === undefined || then === null) return { errors: [], then: [] };
   if (!Array.isArray(then)) return { errors: ['piano-course then must be a list of course ids'] };
   if (then.some((id) => typeof id !== 'string' || !/^plex:\d+$/.test(id))) {

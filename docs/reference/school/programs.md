@@ -143,12 +143,30 @@ for any past day, and the term grid re-scores history by itself.
   and sessions keep one identity across an advance. The ceremony bridge
   announces, hooks and records evidence under `activeCourseId`.
 - An advance logs `school.piano-course.sequence-active` once per learner+course
-  per process. A plan that cannot be read for the list logs
-  `school.piano-course.sequence-read-failed` and judges the head alone. A
-  successor Plex cannot read is `error: true`, never "complete".
-- The list is validated at enrollment (`then` must be distinct `plex:<ratingKey>`
-  ids, never the head itself). There is no teacher UI for it yet; it is edited
-  in the learner's plan file, which the assignment store re-reads per call.
+  per process. A successor Plex cannot read is `error: true`, never "complete";
+  the `status-failed` / `status-rejected` line names the course that failed and
+  the enrolled head (`enrolledCourseId`).
+- The list is validated twice with ONE rule (`validateCourseSequence`): at
+  SetAssignments, and again on every read, because the documented way to set it
+  is a hand edit of the learner's plan file (re-read per call, no restart). A
+  list that is not clean — a scalar instead of a list, an id without `plex:`,
+  the head repeated, a duplicate — judges the head alone and logs
+  `school.piano-course.sequence-invalid` with the errors (sampled). A plan file
+  that is corrupt mid-edit reads as no assignment at all (the store logs
+  `school.assignments.file-corrupt`), so it too judges the head; only a store
+  that THROWS logs `school.piano-course.sequence-read-failed`.
+- A PianoChallenge is looked up against the ACTIVE course, so a challenge
+  authored on a successor applies once the sequence reaches it.
+- Piano's co-progress exemption ("pacing never outranks an assignment",
+  `GetPlayableUnits`) treats a course named in `then:` as enrolled too, so a
+  paired course reached through a sequence keeps its assigned lesson launchable.
+- The ceremony bridge's `reconcile()` backfills every course the sequence has
+  passed through (each read alone with `status({ followSequence: false })`),
+  not only the active one. It therefore also records a successor's lessons the
+  child did before the sequence reached it — real work, recorded as evidence.
+- The agenda row's title is the enrollment's `title`, so a sequenced
+  enrollment should carry a course-neutral one ("Piano lesson"), not the head's
+  name. The live lesson title still comes from the active course.
 
 Why it exists: on 2026-09-28 a learner finished Reading Music (53/53). His
 enrollment had nothing after it, so from the next day the program owed a
