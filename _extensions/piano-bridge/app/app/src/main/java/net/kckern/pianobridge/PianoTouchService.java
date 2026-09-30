@@ -28,6 +28,17 @@ public class PianoTouchService extends AccessibilityService {
     @Override
     public void onServiceConnected() {
         INSTANCE = this;
+        ShellLog.install(this);
+        // The system binds enabled accessibility services on its own, including after
+        // our process dies. Use that as one more way back for the bridge service.
+        if (!PianoBridgeService.isRunning()) {
+            ShellLog.note("A11Y", "bound with no bridge service — starting it");
+            try {
+                startForegroundService(new android.content.Intent(this, PianoBridgeService.class));
+            } catch (Exception e) {
+                ShellLog.note("A11Y", "could not start bridge service: " + e.getMessage());
+            }
+        }
         Log.i(TAG, "AccessibilityService connected — forwarding to payload");
         ShellLog.note("A11Y", "connected");
         PayloadLoader l = PianoBridgeService.loader();

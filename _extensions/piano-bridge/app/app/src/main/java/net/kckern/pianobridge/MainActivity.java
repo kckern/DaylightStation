@@ -87,5 +87,24 @@ public class MainActivity extends Activity {
             startService(serviceIntent);
         }
         Log.i(TAG, "PianoBridgeService start requested (restart=" + restart + ")");
+        requestBatteryExemptionIfNeeded();
+    }
+
+    /**
+     * Ask once per launch, and only while not exempt. An activity is the one context
+     * allowed to raise this dialog, and a person taps "Allow". See ShellKeepAlive for why.
+     */
+    private void requestBatteryExemptionIfNeeded() {
+        try {
+            android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+            if (pm == null || pm.isIgnoringBatteryOptimizations(getPackageName())) return;
+            ShellLog.install(this);
+            ShellLog.note("BATTERY", "not exempt from battery optimization — requesting");
+            Intent i = new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                    .setData(android.net.Uri.parse("package:" + getPackageName()));
+            startActivity(i);
+        } catch (Exception e) {
+            Log.w(TAG, "battery exemption request failed: " + e.getMessage());
+        }
     }
 }

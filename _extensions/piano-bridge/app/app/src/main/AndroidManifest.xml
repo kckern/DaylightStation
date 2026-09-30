@@ -56,6 +56,11 @@
          want is declared NOW, while one tap is cheap, instead of one at a time later.
          All are normal-protection on targetSdk 29 (auto-granted). Unused ones cost
          nothing. -->
+    <!-- v31: lets MainActivity ask for the battery-optimization exemption. Samsung's
+         "sleeping apps" force-stops apps outside that list, and a force-stopped app
+         gets no sticky restart, no alarms and no boot broadcast (2026-09-27 outage:
+         dead two days). FKB is on the list; until v31 the bridge could not be. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
