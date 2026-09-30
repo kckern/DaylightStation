@@ -95,6 +95,19 @@ describe("GetPlayableUnits — today's assigned lesson overrides the co-progress
     expect(outcome.result.coProgressLock.exemptLessonIds).toBeUndefined();
   });
 
+  it('exempts the assigned lesson of a course the learner reaches through a SEQUENCE (then:)', async () => {
+    // A sequenced enrollment names this course in `then:`, not as its head.
+    // Once the head is finished it is the course School judges the day by, so
+    // pacing must not excuse its assigned lesson any more than the head's.
+    const outcome = await build({
+      watched: AHEAD_BY_BUFFER,
+      programs: [{ programId: 'piano-course', courseId: 'plex:99999', then: [COMPOUND] }],
+    }).execute({ courseId: COURSE, userId: AHEAD });
+
+    expect(outcome.result.coProgressLock.locked).toBe(true);
+    expect(outcome.result.coProgressLock.exemptLessonIds).toEqual(['105']);
+  });
+
   it("exempts today's assigned lesson so the learner can finish their day", async () => {
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
     const outcome = await build({ watched: AHEAD_BY_BUFFER, programs: PIANO_PROGRAM, logger })

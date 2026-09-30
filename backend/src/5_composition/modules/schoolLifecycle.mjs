@@ -633,6 +633,15 @@ export async function createSchoolLifecycle({
     pianoCourseLauncher = new PianoCourseProgramLauncher({
       getPlayableUnits: pianoPlayableUnits, donow, dayBypasses: programDayBypassStore,
       challengeCompletion: schoolPianoChallengeCompletionService, timezone, clock, logger,
+      // The enrollment's explicit follow-on courses. Read per call — the
+      // assignment store re-reads the plan file every time — so adding `then:`
+      // to a learner's plan takes effect on the next status read, no restart.
+      courseSequence: async ({ learnerId, courseId }) => {
+        const assignment = await stores.assignments.get(learnerId);
+        const row = (assignment?.programs ?? []).find((program) => program?.programId === 'piano-course'
+          && (program.courseId ?? program.corpusId) === courseId);
+        return Array.isArray(row?.then) ? row.then : [];
+      },
     });
     launchers.set(pianoCourseLauncher.id, pianoCourseLauncher);
   } else {

@@ -69,6 +69,31 @@ describe('PianoLessonCeremonyBridge', () => {
   let ctx;
   beforeEach(() => { ctx = build(); });
 
+  it('names the SUCCESSOR course when a sequenced enrollment has advanced', async () => {
+    const successorLesson = { ...completion('plex:694788', 'Lesson 15'), course: { id: 'plex:694771', title: 'Piano' } };
+    const c = build({ status: {
+      doneToday: true, activeCourseId: 'plex:694771', progressLabel: 'Done today', score: 4,
+      completedLessonsToday: [successorLesson], completedLessons: [successorLesson],
+    } });
+    await c.bus.emit('piano.lesson.completed', { userId: 'learner4', plexId: 'plex:694788', title: 'Lesson 15' });
+    expect(c.bus.sent[0].payload).toMatchObject({ event: 'piano-lesson-complete', courseId: 'plex:694771' });
+    expect(c.fired[0]).toMatchObject({ result: 'satisfied', course: 'plex:694771', lesson: 'Lesson 15' });
+    expect(c.evidence[0].learning.courseId).toBe('plex:694771');
+  });
+
+  it('ignores a re-watch of a finished head lesson once the sequence has moved on', async () => {
+    const logs = [];
+    const c = build({
+      status: { doneToday: false, activeCourseId: 'plex:694771', completedLessonsToday: [], completedLessons: [] },
+      logger: { warn() {}, info: (event, data) => logs.push({ event, data }) },
+    });
+    await c.bus.emit('piano.lesson.completed', { userId: 'learner4', plexId: 'plex:695651', title: 'Eighth Notes' });
+    const ignored = logs.find((l) => l.event === 'school.piano-ceremony.ignored');
+    expect(ignored.data).toMatchObject({ reason: 'not-in-enrolled-course', activeCourseIds: ['plex:694771'] });
+    expect(c.bus.sent).toHaveLength(0);
+    expect(c.fired).toHaveLength(0);
+  });
+
   it('subscribes to the piano completion topic', () => {
     expect(ctx.bus.subscribed).toContain('piano.lesson.completed');
     expect(ctx.bus.subscribed).toContain('piano.school-challenge.completed');
@@ -264,6 +289,40 @@ describe('PianoLessonCeremonyBridge', () => {
     ]);
   });
 
+  it('reconciles EVERY course a sequence has walked through, not only the active one', async () => {
+    // After an advance the head's status answers with the successor. A head
+    // lesson whose live event was missed (a redeploy mid-event) must still be
+    // backfilled, so reconcile also reads each finished course on its own.
+    const rows = new Map();
+    const headLesson = completion('plex:9001', 'Eighth Notes');
+    const nextLesson = { ...completion('plex:694788', 'Lesson 15'), course: { id: 'plex:694771', title: 'Piano' } };
+    const asked = [];
+    const bridge = new PianoLessonCeremonyBridge({
+      realtime: new EventBusSchoolRealtimeAdapter({ eventBus: fakeBus() }),
+      assignments: { get: async () => null, list: async () => [{ learnerId: 'learner4', programs: ENROLLED }] },
+      launcher: {
+        id: 'piano-course',
+        status: async ({ programInstance, followSequence = true }) => {
+          asked.push({ programInstance, followSequence });
+          if (followSequence) {
+            return { activeCourseId: 'plex:694771', sequence: { position: 2, total: 2, courseIds: [COURSE, 'plex:694771'] }, completedLessons: [nextLesson] };
+          }
+          return { activeCourseId: programInstance, completedLessons: programInstance === COURSE ? [headLesson] : [] };
+        },
+      },
+      evidenceRepository: { appendEvidence: async (row) => { rows.set(row.evidenceId, row); return { status: 'recorded' }; } },
+      logger: { warn() {}, info() {} },
+    });
+
+    await bridge.reconcile();
+
+    expect([...rows.keys()].sort()).toEqual(['piano-lesson:learner4:plex:694788', 'piano-lesson:learner4:plex:9001']);
+    expect(asked).toEqual([
+      { programInstance: COURSE, followSequence: true },
+      { programInstance: COURSE, followSequence: false },
+    ]);
+  });
+
   it('keeps first-write historical evidence without replaying metadata conflicts on every boot', async () => {
     const appendEvidence = vi.fn(async () => { throw new Error('must not rewrite first-write evidence'); });
     const logger = { warn: vi.fn(), info: vi.fn(), debug: vi.fn() };
@@ -332,6 +391,8 @@ describe('PianoLessonCeremonyBridge', () => {
         // Derived from the enrollment fixture, never retyped: the whole point
         // of the line is naming which courses COULD have been discharged.
         enrolledCourseIds: ENROLLED.map((row) => row.courseId ?? row.corpusId ?? null),
+        // With no sequence the active course IS the enrolled one.
+        activeCourseIds: ENROLLED.map((row) => row.courseId ?? row.corpusId ?? null),
       },
     });
     // Still ignored: nothing announced, no hook, no evidence written.
