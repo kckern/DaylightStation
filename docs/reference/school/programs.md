@@ -115,6 +115,46 @@ a real completion and the chime. Reference/practice units give no credit here
 for the same reason they give none in the kiosk: the two must agree, or a
 child "finishes" school by replaying a warm-up.
 
+### Course sequences — what comes after this course
+
+An enrollment may name the courses that follow it:
+
+```yaml
+- programId: piano-course
+  courseId: plex:695598      # the head — the enrollment's identity, never changes
+  then: [plex:694771]        # explicit follow-ons, in order
+```
+
+The ACTIVE course is derived, never stored. On every `status()` and launch,
+the launcher walks `[courseId, ...then]` and judges the day against the first
+course **not finished on a study day before it**: every crediting lesson
+watched, each `completedAt` earlier than the day being judged.
+`completedAt` is stamped once and a re-watch never moves it, so the rule holds
+for any past day, and the term grid re-scores history by itself.
+
+- **The finishing day keeps its course.** Its last lesson credits that day, and
+  the successor is owed from the next study day.
+- **Backdated.** Work done in the successor after the finish counts on the day
+  it was done, even if the sequence was added to the plan later.
+- **A successor already partly done** resumes at its first unwatched lesson.
+- **After the last course,** the answer is the old "course complete".
+- `status()` carries `activeCourseId` and `sequence {position, total, courseIds}`.
+  The agenda row's `unitId` / `programInstance` stay the head, so day bypasses
+  and sessions keep one identity across an advance. The ceremony bridge
+  announces, hooks and records evidence under `activeCourseId`.
+- An advance logs `school.piano-course.sequence-active` once per learner+course
+  per process. A plan that cannot be read for the list logs
+  `school.piano-course.sequence-read-failed` and judges the head alone. A
+  successor Plex cannot read is `error: true`, never "complete".
+- The list is validated at enrollment (`then` must be distinct `plex:<ratingKey>`
+  ids, never the head itself). There is no teacher UI for it yet; it is edited
+  in the learner's plan file, which the assignment store re-reads per call.
+
+Why it exists: on 2026-09-28 a learner finished Reading Music (53/53). His
+enrollment had nothing after it, so from the next day the program owed a
+lesson that did not exist, and the Piano-season lessons he moved on to by
+himself earned nothing.
+
 ### The kiosk menu gate
 
 `GetPianoLessonGate` (`3_applications/school/usecases/GetPianoLessonGate.mjs`)
