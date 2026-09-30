@@ -820,12 +820,16 @@ async function cmdVerify(plex, ids) {
 
 async function cmdRefresh(plex) {
     const targets = [];
+    const chosen = [flags.path, flags.section, flags.all].filter(Boolean).length;
+    if (chosen > 1) throw new Error('refresh takes exactly one of --section, --path, --all');
     if (flags.path) {
         const hit = await plex.sectionForPath(flags.path);
         if (!hit) throw new Error(`no library contains path ${flags.path}`);
         targets.push({ section: hit.key, title: hit.title, path: flags.path });
     } else if (flags.section) {
-        targets.push({ section: String(flags.section), path: null });
+        const sec = String(flags.section);
+        const lib = (await plex.getLibraries()).find((l) => String(l.key) === sec);
+        targets.push({ section: sec, title: lib?.title, path: null });
     } else if (flags.all) {
         for (const lib of await plex.getLibraries()) {
             targets.push({ section: String(lib.key), title: lib.title, path: null });
@@ -840,7 +844,7 @@ async function cmdRefresh(plex) {
 
     if (flags.json) {
         console.log(JSON.stringify({
-            refreshed: targets.map(({ section, path: p }) => ({ section, path: p })),
+            refreshed: targets.map(({ section, title, path: p }) => ({ section, ...(title ? { title } : {}), path: p })),
             dryRun: flags.dryRun
         }, null, 2));
         return;
@@ -1349,7 +1353,6 @@ Commands:
   search <query>           Search library by title (shows/movies)
   info <id>                Show metadata for a Plex ID
   verify <id> [...]        Check if ID(s) exist in Plex
-  refresh                  Scan a section or folder (--section <id> | --path <folder> | --all)
   refresh                  Scan a section or folder (--section <id> | --path <folder> | --all)
   set <id>                 Update metadata for a single item
   set-from-yaml <file>     Bulk-update metadata from a YAML manifest
