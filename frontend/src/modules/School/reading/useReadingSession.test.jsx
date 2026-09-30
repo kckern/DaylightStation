@@ -37,6 +37,9 @@ function stubFetch({ summary = SUMMARY, readOk = true, session = null, readNext 
   vi.stubGlobal('fetch', vi.fn((url, opts) => {
     const href = String(url);
     calls.push({ url: href, body: opts?.body ? JSON.parse(opts.body) : null });
+    if (href.includes('/reading/session/adopt-decline')) {
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true }) });
+    }
     if (href.includes('/reading/session/ack')) {
       return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true }) });
     }
@@ -390,5 +393,125 @@ describe('useReadingSession — a book on deck is somebody\'s', () => {
     await act(async () => { await result.current.notePlaybackCompleted(); });
     expect(result.current.view).toBe('book-done');
     expect(result.current.onDeck).toBeNull();
+  });
+});
+
+describe('useReadingSession — adopting a story already playing (2026-09-30)', () => {
+  const ADOPT = {
+    event: 'session-present', reason: 'adopt', location: 'livingroom', learnerId: 'user_7',
+    sessionId: 'rs_1', presentationId: 'rp_1', revision: 4, serverEpoch: 'reading_1',
+    adopt: { contentId: 'plex:674736', pickId: 'pick_adopt_1', studyDay: '2026-09-30' },
+  };
+  const proved = { ok: true, play: [{ contentId: 'plex:674737', mediaType: 'audio' }], positionSec: 11.785, trackContentId: 'plex:674737' };
+
+  beforeEach(() => {
+    h.handler = null;
+    stubFetch();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'requestAnimationFrame', 'cancelAnimationFrame'] });
+  });
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  const mount = (resolveAdoption) => {
+    const played = [];
+    const hook = renderHook(() => useReadingSession({
+      location: 'livingroom', confirmMs: 1000, onPlay: (p) => played.push(p), resolveAdoption,
+    }));
+    return { ...hook, played };
+  };
+
+  it('proves, ACKs FIRST, then mounts the story at the proved position with the server s pick', async () => {
+    const order = [];
+    const resolveAdoption = vi.fn(async () => { order.push('resolve'); return proved; });
+    const { played, result } = mount(resolveAdoption);
+    await act(async () => { h.handler(ADOPT); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+
+    expect(resolveAdoption).toHaveBeenCalledWith('plex:674736');
+    const acks = posted('/reading/session/ack');
+    expect(acks).toHaveLength(1);
+    expect(acks[0].body).toMatchObject({ presentationId: 'rp_1', sessionId: 'rs_1', learnerId: 'user_7', revision: 4, serverEpoch: 'reading_1' });
+    const ackIndex = calls.findIndex((c) => c.url.includes('/reading/session/ack'));
+    expect(ackIndex).toBeGreaterThanOrEqual(0);
+    expect(played).toHaveLength(1);
+    expect(played[0]).toMatchObject({
+      learnerId: 'user_7', contentId: 'plex:674736', pickId: 'pick_adopt_1', sessionId: 'rs_1',
+      studyDay: '2026-09-30', adopted: true, positionSec: 11.785, play: proved.play,
+    });
+    expect(result.current.view).toBe('playing');
+  });
+
+  it('credits the adopted story on natural end with the adopted pickId', async () => {
+    const { result } = mount(async () => proved);
+    await act(async () => { h.handler(ADOPT); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    await act(async () => { await result.current.notePlaybackStarted(); });
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    expect(posted('/reading/playing')[0].body).toMatchObject({ pickId: 'pick_adopt_1', learnerId: 'user_7' });
+    expect(posted('/reading/read')[0].body).toMatchObject({ pickId: 'pick_adopt_1', learnerId: 'user_7', contentId: 'plex:674736', sessionId: 'rs_1' });
+  });
+
+  it('a movie started since → declines content-mismatch, says so, and touches nothing', async () => {
+    const { played, result } = mount(async () => ({ ok: false, reason: 'content-mismatch' }));
+    await act(async () => { h.handler(ADOPT); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(posted('/reading/session/adopt-decline')[0].body).toEqual({ location: 'livingroom', presentationId: 'rp_1', reason: 'content-mismatch' });
+    expect(posted('/reading/session/ack')).toHaveLength(0);
+    expect(played).toHaveLength(0);
+    expect(result.current.view).toBe('idle');
+    expect(result.current.notice).toMatchObject({ title: 'Something else is playing' });
+  });
+
+  it('declines no-owner when the screen has no resolver at all', async () => {
+    const { played } = mount(undefined);
+    await act(async () => { h.handler(ADOPT); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(posted('/reading/session/adopt-decline')[0].body.reason).toBe('no-owner');
+    expect(played).toHaveLength(0);
+  });
+
+  it('the committed session-open for the adopted pick does not throw the story back to the shelf', async () => {
+    const { result } = mount(async () => proved);
+    await act(async () => { h.handler(ADOPT); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    await act(async () => {
+      h.handler({ event: 'session-open', learnerId: 'user_7', location: 'livingroom', sessionId: 'rs_1', presentationId: 'rp_1', revision: 5, serverEpoch: 'reading_1', state: 'confirm', pick: { pickId: 'pick_adopt_1' } });
+    });
+    expect(result.current.view).toBe('playing');
+  });
+
+  it('a page reloaded mid-adoption adopts from the hydrated snapshot, once', async () => {
+    stubFetch({ session: { ...ADOPT, state: 'presenting', pendingPresentation: { ...ADOPT } } });
+    const resolveAdoption = vi.fn(async () => proved);
+    const { played } = mount(resolveAdoption);
+    await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+    expect(resolveAdoption).toHaveBeenCalledTimes(1);
+    expect(played).toHaveLength(1);
+    expect(played[0].pickId).toBe('pick_adopt_1');
+    expect(posted('/reading/session/ack')).toHaveLength(1);
+  });
+});
+
+describe('useReadingSession — one adoption per presentation', () => {
+  beforeEach(() => {
+    h.handler = null;
+    stubFetch();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'requestAnimationFrame', 'cancelAnimationFrame'] });
+  });
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  it('the same adopt presentation arriving twice (socket + hydrate) mounts the story once', async () => {
+    const ADOPT = {
+      event: 'session-present', reason: 'adopt', location: 'livingroom', learnerId: 'user_7',
+      sessionId: 'rs_1', presentationId: 'rp_1', revision: 4, serverEpoch: 'reading_1',
+      adopt: { contentId: 'plex:674736', pickId: 'pick_adopt_1', studyDay: '2026-09-30' },
+    };
+    const played = [];
+    const resolveAdoption = vi.fn(async () => ({ ok: true, play: [{ contentId: 'plex:674737' }], positionSec: 5, trackContentId: 'plex:674737' }));
+    renderHook(() => useReadingSession({ location: 'livingroom', confirmMs: 1000, onPlay: (p) => played.push(p), resolveAdoption }));
+    await act(async () => { h.handler(ADOPT); h.handler(ADOPT); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(resolveAdoption).toHaveBeenCalledTimes(1);
+    expect(played).toHaveLength(1);
+    expect(posted('/reading/session/ack')).toHaveLength(1);
   });
 });
