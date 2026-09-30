@@ -258,6 +258,8 @@ export function makeReadingSessionHandler({
               sinceDispatchMs: clock().getTime() - unclaimed.at,
             });
             void (async () => {
+              const stillPending = () => sessions.current(location)?.pendingPresentation?.presentationId
+                === presentation.presentationId;
               for (let attempt = 1; attempt <= maxDeliveryAttempts; attempt += 1) {
                 if (await sessions.waitForAcknowledgement(presentation.presentationId, ackTimeoutMs)) {
                   log('info', 'school.reading.adoption-acknowledged', {
@@ -265,14 +267,18 @@ export function makeReadingSessionHandler({
                   });
                   return;
                 }
+                // Declined (or otherwise closed) while we waited: the TV has
+                // answered, and replaying into a closed room would only end
+                // in an error line for an adoption that was refused correctly.
+                if (!stillPending()) return;
                 if (attempt < maxDeliveryAttempts) sessions.reannounce(location, presentation.presentationId);
               }
               // The story keeps playing either way — nothing on the TV was
-              // touched until the ACK. Closing frees the reader; the unclaimed
-              // record is kept, so the child's next tap tries again.
-              if (sessions.current(location)?.pendingPresentation?.presentationId === presentation.presentationId) {
-                sessions.close(location, { reason: 'adopt-unacknowledged' });
-              }
+              // touched until the ACK. Abandoning frees the reader and gives
+              // back whatever departure it displaced; the unclaimed record is
+              // kept, so the child's next tap tries again.
+              if (!stillPending()) return;
+              sessions.abandonAdoption?.(location, presentation.presentationId, { reason: 'adopt-unacknowledged' });
               log('error', 'school.reading.adoption-unacknowledged', {
                 location, learnerId, sessionId: adopting.sessionId,
                 presentationId: presentation.presentationId, attempts: maxDeliveryAttempts,

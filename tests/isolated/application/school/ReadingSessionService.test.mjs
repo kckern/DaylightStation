@@ -726,3 +726,57 @@ describe('ReadingSessionService — adopting a book already playing (2026-09-30)
     expect(sent.at(-1).payload).toMatchObject({ event: 'session-close', reason: 'adopt-declined' });
   });
 });
+
+describe('ReadingSessionService — a failed adoption gives the room back (review I1)', () => {
+  const rig = () => {
+    const state = { now: Date.parse('2026-09-30T18:31:36Z') };
+    const s = new ReadingSessionService({ logger: silent, clock: () => new Date(state.now) });
+    return { s, tick: (ms) => { state.now += ms; } };
+  };
+  const lostRoom = (s) => {
+    s.open({ location: 'livingroom', learnerId: 'user_7', target: 'livingroom-tv' });
+    s.close('livingroom', { reason: 'presentation-unacknowledged' });
+  };
+
+  it('a DECLINED adoption restores the departure it displaced — the own-room exemption survives', () => {
+    const { s } = rig();
+    lostRoom(s);
+    s.noteUnclaimedPlay('livingroom', { contentId: 'plex:674736', target: 'livingroom-tv' });
+    const adopting = s.beginAdoption({ location: 'livingroom', learnerId: 'user_7', contentId: 'plex:674736' });
+    s.declineAdoption('livingroom', adopting.pendingPresentation.presentationId, 'content-mismatch');
+    expect(s.recentlyDeparted('livingroom')).toMatchObject({ reason: 'presentation-unacknowledged', session: { learnerId: 'user_7' } });
+  });
+
+  it('an UNACKNOWLEDGED adoption does the same', () => {
+    const { s } = rig();
+    lostRoom(s);
+    const adopting = s.beginAdoption({ location: 'livingroom', learnerId: 'user_7', contentId: 'plex:674736' });
+    expect(s.abandonAdoption('livingroom', adopting.pendingPresentation.presentationId)).not.toBeNull();
+    expect(s.current('livingroom')).toBeNull();
+    expect(s.recentlyDeparted('livingroom')).toMatchObject({ reason: 'presentation-unacknowledged' });
+  });
+
+  it('with nothing displaced, the close records the adoption reason as before', () => {
+    const { s } = rig();
+    const adopting = s.beginAdoption({ location: 'livingroom', learnerId: 'user_7', contentId: 'plex:674736' });
+    s.abandonAdoption('livingroom', adopting.pendingPresentation.presentationId);
+    expect(s.recentlyClosed('livingroom')).toMatchObject({ reason: 'adopt-unacknowledged' });
+  });
+
+  it('an UNVERIFIED decline keeps the unclaimed record so the next tap can retry', () => {
+    const { s } = rig();
+    s.noteUnclaimedPlay('livingroom', { contentId: 'plex:674736', target: 'livingroom-tv' });
+    const adopting = s.beginAdoption({ location: 'livingroom', learnerId: 'user_7', contentId: 'plex:674736' });
+    s.declineAdoption('livingroom', adopting.pendingPresentation.presentationId, 'unverified');
+    expect(s.unclaimedPlay('livingroom')).toMatchObject({ contentId: 'plex:674736' });
+  });
+
+  it('a COMMITTED adoption does not resurrect the old departure', () => {
+    const { s } = rig();
+    lostRoom(s);
+    const adopting = s.beginAdoption({ location: 'livingroom', learnerId: 'user_7', contentId: 'plex:674736' });
+    s.acknowledge('livingroom', adopting.pendingPresentation);
+    s.close('livingroom', { reason: 'day-done' });
+    expect(s.recentlyClosed('livingroom')).toMatchObject({ reason: 'day-done' });
+  });
+});

@@ -55,13 +55,43 @@ describe('resolveAdoptablePlayback', () => {
     expect(result).toEqual({ ok: false, reason: 'content-mismatch' });
   });
 
-  it('declines content-mismatch when the book s queue cannot be read — no proof, no adoption', async () => {
+  it('declines unverified (not a mismatch) when the book s queue cannot be read — no proof, no adoption', async () => {
     const fetchQueue = vi.fn(async () => { throw new Error('HTTP 502'); });
-    expect(await resolveAdoptablePlayback({ capture: capture(), bookContentId: 'b', fetchQueue })).toEqual({ ok: false, reason: 'content-mismatch' });
+    expect(await resolveAdoptablePlayback({ capture: capture(), bookContentId: 'b', fetchQueue })).toEqual({ ok: false, reason: 'unverified' });
   });
 
   it('treats a non-finite position as 0 rather than failing the adoption', async () => {
     const result = await resolveAdoptablePlayback({ capture: capture({ position: NaN }), bookContentId: 'b', fetchQueue: queueOf(track('plex:674737')) });
     expect(result).toMatchObject({ ok: true, positionSec: 0 });
+  });
+});
+
+// THE REAL CAPTURE SHAPE (review C1, 2026-09-30). The screen's session source
+// returns `{ snapshot, identity, capabilities }`; state, current item and
+// position live under `snapshot`. The fixtures above were flat, which is why
+// every real adoption would have been declined `no-owner` while they passed.
+import { createSessionSource } from '../../../screen-framework/publishers/SessionSource.js';
+
+describe('resolveAdoptablePlayback — through the real session source', () => {
+  it('proves the field case from a capture built by createSessionSource', async () => {
+    const source = createSessionSource({
+      ownerId: 'livingroom-tv',
+      queueController: {
+        capture: () => ({
+          state: 'playing', currentItem: { contentId: 'plex:674737' }, position: 11.785,
+          queue: { items: [{ contentId: 'plex:674737' }], currentIndex: 0 },
+        }),
+      },
+    });
+    const result = await resolveAdoptablePlayback({
+      capture: source.capture(), bookContentId: 'plex:674736', fetchQueue: queueOf(track('plex:674737')),
+    });
+    expect(result).toMatchObject({ ok: true, positionSec: 11.785, trackContentId: 'plex:674737' });
+  });
+
+  it('declines no-owner from a real idle source (no player mounted)', async () => {
+    const source = createSessionSource({ ownerId: 'livingroom-tv' });
+    expect(await resolveAdoptablePlayback({ capture: source.capture(), bookContentId: 'b', fetchQueue: queueOf() }))
+      .toEqual({ ok: false, reason: 'no-owner' });
   });
 });

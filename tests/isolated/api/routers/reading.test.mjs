@@ -897,3 +897,15 @@ describe('POST /session/adopt-decline — the TV could not prove it is playing t
     expect((await request(app).post(base).send({ location: 'livingroom', presentationId: 'rp_1', reason: 'because' })).status).toBe(400);
   });
 });
+
+describe('POST /session/adopt-decline — unverified (review M4)', () => {
+  it('accepts unverified and keeps the unclaimed record for the next tap', async () => {
+    const { app, sessions } = build();
+    sessions.noteUnclaimedPlay('livingroom', { contentId: 'plex:674736', target: 'livingroom-tv' });
+    const adopting = sessions.beginAdoption({ location: 'livingroom', learnerId: 'user_7', contentId: 'plex:674736' });
+    const res = await request(app).post('/api/v1/school/reading/session/adopt-decline')
+      .send({ location: 'livingroom', presentationId: adopting.pendingPresentation.presentationId, reason: 'unverified' });
+    expect(res.body).toEqual({ ok: true });
+    expect(sessions.unclaimedPlay('livingroom')).toMatchObject({ contentId: 'plex:674736' });
+  });
+});

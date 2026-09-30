@@ -153,6 +153,13 @@ export class ReadingSessionService {
   #recentlyClosed = new Map();
   /** location -> {contentId, target, at}: the last book dispatched with no session here. */
   #unclaimedPlays = new Map();
+  /**
+   * location -> the departure record a pending adoption displaced. An adoption
+   * that never commits puts it back: a child whose room a cold TV took must
+   * not lose the own-room exemption because the TV then could not prove their
+   * story (review I1, 2026-09-30).
+   */
+  #displacedDepartures = new Map();
   #realtime; #clock; #logger; #idFactory; #idSequence = 0;
   #idleTimeoutMs; #sweepIntervalMs; #onTimeout; #scheduler; #cancelSweep = null;
   #sessionStore; #persistIntervalMs; #cancelPersist = null; #dirty = false;
@@ -579,6 +586,7 @@ export class ReadingSessionService {
     this.#sessions.set(location, committed);
     if (adopted) {
       this.#unclaimedPlays.delete(location);
+      this.#displacedDepartures.delete(location);
       this.#log('info', 'school.reading.adoption-committed', {
         location, learnerId: committed.learnerId, sessionId: committed.sessionId,
         contentId: adopted.contentId, pickId: adopted.pickId,
@@ -699,6 +707,7 @@ export class ReadingSessionService {
     // A live session is never "recently closed" — the reopen grace exists for
     // the gap between sessions and must not survive into one.
     this.#recentlyClosed.delete(session.location);
+    this.#displacedDepartures.delete(session.location);
     this.#log('info', 'school.reading.session-open', {
       location: session.location,
       learnerId: session.learnerId,
@@ -882,6 +891,9 @@ export class ReadingSessionService {
     if (typeof contentId !== 'string' || !contentId) return null;
     const key = location.trim();
     if (this.#sessions.has(key)) return null;
+    const displaced = this.#recentlyClosed.get(key) ?? null;
+    if (displaced) this.#displacedDepartures.set(key, displaced);
+    else this.#displacedDepartures.delete(key);
     const at = this.#clock();
     const sessionId = this.#nextId('rs');
     const revision = this.#nextRevision(key);
@@ -913,18 +925,43 @@ export class ReadingSessionService {
    * The screen could not prove it is playing the book (a movie started since,
    * the story already ended, no playback owner). D2 is restored: the session
    * this adoption reserved is closed and the unclaimed record forgotten, so
-   * the next card is an ordinary refusal rather than another adoption attempt.
+   * the next card is an ordinary refusal rather than another adoption attempt
+   * — EXCEPT `unverified` (nobody could look up the book's tracks), which keeps
+   * the record so the next tap can try again.
    */
   declineAdoption(location, presentationId, reason = null) {
     const session = this.#sessions.get(location) ?? null;
     const pending = session?.pendingPresentation ?? null;
-    if (!pending || pending.reason !== 'adopt' || pending.presentationId !== presentationId) return null;
-    this.#unclaimedPlays.delete(location);
-    const closed = this.close(location, { reason: 'adopt-declined' });
+    const closed = this.abandonAdoption(location, presentationId, {
+      reason: 'adopt-declined', forgetUnclaimed: reason !== 'unverified',
+    });
+    if (!closed) return null;
     this.#log('info', 'school.reading.adoption-declined', {
       location, learnerId: session.learnerId, sessionId: session.sessionId,
       contentId: pending.adopt?.contentId ?? null, reason,
     });
+    return closed;
+  }
+
+  /**
+   * Close a pending adoption that will not commit — declined, or never
+   * acknowledged — and give the room back exactly as it was before: the
+   * departure record the adoption displaced (a `presentation-unacknowledged`
+   * close, say) is restored, so the own-room exemption still lets that child
+   * in. With nothing displaced, the close's own reason stands.
+   *
+   * @returns {object|null} the closed session, or null when that adoption is
+   *   not the one pending here
+   */
+  abandonAdoption(location, presentationId, { reason = 'adopt-unacknowledged', forgetUnclaimed = false } = {}) {
+    const session = this.#sessions.get(location) ?? null;
+    const pending = session?.pendingPresentation ?? null;
+    if (!pending || pending.reason !== 'adopt' || pending.presentationId !== presentationId) return null;
+    if (forgetUnclaimed) this.#unclaimedPlays.delete(location);
+    const closed = this.close(location, { reason });
+    const displaced = this.#displacedDepartures.get(location) ?? null;
+    this.#displacedDepartures.delete(location);
+    if (displaced) this.#recentlyClosed.set(location, displaced);
     return closed;
   }
 
