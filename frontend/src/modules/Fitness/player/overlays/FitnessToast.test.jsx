@@ -271,6 +271,42 @@ describe('FitnessToast — fire zone', () => {
     expect(screen.getByText('ON FIRE')).toBeTruthy();
   });
 
+  it('keeps the fireball centred on the avatar as the toast moves under it', () => {
+    // The toast grows in from a collapsed box and collapses on exit, so the
+    // avatar moves ~77px after mount. A one-shot measurement left the flame
+    // above or below the face; it has to follow.
+    let rect = { left: 900, top: 540, width: 101, height: 101 };
+    const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function measure() {
+        if (!this.classList.contains('fitness-toast__fire-avatar')) return { left: 0, top: 0, width: 0, height: 0 };
+        return { ...rect, right: rect.left + rect.width, bottom: rect.top + rect.height };
+      });
+    try {
+      render(<FitnessToast toast={fireToast()} onDone={() => {}} />);
+      const ball = () => document.body.querySelector('.fitness-toast__fire-ball');
+      const centre = () => ({
+        x: parseFloat(ball().style.left) + parseFloat(ball().style.width) / 2,
+        y: parseFloat(ball().style.top) + parseFloat(ball().style.height) / 2,
+      });
+      expect(centre()).toEqual({ x: 950.5, y: 590.5 });
+
+      rect = { left: 895, top: 459, width: 110, height: 110 }; // settled higher and larger
+      act(() => { vi.advanceTimersByTime(50); });
+      expect(centre()).toEqual({ x: 950, y: 514 });
+      expect(parseFloat(ball().style.width)).toBe(220);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('fades the fireball out with the toast instead of leaving it over nothing', () => {
+    render(<FitnessToast toast={fireToast()} onDone={() => {}} />);
+    const ball = document.body.querySelector('.fitness-toast__fire-ball');
+    expect(ball.style.opacity).toBe('1');
+    act(() => { vi.advanceTimersByTime(3500); });
+    expect(document.body.querySelector('.fitness-toast__fire-ball').style.opacity).toBe('0');
+  });
+
   it('self-dismisses on the celebration lifetime', () => {
     const onDone = vi.fn();
     render(<FitnessToast toast={fireToast()} onDone={onDone} />);
