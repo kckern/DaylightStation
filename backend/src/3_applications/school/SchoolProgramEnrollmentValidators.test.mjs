@@ -85,3 +85,31 @@ describe('Piano course daily video cap', () => {
     }));
   });
 });
+
+describe('piano-course — a course sequence (then:)', () => {
+  const pianoValidator = () => validators().get('piano-course');
+
+  it('keeps an explicit list of follow-on courses, in order', async () => {
+    const result = await pianoValidator()({
+      programId: 'piano-course', courseId: 'plex:695598', then: ['plex:694771', 'plex:694718'],
+    });
+    expect(result.errors).toEqual([]);
+    expect(result.enrollment.then).toEqual(['plex:694771', 'plex:694718']);
+  });
+
+  it('omits the field entirely when there is no sequence', async () => {
+    const result = await pianoValidator()({ programId: 'piano-course', courseId: 'plex:695598', then: [] });
+    expect(result.errors).toEqual([]);
+    expect('then' in result.enrollment).toBe(false);
+  });
+
+  it.each([
+    [['plex:694771', 'plex:694771'], 'piano-course then must not repeat a course'],
+    [['plex:695598'], 'piano-course then must not include the enrolled course itself'],
+    [['694771'], 'piano-course then entries must be of the form plex:<ratingKey>'],
+    ['plex:694771', 'piano-course then must be a list of course ids'],
+  ])('refuses a bad sequence %j', async (then, message) => {
+    const result = await pianoValidator()({ programId: 'piano-course', courseId: 'plex:695598', then });
+    expect(result.errors).toEqual([message]);
+  });
+});
