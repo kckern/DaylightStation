@@ -289,6 +289,40 @@ describe('PianoLessonCeremonyBridge', () => {
     ]);
   });
 
+  it('reconciles EVERY course a sequence has walked through, not only the active one', async () => {
+    // After an advance the head's status answers with the successor. A head
+    // lesson whose live event was missed (a redeploy mid-event) must still be
+    // backfilled, so reconcile also reads each finished course on its own.
+    const rows = new Map();
+    const headLesson = completion('plex:9001', 'Eighth Notes');
+    const nextLesson = { ...completion('plex:694788', 'Lesson 15'), course: { id: 'plex:694771', title: 'Piano' } };
+    const asked = [];
+    const bridge = new PianoLessonCeremonyBridge({
+      realtime: new EventBusSchoolRealtimeAdapter({ eventBus: fakeBus() }),
+      assignments: { get: async () => null, list: async () => [{ learnerId: 'learner4', programs: ENROLLED }] },
+      launcher: {
+        id: 'piano-course',
+        status: async ({ programInstance, followSequence = true }) => {
+          asked.push({ programInstance, followSequence });
+          if (followSequence) {
+            return { activeCourseId: 'plex:694771', sequence: { position: 2, total: 2, courseIds: [COURSE, 'plex:694771'] }, completedLessons: [nextLesson] };
+          }
+          return { activeCourseId: programInstance, completedLessons: programInstance === COURSE ? [headLesson] : [] };
+        },
+      },
+      evidenceRepository: { appendEvidence: async (row) => { rows.set(row.evidenceId, row); return { status: 'recorded' }; } },
+      logger: { warn() {}, info() {} },
+    });
+
+    await bridge.reconcile();
+
+    expect([...rows.keys()].sort()).toEqual(['piano-lesson:learner4:plex:694788', 'piano-lesson:learner4:plex:9001']);
+    expect(asked).toEqual([
+      { programInstance: COURSE, followSequence: true },
+      { programInstance: COURSE, followSequence: false },
+    ]);
+  });
+
   it('keeps first-write historical evidence without replaying metadata conflicts on every boot', async () => {
     const appendEvidence = vi.fn(async () => { throw new Error('must not rewrite first-write evidence'); });
     const logger = { warn: vi.fn(), info: vi.fn(), debug: vi.fn() };

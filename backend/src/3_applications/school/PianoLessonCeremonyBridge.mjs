@@ -136,7 +136,17 @@ export class PianoLessonCeremonyBridge {
         if (!courseId) continue;
         // eslint-disable-next-line no-await-in-loop
         const status = await this.#launcher.status({ userId: learnerId, programInstance: courseId });
-        for (const completion of status?.completedLessons ?? []) {
+        // A SEQUENCED enrollment answers with its ACTIVE course, so the
+        // courses it has already finished are read on their own as well: a
+        // head lesson whose live event was missed must still be backfilled.
+        const passed = (status?.sequence?.courseIds ?? []).slice(0, Math.max(0, (status?.sequence?.position ?? 1) - 1));
+        const completions = [...(status?.completedLessons ?? [])];
+        for (const passedCourseId of passed) {
+          // eslint-disable-next-line no-await-in-loop
+          const own = await this.#launcher.status({ userId: learnerId, programInstance: passedCourseId, followSequence: false });
+          completions.push(...(own?.completedLessons ?? []));
+        }
+        for (const completion of completions) {
           summary.completions += 1;
           // eslint-disable-next-line no-await-in-loop
           const outcome = await this.#recordEvidence({ learnerId, enrollment, completion });

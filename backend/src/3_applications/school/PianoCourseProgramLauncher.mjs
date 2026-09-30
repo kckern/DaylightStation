@@ -39,6 +39,10 @@ import { isSameStudyDay, studyDayForInstant, studyDayMidpointMs } from '#domains
 // The present-tense rule (what counts as "the one you are inside") lives in the
 // domain so the agenda card and the result receipt cannot disagree about it.
 import { inProgressSegments, activeProgressPosition } from '#domains/school/progressRows.mjs';
+// The same rule the enrollment validator applies at SetAssignments, re-applied
+// here because the documented way to set `then:` is a hand edit of the plan
+// file, which never passes through that validator.
+import { validateCourseSequence } from './SchoolProgramEnrollmentValidators.mjs';
 
 /** The household's study day rolls at 4am, same as the rest of the agenda. */
 const BOUNDARY_HOUR = 4;
@@ -200,7 +204,13 @@ export class PianoCourseProgramLauncher {
   /** Lesson completions carry `userCompletedAt`, so any past day can be read. */
   get replayable() { return true; }
 
-  async status({ userId, programInstance = null, day = null }) {
+  /**
+   * `followSequence: false` judges `programInstance` alone, ignoring any
+   * `then:` list — for a caller that must read a finished course's OWN
+   * evidence (the ceremony bridge's reconcile), which the sequence would
+   * otherwise answer with the successor's.
+   */
+  async status({ userId, programInstance = null, day = null, followSequence = true }) {
     if (!programInstance) {
       return { doneToday: false, progressLabel: 'No piano course assigned', score: null, servedWork: [] };
     }
@@ -209,7 +219,7 @@ export class PianoCourseProgramLauncher {
     let result;
     let resolved;
     try {
-      resolved = await this.#resolveCourse({ userId, programInstance, nowMs });
+      resolved = await this.#resolveCourse({ userId, programInstance, nowMs, followSequence });
       const answer = resolved.answer;
       // A rejected user is a wiring/roster problem, not "no lesson today" —
       // surface it as an error so the agenda degrades to `program_unavailable`
@@ -223,7 +233,8 @@ export class PianoCourseProgramLauncher {
       result = { ...answer.result, compoundId: answer.result?.compoundId ?? resolved.courseId };
     } catch (err) {
       sampledWarning(this.#logger, 'school.piano-course.status-failed', {
-        userId, courseId: programInstance, error: err?.message ?? String(err),
+        userId, courseId: err?.courseId ?? programInstance, enrolledCourseId: programInstance,
+        error: err?.message ?? String(err),
       });
       return { error: true };
     }
@@ -350,8 +361,11 @@ export class PianoCourseProgramLauncher {
     // durable evidence settles today; this launcher still owns the course's
     // ordinary video evidence and never writes it on challenge completion.
     const nextLesson = next ? this.#lessonContext({ result, item: next }) : null;
+    // Keyed by the ACTIVE course: a challenge authored on a successor names
+    // that course, and after an advance the lesson it replaces is the
+    // successor's, not the head's.
     const challenge = nextLesson?.lesson && this.#challengeCompletion?.descriptorFor?.({
-      courseId: programInstance, lessonId: nextLesson.lesson.id,
+      courseId: resolved.courseId, lessonId: nextLesson.lesson.id,
     });
     if (challenge) {
       if (this.#challengeCompletion.completed({ learnerId: userId, descriptorId: challenge.id })) {
@@ -428,14 +442,22 @@ export class PianoCourseProgramLauncher {
    *
    * @returns {Promise<{courseId: string, answer: object, position: number, chain: string[]}>}
    */
-  async #resolveCourse({ userId, programInstance, nowMs }) {
-    const chain = [programInstance, ...(await this.#followOn({ userId, courseId: programInstance }))];
+  async #resolveCourse({ userId, programInstance, nowMs, followSequence = true }) {
+    const chain = [programInstance, ...(followSequence ? await this.#followOn({ userId, courseId: programInstance }) : [])];
     const today = studyDayForInstant(nowMs, { timezone: this.#timezone, boundaryHour: BOUNDARY_HOUR });
     let resolved = null;
     for (let index = 0; index < chain.length && !resolved; index += 1) {
       const courseId = chain[index];
-      // eslint-disable-next-line no-await-in-loop
-      const answer = await this.#getPlayableUnits.execute({ courseId, userId });
+      let answer;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        answer = await this.#getPlayableUnits.execute({ courseId, userId });
+      } catch (err) {
+        // Carry WHICH course failed out to `status()`'s log: after an advance
+        // it is the successor, and a line naming the head would send the
+        // investigation to a course that reads fine.
+        throw Object.assign(err instanceof Error ? err : new Error(String(err)), { courseId });
+      }
       const last = index === chain.length - 1;
       if (!answer?.ok || last || !this.#finishedBefore(orderedCreditItems(answer.result), today)) {
         if (answer?.ok && index > 0) this.#announceActive({ userId, enrolledCourseId: programInstance, courseId, index, chain });
@@ -457,18 +479,30 @@ export class PianoCourseProgramLauncher {
     });
   }
 
-  /** The enrollment's `then:` list. A read failure is the head alone, said out loud. */
+  /**
+   * The enrollment's `then:` list. A read failure, or a list that is not clean,
+   * is the head alone — said out loud, by name. A hand-edited `then: plex:1`
+   * (a scalar, not a list) used to be dropped in silence, which quietly
+   * recreates the 2026-09-28 bug this list exists to fix. Sampled, because
+   * `status()` runs on every agenda read and kiosk gate poll.
+   */
   async #followOn({ userId, courseId }) {
     if (typeof this.#courseSequence !== 'function') return [];
+    let raw;
     try {
-      const then = await this.#courseSequence({ learnerId: userId, courseId });
-      return Array.isArray(then) ? then.filter((id) => typeof id === 'string' && id && id !== courseId) : [];
+      raw = await this.#courseSequence({ learnerId: userId, courseId });
     } catch (err) {
-      this.#logger.warn?.('school.piano-course.sequence-read-failed', {
+      sampledWarning(this.#logger, 'school.piano-course.sequence-read-failed', {
         userId, courseId, error: err?.message ?? String(err),
       });
       return [];
     }
+    const { errors, then } = validateCourseSequence(raw, courseId);
+    if (errors.length) {
+      sampledWarning(this.#logger, 'school.piano-course.sequence-invalid', { userId, courseId, errors });
+      return [];
+    }
+    return then;
   }
 
   #announceActive({ userId, enrolledCourseId, courseId, index, chain }) {

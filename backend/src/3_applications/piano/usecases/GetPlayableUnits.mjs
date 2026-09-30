@@ -280,8 +280,15 @@ export class GetPlayableUnits {
       return null;
     }
 
+    // A course reached through an enrollment's SEQUENCE (`then:`) is enrolled
+    // too: once the head is finished, School judges the day by it, and pacing
+    // must not excuse its assigned lesson any more than the head's. Whether the
+    // successor is ACTIVE yet is School's derivation, not this use case's; the
+    // "first unwatched lesson, not done today" rule below keeps the exemption
+    // to one lesson either way.
     const enrolled = programs.some((row) => row?.programId === PIANO_COURSE_PROGRAM
-      && normalizeCourseId(row.courseId ?? row.corpusId) === compoundId);
+      && [row.courseId ?? row.corpusId, ...(Array.isArray(row.then) ? row.then : [])]
+        .some((id) => normalizeCourseId(id) === compoundId));
     if (!enrolled) return null;
 
     // Reference/practice units carry no credit in the kiosk's progression, so

@@ -666,6 +666,38 @@ describe('PianoCourseProgramLauncher — a course sequence', () => {
     expect(logs.some((l) => l.event === 'school.piano-course.sequence-read-failed')).toBe(true);
   });
 
+  it.each([
+    ['a bare id instead of a list', 'plex:694771'],
+    ['an id without the plex: prefix', ['694771']],
+    ['the head repeated', ['plex:695598']],
+  ])('refuses a hand-edited sequence that is not clean (%s) — by name, judging the head', async (_label, then) => {
+    const { launcher, logs } = sequenced({
+      byCourse: { [HEAD]: finishedHead, [NEXT]: successor() }, now: '2026-09-30T18:00:00Z',
+      courseSequence: async () => then,
+    });
+    const status = await launcher.status({ userId: 'user_4', programInstance: HEAD });
+    expect(status.activeCourseId).toBe(HEAD);
+    const invalid = logs.find((l) => l.event === 'school.piano-course.sequence-invalid');
+    expect(invalid?.data).toMatchObject({ userId: 'user_4', courseId: HEAD });
+    expect(invalid.data.errors.length).toBeGreaterThan(0);
+  });
+
+  it('names the SUCCESSOR, not the head, when the successor read throws', async () => {
+    const logs = [];
+    const launcher = new PianoCourseProgramLauncher({
+      getPlayableUnits: { execute: async ({ courseId }) => {
+        if (courseId === NEXT) throw new Error('plex timeout');
+        return { ok: true, result: finishedHead };
+      } },
+      courseSequence: async () => [NEXT],
+      timezone: TZ, clock: () => new Date('2026-09-30T18:00:00Z'),
+      logger: { warn: (event, data) => logs.push({ event, data }), info() {} },
+    });
+    expect(await launcher.status({ userId: 'user_4', programInstance: HEAD })).toEqual({ error: true });
+    const failed = logs.find((l) => l.event === 'school.piano-course.status-failed');
+    expect(failed.data).toMatchObject({ courseId: NEXT, enrolledCourseId: HEAD, error: 'plex timeout' });
+  });
+
   it('reports error (never the head in disguise) when the successor cannot be read', async () => {
     const { launcher } = sequenced({ byCourse: { [HEAD]: finishedHead }, now: '2026-09-30T18:00:00Z' });
     expect(await launcher.status({ userId: 'user_4', programInstance: HEAD })).toEqual({ error: true });
@@ -678,6 +710,31 @@ describe('PianoCourseProgramLauncher — a course sequence', () => {
     const advances = logs.filter((l) => l.event === 'school.piano-course.sequence-active');
     expect(advances).toHaveLength(1);
     expect(advances[0].data).toEqual({ userId: 'user_4', enrolledCourseId: HEAD, activeCourseId: NEXT, position: 2, total: 2 });
+  });
+
+  it('offers a PianoChallenge configured on the SUCCESSOR course (keyed by the active course, not the head)', async () => {
+    const asked = [];
+    const descriptor = { id: 'piano-l16-challenge', courseId: NEXT, lessonId: 'plex:16' };
+    const launcher = new PianoCourseProgramLauncher({
+      getPlayableUnits: { execute: async ({ courseId }) => ({ ok: true, result: { [HEAD]: finishedHead, [NEXT]: successor() }[courseId] }) },
+      courseSequence: async () => [NEXT],
+      challengeCompletion: {
+        descriptorFor: ({ courseId, lessonId }) => { asked.push(courseId); return courseId === NEXT && lessonId === 'plex:16' ? descriptor : null; },
+        completed: () => false,
+      },
+      timezone: TZ, clock: () => new Date('2026-09-30T18:00:00Z'), logger: { warn() {}, info() {} },
+    });
+    const status = await launcher.status({ userId: 'user_4', programInstance: HEAD });
+    expect(asked).toEqual([NEXT]);
+    expect(status.challenge).toEqual(descriptor);
+  });
+
+  it('followSequence: false judges the named course alone', async () => {
+    const { launcher, asked } = sequenced({ byCourse: { [HEAD]: finishedHead, [NEXT]: successor() }, now: '2026-09-30T18:00:00Z' });
+    const status = await launcher.status({ userId: 'user_4', programInstance: HEAD, followSequence: false });
+    expect(status.activeCourseId).toBe(HEAD);
+    expect(status.completedLessons.map((row) => row.lesson.title)).toEqual(['Quarter Notes', 'Eighth Notes']);
+    expect(asked).toEqual([HEAD]);
   });
 
   it('launches the successor\'s next lesson', async () => {
