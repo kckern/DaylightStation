@@ -170,16 +170,22 @@ export class PianoLessonCeremonyBridge {
     let courseId = null;
     let status = null;
     let completion = null;
+    const activeCourseIds = [];
     for (const candidate of enrollments) {
       const candidateCourseId = candidate.courseId ?? candidate.corpusId ?? null;
       if (!candidateCourseId) continue;
       // eslint-disable-next-line no-await-in-loop
       const candidateStatus = await this.#launcher.status({ userId: learnerId, programInstance: candidateCourseId });
+      // A SEQUENCED enrollment judges its ACTIVE course, which after an
+      // advance is not the one the plan names first. The ceremony, the hook
+      // and the evidence must all name the course the child actually played.
+      const activeCourseId = candidateStatus?.activeCourseId ?? candidateCourseId;
+      activeCourseIds.push(activeCourseId);
       const candidateCompletion = (candidateStatus?.completedLessonsToday ?? [])
         .find((row) => row?.lesson?.id === payload?.plexId);
       if (!candidateCompletion) continue;
       enrollment = candidate;
-      courseId = candidateCourseId;
+      courseId = activeCourseId;
       status = candidateStatus;
       completion = candidateCompletion;
       break;
@@ -198,6 +204,7 @@ export class PianoLessonCeremonyBridge {
         title: payload?.title ?? null,
         reason: 'not-in-enrolled-course',
         enrolledCourseIds: enrollments.map((row) => row.courseId ?? row.corpusId ?? null),
+        activeCourseIds,
       });
       return;
     }
@@ -242,11 +249,13 @@ export class PianoLessonCeremonyBridge {
     const assignment = await this.#assignments.get(learnerId);
     const enrollments = (assignment?.programs ?? []).filter((row) => row?.programId === this.#launcher.id);
     for (const enrollment of enrollments) {
-      const courseId = enrollment.courseId ?? enrollment.corpusId ?? null;
-      if (!courseId) continue;
+      const enrolledCourseId = enrollment.courseId ?? enrollment.corpusId ?? null;
+      if (!enrolledCourseId) continue;
       // eslint-disable-next-line no-await-in-loop -- first authoritative settled course wins.
-      const status = await this.#launcher.status({ userId: learnerId, programInstance: courseId });
+      const status = await this.#launcher.status({ userId: learnerId, programInstance: enrolledCourseId });
       if (status?.error || status?.challengeCompleted !== true || status?.excused === true) continue;
+      // The ACTIVE course of a sequenced enrollment — see `#handle`.
+      const courseId = status?.activeCourseId ?? enrolledCourseId;
       const nowMs = this.#nowMs();
       const studyDate = studyDayForInstant(nowMs, { timezone: this.#timezone, boundaryHour: BOUNDARY_HOUR });
       await this.#recordChallengeEvidence({ learnerId, enrollment, courseId, descriptorId, completedAt: payload?.completedAt, studyDate, status });

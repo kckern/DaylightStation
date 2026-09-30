@@ -69,6 +69,31 @@ describe('PianoLessonCeremonyBridge', () => {
   let ctx;
   beforeEach(() => { ctx = build(); });
 
+  it('names the SUCCESSOR course when a sequenced enrollment has advanced', async () => {
+    const successorLesson = { ...completion('plex:694788', 'Lesson 15'), course: { id: 'plex:694771', title: 'Piano' } };
+    const c = build({ status: {
+      doneToday: true, activeCourseId: 'plex:694771', progressLabel: 'Done today', score: 4,
+      completedLessonsToday: [successorLesson], completedLessons: [successorLesson],
+    } });
+    await c.bus.emit('piano.lesson.completed', { userId: 'learner4', plexId: 'plex:694788', title: 'Lesson 15' });
+    expect(c.bus.sent[0].payload).toMatchObject({ event: 'piano-lesson-complete', courseId: 'plex:694771' });
+    expect(c.fired[0]).toMatchObject({ result: 'satisfied', course: 'plex:694771', lesson: 'Lesson 15' });
+    expect(c.evidence[0].learning.courseId).toBe('plex:694771');
+  });
+
+  it('ignores a re-watch of a finished head lesson once the sequence has moved on', async () => {
+    const logs = [];
+    const c = build({
+      status: { doneToday: false, activeCourseId: 'plex:694771', completedLessonsToday: [], completedLessons: [] },
+      logger: { warn() {}, info: (event, data) => logs.push({ event, data }) },
+    });
+    await c.bus.emit('piano.lesson.completed', { userId: 'learner4', plexId: 'plex:695651', title: 'Eighth Notes' });
+    const ignored = logs.find((l) => l.event === 'school.piano-ceremony.ignored');
+    expect(ignored.data).toMatchObject({ reason: 'not-in-enrolled-course', activeCourseIds: ['plex:694771'] });
+    expect(c.bus.sent).toHaveLength(0);
+    expect(c.fired).toHaveLength(0);
+  });
+
   it('subscribes to the piano completion topic', () => {
     expect(ctx.bus.subscribed).toContain('piano.lesson.completed');
     expect(ctx.bus.subscribed).toContain('piano.school-challenge.completed');
@@ -332,6 +357,8 @@ describe('PianoLessonCeremonyBridge', () => {
         // Derived from the enrollment fixture, never retyped: the whole point
         // of the line is naming which courses COULD have been discharged.
         enrolledCourseIds: ENROLLED.map((row) => row.courseId ?? row.corpusId ?? null),
+        // With no sequence the active course IS the enrolled one.
+        activeCourseIds: ENROLLED.map((row) => row.courseId ?? row.corpusId ?? null),
       },
     });
     // Still ignored: nothing announced, no hook, no evidence written.
