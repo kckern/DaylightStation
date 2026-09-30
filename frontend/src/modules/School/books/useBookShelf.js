@@ -867,6 +867,13 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     earliestFinishDay: typeof shelf?.earliestFinishDay === 'string' && shelf.earliestFinishDay
       ? shelf.earliestFinishDay
       : null,
+    // `school.yml` `books.manualEntry: false` → the add door is scan-only and
+    // the pad is not drawn (the server refuses a typed book anyway; see
+    // BookEntryPolicy). A shelf read that says nothing keeps the pad.
+    manualEntry: shelf?.entry?.manual !== false,
+    // The book this shelf was opened FOR by a scan. Its pass is what lets a
+    // scan-only shelf offer "Read again" on a finished copy.
+    scannedBookId: initialBookEntry?.isbn13 ?? null,
     learner,
     error,
     busy,

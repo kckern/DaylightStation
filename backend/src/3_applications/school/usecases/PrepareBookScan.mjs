@@ -1,11 +1,16 @@
 import { parseBookIdentifier } from '#domains/books/BookIdentifier.mjs';
 
 const TTL = 5 * 60_000;
+// How long a claimed scan vouches for its book on that learner's shelf. It
+// outlives the intention because the child still has to pick where they are
+// with the book after the shelf opens; it is short because a pass left behind
+// should not become a way to re-add the book all evening.
+const PASS_TTL = 30 * 60_000;
 const refuse = (status, message) => { const error = new Error(message); error.status = status; throw error; };
 
 /** Short-lived household kiosk intentions. No reading store or progress writer is a dependency. */
 export class PrepareBookScan {
-  #deps; #records = new Map(); #events = new Map();
+  #deps; #records = new Map(); #events = new Map(); #passes = new Map();
   constructor({ resolveBook, roster, issueLaunchTarget, wake, notifications, target,
     clock = Date.now, mintId, logger = {} }) {
     if (typeof mintId !== 'function') throw new TypeError('PrepareBookScan requires a secure intent id generator');
@@ -15,6 +20,7 @@ export class PrepareBookScan {
     const now = this.#deps.clock();
     for (const [id, record] of this.#records) if (record.until <= now) this.#records.delete(id);
     for (const [id, until] of this.#events) if (until <= now) this.#events.delete(id);
+    for (const [key, until] of this.#passes) if (until <= now) this.#passes.delete(key);
   }
   #notify(record) {
     try {
@@ -120,6 +126,8 @@ export class PrepareBookScan {
       if (record.phase !== 'pending') refuse(410, 'This scan is no longer available. Scan again.');
       record.result = { intentId: id, launchTarget, bookEntry: { isbn13: record.isbn13, book: record.book } };
       record.phase = 'claimed';
+      this.#passes.set(JSON.stringify([learnerId, record.isbn13]), this.#deps.clock() + PASS_TTL);
+      while (this.#passes.size > 256) this.#passes.delete(this.#passes.keys().next().value);
       // Retire older previews so returning home only offers the latest deferred scan.
       for (const old of this.#records.values()) {
         if (old === record) break;
@@ -130,6 +138,15 @@ export class PrepareBookScan {
       return record.result;
     }).finally(() => { record.claiming = null; });
     return record.claiming;
+  }
+  /**
+   * Did this learner claim a scan of this book recently? The proof a
+   * scan-only shelf (`school.yml` `books.manualEntry: false`) asks for before
+   * a book joins it — the barcode was physically read, not typed.
+   */
+  hasScanned({ learnerId, isbn13 }) {
+    this.#prune();
+    return this.#passes.has(JSON.stringify([learnerId, isbn13]));
   }
   dismiss({ id, screenId }) {
     const record = this.#record(id, screenId);
