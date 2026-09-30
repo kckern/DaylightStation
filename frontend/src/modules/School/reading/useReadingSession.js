@@ -202,6 +202,10 @@ export function useReadingSession({
   // over the socket and again from the hydrate snapshot of a page that has
   // just loaded — and a second pass would mount the story a second time.
   const adoptedPresentationsRef = useRef(new Set());
+  // Sessions this screen DECLINED to adopt. The server's close of each echoes
+  // back as `session-close`, and resetting on it would wipe the notice that
+  // tells the child why nothing happened (review I2).
+  const declinedAdoptionSessionsRef = useRef(new Set());
   const onCueRef = useRef(onCue);
   onCueRef.current = onCue;
   const noticeTimer = useRef(null);
@@ -638,10 +642,16 @@ export function useReadingSession({
     if (!proof?.ok) {
       const reason = proof?.reason ?? 'no-owner';
       readingLog.session('adoption-declined', { learnerId: payload.learnerId, presentationId: payload.presentationId, reason });
+      declinedAdoptionSessionsRef.current.add(payload.sessionId);
       schoolApi.declineReadingAdoption({ location: presentation.location, presentationId: payload.presentationId, reason })
         .catch?.(() => {});
       cue('warn');
-      say({ tone: 'warn', title: 'Something else is playing', detail: 'We can read when this is finished.' });
+      // Only a real mismatch means something ELSE is playing. No owner, a
+      // story that already stopped, or a lookup nobody could make all mean
+      // the room is the child's to ask for again (review M3).
+      say(reason === 'content-mismatch'
+        ? { tone: 'warn', title: 'Something else is playing', detail: 'We can read when this is finished.' }
+        : { tone: 'warn', title: 'Tap your card again', detail: "Let's pick your book." });
       return;
     }
     const ack = await schoolApi.acknowledgeReadingSession({
@@ -719,11 +729,12 @@ export function useReadingSession({
         return;
       }
       case 'session-open': {
-        // The commit of a pick this screen is ALREADY playing — an adoption's
-        // own ACK echoes back as `session-open` with state `confirm`. Resetting
-        // to the shelf here would drop the story the child just claimed.
-        if (viewRef.current === 'playing' && payload.pick?.pickId
-          && payload.pick.pickId === attributionRef.current?.pickId) {
+        // The commit of an adoption this screen is taking up — its own ACK
+        // echoes back as `session-open` with state `confirm`, and that frame
+        // usually lands BEFORE the ACK's HTTP response (review I3). Keyed on
+        // the adoption, not the view: resetting to the shelf here would flash
+        // the launch card and dismiss the story before the stage exists.
+        if (payload.presentationId && adoptedPresentationsRef.current.has(payload.presentationId)) {
           if (payload.sessionId) rememberPresentation(payload);
           return;
         }
@@ -755,6 +766,9 @@ export function useReadingSession({
       }
       case 'session-close': {
         readingLog.session('session-close', { learnerId: payload.learnerId ?? null, reason: payload.reason ?? null });
+        // The close of an adoption this screen declined: nothing was ever on
+        // screen for it, and the notice explaining why must stay up.
+        if (payload.sessionId && declinedAdoptionSessionsRef.current.has(payload.sessionId)) return;
         // The story outlives the session — and so does the ceremony that credits
         // it. A close arriving mid-ceremony used to drop straight to `idle` and
         // eat the one moment that tells a child the reading counted.

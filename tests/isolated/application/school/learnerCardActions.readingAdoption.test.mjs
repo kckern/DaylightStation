@@ -128,3 +128,38 @@ describe('a learner card while their book is already playing', () => {
     expect(again.status).toBe('reading_session_adopting');
   });
 });
+
+describe('a failed adoption does not cost the child the room (review I1, M1)', () => {
+  it('after a declined adoption, the child who lost the room to a cold TV is let back in, not refused', async () => {
+    const r = rig();
+    r.sessions.open({ location: 'livingroom', learnerId: 'user_7', target: 'livingroom-tv' });
+    r.sessions.close('livingroom', { reason: 'presentation-unacknowledged' });
+    r.bookPlayed();
+    await r.tap();
+    const pending = r.sessions.current('livingroom').pendingPresentation;
+    r.sessions.declineAdoption('livingroom', pending.presentationId, 'content-mismatch');
+    const again = await r.tap();
+    expect(again.status).not.toBe('reading_session_refused');
+    expect(r.logs.some((l) => l.event === 'school.reading.refusal-exempted')).toBe(true);
+  });
+
+  it('a declined adoption stops the ACK loop quietly — no adoption-unacknowledged error', async () => {
+    // First wait: resolves when the decline's close releases the waiter.
+    // Every later wait: an immediate deadline. The old loop replayed into the
+    // closed room and then logged an ERROR for an adoption declined correctly.
+    let calls = 0;
+    const scheduler = {
+      withDeadline: async (work) => { calls += 1; if (calls === 1) return work; throw new Error('deadline'); },
+      every: () => () => {}, wait: async () => {},
+    };
+    const r = rig({ scheduler });
+    r.bookPlayed();
+    await r.tap();
+    const pending = r.sessions.current('livingroom').pendingPresentation;
+    r.sessions.declineAdoption('livingroom', pending.presentationId, 'content-mismatch');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(r.logs.some((l) => l.event === 'school.reading.adoption-unacknowledged')).toBe(false);
+    expect(r.sent.filter((m) => m.event === 'session-present')).toHaveLength(1);
+  });
+});

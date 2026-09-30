@@ -29,24 +29,31 @@ const SIDE_EFFECT = 'trigger/side-effect';
  * @param {string} args.bookContentId - the contentId the book tag resolved to
  * @param {(contentId: string) => Promise<{items?: object[]}>} args.fetchQueue
  * @returns {Promise<{ok: true, play: object[], positionSec: number, trackContentId: string}
- *   | {ok: false, reason: 'no-owner'|'not-playing'|'content-mismatch'}>}
+ *   | {ok: false, reason: 'no-owner'|'not-playing'|'content-mismatch'|'unverified'}>}
  */
 export async function resolveAdoptablePlayback({ capture, bookContentId, fetchQueue }) {
-  const trackContentId = capture?.currentItem?.contentId ?? null;
-  if (!capture || !trackContentId) return { ok: false, reason: 'no-owner' };
-  if (!LIVE_STATES.has(capture.state)) return { ok: false, reason: 'not-playing' };
+  // The session source's `capture()` is `{ snapshot, identity, capabilities }`
+  // — state, current item and position live under `snapshot`. Reading them
+  // off the top level declined every real adoption `no-owner` (review,
+  // 2026-09-30). A flat capture (the owner port's own shape) is accepted too.
+  const snap = capture?.snapshot ?? capture ?? null;
+  const trackContentId = snap?.currentItem?.contentId ?? null;
+  if (!snap || !trackContentId) return { ok: false, reason: 'no-owner' };
+  if (!LIVE_STATES.has(snap.state)) return { ok: false, reason: 'not-playing' };
 
   let items = [];
   try {
     const body = await fetchQueue(bookContentId);
     items = Array.isArray(body?.items) ? body.items.filter((item) => item?.mediaType !== SIDE_EFFECT) : [];
   } catch {
-    return { ok: false, reason: 'content-mismatch' };
+    // Not a mismatch — nobody could look. The server keeps the unclaimed
+    // record for this reason, so the child's next tap can try again.
+    return { ok: false, reason: 'unverified' };
   }
   const index = items.findIndex((item) => item?.contentId === trackContentId);
   if (index < 0) return { ok: false, reason: 'content-mismatch' };
 
-  const position = Number(capture.position);
+  const position = Number(snap.position);
   return {
     ok: true,
     play: items.slice(index),

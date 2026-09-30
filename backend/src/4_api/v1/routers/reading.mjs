@@ -26,7 +26,7 @@ const END_REASONS = new Set(['day-done']);
  * END_REASONS is one: the reason lands in the close record and the log, and a
  * reason added later has to be decided on rather than typed in by a caller.
  */
-const DECLINE_REASONS = new Set(['not-playing', 'content-mismatch', 'no-owner']);
+const DECLINE_REASONS = new Set(['not-playing', 'content-mismatch', 'no-owner', 'unverified']);
 
 function badRequest(message) {
   const err = new Error(message);

@@ -515,3 +515,48 @@ describe('useReadingSession — one adoption per presentation', () => {
     expect(posted('/reading/session/ack')).toHaveLength(1);
   });
 });
+
+describe('useReadingSession — adoption races and notices (review I2, I3, M3)', () => {
+  const ADOPT = {
+    event: 'session-present', reason: 'adopt', location: 'livingroom', learnerId: 'user_7',
+    sessionId: 'rs_1', presentationId: 'rp_1', revision: 4, serverEpoch: 'reading_1',
+    adopt: { contentId: 'plex:674736', pickId: 'pick_adopt_1', studyDay: '2026-09-30' },
+  };
+  const proved = { ok: true, play: [{ contentId: 'plex:674737', mediaType: 'audio' }], positionSec: 11.785, trackContentId: 'plex:674737' };
+  beforeEach(() => {
+    h.handler = null;
+    stubFetch();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'requestAnimationFrame', 'cancelAnimationFrame'] });
+  });
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  it('the ACK\'s own session-open, arriving BEFORE the ACK response, does not flash the launch card', async () => {
+    let finishProof;
+    const resolveAdoption = vi.fn(() => new Promise((resolve) => { finishProof = () => resolve(proved); }));
+    const played = [];
+    const { result } = renderHook(() => useReadingSession({ location: 'livingroom', confirmMs: 1000, onPlay: (p) => played.push(p), resolveAdoption }));
+    await act(async () => { h.handler(ADOPT); });
+    await act(async () => {
+      h.handler({ event: 'session-open', learnerId: 'user_7', location: 'livingroom', sessionId: 'rs_1', presentationId: 'rp_1', revision: 5, serverEpoch: 'reading_1', state: 'confirm', pick: { pickId: 'pick_adopt_1' } });
+    });
+    expect(result.current.view).not.toBe('open');
+    await act(async () => { finishProof(); await vi.advanceTimersByTimeAsync(10); });
+    expect(result.current.view).toBe('playing');
+    expect(played).toHaveLength(1);
+  });
+
+  it('the server\'s close echo of a DECLINED adoption does not wipe the notice', async () => {
+    const { result } = renderHook(() => useReadingSession({ location: 'livingroom', confirmMs: 1000, onPlay: () => {}, resolveAdoption: async () => ({ ok: false, reason: 'content-mismatch' }) }));
+    await act(async () => { h.handler(ADOPT); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    await act(async () => { h.handler({ event: 'session-close', learnerId: 'user_7', sessionId: 'rs_1', reason: 'adopt-declined' }); });
+    expect(result.current.notice).toMatchObject({ title: 'Something else is playing' });
+  });
+
+  it.each(['no-owner', 'not-playing', 'unverified'])('a %s decline asks the child to tap again — nothing else is playing', async (reason) => {
+    const { result } = renderHook(() => useReadingSession({ location: 'livingroom', confirmMs: 1000, onPlay: () => {}, resolveAdoption: async () => ({ ok: false, reason }) }));
+    await act(async () => { h.handler(ADOPT); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(result.current.notice).toMatchObject({ title: 'Tap your card again' });
+  });
+});
