@@ -120,7 +120,7 @@ public class ControlServer extends NanoWSD {
     }
 
     /** Which payload built this server — so "who is answering :8770" is never ambiguous. */
-    public static final String BUILT_BY = "p20-note-time";
+    public static final String BUILT_BY = "p21-self-heal";
 
     @Override
     protected WebSocket openWebSocket(IHTTPSession handshake) {
@@ -196,6 +196,7 @@ public class ControlServer extends NanoWSD {
                     o.put("engine", service.isEngineRunning() ? "running" : "stopped");
                     o.put("wsClients", clients.size());
                     o.put("servedBy", BUILT_BY);
+                    o.put("batteryOptExempt", batteryOptExempt());
                     Loopback lbs = service.getLoopback();
                     if (lbs != null) o.put("outVerified", lbs.snapshot().optBoolean("outVerified")); // the payload whose ControlServer owns :8770
                     // The write path to the piano. Surfaced because "BLE CONNECTED" says
@@ -601,6 +602,17 @@ public class ControlServer extends NanoWSD {
         } catch (Exception e) {
             Log.e(TAG, "HTTP handler error on " + uri, e);
             return json(NanoHTTPD.Response.Status.INTERNAL_ERROR, err(e.getMessage()));
+        }
+    }
+
+    /** Whether Android exempts us from battery optimization (Samsung sleeping-apps force-stops the rest). */
+    private boolean batteryOptExempt() {
+        try {
+            android.content.Context c = service.getContext();
+            android.os.PowerManager pm = (android.os.PowerManager) c.getSystemService(android.content.Context.POWER_SERVICE);
+            return pm != null && pm.isIgnoringBatteryOptimizations(c.getPackageName());
+        } catch (Exception e) {
+            return false;
         }
     }
 

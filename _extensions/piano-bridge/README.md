@@ -1,5 +1,14 @@
 # Piano Bridge (APK)
 
+> **2026-09-30: SHELL v31 (`2.2-self-heal`) + PAYLOAD p21 (`p21-self-heal`) are BUILT,
+> NOT YET ON THE TABLET.** The tablet runs shell v30 + p19. v31 exists because the bridge
+> was force-stopped on 2026-09-27 and stayed dead two days (runbook
+> `docs/runbooks/piano-kiosk-midi.md` §7a). v31 adds a 5-min keep-alive alarm, a restart
+> alarm from the crash handler, a start from the a11y bind, durable BOOT notes, and a
+> battery-optimization exemption request (a person taps "Allow"). p21 adds
+> `batteryOptExempt` to `/status` and includes p20's note timestamps. The off-tablet
+> half is the DS backend `PianoBridgeSupervisorService`.
+
 > **STATUS (2026-08-23): SHELL v30 + HOT-SWAPPABLE PAYLOAD p10, on the SM-T590. The
 > tablet is designed to run with NO physical access — it is "out to sea".**
 >

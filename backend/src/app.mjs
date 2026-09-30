@@ -117,6 +117,7 @@ import { createCalendarApiRouter } from '#composition/modules/calendarApi.mjs';
 import { createScreenPresenceService } from '#composition/modules/screenPresence.mjs';
 import { createPianoScreenPowerSync } from '#composition/modules/pianoScreenPowerSync.mjs';
 import { createPianoMidiWake } from '#composition/modules/pianoMidiWake.mjs';
+import { createPianoBridgeSupervisor } from '#composition/modules/pianoBridgeSupervisor.mjs';
 import { createStateGatesModule } from '#composition/modules/stateGates.mjs';
 import { KioskFrictionTracker } from '#apps/devices/services/KioskFrictionTracker.mjs';
 
@@ -6835,6 +6836,23 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     }),
     logger: adminApiLogger.child?.({ submodule: 'device-remote' }) || adminApiLogger,
   });
+
+  // Off-tablet watcher for the piano-bridge APK: relaunches it through FKB when its
+  // control plane goes dark and pushes when that does not work. The tablet cannot
+  // be trusted to restart its own bridge (2026-09-30: dead two days, unnoticed).
+  // Prod container only, so a dev backend on the same data tree neither
+  // relaunches the app nor pages anyone a second time.
+  if (isDocker && enableScheduler) {
+    createPianoBridgeSupervisor({
+      configService,
+      remoteAdmin: deviceRemoteAdministrationService,
+      haGateway: homeAutomationAdapters.haGateway,
+      householdId,
+      logger: rootLogger.child({ module: 'piano-bridge-supervisor' }),
+    });
+  } else {
+    rootLogger.info?.('piano-bridge.supervisor.skipped', { reason: 'not the prod container', isDocker, enableScheduler });
+  }
   const yamlConfigFileService = new YamlConfigFileService({
     configStore: adminConfigStore,
     logger: adminApiLogger.child?.({ submodule: 'config' }) || adminApiLogger

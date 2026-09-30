@@ -300,11 +300,65 @@ would explain a Write-Command-only failure exactly, but stopping the loop
    re-create the second GATT client at the worst possible moment.
 4. **The e2e CLI uses the loopback echo**, not a lifetime counter thresholded at zero.
 
+## 7a. The bridge process itself dies (2026-09-30)
+
+**Symptom:** the kiosk banner says "Piano connection lost. Piano did not reconnect in
+time." `:8770` refuses connections while FKB on `:2323` answers. The JamCorder's
+`/api/bluetooth/state/get` shows `"clients": []`.
+
+This is not the one-way outage. Nothing holds the BLE link, because the APK process
+is gone.
+
+**What happened.** The bridge last started 2026-09-27 05:00 local and stopped that
+evening. The last heartbeat was 2026-09-28T00:09Z, and it showed a healthy link. The
+crash log holds no `CRASH` entry, so no Java exception killed it. It stayed dead for
+two days. When the tablet rebooted on 2026-09-30, it still did not come back. A
+process Android merely killed comes back through `START_STICKY` and the boot
+receiver. Staying down through a reboot means the app was **force-stopped**, which
+cancels its alarms and blocks its broadcasts until something launches it explicitly.
+The battery-optimization allowlist held FKB but not the bridge, and Samsung's
+sleeping-apps feature force-stops apps outside it. That is the likely killer. The
+sandbox cannot read app-ops or the Samsung sleeping list, so it is not proven.
+
+Meanwhile the backend's MIDI-wake WebSocket logged 7,950
+`piano-midi-wake.ws.reconnect` warnings, and nothing read them.
+
+**Recover by hand** (clears the stopped state; the kiosk reconnects by itself):
+
+```bash
+FKB_PW=<from data/household/auth/fullykiosk-piano.yml> node cli/fkb.cli.mjs launch net.kckern.pianobridge
+curl -s http://{tablet}:8770/status      # ble.state CONNECTED, outVerified true
+```
+
+**What now restarts it without a person:**
+
+| Layer | Where | Covers |
+|---|---|---|
+| Bridge supervisor | DS backend, prod container only (`PianoBridgeSupervisorService`, config `piano.bridge_supervisor`) | Everything, force-stop included. Relaunches through FKB `startApplication` after two failed 30 s checks (backoff 1, 2, 5, 10, 30 min). Pushes if still down after 5 min, and pushes "back" when it recovers. |
+| FKB `appToRunOnStart` | FKB setting, set 2026-09-30 | Reboots, even with the backend down. FKB launches the bridge in the background when FKB starts. |
+| Keep-alive alarm (shell v31) | `ShellKeepAlive` | Kills and crash loops, every 5 min. Not force-stop. |
+| Crash restart alarm (shell v31) | `PianoBridgeService` crash handler | An uncaught exception, 3 s later. |
+| A11y bind (shell v31) | `PianoTouchService` | The system rebinding the accessibility service. |
+| Battery exemption (shell v31) | `MainActivity` requests it; `/status` → `batteryOptExempt` | Stops Samsung's sleeping apps from force-stopping it. |
+
+**Reading the supervisor:**
+
+```bash
+curl -s {env.log_store_url}/select/logsql/query \
+  -d 'query=_msg:"piano-bridge.supervisor" AND _time:24h | stats by (_msg) count() as n'
+```
+
+Events: `started`, `healthy` (every 10 min), `check-failed`, `down` (error),
+`relaunch`, `recovered`, `one-way-suspected`, `one-way` (error), `alert-sent`,
+`alert-unsent` (error: no `notify_service`), `not-started` (error: bad config). A
+gap in `healthy` means the supervisor itself is not running.
+
+---
+
 ## 8. Still open
 
-- **Nothing alerts.** `linkVerdict: ZOMBIE` sat in every heartbeat for 19 hours,
-  fully observable and entirely unobserved. Schedule
-  `node cli/piano-midi-e2e.cli.mjs` (exits non-zero when unhealthy).
+- ~~**Nothing alerts.**~~ Closed 2026-09-30 by the backend bridge supervisor (§7a). It
+  pushes when the piano is on and the echo has been missing for 10 minutes.
 - **Chromium leaks MIDI device connections.** Observed 9 listeners / 6 device
   connections to a one-device list, same device listed twice; an FKB `restartApp`
   does not free them (same PID). Fix 7.1 avoids creating them on the kiosk, but the
