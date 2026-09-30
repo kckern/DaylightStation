@@ -154,6 +154,9 @@ function useConfirmCountdown(deadline, onExpire) {
  *   half of each acknowledgement. Optional: the screen must be legible without it.
  * @param {boolean} [opts.presentationObscured] - true while a fullscreen
  *   overlay covers the launch card; a covered face must never be ACKed.
+ * @param {(bookContentId: string) => Promise<object>} [opts.resolveAdoption] -
+ *   prove the running story is this book (`resolveAdoptablePlayback`). Absent
+ *   means this screen cannot prove anything, and every adoption is declined.
  */
 export function useReadingSession({
   location = 'livingroom',
@@ -161,6 +164,7 @@ export function useReadingSession({
   onPlay = null,
   onCue = null,
   presentationObscured = false,
+  resolveAdoption = null,
 } = {}) {
   const [view, setView] = useState('idle');
   const [learner, setLearner] = useState(null);      // { id, name }
@@ -192,6 +196,12 @@ export function useReadingSession({
   const lastProgressAt = useRef(0);
   const onPlayRef = useRef(onPlay);
   onPlayRef.current = onPlay;
+  const resolveAdoptionRef = useRef(resolveAdoption);
+  resolveAdoptionRef.current = resolveAdoption;
+  // Adoption presentations already taken up. The same one can arrive twice —
+  // over the socket and again from the hydrate snapshot of a page that has
+  // just loaded — and a second pass would mount the story a second time.
+  const adoptedPresentationsRef = useRef(new Set());
   const onCueRef = useRef(onCue);
   onCueRef.current = onCue;
   const noticeTimer = useRef(null);
@@ -614,9 +624,77 @@ export function useReadingSession({
     setView((prev) => (prev === 'playing' ? (learnerRef.current ? 'open' : 'idle') : prev));
   }, []);
 
+  /**
+   * THE CHILD'S BOOK IS ALREADY PLAYING (2026-09-30). The server asks this
+   * screen to adopt it instead of painting a launch card over it. Prove it,
+   * ACK the exact presentation, and only then take the story over — nothing on
+   * screen moves until the server has committed the pick, so a failed ACK
+   * leaves the running story exactly where it was.
+   */
+  const adopt = useCallback(async (payload) => {
+    const presentation = { ...payload, location: payload.location ?? location };
+    const proof = await Promise.resolve(resolveAdoptionRef.current?.(payload.adopt.contentId)).catch(() => null);
+    if (!mounted.current) return;
+    if (!proof?.ok) {
+      const reason = proof?.reason ?? 'no-owner';
+      readingLog.session('adoption-declined', { learnerId: payload.learnerId, presentationId: payload.presentationId, reason });
+      schoolApi.declineReadingAdoption({ location: presentation.location, presentationId: payload.presentationId, reason })
+        .catch?.(() => {});
+      cue('warn');
+      say({ tone: 'warn', title: 'Something else is playing', detail: 'We can read when this is finished.' });
+      return;
+    }
+    const ack = await schoolApi.acknowledgeReadingSession({
+      location: presentation.location, sessionId: payload.sessionId, presentationId: payload.presentationId,
+      learnerId: payload.learnerId, revision: Number(payload.revision), serverEpoch: payload.serverEpoch,
+    }).catch?.(() => null);
+    if (!mounted.current) return;
+    if (!ack?.ok) {
+      readingLog.warn('adoption-ack-failed', { presentationId: payload.presentationId, status: ack?.status ?? 0 });
+      return;
+    }
+    ackedPresentationRef.current = payload.presentationId;
+    const who = { id: payload.learnerId, name: null };
+    learnerRef.current = who;
+    setLearner(who);
+    const attribution = {
+      learnerId: payload.learnerId, contentId: payload.adopt.contentId, title: null,
+      pickId: payload.adopt.pickId, sessionId: payload.sessionId,
+      studyDay: payload.adopt.studyDay ?? null, location: presentation.location,
+    };
+    attributionRef.current = attribution;
+    endedRef.current = false;
+    startedRef.current = false;
+    const shown = { contentId: attribution.contentId, title: null, image: null, pickId: attribution.pickId, sessionId: attribution.sessionId, studyDay: attribution.studyDay };
+    pickRef.current = shown;
+    setPick(shown);
+    setDeadline(null);
+    setView('playing');
+    readingLog.pick('adopted', {
+      learnerId: attribution.learnerId, contentId: attribution.contentId, pickId: attribution.pickId,
+      positionSec: proof.positionSec, trackContentId: proof.trackContentId,
+    });
+    try {
+      onPlayRef.current?.({ ...attribution, image: null, play: proof.play, adopted: true, positionSec: proof.positionSec });
+    } catch (err) {
+      readingLog.error('play-dispatch-failed', { contentId: attribution.contentId, error: err?.message ?? String(err) });
+    }
+    loadSummary(attribution.learnerId);
+    loadBook(attribution.contentId);
+  }, [cue, loadBook, loadSummary, location, say]);
+
   const handle = useCallback((payload) => {
     switch (payload?.event) {
       case 'session-present': {
+        if (payload.reason === 'adopt' && payload.adopt?.contentId) {
+          if (adoptedPresentationsRef.current.has(payload.presentationId)) return;
+          if (!rememberPresentation(payload)) return;
+          adoptedPresentationsRef.current.add(payload.presentationId);
+          // An adoption is a claim on the story, not a face to paint — the
+          // visibility-ACK effect must not also ACK it from the shelf.
+          adopt(payload);
+          return;
+        }
         if (!rememberPresentation(payload)) return;
         const who = { id: payload.learnerId, name: null };
         learnerRef.current = who;
@@ -641,6 +719,14 @@ export function useReadingSession({
         return;
       }
       case 'session-open': {
+        // The commit of a pick this screen is ALREADY playing — an adoption's
+        // own ACK echoes back as `session-open` with state `confirm`. Resetting
+        // to the shelf here would drop the story the child just claimed.
+        if (viewRef.current === 'playing' && payload.pick?.pickId
+          && payload.pick.pickId === attributionRef.current?.pickId) {
+          if (payload.sessionId) rememberPresentation(payload);
+          return;
+        }
         if (payload.sessionId && !rememberPresentation(payload)) return;
         const who = { id: payload.learnerId, name: null };
         learnerRef.current = who;
@@ -825,7 +911,7 @@ export function useReadingSession({
         // own view state, and the session's mirror of it is not an instruction.
         readingLog.screen('event-ignored', { event: payload?.event ?? null });
     }
-  }, [commitNext, commitPick, confirmMs, cue, decorateOnDeck, loadBook, loadSummary, location, rememberPresentation, say]);
+  }, [adopt, commitNext, commitPick, confirmMs, cue, decorateOnDeck, loadBook, loadSummary, location, rememberPresentation, say]);
 
   useWebSocketSubscription(readingTopic(location), handle, [handle]);
 
