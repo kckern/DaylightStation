@@ -125,6 +125,7 @@ const flags = {
     deep: args.includes('--deep'),
     lock: args.includes('--lock'),
     dryRun: args.includes('--dry-run'),
+    all: args.includes('--all'),
     section: null,
     fromYaml: null,
     ids: null,
@@ -134,6 +135,7 @@ const flags = {
 // Flags that consume the next argument as their value
 const valueFlags = {
     '--section': 'section',
+    '--path': 'path',
     '--from-yaml': 'fromYaml',
     '--ids': 'ids',
     '--ids-file': 'idsFile'
@@ -223,6 +225,36 @@ class PlexCLI {
     async getLibraries() {
         const data = await this.fetch('library/sections');
         return data?.MediaContainer?.Directory || [];
+    }
+
+    /**
+     * Ask Plex to scan a library section (or just one folder inside it).
+     * Uses axios directly so a 404 (unknown section) surfaces as an error instead of
+     * being swallowed by fetch().
+     */
+    async refreshSection(sectionKey, folderPath = null) {
+        const query = folderPath ? `?path=${encodeURIComponent(folderPath)}` : '';
+        const sep = query ? '&' : '?';
+        const url = `${this.baseUrl}/library/sections/${sectionKey}/refresh${query}${sep}X-Plex-Token=${this.token}`;
+        const res = await axios.get(url, { headers: { Accept: 'application/json' } });
+        return res.status;
+    }
+
+    /**
+     * The library section whose Location is the longest prefix of `folderPath`, or null.
+     */
+    async sectionForPath(folderPath) {
+        let best = null;
+        for (const lib of await this.getLibraries()) {
+            for (const loc of lib.Location || []) {
+                const root = String(loc.path).replace(/\/+$/, '');
+                const inside = folderPath === root || folderPath.startsWith(`${root}/`);
+                if (inside && (!best || root.length > best.len)) {
+                    best = { key: String(lib.key), title: lib.title, len: root.length };
+                }
+            }
+        }
+        return best;
     }
 
     /**
@@ -786,6 +818,39 @@ async function cmdVerify(plex, ids) {
     console.log();
 }
 
+async function cmdRefresh(plex) {
+    const targets = [];
+    if (flags.path) {
+        const hit = await plex.sectionForPath(flags.path);
+        if (!hit) throw new Error(`no library contains path ${flags.path}`);
+        targets.push({ section: hit.key, title: hit.title, path: flags.path });
+    } else if (flags.section) {
+        targets.push({ section: String(flags.section), path: null });
+    } else if (flags.all) {
+        for (const lib of await plex.getLibraries()) {
+            targets.push({ section: String(lib.key), title: lib.title, path: null });
+        }
+    } else {
+        throw new Error('refresh needs --section <id>, --path <folder>, or --all');
+    }
+
+    if (!flags.dryRun) {
+        for (const t of targets) await plex.refreshSection(t.section, t.path);
+    }
+
+    if (flags.json) {
+        console.log(JSON.stringify({
+            refreshed: targets.map(({ section, path: p }) => ({ section, path: p })),
+            dryRun: flags.dryRun
+        }, null, 2));
+        return;
+    }
+    for (const t of targets) {
+        const verb = flags.dryRun ? '[dry-run] would refresh' : 'refresh requested';
+        console.log(`${verb}: section ${t.section}${t.title ? ` (${t.title})` : ''}${t.path ? ` path ${t.path}` : ''}`);
+    }
+}
+
 /** Build a manifest-shaped entry from the CLI flags (scalars as-is, tag lists comma-split). */
 function entryFromFlags() {
     const entry = {};
@@ -1284,6 +1349,8 @@ Commands:
   search <query>           Search library by title (shows/movies)
   info <id>                Show metadata for a Plex ID
   verify <id> [...]        Check if ID(s) exist in Plex
+  refresh                  Scan a section or folder (--section <id> | --path <folder> | --all)
+  refresh                  Scan a section or folder (--section <id> | --path <folder> | --all)
   set <id>                 Update metadata for a single item
   set-from-yaml <file>     Bulk-update metadata from a YAML manifest
   collection <subcommand>  Manage collections (see below)
@@ -1392,6 +1459,10 @@ async function main() {
             case 'verify':
             case 'v':
                 await cmdVerify(plex, commandArgs);
+                break;
+
+            case 'refresh':
+                await cmdRefresh(plex);
                 break;
 
             case 'set':
