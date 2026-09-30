@@ -228,3 +228,81 @@ describe('useMealMoves', () => {
     } finally { vi.useRealTimers(); }
   });
 });
+
+
+describe('useMealMoves — moving to another day', () => {
+  const eggs = { uuid: 'eggs', name: 'Eggs', date: '2026-09-28', mealTime: 'morning', version: 1 };
+  const toast = { uuid: 'toast', name: 'Toast', date: '2026-09-28', mealTime: 'morning', version: 1 };
+  beforeEach(() => { apiMock.mockReset(); apiMock.mockImplementation(async () => ({ versions: {} })); });
+
+  it('hides the rows at once, PUTs the new date one by one, and reloads', async () => {
+    const reload = vi.fn();
+    const { result } = renderHook(({ day }) => useMealMoves(day), { initialProps: { day: { items: [eggs, toast], reload } } });
+    await act(async () => { await result.current.moveToDay([eggs, toast], '2020-01-15', 'morning'); });
+    const puts = apiMock.mock.calls.filter(call => call[2] === 'PUT');
+    expect(puts.map(call => [call[0], call[1].date])).toEqual([
+      ['api/v1/health/nutrilist/eggs', '2020-01-15'], ['api/v1/health/nutrilist/toast', '2020-01-15'],
+    ]);
+    expect(result.current.items).toEqual([]);
+    expect(reload).toHaveBeenCalled();
+    expect(result.current.undo.label).toBe('Moved 2 foods to Wed, Jan 15');
+  });
+
+  it('a row that is already on that day is left alone', async () => {
+    const { result } = renderHook(() => useMealMoves({ items: [eggs], reload: vi.fn() }));
+    await act(async () => { await result.current.moveToDay([eggs], '2026-09-28', 'morning'); });
+    expect(apiMock).not.toHaveBeenCalled();
+  });
+
+  it('Undo sends the rows back to the day they came from', async () => {
+    const { result } = renderHook(() => useMealMoves({ items: [eggs], reload: vi.fn() }));
+    await act(async () => { await result.current.moveToDay([eggs], '2020-01-15', 'morning'); });
+    apiMock.mockClear();
+    await act(async () => { await result.current.undo.run(); });
+    expect(apiMock.mock.calls.filter(call => call[2] === 'PUT').map(call => call[1].date)).toEqual(['2026-09-28']);
+    expect(result.current.undo).toBeNull();
+  });
+
+  it('a failed PUT brings the row back and says so', async () => {
+    apiMock.mockRejectedValue(new Error('boom'));
+    const { result } = renderHook(() => useMealMoves({ items: [eggs], reload: vi.fn() }));
+    await act(async () => { await result.current.moveToDay([eggs], '2020-01-15', 'morning'); });
+    expect(result.current.items).toEqual([eggs]);
+    expect(result.current.error).toMatch(/Couldn't move Eggs/);
+  });
+});
+
+
+describe('dragging a row onto a day', () => {
+  const byBucket = new Map([
+    ['morning', [{ uuid: 'eggs', name: 'Eggs', calories: 140, mealTime: 'morning', grams: 100, date: '2020-01-15' }]],
+    ['afternoon', []], ['evening', []], ['night', []], [null, []],
+  ]);
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+  it('the day dock exists only during a drag, and a drop on a chip moves the row to that day', async () => {
+    const onMoveToDay = vi.fn();
+    render(<LogTable byBucket={byBucket} date="2020-01-15" onRowTap={() => {}} onMoveEntry={() => {}} onMoveToDay={onMoveToDay} />, { wrapper });
+    layOutSections();
+    expect(screen.queryByLabelText('Drop on a day to move it')).toBeNull();
+    // jsdom has no layout: the chips get a box as they mount.
+    const real = Element.prototype.getBoundingClientRect;
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function box() {
+      if (this.classList?.contains('health-day-dock__chip') && this.textContent === 'Yesterday') {
+        return { top: 300, left: 900, right: 1000, bottom: 340, width: 100, height: 40, x: 900, y: 300, toJSON() {} };
+      }
+      return real.call(this);
+    });
+    pointer('pointerDown', screen.getByText('Eggs'), 20, 20);
+    pointer('pointerMove', document, 30, 40);
+    await act(async () => { pointer('pointerMove', document, 950, 320); });
+    expect(screen.getByLabelText('Drop on a day to move it')).toBeTruthy();
+    expect(screen.getByText('Yesterday').className).toContain('health-day-dock__chip--over');
+    await act(async () => { pointer('pointerUp', document, 950, 320); });
+    expect(onMoveToDay).toHaveBeenCalledTimes(1);
+    const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+    const iso = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+    expect(onMoveToDay).toHaveBeenCalledWith([expect.objectContaining({ uuid: 'eggs' })], iso, 'morning');
+    expect(screen.queryByLabelText('Drop on a day to move it')).toBeNull();
+  });
+});

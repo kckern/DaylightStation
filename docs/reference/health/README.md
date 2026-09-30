@@ -172,49 +172,83 @@ changing `targetDate` or `targetWeightLbs` recolours past days.
 `backend/src/3_applications/health/BudgetService.mjs` is the only calculation owner.
 It serves `/budget`, `/budget/range`, and the budget portion of `/day`. Today reads
 one `/day?date=` snapshot containing entries, their ledger revision, and a budget
-computed from those exact entries. A budget setup error does not hide the food log. `EquationStrip.jsx` is proof by absence: it destructures `budget.budget`,
-`budget.food`, `budget.exercise`, `budget.maintenance`, `budget.remaining`, `budget.status`,
-`budget.stale` and renders them verbatim — as one bar, not a row of cards.
+computed from those exact entries. A budget setup error does not hide the food log.
 
-**The bar is a labelled ruler** (`RulerScale` in `EquationStrip.jsx`, geometry in the
-pure `today/budgetGeometry.js`, pinned by `budgetGeometry.test.js`):
+### The Today budget card — one job at a time
 
-- **Ruler of food eaten, from 0.** `right = max(maintenance + exercise, food,
-  top + exercise, floor) × 1.12`. Every block and label sits at the value it
-  names. The server compares the top and break-even against NET; on a food scale
-  that is the same comparison with exercise added to both sides, so exercise
-  **raises the ceiling** (`top + exercise`) and break-even
-  (`maintenance + exercise`) instead of moving anything left of zero.
-- **Ticks** every 250 kcal, numbered at 1,000s under 600 px of track and at 500s
-  above; none within 12 px of a named mark (floor, top, ceiling, break-even).
-- **Goal band** from `floor` to the ceiling, labelled "Goal 1,200–1,791" (the
-  configured floor and top) above the track at its left edge. With floor = top
-  and no exercise it is one Goal line. **Break even** is a line labelled below
-  with its food-scale value (`maintenance + exercise`); it keeps only its number
-  when it sits within 40 px of the ceiling.
-- **Exercise credit** is a hatched block from `top` to the ceiling, labelled
-  "+N" when ≥ 36 px and the eaten label would not cover it. It is drawn above
-  the food, so food eaten into the credit shows through the hatch.
-- **Food block** from 0, length = food. "N eaten" is its own top-layer pill (not
-  a child of the block, so no band edge, hatch or break-even line cuts it): in
-  the zone colour, ending at the frontier, when the block is ≥ 70 px; otherwise
-  on the track just past the frontier. Its right edge is **the one frontier**,
-  and its colour is the zone:
-  info (incomplete, still working toward the floor), success (in range or
-  declared), warning (past the ceiling), danger (past break-even).
-- **Remaining run.** A dotted run from the frontier to the mark the headline
-  measures against: to the ceiling while under or in range, from the ceiling
-  when over, from break-even when past it. None when the day is declared. Its
-  length in kcal **is** `remaining`: `ceiling − food = top − net`.
+Design: `docs/_wip/plans/2026-09-25-health-budget-card-jobs.md`. The card is read
+in four situations, and its headline answers whichever one applies
+(`today/budgetStory.js`, pinned by `budgetStory.test.js`):
 
-A budget without `range`/`zone` (an older server) still gets the previous two-mark
-bar. The terms line states the real net (with a minus sign when exercise exceeds
-food), and the deficit is counted from it. The headline comes from `headlineFor` in the shared zone rule and names the segment its
-number measures ("N kcal left" — to the ceiling, blue while still under the floor — "N kcal over", "N kcal past break
-even", or "Fasted"/"Logging done"); the week strip's cell labels use the same words.
-The line under it reads "1,603
-eaten · 231 burned · 1,372 net · 919 deficit" (deficit/surplus against break-even),
-so no term is ever printed as a negative. `maintenance` comes from
+| Job | When it leads | Headline / sub-line |
+|---|---|---|
+| **Trust** | live day, `zone: incomplete` (under the floor, not closed) | "991 kcal free" / "400 under the 1,200 floor · prices assume the log is complete"; the ruler's tiers are dimmed |
+| **Afford** | live day, within the plan | "321 kcal free" / "then 311 workout · 500 deficit · 1,132 to break even"; eating into the workout: "202 kcal of workout left" / "used 109 of 311 · …" |
+| **Contain** | live day, past the ceiling | "302 kcal to break even" / "198 over plan"; past it: "198 kcal past break even" |
+| **Judge** | a past date, or today closed as Done/Fasted | "On plan" / "workout banked (311) · ended 1,132 under break even"; "ate back N of M workout"; "Missed plan by N"; "Surplus of N"; "Fasted"; an unclosed past day under the floor reads "Incomplete log … no verdict" |
+
+A skipped meal makes a day trustworthy (`zone: declared`) but does **not** finish it.
+Trust still leads with the free number, because at breakfast the Afford job
+is the one being asked; the dimming and the sub-line carry the doubt.
+While a portion is dragged, the sub-line prices the change instead:
+"this costs 321 free + 109 workout" (`priceOf`), or "gives back 200".
+The card logs `budget-card.job` (debug) once per change of leading job.
+
+**One vocabulary** across bar, sub-line and drag price: *free*, *workout*,
+*deficit*, *to break even*, *over plan*.
+
+**The tiers** (`shared/contracts/health/budgetTiers.mjs`, `priceLadder`) are what
+is left, on the FOOD scale:
+
+```
+free     0 → top                          costs nothing
+workout  top → top + exercise (ceiling)   costs the workout's benefit
+deficit  ceiling → maintenance + exercise costs the day's progress
+```
+
+Every line is capped at break even (a floor above maintenance pushes `top` past
+it; `zoneFor` tests break even first), zero-width tiers are dropped, and the
+workout's *room* (`ceiling − top`) is what the wording uses, not the raw
+exercise. `priceLadder`'s region (`free`/`workout`/`over`/`gain`) agrees with
+`zoneFor` — a 1-kcal sweep test pins it, including the capped cases. The zone
+contract itself is unchanged: `reportCaption` (nutribot), `CoachingMessageBuilder`,
+the week strip, the month block and the health-coach tool still read `zone`,
+`remaining` and `headlineFor`.
+
+The ranged path of `EquationStrip.jsx` reads `range`, `zone`, `food`, `exercise`,
+`maintenance` and `declared`. Its terms line is only "1,470 eaten · 311 burned":
+net and the deficit are tiers on the ruler now.
+
+**The ruler** (`RulerScale` in `EquationStrip.jsx`, geometry in the pure
+`today/budgetGeometry.js`, pinned by `budgetGeometry.test.js`):
+
+- **Food eaten, from 0.** `right = max(break even, food, ceiling) × 1.12`. Every
+  block and mark sits at the value it names.
+- **Food block** 0 → food, coloured by zone: info (incomplete), success (in range
+  or declared), warning (over), danger (past break even). "N eaten" is its own
+  top-layer pill, inside the block from 70 px, else just past the frontier.
+- **Tiers** ahead of the frontier: free (success wash), workout (the credit
+  hatch), deficit (warning wash while live; success wash once the day is
+  finished — the unspent deficit is the win, like the legacy green "N deficit").
+  A spent tier is not drawn; a part-spent one starts at the frontier. Labels read
+  "321 free" from 64 px, "321" from 30 px, nothing below or where the eaten pill
+  covers them. A finished day names them *unused* / *banked* / *deficit*.
+- **Marks:** the goal at `top`, labelled above "Goal 1,791 + 311" on exercise days
+  (the workout room; "Goal · break even N" when capped); a dashed **ceiling**
+  line at top + workout room, which "over plan" counts from; **break even**
+  below, labelled with its food-scale value.
+- **Ticks** every 250 kcal, numbered at 1,000s under 600 px of track and 500s
+  above; none within 12 px of a named line.
+
+While the summary (`.health-equation`, a size container) is under 761 px wide, the
+head stacks: headline, sub-line, then the terms. From 761 px it is a
+grid: the headline spans two rows on the left, the sub-line and the terms stack
+beside it, and the day-close pill takes a third column.
+
+A budget without `range`/`zone` (an older server) still gets the legacy two-mark
+bar of NET calories, its two-way headline ("N kcal left" / "N kcal over goal"),
+and a terms line that states net and the deficit/surplus against break even, so
+no term is ever printed as a negative. `maintenance` comes from
 `computeDailyEnergy` in `BudgetMath.mjs`, which `/budget`, `/budget/range` and `/day`
 all carry; a response without it draws only the goal mark. Protein, carbs and fat sit beside
 the bar (under it below ~1050px of column): grams, with a thin bar against
@@ -404,6 +438,24 @@ not the current hour. The resolved bucket is stored on each entry.
   highlights briefly, and offers one Undo that restores every row it moved, using the
   versions the move returned. A failure part-way keeps what moved and puts the rest
   back. Logs: `entry.move`, `meal.move`, `*.undo`, `entry.move.failed`.
+
+### Moving food to another day
+
+Same rows, different `date` (the meal is kept; a dish's PUT cascades `date` to its
+ingredients). Three routes, one command (`useMealMoves().moveToDay`, `mealDrag.jsx`):
+
+- **Drag:** while a food or a meal header is being dragged, the week ending today
+  docks at the right edge (`DayDropDock`, `MoveDayControl.jsx`; fixed-position, only
+  exists during a drag, so it cannot shift the page). Drop on a day chip.
+- **Select foods:** tick foods, then "Move N to another day…" (recent days, or a date
+  picker for anything older). A dish moves whole, so it counts only when every one of
+  its ingredients is ticked; a partly-ticked dish is skipped with a note.
+- **Meal ⋯ menu:** "Move all to day" moves the whole meal.
+
+The rows leave the viewed day at once (`gone`), each PUT follows, a failure brings back
+the rows it did not reach, and one Undo sends the moved rows home. Logs:
+`entry.move-day`, `entry.move-day.undo`, `entry.move-day.failed`. Day choices live in
+`moveDays.js`.
 
 ### Calorie bars under each kcal figure
 
@@ -878,6 +930,14 @@ land them mid-list. Both come from `today/addFlow.js`, which matches the add res
 row ids (`item.uuid` for a quick-add, `entryIds` for a sentence) against the day's rows and
 logs `add.flow` (`submitToCommittedMs`, `committedToVisibleMs`).
 
+**An inline pick is optimistic.** The row appears and the field clears at once, with no
+spinner: the client builds a provisional row from the suggestion (`provisionalFoodRow`,
+id prefixed `pending-`) and puts it on the day, then saves behind it. The server's row
+replaces it (`settleProvisionalRow`); a failed save removes it, restores the typed text
+and shows the error. `onDone` (the day reload) waits for the save, because a reload that
+beat it would drop a row the server has not seen yet. Logs: `quickadd.optimistic`,
+`quickadd.done` (`saveMs`), `quickadd.failed`. The sheet surface still waits.
+
 `pick(entry)` is the fast path: **one** request, `POST /nutrition/catalog/quickadd
 { catalogEntryId, mealTime }`, then done — no pending state, no confirmation step. The
 meal travels with the quick-add; there is no follow-up `PUT` to move the row afterwards.
@@ -917,6 +977,16 @@ note, or a barcode scan — goes through the **same unified endpoint**,
 which is the web transport onto the pre-existing Telegram nutrition-bot pipeline
 (`WebNutribotAdapter` → `NutribotInputRouter.handleText/handleImage/handleVoice/handleUpc`
 → `LogFoodFromText`/`LogFoodFromImage`/`LogFoodFromVoice`/`LogFoodFromUPC`).
+
+**Which day a sentence or a voice note lands on.** The viewed day (`date` on the request) is
+the answer unless the person NAMES a day. The prompt's "today" is the viewed day (the live
+clock when that is today; a fixed 12:00 PM only for a past day), and the model's `date` is
+honoured only when it also returns `dateExplicit: true` ("yesterday", "last night", "on
+Wednesday"). A meal word or a time of day is not a day: before this rule a pinned noon
+clock made "for dinner I had…" a future meal, and the model filed it under the day
+before (2026-09-28, spoken at 23:40 while viewing today). The same flag rule applies with
+no viewed day (Telegram): the wall clock decides. `LogFoodFromText.mjs`,
+`usecases/viewedDate.test.mjs`.
 
 An optional `bucket` field on that same request declares the meal the capture was
 launched from — a meal section's own header trigger sends that meal's id, the

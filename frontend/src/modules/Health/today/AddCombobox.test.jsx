@@ -597,3 +597,47 @@ describe('AddCombobox — popup placement', () => {
     } finally { rect.mockRestore(); offset.mockRestore(); }
   });
 });
+
+
+// 2026-09-28: a picked protein shake spun for ~1.6 s before it showed. An inline
+// pick now shows its row and clears the field first; the save runs behind it.
+describe('AddCombobox — an inline pick is optimistic', () => {
+  beforeEach(() => { apiMock.mockReset(); resetAddFlow(); });
+  const DAY = '2026-09-20';
+  const SHAKE = { items: [{ id: 'shake', name: 'Protein Shake', grams: 325, unit: 'ml', amount: 325, nutrients: { calories: 160, protein: 30 } }] };
+  const dayItems = () => peekApiResource(healthDayPath(DAY))?.items || [];
+
+  async function pickShake({ save }) {
+    primeApiResource(healthDayPath(DAY), { date: DAY, items: [{ uuid: 'old', date: DAY }] });
+    apiMock.mockImplementation(async (path) => (path.includes('quickadd') ? save() : SUGGEST_SHAKE()));
+    const onDone = vi.fn();
+    r(<AddCombobox inline label="Lunch" bucketId="afternoon" date={DAY} onDone={onDone} onCancel={() => {}} />);
+    const input = screen.getByRole('combobox');
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'shake' } });
+    await waitFor(() => screen.getByText('Protein Shake'));
+    fireEvent.click(screen.getByText('Protein Shake'));
+    return { onDone, input };
+  }
+  const SUGGEST_SHAKE = () => SHAKE;
+
+  it('the row is on the day and the field is clear while the save is still in flight', async () => {
+    let finish; const saving = new Promise(resolve => { finish = resolve; });
+    const { onDone, input } = await pickShake({ save: () => saving });
+    expect(dayItems().map(row => row.name)).toContain('Protein Shake');
+    expect(dayItems().find(row => row.name === 'Protein Shake')).toMatchObject({ calories: 160, protein: 30, date: DAY, mealTime: 'afternoon' });
+    expect(input.value).toBe('');
+    expect(input.getAttribute('aria-busy')).toBeNull();
+    expect(onDone).not.toHaveBeenCalled(); // a reload now would wipe a row the server has not seen
+    await act(async () => { finish({ item: { uuid: 'real-1', name: 'Protein Shake', date: DAY } }); await saving; });
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(dayItems().map(row => row.uuid)).toEqual(['old', 'real-1']); // provisional swapped for the server's row
+  });
+
+  it('a failed save takes the row back out, restores the typed text and says so', async () => {
+    const { onDone, input } = await pickShake({ save: async () => { throw new Error('offline'); } });
+    await waitFor(() => expect(input.value).toBe('shake'));
+    expect(dayItems().map(row => row.uuid)).toEqual(['old']);
+    expect(onDone).not.toHaveBeenCalled();
+  });
+});

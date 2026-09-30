@@ -68,6 +68,39 @@ export function showCommittedFoodRows(rows) {
   }
 }
 
+/**
+ * A food shown before the server has confirmed it. `provisionalFoodRow` builds
+ * the row from what the suggestion already carries; `settleProvisionalRow`
+ * swaps it for the server's row (or, with none, takes it back out); a day
+ * reload that lands in between simply drops it, and the swap re-adds the real
+ * row. Provisional ids never reach the server: the row is untappable-by-id
+ * only for the second or so the save takes.
+ */
+export const PROVISIONAL_PREFIX = 'pending-';
+export function provisionalFoodRow(entry, { date, mealTime, at = Date.now() }) {
+  const nutrients = entry.nutrients || entry;
+  const number = value => (Number.isFinite(value) ? value : 0);
+  return {
+    uuid: `${PROVISIONAL_PREFIX}${crypto.randomUUID()}`, foodId: entry.id, item: entry.name, name: entry.name, kind: 'item', parentId: null,
+    calories: number(nutrients.calories), protein: number(nutrients.protein), carbs: number(nutrients.carbs), fat: number(nutrients.fat),
+    grams: entry.grams ?? null, unit: entry.unit || (entry.grams > 0 ? 'g' : 'serving'), amount: entry.amount ?? entry.grams ?? 1,
+    color: 'yellow', icon: entry.icon ?? null, photoRef: entry.photoRef ?? null, date, mealTime, settled: true, version: 1, provisional: true, createdAt: at,
+  };
+}
+export const isProvisionalRow = row => String(row?.uuid ?? row?.id ?? '').startsWith(PROVISIONAL_PREFIX);
+
+export function settleProvisionalRow(provisional, saved = null) {
+  const gone = String(provisional.uuid);
+  const shown = patchApiResource(healthDayPath(provisional.date), day => {
+    if (!Array.isArray(day?.items)) return undefined;
+    const items = day.items.filter(row => String(row.uuid ?? row.id) !== gone);
+    const savedId = saved ? String(saved.uuid ?? saved.id) : null;
+    if (saved && !items.some(row => String(row.uuid ?? row.id) === savedId)) items.push(saved);
+    return { ...day, items };
+  });
+  logger().info(saved ? 'day.rows.settled' : 'day.rows.retracted', { date: provisional.date, shown });
+}
+
 // A meal's zero-keystroke shortlist in the add row: this bucket's regulars
 // (half most-used, half most-recent — FoodCatalogService.suggest), not a
 // browse surface. Sixteen compact rows: the list is prefetched with the day

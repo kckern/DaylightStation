@@ -476,7 +476,9 @@ export class LogFoodFromText {
     const live = getCurrentTimeDetails(timezone);
     // When pinning the prompt to a specific "as of" date (revision flow), synthesize
     // the dayOfWeek/timeAMPM context from that date instead of the live wall clock.
-    const { today, dayOfWeek, timeAMPM, unix, time } = asOfDate
+    // Viewing TODAY is not a pin: the wall clock is the truth, and a fixed noon
+    // makes "for dinner…" a future meal the model then files under yesterday.
+    const { today, dayOfWeek, timeAMPM, unix, time } = asOfDate && asOfDate !== live.today
       ? pinnedTimeDetails(asOfDate, timezone)
       : live;
 
@@ -490,7 +492,7 @@ export class LogFoodFromText {
 4. Assign a noom_color: "green" (low cal density), "yellow" (moderate), or "orange" (high cal density)
 5. Select an equivalent food icon from this list: ${this.#foodIconsString}. Use "default" if none depicts the actual food; similar colors or ingredients are not an equivalent.
 6. Determine the date - today is ${dayOfWeek}, ${today} at ${timeAMPM} (TZ: ${timezone}, unix: ${unix}).
-   If user mentions "yesterday", "last night", "on wednesday", etc., calculate the actual date.
+   Set "dateExplicit" to true and calculate the actual date ONLY when the user names a day ("yesterday", "last night", "on wednesday", "the 3rd"). A meal word ("for dinner"), a time of day, or the current time is NOT a day: otherwise omit "dateExplicit" and put today's date in "date".
 7. Use Title Case for all food names (e.g., "Grilled Chicken Breast", "Mashed Potatoes")
 7b. The "name" is the FOOD, and only the food. The PORTION lives in "grams"/"quantity"/"unit" and must never appear in the name — no counts, no container, no size, no parenthetical: write "Premier Protein Shake", never "Premier Protein Shake (Bottle)", "2 Premier Protein Shakes", "Premier Protein Shake (335ml)" or "Almonds (Handful)". The same food eaten in a different amount must come back with the SAME name, because that name is the key the food is remembered under.
 8. Prefer grams (g) or ml as the unit; only use other units (cup, tbsp, oz, piece) if the user explicitly says so.
@@ -501,6 +503,7 @@ export class LogFoodFromText {
 Respond in JSON format:
 {
   "date": "YYYY-MM-DD",
+  "dateExplicit": false,
   "time": "${time}",
   "mealTimeExplicit": false,
   "items": [
@@ -524,6 +527,7 @@ Respond in JSON format:
   ]
 }
 ("dish" is OPTIONAL — omit it for a standalone item; include it only on items that are part of a named composite.)
+("dateExplicit" is OPTIONAL — set true only when the user names a day other than today; omit or use false otherwise.)
 ("mealTimeExplicit" is OPTIONAL — set true only when a meal is explicitly named or clearly implied; omit or use false otherwise.)
 
 Be conservative with estimates. Use USDA values when possible.
@@ -598,7 +602,10 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
 
         return {
           items: groupParsedItems(items, { makeId: uuidv4 }),
-          date: data.date || today,
+          // The model's date counts only when the person NAMED a day. Left to
+          // volunteer one it reasons from the clock ("dinner hasn't happened
+          // yet, so last night") and files the meal a day early.
+          date: data.dateExplicit === true && /^\d{4}-\d{2}-\d{2}$/.test(data.date || '') ? data.date : today,
           time: data.time || null,
           mealTimeExplicit: data.mealTimeExplicit === true,
         };
