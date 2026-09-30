@@ -55,10 +55,39 @@ describe('LogFoodFromText — the viewed day anchors the parse', () => {
     expect(saved[0].meal.date).toBe(VIEWED);
   });
 
-  it('a date the model computed FROM the anchor still wins — the anchor is not an override', async () => {
-    const { useCase, saved } = makeText({ aiJson: { date: '2026-09-02', time: 'evening', items: [ITEM] } });
+  it('a date the person NAMED, computed FROM the anchor, wins — the anchor is not an override', async () => {
+    const { useCase, saved } = makeText({ aiJson: { date: '2026-09-02', dateExplicit: true, time: 'evening', items: [ITEM] } });
     await useCase.execute({ userId: 'kc', conversationId: 'web:kc', text: 'a burger yesterday', asOfDate: VIEWED });
     expect(saved[0].meal.date).toBe('2026-09-02');
+  });
+
+  // The 2026-09-28 defect: "For dinner I had…" spoken at 23:40 while viewing
+  // today. The prompt's clock was pinned to 12:00 PM, dinner had not happened
+  // yet, and the model answered with yesterday. A meal word is not a day word.
+  it('a date the model volunteered without the person naming a day is ignored', async () => {
+    const { useCase, saved } = makeText({ aiJson: { date: '2026-09-02', time: 'evening', items: [ITEM] } });
+    await useCase.execute({ userId: 'kc', conversationId: 'web:kc', text: 'for dinner I had a burger', asOfDate: VIEWED });
+    expect(saved[0].meal.date).toBe(VIEWED);
+  });
+
+  it('a volunteered date is ignored with no viewed day too — the wall clock decides', async () => {
+    const { useCase, saved } = makeText({ aiJson: { date: '2001-01-01', time: 'evening', items: [ITEM] } });
+    await useCase.execute({ userId: 'kc', conversationId: 'web:kc', text: 'for dinner I had a burger' });
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+    expect(saved[0].meal.date).toBe(today);
+  });
+
+  it('viewing TODAY reads the live clock, not a fixed noon', async () => {
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+    const { useCase, prompts } = makeText({ aiJson: { items: [ITEM] } });
+    await useCase.execute({ userId: 'kc', conversationId: 'web:kc', text: 'for dinner a burger', asOfDate: today });
+    expect(prompts[0][0].content).not.toContain('at 12:00 PM');
+  });
+
+  it('the prompt tells the model that only a NAMED day sets the date', async () => {
+    const { useCase, prompts } = makeText({ aiJson: { items: [ITEM] } });
+    await useCase.execute({ userId: 'kc', conversationId: 'web:kc', text: 'a burger', asOfDate: VIEWED });
+    expect(prompts[0][0].content).toContain('dateExplicit');
   });
 });
 
