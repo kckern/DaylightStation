@@ -7,8 +7,8 @@ const MAX_BLUR_PX = 4;        // cap to prevent over-softening
 const BLUR_FACTOR_AGGRESSIVE = 2.0;
 const MAX_BLUR_PX_AGGRESSIVE = 6;
 
-// CRT threshold
-const CRT_MAX_HEIGHT = 480;
+// CRT threshold: only sources strictly shorter than this get the CRT; 480p itself is left clean.
+const CRT_BELOW_HEIGHT = 480;
 
 // Timing
 const DEFAULT_STABILIZE_MS = 1500;
@@ -167,7 +167,7 @@ export function useUpscaleEffects({
     const ratio = effectiveWidth / srcDimensions.width;
 
     const isUpscaled = ratio > 1.05; // small threshold to avoid floating point issues
-    const isLowRes = srcDimensions.height <= CRT_MAX_HEIGHT;
+    const isLowRes = srcDimensions.height < CRT_BELOW_HEIGHT;
 
     const blurFactor = presetConfig.aggressive ? BLUR_FACTOR_AGGRESSIVE : BLUR_FACTOR;
     const maxBlur = presetConfig.aggressive ? MAX_BLUR_PX_AGGRESSIVE : MAX_BLUR_PX;
