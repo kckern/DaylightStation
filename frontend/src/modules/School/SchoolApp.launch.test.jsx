@@ -663,6 +663,7 @@ it('Portal scan waits for keypad digits, hands returned grant to the shelf, and 
     await act(async () => h.byTopic.school({ type: 'school.book-scan', screenId: 'portal', intentId: midEntry.id }));
     expect(screen.getByText('Mid entry book was scanned')).toBeInTheDocument();
     expect(schoolApi.bookScans.claim.mock.calls.length).toBe(claimsBefore);
+    schoolApi.bookScans.dismiss.mockResolvedValue({ ok: true });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Dismiss' })); });
     // Asking for a barcode: the scan is this child's.
     await act(async () => bookShelfProps.mock.calls.at(-1)[0].onScanReadyChange(true));
