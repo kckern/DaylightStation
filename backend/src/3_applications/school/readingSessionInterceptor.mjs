@@ -105,6 +105,18 @@ export class ReadingSessionInterceptor {
     const { learnerId } = session;
 
     if (['starting', 'presenting', 'returning'].includes(session.state)) {
+      // THE FIRST CARD'S BOOK IS HELD, NOT REFUSED (2026-09-30). While the
+      // initial launch card is still being delivered — a cold TV can take the
+      // better part of a minute — the book is the second half of the child's
+      // one act. `holdBook` decides whether this is that moment; the ACK that
+      // proves the card was seen then applies it as an ordinary pick.
+      const held = this.#sessions.holdBook?.(location, {
+        pickId: this.#nextPickId(), learnerId, contentId, target: response.target ?? null,
+        studyDay: this.#storyTime?.studyDay?.() ?? null, at: this.#clock().toISOString(),
+      }) ?? null;
+      if (held) {
+        return { claimed: true, by: CLAIMED_BY, held: true, learnerId, contentId };
+      }
       this.#broadcast(location, {
         event: 'book-refused', reason: 'launch-card-not-ready', learnerId, location, contentId,
         at: this.#clock().toISOString(),

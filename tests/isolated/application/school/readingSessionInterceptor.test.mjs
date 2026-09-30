@@ -857,3 +857,35 @@ describe('ReadingSessionInterceptor — a reopen asks for the screen back', () =
     expect(logger.lines.filter((l) => l.event === 'school.reading.reopen-wake')).toEqual([]);
   });
 });
+
+describe('ReadingSessionInterceptor — a book that beats the launch card (2026-09-30)', () => {
+  it('HOLDS a book tapped while the initial card is being delivered — claimed, not refused', async () => {
+    const { interceptor, sessions, sent } = build();
+    const reserved = sessions.open({ location: 'livingroom', learnerId: 'user_5', target: 'livingroom-tv', state: 'starting' });
+    sessions.activate('livingroom', reserved.sessionId);
+
+    const claim = await interceptor.claim(bookTap({ expression: { action: 'play-next', contentId: 'plex:674736', options: {} } }));
+
+    expect(claim).toMatchObject({ claimed: true, held: true, learnerId: 'user_5', contentId: 'plex:674736' });
+    expect(claim.refused).toBeUndefined();
+    expect(sessions.current('livingroom').heldPick).toMatchObject({ contentId: 'plex:674736', learnerId: 'user_5' });
+    expect(sessions.current('livingroom').heldPick.pickId).toEqual(expect.any(String));
+    expect(sent.some((m) => m.payload.event === 'book-refused')).toBe(false);
+  });
+
+  it('still refuses launch-card-not-ready while a RETURN is pending', async () => {
+    const { interceptor, sessions } = build();
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.beginReturn('livingroom');
+    const claim = await interceptor.claim(bookTap());
+    expect(claim).toMatchObject({ claimed: true, refused: true, reason: 'launch-card-not-ready' });
+  });
+
+  it('still refuses launch-card-not-ready while a sibling SWITCH is pending', async () => {
+    const { interceptor, sessions } = build();
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.beginSwitch({ location: 'livingroom', learnerId: 'user_3' });
+    const claim = await interceptor.claim(bookTap());
+    expect(claim).toMatchObject({ claimed: true, refused: true, reason: 'launch-card-not-ready' });
+  });
+});
