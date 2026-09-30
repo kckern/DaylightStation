@@ -34,6 +34,7 @@ function build({
   alertAdult = null,
   ackTimeoutMs = 8_000,
   maxDeliveryAttempts = 3,
+  initialDeliveryBudgetMs = undefined,
 } = {}) {
   const sent = [];
   // ONE bus, shared by the store and the handler, exactly as composition wires
@@ -49,6 +50,7 @@ function build({
     alertAdult,
     ackTimeoutMs,
     maxDeliveryAttempts,
+    ...(initialDeliveryBudgetMs === undefined ? {} : { initialDeliveryBudgetMs }),
     eventBus: bus,
     logger,
   });
@@ -180,7 +182,7 @@ describe('reading-session — an ordinary card tap opens a session', () => {
     };
     const alertAdult = vi.fn(async () => {});
     const logger = { ...silent, info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-    const r = build({ scheduler, logger, alertAdult, maxDeliveryAttempts: 3 });
+    const r = build({ scheduler, logger, alertAdult, maxDeliveryAttempts: 3, initialDeliveryBudgetMs: 0 });
 
     await r.handler(tap());
 
@@ -343,5 +345,67 @@ describe('reading-session — a card tapped while unrelated content plays (D2)',
       logger: { info() { throw new Error('log transport down'); }, warn() { throw new Error('log transport down'); } },
     });
     await expect(handler(tap())).resolves.toMatchObject({ status: 'reading_session_refused' });
+  });
+});
+
+describe('reading-session — a cold TV gets long enough to paint (2026-09-30)', () => {
+  // On 2026-09-30 the page loaded 11s after the wake returned and received the
+  // launch card 0.5s before a 2 x 8s budget closed the session. The budget is
+  // now time-shaped: ~60s of replays, re-foregrounding only as often as before.
+  const failingScheduler = () => ({
+    withDeadline: async () => { throw new Error('deadline'); },
+    every: () => () => {},
+    wait: async () => {},
+  });
+
+  it('keeps replaying for the whole budget before giving up — 8 attempts at the defaults', async () => {
+    const logger = { ...silent, info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const alertAdult = vi.fn(async () => {});
+    const r = build({ scheduler: failingScheduler(), logger, alertAdult, maxDeliveryAttempts: 2 });
+
+    await r.handler(tap());
+
+    await vi.waitFor(() => expect(alertAdult).toHaveBeenCalledTimes(1));
+    expect(logger.error).toHaveBeenCalledWith(
+      'school.reading.delivery-unacknowledged',
+      expect.objectContaining({ attempts: 8, budgetMs: 60_000 }),
+    );
+    // One initial wake, then re-foreground only once (maxDeliveryAttempts - 1):
+    // a cold Shield is not helped by being foregrounded every eight seconds.
+    expect(r.woke).toEqual([
+      { target: 'livingroom-tv', location: 'livingroom' },
+      { target: 'livingroom-tv', location: 'livingroom', prepareOnly: true },
+    ]);
+    const presents = r.sent.filter((e) => e.payload?.event === 'session-present');
+    expect(presents).toHaveLength(8); // activate + 7 replays
+    expect(r.sessions.current('livingroom')).toBeNull();
+  });
+
+  it('an ACK that lands on the third attempt commits the prompt and nothing is closed', async () => {
+    let calls = 0;
+    let store = null;
+    const scheduler = {
+      withDeadline: async (work) => {
+        calls += 1;
+        if (calls === 3) {
+          const pending = store.current('livingroom')?.pendingPresentation;
+          if (pending) store.acknowledge('livingroom', pending);
+          return work;
+        }
+        throw new Error('deadline');
+      },
+      every: () => () => {},
+      wait: async () => {},
+    };
+    const alertAdult = vi.fn(async () => {});
+    const r = build({ scheduler, alertAdult, maxDeliveryAttempts: 2 });
+    store = r.sessions;
+
+    await r.handler(tap());
+
+    await vi.waitFor(() => expect(r.sessions.current('livingroom')?.state).toBe('prompt'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(alertAdult).not.toHaveBeenCalled();
+    expect(r.sent.some((e) => e.payload?.event === 'session-close')).toBe(false);
   });
 });
