@@ -546,3 +546,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-29 | feat/media-redesign-batch-1 | 59361add1 | Media steer2a candidate (2 unmerged commits + archived uncommitted state); tag `archive/media/branch-feat-media-redesign-batch-1-2026-09-29` |
 | 2026-09-29 | media/p0-remaining | d152a416d | Original Task 6 attempt (rejected by review; salvaged on media/task6-salvage). 3 unmerged commits + the unfinished repair archived; tag `archive/media/branch-media-p0-remaining-2026-09-29` |
 | 2026-09-29 | media/task6-salvage | 757102abb | Media Task 6 salvage: four review blockers fixed, certified piecewise, deployed as 757102abb (merged) |
+| 2026-09-30 | feat/piano-course-sequence | 2e7fbe740 | Piano course sequences (then:), merged in 7970f0e40 |
