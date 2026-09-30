@@ -629,7 +629,7 @@ describe('SchoolApp — turning the diagnostics up', () => {
   });
 });
 
-it('Portal scan waits for keypad digits, hands returned grant to the shelf and defers the next scan until Done', async () => {
+it('Portal scan waits for keypad digits, hands returned grant to the shelf, and a scan while that shelf is open is claimed for its child', async () => {
   const oldUrl = window.location.pathname;
   window.history.replaceState({}, '', '/screens/portal');
   const scan = { id: 'portal-scan', screenId: 'portal', isbn13: '9780064400558', status: 'ready', book: { isbn13: '9780064400558', title: 'Hatchet' }, expiresAt: new Date(Date.now() + 300000).toISOString() };
@@ -651,16 +651,19 @@ it('Portal scan waits for keypad digits, hands returned grant to the shelf and d
     await screen.findByRole('dialog', { name: 'This book was just scanned' });
     fireEvent.click(screen.getByRole('button', { name: 'Alpha' }));
     await waitFor(() => expect(bookShelfProps.mock.calls.at(-1)?.[0]).toMatchObject({ learnerId: 'kid1', grant: 'returned-scan-grant', initialBookEntry: { intentId: scan.id, isbn13: scan.isbn13 } }));
-    const next = { ...scan, id: 'next-scan', book: { title: 'Next book' } };
+    // A SCAN WHILE A CHILD'S SHELF IS OPEN IS THAT CHILD'S (2026-09-30). The
+    // shelf itself says "scan the barcode", and the learner is already known —
+    // asking "who's reading?" again (after sending them home) was the bug.
+    const next = { ...scan, id: 'next-scan', isbn13: '9780439023528', book: { isbn13: '9780439023528', title: 'Next book' } };
+    schoolApi.bookScans.claim.mockResolvedValue({ ok: true, data: { intentId: next.id, launchTarget: { kind: 'program', program: 'book-log', learnerId: 'kid1', bookGrant: 'scoped-grant' }, bookEntry: { isbn13: next.isbn13, book: next.book } } });
     schoolApi.bookScans.pending.mockResolvedValue({ ok: true, data: { intent: next } });
     await act(async () => h.byTopic.school({ type: 'school.book-scan', screenId: 'portal', intentId: next.id }));
-    expect(screen.getByText('Next book was scanned')).toBeInTheDocument();
+    await waitFor(() => expect(schoolApi.bookScans.claim).toHaveBeenLastCalledWith('next-scan', { screenId: 'portal', learnerId: 'kid1' }));
+    expect(screen.queryByText('Next book was scanned')).toBeNull();
     expect(screen.queryByRole('dialog', { name: 'This book was just scanned' })).toBeNull();
-    await act(async () => bookShelfProps.mock.calls.at(-1)[0].onExit('done'));
-    expect(await screen.findByRole('dialog', { name: 'This book was just scanned' })).toBeInTheDocument();
-    // The scan card draws the coverless book's title as its cover, so the
-    // title is both the art and the card's heading.
-    expect(screen.getAllByText('Next book').length).toBeGreaterThan(0);
+    await waitFor(() => expect(bookShelfProps.mock.calls.at(-1)?.[0]).toMatchObject({
+      learnerId: 'kid1', grant: 'scoped-grant', initialBookEntry: { intentId: 'next-scan', isbn13: next.isbn13 },
+    }));
   } finally { r.unmount(); window.history.replaceState({}, '', oldUrl); }
 });
 

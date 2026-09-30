@@ -1003,6 +1003,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
           safe={lock.locked && !pending && !pickerOpen && !selfService.busy && !active && !section && !launchPreviewLink && !ceremony.current && selfService.view === 'keypad' && !keypadEngaged}
           onOpen={lock.locked ? openDeferredScan : null}
           confirmExit={gradedRunInFlight}
+          // A child's reading shelf is open and says "scan the barcode": the
+          // scan is theirs, claimed for them without a detour home (2026-09-30).
+          scopeLearnerId={section === 'book-shelf' && !active && bookLaunch?.learnerId && bookLaunch.learnerId === currentUser?.id ? bookLaunch.learnerId : null}
           onLaunch={(target, learnerId) => { claim(learnerId); return onPortalLaunch(target, learnerId); }} />}
         {ceremony.current && <ScanCeremony {...ceremony.current} onDismiss={ceremony.clear} />}
         {/* Launch-card preview (teacher-only deep link). A sibling of the lock
@@ -1324,6 +1327,10 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             source the keypad's card timer reads — never a constant here. */}
         {section === 'book-shelf' && !active && bookLaunch && bookLaunch.learnerId === currentUser?.id && (
           <BookShelf
+            // A scan claimed while the shelf is open relaunches it with that
+            // book; the shelf seeds a scanned entry once per mount, so a new
+            // scan must be a new mount.
+            key={bookLaunch.bookEntry?.intentId ?? 'shelf'}
             learnerId={bookLaunch.learnerId}
             grant={bookLaunch.bookGrant}
             initialBookEntry={bookLaunch.bookEntry}
