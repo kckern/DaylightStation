@@ -92,3 +92,35 @@ it('uses the shared clean book title and author presentation in the scan preview
   expect(screen.getByText('Gary Paulsen')).toBeTruthy();
   expect(screen.queryByText(/electronic resource/)).toBeNull();
 });
+
+describe('BookScanEntry — a scan while a child\'s shelf is open (2026-09-30)', () => {
+  it('claims it for that child at once — no corner card, no "who is reading"', async () => {
+    const onLaunch = vi.fn();
+    render(<BookScanEntry {...props} safe={false} onOpen={vi.fn()} scopeLearnerId="child" onLaunch={onLaunch} />); await act(async () => {});
+    expect(h.claim).toHaveBeenCalledWith('scan1', { screenId: 'portal', learnerId: 'child' });
+    expect(onLaunch).toHaveBeenCalledWith(expect.objectContaining({ bookGrant: 'returned-grant', bookEntry: expect.objectContaining({ intentId: 'scan1' }) }), 'child');
+    expect(screen.queryByTestId('book-scan-offer')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('waits for the lookup to finish before claiming, and draws nothing meanwhile', async () => {
+    h.pending.mockResolvedValue({ ok: true, data: { intent: { ...intent, status: 'loading' } } });
+    render(<BookScanEntry {...props} safe={false} scopeLearnerId="child" />); await act(async () => {});
+    expect(h.claim).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('book-scan-offer')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('claims once, not again on the next poll or socket message', async () => {
+    render(<BookScanEntry {...props} safe={false} scopeLearnerId="child" />); await act(async () => {});
+    await act(async () => h.event({ type: 'school.book-scan', screenId: 'portal' }));
+    expect(h.claim).toHaveBeenCalledTimes(1);
+  });
+
+  it('says so when the scoped claim fails, instead of asking who is reading', async () => {
+    h.claim.mockResolvedValue({ ok: false, status: 409, data: { error: { message: 'That scan was already opened.' } } });
+    render(<BookScanEntry {...props} safe={false} scopeLearnerId="child" />); await act(async () => {});
+    expect(screen.getByText('That scan was already opened.')).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});

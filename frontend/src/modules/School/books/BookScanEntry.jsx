@@ -61,9 +61,13 @@ function ScanOffer({ book, confirmExit, onOpen, onDismiss }) {
   );
 }
 
-export default function BookScanEntry({ screenId, safe, roster, onLaunch, onOpen = null, confirmExit = false }) {
-  const { intent, claiming, error, claim, dismiss, enabled } = useBookScanEntry({ screenId, safe, onLaunch });
+export default function BookScanEntry({ screenId, safe, roster, onLaunch, onOpen = null, confirmExit = false, scopeLearnerId = null }) {
+  const { intent, claiming, error, claim, dismiss, enabled } = useBookScanEntry({ screenId, safe, onLaunch, scopeLearnerId });
   if (!enabled) return null;
+  // A child's shelf is open: the scan is theirs and is claimed for them (see
+  // `useBookScanEntry`). Nothing to offer and nobody to ask — only a failure
+  // is worth drawing.
+  if (scopeLearnerId) return error ? <p className="school-book-scan__notice" role="status">{error}</p> : null;
   if (!intent) return error ? <p className="school-book-scan__notice" role="status">{error}</p> : null;
   const book = presentBook(intent.book ?? { isbn13: intent.isbn13 });
   if (!safe) {
