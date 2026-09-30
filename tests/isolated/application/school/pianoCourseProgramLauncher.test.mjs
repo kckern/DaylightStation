@@ -552,3 +552,138 @@ describe('PianoCourseProgramLauncher lesson media', () => {
     expect('thumbnail' in lesson).toBe(false);
   });
 });
+
+/**
+ * A COURSE SEQUENCE. The active course is DERIVED from evidence on every call:
+ * the first course in `[courseId, ...then]` not finished on a study day BEFORE
+ * the one being judged. Timestamps mirror the 2026-09-28 field case: head
+ * finished 16:58 PDT on the 28th, successor Lesson 15 at 07:43 PDT on the 29th.
+ */
+describe('PianoCourseProgramLauncher — a course sequence', () => {
+  const HEAD = 'plex:695598';
+  const NEXT = 'plex:694771';
+  const LAST = 'plex:694718';
+  const HEAD_DONE = '2026-09-28T23:58:00Z';   // 16:58 PDT, study day 09-28
+  const NEXT_L15 = '2026-09-29T14:43:00Z';     // 07:43 PDT, study day 09-29
+
+  const finishedHead = { compoundId: HEAD, items: [
+    lesson('plex:1', { completedAt: '2026-09-20T18:00:00Z', title: 'Quarter Notes' }),
+    lesson('plex:2', { completedAt: HEAD_DONE, title: 'Eighth Notes' }),
+  ] };
+  const successor = ({ l15 = NEXT_L15 } = {}) => ({ compoundId: NEXT, items: [
+    lesson('plex:14', { completedAt: '2026-08-01T18:00:00Z', title: 'Lesson 14' }),
+    lesson('plex:15', { completedAt: l15, title: 'Lesson 15' }),
+    lesson('plex:16', { title: 'Lesson 16' }),
+  ] });
+
+  const sequenced = ({ byCourse, now, then = [NEXT], courseSequence } = {}) => {
+    const asked = [];
+    const logs = [];
+    const launcher = new PianoCourseProgramLauncher({
+      getPlayableUnits: { execute: async ({ courseId }) => {
+        asked.push(courseId);
+        const result = byCourse[courseId];
+        return result ? { ok: true, result } : { ok: false, reason: 'not-found' };
+      } },
+      courseSequence: courseSequence ?? (async ({ courseId }) => (courseId === HEAD ? then : [])),
+      timezone: TZ,
+      clock: () => new Date(now),
+      logger: { warn: (event, data) => logs.push({ event, data }), info: (event, data) => logs.push({ event, data }) },
+    });
+    return { launcher, asked, logs };
+  };
+
+  it('judges the day after the finish against the successor — backdated, on replay', async () => {
+    const { launcher } = sequenced({ byCourse: { [HEAD]: finishedHead, [NEXT]: successor() }, now: '2026-09-30T18:00:00Z' });
+    const status = await launcher.status({ userId: 'user_4', programInstance: HEAD, day: '2026-09-29' });
+    expect(status.activeCourseId).toBe(NEXT);
+    expect(status.doneToday).toBe(true);
+    expect(status.servedWork).toEqual([{ unitId: 'plex:15', title: 'Lesson 15' }]);
+    expect(status.sequence).toEqual({ position: 2, total: 2, courseIds: [HEAD, NEXT] });
+  });
+
+  it('keeps the finishing course for the finishing day — the successor starts the NEXT study day', async () => {
+    const { launcher } = sequenced({ byCourse: { [HEAD]: finishedHead, [NEXT]: successor() }, now: '2026-09-30T18:00:00Z' });
+    const status = await launcher.status({ userId: 'user_4', programInstance: HEAD, day: '2026-09-28' });
+    expect(status.activeCourseId).toBe(HEAD);
+    expect(status.doneToday).toBe(true);
+  });
+
+  it('owes the successor\'s first UNWATCHED lesson today, not its first lesson', async () => {
+    const { launcher } = sequenced({ byCourse: { [HEAD]: finishedHead, [NEXT]: successor() }, now: '2026-09-30T18:00:00Z' });
+    const status = await launcher.status({ userId: 'user_4', programInstance: HEAD });
+    expect(status.activeCourseId).toBe(NEXT);
+    expect(status.doneToday).toBe(false);
+    expect(status.nextLesson.lesson.title).toBe('Lesson 16');
+    expect(status.progressLabel).toBe('2/3 · next: Lesson 16');
+  });
+
+  it('stays on the head while it is unfinished, whatever the successor holds', async () => {
+    const unfinished = { compoundId: HEAD, items: [...finishedHead.items, lesson('plex:3', { title: 'Accent' })] };
+    const { launcher, asked } = sequenced({ byCourse: { [HEAD]: unfinished, [NEXT]: successor() }, now: '2026-09-29T18:00:00Z' });
+    const status = await launcher.status({ userId: 'user_4', programInstance: HEAD });
+    expect(status.activeCourseId).toBe(HEAD);
+    expect(status.nextLesson.lesson.title).toBe('Accent');
+    expect(asked).toEqual([HEAD]); // the successor is never read while the head is live
+  });
+
+  it('walks the whole chain and reports "course complete" only after the LAST course', async () => {
+    const finishedNext = { compoundId: NEXT, items: [lesson('plex:15', { completedAt: '2026-09-29T14:43:00Z' })] };
+    const finishedLast = { compoundId: LAST, items: [lesson('plex:40', { completedAt: '2026-09-30T15:00:00Z' })] };
+    const { launcher } = sequenced({
+      byCourse: { [HEAD]: finishedHead, [NEXT]: finishedNext, [LAST]: finishedLast },
+      then: [NEXT, LAST], now: '2026-10-02T18:00:00Z',
+    });
+    const status = await launcher.status({ userId: 'user_4', programInstance: HEAD });
+    expect(status.activeCourseId).toBe(LAST);
+    expect(status.doneToday).toBe(false);
+    expect(status.nextLesson).toBeNull();
+    expect(status.progressLabel).toBe('1/1 — course complete');
+  });
+
+  it('with no sequence, a finished course behaves exactly as before', async () => {
+    const { launcher } = sequenced({ byCourse: { [HEAD]: finishedHead }, then: [], now: '2026-09-30T18:00:00Z' });
+    const status = await launcher.status({ userId: 'user_4', programInstance: HEAD });
+    expect(status.activeCourseId).toBe(HEAD);
+    expect(status.progressLabel).toBe('2/2 — course complete');
+    expect(status.nextLesson).toBeNull();
+  });
+
+  it('counts a lesson watched with no timestamp as finished long ago', async () => {
+    const legacyHead = { compoundId: HEAD, items: [lesson('plex:1', { watched: true })] };
+    const { launcher } = sequenced({ byCourse: { [HEAD]: legacyHead, [NEXT]: successor() }, now: '2026-09-30T18:00:00Z' });
+    expect((await launcher.status({ userId: 'user_4', programInstance: HEAD })).activeCourseId).toBe(NEXT);
+  });
+
+  it('falls back to the head, with a warning, when the sequence cannot be read', async () => {
+    const { launcher, logs } = sequenced({
+      byCourse: { [HEAD]: finishedHead, [NEXT]: successor() }, now: '2026-09-30T18:00:00Z',
+      courseSequence: async () => { throw new Error('plan mid-edit'); },
+    });
+    const status = await launcher.status({ userId: 'user_4', programInstance: HEAD });
+    expect(status.error).toBeUndefined();
+    expect(status.activeCourseId).toBe(HEAD);
+    expect(logs.some((l) => l.event === 'school.piano-course.sequence-read-failed')).toBe(true);
+  });
+
+  it('reports error (never the head in disguise) when the successor cannot be read', async () => {
+    const { launcher } = sequenced({ byCourse: { [HEAD]: finishedHead }, now: '2026-09-30T18:00:00Z' });
+    expect(await launcher.status({ userId: 'user_4', programInstance: HEAD })).toEqual({ error: true });
+  });
+
+  it('names the advance in the log once, not on every read', async () => {
+    const { launcher, logs } = sequenced({ byCourse: { [HEAD]: finishedHead, [NEXT]: successor() }, now: '2026-09-30T18:00:00Z' });
+    await launcher.status({ userId: 'user_4', programInstance: HEAD });
+    await launcher.status({ userId: 'user_4', programInstance: HEAD });
+    const advances = logs.filter((l) => l.event === 'school.piano-course.sequence-active');
+    expect(advances).toHaveLength(1);
+    expect(advances[0].data).toEqual({ userId: 'user_4', enrolledCourseId: HEAD, activeCourseId: NEXT, position: 2, total: 2 });
+  });
+
+  it('launches the successor\'s next lesson', async () => {
+    const withParents = { ...successor(), items: successor().items.map((item, i) => ({ ...item, parentId: 'season', parentIndex: 1, itemIndex: i + 14 })) };
+    const { launcher } = sequenced({ byCourse: { [HEAD]: finishedHead, [NEXT]: withParents }, now: '2026-09-30T18:00:00Z' });
+    const target = await launcher.issueLaunchTarget({ userId: 'user_4', programInstance: HEAD });
+    expect(target).toMatchObject({ kind: 'course-lesson', courseId: NEXT, lessonId: 'plex:16', lessonTitle: 'Lesson 16' });
+  });
+});
