@@ -534,12 +534,15 @@ export class ReadingSessionService {
 
     const at = this.#clock();
     const presentation = session.pendingPresentation;
+    const held = presentation.reason === 'initial' ? session.heldPick ?? null : null;
     const committed = Object.freeze({
       ...session,
       learnerId: presentation.learnerId,
       target: presentation.target ?? session.target ?? null,
       sessionId: presentation.sessionId,
-      state: PROMPT,
+      state: held ? 'confirm' : PROMPT,
+      pick: held ?? session.pick ?? null,
+      heldPick: null,
       revision: presentation.revision,
       serverEpoch: presentation.serverEpoch,
       presentationId: presentation.presentationId,
@@ -559,6 +562,19 @@ export class ReadingSessionService {
       presentationId: committed.presentationId, reason: presentation.reason,
     });
     this.#broadcast(location, { event: 'session-open', ...committed });
+    if (held) {
+      // The launch card must be on screen before the book lands on it — the
+      // same order the timeout reopen relies on (`session-open`, then
+      // `book-selected`). The screen then runs its ordinary countdown.
+      this.#broadcast(location, {
+        event: 'book-selected', learnerId: committed.learnerId, location,
+        sessionId: committed.sessionId, ...held,
+      });
+      this.#log('info', 'school.reading.held-book-applied', {
+        location, learnerId: committed.learnerId, sessionId: committed.sessionId,
+        contentId: held.contentId, pickId: held.pickId,
+      });
+    }
     this.#resolveAcknowledgement(presentation);
     return committed;
   }
@@ -773,6 +789,34 @@ export class ReadingSessionService {
     });
     this.#broadcast(location, { event: 'session-present', location, ...rollback });
     return rollback;
+  }
+
+  /**
+   * A BOOK THAT BEAT THE LAUNCH CARD. On 2026-09-30 a cold TV took 17s to show
+   * the child their card, and the book they tapped in the meantime was refused
+   * `launch-card-not-ready` — claimed, so it never played, and refused to a
+   * screen that did not exist yet, so nothing said so. Scanning a card and
+   * then a book is ONE act; the TV's boot time is not the child's problem.
+   *
+   * Only the INITIAL presentation holds. A switch or a return has a face on
+   * screen already and a child who can see it; those keep refusing.
+   * The latest tap wins, exactly as a swap does in `confirm`.
+   *
+   * @returns {object|null} the updated session, or null when this is not a
+   *   moment a book may be held
+   */
+  holdBook(location, pick) {
+    const session = this.#sessions.get(location) ?? null;
+    if (!session || !pick?.contentId || !pick?.pickId) return null;
+    const holdable = session.state === STARTING
+      || (session.state === PRESENTING && session.pendingPresentation?.reason === 'initial');
+    if (!holdable) return null;
+    const updated = this.update(location, { heldPick: Object.freeze({ ...pick }) });
+    this.#log('info', 'school.reading.book-held', {
+      location, learnerId: session.learnerId, sessionId: session.sessionId,
+      contentId: pick.contentId, pickId: pick.pickId, state: session.state,
+    });
+    return updated;
   }
 
   /**

@@ -603,3 +603,59 @@ describe('ReadingSessionService — the learner who just left this room', () => 
     expect(record).toBe(sessions.recentlyClosed('livingroom'));
   });
 });
+
+describe('ReadingSessionService — a book tapped before the launch card was seen (2026-09-30)', () => {
+  const pickFor = (over = {}) => ({
+    pickId: 'pick_1', learnerId: 'user_5', contentId: 'plex:674736', target: 'livingroom-tv',
+    studyDay: '2026-09-30', at: '2026-09-30T18:31:00.824Z', ...over,
+  });
+  const presenting = (sent = []) => {
+    const s = new ReadingSessionService({ logger: silent, realtime: realtimeFor(sent) });
+    const reserved = s.open({ location: 'livingroom', learnerId: 'user_5', target: 'livingroom-tv', state: 'starting' });
+    const active = s.activate('livingroom', reserved.sessionId);
+    return { s, sent, active };
+  };
+
+  it('holds a book while the INITIAL presentation is pending, latest tap wins', () => {
+    const { s } = presenting();
+    s.holdBook('livingroom', pickFor({ pickId: 'pick_1', contentId: 'plex:1' }));
+    s.holdBook('livingroom', pickFor({ pickId: 'pick_2', contentId: 'plex:674736' }));
+    expect(s.current('livingroom').heldPick).toMatchObject({ pickId: 'pick_2', contentId: 'plex:674736' });
+  });
+
+  it('holds a book while the reservation is still STARTING (the wake has not returned)', () => {
+    const s = new ReadingSessionService({ logger: silent });
+    s.open({ location: 'livingroom', learnerId: 'user_5', state: 'starting' });
+    expect(s.holdBook('livingroom', pickFor())).not.toBeNull();
+  });
+
+  it('does not hold during a switch or a return — those keep refusing', () => {
+    const s = new ReadingSessionService({ logger: silent });
+    s.open({ location: 'livingroom', learnerId: 'user_5' });
+    s.beginSwitch({ location: 'livingroom', learnerId: 'user_3' });
+    expect(s.holdBook('livingroom', pickFor())).toBeNull();
+    s.open({ location: 'livingroom', learnerId: 'user_5' });
+    s.beginReturn('livingroom');
+    expect(s.holdBook('livingroom', pickFor())).toBeNull();
+  });
+
+  it('the ACK applies the held book: confirm + pick, session-open THEN book-selected', () => {
+    const { s, sent, active } = presenting();
+    s.holdBook('livingroom', pickFor());
+    s.acknowledge('livingroom', active.pendingPresentation);
+    expect(s.current('livingroom')).toMatchObject({ state: 'confirm', heldPick: null, pick: { pickId: 'pick_1', contentId: 'plex:674736' } });
+    const events = sent.map((m) => m.payload.event);
+    const openAt = events.lastIndexOf('session-open');
+    const selectedAt = events.lastIndexOf('book-selected');
+    expect(openAt).toBeGreaterThanOrEqual(0);
+    expect(selectedAt).toBeGreaterThan(openAt);
+    expect(sent[selectedAt].payload).toMatchObject({ learnerId: 'user_5', contentId: 'plex:674736', pickId: 'pick_1', sessionId: active.sessionId });
+  });
+
+  it('an ACK with nothing held commits the plain prompt as before', () => {
+    const { s, active } = presenting();
+    s.acknowledge('livingroom', active.pendingPresentation);
+    expect(s.current('livingroom')).toMatchObject({ state: 'prompt' });
+    expect(s.current('livingroom').pick ?? null).toBeNull();
+  });
+});
