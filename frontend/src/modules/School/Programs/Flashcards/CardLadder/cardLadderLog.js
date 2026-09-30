@@ -69,6 +69,7 @@ export const cardLadderLog = {
   cardUndone: (data) => emit('card.undone', data),
   roundStarted: (data) => emit('round.started', data),
   roundEnded: (data) => emit('round.ended', data),                      // {quizzed, notYet}
+  summaryCelebrated: (data) => emit('summary.celebrated', data),        // {quizzed, cheerLang, toned} — the day-done card and chime
   noticeShown: (data) => emit('notice.shown', data, 'warn'),
   visibility: (data) => emit('visibility', data),                       // {state}
   // Spoken takes (never graded): {itemId, itemMode, phase: started|stopped|uploaded|failed|refused|unavailable, ms (since the item was shown),

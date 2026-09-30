@@ -657,6 +657,24 @@ when it is still that setting's latest change and still in force. Undo:
 | `session.capMinutes` | day cap | 15 |
 | `typing.passScore` | judge pass threshold | 6 |
 
+## The day-done summary
+
+The day ends on a moment, not a line of text (2026-09-30: "a really ugly
+Done button, no ceremony, no celebration, no obvious call to action"). The
+summary draws a word card that cheers in the learner's target language
+(**잘했어요!** for Korean) and, after 1.2 s, turns to the anchor side ("Great
+job!") with the same transform-only flip every word card uses. A target
+language with no entry in `SummaryItem`'s `CHEERS` gets a single English side
+and no turn — never a guessed translation a child would learn. The School
+success tone (`playScanCeremonyTone('success')`) plays once, and the event
+`school.card-ladder.summary.celebrated` records `{quizzed, cheerLang, toned}`.
+
+Below the card: one line of what was done ("You practised 7 words today"), the
+held-new-words note when it applies, ONE large primary **Done** (Space/Enter),
+and the secondary choices smaller underneath — **Practise more** (1) and, while
+new words remain, **Learn more words** (2). Reduced motion swaps the sides
+instantly.
+
 ## The practice menu (spec §6, post-goal)
 
 Once the day is done (goal or cap) the summary shows once
