@@ -93,6 +93,21 @@ export const DEFAULT_PERSIST_INTERVAL_MS = 5_000;
 export const REOPEN_GRACE_MS = 45_000;
 
 /**
+ * How long a book dispatched UNCLAIMED at a reader stays adoptable by the next
+ * learner card there.
+ *
+ * On 2026-09-30 a child's session died to a cold TV, his re-tapped book played
+ * with nobody's name on it, and his card 17 seconds later restarted the story
+ * from 0:00 instead of claiming it. The record says "the last thing tapped at
+ * this reader was this book"; the TV — which knows what it is ACTUALLY playing
+ * — is the proof (`resolveAdoptablePlayback`). This bound only keeps a stale
+ * record from outliving any plausible story. Two hours is well past the longest
+ * read-along; the TV declines anything it cannot confirm, so a longer bound
+ * costs nothing but a round trip.
+ */
+export const ADOPTABLE_PLAY_MS = 2 * 60 * 60_000;
+
+/**
  * The states an idle session may be torn down FROM (D6). `reading` is
  * deliberately absent: a 45-minute audiobook is not an idle room, and the
  * whole point of the timeout is to catch the room that is genuinely empty.
@@ -136,6 +151,8 @@ export class ReadingSessionService {
   #stuckReported = new Set();
   /** location -> {session, reason, closedAt}: the last teardown, for the reopen grace. */
   #recentlyClosed = new Map();
+  /** location -> {contentId, target, at}: the last book dispatched with no session here. */
+  #unclaimedPlays = new Map();
   #realtime; #clock; #logger; #idFactory; #idSequence = 0;
   #idleTimeoutMs; #sweepIntervalMs; #onTimeout; #scheduler; #cancelSweep = null;
   #sessionStore; #persistIntervalMs; #cancelPersist = null; #dirty = false;
@@ -535,13 +552,20 @@ export class ReadingSessionService {
     const at = this.#clock();
     const presentation = session.pendingPresentation;
     const held = presentation.reason === 'initial' ? session.heldPick ?? null : null;
+    const adopted = presentation.reason === 'adopt' && presentation.adopt
+      ? Object.freeze({
+          pickId: presentation.adopt.pickId, learnerId: presentation.learnerId,
+          contentId: presentation.adopt.contentId, target: presentation.target ?? session.target ?? null,
+          studyDay: presentation.adopt.studyDay ?? null, at: at.toISOString(), adopted: true,
+        })
+      : null;
     const committed = Object.freeze({
       ...session,
       learnerId: presentation.learnerId,
       target: presentation.target ?? session.target ?? null,
       sessionId: presentation.sessionId,
-      state: held ? 'confirm' : PROMPT,
-      pick: held ?? session.pick ?? null,
+      state: held || adopted ? 'confirm' : PROMPT,
+      pick: adopted ?? held ?? session.pick ?? null,
       heldPick: null,
       revision: presentation.revision,
       serverEpoch: presentation.serverEpoch,
@@ -553,6 +577,13 @@ export class ReadingSessionService {
       lastActivityAt: at.getTime(),
     });
     this.#sessions.set(location, committed);
+    if (adopted) {
+      this.#unclaimedPlays.delete(location);
+      this.#log('info', 'school.reading.adoption-committed', {
+        location, learnerId: committed.learnerId, sessionId: committed.sessionId,
+        contentId: adopted.contentId, pickId: adopted.pickId,
+      });
+    }
     this.#persistSoon();
     this.#observe('presentation-acknowledged', committed, {
       presentationId: presentation.presentationId, reason: presentation.reason,
@@ -817,6 +848,84 @@ export class ReadingSessionService {
       contentId: pick.contentId, pickId: pick.pickId, state: session.state,
     });
     return updated;
+  }
+
+  /** The interceptor's note: a book just dispatched here with nobody's name on it. */
+  noteUnclaimedPlay(location, { contentId, target = null } = {}) {
+    if (typeof location !== 'string' || !location || typeof contentId !== 'string' || !contentId) return;
+    this.#unclaimedPlays.set(location, Object.freeze({ contentId, target, at: this.#clock().getTime() }));
+    this.#log('info', 'school.reading.unclaimed-play-noted', { location, contentId, target });
+  }
+
+  /** @returns {{contentId: string, target: string|null, at: number}|null} */
+  unclaimedPlay(location) {
+    const record = this.#unclaimedPlays.get(location) ?? null;
+    if (!record) return null;
+    if (this.#clock().getTime() - record.at > ADOPTABLE_PLAY_MS) return null;
+    return record;
+  }
+
+  /**
+   * A card at a reader where the child's book is already playing: ask the
+   * screen to ADOPT that story rather than put up a launch card over it.
+   *
+   * The pick is minted HERE, at adoption time, exactly as the interceptor
+   * mints one at book time — attribution stays server-owned (invariant 2).
+   * Commit waits for the screen's ACK, which it sends only after proving it is
+   * playing this book and re-mounting it under the reading stage.
+   *
+   * @returns {object|null} the presenting session, or null if one is open
+   */
+  beginAdoption({ location, learnerId, target = null, contentId, studyDay = null } = {}) {
+    if (typeof location !== 'string' || !location.trim()) return null;
+    if (typeof learnerId !== 'string' || !learnerId.trim()) return null;
+    if (typeof contentId !== 'string' || !contentId) return null;
+    const key = location.trim();
+    if (this.#sessions.has(key)) return null;
+    const at = this.#clock();
+    const sessionId = this.#nextId('rs');
+    const revision = this.#nextRevision(key);
+    const presentation = Object.freeze({
+      presentationId: this.#nextId('rp'), sessionId, learnerId: learnerId.trim(), target,
+      revision, serverEpoch: this.#serverEpoch, reason: 'adopt',
+      adopt: Object.freeze({ contentId, pickId: this.#nextId('pick'), studyDay }),
+    });
+    const session = Object.freeze({
+      location: key, learnerId: learnerId.trim(), target, sessionId, revision,
+      serverEpoch: this.#serverEpoch, state: PRESENTING, presentationId: null,
+      presentedAt: null, acknowledgedAt: null, pendingPresentation: presentation,
+      openedAt: at.toISOString(), lastActivityAt: at.getTime(), idleTimeoutMs: this.#idleTimeoutMs,
+    });
+    this.#sessions.set(key, session);
+    this.#stuckReported.delete(key);
+    this.#recentlyClosed.delete(key);
+    this.#persistNow();
+    this.#observe('adoption-requested', session, { presentationId: presentation.presentationId, contentId });
+    this.#log('info', 'school.reading.adoption-requested', {
+      location: key, learnerId: session.learnerId, sessionId, contentId,
+      presentationId: presentation.presentationId, pickId: presentation.adopt.pickId,
+    });
+    this.#broadcast(key, { event: 'session-present', location: key, ...presentation });
+    return session;
+  }
+
+  /**
+   * The screen could not prove it is playing the book (a movie started since,
+   * the story already ended, no playback owner). D2 is restored: the session
+   * this adoption reserved is closed and the unclaimed record forgotten, so
+   * the next card is an ordinary refusal rather than another adoption attempt.
+   */
+  declineAdoption(location, presentationId, reason = null) {
+    const session = this.#sessions.get(location) ?? null;
+    const pending = session?.pendingPresentation ?? null;
+    if (!pending || pending.reason !== 'adopt' || pending.presentationId !== presentationId) return null;
+    this.#unclaimedPlays.delete(location);
+    const closed = this.close(location, { reason: 'adopt-declined' });
+    this.#log('info', 'school.reading.adoption-declined', {
+      location, learnerId: session.learnerId, sessionId: session.sessionId,
+      contentId: pending.adopt?.contentId ?? null, reason,
+    });
+    return closed;
   }
 
   /**
