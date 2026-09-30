@@ -47,6 +47,10 @@ export class ReadingApiService {
     const session = this.#sessions.acknowledge(location, proof);
     return { ok: Boolean(session), session };
   }
+  /** The screen could not prove the adoption; D2 is restored. See `ReadingSessionService#declineAdoption`. */
+  declineAdoption(location, presentationId, reason) {
+    return { ok: Boolean(this.#sessions.declineAdoption(location, presentationId, reason)) };
+  }
   /**
    * THE DAY IS OVER — close the session and let the reader's own end policy run.
    *
