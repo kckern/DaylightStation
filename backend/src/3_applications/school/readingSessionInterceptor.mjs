@@ -99,7 +99,15 @@ export class ReadingSessionInterceptor {
     const current = this.#sessions.current(location);
     const reopened = current ? null : this.#reopenIfJustClosed(location, response?.target ?? null);
     const session = current ?? reopened;
-    if (!session) return null;
+    if (!session) {
+      // Nobody's session, so this book plays with nobody's name on it — but it
+      // was tapped at a READING reader, and a child's card may follow it in a
+      // few seconds (2026-09-30: seventeen). Remember what it was, so that card
+      // can adopt the running story instead of restarting it.
+      const contentId = response.expression?.contentId ?? null;
+      if (contentId) this.#sessions.noteUnclaimedPlay?.(location, { contentId, target: response.target ?? null });
+      return null;
+    }
 
     const contentId = response.expression?.contentId ?? null;
     const { learnerId } = session;

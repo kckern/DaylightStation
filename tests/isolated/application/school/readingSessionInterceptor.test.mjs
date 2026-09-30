@@ -889,3 +889,18 @@ describe('ReadingSessionInterceptor — a book that beats the launch card (2026-
     expect(claim).toMatchObject({ claimed: true, refused: true, reason: 'launch-card-not-ready' });
   });
 });
+
+describe('ReadingSessionInterceptor — remembers the book nobody claimed', () => {
+  it('records an unclaimed book dispatch at the reader so a later card can adopt it', async () => {
+    const { interceptor, sessions } = build();
+    expect(await interceptor.claim(bookTap({ expression: { action: 'play-next', contentId: 'plex:674736', options: {} } }))).toBeNull();
+    expect(sessions.unclaimedPlay('livingroom')).toMatchObject({ contentId: 'plex:674736', target: 'livingroom-tv' });
+  });
+
+  it('does NOT record a book a session claimed', async () => {
+    const { interceptor, sessions } = build();
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    await interceptor.claim(bookTap());
+    expect(sessions.unclaimedPlay('livingroom')).toBeNull();
+  });
+});

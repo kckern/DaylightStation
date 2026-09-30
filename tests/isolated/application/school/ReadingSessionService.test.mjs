@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ReadingSessionService as ProductionReadingSessionService } from '#apps/school/ReadingSessionService.mjs';
+import { ReadingSessionService as ProductionReadingSessionService, ADOPTABLE_PLAY_MS } from '#apps/school/ReadingSessionService.mjs';
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
 const TEST_SCHEDULER = {
@@ -657,5 +657,72 @@ describe('ReadingSessionService — a book tapped before the launch card was see
     s.acknowledge('livingroom', active.pendingPresentation);
     expect(s.current('livingroom')).toMatchObject({ state: 'prompt' });
     expect(s.current('livingroom').pick ?? null).toBeNull();
+  });
+});
+
+describe('ReadingSessionService — adopting a book already playing (2026-09-30)', () => {
+  const rig = () => {
+    const state = { now: Date.parse('2026-09-30T18:31:36Z') };
+    const sent = [];
+    const s = new ReadingSessionService({ logger: silent, realtime: realtimeFor(sent), clock: () => new Date(state.now) });
+    return { s, sent, tick: (ms) => { state.now += ms; } };
+  };
+
+  it('remembers the last book dispatched unclaimed at a reader, latest wins', () => {
+    const { s } = rig();
+    s.noteUnclaimedPlay('livingroom', { contentId: 'plex:1', target: 'livingroom-tv' });
+    s.noteUnclaimedPlay('livingroom', { contentId: 'plex:674736', target: 'livingroom-tv' });
+    expect(s.unclaimedPlay('livingroom')).toMatchObject({ contentId: 'plex:674736', target: 'livingroom-tv' });
+    expect(s.unclaimedPlay('study')).toBeNull();
+  });
+
+  it('forgets it after ADOPTABLE_PLAY_MS', () => {
+    const { s, tick } = rig();
+    s.noteUnclaimedPlay('livingroom', { contentId: 'plex:674736', target: 'livingroom-tv' });
+    tick(ADOPTABLE_PLAY_MS + 1);
+    expect(s.unclaimedPlay('livingroom')).toBeNull();
+  });
+
+  it('beginAdoption publishes an adopt presentation carrying a SERVER-minted pick', () => {
+    const { s, sent } = rig();
+    const session = s.beginAdoption({ location: 'livingroom', learnerId: 'user_7', target: 'livingroom-tv', contentId: 'plex:674736', studyDay: '2026-09-30' });
+    expect(session).toMatchObject({ state: 'presenting', learnerId: 'user_7' });
+    expect(session.pendingPresentation).toMatchObject({
+      reason: 'adopt', learnerId: 'user_7',
+      adopt: { contentId: 'plex:674736', studyDay: '2026-09-30', pickId: expect.any(String) },
+    });
+    const present = sent.find((m) => m.payload.event === 'session-present');
+    expect(present.payload).toMatchObject({ reason: 'adopt', adopt: { contentId: 'plex:674736' } });
+  });
+
+  it('beginAdoption refuses when a session is already open', () => {
+    const { s } = rig();
+    s.open({ location: 'livingroom', learnerId: 'user_3' });
+    expect(s.beginAdoption({ location: 'livingroom', learnerId: 'user_7', contentId: 'plex:674736' })).toBeNull();
+  });
+
+  it('the ACK commits confirm with the adopted pick and consumes the unclaimed record', () => {
+    const { s } = rig();
+    s.noteUnclaimedPlay('livingroom', { contentId: 'plex:674736', target: 'livingroom-tv' });
+    const session = s.beginAdoption({ location: 'livingroom', learnerId: 'user_7', target: 'livingroom-tv', contentId: 'plex:674736', studyDay: '2026-09-30' });
+    const { pickId } = session.pendingPresentation.adopt;
+    s.acknowledge('livingroom', session.pendingPresentation);
+    expect(s.current('livingroom')).toMatchObject({
+      state: 'confirm',
+      pick: { pickId, learnerId: 'user_7', contentId: 'plex:674736', studyDay: '2026-09-30', adopted: true },
+    });
+    expect(s.unclaimedPlay('livingroom')).toBeNull();
+  });
+
+  it('declineAdoption closes ONLY the matching pending adoption, as adopt-declined', () => {
+    const { s, sent } = rig();
+    s.noteUnclaimedPlay('livingroom', { contentId: 'plex:674736', target: 'livingroom-tv' });
+    const session = s.beginAdoption({ location: 'livingroom', learnerId: 'user_7', contentId: 'plex:674736' });
+    expect(s.declineAdoption('livingroom', 'rp_wrong', 'content-mismatch')).toBeNull();
+    expect(s.declineAdoption('livingroom', session.pendingPresentation.presentationId, 'content-mismatch')).not.toBeNull();
+    expect(s.current('livingroom')).toBeNull();
+    expect(s.recentlyClosed('livingroom')).toMatchObject({ reason: 'adopt-declined' });
+    expect(s.unclaimedPlay('livingroom')).toBeNull();
+    expect(sent.at(-1).payload).toMatchObject({ event: 'session-close', reason: 'adopt-declined' });
   });
 });
