@@ -1,7 +1,10 @@
 # Piano Bridge (APK)
 
-> **2026-09-30: SHELL v31 (`2.2-self-heal`) + PAYLOAD p21 (`p21-self-heal`) are BUILT,
-> NOT YET ON THE TABLET.** The tablet runs shell v30 + p19. v31 exists because the bridge
+> **2026-09-30: SHELL v31 (`2.2-self-heal`) + PAYLOAD p21 (`p21-self-heal`) are ON THE
+> TABLET** (installed 12:36 PDT; right after the install the a11y bind restarted the
+> service by itself). Battery exemption GRANTED 12:40 PDT (`/status` → `batteryOptExempt: true`); the "Allow" tap needs kioskMode off or FKB steals the foreground first.
+> Hosting gotcha: `/payloads/<file>` returns the SPA's index.html with HTTP 200 when the
+> file is missing, so check the downloaded byte count, not the status code. v31 exists because the bridge
 > was force-stopped on 2026-09-27 and stayed dead two days (runbook
 > `docs/runbooks/piano-kiosk-midi.md` §7a). v31 adds a 5-min keep-alive alarm, a restart
 > alarm from the crash handler, a start from the a11y bind, durable BOOT notes, and a
