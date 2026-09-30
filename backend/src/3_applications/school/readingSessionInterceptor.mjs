@@ -99,12 +99,32 @@ export class ReadingSessionInterceptor {
     const current = this.#sessions.current(location);
     const reopened = current ? null : this.#reopenIfJustClosed(location, response?.target ?? null);
     const session = current ?? reopened;
-    if (!session) return null;
+    if (!session) {
+      // Nobody's session, so this book plays with nobody's name on it — but it
+      // was tapped at a READING reader, and a child's card may follow it in a
+      // few seconds (2026-09-30: seventeen). Remember what it was, so that card
+      // can adopt the running story instead of restarting it.
+      const contentId = response.expression?.contentId ?? null;
+      if (contentId) this.#sessions.noteUnclaimedPlay?.(location, { contentId, target: response.target ?? null });
+      return null;
+    }
 
     const contentId = response.expression?.contentId ?? null;
     const { learnerId } = session;
 
     if (['starting', 'presenting', 'returning'].includes(session.state)) {
+      // THE FIRST CARD'S BOOK IS HELD, NOT REFUSED (2026-09-30). While the
+      // initial launch card is still being delivered — a cold TV can take the
+      // better part of a minute — the book is the second half of the child's
+      // one act. `holdBook` decides whether this is that moment; the ACK that
+      // proves the card was seen then applies it as an ordinary pick.
+      const held = this.#sessions.holdBook?.(location, {
+        pickId: this.#nextPickId(), learnerId, contentId, target: response.target ?? null,
+        studyDay: this.#storyTime?.studyDay?.() ?? null, at: this.#clock().toISOString(),
+      }) ?? null;
+      if (held) {
+        return { claimed: true, by: CLAIMED_BY, held: true, learnerId, contentId };
+      }
       this.#broadcast(location, {
         event: 'book-refused', reason: 'launch-card-not-ready', learnerId, location, contentId,
         at: this.#clock().toISOString(),

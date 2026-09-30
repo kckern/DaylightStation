@@ -21,6 +21,13 @@ const trimmed = value => typeof value === 'string' && value.trim() ? value.trim(
  */
 const END_REASONS = new Set(['day-done']);
 
+/**
+ * Why a screen may decline an adoption. An allowlist for the same reason
+ * END_REASONS is one: the reason lands in the close record and the log, and a
+ * reason added later has to be decided on rather than typed in by a caller.
+ */
+const DECLINE_REASONS = new Set(['not-playing', 'content-mismatch', 'no-owner', 'unverified']);
+
 function badRequest(message) {
   const err = new Error(message);
   err.name = 'ValidationError';
@@ -56,6 +63,15 @@ export function createReadingRouter({ readingService } = {}) {
     const result = readingService.acknowledge(location, proof);
     if (!result.ok && presentationId) return res.status(409).json({ ok: false, reason: 'stale-presentation' });
     return res.json(result);
+  }));
+
+  router.post('/session/adopt-decline', asyncHandler(async (req, res) => {
+    const location = trimmed(req.body?.location);
+    const presentationId = trimmed(req.body?.presentationId);
+    const reason = trimmed(req.body?.reason);
+    if (!location || !presentationId) throw badRequest('location and presentationId are required');
+    if (!DECLINE_REASONS.has(reason)) throw badRequest(`reason must be one of: ${[...DECLINE_REASONS].join(', ')}`);
+    return res.json(readingService.declineAdoption(location, presentationId, reason));
   }));
 
   /**

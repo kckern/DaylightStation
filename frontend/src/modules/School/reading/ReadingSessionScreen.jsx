@@ -32,6 +32,9 @@ import Player from '../../Player/Player.jsx';
 import SurroundFrame from '../../Surround/SurroundFrame.jsx';
 import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
 import { useScreenOverlay } from '../../../screen-framework/overlays/ScreenOverlayProvider.jsx';
+import { useSessionSourceContext } from '../../../screen-framework/publishers/useSessionSourceContext.js';
+import { DaylightAPI } from '../../../lib/api.mjs';
+import { resolveAdoptablePlayback } from './adoptForeignPlayback.js';
 import { playScanCeremonyTone } from '../selfService/scanCeremonySound.js';
 import { useReadingSession, DEFAULT_CONFIRM_MS } from './useReadingSession.js';
 import { readingLog } from './readingLog.js';
@@ -138,7 +141,9 @@ const EMPTY_READING = Object.freeze({
  */
 export function ReadingStage({ store, play, getMediaEl, onMediaRef, onPlaybackCompleted, clear, logger = null }) {
   const reading = useSyncExternalStore(store.subscribe, store.get);
-  const contentId = play?.contentId ?? null;
+  // An ADOPTED story hands in an array of tracks, which has no `contentId`;
+  // the book id the store carries keeps the clock's log lines correlated.
+  const contentId = play?.contentId ?? reading?.contentId ?? null;
   const log = useMemo(
     () => logger ?? getLogger().child({ app: 'school', component: 'reading-stage' }),
     [logger],
@@ -491,11 +496,26 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
   // the cycle without making either of them re-created on every render.
   const handlers = useRef({});
   const mediaRef = useRef(null);
+  const sessionSource = useSessionSourceContext();
+  // An ADOPTED story resumes where it was. The Player's media controller will
+  // not apply a start offset to short audio (and resets one near the end), so
+  // the stage seeks its own element on the first frame — once.
+  const pendingSeekRef = useRef(null);
   // STABLE identities, delegating to whatever `handlers` holds this render.
   // Listeners rebuilt per render could never be removed again — the element
   // outlives several renders, and `removeEventListener` matches by reference.
   const listeners = useRef({
-    playing: () => handlers.current.notePlaybackStarted?.(),
+    playing: (event) => {
+      const seekTo = pendingSeekRef.current;
+      if (seekTo != null) {
+        pendingSeekRef.current = null;
+        const el = event?.currentTarget;
+        let applied = false;
+        try { if (el) { el.currentTime = seekTo; applied = true; } } catch { /* a refused seek plays from where it is */ }
+        readingLog.playback('adoption-seek', { positionSec: seekTo, applied });
+      }
+      handlers.current.notePlaybackStarted?.();
+    },
     timeupdate: (event) => handlers.current.notePlaybackProgress?.(event.currentTarget),
   });
 
@@ -545,11 +565,17 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
       title: committed.title ?? readingSnapshotRef.current.title ?? null,
       image: committed.image ?? readingSnapshotRef.current.image ?? null,
     });
+    pendingSeekRef.current = committed.adopted && Number.isFinite(committed.positionSec) && committed.positionSec > 1
+      ? committed.positionSec
+      : null;
     showOverlay(ReadingStage, {
       store: storeRef.current,
       // ONE object per story. Rebuilding it inline on a re-render is the
       // identity-churn shape that once opened 495 Plex transcode sessions.
-      play: { contentId: committed.contentId },
+      // An ADOPTION hands in the book's queue from the playing track onward
+      // (an array — the Player maps array items directly, no queue fetch); a
+      // pick hands in the book id.
+      play: committed.play ?? { contentId: committed.contentId },
       getMediaEl: () => mediaRef.current,
       onMediaRef: attachMedia,
       onPlaybackCompleted: () => handlers.current.notePlaybackCompleted?.(),
@@ -572,9 +598,16 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
     }, { chrome: 'media', priority: 'high' });
   }, [attachMedia, detachMedia, dismissOverlay, showOverlay]);
 
+  const resolveAdoption = useCallback((bookContentId) => resolveAdoptablePlayback({
+    capture: sessionSource?.capture?.() ?? null,
+    bookContentId,
+    fetchQueue: (cid) => DaylightAPI(`api/v1/queue/${encodeURIComponent(cid)}`),
+  }), [sessionSource]);
+
   const session = useReadingSession({
     location, confirmMs, onPlay, onCue: cueTone,
     presentationObscured: hasOverlay,
+    resolveAdoption,
   });
 
   // Rebound every render so the media listeners and Player completion callback
@@ -634,7 +667,10 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
   // screen legitimately mounts mid-session.
   const wasIdle = useRef(true);
   useEffect(() => {
-    if (session.view !== 'idle' && wasIdle.current) {
+    // An ADOPTION jumps straight from idle to playing, and `onPlay` has
+    // already dismissed what was there and mounted the stage. Dismissing now
+    // would take down the story the child just claimed.
+    if (session.view !== 'idle' && session.view !== 'playing' && wasIdle.current) {
       dismissOverlay();
       readingLog.screen('screensaver-cleared', { view: session.view });
     }

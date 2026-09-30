@@ -19,6 +19,14 @@
 > teardown, NOT the one that arrives before the session. The deploy half is
 > fixed outside this document — `scripts/deploy-gate.sh` §5 now refuses to
 > restart over an open session.
+> On 2026-09-30 a cold TV lost a child twice in one minute. The initial launch
+> card's ACK budget (2 × 8 s) expired 0.5 s after the page — which loaded 11 s
+> after the wake returned — finally received it, and the book tapped meanwhile
+> was refused to a screen that did not exist yet. His re-tapped book then played
+> unclaimed, and his card 17 s later restarted it from 0:00. The initial budget
+> is now ~60 s (§9), a book tapped while the first card is in flight is HELD and
+> applied on the ACK (§9), and a card scanned while the reader's last unclaimed
+> book is playing ADOPTS that story in place (D12).
 > Implementation plans: `docs/_wip/plans/2026-08-26-preschool-reading-03-livingroom-session-screen.md`,
 > `docs/_archive/2026-09-11-reading-launch-card-and-timeout-race.md`.
 > This document is the authority on *behaviour*; the plan is the authority on *how*.
@@ -220,7 +228,9 @@ stateDiagram-v2
     TV_IDLE --> STARTING: card
     TV_IDLE --> FOREIGN_PLAY: book, no session
 
-    FOREIGN_PLAY --> FOREIGN_PLAY: card — refused, D2
+
+- [ ] **Step 2: Settled decisions** — amend the D2 row by appending: "**Second exemption (D12):** content is not unrelated when it is the book last dispatched unclaimed at this reader — the card adopts it." Add a row:
+
     FOREIGN_PLAY --> TV_IDLE: playback-completed
 
     PROMPT --> CONFIRM: book
@@ -264,7 +274,9 @@ flowchart TD
     D -->|no| D1[no_handler — named refusal,<br/>acknowledged on screen]
     D -->|yes| E{current state}
     E -->|OFF or TV_IDLE| F[reserve STARTING, wake TV,<br/>present face, await rendered ACK]
-    E -->|FOREIGN_PLAY| G[D2: refuse visibly.<br/>content keeps playing]
+
+- [ ] **Step 3: States and diagrams** — in §5's `stateDiagram-v2`, replace `FOREIGN_PLAY --> FOREIGN_PLAY: card — refused, D2` with:
+
     E -->|acknowledged PROMPT| H[present candidate immediately;<br/>commit only after rendered ACK]
     E -->|STARTING, PRESENTING, CONFIRM,<br/>READING, CELEBRATE, RETURNING| I[refuse visibly;<br/>change nothing]
 ```
@@ -299,8 +311,8 @@ The two modes differ in exactly one cell, which is the point of the distinction.
 |---|---|---|---|---|---|
 | `OFF` | wake → `STARTING` | plays → `FOREIGN_PLAY` | — | — | — |
 | `TV_IDLE` | → `STARTING` | plays → `FOREIGN_PLAY` | — | — | — |
-| `FOREIGN_PLAY` | refuse visibly, stay | existing queue rules | → `TV_IDLE` | — | — |
-| `STARTING` / `PRESENTING` | **refuse, stay** | **refuse, stay** | — | — | → `TEARDOWN` |
+| `FOREIGN_PLAY` | adopt when the reader's last unclaimed book is playing (D12); otherwise refuse visibly, stay | existing queue rules | → `TV_IDLE` | — | — |
+| `STARTING` / `PRESENTING` | **refuse, stay** | **hold** during the initial card (applied on ACK); refuse during a switch | — | — | → `TEARDOWN` |
 | `PROMPT` | present learner; commit on rendered ACK | → `CONFIRM` | — | — | → `TEARDOWN` |
 | `CONFIRM` | **refuse, keep pick** | swap pick / same book confirms | — | → `READING` | → `TEARDOWN` |
 | `READING` | **refuse, keep exact session/pick** | **refuse — finish this one** | backend → `RETURNING`; screen may show `CELEBRATE` first | — | — |
@@ -323,11 +335,12 @@ Identical, except:
 | # | Question | Decision |
 |---|---|---|
 | **D1** | A card not enrolled in story-time | Opens an ordinary session in browsing mode. Reads logged, nothing counted. No special case. |
-| **D2** | A card tapped while unrelated content plays | **Refuse, visibly.** Brief on-screen acknowledgement; the content keeps playing. A reading session never seizes the TV from whoever is already watching. **One exemption:** content is not "unrelated" at a reader whose last session the system tore down from THIS learner within `recentlyDeparted`'s window — that is most likely their own orphaned story, and the refusal is non-retryable, so without the exemption the child is locked out by their own book (§9). |
+| **D2** | A card tapped while unrelated content plays | **Refuse, visibly.** Brief on-screen acknowledgement; the content keeps playing. A reading session never seizes the TV from whoever is already watching. **One exemption:** content is not "unrelated" at a reader whose last session the system tore down from THIS learner within `recentlyDeparted`'s window — that is most likely their own orphaned story, and the refusal is non-retryable, so without the exemption the child is locked out by their own book (§9). **Second exemption (D12):** content is not unrelated when it is the book last dispatched unclaimed at this reader — the card adopts it. |
 | **D3** | A card during the confirm countdown | **Refuse visibly.** Keep learner, session id, and pick exactly unchanged. |
 | **D4** | A card tapped mid-story | **Refuse visibly.** Keep learner, session id, pick, and playback attribution exactly unchanged, so completion cannot expire underneath the story. |
 | **D5** | A book tapped mid-story | **Mode-dependent.** Assignment: refuse — finish this one first. Browsing: do not claim; the existing queue applies — and the session records **whose** the queued book is (D11). |
 | **D11** | Who a queued book belongs to | **The queue is user-scoped.** A browsing-mode second book goes on deck scoped to the child at the reader now; a card tapped while it waits **re-scopes it** to that child (the playing story keeps its own attribution — D4 holds); the moment it takes the stage it is frozen into the pick, exactly as a countdown pick is. The rail shows the waiting book with the face and name it will be credited to. When the first story is credited the server advances into the on-deck pick instead of returning to the launch card, and the screen commits a fresh attribution for it. Before this, a queued story finished into a completion guard that had already fired and was never credited. |
+| **D12** | A card scanned while a book tapped at this reader is playing | **Adopt it.** The server remembers the last book dispatched unclaimed at the reader (`unclaimedPlay`, 2 h bound) and presents `reason: 'adopt'` with a server-minted pick. The TV proves the running track belongs to that book (`resolveAdoptablePlayback`), ACKs, re-mounts the story inside the reading stage from the playing track and seeks to the proved position on its first frame. Credit is the ordinary natural-end read under the adopted `pickId` — the whole book counts, including the part before the scan. Any failed proof (`no-owner`, `not-playing`, `content-mismatch`, `unverified`) posts `adopt-decline`: the session closes `adopt-declined`. Only `content-mismatch` shows D2's "Something else is playing"; the others say "Tap your card again". An adoption that never commits — declined or unacknowledged — restores the departure record it displaced (`abandonAdoption`), so a child whose room a cold TV took keeps the own-room exemption. An unacknowledged adoption, and an `unverified` decline (nobody could read the book's tracks), keep the unclaimed record so the next tap retries. The proof reads `capture().snapshot` — the session source nests state, current item and position there. |
 | **D6** | Nobody picks a book | **~2 minutes quiet → `TEARDOWN` → TV off.** Same teardown as a finished session. The TV never stays on unattended and the next tap always lands in a fresh session. |
 | **D7** | A card racing `CELEBRATE` or `RETURNING` | **Refuse visibly.** The next learner may enter after the launch face has returned and its rendered ACK commits `PROMPT`. |
 | **D8** | Does the TV always power off? | The session **suppresses the location's `end: tv-off`** while open and owns teardown timing, so the ceremony can render first. Not optional — see §3. |
@@ -349,6 +362,7 @@ goes back over the HTTP routes below. There is no other channel.
 | Event | Sent by | Payload | The screen does |
 |---|---|---|---|
 | `session-present` | `ReadingSessionService` | `learnerId, location, sessionId, presentationId, revision, serverEpoch, reason` | render that face immediately; ACK only after the launch card is painted and no fullscreen overlay covers it |
+| `session-present` `reason: 'adopt'` | `ReadingSessionService.beginAdoption` | presentation + `adopt: {contentId, pickId, studyDay}` | prove the running story (`resolveAdoptablePlayback`), ACK, then take it over at its position; on failure `POST /session/adopt-decline` and the D2 notice. Never painted as a launch card |
 | `session-open` | `ReadingSessionService.acknowledge` | committed session plus presentation identity, including `idleTimeoutMs` | confirm the authoritative prompt; reconnects may safely re-ACK it. The window is drawn on the live empty slot, whose light fades over it |
 | `session-update` | `ReadingSessionService.update` | the whole session | **nothing** — the screen owns its own view; the session's mirror is not an instruction |
 | `session-close` | `ReadingSessionService.close` | the session, plus `reason` (`timeout`, …) | back to `idle`, unless a story is still playing — that outlives the session |
@@ -391,6 +405,7 @@ mid-assignment child's hardening off with nothing anywhere to say so.
 | Route | Body / query | Why it exists |
 |---|---|---|
 | `GET /session`, `POST /session/ack` | `location`, then `location, learnerId, sessionId, presentationId, revision, serverEpoch` | Snapshot/revision recovery and an exact compare-and-swap. The screen sends the ACK after two paint opportunities, only with the launch card unobscured. A stale proof is `409 stale-presentation`. |
+| `POST /session/adopt-decline` | `location, presentationId, reason` (`not-playing` \| `content-mismatch` \| `no-owner`) | The TV could not prove the adoption. Closes the pending adoption `adopt-declined` and forgets the unclaimed record. `{ok: false}` when that presentation is not pending. |
 | `GET /events` | `?location=&limit=` | Bounded, restart-safe timeline in `school/runtime/reading-sessions/events.yml`: opening age, ACK/progress ages, server-observed visible state and `displayedSince`, plus timestamped transitions. This is the operator answer to “what has the TV been doing?” |
 | `POST /progress` | `location, sessionId, pickId, positionSec, durationSec, paused` | Liveness heartbeat. A stalled player, long pause, or terminal media without Player's completion callback enters `RETURNING` without granting credit. |
 | `POST /playing` | `location, learnerId, contentId, pickId` | **Nothing else moves a session to `reading`.** The backend cannot see the first frame; without this, `state` never leaves `confirm`, D5 never fires in the field, and every book tapped during a story is claimed as a fresh prompt. It reports PLAYBACK START, not countdown expiry — they differ by however long the content takes to load, and that gap is exactly when a stray tap misbehaves. |
@@ -476,6 +491,7 @@ flowchart TD
 | Launch card, shelf, slots, ceremony | `frontend/src/modules/School/reading/ReadingSessionScreen.jsx` + `.scss` (`reading-slot-breathe`, `reading-slot-idle-out`) |
 | Shelf covers, sized and cached | `frontend/src/modules/School/reading/bookCovers.js`, `School/plexImage.js` (`ART_BOX.readingShelf`) |
 | Screen state machine | `frontend/src/modules/School/reading/useReadingSession.js` |
+| TV-side adoption proof | `frontend/src/modules/School/reading/adoptForeignPlayback.js` |
 | Composition | `backend/src/app.mjs` (search `Living-room reading sessions`) |
 | Mount | `data/household/screens/living-room.yml` → `widget: school-reading` |
 
@@ -489,7 +505,10 @@ Not state transitions, but each must land somewhere visible.
 |---|---|
 | Content lookup fails | The player bails today. In a session: back to `PROMPT` with "that one didn't work" |
 | No book is picked | After two minutes, close the session. `end: tv-off` turns the configured display off; otherwise the widget returns to its idle/art surface. The prompt SHOWS that window running: the session publishes its own `idleTimeoutMs` and the live empty slot's amber glow eases to nothing over it (`--slot-idle-ms`, `reading-slot-idle-out`). That is a PICTURE of the sweep, never the sweep itself — the server decides off `lastActivityAt`, which every tap moves and the stylesheet cannot see, so where the two disagree the sweep wins. A `session-open` carrying no window draws no clock. |
-| TV wakes slowly, fails to wake, reloads, or misses the event | Reserve before wake; publish `PRESENTING` after the bounded wake result; a client hydrated during `STARTING` polls until the presentation exists. Replay twice. If no rendered ACK arrives, close the unseen initial session and alert an adult. |
+| TV wakes slowly, fails to wake, reloads, or misses the event | Reserve before wake; publish `PRESENTING` after the bounded wake result; a client hydrated during `STARTING` polls until the presentation exists. Replay for `initialDeliveryBudgetMs` (~60 s; attempts = `max(maxDeliveryAttempts, ceil(budget / ackTimeoutMs))`), re-foregrounding only on the first `maxDeliveryAttempts − 1` replays. If no rendered ACK arrives, close the unseen initial session and alert an adult. |
+| A book tapped while the first launch card is still in flight | **Held**, not refused. `holdBook` keeps the latest tap on the session; the ACK of the initial presentation commits `confirm` with it and broadcasts `session-open` then `book-selected`, so the child sees their book's countdown the moment their card appears. A switch or return still refuses `launch-card-not-ready` — a face is already on screen there. If the card is never acknowledged the held book is lost with the session; the child's re-tap then plays it unclaimed, and their next card adopts it (D12). |
+| An adoption the TV cannot prove | `adopt-decline` → close `adopt-declined`, unclaimed record forgotten (kept for `unverified`), the displaced departure restored, and a notice that fits the reason. The TV ignores the close's own echo so that notice stays up. The running content is never touched: the TV takes nothing over until the server has committed the pick, and the ACK's `session-open` echo — which usually arrives before the ACK response — is recognised by presentation id, so no launch card flashes over the story. |
+| An adoption never acknowledged | `abandonAdoption` closes `adopt-unacknowledged` (or restores the displaced departure); the story keeps playing; the unclaimed record is kept so the next tap retries. The ACK loop stops quietly if the TV declined meanwhile. |
 | Candidate learner face is not acknowledged | Never commit it. Replay once, then present the prior learner again and alert an adult; all inputs remain blocked until a face is acknowledged. |
 | Reading log write fails | The story still played. Surface it; never claim a read that was not recorded |
 | Backend restart mid-session | Session state is in-memory and is lost — correct; nobody is at the reader after a restart |
@@ -506,11 +525,11 @@ Not state transitions, but each must land somewhere visible.
 
 1. **A read is credited only from Player's semantic natural-end callback** — never on pick, play, skip, back, load failure, or explicit clear. **Both ceremony tiers hang off that same credited read**, so neither is a second source of it.
 2. **Attribution is decided and stored server-side at pick time**; the client cannot replace it.
-3. **No session, no credit.** An unclaimed book tap plays and counts for nobody.
+3. **No session, no credit** — until a card adopts it. An unclaimed book tap plays for nobody; a learner card scanned while it plays may adopt it (D12), and the whole read is then credited under the adopted pick.
 4. **Mode is derived, never stored.** It cannot go stale and it flips by itself.
 5. **Every tap is acknowledged on screen** — the same rule the scan ceremony holds.
    A child who taps and sees nothing taps harder.
-6. **A reading session never seizes the TV** from content already playing — except at a reader whose last session the system itself tore down from this same learner, inside `recentlyDeparted`'s window. That is the one case where the content playing is most likely the learner's own orphaned story, and where refusing them is a lock-out with no retry (§9, D2).
+6. **A reading session never seizes the TV** from content already playing — except at a reader whose last session the system itself tore down from this same learner, inside `recentlyDeparted`'s window. That is the one case where the content playing is most likely the learner's own orphaned story, and where refusing them is a lock-out with no retry (§9, D2) — and the one case in which the content playing is provably the book last tapped at this reader (D12), where the TV, not the server, is the proof.
 7. **In assignment mode: one story at a time.** No queue, no on-deck, nothing silent.
 8. **Only a visibly acknowledged launch card may hand off learners.** Every
    other state refuses cards without changing learner, session id, pick, or playback.
@@ -565,6 +584,16 @@ been watched succeed. Three details cannot be settled any other way:
    and a screensaver is a fullscreen overlay over the layout this widget renders
    into. The widget dismisses it once on the way out of `idle`; whether that is
    enough on the real screen, at the real idle timings, is a thing to watch.
+
+7. **Adoption on the real Shield.** The seek is applied to the element on the
+   stage's first frame; how long the audio gap between the foreign player's
+   unmount and the stage's first frame is, and whether the seek lands within a
+   second of the proved position, has not been measured on the set. The
+   `school.reading.adoption-*` lines and the frontend `adoption-seek` event
+   answer both. Multi-track books adopted past track 1 are covered by tests only.
+   A page RELOADED mid-adoption is tested only for doing it once: in the field a
+   reload destroys the foreign playback, so the hydrated adoption will decline
+   (`no-owner`) and the child is asked to tap again.
 
 One known gap remains deliberate:
 

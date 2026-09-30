@@ -488,6 +488,8 @@ export const schoolApi = {
   readingSummary: (learnerId) => req(`/reading/summary?learnerId=${encodeURIComponent(learnerId)}`),
   readingSession: (location) => req(`/reading/session?location=${encodeURIComponent(location)}`),
   acknowledgeReadingSession: (presentation) => req('/reading/session/ack', presentation),
+  // The TV could not prove it is playing the book it was asked to adopt.
+  declineReadingAdoption: (body) => req('/reading/session/adopt-decline', body),
   // The day is done and nobody cancelled the wind-down: close the session and
   // let the reader's own end policy turn the room off.
   endReadingSession: (body) => req('/reading/session/end', body),
