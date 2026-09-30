@@ -120,3 +120,17 @@ it.each(['lookup', 'wake'])('new-event rescan retries a failed %s without extend
 it('requires composition to supply the secure capability generator', () => {
   expect(() => fixture({ mintId: undefined })).toThrow('requires a secure intent id generator');
 });
+
+it('leaves a pass for the claiming learner and that book only, which expires', async () => {
+  const f = fixture(); await receive(f); await settle();
+  expect(f.service.hasScanned({ learnerId: 'child', isbn13: ISBN })).toBe(false);
+  const intent = f.service.pending('portal');
+  await f.service.claim({ id: intent.id, screenId: 'portal', learnerId: 'child' });
+  expect(f.service.hasScanned({ learnerId: 'child', isbn13: ISBN })).toBe(true);
+  expect(f.service.hasScanned({ learnerId: 'sibling', isbn13: ISBN })).toBe(false);
+  expect(f.service.hasScanned({ learnerId: 'child', isbn13: '9780123456786' })).toBe(false);
+  f.advance(29 * 60_000);
+  expect(f.service.hasScanned({ learnerId: 'child', isbn13: ISBN })).toBe(true);
+  f.advance(2 * 60_000);
+  expect(f.service.hasScanned({ learnerId: 'child', isbn13: ISBN })).toBe(false);
+});

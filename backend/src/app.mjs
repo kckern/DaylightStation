@@ -400,6 +400,7 @@ import { YamlDocumentFileStore } from './1_adapters/school/YamlDocumentFileStore
 import { RUBIKS_CUBE_COURSE_ID, RUBIKS_CUBE_REVISION } from './3_applications/school/rubiksCube/courseCatalog.mjs';
 import { createRubiksCubeRouter } from './4_api/v1/routers/rubiksCube.mjs';
 import { PrepareBookScan } from '#apps/school/usecases/PrepareBookScan.mjs';
+import { BookEntryPolicy } from '#apps/school/BookEntryPolicy.mjs';
 import { OpenBookShelfAtPanel } from '#apps/school/usecases/OpenBookShelfAtPanel.mjs';
 
 /**
@@ -5008,6 +5009,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       openBookShelfItem: schoolLifecycle.useCases.openBookShelfItem,
       recordBookProgress: schoolLifecycle.useCases.recordBookProgress,
       onBookLogChanged: (payload) => eventBus.broadcast('school', payload),
+      // school.yml `books.manualEntry: false` makes the child's add door
+      // scan-only; see BookEntryPolicy for why.
+      entryPolicy: new BookEntryPolicy({
+        manualEntryAllowed: () => configService.getHouseholdAppConfig(null, 'school')?.books?.manualEntry !== false,
+        scanned: (args) => bookScans?.hasScanned(args) ?? false,
+        logger: rootLogger.child({ module: 'school-books-api' }),
+      }),
       logger: rootLogger.child({ module: 'school-books-api' }),
     }));
   }

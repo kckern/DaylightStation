@@ -47,7 +47,7 @@ function Fault({ message }) {
  * @param {boolean} props.busy - a write is in flight.
  * @param {object} props.actions - the hook's actions.
  */
-export default function AddBook({ step, add, today, earliestDay = null, error = null, busy = false, actions }) {
+export default function AddBook({ step, add, today, earliestDay = null, error = null, busy = false, actions, manualEntry = true }) {
   const tap = useTapFire();
   const [rereading, setRereading] = useState(false);
   const press = useCallback((fn) => tap(() => { if (!busy) fn(); }), [tap, busy]);
@@ -134,6 +134,18 @@ export default function AddBook({ step, add, today, earliestDay = null, error = 
         <DayPicker key={today} compact initiallyOpen today={today} minDay={earliestDay} busy={busy} onConfirm={(key) => { if (!busy) actions.submitDay(key); }} />
         <Fault message={message} />
         </div>
+      </div>
+    );
+  } else if (!manualEntry) {
+    // SCAN-ONLY (`school.yml` `books.manualEntry: false`). The pad was typed
+    // from memory — one placeholder number, over and over — so where it stood
+    // there is only the instruction. A scan lands through the panel's own
+    // scan offer and comes back here with the book already named.
+    body = (
+      <div className="school-books-add__number school-books-add__scan-only" data-testid="scan-only">
+        <Icon name="barcode" className="school-books-add__scan-icon" />
+        <p className="school-books-add__prompt">Scan the barcode on the back of your book</p>
+        <Fault message={message} />
       </div>
     );
   } else {

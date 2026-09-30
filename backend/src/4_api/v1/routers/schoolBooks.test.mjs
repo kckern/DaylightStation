@@ -129,6 +129,37 @@ describe('school books routes', () => {
     expect(res.body.error.message).toMatch(/page/);
   });
 
+  describe('scan-only entry (books.manualEntry: false)', () => {
+    const withPolicy = (policy) => app({ ...deps(), entryPolicy: policy });
+
+    it('GET shelf tells the panel whether the pad may be drawn', async () => {
+      const [a] = withPolicy({ describe: () => ({ manual: false }), assertMayOpen: vi.fn() });
+      const res = await request(a).get('/school/books/kid/shelf').set(H, 'ok-kid');
+      expect(res.body).toEqual({ ...view, entry: { manual: false } });
+    });
+
+    it('refuses a book the policy refuses, before the use case writes, in the app error shape', async () => {
+      const assertMayOpen = vi.fn(() => { const e = new Error('Scan the barcode on your book to add it.'); e.name = 'AuthorizationError'; e.status = 403; throw e; });
+      const [a, d] = withPolicy({ describe: () => ({ manual: false }), assertMayOpen });
+      const res = await request(a).post('/school/books/kid/shelf').set(H, 'ok-kid')
+        .send({ learnerId: 'sibling', bookId: '9780123456786', entryId: 'e1', where: 'starting' });
+      expect(res.status).toBe(403);
+      expect(res.body.error.message).toMatch(/Scan the barcode/);
+      expect(assertMayOpen).toHaveBeenCalledWith({ learnerId: 'kid', bookId: '9780123456786' });
+      expect(d.openBookShelfItem.calls).toHaveLength(0);
+      expect(d.onBookLogChanged).not.toHaveBeenCalled();
+    });
+
+    it('does not gate progress on a reading already on the shelf', async () => {
+      const assertMayOpen = vi.fn(() => { throw new Error('should not be asked'); });
+      const [a, d] = withPolicy({ describe: () => ({ manual: false }), assertMayOpen });
+      const res = await request(a).post('/school/books/kid/shelf/kid:b:e1/progress').set(H, 'ok-kid').send({ kind: 'progress', page: 9, entryId: 'p' });
+      expect(res.status).toBe(200);
+      expect(assertMayOpen).not.toHaveBeenCalled();
+      expect(d.recordBookProgress.calls).toHaveLength(1);
+    });
+  });
+
   it('names each missing collaborator at construction', () => {
     for (const name of ['grants', 'getBookShelf', 'openBookShelfItem', 'recordBookProgress', 'onBookLogChanged']) {
       expect(() => createSchoolBooksRouter({ ...deps(), [name]: undefined }), name).toThrow(new RegExp(name));

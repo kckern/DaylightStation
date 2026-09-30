@@ -13,7 +13,7 @@ const GRANT_HEADER = 'X-School-Book-Grant';
  */
 export function createSchoolBooksRouter({
   grants, getBookShelf, openBookShelfItem, recordBookProgress,
-  onBookLogChanged, logger = console,
+  onBookLogChanged, entryPolicy = null, logger = console,
 } = {}) {
   for (const [name, dep] of Object.entries({
     grants, getBookShelf, openBookShelfItem, recordBookProgress, onBookLogChanged,
@@ -56,11 +56,15 @@ export function createSchoolBooksRouter({
 
   router.get('/:learnerId/shelf', asyncHandler(async (req, res) => {
     const learnerId = learnerFromGrant(req);
-    res.json(await getBookShelf.execute({ learnerId }));
+    const shelf = await getBookShelf.execute({ learnerId });
+    // Whether the panel may offer the number pad (`BookEntryPolicy`). Absent
+    // policy, absent key: the panel keeps the pad it always had.
+    res.json(entryPolicy ? { ...shelf, entry: entryPolicy.describe() } : shelf);
   }));
 
   router.post('/:learnerId/shelf', express.json(), asyncHandler(async (req, res) => {
     const learnerId = learnerFromGrant(req);
+    entryPolicy?.assertMayOpen({ learnerId, bookId: req.body?.bookId });
     const result = await openBookShelfItem.execute({ ...withoutLearner(req.body), learnerId });
     await notifyChanged(learnerId);
     res.json(result);

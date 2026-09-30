@@ -478,4 +478,39 @@ describe('BookShelf', () => {
       expect(screen.getByTestId('book-history-more')).toBeInTheDocument();
     });
   });
+
+  describe('scan-only (books.manualEntry: false)', () => {
+    it('the add card asks for a scan, not a number', () => {
+      arm({ manualEntry: false });
+      mount();
+      const add = within(screen.getByTestId('book-grid')).getByRole('button', { name: /Add a book/ });
+      expect(add).toHaveTextContent('Scan the barcode');
+      expect(add).not.toHaveTextContent('type the number');
+    });
+
+    it('the add view draws no number pad, only the scan instruction', () => {
+      arm({ manualEntry: false, view: 'add', step: 'number', add: { entry: '', hint: null, canSubmit: false, canRetry: false, resolved: null, duplicateOf: null } });
+      mount();
+      expect(screen.getByTestId('scan-only')).toHaveTextContent('Scan the barcode on the back of your book');
+      expect(screen.queryByText('Type the number under the barcode')).toBeNull();
+      expect(screen.queryByRole('button', { name: '7' })).toBeNull();
+    });
+
+    it('a finished book offers Read again only when it is the book just scanned', () => {
+      arm({ manualEntry: false, scannedBookId: null, view: 'completed', current: DONE_AUG });
+      const { unmount } = mount();
+      expect(screen.queryByRole('button', { name: /Read again/ })).toBeNull();
+      expect(screen.getByTestId('scan-to-read-again')).toHaveTextContent('Scan its barcode');
+      unmount();
+      arm({ manualEntry: false, scannedBookId: DONE_AUG.bookId, view: 'completed', current: DONE_AUG });
+      mount();
+      expect(screen.getByRole('button', { name: /Read again/ })).toBeInTheDocument();
+    });
+
+    it('with manual entry on, the pad and Read again are unchanged', () => {
+      arm({ manualEntry: true, view: 'completed', current: DONE_AUG });
+      mount();
+      expect(screen.getByRole('button', { name: /Read again/ })).toBeInTheDocument();
+    });
+  });
 });

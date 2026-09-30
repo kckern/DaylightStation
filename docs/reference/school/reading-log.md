@@ -1,6 +1,6 @@
 # The reading log — a child's books, on paper, on the panel, and in the console
 
-> **Status:** current as of 2026-09-06. This is the durable reference; the
+> **Status:** current as of 2026-09-29. This is the durable reference; the
 > dated files in `docs/_wip/plans/` are the point-in-time record of how it got
 > here and why particular decisions were reversed.
 
@@ -188,6 +188,39 @@ the `3` and fired on pointerdown; a child wiped a half-typed ISBN four times in
 88 seconds. Clearing now lives behind a 600ms hold on backspace. And the three
 "where are you with it" doors were stacked text bars a pre-reader could not
 tell apart; they are square tiles with icons.
+
+### Scan-only mode (`books.manualEntry: false`)
+
+`school.yml` → `books.manualEntry: false` closes the typed door. It is **on in
+this household since 2026-09-29**; an absent key keeps the pad.
+
+Why: the pad accepts any number that checksums, and `9780123456786` — the
+digits 0–9 in order after `978` — happens to. In the week to 2026-09-29, 29 of
+the 39 readings children opened were that one number (one child: 25, sixteen
+in a single day), finished and re-finished for credit, against 118 rejected
+keypad mashes (`not-an-identifier`) and 108 pad clears. Not one book scan was
+logged in the same week. A scan needs the book in hand; a memorised number does not.
+
+What it changes:
+
+- **The panel draws no pad.** The Add tile reads "Scan the barcode" and the add
+  view is a barcode mark and one sentence. The book arrives through the scan
+  offer (above) and lands on the cover step already named.
+- **The server refuses a typed book.** `POST /school/books/:learnerId/shelf` asks
+  `BookEntryPolicy` first; without a pass it answers 403 "Scan the barcode on
+  your book to add it." and logs `school.book-log.manual-entry-refused`. A pass
+  is left by `PrepareBookScan#claim` for **that learner and that ISBN, for 30
+  minutes**, in memory — a restart costs a rescan, nothing more.
+- **"Read again" needs the scan too.** A re-read is a new reading, so a finished
+  book tapped on the shelf says "Reading it again? Scan its barcode." A scan of
+  a finished book opens it WITH the button, because that scan left the pass.
+- **Untouched:** progress on readings already on the shelf, the panel door and
+  the printed code (they still open the shelf), and the teacher console's "open
+  a book for a child", which is a different route.
+
+The shelf read carries `entry: {manual}` so the panel and the server read the
+same flag. The flag is read per request from the in-memory config, so flipping
+it needs a config reload or restart, not a rebuild.
 
 ### What the shelf looks like
 
@@ -385,6 +418,7 @@ different job, and it is [`reading-shelf.md`](reading-shelf.md).
 | Child panel | `frontend/src/modules/School/books/` |
 | Teacher workspace | `frontend/src/modules/School/teacher/panels/ReadingShelfPanel.jsx` |
 | HTTP | `4_api/v1/routers/{books,schoolBooks,school.teacherReading}.mjs` |
+| Scan-only gate | `3_applications/school/BookEntryPolicy.mjs`, pass in `usecases/PrepareBookScan.mjs` |
 | CLI | `cli/school/booklog.cli.mjs` |
 
 ## Related

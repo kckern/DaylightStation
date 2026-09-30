@@ -62,7 +62,7 @@ function LearnerChip({ learner }) {
  * is then a shelf with one empty book on it, which is an invitation; the
  * sentence it replaced ("Ready for your next book") was only an observation.
  */
-function AddTile({ first, onSelect, disabled = false }) {
+function AddTile({ first, onSelect, disabled = false, manualEntry = true }) {
   return (
     // A POSTER FRAME AND NOTHING AROUND IT: the dashed slot a cover would fill,
     // a plus in it, the words under it. It used to be that slot inside a
@@ -81,7 +81,7 @@ function AddTile({ first, onSelect, disabled = false }) {
       </span>
       <span className="school-books-tile__text">
         <span className="school-books-tile__title">{first ? 'Add your first book' : 'Add a book'}</span>
-        <span className="school-books-tile__caption">Tap to type the number</span>
+        <span className="school-books-tile__caption">{manualEntry ? 'Tap to type the number' : 'Scan the barcode'}</span>
       </span>
     </button>
   );
@@ -97,7 +97,7 @@ function Fault({ error, onRetry, needsRefresh = false, busy = false }) {
   );
 }
 
-function Shelf({ shelf, error, actions, receipt, busy, needsRefresh, today }) {
+function Shelf({ shelf, error, actions, receipt, busy, needsRefresh, today, manualEntry = true }) {
   const items = (shelf?.items ?? []).filter((item) => ON_SHELF.has(item?.projection?.status ?? 'reading'));
   // Finished AND set aside: one row for everything the child is done with, the
   // tile's own mark saying which is which.
@@ -131,7 +131,7 @@ function Shelf({ shelf, error, actions, receipt, busy, needsRefresh, today }) {
             with their own headings and their own scroll behaviour; a child
             reading the shelf had to cross a seam to see yesterday. */}
         <BookHistory
-          lead={<AddTile first={(shelf?.items ?? []).length === 0} disabled={awaitingShelf} onSelect={actions.startAdd} />}
+          lead={<AddTile first={(shelf?.items ?? []).length === 0} disabled={awaitingShelf} onSelect={actions.startAdd} manualEntry={manualEntry} />}
           reading={items}
           items={done}
           today={today}
@@ -151,7 +151,7 @@ function Shelf({ shelf, error, actions, receipt, busy, needsRefresh, today }) {
  * @param {(reason: 'done'|'idle') => void} [props.onExit]
  */
 export default function BookShelf({ learnerId, grant, idleTimeoutSeconds, onExit, initialBookEntry, openAdd = false }) {
-  const { view, step, shelf, studyDay, earliestFinishDay, learner, error, busy, needsRefresh = false, current, receipt, add, actions } = useBookShelf({ learnerId, grant, idleTimeoutSeconds, onExit, initialBookEntry, openAdd });
+  const { view, step, shelf, studyDay, earliestFinishDay, manualEntry, scannedBookId, learner, error, busy, needsRefresh = false, current, receipt, add, actions } = useBookShelf({ learnerId, grant, idleTimeoutSeconds, onExit, initialBookEntry, openAdd });
 
   if (view === 'closed') return null;
   // The server's study day, re-read on every shelf fetch; the DayPickers are
@@ -165,13 +165,13 @@ export default function BookShelf({ learnerId, grant, idleTimeoutSeconds, onExit
       ? <Fault error={error} onRetry={actions.retry} />
       : <p className="school-books__loading">Getting your shelf…</p>;
   } else if (view === 'completed' && current) {
-    body = <CompletedBook item={current} actions={actions} />;
+    body = <CompletedBook item={current} actions={actions} canReadAgain={manualEntry !== false || current.bookId === scannedBookId} />;
   } else if (view === 'update' && current) {
     body = <UpdateBook key={current.itemId} item={current} today={today} earliestDay={earliestFinishDay} error={error} busy={busy} actions={actions} />;
   } else if (view === 'add') {
-    body = <AddBook key={add.entryId ?? 'isbn'} step={step} add={add} today={today} earliestDay={earliestFinishDay} error={error} busy={busy} actions={actions} />;
+    body = <AddBook key={add.entryId ?? 'isbn'} step={step} add={add} today={today} earliestDay={earliestFinishDay} error={error} busy={busy} actions={actions} manualEntry={manualEntry} />;
   } else {
-    body = <Shelf shelf={shelf} error={error} actions={actions} receipt={receipt} busy={busy} needsRefresh={needsRefresh} today={today} />;
+    body = <Shelf shelf={shelf} error={error} actions={actions} receipt={receipt} busy={busy} needsRefresh={needsRefresh} today={today} manualEntry={manualEntry} />;
   }
 
   return (

@@ -67,6 +67,7 @@ subject — transport (`play`, `pause`, `next`, `prev`, `rewind`, `restart`),
 | `power` | `svg/power.svg` | the locked panel's "Turn off screen" control (standby glyph, drawn to the contract above) |
 | `plus` | `svg/plus.svg` | the reading shelf's add card, in the empty book slot |
 | `bookmark` | `svg/bookmark.svg` | the reading shelf's set-aside mark, beside `book-finished`'s check |
+| `barcode` | `svg/barcode.svg` | the reading shelf's scan-only add prompt, where the number pad was (drawn to the contract: six rounded bars, `currentColor`) |
 | `record` | `svg/record.svg` | the Sentence Ladder recording rung's start tile — "Listen, then record" (SVG Repo 524865, record-circle-1; strokes → currentColor) |
 | `stop` | `svg/stop.svg` | the recording rung's live-mic tile — a rounded square, red, the only red on that stage (drawn to the contract) |
 | `record-again` | `svg/record-again.svg` | the recording rung's "Record again" (SVG Repo 506292, redo-circle; strokes → currentColor) |
