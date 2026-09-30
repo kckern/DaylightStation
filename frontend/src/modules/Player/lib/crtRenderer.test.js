@@ -35,8 +35,8 @@ describe('resolveParams', () => {
     expect(resolved.INV).toBe(1);
     expect(resolved.R).toBe(1.8);
     expect(resolved.cornersize).toBe(0.041);
+    expect(resolved.DOTMASK).toBe(0.4);
     // left at the shader's own default
-    expect(resolved.DOTMASK).toBe(0.3);
     expect(resolved.scanline_weight).toBe(0.3);
     expect(resolved.SHARPER).toBe(1);
   });

@@ -25,13 +25,15 @@ import CRT_GEOM_SRC from '../shaders/crt-geom.glsl?raw';
 import { createCrtFrameStats } from './crtFrameStats.js';
 
 // crt-geom deltas from the shader's own defaults, settled 2026-08-18 in the CRT lab
-// (frontend/public/crt-lab/). Everything not listed stays at the shader default,
-// notably DOTMASK 0.3, scanline_weight 0.3, SHARPER 1, CURVATURE 1.
+// (frontend/public/crt-lab/); DOTMASK raised 0.3 → 0.4 on 2026-09-30. Everything
+// not listed stays at the shader default, notably scanline_weight 0.3, SHARPER 1,
+// CURVATURE 1.
 export const CRT_GEOM_PRESET = Object.freeze({
   CRTgamma: 1.9,
   INV: 1,
   R: 1.8,
-  cornersize: 0.041
+  cornersize: 0.041,
+  DOTMASK: 0.4
 });
 
 export const DEFAULT_PRE_FILTER = Object.freeze({
