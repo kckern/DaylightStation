@@ -549,3 +549,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-30 | feat/piano-course-sequence | 2e7fbe740 | Piano course sequences (then:), merged in 7970f0e40 |
 | 2026-09-30 | feat/reading-adoption | 7a5b0b065 | Reading cold-wake budget, held book, mid-story adoption (D12) + review fixes, merged in a5836af2e |
 | 2026-09-30 | fix/book-scan-shelf-scope | 0b537afc0 | Book scanned on a child's open shelf is claimed for that child, merged in bb64f4107/0b537afc0 |
+| 2026-09-30 | fix/card-ladder-summary-ceremony | 08cfb0c91 | Card ladder day-done celebration card + one big Done, merged in main |
