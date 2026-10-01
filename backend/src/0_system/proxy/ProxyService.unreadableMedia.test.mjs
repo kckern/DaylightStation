@@ -44,7 +44,7 @@ describe('ProxyService — Plex media file refusals', () => {
     upstream = null;
   });
 
-  async function start(refusals) {
+  async function start(refusals, listeners = []) {
     const hits = [];
     upstream = await listen(http.createServer((req, res) => {
       const path = req.url.split('?')[0];
@@ -60,6 +60,7 @@ describe('ProxyService — Plex media file refusals', () => {
     }));
     const service = new ProxyService({ logger: { debug() {}, warn() {}, error() {}, info() {} } });
     service.register(new FastPlexProxyAdapter({ host: `http://127.0.0.1:${upstream.address().port}`, token: 't' }));
+    listeners.forEach((l) => service.onErrorReplaced(l));
     const app = express();
     app.use('/api/v1/proxy/plex', service.createMiddleware('plex'));
     proxyApp = await listen(http.createServer(app));
@@ -81,6 +82,19 @@ describe('ProxyService — Plex media file refusals', () => {
     expect(res.headers['retry-after']).toBe('5');
     expect(JSON.parse(res.body)).toEqual({ error: 'Media file temporarily unreadable', reason: 'source-unreadable' });
     expect(hits.filter((p) => p === PART)).toHaveLength(4); // first try + 3 retries
+  });
+
+  it('tells error-replaced listeners which part was refused (server-side heal trigger)', async () => {
+    const events = [];
+    const { port } = await start(Infinity, [
+      (e) => events.push(e),
+      () => { throw new Error('listener bug'); },
+    ]);
+    const res = await get(port, `/api/v1/proxy/plex${PART}?offset=114`);
+    expect(res.status).toBe(503); // a throwing listener never touches the response
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ service: 'plex', statusCode: 404, reason: 'source-unreadable' });
+    expect(events[0].path).toContain('/library/parts/762015/');
   });
 
   it('leaves every other 404 alone', async () => {

@@ -272,3 +272,16 @@ describe('PlexAdapter.getMediaUrl — id-only convenience', () => {
     expect(adapter.client.getMetadata).toHaveBeenCalledWith('42');
   });
 });
+
+describe('PlexAdapter.ratingKeyForPart — refused part -> item to heal', () => {
+  it('remembers the part of every audio URL it hands out', async () => {
+    const adapter = makeAdapter();
+    expect(adapter.ratingKeyForPart('624639')).toBeNull();
+    const result = await adapter.loadMediaUrl(makeAudioPlayable({
+      ratingKey: '592906', mediaKey: '/library/parts/624639/1692829601/file.mp3',
+    }));
+    expect(result.url).toContain('/library/parts/624639/');
+    expect(adapter.ratingKeyForPart('624639')).toBe('592906');
+    expect(adapter.ratingKeyForPart(624639)).toBe('592906');
+  });
+});
