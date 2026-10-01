@@ -20,6 +20,13 @@ import { deriveRecap } from './recapVideo.js';
 import { useSettledRecapPlay } from './recapPlayback.js';
 import RingIcon from '@/lib/icons/RingIcon.jsx';
 import Skeleton from '@/lib/ui/Skeleton.jsx';
+import getLogger from '@/lib/logging/Logger.js';
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ app: 'fitness', component: 'session-detail' });
+  return _logger;
+}
 
 const StravaIcon = ({ size = 12, color = '#fc4c02' }) => (
   <svg width={size} height={size} viewBox="0 0 16 16" fill={color} style={{ flexShrink: 0 }}>
@@ -136,20 +143,42 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   const posterRef = useRef(null);
   const [posterWidth, setPosterWidth] = useState(0);
 
-  const fetchSession = useCallback(() => {
+  // The pane stays mounted when it swaps to another session (same widget key),
+  // so a response is applied only if it is still for the session on screen.
+  const activeSessionIdRef = useRef(sessionId);
+  activeSessionIdRef.current = sessionId;
+
+  // `background` refreshes keep the current detail on screen: the skeleton is
+  // for a first load only. Swapping a rendered detail back to a skeleton to
+  // refresh it is what made the pane blank out and redraw during hydration.
+  const fetchSession = useCallback(({ background = false } = {}) => {
     if (!sessionId) return;
-    setLoading(true);
-    setError(null);
+    if (!background) {
+      setLoading(true);
+      setError(null);
+    }
+    const startedAt = performance.now();
     fetch(`/api/v1/fitness/sessions/${sessionId}`)
       .then((res) => {
         if (!res.ok) throw new Error(`${res.status}`);
         return res.json();
       })
       .then((data) => {
+        if (activeSessionIdRef.current !== sessionId) return;
         setSessionData(data.session || data);
+        setError(null);
         setLoading(false);
+        logger().info('session-detail.loaded', {
+          sessionId, background, ms: Math.round(performance.now() - startedAt),
+        });
       })
       .catch((err) => {
+        if (activeSessionIdRef.current !== sessionId) return;
+        if (background) {
+          logger().warn('session-detail.refresh-failed', { sessionId, error: err.message });
+          return;
+        }
+        logger().warn('session-detail.load-failed', { sessionId, error: err.message });
         setError(err.message);
         setLoading(false);
       });
@@ -173,7 +202,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
     if (!sessionId) return;
     fitnessCtx?.openVoiceMemoCapture?.(null, {
       sessionId,
-      onComplete: () => fetchSession()
+      onComplete: () => fetchSession({ background: true })
     });
   }, [sessionId, fitnessCtx, fetchSession]);
 
@@ -189,7 +218,27 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
 
   useEffect(() => {
     fetchSession();
-  }, [fetchSession, sessionsData]);
+  }, [fetchSession]);
+
+  // This session's row in the home sessions list. When the row changes (the
+  // final save landed, a memo was transcribed, Strava matched) the detail is
+  // refreshed in the background. A list refresh that leaves the row untouched
+  // — the 5-minute poll, another session saving — does not refetch the detail.
+  // `undefined` = list not loaded yet; null = loaded, session not in it.
+  const listRow = useMemo(() => {
+    if (!sessionsData) return undefined;
+    const row = (sessionsData.sessions || []).find((s) => s.sessionId === sessionId);
+    return row ? JSON.stringify(row) : null;
+  }, [sessionsData, sessionId]);
+  const lastListRowRef = useRef(null);
+  useEffect(() => {
+    const prev = lastListRowRef.current;
+    lastListRowRef.current = { sessionId, row: listRow };
+    if (!prev || prev.sessionId !== sessionId) return;
+    if (prev.row === undefined || listRow === undefined || prev.row === listRow) return;
+    logger().debug('session-detail.list-row-changed', { sessionId });
+    fetchSession({ background: true });
+  }, [sessionId, listRow, fetchSession]);
 
   const header = useMemo(() => {
     if (!sessionData) return null;

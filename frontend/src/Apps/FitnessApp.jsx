@@ -56,6 +56,14 @@ registerBuiltinWidgets();
 // showed skeletons on every return from the player. Deliberately NOT
 // `suggestions`: a stale "up next" flashing then changing is worse than a wait.
 const SCREEN_PERSISTED_SOURCES = ['sessions'];
+// Widgets that read the injected `dashboard` screen-data source.
+const DASHBOARD_WIDGETS = new Set(['fitness:coach', 'fitness:upnext']);
+
+function layoutUsesWidget(node, widgets) {
+  if (!node || typeof node !== 'object') return false;
+  if (node.widget && widgets.has(node.widget)) return true;
+  return Array.isArray(node.children) && node.children.some((child) => layoutUsesWidget(child, widgets));
+}
 
 const FitnessApp = () => {
   useDocumentTitle('Fitness');
@@ -821,19 +829,33 @@ const FitnessApp = () => {
     return root?.screens || {};
   }, [fitnessConfiguration]);
 
-  // Resolve data sources for active screen, injecting dashboard URL with primary userId
+  // Resolve data sources for active screen. The health dashboard source is
+  // injected only when the layout has a widget that reads it — fetching it for a
+  // layout without one is a request (often a 404: no dashboard generated today)
+  // every refresh for nothing.
   const screenSources = useMemo(() => {
     const screenCfg = activeScreen ? screensConfig[activeScreen] : null;
     if (!screenCfg?.data) return {};
     const sources = { ...screenCfg.data };
     const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
     const primaryUser = root?.users?.primary?.[0];
-    if (primaryUser) {
+    if (primaryUser && layoutUsesWidget(screenCfg.layout, DASHBOARD_WIDGETS)) {
       const userId = primaryUser.id || primaryUser.profileId;
       sources.dashboard = { source: `/api/v1/health-dashboard/${userId}`, refresh: 300 };
     }
     return sources;
   }, [activeScreen, screensConfig, fitnessConfiguration]);
+
+  // Stable layout config for ScreenProvider. Built inline it was a new object on
+  // every FitnessApp render, which re-annotated and re-merged the whole layout
+  // tree and re-rendered every home widget each time the app ticked.
+  const activeScreenLayout = useMemo(() => {
+    const screenCfg = activeScreen ? screensConfig[activeScreen] : null;
+    if (!screenCfg) return null;
+    return { ...screenCfg.layout, theme: screenCfg.theme };
+  }, [activeScreen, screensConfig]);
+  const handleCtaAction = useCallback((cta) => logger.info('fitness-cta-action', { action: cta.action }), [logger]);
+  const handleSelectedSessionConsumed = useCallback(() => setPendingSelectedSessionId(null), []);
 
   // Derive sequential labels config for route-based play blocking
   const sequentialLabelSet = useMemo(() => {
@@ -1186,6 +1208,13 @@ const FitnessApp = () => {
         logger.warn('fitness-navigate-unknown', { type });
     }
   };
+
+  // Stable identity for the screen widgets' context: handleNavigate is rebuilt
+  // every render, and passing it directly changed FitnessScreenContext on every
+  // FitnessApp render, re-rendering every home widget with it.
+  const handleNavigateRef = useRef(handleNavigate);
+  handleNavigateRef.current = handleNavigate;
+  const handleScreenNavigate = useCallback((...args) => handleNavigateRef.current(...args), []);
 
   const handleBackToMenu = () => {
     setCurrentView('menu');
@@ -1670,10 +1699,10 @@ const FitnessApp = () => {
                   <div className="screen-app">
                     <FitnessScreenProvider
                       onPlay={handleHomePlay}
-                      onNavigate={handleNavigate}
-                      onCtaAction={(cta) => logger.info('fitness-cta-action', { action: cta.action })}
+                      onNavigate={handleScreenNavigate}
+                      onCtaAction={handleCtaAction}
                       initialSelectedSessionId={pendingSelectedSessionId}
-                      onSelectedSessionConsumed={() => setPendingSelectedSessionId(null)}
+                      onSelectedSessionConsumed={handleSelectedSessionConsumed}
                       roster={momentumRoster}
                       householdLabel={householdLabel}
                       compareWeeks={momentumCompareWeeks}
@@ -1686,7 +1715,7 @@ const FitnessApp = () => {
                         actionsRef={screenDataActionsRef}
                       >
                         <ScreenProvider
-                          config={{ ...screensConfig[activeScreen].layout, theme: screensConfig[activeScreen].theme }}
+                          config={activeScreenLayout}
                           initialReplacements={sessionDetailSeed(pendingSelectedSessionId)}
                         >
                           <PanelRenderer />

@@ -85,6 +85,7 @@ export class FitnessSuggestionService {
     const startDate = startD.toISOString().split('T')[0];
 
     const hid = this.#sessionService.resolveHouseholdId(householdId);
+    const sessionsStart = Date.now();
     let recentSessions = [];
     try {
       recentSessions = await this.#sessionService.listSessionsInRange(startDate, endDate, hid);
@@ -92,9 +93,12 @@ export class FitnessSuggestionService {
       this.#logger.warn?.('suggestions.sessions-fetch-failed', { error: err?.message });
     }
 
+    const sessionsMs = Date.now() - sessionsStart;
+
     // Resolve shows excluded via exclude_collections (Plex collection/playlist
     // membership). Applies to NextUp + Discovery; Resume / Favorite / Memorable
     // honor their own explicit signals so they still surface these.
+    const excludedStart = Date.now();
     const excludedShowIds = await this.#getExcludedShowIds(
       suggestionPolicy.excludedCollectionIds
     );
@@ -105,6 +109,8 @@ export class FitnessSuggestionService {
     const neverSuggestShowIds = await this.#getExcludedShowIds(
       suggestionPolicy.neverSuggestCollectionIds
     );
+
+    const excludedMs = Date.now() - excludedStart;
 
     // Request-scoped memo for getPlayableEpisodes. The same show is resolved by
     // multiple strategies (Resume + NextUp both walk recent shows; Favorite /
@@ -187,6 +193,9 @@ export class FitnessSuggestionService {
     // (playable.calls vs playable.misses shows how much the memo deduped).
     this.#logger.info?.('suggestions.breakdown', {
       slots,
+      sessionsMs,
+      excludedMs,
+      recentSessions: recentSessions.length,
       strategyTimings,
       playableCalls: playableStats.calls,
       playableMisses: playableStats.misses,

@@ -213,6 +213,25 @@ orphans piling up per deploy. Logs `screendataprovider.cache-hydrated` (with
 Pick persisted sources where a briefly stale value beats a skeleton — Fitness
 home persists `sessions` but not `suggestions`.
 
+**A source arriving re-renders every consumer — design for it.** A screen with
+a persisted source sees it at least twice on mount (cached, then fetched), and
+again on every `refresh` tick and every `refetch`. A consumer that reacts to the
+store object itself — refetching its own detail, showing a skeleton, scrolling —
+does that each time. Key such reactions on the part of the payload that matters
+(the Fitness session detail refreshes only when *its* row in `sessions` changes,
+and refreshes in the background without a skeleton), and do one-shot effects
+once (the sessions list scrolls to a selection once, not per render).
+
+**Declare only the sources the layout reads.** Every `data` entry is fetched
+and re-fetched whether or not any widget on the layout consumes it. FitnessApp
+injects the health `dashboard` source only when the layout contains
+`fitness:coach` or `fitness:upnext`.
+
+**Pass `ScreenProvider` a stable `config`.** It re-annotates and re-merges the
+layout tree whenever `config` changes identity, re-rendering every widget; a
+`config={{ ...layout }}` literal in a frequently rendering parent does that on
+every parent render. FitnessApp memoizes it per active screen.
+
 **Refetch from outside the tree.** `useScreenDataRefetch()` only reaches a
 provider above the caller; outside one it gets a no-op default. A component
 rendered beside the provider (e.g. the Fitness player overlay) gets it via the

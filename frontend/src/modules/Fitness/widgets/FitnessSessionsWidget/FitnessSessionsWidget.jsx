@@ -112,9 +112,7 @@ function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) 
               return (
                 <div
                   key={s.sessionId}
-                  ref={s.sessionId === selectedSessionId ? (el) => {
-                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  } : undefined}
+                  data-session-id={s.sessionId}
                   className={`session-row${bgUrl ? ' session-row--has-bg' : ''}${s.sessionId === selectedSessionId ? ' session-row--selected' : ''}`}
                   style={bgUrl ? { backgroundImage: `url(${bgUrl})` } : undefined}
                   onPointerDown={() => onSessionClick?.(s.sessionId)}
@@ -383,6 +381,24 @@ export default function FitnessSessionsWidget() {
     // Only a URL change should re-run this; the refs and setter are stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
+
+  // Bring the selected row into view once per selection — when it is selected,
+  // or when it first appears in the list (a post-session landing selects it
+  // before the refreshed list contains it). Not on every render: an inline
+  // callback ref here re-ran scrollIntoView on each re-render, yanking the list
+  // back to the selection on every data refresh and while the user scrolled.
+  const scrolledToRef = useRef(null);
+  useEffect(() => {
+    if (!selectedSessionId) {
+      scrolledToRef.current = null;
+      return;
+    }
+    if (scrolledToRef.current === selectedSessionId || !containerRef.current) return;
+    const row = containerRef.current.querySelector(`[data-session-id="${CSS.escape(selectedSessionId)}"]`);
+    if (!row) return;
+    scrolledToRef.current = selectedSessionId;
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [selectedSessionId, sessions]);
 
   // When calendar sets scrollToDate, scroll to that date group and auto-select first session
   useEffect(() => {
