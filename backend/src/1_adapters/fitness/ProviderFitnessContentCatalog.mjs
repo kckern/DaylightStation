@@ -88,6 +88,11 @@ export class ProviderFitnessContentCatalog extends IFitnessContentCatalog {
   async describeItem(contentId) {
     const item = await this.getItem(contentId);
     const info = await this.getContainerInfo(contentId);
+    return this.describeFrom(item, info);
+  }
+
+  /** Map an already-fetched item + container info to the description shape. */
+  describeFrom(item, info) {
     return {
       title: item?.title ?? null,
       description: item?.metadata?.summary ?? null,

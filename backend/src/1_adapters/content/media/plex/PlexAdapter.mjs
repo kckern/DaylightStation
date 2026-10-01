@@ -114,6 +114,12 @@ export class PlexAdapter {
   // when Plex refuses a file, so this is how a refused part finds the item to
   // heal (ratingKeyForPart). Bounded; oldest entries fall off.
   #partIndex = new Map();
+  // rating key -> progress storage path (`plex/{librarySectionID}_{name}`).
+  // An item's library section never changes, and every watch-state enrich
+  // asked Plex for it again — one serialized metadata call per show per
+  // request, a dozen-plus per /fitness/suggestions. Only successful lookups
+  // are kept; the 'plex' fallback on an error is not. Bounded; oldest drop.
+  #storagePathCache = new Map();
 
   /**
    * @param {Object} config
@@ -1045,6 +1051,8 @@ export class PlexAdapter {
   async getStoragePath(id) {
     // Strip plex: prefix if present
     const localId = String(id).replace(/^plex:/, '');
+    const cached = this.#storagePathCache.get(localId);
+    if (cached) return cached;
 
     try {
       const item = await this.getItem(`plex:${localId}`);
@@ -1054,7 +1062,12 @@ export class PlexAdapter {
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, '-')
           .replace(/^-|-$/g, '');
-        return `plex/${libraryId}_${libraryName}`;
+        const storagePath = `plex/${libraryId}_${libraryName}`;
+        if (this.#storagePathCache.size >= 5000) {
+          this.#storagePathCache.delete(this.#storagePathCache.keys().next().value);
+        }
+        this.#storagePathCache.set(localId, storagePath);
+        return storagePath;
       }
     } catch (e) {
       // Fall back to generic plex path on error
