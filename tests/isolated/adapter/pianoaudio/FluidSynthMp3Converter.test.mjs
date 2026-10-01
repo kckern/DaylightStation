@@ -69,6 +69,29 @@ describe('FluidSynthMp3Converter.convertRecording', () => {
     expect(fs.existsSync(wavPath)).toBe(false);          // scratch wav cleaned
   });
 
+  // 2026-10-01: multi-hour takes were killed at the 10-minute cap every run.
+  it('gives ffmpeg a budget from the WAV duration, past the old 10-minute cap', async () => {
+    const threeHours = 3 * 3600 * 44_100 * 2 * 2; // 44.1 kHz 16-bit stereo
+    const execFile = vi.fn(async (cmd, args) => {
+      if (cmd === 'fluidsynth') {
+        const wav = args[args.indexOf('-F') + 1];
+        fs.writeFileSync(wav, '');
+        fs.truncateSync(wav, threeHours); // sparse: size without the bytes
+      } else {
+        fs.writeFileSync(args[args.length - 2], 'MP3');
+      }
+      return { stdout: '', stderr: '' };
+    });
+    const conv = new FluidSynthMp3Converter({
+      soundfontPath: '/sf/x.sf2', sourceDir, destDir, scratchDir, logger: silent, execFile,
+    });
+    await conv.convertRecording({ recordingId: 'nested/take.mid' });
+    const ffTimeout = execFile.mock.calls[1][2].timeout;
+    expect(ffTimeout).toBeGreaterThan(600_000);
+    // 3h of audio at the assumed 5x floor = 36 min, plus the 60s minimum.
+    expect(ffTimeout).toBe(60_000 + (3 * 3600 / 5) * 1000);
+  });
+
   it('skips conversion (no exec) when the final mp3 already exists', async () => {
     fs.mkdirSync(path.dirname(mp3Path), { recursive: true });
     fs.writeFileSync(mp3Path, 'EXISTING');

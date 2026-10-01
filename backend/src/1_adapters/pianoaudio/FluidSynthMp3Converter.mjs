@@ -19,6 +19,14 @@ const execFileAsync = promisify(_execFile);
 const LOUDNORM = 'loudnorm=I=-16:TP=-1.5:LRA=11';
 const MIN_TIMEOUT_MS = 60_000;
 const MAX_TIMEOUT_MS = 600_000;
+// ffmpeg's budget comes from the WAV's DURATION, not the generic size rule:
+// fluidsynth writes 44.1 kHz 16-bit stereo, so a 3-hour take is ~1.9 GB and
+// the size rule always hit the 10-minute cap — and loudnorm runs at ~15x, so
+// a 3h take needs ~12 min. On 2026-10-01 every multi-hour July take was killed
+// at 10:00 and retried (and killed) on each run. Budget for >=5x, up to 2 h.
+const WAV_BYTES_PER_SEC = 44_100 * 2 * 2;
+const FFMPEG_MIN_SPEED = 5;
+const FFMPEG_MAX_TIMEOUT_MS = 7_200_000;
 
 export class FluidSynthMp3Converter extends IMidiConverter {
   #soundfontPath; #sourceDir; #destDir; #scratchDir; #logger; #execFile; #counter = 0;
@@ -59,7 +67,7 @@ export class FluidSynthMp3Converter extends IMidiConverter {
         // -f mp3 is REQUIRED: the output path ends in `.tmp` (for atomic rename),
         // so ffmpeg cannot infer the muxer from the extension and must be told.
         ['-i', wavPath, '-af', LOUDNORM, '-codec:a', 'libmp3lame', '-qscale:a', '2', '-f', 'mp3', tmpMp3, '-y'],
-        { timeout: this.#timeoutFor(wavPath) },
+        { timeout: this.#ffmpegTimeoutFor(wavPath) },
       );
       renameFile(tmpMp3, mp3Path);
     } finally {
@@ -79,6 +87,13 @@ export class FluidSynthMp3Converter extends IMidiConverter {
     let size = 0;
     try { size = getStats(filePath).size; } catch { /* keep 0 */ }
     return Math.min(MAX_TIMEOUT_MS, MIN_TIMEOUT_MS + Math.floor(size / 4096) * 1000);
+  }
+
+  #ffmpegTimeoutFor(wavPath) {
+    let size = 0;
+    try { size = getStats(wavPath).size; } catch { /* keep 0 */ }
+    const audioSeconds = size / WAV_BYTES_PER_SEC;
+    return Math.min(FFMPEG_MAX_TIMEOUT_MS, MIN_TIMEOUT_MS + Math.ceil(audioSeconds / FFMPEG_MIN_SPEED) * 1000);
   }
 
   #safeUnlink(p) {

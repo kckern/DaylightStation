@@ -50,7 +50,17 @@ export class ConvertPendingPianoMidi {
             converted += 1;
             this.#logger.info?.('pianoaudio.converted', { recordingId: ref.recordingId });
           } catch (err) {
-            this.#logger.warn?.('pianoaudio.convert.failed', { recordingId: ref.recordingId, error: err.message });
+            // A subprocess error's message is the command line plus ALL of
+            // stderr — for ffmpeg, ~110 KB of progress lines with the cause at
+            // the very end. Keep the command, the kill signal and the tail.
+            const message = String(err?.message ?? err);
+            this.#logger.warn?.('pianoaudio.convert.failed', {
+              recordingId: ref.recordingId,
+              command: message.split('\n', 1)[0].slice(0, 300),
+              killed: err?.killed ?? null,
+              signal: err?.signal ?? null,
+              error: message.length > 800 ? `…${message.slice(-800)}` : message,
+            });
           }
         }
       };
