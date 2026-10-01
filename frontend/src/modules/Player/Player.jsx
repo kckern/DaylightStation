@@ -878,7 +878,8 @@ const Player = forwardRef(function Player(props, ref) {
       reason = 'unspecified',
       source = 'player',
       trigger = undefined,
-      conditions = undefined
+      conditions = undefined,
+      resumePlayback = false
     } = options || {};
 
     const { scheduledDelayMs = 0, attempt: attemptOverride = null } = meta || {};
@@ -903,7 +904,7 @@ const Player = forwardRef(function Player(props, ref) {
       // Carried so the rebuilt element does not autoplay over a deliberate pause. Read
       // through the ref, not the render closure: this callback is routinely invoked from
       // a backoff timer armed up to 45s earlier (see playbackMetricsRef).
-      wasPaused: playbackMetricsRef.current?.isPaused === true
+      wasPaused: resumePlayback === true ? false : playbackMetricsRef.current?.isPaused === true
     };
 
     playbackLog('player-remount', {
@@ -920,6 +921,7 @@ const Player = forwardRef(function Player(props, ref) {
       metaKey,
       playbackSeconds: playbackMetricsRef.current?.seconds ?? null,
       isPaused: playbackMetricsRef.current?.isPaused ?? null,
+      resumePlayback: resumePlayback === true,
       isSeeking: playbackMetricsRef.current?.isSeeking ?? null,
       trigger,
       conditions
@@ -1381,6 +1383,7 @@ const Player = forwardRef(function Player(props, ref) {
     const {
       forceRemount,
       userInitiated,
+      resumePlayback,
       seekToIntentMs,
       refreshUrl,
       ...rest
@@ -1457,6 +1460,9 @@ const Player = forwardRef(function Player(props, ref) {
       // consent would bypass both brakes on the commonest recovery path there
       // is — reopening the 2026-09-01 incident rather than closing it.
       userInitiated: Boolean(userInitiated),
+      // A restored refused source whose pause was the error's, not the viewer's
+      // (useMediaResilience decides). Overrides the carried pause state below.
+      resumePlayback: resumePlayback === true,
       reason: rest?.reason || 'resilience',
       source: rest?.source || 'resilience',
       trigger: triggerDetails,

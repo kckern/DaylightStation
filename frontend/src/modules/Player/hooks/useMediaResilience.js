@@ -359,6 +359,7 @@ export function useMediaResilience({
         waitKey,
         refreshUrl,
         ...(options.forceRemount === true ? { forceRemount: true } : {}),
+        ...(options.resumePlayback === true ? { resumePlayback: true } : {}),
         seekToIntentMs: seekMs
       });
     }
@@ -401,6 +402,24 @@ export function useMediaResilience({
   //   retry   — the refusal cleared before we ever waited: reload now instead
   //             of sitting until the startup deadline.
   //   gave-up — SOURCE_UNAVAILABLE_MAX_MS passed: the ordinary Tap to Retry.
+  //
+  // Whether the restored file should PLAY, decided when the wait begins. The
+  // refused load pauses the element itself, so at settle time `isPaused` reads
+  // true and the remount would carry it as a viewer's pause — 2026-09-30 the
+  // restored video sat loaded and frozen for 15s until the startup deadline
+  // remounted it again. Play if the error stopped playback, or if the item
+  // never got as far as playing (it failed on its way to starting), or the
+  // viewer's last known intent was to play; stay paused only when the viewer
+  // had paused before the error landed. `userIntent` here is still the value
+  // from before the wait (the intent effect forces `playing` once it opens).
+  const sourceWaitResumeRef = useRef(false);
+  const sourceWaitWasOpenRef = useRef(false);
+  if (sourceUnavailable && !sourceWaitWasOpenRef.current) {
+    sourceWaitResumeRef.current = mediaErrorStoppedPlayback
+      || !hasEverPlayedRef.current
+      || userIntent !== USER_INTENT.paused;
+  }
+  sourceWaitWasOpenRef.current = sourceUnavailable;
   sourceSettledRef.current = (decision) => {
     if (decision === 'resume') {
       getRecoveryLedger().userReset(playbackSessionKey);
@@ -408,7 +427,10 @@ export function useMediaResilience({
       // A wait may have begun at the END of the jolt ladder (checked before
       // skipping). The restored file gets a fresh ladder, not an instant skip.
       joltStepRef.current = 0;
-      triggerRecovery('source-restored', { sourceRestored: true, refreshUrl: true, forceRemount: true, bypassCooldown: true });
+      triggerRecovery('source-restored', {
+        sourceRestored: true, refreshUrl: true, forceRemount: true, bypassCooldown: true,
+        resumePlayback: sourceWaitResumeRef.current,
+      });
     } else if (decision === 'retry') {
       triggerRecovery('source-refusal-cleared', { refreshUrl: true });
     } else if (decision === 'gave-up') {
