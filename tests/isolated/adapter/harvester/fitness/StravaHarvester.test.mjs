@@ -423,6 +423,43 @@ describe('StravaHarvester', () => {
       expect(evaluated).toMatchObject({ sessions: 2, evaluated: 1 });
     });
 
+    it('two activities matching one session: the larger overlap owns the link, stably', async () => {
+      const dateDir = path.join(tmpDir, '2026-02-15');
+      fs.mkdirSync(dateDir, { recursive: true });
+      const { saveYaml, loadYamlSafe } = await import('#system/utils/FileIO.mjs');
+      saveYaml(path.join(dateDir, '20260215190000'), {
+        sessionId: '20260215190000',
+        session: { id: '20260215190000', date: '2026-02-15', start: '2026-02-15 19:00:00', end: '2026-02-15 20:00:00', duration_seconds: 3600 },
+        timezone: 'America/Los_Angeles',
+        participants: { user_1: { display_name: 'User_1', is_primary: true } },
+        treasureBox: { totalRings: 1 },
+        timeline: { events: [] },
+      });
+      const long = { id: 2, start_date: '2026-02-16T03:00:00Z', moving_time: 3000, type: 'WeightTraining' };
+      const short = { id: 1, start_date: '2026-02-16T03:40:00Z', moving_time: 600, type: 'Workout' };
+      harvester = new StravaHarvester({
+        stravaClient: mockStravaClient,
+        lifelogStore: mockLifelogStore,
+        getUserAuth: mockConfigService.getUserAuth,
+        getUserDir: mockConfigService.getUserDir,
+        clientId: mockConfigService.getSecret('STRAVA_CLIENT_ID'),
+        redirectUri: mockConfigService.getSecret('STRAVA_URL'),
+        mediaDir: mockConfigService.getMediaDir(),
+        fitnessHistoryDir: tmpDir,
+        timezone: 'America/Los_Angeles',
+        logger: mockLogger,
+      });
+      const linked = () => loadYamlSafe(path.join(dateDir, '20260215190000')).participants.user_1.strava.activityId;
+      const completes = () => mockLogger.info.mock.calls
+        .filter(([e]) => e === 'strava.homeMatch.complete').map(([, d]) => d);
+
+      await harvester.applyHomeSessionEnrichment('user_1', [long, short]);
+      expect(linked()).toBe(2);
+      await harvester.applyHomeSessionEnrichment('user_1', [short, long]); // order must not matter
+      expect(linked()).toBe(2);
+      expect(completes()[1]).toMatchObject({ matchCount: 2, sessionsWritten: 0 });
+    });
+
     it('should NOT match when user is not a participant', async () => {
       const dateDir = path.join(tmpDir, '2026-02-15');
       fs.mkdirSync(dateDir, { recursive: true });

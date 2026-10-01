@@ -833,6 +833,7 @@ export class StravaHarvester extends IHarvester {
           sessionId: bestMatch.sessionId,
           session: bestMatch,
           activity,
+          overlapMs: bestOverlap,
         });
       }
     }
@@ -915,7 +916,21 @@ export class StravaHarvester extends IHarvester {
     // (match.session.data), so an already-enriched session is recognised
     // without reading the file again. The raw file is re-read only to write
     // it: the parsed copy has a hydrated timeline, not the stored form.
+    // A session has ONE strava slot per participant, but two activities can
+    // match the same session (two recordings of one workout). Writing both made
+    // them overwrite each other every run — 3 sessions rewritten hourly,
+    // flip-flopping their link (2026-10-01). The largest overlap wins, ties to
+    // the lower activity id, so the answer is the same every run.
+    const sessionWinner = new Map();
     for (const match of matches) {
+      const held = sessionWinner.get(match.sessionId);
+      const better = !held
+        || (match.overlapMs ?? 0) > (held.overlapMs ?? 0)
+        || ((match.overlapMs ?? 0) === (held.overlapMs ?? 0) && Number(match.activityId) < Number(held.activityId));
+      if (better) sessionWinner.set(match.sessionId, match);
+    }
+
+    for (const match of sessionWinner.values()) {
       const strava = {
         activityId: match.activityId,
         type: match.activity.type || match.activity.sport_type || null,
