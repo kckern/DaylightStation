@@ -67,6 +67,21 @@ if [ "$MODE" = "0" ] || [ "$MODE" = "000" ]; then
   SIBLINGS=$(timeout 30 find "$(dirname "$P")" -maxdepth 1 -type f -perm 0000 -print0 2>/dev/null \
     | xargs -0 -r chmod 0777 -v 2>/dev/null | grep -c . || true)
 fi
+
+# The 000 "ghost" is usually a poisoned entry in this host's NFS cache, not the
+# NAS (nfs-watchdog.sh header, 2026-09-28): NFSv3 only re-trusts cached
+# attributes — and the per-user access cache — when the file's ctime changes.
+# The chmod above changes it. When the mode does NOT read 000 but Plex was still
+# refused (Permission denied with 777 showing, 2026-09-30), re-apply the CURRENT
+# mode: permissions stay the same, the NAS bumps ctime, and the next lookup
+# from any container refetches instead of trusting the stale entry. A targeted
+# per-file cache reset that needs no root (drop_caches does).
+REFRESHED=false
+if [ "$CHMOD" = false ] && [ -n "$MODE" ] && [ "$MODE" != "0" ] && [ "$MODE" != "000" ]; then
+  if timeout "$IO_TIMEOUT" chmod "$MODE" "$P" 2>/dev/null; then
+    REFRESHED=true
+  fi
+fi
 MODE_AFTER=$(timeout "$IO_TIMEOUT" stat -c '%a' "$P" 2>/dev/null || echo "")
 
 START=$(date +%s%3N)
@@ -77,5 +92,5 @@ else
 fi
 READ_MS=$(( $(date +%s%3N) - START ))
 
-printf '{"ok":true,"exists":true,"mode":"%s","chmodApplied":%s,"siblingsFixed":%s,"modeAfter":"%s","readable":%s,"readMs":%s}\n' \
-  "$MODE" "$CHMOD" "${SIBLINGS:-0}" "$MODE_AFTER" "$READABLE" "$READ_MS"
+printf '{"ok":true,"exists":true,"mode":"%s","chmodApplied":%s,"cacheRefreshed":%s,"siblingsFixed":%s,"modeAfter":"%s","readable":%s,"readMs":%s}\n' \
+  "$MODE" "$CHMOD" "$REFRESHED" "${SIBLINGS:-0}" "$MODE_AFTER" "$READABLE" "$READ_MS"
