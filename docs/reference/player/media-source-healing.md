@@ -179,6 +179,19 @@ timing:
   alertAfterMs: 120000
 ```
 
+**Server-side trigger.** Only the video Player asks `/media-source/check`.
+Audio paths (garage menu music, playlists) just skip a refused track, so on
+2026-10-01 a ghosted Children's Music file stayed unreadable for 4h+ with no
+heal attempt. The proxy now reports every part 404 it turns into 503
+`source-unreadable` (`ProxyService.onErrorReplaced`); `app.mjs` maps the part
+back to its rating key (`PlexAdapter.ratingKeyForPart`, an index of every part
+URL the adapter has minted since startup) and runs the same
+`mediaSourceHealer.check`. A part minted before the last restart is logged as
+`media.source.heal.proxy-unmapped` and skipped.
+
+`drop_caches` (the watchdog) does not clear a ghost on an inode the kernel
+still holds; a ctime bump (below) or a directory listing of the folder does.
+
 When the host sees mode `000` the script restores `0777` (and zeroed
 siblings). When it does **not** — Plex refused with `Permission denied` while
 the mode reads 777 — it re-applies the file's current mode (`cacheRefreshed`).

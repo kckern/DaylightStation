@@ -1572,6 +1572,27 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       plex: Boolean(plexClient), hostHealer: hostHealer.isConfigured(),
     });
     v1Routers['media-source'] = createMediaSourceRouter({ mediaSourceHealer, logger: healLogger });
+
+    // Heal from the server side too. Only the video Player asks
+    // /media-source/check; menu music and other audio just skip a refused
+    // track, so a ghosted file stayed unreadable for 4h+ on 2026-10-01
+    // (garage menu music, Children's Music). When the proxy turns a part 404
+    // into 503 source-unreadable, map the part back to its item and run the
+    // same check (in-flight dedupe + host-heal cooldown live in the healer).
+    const plexAdapter = contentRegistry?.get?.('plex') ?? null;
+    if (mediaSourceHealer && typeof plexAdapter?.ratingKeyForPart === 'function') {
+      contentProxyService.onErrorReplaced(({ service, path: partPath, reason }) => {
+        if (service !== 'plex' || reason !== 'source-unreadable') return;
+        const partId = /\/library\/parts\/(\d+)\//.exec(String(partPath || ''))?.[1];
+        const ratingKey = partId ? plexAdapter.ratingKeyForPart(partId) : null;
+        if (!ratingKey) {
+          healLogger.info('media.source.heal.proxy-unmapped', { partId: partId ?? null });
+          return;
+        }
+        mediaSourceHealer.check(`plex:${ratingKey}`, { origin: 'proxy' })
+          .catch((error) => healLogger.warn('media.source.heal.proxy-failed', { ratingKey, error: error.message }));
+      });
+    }
   }
 
   // Livestream engine — concrete adapters composed here, injected as factories

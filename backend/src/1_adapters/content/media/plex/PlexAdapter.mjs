@@ -109,6 +109,11 @@ export function plexArtPath(item) {
  */
 export class PlexAdapter {
   #httpClient;
+  // part id -> rating key for every part URL this adapter hands out. Plex has
+  // no part->item lookup, and the proxy only sees `/library/parts/{id}/...`
+  // when Plex refuses a file, so this is how a refused part finds the item to
+  // heal (ratingKeyForPart). Bounded; oldest entries fall off.
+  #partIndex = new Map();
 
   /**
    * @param {Object} config
@@ -1815,6 +1820,24 @@ export class PlexAdapter {
    * @param {number} [opts.startOffset]
    * @returns {Promise<{ url: string|null, reason?: 'metadata-missing'|'non-playable-type'|'audio-key-missing'|'transient' }>}
    */
+  /**
+   * The rating key whose media URL contained this part, if this adapter
+   * minted one since startup.
+   * @param {string|number} partId
+   * @returns {string|null}
+   */
+  ratingKeyForPart(partId) {
+    return this.#partIndex.get(String(partId)) ?? null;
+  }
+
+  #rememberPart(partPath, ratingKey) {
+    const match = /\/library\/parts\/(\d+)\//.exec(String(partPath || ''));
+    if (!match || !ratingKey) return;
+    this.#partIndex.delete(match[1]);
+    this.#partIndex.set(match[1], String(ratingKey));
+    if (this.#partIndex.size > 5000) this.#partIndex.delete(this.#partIndex.keys().next().value);
+  }
+
   async loadMediaUrl(playableItem, opts = {}) {
     let ratingKey;
     try {
@@ -1861,6 +1884,7 @@ export class PlexAdapter {
         }
 
         const separator = mediaKey.includes('?') ? '&' : '?';
+        this.#rememberPart(mediaKey, ratingKey);
         return {
           url: `${this.proxyPath}${mediaKey}${separator}X-Plex-Client-Identifier=${clientIdentifier}&X-Plex-Session-Identifier=${sessionIdentifier}`
         };
@@ -1921,6 +1945,7 @@ export class PlexAdapter {
       if (allowDirectPlay && decision.canDirectPlay && decision.directStreamPath) {
         const directPath = decision.directStreamPath;
         const separator = directPath.includes('?') ? '&' : '?';
+        this.#rememberPart(directPath, ratingKey);
         return {
           url: `${this.proxyPath}${directPath}${separator}X-Plex-Client-Identifier=${clientIdentifier}&X-Plex-Session-Identifier=${sessionIdentifier}`
         };

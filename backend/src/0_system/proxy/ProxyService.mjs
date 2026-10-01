@@ -24,6 +24,7 @@ import { sendPlaceholderSvg } from './placeholders.mjs';
 export class ProxyService {
   #adapters = new Map();
   #logger;
+  #errorReplacedListeners = [];
 
   /**
    * @param {Object} [options]
@@ -31,6 +32,16 @@ export class ProxyService {
    */
   constructor(options = {}) {
     this.#logger = options.logger || console;
+  }
+
+  /**
+   * Be told when an upstream error is replaced (see getErrorReplacement). The
+   * listener runs after the response is sent and must not throw; a slow or
+   * failing listener never touches the request.
+   * @param {(event: {service: string, path: string, statusCode: number, reason: string|null}) => void} listener
+   */
+  onErrorReplaced(listener) {
+    if (typeof listener === 'function') this.#errorReplacedListeners.push(listener);
   }
 
   /**
@@ -246,6 +257,14 @@ export class ProxyService {
             });
             res.end(JSON.stringify(replacement.body ?? {}));
             resolve();
+            const event = {
+              service: serviceName, path, statusCode, reason: replacement.body?.reason ?? null,
+            };
+            for (const listener of this.#errorReplacedListeners) {
+              try { listener(event); } catch (error) {
+                this.#logger.warn?.('proxy.error-replaced.listener-failed', { error: error.message });
+              }
+            }
             return;
           }
         }
