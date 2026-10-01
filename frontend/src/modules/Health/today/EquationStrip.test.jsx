@@ -117,7 +117,7 @@ describe('EquationStrip — the card follows the job', () => {
     expect(screen.getByTestId('budget-sub').textContent).toBe('then 311 workout · 500 deficit · 1,132 to break even');
     for (const key of ['free', 'workout', 'deficit']) expect(screen.getByTestId(`budget-tier-${key}`)).toBeTruthy();
     expect(screen.getByTestId('budget-ruler').getAttribute('aria-label'))
-      .toBe('1,470 kcal eaten; 321 free, 311 workout, 500 deficit; break even 2,602; 321 kcal free');
+      .toBe('1,470 kcal eaten; goal 1,200–1,791 + 311; 321 free, 311 workout, 500 deficit; break even 2,602; 321 kcal free');
   });
 
   it('the terms line is only what was eaten and burned', () => {
@@ -130,7 +130,9 @@ describe('EquationStrip — the card follows the job', () => {
 
   it('the goal, ceiling and break even are marked at their values', () => {
     const { container } = strip({ ...live, budget: sept25 });
-    expect(container.querySelector('.health-budget__goal-label').textContent).toBe('Goal 1,791 + 311');
+    expect(container.querySelector('.health-budget__goal-label').textContent).toBe('Goal 1,200–1,791 + 311');
+    expect(screen.getByTestId('budget-range')).toBeTruthy();
+    expect(container.querySelector('.health-budget__floor-line')).toBeTruthy();
     expect(container.querySelector('.health-budget__ceiling-line')).toBeTruthy();
     expect(container.querySelector('.health-budget__even-label').textContent).toBe('Break even 2,602');
   });

@@ -23,8 +23,18 @@ describe('budgetGeometry — the ruler is food, from 0', () => {
   it('the goal mark sits at the top and names the workout it grows by', () => {
     const g = budgetGeometry(day(), { widthPx: 360 });
     close(g.goal.pct, g.pct(1791));
-    expect(g.goal.label).toBe('Goal 1,791 + 311');
-    expect(budgetGeometry(day({ exercise: 0 }), { widthPx: 360 }).goal.label).toBe('Goal 1,791');
+    expect(g.goal.label).toBe('Goal 1,200–1,791 + 311');
+    expect(budgetGeometry(day({ exercise: 0 }), { widthPx: 360 }).goal.label).toBe('Goal 1,200–1,791');
+  });
+
+  it('the goal range runs floor → top, and only when the floor sits under the top', () => {
+    const g = budgetGeometry(day(), { widthPx: 360 });
+    close(g.range.fromPct, g.pct(1200));
+    close(g.range.fromPct + g.range.widthPct, g.pct(1791));
+    close(g.range.floorPct, g.pct(1200));
+    expect(budgetGeometry(day({ range: { floor: 0, top: 1791 } }), { widthPx: 360 }).range).toBeNull();
+    expect(budgetGeometry(day({ range: { floor: 0, top: 1791 } }), { widthPx: 360 }).goal.label).toBe('Goal 1,791 + 311');
+    expect(budgetGeometry(day({ range: { floor: 1200, top: 1200 } }), { widthPx: 360 }).range).toBeNull();
   });
 
   it('the ceiling is marked on exercise days, even once the workout tier is spent', () => {

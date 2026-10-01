@@ -124,21 +124,23 @@ const endAnchored = (p) => (p > 50 ? ' health-budget__label--end' : '');
 function RulerScale({ budget, spoken, finished, tentative }) {
   const ref = useRef(null);
   const g = budgetGeometry(budget, { widthPx: useWidth(ref), finished });
-  const { goal, ceiling, even, food, tiers, zone } = g;
+  const { goal, range, ceiling, even, food, tiers, zone } = g;
   const priced = tiers.map(t => t.label).join(', ') || 'nothing left on plan';
   const rulerClass = ['health-budget__ruler', tentative && 'health-budget__ruler--tentative', finished && 'health-budget__ruler--finished']
     .filter(Boolean).join(' ');
   return (
     <div className={rulerClass} ref={ref}>
       <div className="health-budget__rail health-budget__rail--above">
+        {range ? <span className="health-budget__range" data-testid="budget-range" style={{ left: at(range.fromPct), width: at(range.widthPct) }} /> : null}
         <span className={`health-budget__goal-label${endAnchored(goal.pct)}`} style={{ left: at(goal.pct) }}>{goal.label}</span>
       </div>
       <div className="health-budget__track health-budget__track--ruler" role="img" data-testid="budget-ruler"
-        aria-label={`${n(food.value)} kcal eaten; ${priced}${even ? `; break even ${n(even.value)}` : ''}; ${spoken}`}>
+        aria-label={`${n(food.value)} kcal eaten; ${goal.label.toLowerCase()}; ${priced}${even ? `; break even ${n(even.value)}` : ''}; ${spoken}`}>
         <span className={`health-budget__food health-budget__food--${zone}`} data-testid="budget-food" style={{ left: at(food.fromPct), width: at(food.widthPct) }} />
         {tiers.map(t => <span key={t.key} className={`health-budget__tier health-budget__tier--${t.key}`} data-testid={`budget-tier-${t.key}`}
           style={{ left: at(t.fromPct), width: at(t.widthPct) }}>
           {t.shown ? <span className="health-budget__seg-label">{t.shown}</span> : null}</span>)}
+        {range ? <span className="health-budget__floor-line" style={{ left: at(range.floorPct) }} /> : null}
         <span className="health-budget__goal-line" style={{ left: at(goal.pct) }} />
         {ceiling ? <span className="health-budget__ceiling-line" style={{ left: at(ceiling.pct) }} /> : null}
         {/* Its own top layer, not a child of the food block: the plan marks and
