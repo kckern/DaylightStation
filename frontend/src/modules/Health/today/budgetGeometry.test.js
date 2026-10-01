@@ -34,6 +34,11 @@ describe('budgetGeometry — the ruler is food, from 0', () => {
     close(g.range.fromPct, g.pct(1200));
     close(g.range.fromPct + g.range.widthPct, g.pct(2102));
     close(g.range.floorPct, g.pct(1200));
+    // Solid to the plan's top, hatched across the workout bonus.
+    close(g.range.solid.fromPct + g.range.solid.widthPct, g.pct(1791));
+    close(g.range.bonus.fromPct, g.pct(1791));
+    close(g.range.bonus.fromPct + g.range.bonus.widthPct, g.pct(2102));
+    expect(budgetGeometry(day({ exercise: 0 }), { widthPx: 360 }).range.bonus).toBeNull();
     expect(budgetGeometry(day({ range: { floor: 0, top: 1791 } }), { widthPx: 360 }).range).toBeNull();
     expect(budgetGeometry(day({ range: { floor: 0, top: 1791 } }), { widthPx: 360 }).goal.label).toBe('Goal 2,102');
     expect(budgetGeometry(day({ exercise: 0, range: { floor: 1200, top: 1200 } }), { widthPx: 360 }).range).toBeNull();
