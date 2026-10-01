@@ -140,6 +140,7 @@ function RulerScale({ budget, spoken, finished, tentative }) {
         {tiers.map(t => <span key={t.key} className={`health-budget__tier health-budget__tier--${t.key}`} data-testid={`budget-tier-${t.key}`}
           style={{ left: at(t.fromPct), width: at(t.widthPct) }}>
           {t.shown ? <span className="health-budget__seg-label">{t.shown}</span> : null}</span>)}
+        {range ? <span className="health-budget__range-band" data-testid="budget-range-band" style={{ left: at(range.fromPct), width: at(range.widthPct) }} /> : null}
         {range ? <span className="health-budget__floor-line" style={{ left: at(range.floorPct) }} /> : null}
         <span className="health-budget__goal-line" style={{ left: at(goal.pct) }} />
         {ceiling ? <span className="health-budget__ceiling-line" style={{ left: at(ceiling.pct) }} /> : null}
