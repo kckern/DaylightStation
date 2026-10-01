@@ -14,6 +14,7 @@ export class IFitnessContentCatalog {
   async listConfiguredShows() { throw new Error('IFitnessContentCatalog.listConfiguredShows not implemented'); }
   async collectionShowIds(_collectionId) { throw new Error('IFitnessContentCatalog.collectionShowIds not implemented'); }
   async describeItem(_contentId) { throw new Error('IFitnessContentCatalog.describeItem not implemented'); }
+  describeFrom(_item, _info) { throw new Error('IFitnessContentCatalog.describeFrom not implemented'); }
   async enrichConfiguredPlaylists(_config) { throw new Error('IFitnessContentCatalog.enrichConfiguredPlaylists not implemented'); }
   async getGovernedItems(_labels, _options) { throw new Error('IFitnessContentCatalog.getGovernedItems not implemented'); }
 }

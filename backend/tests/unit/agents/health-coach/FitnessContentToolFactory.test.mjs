@@ -7,7 +7,7 @@ import { FitnessContentToolFactory } from '../../../../src/3_applications/agents
 describe('FitnessContentToolFactory', () => {
   let factory;
   let mockFitnessPlayableService;
-  let mockDataService;
+  let mockWorkspaceRepository;
 
   const sampleEpisodes = {
     containerItem: { title: 'P90X' },
@@ -23,21 +23,16 @@ describe('FitnessContentToolFactory', () => {
       getPlayableEpisodes: async (showId) => sampleEpisodes,
     };
 
-    mockDataService = {
-      user: {
-        read: (path, userId) => {
-          if (path.includes('program-state')) {
-            return { program: { id: 'p90x', content_source: 'plex:12345', current_day: 23, status: 'active' } };
-          }
-          return null;
-        },
-        write: () => true,
-      },
+    // Program state lives behind the agent workspace repository (it used to be
+    // read/written through DataService paths directly).
+    mockWorkspaceRepository = {
+      getProgramState: () => ({ program: { id: 'p90x', content_source: 'plex:12345', current_day: 23, status: 'active' } }),
+      saveProgramState: async () => {},
     };
 
     factory = new FitnessContentToolFactory({
       fitnessPlayableService: mockFitnessPlayableService,
-      dataService: mockDataService,
+      workspaceRepository: mockWorkspaceRepository,
     });
   });
 
@@ -83,7 +78,7 @@ describe('FitnessContentToolFactory', () => {
     });
 
     it('should return null program when no state exists', async () => {
-      mockDataService.user.read = () => null;
+      mockWorkspaceRepository.getProgramState = () => null;
       const tools = factory.createTools();
       const tool = tools.find(t => t.name === 'get_program_state');
       const result = await tool.execute({ userId: 'user_1' });
@@ -93,12 +88,11 @@ describe('FitnessContentToolFactory', () => {
   });
 
   describe('update_program_state', () => {
-    it('should write state via DataService', async () => {
-      let writtenPath, writtenData;
-      mockDataService.user.write = (path, data, userId) => {
-        writtenPath = path;
+    it('should save state via the workspace repository', async () => {
+      let writtenUser, writtenData;
+      mockWorkspaceRepository.saveProgramState = async (userId, data) => {
+        writtenUser = userId;
         writtenData = data;
-        return true;
       };
 
       const tools = factory.createTools();
@@ -109,7 +103,7 @@ describe('FitnessContentToolFactory', () => {
       });
 
       assert.ok(result.success);
-      assert.ok(writtenPath.includes('program-state'));
+      assert.strictEqual(writtenUser, 'user_1');
       assert.strictEqual(writtenData.program.current_day, 24);
     });
   });

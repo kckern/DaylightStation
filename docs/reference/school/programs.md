@@ -213,13 +213,15 @@ the memo deliberately does not do: it never caches the `unavailable` verdict,
 because that is the fail-open answer for a broken read and holding it would
 extend a one-second Plex blip into a minute of open gate; and it does nothing
 for the **cold** read. Sixty seconds is also deliberately shorter than the
-5-minute structure cache one layer down, so this memo can never extend
+5-minute structure TTL one layer down, so this memo can never extend
 structure staleness — the worst it can do is re-serve an answer that cache was
-going to give anyway.
+going to give anyway. (Past that TTL the structure cache serves the stale
+course shape while one background fetch renews it, for up to 24 hours; only an
+entry older than that, or a process restart, makes a caller wait on Plex.)
 
 On the cold read: the 11.1s is best explained as a cold miss in
-`FitnessPlayableService`'s structure cache (5-minute TTL, watch-state
-enrichment deliberately excluded), since the 0.35s warm figure includes that
+`FitnessPlayableService`'s structure cache (5-minute TTL then
+stale-while-revalidate, watch-state enrichment deliberately excluded), since the 0.35s warm figure includes that
 live enrichment and so cannot be where the ten seconds went. That is an
 **inference from the two timings, not a measurement** — nobody instrumented
 which layer spent the time. Either way the memo cannot help here: the first
