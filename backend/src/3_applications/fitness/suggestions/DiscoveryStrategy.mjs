@@ -7,6 +7,14 @@ export class DiscoveryStrategy {
   async suggest(context, remainingSlots) {
     if (remainingSlots <= 0) return [];
     const { suggestionPolicy, fitnessPlayableService, sessionDatastore, householdId, excludedShowIds, contentCatalog } = context;
+    // Picks are stable for the day, not reshuffled per request. The home
+    // screen re-asks every 5 minutes; a fresh shuffle each time swapped the
+    // discovery cards under the user AND pulled up to seven never-cached shows
+    // from a ~280-show library, each a cold run of serialized Plex calls
+    // (1-1.7s of a warm request, measured 2026-10-01). Seeded per local day and
+    // household, the same shows stay picked — and cached — until the pools
+    // change (a show done today leaves them) or the day turns.
+    const random = context.random || seededRandom(`${localDayKey(new Date())}:${householdId ?? ''}`);
     const lapsedDays = suggestionPolicy.discoveryLapsedDays;
     const lapsedWeight = suggestionPolicy.discoveryLapsedWeight;
 
@@ -74,7 +82,7 @@ export class DiscoveryStrategy {
     const usedIds = new Set();
 
     for (let i = 0; i < remainingSlots; i++) {
-      const useLapsed = lapsed.length > 0 && (fresh.length === 0 || Math.random() < lapsedWeight);
+      const useLapsed = lapsed.length > 0 && (fresh.length === 0 || random() < lapsedWeight);
       const pool = useLapsed ? lapsed : (fresh.length > 0 ? fresh : lapsed);
       if (pool.length === 0) break;
 
@@ -84,11 +92,11 @@ export class DiscoveryStrategy {
         // Fall back to the other pool
         const otherPool = (pool === lapsed ? fresh : lapsed).filter(s => !usedIds.has(s.id));
         if (otherPool.length === 0) break;
-        const pick = otherPool[Math.floor(Math.random() * otherPool.length)];
+        const pick = otherPool[Math.floor(random() * otherPool.length)];
         selected.push(pick);
         usedIds.add(pick.id);
       } else {
-        const pick = available[Math.floor(Math.random() * available.length)];
+        const pick = available[Math.floor(random() * available.length)];
         selected.push(pick);
         usedIds.add(pick.id);
       }
@@ -150,7 +158,7 @@ export class DiscoveryStrategy {
 
       const pool = substantive.length > 0 ? substantive : episodes;
       const nextUnwatched = pool.find(ep => !ep.isWatched);
-      const ep = nextUnwatched || pool[Math.floor(Math.random() * pool.length)];
+      const ep = nextUnwatched || pool[Math.floor(random() * pool.length)];
       if (!ep) continue;
 
       const daysSince = show.lastDone
@@ -183,3 +191,22 @@ export class DiscoveryStrategy {
 }
 import { contentImageRef, displayImageRef } from '#apps/common/resources/publicResourceRefs.mjs';
 import { episodeLaunchFields } from './episodeLaunchFields.mjs';
+
+function localDayKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+/** Deterministic [0,1) generator (mulberry32) seeded from a string. */
+export function seededRandom(seedText) {
+  let seed = 2166136261;
+  for (let i = 0; i < seedText.length; i++) {
+    seed ^= seedText.charCodeAt(i);
+    seed = Math.imul(seed, 16777619);
+  }
+  return () => {
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
