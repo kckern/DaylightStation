@@ -31,6 +31,13 @@ export class HeadlineService {
   #logger;
   #storyJudge;
   #reviewsInFlight = new Map();
+  // link -> when its page last failed to load for image enrichment. Paywalled
+  // sources (GeekWire, Economist) answer 403 every time; without this the
+  // hourly harvest re-fetched the same ~290 pages each run (3,734 upstream
+  // errors overnight 2026-10-01). Skipped for ENRICH_RETRY_MS, in memory only.
+  #enrichFailures = new Map();
+  static #ENRICH_RETRY_MS = 24 * 60 * 60 * 1000;
+  static #ENRICH_FAILURES_MAX = 5000;
 
   constructor({ headlineStore, harvester, configRepository, config = {}, webContentGateway, storyJudge = null, logger = console }) {
     if (!isFeedConfigRepository(configRepository)) throw new Error('HeadlineService requires configRepository');
@@ -441,7 +448,12 @@ export class HeadlineService {
     if (!this.#webContentGateway) return;
     const CONCURRENCY = 3;
 
-    const candidates = items.filter(i => !i.image && i.link && !existingIds.has(i.id));
+    const now = Date.now();
+    const recentlyFailed = (link) => {
+      const at = this.#enrichFailures.get(link);
+      return at !== undefined && now - at < HeadlineService.#ENRICH_RETRY_MS;
+    };
+    const candidates = items.filter(i => !i.image && i.link && !existingIds.has(i.id) && !recentlyFailed(i.link));
     if (candidates.length === 0) return;
 
     let active = 0;
@@ -457,6 +469,10 @@ export class HeadlineService {
               if (result?.ogImage && !this.#isGenericImage(result.ogImage)) item.image = result.ogImage;
             })
             .catch(err => {
+              this.#enrichFailures.set(item.link, Date.now());
+              if (this.#enrichFailures.size > HeadlineService.#ENRICH_FAILURES_MAX) {
+                this.#enrichFailures.delete(this.#enrichFailures.keys().next().value);
+              }
               this.#logger.debug?.('headline.enrich.skip', { link: item.link, error: err.message });
             })
             .finally(() => {
