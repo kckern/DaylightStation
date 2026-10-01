@@ -1548,7 +1548,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const plexClient = contentRegistry?.get?.('plex')?.client ?? null;
     const sourceHealConfig = configService.getAppConfig('media-source-heal') || {};
     const healLogger = rootLogger.child({ module: 'media-source-heal' });
-    const hostHealer = new SshMediaHostHealer(sourceHealConfig.host || {}, { logger: healLogger });
+    // Key/known_hosts paths in the YAML are relative to the app root (the
+    // data dir's parent), but the backend runs with cwd = backend/, so ssh
+    // resolved them against the wrong directory and every host heal failed
+    // with "Identity file ... not accessible". Resolve them here.
+    const appRoot = path.dirname(configService.getDataDir());
+    const resolveFromAppRoot = (p) => (p && !path.isAbsolute(p) ? path.resolve(appRoot, p) : p);
+    const hostConfig = { ...(sourceHealConfig.host || {}) };
+    for (const key of ['privateKey', 'private_key', 'knownHostsPath', 'known_hosts_path']) {
+      if (hostConfig[key]) hostConfig[key] = resolveFromAppRoot(hostConfig[key]);
+    }
+    const hostHealer = new SshMediaHostHealer(hostConfig, { logger: healLogger });
     const mediaSourceHealer = plexClient
       ? new MediaSourceHealer({
         sourceProbe: new PlexSourceProbe({ client: plexClient }),
