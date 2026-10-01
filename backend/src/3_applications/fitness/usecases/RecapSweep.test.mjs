@@ -4,8 +4,8 @@ import { RecapSweep, recentDateStrings } from './RecapSweep.mjs';
 
 const NOW = new Date('2026-06-18T12:00:00').getTime(); // local noon
 
-function session(id, { status, captures = [{ role: 'camera' }] } = {}) {
-  return { sessionId: id, snapshots: { captures }, timelapse: status ? { status } : null };
+function session(id, { status, error, captures = [{ role: 'camera' }] } = {}) {
+  return { sessionId: id, snapshots: { captures }, timelapse: status ? { status, ...(error ? { error } : {}) } : null };
 }
 
 function harness(byDate, { executeImpl } = {}) {
@@ -65,6 +65,14 @@ test('retries a failed recap (un-recapped, frames still present)', async () => {
   const { sweep, executed } = harness({ '2026-06-18': [session('boom', { status: 'failed' })] });
   await sweep.run({ now: NOW, lookbackDays: 0 });
   assert.deepEqual(executed, ['boom']);
+});
+
+test('does not retry a failure no retry can change (no-frames-rendered)', async () => {
+  const { sweep, executed } = harness({
+    '2026-06-18': [session('noFrames', { status: 'failed', error: 'no-frames-rendered' })],
+  });
+  await sweep.run({ now: NOW, lookbackDays: 0 });
+  assert.deepEqual(executed, []);
 });
 
 test('skips sessions with no camera captures (player-only or empty)', async () => {
