@@ -1431,6 +1431,34 @@ export function createHealthRouter(config) {
       }
     }));
 
+    /**
+     * POST /nutrilist/:uuid/revise-dish — "the soup didn't have noodles, the
+     * base was broth, chicken and tofu". Rebuilds a dish's parts (keep / change /
+     * remove / add) and COMMITS through the audited meal amend, returning its
+     * Undo token and what it heard and did. ReviseDishService validates every id
+     * the model names against the dish's real parts before anything is written.
+     */
+    router.post('/nutrilist/:uuid/revise-dish', asyncHandler(async (req, res) => {
+      const { uuid } = req.params;
+      const { instruction, audio, operationId } = req.body || {};
+      if (!ENTRY_UUID_PATTERN.test(uuid)) return res.status(400).json({ error: 'A dish ID is required' });
+      const spoken = typeof audio === 'string' && audio.startsWith('data:');
+      if (!spoken && (typeof instruction !== 'string' || !instruction.trim())) {
+        return res.status(400).json({ error: 'A correction is required' });
+      }
+      const userId = getDefaultUsername(req);
+      try {
+        const result = await healthOperations.reviseNutritionDish({ userId, groupUuid: uuid,
+          ...(typeof operationId === 'string' ? { operationId } : {}), ...(spoken ? { audio } : { instruction }) });
+        logger.info?.('health.dish.revision.complete', { userId, uuid, removed: result.removed?.length, added: result.added?.length, changed: result.changed?.length });
+        return res.json(result);
+      } catch (err) {
+        logger.warn?.('health.dish.revision.failed', { userId, uuid, error: err.message });
+        if (err.status) return res.status(err.status).json({ error: err.message, code: err.code, ...(err.audioRef ? { audioRef: err.audioRef } : {}) });
+        return sendInternalError(res, { error: err.message });
+      }
+    }));
+
     router.post('/nutrition/meal-suggestions', asyncHandler(async (req, res) => {
       const { date, bucket, selectedIds } = req.body || {};
       if (!isISODate(date) || !NUTRITION_MEAL_BUCKETS.includes(bucket) || !Array.isArray(selectedIds) || selectedIds.some(id => typeof id !== 'string' || !ENTRY_UUID_PATTERN.test(id))) {

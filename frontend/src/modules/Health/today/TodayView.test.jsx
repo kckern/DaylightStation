@@ -495,8 +495,8 @@ describe('TodayView — scale observations', () => {
 
     await waitFor(() => expect(screen.getByText('Guessed')).toBeTruthy());
     expect(screen.queryByText(/estimated/i)).toBeNull();
-    expect(screen.getAllByRole('button', { name: /confirm entry/i })).toHaveLength(1);
     expect(document.querySelectorAll('.health-row-line--unsettled')).toHaveLength(1);
+    expect(screen.getByText('Guessed').closest('.health-row-line')).toHaveClass('health-row-line--unsettled');
   });
 
   it('REGRESSION: bucket kcal totals still sum every row unconditionally (a group carries zero)', async () => {

@@ -19,6 +19,7 @@ export class WebNutribotAdapter {
   #logger;
   #mealInstructions;
   #entryRevisions;
+  #dishRevisions;
   #transcribeVoice;
 
   /**
@@ -40,6 +41,7 @@ export class WebNutribotAdapter {
     this.#inputRouter = config.inputRouter;
     this.#mealInstructions = config.mealInstructions || null;
     this.#entryRevisions = config.entryRevisions || null;
+    this.#dishRevisions = config.dishRevisions || null;
     this.#transcribeVoice = config.transcribeVoice || null;
     this.#foodLogStore = config.foodLogStore || null;
     this.#voiceMemoStore = config.voiceMemoStore || null;
@@ -400,7 +402,24 @@ export class WebNutribotAdapter {
    *  work and changes nothing is the failure this codebase keeps naming. */
   async reviseEntry({ userId, audio = null, ...input }) {
     if (!this.#entryRevisions) throw Object.assign(new Error('Food revision is unavailable'), { status: 503 });
-    let instruction = input.instruction;
+    const instruction = await this.#correctionText(userId, audio, input.instruction);
+    const result = await this.#entryRevisions.propose(userId, { ...input, instruction });
+    // The heard text travels back so the surface can show what it acted on. A
+    // voice correction that silently mis-transcribes is otherwise indistinguishable
+    // from a model that misunderstood a correct one.
+    return audio ? { ...result, instruction } : result;
+  }
+
+  /** Rebuild a dish's parts from a spoken/typed correction. Unlike reviseEntry
+   *  this COMMITS (through the audited meal amend) and returns its Undo token. */
+  async reviseDish({ userId, audio = null, ...input }) {
+    if (!this.#dishRevisions) throw Object.assign(new Error('Dish revision is unavailable'), { status: 503 });
+    const instruction = await this.#correctionText(userId, audio, input.instruction);
+    return this.#dishRevisions.revise(userId, { ...input, instruction });
+  }
+
+  async #correctionText(userId, audio, typed) {
+    let instruction = typed;
     if (audio) {
       if (!this.#transcribeVoice) throw Object.assign(new Error('Voice corrections are unavailable'), { status: 503 });
       const { buffer, mimeType } = this.#decodeDataUrl(audio, 'voice');
@@ -419,11 +438,7 @@ export class WebNutribotAdapter {
         throw Object.assign(new Error('That recording came back empty'), { status: 422, code: 'TRANSCRIBE_EMPTY', audioRef });
       }
     }
-    const result = await this.#entryRevisions.propose(userId, { ...input, instruction });
-    // The heard text travels back so the surface can show what it acted on. A
-    // voice correction that silently mis-transcribes is otherwise indistinguishable
-    // from a model that misunderstood a correct one.
-    return audio ? { ...result, instruction } : result;
+    return instruction;
   }
 
   reviewPending(input) { return this.#inputRouter.reviewPending(input); }

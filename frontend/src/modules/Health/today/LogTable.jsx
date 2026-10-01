@@ -187,7 +187,7 @@ function Section({
         // `id` for the same reason `key` does: not every row shape carries both.
         const measured = measuredByUuid?.get(row.uuid) ?? measuredByUuid?.get(row.id) ?? null;
         if (!isGroup) {
-          return renderRow({row,onTap:onRowTap,onConfirm,onRequestDelete,measured,kcalShare:entryShares[entryIndex],entryKey:String(key)});
+          return renderRow({row,onTap:onRowTap,onConfirm,onRequestDelete,onChanged,measured,kcalShare:entryShares[entryIndex],entryKey:String(key)});
         }
         const isOpen = !collapsed.has(key);
         const childShares = calorieShares(children.map(child => child.calories), kcalScale);
@@ -198,11 +198,10 @@ function Section({
                 for display) — purely so the tap handler forwards them to
                 whatever opens next (EntryEditSheet's group mode needs the
                 full child list to scale/move/delete them together). */}
-            {renderRow({ row:{...row,children},densityRow:{kind:'group',children},onTap:onRowTap,onConfirm,onRequestDelete,measured,kcalShare:entryShares[entryIndex],
+            {renderRow({ row:{...row,children},densityRow:{kind:'group',children},onTap:onRowTap,onConfirm,onRequestDelete,onChanged,measured,kcalShare:entryShares[entryIndex],
               isGroup:true,expanded:isOpen,onToggle:()=>toggle(key),rollupKcal:rollup.calories })}
-            {isOpen ? children.map((c,index)=>renderRow({row:c,onTap:onRowTap,onConfirm,onRequestDelete,child:true,lastChild:index===children.length-1 && !dishEditable,kcalShare:childShares[index],
-              measured:measuredByUuid?.get(c.uuid) ?? measuredByUuid?.get(c.id) ?? null,
-              ...(dishEditable ? { onRemoveFromDish:child=>dish.remove(key,child.uuid ?? child.id), dishName:row.name || row.item || row.label, dishBusy:dish.busy === key } : {})})) : null}
+            {isOpen ? children.map((c,index)=>renderRow({row:c,onTap:onRowTap,onConfirm,onRequestDelete,onChanged,child:true,lastChild:index===children.length-1 && !dishEditable,kcalShare:childShares[index],
+              measured:measuredByUuid?.get(c.uuid) ?? measuredByUuid?.get(c.id) ?? null})) : null}
             {isOpen && dishEditable ? <DishAddRow dishName={row.name || row.item || row.label} candidates={dishOptions(rows, key)}
               busy={dish.busy === key} error={dish.error?.groupId === key ? dish.error.message : null} onAdd={foodId=>dish.add(key,foodId)}/> : null}
           </div>

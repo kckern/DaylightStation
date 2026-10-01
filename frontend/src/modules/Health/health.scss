@@ -632,7 +632,7 @@ $health-aside-gap: 1.5rem;
 // are unaffected) and LogTable's own per-meal barcode trigger. Mantine's
 // ActionIcon defaults to well under 44px; min-width/min-height act as a
 // floor over its own width/height (CSS spec: min-* always wins over a
-// smaller explicit width/height), same pattern as `.health-row__confirm` /
+// smaller explicit width/height), same pattern as `.health-row__menu` /
 // `.health-row__expand` above.
 .health-meal__capture-btn { min-width: 44px; min-height: 44px; }
 
@@ -785,7 +785,7 @@ $health-aside-gap: 1.5rem;
   .health-row__kcal small { display: none; }
   .health-row__identity { gap: 0.25rem; }
   .health-row-line, .health-row-identity, .health-row-name, .health-portion,
-  .health-row__confirm, .health-row__delete, .health-row__unnest, .health-row__expand, .health-density-badge { min-height: 44px; }
+  .health-row__menu, .health-row__expand, .health-density-badge { min-height: 44px; }
 }
 
 // A workout is a food row's shape (ExerciseSection.jsx): poster and name in
@@ -926,40 +926,26 @@ $health-aside-gap: 1.5rem;
 .health-equation__math small { font-size: 0.7rem; color: var(--ds-text-mid); }
 .health-intakeburn__legend { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0; font-size: 0.7rem; color: var(--ds-text-mid); }
 
-// Its own real button (not a bigger glyph) — min-height/width give the
-// 44px touch target called for by the a11y requirement.
-.health-row__confirm {
+// The row's one control (⋮): every row action lives in its menu. Muted until
+// reached, so a log scanned for numbers carries one quiet affordance per row.
+.health-row__menu {
   display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
   min-width: 28px; min-height: 28px;
   border: 1px solid transparent; border-radius: 8px;
-  color: var(--ds-warning); font-size: 1rem;
-  &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
-  &:hover { background: var(--ds-surface-alt); }
-}
-
-// Same geometry as the confirm beside it, muted until reached. A destructive
-// control on every row of a log you scan for numbers must not compete with the
-// numbers; it earns its colour on hover/focus, when you have clearly aimed at it.
-.health-row__delete {
-  display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
-  min-width: 28px; min-height: 28px;
-  border: 1px solid transparent; border-radius: 8px;
-  color: var(--ds-text-mid); opacity: 0.55;
-  &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; opacity: 1; color: var(--ds-danger); }
-  &:hover { background: var(--ds-surface-alt); opacity: 1; color: var(--ds-danger); }
+  color: var(--ds-text-mid); opacity: 0.6;
+  &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; opacity: 1; }
+  &:hover, &[aria-expanded="true"] { background: var(--ds-surface-alt); opacity: 1; color: var(--ds-text-high); }
   &:disabled { opacity: 0.2; }
 }
-
-// Takes an ingredient out of its dish (it stays in the meal). Same muted
-// geometry as the delete, but not a destructive colour: nothing is lost.
-.health-row__unnest {
-  display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
-  min-width: 28px; min-height: 28px;
-  border: 1px solid transparent; border-radius: 8px;
-  color: var(--ds-text-mid); opacity: 0.45;
-  &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; opacity: 1; color: var(--ds-accent); }
-  &:hover { background: var(--ds-surface-alt); opacity: 1; color: var(--ds-accent); }
-  &:disabled { opacity: 0.2; }
+// A just-verified estimate: a brief tick beside the menu.
+.health-row__verified { color: var(--ds-success); font-size: 0.9rem; }
+// The whole row opens its details; its own controls keep their clicks.
+.health-row-line { cursor: pointer; }
+// The menu's Revise, opened in place under its row.
+.health-row-revise {
+  margin: 2px 0 6px; padding: 8px 10px; border-radius: 8px;
+  background: var(--ds-surface-alt); cursor: default;
+  .health-row-revise__body { flex: 1 1 auto; min-width: 0; }
 }
 // The last line of an open dish: a picker that folds another food into it.
 .health-dish-add {
@@ -992,7 +978,7 @@ $health-aside-gap: 1.5rem;
 
 @media (pointer: coarse) {
   .health-row-line, .health-row-identity, .health-row-name, .health-portion,
-  .health-row__confirm, .health-row__delete, .health-row__unnest, .health-row__expand, .health-density-badge { min-height: 44px; }
+  .health-row__menu, .health-row__expand, .health-density-badge { min-height: 44px; }
 }
 
 .health-display-settings {
@@ -1006,7 +992,7 @@ $health-aside-gap: 1.5rem;
 // button/input (1.875rem tall, ~30px, and narrower than 44px wide on a
 // short label like "Save" or "×½") falls under the 44px touch-target floor
 // on BOTH axes, so pin min-width AND min-height explicitly here — same
-// pattern as `.health-row__confirm`/`.health-row__expand` above — rather
+// pattern as `.health-row__menu`/`.health-row__expand` above — rather
 // than resizing every pre-existing xs button in the sheet (item mode must
 // render exactly as it does today; this class only ever attaches to the
 // new controls).
@@ -1158,7 +1144,7 @@ $health-aside-gap: 1.5rem;
   &__actions { margin-left: auto; display: flex; gap: 0.4rem; }
   // Mantine's size="xs" button is ~30px tall and can be narrower than 44px on
   // a short label, i.e. under the touch-target floor on BOTH axes — pinned
-  // explicitly, same pattern as `.health-row__confirm` / `.health-edit__control`.
+  // explicitly, same pattern as `.health-row__menu` / `.health-edit__control`.
   &__btn { min-width: 44px; min-height: 44px; }
 
   // Inside the edit sheet the surrounding Sheet already supplies the frame.

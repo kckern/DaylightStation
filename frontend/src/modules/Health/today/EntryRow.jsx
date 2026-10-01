@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { UnstyledButton } from '@mantine/core';
+import { Menu, UnstyledButton } from '@mantine/core';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { MacroBadges } from './MacroBadges.jsx';
 import { DensityBadge } from './DensityBadge.jsx';
@@ -13,6 +13,7 @@ import { usePortionControl } from './usePortionDraft.js';
 import { PortionDraftAlert, portionAlertFor } from './PortionDraftAlert.jsx';
 import { useRowPreview, logRowPreviewOpen } from './RowPreview.jsx';
 import { useDraggableRow } from './mealDrag.jsx';
+import { RowRevise } from './RowRevise.jsx';
 
 // A food row whose art is not settled yet: the artwork queue works every such
 // row until it has a real icon (it never gives up), so the generic glyph here
@@ -23,9 +24,17 @@ import { isReconstructedRow } from '@shared-contracts/nutrition/reconstruction.m
 
 const logger = createAppLogger('health').child('entry-row');
 
-export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDelete, isGroup = false, expanded = false, onToggle, rollupKcal, child = false, lastChild = false, measured = null, kcalShare = null, added = false, entryKey = undefined, dragBucket = null, onRemoveFromDish = null, dishName = '', dishBusy = false }) {
+// A tap anywhere on the row opens its details, except on a control that owns
+// its own click (portion, kcal, macros, the menu, the dish triangle, the photo
+// preview), and never from a click that bubbled up out of a portal (a menu or
+// popover dropdown is a React child but not a DOM child of the row).
+const OWN_CLICK = 'button, a, input, textarea, select, label, [role="menuitem"], [role="dialog"], .health-row-artwork, .health-row-revise';
+const rowTapTarget = event => event.currentTarget.contains(event.target) && !event.target.closest(OWN_CLICK);
+
+export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDelete, isGroup = false, expanded = false, onToggle, rollupKcal, child = false, lastChild = false, measured = null, kcalShare = null, added = false, entryKey = undefined, dragBucket = null, onChanged = null }) {
   const [error, setError] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
+  const [revising, setRevising] = useState(false);
   const pending = useRef(false);
   const operation = useRef(null);
   const [brokenPhoto, setBrokenPhoto] = useState(null);
@@ -56,7 +65,8 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
       logger.warn('entry.confirm_failed', { uuid: entryId(row), error: err.message });
     } finally { pending.current = false; }
   };
-  return <div ref={drag.ref} {...drag.handlers} className={['health-row-line', unsettled && confirmation !== 'saved' && 'health-row-line--unsettled', child && 'health-row-line--child', lastChild && 'health-row-line--last-child', isGroup && 'health-row-line--group', added && 'health-row-line--added', reconstructed && 'health-row-line--reconstructed', drag.draggable && 'health-row-line--draggable', drag.dragging && 'health-row-line--dragging'].filter(Boolean).join(' ')} data-preview={preview.opened ? 'open' : undefined} data-entry-key={entryKey}>
+  const openDetails = () => { if (portions?.draft) return; preview.close(); onTap(row); };
+  return <><div ref={drag.ref} {...drag.handlers} onClick={event => { if (rowTapTarget(event)) openDetails(); }} className={['health-row-line', unsettled && confirmation !== 'saved' && 'health-row-line--unsettled', child && 'health-row-line--child', lastChild && 'health-row-line--last-child', isGroup && 'health-row-line--group', added && 'health-row-line--added', reconstructed && 'health-row-line--reconstructed', drag.draggable && 'health-row-line--draggable', drag.dragging && 'health-row-line--dragging'].filter(Boolean).join(' ')} data-preview={preview.opened ? 'open' : undefined} data-entry-key={entryKey}>
     <div className="health-row__branch">
       {isGroup ? <UnstyledButton className="health-row__expand" aria-expanded={expanded}
         aria-label={`${expanded ? 'Collapse' : 'Expand'} ${name}`} onClick={onToggle}
@@ -84,37 +94,34 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
     <span className="health-row__portion-cell health-row__visual"><PortionControl row={row} /></span>
     <PortionControl row={row} field="calories" className="health-row__kcal health-row__visual">{displayKcal == null ? '—' : Math.round(displayKcal)}<small> kcal</small>
       {kcalShare == null ? null : <span className="health-row__kcal-bar" aria-hidden="true" style={{ '--kcal-share': kcalShare }} />}</PortionControl>
+    {/* The row's one control. Every action that used to sit here as its own
+        icon (confirm ✓, delete ✕, take out of dish −) lives in this menu, so a
+        log scanned for numbers carries one quiet affordance per row. Remove
+        deletes — on a dish part too; "take out but keep" read as a duplicate
+        (2026-10-01). */}
     <div className="health-row__action health-row__visual">
-      {confirmation === 'saved' ? <span role="status" aria-label={`${name} confirmed`} title="Confirmed">✓</span> : unsettled ?
-        <UnstyledButton className="health-row__confirm" aria-label={`Confirm entry: ${name}`} title="Confirm this estimate"
-          disabled={confirmation === 'saving' || Boolean(portions?.draft)} aria-busy={confirmation === 'saving'} onClick={confirm}>{confirmation === 'saving' ? '…' : '✓'}</UnstyledButton> : null}
-      {/* Asks the VIEW to delete rather than deleting: one dialog for the whole
-          list, and the row never has to know what cascades. Muted until reached,
-          because a destructive control that shouts on every row of a log you scan
-          for numbers is the wrong kind of visible. Held back while a portion drag
-          is live for the same reason the confirm is — a pointer already committed
-          to one gesture must not land on another.
-
-          NOT ON CHILD ROWS. A dish's members are deleted with the dish; giving
-          each one its own X puts four more destructive controls inside one
-          expanded group and makes the list harder to read than the mis-parse it
-          would fix. An ingredient gets the gentler control below instead:
-          it leaves the dish and stays in the meal, where its own X can delete it. */}
-      {onRequestDelete && !child ? <UnstyledButton className="health-row__delete" aria-label={`Delete entry: ${name}`} title="Delete this entry"
-        disabled={Boolean(portions?.draft)} onClick={() => onRequestDelete(row)}>
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" focusable="false">
-          <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        </svg>
-      </UnstyledButton> : null}
-      {onRemoveFromDish && child ? <UnstyledButton className="health-row__unnest" aria-label={`Take ${name} out of ${dishName || 'the dish'}`}
-        title="Take out of the dish (stays in this meal)" disabled={dishBusy || Boolean(portions?.draft)} onClick={() => onRemoveFromDish(row)}>
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" focusable="false">
-          <path d="M2.5 6h7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        </svg>
-      </UnstyledButton> : null}
+      {confirmation === 'saved' ? <span className="health-row__verified" role="status" aria-label={`${name} verified`} title="Verified">✓</span> : null}
+      <Menu position="bottom-end" withinPortal shadow="md" disabled={Boolean(portions?.draft)}>
+        <Menu.Target>
+          <UnstyledButton className="health-row__menu" aria-label={`Actions for ${name}`} title="Actions" disabled={Boolean(portions?.draft)}>
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false">
+              <circle cx="7" cy="2.5" r="1.4" fill="currentColor" /><circle cx="7" cy="7" r="1.4" fill="currentColor" /><circle cx="7" cy="11.5" r="1.4" fill="currentColor" />
+            </svg>
+          </UnstyledButton>
+        </Menu.Target>
+        <Menu.Dropdown>
+          <Menu.Item onClick={() => { logger.debug('row.menu', { action: 'details', uuid: entryId(row) }); openDetails(); }}>Details</Menu.Item>
+          {unsettled && confirmation !== 'saved' ? <Menu.Item disabled={confirmation === 'saving'} onClick={() => { logger.debug('row.menu', { action: 'verify', uuid: entryId(row) }); confirm(); }}>Verify</Menu.Item> : null}
+          <Menu.Item onClick={() => { logger.debug('row.menu', { action: 'revise', uuid: entryId(row) }); setRevising(true); }}>Revise</Menu.Item>
+          {onRequestDelete ? <Menu.Item color="red" onClick={() => { logger.debug('row.menu', { action: 'remove', uuid: entryId(row) }); onRequestDelete(row); }}>Remove</Menu.Item> : null}
+        </Menu.Dropdown>
+      </Menu>
     </div>
     {error ? <span role="alert" className="health-row__error">{error}</span> : null}
     {portionAlertFor(portions, row) ? <PortionDraftAlert control={portions} className="health-portion-error health-portion-error--row" /> : null}
-  </div>;
+  </div>
+  {revising ? <RowRevise row={row} isGroup={isGroup} onClose={() => setRevising(false)}
+    onChanged={result => { onChanged ? onChanged(result) : onConfirm?.(row); }} onReload={() => onConfirm?.(row)} /> : null}
+  </>;
 }
 export default EntryRow;

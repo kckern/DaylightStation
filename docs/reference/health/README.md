@@ -1100,6 +1100,34 @@ renders like any other row: tapping it opens `EntryEditSheet` to edit or delete,
 `TodayView`, when the result isn't `unknownUpc`) submit through the identical
 `/nutrition/input` call and follow the same reload-or-notice handling.
 
+### Row actions — the ⋮ menu
+
+Every Today row, dish parts included, has one control: a vertical **⋮** that opens
+**Details · Verify · Revise · Remove** (`EntryRow.jsx`). The old per-row icons (✓
+confirm, ✕ delete, − take out of dish) are gone (2026-10-01).
+
+- **A tap anywhere on the row opens Details** (the edit sheet), the same as the menu's
+  Details. A control that owns its own click keeps it: portion and kcal scrubbers,
+  macro and density badges, the dish triangle, the photo preview, the ⋮ itself. A
+  click that bubbles out of a portalled menu or popover is ignored.
+- **Verify** appears only on an unverified estimate (`settled: false`) and PUTs
+  `settled: true`; a brief ✓ shows beside the ⋮.
+- **Revise** opens a correction field in place under the row (`RowRevise.jsx`), typed
+  or spoken (the mic transcribes server-side), and applies in one gesture:
+  - **A food** is re-derived by `POST /nutrilist/:uuid/revise` (`ReviseEntryService`,
+    a proposal the client PUTs), with an Undo that writes the previous values back.
+  - **A dish** has its PARTS rebuilt by `POST /nutrilist/:uuid/revise-dish`
+    (`ReviseDishService`): "the soup didn't have noodles, the base was broth, chicken
+    and tofu" keeps, adjusts, removes and adds parts. Every id the model names is
+    checked against the dish's real parts, a part it forgets to mention is kept, a
+    part may not share the dish's name, and the change commits through the meal
+    command's `amend` (with its `removals`), so the page's "Meal updated · Undo"
+    banner reverses the whole thing.
+- **Remove** asks the view's delete dialog, on a dish part too. It deletes; taking a
+  part out of its dish but keeping it in the meal was retired because the part,
+  often named like its dish, read as the dish logged twice. Deleting a dish's last
+  part retires the empty header with it.
+
 ### Groups (composite dishes)
 
 A **group** is a dish or course within a meal, not the meal itself — a smoothie and its

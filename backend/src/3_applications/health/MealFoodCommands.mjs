@@ -136,12 +136,23 @@ export class MealFoodCommands {
           }
           creates.push({ ...values, uuid: uuidv5(`${userId}:${operationId}:addition:${index}`, uuidv5.URL), userId, date, mealTime: bucket, parentId: destination, kind: 'food' });
         }
+        // A dish revision ("it didn't have noodles") deletes parts outright —
+        // the only place an amend removes food, and only foods it was shown.
+        if (input.removals !== undefined && !Array.isArray(input.removals)) fail('Invalid removals');
+        for (const id of input.removals || []) {
+          if (typeof id !== 'string' || !selectedIds.includes(id)) fail('Removal exceeds selection');
+          const row = get(id); requireFood(row);
+          if (!deleteIds.includes(id)) deleteIds.push(id);
+        }
       }
-      // Retire only headers made empty by reassignment; foods are never deleted here.
-      const oldParents = new Set([...updates.values()].map(u => byId.get(u.id)?.parentId).filter(Boolean));
+      // Retire headers made empty by reassignment or removal. Foods are deleted
+      // only by an amend's explicit removals above.
+      const oldParents = new Set([...updates.values()].map(u => byId.get(u.id)?.parentId)
+        .concat(deleteIds.map(id => byId.get(id)?.parentId)).filter(Boolean));
       for (const parentId of oldParents) {
         const parent = get(parentId); check(parent);
         const remaining = rows.some(row => {
+          if (deleteIds.includes(idOf(row))) return false;
           const changes = updates.get(idOf(row))?.changes;
           return (changes && Object.hasOwn(changes, 'parentId') ? changes.parentId : row.parentId) === parentId;
         }) || creates.some(row => row.parentId === parentId);
