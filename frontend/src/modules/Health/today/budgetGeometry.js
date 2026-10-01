@@ -72,6 +72,16 @@ export function budgetGeometry(budget, { widthPx = 360, finished = false } = {})
     return { ...segment(from, t.to), key: t.key, left: t.left, label, shown };
   });
 
+  // The workout's bonus hatch rides above the food, so it stays visible once
+  // eaten into. Once the food has covered all of it, the workout tier (and its
+  // price label) is gone, so the bonus carries the workout's room as a number.
+  const bonusFrom = Math.max(floor, top);
+  const bonusMidPx = ((bonusFrom + upper) / 2) * pxPerKcal;
+  const bonusFits = (upper - bonusFrom) * pxPerKcal >= TIER_NUMBER_PX
+    && !(foodSeg.labelled && bonusMidPx - TIER_NUMBER_PX / 2 < foodLabel[1] && foodLabel[0] < bonusMidPx + TIER_NUMBER_PX / 2);
+  const bonus = { ...segment(bonusFrom, upper), value: Math.round(upper - top),
+    shown: food >= upper && bonusFits ? fmt(upper - top) : null };
+
   const goalLabel = capped ? `Goal · break even ${fmt(top)}`
     : ranged ? `Goal ${fmt(floor)}–${fmt(upper)}` : `Goal ${fmt(upper)}`;
 
@@ -80,7 +90,7 @@ export function budgetGeometry(budget, { widthPx = 360, finished = false } = {})
     goal: { pct: pct(upper), value: upper, label: goalLabel },
     // The band is solid floor → top; the workout's bonus, top → ceiling, is hatched.
     range: ranged ? { ...segment(floor, upper), floor, floorPct: pct(floor),
-      solid: segment(floor, Math.max(floor, top)), bonus: upper > Math.max(floor, top) ? segment(Math.max(floor, top), upper) : null } : null,
+      solid: segment(floor, Math.max(floor, top)), bonus: upper > Math.max(floor, top) ? bonus : null } : null,
     base: exercise > 0 && ceiling > top ? { pct: pct(top), value: top } : null,
     even: even != null ? { pct: pct(even), value: even } : null,
     food: foodSeg,

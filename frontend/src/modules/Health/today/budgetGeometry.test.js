@@ -39,6 +39,14 @@ describe('budgetGeometry — the ruler is food, from 0', () => {
     close(g.range.bonus.fromPct, g.pct(1791));
     close(g.range.bonus.fromPct + g.range.bonus.widthPct, g.pct(2102));
     expect(budgetGeometry(day({ exercise: 0 }), { widthPx: 360 }).range.bonus).toBeNull();
+  });
+
+  it('the bonus carries the workout room as a number once the food has covered it', () => {
+    // 2026-09-30: top 1600, 384 burned, 2,160 eaten — past the whole goal.
+    const over = budgetGeometry(day({ food: 2160, exercise: 384, maintenance: 2000, range: { floor: 1200, top: 1600 }, zone: 'over' }), { widthPx: 700 });
+    expect(over.range.bonus).toMatchObject({ value: 384, shown: '384' });
+    // Not yet covered: the workout tier prices it, so the bonus stays quiet.
+    expect(budgetGeometry(day(), { widthPx: 700 }).range.bonus.shown).toBeNull();
     expect(budgetGeometry(day({ range: { floor: 0, top: 1791 } }), { widthPx: 360 }).range).toBeNull();
     expect(budgetGeometry(day({ range: { floor: 0, top: 1791 } }), { widthPx: 360 }).goal.label).toBe('Goal 2,102');
     expect(budgetGeometry(day({ exercise: 0, range: { floor: 1200, top: 1200 } }), { widthPx: 360 }).range).toBeNull();
