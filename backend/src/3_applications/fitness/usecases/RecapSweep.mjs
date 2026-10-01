@@ -24,6 +24,16 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** Recap statuses that mean "leave it alone" — finished, in flight, or no-captures. */
 const TERMINAL_OR_INFLIGHT = new Set(['ready', 'processing', 'skipped']);
 
+/**
+ * Failures that a retry cannot change. A failed recap is otherwise retried on
+ * every tick (a transient encode/IO error deserves that), but `no-frames-rendered`
+ * means no camera capture lines up with any frame — after the session has ended
+ * the captures never change, so it failed identically 46 times in 48 h for one
+ * session (2026-10-01) whose captures were already gone. A forced re-render
+ * from the API still runs; only the sweep leaves it alone.
+ */
+const PERMANENT_FAILURES = new Set(['no-frames-rendered']);
+
 export class RecapSweep {
   #d;
   constructor(deps) { this.#d = deps; }
@@ -71,6 +81,7 @@ export class RecapSweep {
         // Already finished / in flight / known no-captures — nothing to do.
         const status = session.timelapse?.status || null;
         if (status && TERMINAL_OR_INFLIGHT.has(status)) continue;
+        if (status === 'failed' && PERMANENT_FAILURES.has(session.timelapse?.error)) continue;
 
         // Needs camera captures to render anything (mirrors buildFrames' requirement).
         const hasCamera = (session.snapshots?.captures || [])
