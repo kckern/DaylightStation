@@ -111,6 +111,9 @@ describe('useMediaResilience — refused source', () => {
     expect(args.onReload).toHaveBeenCalledTimes(1);
     expect(args.onReload.mock.calls[0][0]).toMatchObject({
       reason: 'source-restored', refreshUrl: true, forceRemount: true,
+      // The refused load paused the element itself; that is not a viewer's
+      // pause, so the restored file must play (2026-09-30: it sat frozen 15s).
+      resumePlayback: true,
     });
     expect(result.current.overlayProps.sourceNotice).toBeNull();
   });
@@ -214,8 +217,37 @@ describe('useMediaResilience — refused source', () => {
       api.DaylightAPI.mockResolvedValue(answer('readable'));
       await advance(15_000);
       expect(args.onReload).toHaveBeenCalledTimes(1);
-      expect(args.onReload.mock.calls[0][0]).toMatchObject({ reason: 'source-restored', forceRemount: true });
+      expect(args.onReload.mock.calls[0][0]).toMatchObject({ reason: 'source-restored', forceRemount: true, resumePlayback: true });
       expect(args.onExhausted).not.toHaveBeenCalled();
+    });
+
+    it('keeps a viewer\'s pause: a file refused while paused is restored paused', async () => {
+      api.DaylightAPI.mockResolvedValue(answer('unreadable'));
+      const el = makeFakeEl();
+      playing(el);
+      let args = baseArgs(el, { seconds: 376.9 });
+      const { rerender } = renderHook((props) => useMediaResilience(props), { initialProps: args });
+
+      await act(async () => { el._fire('playing'); el._fire('timeupdate'); });
+      await advance(1000);
+      el.currentTime = 378;
+      await act(async () => { el._fire('timeupdate'); });
+      await advance(1000);
+      // The viewer pauses; only then does the file go away.
+      args = { ...args, isPaused: true };
+      await act(async () => { el.paused = true; el._fire('pause'); rerender(args); });
+      await flush();
+      await act(async () => {
+        el.error = { code: 4, message: 'MEDIA_ELEMENT_ERROR: Format error' };
+        el._fire('error');
+      });
+      await flush();
+
+      api.DaylightAPI.mockResolvedValue(answer('readable'));
+      await advance(15_000);
+      expect(args.onReload).toHaveBeenCalledTimes(1);
+      expect(args.onReload.mock.calls[0][0]).toMatchObject({ reason: 'source-restored' });
+      expect(args.onReload.mock.calls[0][0].resumePlayback).toBeUndefined();
     });
 
     it('checks before skipping when the ladder runs out, and waits instead if the file is refused', async () => {

@@ -152,7 +152,7 @@ the part probe below, exist for that case.
 
 | Decision | What happens |
 |---|---|
-| `resume` | Resets the recovery ledger, then one `source-restored` recovery with `refreshUrl` and `forceRemount`. It seeks to the last position that played, and works even from `exhausted`. |
+| `resume` | Resets the recovery ledger, then one `source-restored` recovery with `refreshUrl` and `forceRemount`. It seeks to the last position that played, and works even from `exhausted`. It carries `resumePlayback` (the rebuilt element autoplays) unless the viewer had paused before the error: the refused load pauses the element itself, and before 2026-09-30 that pause was carried as the viewer's, so the restored video sat loaded and frozen until the 15s startup deadline remounted it again. |
 | `retry` | The refusal cleared before any wait: one `source-refusal-cleared` recovery. |
 | `normal` | Nothing extra; the ordinary ladder runs. |
 | `gave-up` | After 30 minutes the Player falls back to `exhausted` (Tap to Retry) and calls `onExhausted`. |
