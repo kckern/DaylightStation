@@ -857,6 +857,16 @@ export class StravaHarvester extends IHarvester {
     }
     await this.#lifelogStore.save(username, 'strava', summary);
 
+    // Steps 2 and 3 run every hourly harvest over ~90 days of matches, and
+    // nearly all of them were applied in an earlier run. Rewriting them anyway
+    // — synchronous YAML parse + dump of full session timelines, no yield —
+    // blocked the event loop for 10-22 SECONDS at :05 past every hour
+    // (2026-09-29..10-01, `system.event-loop.lag`, ~110 matches). Skip a write
+    // that would change nothing, and yield between the files that do change,
+    // the same way #loadHomeSessions yields between reads.
+    let archivesWritten = 0;
+    let sessionsWritten = 0;
+
     // 2. Enrich Strava archive files
     for (const match of matches) {
       const date = moment(match.activity.start_date).tz(this.#timezone).format('YYYY-MM-DD');
@@ -864,36 +874,59 @@ export class StravaHarvester extends IHarvester {
       const safeType = typeRaw.replace(/\s+/g, '').replace(/[^A-Za-z0-9_-]/g, '') || 'activity';
       const archiveName = `strava/${date}_${safeType}_${match.activityId}`;
 
+      await new Promise(resolve => setImmediate(resolve));
       const archive = await this.#lifelogStore.load(username, archiveName);
       if (archive?.data) {
+        const media = match.session.media || null;
+        const unchanged = archive.data.homeSessionId === match.sessionId
+          && archive.data.homeRings === match.session.rings
+          && (media === null || archive.data.homeMedia === media);
+        if (unchanged) continue;
         archive.data.homeSessionId = match.sessionId;
         archive.data.homeRings = match.session.rings;
-        if (match.session.media) archive.data.homeMedia = match.session.media;
+        if (media) archive.data.homeMedia = media;
         await this.#lifelogStore.save(username, archiveName, archive);
+        archivesWritten += 1;
       }
     }
 
-    // 3. Enrich home session files
+    // 3. Enrich home session files. #loadHomeSessions already parsed each one
+    // (match.session.data), so an already-enriched session is recognised
+    // without reading the file again. The raw file is re-read only to write
+    // it: the parsed copy has a hydrated timeline, not the stored form.
     for (const match of matches) {
+      const strava = {
+        activityId: match.activityId,
+        type: match.activity.type || match.activity.sport_type || null,
+        sufferScore: match.activity.suffer_score || null,
+        deviceName: match.activity.device_name || null,
+      };
+      const current = match.session.data?.participants?.[username]?.strava;
+      if (current
+        && current.activityId === strava.activityId
+        && current.type === strava.type
+        && current.sufferScore === strava.sufferScore
+        && current.deviceName === strava.deviceName) continue;
+
+      await new Promise(resolve => setImmediate(resolve));
       const data = loadYamlSafe(match.session.filePath);
       if (!data?.participants) continue;
 
       if (data.participants[username]) {
-        data.participants[username].strava = {
-          activityId: match.activityId,
-          type: match.activity.type || match.activity.sport_type || null,
-          sufferScore: match.activity.suffer_score || null,
-          deviceName: match.activity.device_name || null,
-        };
+        data.participants[username].strava = strava;
 
         const savePath = match.session.filePath.replace(/\.yml$/, '');
+        await new Promise(resolve => setImmediate(resolve));
         saveYaml(savePath, data);
+        sessionsWritten += 1;
       }
     }
 
     this.#logger.info?.('strava.homeMatch.complete', {
       username,
       matchCount: matches.length,
+      archivesWritten,
+      sessionsWritten,
       sessionIds: matches.map(m => m.sessionId),
     });
   }
