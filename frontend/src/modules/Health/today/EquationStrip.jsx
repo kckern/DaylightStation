@@ -137,19 +137,24 @@ function RulerScale({ budget, spoken, finished, tentative }) {
       </div>
       <div className="health-budget__track health-budget__track--ruler" role="img" data-testid="budget-ruler"
         aria-label={`${n(food.value)} kcal eaten; ${goal.label.toLowerCase()}; ${priced}${even ? `; break even ${n(even.value)}` : ''}; ${spoken}`}>
-        <span className={`health-budget__food health-budget__food--${zone}`} data-testid="budget-food" style={{ left: at(food.fromPct), width: at(food.widthPct) }} />
+        {/* One block, or split by where it ends against the goal (budgetGeometry.js). */}
+        <span className={`health-budget__food health-budget__food--${food.parts.length > 1 ? 'split' : food.tone}`} data-testid="budget-food" style={{ left: at(food.fromPct), width: at(food.widthPct) }} />
+        {food.parts.length > 1 ? food.parts.map(p => <span key={p.tone} className={`health-budget__food health-budget__food--${p.tone}`} data-testid={`budget-food-${p.tone}`}
+          style={{ left: at(p.fromPct), width: at(p.widthPct) }} />) : null}
         {tiers.map(t => <span key={t.key} className={`health-budget__tier health-budget__tier--${t.key}`} data-testid={`budget-tier-${t.key}`}
           style={{ left: at(t.fromPct), width: at(t.widthPct) }}>
           {t.shown ? <span className="health-budget__seg-label">{t.shown}</span> : null}</span>)}
         {range && range.solid.widthPct > 0 ? <span className="health-budget__range-band" data-testid="budget-range-band" style={{ left: at(range.solid.fromPct), width: at(range.solid.widthPct) }} /> : null}
-        {range?.bonus ? <span className="health-budget__range-band health-budget__range-band--bonus" data-testid="budget-range-bonus" style={{ left: at(range.bonus.fromPct), width: at(range.bonus.widthPct) }}>
+        {range?.bonus ? range.bonus.parts.map(p => <span key={p.tone} className={`health-budget__range-band health-budget__range-band--bonus health-budget__range-band--bonus-${p.tone}`}
+          data-testid={`budget-range-bonus-${p.tone}`} style={{ left: at(p.fromPct), width: at(p.widthPct) }} />) : null}
+        {range?.bonus ? <span className="health-budget__bonus-label" data-testid="budget-range-bonus" style={{ left: at(range.bonus.fromPct), width: at(range.bonus.widthPct) }}>
           {range.bonus.shown ? <span className="health-budget__seg-label">{range.bonus.shown}</span> : null}</span> : null}
         {range ? <span className="health-budget__floor-line" style={{ left: at(range.floorPct) }} /> : null}
         <span className="health-budget__goal-line" style={{ left: at(goal.pct) }} />
         {base ? <span className="health-budget__base-line" style={{ left: at(base.pct) }} /> : null}
         {/* Its own top layer, not a child of the food block: the plan marks and
             break even stack above the food and would cut through it. */}
-        {food.labelled ? <span className={`health-budget__food-label health-budget__food-label--${food.outside ? 'outside' : zone}`} data-testid="budget-food-label"
+        {food.labelled ? <span className={`health-budget__food-label health-budget__food-label--${food.outside ? 'outside' : food.tone}`} data-testid="budget-food-label"
           style={food.outside ? { left: at(food.fromPct + food.widthPct) } : { right: at(100 - (food.fromPct + food.widthPct)) }}>{n(food.value)} eaten</span> : null}
         {even ? <span className="health-budget__even" style={{ left: at(even.pct) }} /> : null}
       </div>

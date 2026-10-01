@@ -55,7 +55,22 @@ export function budgetGeometry(budget, { widthPx = 360, finished = false } = {})
   // just past the frontier instead of dropping it.
   const foodPx = food * pxPerKcal;
   const outside = foodPx < FOOD_LABEL_PX;
-  const foodSeg = { ...segment(0, food), value: food, labelled: food > 0, outside };
+  // The food block splits by where it ends against the goal (2026-10-01):
+  //   within the plan        one block in the zone colour
+  //   into the workout bonus 0 → top in the zone colour, top → food caution (yellow)
+  //   past the goal          0 → ceiling caution, ceiling → food overshoot (orange)
+  //   past break even        one block, red
+  // and the eaten part of the bonus hatch goes orange (maroon in surplus).
+  const pastEven = even != null && food > even;
+  const intoBonus = exercise > 0 && ceiling > top && food > top;
+  const parts = pastEven ? [{ from: 0, to: food, tone: 'past-even' }]
+    : food > ceiling && ceiling > 0 ? [{ from: 0, to: ceiling, tone: 'caution' }, { from: ceiling, to: food, tone: 'overshoot' }]
+      : intoBonus ? [{ from: 0, to: top, tone: budget.zone }, { from: top, to: food, tone: 'caution' }]
+        : [{ from: 0, to: food, tone: budget.zone }];
+  const bonusSpent = pastEven ? 'surplus' : food > top ? 'spent' : null;
+  const foodSeg = { ...segment(0, food), value: food, labelled: food > 0, outside,
+    parts: parts.filter(p => p.to > p.from).map(p => ({ ...segment(p.from, p.to), tone: p.tone })),
+    tone: parts[parts.length - 1].tone };
   const foodLabel = outside ? [foodPx, foodPx + FOOD_LABEL_PX] : [foodPx - FOOD_LABEL_PX, foodPx];
 
   // A tier shows "321 free" where it fits, "321" where only the number fits,
@@ -79,8 +94,13 @@ export function budgetGeometry(budget, { widthPx = 360, finished = false } = {})
   const bonusMidPx = ((bonusFrom + upper) / 2) * pxPerKcal;
   const bonusFits = (upper - bonusFrom) * pxPerKcal >= TIER_NUMBER_PX
     && !(foodSeg.labelled && bonusMidPx - TIER_NUMBER_PX / 2 < foodLabel[1] && foodLabel[0] < bonusMidPx + TIER_NUMBER_PX / 2);
+  const bonusEaten = Math.min(Math.max(food, bonusFrom), upper);
   const bonus = { ...segment(bonusFrom, upper), value: Math.round(upper - top),
-    shown: food >= upper && bonusFits ? fmt(upper - top) : null };
+    shown: food >= upper && bonusFits ? fmt(upper - top) : null,
+    parts: [
+      ...(bonusSpent && bonusEaten > bonusFrom ? [{ ...segment(bonusFrom, bonusEaten), tone: bonusSpent }] : []),
+      ...(upper > bonusEaten ? [{ ...segment(bonusEaten, upper), tone: 'free' }] : []),
+    ] };
 
   const goalLabel = capped ? `Goal · break even ${fmt(top)}`
     : ranged ? `Goal ${fmt(floor)}–${fmt(upper)}` : `Goal ${fmt(upper)}`;
