@@ -44,9 +44,6 @@ export class FitnessSuggestionService {
    * (containers) or episodes — either way we pull the show (grandparent) id.
    *
    * Cached with a short TTL so repeated suggestion calls don't hammer Plex.
-   * Past the TTL the last set is served while one background resolve renews
-   * it: the home screen polls on the same 5-minute period, so blocking on
-   * expiry put this Plex walk (~1s) in front of nearly every poll.
    *
    * @param {Array<string|number>} excludeCollections
    * @returns {Promise<Set<string>>} show IDs (no `plex:` prefix)
@@ -54,22 +51,11 @@ export class FitnessSuggestionService {
    */
   async #getExcludedShowIds(excludeCollections) {
     const key = JSON.stringify(excludeCollections || []);
+    const now = Date.now();
     const cached = this.#excludedCache.get(key);
-    if (cached) {
-      if (Date.now() - cached.at >= FitnessSuggestionService.#EXCLUDED_TTL_MS && !cached.renewing) {
-        cached.renewing = true;
-        this.#resolveExcludedShowIds(excludeCollections)
-          .then((ids) => { this.#excludedCache.set(key, { at: Date.now(), ids }); })
-          .finally(() => { cached.renewing = false; });
-      }
+    if (cached && now - cached.at < FitnessSuggestionService.#EXCLUDED_TTL_MS) {
       return cached.ids;
     }
-    const ids = await this.#resolveExcludedShowIds(excludeCollections);
-    this.#excludedCache.set(key, { at: Date.now(), ids });
-    return ids;
-  }
-
-  async #resolveExcludedShowIds(excludeCollections) {
     const ids = new Set();
     if (Array.isArray(excludeCollections) && excludeCollections.length
         && this.#contentCatalog?.collectionShowIds) {
@@ -83,7 +69,13 @@ export class FitnessSuggestionService {
         }
       }
     }
+    this.#excludedCache.set(key, { at: now, ids });
     return ids;
+  }
+
+  /** The grid size a request resolves to (explicit, else the configured slots). */
+  resolveSlots(gridSize, householdId) {
+    return gridSize || this.#fitnessConfigService.getSuggestionPolicy(householdId).slots;
   }
 
   async getSuggestions({ gridSize, householdId } = {}) {

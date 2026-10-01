@@ -1301,7 +1301,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     // voice memo (and final stats) show on the session entry without a manual re-nav.
     if (typeof refetchScreenData === 'function') {
       Promise.resolve(fitnessSessionInstance?.whenFinalPersistSettled?.())
-        .finally(() => { refetchScreenData('sessions'); });
+        .finally(() => {
+          refetchScreenData('sessions');
+          // The suggestions snapshot went stale with this workout's saves; this
+          // request waits for its rebuild, so home lands on fresh Resume / Next Up.
+          refetchScreenData('suggestions');
+        });
     }
 
     // School assessment starts only after Fitness has finished its own final

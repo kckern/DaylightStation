@@ -31,6 +31,7 @@ import { getUnlockService } from '#apps/fitness/unlockService.mjs';
 import { DiscoveryStrategy } from '#apps/fitness/suggestions/DiscoveryStrategy.mjs';
 import { FavoriteStrategy } from '#apps/fitness/suggestions/FavoriteStrategy.mjs';
 import { FitnessSuggestionService } from '#apps/fitness/suggestions/FitnessSuggestionService.mjs';
+import { SuggestionsSnapshot } from '#apps/fitness/suggestions/SuggestionsSnapshot.mjs';
 import { MemorableStrategy } from '#apps/fitness/suggestions/MemorableStrategy.mjs';
 import { NextUpStrategy } from '#apps/fitness/suggestions/NextUpStrategy.mjs';
 import { ResumeStrategy } from '#apps/fitness/suggestions/ResumeStrategy.mjs';
@@ -158,6 +159,15 @@ export function createFitnessApiRouter(config) {
     contentCatalog: fitnessContentCatalog,
     logger,
   });
+  // The grid is served from a snapshot built at boot, at midnight, and once a
+  // workout settles — not recomputed against Plex on every home refresh.
+  const suggestionsSnapshot = new SuggestionsSnapshot({
+    service: fitnessSuggestionService,
+    setTimer: setTimeout,
+    clearTimer: clearTimeout,
+    logger,
+  });
+  suggestionsSnapshot.preload({});
 
   // Session time-lapse recap generator (background render at session end).
   const timelapseConfig = fitnessConfigService.getNormalizedConfig()?.timelapse;
@@ -374,7 +384,10 @@ export function createFitnessApiRouter(config) {
     timelapse: generateSessionTimelapse,
     renderReceipt: createReceiptCanvas,
     config: fitnessConfigService,
-    onSessionsChanged,
+    onSessionsChanged: (change) => {
+      suggestionsSnapshot.invalidate(`session-${change?.operation ?? 'changed'}`);
+      return onSessionsChanged?.(change);
+    },
     logger,
   });
   const cycleRaceApi = new CycleRaceApiService({ races: fitnessServices.cycleRaceService, config: fitnessConfigService });
@@ -399,7 +412,7 @@ export function createFitnessApiRouter(config) {
     fitnessPlayableService,
     fitnessSchoolCourseService,
     fitnessContentService,
-    fitnessSuggestionService,
+    fitnessSuggestionService: suggestionsSnapshot,
     defaultHouseholdId: configService?.getDefaultHouseholdId?.() ?? null,
     printFitnessReceipt,
     fitnessWebhookService,
