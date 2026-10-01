@@ -233,15 +233,16 @@ net and the deficit are tiers on the ruler now.
   A spent tier is not drawn; a part-spent one starts at the frontier. Labels read
   "321 free" from 64 px, "321" from 30 px, nothing below or where the eaten pill
   covers them. A finished day names them *unused* / *banked* / *deficit*.
-- **Marks:** the goal at `top`, labelled above as the goal RANGE, "Goal 1,200–1,791
-  + 311" on exercise days (the workout room; "Goal · break even N" when capped).
-  When `0 < floor < top` a bracket above the track spans floor → top, the track
-  paints that span as a green **range band** (stronger than the free wash, kept
-  on a dimmed tentative ruler, under the food block), and a quiet **floor** line
-  sits at the floor; without a usable floor the label is just
-  "Goal 1,791". A dashed **ceiling**
-  line at top + workout room, which "over plan" counts from; **break even**
-  below, labelled with its food-scale value.
+- **Marks:** the goal is a RANGE whose upper end grows with the day's exercise:
+  floor → ceiling (top + workout room, the line "over plan" counts from),
+  labelled above "Goal 1,200–2,102" (just "Goal 2,102" without a usable floor;
+  "Goal · break even N" when the plan itself is capped). When `0 < floor <
+  ceiling` a bracket above the track spans the range, the track paints it as a
+  green **range band** (stronger than the free wash, kept on a dimmed tentative
+  ruler, under the food block), and a quiet **floor** line sits at the floor.
+  The solid goal line sits at the upper end; on exercise days a dashed **base**
+  line marks the plan's top before the workout, where *free* turns into
+  *workout*. **Break even** is below, labelled with its food-scale value.
 - **Ticks** every 250 kcal, numbered at 1,000s under 600 px of track and 500s
   above; none within 12 px of a named line.
 

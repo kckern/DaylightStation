@@ -117,7 +117,7 @@ describe('EquationStrip — the card follows the job', () => {
     expect(screen.getByTestId('budget-sub').textContent).toBe('then 311 workout · 500 deficit · 1,132 to break even');
     for (const key of ['free', 'workout', 'deficit']) expect(screen.getByTestId(`budget-tier-${key}`)).toBeTruthy();
     expect(screen.getByTestId('budget-ruler').getAttribute('aria-label'))
-      .toBe('1,470 kcal eaten; goal 1,200–1,791 + 311; 321 free, 311 workout, 500 deficit; break even 2,602; 321 kcal free');
+      .toBe('1,470 kcal eaten; goal 1,200–2,102; 321 free, 311 workout, 500 deficit; break even 2,602; 321 kcal free');
   });
 
   it('the terms line is only what was eaten and burned', () => {
@@ -128,13 +128,13 @@ describe('EquationStrip — the card follows the job', () => {
     expect(terms).not.toMatch(/net|deficit|surplus/);
   });
 
-  it('the goal, ceiling and break even are marked at their values', () => {
+  it('the goal range, base and break even are marked at their values', () => {
     const { container } = strip({ ...live, budget: sept25 });
-    expect(container.querySelector('.health-budget__goal-label').textContent).toBe('Goal 1,200–1,791 + 311');
+    expect(container.querySelector('.health-budget__goal-label').textContent).toBe('Goal 1,200–2,102');
     expect(screen.getByTestId('budget-range')).toBeTruthy();
     expect(screen.getByTestId('budget-range-band')).toBeTruthy();
     expect(container.querySelector('.health-budget__floor-line')).toBeTruthy();
-    expect(container.querySelector('.health-budget__ceiling-line')).toBeTruthy();
+    expect(container.querySelector('.health-budget__base-line')).toBeTruthy();
     expect(container.querySelector('.health-budget__even-label').textContent).toBe('Break even 2,602');
   });
 
@@ -145,11 +145,11 @@ describe('EquationStrip — the card follows the job', () => {
     expect(container.querySelector('.health-budget__ruler--tentative')).toBeTruthy();
   });
 
-  it('Contain: past the plan, the headline counts down to break even and the ceiling stays marked', () => {
+  it('Contain: past the plan, the headline counts down to break even and the base stays marked', () => {
     const { container } = strip({ ...live, budget: { ...sept25, food: 2300, net: 1989, zone: 'over', remaining: 198, status: 'over' } });
     expect(screen.getByTestId('budget-headline').textContent).toMatch(/302\s*kcal to break even/);
     expect(screen.getByTestId('budget-sub').textContent).toBe('198 over plan');
-    expect(container.querySelector('.health-budget__ceiling-line')).toBeTruthy();
+    expect(container.querySelector('.health-budget__base-line')).toBeTruthy();
   });
 
   it('Judge: a past day gives a verdict and names tiers as outcomes', () => {
@@ -172,15 +172,15 @@ describe('EquationStrip — the card follows the job', () => {
     expect(parseFloat(label.style.right)).toBeCloseTo(100 - (parseFloat(food.style.left) + parseFloat(food.style.width)), 1);
   });
 
-  it('no exercise: no workout tier and no ceiling mark', () => {
+  it('no exercise: no workout tier and no base mark', () => {
     const { container } = strip({ ...live, budget: { ...ranged, food: 1470, exercise: 0, net: 1470, zone: 'in-range', remaining: 321 } });
     expect(screen.queryByTestId('budget-tier-workout')).toBeNull();
-    expect(container.querySelector('.health-budget__ceiling-line')).toBeNull();
+    expect(container.querySelector('.health-budget__base-line')).toBeNull();
   });
 
-  it('a plan capped at break even: no ceiling mark, and the goal says so', () => {
+  it('a plan capped at break even: no base mark, and the goal says so', () => {
     const { container } = strip({ ...live, budget: { ...ranged, range: { floor: 1200, top: 1200 }, maintenance: 1100, food: 900, exercise: 0, net: 900, zone: 'incomplete', remaining: 300 } });
-    expect(container.querySelector('.health-budget__ceiling-line')).toBeNull();
+    expect(container.querySelector('.health-budget__base-line')).toBeNull();
     expect(container.querySelector('.health-budget__goal-label').textContent).toBe('Goal · break even 1,100');
   });
 

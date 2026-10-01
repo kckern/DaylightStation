@@ -5,10 +5,11 @@
 // The ruler is FOOD eaten, from 0. The food block runs 0 → food; what is left
 // is drawn ahead of it as the price tiers from budgetTiers.mjs (free, workout,
 // deficit), each starting at the frontier or its own start, whichever is
-// later, so a spent tier disappears and a part-spent one shrinks. Two plan
-// marks stay put: the goal at the top, and on exercise days the ceiling
-// (top + exercise) that "over plan" counts from. The goal range (floor → top)
-// is bracketed above the track. Break even sits below.
+// later, so a spent tier disappears and a part-spent one shrinks. The goal is
+// a range, floor → ceiling: the plan's top grows by the day's exercise (the
+// workout's room), and "over plan" counts from that upper end. On exercise days
+// a dashed base mark keeps the plan's top before the workout, where the free
+// tier turns into the workout tier. Break even sits below.
 
 import { priceLadder } from '@shared-contracts/health/budgetTiers.mjs';
 
@@ -38,8 +39,10 @@ export function budgetGeometry(budget, { widthPx = 360, finished = false } = {})
   const pct = (v) => (Math.min(Math.max(v, 0), right) / right) * 100;
   const segment = (from, to) => ({ fromPct: pct(Math.min(from, to)), widthPct: Math.abs(pct(to) - pct(from)) });
 
-  // The goal is a range: floor (logging completeness) to top (the plan).
-  const ranged = !capped && floor > 0 && floor < top;
+  // The goal is a range: floor (logging completeness) to the ceiling (the plan
+  // plus the workout's room, capped at break even).
+  const upper = ceiling;
+  const ranged = !capped && floor > 0 && floor < upper;
   const named = [...(ranged ? [floor] : []), top, ...(exercise > 0 ? [ceiling] : []), ...(even != null ? [even] : [])];
   const labelEvery = widthPx >= WIDE_PX ? 500 : 1000;
   const ticks = [];
@@ -69,16 +72,14 @@ export function budgetGeometry(budget, { widthPx = 360, finished = false } = {})
     return { ...segment(from, t.to), key: t.key, left: t.left, label, shown };
   });
 
-  // The workout's room, not the raw exercise: break even can cap the ceiling.
-  const goalSpan = ranged ? `${fmt(floor)}–${fmt(top)}` : fmt(top);
   const goalLabel = capped ? `Goal · break even ${fmt(top)}`
-    : ceiling > top ? `Goal ${goalSpan} + ${fmt(ceiling - top)}` : `Goal ${goalSpan}`;
+    : ranged ? `Goal ${fmt(floor)}–${fmt(upper)}` : `Goal ${fmt(upper)}`;
 
   return {
     right, pct, ticks, tiers, zone: budget.zone,
-    goal: { pct: pct(top), value: top, label: goalLabel },
-    range: ranged ? { ...segment(floor, top), floor, floorPct: pct(floor) } : null,
-    ceiling: exercise > 0 && ceiling > top ? { pct: pct(ceiling), value: ceiling } : null,
+    goal: { pct: pct(upper), value: upper, label: goalLabel },
+    range: ranged ? { ...segment(floor, upper), floor, floorPct: pct(floor) } : null,
+    base: exercise > 0 && ceiling > top ? { pct: pct(top), value: top } : null,
     even: even != null ? { pct: pct(even), value: even } : null,
     food: foodSeg,
   };

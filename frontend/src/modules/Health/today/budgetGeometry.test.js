@@ -20,34 +20,38 @@ describe('budgetGeometry — the ruler is food, from 0', () => {
     close(g.food.fromPct + g.food.widthPct, g.pct(1470));
   });
 
-  it('the goal mark sits at the top and names the workout it grows by', () => {
+  it('the goal\'s upper end grows by the workout', () => {
     const g = budgetGeometry(day(), { widthPx: 360 });
-    close(g.goal.pct, g.pct(1791));
-    expect(g.goal.label).toBe('Goal 1,200–1,791 + 311');
-    expect(budgetGeometry(day({ exercise: 0 }), { widthPx: 360 }).goal.label).toBe('Goal 1,200–1,791');
+    close(g.goal.pct, g.pct(2102));
+    expect(g.goal.label).toBe('Goal 1,200–2,102');
+    const rest = budgetGeometry(day({ exercise: 0 }), { widthPx: 360 });
+    close(rest.goal.pct, rest.pct(1791));
+    expect(rest.goal.label).toBe('Goal 1,200–1,791');
   });
 
-  it('the goal range runs floor → top, and only when the floor sits under the top', () => {
+  it('the goal range runs floor → top + workout, and only when the floor sits under the top', () => {
     const g = budgetGeometry(day(), { widthPx: 360 });
     close(g.range.fromPct, g.pct(1200));
-    close(g.range.fromPct + g.range.widthPct, g.pct(1791));
+    close(g.range.fromPct + g.range.widthPct, g.pct(2102));
     close(g.range.floorPct, g.pct(1200));
     expect(budgetGeometry(day({ range: { floor: 0, top: 1791 } }), { widthPx: 360 }).range).toBeNull();
-    expect(budgetGeometry(day({ range: { floor: 0, top: 1791 } }), { widthPx: 360 }).goal.label).toBe('Goal 1,791 + 311');
-    expect(budgetGeometry(day({ range: { floor: 1200, top: 1200 } }), { widthPx: 360 }).range).toBeNull();
+    expect(budgetGeometry(day({ range: { floor: 0, top: 1791 } }), { widthPx: 360 }).goal.label).toBe('Goal 2,102');
+    expect(budgetGeometry(day({ exercise: 0, range: { floor: 1200, top: 1200 } }), { widthPx: 360 }).range).toBeNull();
+    // A workout widens a closed range: 1,200–1,200 + 311.
+    expect(budgetGeometry(day({ range: { floor: 1200, top: 1200 } }), { widthPx: 360 }).goal.label).toBe('Goal 1,200–1,511');
   });
 
-  it('the ceiling is marked on exercise days, even once the workout tier is spent', () => {
+  it('the plan\'s pre-workout top is a base mark on exercise days, even once the workout tier is spent', () => {
     const g = budgetGeometry(day({ food: 2300, zone: 'over' }), { widthPx: 360 });
-    expect(g.ceiling.value).toBe(2102);
-    close(g.ceiling.pct, g.pct(2102));
-    expect(budgetGeometry(day({ exercise: 0 }), { widthPx: 360 }).ceiling).toBeNull();
+    expect(g.base.value).toBe(1791);
+    close(g.base.pct, g.pct(1791));
+    expect(budgetGeometry(day({ exercise: 0 }), { widthPx: 360 }).base).toBeNull();
   });
 
-  it('a ceiling capped at break even labels the workout room, not the raw exercise', () => {
+  it('a ceiling capped at break even grows the goal by the workout room, not the raw exercise', () => {
     // top 1200, exercise 300, maintenance 1100 → break even 1400, workout room 200.
     const g = budgetGeometry(day({ exercise: 300, maintenance: 1100, range: { floor: 1200, top: 1200 }, food: 900 }), { widthPx: 360 });
-    expect(g.goal.label).toBe('Goal 1,200 + 200');
+    expect(g.goal.label).toBe('Goal 1,200–1,400');
   });
 
   it('a plan capped at break even says so on the goal mark', () => {

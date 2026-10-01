@@ -117,14 +117,15 @@ const endAnchored = (p) => (p > 50 ? ' health-budget__label--end' : '');
 /**
  * The budget as a labelled ruler of FOOD eaten (budgetGeometry.js): the food
  * block from 0, whose right edge is the frontier, coloured by zone; ahead of it
- * the price tiers of what is left (free, workout, deficit); the goal mark at
- * the top, a ceiling mark at top + exercise, and break even below. Tentative
+ * the price tiers of what is left (free, workout, deficit); the goal range
+ * floor → top + exercise, a dashed base mark at the plan's top before the
+ * workout, and break even below. Tentative
  * (an unverified log) dims the tiers; finished recolours the deficit as won.
  */
 function RulerScale({ budget, spoken, finished, tentative }) {
   const ref = useRef(null);
   const g = budgetGeometry(budget, { widthPx: useWidth(ref), finished });
-  const { goal, range, ceiling, even, food, tiers, zone } = g;
+  const { goal, range, base, even, food, tiers, zone } = g;
   const priced = tiers.map(t => t.label).join(', ') || 'nothing left on plan';
   const rulerClass = ['health-budget__ruler', tentative && 'health-budget__ruler--tentative', finished && 'health-budget__ruler--finished']
     .filter(Boolean).join(' ');
@@ -143,7 +144,7 @@ function RulerScale({ budget, spoken, finished, tentative }) {
         {range ? <span className="health-budget__range-band" data-testid="budget-range-band" style={{ left: at(range.fromPct), width: at(range.widthPct) }} /> : null}
         {range ? <span className="health-budget__floor-line" style={{ left: at(range.floorPct) }} /> : null}
         <span className="health-budget__goal-line" style={{ left: at(goal.pct) }} />
-        {ceiling ? <span className="health-budget__ceiling-line" style={{ left: at(ceiling.pct) }} /> : null}
+        {base ? <span className="health-budget__base-line" style={{ left: at(base.pct) }} /> : null}
         {/* Its own top layer, not a child of the food block: the plan marks and
             break even stack above the food and would cut through it. */}
         {food.labelled ? <span className={`health-budget__food-label health-budget__food-label--${food.outside ? 'outside' : zone}`} data-testid="budget-food-label"

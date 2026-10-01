@@ -190,7 +190,7 @@ export default function FitnessToast({ toast, onDone }) {
       const el = fireAnchorRef.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
-      const size = (r.width || 0) * 2; // twice the avatar's bounding box
+      const size = (r.width || 0) * 4; // four times the avatar's bounding box, same centre
       if (size <= 0) return;
       const next = { left: r.left + r.width / 2 - size / 2, top: r.top + r.height / 2 - size / 2, size };
       // Re-render only when the avatar actually moved — steady state is free.
@@ -247,7 +247,7 @@ export default function FitnessToast({ toast, onDone }) {
       // Before the first measurement (and in jsdom, which has no layout), fall
       // back to viewport-centred. No transform: keep this element's own
       // compositing as simple as possible.
-      : { position: 'fixed', left: '50%', top: '50%', width: '13rem', height: '13rem', marginLeft: '-6.5rem', marginTop: '-6.5rem' };
+      : { position: 'fixed', left: '50%', top: '50%', width: '26rem', height: '26rem', marginLeft: '-13rem', marginTop: '-13rem' };
 
     return (
       <>

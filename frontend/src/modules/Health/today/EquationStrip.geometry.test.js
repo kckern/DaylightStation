@@ -31,12 +31,12 @@ for (const { width, mainWidth } of [{ width: 390, mainWidth: 358 }, { width: 800
             <span class="health-dayclose"><button class="health-dayclose-pill"><span>Close day</span></button></span></div>
           <div class="health-budget__ruler">
             <div class="health-budget__rail health-budget__rail--above">
-              <span class="health-budget__goal-label health-budget__label--end" style="left:55.00%">Goal 20,000 + 2,345</span></div>
+              <span class="health-budget__goal-label health-budget__label--end" style="left:62.00%">Goal 12,000–22,345</span></div>
             <div class="health-budget__track health-budget__track--ruler">
               <span class="health-budget__food health-budget__food--in-range" style="left:0.00%;width:44.00%"></span>
               <span class="health-budget__tier health-budget__tier--free" style="left:44.00%;width:11.00%"><span class="health-budget__seg-label">10,000 free</span></span>
-              <span class="health-budget__goal-line" style="left:55.00%"></span>
-              <span class="health-budget__ceiling-line" style="left:62.00%"></span>
+              <span class="health-budget__goal-line" style="left:62.00%"></span>
+              <span class="health-budget__base-line" style="left:55.00%"></span>
               <span class="health-budget__food-label health-budget__food-label--in-range" style="right:56.00%">12,345 eaten</span>
               <span class="health-budget__even" style="left:89.00%"></span></div>
             <div class="health-budget__rail health-budget__ticks">
