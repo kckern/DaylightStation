@@ -18,16 +18,6 @@ const mount = (props = {}) => render(<MantineProvider><LogTable date="2026-09-24
   onRowTap={() => {}} onMealChanged={() => {}} {...props}/></MantineProvider>);
 const versions = { bowl: 3, beef: 1, rice: 1, kimchi: 2, poke: 1, tuna: 1 };
 
-it('takes an ingredient out of its dish without deleting it', async () => {
-  const onMealChanged = vi.fn(); api.mockResolvedValue({ committed: true, undoToken: 'undo-1' });
-  mount({ onMealChanged });
-  fireEvent.click(screen.getByRole('button', { name: 'Take Rice out of Rice bowl' }));
-  await waitFor(() => expect(onMealChanged).toHaveBeenCalledWith(expect.objectContaining({ undoToken: 'undo-1' })));
-  expect(api).toHaveBeenCalledWith('api/v1/health/nutrition/meal-command', expect.objectContaining({
-    action: 'membership', date: '2026-09-24', bucket: 'afternoon', groupId: 'bowl', selectedIds: ['beef'], expectedVersions: versions,
-  }), 'POST');
-});
-
 it('adds a loose food, or another dish’s ingredient, from the dish’s last line', async () => {
   api.mockResolvedValue({ committed: true });
   mount();
@@ -42,7 +32,7 @@ it('adds a loose food, or another dish’s ingredient, from the dish’s last li
 it('shows the failure on the dish it belongs to', async () => {
   api.mockRejectedValue(new Error('This meal changed. Reload before saving.'));
   mount();
-  fireEvent.click(screen.getByRole('button', { name: 'Take Tuna out of Poke' }));
+  fireEvent.change(screen.getByRole('combobox', { name: 'Add a food to Poke' }), { target: { value: 'kimchi' } });
   expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'This meal changed. Reload before saving.');
 });
 

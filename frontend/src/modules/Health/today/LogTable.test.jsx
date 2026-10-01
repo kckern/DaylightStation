@@ -242,7 +242,7 @@ describe('LogTable', () => {
   });
 
   describe('grouped rows — settled cue', () => {
-    it('a group row with settled:false still shows the unsettled cue and confirm button', () => {
+    it('a group row with settled:false still shows the unsettled cue and its action menu', () => {
       const unsettledGroupBucket = new Map([
         ['morning', [
           { uuid: 'g1', id: 'g1', kind: 'group', name: 'Smoothie', calories: 0, settled: false },
@@ -253,7 +253,8 @@ describe('LogTable', () => {
       ]);
       render(<LogTable byBucket={unsettledGroupBucket} sessions={[]} onRowTap={() => {}} />, { wrapper });
       expect(screen.queryByText(/estimated/i)).toBeNull();
-      expect(screen.getByRole('button', { name: /confirm entry/i })).toBeTruthy();
+      expect(document.querySelector('.health-row-line--group.health-row-line--unsettled')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Actions for Smoothie' })).toBeTruthy();
     });
   });
 });

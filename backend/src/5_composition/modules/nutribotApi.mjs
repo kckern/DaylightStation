@@ -4,6 +4,7 @@
 import { scopedGateway } from '#apps/common/ports/IAIGateway.mjs';
 import { MealInstructionService } from '#apps/health/MealInstructionService.mjs';
 import { ReviseEntryService } from '#apps/health/ReviseEntryService.mjs';
+import { ReviseDishService } from '#apps/health/ReviseDishService.mjs';
 import { MealFoodCommands } from '#apps/health/MealFoodCommands.mjs';
 import { WebNutribotAdapter } from '#adapters/nutribot/WebNutribotAdapter.mjs';
 import { NutribotInputRouter } from '#apps/nutribot/services/NutribotInputRouter.mjs';
@@ -92,6 +93,12 @@ export function createNutribotApiRouter(config) {
       logger,
       nutritionItems: nutribotServices.nutriListStore,
       aiGateway: scopedGateway(nutribotServices.nutribotContainer.getAIGateway(), { feature: 'revision' }),
+    }) : null,
+    dishRevisions: aiGatewayAvailable ? new ReviseDishService({
+      logger,
+      nutritionItems: nutribotServices.nutriListStore,
+      aiGateway: scopedGateway(nutribotServices.nutribotContainer.getAIGateway(), { feature: 'revision' }),
+      mealCommands: new MealFoodCommands({ nutritionItems: nutribotServices.nutriListStore, logger }),
     }) : null,
     foodLogStore: nutribotServices.foodLogStore,
     voiceMemoStore: new VoiceMemoStore({ dataService, logger }),

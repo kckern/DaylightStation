@@ -248,6 +248,32 @@ describe('HealthOperations deleteNutritionItem is the discard replacement', () =
     expect(deleteById).not.toHaveBeenCalled();
     expect(result).toEqual({ found: false, deleted: false });
   });
+
+  // 2026-10-01: Remove on a dish part deletes it; the last part takes its
+  // (0-kcal) header with it rather than leaving an empty dish behind.
+  const dishDay = [
+    { uuid: 'soup', kind: 'group', date: '2026-10-01' },
+    { uuid: 'chicken', parentId: 'soup', date: '2026-10-01' },
+    { uuid: 'lime', parentId: 'soup', date: '2026-10-01' },
+  ];
+  const opsOver = (day) => {
+    const mutateEntries = vi.fn(async () => ({ affectedIds: [] }));
+    const ops = new HealthOperations({ healthData: {}, today: () => '2026-10-01', nutritionItems: {
+      findByUuid: async (_u, id) => day.find(row => row.uuid === id), findByDate: async () => day, mutateEntries } });
+    return { ops, mutateEntries };
+  };
+
+  it('deleting one part of a dish keeps the dish', async () => {
+    const { ops, mutateEntries } = opsOver(dishDay);
+    await ops.deleteNutritionItem('kc', 'chicken');
+    expect(mutateEntries).toHaveBeenCalledWith('kc', { deleteIds: ['chicken'] });
+  });
+
+  it('deleting the last part of a dish retires its header', async () => {
+    const { ops, mutateEntries } = opsOver(dishDay.filter(row => row.uuid !== 'lime'));
+    await ops.deleteNutritionItem('kc', 'chicken');
+    expect(mutateEntries).toHaveBeenCalledWith('kc', { deleteIds: ['chicken', 'soup'] });
+  });
 });
 
 // Task 5.4 fix round — the ratification stamp is a claim about REVIEW, not about writes.

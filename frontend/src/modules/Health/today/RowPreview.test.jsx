@@ -144,7 +144,7 @@ describe('EntryRow preview card — one card, at the cursor', () => {
   it('keyboard focus on the name opens it; Escape closes it', () => {
     rows(apple);
     const name = screen.getByRole('button', { name: 'Edit Apple' });
-    fireEvent.keyDown(document, { key: 'Tab' });
+    fireEvent.keyDown(document.body, { key: 'Tab' });
     fireEvent.focus(name);
     expect(lineOf('Apple').dataset.preview).toBe('open');
     fireEvent.keyDown(name, { key: 'Escape' });
@@ -154,10 +154,10 @@ describe('EntryRow preview card — one card, at the cursor', () => {
   it('focus that did not come from Tab (a sheet returning focus, a tap) does not open it', () => {
     rows(apple);
     const name = screen.getByRole('button', { name: 'Edit Apple' });
-    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.keyDown(document.body, { key: 'Escape' });
     fireEvent.focus(name);
     expect(card()).toBeNull();
-    fireEvent.keyDown(document, { key: 'Tab' });
+    fireEvent.keyDown(document.body, { key: 'Tab' });
     fireEvent.pointerDown(document.body);
     fireEvent.focus(name);
     expect(card()).toBeNull();

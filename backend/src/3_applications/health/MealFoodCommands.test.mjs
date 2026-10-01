@@ -116,3 +116,34 @@ describe('reversible meal commands',()=>{
   await commands.undo('u',{undoToken:result.undoToken,operationId:'undo-amend'});expect(await rows()).toEqual(before.map(r=>id(r)==='a'?{...r,version:3}:r));
  });
 });
+
+describe('amend removals (dish revision)', () => {
+  it('deletes named parts, keeps the rest, and Undo restores them', async () => {
+    const grouped = await execute('group', { name: 'Soup', selectedIds: ['a', 'b'] });
+    const group = id(grouped.items.find(r => r.kind === 'group'));
+    const result = await execute('amend', { operationId: 'op-remove', selectedIds: [group, 'a', 'b'], removals: ['a'],
+      additions: [{ parentId: group, name: 'Tofu', grams: 80, calories: 90 }] });
+    const after = await rows();
+    expect(after.some(r => id(r) === 'a')).toBe(false);
+    expect(after.find(r => id(r) === 'b').parentId).toBe(group);
+    expect(after.find(r => r.name === 'Tofu').parentId).toBe(group);
+    await commands.undo('u', { undoToken: result.undoToken, operationId: 'undo-remove' });
+    const restored = await rows();
+    expect(restored.find(r => id(r) === 'a').parentId).toBe(group);
+    expect(restored.some(r => r.name === 'Tofu')).toBe(false);
+  });
+
+  it('retires a dish header whose parts are all removed', async () => {
+    const grouped = await execute('group', { name: 'Soup', selectedIds: ['a', 'b'] });
+    const group = id(grouped.items.find(r => r.kind === 'group'));
+    await execute('amend', { operationId: 'op-remove-all', selectedIds: [group, 'a', 'b'], removals: ['a', 'b'] });
+    expect((await rows()).map(id).sort()).toEqual(['c']);
+  });
+
+  it('refuses a removal outside the selection or of a dish header', async () => {
+    const grouped = await execute('group', { name: 'Soup', selectedIds: ['a', 'b'] });
+    const group = id(grouped.items.find(r => r.kind === 'group'));
+    await expect(execute('amend', { operationId: 'op-x', selectedIds: [group, 'a'], removals: ['c'] })).rejects.toMatchObject({ status: 400 });
+    await expect(execute('amend', { operationId: 'op-y', selectedIds: [group, 'a'], removals: [group] })).rejects.toMatchObject({ status: 400 });
+  });
+});

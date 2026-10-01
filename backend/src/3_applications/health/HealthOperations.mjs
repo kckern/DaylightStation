@@ -466,9 +466,14 @@ export class HealthOperations {
     const existing = await this.nutritionItems.findByUuid(username, id);
     if (!existing) return { found: false, deleted: false };
     if (typeof this.nutritionItems.mutateEntries === 'function') {
-      const siblings = existing.kind === 'group' ? await this.nutritionItems.findByDate(username, existing.date) : [];
-      const children = siblings.filter(child => child.parentId != null && (child.parentId === existing.id || child.parentId === existing.uuid));
-      const result = await this.nutritionItems.mutateEntries(username, { deleteIds: [id, ...children.map(child => child.uuid ?? child.id)] });
+      const siblings = existing.kind === 'group' || existing.parentId ? await this.nutritionItems.findByDate(username, existing.date) : [];
+      const children = existing.kind === 'group'
+        ? siblings.filter(child => child.parentId != null && (child.parentId === existing.id || child.parentId === existing.uuid)) : [];
+      // Deleting a dish's last part retires the dish header with it: an empty
+      // dish is a 0-kcal row that reads as food logged and is not.
+      const header = existing.parentId ? siblings.find(row => row.kind === 'group' && (row.uuid === existing.parentId || row.id === existing.parentId)) : null;
+      const lastPart = header && !siblings.some(row => row !== existing && (row.uuid ?? row.id) !== (existing.uuid ?? existing.id) && row.parentId === existing.parentId);
+      const result = await this.nutritionItems.mutateEntries(username, { deleteIds: [id, ...children.map(child => child.uuid ?? child.id), ...(lastPart ? [header.uuid ?? header.id] : [])] });
       return { found: true, deleted: true, ...result };
     }
     return { found: true, deleted: await this.nutritionItems.deleteById(username, id) };
@@ -537,6 +542,7 @@ export class HealthOperations {
   undoMealFoodCommand(username, input) { return this.mealCommands.undo(username, input); }
   suggestMealGroups(input) { return this.nutritionInput.suggestMealGroups(input); }
   reviseNutritionEntry(input) { return this.nutritionInput.reviseEntry(input); }
+  reviseNutritionDish(input) { return this.nutritionInput.reviseDish(input); }
 
   processNutritionInput({ type, content, userId, bucket, date, audioRef, operationId, selectedIds, clarification }) {
     return this.nutritionInput.process({ type, content, userId, bucket, date, audioRef, ...(operationId ? { operationId } : {}), ...(selectedIds !== undefined ? { selectedIds } : {}), ...(clarification !== undefined ? { clarification } : {}) });

@@ -1,9 +1,10 @@
-// Add a food to a dish, or take one out, from the dish's own rows.
+// Add a food to a dish from the dish's own last line. (Taking one out was
+// retired 2026-10-01: a part leaving its dish but staying in the meal read as
+// the dish logged twice. The row menu's Remove deletes it instead.)
 //
-// Both are the meal command's `membership` action (MealFoodCommands.mjs) with
-// the dish's next member list: the same write the "Edit groups" panel makes,
-// so it carries the same version checks and the same Undo. Taking the last
-// food out retires the dish header; the food itself is never deleted here.
+// It is the meal command's `membership` action (MealFoodCommands.mjs) with the
+// dish's next member list: the same write the "Edit groups" panel makes, so it
+// carries the same version checks and the same Undo.
 import { useRef, useState } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
@@ -38,6 +39,5 @@ export function useDishMembership({ date, bucket, rows, onChanged }) {
   return {
     busy, error,
     add: (groupId, foodId) => save(groupId, [...membersOf(groupId), foodId], 'dish.add-food'),
-    remove: (groupId, foodId) => save(groupId, membersOf(groupId).filter(id => id !== foodId), 'dish.remove-food'),
   };
 }

@@ -36,91 +36,103 @@ describe('EntryRow', () => {
     expect(identity.children[2]).toHaveClass('health-density-badge');
   });
 
-  it('asks the view to delete, and offers no X at all when the view cannot handle one', () => {
+  // The row's one control is the ⋮ menu (2026-10-01): Details, Verify (an
+  // unverified estimate only), Revise, Remove. The ✓ / ✕ / − icons are gone.
+  const openMenu = async (name = 'Apple') => {
+    fireEvent.click(screen.getByRole('button', { name: `Actions for ${name}` }));
+    return waitFor(() => screen.getByRole('menu'));
+  };
+  const item = (label) => screen.queryByRole('menuitem', { name: label });
+
+  it('has one action control and none of the old icons', () => {
+    r(<EntryRow row={{ ...baseRow, settled: false }} onTap={() => {}} onConfirm={() => {}} onRequestDelete={() => {}} />);
+    const action = document.querySelector('.health-row__action');
+    expect(action.querySelectorAll('button')).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: /confirm entry|delete entry|take .* out/i })).toBeNull();
+  });
+
+  it('Remove asks the view to delete, and is absent when the view cannot handle one', async () => {
     const requested = vi.fn();
     const view = r(<EntryRow row={baseRow} onTap={() => {}} onRequestDelete={requested} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Delete entry: Apple' }));
-    // The row never deletes and never confirms: it hands the row up. Nothing may
-    // reach the network from a single tap on a destructive control.
+    await openMenu();
+    fireEvent.click(item('Remove'));
+    // The row never deletes: it hands the row up to the view's confirm dialog.
     expect(requested).toHaveBeenCalledWith(baseRow);
     expect(apiMock).not.toHaveBeenCalled();
     view.unmount();
-    // No handler, no button — a control that cannot do its job is worse than absent.
     r(<EntryRow row={baseRow} onTap={() => {}} />);
-    expect(screen.queryByRole('button', { name: 'Delete entry: Apple' })).toBeNull();
+    await openMenu();
+    expect(item('Remove')).toBeNull();
   });
 
-  it('gives a dish member no X of its own — the dish deletes it', () => {
-    // The group's X cascades to its children, so four more destructive controls
-    // inside one expanded dish buy nothing and cost the list's legibility.
-    r(<EntryRow row={baseRow} onTap={() => {}} onRequestDelete={() => {}} child />);
-    expect(screen.queryByRole('button', { name: 'Delete entry: Apple' })).toBeNull();
+  it('a dish part can be removed too (deleted, not taken out)', async () => {
+    const requested = vi.fn();
+    r(<EntryRow row={baseRow} onTap={() => {}} onRequestDelete={requested} child />);
+    await openMenu();
+    fireEvent.click(item('Remove'));
+    expect(requested).toHaveBeenCalledWith(baseRow);
   });
 
-  it('keeps confirm and delete as separate targets on an unsettled row', () => {
-    r(<EntryRow row={{ ...baseRow, settled: false }} onTap={() => {}} onConfirm={() => {}} onRequestDelete={() => {}} />);
-    const action = document.querySelector('.health-row__action');
-    // Both live in the action cell; a row awaiting confirmation must not lose its
-    // ✓ to the new ✕, and the two must not be the same tap target.
-    expect(action.querySelector('.health-row__confirm')).toBeTruthy();
-    expect(action.querySelector('.health-row__delete')).toBeTruthy();
-    expect(action.querySelector('.health-row__confirm')).not.toBe(action.querySelector('.health-row__delete'));
-  });
-
-  it('an unsettled row (settled:false) renders the unsettled cue and a confirm button', () => {
+  it('an unverified row (settled:false) keeps its cue and offers Verify in the menu', async () => {
     r(<EntryRow row={{ ...baseRow, settled: false }} onTap={() => {}} onConfirm={() => {}} />);
     expect(document.querySelector('.health-row-line--unsettled')).toBeTruthy();
-    // The confirmation control retains an accessible estimate action.
-    expect(screen.queryByText(/estimated/i)).toBeNull();
-    const confirmBtn = screen.getByRole('button', { name: /confirm entry/i });
-    expect(confirmBtn).toBeTruthy();
+    await openMenu();
+    expect(item('Verify')).toBeTruthy();
   });
 
-  it('a settled row (settled:true) renders neither the cue nor the confirm button', () => {
-    r(<EntryRow row={{ ...baseRow, settled: true }} onTap={() => {}} onConfirm={() => {}} />);
+  it('a settled row, or one with no settled key, has no cue and no Verify', async () => {
+    const view = r(<EntryRow row={{ ...baseRow, settled: true }} onTap={() => {}} onConfirm={() => {}} />);
     expect(document.querySelector('.health-row-line--unsettled')).toBeFalsy();
-    expect(screen.queryByText(/estimated/i)).toBeFalsy();
-    expect(screen.queryByRole('button', { name: /confirm entry/i })).toBeNull();
-  });
-
-  it('a row with NO settled key renders neither the cue nor the confirm button (absent = settled)', () => {
+    await openMenu();
+    expect(item('Verify')).toBeNull();
+    view.unmount();
     r(<EntryRow row={{ ...baseRow }} onTap={() => {}} onConfirm={() => {}} />);
-    expect(document.querySelector('.health-row-line--unsettled')).toBeFalsy();
-    expect(screen.queryByRole('button', { name: /confirm entry/i })).toBeNull();
+    await openMenu();
+    expect(item('Verify')).toBeNull();
   });
 
-  it('tapping confirm PUTs settled:true to the row and calls onConfirm', async () => {
+  it('Verify PUTs settled:true and calls onConfirm, without opening details', async () => {
     apiMock.mockResolvedValue({ ok: true });
     const onConfirm = vi.fn();
-    r(<EntryRow row={{ ...baseRow, settled: false }} onTap={() => {}} onConfirm={onConfirm} />);
-
-    fireEvent.click(screen.getByRole('button', { name: /confirm entry/i }));
-
+    const onTap = vi.fn();
+    r(<EntryRow row={{ ...baseRow, settled: false }} onTap={onTap} onConfirm={onConfirm} />);
+    await openMenu();
+    fireEvent.click(item('Verify'));
     await waitFor(() => expect(onConfirm).toHaveBeenCalled());
     expect(apiMock).toHaveBeenCalledWith(
       'api/v1/health/nutrilist/row-1',
       expect.objectContaining({ settled: true, expectedVersion: 1, expectedVersions: { 'row-1': 1 }, operationId: expect.any(String) }),
       'PUT',
     );
-  });
-
-  it('tapping confirm does not also trigger the row tap (onTap)', async () => {
-    apiMock.mockResolvedValue({ ok: true });
-    const onTap = vi.fn();
-    const onConfirm = vi.fn();
-    r(<EntryRow row={{ ...baseRow, settled: false }} onTap={onTap} onConfirm={onConfirm} />);
-
-    fireEvent.click(screen.getByRole('button', { name: /confirm entry/i }));
-
-    await waitFor(() => expect(onConfirm).toHaveBeenCalled());
     expect(onTap).not.toHaveBeenCalled();
   });
 
-  it('tapping the row body (not confirm) calls onTap with the row', () => {
+  it('Details opens the same thing a row tap does', async () => {
+    const onTap = vi.fn();
+    r(<EntryRow row={baseRow} onTap={onTap} />);
+    await openMenu();
+    fireEvent.click(item('Details'));
+    expect(onTap).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'row-1' }));
+  });
+
+  it('a tap anywhere on the row opens details; the menu button does not', () => {
     const onTap = vi.fn();
     r(<EntryRow row={{ ...baseRow, settled: false }} onTap={onTap} onConfirm={() => {}} />);
     fireEvent.click(screen.getByText('Apple'));
-    expect(onTap).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'row-1' }));
+    expect(onTap).toHaveBeenCalledTimes(1);
+    fireEvent.click(document.querySelector('.health-row-line'));
+    expect(onTap).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Apple' }));
+    expect(onTap).toHaveBeenCalledTimes(2);
+  });
+
+  it('Revise opens the correction field in place under the row', async () => {
+    r(<EntryRow row={baseRow} onTap={() => {}} />);
+    await openMenu();
+    fireEvent.click(item('Revise'));
+    const panel = await screen.findByTestId('row-revise');
+    expect(panel.querySelector('input')).toBeTruthy();
+    expect(screen.getByLabelText('Say what this really was')).toBeTruthy();
   });
 
   it('shows grams only, never the capture model\'s mixed amount/unit prose', () => {
@@ -186,11 +198,11 @@ describe('EntryRow', () => {
     });
   });
 
-  it('an indented child row still carries the unsettled cue and confirm affordance', () => {
+  it('an indented child row still carries the unsettled cue and its action menu', () => {
     r(<EntryRow row={{ ...baseRow, settled: false }} onTap={() => {}} onConfirm={() => {}} child />);
     expect(document.querySelector('.health-row-line--child')).toBeTruthy();
-    expect(screen.queryByText(/estimated/i)).toBeNull();
-    expect(screen.getByRole('button', { name: /confirm entry/i })).toBeTruthy();
+    expect(document.querySelector('.health-row-line--unsettled')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Actions for Apple' })).toBeTruthy();
   });
 
   describe('photo thumbnail', () => {
@@ -243,7 +255,7 @@ describe('EntryRow', () => {
       r(<EntryRow row={{ ...baseRow, settled: false }} onTap={() => {}} onConfirm={() => {}} measured="82 g · scale ✓" />);
       expect(screen.queryByText(/estimated/i)).toBeNull();
       expect(screen.getByTitle('82 g · scale ✓')).toBeTruthy();
-      expect(screen.getByRole('button', { name: /confirm entry/i })).toBeTruthy();
+      expect(document.querySelector('.health-row-line--unsettled')).toBeTruthy();
     });
   });
 
