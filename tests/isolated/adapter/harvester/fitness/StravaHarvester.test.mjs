@@ -332,6 +332,61 @@ describe('StravaHarvester', () => {
       expect(matches[0].sessionId).toBe('20260215191250');
     });
 
+    // 2026-10-01: the hourly harvest re-applied ~110 old matches every run,
+    // rewriting every session file synchronously — a 10-22s event-loop stall
+    // at :05 past every hour. A match already applied must not be rewritten.
+    it('applies a match once; a repeat run rewrites neither archive nor session file', async () => {
+      const dateDir = path.join(tmpDir, '2026-02-15');
+      fs.mkdirSync(dateDir, { recursive: true });
+      const { saveYaml, loadYamlSafe } = await import('#system/utils/FileIO.mjs');
+      saveYaml(path.join(dateDir, '20260215191250'), {
+        sessionId: '20260215191250',
+        session: { id: '20260215191250', date: '2026-02-15', start: '2026-02-15 19:12:50', end: '2026-02-15 19:20:50', duration_seconds: 480 },
+        timezone: 'America/Los_Angeles',
+        participants: { user_1: { display_name: 'User_1', hr_device: '40475', is_primary: true } },
+        treasureBox: { totalRings: 15 },
+        timeline: { events: [] },
+      });
+      const activity = {
+        id: 17418186050, start_date: '2026-02-16T03:10:00Z', moving_time: 600,
+        type: 'WeightTraining', name: 'Evening Weight Training', suffer_score: 5,
+        device_name: 'Garmin Forerunner 245 Music',
+      };
+      // The archive store remembers what was saved, like the real one.
+      const archives = { 'strava/2026-02-15_WeightTraining_17418186050': { data: { id: activity.id } } };
+      mockLifelogStore.load.mockImplementation(async (_u, name) => archives[name] ?? {});
+      mockLifelogStore.save.mockImplementation(async (_u, name, data) => { archives[name] = data; });
+
+      harvester = new StravaHarvester({
+        stravaClient: mockStravaClient,
+        lifelogStore: mockLifelogStore,
+        getUserAuth: mockConfigService.getUserAuth,
+        getUserDir: mockConfigService.getUserDir,
+        clientId: mockConfigService.getSecret('STRAVA_CLIENT_ID'),
+        redirectUri: mockConfigService.getSecret('STRAVA_URL'),
+        mediaDir: mockConfigService.getMediaDir(),
+        fitnessHistoryDir: tmpDir,
+        timezone: 'America/Los_Angeles',
+        logger: mockLogger,
+      });
+      const completes = () => mockLogger.info.mock.calls
+        .filter(([event]) => event === 'strava.homeMatch.complete').map(([, data]) => data);
+
+      await harvester.applyHomeSessionEnrichment('user_1', [activity]);
+      expect(completes()[0]).toMatchObject({ matchCount: 1, archivesWritten: 1, sessionsWritten: 1 });
+      const sessionFile = path.join(dateDir, '20260215191250.yml');
+      expect(loadYamlSafe(sessionFile.replace(/\.yml$/, '')).participants.user_1.strava.activityId).toBe(17418186050);
+      const mtime = fs.statSync(sessionFile).mtimeMs;
+
+      await harvester.applyHomeSessionEnrichment('user_1', [activity]);
+      expect(completes()[1]).toMatchObject({ matchCount: 1, archivesWritten: 0, sessionsWritten: 0 });
+      expect(fs.statSync(sessionFile).mtimeMs).toBe(mtime);
+
+      // A changed detail (suffer score revised on Strava) is still written.
+      await harvester.applyHomeSessionEnrichment('user_1', [{ ...activity, suffer_score: 9 }]);
+      expect(completes()[2]).toMatchObject({ sessionsWritten: 1 });
+    });
+
     it('should NOT match when user is not a participant', async () => {
       const dateDir = path.join(tmpDir, '2026-02-15');
       fs.mkdirSync(dateDir, { recursive: true });
