@@ -21,7 +21,7 @@ import { IHarvester, HarvesterCategory } from '#apps/harvester/ports/IHarvester.
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { listYamlFiles, ensureDir, loadYamlSafe, saveYaml, deleteFile } from '#system/utils/FileIO.mjs';
-import { evaluateActivitySessionMatch } from '#domains/fitness/services/activitySessionMatch.mjs';
+import { evaluateActivitySessionMatch, DEFAULT_MATCH_POLICY } from '#domains/fitness/services/activitySessionMatch.mjs';
 
 function hydrateStoredTimeline(data) {
   if (!data?.timeline?.series) return data;
@@ -771,14 +771,32 @@ export class StravaHarvester extends IHarvester {
     if (homeSessions.length === 0) return [];
 
     const matches = [];
+    // Every activity was run through the full guard against EVERY session on
+    // every date in the window — ~6 moment-timezone parses per pair, tens of
+    // thousands of pairs, one unbroken run: a 10-22s event-loop stall at :05
+    // past every hour (2026-09-29..10-01; still 13.2s after the write fix).
+    // A numeric pre-filter drops pairs whose windows cannot overlap (an hour of
+    // slack past the guard's own buffer, so the guard stays the only judge of
+    // anything near), and each activity yields before its checks.
+    const slackMs = DEFAULT_MATCH_POLICY.bufferMs + 60 * 60 * 1000;
+    let evaluated = 0;
 
     for (const activity of activities) {
       if (!activity?.id || !activity?.start_date) continue;
+      await new Promise(resolve => setImmediate(resolve));
+
+      const actStartMs = Date.parse(activity.start_date);
+      const actSeconds = Number(activity.elapsed_time) || Number(activity.moving_time) || 0;
+      const windowStart = actStartMs - slackMs;
+      const windowEnd = actStartMs + actSeconds * 1000 + slackMs;
 
       let bestMatch = null;
       let bestOverlap = 0;
 
       for (const session of homeSessions) {
+        if (Number.isFinite(actStartMs)
+          && (session.end.valueOf() < windowStart || session.start.valueOf() > windowEnd)) continue;
+        evaluated += 1;
         // Membership, venue, overlap and presence guards — the same domain
         // policy the webhook path uses, so the two cannot drift apart again.
         // This path had no guards at all until the 2026-07-25 incident.
@@ -819,6 +837,9 @@ export class StravaHarvester extends IHarvester {
       }
     }
 
+    this.#logger.debug?.('strava.homeMatch.evaluated', {
+      username, activities: activities.length, sessions: homeSessions.length, evaluated,
+    });
     return matches;
   }
 

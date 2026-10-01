@@ -387,6 +387,42 @@ describe('StravaHarvester', () => {
       expect(completes()[2]).toMatchObject({ sessionsWritten: 1 });
     });
 
+    it('only runs the full guard on sessions whose window can overlap the activity', async () => {
+      const dateDir = path.join(tmpDir, '2026-02-15');
+      fs.mkdirSync(dateDir, { recursive: true });
+      const { saveYaml } = await import('#system/utils/FileIO.mjs');
+      const mk = (id, start, end) => saveYaml(path.join(dateDir, id), {
+        sessionId: id,
+        session: { id, date: '2026-02-15', start, end, duration_seconds: 480 },
+        timezone: 'America/Los_Angeles',
+        participants: { user_1: { display_name: 'User_1', is_primary: true } },
+        treasureBox: { totalRings: 1 },
+        timeline: { events: [] },
+      });
+      mk('20260215191250', '2026-02-15 19:12:50', '2026-02-15 19:20:50'); // overlaps
+      mk('20260215061000', '2026-02-15 06:10:00', '2026-02-15 06:40:00'); // 13h earlier
+
+      harvester = new StravaHarvester({
+        stravaClient: mockStravaClient,
+        lifelogStore: mockLifelogStore,
+        getUserAuth: mockConfigService.getUserAuth,
+        getUserDir: mockConfigService.getUserDir,
+        clientId: mockConfigService.getSecret('STRAVA_CLIENT_ID'),
+        redirectUri: mockConfigService.getSecret('STRAVA_URL'),
+        mediaDir: mockConfigService.getMediaDir(),
+        fitnessHistoryDir: tmpDir,
+        timezone: 'America/Los_Angeles',
+        logger: mockLogger,
+      });
+      const matches = await harvester.matchHomeSessions('user_1', [{
+        id: 1, start_date: '2026-02-16T03:10:00Z', moving_time: 600, type: 'WeightTraining',
+      }]);
+
+      expect(matches.map(m => m.sessionId)).toEqual(['20260215191250']);
+      const evaluated = mockLogger.debug.mock.calls.find(([e]) => e === 'strava.homeMatch.evaluated')?.[1];
+      expect(evaluated).toMatchObject({ sessions: 2, evaluated: 1 });
+    });
+
     it('should NOT match when user is not a participant', async () => {
       const dateDir = path.join(tmpDir, '2026-02-15');
       fs.mkdirSync(dateDir, { recursive: true });
