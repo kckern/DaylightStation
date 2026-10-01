@@ -154,8 +154,8 @@ function RulerScale({ budget, spoken, finished, tentative }) {
         {base ? <span className="health-budget__base-line" style={{ left: at(base.pct) }} /> : null}
         {/* Its own top layer, not a child of the food block: the plan marks and
             break even stack above the food and would cut through it. */}
-        {food.labelled ? <span className={`health-budget__food-label health-budget__food-label--${food.outside ? 'outside' : food.tone}`} data-testid="budget-food-label"
-          style={food.outside ? { left: at(food.fromPct + food.widthPct) } : { right: at(100 - (food.fromPct + food.widthPct)) }}>{n(food.value)} eaten</span> : null}
+        {food.labelled ? <span className={`health-budget__food-label health-budget__food-label--${food.outside ? 'outside' : food.labelTone}`} data-testid="budget-food-label"
+          style={food.outside ? { left: at(food.fromPct + food.widthPct) } : { right: at(100 - food.labelEndPct) }}>{n(food.value)} eaten</span> : null}
         {even ? <span className="health-budget__even" style={{ left: at(even.pct) }} /> : null}
       </div>
       <div className="health-budget__rail health-budget__ticks" aria-hidden="true">

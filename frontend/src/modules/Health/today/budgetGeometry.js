@@ -54,7 +54,15 @@ export function budgetGeometry(budget, { widthPx = 360, finished = false } = {})
   // "N eaten" ends at the frontier; a block too short for it carries the label
   // just past the frontier instead of dropping it.
   const foodPx = food * pxPerKcal;
-  const outside = foodPx < FOOD_LABEL_PX;
+  // The label never sits on the exercise bonus hatch: past the goal it moves
+  // just past the frontier; ending inside the bonus, it ends where the hatch
+  // starts instead (or past the frontier when there is no room before it).
+  const bonusFrom = Math.max(floor, top);
+  const hasBonus = !capped && floor > 0 && floor < ceiling && ceiling > bonusFrom;
+  const onBonus = hasBonus && food > bonusFrom && foodPx - FOOD_LABEL_PX < ceiling * pxPerKcal;
+  const beforeBonus = onBonus && food <= ceiling && bonusFrom * pxPerKcal >= FOOD_LABEL_PX;
+  const outside = foodPx < FOOD_LABEL_PX || (onBonus && !beforeBonus);
+  const labelEndPx = beforeBonus ? bonusFrom * pxPerKcal : foodPx;
   // The food block splits by where it ends against the goal (2026-10-01):
   //   within the plan        one block in the zone colour
   //   into the workout bonus 0 → top in the zone colour, top → food caution (yellow)
@@ -71,7 +79,10 @@ export function budgetGeometry(budget, { widthPx = 360, finished = false } = {})
   const foodSeg = { ...segment(0, food), value: food, labelled: food > 0, outside,
     parts: parts.filter(p => p.to > p.from).map(p => ({ ...segment(p.from, p.to), tone: p.tone })),
     tone: parts[parts.length - 1].tone };
-  const foodLabel = outside ? [foodPx, foodPx + FOOD_LABEL_PX] : [foodPx - FOOD_LABEL_PX, foodPx];
+  const foodLabel = outside ? [foodPx, foodPx + FOOD_LABEL_PX] : [labelEndPx - FOOD_LABEL_PX, labelEndPx];
+  foodSeg.labelEndPct = beforeBonus ? pct(bonusFrom) : foodSeg.fromPct + foodSeg.widthPct;
+  // Its pill takes the colour of the part it sits on.
+  foodSeg.labelTone = beforeBonus ? parts[0].tone : foodSeg.tone;
 
   // A tier shows "321 free" where it fits, "321" where only the number fits,
   // and nothing below that or where the eaten label (drawn above) covers it.
@@ -90,7 +101,6 @@ export function budgetGeometry(budget, { widthPx = 360, finished = false } = {})
   // The workout's bonus hatch rides above the food, so it stays visible once
   // eaten into. Once the food has covered all of it, the workout tier (and its
   // price label) is gone, so the bonus carries the workout's room as a number.
-  const bonusFrom = Math.max(floor, top);
   const bonusMidPx = ((bonusFrom + upper) / 2) * pxPerKcal;
   const bonusFits = (upper - bonusFrom) * pxPerKcal >= TIER_NUMBER_PX
     && !(foodSeg.labelled && bonusMidPx - TIER_NUMBER_PX / 2 < foodLabel[1] && foodLabel[0] < bonusMidPx + TIER_NUMBER_PX / 2);
