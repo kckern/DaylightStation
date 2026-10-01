@@ -179,6 +179,12 @@ timing:
   alertAfterMs: 120000
 ```
 
+Relative `privateKey` / `knownHostsPath` are resolved against the app root
+(the data dir's parent) in `app.mjs`. The backend runs with cwd `backend/`, so
+before 2026-09-30 ssh resolved them there and every host heal failed with
+`Identity file ... not accessible` — the ladder still recovered via Plex
+re-checks, which hid it.
+
 Take `pathMap` from `docker inspect plex` mounts, and update it when those
 mounts change. An unmapped path makes the host rung return `unmapped-path`, and
 the ladder carries on without it. With no `host` section the host rung is
