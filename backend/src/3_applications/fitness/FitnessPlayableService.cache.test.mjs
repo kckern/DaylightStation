@@ -59,52 +59,13 @@ describe('FitnessPlayableService structure cache', () => {
     expect(enrichWithWatchState).toHaveBeenCalledTimes(3);
   });
 
-  // Past the TTL the caller gets the stale structure at once and ONE
-  // background fetch renews it. The Fitness home polls on the same 5-minute
-  // period as the TTL, so blocking on expiry made nearly every poll cold.
-  it('past the TTL serves stale structure immediately and renews it in the background', async () => {
+  it('re-fetches once the TTL has passed', async () => {
     let clock = 0;
     const { service, resolvePlayables } = makeService({ now: () => clock, structureTtlMs: 1000 });
     await service.getPlayableEpisodes('675689', 'h');
-    resolvePlayables.mockImplementation(async () => [{ id: 'plex:1', title: 'Lesson 1' }, { id: 'plex:2', title: 'Lesson 2' }]);
-    clock = 1500;
-    const stale = await service.getPlayableEpisodes('675689', 'h');
-    expect(stale.items).toHaveLength(1);
-    // A second stale read while the renewal is in flight does not start another.
-    await service.getPlayableEpisodes('675689', 'h');
-    await new Promise((r) => setTimeout(r, 0));
-    expect(resolvePlayables).toHaveBeenCalledTimes(2);
-    const renewed = await service.getPlayableEpisodes('675689', 'h');
-    expect(renewed.items).toHaveLength(2);
-    expect(resolvePlayables).toHaveBeenCalledTimes(2);
-  });
-
-  it('waits for a fresh fetch once an entry is older than the stale ceiling', async () => {
-    let clock = 0;
-    const resolvePlayables = vi.fn(async () => [{ id: 'plex:1', title: `at ${clock}` }]);
-    const service = new FitnessPlayableService({
-      fitnessConfigService: configService,
-      contentCatalog: catalog({ resolvePlayables, getContainerInfo: async () => null, getItem: async () => null }),
-      createProgressClassifier: () => ({ classify: () => 'unwatched' }),
-      logger: { warn() {}, debug() {}, info() {} },
-      structureTtlMs: 1000, structureMaxStaleMs: 5000, now: () => clock,
-    });
-    await service.getPlayableEpisodes('675689', 'h');
-    clock = 10_000;
-    const result = await service.getPlayableEpisodes('675689', 'h');
-    expect(result.items[0].title).toBe('at 10000');
-  });
-
-  it('keeps serving stale structure when a background renewal fails', async () => {
-    let clock = 0;
-    const { service, resolvePlayables } = makeService({ now: () => clock, structureTtlMs: 1000 });
-    await service.getPlayableEpisodes('675689', 'h');
-    resolvePlayables.mockRejectedValueOnce(new Error('plex down'));
     clock = 1500;
     await service.getPlayableEpisodes('675689', 'h');
-    await new Promise((r) => setTimeout(r, 0));
-    const after = await service.getPlayableEpisodes('675689', 'h');
-    expect(after.items[0].title).toBe('Lesson 1');
+    expect(resolvePlayables).toHaveBeenCalledTimes(2);
   });
 
   it('describeItem reuses the cached item/info reads', async () => {

@@ -41,7 +41,6 @@ export class FitnessPlayableService {
    */
   #structureCache = new Map();
   #structureTtlMs;
-  #structureMaxStaleMs;
   #now;
 
   /**
@@ -53,7 +52,7 @@ export class FitnessPlayableService {
    */
   constructor({
     fitnessConfigService, contentCatalog, createProgressClassifier,
-    logger = console, structureTtlMs = null, structureMaxStaleMs = null, now = () => Date.now(),
+    logger = console, structureTtlMs = null, now = () => Date.now(),
   }) {
     this.#fitnessConfigService = fitnessConfigService;
     this.#contentCatalog = contentCatalog;
@@ -63,13 +62,6 @@ export class FitnessPlayableService {
     // which is a human-scale event, and the cost of being a few minutes late
     // to notice is nil. Injectable so tests do not sleep.
     this.#structureTtlMs = Number.isFinite(structureTtlMs) ? structureTtlMs : 5 * 60_000;
-    // Past the TTL an entry is served stale while ONE background fetch renews
-    // it, so no caller waits on Plex for structure it already has. The Fitness
-    // home polls suggestions every 5 minutes — the same as the TTL — so a
-    // block-on-expiry cache was cold on nearly every poll, and each cold poll
-    // paid ~100 serialized Plex calls (4.5s on a quiet Plex, 22s on a busy
-    // one, measured 2026-10-01). Only past this ceiling does a caller wait.
-    this.#structureMaxStaleMs = Number.isFinite(structureMaxStaleMs) ? structureMaxStaleMs : 24 * 60 * 60_000;
     this.#now = now;
   }
 
@@ -101,10 +93,6 @@ export class FitnessPlayableService {
     if (hit && (hit.pending || now - hit.at < this.#structureTtlMs)) {
       return hit.value.then(FitnessPlayableService.#detach);
     }
-    if (hit && now - hit.at < this.#structureMaxStaleMs) {
-      this.#renewStructure(key, hit, produce);
-      return hit.value.then(FitnessPlayableService.#detach);
-    }
     const value = Promise.resolve().then(produce);
     const entry = { value, at: now, pending: true };
     this.#structureCache.set(key, entry);
@@ -113,28 +101,6 @@ export class FitnessPlayableService {
       () => { this.#structureCache.delete(key); },
     );
     return value.then(FitnessPlayableService.#detach);
-  }
-
-  /**
-   * Background renewal of a stale entry. One at a time per key; a failure keeps
-   * serving the stale value (and retries on the next read) rather than dropping
-   * structure we know to be nearly right.
-   */
-  #renewStructure(key, entry, produce) {
-    if (entry.renewing) return;
-    entry.renewing = true;
-    Promise.resolve().then(produce).then(
-      (value) => {
-        entry.renewing = false;
-        if (this.#structureCache.get(key) !== entry) return;
-        entry.value = Promise.resolve(value);
-        entry.at = this.#now();
-      },
-      (err) => {
-        entry.renewing = false;
-        this.#logger.warn?.('fitness.playable.structure_renew_failed', { key, error: err?.message });
-      },
-    );
   }
 
   /**
