@@ -8,7 +8,7 @@ vi.mock('@mantine/core', () => ({
   Skeleton: ({ children, ...props }) => React.createElement('div', props, children),
 }));
 
-let sessionsValue = [];
+let sessionsValue = null;
 vi.mock('@/screen-framework/data/useScreenData.js', () => ({
   useScreenData: (key) => (key === 'sessions' ? sessionsValue : null),
   useScreenDataRefetch: () => vi.fn()
@@ -33,23 +33,68 @@ vi.mock('@/screen-framework/widgets/registry.js', () => ({
 
 import FitnessSessionDetailWidget from './FitnessSessionDetailWidget.jsx';
 
+const ID = '20260528194117';
+let resolveFetch = null;
+
 beforeEach(() => {
-  sessionsValue = [];
+  sessionsValue = null;
+  resolveFetch = null;
   global.fetch = vi.fn().mockResolvedValue({
     ok: true,
-    json: async () => ({ sessionId: '20260528194117', summary: { voiceMemos: [] }, timeline: {} })
+    json: async () => ({ sessionId: ID, summary: { voiceMemos: [] }, timeline: {} })
   });
 });
 
-describe('FitnessSessionDetailWidget — refetch on sessions change', () => {
-  it('re-fetches its detail when the sessions store updates', async () => {
-    const { rerender } = render(<FitnessSessionDetailWidget sessionId="20260528194117" />);
-    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+// The real store shape: { sessions: [...] } from /api/v1/fitness/sessions.
+const list = (...rows) => ({ sessions: rows });
 
-    // Simulate the post-save sessions refetch producing a new array reference.
-    sessionsValue = [{ sessionId: '20260528194117', voiceMemos: [{ memoId: 'm1' }] }];
-    rerender(<FitnessSessionDetailWidget sessionId="20260528194117" />);
+describe('FitnessSessionDetailWidget — refresh when its list row changes', () => {
+  it('re-fetches in the background when this session\'s row changes (final save, memo)', async () => {
+    sessionsValue = list({ sessionId: ID, voiceMemos: [] });
+    const { rerender, container } = render(<FitnessSessionDetailWidget sessionId={ID} />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(container.querySelector('.session-detail__header')).not.toBeNull());
+
+    // Hold the refresh open so the in-flight state is observable.
+    global.fetch.mockImplementationOnce(() => new Promise((resolve) => { resolveFetch = resolve; }));
+    sessionsValue = list({ sessionId: ID, voiceMemos: [{ memoId: 'm1' }] });
+    rerender(<FitnessSessionDetailWidget sessionId={ID} />);
 
     await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(2));
+    // The rendered detail stays up while it refreshes — no skeleton swap.
+    expect(container.querySelector('.session-detail__header')).not.toBeNull();
+    resolveFetch({ ok: true, json: async () => ({ sessionId: ID, summary: { voiceMemos: [] }, timeline: {} }) });
+  });
+
+  it('re-fetches when the session first appears in a refreshed list (post-session landing)', async () => {
+    sessionsValue = list({ sessionId: 'older' });
+    const { rerender } = render(<FitnessSessionDetailWidget sessionId={ID} />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+
+    sessionsValue = list({ sessionId: ID }, { sessionId: 'older' });
+    rerender(<FitnessSessionDetailWidget sessionId={ID} />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(2));
+  });
+
+  it('does not re-fetch when a list refresh leaves its row unchanged', async () => {
+    sessionsValue = list({ sessionId: ID, voiceMemos: [] });
+    const { rerender } = render(<FitnessSessionDetailWidget sessionId={ID} />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+
+    // The 5-minute poll: a new store object, another session added, this row identical.
+    sessionsValue = list({ sessionId: 'newer' }, { sessionId: ID, voiceMemos: [] });
+    rerender(<FitnessSessionDetailWidget sessionId={ID} />);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not re-fetch when the list arrives after the detail on a cold load', async () => {
+    const { rerender } = render(<FitnessSessionDetailWidget sessionId={ID} />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+
+    sessionsValue = list({ sessionId: ID });
+    rerender(<FitnessSessionDetailWidget sessionId={ID} />);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 });
