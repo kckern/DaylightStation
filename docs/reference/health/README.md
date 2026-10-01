@@ -224,8 +224,14 @@ net and the deficit are tiers on the ruler now.
 
 - **Food eaten, from 0.** `right = max(break even, food, ceiling) × 1.12`. Every
   block and mark sits at the value it names.
-- **Food block** 0 → food, coloured by zone: info (incomplete), success (in range
-  or declared), warning (over), danger (past break even). "N eaten" is its own
+- **Food block** 0 → food, coloured by where it ends against the goal:
+  within the plan, one block in the zone colour (info incomplete, success in
+  range / declared); into the exercise bonus, zone colour to the plan's top and
+  yellow (caution) from there to the food; past the goal but under break even,
+  yellow to the goal's upper end and **orange** (overshoot, a warning/danger mix)
+  past it — that orange stretch is the "missed plan by" number; past break even,
+  one red block. The eaten part of the bonus hatch turns orange (maroon in a
+  surplus); its uneaten part stays green. "N eaten" is its own
   top-layer pill, inside the block from 70 px, else just past the frontier.
 - **Tiers** ahead of the frontier: free (success wash), workout (the credit
   hatch), deficit (warning wash while live; success wash once the day is

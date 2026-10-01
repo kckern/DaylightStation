@@ -41,6 +41,42 @@ describe('budgetGeometry — the ruler is food, from 0', () => {
     expect(budgetGeometry(day({ exercise: 0 }), { widthPx: 360 }).range.bonus).toBeNull();
   });
 
+  describe('the food block splits by where it ends against the goal', () => {
+    // top 1600, 384 burned → ceiling 1984, break even 2384.
+    const sept30 = (food, zone) => budgetGeometry(day({ food, exercise: 384, maintenance: 2000, range: { floor: 1200, top: 1600 }, zone }), { widthPx: 700 });
+    const tones = (g) => g.food.parts.map(p => p.tone);
+    const hatch = (g) => g.range.bonus.parts.map(p => p.tone);
+
+    it('within the plan: one block in the zone colour, bonus all green', () => {
+      const g = sept30(1500, 'in-range');
+      expect(tones(g)).toEqual(['in-range']);
+      expect(hatch(g)).toEqual(['free']);
+    });
+
+    it('into the bonus: zone colour to the top, yellow to the food; the eaten hatch goes orange', () => {
+      const g = sept30(1800, 'in-range');
+      expect(tones(g)).toEqual(['in-range', 'caution']);
+      close(g.food.parts[1].fromPct, g.pct(1600));
+      expect(hatch(g)).toEqual(['spent', 'free']);
+      close(g.range.bonus.parts[0].fromPct + g.range.bonus.parts[0].widthPct, g.pct(1800));
+      expect(g.food.tone).toBe('caution');
+    });
+
+    it('past the goal, still a deficit: yellow to the goal, orange past it, orange hatch', () => {
+      const g = sept30(2160, 'over');
+      expect(tones(g)).toEqual(['caution', 'overshoot']);
+      close(g.food.parts[1].fromPct, g.pct(1984));
+      close(g.food.parts[1].fromPct + g.food.parts[1].widthPct, g.pct(2160));
+      expect(hatch(g)).toEqual(['spent']);
+    });
+
+    it('a surplus: the whole block red, the hatch maroon', () => {
+      const g = sept30(2500, 'past-even');
+      expect(tones(g)).toEqual(['past-even']);
+      expect(hatch(g)).toEqual(['surplus']);
+    });
+  });
+
   it('the bonus carries the workout room as a number once the food has covered it', () => {
     // 2026-09-30: top 1600, 384 burned, 2,160 eaten — past the whole goal.
     const over = budgetGeometry(day({ food: 2160, exercise: 384, maintenance: 2000, range: { floor: 1200, top: 1600 }, zone: 'over' }), { widthPx: 700 });

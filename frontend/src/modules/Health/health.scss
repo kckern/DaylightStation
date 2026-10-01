@@ -73,6 +73,12 @@
   --health-zone-ok: var(--ds-success);
   --health-zone-over: var(--ds-warning);
   --health-zone-past: var(--ds-danger);
+  // The food block past the plan (budgetGeometry.js): caution up to the goal,
+  // overshoot (orange, between warning and danger) past it; the eaten bonus
+  // hatch goes overshoot, or maroon in a surplus.
+  --health-zone-caution: var(--ds-warning);
+  --health-zone-overshoot: color-mix(in srgb, var(--ds-warning) 45%, var(--ds-danger));
+  --health-zone-surplus-hatch: color-mix(in srgb, var(--ds-danger) 45%, black);
 
   &__headline--incomplete strong { color: var(--health-zone-incomplete); }
   &__headline--in-range strong, &__headline--declared strong { color: var(--health-zone-ok); }
@@ -112,12 +118,19 @@
     // The exercise bonus (top → top + workout): the same green, in diagonals,
     // over the food block (z 2, after it) so an eaten-into bonus still shows.
     &--bonus {
-      z-index: 2; display: flex; align-items: center; justify-content: center; overflow: hidden;
-      .health-budget__seg-label { color: var(--ds-text-high); background: var(--ds-surface-alt); border-radius: 3px; padding: 2px 0.3rem; }
-      background: repeating-linear-gradient(135deg,
-        color-mix(in srgb, var(--ds-success) 55%, transparent) 0 3px,
-        transparent 3px 6px);
+      --hatch: color-mix(in srgb, var(--ds-success) 55%, transparent);
+      z-index: 2;
+      background: repeating-linear-gradient(135deg, var(--hatch) 0 3px, transparent 3px 6px);
     }
+    // Eaten into: orange on the yellow block; maroon on a surplus's red.
+    &--bonus-spent { --hatch: var(--health-zone-overshoot); }
+    &--bonus-surplus { --hatch: var(--health-zone-surplus-hatch); }
+  }
+  // The bonus's number, centred over all of it, above the hatch parts.
+  &__bonus-label {
+    position: absolute; top: 0; bottom: 0; z-index: 2; pointer-events: none;
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+    .health-budget__seg-label { color: var(--ds-text-high); background: var(--ds-surface-alt); border-radius: 3px; padding: 2px 0.3rem; }
   }
   // The floor: where a day's log counts as complete. Quieter than the goal.
   &__floor-line { width: 1px; margin-left: -0.5px; background: var(--ds-text-mid); z-index: 3; opacity: 0.7; }
@@ -154,6 +167,10 @@
     &--in-range, &--declared { background: var(--health-zone-ok); }
     &--over { background: var(--health-zone-over); }
     &--past-even { background: var(--health-zone-past); }
+    &--caution { background: var(--health-zone-caution); }
+    &--overshoot { background: var(--health-zone-overshoot); }
+    // The whole extent of a split block; its parts paint it.
+    &--split { background: transparent; }
   }
   &__seg-label, &__food-label {
     padding: 0 0.3rem; font-size: 0.62rem; font-weight: 600; line-height: 1; white-space: nowrap;
@@ -168,6 +185,8 @@
     &--in-range, &--declared { background: var(--health-zone-ok); }
     &--over { background: var(--health-zone-over); }
     &--past-even { background: var(--health-zone-past); }
+    &--caution { background: var(--health-zone-caution); }
+    &--overshoot { background: var(--health-zone-overshoot); }
     // Past the frontier of a block too short to hold it: on the track, over the tiers.
     &--outside { margin-left: 3px; background: var(--ds-surface-alt); color: var(--ds-text-high); }
   }
