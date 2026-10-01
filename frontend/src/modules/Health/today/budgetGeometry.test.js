@@ -70,6 +70,21 @@ describe('budgetGeometry — the ruler is food, from 0', () => {
       expect(hatch(g)).toEqual(['spent']);
     });
 
+    it('the eaten label never sits on the bonus hatch', () => {
+      // Past the goal: just past the frontier.
+      const over = sept30(2160, 'over');
+      expect(over.food.outside).toBe(true);
+      // Ending inside the bonus: its right edge where the hatch starts, in the colour under it.
+      const into = sept30(1800, 'in-range');
+      expect(into.food.outside).toBe(false);
+      close(into.food.labelEndPct, into.pct(1600));
+      expect(into.food.labelTone).toBe('in-range');
+      // Well short of the bonus: unchanged, at the frontier.
+      const short = sept30(1000, 'in-range');
+      expect(short.food.outside).toBe(false);
+      close(short.food.labelEndPct, short.pct(1000));
+    });
+
     it('a surplus: the whole block red, the hatch maroon', () => {
       const g = sept30(2500, 'past-even');
       expect(tones(g)).toEqual(['past-even']);

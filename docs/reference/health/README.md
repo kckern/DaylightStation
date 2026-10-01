@@ -232,7 +232,10 @@ net and the deficit are tiers on the ruler now.
   past it — that orange stretch is the "missed plan by" number; past break even,
   one red block. The eaten part of the bonus hatch turns orange (maroon in a
   surplus); its uneaten part stays green. "N eaten" is its own
-  top-layer pill, inside the block from 70 px, else just past the frontier.
+  top-layer pill, inside the block from 70 px, else just past the frontier. It
+  never sits on the exercise bonus hatch: past the goal it goes just past the
+  frontier; ending inside the bonus, its right edge moves to where the hatch
+  starts, in the colour of the block under it.
 - **Tiers** ahead of the frontier: free (success wash), workout (the credit
   hatch), deficit (warning wash while live; success wash once the day is
   finished — the unspent deficit is the win, like the legacy green "N deficit").
