@@ -107,7 +107,9 @@ export class MediaSourceHealer {
       if (host.ok !== false) {
         probe = await this.#step(steps, ratingKey, 'plex-recheck', () => this.#probe.probe(ratingKey));
         if (probe.state === SOURCE_STATE.readable || probe.state === SOURCE_STATE.missing) {
-          this.#closeEpisode(ratingKey, probe.state, host.chmodApplied ? 'host-chmod' : 'plex-recheck');
+          this.#closeEpisode(ratingKey, probe.state, host.chmodApplied
+            ? 'host-chmod'
+            : (host.cacheRefreshed ? 'host-cache-refresh' : 'plex-recheck'));
           return this.#answer(contentId, probe, steps, null);
         }
       }
@@ -134,6 +136,7 @@ export class MediaSourceHealer {
       ok: result.ok ?? null,
       mode: result.mode ?? null,
       chmodApplied: result.chmodApplied ?? null,
+      cacheRefreshed: result.cacheRefreshed ?? null,
       siblingsFixed: result.siblingsFixed ?? null,
       readable: result.readable ?? null,
       error: result.error ?? null,

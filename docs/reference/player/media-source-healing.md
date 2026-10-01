@@ -179,6 +179,15 @@ timing:
   alertAfterMs: 120000
 ```
 
+When the host sees mode `000` the script restores `0777` (and zeroed
+siblings). When it does **not** — Plex refused with `Permission denied` while
+the mode reads 777 — it re-applies the file's current mode (`cacheRefreshed`).
+Both bump the file's ctime on the NAS, which is the only thing that makes this
+host's NFSv3 cache re-trust the file's attributes and access rights (the
+"ghost 000" cache poisoning, see `nfs-watchdog.sh`). That is a per-file cache
+reset that needs no root; the system-wide `drop_caches` stays with the
+watchdog.
+
 Relative `privateKey` / `knownHostsPath` are resolved against the app root
 (the data dir's parent) in `app.mjs`. The backend runs with cwd `backend/`, so
 before 2026-09-30 ssh resolved them there and every host heal failed with
