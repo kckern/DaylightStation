@@ -78,7 +78,9 @@ export function budgetGeometry(budget, { widthPx = 360, finished = false } = {})
   return {
     right, pct, ticks, tiers, zone: budget.zone,
     goal: { pct: pct(upper), value: upper, label: goalLabel },
-    range: ranged ? { ...segment(floor, upper), floor, floorPct: pct(floor) } : null,
+    // The band is solid floor → top; the workout's bonus, top → ceiling, is hatched.
+    range: ranged ? { ...segment(floor, upper), floor, floorPct: pct(floor),
+      solid: segment(floor, Math.max(floor, top)), bonus: upper > Math.max(floor, top) ? segment(Math.max(floor, top), upper) : null } : null,
     base: exercise > 0 && ceiling > top ? { pct: pct(top), value: top } : null,
     even: even != null ? { pct: pct(even), value: even } : null,
     food: foodSeg,

@@ -109,6 +109,12 @@
   &__range-band {
     position: absolute; top: 0; bottom: 0; z-index: 1; pointer-events: none;
     background: color-mix(in srgb, var(--ds-success) 45%, transparent);
+    // The exercise bonus (top → top + workout): the same green, in diagonals.
+    &--bonus {
+      background: repeating-linear-gradient(135deg,
+        color-mix(in srgb, var(--ds-success) 55%, transparent) 0 3px,
+        transparent 3px 6px);
+    }
   }
   // The floor: where a day's log counts as complete. Quieter than the goal.
   &__floor-line { width: 1px; margin-left: -0.5px; background: var(--ds-text-mid); z-index: 3; opacity: 0.7; }

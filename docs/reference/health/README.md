@@ -239,7 +239,8 @@ net and the deficit are tiers on the ruler now.
   "Goal · break even N" when the plan itself is capped). When `0 < floor <
   ceiling` a bracket above the track spans the range, the track paints it as a
   green **range band** (stronger than the free wash, kept on a dimmed tentative
-  ruler, under the food block), and a quiet **floor** line sits at the floor.
+  ruler, under the food block) — solid floor → top, green diagonals across the
+  exercise bonus top → ceiling — and a quiet **floor** line sits at the floor.
   The solid goal line sits at the upper end; on exercise days a dashed **base**
   line marks the plan's top before the workout, where *free* turns into
   *workout*. **Break even** is below, labelled with its food-scale value.

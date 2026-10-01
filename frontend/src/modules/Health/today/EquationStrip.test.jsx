@@ -133,6 +133,7 @@ describe('EquationStrip — the card follows the job', () => {
     expect(container.querySelector('.health-budget__goal-label').textContent).toBe('Goal 1,200–2,102');
     expect(screen.getByTestId('budget-range')).toBeTruthy();
     expect(screen.getByTestId('budget-range-band')).toBeTruthy();
+    expect(screen.getByTestId('budget-range-bonus')).toBeTruthy();
     expect(container.querySelector('.health-budget__floor-line')).toBeTruthy();
     expect(container.querySelector('.health-budget__base-line')).toBeTruthy();
     expect(container.querySelector('.health-budget__even-label').textContent).toBe('Break even 2,602');
