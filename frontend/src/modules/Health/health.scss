@@ -109,8 +109,11 @@
   &__range-band {
     position: absolute; top: 0; bottom: 0; z-index: 1; pointer-events: none;
     background: color-mix(in srgb, var(--ds-success) 45%, transparent);
-    // The exercise bonus (top → top + workout): the same green, in diagonals.
+    // The exercise bonus (top → top + workout): the same green, in diagonals,
+    // over the food block (z 2, after it) so an eaten-into bonus still shows.
     &--bonus {
+      z-index: 2; display: flex; align-items: center; justify-content: center; overflow: hidden;
+      .health-budget__seg-label { color: var(--ds-text-high); background: var(--ds-surface-alt); border-radius: 3px; padding: 2px 0.3rem; }
       background: repeating-linear-gradient(135deg,
         color-mix(in srgb, var(--ds-success) 55%, transparent) 0 3px,
         transparent 3px 6px);
@@ -122,7 +125,7 @@
   // the free tier turns into the workout tier. Dashed, so it reads as the goal
   // moved by the workout rather than a second goal.
   &__base-line { width: 0; margin-left: -1px; border-left: 2px dashed var(--ds-text-high); z-index: 3; opacity: 0.8; }
-  // Stacking: tiers 1, range band 1 (after the tiers), food 2, goal / floor / base / even lines 3, food label 5.
+  // Stacking: tiers 1, range band 1 (after the tiers), food 2, bonus hatch 2 (after the food), goal / floor / base / even lines 3, food label 5.
   // What is left, priced. Free is a success wash; the workout keeps the old
   // credit hatch (allowance, not intake); the live deficit is a warning wash —
   // eating into it costs the day's progress. Labels are centred: the 18px
