@@ -840,8 +840,8 @@ Crossing into the Fire zone gets a toast of its own, and it is deliberately not
 a card. Every other toast — rider selection, challenge start/success, ring
 celebrations — is a panel with a border and a shadow, which is the shape of a
 system message. This one is frameless: avatar, name, and `ON FIRE` floating over
-the video, with `fitness/ux/fireball.gif` behind the avatar at twice its
-bounding box. That gif has no alpha channel (its background is solid black), so
+the video, with `fitness/ux/fireball.gif` behind the avatar at four times its
+bounding box, centred on it. That gif has no alpha channel (its background is solid black), so
 it is composited with `mix-blend-mode: screen`, which maps black to transparent
 and leaves the flame — `multiply` would knock out white and leave a black square
 instead. The avatar renders plain here, without the `zone-fire` pulse and

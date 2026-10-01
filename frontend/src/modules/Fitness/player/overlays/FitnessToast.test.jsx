@@ -293,7 +293,7 @@ describe('FitnessToast — fire zone', () => {
       rect = { left: 895, top: 459, width: 110, height: 110 }; // settled higher and larger
       act(() => { vi.advanceTimersByTime(50); });
       expect(centre()).toEqual({ x: 950, y: 514 });
-      expect(parseFloat(ball().style.width)).toBe(220);
+      expect(parseFloat(ball().style.width)).toBe(440); // 4x the avatar box
     } finally {
       spy.mockRestore();
     }

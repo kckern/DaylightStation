@@ -89,7 +89,7 @@
     position: absolute; white-space: nowrap; line-height: 1;
     font-size: 0.64rem; letter-spacing: 0.03em; color: var(--ds-text-mid); font-variant-numeric: tabular-nums;
   }
-  // The goal range, floor → top: a bracket under the goal label.
+  // The goal range, floor → top + exercise: a bracket under the goal label.
   &__range {
     position: absolute; bottom: 0; height: 4px;
     border: 1px solid var(--ds-text-mid); border-bottom: 0; border-radius: 2px 2px 0 0;
@@ -102,11 +102,9 @@
   &__even-label.health-budget__label--end { transform: translateX(-100%); }
 
   &__track--ruler { height: 18px; overflow: hidden; }
-  &__tier, &__food, &__even, &__goal-line, &__floor-line, &__ceiling-line { position: absolute; top: 0; bottom: 0; }
+  &__tier, &__food, &__even, &__goal-line, &__floor-line, &__base-line { position: absolute; top: 0; bottom: 0; }
   &__goal-line { width: 2px; margin-left: -1px; background: var(--ds-text-high); z-index: 3; }
-  // The ceiling (top + exercise): where "over plan" counts from. Dashed, so it
-  // reads as the goal moved by the workout rather than a second goal.
-  // The goal range, floor → top, in the track: a stronger green than the free
+  // The goal range, floor → top + exercise, in the track: a stronger green than the free
   // wash, and still green on a tentative (dimmed) ruler. Above the tiers, under the food.
   &__range-band {
     position: absolute; top: 0; bottom: 0; z-index: 1; pointer-events: none;
@@ -114,8 +112,11 @@
   }
   // The floor: where a day's log counts as complete. Quieter than the goal.
   &__floor-line { width: 1px; margin-left: -0.5px; background: var(--ds-text-mid); z-index: 3; opacity: 0.7; }
-  &__ceiling-line { width: 0; margin-left: -1px; border-left: 2px dashed var(--ds-text-high); z-index: 3; opacity: 0.8; }
-  // Stacking: tiers 1, range band 1 (after the tiers), food 2, goal / floor / ceiling / even lines 3, food label 5.
+  // The base: the plan's top before the workout, inside the goal range where
+  // the free tier turns into the workout tier. Dashed, so it reads as the goal
+  // moved by the workout rather than a second goal.
+  &__base-line { width: 0; margin-left: -1px; border-left: 2px dashed var(--ds-text-high); z-index: 3; opacity: 0.8; }
+  // Stacking: tiers 1, range band 1 (after the tiers), food 2, goal / floor / base / even lines 3, food label 5.
   // What is left, priced. Free is a success wash; the workout keeps the old
   // credit hatch (allowance, not intake); the live deficit is a warning wash —
   // eating into it costs the day's progress. Labels are centred: the 18px
