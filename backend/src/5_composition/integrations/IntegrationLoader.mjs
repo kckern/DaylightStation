@@ -110,7 +110,15 @@ export class IntegrationLoader {
         ? { ...sharedDeps, logger: sharedDeps.logger.child({ module: `${provider}-adapter` }) }
         : sharedDeps;
       const adapter = new AdapterClass(config, adapterDeps);
-      return typeof decorateAdapter === 'function' ? (decorateAdapter(capability, adapter, serviceConfig) ?? adapter) : adapter;
+      if (typeof decorateAdapter !== 'function') return adapter;
+      // A broken decorator must never cost the integration: fall back to the
+      // plain adapter (for AI, that is today's behaviour without the wire layer).
+      try {
+        return decorateAdapter(capability, adapter, serviceConfig) ?? adapter;
+      } catch (err) {
+        this.#logger.warn?.('integration.adapter.decorate-failed', { capability, provider, error: err.message });
+        return adapter;
+      }
     } catch (err) {
       this.#logger.error?.('integration.adapter.failed', { capability, provider, error: err.message });
       return null;
