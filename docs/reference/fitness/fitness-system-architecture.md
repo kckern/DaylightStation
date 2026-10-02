@@ -266,6 +266,16 @@ ANT+ Sensor          Backend              WebSocket        FitnessContext      F
      └────────────────────────────┘
 ```
 
+**A silent sensor pipeline is not an empty room.** When no device at all has
+delivered a packet (`DeviceManager.lastPacketAt` older than `transportStallMs`),
+every participant drops off the roster at once even though their straps are
+still broadcasting at the bridge. The empty-roster clock is held for the length
+of such a silence, up to `emptySessionTransportHold` (180s), and restarts from
+zero once packets resume. A dead bridge (silence past the cap) still lets the
+session end. Logged as `fitness.session.empty_roster_held_transport_stall` /
+`fitness.session.empty_roster_hold_released`; every end ships
+`fitness.session.ended` with its `reason` and `transportSilenceMs`.
+
 ---
 
 ### Sequence 3: Tick Processing (Every 5 Seconds)
@@ -498,6 +508,14 @@ WebSocketService.connect()
      │
      └──▶ ws.onerror → log, attempt reconnect
 ```
+
+**Sensor bridge → backend (`_extensions/fitness/src/server.mjs`).** The garage
+bridge is a Node `ws` client, so it must detect a black-holed socket itself — a
+lossy link can leave the socket OPEN with no FIN/RST while `send()` buffers into
+nothing. It pings every 5s and terminates the socket when nothing (pong or
+message) has come back for 20s, then reconnects with backoff 1s → 2s → … → 30s.
+The server's own pong-miss sweep (`eventbus.client_stale`, 3 × 30s) is the
+backstop, not the primary detector.
 
 ---
 
