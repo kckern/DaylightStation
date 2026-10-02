@@ -38,3 +38,20 @@ wrong data was saved. The failure is generation fidelity, not decoding.
 
 Rows `app: ai-wire-ab, feature: cli`, grouped by `wire`, averaging
 `completionTokens` and `durationMs` over `data/system/history/ai-usage/2026-10*.jsonl`.
+
+## A/B #2 (2026-10-02, build 9a83383d8): primer fix + flush-left rows + scalar checks
+
+Same 20 texts × 3 runs, gpt-4.1. **FAIL** — layer stays `off`.
+
+| Path | Calls | Avg completion tokens | Avg latency |
+|---|---|---|---|
+| JSON (baseline) | 60 | 338 | 2.04 s |
+| TOON reply | 60 | 136 | 1.28 s |
+| JSON re-ask after TOON failure | 6 | 613 | 3.04 s |
+
+End-to-end TOON path: 1.59 s mean vs 2.04 s JSON. Fallbacks dropped 54/60 → 6/60.
+
+Verdict reasons: fallback 6/60 (> 5%); kcal within JSON spread ±15% for
+12/20 texts (needs 18); TOON food names overlapped JSON's for 17/20 texts (needs 18).
+Open question: whether the kcal/name gaps are the TOON format or ordinary
+model variance against a 3-run JSON spread.
