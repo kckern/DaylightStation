@@ -86,7 +86,7 @@ describe('planWire edge cases', () => {
   });
 
   it('data block on the template\'s cue line: ambiguous, same array back', () => {
-    const messages = [{ role: 'user', content: 'Rows [{"a":1,"b":2},{"a":3,"b":4}] - now return JSON like {"items":[{"x":1}]}' }];
+    const messages = [{ role: 'user', content: 'Rows [{"a":1,"b":2},{"a":3,"b":4}]. Return JSON like {"items":[{"x":1}]}' }];
     const plan = planWire(messages, { reply: true });
     expect(plan.skip).toBe('ambiguous');
     expect(plan.messages).toBe(messages);
@@ -97,5 +97,38 @@ describe('planWire edge cases', () => {
     const plan = planWire(messages, { reply: true });
     expect(plan.rewrites).toEqual([{ kind: 'input', rows: 2 }]);
     expect(plan.skip).toBeNull();
+  });
+});
+
+describe('planWire reply cue: imperatives only', () => {
+  const table = '{"items":[{"name":"Egg","grams":50},{"name":"Toast","grams":30}]}';
+  const planFor = (cue) => planWire([{ role: 'user', content: `${cue}\n${table}` }], { reply: true });
+
+  it.each([
+    'Here is the previous reply as JSON data:',
+    'The answer in JSON from yesterday:',
+  ])('noun use %j is not a cue: the block is input data, not a template', (cue) => {
+    const plan = planFor(cue);
+    expect(plan.toonReply).toBe(false);
+    expect(plan.replyEligible).toBe(false);
+    expect(plan.rewrites).toEqual([{ kind: 'input', rows: 2 }]);
+    expect(plan.messages[0].content).not.toMatch(/\[N\t\]/);
+  });
+
+  it.each([
+    'Return the list as JSON:',
+    'Respond in JSON format:',
+    'Respond in JSON format with the COMPLETE revised list:',
+    'Use USDA values. Reply with valid JSON:',
+    '2. Output as JSON:',
+  ])('imperative %j is a cue', (cue) => {
+    const plan = planFor(cue);
+    expect(plan.toonReply).toBe(true);
+    expect(plan.messages[0].content).toMatch(/items\[N\t\]\{name\tgrams\}:/);
+  });
+
+  it('"Respond exactly as:" is a cue (flat template stays untouched)', () => {
+    const plan = planWire([{ role: 'user', content: 'Respond exactly as:\n{"name":"x","grams":1}' }], { reply: true });
+    expect(plan.skip).toBe('flat-object');
   });
 });

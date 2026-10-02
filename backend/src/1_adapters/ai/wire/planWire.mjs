@@ -3,8 +3,14 @@ import { findJsonBlocks } from './jsonBlocks.mjs';
 import { isEncodableData, isTable, templateShape } from './shapes.mjs';
 import { buildReplySkeleton, rewriteCueLine, stripFormatSentences, TOON_REPLY_RULES } from './replyFormat.mjs';
 
-/** The nearest non-blank text before a block reads like an instruction about the reply's format. */
-const REPLY_CUE = /\b(?:respond|reply|return|answer|output)\b.*\b(?:json|exactly as)\b/i;
+/**
+ * The nearest non-blank text before a block is an IMPERATIVE about the reply's
+ * format: a verb that starts the line, a sentence (after `.` `:` `!` `?`) or a
+ * bullet/number, then `in`/`with`/`as` … `JSON` within the sentence, or `JSON`
+ * directly ("Return JSON:"), or `respond|reply exactly as`. Noun uses such as
+ * "the previous reply as JSON:" are not cues.
+ */
+const REPLY_CUE = /(?:^\s*(?:(?:[-*•]|\d+[.)])\s+)?|[.:!?]\s+)(?:(?:respond|reply|return|answer|output)\b(?:[^\n.!?]*?\b(?:in|with|as)\s+(?:[^\n.!?]*?\s)?|\s+)json\b|(?:respond|reply)\s+exactly\s+as\b)/i;
 
 /**
  * The cue for a block: its same-line prefix, else the line directly above.
