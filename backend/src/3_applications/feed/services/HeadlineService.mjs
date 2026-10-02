@@ -439,6 +439,9 @@ export class HeadlineService {
    * Enrich imageless items by fetching og:image from their article pages.
    * Skips items that already have an image or already exist in the cache.
    * Runs with limited concurrency to avoid overwhelming upstream servers.
+   * Uses the gateway's meta-tag-only lookup, never readable extraction: the
+   * latter parsed a full DOM per article and held the event loop ~90% busy
+   * for a minute every hour (2026-10-02).
    *
    * @param {Array} items - Harvested items (mutated in-place)
    * @param {Set<string>} existingIds - IDs already present in the cache
@@ -464,7 +467,7 @@ export class HeadlineService {
         while (active < CONCURRENCY && idx < candidates.length) {
           const item = candidates[idx++];
           active++;
-          this.#webContentGateway.extractReadableContent(item.link)
+          this.#webContentGateway.extractOgImage(item.link)
             .then(result => {
               if (result?.ogImage && !this.#isGenericImage(result.ogImage)) item.image = result.ogImage;
             })

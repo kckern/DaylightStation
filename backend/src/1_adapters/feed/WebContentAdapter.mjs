@@ -23,6 +23,38 @@ const READABLE_TIMEOUT = 8000;
 const MAX_WORDS = 500;
 const USER_AGENT = 'Mozilla/5.0 (compatible; DaylightStation/1.0)';
 
+/**
+ * Read a page's preview image from its `<head>` meta tags.
+ *
+ * A regex over the raw HTML, deliberately: the headline harvest needs one
+ * attribute, and building a DOM to get it was the most expensive thing the
+ * backend did all hour. On 2026-10-02 the article extractor's linkedom parse
+ * held the event loop ~90% busy for over a minute at :25 past every hour,
+ * stalling the school Portal and every other client.
+ *
+ * Handles either attribute order (`property` before or after `content`),
+ * `og:image`, `og:image:url` and `twitter:image`, and decodes `&amp;`.
+ *
+ * @param {string} html
+ * @returns {string|null}
+ */
+export function extractOgImageFromHtml(html) {
+  if (typeof html !== 'string' || !html) return null;
+  // Meta tags live in <head>; never scan a whole article body for them.
+  const headEnd = html.search(/<\/head\s*>/i);
+  const head = headEnd > 0 ? html.slice(0, headEnd) : html.slice(0, 200_000);
+  const KEYS = ['og:image', 'og:image:url', 'og:image:secure_url', 'twitter:image', 'twitter:image:src'];
+  const found = new Map();
+  for (const tag of head.match(/<meta\b[^>]*>/gi) || []) {
+    const key = tag.match(/\b(?:property|name)\s*=\s*["']([^"']+)["']/i)?.[1]?.toLowerCase();
+    if (!key || !KEYS.includes(key) || found.has(key)) continue;
+    const content = tag.match(/\bcontent\s*=\s*["']([^"']*)["']/i)?.[1]?.trim();
+    if (content) found.set(key, content.replace(/&amp;/g, '&'));
+  }
+  for (const key of KEYS) if (found.has(key)) return found.get(key);
+  return null;
+}
+
 const PLACEHOLDER_SVG = Buffer.from(
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 225" fill="none">' +
   '<rect width="400" height="225" fill="#1a1b1e"/>' +
@@ -228,6 +260,36 @@ export class WebContentAdapter {
   // ===========================================================================
   // Readable content extraction
   // ===========================================================================
+
+  /**
+   * Fetch a page and read only its preview image.
+   *
+   * The headline harvest's whole question is "does this story have a
+   * picture" — it never shows the article body — so it must not pay for
+   * readable extraction. See {@link extractOgImageFromHtml}.
+   *
+   * @param {string} url
+   * @returns {Promise<{ ogImage: string|null }>}
+   * @throws {Error} If the upstream page cannot be fetched
+   */
+  async extractOgImage(url) {
+    const start = Date.now();
+    const pageRes = await safeFetch(url, {
+      responseType: 'text',
+      timeoutMs: READABLE_TIMEOUT,
+      maxBytes: 3 * 1024 * 1024,
+      headers: { 'User-Agent': USER_AGENT, 'Accept': 'text/html' },
+    });
+    if (!pageRes.ok) {
+      this.#logger.debug?.('webcontent.og-image.upstream-error', { url, status: pageRes.status, durationMs: Date.now() - start });
+      const err = new Error(`Upstream returned ${pageRes.status}`);
+      err.upstreamStatus = pageRes.status;
+      throw err;
+    }
+    const ogImage = extractOgImageFromHtml(pageRes.data);
+    this.#logger.debug?.('webcontent.og-image.extracted', { url, hasOgImage: !!ogImage, durationMs: Date.now() - start });
+    return { ogImage };
+  }
 
   /**
    * Fetch a web page and extract its readable content.

@@ -128,13 +128,8 @@ describe('HeadlineService', () => {
 
     beforeEach(() => {
       mockWebContentGateway = {
-        extractReadableContent: vi.fn().mockResolvedValue({
-          title: 'Article Title',
-          content: 'body text',
-          wordCount: 2,
-          ogImage: 'https://example.com/hero.jpg',
-          ogDescription: 'desc',
-        }),
+        extractOgImage: vi.fn().mockResolvedValue({ ogImage: 'https://example.com/hero.jpg' }),
+        extractReadableContent: vi.fn().mockRejectedValue(new Error('harvest must not run readable extraction')),
       };
 
       // Use a single-source config so assertions are clear
@@ -183,8 +178,10 @@ describe('HeadlineService', () => {
       await svc.harvestAll('user_1');
 
       // Should only fetch og:image for item-1 (item-2 already has an image)
-      expect(mockWebContentGateway.extractReadableContent).toHaveBeenCalledTimes(1);
-      expect(mockWebContentGateway.extractReadableContent).toHaveBeenCalledWith('https://example.com/article1');
+      expect(mockWebContentGateway.extractOgImage).toHaveBeenCalledTimes(1);
+      expect(mockWebContentGateway.extractOgImage).toHaveBeenCalledWith('https://example.com/article1');
+      // A full readable extraction per story was the hourly event-loop stall.
+      expect(mockWebContentGateway.extractReadableContent).not.toHaveBeenCalled();
 
       // Verify save was called with enriched item
       const savedResult = mockStore.saveSource.mock.calls[0][1];
@@ -214,14 +211,14 @@ describe('HeadlineService', () => {
       await svc.harvestAll('user_1');
 
       // Should only enrich new-1 (existing-1 already in cache, so skipped)
-      expect(mockWebContentGateway.extractReadableContent).toHaveBeenCalledTimes(1);
-      expect(mockWebContentGateway.extractReadableContent).toHaveBeenCalledWith('https://example.com/new');
+      expect(mockWebContentGateway.extractOgImage).toHaveBeenCalledTimes(1);
+      expect(mockWebContentGateway.extractOgImage).toHaveBeenCalledWith('https://example.com/new');
     });
 
     // 2026-10-01: paywalled pages 403 every time; the hourly harvest re-fetched
     // the same ~290 of them each run (3,734 upstream errors overnight).
     test('does not re-fetch a page that failed in an earlier harvest', async () => {
-      mockWebContentGateway.extractReadableContent.mockRejectedValue(new Error('Upstream returned 403'));
+      mockWebContentGateway.extractOgImage.mockRejectedValue(new Error('Upstream returned 403'));
       const svc = buildServiceWithAdapter();
       const now = new Date().toISOString();
       mockHarvester.harvest.mockResolvedValue({
@@ -233,11 +230,11 @@ describe('HeadlineService', () => {
       await svc.harvestAll('user_1');
       await svc.harvestAll('user_1');
 
-      expect(mockWebContentGateway.extractReadableContent).toHaveBeenCalledTimes(1);
+      expect(mockWebContentGateway.extractOgImage).toHaveBeenCalledTimes(1);
     });
 
     test('leaves image undefined when og:image fetch fails', async () => {
-      mockWebContentGateway.extractReadableContent.mockRejectedValue(new Error('Network error'));
+      mockWebContentGateway.extractOgImage.mockRejectedValue(new Error('Network error'));
 
       const svc = buildServiceWithAdapter();
       const now = new Date().toISOString();
@@ -260,13 +257,7 @@ describe('HeadlineService', () => {
     });
 
     test('leaves image undefined when og:image is absent from page', async () => {
-      mockWebContentGateway.extractReadableContent.mockResolvedValue({
-        title: 'Article',
-        content: 'body',
-        wordCount: 1,
-        ogImage: null,
-        ogDescription: null,
-      });
+      mockWebContentGateway.extractOgImage.mockResolvedValue({ ogImage: null });
 
       const svc = buildServiceWithAdapter();
       const now = new Date().toISOString();
@@ -289,7 +280,7 @@ describe('HeadlineService', () => {
     });
 
     test('rejects generic placeholder og:image (Google News icon)', async () => {
-      mockWebContentGateway.extractReadableContent.mockResolvedValue({
+      mockWebContentGateway.extractOgImage.mockResolvedValue({
         title: 'Article',
         content: 'body',
         wordCount: 1,
@@ -318,7 +309,7 @@ describe('HeadlineService', () => {
     });
 
     test('rejects generic placeholder og:image (exact URL match)', async () => {
-      mockWebContentGateway.extractReadableContent.mockResolvedValue({
+      mockWebContentGateway.extractOgImage.mockResolvedValue({
         title: 'Article',
         content: 'body',
         wordCount: 1,

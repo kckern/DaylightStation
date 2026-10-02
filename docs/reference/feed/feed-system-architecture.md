@@ -95,7 +95,7 @@ The feed system aggregates content from external services (RSS, Reddit, YouTube,
 |-------|------|---------|
 | **System** | `backend/src/5_composition/bootstrap.mjs` | Creates feed services, configures RSSParser with `media:content`/`media:thumbnail` custom fields |
 | **Adapter** | `backend/src/1_adapters/feed/RssHeadlineHarvester.mjs` | Harvests RSS feeds (supports multi-URL sources), extracts images from media:content/thumbnail/enclosure |
-| **Adapter** | `backend/src/1_adapters/feed/WebContentAdapter.mjs` | Fetches web pages, extracts readable content + og:image + og:description |
+| **Adapter** | `backend/src/1_adapters/feed/WebContentAdapter.mjs` | Fetches web pages, extracts readable content + og:image + og:description; `extractOgImage` is the cheap meta-tag-only path the headline harvest uses |
 | **Adapter** | `backend/src/1_adapters/feed/sources/*.mjs` | 12 source adapters (see Source Adapters section) |
 | **Application** | `backend/src/3_applications/feed/ports/IFeedSourceAdapter.mjs` | Base class defining `fetchItems()` and optional `getDetail()` |
 | **Application** | `backend/src/3_applications/feed/services/FeedAssemblyService.mjs` | Scroll orchestration — pool → preference filtering → tier assembly → padding → history, detail delegation, filter bypass |
@@ -286,6 +286,7 @@ Grid coordinates are zero-based and must fall within the declared row/column ind
 - Extracts images from `media:content`, `media:thumbnail`, and `enclosure` tags
 - Multi-URL sources are merged and sorted by timestamp descending
 - Pruning respects a `max_per_source` minimum — low-volume feeds keep all items even past retention window
+- New items with no image are enriched from the article page's `og:image` / `twitter:image` meta tag via `WebContentAdapter.extractOgImage`, three at a time, skipping pages that failed recently. This is a regex over the page `<head>`, **never** readable extraction: until 2026-10-02 the harvest ran `@extractus/article-extractor` (a full linkedom DOM + Readability) per story just to read that one tag, which held the backend event loop ~90% busy for over a minute at :25 past every hour. Readable extraction (`extractReadableContent`) is only for the detail/reader views that actually show an article body.
 
 ### Paywall Proxy
 
