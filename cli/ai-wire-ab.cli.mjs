@@ -37,6 +37,7 @@ async function main() {
 
   const base = new OpenAIAdapter({ apiKey }, { httpClient: axios, aiUsageLedger: createCliAiUsageLedger(cfg) })
     .scoped(cliUsageTags('ai-wire-ab'));
+  // Every decode fallback counts, whatever its reason: each one cost a re-ask.
   let fallbacks = 0;
   const wireLogger = { debug() {}, info() {}, error() {}, warn: (event) => { if (event === 'ai.wire.decode.fallback') fallbacks += 1; } };
   const gateways = {
@@ -85,6 +86,7 @@ async function main() {
         results.push({
           text, path, run, ms: Date.now() - started, replyChars,
           itemCount: items.length,
+          names: items.map((i) => String(i.label ?? i.name ?? '').trim().toLowerCase()).filter(Boolean),
           kcal: items.reduce((n, i) => n + (Number(i.calories) || 0), 0),
           fallback: fallbacks > before,
           success,
