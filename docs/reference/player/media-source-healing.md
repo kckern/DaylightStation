@@ -201,6 +201,35 @@ host's NFSv3 cache re-trust the file's attributes and access rights (the
 reset that needs no root; the system-wide `drop_caches` stays with the
 watchdog.
 
+**What the ghosts look like on this host (observed 2026-10-02, no packet
+capture yet).**
+
+- **They are made by directory walks on a cold cache.** Right after a
+  `drop_caches`, a `find -maxdepth 3 -perm 000` over the share produced fresh
+  `000` entries; the same walk on a warm cache produced none. A full-depth
+  `find -perm 000` listed 37,610 paths (mostly `#recycle/`, `Speech/_Inbox`,
+  `Archives/`), and a 400-path sample was 100% readable minutes later with
+  ctime unchanged. That points at attributes delivered with directory listings
+  (NFSv3 READDIRPLUS), not at any real `chmod`.
+- **Some files read `000` from the NAS itself.** A handful (macOS `.DS_Store` /
+  `._*`, 104 files in `SFX/Bonus`) still read `000` after the attribute cache
+  expired, with a ctime weeks old: the server reported mode 0 without the mode
+  ever having changed. A `chmod 0777` (ctime bump) fixes each one.
+- **The watchdog sustains its own loop.** `nfs-watchdog.sh` drops caches when
+  its depth-3 scan sees a ghost; its next scan runs on the now-cold cache and
+  finds new ones. On 2026-10-02 it dropped caches every 2–5 minutes all
+  morning (`/tmp/nfs-watchdog-dropcaches-last` mtime, readable without root).
+- **Plex hits them during its scheduled analysis.** `Permission denied` lines
+  clustered at 05:00 on 2026-10-01 and 2026-10-02; the files were readable
+  later with ctime untouched.
+
+Still open: whether the NAS sends mode 0 in READDIRPLUS replies (server bug)
+or the client mis-merges them. A two-way capture (calls and replies,
+`tcpdump -Z root … "host <nas> and port 2049 and less 1000"`) answers it; the
+2026-10-02 run was never started. Mounting with `nordirplus` is the cheap
+test of the READDIRPLUS theory. Both need root, as does any change to the
+watchdog's cooldown or scan.
+
 Relative `privateKey` / `knownHostsPath` are resolved against the app root
 (the data dir's parent) in `app.mjs`. The backend runs with cwd `backend/`, so
 before 2026-09-30 ssh resolved them there and every host heal failed with
