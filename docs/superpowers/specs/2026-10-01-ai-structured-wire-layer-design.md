@@ -116,19 +116,26 @@ round-tripped by the codec.
 
 ### Reply decode (for a call whose template was rewritten)
 
-(Amended 2026-10-01 after the final review: rows are never dropped.)
+(Amended 2026-10-01 after the final review and re-review: rows are never
+dropped, and rows must be exactly full width.)
 
 1. Reply parses as TOON (`@toon-format/toon`, strict, else lax) → value.
-   - Rows other than the last are **kept** even when short of columns
-     (models omit the trailing tab of an empty last cell); missing cells are
-     absent keys, the same as empty cells.
-   - A short **last** row in a lax decode is a decode failure (`truncated`).
-   - The raw table row lines (indented lines after the `name[N…]{…}:` header)
-     must equal both the declared `[N]` and the decoded row count, else the
-     decode fails (`row-count-mismatch`). This catches lines the decoder
-     silently eats: a `#`-leading row (a comment to it) and an unquoted row
-     whose first cell holds a colon (read as a key).
-   - Extra cells (`extra-cells`) and a mid-cell `"` (`stray-quote`) fail too.
+   - Exactly one table header, declaring the tab delimiter (`name[N<TAB>]`),
+     else `multiple-tables` / `wrong-delimiter`. Its column list must equal
+     the template's columns in order, else `column-mismatch`.
+   - Every row, middle and last, has exactly one cell per column (split on
+     unquoted tabs): fewer → `short-row`, more → `extra-cells`. An empty cell
+     written with its tab is an absent key. Positional rows with optional
+     cells cannot be repaired case by case, so a short row is never kept.
+   - The raw table row lines must equal both the declared `[N]` and the
+     decoded row count, else `row-count-mismatch`. This catches lines the
+     decoder silently eats: a `#`-leading row (a comment to it) and an
+     unquoted row whose first cell holds a colon (read as a key).
+   - A mid-cell `"` fails (`stray-quote`).
+   - Types follow the template's example values: number columns decode to a
+     number or null, boolean columns to a boolean or null, and a text column
+     never holds a bare number or boolean (`"7"` quoted is fine), else
+     `type-mismatch`.
    - `chat()` / `chatWithImage()` return `JSON.stringify(value)` — callers'
      existing regex + `JSON.parse` receive the same shape they get today.
    - `chatStructured()` returns `value`.
@@ -165,7 +172,7 @@ Reply in TOON, not JSON, using exactly the layout above:
 - Scalar fields are `key: value` lines.
 - The table header is `name[N<TAB>]{col1<TAB>col2…}:` where N is the number of rows you write and <TAB> is a tab character.
 - Then N rows, each indented two spaces, values separated by tab characters in header column order.
-- Every row has a tab between every pair of columns, including before trailing empty cells.
+- Every row has exactly one value per column, in header order, with a tab between each pair of values. An empty value keeps its tab, including a tab before an empty last value.
 - Leave a cell empty to omit that field.
 - Wrap a value in double quotes if it contains a tab, newline, colon or double quote (escape it as \"), starts with # or -, begins or ends with a space, or is text that looks like a number or like true, false or null. Never quote a real number.
 - No code fences and no text before or after.
@@ -217,7 +224,7 @@ Vitest (`npm run test:unit:vitest`):
   - `LogFoodFromText`, `LogFoodFromImage`, `ProcessRevisionInput` templates rewritten; `ReviseEntryService` left alone.
   - `ProcessRevisionInput` `currentJson` re-encoded as input data.
   - Format-sentence stripping list.
-  - Decode: tab rows, empty cell → absent key, truncated → partial row dropped, JSON reply passthrough, garbage passthrough, value containing a comma.
+  - Decode: tab rows, empty cell → absent key, short/cut/extra-width row → failure (amended 2026-10-01), JSON reply passthrough, garbage passthrough, value containing a comma.
 - **Layer** — TOON path never sends `jsonMode`; JSON path delegates to
   `inner.chatStructured`; `scoped()` preserves tags and the layer; `transcribe`
   / `embed` pass through; `mode: off` byte-identical messages; `sample` honoured
