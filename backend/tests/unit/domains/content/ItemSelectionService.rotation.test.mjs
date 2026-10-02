@@ -105,3 +105,21 @@ describe('rotation after the cycle exhausts', () => {
     assert.deepStrictEqual([...seen].sort(), ['a', 'b']);
   });
 });
+
+describe('least_recent ordering', () => {
+  it('orders mixed local and ISO timestamps as instants', () => {
+    const items = [
+      { id: 'local-today', lastPlayed: '2026-10-02 07:40:00' },
+      { id: 'iso-yesterday-evening', lastPlayed: '2026-10-02T03:00:00.000Z' },
+    ];
+    const sorted = ItemSelectionService.applySort(items, 'least_recent', () => 0.5);
+    assert.deepStrictEqual(sorted.map((i) => i.id), ['iso-yesterday-evening', 'local-today']);
+  });
+
+  it('breaks ties randomly instead of always returning source order', () => {
+    const items = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+    const firsts = new Set();
+    for (let i = 0; i < 40; i++) firsts.add(ItemSelectionService.applySort(items, 'least_recent', Math.random)[0].id);
+    assert.ok(firsts.size > 1);
+  });
+});

@@ -168,12 +168,18 @@ const SORT_METHODS = {
   },
 
   // Least-recently-played first; never-played (no lastPlayed) ahead of all.
-  // `lastPlayed` is 'YYYY-MM-DD HH:mm:ss' or ISO, both of which order as text.
-  least_recent: (items) => [...items].sort((a, b) => {
-    const la = a.lastPlayed ? String(a.lastPlayed) : '';
-    const lb = b.lastPlayed ? String(b.lastPlayed) : '';
-    return la.localeCompare(lb);
-  }),
+  // Compared as instants: media memory writes local 'YYYY-MM-DD HH:mm:ss'
+  // and sync sources write ISO, which do not order correctly as text. Ties
+  // (incl. all-unknown) shuffle rather than fall back to source order.
+  least_recent: (items, random) => {
+    const at = (v) => {
+      if (!v) return -Infinity;
+      const t = Date.parse(String(v).includes('T') ? String(v) : String(v).replace(' ', 'T'));
+      return Number.isNaN(t) ? -Infinity : t;
+    };
+    const shuffled = typeof random === 'function' ? SORT_METHODS.random(items, random) : [...items];
+    return shuffled.sort((a, b) => at(a.lastPlayed) - at(b.lastPlayed));
+  },
 
   title: (items) => {
     return [...items].sort((a, b) => {
