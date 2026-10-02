@@ -177,4 +177,70 @@ describe('the homegrown tier', () => {
     expect(move).toBeNull();
     engine.dispose();
   });
+
+  it('searches off the event loop, so a deep rung does not freeze the backend', async () => {
+    // A busy middlegame at depth 3: seconds of search. Inline, that was one
+    // synchronous block — every other request in the house waited on it.
+    const middlegame = 'r1bq1rk1/pp2bppp/2n1pn2/3p4/2PP4/2N1PN2/PP2BPPP/R2QKB1R w KQ - 0 8';
+    const engine = createStockfishEngine({ workerPath: '/nonexistent/worker.mjs', logger: silentLogger });
+    let longestGapMs = 0;
+    let last = Date.now();
+    const ticker = setInterval(() => {
+      const now = Date.now();
+      longestGapMs = Math.max(longestGapMs, now - last);
+      last = now;
+    }, 10);
+    const startedAt = Date.now();
+    const move = await engine.chooseMove({
+      fen: middlegame,
+      rung: { id: 'deep', engine: 'homegrown', depth: 3, blunder_rate: 0 },
+      gameId: 'g1',
+    });
+    const searchMs = Date.now() - startedAt;
+    clearInterval(ticker);
+    // An inline search resolves before its overdue tick can run, so the stall
+    // it caused is only visible as the time since the last tick that did.
+    longestGapMs = Math.max(longestGapMs, Date.now() - last);
+    engine.dispose();
+    expect(move.engine).toBe('homegrown');
+    expect(legalMoves(middlegame).map((m) => m.san)).toContain(move.san);
+    // A ratio, not a stopwatch: the loop's longest stall must be a small
+    // fraction of the search it sat beside, however fast this machine is.
+    expect(searchMs).toBeGreaterThan(200);
+    expect(longestGapMs).toBeLessThan(searchMs / 4);
+  }, 60000);
+
+  it('falls back to a shallow inline reply when the search thread never answers', async () => {
+    const engine = createStockfishEngine({
+      workerPath: '/nonexistent/worker.mjs',
+      // Stays alive and never replies — the shape of a wedged search.
+      homegrownWorkerPath: BOOT_FAILING_WORKER,
+      homegrownTimeoutMs: 200,
+      logger: silentLogger,
+    });
+    const move = await engine.chooseMove({
+      fen: START,
+      rung: { id: 'level-5', engine: 'homegrown', depth: 2, blunder_rate: 0 },
+      gameId: 'g1',
+    });
+    engine.dispose();
+    expect(move.engine).toBe('fallback');
+    expect(legalMoves(START).map((m) => m.san)).toContain(move.san);
+  });
+
+  it('falls back to a shallow inline reply when the search thread cannot start', async () => {
+    const engine = createStockfishEngine({
+      workerPath: '/nonexistent/worker.mjs',
+      homegrownWorkerPath: '/nonexistent/homegrown.mjs',
+      logger: silentLogger,
+    });
+    const move = await engine.chooseMove({
+      fen: START,
+      rung: { id: 'level-5', engine: 'homegrown', depth: 2, blunder_rate: 0 },
+      gameId: 'g1',
+    });
+    engine.dispose();
+    expect(move.engine).toBe('fallback');
+    expect(legalMoves(START).map((m) => m.san)).toContain(move.san);
+  });
 });

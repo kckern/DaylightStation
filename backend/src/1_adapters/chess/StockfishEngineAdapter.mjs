@@ -2,7 +2,10 @@ import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { fileURLToPath } from 'node:url';
 import { applyMove, legalMoves } from '../../../../shared/gaming/rulesets/chess/engine.mjs';
-import { chooseMove as homegrownChooseMove } from '../../../../shared/gaming/rulesets/chess/opponent.mjs';
+import {
+  chooseMove as homegrownChooseMove,
+  DIFFICULTIES as HOMEGROWN_DIFFICULTIES,
+} from '../../../../shared/gaming/rulesets/chess/opponent.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ELO_FLOOR = 1320;
@@ -75,11 +78,111 @@ export function fallbackDifficultyFor(rung, options) {
   return 'steady';
 }
 
+/**
+ * Runs the homegrown opponent on its own thread.
+ *
+ * It used to run inline, and a depth-2 rung took 3–14 s per move on
+ * 2026-10-02 — a single synchronous block that froze every other request the
+ * backend serves, the school Portal included. Resolves `{ move }` (move null
+ * when the side to move has none) or null when the thread could not answer:
+ * failed to spawn, crashed, or overran `timeoutMs`. A search cannot be
+ * interrupted, only killed, so an overrun terminates the thread and the next
+ * move respawns it.
+ */
+function createHomegrownRunner({ workerPath, logger, timeoutMs }) {
+  let worker = null;
+  let nextId = 1;
+  const waiting = new Map();
+
+  function settleAll() {
+    for (const resolve of waiting.values()) resolve(null);
+    waiting.clear();
+  }
+
+  function ensureWorker() {
+    if (worker) return worker;
+    try {
+      worker = new Worker(workerPath);
+      worker.on('message', (msg) => {
+        if (msg?.type !== 'chosen') return;
+        const resolve = waiting.get(msg.id);
+        if (!resolve) return;
+        if (msg.error) logger?.warn?.('chess.engine.homegrown-error', { message: msg.error });
+        resolve(msg.error ? null : { move: msg.move ?? null });
+      });
+      worker.on('error', (error) => {
+        logger?.warn?.('chess.engine.homegrown-worker-error', { message: error?.message });
+        settleAll();
+        worker?.terminate?.();
+        worker = null;
+      });
+      worker.on('exit', () => {
+        settleAll();
+        worker = null;
+      });
+      worker.unref?.();
+    } catch (error) {
+      logger?.warn?.('chess.engine.homegrown-spawn-failed', { message: error?.message });
+      worker = null;
+    }
+    return worker;
+  }
+
+  return {
+    choose(fen, options) {
+      const live = ensureWorker();
+      if (!live) return Promise.resolve(null);
+      const id = nextId++;
+      return new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          waiting.delete(id);
+          logger?.warn?.('chess.engine.homegrown-timeout', { timeoutMs, depth: options?.depth ?? null });
+          live.terminate?.();
+          if (worker === live) worker = null;
+          resolve(null);
+        }, timeoutMs);
+        waiting.set(id, (result) => {
+          clearTimeout(timer);
+          waiting.delete(id);
+          resolve(result);
+        });
+        live.postMessage({ type: 'choose', id, fen, options });
+      });
+    },
+    dispose() {
+      settleAll();
+      worker?.terminate?.();
+      worker = null;
+    },
+  };
+}
+
+/**
+ * The last resort when the homegrown thread cannot answer: a depth-1 reply,
+ * computed inline. Depth 1 scores each legal move once — milliseconds, not
+ * seconds — so it is the one search cheap enough to run on the event loop.
+ */
+function inlineShallowMove(fen, { blunder_rate = 0, seed = 0 } = {}) {
+  return homegrownChooseMove(fen, { depth: 1, blunder_rate, seed });
+}
+
 export function createStockfishEngine({
   workerPath = path.join(HERE, 'stockfishWorker.mjs'),
+  homegrownWorkerPath = path.join(HERE, 'homegrownWorker.mjs'),
+  homegrownTimeoutMs = 30000,
   logger = null,
   timeoutMarginMs = 1500,
 } = {}) {
+  const homegrown = createHomegrownRunner({ workerPath: homegrownWorkerPath, logger, timeoutMs: homegrownTimeoutMs });
+
+  /** Off-thread first; a shallow inline reply only when the thread fails. */
+  async function homegrownMove(fen, options) {
+    const result = await homegrown.choose(fen, options);
+    if (result) return { move: result.move, offThread: true };
+    logger?.warn?.('chess.engine.homegrown-inline', { depth: 1, requestedDepth: options?.depth ?? null });
+    return { move: inlineShallowMove(fen, options), offThread: false };
+  }
+
   let worker = null;
   let workerUsable = true;
   let queue = Promise.resolve();
@@ -164,7 +267,7 @@ export function createStockfishEngine({
       // the router's.
       if (isHomegrownRung(rung)) {
         const startedAt = Date.now();
-        const move = homegrownChooseMove(fen, {
+        const { move, offThread } = await homegrownMove(fen, {
           depth: rung.depth,
           blunder_rate: rung.blunder_rate,
           // Seeded by position so a rung is deterministic: the same board always
@@ -173,10 +276,13 @@ export function createStockfishEngine({
           seed: fen.length,
         });
         if (!move) return null;
+        // A shallow inline stand-in is not the rung that was asked for, and
+        // the archive must not record it as if it were.
+        const engine = offThread ? 'homegrown' : 'fallback';
         logger?.info?.('chess.engine.move', {
           rung: rung?.id,
-          engine: 'homegrown',
-          depth: rung.depth,
+          engine,
+          depth: offThread ? rung.depth : 1,
           blunderRate: rung.blunder_rate,
           thinkingMs: Date.now() - startedAt,
         });
@@ -185,7 +291,7 @@ export function createStockfishEngine({
           to: move.to,
           ...(move.promotion ? { promotion: move.promotion } : {}),
           san: move.san,
-          engine: 'homegrown',
+          engine,
           thinkingMs: Date.now() - startedAt,
         };
       }
@@ -217,8 +323,10 @@ export function createStockfishEngine({
         movetimeMs: options.movetimeMs,
         reason: workerUsable ? 'no_bestmove' : 'worker_unavailable',
       });
-      const fallback = homegrownChooseMove(fen, {
-        difficulty: fallbackDifficultyFor(rung, options),
+      const preset = HOMEGROWN_DIFFICULTIES[fallbackDifficultyFor(rung, options)];
+      const { move: fallback } = await homegrownMove(fen, {
+        depth: preset.depth,
+        blunder_rate: preset.blunder_rate,
         seed: fen.length,
       });
       if (!fallback) return null;
@@ -235,6 +343,7 @@ export function createStockfishEngine({
       worker?.terminate?.();
       worker = null;
       waiting.clear();
+      homegrown.dispose();
     },
   };
 }
