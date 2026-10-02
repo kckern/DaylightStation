@@ -17,13 +17,15 @@ import { currentOrigin } from '#system/runtime/aiContext.mjs';
 /**
  * The attribution fields every ledger row carries.
  * @param {Object} [usageTags]
- * @returns {{ app: string|null, feature: string|null, origin: string|null }}
+ * @returns {{ app: string|null, feature: string|null, origin: string|null, wire?: 'toon'|'json'|'passthrough' }}
  */
 export function usageAttribution(usageTags = null) {
   return {
     app: usageTags?.app ?? null,
     feature: usageTags?.feature ?? null,
     origin: currentOrigin() ?? null,
+    // Set only by StructuredWireLayer; absent keeps pre-layer rows unchanged.
+    ...(usageTags?.wire ? { wire: usageTags.wire } : {}),
   };
 }
 
