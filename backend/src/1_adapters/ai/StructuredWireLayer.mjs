@@ -105,7 +105,7 @@ export class StructuredWireLayer extends IAIGateway {
 
   #decode(raw, plan) {
     const decoded = decodeReply(raw, plan.shape);
-    if (decoded.ok) this.#log('debug', 'ai.wire.decode.ok', { rows: decoded.value[plan.shape.arrayKey].length, droppedRows: decoded.droppedRows });
+    if (decoded.ok) this.#log('debug', 'ai.wire.decode.ok', { rows: decoded.value[plan.shape.arrayKey].length });
     else this.#log('warn', 'ai.wire.decode.fallback', { reason: decoded.reason, sample: typeof raw === 'string' ? raw.slice(0, 200) : null });
     return decoded;
   }

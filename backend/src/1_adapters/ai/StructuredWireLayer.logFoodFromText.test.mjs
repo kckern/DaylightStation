@@ -18,6 +18,13 @@ const payload = {
   ],
 };
 const toonReply = encode({ ...payload, items: payload.items.map((i) => Object.fromEntries(COLUMNS.map((c) => [c, i[c] ?? '']))) }, { delimiter: '\t' });
+// What models really write: an empty dish is no cell at all, not a trailing
+// tab (the encoder writes `\t""`; strip that whole trailing cell).
+// Iced Tea, the dish-less row, is moved off the last line so it stays a
+// kept non-last row rather than a (correctly) rejected short last row.
+const reordered = { ...payload, items: [payload.items[2], payload.items[0], payload.items[1]] };
+const realToonReply = encode({ ...reordered, items: reordered.items.map((i) => Object.fromEntries(COLUMNS.map((c) => [c, i[c] ?? '']))) }, { delimiter: '\t' })
+  .split('\n').map((line) => line.replace(/(?:\t(?:"")?)+$/, '')).join('\n');
 
 async function savedItems(aiGateway) {
   const saved = [];
@@ -39,5 +46,15 @@ describe('LogFoodFromText over the wire layer', () => {
     expect(innerChat.mock.calls[0][0][0].content).toMatch(/items\[N\t\]\{name\t/); // TOON really was requested
     expect(viaToon).toEqual(viaJson);
     expect(viaToon.length).toBeGreaterThan(3); // dish header + members + standalone
+  });
+
+  it('a reply without trailing tabs on empty dish cells keeps every item', async () => {
+    expect(realToonReply).toMatch(/\n  Iced Tea\t[^\n]*\t0\n/); // dish cell really absent, no trailing tab
+    expect(realToonReply).not.toMatch(/\t(?:"")?\n/);
+    const viaJson = await savedItems({ chat: vi.fn(async () => JSON.stringify(reordered)) });
+    const viaToon = await savedItems(new StructuredWireLayer({ chat: vi.fn(async () => realToonReply) }, { mode: 'full', sample: 1, random: () => 0 }));
+    expect(viaToon).toEqual(viaJson);
+    expect(viaToon.map((i) => i.label ?? i.name)).toEqual(viaJson.map((i) => i.label ?? i.name));
+    expect(viaToon.length).toBeGreaterThan(3);
   });
 });
