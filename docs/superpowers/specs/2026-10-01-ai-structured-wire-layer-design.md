@@ -176,8 +176,8 @@ As shipped (amended 2026-10-01; `wire/replyFormat.mjs` is the source of truth):
 ```
 Reply in TOON, not JSON, using exactly the layout above:
 - Scalar fields are `key: value` lines.
-- The table header is `name[N<TAB>]{col1<TAB>col2…}:` where N is the number of rows you write and <TAB> is a tab character.
-- Then N rows, each indented two spaces, values separated by tab characters in header column order.
+- Copy the table header line above exactly, changing only N to the number of rows you write. Keep its tab before ] and its column list unchanged.
+- Then N rows, each on its own line indented two spaces, values separated by tab characters in header column order.
 - Every row has exactly one value per column, in header order, with a tab between each pair of values. An empty value keeps its tab, including a tab before an empty last value.
 - Leave a cell empty to omit that field.
 - Wrap a value in double quotes if it contains a tab, newline, colon or double quote (escape it as \"), starts with # or -, begins or ends with a space, or is text that looks like a number or like true, false or null. Never quote a real number.

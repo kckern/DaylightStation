@@ -121,6 +121,16 @@ template's shape:
   - A `"` anywhere but the start of a cell fails as `stray-quote`: the
     decoder would open a quoted string there and swallow the following tabs
     (`12" Sub`).
+- **Scalar lines are checked too.** Any non-blank line outside the table that
+  is indented or contains a tab fails as `scalar-format` (a tab would turn
+  `dateExplicit: false` into the truthy string `"f\talse"`; an indented line
+  vanishes from the decode). Each scalar must decode to its template example's
+  type, else `type-mismatch`.
+- **Flush-left rows are indented first.** Models often drop the 2-space row
+  indent, which the TOON decoder rejects. After the tab table header, each
+  flush-left line that contains a tab is treated as a row and indented; the
+  first line without a tab (a scalar) ends the table. Every width, count and
+  type check still runs on the result.
 - **Rows are never dropped.** The decoder silently skips some lines: a row
   whose first cell starts with `#` is a comment to it, and an unquoted row
   whose first cell holds a colon (`Soup: Miso`) reads as a key. So the raw
@@ -141,7 +151,7 @@ template's shape:
   check (two slips that cancel out) almost always lands text in a number
   column or a number in a text column, which this catches.
 - Order of checks: `json-reply`, `no-end-marker`, `multiple-tables`,
-  `wrong-delimiter`, `toon-parse`,
+  `wrong-delimiter`, `scalar-format`, `toon-parse`,
   `shape-mismatch`, `column-mismatch`, `row-count-mismatch`, then per raw row
   `stray-quote`, `extra-cells`, `short-row`, then `type-mismatch`.
 - Success is `{ ok: true, value }`; failure is `{ ok: false, reason }`.
@@ -214,7 +224,7 @@ JSON), `input-only` (eligible, `mode: input`). Debug events are not shipped to
 the log store; the warn fallback is.
 
 Decode-fallback `reason`s: `not-text`, `json-reply`, `no-end-marker`, `toon-parse`,
-`multiple-tables`, `wrong-delimiter`, `shape-mismatch`,
+`multiple-tables`, `wrong-delimiter`, `scalar-format`, `shape-mismatch`,
 `column-mismatch`, `row-count-mismatch`, `stray-quote`, `extra-cells`,
 `short-row`, `type-mismatch`. Mode `off` emits no skip reason (nothing is planned).
 
