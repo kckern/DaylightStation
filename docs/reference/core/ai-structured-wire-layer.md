@@ -86,7 +86,16 @@ template's shape:
 
 - Code fences are removed, and the ends are trimmed **without removing tabs**,
   because a trailing tab delimits an empty last cell.
-- A reply starting with `{` or `[` is a JSON reply (`json-reply`).
+- A reply starting with `{` or `[` is a JSON reply (`json-reply`). This is
+  checked first, so a JSON answer keeps the no-second-call path.
+- **End marker.** The last non-blank line must be exactly `END` (surrounding
+  whitespace and `\r` allowed), else `no-end-marker`; the line is then
+  stripped and the rest decoded. The skeleton the model copies ends with
+  `END`, and the primer requires it. Why: the layer cannot see the
+  provider's finish reason, and a reply cut by the token limit inside or just
+  before its last cell (`…150\t0\t` or `…\tPla`) still has the right width
+  and row count, so without the marker it would decode with a dropped or
+  shortened `dish`. Text after `END` also fails, because `END` must be last.
 - The reply may hold **one** array header line (`key[N…]…:`); a second one,
   for any key, fails as `multiple-tables`. That header must declare the tab
   delimiter, a tab right before `]` as in `items[3<TAB>]{…}:`. Any other form
@@ -107,8 +116,7 @@ template's shape:
     order**, else `column-mismatch`.
   - Every row, middle and last alike, must have exactly one cell per column,
     counted by splitting on unquoted tabs. Fewer fails as `short-row`
-    (including a row whose empty last value lost its tab, and a reply cut
-    mid-row); more fails as `extra-cells` (lax decode would silently drop the
+    (including a row whose empty last value lost its tab); more fails as `extra-cells` (lax decode would silently drop the
     surplus). An empty cell written with its tab is an **absent key**.
   - A `"` anywhere but the start of a cell fails as `stray-quote`: the
     decoder would open a quoted string there and swallow the following tabs
@@ -132,7 +140,8 @@ template's shape:
   Empty cells are absent keys and always pass. A shift that survives the width
   check (two slips that cancel out) almost always lands text in a number
   column or a number in a text column, which this catches.
-- Order of checks: `multiple-tables`, `wrong-delimiter`, `toon-parse`,
+- Order of checks: `json-reply`, `no-end-marker`, `multiple-tables`,
+  `wrong-delimiter`, `toon-parse`,
   `shape-mismatch`, `column-mismatch`, `row-count-mismatch`, then per raw row
   `stray-quote`, `extra-cells`, `short-row`, then `type-mismatch`.
 - Success is `{ ok: true, value }`; failure is `{ ok: false, reason }`.
@@ -204,7 +213,7 @@ template), `flat-object`, `ambiguous`, `not-sampled` (eligible, sampling said
 JSON), `input-only` (eligible, `mode: input`). Debug events are not shipped to
 the log store; the warn fallback is.
 
-Decode-fallback `reason`s: `not-text`, `json-reply`, `toon-parse`,
+Decode-fallback `reason`s: `not-text`, `json-reply`, `no-end-marker`, `toon-parse`,
 `multiple-tables`, `wrong-delimiter`, `shape-mismatch`,
 `column-mismatch`, `row-count-mismatch`, `stray-quote`, `extra-cells`,
 `short-row`, `type-mismatch`. Mode `off` emits no skip reason (nothing is planned).

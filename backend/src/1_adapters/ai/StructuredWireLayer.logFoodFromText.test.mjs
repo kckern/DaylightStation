@@ -17,12 +17,12 @@ const payload = {
     { name: 'Iced Tea', icon: 'default', noom_color: 'green', quantity: 350, unit: 'ml', grams: 350, calories: 5, protein: 0, carbs: 1, fat: 0, fiber: 0, sugar: 0, sodium: 10, cholesterol: 0 },
   ],
 };
-const toonReply = encode({ ...payload, items: payload.items.map((i) => Object.fromEntries(COLUMNS.map((c) => [c, i[c] ?? '']))) }, { delimiter: '\t' });
+const toonReply = `${encode({ ...payload, items: payload.items.map((i) => Object.fromEntries(COLUMNS.map((c) => [c, i[c] ?? '']))) }, { delimiter: '\t' })}\nEND`;
 // A model's full-width row with an empty dish ends in a bare tab (the
 // encoder writes `\t""`). Iced Tea, the dish-less row, goes first.
 const reordered = { ...payload, items: [payload.items[2], payload.items[0], payload.items[1]] };
 const fullWidthReply = encode({ ...reordered, items: reordered.items.map((i) => Object.fromEntries(COLUMNS.map((c) => [c, i[c] ?? '']))) }, { delimiter: '\t' })
-  .split('\n').map((line) => line.replace(/\t""$/, '\t')).join('\n');
+  .split('\n').map((line) => line.replace(/\t""$/, '\t')).join('\n') + '\nEND';
 // The slip models make: no trailing tab at all, so the row is one cell short.
 // Positional rows cannot be trusted short, so the layer re-asks on JSON.
 const shortRowReply = fullWidthReply.split('\n').map((line) => line.replace(/\t+$/, '')).join('\n');

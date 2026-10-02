@@ -12,8 +12,12 @@ export const TOON_REPLY_RULES = [
   '- Every row has exactly one value per column, in header order, with a tab between each pair of values. An empty value keeps its tab, including a tab before an empty last value.',
   '- Leave a cell empty to omit that field.',
   '- Wrap a value in double quotes if it contains a tab, newline, colon or double quote (escape it as \\"), starts with # or -, begins or ends with a space, or is text that looks like a number or like true, false or null. Never quote a real number.',
+  '- End the reply with a final line containing exactly END, with nothing after it.',
   '- No code fences and no text before or after.',
 ].join('\n');
+
+/** Last line of every TOON reply: a reply cut by the token limit lacks it. */
+export const END_MARKER = 'END';
 
 const cell = (v) => (v === null ? 'null' : String(v));
 
@@ -25,6 +29,7 @@ export function buildReplySkeleton(template, shape) {
     lines.push(`${key}[N\t]{${shape.columns.join('\t')}}:`);
     lines.push(`  ${shape.columns.map((column) => cell(value[0][column])).join('\t')}`);
   }
+  lines.push(END_MARKER);
   return lines.join('\n');
 }
 
@@ -50,6 +55,10 @@ export function stripFormatSentences(text) {
  * or shifted a cell returns `ok: false` so the caller can fall back to
  * today's behaviour (a re-ask on the JSON path).
  *
+ * The reply must end with an `END` line (`no-end-marker` otherwise): the
+ * layer cannot see the provider's finish reason, and a reply cut inside its
+ * last cell is otherwise indistinguishable from a finished one.
+ *
  * Rows are positional, so one slipped tab moves every later value into the
  * wrong column. The only safe rule is exact width: the table is the only one,
  * declares the tab delimiter, lists exactly the template's columns in order,
@@ -67,9 +76,18 @@ export function decodeReply(text, shape) {
 
   // Trim ends without removing tabs (which delimit empty final cells)
   const trimEnds = (s) => s.replace(/^\s+/, '').replace(/[^\S\t]+$/, '');
-  const body = trimEnds(trimEnds(text).replace(/^```[\w-]*\n?/, '').replace(/\n?```$/, ''));
+  const raw = trimEnds(trimEnds(text).replace(/^```[\w-]*\n?/, '').replace(/\n?```$/, ''));
 
-  if (/^[{[]/.test(body)) return { ok: false, reason: 'json-reply' };
+  if (/^[{[]/.test(raw)) return { ok: false, reason: 'json-reply' };
+
+  // A reply cut by the token limit can stop inside or right before the last
+  // cell and still have the right width and row count. Only a reply that
+  // reached its END line is known to be whole.
+  const lines = raw.split('\n');
+  let last = lines.length - 1;
+  while (last >= 0 && !lines[last].trim()) last -= 1;
+  if (last < 0 || lines[last].trim() !== END_MARKER) return { ok: false, reason: 'no-end-marker' };
+  const body = trimEnds(lines.slice(0, last).join('\n'));
 
   // The header the decoder reads decides the delimiter. A comma header
   // (`items[2]{a,b}:`) splits `Chicken Breast, Grilled` into two cells and

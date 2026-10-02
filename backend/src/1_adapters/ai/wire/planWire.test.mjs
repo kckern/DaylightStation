@@ -21,6 +21,7 @@ describe('planWire on the real food-logging prompts', () => {
     expect(content).not.toMatch(/'\{'/);
     expect(content).toMatch(/"dish" is OPTIONAL/);
     expect(content.endsWith('No code fences and no text before or after.')).toBe(true);
+    expect(content).toMatch(/\t[^\n]*\nEND\n/); // the skeleton's last line is END
     expect(system(original)).toMatch(/Respond in JSON format:/); // caller's array untouched
   });
 
@@ -28,6 +29,7 @@ describe('planWire on the real food-logging prompts', () => {
     const plan = planWire(await captureImagePrompt(), { reply: true });
     expect(plan.toonReply).toBe(true);
     expect(system(plan.messages)).toMatch(/items\[N\t\]\{name\t/);
+    expect(system(plan.messages)).toMatch(/\t[^\n]*\nEND\n/);
   });
 
   it('ProcessRevisionInput: current items re-encoded as input AND reply template rewritten', async () => {
@@ -36,6 +38,7 @@ describe('planWire on the real food-logging prompts', () => {
     const content = system(plan.messages);
     expect(content).toMatch(/\[2\t\]\{/);
     expect(content).not.toMatch(/"label": "Toast"/);
+    expect(content).toMatch(/items\[N\t\]\{[^\n]*\n  [^\n]*\nEND\n/); // skeleton ends with END
   });
 
   it('ReviseEntryService: flat template left alone, call untouched', async () => {
