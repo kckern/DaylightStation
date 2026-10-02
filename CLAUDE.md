@@ -236,6 +236,7 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 | Health app (log-first food logging, budget, medical) | `docs/reference/health/README.md` |
 | Nutrition auditor (AI cleanup agent: triggers, gates, permissions, journal, cost) | `docs/reference/health/nutrition-auditor.md` |
 | AI spend attribution (ledger app/feature/origin, scoped gateways, openai-usage CLI) | `docs/reference/core/configuration.md` (AI usage ledger) |
+| AI structured wire layer (TOON inside the gateway: classification, fallback, config) | `docs/reference/core/ai-structured-wire-layer.md` |
 | OMR bubble-sheet reader (Chatsworth OMR-1100) | `docs/reference/omr/README.md` |
 | Journalist domain (journaling bot) | `docs/reference/journalist/journalist-domain.md` |
 | School / Portal homeschool | `docs/reference/school/README.md` |

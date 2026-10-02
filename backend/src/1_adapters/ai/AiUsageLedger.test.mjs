@@ -132,7 +132,7 @@ describe('callerFrame', () => {
       '    at Object.record (/usr/src/app/backend/src/1_adapters/ai/AiUsageLedger.mjs:120:20)',
       '    at OpenAIAdapter.#recordUsage (/usr/src/app/backend/src/1_adapters/ai/OpenAIAdapter.mjs:360:24)',
       '    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)',
-      '    at async OpenAIAdapter.chatWithJson (file:///usr/src/app/backend/src/1_adapters/ai/OpenAIAdapter.mjs:420:5)',
+      '    at async OpenAIAdapter.chatStructured (file:///usr/src/app/backend/src/1_adapters/ai/OpenAIAdapter.mjs:420:5)',
       '    at async TransactionCategorizationService.categorize (file:///usr/src/app/backend/src/3_applications/finance/TransactionCategorizationService.mjs:212:22)',
       '    at async FinanceHarvestService.harvest (/usr/src/app/backend/src/3_applications/finance/FinanceHarvestService.mjs:90:5)',
     ].join('\n');

@@ -277,6 +277,16 @@ scheduler, `createBotWebhookHandler`, the nutrition cleanup and artwork timers,
 and the AI-calling CLIs. `listCosts` filters by any of `agentId` / `app` /
 `feature`.
 
+Rows may also carry **`wire`** (`toon` | `json` | `passthrough`), set per call by
+the structured wire layer through the same `usageTags` path (see
+[ai-structured-wire-layer.md](ai-structured-wire-layer.md)); rows written
+without the layer, or with it in `mode: off`, have no `wire` key. Compare
+`wire` values only within one `app`/`feature` — different callers have
+different prompts — e.g. `ledger --by app,feature,wire`. The layer's own
+setting is `ai[].wire` in `integrations.yml` (`mode: off | input | full`,
+`sample: 0..1`; default off, restart to change); the AI entry otherwise
+takes `provider` and the `pricing:` overrides above.
+
 **Typed decisions (`decision` capability).** TypeSafe's Jev model sits behind
 `IDecisionGateway` (`3_applications/common/ports/`), not `IAIGateway`: callers
 send one `state` plus named `yesNo` / `choice` / `score` questions and get

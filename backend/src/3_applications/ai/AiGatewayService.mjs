@@ -44,10 +44,10 @@ export class AiGatewayService {
     return { provider: provider ?? this.#defaultProvider, content: await p.chat(messages, options) };
   }
 
-  async chatJson(messages, { provider, ...options } = {}) {
+  async chatStructured(messages, { provider, ...options } = {}) {
     const p = this.#pick(provider);
     if (!p) return null;
-    return { provider: provider ?? this.#defaultProvider, json: await p.chatWithJson(messages, options) };
+    return { provider: provider ?? this.#defaultProvider, json: await p.chatStructured(messages, options) };
   }
 
   async chatVision(messages, imageUrl, { provider, ...options } = {}) {

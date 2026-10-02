@@ -11,7 +11,7 @@ function makeCache() {
 
 const entry = (term, gloss = 'Hello', kind = 'phrase') => ({ id: 'w', term, gloss, kind });
 const make = (reply) => {
-  const aiGateway = { chatWithJson: vi.fn(reply) };
+  const aiGateway = { chatStructured: vi.fn(reply) };
   return { aiGateway, judge: new CardLadderTypedJudge({ aiGateway, cache: makeCache(), model: 'small', logger: { info() {}, warn() {} } }) };
 };
 
@@ -21,14 +21,14 @@ describe('CardLadderTypedJudge', () => {
     expect(await judge.judge({ pkg: 'p', entry: entry('가위'), typed: '가위', otherWords: [] })).toMatchObject({ judge: 'exact', pass: true });
     expect(await judge.judge({ pkg: 'p', entry: entry('가위'), typed: 'hi', otherWords: [] })).toMatchObject({ score: 1, pass: false });
     expect(await judge.judge({ pkg: 'p', entry: entry('가위'), typed: '가이', otherWords: [] })).toMatchObject({ judge: 'distance', score: 6, pass: true });
-    expect(aiGateway.chatWithJson).not.toHaveBeenCalled();
+    expect(aiGateway.chatStructured).not.toHaveBeenCalled();
   });
   it('model raises at most one band from an eligible floor, attempt passed as data', async () => {
     const { aiGateway, judge } = make(async () => ({ score: 9, reason: 'clearly the phrase' }));
     const r = await judge.judge({ pkg: 'p', entry: entry('안녕히계세요'), typed: '안녕히개새요', otherWords: [] });
     expect(r.judge).toBe('model');
     expect(r.score).toBeLessThanOrEqual(8);
-    const [messages] = aiGateway.chatWithJson.mock.calls[0];
+    const [messages] = aiGateway.chatStructured.mock.calls[0];
     expect(messages[0].content).not.toContain('안녕히개새요');
     expect(JSON.parse(messages[1].content).attempt).toBe('안녕히개새요');
   });
@@ -40,20 +40,20 @@ describe('CardLadderTypedJudge', () => {
     const { aiGateway, judge } = make(async () => ({}));
     expect(await judge.judge({ pkg: 'p', entry: entry('안녕히계세요'), typed: '안녕히개새요', otherWords: [] })).toMatchObject({ judge: 'fallback' });
     await judge.judge({ pkg: 'p', entry: entry('안녕히계세요'), typed: '안녕히개새요', otherWords: [] });
-    expect(aiGateway.chatWithJson).toHaveBeenCalledTimes(2);
+    expect(aiGateway.chatStructured).toHaveBeenCalledTimes(2);
   });
   it('a malformed reply (out-of-range score) falls back and is not cached', async () => {
     const { aiGateway, judge } = make(async () => ({ score: 42 }));
     expect(await judge.judge({ pkg: 'p', entry: entry('안녕히계세요'), typed: '안녕히개새요', otherWords: [] })).toMatchObject({ judge: 'fallback' });
     await judge.judge({ pkg: 'p', entry: entry('안녕히계세요'), typed: '안녕히개새요', otherWords: [] });
-    expect(aiGateway.chatWithJson).toHaveBeenCalledTimes(2);
+    expect(aiGateway.chatStructured).toHaveBeenCalledTimes(2);
   });
   it('caches by package, word and normalised answer', async () => {
     const { aiGateway, judge } = make(async () => ({ score: 8, reason: 'ok' }));
     await judge.judge({ pkg: 'p', entry: entry('안녕히계세요'), typed: '안녕히개새요', otherWords: [] });
     const again = await judge.judge({ pkg: 'p', entry: entry('안녕히계세요'), typed: '안녕히개새요 ', otherWords: [] });
     expect(again.judge).toBe('cache');
-    expect(aiGateway.chatWithJson).toHaveBeenCalledTimes(1);
+    expect(aiGateway.chatStructured).toHaveBeenCalledTimes(1);
   });
   it('a grown-up\'s re-grade in the cache wins over every band, even without a model', async () => {
     const cache = makeCache();
@@ -73,7 +73,7 @@ describe('CardLadderTypedJudge — the target script seam', () => {
     expect(await judge.judge({ ...generic, typed: 'photosynthesis' })).toMatchObject({ judge: 'exact', pass: true });
     const near = await judge.judge({ ...generic, typed: 'photosynthesys' });
     expect(near.judge).toBe('model');
-    expect(aiGateway.chatWithJson.mock.calls[0][0][0].content).toContain("typed English answer");
+    expect(aiGateway.chatStructured.mock.calls[0][0][0].content).toContain("typed English answer");
   });
   it('a Hangul target keeps the no-Hangul floor when targetScript says so', async () => {
     const { judge } = make(async () => ({ score: 10 }));
@@ -93,7 +93,7 @@ describe('CardLadderTypedJudge — per-script grading', () => {
     const typo = await judge.judge({ ...ephemeral, typed: 'Ephemeril', otherWords: [] });
     expect(typo).toMatchObject({ pass: true });
     expect(typo.score).toBeGreaterThanOrEqual(8);
-    const [messages] = aiGateway.chatWithJson.mock.calls[0];
+    const [messages] = aiGateway.chatStructured.mock.calls[0];
     expect(messages[0].content).not.toMatch(/Korean|Hangul|jamo/);
     expect(messages[0].content).toContain('English');
     expect(messages[0].content).toContain('latin');
@@ -105,7 +105,7 @@ describe('CardLadderTypedJudge — per-script grading', () => {
     expect(await judge.judge({ ...cafe, typed: 'cafe' })).toMatchObject({ score: 8, judge: 'accent', pass: true });
     const decl = { pkg: 'hist', entry: { id: 'decl', term: 'Declaration of Independence (1776)', gloss: 'a founding document', kind: 'phrase' }, targetScript: 'latin', targetLanguage: 'English', otherWords: [] };
     expect(await judge.judge({ ...decl, typed: 'Declaration of Independence (1767)' })).toMatchObject({ score: 2, judge: 'number', pass: false });
-    expect(aiGateway.chatWithJson).not.toHaveBeenCalled();
+    expect(aiGateway.chatStructured).not.toHaveBeenCalled();
   });
 });
 
@@ -125,14 +125,14 @@ describe('CardLadderTypedJudge — cache and re-grade keys use the script normal
     const ask = (typed) => judge.judge({ pkg: 'p', entry: entry('photosynthesis', 'how plants make food', 'word'), typed, otherWords: [], targetScript: 'latin', targetLanguage: 'English' });
     await ask('Photosynthesys');
     expect(await ask('photosynthesys')).toMatchObject({ judge: 'cache' });
-    expect(aiGateway.chatWithJson).toHaveBeenCalledTimes(1);
+    expect(aiGateway.chatStructured).toHaveBeenCalledTimes(1);
   });
   describe('shadow judge (decision model)', () => {
     const LONG = entry('안녕히계세요');
     const TYPED = '안녕히개새요';
     const shadowJudge = ({ llm = async () => ({ score: 9 }), jev }) => {
       const logger = { info: vi.fn(), warn: vi.fn() };
-      const aiGateway = { chatWithJson: vi.fn(llm) };
+      const aiGateway = { chatStructured: vi.fn(llm) };
       const decisionGateway = { isConfigured: () => true, evaluate: vi.fn(jev) };
       return { logger, aiGateway, decisionGateway,
         judge: new CardLadderTypedJudge({ aiGateway, decisionGateway, cache: makeCache(), model: 'small', logger }) };
@@ -146,7 +146,7 @@ describe('CardLadderTypedJudge — cache and re-grade keys use the script normal
       const plain = await make(async () => ({ score: 9 })).judge.judge({ pkg: 'p', entry: LONG, typed: TYPED, otherWords: [] });
       expect(verdict).toEqual(plain);
       const [state, questions] = decisionGateway.evaluate.mock.calls[0];
-      expect(state).toEqual(JSON.parse(aiGateway.chatWithJson.mock.calls[0][0][1].content));
+      expect(state).toEqual(JSON.parse(aiGateway.chatStructured.mock.calls[0][0][1].content));
       expect(questions.match.type).toBe('score');
       expect(questions.match.levels).toHaveLength(5);
       const row = logger.info.mock.calls.find(([event]) => event === 'school.card-ladder.judge-shadow')[1];

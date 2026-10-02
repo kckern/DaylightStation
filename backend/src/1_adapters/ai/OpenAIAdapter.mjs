@@ -23,7 +23,7 @@ const COMPLETION_TOKEN_PREFIXES = ['gpt-5', 'o1', 'o3', 'o4'];
 
 /** Methods a scoped view tags, and the index of each one's options argument. */
 const SCOPED_METHODS = Object.freeze({
-  chat: 1, chatWithImage: 2, chatWithJson: 1, transcribe: 1, embed: 1, callCompletions: 1, callApi: 2,
+  chat: 1, chatWithImage: 2, chatStructured: 1, transcribe: 1, embed: 1, callCompletions: 1, callApi: 2,
 });
 
 export class OpenAIAdapter extends IAIGateway {
@@ -547,7 +547,7 @@ export class OpenAIAdapter extends IAIGateway {
   }
 
   /**
-   * Get structured JSON response with validation and repair
+   * Get a structured response (JSON on this adapter's wire) with validation and repair
    * 
    * Uses jsonMode for OpenAI, validates and repairs malformed JSON,
    * retries with explicit instructions on parse failures.
@@ -558,7 +558,7 @@ export class OpenAIAdapter extends IAIGateway {
    * @returns {Promise<Object>} - Parsed JSON response
    * @throws {InfrastructureError} If JSON parsing fails after all attempts
    */
-  async chatWithJson(messages, options = {}) {
+  async chatStructured(messages, options = {}) {
     const maxParseAttempts = options.maxParseAttempts || 2;
 
     for (let attempt = 1; attempt <= maxParseAttempts; attempt++) {
