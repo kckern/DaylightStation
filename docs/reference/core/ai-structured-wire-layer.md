@@ -98,9 +98,14 @@ Per entry point:
 
 ## Provider JSON mode
 
-The TOON path never sends `jsonMode` (a TOON reply is not JSON, so provider
-JSON mode would reject it); the layer strips it from a copy of the caller's
-options, never from the caller's object. Every other path, including the
+The TOON path never sends `jsonMode`. Provider JSON mode does not validate a
+reply; it forces the model to emit JSON (`response_format: {type: 'json_object'}`
+in `OpenAIAdapter`). Sent on the TOON path it would make the model answer in
+JSON, which decodes as `json-reply` and falls back, defeating the TOON reply.
+OpenAI can also error when `json_object` is set but the messages no longer
+mention "JSON", as happens once the cue line is rewritten to TOON. The layer
+therefore strips `jsonMode` from a copy of the caller's options, never from the
+caller's object. Every other path, including the
 `chatStructured` re-ask, delegates to the adapter with options intact so the
 adapter's JSON mode applies as before.
 
