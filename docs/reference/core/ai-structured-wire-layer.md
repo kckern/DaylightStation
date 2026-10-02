@@ -268,7 +268,13 @@ a re-ask). Name overlap: each run records `names`, its lowercased item labels
 with group headers excluded; a TOON run's overlap is the share of its names
 present in the union of that text's JSON-run names (containment rather than
 Jaccard, so JSON's own run-to-run variety does not count against TOON), and a
-text passes when every TOON run reaches 0.5. Token savings are read from the ledger (`wire` plus
+text passes when every TOON run reaches 0.5. The CLI also runs a **JSON
+control**: a second set of JSON runs scored against the first exactly as TOON
+is. With a control present, each TOON match rate (item count, kcal, names)
+must be no more than 10 points below the control's rate instead of the
+absolute 90%, because three runs make a narrow spread and JSON misses its own
+spread too; the output's `rates` block shows both. The fallback limit does not
+change. Token savings are read from the ledger (`wire` plus
 completion tokens), not from the CLI's reply-size column.
 
 ## Adding a new structured caller
