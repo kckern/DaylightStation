@@ -17,7 +17,6 @@
  * @property {number} [maxTokens] - Maximum tokens in response
  * @property {number} [temperature] - Sampling temperature (0-2)
  * @property {'none'|'minimal'|'low'|'medium'|'high'} [reasoningEffort] - Model reasoning budget
- * @property {boolean} [jsonMode=false] - Request JSON response format
  * @property {number} [timeout] - Request timeout in ms
  * @property {{app?: string, feature?: string}} [usageTags] - Usage-ledger
  *   attribution. Normally set by a scoped gateway view, not by callers.
@@ -57,13 +56,14 @@ export class IAIGateway {
   }
 
   /**
-   * Get structured JSON response
+   * Get a structured response as a plain JS object. The wire format used to
+   * obtain it (JSON, TOON, provider-native modes) is the adapter's concern.
    * @param {ChatMessage[]} messages - Conversation messages
    * @param {ChatOptions} [options] - Optional configuration
-   * @returns {Promise<Object>} - Parsed JSON response
+   * @returns {Promise<Object>} - Parsed structured response
    */
-  async chatWithJson(messages, options = {}) {
-    throw new Error('IAIGateway.chatWithJson must be implemented');
+  async chatStructured(messages, options = {}) {
+    throw new Error('IAIGateway.chatStructured must be implemented');
   }
 
   /**
@@ -118,7 +118,7 @@ export function isAIGateway(obj) {
   const requiredMethods = [
     'chat',
     'chatWithImage',
-    'chatWithJson',
+    'chatStructured',
     'transcribe',
     'embed',
   ];

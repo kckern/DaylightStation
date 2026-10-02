@@ -4,7 +4,7 @@ import { AiGatewayService } from './AiGatewayService.mjs';
 
 const fake = (name) => ({
   chat: vi.fn(async () => `${name} said hi`),
-  chatWithJson: vi.fn(async () => ({ from: name })),
+  chatStructured: vi.fn(async () => ({ from: name })),
   chatWithImage: vi.fn(async () => `${name} saw it`),
   transcribe: vi.fn(async () => 'words'),
   embed: vi.fn(async () => [0.1]),
@@ -27,7 +27,7 @@ describe('AiGatewayService', () => {
     expect(await svc.chat([{ role: 'user', content: 'x' }], { provider: 'anthropic', maxTokens: 5 }))
       .toEqual({ provider: 'anthropic', content: 'anthropic said hi' });
     expect(anthropic.chat).toHaveBeenCalledWith([{ role: 'user', content: 'x' }], { maxTokens: 5 });
-    expect(await svc.chatJson([{ role: 'user', content: 'x' }])).toEqual({ provider: 'openai', json: { from: 'openai' } });
+    expect(await svc.chatStructured([{ role: 'user', content: 'x' }])).toEqual({ provider: 'openai', json: { from: 'openai' } });
     expect(await svc.chat([], { provider: 'nope' })).toBeNull();
   });
 

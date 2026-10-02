@@ -30,7 +30,7 @@ describe('OpenAIAdapter.scoped', () => {
     expect(rows(ledger)[0]).toMatchObject({ app: null, feature: null, origin: null });
   });
 
-  it('tags chat, chatWithJson, chatWithImage and embed through a view', async () => {
+  it('tags chat, chatStructured, chatWithImage and embed through a view', async () => {
     const post = vi.fn(async (url) => (url.endsWith('/embeddings')
       ? { status: 200, headers: {}, data: { model: 'text-embedding-3-small', data: [{ embedding: [1, 2] }], usage: { total_tokens: 3 } } }
       : chatReply('{"ok":true}')));
@@ -38,7 +38,7 @@ describe('OpenAIAdapter.scoped', () => {
     const health = adapter.scoped({ app: 'health' }).scoped({ feature: 'photo-log' });
 
     await health.chat([{ role: 'user', content: 'x' }]);
-    await health.chatWithJson([{ role: 'user', content: 'x' }]);
+    await health.chatStructured([{ role: 'user', content: 'x' }]);
     await health.chatWithImage([{ role: 'user', content: 'x' }], 'data:image/png;base64,AA==');
     await expect(health.embed('x')).resolves.toEqual([1, 2]);
 
@@ -142,7 +142,7 @@ describe('OpenAIAdapter.scoped', () => {
 });
 
 describe('AnthropicAdapter.scoped', () => {
-  it('tags chat and chatWithJson rows and passes the port check', async () => {
+  it('tags chat and chatStructured rows and passes the port check', async () => {
     const post = vi.fn(async () => ({
       status: 200, headers: {},
       data: { model: 'claude-sonnet-4', content: [{ type: 'text', text: '{"a":1}' }], usage: { input_tokens: 5, output_tokens: 2 } },
@@ -154,7 +154,7 @@ describe('AnthropicAdapter.scoped', () => {
     expect(view).toBeInstanceOf(AnthropicAdapter);
 
     await view.chat([{ role: 'user', content: 'x' }]);
-    await view.chatWithJson([{ role: 'user', content: 'x' }]);
+    await view.chatStructured([{ role: 'user', content: 'x' }]);
     await adapter.chat([{ role: 'user', content: 'x' }]);
 
     expect(rows(ledger).map(r => [r.app, r.feature])).toEqual([

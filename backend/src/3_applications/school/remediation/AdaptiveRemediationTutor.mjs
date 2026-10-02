@@ -165,13 +165,13 @@ export class AdaptiveRemediationTutor {
   }
 
   async #generateTurn(session, concept, repair = {}) {
-    if (!this.#aiGateway || typeof this.#aiGateway.chatWithJson !== 'function'
+    if (!this.#aiGateway || typeof this.#aiGateway.chatStructured !== 'function'
         || this.#aiGateway.isConfigured?.() === false) {
       throw aiError('Adaptive tutor is not configured');
     }
     const messages = buildTutorPrompt(session, concept, repair);
     try {
-      return await this.#aiGateway.chatWithJson(messages, {
+      return await this.#aiGateway.chatStructured(messages, {
         maxTokens: 600, temperature: 0.2, timeout: 45_000,
       });
     } catch (error) {

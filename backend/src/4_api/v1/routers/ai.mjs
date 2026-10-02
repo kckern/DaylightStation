@@ -55,7 +55,7 @@ export function createAIRouter(deps) {
       return res.status(400).json({ error: 'Messages array is required' });
     }
 
-    const result = await aiService.chatJson(messages, { provider, model, maxTokens, temperature });
+    const result = await aiService.chatStructured(messages, { provider, model, maxTokens, temperature });
     if (!result) {
       return res.status(503).json({ error: 'No AI provider configured' });
     }

@@ -15,7 +15,7 @@ const ANTHROPIC_API_BASE = 'https://api.anthropic.com/v1';
 const ANTHROPIC_VERSION = '2023-06-01';
 
 /** Methods a scoped view tags, and the index of each one's options argument. */
-const SCOPED_METHODS = Object.freeze({ chat: 1, chatWithImage: 2, chatWithJson: 1, transcribe: 1, embed: 1, callApi: 2 });
+const SCOPED_METHODS = Object.freeze({ chat: 1, chatWithImage: 2, chatStructured: 1, transcribe: 1, embed: 1, callApi: 2 });
 
 export class AnthropicAdapter extends IAIGateway {
   /**
@@ -393,9 +393,9 @@ export class AnthropicAdapter extends IAIGateway {
   }
 
   /**
-   * Get structured JSON response with validation and repair
+   * Get a structured response (JSON on this adapter's wire) with validation and repair
    */
-  async chatWithJson(messages, options = {}) {
+  async chatStructured(messages, options = {}) {
     const maxParseAttempts = options.maxParseAttempts || 2;
 
     // Anthropic doesn't have a native JSON mode, so we add instruction

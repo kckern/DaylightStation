@@ -60,7 +60,7 @@ describe('AI route characterization', () => {
 
   it('preserves JSON, vision, transcription, embedding, and metrics contracts', async () => {
     const openai = {
-      chatWithJson: vi.fn(async () => ({ value: 1 })),
+      chatStructured: vi.fn(async () => ({ value: 1 })),
       chatWithImage: vi.fn(async () => 'seen'),
       transcribe: vi.fn(async () => 'words'),
       embed: vi.fn(async () => [0.1, 0.2]),

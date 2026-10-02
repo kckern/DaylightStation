@@ -14,7 +14,7 @@ describe('ProcessGratitudeInput', () => {
       updateMessage: vi.fn().mockResolvedValue(undefined)
     };
     mockAiGateway = {
-      chatWithJson: vi.fn().mockResolvedValue({
+      chatStructured: vi.fn().mockResolvedValue({
         items: [{ text: 'Good health' }, { text: 'Family' }],
         category: 'gratitude'
       })
@@ -45,7 +45,7 @@ describe('ProcessGratitudeInput', () => {
       text: 'I am grateful for good health and family'
     });
 
-    expect(mockAiGateway.chatWithJson).toHaveBeenCalled();
+    expect(mockAiGateway.chatStructured).toHaveBeenCalled();
     expect(mockMessagingGateway.sendMessage).toHaveBeenCalled();
     expect(mockStateStore.set).toHaveBeenCalled();
   });

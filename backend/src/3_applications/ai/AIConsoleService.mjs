@@ -31,7 +31,7 @@ export class AIConsoleService {
   }
 
   async chat(messages, options = {}) { return this.#invoke('chat', messages, options); }
-  async chatJson(messages, options = {}) { return this.#invoke('chatWithJson', messages, options); }
+  async chatStructured(messages, options = {}) { return this.#invoke('chatStructured', messages, options); }
 
   async #invoke(method, messages, { provider, ...options }) {
     const selected = this.#select(provider);

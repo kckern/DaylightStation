@@ -165,7 +165,7 @@ describe('OpenAIAdapter', () => {
     });
   });
 
-  describe('chatWithJson', () => {
+  describe('chatStructured', () => {
     test('parses JSON response', async () => {
       mockHttpClient.fetch.mockResolvedValue({
         ok: true,
@@ -176,7 +176,7 @@ describe('OpenAIAdapter', () => {
       });
 
       const messages = [{ role: 'user', content: 'Return JSON' }];
-      const response = await adapter.chatWithJson(messages);
+      const response = await adapter.chatStructured(messages);
 
       expect(response).toEqual({ name: 'test', value: 123 });
     });
@@ -199,7 +199,7 @@ describe('OpenAIAdapter', () => {
         });
 
       const messages = [{ role: 'user', content: 'Return JSON' }];
-      const response = await adapter.chatWithJson(messages);
+      const response = await adapter.chatStructured(messages);
 
       expect(response).toEqual({ valid: true });
       expect(mockHttpClient.fetch).toHaveBeenCalledTimes(2);
