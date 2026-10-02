@@ -551,3 +551,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-30 | fix/book-scan-shelf-scope | 0b537afc0 | Book scanned on a child's open shelf is claimed for that child, merged in bb64f4107/0b537afc0 |
 | 2026-09-30 | fix/card-ladder-summary-ceremony | 08cfb0c91 | Card ladder day-done celebration card + one big Done, merged in main |
 | 2026-10-02 | fix/chess-homegrown-offthread | 3c442e933 | Homegrown chess opponent on worker thread (merged) |
+| 2026-10-02 | fix/headline-og-image-light | 32ac4ffe0 | Headline og:image via meta tags, not readable extraction (merged) |
