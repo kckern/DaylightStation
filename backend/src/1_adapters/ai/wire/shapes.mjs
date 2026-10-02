@@ -43,5 +43,6 @@ export function templateShape(value) {
     columns,
     scalarKeys: entries.filter(([key]) => key !== arrayKey).map(([key]) => key),
     stringColumns: columns.filter((column) => typeof rows[0][column] === 'string'),
+    numberColumns: columns.filter((column) => typeof rows[0][column] === 'number'),
   };
 }
