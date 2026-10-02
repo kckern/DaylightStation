@@ -62,7 +62,7 @@ Pure functions, no I/O, unit-testable in isolation:
 - `classifyBlock(text, block)` — `template` | `data` | `ignore` (§2).
 - `toToonTemplate(templateObj)` — skeleton + example row from template values.
 - `encodeData(value)` — TOON table for eligible data, else `null`.
-- `decodeReply(text)` — `{ ok, value, droppedRows }` or `{ ok: false, reason }`.
+- `decodeReply(text, shape)` — `{ ok: true, value }` or `{ ok: false, reason }` (amended 2026-10-01: no `droppedRows`; rows are never dropped).
 - `TOON_REPLY_RULES` — the fixed format primer (§3).
 
 ### Wiring — composition only
@@ -91,7 +91,7 @@ Per message `content` (string only; non-string content passes through):
 
 | Content | Classified as | Action |
 |---|---|---|
-| JSON block preceded (within the same paragraph) by a reply cue — `respond … JSON`, `return JSON`, `respond exactly as` (case-insensitive) | **template** | If it contains an array of objects (tabular-eligible) → rewrite to TOON reply skeleton. Otherwise (single flat object, e.g. `ReviseEntryService`) → leave. |
+| JSON block preceded (same line, or the line directly above) by an imperative reply cue — a verb (`respond`/`reply`/`return`/`answer`/`output`) starting the line, a sentence or a bullet, then `in`/`with`/`as` … `JSON` or `JSON` directly, or `respond`/`reply exactly as` (case-insensitive; amended 2026-10-01: noun uses like "the previous reply as JSON:" are not cues) | **template** | If it contains an array of objects (tabular-eligible) → rewrite to TOON reply skeleton. Otherwise (single flat object, e.g. `ReviseEntryService`) → leave. |
 | Any other JSON block | **data** | If an array of ≥ 2 objects with a uniform primitive-valued key set (TOON tabular-eligible) → replace in place with TOON. Otherwise leave (single objects, inline values like `Current food: {…}`). |
 | Anything ambiguous | — | Leave the whole call untouched (`ai.wire.skip`). |
 
@@ -116,18 +116,30 @@ round-tripped by the codec.
 
 ### Reply decode (for a call whose template was rewritten)
 
-1. Reply parses as TOON (`@toon-format/toon`, strict) → value.
-   - Truncation: if rows < declared `[N]`, drop the partial last row, keep the
-     complete ones, log `droppedRows`.
+(Amended 2026-10-01 after the final review: rows are never dropped.)
+
+1. Reply parses as TOON (`@toon-format/toon`, strict, else lax) → value.
+   - Rows other than the last are **kept** even when short of columns
+     (models omit the trailing tab of an empty last cell); missing cells are
+     absent keys, the same as empty cells.
+   - A short **last** row in a lax decode is a decode failure (`truncated`).
+   - The raw table row lines (indented lines after the `name[N…]{…}:` header)
+     must equal both the declared `[N]` and the decoded row count, else the
+     decode fails (`row-count-mismatch`). This catches lines the decoder
+     silently eats: a `#`-leading row (a comment to it) and an unquoted row
+     whose first cell holds a colon (read as a key).
+   - Extra cells (`extra-cells`) and a mid-cell `"` (`stray-quote`) fail too.
    - `chat()` / `chatWithImage()` return `JSON.stringify(value)` — callers'
      existing regex + `JSON.parse` receive the same shape they get today.
    - `chatStructured()` returns `value`.
 2. Reply is JSON, or TOON decode fails → warn (`ai.wire.decode.fallback`) and
-   fall back. `chat()` / `chatWithImage()` return the raw reply unchanged, so
-   callers' existing repair logic still applies. `chatStructured()` must return an
-   object: a JSON reply is parsed and returned; anything else is re-asked once
-   through `inner.chatStructured(originalMessages)`. The worst case is today's
-   behaviour (plus one call for `chatStructured`).
+   fall back. A JSON reply is returned raw by `chat()` / `chatWithImage()` and
+   parsed by `chatStructured()`. Any other failure is re-asked **once** with the
+   original messages, tagged `wire: json`: `chat()` / `chatWithImage()` through
+   the same inner method with the caller's original options (`jsonMode` as the
+   caller passed it, the image kept), `chatStructured()` through
+   `inner.chatStructured(originalMessages)`. The worst case is today's
+   behaviour plus one call.
 
 ## 3. Provider JSON mode and the TOON primer
 
@@ -144,17 +156,24 @@ round-tripped by the codec.
   treated as an explicit structured request for the format decision. After the
   rename it becomes internal-only (§4).
 
-### `TOON_REPLY_RULES` (fixed, provider-agnostic, ~80 tokens)
+### `TOON_REPLY_RULES` (fixed, provider-agnostic)
+
+As shipped (amended 2026-10-01; `wire/replyFormat.mjs` is the source of truth):
 
 ```
-Reply in TOON, not JSON:
-- Scalar fields as `key: value` lines.
-- A table: `items[N\t]{f1\tf2…}:` then N rows, each row 2-space-indented, values tab-separated in column order.
-- N must equal the row count.
+Reply in TOON, not JSON, using exactly the layout above:
+- Scalar fields are `key: value` lines.
+- The table header is `name[N<TAB>]{col1<TAB>col2…}:` where N is the number of rows you write and <TAB> is a tab character.
+- Then N rows, each indented two spaces, values separated by tab characters in header column order.
+- Every row has a tab between every pair of columns, including before trailing empty cells.
 - Leave a cell empty to omit that field.
-- Quote a value only if it contains a tab or newline, or has leading/trailing space.
-- No code fences, no prose before or after.
+- Wrap a value in double quotes if it contains a tab, newline, colon or double quote (escape it as \"), starts with # or -, or begins or ends with a space.
+- No code fences and no text before or after.
 ```
+
+The quoting line matches what the library's encoder quotes (`isSafeUnquoted`):
+an unquoted `#` at a row start is a comment to the decoder, and an unquoted
+colon before the first tab makes the row read as a key.
 
 Identical bytes every call, placed after the stable prompt prefix, so provider
 prompt caching of that prefix is unaffected. Input-side TOON needs no primer.
@@ -181,8 +200,8 @@ Backend structured logger, `module: ai-wire`:
 | Event | Level | Data |
 |---|---|---|
 | `ai.wire.rewrite` | debug | `kind: template\|input`, `columns`, `rows`, `app`, `feature` |
-| `ai.wire.skip` | debug | `reason: no-cue\|flat-object\|ambiguous\|mode-off\|not-sampled` |
-| `ai.wire.decode.ok` | debug | `rows`, `droppedRows` |
+| `ai.wire.skip` | debug | `reason: no-messages\|no-cue\|flat-object\|ambiguous\|not-sampled\|input-only` (none in mode off: nothing is planned) |
+| `ai.wire.decode.ok` | debug | `rows` |
 | `ai.wire.decode.fallback` | warn | `reason`, `sample` (first 200 chars), `app`, `feature` |
 
 Usage ledger: the layer adds `wire: toon | json | passthrough` to the call's

@@ -13,8 +13,10 @@ the expensive, slow part of a call, and a table written once as a header plus
 rows is much shorter than the same table as repeated JSON objects.
 
 Every failure path falls back to what the call would have done without the
-layer. In `mode: off` (the default) the call is byte-identical: nothing is
-rewritten, logged or tagged.
+layer, at worst at the cost of one re-ask. In `mode: off` (the default) the
+call is byte-identical: nothing is rewritten or tagged, and no per-call event
+is logged. The resolved config (`ai.wire.config`) is still logged once at boot
+on the root logger; per-call events go to `module: ai-wire`.
 
 ## Where it sits
 
@@ -42,11 +44,19 @@ and `isConfigured` delegate. The layer is a Proxy: any member not on the port
 and returns the same array when nothing changes. It finds JSON blocks in each
 string `content` (`wire/jsonBlocks.mjs`), then classifies each.
 
-A block is a **reply template** when a cue matches the regex
+A block is a **reply template** when its cue is an **imperative** about the
+reply format (`REPLY_CUE` in `planWire.mjs`, case-insensitive):
 
-```
-\b(?:respond|reply|return|answer|output)\b.*\b(?:json|exactly as)\b   (case-insensitive)
-```
+- a verb (`respond`, `reply`, `return`, `answer`, `output`) that starts the
+  line, follows sentence punctuation (`.` `:` `!` `?`) or follows a bullet or
+  number (`-`, `*`, `2.`);
+- then, within the same sentence, `in` / `with` / `as` followed (optionally
+  after more words) by `JSON` — "Respond in JSON format:", "Return the list as
+  JSON:" — or `JSON` directly ("Return JSON:");
+- or `respond exactly as` / `reply exactly as`.
+
+Noun uses are not cues: "Here is the previous reply as JSON data:" and "The
+answer in JSON from yesterday:" leave the block below them as input data.
 
 The cue must be on the **same line** as the block (the text before it) or on the
 **line directly above it**. A blank line in between means no cue; a cue from an
@@ -77,20 +87,39 @@ template's shape:
 - Code fences are removed, and the ends are trimmed **without removing tabs**,
   because a trailing tab delimits an empty last cell.
 - A reply starting with `{` or `[` is a JSON reply (`json-reply`).
-- Parse is strict first; on failure it re-parses non-strict and treats the
-  reply as truncated. Keys outside the template, or a missing array, are a
+- Parse is strict first; on failure it re-parses non-strict (lax). Keys
+  outside the template, or a missing array or table header, are a
   `shape-mismatch`.
-- A row missing any template column is dropped as truncated. If every row is
-  partial the decode fails as `truncated-empty`.
-- An empty cell becomes an **absent key**.
+- **Rows are never dropped.** The decoder silently skips some lines: a row
+  whose first cell starts with `#` is a comment to it, and an unquoted row
+  whose first cell holds a colon (`Soup: Miso`) reads as a key. So the raw
+  row lines (indented, non-blank lines after the `name[N…]{…}:` header) are
+  counted; if they differ from the declared `[N]` or from the decoded rows,
+  the decode fails as `row-count-mismatch`. This runs after strict decodes
+  too, because strict mode skips a `#` row without complaint when `[N]`
+  already agrees with what is left.
+- A row with more cells than columns fails as `extra-cells` (lax mode would
+  discard them). A `"` anywhere but the start of a cell fails as
+  `stray-quote` (the decoder would open a quoted string there and swallow the
+  following tabs, e.g. `12" Sub`).
+- A row short of columns is **kept**, with the missing cells as absent keys
+  (models often omit the trailing tab of an empty last cell such as `dish`),
+  **unless it is the last row of a lax decode**: that is what a cut reply looks
+  like, so the decode fails as `truncated`. A strict decode has no short rows.
+- An empty or missing cell becomes an **absent key**.
+- Success is `{ ok: true, value }`; failure is `{ ok: false, reason }`.
 - String columns (typed by the template's example value) are coerced back to
   strings, so `"5"` never returns as the number 5.
 
 Per entry point:
 
 - **`chat` / `chatWithImage`** return a JSON string (`JSON.stringify` of the
-  decoded object). On any decode failure the raw reply is returned unchanged,
-  which is what the caller would have parsed anyway.
+  decoded object). If the reply was JSON (`json-reply`), it is returned raw:
+  the caller parses JSON. On any other decode failure the call is re-asked
+  **once** through the same inner method (`chatWithImage` keeps its image)
+  with the **original** messages and the caller's original options
+  (`jsonMode` exactly as the caller passed it), tagged `wire: json`, and that
+  raw reply is returned.
 - **`chatStructured`** returns an object. On a TOON decode failure: if the
   reply was JSON, it is parsed and returned with **no second call**; otherwise
   the call is re-asked **once** through the adapter's own JSON path with the
@@ -105,8 +134,8 @@ JSON, which decodes as `json-reply` and falls back, defeating the TOON reply.
 OpenAI can also error when `json_object` is set but the messages no longer
 mention "JSON", as happens once the cue line is rewritten to TOON. The layer
 therefore strips `jsonMode` from a copy of the caller's options, never from the
-caller's object. Every other path, including the
-`chatStructured` re-ask, delegates to the adapter with options intact so the
+caller's object. Every other path, including the `chat` / `chatWithImage` and
+`chatStructured` re-asks, delegates to the adapter with options intact so the
 adapter's JSON mode applies as before.
 
 ## Config
@@ -123,7 +152,7 @@ ai:
 
 | Mode | Behaviour |
 |------|-----------|
-| `off` | Default. Layer inert; calls byte-identical, no logs, no `wire` tag |
+| `off` | Default. Layer inert; calls byte-identical, no per-call logs, no `wire` tag (`ai.wire.config` still logs once at boot) |
 | `input` | Re-encode input tables only; replies stay JSON |
 | `full` | Input tables plus TOON replies for eligible templates, at the `sample` rate |
 
@@ -132,16 +161,17 @@ boot, so a change needs a backend restart.
 
 ## Observability
 
-Events carry `app` and `feature` from the scoped tags (`context.module` is
-`ai-wire`).
+Per-call events carry `app` and `feature` from the scoped tags
+(`context.module` is `ai-wire`). `ai.wire.config` is logged once at boot on
+the root logger, in every mode including `off`.
 
 | Event | Level | Meaning |
 |-------|-------|---------|
-| `ai.wire.config` | info | Resolved `{ mode, sample }` at boot |
+| `ai.wire.config` | info | Resolved `{ mode, sample }` at boot (root logger) |
 | `ai.wire.rewrite` | debug | One per rewritten block: `kind: input` (`rows`) or `kind: template` (`columns`) |
 | `ai.wire.skip` | debug | Nothing was sent as TOON; `reason` below |
-| `ai.wire.decode.ok` | debug | `rows`, `droppedRows` |
-| `ai.wire.decode.fallback` | warn | `reason` and a 200-char `sample` of the reply |
+| `ai.wire.decode.ok` | debug | `rows` |
+| `ai.wire.decode.fallback` | warn | `reason` and a 200-char `sample` of the reply; a re-ask follows unless `reason` is `json-reply` |
 
 `ai.wire.skip` reasons: `no-messages` (not an array), `no-cue` (no reply
 template), `flat-object`, `ambiguous`, `not-sampled` (eligible, sampling said
@@ -149,14 +179,15 @@ JSON), `input-only` (eligible, `mode: input`). Debug events are not shipped to
 the log store; the warn fallback is.
 
 Decode-fallback `reason`s: `not-text`, `json-reply`, `toon-parse`,
-`shape-mismatch`, `truncated-empty`.
+`shape-mismatch`, `row-count-mismatch`, `extra-cells`, `stray-quote`,
+`truncated`. Mode `off` emits no skip reason (nothing is planned).
 
 The usage ledger row carries `wire` (`1_adapters/ai/usageAttribution.mjs`):
 
 | `wire` | Meaning |
 |--------|---------|
 | `toon` | A TOON reply was requested |
-| `json` | The call was eligible but not sampled (or `input` mode), or it was the `chatStructured` re-ask |
+| `json` | The call was eligible but not sampled (or `input` mode), or it was a re-ask after a decode failure (`chat`, `chatWithImage` or `chatStructured`) |
 | `passthrough` | Nothing eligible |
 | absent | Layer off, or row written without the layer |
 
@@ -185,7 +216,13 @@ Exit codes: 0 PASS, 1 FAIL, 2 usage/setup error. Calls are attributed to app
 with 0 items, a text missing a path, or no texts. Pass thresholds: TOON
 fallback rate at most 5%; item count matching the JSON path's most frequent
 count(s) for at least 90% of texts; kcal within the JSON spread +/-15% for at
-least 90% of texts. Token savings are read from the ledger (`wire` plus
+least 90% of texts; food-name overlap for at least 90% of texts. The fallback
+rate counts every `ai.wire.decode.fallback`, whatever its reason (each one cost
+a re-ask). Name overlap: each run records `names`, its lowercased item labels
+with group headers excluded; a TOON run's overlap is the share of its names
+present in the union of that text's JSON-run names (containment rather than
+Jaccard, so JSON's own run-to-run variety does not count against TOON), and a
+text passes when every TOON run reaches 0.5. Token savings are read from the ledger (`wire` plus
 completion tokens), not from the CLI's reply-size column.
 
 ## Adding a new structured caller
@@ -194,8 +231,9 @@ Prefer `chatStructured`: it gets the decode, the JSON-reply shortcut and the
 re-ask for free. If you write a prose prompt with a reply template, qualify
 automatically by:
 
-- putting the JSON block on the same line as, or directly under, a cue line
-  such as "Respond in JSON format:" (no blank line between);
+- putting the JSON block on the same line as, or directly under, an
+  imperative cue line such as "Respond in JSON format:" (no blank line
+  between);
 - using exactly one array of flat example objects, with primitive scalar
   siblings only;
 - putting field notes in prose, not inside the template;
