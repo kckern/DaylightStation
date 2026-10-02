@@ -90,3 +90,25 @@ export function deriveVideoState({ paused, readyState, fps } = {}) {
   if (fps === 0) return 'stalled';
   return 'playing';
 }
+
+/**
+ * Attribute that marks a <video> as decorative (a looping recap thumbnail, a
+ * webcam preview, an exercise demo clip): the profiler must not report it as
+ * the video someone is watching. 2026-10-01: the session-detail recap
+ * thumbnail was the only video on an idle home screen, the querySelector
+ * fallback picked it, and `"videoState":"playing"` held the deploy gate shut
+ * overnight with nobody in the garage.
+ */
+export const PROBE_IGNORE_ATTR = 'data-activity-probe';
+
+/**
+ * The video the profiler samples: the element FitnessPlayer registered, else
+ * the first video on the page that is not marked decorative.
+ * @param {Document} doc
+ * @param {HTMLVideoElement|null} registered - window.__fitnessVideoElement
+ * @returns {Element|null}
+ */
+export function pickProfiledVideo(doc, registered) {
+  if (registered) return registered;
+  return doc?.querySelector?.(`video:not([${PROBE_IGNORE_ATTR}="ignore"]), dash-video`) ?? null;
+}
