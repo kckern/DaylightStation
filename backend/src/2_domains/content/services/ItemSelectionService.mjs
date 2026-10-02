@@ -167,6 +167,14 @@ const SORT_METHODS = {
     return result;
   },
 
+  // Least-recently-played first; never-played (no lastPlayed) ahead of all.
+  // `lastPlayed` is 'YYYY-MM-DD HH:mm:ss' or ISO, both of which order as text.
+  least_recent: (items) => [...items].sort((a, b) => {
+    const la = a.lastPlayed ? String(a.lastPlayed) : '';
+    const lb = b.lastPlayed ? String(b.lastPlayed) : '';
+    return la.localeCompare(lb);
+  }),
+
   title: (items) => {
     return [...items].sort((a, b) => {
       const titleA = a.title || '';
@@ -238,7 +246,7 @@ export class ItemSelectionService {
    * Apply a named sort to items.
    *
    * @param {Array} items - Items to sort
-   * @param {string} sortName - Sort name (priority, track_order, source_order, date_asc, date_desc, random, title)
+   * @param {string} sortName - Sort name (priority, track_order, source_order, date_asc, date_desc, random, least_recent, title)
    * @returns {Array} Sorted items (new array)
    * @throws {Error} If sort is unknown
    */
@@ -372,8 +380,12 @@ export class ItemSelectionService {
       );
     }
 
-    // Sort
-    processed = this.applySort(processed, strategy.sort, overrides.random);
+    // Sort. A rotation whose pool is all heard has exhausted its cycle (the
+    // fallback relaxed the watched filter): a uniform random pick there can
+    // replay yesterday's item, so play the least recently played instead.
+    const exhaustedRotation = strategy.name === 'rotation' && processed.length > 0
+      && processed.every((item) => QueueService.isWatched(item));
+    processed = this.applySort(processed, exhaustedRotation ? 'least_recent' : strategy.sort, overrides.random);
 
     // Pick
     processed = this.applyPick(processed, strategy.pick, overrides.random);

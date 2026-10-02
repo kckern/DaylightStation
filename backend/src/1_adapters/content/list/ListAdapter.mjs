@@ -646,7 +646,18 @@ export class ListAdapter {
         || 'files';
       const allProgress = await this.mediaProgressMemory.listProgress(storagePath);
       const map = new Map(allProgress.map(p => [p.contentId, p]));
-      enriched = allItems.map(it => ({ ...it, percent: map.get(it.id)?.percent || 0 }));
+      // lastPlayed lets an exhausted `rotation` play the least recently heard
+      // item; duration (when the source item lacks one) lets the watched rule
+      // apply its short-item threshold.
+      enriched = allItems.map(it => {
+        const p = map.get(it.id);
+        return {
+          ...it,
+          percent: p?.percent || 0,
+          lastPlayed: p?.lastPlayed ?? null,
+          ...(it.duration == null && p?.duration ? { duration: p.duration } : {}),
+        };
+      });
     }
 
     return ItemSelectionService.select(

@@ -31,7 +31,7 @@ describe('ItemSelectionService.STRATEGIES.rotation', () => {
       const result = ItemSelectionService.select(
         items,
         { now: new Date('2026-04-23T16:00:00Z') },
-        { strategy: 'rotation' }
+        { strategy: 'rotation', random: Math.random }
       );
       assert.strictEqual(result.length, 1, 'pick: first must return exactly one item');
       const picked = result[0].id;
@@ -66,9 +66,42 @@ describe('ItemSelectionService.STRATEGIES.rotation', () => {
     const result = ItemSelectionService.select(
       allWatched,
       { now: new Date('2026-04-23T16:00:00Z') },
-      { strategy: 'rotation' }
+      { strategy: 'rotation', random: Math.random }
     );
     assert.deepStrictEqual(result, [],
       'without allowFallback, rotation returns empty when nothing unwatched');
+  });
+});
+
+// 2026-10-02: once every poem had been heard, the fallback dropped the watched
+// filter and picked uniformly at random from the whole pool, so yesterday's
+// poem could come straight back. An exhausted rotation now plays the least
+// recently played item (never-played first), keeping it a rotation forever.
+describe('rotation after the cycle exhausts', () => {
+  const now = { now: new Date('2026-10-02T16:00:00Z') };
+  const allHeard = [
+    { id: 'yesterday', duration: 20, percent: 100, lastPlayed: '2026-10-01 07:40:00' },
+    { id: 'july', duration: 20, percent: 100, lastPlayed: '2026-07-12 11:38:35' },
+    { id: 'august', duration: 20, percent: 100, lastPlayed: '2026-08-16 07:41:26' },
+  ];
+
+  it('picks the least recently played item, every time', () => {
+    for (let i = 0; i < 30; i++) {
+      const [picked] = ItemSelectionService.select(allHeard, now, { strategy: 'rotation', allowFallback: true, random: Math.random });
+      assert.strictEqual(picked.id, 'july');
+    }
+  });
+
+  it('prefers an item with no lastPlayed at all', () => {
+    const pool = [...allHeard, { id: 'unknown', duration: 20, percent: 100 }];
+    const [picked] = ItemSelectionService.select(pool, now, { strategy: 'rotation', allowFallback: true });
+    assert.strictEqual(picked.id, 'unknown');
+  });
+
+  it('still picks randomly among unheard items while the cycle lasts', () => {
+    const pool = [...allHeard, { id: 'a', duration: 20, percent: 0 }, { id: 'b', duration: 20, percent: 0 }];
+    const seen = new Set();
+    for (let i = 0; i < 40; i++) seen.add(ItemSelectionService.select(pool, now, { strategy: 'rotation', allowFallback: true, random: Math.random })[0].id);
+    assert.deepStrictEqual([...seen].sort(), ['a', 'b']);
   });
 });
