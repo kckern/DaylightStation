@@ -377,9 +377,30 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
       }
     };
   
+    // Progress is logged at most every 10s and never at the end, so a short
+    // read-along (a 17s poem) was recorded at 59% forever and never counted
+    // as heard — the office-program poetry rotation kept serving it. A
+    // natural end logs 100% once per track.
+    const completionLoggedRef = useRef(null);
+    const logCompletion = useCallback(() => {
+      const total = Number(mainRef.current?.duration) || duration;
+      if (!assetId || !(total > 0) || completionLoggedRef.current === mainMediaUrl) return;
+      completionLoggedRef.current = mainMediaUrl;
+      const logType = resolvePlayLogType(type, assetId);
+      const seconds = Math.round(total);
+      DaylightAPI(`api/v1/play/log`, { title, type: logType, assetId, seconds, percent: 100, listId })
+        .catch((error) => {
+          playbackLog('play.log.failed', {
+            type: logType, assetId, seconds, percent: 100, completion: true,
+            message: error?.message || 'unknown'
+          }, { level: 'warn' });
+        });
+    }, [assetId, duration, listId, mainMediaUrl, resolvePlayLogType, title, type]);
+
     const handleEnded = useCallback(() => {
+      logCompletion();
       onAdvance && onAdvance();
-    }, [onAdvance]);
+    }, [logCompletion, onAdvance]);
 
     // Fallback advance when HTML5 `ended` never fires — e.g. DASH with a
     // zero-byte trailing fragment leaves the element paused at duration
