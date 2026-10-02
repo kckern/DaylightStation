@@ -6,17 +6,19 @@ import { buildReplySkeleton, rewriteCueLine, stripFormatSentences, TOON_REPLY_RU
 /** The nearest non-blank text before a block reads like an instruction about the reply's format. */
 const REPLY_CUE = /\b(?:respond|reply|return|answer|output)\b.*\b(?:json|exactly as)\b/i;
 
-/** The nearest non-blank line (or same-line prefix) before `index`, with its span. */
+/**
+ * The cue for a block: its same-line prefix, else the line directly above.
+ * A blank line ends the paragraph, so a cue from an earlier paragraph is no cue.
+ */
 function cueLineBefore(text, index) {
-  let end = index;
-  while (end > 0) {
-    const start = text.lastIndexOf('\n', end - 1) + 1;
-    const line = text.slice(start, end);
-    if (line.trim()) return { start, end, line };
-    if (start === 0) return null;
-    end = start - 1;
-  }
-  return null;
+  const start = text.lastIndexOf('\n', index - 1) + 1;
+  const prefix = text.slice(start, index);
+  if (prefix.trim()) return { start, end: index, line: prefix };
+  if (start === 0) return null;
+  const prevEnd = start - 1;
+  const prevStart = text.lastIndexOf('\n', prevEnd - 1) + 1;
+  const line = text.slice(prevStart, prevEnd);
+  return line.trim() ? { start: prevStart, end: prevEnd, line } : null;
 }
 
 function applyEdits(text, edits) {
@@ -55,6 +57,11 @@ export function planWire(messages, { reply = false } = {}) {
   const template = templates[0] ?? null;
   const shape = template ? templateShape(template.value) : null;
   if (template && shape === null) return untouched('ambiguous');
+  // A data block sharing the cue's span would collide with the cue edit.
+  if (template && found[template.messageIndex].data
+    .some((block) => block.start < template.cue.end && block.end > template.cue.start)) {
+    return untouched('ambiguous');
+  }
 
   const replyEligible = shape?.kind === 'table';
   const toonReply = replyEligible && reply;

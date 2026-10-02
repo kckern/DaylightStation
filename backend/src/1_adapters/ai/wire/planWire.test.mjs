@@ -84,4 +84,18 @@ describe('planWire edge cases', () => {
     const messages = [{ role: 'user', content: 'Current food: {"name":"Rice","grams":158}' }];
     expect(planWire(messages, { reply: true }).messages).toBe(messages);
   });
+
+  it('data block on the template\'s cue line: ambiguous, same array back', () => {
+    const messages = [{ role: 'user', content: 'Rows [{"a":1,"b":2},{"a":3,"b":4}] - now return JSON like {"items":[{"x":1}]}' }];
+    const plan = planWire(messages, { reply: true });
+    expect(plan.skip).toBe('ambiguous');
+    expect(plan.messages).toBe(messages);
+  });
+
+  it('a cue in an earlier paragraph is not a cue: the array is input data', () => {
+    const messages = [{ role: 'user', content: 'Return JSON.\n\n[{"a":1},{"a":2}]' }];
+    const plan = planWire(messages, { reply: true });
+    expect(plan.rewrites).toEqual([{ kind: 'input', rows: 2 }]);
+    expect(plan.skip).toBeNull();
+  });
 });
