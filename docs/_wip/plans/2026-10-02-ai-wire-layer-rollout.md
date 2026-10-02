@@ -55,3 +55,22 @@ Verdict reasons: fallback 6/60 (> 5%); kcal within JSON spread ±15% for
 12/20 texts (needs 18); TOON food names overlapped JSON's for 17/20 texts (needs 18).
 Open question: whether the kcal/name gaps are the TOON format or ordinary
 model variance against a 3-run JSON spread.
+
+## A/B #3 (2026-10-02, build a75e8973a): 20 texts × 5 runs, JSON control added
+
+**FAIL** — layer stays `off`.
+
+| Rate (per text, vs the JSON runs' spread) | TOON | JSON control |
+|---|---|---|
+| item count matches | 90% | 95% |
+| kcal within ±15% | **60%** | 85% |
+| food names overlap | 85% | 75% |
+
+Fallbacks 6/100 (limit 5%). TOON mean 1.50 s vs JSON 2.16 s; replies ~35% smaller.
+
+Conclusion: the decode is now reliable enough to measure, and the remaining gap
+is not noise: with the same prompt, the model's calorie estimates differ when it
+answers in a TOON table (25 points below JSON's own consistency). Item lists and
+names are equivalent. Enabling it would change logged nutrition, so it stays off.
+Options if revisited: try a model that follows TOON better, or a compact-JSON
+reply (columns once, rows as arrays) instead of TOON.
