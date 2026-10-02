@@ -122,9 +122,12 @@ round-tripped by the codec.
    - `chat()` / `chatWithImage()` return `JSON.stringify(value)` — callers'
      existing regex + `JSON.parse` receive the same shape they get today.
    - `chatStructured()` returns `value`.
-2. Reply is JSON, or TOON decode fails → return the raw reply unchanged and warn
-   (`ai.wire.decode.fallback`). Callers' existing repair logic still applies. The
-   worst case is today's behaviour.
+2. Reply is JSON, or TOON decode fails → warn (`ai.wire.decode.fallback`) and
+   fall back. `chat()` / `chatWithImage()` return the raw reply unchanged, so
+   callers' existing repair logic still applies. `chatStructured()` must return an
+   object: a JSON reply is parsed and returned; anything else is re-asked once
+   through `inner.chatStructured(originalMessages)`. The worst case is today's
+   behaviour (plus one call for `chatStructured`).
 
 ## 3. Provider JSON mode and the TOON primer
 
