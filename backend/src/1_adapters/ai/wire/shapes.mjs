@@ -42,6 +42,8 @@ export function templateShape(value) {
     arrayKey,
     columns,
     scalarKeys: entries.filter(([key]) => key !== arrayKey).map(([key]) => key),
+    scalarTypes: Object.fromEntries(entries.filter(([key]) => key !== arrayKey)
+      .map(([key, v]) => [key, v === null ? 'null' : typeof v])),
     stringColumns: columns.filter((column) => typeof rows[0][column] === 'string'),
     numberColumns: columns.filter((column) => typeof rows[0][column] === 'number'),
     booleanColumns: columns.filter((column) => typeof rows[0][column] === 'boolean'),

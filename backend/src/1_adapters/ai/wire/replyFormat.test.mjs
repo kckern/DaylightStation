@@ -349,3 +349,76 @@ describe('decodeReply END marker', () => {
   });
 });
 
+
+// 2026-10-02 A/B: 9 of 20 gpt-4.1 replies wrote the table rows without the
+// 2-space indent, and 5 copied the primer's placeholder header (`name[N<TAB>]`)
+// literally. See docs/_wip/plans/2026-10-02-ai-wire-layer-rollout.md.
+describe('A/B findings', () => {
+  it('decodes rows written without their indent', () => {
+    const reply = ended('date: 2026-10-02\ntime: morning\nitems[2\t]{name\tunit\tgrams\tdish}:\nScrambled Eggs\tg\t100\t\nSourdough Toast\tslice\t40\tBreakfast');
+    expect(decodeReply(reply, shape)).toEqual({ ok: true, value: { date: '2026-10-02', time: 'morning', items: [
+      { name: 'Scrambled Eggs', unit: 'g', grams: 100 },
+      { name: 'Sourdough Toast', unit: 'slice', grams: 40, dish: 'Breakfast' },
+    ] } });
+  });
+
+  it('still applies every row check to unindented rows', () => {
+    const shifted = ended('items[1\t]{name\tunit\tgrams\tdish}:\nRice\t100\tBowl');
+    expect(decodeReply(shifted, shape)).toEqual({ ok: false, reason: 'short-row' });
+  });
+
+  it('stops re-indenting at a line with no tab, so a trailing scalar stays a scalar', () => {
+    const reply = ended('items[1\t]{name\tunit\tgrams\tdish}:\nRice\tg\t100\t\ntime: evening');
+    const result = decodeReply(reply, shape);
+    expect(result.ok).toBe(true);
+    expect(result.value.time).toBe('evening');
+    expect(result.value.items).toEqual([{ name: 'Rice', unit: 'g', grams: 100 }]);
+  });
+
+  it('the primer gives no placeholder header a model could copy', () => {
+    expect(TOON_REPLY_RULES).not.toMatch(/name\[N/);
+    expect(TOON_REPLY_RULES).toMatch(/Copy the table header line above exactly/);
+  });
+});
+
+// Scalars are positional-free but were never checked: one stray tab in
+// `dateExplicit: false` made it the truthy string "f\talse" (a meal filed
+// under the wrong day), and a tab before a scalar line made the key vanish.
+describe('scalar lines', () => {
+  const flags = templateShape({
+    date: 'YYYY-MM-DD', dateExplicit: false, time: 'evening', mealTimeExplicit: false,
+    items: [{ name: 'Food', grams: 100 }],
+  });
+  const reply = (scalars) => ended(`${scalars}\nitems[1\t]{name\tgrams}:\n  Rice\t100`);
+
+  it('decodes well-formed scalars of every type', () => {
+    expect(decodeReply(reply('date: 2026-10-01\ndateExplicit: true\ntime: evening\nmealTimeExplicit: false'), flags)).toEqual({
+      ok: true, value: { date: '2026-10-01', dateExplicit: true, time: 'evening', mealTimeExplicit: false, items: [{ name: 'Rice', grams: 100 }] },
+    });
+  });
+
+  it('a boolean scalar that is not a boolean fails', () => {
+    expect(decodeReply(reply('dateExplicit: f\talse'), flags)).toEqual({ ok: false, reason: 'scalar-format' });
+    expect(decodeReply(reply('dateExplicit: yes'), flags)).toEqual({ ok: false, reason: 'type-mismatch' });
+  });
+
+  it('a tab anywhere in a scalar line fails', () => {
+    expect(decodeReply(reply('date: 2026\t-10-01'), flags)).toEqual({ ok: false, reason: 'scalar-format' });
+  });
+
+  it('an indented scalar line fails instead of silently vanishing', () => {
+    expect(decodeReply(reply('date: 2026-10-01\n\tdateExplicit: true'), flags)).toEqual({ ok: false, reason: 'scalar-format' });
+  });
+
+  it('a scalar written twice fails', () => {
+    expect(decodeReply(reply('time: evening\ntime: morning'), flags)).toEqual({ ok: false, reason: 'scalar-format' });
+  });
+
+  it('a text scalar that decodes as a number fails', () => {
+    expect(decodeReply(reply('time: 7'), flags)).toEqual({ ok: false, reason: 'type-mismatch' });
+  });
+
+  it('templateShape records each scalar\'s example type', () => {
+    expect(flags.scalarTypes).toEqual({ date: 'string', dateExplicit: 'boolean', time: 'string', mealTimeExplicit: 'boolean' });
+  });
+});
