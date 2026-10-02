@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { summarize } from './ai-wire-ab.lib.mjs';
+import { summarize, nameOverlap } from './ai-wire-ab.lib.mjs';
 
-const row = (text, path, run, kcal, itemCount, extra = {}) => ({ text, path, run, ms: path === 'toon' ? 900 : 2000, replyChars: path === 'toon' ? 300 : 900, itemCount, kcal, fallback: false, success: true, error: null, ...extra });
+const FOODS = ['rice', 'chicken thigh', 'broccoli', 'iced tea', 'egg'];
+const row = (text, path, run, kcal, itemCount, extra = {}) => ({ text, path, run, ms: path === 'toon' ? 900 : 2000, replyChars: path === 'toon' ? 300 : 900, itemCount, kcal, names: FOODS.slice(0, itemCount), fallback: false, success: true, error: null, ...extra });
 
 describe('summarize', () => {
   it('passes when TOON stays inside the JSON run-to-run spread', () => {
@@ -59,5 +60,33 @@ describe('summarize', () => {
     const results = [row('a', 'json', 1, 500, 1), row('a', 'json', 2, 500, 2), row('a', 'toon', 1, 500, 2)];
     const { verdict } = summarize(results);
     expect(verdict.pass).toBe(true);
+  });
+
+  it('passes name overlap when each TOON run shares >= half its names with the JSON union', () => {
+    const results = [
+      row('a', 'json', 1, 500, 2, { names: ['rice', 'chicken thigh'] }),
+      row('a', 'json', 2, 500, 2, { names: ['white rice', 'chicken thigh'] }),
+      row('a', 'toon', 1, 500, 2, { names: ['White Rice', 'grilled chicken'] }),
+    ];
+    const { verdict } = summarize(results);
+    expect(verdict.pass).toBe(true);
+  });
+
+  it('fails name overlap when TOON logged different foods with the same count and kcal', () => {
+    const results = [
+      row('a', 'json', 1, 500, 2, { names: ['rice', 'chicken thigh'] }),
+      row('a', 'json', 2, 500, 2, { names: ['rice', 'chicken thigh'] }),
+      row('a', 'toon', 1, 500, 2, { names: ['pasta', 'beef'] }),
+    ];
+    const { verdict } = summarize(results);
+    expect(verdict.pass).toBe(false);
+    expect(verdict.reasons.join(' ')).toMatch(/food names overlapped JSON's .* for only 0\/1 texts/);
+  });
+
+  it('nameOverlap is the share of TOON names present in the JSON union', () => {
+    const union = new Set(['rice', 'egg']);
+    expect(nameOverlap(['Rice', 'toast'], union)).toBe(0.5);
+    expect(nameOverlap([], union)).toBe(0);
+    expect(nameOverlap([], new Set())).toBe(1);
   });
 });
