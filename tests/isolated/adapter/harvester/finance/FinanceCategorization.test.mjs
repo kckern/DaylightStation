@@ -51,7 +51,7 @@ describe('FinanceCategorization', () => {
 
   beforeEach(() => {
     mockAIGateway = {
-      chatWithJson: vi.fn()
+      chatStructured: vi.fn()
     };
 
     mockTransactionSource = {
@@ -105,7 +105,7 @@ describe('FinanceCategorization', () => {
         { id: '235351917', date: '2026-02-02', description: 'Mortgage', tagNames: [], amount: 6206.97 }
       ];
 
-      mockAIGateway.chatWithJson.mockResolvedValue({
+      mockAIGateway.chatStructured.mockResolvedValue({
         category: 'Housing',
         friendlyName: 'Mortgage Payment',
         memo: 'Monthly mortgage'
@@ -113,7 +113,7 @@ describe('FinanceCategorization', () => {
 
       const result = await service.categorize(mortgageTransaction);
 
-      expect(mockAIGateway.chatWithJson).toHaveBeenCalledTimes(1);
+      expect(mockAIGateway.chatStructured).toHaveBeenCalledTimes(1);
       expect(result.processed).toHaveLength(1);
       expect(result.processed[0].id).toBe('235351917');
       expect(result.processed[0].category).toBe('Housing');
@@ -148,7 +148,7 @@ describe('FinanceCategorization', () => {
           { id: 'test-1', date: '2026-01-15', description: desc, tagNames: [] }
         ];
 
-        mockAIGateway.chatWithJson.mockResolvedValue({
+        mockAIGateway.chatStructured.mockResolvedValue({
           category: expectedCategory,
           friendlyName: expectedName
         });
@@ -168,7 +168,7 @@ describe('FinanceCategorization', () => {
         { id: '1', date: '2026-01-15', description: 'Test', tagNames: [] }
       ];
 
-      mockAIGateway.chatWithJson.mockResolvedValue({
+      mockAIGateway.chatStructured.mockResolvedValue({
         category: 'NotAValidCategory',
         friendlyName: 'Test'
       });
@@ -193,14 +193,14 @@ describe('FinanceCategorization', () => {
   describe('handles batch processing', () => {
     it('processes multiple untagged transactions', async () => {
       // Mock AI to return appropriate categories
-      mockAIGateway.chatWithJson
+      mockAIGateway.chatStructured
         .mockResolvedValueOnce({ category: 'Housing', friendlyName: 'Mortgage' })
         .mockResolvedValueOnce({ category: 'Shopping', friendlyName: 'Harman' })
         .mockResolvedValueOnce({ category: 'Car Maintenance', friendlyName: 'Quick Quack' });
 
       const result = await service.categorize(untaggedTransactions.slice(0, 3));
 
-      expect(mockAIGateway.chatWithJson).toHaveBeenCalledTimes(3);
+      expect(mockAIGateway.chatStructured).toHaveBeenCalledTimes(3);
       expect(result.processed).toHaveLength(3);
       expect(mockTransactionSource.updateTransaction).toHaveBeenCalledTimes(3);
     });
@@ -213,7 +213,7 @@ describe('FinanceCategorization', () => {
         { id: '3', date: '2026-01-15', description: 'Transaction Three', tagNames: [] },
       ];
 
-      mockAIGateway.chatWithJson
+      mockAIGateway.chatStructured
         .mockResolvedValueOnce({ category: 'Housing', friendlyName: 'Trans One' })
         .mockRejectedValueOnce(new Error('API timeout'))
         .mockResolvedValueOnce({ category: 'Fuel', friendlyName: 'Trans Three' });

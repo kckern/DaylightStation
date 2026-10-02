@@ -25,7 +25,7 @@ describe('createFinanceServices: categorization decision gateway', () => {
     const { categorizationService } = createFinanceServices({
       configService: { getHouseholdPath: () => dir },
       buxferAdapter: { updateTransaction: vi.fn() },
-      aiGateway: { chatWithJson: vi.fn().mockResolvedValue({ category: 'Groceries', friendlyName: 'Costco' }) },
+      aiGateway: { chatStructured: vi.fn().mockResolvedValue({ category: 'Groceries', friendlyName: 'Costco' }) },
       decisionGateway,
       defaultHouseholdId: 'default',
       logger,
@@ -45,7 +45,7 @@ describe('createFinanceServices: categorization decision gateway', () => {
     const { categorizationService } = createFinanceServices({
       configService: { getHouseholdPath: () => dir },
       buxferAdapter: { updateTransaction: vi.fn() },
-      aiGateway: { chatWithJson: vi.fn().mockResolvedValue({ category: 'Groceries', friendlyName: 'Costco' }) },
+      aiGateway: { chatStructured: vi.fn().mockResolvedValue({ category: 'Groceries', friendlyName: 'Costco' }) },
       decisionGateway,
       defaultHouseholdId: 'default',
       logger,

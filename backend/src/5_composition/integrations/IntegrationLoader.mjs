@@ -100,13 +100,25 @@ export class IntegrationLoader {
 
     try {
       const { default: AdapterClass } = await manifest.adapter();
+      // decorateAdapter is composition's hook (e.g. the AI wire layer); the
+      // adapter itself never receives it.
+      const { decorateAdapter, ...sharedDeps } = deps;
       // Scope the shared logger per provider so adapter events (openai.usage,
       // openai.error, …) carry a module tag and ship to the log store instead
       // of defaulting to console/stdout.
-      const adapterDeps = deps.logger?.child
-        ? { ...deps, logger: deps.logger.child({ module: `${provider}-adapter` }) }
-        : deps;
-      return new AdapterClass(config, adapterDeps);
+      const adapterDeps = sharedDeps.logger?.child
+        ? { ...sharedDeps, logger: sharedDeps.logger.child({ module: `${provider}-adapter` }) }
+        : sharedDeps;
+      const adapter = new AdapterClass(config, adapterDeps);
+      if (typeof decorateAdapter !== 'function') return adapter;
+      // A broken decorator must never cost the integration: fall back to the
+      // plain adapter (for AI, that is today's behaviour without the wire layer).
+      try {
+        return decorateAdapter(capability, adapter, serviceConfig) ?? adapter;
+      } catch (err) {
+        this.#logger.warn?.('integration.adapter.decorate-failed', { capability, provider, error: err.message });
+        return adapter;
+      }
     } catch (err) {
       this.#logger.error?.('integration.adapter.failed', { capability, provider, error: err.message });
       return null;

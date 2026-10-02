@@ -393,7 +393,7 @@ export class TransactionCategorizationService {
     messages.push({ role: 'user', content: transaction.description });
 
     try {
-      const response = await this.#aiGateway.chatWithJson(messages);
+      const response = await this.#aiGateway.chatStructured(messages);
       // Plain destructure (no ?.): a null response stays an "AI error", as before.
       const { category, friendlyName, memo } = response;
       return { category, friendlyName, memo };

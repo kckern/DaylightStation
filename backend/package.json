@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "description": "",
   "type": "module",
-  "engines": { "node": ">=22.13.0" },
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "main": "index.js",
   "scripts": {
     "test": "NODE_OPTIONS=--experimental-vm-modules jest",
@@ -38,6 +40,7 @@
     "@mastra/core": "1.71.0",
     "@mastra/libsql": "1.23.3",
     "@mastra/memory": "1.32.1",
+    "@toon-format/toon": "4.1.1",
     "ajv": "8.20.0",
     "axios": "^1.4.0",
     "bwip-js": "^4.3.2",

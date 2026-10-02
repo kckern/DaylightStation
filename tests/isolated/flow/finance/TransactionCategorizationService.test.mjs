@@ -25,7 +25,7 @@ describe('TransactionCategorizationService', () => {
 
   beforeEach(() => {
     mockAIGateway = {
-      chatWithJson: vi.fn()
+      chatStructured: vi.fn()
     };
 
     mockTransactionSource = {
@@ -86,7 +86,7 @@ describe('TransactionCategorizationService', () => {
       expect(result.processed).toHaveLength(0);
       expect(result.failed).toHaveLength(0);
       expect(result.skipped).toHaveLength(2);
-      expect(mockAIGateway.chatWithJson).not.toHaveBeenCalled();
+      expect(mockAIGateway.chatStructured).not.toHaveBeenCalled();
     });
 
     it('processes transactions with no tags', async () => {
@@ -94,7 +94,7 @@ describe('TransactionCategorizationService', () => {
         { id: '1', date: '2026-01-01', description: 'WALMART #1234', tagNames: [] }
       ];
 
-      mockAIGateway.chatWithJson.mockResolvedValue({
+      mockAIGateway.chatStructured.mockResolvedValue({
         category: 'Groceries',
         friendlyName: 'Walmart',
         memo: 'Weekly shopping'
@@ -120,7 +120,7 @@ describe('TransactionCategorizationService', () => {
         { id: '1', date: '2026-01-01', description: 'Direct Deposit PWP*12345', tagNames: ['Income'] }
       ];
 
-      mockAIGateway.chatWithJson.mockResolvedValue({
+      mockAIGateway.chatStructured.mockResolvedValue({
         category: 'Income',
         friendlyName: 'Paycheck'
       });
@@ -136,7 +136,7 @@ describe('TransactionCategorizationService', () => {
         { id: '1', date: '2026-01-01', description: 'Some transaction', tagNames: [] }
       ];
 
-      mockAIGateway.chatWithJson.mockResolvedValue({
+      mockAIGateway.chatStructured.mockResolvedValue({
         category: 'InvalidCategory',
         friendlyName: 'Some Name'
       });
@@ -153,7 +153,7 @@ describe('TransactionCategorizationService', () => {
         { id: '1', date: '2026-01-01', description: 'Some transaction', tagNames: [] }
       ];
 
-      mockAIGateway.chatWithJson.mockRejectedValue(new Error('API timeout'));
+      mockAIGateway.chatStructured.mockRejectedValue(new Error('API timeout'));
 
       const result = await service.categorize(transactions);
 
@@ -182,7 +182,7 @@ describe('TransactionCategorizationService', () => {
         { id: '1', date: '2026-01-01', description: 'COSTCO #567', tagNames: [] }
       ];
 
-      mockAIGateway.chatWithJson.mockResolvedValue({
+      mockAIGateway.chatStructured.mockResolvedValue({
         category: 'Groceries',
         friendlyName: 'Costco',
         memo: 'Bulk shopping'
@@ -205,7 +205,7 @@ describe('TransactionCategorizationService', () => {
       const result = await service.preview(transactions);
 
       expect(result.suggestions).toEqual([expect.objectContaining({ id: '1', source: 'rule', suggestedName: 'Cash Sweep', suggestedCategory: 'Transfer' })]);
-      expect(mockAIGateway.chatWithJson).not.toHaveBeenCalled();
+      expect(mockAIGateway.chatStructured).not.toHaveBeenCalled();
       expect(transactions[0].description).toBe('FIDELITY CASH SWEEP Xx1234');
     });
 
@@ -213,23 +213,23 @@ describe('TransactionCategorizationService', () => {
       mockFinanceStore.getCategorizationConfig.mockReturnValue({
         ...mockCategorizationConfig, descriptionRules: [{ pattern: 'ACME', rename: 'Acme' }],
       });
-      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Shopping', friendlyName: 'Acme' });
+      mockAIGateway.chatStructured.mockResolvedValue({ category: 'Shopping', friendlyName: 'Acme' });
 
       const result = await service.preview([{ id: '1', date: '2026-01-01', description: 'ACME STORE 42', tagNames: [] }]);
 
-      const messages = mockAIGateway.chatWithJson.mock.calls[0][0];
+      const messages = mockAIGateway.chatStructured.mock.calls[0][0];
       expect(messages.at(-1)).toEqual({ role: 'user', content: 'Acme' });
       expect(result.suggestions.map(s => s.source ?? 'llm')).toEqual(['rule', 'llm']);
     });
 
     it('skips a settled row exactly as categorize does', async () => {
-      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Income', friendlyName: 'Direct Deposit' });
+      mockAIGateway.chatStructured.mockResolvedValue({ category: 'Income', friendlyName: 'Direct Deposit' });
       await service.categorize([{ id: 9, date: '2026-09-15', description: 'Direct Deposit Acme Payroll Ppd', tagNames: [] }]);
-      mockAIGateway.chatWithJson.mockClear();
+      mockAIGateway.chatStructured.mockClear();
 
       const result = await service.preview([{ id: 9, date: '2026-09-15', description: 'Direct Deposit', tagNames: ['Income'] }]);
 
-      expect(mockAIGateway.chatWithJson).not.toHaveBeenCalled();
+      expect(mockAIGateway.chatStructured).not.toHaveBeenCalled();
       expect(result).toEqual({ suggestions: [], failed: [] });
     });
 
@@ -239,18 +239,18 @@ describe('TransactionCategorizationService', () => {
         descriptionRules: [{ pattern: 'CASH SWEEP', rename: 'Cash Sweep', tag: 'Transfer' }, { pattern: 'ACME', rename: 'Acme' }],
       };
       mockFinanceStore.getCategorizationConfig.mockReturnValue(config);
-      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Shopping', friendlyName: 'Named' });
+      mockAIGateway.chatStructured.mockResolvedValue({ category: 'Shopping', friendlyName: 'Named' });
       const rows = () => [
         { id: '1', date: '2026-01-01', description: 'FIDELITY CASH SWEEP Xx1234', tagNames: [] },
         { id: '2', date: '2026-01-01', description: 'ACME STORE 42', tagNames: [] },
         { id: '3', date: '2026-01-01', description: 'Clean Row', tagNames: ['Dining'] },
         { id: '4', date: '2026-01-01', description: 'SQ *COFFEE', tagNames: ['Dining'] },
       ];
-      const asked = () => mockAIGateway.chatWithJson.mock.calls.map(([messages]) => messages.at(-1).content);
+      const asked = () => mockAIGateway.chatStructured.mock.calls.map(([messages]) => messages.at(-1).content);
 
       await service.preview(rows());
       const previewAsked = asked();
-      mockAIGateway.chatWithJson.mockClear();
+      mockAIGateway.chatStructured.mockClear();
       await service.categorize(rows());
 
       expect(previewAsked).toEqual(['Acme', 'SQ *COFFEE']);
@@ -289,28 +289,28 @@ describe('TransactionCategorizationService', () => {
 
   describe('settled transactions', () => {
     it('does not re-send a tagged transaction whose new name still matches a raw pattern', async () => {
-      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Income', friendlyName: 'Direct Deposit' });
+      mockAIGateway.chatStructured.mockResolvedValue({ category: 'Income', friendlyName: 'Direct Deposit' });
       await service.categorize([{ id: 9, date: '2026-09-15', description: 'Direct Deposit Acme Payroll Ppd', tagNames: [] }]);
 
       // The next harvest re-reads the renamed, tagged transaction from the provider
       const result = await service.categorize([{ id: 9, date: '2026-09-15', description: 'Direct Deposit', tagNames: ['Income'] }]);
 
-      expect(mockAIGateway.chatWithJson).toHaveBeenCalledTimes(1);
+      expect(mockAIGateway.chatStructured).toHaveBeenCalledTimes(1);
       expect(mockTransactionSource.updateTransaction).toHaveBeenCalledTimes(1);
       expect(result.skipped).toHaveLength(1);
       expect(mockLogger.info).toHaveBeenCalledWith('categorization.settled', { id: 9, friendlyName: 'Direct Deposit' });
     });
 
     it('re-sends it when the provider description changes again', async () => {
-      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Income', friendlyName: 'Direct Deposit' });
+      mockAIGateway.chatStructured.mockResolvedValue({ category: 'Income', friendlyName: 'Direct Deposit' });
       await service.categorize([{ id: 9, date: '2026-09-15', description: 'Direct Deposit Acme Payroll Ppd', tagNames: [] }]);
       await service.categorize([{ id: 9, date: '2026-09-15', description: 'Direct Deposit Pwp Xx12', tagNames: ['Income'] }]);
 
-      expect(mockAIGateway.chatWithJson).toHaveBeenCalledTimes(2);
+      expect(mockAIGateway.chatStructured).toHaveBeenCalledTimes(2);
     });
 
     it('getUncategorized agrees with categorize about settled rows', async () => {
-      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Income', friendlyName: 'Direct Deposit' });
+      mockAIGateway.chatStructured.mockResolvedValue({ category: 'Income', friendlyName: 'Direct Deposit' });
       await service.categorize([{ id: 9, date: '2026-09-15', description: 'Direct Deposit Acme Payroll Ppd', tagNames: [] }]);
 
       expect(service.getUncategorized([{ id: '9', description: 'Direct Deposit', tagNames: ['Income'] }])).toEqual([]);
@@ -338,7 +338,7 @@ describe('TransactionCategorizationService', () => {
     });
 
     it('logs both picks and keeps the LLM category on the apply path', async () => {
-      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+      mockAIGateway.chatStructured.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
       jevSays('Shopping', 0.95);
 
       const result = await service.categorize(walmart());
@@ -352,7 +352,7 @@ describe('TransactionCategorizationService', () => {
     });
 
     it('logs the same comparison on the preview path and writes nothing', async () => {
-      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+      mockAIGateway.chatStructured.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
       jevSays('Groceries', 0.7);
 
       const result = await service.preview(walmart());
@@ -363,7 +363,7 @@ describe('TransactionCategorizationService', () => {
     });
 
     it('still compares when the LLM category is invalid, and the row still fails in shadow', async () => {
-      mockAIGateway.chatWithJson.mockResolvedValue({ category: '', friendlyName: 'PayPal' });
+      mockAIGateway.chatStructured.mockResolvedValue({ category: '', friendlyName: 'PayPal' });
       jevSays('Shopping', 0.9);
 
       const result = await service.categorize(walmart());
@@ -373,7 +373,7 @@ describe('TransactionCategorizationService', () => {
     });
 
     it('a Jev failure leaves the legacy result untouched', async () => {
-      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+      mockAIGateway.chatStructured.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
       decisionGateway.evaluate.mockRejectedValue(new Error('jev down'));
 
       const result = await service.categorize(walmart());
@@ -385,7 +385,7 @@ describe('TransactionCategorizationService', () => {
 
     it('mode off asks Jev nothing', async () => {
       mockFinanceStore.getCategorizationConfig.mockReturnValue({ ...mockCategorizationConfig, jev: { mode: 'off' } });
-      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+      mockAIGateway.chatStructured.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
 
       await service.categorize(walmart());
 
@@ -398,7 +398,7 @@ describe('TransactionCategorizationService', () => {
       const unhandled = vi.fn();
       process.on('unhandledRejection', unhandled);
       try {
-        mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+        mockAIGateway.chatStructured.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
 
         const result = await service.categorize(walmart());
         await new Promise((resolve) => setTimeout(resolve, 0));
@@ -417,7 +417,7 @@ describe('TransactionCategorizationService', () => {
     it('a rejecting judge does not leak when the LLM also fails', async () => {
       const spy = vi.spyOn(TransactionCategoryJudge.prototype, 'judge').mockRejectedValue(new Error('judge blew up'));
       try {
-        mockAIGateway.chatWithJson.mockRejectedValue(new Error('API timeout'));
+        mockAIGateway.chatStructured.mockRejectedValue(new Error('API timeout'));
 
         const result = await service.preview(walmart());
 
@@ -429,7 +429,7 @@ describe('TransactionCategorizationService', () => {
     });
 
     it('defaults to mode shadow and floor 0.8 when the config has no jev block', async () => {
-      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+      mockAIGateway.chatStructured.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
       jevSays('Groceries', 0.9);
 
       await service.categorize(walmart());
@@ -439,7 +439,7 @@ describe('TransactionCategorizationService', () => {
     });
 
     it('flags an LLM error in the comparison', async () => {
-      mockAIGateway.chatWithJson.mockRejectedValue(new Error('API timeout'));
+      mockAIGateway.chatStructured.mockRejectedValue(new Error('API timeout'));
       jevSays('Groceries', 0.9);
 
       await service.categorize(walmart());
@@ -448,7 +448,7 @@ describe('TransactionCategorizationService', () => {
     });
 
     it('marks llmError false when the LLM answered', async () => {
-      mockAIGateway.chatWithJson.mockResolvedValue({ category: '', friendlyName: 'PayPal' });
+      mockAIGateway.chatStructured.mockResolvedValue({ category: '', friendlyName: 'PayPal' });
       jevSays('Shopping', 0.9);
 
       await service.categorize(walmart());
@@ -458,7 +458,7 @@ describe('TransactionCategorizationService', () => {
 
     it('an unknown mode falls back to shadow and warns once per distinct bad config', async () => {
       mockFinanceStore.getCategorizationConfig.mockReturnValue({ ...mockCategorizationConfig, jev: { mode: 'yolo' } });
-      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+      mockAIGateway.chatStructured.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
       jevSays('Groceries', 0.9);
 
       await service.categorize(walmart());
@@ -470,7 +470,7 @@ describe('TransactionCategorizationService', () => {
 
     it.each([[1.5], [-0.1], [Number.NaN], ['0.9']])('confidenceFloor %s falls back to 0.8 and warns once', async (floor) => {
       mockFinanceStore.getCategorizationConfig.mockReturnValue({ ...mockCategorizationConfig, jev: { mode: 'shadow', confidenceFloor: floor } });
-      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+      mockAIGateway.chatStructured.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
       jevSays('Groceries', 0.9);
 
       await service.categorize(walmart());
@@ -481,7 +481,7 @@ describe('TransactionCategorizationService', () => {
     });
 
     it('warns again for a different bad config', async () => {
-      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+      mockAIGateway.chatStructured.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
       jevSays('Groceries', 0.9);
 
       mockFinanceStore.getCategorizationConfig.mockReturnValue({ ...mockCategorizationConfig, jev: { mode: 'yolo' } });
@@ -494,7 +494,7 @@ describe('TransactionCategorizationService', () => {
 
     it('a valid floor inside [0,1] is used as given', async () => {
       mockFinanceStore.getCategorizationConfig.mockReturnValue({ ...mockCategorizationConfig, jev: { mode: 'promote', confidenceFloor: 0.65 } });
-      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+      mockAIGateway.chatStructured.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
       jevSays('Groceries', 0.9);
 
       await service.categorize(walmart());
@@ -508,7 +508,7 @@ describe('TransactionCategorizationService', () => {
         aiGateway: mockAIGateway, transactionSource: mockTransactionSource,
         financeStore: mockFinanceStore, logger: mockLogger,
       });
-      mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+      mockAIGateway.chatStructured.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
 
       const result = await service.categorize(walmart());
 
@@ -518,7 +518,7 @@ describe('TransactionCategorizationService', () => {
 
     it('asks Jev while the LLM is still thinking', async () => {
       let releaseLlm;
-      mockAIGateway.chatWithJson.mockReturnValue(new Promise((resolve) => { releaseLlm = resolve; }));
+      mockAIGateway.chatStructured.mockReturnValue(new Promise((resolve) => { releaseLlm = resolve; }));
       jevSays('Groceries', 0.9);
 
       const pending = service.categorize(walmart());
@@ -536,7 +536,7 @@ describe('TransactionCategorizationService', () => {
       });
 
       it('Jev category wins at the floor; the LLM still names and memos', async () => {
-        mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart', memo: 'Weekly' });
+        mockAIGateway.chatStructured.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart', memo: 'Weekly' });
         jevSays('Shopping', 0.8);
 
         const result = await service.categorize(walmart());
@@ -547,7 +547,7 @@ describe('TransactionCategorizationService', () => {
       });
 
       it('below the floor the LLM category stands', async () => {
-        mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+        mockAIGateway.chatStructured.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
         jevSays('Shopping', 0.79);
 
         const result = await service.categorize(walmart());
@@ -556,7 +556,7 @@ describe('TransactionCategorizationService', () => {
       });
 
       it('rescues a blank LLM category when Jev is confident', async () => {
-        mockAIGateway.chatWithJson.mockResolvedValue({ category: '', friendlyName: 'PayPal' });
+        mockAIGateway.chatStructured.mockResolvedValue({ category: '', friendlyName: 'PayPal' });
         jevSays('Shopping', 0.9);
 
         const result = await service.categorize(walmart());
@@ -566,7 +566,7 @@ describe('TransactionCategorizationService', () => {
       });
 
       it('cannot rescue a missing friendly name', async () => {
-        mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Shopping' });
+        mockAIGateway.chatStructured.mockResolvedValue({ category: 'Shopping' });
         jevSays('Shopping', 0.99);
 
         const result = await service.categorize(walmart());
@@ -575,7 +575,7 @@ describe('TransactionCategorizationService', () => {
       });
 
       it('preview promotes exactly as apply does', async () => {
-        mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+        mockAIGateway.chatStructured.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
         jevSays('Shopping', 0.9);
 
         const result = await service.preview(walmart());
@@ -585,7 +585,7 @@ describe('TransactionCategorizationService', () => {
 
       it('an invalid confidenceFloor falls back to 0.8', async () => {
         mockFinanceStore.getCategorizationConfig.mockReturnValue({ ...mockCategorizationConfig, jev: { mode: 'promote', confidenceFloor: 'high' } });
-        mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+        mockAIGateway.chatStructured.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
         jevSays('Shopping', 0.75);
 
         const result = await service.categorize(walmart());
@@ -596,7 +596,7 @@ describe('TransactionCategorizationService', () => {
 
       it('a null confidence never promotes, even at floor 0', async () => {
         mockFinanceStore.getCategorizationConfig.mockReturnValue({ ...mockCategorizationConfig, jev: { mode: 'promote', confidenceFloor: 0 } });
-        mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+        mockAIGateway.chatStructured.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
         decisionGateway.evaluate.mockResolvedValue({
           model: 'jev-test-1', usage: {}, answers: { category: { type: 'choice', choice: 'Shopping', confidence: null } },
         });
@@ -608,7 +608,7 @@ describe('TransactionCategorizationService', () => {
       });
 
       it('a Jev pick outside validTags never promotes', async () => {
-        mockAIGateway.chatWithJson.mockResolvedValue({ category: '', friendlyName: 'PayPal' });
+        mockAIGateway.chatStructured.mockResolvedValue({ category: '', friendlyName: 'PayPal' });
         jevSays('Bogus', 0.99);
 
         const result = await service.categorize(walmart());
@@ -619,7 +619,7 @@ describe('TransactionCategorizationService', () => {
       });
 
       it('an LLM error is not rescued by Jev', async () => {
-        mockAIGateway.chatWithJson.mockRejectedValue(new Error('API timeout'));
+        mockAIGateway.chatStructured.mockRejectedValue(new Error('API timeout'));
         jevSays('Shopping', 0.99);
 
         const result = await service.categorize(walmart());
@@ -630,7 +630,7 @@ describe('TransactionCategorizationService', () => {
 
       it('shadow mode with a confident Jev still applies the LLM category', async () => {
         mockFinanceStore.getCategorizationConfig.mockReturnValue({ ...mockCategorizationConfig, jev: { mode: 'shadow', confidenceFloor: 0.8 } });
-        mockAIGateway.chatWithJson.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+        mockAIGateway.chatStructured.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
         jevSays('Shopping', 0.99);
 
         const result = await service.categorize(walmart());

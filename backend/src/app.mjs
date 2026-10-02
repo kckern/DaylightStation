@@ -677,6 +677,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'agent-usage' }),
   });
 
+  // Structured wire layer: every AI adapter is wrapped once where it is built,
+  // so all consumers (and every scoped view) get it without knowing. Inert
+  // unless integrations.yml sets ai[].wire.mode. See ai-structured-wire-layer.md.
+  const { StructuredWireLayer } = await import('#adapters/ai/StructuredWireLayer.mjs');
+  const { readAiWireConfig } = await import('#composition/aiWireConfig.mjs');
+  const aiWire = readAiWireConfig(configService.getIntegrationsConfig?.(defaultHouseholdId));
+  const aiWireLogger = rootLogger.child({ module: 'ai-wire' });
+  const wrapAiWire = (adapter) => (adapter ? new StructuredWireLayer(adapter, { ...aiWire, logger: aiWireLogger }) : adapter);
+  rootLogger.info('ai.wire.config', aiWire);
+
   try {
     integrationSystem = await initializeIntegrations({
       configService,
@@ -688,7 +698,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       householdId: defaultHouseholdId,
       httpClient: axios,
       logger: rootLogger.child({ module: 'integrations' }),
-      aiUsageLedger
+      aiUsageLedger,
+      decorateAdapter: (capability, adapter) => (capability === 'ai' ? wrapAiWire(adapter) : adapter)
     });
 
     rootLogger.info('integrations.loaded', {
@@ -717,7 +728,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   let sharedAiGateway = householdAdapters?.has?.('ai') ? householdAdapters.get('ai') : null;
   if (!sharedAiGateway && openaiApiKey) {
     const { OpenAIAdapter } = await import('#adapters/ai/OpenAIAdapter.mjs');
-    sharedAiGateway = new OpenAIAdapter({ apiKey: openaiApiKey }, { httpClient: axios, logger: rootLogger.child({ module: 'shared-ai' }), aiUsageLedger });
+    sharedAiGateway = wrapAiWire(new OpenAIAdapter({ apiKey: openaiApiKey }, { httpClient: axios, logger: rootLogger.child({ module: 'shared-ai' }), aiUsageLedger }));
     rootLogger.debug('ai.adapter.fallback', { reason: 'Using hardcoded OpenAI adapter creation' });
   }
 
@@ -6562,10 +6573,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   let aiAnthropicAdapter = null;
   if (anthropicApiKey) {
     const { AnthropicAdapter } = await import('#adapters/ai/AnthropicAdapter.mjs');
-    aiAnthropicAdapter = new AnthropicAdapter(
+    aiAnthropicAdapter = wrapAiWire(new AnthropicAdapter(
       { apiKey: anthropicApiKey },
       { httpClient: axios, logger: rootLogger.child({ module: 'ai-anthropic' }), aiUsageLedger }
-    );
+    ));
   }
 
   const { AiGatewayService } = await import('#apps/ai/AiGatewayService.mjs');

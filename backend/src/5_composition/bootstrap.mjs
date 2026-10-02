@@ -484,10 +484,11 @@ export async function initializeIntegrations(config) {
  * @param {string} [config.householdId] - Household ID (defaults to default)
  * @param {Object} [config.httpClient] - HTTP client for adapter use
  * @param {Object} [config.logger] - Logger instance
+ * @param {Function} [config.decorateAdapter] - (capability, adapter, serviceConfig) => adapter; wraps each loaded adapter
  * @returns {Promise<Object>} Adapters keyed by capability
  */
 export async function loadHouseholdIntegrations(config) {
-  const { householdId, httpClient, logger = console, aiUsageLedger = null } = config;
+  const { householdId, httpClient, logger = console, aiUsageLedger = null, decorateAdapter = null } = config;
 
   if (!integrationLoaderInstance) {
     throw new Error('Integration system not initialized. Call initializeIntegrations first.');
@@ -495,7 +496,7 @@ export async function loadHouseholdIntegrations(config) {
 
   const adapters = await integrationLoaderInstance.loadForHousehold(
     householdId,
-    { httpClient, logger, aiUsageLedger }
+    { httpClient, logger, aiUsageLedger, ...(decorateAdapter ? { decorateAdapter } : {}) }
   );
 
   logger.info?.('integrations.household.loaded', {
