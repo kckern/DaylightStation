@@ -54,7 +54,8 @@ export function stripFormatSentences(text) {
  * a key), so the raw row lines are counted and must match both the declared
  * `[N]` and the decoded rows. A row short of columns is kept with the missing
  * cells absent, unless it is the LAST row of a lax decode: that is what a cut
- * reply looks like, so it fails. The table must be the only one and declare
+ * reply looks like, so it fails; any other short row may only omit trailing
+ * text columns (`short-row`). The table must be the only one and declare
  * the tab delimiter (`name[N<TAB>]`), row keys must be template columns, and
  * numeric template columns must decode to numbers (or null/empty): together
  * these turn a column shift into a failure instead of a corrupted log.
@@ -109,6 +110,8 @@ export function decodeReply(text, shape) {
     && Object.keys(row).every((key) => columns.has(key)))) {
     return { ok: false, reason: 'shape-mismatch' };
   }
+  const isShort = (row) => !shape.columns.every((c) => Object.hasOwn(row, c));
+  if (lax && rows.length > 0 && isShort(rows.at(-1))) return { ok: false, reason: 'truncated' };
   // A shifted row puts text in a numeric column: number, null or empty only.
   const numberColumns = shape.numberColumns ?? [];
   if (rows.some((row) => numberColumns.some((c) => Object.hasOwn(row, c)
@@ -122,10 +125,22 @@ export function decodeReply(text, shape) {
     && stringColumns.some((c) => typeof row[c] === 'number' || typeof row[c] === 'boolean'))) {
     return { ok: false, reason: 'type-mismatch' };
   }
-  const isShort = (row) => !shape.columns.every((c) => Object.hasOwn(row, c));
-  if (lax && rows.length > 0 && isShort(rows.at(-1))) return { ok: false, reason: 'truncated' };
+  // A short row may only omit trailing TEXT columns (an empty `dish` written
+  // without its tab). A missing numeric suffix means a cell went missing
+  // earlier and the nutrients shifted left. A short row that still ends in an
+  // empty cell wrote its trailing tab, so it, too, lost a cell somewhere.
+  if (rows.some((row) => isShort(row) && !shortRowIsTrailingText(row, shape))) {
+    return { ok: false, reason: 'short-row' };
+  }
 
   return { ok: true, value: { ...value, [shape.arrayKey]: rows.map((row) => cleanRow(row, shape)) } };
+}
+
+function shortRowIsTrailingText(row, shape) {
+  const firstMissing = shape.columns.findIndex((c) => !Object.hasOwn(row, c));
+  const suffix = shape.columns.slice(firstMissing);
+  if (suffix.some((c) => Object.hasOwn(row, c) || !shape.stringColumns.includes(c))) return false;
+  return firstMissing === 0 || row[shape.columns[firstMissing - 1]] !== '';
 }
 
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

@@ -251,4 +251,44 @@ describe('decodeReply', () => {
   it('a header column outside the template fails shape-mismatch', () => {
     expect(decodeReply('items[1\t]{name\tunit\tgrams\tcolour}:\n  Egg\tg\t50\tred', shape)).toEqual({ ok: false, reason: 'shape-mismatch' });
   });
+
+  // A short row may only omit trailing text columns (real 15-column food shape).
+  describe('short rows in the 15-column food shape', () => {
+    const header = `items[3\t]{${FOOD_COLUMNS.join('\t')}}:`;
+    const egg = ['Egg', 'default', 'yellow', 1, 'g', 50, 70, 6, 0, 5, 0, 0, 60, 180];
+    const rice = ['Rice', 'default', 'yellow', 1, 'g', 100, 130, 3, 28, 0, 0, 0, 1, 0, 'Bowl'];
+    const toast = ['Toast', 'default', 'yellow', 1, 'g', 30, 80, 3, 15, 1, 1, 1, 150, 0, 'Plate'];
+    const reply = (...rows) => `date: d\ntime: evening\n${header}\n${rows.map((r) => `  ${r.join('\t')}`).join('\n')}`;
+    const withoutProtein = (row) => row.filter((_, i) => i !== FOOD_COLUMNS.indexOf('protein'));
+
+    it('missing protein, dish empty and no trailing tab: fails short-row (cholesterol is in the missing suffix)', () => {
+      expect(decodeReply(reply(withoutProtein(egg), rice, toast), foodShape)).toEqual({ ok: false, reason: 'short-row' });
+    });
+
+    it('missing protein, dish empty WITH its trailing tab: fails short-row (short row ending in an empty cell)', () => {
+      expect(decodeReply(reply([...withoutProtein(egg), ''], rice, toast), foodShape)).toEqual({ ok: false, reason: 'short-row' });
+    });
+
+    it('missing protein with dish present: fails (the shifted number lands in dish)', () => {
+      expect(decodeReply(reply(withoutProtein([...egg, 'Breakfast']), rice, toast), foodShape)).toEqual({ ok: false, reason: 'type-mismatch' });
+    });
+
+    it('dish empty with no trailing tab in a middle row decodes with dish absent', () => {
+      const result = decodeReply(reply(rice, egg, toast), foodShape);
+      expect(result.ok).toBe(true);
+      expect(result.value.items[1]).toEqual(Object.fromEntries(egg.map((v, i) => [FOOD_COLUMNS[i], v])));
+      expect(Object.hasOwn(result.value.items[1], 'dish')).toBe(false);
+    });
+
+    it('dish empty on the last row of a strict decode (tab present) decodes with dish absent', () => {
+      const result = decodeReply(reply(rice, toast, [...egg, '']), foodShape);
+      expect(result.ok).toBe(true);
+      expect(Object.hasOwn(result.value.items[2], 'dish')).toBe(false);
+      expect(result.value.items[2].cholesterol).toBe(180);
+    });
+
+    it('dish empty with no trailing tab on the LAST row cannot be strict and stays truncated', () => {
+      expect(decodeReply(reply(rice, toast, egg), foodShape)).toEqual({ ok: false, reason: 'truncated' });
+    });
+  });
 });

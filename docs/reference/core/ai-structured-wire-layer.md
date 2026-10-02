@@ -115,6 +115,17 @@ template's shape:
   (models often omit the trailing tab of an empty last cell such as `dish`),
   **unless it is the last row of a lax decode**: that is what a cut reply looks
   like, so the decode fails as `truncated`. A strict decode has no short rows.
+- A kept short row may only omit **trailing text columns** (the missing
+  columns are always a suffix of the column list, and every one must be in
+  `stringColumns`). Otherwise it fails as `short-row`: in the 15-column food
+  table, a row missing `protein` with an empty `dish` is missing
+  `[cholesterol, dish]`, so every nutrient after `carbs` slid one column left.
+  A short row whose last present cell is empty also fails as `short-row`: it
+  wrote its trailing tab, so a cell went missing somewhere before it. (A row
+  missing a middle number but carrying its `dish` puts a number in `dish`;
+  that is the text-column `type-mismatch` below.)
+- Order of checks: `truncated` (last row), then `type-mismatch`, then
+  `short-row`.
 - Every decoded row key must be a template column (else `shape-mismatch`).
 - **Type check** (`type-mismatch`): a column whose template example is a
   number (`numberColumns` in the shape) must decode to a number or `null`, or
@@ -198,7 +209,7 @@ the log store; the warn fallback is.
 Decode-fallback `reason`s: `not-text`, `json-reply`, `toon-parse`,
 `multiple-tables`, `wrong-delimiter`, `shape-mismatch`,
 `row-count-mismatch`, `extra-cells`, `stray-quote`, `type-mismatch`,
-`truncated`. Mode `off` emits no skip reason (nothing is planned).
+`short-row`, `truncated`. Mode `off` emits no skip reason (nothing is planned).
 
 The usage ledger row carries `wire` (`1_adapters/ai/usageAttribution.mjs`):
 
