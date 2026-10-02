@@ -24,6 +24,8 @@ async function main() {
   if (!b64) { process.stderr.write('usage: --texts-b64 <base64> [--runs N]\n'); process.exit(2); }
   const texts = Buffer.from(b64, 'base64').toString('utf8').split('\n').map((t) => t.trim()).filter(Boolean);
   const runs = Number(arg('--runs', '3'));
+  if (texts.length === 0) { process.stderr.write('usage: --texts-b64 decoded to no descriptions\n'); process.exit(2); }
+  if (!Number.isInteger(runs) || runs < 1) { process.stderr.write('usage: --runs must be a positive integer\n'); process.exit(2); }
 
   const cfg = await getConfigService();
   const apiKey = cfg.getSystemAuth('openai', 'api_key');
@@ -68,13 +70,25 @@ async function main() {
         });
         const before = fallbacks;
         const started = Date.now();
-        await uc.execute({ userId: 'ai-wire-ab', conversationId: 'cli:ai-wire-ab', text, messageId: null }).catch(() => {});
+        let success = false;
+        let error = null;
+        try {
+          const out = await uc.execute({ userId: 'ai-wire-ab', conversationId: 'cli:ai-wire-ab', text, messageId: null });
+          success = out?.success === true;
+        } catch (e) {
+          error = e?.message || String(e);
+        }
+        if (error || !success) {
+          process.stderr.write(`run failed: path=${path} run=${run} text=${JSON.stringify(text)} ${error ? `error=${error}` : 'success=false'}\n`);
+        }
         const items = (saved.at(-1)?.items ?? []).filter((i) => i.kind !== 'group');
         results.push({
           text, path, run, ms: Date.now() - started, replyChars,
           itemCount: items.length,
           kcal: items.reduce((n, i) => n + (Number(i.calories) || 0), 0),
           fallback: fallbacks > before,
+          success,
+          error,
         });
       }
     }
