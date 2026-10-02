@@ -474,6 +474,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
               <video
                 key={header.recapUrl}
                 ref={recapVideoRef}
+                data-activity-probe="ignore"
                 className="session-detail__thumb-video"
                 src={header.recapUrl}
                 poster={header.thumbUrl || undefined}

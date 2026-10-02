@@ -218,6 +218,7 @@ export default function ExerciseDetail({
           <div className="exercise-detail__media">
             {showVideo && video ? (
               <video
+                data-activity-probe="ignore"
                 className="exercise-detail__video"
                 data-testid="exercise-detail-video"
                 src={DaylightMediaPath(video)}

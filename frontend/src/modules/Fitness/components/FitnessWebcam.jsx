@@ -189,6 +189,7 @@ const FitnessWebcam = forwardRef(function FitnessWebcam(props, ref) {
         autoPlay
         playsInline
         muted={audioConstraints === false}
+        data-activity-probe="ignore"
         className={`fitness-webcam-video${videoClassName ? ` ${videoClassName}` : ''}`}
         style={mergedVideoStyle}
       />
