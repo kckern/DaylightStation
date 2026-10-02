@@ -2138,7 +2138,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         itemsRoot: configService.getHouseholdPath('feedback'),
         mediaDir: mediaBasePath,
       }),
-      transcriptionService: scopedGateway(sharedAiGateway, { app: 'feedback' }),
+      transcriptionService: scopedGateway(sharedAiGateway, { app: 'feedback', feature: 'transcription' }),
       notificationService: notificationStack?.notificationService || null,
       resourcePresenter: publicResourceUrl,
       logger: rootLogger.child({ module: 'feedback' }),
