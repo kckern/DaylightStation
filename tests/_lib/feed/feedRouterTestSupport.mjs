@@ -26,6 +26,7 @@ export function createFeedTestRouter(legacy = {}) {
     resolveIcon: async () => null,
     proxyImage: async () => ({ contentType: 'image/svg+xml', data: Buffer.from('') }),
     extractReadableContent: async () => ({}),
+    extractOgImage: async () => ({ ogImage: null }),
   };
   return createFeedRouter({
     ...options,
