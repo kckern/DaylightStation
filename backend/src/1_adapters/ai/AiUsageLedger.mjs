@@ -15,6 +15,38 @@ import { appendTextFile, readDirectoryAsync, readTextFromPathAsync } from '#syst
 
 const MONTH_FILE = /^(\d{4})-(\d{2})(?:\.[\w.-]+)?\.jsonl$/;
 
+/** Stack frames that are AI plumbing, never the code that spent the money. */
+const PLUMBING_FRAME = /[\\/]1_adapters[\\/](?:ai|agents)[\\/]|[\\/]node_modules[\\/]|agentUsageRecorder|node:internal|\(<anonymous>\)|^\s*at (?:async )?Promise\b/;
+
+/**
+ * The first stack frame outside the AI plumbing, as `<path under src>:<line>`
+ * plus the function name when V8 gives one — e.g.
+ * `3_applications/finance/TransactionCategorizationService.mjs:212 (TransactionCategorizationService.categorize)`.
+ * Async callers appear through V8's async stack traces (`at async …`), which
+ * is how a ledger write that happens after the HTTP await still names them.
+ * @param {string} [stack]
+ * @returns {string|null}
+ */
+export function callerFrame(stack = null) {
+  let text = stack;
+  if (text == null) {
+    const limit = Error.stackTraceLimit;
+    Error.stackTraceLimit = 40;
+    text = new Error().stack || '';
+    Error.stackTraceLimit = limit;
+  }
+  for (const line of String(text).split('\n').slice(1)) {
+    if (!/^\s*at /.test(line) || PLUMBING_FRAME.test(line)) continue;
+    const m = /^\s*at (?:async )?(?:(.+?) \()?(?:file:\/\/)?(.+?):(\d+):\d+\)?\s*$/.exec(line);
+    if (!m) continue;
+    const file = /[\\/]backend[\\/]src[\\/]/.test(m[2])
+      ? m[2].replace(/^.*[\\/]backend[\\/]src[\\/]/, '')
+      : m[2].replace(/^.*[\\/](cli[\\/])/, '$1');
+    return m[1] ? `${file}:${m[3]} (${m[1]})` : `${file}:${m[3]}`;
+  }
+  return null;
+}
+
 /**
  * @param {Object} config
  * @param {string} config.dir - Directory for the monthly JSONL files
@@ -26,6 +58,9 @@ const MONTH_FILE = /^(\d{4})-(\d{2})(?:\.[\w.-]+)?\.jsonl$/;
  */
 export function createAiUsageLedger({ dir, source = null, logger = null }) {
   let tail = Promise.resolve();
+  // Callers already warned about, so a hot untagged path warns once per
+  // process instead of once per call; every row still carries its caller.
+  const warnedCallers = new Set();
 
   /** Parsed rows with `ts` in [from, to) from every writer's month files. */
   async function readRange(from, to) {
@@ -80,12 +115,34 @@ export function createAiUsageLedger({ dir, source = null, logger = null }) {
      *   ('http:POST /api/v1/…', 'job:<id>', 'telegram:<bot>', 'tick:…',
      *   'cli:<name>'). Informational, for finding untagged callers; never
      *   used as attribution.
+     * @param {string} [entry.caller] - Set by the ledger itself on untagged
+     *   rows only: the code that made the call, `<path>:<line> (<fn>)`.
      * @param {string} [entry.agentId] - Mastra agent rows only
      * @returns {Promise<void>} resolves once the append settles (never rejects)
+     *
+     * Guard: a row without an `app` reached the ledger through an unscoped
+     * gateway (or an agent missing from AGENT_ATTRIBUTION). It is still
+     * written with `app: null` — the contract every reader filters on — but
+     * also gets `caller` (the first stack frame outside the AI plumbing), and
+     * the first such row per caller logs `ai.usage.unattributed`.
      */
     record(entry) {
       const ts = new Date().toISOString();
-      const line = `${JSON.stringify({ ts, ...entry })}\n`;
+      let row = entry;
+      if (!entry?.app) {
+        let caller = null;
+        try { caller = callerFrame(); } catch { /* never break the call it observes */ }
+        row = { ...entry, app: null, caller };
+        const key = caller || `${entry?.provider}:${entry?.endpoint}:${entry?.agentId ?? ''}`;
+        if (!warnedCallers.has(key)) {
+          warnedCallers.add(key);
+          logger?.warn?.('ai.usage.unattributed', {
+            caller, provider: entry?.provider ?? null, endpoint: entry?.endpoint ?? null, model: entry?.model ?? null,
+            agentId: entry?.agentId ?? null, feature: entry?.feature ?? null, origin: entry?.origin ?? null,
+          });
+        }
+      }
+      const line = `${JSON.stringify({ ts, ...row })}\n`;
       const suffix = source ? `.${String(source).replace(/[^\w.-]+/g, '-')}` : '';
       const file = path.join(dir, `${ts.slice(0, 7)}${suffix}.jsonl`);
       tail = tail
@@ -148,4 +205,4 @@ export function createAiUsageLedger({ dir, source = null, logger = null }) {
   };
 }
 
-export default { createAiUsageLedger };
+export default { createAiUsageLedger, callerFrame };

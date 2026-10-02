@@ -124,3 +124,25 @@ describe('AiUsageLedger', () => {
   });
 });
 
+describe('callerFrame', () => {
+  it('skips AI plumbing and node internals, and names the first real caller', async () => {
+    const { callerFrame } = await import('./AiUsageLedger.mjs');
+    const stack = [
+      'Error',
+      '    at Object.record (/usr/src/app/backend/src/1_adapters/ai/AiUsageLedger.mjs:120:20)',
+      '    at OpenAIAdapter.#recordUsage (/usr/src/app/backend/src/1_adapters/ai/OpenAIAdapter.mjs:360:24)',
+      '    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)',
+      '    at async OpenAIAdapter.chatWithJson (file:///usr/src/app/backend/src/1_adapters/ai/OpenAIAdapter.mjs:420:5)',
+      '    at async TransactionCategorizationService.categorize (file:///usr/src/app/backend/src/3_applications/finance/TransactionCategorizationService.mjs:212:22)',
+      '    at async FinanceHarvestService.harvest (/usr/src/app/backend/src/3_applications/finance/FinanceHarvestService.mjs:90:5)',
+    ].join('\n');
+    expect(callerFrame(stack)).toBe('3_applications/finance/TransactionCategorizationService.mjs:212 (TransactionCategorizationService.categorize)');
+  });
+
+  it('handles anonymous frames and CLI paths, and returns null when only plumbing remains', async () => {
+    const { callerFrame } = await import('./AiUsageLedger.mjs');
+    expect(callerFrame('Error\n    at async file:///opt/x/cli/journalist-debrief-preview.cli.mjs:130:3')).toBe('cli/journalist-debrief-preview.cli.mjs:130');
+    expect(callerFrame('Error\n    at x (/app/backend/src/1_adapters/ai/OpenAIAdapter.mjs:1:1)')).toBeNull();
+  });
+});
+
