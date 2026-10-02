@@ -20,9 +20,9 @@ describe('IAIGateway', () => {
       await expect(gateway.chatWithImage([], 'url')).rejects.toThrow('must be implemented');
     });
 
-    test('chatWithJson throws not implemented', async () => {
+    test('chatStructured throws not implemented', async () => {
       const gateway = new IAIGateway();
-      await expect(gateway.chatWithJson([])).rejects.toThrow('must be implemented');
+      await expect(gateway.chatStructured([])).rejects.toThrow('must be implemented');
     });
 
     test('transcribe throws not implemented', async () => {
@@ -42,11 +42,16 @@ describe('IAIGateway', () => {
   });
 
   describe('isAIGateway', () => {
+    test('isAIGateway rejects an object that still only has chatWithJson', () => {
+      const legacy = { chat() {}, chatWithImage() {}, chatWithJson() {}, transcribe() {}, embed() {} };
+      expect(isAIGateway(legacy)).toBe(false);
+    });
+
     test('returns true for valid implementation', () => {
       const mockGateway = {
         chat: () => {},
         chatWithImage: () => {},
-        chatWithJson: () => {},
+        chatStructured: () => {},
         transcribe: () => {},
         embed: () => {}
       };
@@ -78,7 +83,7 @@ describe('IAIGateway', () => {
       const mockGateway = {
         chat: () => {},
         chatWithImage: () => {},
-        chatWithJson: () => {},
+        chatStructured: () => {},
         transcribe: () => {},
         embed: () => {}
       };

@@ -88,10 +88,10 @@ export class CardLadderTypedJudge {
   }
 
   async #askModel(facts, floor, targetLanguage, script) {
-    const reply = await this.#ai.chatWithJson([
+    const reply = await this.#ai.chatStructured([
       { role: 'system', content: systemPrompt(targetLanguage, script) },
       { role: 'user', content: JSON.stringify(facts) },
-    ], { model: this.#model, reasoningEffort: 'minimal', timeout: this.#timeoutMs, jsonMode: true });
+    ], { model: this.#model, reasoningEffort: 'minimal', timeout: this.#timeoutMs });
     if (!Number.isInteger(reply?.score) || reply.score < 1 || reply.score > 10) {
       throw new Error('malformed reply');
     }

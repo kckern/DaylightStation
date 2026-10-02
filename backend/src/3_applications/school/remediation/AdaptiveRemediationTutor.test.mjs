@@ -87,7 +87,7 @@ async function harness() {
   let turn = 0;
   const aiGateway = {
     isConfigured: () => true,
-    chatWithJson: vi.fn(async (messages) => {
+    chatStructured: vi.fn(async (messages) => {
       turn += 1;
       return {
         conceptId: 'unit-rate',
@@ -117,7 +117,7 @@ describe('adaptive remediation application flow', () => {
       offer: { status: 'offered', launch: 'offer' },
     });
     expect(offer.offer.source).not.toHaveProperty('tutorContext');
-    expect(aiGateway.chatWithJson).not.toHaveBeenCalled();
+    expect(aiGateway.chatStructured).not.toHaveBeenCalled();
   });
 
   it('maps A-E choices to F1-F5, adapts after a wrong answer, and resumes by cursor', async () => {
@@ -136,7 +136,7 @@ describe('adaptive remediation application flow', () => {
       lastServerSequence: 0, action: 'start',
     });
     expect(duplicate).toEqual(started);
-    expect(aiGateway.chatWithJson).toHaveBeenCalledTimes(1);
+    expect(aiGateway.chatStructured).toHaveBeenCalledTimes(1);
 
     const adapted = await tutor.act({
       sessionId: 'rem_ABC123', access, clientSequence: 1,
@@ -144,7 +144,7 @@ describe('adaptive remediation application flow', () => {
     });
     expect(adapted.answer).toMatchObject({ correct: false, conceptId: 'unit-rate' });
     expect(adapted.session.turns.at(-1)).toMatchObject({ turnId: 'turn-2', serverSequence: 2 });
-    expect(aiGateway.chatWithJson.mock.calls[1][0][1].content).toContain('"correct":false');
+    expect(aiGateway.chatStructured.mock.calls[1][0][1].content).toContain('"correct":false');
 
     const resumed = await tutor.get({
       sessionId: 'rem_ABC123', access, afterServerSequence: 1,
@@ -194,7 +194,7 @@ describe('adaptive remediation application flow', () => {
       sessionId: 'rem_ABC123', access, clientSequence: 1,
       lastServerSequence: 1, action: 'choice', turnId: 'turn-1', choiceId: 'B',
     })).rejects.toMatchObject({ code: 'REMEDIATION_ACTION_CONFLICT' });
-    expect(aiGateway.chatWithJson).toHaveBeenCalledTimes(2);
+    expect(aiGateway.chatStructured).toHaveBeenCalledTimes(2);
   });
 
   it('lets the learner request an explanation without recording a wrong answer', async () => {
@@ -221,7 +221,7 @@ describe('adaptive remediation application flow', () => {
       sessionId: 'rem_ABC123', access, clientSequence: 0,
       lastServerSequence: 0, action: 'start',
     });
-    aiGateway.chatWithJson
+    aiGateway.chatStructured
       .mockResolvedValueOnce({
         conceptId: 'unit-rate', body: 'Divide the total by the number of equal units.',
         prompt: '15 miles in 3 hours?',
@@ -239,7 +239,7 @@ describe('adaptive remediation application flow', () => {
       lastServerSequence: 1, action: 'choice', turnId: 'turn-1', choiceId: 'A',
     });
     expect(response.session.turns.at(-1).prompt).toBe('28 pages in 4 days?');
-    expect(aiGateway.chatWithJson).toHaveBeenCalledTimes(3);
-    expect(aiGateway.chatWithJson.mock.calls.at(-1)[0][1].content).toContain('Previous candidate was rejected');
+    expect(aiGateway.chatStructured).toHaveBeenCalledTimes(3);
+    expect(aiGateway.chatStructured.mock.calls.at(-1)[0][1].content).toContain('Previous candidate was rejected');
   });
 });

@@ -73,7 +73,7 @@ describe('AI usage attribution — previously feature-less consumers', () => {
       defaultHouseholdId: 'default',
       logger: quietLogger(),
     });
-    await captured.categorization.aiGateway.chatWithJson(MESSAGES);
+    await captured.categorization.aiGateway.chatStructured(MESSAGES);
     expect(await rows()).toEqual([expect.objectContaining({ app: 'finance', feature: 'categorization' })]);
   });
 
@@ -88,7 +88,7 @@ describe('AI usage attribution — previously feature-less consumers', () => {
       logger: quietLogger(),
     });
     await homebotContainer.getProcessGratitudeInput();
-    await captured.gratitude.aiGateway.chatWithJson(MESSAGES);
+    await captured.gratitude.aiGateway.chatStructured(MESSAGES);
     expect(await rows()).toEqual([expect.objectContaining({ app: 'homebot', feature: 'gratitude' })]);
   });
 

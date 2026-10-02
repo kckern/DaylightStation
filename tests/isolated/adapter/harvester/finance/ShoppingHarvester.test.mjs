@@ -82,7 +82,7 @@ describe('ShoppingHarvester', () => {
     mockGmailClientFactory = vi.fn().mockResolvedValue(mockGmail);
 
     mockAiGateway = {
-      chatWithJson: vi.fn(),
+      chatStructured: vi.fn(),
       miniModel: 'gpt-4o-mini',
     };
 
@@ -208,7 +208,7 @@ describe('ShoppingHarvester', () => {
         data: { messages: [{ id: 'msg-123' }] },
       });
       mockGmail.users.messages.get.mockResolvedValue({ data: mockEmailMessage });
-      mockAiGateway.chatWithJson.mockResolvedValue(mockReceiptData);
+      mockAiGateway.chatStructured.mockResolvedValue(mockReceiptData);
 
       const result = await harvester.harvest('testuser', { days: 7 });
 
@@ -255,7 +255,7 @@ describe('ShoppingHarvester', () => {
         data: { messages: [{ id: 'msg-123' }] },
       });
       mockGmail.users.messages.get.mockResolvedValue({ data: mockEmailMessage });
-      mockAiGateway.chatWithJson.mockResolvedValue({ items: [], total: null });
+      mockAiGateway.chatStructured.mockResolvedValue({ items: [], total: null });
 
       const result = await harvester.harvest('testuser', { days: 7 });
 
@@ -286,7 +286,7 @@ describe('ShoppingHarvester', () => {
       const result = await harvester.harvest('testuser', { days: 7 });
 
       expect(result.stats.skipped).toBe(1);
-      expect(mockAiGateway.chatWithJson).not.toHaveBeenCalled();
+      expect(mockAiGateway.chatStructured).not.toHaveBeenCalled();
     });
 
     test('handles full sync mode with no date filter', async () => {
@@ -350,7 +350,7 @@ describe('ShoppingHarvester', () => {
         data: { messages: [{ id: 'msg-123' }] },
       });
       mockGmail.users.messages.get.mockResolvedValue({ data: mockEmailMessage });
-      mockAiGateway.chatWithJson.mockResolvedValue(mockReceiptData);
+      mockAiGateway.chatStructured.mockResolvedValue(mockReceiptData);
 
       await harvester.harvest('testuser', { days: 7 });
 
@@ -386,7 +386,7 @@ describe('ShoppingHarvester', () => {
       mockGmail.users.messages.get
         .mockRejectedValueOnce(new Error('Network error'))
         .mockResolvedValueOnce({ data: mockEmailMessage });
-      mockAiGateway.chatWithJson.mockResolvedValue(mockReceiptData);
+      mockAiGateway.chatStructured.mockResolvedValue(mockReceiptData);
 
       const result = await harvester.harvest('testuser', { days: 7 });
 
@@ -469,7 +469,7 @@ describe('ShoppingHarvester', () => {
       mockGmail.users.messages.list.mockResolvedValue({
         data: { messages: [{ id: 'msg-123' }] },
       });
-      mockAiGateway.chatWithJson.mockResolvedValue(mockReceiptData);
+      mockAiGateway.chatStructured.mockResolvedValue(mockReceiptData);
     });
 
     test('extracts plain text body', async () => {
@@ -477,7 +477,7 @@ describe('ShoppingHarvester', () => {
 
       await harvester.harvest('testuser', { days: 7 });
 
-      const aiCall = mockAiGateway.chatWithJson.mock.calls[0][0];
+      const aiCall = mockAiGateway.chatStructured.mock.calls[0][0];
       const userMessage = aiCall.find(m => m.role === 'user').content;
       expect(userMessage).toContain('Order #123-456-789');
       expect(userMessage).toContain('Widget');
@@ -503,7 +503,7 @@ describe('ShoppingHarvester', () => {
 
       await harvester.harvest('testuser', { days: 7 });
 
-      const aiCall = mockAiGateway.chatWithJson.mock.calls[0][0];
+      const aiCall = mockAiGateway.chatStructured.mock.calls[0][0];
       const userMessage = aiCall.find(m => m.role === 'user').content;
       expect(userMessage).toContain('Order #HTML-123');
       expect(userMessage).not.toContain('<html>');
@@ -536,7 +536,7 @@ describe('ShoppingHarvester', () => {
 
       await harvester.harvest('testuser', { days: 7 });
 
-      const aiCall = mockAiGateway.chatWithJson.mock.calls[0][0];
+      const aiCall = mockAiGateway.chatStructured.mock.calls[0][0];
       const userMessage = aiCall.find(m => m.role === 'user').content;
       expect(userMessage).toContain('Plain text content');
       expect(userMessage).not.toContain('HTML content');
@@ -567,7 +567,7 @@ describe('ShoppingHarvester', () => {
 
       await harvester.harvest('testuser', { days: 7 });
 
-      const aiCall = mockAiGateway.chatWithJson.mock.calls[0][0];
+      const aiCall = mockAiGateway.chatStructured.mock.calls[0][0];
       const userMessage = aiCall.find(m => m.role === 'user').content;
       expect(userMessage).toContain('Nested plain text');
     });
@@ -586,7 +586,7 @@ describe('ShoppingHarvester', () => {
 
       await harvester.harvest('testuser', { days: 7 });
 
-      const aiCall = mockAiGateway.chatWithJson.mock.calls[0][0];
+      const aiCall = mockAiGateway.chatStructured.mock.calls[0][0];
       const userMessage = aiCall.find(m => m.role === 'user').content;
       expect(userMessage).toContain('Snippet fallback content');
     });
@@ -602,7 +602,7 @@ describe('ShoppingHarvester', () => {
       mockGmail.users.messages.list.mockResolvedValue({
         data: { messages: [{ id: 'msg-123' }] },
       });
-      mockAiGateway.chatWithJson.mockResolvedValue(mockReceiptData);
+      mockAiGateway.chatStructured.mockResolvedValue(mockReceiptData);
     });
 
     test('identifies Amazon retailer from sender', async () => {
@@ -675,32 +675,32 @@ describe('ShoppingHarvester', () => {
     });
 
     test('calls AI gateway with correct system prompt', async () => {
-      mockAiGateway.chatWithJson.mockResolvedValue(mockReceiptData);
+      mockAiGateway.chatStructured.mockResolvedValue(mockReceiptData);
 
       await harvester.harvest('testuser', { days: 7 });
 
-      const aiCall = mockAiGateway.chatWithJson.mock.calls[0][0];
+      const aiCall = mockAiGateway.chatStructured.mock.calls[0][0];
       const systemMessage = aiCall.find(m => m.role === 'system').content;
       expect(systemMessage).toContain('receipt parsing assistant');
       expect(systemMessage).toContain('Output JSON schema');
     });
 
     test('passes retailer name to AI for context', async () => {
-      mockAiGateway.chatWithJson.mockResolvedValue(mockReceiptData);
+      mockAiGateway.chatStructured.mockResolvedValue(mockReceiptData);
 
       await harvester.harvest('testuser', { days: 7 });
 
-      const aiCall = mockAiGateway.chatWithJson.mock.calls[0][0];
+      const aiCall = mockAiGateway.chatStructured.mock.calls[0][0];
       const userMessage = aiCall.find(m => m.role === 'user').content;
       expect(userMessage).toContain('Amazon');
     });
 
     test('uses correct AI model and parameters', async () => {
-      mockAiGateway.chatWithJson.mockResolvedValue(mockReceiptData);
+      mockAiGateway.chatStructured.mockResolvedValue(mockReceiptData);
 
       await harvester.harvest('testuser', { days: 7 });
 
-      const aiOptions = mockAiGateway.chatWithJson.mock.calls[0][1];
+      const aiOptions = mockAiGateway.chatStructured.mock.calls[0][1];
       expect(aiOptions).toEqual({
         model: 'gpt-4o-mini',
         maxTokens: 2000,
@@ -709,7 +709,7 @@ describe('ShoppingHarvester', () => {
     });
 
     test('marks as false positive when AI returns no items and no total', async () => {
-      mockAiGateway.chatWithJson.mockResolvedValue({
+      mockAiGateway.chatStructured.mockResolvedValue({
         items: [],
         total: null,
         merchant: null,
@@ -725,7 +725,7 @@ describe('ShoppingHarvester', () => {
     });
 
     test('accepts receipt with total but no items', async () => {
-      mockAiGateway.chatWithJson.mockResolvedValue({
+      mockAiGateway.chatStructured.mockResolvedValue({
         items: [],
         total: 50.00,
         merchant: 'Amazon',
@@ -737,7 +737,7 @@ describe('ShoppingHarvester', () => {
     });
 
     test('accepts receipt with items but no total', async () => {
-      mockAiGateway.chatWithJson.mockResolvedValue({
+      mockAiGateway.chatStructured.mockResolvedValue({
         items: [{ name: 'Item', quantity: 1, unit_price: 10, total_price: 10 }],
         total: null,
         merchant: 'Amazon',
@@ -763,7 +763,7 @@ describe('ShoppingHarvester', () => {
     });
 
     test('generates ID from source, date, and order_id', async () => {
-      mockAiGateway.chatWithJson.mockResolvedValue({
+      mockAiGateway.chatStructured.mockResolvedValue({
         ...mockReceiptData,
         order_id: 'ORD-12345',
         date: '2026-01-13',
@@ -777,7 +777,7 @@ describe('ShoppingHarvester', () => {
     });
 
     test('uses email ID when no order_id available', async () => {
-      mockAiGateway.chatWithJson.mockResolvedValue({
+      mockAiGateway.chatStructured.mockResolvedValue({
         ...mockReceiptData,
         order_id: null,
         date: '2026-01-13',
@@ -791,7 +791,7 @@ describe('ShoppingHarvester', () => {
     });
 
     test('sanitizes special characters in ID', async () => {
-      mockAiGateway.chatWithJson.mockResolvedValue({
+      mockAiGateway.chatStructured.mockResolvedValue({
         ...mockReceiptData,
         order_id: 'ORD#123/456@789',
         date: '2026-01-13',
@@ -813,7 +813,7 @@ describe('ShoppingHarvester', () => {
         shopping: { enabled: true, retailers: mockRetailers },
       });
       mockGmail.users.messages.get.mockResolvedValue({ data: mockEmailMessage });
-      mockAiGateway.chatWithJson.mockResolvedValue(mockReceiptData);
+      mockAiGateway.chatStructured.mockResolvedValue(mockReceiptData);
     });
 
     test('deduplicates receipts by ID', async () => {
@@ -874,7 +874,7 @@ describe('ShoppingHarvester', () => {
     });
 
     test('formats datetime with timezone', async () => {
-      mockAiGateway.chatWithJson.mockResolvedValue({
+      mockAiGateway.chatStructured.mockResolvedValue({
         ...mockReceiptData,
         date: '2026-01-13',
         time: '14:30',
@@ -888,7 +888,7 @@ describe('ShoppingHarvester', () => {
     });
 
     test('handles RFC 2822 date format from email headers', async () => {
-      mockAiGateway.chatWithJson.mockResolvedValue({
+      mockAiGateway.chatStructured.mockResolvedValue({
         ...mockReceiptData,
         date: null,
         time: null,
@@ -903,7 +903,7 @@ describe('ShoppingHarvester', () => {
     });
 
     test('uses email date when receipt date not available', async () => {
-      mockAiGateway.chatWithJson.mockResolvedValue({
+      mockAiGateway.chatStructured.mockResolvedValue({
         ...mockReceiptData,
         date: null,
       });
@@ -1019,7 +1019,7 @@ describe('ShoppingHarvester', () => {
     });
 
     test('creates receipt with all required fields', async () => {
-      mockAiGateway.chatWithJson.mockResolvedValue(mockReceiptData);
+      mockAiGateway.chatStructured.mockResolvedValue(mockReceiptData);
 
       await harvester.harvest('testuser', { days: 7 });
 
@@ -1051,7 +1051,7 @@ describe('ShoppingHarvester', () => {
     });
 
     test('uses retailer name as merchant fallback', async () => {
-      mockAiGateway.chatWithJson.mockResolvedValue({
+      mockAiGateway.chatStructured.mockResolvedValue({
         ...mockReceiptData,
         merchant: null,
       });
@@ -1064,7 +1064,7 @@ describe('ShoppingHarvester', () => {
     });
 
     test('defaults currency to USD', async () => {
-      mockAiGateway.chatWithJson.mockResolvedValue({
+      mockAiGateway.chatStructured.mockResolvedValue({
         ...mockReceiptData,
         currency: null,
       });
@@ -1077,7 +1077,7 @@ describe('ShoppingHarvester', () => {
     });
 
     test('defaults items to empty array', async () => {
-      mockAiGateway.chatWithJson.mockResolvedValue({
+      mockAiGateway.chatStructured.mockResolvedValue({
         ...mockReceiptData,
         items: null,
         total: 50.00,
@@ -1102,7 +1102,7 @@ describe('ShoppingHarvester', () => {
         data: { messages: [{ id: 'msg-123' }] },
       });
       mockGmail.users.messages.get.mockResolvedValue({ data: mockEmailMessage });
-      mockAiGateway.chatWithJson.mockResolvedValue(mockReceiptData);
+      mockAiGateway.chatStructured.mockResolvedValue(mockReceiptData);
     });
 
     test('saves meta with lastSync timestamp', async () => {
@@ -1134,7 +1134,7 @@ describe('ShoppingHarvester', () => {
     });
 
     test('saves meta with false_positives array', async () => {
-      mockAiGateway.chatWithJson.mockResolvedValue({ items: [], total: null });
+      mockAiGateway.chatStructured.mockResolvedValue({ items: [], total: null });
 
       await harvester.harvest('testuser', { days: 7 });
 

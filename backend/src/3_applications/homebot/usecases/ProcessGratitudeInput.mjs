@@ -179,7 +179,7 @@ Example output: { "items": [{ "text": "Good health" }, { "text": "Supportive fam
         }
       ];
 
-      const result = await this.#aiGateway.chatWithJson(prompt);
+      const result = await this.#aiGateway.chatStructured(prompt);
 
       // Ensure items have IDs
       const items = (result?.items || []).map(item => ({

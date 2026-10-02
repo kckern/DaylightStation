@@ -32,7 +32,7 @@ For each transaction in the batch:
    transaction has **no tag**, or its description matches a **raw pattern**
    (`^Direct`, `Pwp`, `^xx`, `as of`, `*`, fullwidth `（`, `Privacycom`).
    A **settled** row is skipped (see below).
-3. **LLM and Jev in parallel.** The LLM (`aiGateway.chatWithJson`) names the
+3. **LLM and Jev in parallel.** The LLM (`aiGateway.chatStructured`) names the
    transaction (`friendlyName`, optional `memo`) and proposes a category. Jev
    (`TransactionCategoryJudge.judge`) independently picks a category from
    `validTags`. Jev never sees the LLM's answer, so agreement between the two
