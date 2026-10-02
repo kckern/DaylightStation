@@ -6,7 +6,7 @@ const TEMPLATE_PROMPT = [
   { role: 'system', content: 'Analyze food.\nRespond in JSON format:\n{\n  "time": "evening",\n  "items": [{ "name": "Food", "grams": 100, "dish": "Bowl" }]\n}\nBegin response with \'{\' character - output only valid JSON, no markdown.' },
   { role: 'user', content: 'eggs' },
 ];
-const TOON_REPLY = 'time: morning\nitems[1\t]{name\tgrams\tdish}:\n  Fried Egg\t100\t';
+const TOON_REPLY = 'time: morning\nitems[1\t]{name\tgrams\tdish}:\n  Fried Egg\t100\t\nEND';
 
 function fakeInner({ chat = async () => TOON_REPLY, chatStructured = async () => ({ from: 'json-path' }) } = {}) {
   const inner = {
@@ -167,5 +167,12 @@ describe('StructuredWireLayer', () => {
     await layer(inner, { mode: 'off' }).chatStructured(TEMPLATE_PROMPT, options);
     expect(inner.chatStructured.mock.calls[0][0]).toBe(TEMPLATE_PROMPT);
     expect(inner.chatStructured.mock.calls[0][1]).toBe(options);
+  });
+
+  it('a TOON reply cut before its END line re-asks on the JSON path', async () => {
+    const replies = [TOON_REPLY.replace(/\nEND$/, ''), '{"time":"x","items":[]}'];
+    const inner = fakeInner({ chat: async () => replies.shift() });
+    expect(await layer(inner).chat(TEMPLATE_PROMPT)).toBe('{"time":"x","items":[]}');
+    expect(inner.chat).toHaveBeenCalledTimes(2);
   });
 });

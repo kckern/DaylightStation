@@ -105,7 +105,7 @@ round-tripped by the codec.
   scalars become `key: example` lines; the array becomes a tab-delimited table
   header `items[N\t]{name\ticon\t…\tdish}:` with **one example row** built from
   the template's example values, so enum hints (`"g|ml"`, `"green|yellow|orange"`)
-  survive.
+  survive. The skeleton's last line is `END` (amended 2026-10-01).
 - Tab delimiter, so commas in food names never split a row.
 - Optional fields (e.g. `dish`) stay as columns; an **empty cell decodes to an
   absent key**, preserving callers' `item.dish ? …` checks.
@@ -120,6 +120,12 @@ round-tripped by the codec.
 dropped, and rows must be exactly full width.)
 
 1. Reply parses as TOON (`@toon-format/toon`, strict, else lax) → value.
+   - A JSON reply is recognised first (`json-reply`). Then the last non-blank
+     line must be exactly `END` (whitespace and `\r` allowed), else
+     `no-end-marker`; it is stripped before decoding. The skeleton ends with
+     `END` and the primer requires it, because the layer cannot see the
+     provider's finish reason and a reply cut inside its last cell otherwise
+     keeps the right width and row count. (Amended 2026-10-01.)
    - Exactly one table header, declaring the tab delimiter (`name[N<TAB>]`),
      else `multiple-tables` / `wrong-delimiter`. Its column list must equal
      the template's columns in order, else `column-mismatch`.
@@ -175,6 +181,7 @@ Reply in TOON, not JSON, using exactly the layout above:
 - Every row has exactly one value per column, in header order, with a tab between each pair of values. An empty value keeps its tab, including a tab before an empty last value.
 - Leave a cell empty to omit that field.
 - Wrap a value in double quotes if it contains a tab, newline, colon or double quote (escape it as \"), starts with # or -, begins or ends with a space, or is text that looks like a number or like true, false or null. Never quote a real number.
+- End the reply with a final line containing exactly END, with nothing after it.
 - No code fences and no text before or after.
 ```
 
