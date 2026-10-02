@@ -90,3 +90,40 @@ describe('summarize', () => {
     expect(nameOverlap([], new Set())).toBe(1);
   });
 });
+
+// A second set of JSON runs ('control') is scored against the JSON runs
+// exactly as TOON is. When present, TOON must be no more than 10 points below
+// the control on each match rate, instead of the absolute 90% bar: three JSON
+// runs make a narrow spread, and JSON misses its own spread too.
+describe('summarize with a JSON control', () => {
+  const texts = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'];
+  // JSON spread 500..520 per text; a candidate at 700 is outside ±15%.
+  const build = (controlMisses, toonMisses) => texts.flatMap((t, i) => [
+    row(t, 'json', 1, 500, 2), row(t, 'json', 2, 520, 2),
+    row(t, 'control', 1, i < controlMisses ? 700 : 510, 2),
+    row(t, 'toon', 1, i < toonMisses ? 700 : 510, 2),
+  ]);
+
+  it('passes when TOON misses about as often as JSON misses itself', () => {
+    const { verdict, rates } = summarize(build(3, 4));
+    expect(rates.control.kcal).toBe(0.7);
+    expect(rates.toon.kcal).toBe(0.6);
+    expect(verdict.pass).toBe(true);
+  });
+
+  it('fails when TOON misses clearly more often than the control', () => {
+    const { verdict } = summarize(build(1, 4));
+    expect(verdict.pass).toBe(false);
+    expect(verdict.reasons.join(' ')).toMatch(/kcal.*control/);
+  });
+
+  it('keeps the absolute 90% bar when no control ran', () => {
+    const { verdict } = summarize(build(0, 3).filter((r) => r.path !== 'control'));
+    expect(verdict.pass).toBe(false);
+  });
+
+  it('control fallbacks never count against TOON', () => {
+    const results = build(0, 0).map((r) => (r.path === 'control' ? { ...r, fallback: true } : r));
+    expect(summarize(results).verdict.pass).toBe(true);
+  });
+});

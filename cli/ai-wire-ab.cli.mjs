@@ -42,13 +42,16 @@ async function main() {
   const wireLogger = { debug() {}, info() {}, error() {}, warn: (event) => { if (event === 'ai.wire.decode.fallback') fallbacks += 1; } };
   const gateways = {
     json: base,
+    // A second JSON path, scored against 'json' exactly as TOON is: the
+    // control for how often JSON misses its own run-to-run spread.
+    control: base,
     toon: new StructuredWireLayer(base, { mode: 'full', sample: 1, logger: wireLogger }),
   };
 
   const results = [];
   for (const text of texts) {
     for (let run = 1; run <= runs; run += 1) {
-      for (const path of ['json', 'toon']) {
+      for (const path of ['json', 'control', 'toon']) {
         // replyChars compares the size of what each path RETURNS to the use
         // case, not tokens. The JSON path's is the raw JSON; the TOON path's is
         // the JSON string the layer reconstructs. Token savings are read from
@@ -96,8 +99,8 @@ async function main() {
     }
   }
 
-  const { perPath, verdict } = summarize(results);
-  process.stdout.write(`${JSON.stringify({ texts: texts.length, runs, perPath, verdict }, null, 2)}\n`);
+  const { perPath, rates, verdict } = summarize(results);
+  process.stdout.write(`${JSON.stringify({ texts: texts.length, runs, perPath, rates, verdict }, null, 2)}\n`);
   process.exit(verdict.pass ? 0 : 1);
 }
 
