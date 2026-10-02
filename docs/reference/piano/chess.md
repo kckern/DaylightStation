@@ -527,6 +527,14 @@ The table is data: a household can re-space the whole ladder from YAML under `la
 a code change, which is the point of measuring in the first place. A short override fills the rest
 from the default rather than leaving a level unreachable.
 
+**Both tiers search off the event loop.** The homegrown opponent runs in `homegrownWorker.mjs`,
+exactly as Stockfish runs in `stockfishWorker.mjs`. It used to run inline, and a depth-2 rung took
+3-14 s per move on 2026-10-02, with every one of those seconds freezing the whole backend (the
+school Portal's code lookups sat behind a child's game for 28 s). If the thread cannot answer
+(spawn failure, crash, or a search past `homegrownTimeoutMs`, default 30 s, which terminates the
+thread), the adapter plays a depth-1 reply inline, since that is the one search cheap enough for the
+event loop, and records it as `engine: 'fallback'`, not as the rung that was asked for.
+
 A rung now travels with its `engine`, `depth` and `blunder_rate` into the archive. Without that, a
 reviewed game could not say whether "level 3" meant the teaching engine or Stockfish — and since
 the mapping changes as the ladder is re-spaced, a bare level number is not a strength.
