@@ -672,7 +672,11 @@ const VoiceMemoOverlay = ({
   const displayTranscript = showRedo
     ? (isRecording || (!isProcessing && !isRecording) ? 'Recording…' : 'Processing voice memo…')
     : (showReview && !currentMemo ? 'Finalizing memo…' : transcript);
-  const hasMemoId = Boolean(currentMemo?.memoId || overlayState?.memoId);
+  // Redo/Delete act on the LIVE session's memo list. A retroactive memo was
+  // saved straight to a historical session, so those controls stay off for it
+  // even now that the backend mints it an id.
+  const isRetroactiveReview = Boolean(overlayState?.sessionId) && overlayState.sessionId !== sessionId;
+  const hasMemoId = Boolean(currentMemo?.memoId || overlayState?.memoId) && !isRetroactiveReview;
     
   const overlayContent = (
     <div

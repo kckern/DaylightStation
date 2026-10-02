@@ -34,6 +34,7 @@ const FITNESS_TIMEOUTS = {
   rpmZero: 1200,  // zero RPM ~1.2s after the last cadence broadcast (silence case)
   transportStallMs: 1200, // MUST equal rpmZero: the stall check and the zero gate have to cross on the same prune tick, or a tick landing between them zeroes the meter and the hold then preserves that zero for the whole stall
   emptySession: 60000, // 6A: Time (ms) with empty roster before auto-ending session
+  emptySessionTransportHold: 180000, // Max sensor-pipeline silence during which an empty roster is NOT counted as an empty room (link outage, not departure)
   sessionEndCooldown: 600000, // 10 minutes — prevents duplicate sessions from leftover HR data
   resumeContentWait: 6000 // Max time to wait for content to register before starting a fresh (un-merged) session
 };
@@ -2523,6 +2524,14 @@ export class FitnessSession {
       durationMs,
       reason
     });
+    // The eventLog above never leaves the browser; this is the only shipped
+    // record of WHY a session ended (inactivity / empty_roster / user_initiated).
+    getLogger().info('fitness.session.ended', {
+      sessionId: this.sessionId,
+      durationMs,
+      reason,
+      transportSilenceMs: this.deviceManager?.lastPacketAt ? now - this.deviceManager.lastPacketAt : null
+    });
 
     let sessionData = null;
     try {
@@ -2644,9 +2653,33 @@ export class FitnessSession {
   _checkEmptyRosterTimeout() {
     const roster = this.roster;
     const now = Date.now();
-    const { emptySession } = this._getTimeouts();
+    const { emptySession, transportStallMs = 1200, emptySessionTransportHold = 180000 } = this._getTimeouts();
     
     if (!roster || roster.length === 0) {
+      // A starved sensor pipeline is not an empty room. When NO device at all
+      // is delivering, every participant drops off the roster at once even
+      // though their straps are still broadcasting at the bridge (garage,
+      // 2026-10-02: a black-holed socket emptied the roster for 2m15s and ended
+      // the workout 4 minutes before the video did). Hold the clock while the
+      // link is silent, up to a cap so a dead bridge still lets the session end.
+      const lastPacketAt = this.deviceManager?.lastPacketAt || 0;
+      const silenceMs = lastPacketAt ? now - lastPacketAt : 0;
+      if (silenceMs > transportStallMs && silenceMs < emptySessionTransportHold) {
+        if (!this._emptyRosterHeldForStall) {
+          this._emptyRosterHeldForStall = true;
+          getLogger().warn('fitness.session.empty_roster_held_transport_stall', {
+            sessionId: this.sessionId, silenceMs, holdCapMs: emptySessionTransportHold
+          });
+        }
+        this._emptyRosterStartTime = null;
+        return;
+      }
+      if (this._emptyRosterHeldForStall) {
+        this._emptyRosterHeldForStall = false;
+        getLogger().info('fitness.session.empty_roster_hold_released', {
+          sessionId: this.sessionId, silenceMs, capped: silenceMs >= emptySessionTransportHold
+        });
+      }
       // Roster is empty - start or check timer
       if (!this._emptyRosterStartTime) {
         this._emptyRosterStartTime = now;
@@ -2660,6 +2693,7 @@ export class FitnessSession {
         this.endSession('empty_roster');
       }
     } else {
+      this._emptyRosterHeldForStall = false;
       // Roster has users - reset the empty timer
       if (this._emptyRosterStartTime) {
         this._log('roster_recovered', { sessionId: this.sessionId });
@@ -2690,6 +2724,7 @@ export class FitnessSession {
     this._stopTickTimer(); // 6A: Also stop tick timer on reset
     this._lastAutosaveAt = 0;
     this._emptyRosterStartTime = null; // 6A: Reset empty roster tracking
+    this._emptyRosterHeldForStall = false;
     this._isEndingSession = false; // Clear re-entrancy guard
     // Note: Don't clear _sessionEndedCallbacks - they persist across sessions
     this.governanceEngine.reset();

@@ -42,6 +42,7 @@ import { buildConfiguredDeviceIdSet, filterGhostRpmDevices } from '../hooks/fitn
 
 // Phase 5 SSOT: Zone metadata — single source for zone system info
 import { buildZoneMetadata } from '../hooks/fitness/zoneMetadata.js';
+import { buildReviewOverlayState, isOverlayMemoMissing } from '../modules/Fitness/player/overlays/voiceMemoReviewState.js';
 
 // Phase 4 SSOT: Display name resolution
 import {
@@ -190,6 +191,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const [sidebarSizeMode, setSidebarSizeMode] = useState('regular');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [voiceMemoOverlayState, setVoiceMemoOverlayState] = useState(VOICE_MEMO_OVERLAY_INITIAL);
+  const voiceMemoOverlayStateRef = useRef(voiceMemoOverlayState);
+  voiceMemoOverlayStateRef.current = voiceMemoOverlayState;
   // Separate from voiceMemoOverlayState (the in-app "Voice Memo" feature's own
   // state shape) — this flags the developer-facing Feedback panel (recording a
   // bug/note) so MenuMusicController can duck ambient music for it too. The two
@@ -1123,16 +1126,20 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       }
     }
 
-    setVoiceMemoOverlayStateGuarded({
-      open: true,
-      mode: 'review',
+    // A review that follows a recording continues the same capture flow: keep
+    // the historical session it targets and the callback owed on completion.
+    const prevOverlay = voiceMemoOverlayStateRef.current;
+    const carry = fromRecording && prevOverlay?.open
+      ? { sessionId: prevOverlay.sessionId ?? null, onComplete: prevOverlay.onComplete ?? null }
+      : null;
+    setVoiceMemoOverlayStateGuarded(buildReviewOverlayState({ memoOrId, autoAccept: resolvedAutoAccept, carry }));
+    logVoiceMemo('overlay-open-review', {
       memoId: id || null,
-      // Stash the memo payload for review when no memoId exists (retroactive).
-      memo: isObject && !id ? memoOrId : null,
       autoAccept: resolvedAutoAccept,
-      startedAt: Date.now()
+      hasInlineMemo: isObject,
+      carriedSessionId: carry?.sessionId ?? null,
+      carriedOnComplete: Boolean(carry?.onComplete),
     });
-    logVoiceMemo('overlay-open-review', { memoId: id || null, autoAccept: resolvedAutoAccept, hasInlineMemo: Boolean(isObject && !id) });
     emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'review', memoId: id || null, autoAccept: resolvedAutoAccept });
   }, [emitVoiceMemoTelemetry, getVoiceMemoById, logVoiceMemo, setVoiceMemoOverlayStateGuarded, voiceMemos.length]);
 
@@ -2665,8 +2672,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       return;
     }
     if (voiceMemoOverlayState.memoId) {
-      const exists = voiceMemos.some((memo) => memo && String(memo.memoId) === String(voiceMemoOverlayState.memoId));
-      if (!exists && voiceMemoOverlayState.mode !== 'redo') {
+      if (isOverlayMemoMissing(voiceMemoOverlayState, voiceMemos)) {
         logVoiceMemo('overlay-clear-memo', {
           reason: 'memo-missing',
           memoId: voiceMemoOverlayState.memoId,

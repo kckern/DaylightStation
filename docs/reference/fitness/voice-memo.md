@@ -208,6 +208,18 @@ const VOICE_MEMO_OVERLAY_INITIAL = {
 | `review` | View/approve transcription | No | Yes |
 | `list` | Browse all session memos | No | All |
 
+### Retroactive memos (recorded from a session's detail page)
+
+The memo is saved straight to a historical session, so it never appears in the
+live session's memo list. Review must therefore render from the inline memo the
+recorder handed back (`overlayState.memo`). The backend mints these memos a
+`memoId`, so having an id does not mean the memo is in the list.
+`buildReviewOverlayState` / `isOverlayMemoMissing`
+(`player/overlays/voiceMemoReviewState.js`) keep the inline copy and stop the
+memo-missing guard from clearing it. The capture → review hand-off also carries
+`sessionId` and `onComplete` forward. Redo and Delete stay disabled for
+retroactive reviews because they act on the live list.
+
 ## Memo Object Structure
 
 ```javascript
