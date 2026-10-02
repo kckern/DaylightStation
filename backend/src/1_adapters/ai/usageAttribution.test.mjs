@@ -6,6 +6,7 @@ import { VoiceTranscriptionService } from './VoiceTranscriptionService.mjs';
 import { isAIGateway, IAIGateway } from '#apps/common/ports/IAIGateway.mjs';
 import { isDecisionGateway, yesNo } from '#apps/common/ports/IDecisionGateway.mjs';
 import { runWithOrigin } from '#system/runtime/aiContext.mjs';
+import { usageAttribution } from './usageAttribution.mjs';
 
 const quietLogger = () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() });
 
@@ -223,5 +224,12 @@ describe('port defaults', () => {
     expect(scopedGateway(null, { feature: 'f' })).toBeNull();
     const { adapter } = openai();
     expect(scopedGateway(adapter, { app: 'health' }).usageTags).toEqual({ app: 'health' });
+  });
+});
+
+describe('usageAttribution wire tag', () => {
+  it('carries wire only when set', () => {
+    expect(usageAttribution({ app: 'health', wire: 'toon' })).toMatchObject({ app: 'health', wire: 'toon' });
+    expect(Object.hasOwn(usageAttribution({ app: 'health' }), 'wire')).toBe(false);
   });
 });
