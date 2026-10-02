@@ -15,6 +15,7 @@ import { chessCommentary, chessNotableFacts } from '#shared/gaming/rulesets/ches
 import { GameRivalryMemoryService } from '#apps/piano-games/GameRivalryMemoryService.mjs';
 import { NodePromiseDeadline } from '#adapters/scheduling/NodePromiseDeadline.mjs';
 import { OpponentDialogueGenerator } from '#adapters/ai/OpponentDialogueGenerator.mjs';
+import { scopedGateway } from '#apps/common/ports/IAIGateway.mjs';
 
 export function createPianoGamesModule({
   dataService, configService, logger, nativeRouters = {},
@@ -64,7 +65,8 @@ export function createPianoGamesModule({
   let container;
   const dialogue = new OpponentDialogueService({
     dialogueGenerator: aiGateway ? new OpponentDialogueGenerator({
-      aiGateway,
+      // The only AI consumer in piano-games: opponent table talk.
+      aiGateway: scopedGateway(aiGateway, { feature: 'opponent-dialogue' }),
       deadline: new NodePromiseDeadline(),
     }) : null,
     logger,

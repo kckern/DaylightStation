@@ -181,7 +181,8 @@ The AI-calling CLIs (`backfill-toc-offset`, `journalist-debrief-preview`,
 (`YYYY-MM.cli.jsonl`, via `cli/_aiUsage.mjs`), attributed `<app>/cli`.
 `node cli/openai-usage.cli.mjs ledger --by app,feature` splits spend by owner;
 `ledger --untagged` lists the rows no app claimed, grouped by origin — the
-place to look for a consumer that escaped scoping.
+place to look for a consumer that escaped scoping; `ledger --untagged --by
+caller` names the code that made each call (see `caller` below).
 The provider side of the same CLI reads OpenAI's own records: `costs`
 (billed dollars), `usage` (EVERY usage report — completions, images, audio,
 embeddings, moderations; `--kind images` for one), `audit` (key created or
@@ -211,11 +212,22 @@ constructor — in `app.mjs` and `5_composition/`: each must be its declaration,
 a null/truthiness check, a producer's `return`, or the first argument of
 `scopedGateway(…)` / `.scoped(…)` with literal tags naming an `app`. Anything
 else (a bare key, a positional argument, a spread, a ternary branch, tags
-without an app) fails with file:line. Apps: `health`, `journalist`,
-`homebot`, `finance`, `feed`, `lifeplan`, `fitness` (feature `voice-memo`),
-`harvester` (`shopping`), `feedback`, `gaming`, `piano-games`, `school`
-(`card-ladder`, `language`), `trigger`, `agents` (paged-media-toc rows are
-`media/paged-media-toc`), `weekly-review`, `ai-console`. Telegram voice memos are
+without an app) fails with file:line. Apps (features in parentheses):
+`health` (below), `journalist` (`text-entry`, `journal-prompt`,
+`multiple-choice`, `therapist-analysis`, `morning-debrief`,
+`debrief-interview` — narrowed per use case in `JournalistContainer#aiFor`,
+*before* the `LoggingAIGateway` wrapper, which has no `scoped()`), `homebot`
+(`gratitude`), `finance` (`categorization` — the hourly `job:budget`
+harvest's LLM tagger and its Jev category judge, both narrowed in
+`createFinanceServices`), `feed`, `lifeplan`, `fitness` (`voice-memo`),
+`harvester` (`shopping`), `feedback` (`transcription`), `gaming`,
+`piano-games` (`opponent-dialogue`, the gpt-5.6-luna table talk, narrowed in
+`5_composition/modules/pianoGames.mjs`), `school` (`card-ladder`,
+`language`), `trigger`, `agents` (paged-media-toc rows are
+`media/paged-media-toc`), `weekly-review`, `ai-console`.
+`5_composition/aiUsageAttribution.consumers.test.mjs` drives a real call
+through each of the finance, homebot, journalist and piano-games gateways into
+a real ledger file and asserts the row. Telegram voice memos are
 billed per bot by `SystemBotLoader` (nutribot → `health/voice-log`, else the bot
 name). Health features: `photo-log`, `text-log`, `voice-log`, `upc-log`,
 `scale-log`, `revision` (bot revisions and web entry corrections),
@@ -230,7 +242,20 @@ nutribot memo, including a spoken correction or a spoken scale description —
 plus the parse of a voice food log; the parse of a spoken correction is billed
 to the flow it lands in (`revision`, `scale-log`). `tests/unit/composition/healthAiFeatures.test.mjs` drives
 each one.
-Untagged rows record `null`. `origin` is the entry point the call ran under
+Untagged rows record `app: null` — the value `ledger --untagged`,
+`listCosts({ app: null })` and Health's AI-usage reader filter on. The ledger
+itself is the runtime guard behind the static one: `AiUsageLedger.record()`
+adds a **`caller`** field to any row without an `app` — the first stack frame
+outside `1_adapters/ai/`, `1_adapters/agents/` and node internals, as
+`<path under backend/src>:<line> (<function>)`, found through V8's async stack
+traces — and logs `ai.usage.unattributed` (warn; caller, provider, endpoint,
+model, agentId, origin) the first time each caller appears in a process. A
+consumer that escapes scoping therefore names itself in the durable ledger,
+not only in the 7-day log store. Rows written before 2026-09-25 carry neither
+`app` nor `caller`; the September untagged spend (~$6.39, 85% of the month)
+was those pre-tagging rows — chiefly the artwork-queue icon picks of 09-23/24,
+the hourly finance categorization, and piano-games dialogue — not a live leak.
+`origin` is the entry point the call ran under
 (`http:METHOD /path`, `job:<id>`, `telegram:<bot>`, `tick:<name>`,
 `cli:<name>`), read from `0_system/runtime/aiContext.mjs`; it is for finding
 untagged callers and is never used as attribution. It is set by

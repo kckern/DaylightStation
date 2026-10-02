@@ -39,9 +39,10 @@
  *   --by <keys>            Comma list. costs: project,line_item,key,day
  *                          usage: kind,project,model,key,day
  *                          ledger: any row field — model,endpoint,status,day,
- *                          app,feature,origin,agentId,writer
+ *                          app,feature,origin,caller,agentId,writer
  *   --untagged             ledger: only rows no app claimed (app null),
- *                          grouped by origin — where the untagged spend came from
+ *                          grouped by origin — where the untagged spend came from;
+ *                          `--by caller` names the code (rows since 2026-10-01)
  *   --project <id>         Limit org reports / reconcile to one project
  *   --kind <list>          usage: completions,images,embeddings,moderations,
  *                          audio_speeches,audio_transcriptions (default: all)
@@ -219,7 +220,7 @@ export function reconcileByDay(costRows, ledgerRows) {
     .sort((a, b) => a.day.localeCompare(b.day));
 }
 
-const LEDGER_EMPTY_LABEL = Object.freeze({ app: '(untagged)', feature: '(no feature)', origin: '(no origin)' });
+const LEDGER_EMPTY_LABEL = Object.freeze({ app: '(untagged)', feature: '(no feature)', origin: '(no origin)', caller: '(no caller)' });
 
 /**
  * Group ledger rows for the `ledger` command.

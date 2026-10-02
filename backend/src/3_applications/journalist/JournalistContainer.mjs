@@ -5,6 +5,8 @@
  * Wires up all journalist dependencies following DDD patterns.
  */
 
+import { scopedGateway } from '#apps/common/ports/IAIGateway.mjs';
+
 // Core Use Cases
 import { ProcessTextEntry } from './usecases/ProcessTextEntry.mjs';
 import { ProcessVoiceEntry } from './usecases/ProcessVoiceEntry.mjs';
@@ -50,6 +52,7 @@ export class JournalistContainer {
   #messagingGateway;
   #aiGateway;
   #wrappedAIGateway;
+  #featureAIGateways = new Map();
   #loggingAIGatewayFactory;
   #journalEntryRepository;
   #messageQueueRepository;
@@ -165,6 +168,23 @@ export class JournalistContainer {
     return this.#wrappedAIGateway;
   }
 
+  /**
+   * The AI gateway narrowed to one journalist feature, so its spend is
+   * attributed `journalist/<feature>` in the usage ledger (composition scopes
+   * the gateway to `{ app: 'journalist' }`). Scoped BEFORE the logging wrapper:
+   * the wrapper has no scoped(), so narrowing its output would drop the tag.
+   */
+  #aiFor(feature) {
+    if (!this.#featureAIGateways.has(feature)) {
+      if (!this.#aiGateway) throw new Error('aiGateway not configured');
+      const view = scopedGateway(this.#aiGateway, { feature });
+      this.#featureAIGateways.set(feature, this.#loggingAIGatewayFactory
+        ? this.#loggingAIGatewayFactory({ aiGateway: view, username: this.#config.username || 'unknown', logger: this.#logger })
+        : view);
+    }
+    return this.#featureAIGateways.get(feature);
+  }
+
   getJournalEntryRepository() {
     return this.#journalEntryRepository;
   }
@@ -198,7 +218,7 @@ export class JournalistContainer {
     if (!this.#processTextEntry) {
       this.#processTextEntry = new ProcessTextEntry({
         messagingGateway: this.getMessagingGateway(),
-        aiGateway: this.getAIGateway(),
+        aiGateway: this.#aiFor('text-entry'),
         journalEntryRepository: this.#journalEntryRepository,
         messageQueueRepository: this.#messageQueueRepository,
         conversationStateStore: this.#conversationStateStore,
@@ -224,7 +244,7 @@ export class JournalistContainer {
     if (!this.#initiateJournalPrompt) {
       this.#initiateJournalPrompt = new InitiateJournalPrompt({
         messagingGateway: this.getMessagingGateway(),
-        aiGateway: this.getAIGateway(),
+        aiGateway: this.#aiFor('journal-prompt'),
         journalEntryRepository: this.#journalEntryRepository,
         messageQueueRepository: this.#messageQueueRepository,
         logger: this.#logger,
@@ -236,7 +256,7 @@ export class JournalistContainer {
   getGenerateMultipleChoices() {
     if (!this.#generateMultipleChoices) {
       this.#generateMultipleChoices = new GenerateMultipleChoices({
-        aiGateway: this.getAIGateway(),
+        aiGateway: this.#aiFor('multiple-choice'),
         logger: this.#logger,
       });
     }
@@ -313,7 +333,7 @@ export class JournalistContainer {
     if (!this.#generateTherapistAnalysis) {
       this.#generateTherapistAnalysis = new GenerateTherapistAnalysis({
         messagingGateway: this.getMessagingGateway(),
-        aiGateway: this.getAIGateway(),
+        aiGateway: this.#aiFor('therapist-analysis'),
         journalEntryRepository: this.#journalEntryRepository,
         messageQueueRepository: this.#messageQueueRepository,
         debriefRepository: this.getDebriefRepository(),
@@ -386,7 +406,7 @@ export class JournalistContainer {
     if (!this.#generateMorningDebrief) {
       this.#generateMorningDebrief = new GenerateMorningDebrief({
         lifelogAggregator: this.getLifelogAggregator(),
-        aiGateway: this.getAIGateway(),
+        aiGateway: this.#aiFor('morning-debrief'),
         debriefRepository: this.getDebriefRepository(),
         journalEntryRepository: this.#journalEntryRepository,
         logger: this.#logger,
@@ -447,7 +467,7 @@ export class JournalistContainer {
     if (!this.#initiateDebriefInterview) {
       this.#initiateDebriefInterview = new InitiateDebriefInterview({
         messagingGateway: this.getMessagingGateway(),
-        aiGateway: this.getAIGateway(),
+        aiGateway: this.#aiFor('debrief-interview'),
         journalEntryRepository: this.#journalEntryRepository,
         messageQueueRepository: this.#messageQueueRepository,
         debriefRepository: this.getDebriefRepository(),
