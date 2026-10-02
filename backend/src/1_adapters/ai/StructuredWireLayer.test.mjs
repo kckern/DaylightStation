@@ -48,9 +48,35 @@ describe('StructuredWireLayer', () => {
     expect(Object.hasOwn(opts, 'jsonMode')).toBe(false);
   });
 
-  it('chat: an undecodable reply comes back raw', async () => {
-    const inner = fakeInner({ chat: async () => 'I could not do that' });
-    expect(await layer(inner).chat(TEMPLATE_PROMPT)).toBe('I could not do that');
+  it('chat: an undecodable reply re-asks once with the ORIGINAL messages and options, tagged json', async () => {
+    const replies = ['I could not do that', '{"time":"x","items":[]}'];
+    const inner = fakeInner({ chat: async () => replies.shift() });
+    const options = { maxTokens: 50, jsonMode: true, usageTags: { feature: 'log' } };
+    expect(await layer(inner).chat(TEMPLATE_PROMPT, options)).toBe('{"time":"x","items":[]}');
+    expect(inner.chat).toHaveBeenCalledTimes(2);
+    const [sent, opts] = inner.chat.mock.calls[1];
+    expect(sent).toBe(TEMPLATE_PROMPT);
+    expect(opts).toEqual({ maxTokens: 50, jsonMode: true, usageTags: { feature: 'log', wire: 'json' } });
+  });
+
+  it('chat: re-ask keeps jsonMode absent when the caller did not pass it', async () => {
+    const replies = ['nope', '{}'];
+    const inner = fakeInner({ chat: async () => replies.shift() });
+    await layer(inner).chat(TEMPLATE_PROMPT);
+    expect(Object.hasOwn(inner.chat.mock.calls[1][1], 'jsonMode')).toBe(false);
+  });
+
+  it('chatWithImage: an undecodable reply re-asks once with the original messages AND the image', async () => {
+    const replies = ['garbage: [', '{"items":[]}'];
+    const inner = fakeInner();
+    inner.chatWithImage.mockImplementation(async () => replies.shift());
+    const out = await layer(inner).chatWithImage(TEMPLATE_PROMPT, 'data:image/png;base64,AA', { jsonMode: false });
+    expect(out).toBe('{"items":[]}');
+    expect(inner.chatWithImage).toHaveBeenCalledTimes(2);
+    const [sent, image, opts] = inner.chatWithImage.mock.calls[1];
+    expect(sent).toBe(TEMPLATE_PROMPT);
+    expect(image).toBe('data:image/png;base64,AA');
+    expect(opts).toEqual({ jsonMode: false, usageTags: { wire: 'json' } });
   });
 
   // Review Focus 3
@@ -58,6 +84,7 @@ describe('StructuredWireLayer', () => {
     const json = '{"time":"x","items":[]}';
     const inner = fakeInner({ chat: async () => json });
     expect(await layer(inner).chat(TEMPLATE_PROMPT)).toBe(json);
+    expect(inner.chat).toHaveBeenCalledTimes(1); // no re-ask for a JSON reply
     expect(await layer(inner).chatStructured(TEMPLATE_PROMPT)).toEqual({ time: 'x', items: [] });
     expect(inner.chatStructured).not.toHaveBeenCalled();
   });

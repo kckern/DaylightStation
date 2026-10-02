@@ -57,4 +57,15 @@ describe('LogFoodFromText over the wire layer', () => {
     expect(viaToon.map((i) => i.label ?? i.name)).toEqual(viaJson.map((i) => i.label ?? i.name));
     expect(viaToon.length).toBeGreaterThan(3);
   });
+
+  it('an undecodable TOON reply re-asks on the JSON path and still saves every item', async () => {
+    const viaJson = await savedItems({ chat: vi.fn(async () => JSON.stringify(payload)) });
+    const cut = toonReply.slice(0, toonReply.lastIndexOf('\t', toonReply.length - 20)); // last row cut mid-way
+    const replies = [cut, JSON.stringify(payload)];
+    const innerChat = vi.fn(async () => replies.shift());
+    const viaToon = await savedItems(new StructuredWireLayer({ chat: innerChat }, { mode: 'full', sample: 1, random: () => 0 }));
+    expect(innerChat).toHaveBeenCalledTimes(2);
+    expect(innerChat.mock.calls[1][0][0].content).toMatch(/Respond in JSON format:/); // original prompt
+    expect(viaToon).toEqual(viaJson);
+  });
 });

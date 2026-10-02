@@ -83,7 +83,11 @@ export class StructuredWireLayer extends IAIGateway {
     const raw = await call(plan.messages, this.#options(options, plan));
     if (!plan.toonReply) return raw;
     const decoded = this.#decode(raw, plan);
-    return decoded.ok ? JSON.stringify(decoded.value) : raw;
+    if (decoded.ok) return JSON.stringify(decoded.value);
+    // A JSON reply is already what the caller parses. Anything else is TOON
+    // the caller cannot read: re-ask once, exactly as the caller asked.
+    if (decoded.reason === 'json-reply') return raw;
+    return call(messages, { ...options, usageTags: { ...options?.usageTags, wire: 'json' } });
   }
 
   #plan(messages) {
