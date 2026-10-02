@@ -1220,10 +1220,10 @@ export function createFinanceServices(config) {
     const categorizationConfig = financeStore.getCategorizationConfig(defaultHouseholdId);
     if (categorizationConfig) {
       categorizationService = new TransactionCategorizationService({
-        aiGateway,
+        aiGateway: scopedGateway(aiGateway, { feature: 'categorization' }),
         transactionSource: buxferAdapter,
         financeStore,
-        decisionGateway,
+        decisionGateway: scopedGateway(decisionGateway, { feature: 'categorization' }),
         logger
       });
       logger.info?.('finance.categorization.enabled', {
@@ -2205,7 +2205,8 @@ export function createHomebotServices(config) {
   // Create homebot container with all dependencies
   const homebotContainer = new HomeBotContainer({
     messagingGateway: telegramAdapter,
-    aiGateway,
+    // Gratitude extraction is homebot's only AI consumer.
+    aiGateway: scopedGateway(aiGateway, { feature: 'gratitude' }),
     gratitudeService,
     conversationStateStore,
     householdRepository,
