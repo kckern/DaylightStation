@@ -11,7 +11,7 @@ export const TOON_REPLY_RULES = [
   '- Then N rows, each indented two spaces, values separated by tab characters in header column order.',
   '- Every row has a tab between every pair of columns, including before trailing empty cells.',
   '- Leave a cell empty to omit that field.',
-  '- Wrap a value in double quotes if it contains a tab, newline, colon or double quote (escape it as \\"), starts with # or -, or begins or ends with a space.',
+  '- Wrap a value in double quotes if it contains a tab, newline, colon or double quote (escape it as \\"), starts with # or -, begins or ends with a space, or is text that looks like a number or like true, false or null. Never quote a real number.',
   '- No code fences and no text before or after.',
 ].join('\n');
 
@@ -54,7 +54,10 @@ export function stripFormatSentences(text) {
  * a key), so the raw row lines are counted and must match both the declared
  * `[N]` and the decoded rows. A row short of columns is kept with the missing
  * cells absent, unless it is the LAST row of a lax decode: that is what a cut
- * reply looks like, so it fails.
+ * reply looks like, so it fails. The table must be the only one and declare
+ * the tab delimiter (`name[N<TAB>]`), row keys must be template columns, and
+ * numeric template columns must decode to numbers (or null/empty): together
+ * these turn a column shift into a failure instead of a corrupted log.
  *
  * @returns {{ok: true, value: Object} | {ok: false, reason: string}}
  */
@@ -66,6 +69,13 @@ export function decodeReply(text, shape) {
   const body = trimEnds(trimEnds(text).replace(/^```[\w-]*\n?/, '').replace(/\n?```$/, ''));
 
   if (/^[{[]/.test(body)) return { ok: false, reason: 'json-reply' };
+
+  // The header the decoder reads decides the delimiter. A comma header
+  // (`items[2]{a,b}:`) splits `Chicken Breast, Grilled` into two cells and
+  // shifts every later column, so only the tab form is accepted.
+  const headers = body.split('\n').filter((line) => TABLE_HEADER.test(line));
+  if (headers.length > 1) return { ok: false, reason: 'multiple-tables' };
+  if (headers.length === 1 && TABLE_HEADER.exec(headers[0])[2] !== '\t') return { ok: false, reason: 'wrong-delimiter' };
 
   let value;
   let lax = false;
@@ -94,8 +104,23 @@ export function decodeReply(text, shape) {
     if (strayQuote) return { ok: false, reason: 'stray-quote' };
     if (cells > shape.columns.length) return { ok: false, reason: 'extra-cells' };
   }
-  if (!rows.every((row) => row && typeof row === 'object' && !Array.isArray(row))) {
+  const columns = new Set(shape.columns);
+  if (!rows.every((row) => row && typeof row === 'object' && !Array.isArray(row)
+    && Object.keys(row).every((key) => columns.has(key)))) {
     return { ok: false, reason: 'shape-mismatch' };
+  }
+  // A shifted row puts text in a numeric column: number, null or empty only.
+  const numberColumns = shape.numberColumns ?? [];
+  if (rows.some((row) => numberColumns.some((c) => Object.hasOwn(row, c)
+    && !(typeof row[c] === 'number' || row[c] === null || row[c] === '')))) {
+    return { ok: false, reason: 'type-mismatch' };
+  }
+  // A short row is where a missing middle cell hides: there, a bare number or
+  // boolean in a text column (`unit: 50`) is a shift, not a quirky name.
+  const stringColumns = shape.stringColumns ?? [];
+  if (rows.some((row) => shape.columns.some((c) => !Object.hasOwn(row, c))
+    && stringColumns.some((c) => typeof row[c] === 'number' || typeof row[c] === 'boolean'))) {
+    return { ok: false, reason: 'type-mismatch' };
   }
   const isShort = (row) => !shape.columns.every((c) => Object.hasOwn(row, c));
   if (lax && rows.length > 0 && isShort(rows.at(-1))) return { ok: false, reason: 'truncated' };
@@ -105,10 +130,13 @@ export function decodeReply(text, shape) {
 
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/** Any TOON array header line: key, `[N<delimiter?>]`, optional `{fields}`, colon. Group 2 is the delimiter. */
+const TABLE_HEADER = /^\s*("(?:[^"\\]|\\.)*"|[^\s:"[\]{}]+)\[\d+([^\]]*)\](?:\{[^}]*\})?:/;
+
 /** The table's declared row count and its raw row lines: the indented, non-blank lines after its header. */
 function rawTable(body, arrayKey) {
   const lines = body.split('\n').map((line) => line.replace(/\r$/, ''));
-  const header = new RegExp(`^${escapeRegExp(arrayKey)}\\[(\\d+)[^\\]]*\\](?:\\{[^}]*\\})?:\\s*$`);
+  const header = new RegExp(`^${escapeRegExp(arrayKey)}\\[(\\d+)\\t\\](?:\\{[^}]*\\})?:\\s*$`);
   const at = lines.findIndex((line) => header.test(line));
   if (at === -1) return null;
   const declared = Number(header.exec(lines[at])[1]);

@@ -87,6 +87,13 @@ template's shape:
 - Code fences are removed, and the ends are trimmed **without removing tabs**,
   because a trailing tab delimits an empty last cell.
 - A reply starting with `{` or `[` is a JSON reply (`json-reply`).
+- The reply may hold **one** array header line (`key[N…]…:`); a second one,
+  for any key, fails as `multiple-tables`. That header must declare the tab
+  delimiter, a tab right before `]` as in `items[3<TAB>]{…}:`. Any other form
+  (`items[3]{a,b}:`, TOON's default comma, or `[3|]`) fails as
+  `wrong-delimiter`: with a comma header a name like `Chicken Breast, Grilled`
+  splits into two cells and every later column shifts by one, which lax decode
+  would otherwise return as `ok`.
 - Parse is strict first; on failure it re-parses non-strict (lax). Keys
   outside the template, or a missing array or table header, are a
   `shape-mismatch`.
@@ -98,14 +105,24 @@ template's shape:
   the decode fails as `row-count-mismatch`. This runs after strict decodes
   too, because strict mode skips a `#` row without complaint when `[N]`
   already agrees with what is left.
-- A row with more cells than columns fails as `extra-cells` (lax mode would
-  discard them). A `"` anywhere but the start of a cell fails as
+- A row with more **tab-separated** cells than columns fails as
+  `extra-cells` (lax mode would discard the surplus). The count splits on
+  unquoted tabs only, so it guards tab tables; the `wrong-delimiter` check is
+  what keeps other delimiters out. A `"` anywhere but the start of a cell fails as
   `stray-quote` (the decoder would open a quoted string there and swallow the
   following tabs, e.g. `12" Sub`).
 - A row short of columns is **kept**, with the missing cells as absent keys
   (models often omit the trailing tab of an empty last cell such as `dish`),
   **unless it is the last row of a lax decode**: that is what a cut reply looks
   like, so the decode fails as `truncated`. A strict decode has no short rows.
+- Every decoded row key must be a template column (else `shape-mismatch`).
+- **Type check** (`type-mismatch`): a column whose template example is a
+  number (`numberColumns` in the shape) must decode to a number or `null`, or
+  be empty/absent. A shifted row usually puts text such as `g` or `Bowl` into
+  a numeric column, so most middle-cell shifts fail here. In a row that is
+  short of columns, a bare number or boolean in a text column (`unit: 50`) is
+  also a `type-mismatch`, since a short row is where a missing middle cell
+  hides. A full-width row may still carry a number-like name such as `7`.
 - An empty or missing cell becomes an **absent key**.
 - Success is `{ ok: true, value }`; failure is `{ ok: false, reason }`.
 - String columns (typed by the template's example value) are coerced back to
@@ -179,7 +196,8 @@ JSON), `input-only` (eligible, `mode: input`). Debug events are not shipped to
 the log store; the warn fallback is.
 
 Decode-fallback `reason`s: `not-text`, `json-reply`, `toon-parse`,
-`shape-mismatch`, `row-count-mismatch`, `extra-cells`, `stray-quote`,
+`multiple-tables`, `wrong-delimiter`, `shape-mismatch`,
+`row-count-mismatch`, `extra-cells`, `stray-quote`, `type-mismatch`,
 `truncated`. Mode `off` emits no skip reason (nothing is planned).
 
 The usage ledger row carries `wire` (`1_adapters/ai/usageAttribution.mjs`):

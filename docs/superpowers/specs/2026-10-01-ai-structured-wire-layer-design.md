@@ -167,7 +167,7 @@ Reply in TOON, not JSON, using exactly the layout above:
 - Then N rows, each indented two spaces, values separated by tab characters in header column order.
 - Every row has a tab between every pair of columns, including before trailing empty cells.
 - Leave a cell empty to omit that field.
-- Wrap a value in double quotes if it contains a tab, newline, colon or double quote (escape it as \"), starts with # or -, or begins or ends with a space.
+- Wrap a value in double quotes if it contains a tab, newline, colon or double quote (escape it as \"), starts with # or -, begins or ends with a space, or is text that looks like a number or like true, false or null. Never quote a real number.
 - No code fences and no text before or after.
 ```
 

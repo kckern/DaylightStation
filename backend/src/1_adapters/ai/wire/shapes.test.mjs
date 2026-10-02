@@ -28,7 +28,7 @@ describe('isEncodableData', () => {
 describe('templateShape', () => {
   it('describes a one-array template with scalar siblings', () => {
     expect(templateShape({ date: 'YYYY-MM-DD', items: [{ name: 'Food', grams: 100, dish: 'Smoothie' }] })).toEqual({
-      kind: 'table', arrayKey: 'items', columns: ['name', 'grams', 'dish'], scalarKeys: ['date'], stringColumns: ['name', 'dish'],
+      kind: 'table', arrayKey: 'items', columns: ['name', 'grams', 'dish'], scalarKeys: ['date'], stringColumns: ['name', 'dish'], numberColumns: ['grams'],
     });
   });
   it('calls a template with no array flat (even with a nested object)', () => {
