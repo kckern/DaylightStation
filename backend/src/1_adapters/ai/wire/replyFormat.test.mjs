@@ -101,4 +101,24 @@ describe('decodeReply', () => {
     expect(result.value.items.map(i => i.name)).toEqual(['7', 'true']);
     expect(result.value.items[0].grams).toBe(330);
   });
+
+  // Regression: truncated last row without trailing tab is dropped
+  it('truncated last row (missing exactly 1 column, no trailing tab) is dropped', () => {
+    const cut = 'date: d\nitems[2\t]{name\tunit\tgrams\tdish}:\n  A\tg\t1\tX\n  B\tg\t2';
+    const result = decodeReply(cut, shape);
+    expect(result.ok).toBe(true);
+    expect(result.droppedRows).toBe(1);
+    expect(result.truncated).toBe(true);
+    expect(result.value.items.map(i => i.name)).toEqual(['A']);
+  });
+
+  // Regression: fenced reply with empty last cell is kept (tab preserved through fence)
+  it('fenced reply: empty last cell (trailing tab) is preserved and row is complete', () => {
+    const fenced = '```toon\nitems[1\t]{name\tunit\tgrams\tdish}:\n  A\tg\t1\t\n```';
+    const result = decodeReply(fenced, shape);
+    expect(result.ok).toBe(true);
+    expect(result.droppedRows).toBe(0);
+    expect(result.value.items.length).toBe(1);
+    expect(result.value.items[0].name).toBe('A');
+  });
 });
