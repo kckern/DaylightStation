@@ -50,7 +50,11 @@ export function stripFormatSentences(text) {
  */
 export function decodeReply(text, shape) {
   if (typeof text !== 'string') return { ok: false, reason: 'not-text' };
-  const body = text.trim().replace(/^```[\w-]*\n?/, '').replace(/\n?```$/, '').trim();
+
+  // Trim ends without removing tabs (which delimit empty final cells)
+  const trimEnds = (s) => s.replace(/^\s+/, '').replace(/[^\S\t]+$/, '');
+  const body = trimEnds(trimEnds(text).replace(/^```[\w-]*\n?/, '').replace(/\n?```$/, ''));
+
   if (/^[{[]/.test(body)) return { ok: false, reason: 'json-reply' };
 
   let value;
@@ -70,55 +74,13 @@ export function decodeReply(text, shape) {
   }
 
   const rows = value[shape.arrayKey];
-
-  // Separate complete rows from incomplete ones
-  const complete = [];
-  const incomplete = [];
-
-  for (const row of rows) {
-    if (!row || typeof row !== 'object') {
-      incomplete.push(row);
-      continue;
-    }
-    if (shape.columns.every((c) => Object.hasOwn(row, c))) {
-      complete.push(row);
-    } else {
-      incomplete.push(row);
-    }
-  }
-
-  // In lax mode, try to salvage rows missing only trailing columns
-  // Only salvage if missing exactly 1-2 columns (more likely an empty trailing cell)
-  if (truncated && incomplete.length > 0) {
-    const salvaged = incomplete.filter((row) => {
-      if (!row || typeof row !== 'object') return false;
-      const presentCols = shape.columns.filter((c) => Object.hasOwn(row, c));
-      if (presentCols.length === 0) return false;
-      const missingCount = shape.columns.length - presentCols.length;
-      // Only salvage if missing exactly 1 trailing column (not multiple)
-      if (missingCount !== 1) return false;
-      // And all missing columns must be trailing
-      const lastPresentIndex = shape.columns.lastIndexOf(presentCols[presentCols.length - 1]);
-      return shape.columns.slice(lastPresentIndex + 1).every((c) => !Object.hasOwn(row, c));
-    });
-    complete.push(...salvaged);
-  }
-
+  const complete = rows.filter((row) => row && typeof row === 'object' && shape.columns.every((c) => Object.hasOwn(row, c)));
   const droppedRows = rows.length - complete.length;
   if (droppedRows > 0 && complete.length === 0) return { ok: false, reason: 'truncated-empty' };
 
-  // Fill in any missing trailing columns as empty strings for output
-  const filledComplete = complete.map((row) => {
-    const result = {};
-    for (const col of shape.columns) {
-      result[col] = Object.hasOwn(row, col) ? row[col] : '';
-    }
-    return result;
-  });
-
   return {
     ok: true,
-    value: { ...value, [shape.arrayKey]: filledComplete.map((row) => cleanRow(row, shape)) },
+    value: { ...value, [shape.arrayKey]: complete.map((row) => cleanRow(row, shape)) },
     droppedRows,
     truncated,
   };
