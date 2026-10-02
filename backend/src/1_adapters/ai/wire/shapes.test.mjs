@@ -28,8 +28,12 @@ describe('isEncodableData', () => {
 describe('templateShape', () => {
   it('describes a one-array template with scalar siblings', () => {
     expect(templateShape({ date: 'YYYY-MM-DD', items: [{ name: 'Food', grams: 100, dish: 'Smoothie' }] })).toEqual({
-      kind: 'table', arrayKey: 'items', columns: ['name', 'grams', 'dish'], scalarKeys: ['date'], stringColumns: ['name', 'dish'], numberColumns: ['grams'],
+      kind: 'table', arrayKey: 'items', columns: ['name', 'grams', 'dish'], scalarKeys: ['date'], stringColumns: ['name', 'dish'], numberColumns: ['grams'], booleanColumns: [],
     });
+  });
+  it('types each column by its example value: string, number or boolean', () => {
+    const shape = templateShape({ items: [{ name: 'x', grams: 1, organic: false, note: null }] });
+    expect(shape).toMatchObject({ stringColumns: ['name'], numberColumns: ['grams'], booleanColumns: ['organic'] });
   });
   it('calls a template with no array flat (even with a nested object)', () => {
     expect(templateShape({ name: '', volume: { amount: 1, unit: 'cup' } })).toEqual({ kind: 'flat' });

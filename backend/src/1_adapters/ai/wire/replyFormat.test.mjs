@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { encode } from '@toon-format/toon';
 import { buildReplySkeleton, rewriteCueLine, stripFormatSentences, decodeReply, TOON_REPLY_RULES } from './replyFormat.mjs';
 import { templateShape } from './shapes.mjs';
+import { planWire } from './planWire.mjs';
+import { captureTextPrompt } from './fixtures/foodPrompts.mjs';
 
 const template = {
   date: 'YYYY-MM-DD',
@@ -40,7 +42,8 @@ describe('TOON_REPLY_RULES', () => {
     expect(TOON_REPLY_RULES).not.toMatch(/items/);
   });
   it('asks for a tab on every column and quoting that matches what the encoder quotes', () => {
-    expect(TOON_REPLY_RULES).toMatch(/including before trailing empty cells/);
+    expect(TOON_REPLY_RULES).toMatch(/exactly one value per column/);
+    expect(TOON_REPLY_RULES).toMatch(/including a tab before an empty last value/);
     expect(TOON_REPLY_RULES).toMatch(/colon/);
     expect(TOON_REPLY_RULES).toMatch(/starts with # or -/);
     expect(TOON_REPLY_RULES).toMatch(/looks like a number or like true, false or null/);
@@ -53,9 +56,10 @@ describe('TOON_REPLY_RULES', () => {
 });
 
 describe('decodeReply', () => {
-  const reply = 'date: 2026-10-01\ntime: evening\nitems[2\t]{name\tunit\tgrams\tdish}:\n  Chicken, Rice\tg\t150\t\n  Broccoli\tg\t80\tBowl';
+  const H = 'items[2\t]{name\tunit\tgrams\tdish}:';
+  const reply = `date: 2026-10-01\ntime: evening\n${H}\n  Chicken, Rice\tg\t150\t\n  Broccoli\tg\t80\tBowl`;
 
-  it('decodes rows and turns an empty cell into an absent key', () => {
+  it('decodes full-width rows and turns an empty cell (written with its tab) into an absent key', () => {
     expect(decodeReply(reply, shape)).toEqual({
       ok: true,
       value: { date: '2026-10-01', time: 'evening', items: [
@@ -65,99 +69,27 @@ describe('decodeReply', () => {
     });
   });
 
-  // Real model output: no trailing tab when the last optional cell (dish) is empty.
-  it('keeps every row when non-last rows omit the trailing tab of an empty dish', () => {
-    const real = 'date: 2026-10-01\ntime: morning\nitems[3\t]{name\tunit\tgrams\tdish}:\n  Egg\tg\t50\n  Toast\tg\t30\n  Rice\tg\t100\tBowl';
-    expect(decodeReply(real, shape)).toEqual({
-      ok: true,
-      value: { date: '2026-10-01', time: 'morning', items: [
-        { name: 'Egg', unit: 'g', grams: 50 },
-        { name: 'Toast', unit: 'g', grams: 30 },
-        { name: 'Rice', unit: 'g', grams: 100, dish: 'Bowl' },
-      ] },
-    });
-  });
-
-  it('a short LAST row in a lax decode is a truncation failure, not a silent drop', () => {
-    const cut = 'date: 2026-10-01\nitems[3\t]{name\tunit\tgrams\tdish}:\n  A\tg\t1\t\n  B\tg\t2\tX\n  C\tg';
-    expect(decodeReply(cut, shape)).toEqual({ ok: false, reason: 'truncated' });
-  });
-
-  it('a last row missing only its trailing dish tab also fails truncated (indistinguishable from a cut)', () => {
-    const cut = 'date: d\nitems[2\t]{name\tunit\tgrams\tdish}:\n  A\tg\t1\tX\n  B\tg\t2';
-    expect(decodeReply(cut, shape)).toEqual({ ok: false, reason: 'truncated' });
-  });
-
-  it('a middle row starting with # (a comment to the decoder) fails instead of vanishing', () => {
-    const reply = 'date: d\nitems[3\t]{name\tunit\tgrams\tdish}:\n  Egg\tg\t50\t\n  #1 Combo\tg\t300\t\n  Rice\tg\t100\tBowl';
-    expect(decodeReply(reply, shape)).toEqual({ ok: false, reason: 'row-count-mismatch' });
-  });
-
-  it('a # row is caught even when the declared [N] agrees with what strict decode kept', () => {
-    const reply = 'date: d\nitems[2\t]{name\tunit\tgrams\tdish}:\n  Egg\tg\t50\t\n  #1 Combo\tg\t300\t\n  Rice\tg\t100\tBowl';
-    expect(decodeReply(reply, shape).ok).toBe(false);
-  });
-
-  it('a quoted "#1 Combo" decodes correctly', () => {
-    const reply = 'date: d\nitems[2\t]{name\tunit\tgrams\tdish}:\n  Egg\tg\t50\t\n  "#1 Combo"\tg\t300\t';
-    expect(decodeReply(reply, shape).value.items.map((i) => i.name)).toEqual(['Egg', '#1 Combo']);
-  });
-
-  it('a single unquoted "Soup: Miso" row fails, never {items:[]} ok', () => {
-    const reply = 'date: d\nitems[1\t]{name\tunit\tgrams\tdish}:\n  Soup: Miso\tg\t200\t';
-    expect(decodeReply(reply, shape)).toEqual({ ok: false, reason: 'row-count-mismatch' });
-  });
-
-  it('an unquoted "Soup: Miso" middle row fails', () => {
-    const reply = 'date: d\nitems[3\t]{name\tunit\tgrams\tdish}:\n  Egg\tg\t50\t\n  Soup: Miso\tg\t200\t\n  Rice\tg\t100\tBowl';
-    expect(decodeReply(reply, shape).ok).toBe(false);
-  });
-
-  it('a colon after the first cell, or a quoted colon value, decodes correctly', () => {
-    const reply = 'date: d\nitems[2\t]{name\tunit\tgrams\tdish}:\n  "Soup: Miso"\tml\t200\t\n  Tofu\tg\t50\tSoup: Miso';
-    expect(decodeReply(reply, shape).value.items).toEqual([
-      { name: 'Soup: Miso', unit: 'ml', grams: 200 },
-      { name: 'Tofu', unit: 'g', grams: 50, dish: 'Soup: Miso' },
-    ]);
-  });
-
-  it('a declared [N] that disagrees with the rows present fails, in either direction', () => {
-    const rows = '\n  Egg\tg\t50\t\n  Toast\tg\t30\t\n  Rice\tg\t100\tBowl';
-    expect(decodeReply(`date: d\nitems[2\t]{name\tunit\tgrams\tdish}:${rows}`, shape)).toEqual({ ok: false, reason: 'row-count-mismatch' });
-    expect(decodeReply(`date: d\nitems[4\t]{name\tunit\tgrams\tdish}:${rows}`, shape)).toEqual({ ok: false, reason: 'row-count-mismatch' });
-  });
-
-  it('an extra cell the lax decoder would discard fails', () => {
-    expect(decodeReply('date: d\nitems[1\t]{name\tunit\tgrams\tdish}:\n  Egg\tg\t50\tX\tY', shape)).toEqual({ ok: false, reason: 'extra-cells' });
-  });
-
-  it('a stray unquoted double quote (which would swallow the following tabs) fails', () => {
-    const reply = 'date: d\nitems[2\t]{name\tunit\tgrams\tdish}:\n  12" Sub\tg\t300\t\n  Rice\tg\t100\tBowl';
-    expect(decodeReply(reply, shape)).toEqual({ ok: false, reason: 'stray-quote' });
-  });
-
-  it('a blank line inside the table does not lose a row', () => {
-    const reply = 'date: d\nitems[2\t]{name\tunit\tgrams\tdish}:\n  Egg\tg\t50\t\n\n  Rice\tg\t100\tBowl';
-    expect(decodeReply(reply, shape).value.items.map((i) => i.name)).toEqual(['Egg', 'Rice']);
-  });
-
   it('accepts a correct table with zero rows', () => {
-    expect(decodeReply('date: 2026-10-01\nitems[0\t]{name\tunit\tgrams\tdish}:', shape).value.items).toEqual([]);
+    expect(decodeReply(`date: 2026-10-01\nitems[0\t]{name\tunit\tgrams\tdish}:`, shape).value.items).toEqual([]);
   });
 
   it('reports a JSON reply instead of decoding it', () => {
     expect(decodeReply('{"items":[]}', shape)).toEqual({ ok: false, reason: 'json-reply' });
   });
 
-  // Review Focus 2
   it('fenced reply: strips a ```toon fence and decodes', () => {
     expect(decodeReply('```toon\n' + reply + '\n```', shape).ok).toBe(true);
   });
+
+  it('fenced reply: an empty last cell (trailing tab) survives the fence strip', () => {
+    const result = decodeReply('```toon\nitems[1\t]{name\tunit\tgrams\tdish}:\n  A\tg\t1\t\n```', shape);
+    expect(result).toEqual({ ok: true, value: { items: [{ name: 'A', unit: 'g', grams: 1 }] } });
+  });
+
   it('prose preface falls back instead of returning a junk key', () => {
     expect(decodeReply('Here you go:\n' + reply, shape)).toEqual({ ok: false, reason: 'shape-mismatch' });
   });
 
-  // Review Focus 1
   it('quoted values round-trip: tab, newline, quote and leading space in a name', () => {
     const items = [
       { name: 'Mac\t"n" Cheese', unit: 'g', grams: 200, dish: '' },
@@ -169,126 +101,206 @@ describe('decodeReply', () => {
     expect(result.value.items[1].name).toBe(' Leading space\nand newline');
   });
 
-  // Review Focus 4
-  it('string columns stay strings when the cell looks like a number or boolean', () => {
-    const result = decodeReply('items[2\t]{name\tunit\tgrams\tdish}:\n  7\tg\t330\t\n  true\tg\t1\t', shape);
-    expect(result.value.items.map(i => i.name)).toEqual(['7', 'true']);
-    expect(result.value.items[0].grams).toBe(330);
+  // Exact width: one value per column on every row, middle and last alike.
+  it('a middle row without the trailing tab of an empty dish fails short-row', () => {
+    const r = `date: d\nitems[3\t]{name\tunit\tgrams\tdish}:\n  Egg\tg\t50\n  Toast\tg\t30\t\n  Rice\tg\t100\tBowl`;
+    expect(decodeReply(r, shape)).toEqual({ ok: false, reason: 'short-row' });
   });
 
-  // Regression: fenced reply with empty last cell is kept (tab preserved through fence)
-  it('fenced reply: empty last cell (trailing tab) is preserved and row is complete', () => {
-    const fenced = '```toon\nitems[1\t]{name\tunit\tgrams\tdish}:\n  A\tg\t1\t\n```';
-    const result = decodeReply(fenced, shape);
-    expect(result.ok).toBe(true);
-    expect(result.value.items.length).toBe(1);
-    expect(result.value.items[0].name).toBe('A');
+  it('a last row without the trailing tab of an empty dish fails short-row', () => {
+    const r = `date: d\nitems[2\t]{name\tunit\tgrams\tdish}:\n  Rice\tg\t100\tBowl\n  Egg\tg\t50`;
+    expect(decodeReply(r, shape)).toEqual({ ok: false, reason: 'short-row' });
   });
 
-  // Final re-review: column shifts must fail, never decode ok.
-  const FOOD_COLUMNS = ['name', 'icon', 'noom_color', 'quantity', 'unit', 'grams', 'calories', 'protein', 'carbs', 'fat', 'fiber', 'sugar', 'sodium', 'cholesterol', 'dish'];
-  const foodShape = templateShape({
-    date: 'YYYY-MM-DD', time: 'evening',
-    items: [{ name: 'Food', icon: 'default', noom_color: 'green|yellow|orange', quantity: 1, unit: 'g|ml', grams: 100, calories: 100, protein: 1, carbs: 1, fat: 1, fiber: 1, sugar: 1, sodium: 1, cholesterol: 1, dish: 'Smoothie' }],
+  it('a truncated last row fails short-row', () => {
+    const cut = `date: d\nitems[3\t]{name\tunit\tgrams\tdish}:\n  A\tg\t1\t\n  B\tg\t2\tX\n  C\tg`;
+    expect(decodeReply(cut, shape)).toEqual({ ok: false, reason: 'short-row' });
   });
 
-  it('a comma-delimited 15-column food table (name with a comma) fails wrong-delimiter', () => {
-    const reply = `date: 2026-10-01\ntime: evening\nitems[2]{${FOOD_COLUMNS.join(',')}}:\n`
-      + '  Chicken Breast, Grilled,chicken,yellow,1,g,150,250,40,0,5,0,0,80,90,\n'
-      + '  Rice,default,yellow,1,g,100,130,3,28,0,0,0,1,0,';
-    expect(decodeReply(reply, foodShape)).toEqual({ ok: false, reason: 'wrong-delimiter' });
+  it('an extra cell the lax decoder would discard fails extra-cells', () => {
+    expect(decodeReply('date: d\nitems[1\t]{name\tunit\tgrams\tdish}:\n  Egg\tg\t50\tX\tY', shape)).toEqual({ ok: false, reason: 'extra-cells' });
   });
 
+  it('a reordered header fails column-mismatch', () => {
+    expect(decodeReply('items[1\t]{name\tgrams\tunit\tdish}:\n  Egg\t50\tg\t', shape)).toEqual({ ok: false, reason: 'column-mismatch' });
+  });
+
+  it('a header missing a column, or naming one outside the template, fails column-mismatch', () => {
+    expect(decodeReply('items[1\t]{name\tunit\tgrams}:\n  Egg\tg\t50', shape)).toEqual({ ok: false, reason: 'column-mismatch' });
+    expect(decodeReply('items[1\t]{name\tunit\tgrams\tcolour}:\n  Egg\tg\t50\tred', shape)).toEqual({ ok: false, reason: 'column-mismatch' });
+  });
+
+  // Lines the decoder silently eats.
+  it('a middle row starting with # (a comment to the decoder) fails instead of vanishing', () => {
+    const r = 'date: d\nitems[3\t]{name\tunit\tgrams\tdish}:\n  Egg\tg\t50\t\n  #1 Combo\tg\t300\t\n  Rice\tg\t100\tBowl';
+    expect(decodeReply(r, shape)).toEqual({ ok: false, reason: 'row-count-mismatch' });
+  });
+
+  it('a # row is caught even when the declared [N] agrees with what strict decode kept', () => {
+    const r = 'date: d\nitems[2\t]{name\tunit\tgrams\tdish}:\n  Egg\tg\t50\t\n  #1 Combo\tg\t300\t\n  Rice\tg\t100\tBowl';
+    expect(decodeReply(r, shape).ok).toBe(false);
+  });
+
+  it('a quoted "#1 Combo" decodes correctly', () => {
+    const r = 'date: d\nitems[2\t]{name\tunit\tgrams\tdish}:\n  Egg\tg\t50\t\n  "#1 Combo"\tg\t300\t';
+    expect(decodeReply(r, shape).value.items.map((i) => i.name)).toEqual(['Egg', '#1 Combo']);
+  });
+
+  it('a single unquoted "Soup: Miso" row fails, never {items:[]} ok', () => {
+    const r = 'date: d\nitems[1\t]{name\tunit\tgrams\tdish}:\n  Soup: Miso\tg\t200\t';
+    expect(decodeReply(r, shape)).toEqual({ ok: false, reason: 'row-count-mismatch' });
+  });
+
+  it('an unquoted "Soup: Miso" middle row fails', () => {
+    const r = 'date: d\nitems[3\t]{name\tunit\tgrams\tdish}:\n  Egg\tg\t50\t\n  Soup: Miso\tg\t200\t\n  Rice\tg\t100\tBowl';
+    expect(decodeReply(r, shape).ok).toBe(false);
+  });
+
+  it('a colon after the first cell, or a quoted colon value, decodes correctly', () => {
+    const r = 'date: d\nitems[2\t]{name\tunit\tgrams\tdish}:\n  "Soup: Miso"\tml\t200\t\n  Tofu\tg\t50\tSoup: Miso';
+    expect(decodeReply(r, shape).value.items).toEqual([
+      { name: 'Soup: Miso', unit: 'ml', grams: 200 },
+      { name: 'Tofu', unit: 'g', grams: 50, dish: 'Soup: Miso' },
+    ]);
+  });
+
+  it('a declared [N] that disagrees with the rows present fails, in either direction', () => {
+    const rows = '\n  Egg\tg\t50\t\n  Toast\tg\t30\t\n  Rice\tg\t100\tBowl';
+    expect(decodeReply(`date: d\nitems[2\t]{name\tunit\tgrams\tdish}:${rows}`, shape)).toEqual({ ok: false, reason: 'row-count-mismatch' });
+    expect(decodeReply(`date: d\nitems[4\t]{name\tunit\tgrams\tdish}:${rows}`, shape)).toEqual({ ok: false, reason: 'row-count-mismatch' });
+  });
+
+  it('a stray unquoted double quote (which would swallow the following tabs) fails', () => {
+    const r = 'date: d\nitems[2\t]{name\tunit\tgrams\tdish}:\n  12" Sub\tg\t300\t\n  Rice\tg\t100\tBowl';
+    expect(decodeReply(r, shape)).toEqual({ ok: false, reason: 'stray-quote' });
+  });
+
+  it('a blank line inside the table does not lose a row', () => {
+    const r = 'date: d\nitems[2\t]{name\tunit\tgrams\tdish}:\n  Egg\tg\t50\t\n\n  Rice\tg\t100\tBowl';
+    expect(decodeReply(r, shape).value.items.map((i) => i.name)).toEqual(['Egg', 'Rice']);
+  });
+
+  // Header form.
   it('any header delimiter other than tab fails wrong-delimiter', () => {
     expect(decodeReply('items[1|]{name|unit|grams|dish}:\n  Egg|g|50|', shape)).toEqual({ ok: false, reason: 'wrong-delimiter' });
     expect(decodeReply('items[1]{name,unit,grams,dish}:\n  Egg,g,50,', shape)).toEqual({ ok: false, reason: 'wrong-delimiter' });
   });
 
-  it('a shifted middle row (text lands in numeric grams) fails type-mismatch', () => {
-    const reply = 'date: d\nitems[3\t]{name\tunit\tgrams\tdish}:\n  Egg\tg\t50\t\n  Rice\t100\tBowl\n  Toast\tg\t30\tPlate';
-    expect(decodeReply(reply, shape)).toEqual({ ok: false, reason: 'type-mismatch' });
-  });
-
-  it('the 15-column food shape: a short row missing its unit cell fails type-mismatch (number in unit)', () => {
-    const header = `items[2\t]{${FOOD_COLUMNS.join('\t')}}:`;
-    const good = ['Rice', 'default', 'yellow', 1, 'g', 100, 130, 3, 28, 0, 0, 0, 1, 0, 'Bowl'].join('\t');
-    const shifted = ['Egg', 'default', 'yellow', 1, 50, 70, 6, 0, 5, 0, 0, 60, 180, ''].join('\t');
-    expect(decodeReply(`date: d\ntime: evening\n${header}\n  ${shifted}\n  ${good}`, foodShape)).toEqual({ ok: false, reason: 'type-mismatch' });
-  });
-
-  it('the 15-column food shape: a row missing its noom_color cell fails type-mismatch (text in quantity)', () => {
-    const header = `items[2\t]{${FOOD_COLUMNS.join('\t')}}:`;
-    const good = ['Rice', 'default', 'yellow', 1, 'g', 100, 130, 3, 28, 0, 0, 0, 1, 0, 'Bowl'].join('\t');
-    const shifted = ['Egg', 'default', 1, 'g', 50, 70, 6, 0, 5, 0, 0, 60, 180, 'Plate'].join('\t');
-    expect(decodeReply(`date: d\ntime: evening\n${header}\n  ${shifted}\n  ${good}`, foodShape)).toEqual({ ok: false, reason: 'type-mismatch' });
-  });
-
-  it('a full-width row may still carry a number-like name (only short rows are suspect)', () => {
-    const reply = 'items[2\t]{name\tunit\tgrams\tdish}:\n  7\tg\t330\t\n  Rice\tg\t100\tBowl';
-    expect(decodeReply(reply, shape).value.items[0].name).toBe('7');
-  });
-
   it('two table headers fail multiple-tables', () => {
-    const reply = 'date: d\nitems[1\t]{name\tunit\tgrams\tdish}:\n  Egg\tg\t50\t\nitems[1\t]{name\tunit\tgrams\tdish}:\n  Rice\tg\t100\tBowl';
-    expect(decodeReply(reply, shape)).toEqual({ ok: false, reason: 'multiple-tables' });
+    const r = 'date: d\nitems[1\t]{name\tunit\tgrams\tdish}:\n  Egg\tg\t50\t\nitems[1\t]{name\tunit\tgrams\tdish}:\n  Rice\tg\t100\tBowl';
+    expect(decodeReply(r, shape)).toEqual({ ok: false, reason: 'multiple-tables' });
     const other = 'date: d\nitems[1\t]{name\tunit\tgrams\tdish}:\n  Egg\tg\t50\t\nextras[1\t]{name}:\n  Salt';
     expect(decodeReply(other, shape)).toEqual({ ok: false, reason: 'multiple-tables' });
   });
 
-  it('a valid reply with null in a numeric column still decodes', () => {
-    const reply = 'date: d\nitems[2\t]{name\tunit\tgrams\tdish}:\n  Egg\tg\tnull\t\n  Rice\tg\t100\tBowl';
-    expect(decodeReply(reply, shape)).toEqual({ ok: true, value: { date: 'd', items: [
+  // Types.
+  it('a shifted row (text lands in numeric grams) fails type-mismatch', () => {
+    const r = 'date: d\nitems[1\t]{name\tunit\tgrams\tdish}:\n  Rice\t100\tBowl\t';
+    expect(decodeReply(r, shape)).toEqual({ ok: false, reason: 'type-mismatch' });
+  });
+
+  it('a bare number or boolean in a text column fails; quoted "7" and "true" decode as strings', () => {
+    expect(decodeReply('items[1\t]{name\tunit\tgrams\tdish}:\n  7\tg\t330\t', shape)).toEqual({ ok: false, reason: 'type-mismatch' });
+    expect(decodeReply('items[1\t]{name\tunit\tgrams\tdish}:\n  true\tg\t1\t', shape)).toEqual({ ok: false, reason: 'type-mismatch' });
+    const quoted = decodeReply('items[2\t]{name\tunit\tgrams\tdish}:\n  "7"\tg\t330\t\n  "true"\tg\t1\t', shape);
+    expect(quoted.value.items.map((i) => i.name)).toEqual(['7', 'true']);
+    expect(quoted.value.items[0].grams).toBe(330);
+  });
+
+  it('a boolean column must decode to a boolean or null', () => {
+    const boolShape = templateShape({ items: [{ name: 'x', organic: false }] });
+    expect(decodeReply('items[1\t]{name\torganic}:\n  Egg\tyes', boolShape)).toEqual({ ok: false, reason: 'type-mismatch' });
+    expect(decodeReply('items[1\t]{name\torganic}:\n  Egg\t1', boolShape)).toEqual({ ok: false, reason: 'type-mismatch' });
+    expect(decodeReply('items[2\t]{name\torganic}:\n  Egg\ttrue\n  Kale\tnull', boolShape).value.items).toEqual([
+      { name: 'Egg', organic: true }, { name: 'Kale', organic: null },
+    ]);
+  });
+
+  it('null in a numeric column decodes; an empty numeric cell is an absent key', () => {
+    const r = 'date: d\nitems[2\t]{name\tunit\tgrams\tdish}:\n  Egg\tg\tnull\t\n  Rice\tg\t\tBowl';
+    expect(decodeReply(r, shape)).toEqual({ ok: true, value: { date: 'd', items: [
       { name: 'Egg', unit: 'g', grams: null },
-      { name: 'Rice', unit: 'g', grams: 100, dish: 'Bowl' },
+      { name: 'Rice', unit: 'g', dish: 'Bowl' },
     ] } });
   });
+});
 
-  it('an empty numeric cell is an absent key, not a type mismatch', () => {
-    const reply = 'date: d\nitems[2\t]{name\tunit\tgrams\tdish}:\n  Egg\tg\t\t\n  Rice\tg\t100\tBowl';
-    expect(decodeReply(reply, shape).value.items[0]).toEqual({ name: 'Egg', unit: 'g' });
+describe('decodeReply on the real 15-column food shape', () => {
+  const FOOD_COLUMNS = ['name', 'icon', 'noom_color', 'quantity', 'unit', 'grams', 'calories', 'protein', 'carbs', 'fat', 'fiber', 'sugar', 'sodium', 'cholesterol', 'dish'];
+  const realShape = async () => planWire(await captureTextPrompt(), { reply: true }).shape;
+  const header = (n) => `items[${n}\t]{${FOOD_COLUMNS.join('\t')}}:`;
+  const scalars = 'date: 2026-10-01\ndateExplicit: false\ntime: evening\nmealTimeExplicit: true';
+  const reply = (...rows) => `${scalars}\n${header(rows.length)}\n${rows.map((r) => `  ${r.join('\t')}`).join('\n')}`;
+  const egg = ['Egg', 'default', 'yellow', 1, 'g', 50, 70, 6, 0.6, 5, 0, 0.2, 60, 180, ''];
+  const rice = ['Rice', 'default', 'yellow', 1, 'g', 100, 130, 2.7, 28, 0.3, 0.4, 0.1, 1, 0, 'Bowl'];
+  const toast = ['Toast', 'default', 'yellow', 1, 'g', 30, 80, 3, 15, 1, 1, 1, 150, 0, 'Plate'];
+  const asObject = (row) => Object.fromEntries(row.map((v, i) => [FOOD_COLUMNS[i], v]).filter(([, v]) => v !== ''));
+
+  it('the shape the real prompt produces is the 15 columns in order', async () => {
+    expect((await realShape()).columns).toEqual(FOOD_COLUMNS);
   });
 
-  it('a header column outside the template fails shape-mismatch', () => {
-    expect(decodeReply('items[1\t]{name\tunit\tgrams\tcolour}:\n  Egg\tg\t50\tred', shape)).toEqual({ ok: false, reason: 'shape-mismatch' });
+  it('good reply: full-width rows, empty dish with its tab, mixed dish rows, four scalars, decimals', async () => {
+    expect(decodeReply(reply(egg, rice, toast), await realShape())).toEqual({ ok: true, value: {
+      date: '2026-10-01', dateExplicit: false, time: 'evening', mealTimeExplicit: true,
+      items: [asObject(egg), asObject(rice), asObject(toast)],
+    } });
   });
 
-  // A short row may only omit trailing text columns (real 15-column food shape).
-  describe('short rows in the 15-column food shape', () => {
-    const header = `items[3\t]{${FOOD_COLUMNS.join('\t')}}:`;
-    const egg = ['Egg', 'default', 'yellow', 1, 'g', 50, 70, 6, 0, 5, 0, 0, 60, 180];
-    const rice = ['Rice', 'default', 'yellow', 1, 'g', 100, 130, 3, 28, 0, 0, 0, 1, 0, 'Bowl'];
-    const toast = ['Toast', 'default', 'yellow', 1, 'g', 30, 80, 3, 15, 1, 1, 1, 150, 0, 'Plate'];
-    const reply = (...rows) => `date: d\ntime: evening\n${header}\n${rows.map((r) => `  ${r.join('\t')}`).join('\n')}`;
-    const withoutProtein = (row) => row.filter((_, i) => i !== FOOD_COLUMNS.indexOf('protein'));
+  it('good reply: a null nutrient decodes as null', async () => {
+    const withNull = [...rice];
+    withNull[FOOD_COLUMNS.indexOf('fiber')] = 'null'; // join() would write a JS null as an empty cell
+    expect(decodeReply(reply(withNull), await realShape()).value.items[0].fiber).toBeNull();
+  });
 
-    it('missing protein, dish empty and no trailing tab: fails short-row (cholesterol is in the missing suffix)', () => {
-      expect(decodeReply(reply(withoutProtein(egg), rice, toast), foodShape)).toEqual({ ok: false, reason: 'short-row' });
-    });
+  it('good reply: a single row ([1])', async () => {
+    expect(decodeReply(reply(rice), await realShape()).value.items).toEqual([asObject(rice)]);
+  });
 
-    it('missing protein, dish empty WITH its trailing tab: fails short-row (short row ending in an empty cell)', () => {
-      expect(decodeReply(reply([...withoutProtein(egg), ''], rice, toast), foodShape)).toEqual({ ok: false, reason: 'short-row' });
-    });
+  it('good reply: CRLF line endings', async () => {
+    expect(decodeReply(reply(egg, rice).replace(/\n/g, '\r\n'), await realShape()).value.items).toEqual([asObject(egg), asObject(rice)]);
+  });
 
-    it('missing protein with dish present: fails (the shifted number lands in dish)', () => {
-      expect(decodeReply(reply(withoutProtein([...egg, 'Breakfast']), rice, toast), foodShape)).toEqual({ ok: false, reason: 'type-mismatch' });
-    });
+  it('a comma-delimited table (name with a comma) fails wrong-delimiter', async () => {
+    const r = `${scalars}\nitems[2]{${FOOD_COLUMNS.join(',')}}:\n`
+      + '  Chicken Breast, Grilled,chicken,yellow,1,g,150,250,40,0,5,0,0,80,90,\n'
+      + '  Rice,default,yellow,1,g,100,130,3,28,0,0,0,1,0,';
+    expect(decodeReply(r, await realShape())).toEqual({ ok: false, reason: 'wrong-delimiter' });
+  });
 
-    it('dish empty with no trailing tab in a middle row decodes with dish absent', () => {
-      const result = decodeReply(reply(rice, egg, toast), foodShape);
-      expect(result.ok).toBe(true);
-      expect(result.value.items[1]).toEqual(Object.fromEntries(egg.map((v, i) => [FOOD_COLUMNS[i], v])));
-      expect(Object.hasOwn(result.value.items[1], 'dish')).toBe(false);
-    });
+  it('probe 2e: a dish-less row without its trailing tab plus a doubled tab among the nutrients fails', async () => {
+    // Exactly full width: protein reads empty, everything after shifts, dish gets a bare 180.
+    const slipped = `  ${egg.slice(0, 7).join('\t')}\t\t${egg.slice(7, 14).join('\t')}`;
+    const r = `${scalars}\n${header(2)}\n${slipped}\n  ${rice.join('\t')}`;
+    expect(slipped.split('\t')).toHaveLength(FOOD_COLUMNS.length);
+    expect(decodeReply(r, await realShape())).toEqual({ ok: false, reason: 'type-mismatch' });
+  });
 
-    it('dish empty on the last row of a strict decode (tab present) decodes with dish absent', () => {
-      const result = decodeReply(reply(rice, toast, [...egg, '']), foodShape);
-      expect(result.ok).toBe(true);
-      expect(Object.hasOwn(result.value.items[2], 'dish')).toBe(false);
-      expect(result.value.items[2].cholesterol).toBe(180);
-    });
+  it('missing protein, dish empty, no trailing tab: fails short-row', async () => {
+    const noProtein = egg.filter((_, i) => i !== FOOD_COLUMNS.indexOf('protein')).slice(0, -1);
+    expect(decodeReply(reply(noProtein, rice), await realShape())).toEqual({ ok: false, reason: 'short-row' });
+  });
 
-    it('dish empty with no trailing tab on the LAST row cannot be strict and stays truncated', () => {
-      expect(decodeReply(reply(rice, toast, egg), foodShape)).toEqual({ ok: false, reason: 'truncated' });
-    });
+  it('missing protein, dish present: fails short-row', async () => {
+    const noProtein = rice.filter((_, i) => i !== FOOD_COLUMNS.indexOf('protein'));
+    expect(decodeReply(reply(noProtein, egg), await realShape())).toEqual({ ok: false, reason: 'short-row' });
+  });
+
+  it('dish empty without its trailing tab fails on a middle row and on the last row', async () => {
+    const eggNoTab = egg.slice(0, -1);
+    expect(decodeReply(reply(rice, eggNoTab, toast), await realShape())).toEqual({ ok: false, reason: 'short-row' });
+    expect(decodeReply(reply(rice, toast, eggNoTab), await realShape())).toEqual({ ok: false, reason: 'short-row' });
+  });
+
+  it('a reordered header fails column-mismatch', async () => {
+    const swapped = [...FOOD_COLUMNS];
+    [swapped[7], swapped[8]] = [swapped[8], swapped[7]];
+    const r = `${scalars}\nitems[1\t]{${swapped.join('\t')}}:\n  ${rice.join('\t')}`;
+    expect(decodeReply(r, await realShape())).toEqual({ ok: false, reason: 'column-mismatch' });
+  });
+
+  it('a row missing its noom_color cell (text lands in quantity) fails', async () => {
+    const shifted = [...egg.slice(0, 2), ...egg.slice(3)];
+    expect(decodeReply(reply(shifted, rice), await realShape()).ok).toBe(false);
   });
 });

@@ -9,7 +9,7 @@ export const TOON_REPLY_RULES = [
   '- Scalar fields are `key: value` lines.',
   '- The table header is `name[N<TAB>]{col1<TAB>col2…}:` where N is the number of rows you write and <TAB> is a tab character.',
   '- Then N rows, each indented two spaces, values separated by tab characters in header column order.',
-  '- Every row has a tab between every pair of columns, including before trailing empty cells.',
+  '- Every row has exactly one value per column, in header order, with a tab between each pair of values. An empty value keeps its tab, including a tab before an empty last value.',
   '- Leave a cell empty to omit that field.',
   '- Wrap a value in double quotes if it contains a tab, newline, colon or double quote (escape it as \\"), starts with # or -, begins or ends with a space, or is text that looks like a number or like true, false or null. Never quote a real number.',
   '- No code fences and no text before or after.',
@@ -47,18 +47,18 @@ export function stripFormatSentences(text) {
 /**
  * Decode a TOON reply against the template's shape. Never throws: a reply
  * that is JSON, unparseable, not the requested shape, or that could have lost
- * a row returns `ok: false` so the caller can fall back to today's behaviour.
+ * or shifted a cell returns `ok: false` so the caller can fall back to
+ * today's behaviour (a re-ask on the JSON path).
  *
- * Rows are never dropped. The decoder silently skips some lines (a row
- * starting with `#` is a comment to it; an unquoted `Soup: Miso` row reads as
- * a key), so the raw row lines are counted and must match both the declared
- * `[N]` and the decoded rows. A row short of columns is kept with the missing
- * cells absent, unless it is the LAST row of a lax decode: that is what a cut
- * reply looks like, so it fails; any other short row may only omit trailing
- * text columns (`short-row`). The table must be the only one and declare
- * the tab delimiter (`name[N<TAB>]`), row keys must be template columns, and
- * numeric template columns must decode to numbers (or null/empty): together
- * these turn a column shift into a failure instead of a corrupted log.
+ * Rows are positional, so one slipped tab moves every later value into the
+ * wrong column. The only safe rule is exact width: the table is the only one,
+ * declares the tab delimiter, lists exactly the template's columns in order,
+ * and every row has exactly one cell per column (an empty cell written with
+ * its tab is an absent key). Raw row lines are counted against `[N]` and the
+ * decoded rows, because the decoder silently skips some lines (a `#` row is a
+ * comment to it; an unquoted `Soup: Miso` row reads as a key). Types then
+ * catch what is left: numbers and booleans only where the template has them,
+ * and never a bare number or boolean in a text column.
  *
  * @returns {{ok: true, value: Object} | {ok: false, reason: string}}
  */
@@ -79,11 +79,9 @@ export function decodeReply(text, shape) {
   if (headers.length === 1 && TABLE_HEADER.exec(headers[0])[2] !== '\t') return { ok: false, reason: 'wrong-delimiter' };
 
   let value;
-  let lax = false;
   try {
     value = decode(body, { strict: true });
   } catch {
-    lax = true;
     try { value = decode(body, { strict: false }); } catch { return { ok: false, reason: 'toon-parse' }; }
   }
 
@@ -96,6 +94,10 @@ export function decodeReply(text, shape) {
 
   const table = rawTable(body, shape.arrayKey);
   if (!table) return { ok: false, reason: 'shape-mismatch' };
+  if (table.fields === null || table.fields.length !== shape.columns.length
+    || table.fields.some((field, i) => field !== shape.columns[i])) {
+    return { ok: false, reason: 'column-mismatch' };
+  }
   const rows = value[shape.arrayKey];
   if (table.declared !== table.lines.length || rows.length !== table.lines.length) {
     return { ok: false, reason: 'row-count-mismatch' };
@@ -104,43 +106,27 @@ export function decodeReply(text, shape) {
     const { cells, strayQuote } = splitRow(line);
     if (strayQuote) return { ok: false, reason: 'stray-quote' };
     if (cells > shape.columns.length) return { ok: false, reason: 'extra-cells' };
+    if (cells < shape.columns.length) return { ok: false, reason: 'short-row' };
   }
   const columns = new Set(shape.columns);
   if (!rows.every((row) => row && typeof row === 'object' && !Array.isArray(row)
     && Object.keys(row).every((key) => columns.has(key)))) {
     return { ok: false, reason: 'shape-mismatch' };
   }
-  const isShort = (row) => !shape.columns.every((c) => Object.hasOwn(row, c));
-  if (lax && rows.length > 0 && isShort(rows.at(-1))) return { ok: false, reason: 'truncated' };
-  // A shifted row puts text in a numeric column: number, null or empty only.
-  const numberColumns = shape.numberColumns ?? [];
-  if (rows.some((row) => numberColumns.some((c) => Object.hasOwn(row, c)
-    && !(typeof row[c] === 'number' || row[c] === null || row[c] === '')))) {
+
+  const typeOk = (column, v) => {
+    if (v === '' || v === null || v === undefined) return true;
+    if (shape.numberColumns?.includes(column)) return typeof v === 'number';
+    if (shape.booleanColumns?.includes(column)) return typeof v === 'boolean';
+    // A text column: a quoted "7" decodes as a string; a bare 7 is a slip.
+    if (shape.stringColumns?.includes(column)) return typeof v === 'string';
+    return true;
+  };
+  if (rows.some((row) => shape.columns.some((c) => !typeOk(c, row[c])))) {
     return { ok: false, reason: 'type-mismatch' };
-  }
-  // A short row is where a missing middle cell hides: there, a bare number or
-  // boolean in a text column (`unit: 50`) is a shift, not a quirky name.
-  const stringColumns = shape.stringColumns ?? [];
-  if (rows.some((row) => shape.columns.some((c) => !Object.hasOwn(row, c))
-    && stringColumns.some((c) => typeof row[c] === 'number' || typeof row[c] === 'boolean'))) {
-    return { ok: false, reason: 'type-mismatch' };
-  }
-  // A short row may only omit trailing TEXT columns (an empty `dish` written
-  // without its tab). A missing numeric suffix means a cell went missing
-  // earlier and the nutrients shifted left. A short row that still ends in an
-  // empty cell wrote its trailing tab, so it, too, lost a cell somewhere.
-  if (rows.some((row) => isShort(row) && !shortRowIsTrailingText(row, shape))) {
-    return { ok: false, reason: 'short-row' };
   }
 
   return { ok: true, value: { ...value, [shape.arrayKey]: rows.map((row) => cleanRow(row, shape)) } };
-}
-
-function shortRowIsTrailingText(row, shape) {
-  const firstMissing = shape.columns.findIndex((c) => !Object.hasOwn(row, c));
-  const suffix = shape.columns.slice(firstMissing);
-  if (suffix.some((c) => Object.hasOwn(row, c) || !shape.stringColumns.includes(c))) return false;
-  return firstMissing === 0 || row[shape.columns[firstMissing - 1]] !== '';
 }
 
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -148,20 +134,31 @@ const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** Any TOON array header line: key, `[N<delimiter?>]`, optional `{fields}`, colon. Group 2 is the delimiter. */
 const TABLE_HEADER = /^\s*("(?:[^"\\]|\\.)*"|[^\s:"[\]{}]+)\[\d+([^\]]*)\](?:\{[^}]*\})?:/;
 
-/** The table's declared row count and its raw row lines: the indented, non-blank lines after its header. */
+const unquote = (field) => (/^".*"$/.test(field) ? field.slice(1, -1).replace(/\\(.)/g, '$1') : field);
+
+/**
+ * The table's declared row count, its header fields (null when the header
+ * has none), and its raw row lines: the indented, non-blank lines after it.
+ */
 function rawTable(body, arrayKey) {
   const lines = body.split('\n').map((line) => line.replace(/\r$/, ''));
-  const header = new RegExp(`^${escapeRegExp(arrayKey)}\\[(\\d+)\\t\\](?:\\{[^}]*\\})?:\\s*$`);
+  const header = new RegExp(`^${escapeRegExp(arrayKey)}\\[(\\d+)\\t\\](?:\\{([^}]*)\\})?:\\s*$`);
   const at = lines.findIndex((line) => header.test(line));
   if (at === -1) return null;
-  const declared = Number(header.exec(lines[at])[1]);
+  const [, count, fieldList] = header.exec(lines[at]);
   const rows = [];
   for (const line of lines.slice(at + 1)) {
     if (!line.trim()) continue;
     if (!/^[ \t]/.test(line)) break;
-    rows.push(line.replace(/^[ \t]*/, '').replace(/ +$/, ''));
+    // Strip the indentation only (spaces, or tabs in a lax tab-indented
+    // reply), never a tab that delimits an empty first cell.
+    rows.push(line.replace(/^(?: +|\t+)/, '').replace(/ +$/, ''));
   }
-  return { declared, lines: rows };
+  return {
+    declared: Number(count),
+    fields: fieldList === undefined ? null : fieldList.split('\t').map((f) => unquote(f.trim())),
+    lines: rows,
+  };
 }
 
 /**
@@ -191,14 +188,13 @@ function splitRow(line) {
   return { cells, strayQuote };
 }
 
-/** Empty or missing cell → absent key; a string column never comes back as a number/boolean. */
+/** Empty or missing cell → absent key. Types were already checked. */
 function cleanRow(row, shape) {
   const out = {};
   for (const column of shape.columns) {
     const v = row[column];
     if (v === '' || v === undefined) continue;
-    const coerce = shape.stringColumns.includes(column) && (typeof v === 'number' || typeof v === 'boolean');
-    out[column] = coerce ? String(v) : v;
+    out[column] = v;
   }
   return out;
 }

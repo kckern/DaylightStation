@@ -97,47 +97,45 @@ template's shape:
 - Parse is strict first; on failure it re-parses non-strict (lax). Keys
   outside the template, or a missing array or table header, are a
   `shape-mismatch`.
+- **Rows are positional, so the table must be exactly as wide as the
+  template.** One slipped tab moves every later value into the wrong column,
+  and optional cells make that impossible to repair case by case (a dish-less
+  row missing its trailing tab plus one doubled tab among the nutrients is
+  exactly full width again, with every nutrient after the slip one column
+  over). So:
+  - The header's column list must equal the template's columns, **in the same
+    order**, else `column-mismatch`.
+  - Every row, middle and last alike, must have exactly one cell per column,
+    counted by splitting on unquoted tabs. Fewer fails as `short-row`
+    (including a row whose empty last value lost its tab, and a reply cut
+    mid-row); more fails as `extra-cells` (lax decode would silently drop the
+    surplus). An empty cell written with its tab is an **absent key**.
+  - A `"` anywhere but the start of a cell fails as `stray-quote`: the
+    decoder would open a quoted string there and swallow the following tabs
+    (`12" Sub`).
 - **Rows are never dropped.** The decoder silently skips some lines: a row
   whose first cell starts with `#` is a comment to it, and an unquoted row
   whose first cell holds a colon (`Soup: Miso`) reads as a key. So the raw
-  row lines (indented, non-blank lines after the `name[N…]{…}:` header) are
-  counted; if they differ from the declared `[N]` or from the decoded rows,
-  the decode fails as `row-count-mismatch`. This runs after strict decodes
-  too, because strict mode skips a `#` row without complaint when `[N]`
-  already agrees with what is left.
-- A row with more **tab-separated** cells than columns fails as
-  `extra-cells` (lax mode would discard the surplus). The count splits on
-  unquoted tabs only, so it guards tab tables; the `wrong-delimiter` check is
-  what keeps other delimiters out. A `"` anywhere but the start of a cell fails as
-  `stray-quote` (the decoder would open a quoted string there and swallow the
-  following tabs, e.g. `12" Sub`).
-- A row short of columns is **kept**, with the missing cells as absent keys
-  (models often omit the trailing tab of an empty last cell such as `dish`),
-  **unless it is the last row of a lax decode**: that is what a cut reply looks
-  like, so the decode fails as `truncated`. A strict decode has no short rows.
-- A kept short row may only omit **trailing text columns** (the missing
-  columns are always a suffix of the column list, and every one must be in
-  `stringColumns`). Otherwise it fails as `short-row`: in the 15-column food
-  table, a row missing `protein` with an empty `dish` is missing
-  `[cholesterol, dish]`, so every nutrient after `carbs` slid one column left.
-  A short row whose last present cell is empty also fails as `short-row`: it
-  wrote its trailing tab, so a cell went missing somewhere before it. (A row
-  missing a middle number but carrying its `dish` puts a number in `dish`;
-  that is the text-column `type-mismatch` below.)
-- Order of checks: `truncated` (last row), then `type-mismatch`, then
-  `short-row`.
-- Every decoded row key must be a template column (else `shape-mismatch`).
-- **Type check** (`type-mismatch`): a column whose template example is a
-  number (`numberColumns` in the shape) must decode to a number or `null`, or
-  be empty/absent. A shifted row usually puts text such as `g` or `Bowl` into
-  a numeric column, so most middle-cell shifts fail here. In a row that is
-  short of columns, a bare number or boolean in a text column (`unit: 50`) is
-  also a `type-mismatch`, since a short row is where a missing middle cell
-  hides. A full-width row may still carry a number-like name such as `7`.
-- An empty or missing cell becomes an **absent key**.
+  row lines (indented, non-blank lines after the header) are counted; if they
+  differ from the declared `[N]` or from the decoded rows, the decode fails as
+  `row-count-mismatch`. This runs after strict decodes too, because strict
+  mode skips a `#` row without complaint when `[N]` already agrees with what
+  is left.
+- **Type check** (`type-mismatch`), by the template's example value
+  (`stringColumns`, `numberColumns`, `booleanColumns` in the shape), for
+  every row:
+  - a number column must decode to a number or `null`;
+  - a boolean column must decode to a boolean or `null`;
+  - a text column must not hold a **bare** number or boolean: `7` is a slip,
+    `"7"` (quoted, as the primer asks) decodes as the string `7`.
+
+  Empty cells are absent keys and always pass. A shift that survives the width
+  check (two slips that cancel out) almost always lands text in a number
+  column or a number in a text column, which this catches.
+- Order of checks: `multiple-tables`, `wrong-delimiter`, `toon-parse`,
+  `shape-mismatch`, `column-mismatch`, `row-count-mismatch`, then per raw row
+  `stray-quote`, `extra-cells`, `short-row`, then `type-mismatch`.
 - Success is `{ ok: true, value }`; failure is `{ ok: false, reason }`.
-- String columns (typed by the template's example value) are coerced back to
-  strings, so `"5"` never returns as the number 5.
 
 Per entry point:
 
@@ -208,8 +206,8 @@ the log store; the warn fallback is.
 
 Decode-fallback `reason`s: `not-text`, `json-reply`, `toon-parse`,
 `multiple-tables`, `wrong-delimiter`, `shape-mismatch`,
-`row-count-mismatch`, `extra-cells`, `stray-quote`, `type-mismatch`,
-`short-row`, `truncated`. Mode `off` emits no skip reason (nothing is planned).
+`column-mismatch`, `row-count-mismatch`, `stray-quote`, `extra-cells`,
+`short-row`, `type-mismatch`. Mode `off` emits no skip reason (nothing is planned).
 
 The usage ledger row carries `wire` (`1_adapters/ai/usageAttribution.mjs`):
 
