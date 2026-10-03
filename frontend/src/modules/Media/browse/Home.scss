@@ -1,0 +1,219 @@
+// frontend/src/modules/Media/browse/Home.scss
+// Start page rows (FIND.7a/9a/10a/12b). Layout only; colours and radii come
+// from the Mantine/--ds token ramp. Rows scroll sideways so nothing is hidden
+// by width; every control is at least 44px.
+@use '../../../styles/breakpoints' as *;
+
+.home-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-xs);
+  min-width: 0;
+
+  .home-row-title {
+    font-size: var(--mantine-font-size-lg);
+    font-weight: 600;
+  }
+
+  .home-row-scroll {
+    display: flex;
+    gap: var(--mantine-spacing-sm);
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+.home-tile {
+  --home-tile-width: 136px;
+  flex: 0 0 var(--home-tile-width);
+  width: var(--home-tile-width);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  scroll-snap-align: start;
+  min-width: 0;
+
+  &--large { --home-tile-width: 168px; }
+  &--now { --home-tile-width: 220px; }
+
+  @include tablet-up {
+    --home-tile-width: 152px;
+    &--large { --home-tile-width: 208px; }
+    &--now { --home-tile-width: 240px; }
+  }
+
+  .home-tile-picture {
+    position: relative;
+    display: block;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    border-radius: var(--mantine-radius-md);
+    background: var(--mantine-color-dark-5);
+    border: 1px solid transparent;
+    transition: border-color var(--ds-motion-fast) var(--ds-motion-easing);
+
+    img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+    &:hover, &:focus-visible { border-color: var(--mantine-color-amber-5); }
+    &--static { aspect-ratio: 16 / 9; }
+  }
+
+  &--large .home-tile-picture { aspect-ratio: 2 / 3; }
+
+  .home-tile-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    font-size: 32px;
+    font-weight: 600;
+    color: var(--mantine-color-dark-2);
+  }
+
+  .home-tile-progress {
+    position: absolute;
+    left: 6px;
+    right: 6px;
+    bottom: 6px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--mantine-color-dark-4);
+    overflow: hidden;
+  }
+
+  .home-tile-progress-fill {
+    display: block;
+    height: 100%;
+    background: var(--mantine-color-amber-5);
+  }
+
+  .home-tile-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .home-tile-title {
+    font-size: var(--mantine-font-size-sm);
+    font-weight: 600;
+    color: var(--mantine-color-dark-0);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &--large .home-tile-title { font-size: var(--mantine-font-size-md); }
+
+  .home-tile-line {
+    font-size: var(--mantine-font-size-xs);
+    color: var(--mantine-color-dark-1);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .home-tile-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    margin-top: auto;
+  }
+
+  .home-tile-primary {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 44px;
+  }
+
+  .home-tile-primary-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &--now .home-tile-actions :is(button) { min-height: 44px; }
+}
+
+.home-recents-empty {
+  margin: 0;
+  font-size: var(--mantine-font-size-sm);
+  color: var(--mantine-color-dark-1);
+}
+
+// Played earlier (FIND.11a) inside every screen's queue panel.
+.played-earlier {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-xs);
+  margin-top: var(--mantine-spacing-md);
+
+  .played-earlier-title {
+    font-size: var(--mantine-font-size-md);
+    font-weight: 600;
+  }
+
+  .played-earlier-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .played-earlier-row {
+    display: flex;
+    align-items: center;
+    gap: var(--mantine-spacing-sm);
+    min-width: 0;
+  }
+
+  .played-earlier-main {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--mantine-spacing-sm);
+    min-width: 0;
+    min-height: 44px;
+    border-radius: var(--mantine-radius-sm);
+
+    &:hover, &:focus-visible { background: var(--mantine-color-dark-5); }
+  }
+
+  .played-earlier-thumb {
+    flex: 0 0 48px;
+    width: 48px;
+    height: 48px;
+    border-radius: var(--mantine-radius-sm);
+    object-fit: cover;
+    background: var(--mantine-color-dark-5);
+  }
+
+  .played-earlier-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .played-earlier-name {
+    font-size: var(--mantine-font-size-sm);
+    color: var(--mantine-color-dark-0);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .played-earlier-meta {
+    font-size: var(--mantine-font-size-xs);
+    color: var(--mantine-color-dark-1);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
