@@ -78,6 +78,22 @@ describe('sleep timer (RQ-STEER-12)', () => {
     expect(ports.setFade.mock.calls.at(-1)[0]).toBe(1);
   });
 
+  it('dispose restores full output even mid-fade', async () => {
+    const { controls, ports } = setup();
+    await controls.handleSession('sleep-timer', { minutes: 1 });
+    vi.advanceTimersByTime(55_000);
+    controls.dispose();
+    expect(ports.setFade.mock.calls.at(-1)[0]).toBe(1);
+  });
+
+  it('re-arming during a fade restores full output first', async () => {
+    const { controls, ports } = setup();
+    await controls.handleSession('sleep-timer', { minutes: 1 });
+    vi.advanceTimersByTime(55_000);
+    await controls.handleSession('sleep-timer', { minutes: 30 });
+    expect(ports.setFade.mock.calls.at(-1)[0]).toBe(1);
+  });
+
   it('cancels cleanly and restores full volume', async () => {
     const { controls, ports } = setup();
     await controls.handleSession('sleep-timer', { minutes: 1 });
@@ -233,6 +249,39 @@ describe('end of queue and next episode (RQ-STEER-19, RQ-STEER-20)', () => {
     await vi.runAllTimersAsync();
     expect(ports.addAutoContinueBatch).not.toHaveBeenCalled();
     expect(actions.advance).not.toHaveBeenCalled();
+  });
+
+  it('similar: never re-adds what it already added, so a cycled container ends in "Nothing similar left"', async () => {
+    const resolveContinuation = vi.fn(async ({ exclude }) => (exclude.includes('plex:7') ? [] : [item(7)]));
+    const { controls, actions } = setup({ ports: { resolveContinuation } });
+    controls.applyConfig('endOfQueue', 'similar');
+    controls.naturalEndPolicy({ isQueue: true, current: item(2), next: null }, actions);
+    await vi.runAllTimersAsync();
+    expect(actions.advance).toHaveBeenCalledTimes(1);
+    controls.naturalEndPolicy({ isQueue: true, current: item(7), next: null }, actions);
+    await vi.runAllTimersAsync();
+    expect(resolveContinuation).toHaveBeenLastCalledWith(expect.objectContaining({ exclude: ['plex:7'] }));
+    expect(controls.toPublished().endOfQueueStatus).toMatchObject({ code: 'NOTHING_SIMILAR' });
+  });
+
+  it('similar: stops after 4 unattended batches; any human input resets the count', async () => {
+    let n = 100;
+    const resolveContinuation = vi.fn(async () => [item(n++)]);
+    const { controls, actions } = setup({ ports: { resolveContinuation } });
+    controls.applyConfig('endOfQueue', 'similar');
+    const end = async () => {
+      controls.naturalEndPolicy({ isQueue: true, current: item(1), next: null }, actions);
+      await vi.runAllTimersAsync();
+    };
+    for (let i = 0; i < 4; i += 1) await end();
+    expect(actions.advance).toHaveBeenCalledTimes(4);
+    await end();
+    expect(actions.advance).toHaveBeenCalledTimes(4);
+    expect(actions.finish).toHaveBeenCalledTimes(1);
+    expect(controls.toPublished().endOfQueueStatus).toMatchObject({ code: 'NOTHING_SIMILAR' });
+    controls.markHumanInput();
+    await end();
+    expect(actions.advance).toHaveBeenCalledTimes(5);
   });
 
   it('similar: tops up when the last auto-added item starts', async () => {

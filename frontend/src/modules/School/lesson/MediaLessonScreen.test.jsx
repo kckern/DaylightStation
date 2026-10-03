@@ -355,7 +355,5 @@ describe('the widget registry', () => {
     const { registerBuiltinWidgets } = await import('../../../screen-framework/widgets/builtins.js');
     const { default: MediaLessonScreenDefault } = await import('./MediaLessonScreen.jsx');
     expect(registerBuiltinWidgets().get('school-lesson')).toBe(MediaLessonScreenDefault);
-    // Cold-importing every builtin widget takes ~15s alone and more under the
-    // parallel gate; this asserts registration, not import speed.
-  }, 60_000);
+  });
 });

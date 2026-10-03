@@ -32,6 +32,9 @@ function logger() {
 }
 
 const NOTE_GROUP_WINDOW_MS = 60_000;
+// "Keep similar things playing" without anyone touching the screen stops
+// after this many batches (~2 hours at the 30-minute batch size).
+const MAX_UNATTENDED_BATCHES = 4;
 const MAX_NOTES = 5;
 const FADE_TICK_MS = 250;
 const FADE_RESTORE_DELAY_MS = 1_000;
@@ -111,6 +114,10 @@ export function createScreenSessionControls({
   let refillFor = null;
   let disposed = false;
   let hadPlayback = false;
+  // Auto-continue since the last human input: what was added (never re-added,
+  // so a container is cycled at most once) and how many batches.
+  let autoAdded = [];
+  let unattendedBatches = 0;
   const seenCommandIds = [];
   const listeners = new Set();
 
@@ -127,6 +134,8 @@ export function createScreenSessionControls({
     if (!sleep) return;
     for (const t of sleep.timers) { clearTimeout(t); clearInterval(t); }
     sleep.timers = [];
+    // Never leave the screen faded once the timer that faded it is gone.
+    if (sleep.fading) { sleep.fading = false; setFade(1); }
   }
 
   function completeSleep(reason) {
@@ -165,7 +174,7 @@ export function createScreenSessionControls({
   }
 
   function armSleep(params) {
-    clearSleepTimers();
+    clearSleepTimers(); // restores full output if a previous timer was fading
     const setAt = now();
     const base = { setAt: iso(setAt), setPosition: positionOf(snapshot()), fading: false, timers: [] };
     if (params.atEnd) {
@@ -254,9 +263,17 @@ export function createScreenSessionControls({
 
   async function addContinuation(finished, { advanceAfter, actions }) {
     const startedGeneration = generation;
+    if (unattendedBatches >= MAX_UNATTENDED_BATCHES) {
+      logger().info('auto-continue.unattended-limit', { ownerId, batches: unattendedBatches });
+      setStatus({ code: 'NOTHING_SIMILAR', message: 'Nothing similar left' });
+      if (advanceAfter) actions.finish();
+      return;
+    }
     let items = [];
     try {
-      items = await ports.resolveContinuation?.({ finished, queue: snapshot()?.queue ?? null }) ?? [];
+      items = await ports.resolveContinuation?.({
+        finished, queue: snapshot()?.queue ?? null, exclude: [...autoAdded],
+      }) ?? [];
     } catch (err) {
       logger().warn('auto-continue.resolve-failed', { ownerId, contentId: finished?.contentId, error: String(err?.message ?? err) });
       items = [];
@@ -278,6 +295,8 @@ export function createScreenSessionControls({
       if (advanceAfter) actions.finish();
       return;
     }
+    unattendedBatches += 1;
+    autoAdded.push(...marked.map((it) => it.contentId).filter(Boolean));
     logger().info('auto-continue.added', {
       ownerId, after: finished?.contentId, count: marked.length,
       contentIds: marked.map((it) => it.contentId), operationId: result?.operationId ?? null,
@@ -475,7 +494,14 @@ export function createScreenSessionControls({
     clearCountdown(reason ?? 'interrupted');
   }
 
+  /** A person acted (remote command or local input): auto-continue limits restart. */
+  function markHumanInput() {
+    unattendedBatches = 0;
+    autoAdded = [];
+  }
+
   function markLocalPlayback() {
+    markHumanInput();
     resetModes('local-start');
     generation += 1;
     restore = null;
@@ -524,6 +550,7 @@ export function createScreenSessionControls({
     handleSession,
     noteRemoteCommand,
     markLocalPlayback,
+    markHumanInput,
     interrupt,
     naturalEndPolicy,
     observeSnapshot,
@@ -547,6 +574,7 @@ export function createScreenSessionControls({
     dispose() {
       disposed = true;
       clearSleepTimers();
+      setFade(1);
       clearCountdown('dispose');
       listeners.clear();
     },

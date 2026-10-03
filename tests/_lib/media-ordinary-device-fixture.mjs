@@ -18,7 +18,7 @@ export const ORDINARY_DEVICE_ID = 'acceptance-media';
 const VIRTUAL_TRANSPORT_ACTIONS = new Set(['pause', 'play', 'seekAbs', 'seekRel', 'skipNext', 'skipPrev', 'stop']);
 // Screen session controls (P1): virtual receiver only, like transport.
 const VIRTUAL_SESSION_ROUTES = [
-  ['PUT', /^\/session\/(add-only|end-of-queue|stop-after-current)$/],
+  ['PUT', /^\/session\/(add-only|end-of-queue|stop-after-current|volume)$/],
   ['POST', /^\/session\/(sleep-timer|sleep-timer\/cancel|sleep-timer\/resume|put-back|countdown\/cancel|countdown\/start-now)$/],
   ['GET', /^\/start-status$/],
 ];
