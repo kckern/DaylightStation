@@ -143,3 +143,15 @@ describe('GET /media/household/plays', () => {
     expect(res.body).toEqual({ items: [], ledger: false });
   });
 });
+
+describe('POST /media/household/watched without the mark use case', () => {
+  it('answers 501', async () => {
+    const app = express();
+    app.use(express.json());
+    app.use('/api/v1/media', createMediaRouter({
+      mediaQueueService: {}, mediaSurfaceConfig: { get: () => ({}) }, mediaQueueEvents: {}, createMediaQueue: (p) => p,
+      householdMediaMemory: { canMarkWatched: false, markWatched: vi.fn() },
+    }));
+    await request(app).post('/api/v1/media/household/watched').send({ contentId: 'plex:1', watched: true }).expect(501);
+  });
+});
