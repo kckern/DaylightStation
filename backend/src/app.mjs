@@ -1619,6 +1619,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       playLedger,
       progressMemory: mediaProgressMemory,
       originHints: loadOriginHints,
+      householdMediaMemory,
+      plexAdapter: contentRegistry?.get?.('plex') ?? null,
+      nowLocal: (await import('./0_system/utils/index.mjs')).nowTs24,
       logger: rootLogger,
     });
   })();

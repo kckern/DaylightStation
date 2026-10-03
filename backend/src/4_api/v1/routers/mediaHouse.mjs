@@ -14,6 +14,14 @@
  * - POST   /screens/:id/restore
  * - GET    /screens/:id/routines        — routines that target the screen
  *
+ * Screen playback (RQ-HOUSE-07, RQ-FIND-17):
+ * - GET    /started-by                  — how playback started on every screen playing now
+ * - GET    /screens/:id/started-by      — how this screen's playback started
+ * - GET    /screens/:id/played-earlier  — this screen's plays, newest first (?limit=&before=)
+ *
+ * Suggestions (RQ-FIND-16):
+ * - GET    /suggestions                 — start-page rows (?deviceId=, else the X-Daylight-Device header)
+ *
  * Routines (RQ-AUTO-02, RQ-AUTO-05):
  * - GET    /routines                    — { routines, sources }
  * - PUT    /routines/catalog            — import { config } (parsed HA routine config) or { routines }
@@ -49,10 +57,13 @@ function sendDomainError(res, error) {
  * @param {Object} [config.screenRegistry] - ScreenRegistryService
  * @param {Object} [config.routineCatalog] - RoutineCatalogService
  * @param {Object} [config.routineHistory] - RoutineHistoryService
+ * @param {Object} [config.screenPlayback] - ScreenPlaybackService
+ * @param {Object} [config.suggestions] - MediaSuggestionsService
  * @param {Object} [config.logger]
  * @returns {express.Router}
  */
-export function createMediaHouseRouter({ screenRegistry = null, routineCatalog = null, routineHistory = null, logger = console } = {}) {
+export function createMediaHouseRouter({ screenRegistry = null, routineCatalog = null, routineHistory = null,
+  screenPlayback = null, suggestions = null, logger = console } = {}) {
   const router = express.Router();
   const hid = (req) => (typeof req.query.household === 'string' && req.query.household ? req.query.household : undefined);
   const str = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
@@ -139,6 +150,31 @@ export function createMediaHouseRouter({ screenRegistry = null, routineCatalog =
 
   router.get('/screens/:id/routines', screens, guarded(async (req, res) => {
     res.json({ items: await screenRegistry.routinesFor({ householdId: hid(req), id: req.params.id }) });
+  }));
+
+  // ── Screen playback ──────────────────────────────────────────────────────
+  const playback = requireService(screenPlayback, 'Screen playback');
+
+  router.get('/started-by', playback, guarded(async (req, res) => {
+    res.json(await screenPlayback.startedByAll({ householdId: hid(req) }));
+  }));
+
+  router.get('/screens/:id/started-by', playback, guarded(async (req, res) => {
+    res.json(await screenPlayback.startedBy({ householdId: hid(req), deviceId: req.params.id }));
+  }));
+
+  router.get('/screens/:id/played-earlier', playback, guarded(async (req, res) => {
+    const before = str(req.query.before);
+    if (before && !Number.isFinite(Date.parse(before))) {
+      return res.status(400).json({ error: 'before must be an ISO-8601 timestamp', code: 'INVALID_QUERY' });
+    }
+    res.json(await screenPlayback.playedEarlier({ householdId: hid(req), deviceId: req.params.id, limit: req.query.limit, before }));
+  }));
+
+  // ── Suggestions ──────────────────────────────────────────────────────────
+  router.get('/suggestions', requireService(suggestions, 'Suggestions'), guarded(async (req, res) => {
+    const deviceId = str(req.query.deviceId) || str(req.get('X-Daylight-Device'));
+    res.json(await suggestions.suggest({ householdId: hid(req), deviceId }));
   }));
 
   // ── Routines ─────────────────────────────────────────────────────────────

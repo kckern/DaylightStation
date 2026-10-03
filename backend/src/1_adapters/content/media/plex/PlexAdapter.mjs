@@ -104,6 +104,34 @@ export function plexArtPath(item) {
 }
 
 /**
+ * When Plex added an item, as ISO — Plex sends `addedAt` in epoch seconds
+ * (number or numeric string), or nothing. Absent/unparseable → null.
+ * @param {Object} item - Plex metadata
+ * @returns {string|null}
+ */
+export function plexAddedAt(item) {
+  const raw = item?.addedAt;
+  const seconds = typeof raw === 'number' ? raw : (typeof raw === 'string' && /^\d+$/.test(raw) ? Number(raw) : NaN);
+  return Number.isFinite(seconds) && seconds > 0 ? new Date(seconds * 1000).toISOString() : null;
+}
+
+// Recently added: which collection a new item is offered as (episodes and
+// seasons → their show, tracks → their album), so a new season reads as one
+// "Bluey", not twelve episodes.
+function recentlyAddedCollection(item) {
+  if (item.type === 'episode' && item.grandparentRatingKey) {
+    return { key: item.grandparentRatingKey, type: 'show', title: item.grandparentTitle, thumb: item.grandparentThumb || item.parentThumb || item.thumb };
+  }
+  if (item.type === 'season' && item.parentRatingKey) {
+    return { key: item.parentRatingKey, type: 'show', title: item.parentTitle, thumb: item.parentThumb || item.thumb };
+  }
+  if (item.type === 'track' && item.parentRatingKey) {
+    return { key: item.parentRatingKey, type: 'album', title: item.parentTitle, thumb: item.parentThumb || item.thumb };
+  }
+  return { key: item.ratingKey, type: item.type, title: item.title, thumb: plexArtPath(item) };
+}
+
+/**
  * Plex content source adapter.
  * Implements IContentSource interface for accessing Plex Media Server content.
  */
@@ -814,7 +842,8 @@ export class PlexAdapter {
       rating: item.userRating ?? item.rating ?? item.audienceRating ?? null,
       userRating: item.userRating ?? null,
       librarySectionTitle: item.librarySectionTitle || null,
-      childCount: item.leafCount || item.childCount || 0
+      childCount: item.leafCount || item.childCount || 0,
+      addedAt: plexAddedAt(item)
     };
 
     // Add parent info based on type
@@ -875,7 +904,8 @@ export class PlexAdapter {
         summary: item.summary,
         librarySectionID: item.librarySectionID || null,
         librarySectionTitle: item.librarySectionTitle || null,
-        childCount: item.leafCount || item.childCount || 0
+        childCount: item.leafCount || item.childCount || 0,
+        addedAt: plexAddedAt(item)
       };
 
       // Add parent info for containers
@@ -942,7 +972,8 @@ export class PlexAdapter {
       // Media info from Plex (for audio direct stream)
       Media: item.Media,
       // Labels for governance (merged item + show labels for episodes)
-      labels: allLabels.length > 0 ? allLabels : null
+      labels: allLabels.length > 0 ? allLabels : null,
+      addedAt: plexAddedAt(item)
     };
 
     // Plex view count — how many times the item has been fully watched.
@@ -2434,6 +2465,48 @@ export class PlexAdapter {
    * @param {number} [opts.limit] - Max items to return (default: 100)
    * @returns {Promise<Array>} Items with matching labels
    */
+  /**
+   * What the library gained since `since` (RQ-FIND-16 "New"), newest first,
+   * one entry per collection: episodes and seasons are offered as their show,
+   * tracks as their album. Each entry: { id, type, title, thumbnail, addedAt,
+   * latestId, latestTitle } (latest = the newest item added to it).
+   * A Plex failure is logged and answers [].
+   * @param {{since: string, limit?: number, scan?: number}} opts
+   * @returns {Promise<Object[]>}
+   */
+  async getRecentlyAdded({ since, limit = 20, scan = 200 } = {}) {
+    const sinceMs = Date.parse(since);
+    let metadata = [];
+    try {
+      const response = await this.client.request(`/library/recentlyAdded?X-Plex-Container-Start=0&X-Plex-Container-Size=${scan}`);
+      metadata = response?.MediaContainer?.Metadata ?? [];
+    } catch (error) {
+      this.logger.warn?.('plex.recently_added.failed', { error: error.message });
+      return [];
+    }
+    const byKey = new Map();
+    for (const item of metadata) {
+      const addedAt = plexAddedAt(item);
+      if (!addedAt || (Number.isFinite(sinceMs) && Date.parse(addedAt) < sinceMs)) continue;
+      const collection = recentlyAddedCollection(item);
+      if (!collection.key) continue;
+      const prev = byKey.get(collection.key);
+      if (prev && Date.parse(prev.addedAt) >= Date.parse(addedAt)) continue;
+      byKey.set(collection.key, {
+        id: `plex:${collection.key}`,
+        type: collection.type ?? null,
+        title: collection.title ?? item.title ?? null,
+        thumbnail: collection.thumb ? `${this.proxyPath}${collection.thumb}` : null,
+        addedAt,
+        latestId: `plex:${item.ratingKey}`,
+        latestTitle: item.title ?? null,
+      });
+    }
+    return [...byKey.values()]
+      .sort((a, b) => Date.parse(b.addedAt) - Date.parse(a.addedAt))
+      .slice(0, limit);
+  }
+
   async getItemsByLabel(labels, opts = {}) {
     const {
       types = ['show', 'movie'],

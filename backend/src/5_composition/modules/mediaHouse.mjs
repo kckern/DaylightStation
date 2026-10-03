@@ -19,6 +19,8 @@ import { YamlRoutineHistoryDatastore } from '#adapters/persistence/yaml/YamlRout
 import { YamlRoutineSnapshotDatastore } from '#adapters/persistence/yaml/YamlRoutineSnapshotDatastore.mjs';
 import { HomeAssistantRoutineFileSource } from '#adapters/home-automation/HomeAssistantRoutineFileSource.mjs';
 import { currentRequestContext } from '#system/runtime/requestContext.mjs';
+import { ScreenPlaybackService } from '#apps/media/ScreenPlaybackService.mjs';
+import { MediaSuggestionsService } from '#apps/media/MediaSuggestionsService.mjs';
 
 /**
  * @param {Object} deps
@@ -29,6 +31,9 @@ import { currentRequestContext } from '#system/runtime/requestContext.mjs';
  * @param {Object} [deps.progressMemory] - media progress (spot moves on merge)
  * @param {Function} [deps.createMediaProgress]
  * @param {LoadOriginHints} [deps.originHints] - shared with the PlayLedgerRecorder
+ * @param {Object} [deps.householdMediaMemory] - HouseholdMediaMemoryService (display fields, now playing)
+ * @param {{getRecentlyAdded: Function}|null} [deps.plexAdapter] - "New" suggestions
+ * @param {Function} [deps.nowLocal] - local `YYYY-MM-DD HH:mm:ss` (time-of-day suggestions)
  * @param {Object} deps.logger
  * @returns {{router, screenRegistry, routineCatalog, routineHistory, originHints,
  *   wrapWakeAndLoad: (wakeAndLoad: {execute: Function}) => {execute: Function}}}
@@ -41,6 +46,9 @@ export function createMediaHouseModule({
   progressMemory = null,
   createMediaProgress = (props) => new MediaProgress(props),
   originHints = new LoadOriginHints(),
+  householdMediaMemory = null,
+  plexAdapter = null,
+  nowLocal = null,
   logger,
 }) {
   const log = (module) => logger.child?.({ module }) ?? logger;
@@ -92,9 +100,30 @@ export function createMediaHouseModule({
     })
     : null);
 
-  const router = createMediaHouseRouter({ screenRegistry, routineCatalog, routineHistory, logger: log('media-house-api') });
+  const screenPlayback = playLedger
+    ? new ScreenPlaybackService({
+      playLedger, livenessService, memory: householdMediaMemory, screens: screenRegistry, logger: log('media-screen-playback'),
+    })
+    : null;
 
-  return { router, screenRegistry, routineCatalog, routineHistory, originHints, wrapWakeAndLoad };
+  const suggestions = householdMediaMemory && nowLocal
+    ? new MediaSuggestionsService({
+      memory: householdMediaMemory,
+      playLedger,
+      recentAdditions: typeof plexAdapter?.getRecentlyAdded === 'function'
+        ? { list: ({ since, limit }) => plexAdapter.getRecentlyAdded({ since, limit }) }
+        : null,
+      screens: screenRegistry,
+      nowLocal,
+      logger: log('media-suggestions'),
+    })
+    : null;
+
+  const router = createMediaHouseRouter({
+    screenRegistry, routineCatalog, routineHistory, screenPlayback, suggestions, logger: log('media-house-api'),
+  });
+
+  return { router, screenRegistry, routineCatalog, routineHistory, screenPlayback, suggestions, originHints, wrapWakeAndLoad };
 }
 
 export default createMediaHouseModule;
