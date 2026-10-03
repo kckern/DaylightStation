@@ -72,3 +72,44 @@ describe('WakeAndLoadService — Add only receivers', () => {
     expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({ step: 'playback', status: 'timeout' }));
   });
 });
+
+describe('WakeAndLoadService — dispatch origin (B5)', () => {
+  const setup = () => {
+    const broadcast = vi.fn();
+    const eventBus = {
+      subscribe: vi.fn(() => () => {}),
+      getTopicSubscriberCount: vi.fn().mockReturnValue(1),
+      waitForMessage: vi.fn(async () => {
+        const [[envelope]] = broadcast.mock.calls.filter(([m]) => m.type === 'command');
+        return { topic: 'device-ack', deviceId: 'tv', ok: true, commandId: envelope.commandId };
+      }),
+    };
+    const device = {
+      id: 'tv', screenPath: '/screen/tv', defaultVolume: null, hasCapability: () => false,
+      powerOn: vi.fn().mockResolvedValue({ ok: true, verified: true }),
+      prepareForContent: vi.fn().mockResolvedValue({ ok: true, coldRestart: false, cameraAvailable: true }),
+      loadContent: vi.fn().mockResolvedValue({ ok: true }),
+    };
+    const svc = new WakeAndLoadService({
+      ...testApplicationRuntime(), deviceService: { get: () => device },
+      readinessPolicy: { isReady: vi.fn().mockResolvedValue({ ready: true }) },
+      broadcast, eventBus, commandHandlerLivenessService: { isFresh: () => true },
+      deviceLivenessService: { getLastSnapshot: () => null }, logger: logger(),
+    });
+    const sent = () => broadcast.mock.calls.map(([m]) => m).find((m) => m.type === 'command');
+    return { svc, sent };
+  };
+
+  it('stamps an automation routine origin on a dispatch nobody named (HA, schedules, triggers)', async () => {
+    const { svc, sent } = setup();
+    await svc.execute('tv', { play: 'plex:1' });
+    expect(sent().origin).toEqual({ kind: 'routine', name: 'Automation' });
+  });
+
+  it('carries the caller origin when one is given (a person on the Media app)', async () => {
+    const { svc, sent } = setup();
+    const origin = { kind: 'device', id: 'browser:abc', name: "Dad's phone" };
+    await svc.execute('tv', { play: 'plex:1' }, { origin });
+    expect(sent().origin).toEqual(origin);
+  });
+});

@@ -5,6 +5,7 @@ import { DeviceStartStatusService } from '#apps/devices/services/DeviceStartStat
 import { EventBusDeviceTransportGateway } from '#adapters/devices/EventBusDeviceTransportGateway.mjs';
 
 let instance = null;
+let instanceBus = null;
 
 /**
  * @param {Object} config
@@ -14,7 +15,10 @@ let instance = null;
  */
 export function createDeviceStartStatusService({ eventBus, logger = console } = {}) {
   if (!eventBus) throw new Error('createDeviceStartStatusService requires eventBus');
-  if (instance) return { startStatusService: instance };
+  // A singleton per event bus: a second composition (tests, a restarted bus)
+  // must not get a service still listening to the first one.
+  if (instance && instanceBus === eventBus) return { startStatusService: instance };
+  if (instance) { try { instance.stop(); } catch { /* best effort */ } }
   const startStatusService = new DeviceStartStatusService({
     progressGateway: new EventBusDeviceTransportGateway({ eventBus }), logger,
   });
@@ -22,6 +26,7 @@ export function createDeviceStartStatusService({ eventBus, logger = console } = 
   if (typeof eventBus.setStartStatusService === 'function') eventBus.setStartStatusService(startStatusService);
   else logger.warn?.('device-start-status.bus_missing_setter');
   instance = startStatusService;
+  instanceBus = eventBus;
   return { startStatusService };
 }
 
@@ -32,4 +37,5 @@ export function getDeviceStartStatusService() {
 export function stopDeviceStartStatusService() {
   try { instance?.stop(); } catch { /* best effort */ }
   instance = null;
+  instanceBus = null;
 }

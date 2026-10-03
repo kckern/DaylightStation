@@ -19,7 +19,10 @@ export const SLEEP_TIMER_AT_END = Object.freeze(['item']);
 export const SLEEP_TIMER_MAX_MINUTES = 720;
 export const SCREEN_NOTE_KINDS = Object.freeze(['paused', 'stopped', 'replaced', 'moved']);
 export const END_OF_QUEUE_STATUS_CODES = Object.freeze(['NOTHING_SIMILAR', 'SIMILAR_ADDED', 'STOPPED_AFTER_CURRENT']);
-export const START_PHASES = Object.freeze(['starting', 'delivered', 'started', 'failed']);
+// `queued`: the screen took the content as a queue add (Add only) — reached, not started.
+export const START_PHASES = Object.freeze(['starting', 'delivered', 'queued', 'started', 'failed']);
+/** Longest origin `name` a screen will show (contract cap). */
+export const ORIGIN_NAME_MAX_LENGTH = 80;
 
 /** Seconds of the visible next-episode countdown (requirements §NF timing table). */
 export const NEXT_EPISODE_COUNTDOWN_SECONDS = 10;

@@ -100,4 +100,19 @@ describe('DeviceStartStatusService', () => {
     bus.emit('homeline:c', progress('d3', 'power', 'running'));
     expect(service.get('c')).toBeNull();
   });
+
+  it('reports an Add-only append as queued, not started', () => {
+    const { bus, service } = setup();
+    bus.emit('homeline:tv', progress('d1', 'load', 'done', { method: 'websocket', appliedAs: 'add' }));
+    expect(service.get('tv').phase).toBe('queued');
+    bus.emit('homeline:tv', progress('d1', 'queue', 'confirmed', { operation: 'add', contentId: 'plex:9' }));
+    expect(service.get('tv').phase).toBe('queued');
+  });
+
+  it('never carries a content id over from an earlier dispatch', () => {
+    const { bus, service } = setup();
+    bus.emit('homeline:tv', progress('d1', 'playback', 'confirmed', { contentId: 'plex:1' }));
+    bus.emit('homeline:tv', progress('d2', 'power', 'running'));
+    expect(service.get('tv').contentId).toBeNull();
+  });
 });

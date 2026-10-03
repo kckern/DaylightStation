@@ -16,6 +16,7 @@
  * @module applications/devices/services
  */
 import { buildDeviceStartStatus } from '#shared-contracts/media/sessionControls.mjs';
+import { isDeviceStartProgressGateway } from '../ports/IDeviceTransportGateway.mjs';
 
 const DEFAULT_STALE_AFTER_MS = 120_000;
 const TERMINAL = new Set(['failed', 'timeout', 'confirmed']);
@@ -32,7 +33,7 @@ export class DeviceStartStatusService {
    *           publishStartStatus(deviceId: string, status: object): void }} deps.progressGateway
    */
   constructor({ progressGateway, clock = Date, logger = console, staleAfterMs = DEFAULT_STALE_AFTER_MS } = {}) {
-    if (typeof progressGateway?.subscribeWakeProgress !== 'function' || typeof progressGateway?.publishStartStatus !== 'function') {
+    if (!isDeviceStartProgressGateway(progressGateway)) {
       throw new TypeError('DeviceStartStatusService requires a progressGateway');
     }
     this.#gateway = progressGateway;
@@ -56,7 +57,7 @@ export class DeviceStartStatusService {
   get(deviceId) {
     const status = this.#statuses.get(deviceId);
     if (!status) return null;
-    const terminal = status.phase === 'started' || status.phase === 'failed';
+    const terminal = ['started', 'queued', 'failed'].includes(status.phase);
     const age = this.#clock.now() - Date.parse(status.updatedAt);
     return { ...status, stale: !terminal && age > this.#staleAfterMs };
   }
@@ -89,16 +90,19 @@ export class DeviceStartStatusService {
     } else if (stepStatus === 'confirmed') {
       phase = 'started';
     } else if (step === 'load' && stepStatus === 'done') {
-      phase = 'delivered';
+      phase = payload.appliedAs === 'add' ? 'queued' : 'delivered';
     }
+    // An append (Add only, or a requested add) reached the queue; nothing started.
+    if (stepStatus === 'confirmed' && (step === 'queue' || payload.operation === 'add')) phase = 'queued';
 
     let lastFailure = previous?.lastFailure ?? null;
     if (phase === 'failed') lastFailure = { dispatchId, step, error, at };
-    if (phase === 'started') lastFailure = null;
+    if (phase === 'started' || phase === 'queued') lastFailure = null;
 
     const status = buildDeviceStartStatus({
       deviceId, dispatchId, phase, step, stepStatus, error,
-      contentId: payload.contentId ?? payload.expectedContentId ?? previous?.contentId ?? null,
+      contentId: payload.contentId ?? payload.expectedContentId
+        ?? (previous?.dispatchId === dispatchId ? previous?.contentId : null) ?? null,
       lastFailure, updatedAt: at,
     });
     this.#statuses.set(deviceId, status);
