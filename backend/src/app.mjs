@@ -1602,6 +1602,22 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'media-api' }),
   });
 
+  // Household screens, routines, how playback started, played earlier and
+  // suggestions — mounted on the media router (/api/v1/media/screens, ...).
+  // See docs/reference/media/media-app-technical.md §2.5–2.9.
+  const mediaHouse = await (async () => {
+    const { createMediaHouseModule } = await import('./5_composition/modules/mediaHouse.mjs');
+    return createMediaHouseModule({
+      configService,
+      eventBus,
+      livenessService: deviceLivenessService,
+      playLedger,
+      progressMemory: mediaProgressMemory,
+      logger: rootLogger,
+    });
+  })();
+  v1Routers.media.use(mediaHouse.router);
+
   // Media source healing — when Plex refuses a file (the NAS zeroing modes,
   // 2026-09-28), the Player asks here, waits, and resumes. system config
   // media-source-heal.yml holds the host SSH target and the Plex→host path map
