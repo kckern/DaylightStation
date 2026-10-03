@@ -226,9 +226,10 @@ test('A screen keeps its spot and queue through a power cut and comes back PAUSE
     const snap = await state(request);
     return snap?.currentItem?.contentId === EP_HOSPITAL ? snap.state : null;
   }, { timeout: 60000 }).toMatch(/paused|ready/);
-  // The spot is applied once the paused renderer has loaded the stream.
+  // The spot is applied once the paused renderer has loaded the stream. It is
+  // persisted every 5 s, so it may trail the last observed position by that.
   await expect.poll(async () => (await state(request))?.position ?? 0, { timeout: 60000 })
-    .toBeGreaterThanOrEqual(Math.floor(before.position) - 2);
+    .toBeGreaterThanOrEqual(Math.max(3, Math.floor(before.position) - 6));
   const after = await state(request);
   expect(after.state).not.toBe('playing');
   expect(after.queue.items.map(i => i.contentId)).toEqual(before.queue.items.map(i => i.contentId));
