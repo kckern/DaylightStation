@@ -91,6 +91,18 @@ describe('ScreenSessionControlsHost', () => {
     expect(loadPersistedSession('tv').snapshot).toMatchObject({ currentItem: { contentId: 'plex:1' }, position: 77 });
   });
 
+  it('keeps the persisted spot fresh while playing, without any state change', async () => {
+    const source = makeSource(idle);
+    mount(source);
+    await act(async () => { vi.advanceTimersByTime(POWER_RESTORE_DELAY_MS + 10); });
+    act(() => source.set(playing));
+    await act(async () => { vi.advanceTimersByTime(2_100); });
+    const snap = { ...playing, position: 300 };
+    source.getBareSnapshot = () => snap; // position ticks are not change events
+    await act(async () => { vi.advanceTimersByTime(5_100); });
+    expect(loadPersistedSession('tv').snapshot.position).toBe(300);
+  });
+
   it('answers session-control commands with applied / error acks', async () => {
     mount(makeSource(playing));
     const applied = vi.fn();
