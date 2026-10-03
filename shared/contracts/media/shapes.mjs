@@ -1,5 +1,6 @@
 import { isSessionState, isRepeatMode } from './commands.mjs';
 import { validatePlaybackOwnerSessionSnapshot } from './playback-owner.mjs';
+import { validateSessionControls } from './sessionControls.mjs';
 
 const FORMATS = new Set([
   'video', 'dash_video', 'hls_video', 'audio', 'singalong', 'readalong',
@@ -80,6 +81,12 @@ export function validateSessionSnapshot(obj) {
   }
   if (!obj.meta || !isStr(obj.meta.ownerId) || !isStr(obj.meta.updatedAt)) {
     e.push('SessionSnapshot.meta: required { ownerId, updatedAt }');
+  }
+  // Optional screen session controls (§9.14) — validated only when present so
+  // older publishers and browser sessions stay valid.
+  if (obj.controls !== undefined) {
+    const cr = validateSessionControls(obj.controls);
+    if (!cr.valid) e.push(...cr.errors.map((error) => `SessionSnapshot.${error}`));
   }
   const ownerResult = validatePlaybackOwnerSessionSnapshot(obj);
   if (!ownerResult.valid) e.push(...ownerResult.errors.map((error) => `SessionSnapshot.${error}`));
