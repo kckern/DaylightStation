@@ -679,7 +679,7 @@ query. Sources, merged:
 |---|---|
 | `live` | the HA config read in place (`rest_commands/` merged, `scripts/` named by file, `automations/` one per file) from system config `media-routines.yml` → `homeAssistant.configDir` (the HA `_includes` dir), cached 60 s. Unreadable → unavailable. |
 | `snapshot` | the last catalog imported via `PUT /routines/catalog`, stored at `household[-{id}]/media/routines.yml`; used when no live source is available (the container does not mount the HA config). Push it with `node cli/media-routines.cli.mjs push --dir <HA _includes> --url <app>`. |
-| `observed` | routines the history has seen that neither knows (`id: "observed:<slug>"`) |
+| `observed` | routines neither knows, seen in the routine history or as a routine `origin` on play-ledger starts in the last 30 days (a routine driving a browser by command reaches the ledger this way) — `id: "observed:<slug>"` |
 
 `Routine`: `{ id: "automation:kitchen_button_4", name, kind: "automation"|"script"|"command"|"observed",
 source, targets: [{ deviceId: "fleet:livingroom-tv", screenId, query }], via: ["script:…", "rest_command:…"] }`.
