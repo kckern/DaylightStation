@@ -11,7 +11,7 @@ import { useDismissLayer } from '../shell/useDismissLayer.js';
 
 export function RenameScreenDialog({
   open, onClose, title = 'Rename this device', initialName = '', initialRoom = '', withRoom = true,
-  onSubmit, nameOf = (id) => id, saveLabel = 'Save device name', testid = 'rename-screen',
+  onSubmit, nameOf = (id) => id, saveLabel = 'Save device name', testid = 'rename-screen', nameLabel = 'Device name',
 }) {
   const [name, setName] = useState(initialName);
   const [room, setRoom] = useState(initialRoom ?? '');
@@ -38,7 +38,7 @@ export function RenameScreenDialog({
     <Modal opened={open} onClose={onClose} title={title} centered>
       <Stack gap="sm" data-testid={`${testid}-dialog`}>
         <TextInput
-          label="Name"
+          label={nameLabel}
           description="Every screen in the house has its own name."
           value={name}
           onChange={(e) => { setName(e.currentTarget.value); setAnswer(null); }}

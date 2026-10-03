@@ -26,6 +26,9 @@ export function clockTime(iso, now = Date.now()) {
 }
 
 function failureText({ step, error, at }, kind, now) {
+  // A sentence from the backend ("The screen did not confirm playback") says
+  // it best; a bare code ("timeout") needs the step it happened in.
+  if (typeof error === 'string' && /\s/.test(error.trim())) return `Couldn't start at ${clockTime(at, now)}: ${error.trim()}`;
   const phrase = friendlyStepPhrase(step, kind);
   const what = phrase ? `${phrase} failed` : 'it failed';
   return `Couldn't start at ${clockTime(at, now)}: ${what}${error ? ` (${error})` : ''}`;

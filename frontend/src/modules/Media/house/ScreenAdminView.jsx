@@ -5,7 +5,7 @@
 // a screen after seeing which routines point at it; restore a retired one.
 // Screens silent for 30 days fold into "Not seen lately".
 import React, { useEffect, useState } from 'react';
-import { Alert, Button, Group, List, Select, Stack, Text, TextInput, Title } from '@mantine/core';
+import { Alert, Button, Group, List, Radio, Stack, Text, TextInput, Title } from '@mantine/core';
 import { IconAlertCircle, IconArchive, IconArrowBackUp, IconArrowMerge, IconEdit, IconPlus } from '@tabler/icons-react';
 import { useFleetContext } from '../fleet/useFleetContext.js';
 import { ConfirmDialog } from '../shell/ConfirmDialog.jsx';
@@ -223,6 +223,7 @@ export function ScreenAdminView() {
         onSubmit={(input) => admin.nameScreen(renaming, input)}
         nameOf={nameOf}
         saveLabel="Save"
+        nameLabel="Name"
         testid="screen-admin-rename"
       />
 
@@ -257,15 +258,19 @@ export function ScreenAdminView() {
       >
         {merging && (
           <Stack gap="xs" mb="md" data-testid="screen-admin-merge-dialog">
-            <Select
-              label="Into"
-              placeholder="Choose the earlier screen"
-              data={live.filter((s) => s.id !== merging.screen.id).map((s) => ({ value: s.id, label: s.name }))}
+            <Radio.Group
+              label="Into its earlier self"
               value={merging.into?.id ?? null}
               onChange={chooseMergeTarget}
               data-testid="screen-admin-merge-into"
-              comboboxProps={{ withinPortal: false }}
-            />
+            >
+              <Stack gap={4} mt={4} className="house-merge-targets">
+                {live.filter((s) => s.id !== merging.screen.id).map((s) => (
+                  <Radio key={s.id} value={s.id} label={s.room ? `${s.name} · ${s.room}` : s.name}
+                    data-testid={`screen-admin-merge-target-${s.id}`} className="house-merge-target" />
+                ))}
+              </Stack>
+            </Radio.Group>
             {merging.routines.length > 0 && (
               <div data-testid="screen-admin-merge-routines">
                 <Text size="sm" fw={600}>Routines on these screens:</Text>

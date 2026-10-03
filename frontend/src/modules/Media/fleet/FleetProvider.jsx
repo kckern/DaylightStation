@@ -10,7 +10,7 @@ import mediaLog from '../logging/mediaLog.js';
 import { useClientIdentity } from '../identity/useClientIdentity.js';
 import { TIMING } from '../constants.js';
 import { browserDisplayState, mergeCanonicalFleetState, silenceMs, sortFleetDevices } from './browserLiveness.js';
-import { useScreenRegistry, mergeRegistryNames } from '../house/useScreenRegistry.js';
+import { useScreenRegistry, mergeRegistryNames, registryLagsLiveNames } from '../house/useScreenRegistry.js';
 
 export const FleetContext = createContext(null);
 
@@ -162,6 +162,7 @@ export function FleetProvider({ children }) {
       .map(([id, entry]) => ({
         id,
         name: entry.identity?.name ?? entry.snapshot?.displayName ?? (id === browserDeviceId(clientId) ? displayName : id.slice('browser:'.length)),
+        liveName: entry.identity?.name ?? null,
         room: entry.identity?.room,
         type: 'browser',
         isLocal: id === browserDeviceId(clientId),
@@ -179,6 +180,16 @@ export function FleetProvider({ children }) {
       registry.byId,
     ));
   }, [devices, browserEntries, clientId, displayName, uncertaintyTick, registry.byId]);
+
+  // Another device was renamed since the list was read: re-read it (at most
+  // every 10 s) so its room and "(was …)" catch up too.
+  const lastLagRefresh = useRef(0);
+  useEffect(() => {
+    if (!registryLagsLiveNames(fleetDevices, registry.byId)) return;
+    if (Date.now() - lastLagRefresh.current < 10_000) return;
+    lastLagRefresh.current = Date.now();
+    refreshRegistry();
+  }, [fleetDevices, registry.byId, refreshRegistry]);
 
   const value = useMemo(
     () => ({ devices: fleetDevices, store, loading, error, refresh, connected, identity: { clientId, deviceId: browserDeviceId(clientId) }, registry, quiet }),

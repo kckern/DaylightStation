@@ -16,6 +16,7 @@ import { createBrowserIdentity, renameBrowserIdentity, isPlaceholderName } from 
 import { houseApi as defaultHouseApi } from '../house/houseApi.js';
 import houseLog from '../house/houseLog.js';
 import { STORAGE_KEYS } from '../constants.js';
+import { adoptBrowserDeviceId } from '../../../lib/deviceIdentity.js';
 
 export const ClientIdentityContext = createContext(null);
 
@@ -67,7 +68,14 @@ function adopt(current, screen) {
 }
 
 export function ClientIdentityProvider({ children, api = defaultHouseApi }) {
-  const [identity, setIdentity] = useState(() => createBrowserIdentity({ randomUuid: uuidV4 }));
+  const [identity, setIdentity] = useState(() => {
+    const created = createBrowserIdentity({ randomUuid: uuidV4 });
+    // One id per browser: every request now names this browser the way the
+    // screen registry and the house view do (set before any child effect
+    // issues a request).
+    adoptBrowserDeviceId(created.clientId);
+    return created;
+  });
   const [firstUse, setFirstUse] = useState(() => readFirstUse(identity));
   const [registered, setRegistered] = useState(null); // registry Screen for this browser
   const registration = useControlRegistration(identity.clientId);

@@ -91,8 +91,7 @@ describe('ScreenAdminView', () => {
     wrap();
     fireEvent.click(screen.getByTestId('screen-admin-merge-browser:new'));
     const dialog = await screen.findByTestId('screen-admin-merge-dialog');
-    fireEvent.click(within(dialog).getByRole('textbox', { name: 'Into' }));
-    fireEvent.click(await screen.findByRole('option', { name: 'Kitchen tablet' }));
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Kitchen tablet · Kitchen' }));
     fireEvent.click(screen.getByTestId('confirm-ok'));
     await waitFor(() => expect(api.mergeScreen).toHaveBeenCalledWith('browser:new', { into: 'browser:old', confirm: true }));
     const outcome = recordLocal.mock.calls.find(([r]) => r.kind === 'screenMerged')[0];

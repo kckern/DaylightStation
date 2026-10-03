@@ -25,6 +25,8 @@ describe('startStatusLine (RQ-HOUSE-04)', () => {
     const failed = { phase: 'failed', step: 'power', error: 'timeout', updatedAt: '2026-10-03T14:02:00.000Z' };
     expect(startStatusLine(failed, { kind: 'tv', now: NOW }))
       .toEqual({ tone: 'failed', text: `Couldn't start at ${at('2026-10-03T14:02:00.000Z')}: Turning on TV failed (timeout)` });
+    expect(startStatusLine({ phase: 'failed', step: 'playback', error: 'The screen did not confirm playback', updatedAt: '2026-10-03T14:02:00.000Z' }, { now: NOW }).text)
+      .toBe(`Couldn't start at ${at('2026-10-03T14:02:00.000Z')}: The screen did not confirm playback`);
     const later = { phase: 'started', updatedAt: '2026-10-03T13:00:00.000Z', lastFailure: { step: 'load', error: 'no ack', at: '2026-10-03T12:00:00.000Z' } };
     expect(startStatusLine(later, { now: NOW }).tone).toBe('failed');
   });

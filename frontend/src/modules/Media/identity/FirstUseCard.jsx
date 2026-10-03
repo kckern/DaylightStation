@@ -52,7 +52,7 @@ export function FirstUseCard() {
       <Text size="sm">Everyone in the house, and any routine, will see it by this name.</Text>
       <Group align="flex-end" gap="xs" wrap="wrap">
         <TextInput
-          label="Device name"
+          label="Name for this device"
           value={name}
           onChange={(e) => { setName(e.currentTarget.value); setAnswer(null); }}
           data-testid="first-use-name"
