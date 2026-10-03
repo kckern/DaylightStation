@@ -26,6 +26,9 @@ const EP1 = 'plex:665638'; // 3 Body Problem S1E1 — 43 subtitle streams
 const EP2 = 'plex:665639'; // S1E2 — same show, its own stream ids
 const EP1_ENGLISH = '1278358';
 const EP2_ENGLISH = '1278403';
+const FILM = 'plex:703558'; // French original with Turkish and English audio
+const FILM_FRENCH = '1376006';
+const FILM_ENGLISH = '1376008';
 const HOSPITAL = 'plex:266151';
 const KEEPY_UPPY = 'plex:266152';
 const FAITH = 'plex:584614';
@@ -51,6 +54,13 @@ async function resetPlexSubtitles(request) {
     const put = await request.fetch(`${upstream}/api/v1/proxy/plex/library/parts/${partId}?subtitleStreamID=0&allParts=1`, { method: 'PUT' });
     expect(put.status()).toBe(200);
   }
+}
+// …and the film's audio back to its original French.
+async function resetPlexFilmAudio(request) {
+  const meta = await request.get(`${upstream}/api/v1/proxy/plex/library/metadata/${FILM.split(':')[1]}`, { headers: { Accept: 'application/json' } });
+  const partId = (await meta.json()).MediaContainer.Metadata[0].Media[0].Part[0].id;
+  const put = await request.fetch(`${upstream}/api/v1/proxy/plex/library/parts/${partId}?audioStreamID=${FILM_FRENCH}&allParts=1`, { method: 'PUT' });
+  expect(put.status()).toBe(200);
 }
 
 // Opening the dev/preview page can lose module fetches to a host network
@@ -183,6 +193,38 @@ test.describe('Subtitles and audio language (STEER.12a)', () => {
     }, { timeout: 60000 }).toBe('none');
     expect(mints.at(-1)).toMatchObject({ ratingKey: '665639', params: expect.objectContaining({ subtitleStreamID: '0' }) });
     await receiver.close();
+  });
+
+  test('a screen\'s audio language through its Remote: only the film\'s languages, switched at the same spot', async ({ context, page: sender, request }) => {
+    await resetPlexFilmAudio(request);
+    try {
+      const receiver = await openReceiver(context, request);
+      const mints = streamMints(receiver);
+      await playOnReceiver(request, receiver, `play=${FILM}`, FILM);
+      await openRemote(sender, 'app-nav-fleet');
+      const audio = sender.getByTestId('pf-audio');
+      await expect(audio).toHaveText(/Audio: Français/, { timeout: 30000 });
+      await audio.click();
+      const menu = sender.getByTestId('pf-audio-menu');
+      await expect(menu.locator('[data-testid^="pf-audio-"]')).toHaveCount(3);
+      await expect(menu).toContainText('Türkçe');
+      await expect(menu).toContainText('English');
+      await shot(sender, 'steer12a-remote-audio-menu');
+      const before = (await state(request)).position;
+      await sender.getByTestId(`pf-audio-${FILM_ENGLISH}`).click();
+      await expect.poll(async () => {
+        await receiverMedia(receiver);
+        const snap = await state(request);
+        return snap?.controls?.tracks?.selected?.audio === FILM_ENGLISH && snap.state === 'playing';
+      }, { timeout: 90000 }).toBe(true);
+      expect(mints.some((m) => m.ratingKey === '703558' && m.params.audioStreamID === FILM_ENGLISH)).toBe(true);
+      expect(Math.abs((await state(request)).position - before)).toBeLessThan(30);
+      await expect(audio).toHaveText(/Audio: English/);
+      await shot(sender, 'steer12a-remote-audio-english');
+      await receiver.close();
+    } finally {
+      await resetPlexFilmAudio(request);
+    }
   });
 });
 
