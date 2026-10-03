@@ -26,7 +26,7 @@ import { HOUSEHOLD_PATHS, suggestionsPath } from '../household/householdApi.js';
 import {
   toItem, formatLeft, spotsSummary, whereLine, playedAtLabel, nowOnScreenIds, bareScreenId,
 } from '../household/householdModel.js';
-import { useFavourites } from '../household/useHousehold.js';
+import { useFavourites, householdResourceLogger } from '../household/useHousehold.js';
 import { useItemVerbs, isCollection } from '../household/useItemVerbs.jsx';
 import { useMoveHere } from '../household/useMoveHere.js';
 import './Home.scss';
@@ -114,9 +114,9 @@ function suggestionLines(rowId, item, entry, nameFor) {
 
 export function HomeView() {
   const deviceId = useMemo(() => getDeviceId(), []);
-  const suggestions = useApiResource(suggestionsPath(deviceId), { swr: true, label: 'media-suggestions' });
-  const carryOn = useApiResource(HOUSEHOLD_PATHS.carryOn, { swr: true, label: 'media-carry-on' });
-  const recent = useApiResource(HOUSEHOLD_PATHS.recent, { swr: true, label: 'media-recent' });
+  const suggestions = useApiResource(suggestionsPath(deviceId), { swr: true, label: 'media-suggestions', logger: householdResourceLogger });
+  const carryOn = useApiResource(HOUSEHOLD_PATHS.carryOn, { swr: true, label: 'media-carry-on', logger: householdResourceLogger });
+  const recent = useApiResource(HOUSEHOLD_PATHS.recent, { swr: true, label: 'media-recent', logger: householdResourceLogger });
   const favourites = useFavourites();
   const { run, overlays, nameFor } = useItemVerbs();
   const { goToArea } = useNav();

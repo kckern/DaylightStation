@@ -39,7 +39,7 @@ import { isContainer } from './comboboxMachine.js';
  * or behavioral change.
  */
 export function ResultRowActions({
-  item, isContainerItem, onPlayAll, onDetails, detailsTestId, onMore, onAction, testId,
+  item, isContainerItem, onPlayAll, onDetails, detailsTestId, onMore, onAction, testId, extraActions = null,
   onMoreMenuPointerDown, onMoreMenuChange, onMoreMenuAction, onMoreMenuTriggerFocus, onMoreBoundaryBlur,
 }) {
   const container = isContainerItem ?? (item ? isContainer(item) : false);
@@ -146,6 +146,13 @@ export function ResultRowActions({
         {onAction && <Menu.Item onClick={fire('addOn')}>Add on…</Menu.Item>}
         <Menu.Divider />
         <Menu.Item data-testid={`result-action-detail-${idPart}`} onClick={fire('detail')}>Open detail</Menu.Item>
+        {/* Additive, caller-supplied verbs (Media: favourites, watched marks).
+            They reach the caller through the same onAction({ kind, item }). */}
+        {onAction && typeof extraActions === 'function' && extraActions(item).map(extra => (
+          <Menu.Item key={extra.kind} data-testid={`result-action-${extra.kind}-${idPart}`} onClick={fire(extra.kind)}>
+            {extra.label}
+          </Menu.Item>
+        ))}
       </Menu.Dropdown>
     </Menu>
     )}
@@ -171,8 +178,10 @@ export function ResultRowActions({
  * @param {() => void} [props.onDetails] - leaf-only: an explicit inline Detail verb
  * @param {(action: string) => void} [props.onMore] - leaf-only: the ⋯ verb
  * @param {string} [props.testId] - testid for the tap button (defaults to `result-row-${item.id}`)
+ * @param {(item: object) => Array<{kind: string, label: string}>} [props.extraActions] - additive
+ *   menu verbs, delivered through onAction({ kind, item }) (onAction contract only)
  */
-export function ResultRow({ item, title, subtitle, thumbnail, onTap, onPlayAll, onDetails, detailsTestId, onMore, onAction, testId, focusId }) {
+export function ResultRow({ item, title, subtitle, thumbnail, onTap, onPlayAll, onDetails, detailsTestId, onMore, onAction, testId, focusId, extraActions = null }) {
   const container = item ? isContainer(item) : false;
   const idPart = item?.id ?? 'row';
   const rowTestId = testId ?? `result-row-${idPart}`;
@@ -203,7 +212,7 @@ export function ResultRow({ item, title, subtitle, thumbnail, onTap, onPlayAll, 
           (flex, gap 4px, flex-shrink 0) — reused here rather than inventing a
           new one, mirroring .browse-row-actions' role in BrowseView.jsx. */}
       <span className="media-result-actions">
-        <ResultRowActions item={item} isContainerItem={container} onPlayAll={onPlayAll} onDetails={onDetails} detailsTestId={detailsTestId} onMore={onMore} onAction={onAction} testId={idPart} />
+        <ResultRowActions item={item} isContainerItem={container} onPlayAll={onPlayAll} onDetails={onDetails} detailsTestId={detailsTestId} onMore={onMore} onAction={onAction} testId={idPart} extraActions={extraActions} />
       </span>
     </>
   );

@@ -122,7 +122,7 @@ describe('HomeView start page', () => {
     fireEvent.click(within(fav).getByTestId('home-tile-favourites-plex:100-picture'));
     expect(dispatch).toHaveBeenCalledWith('plex:100', expect.objectContaining({ itemType: 'container' }));
     fireEvent.click(within(fav).getByRole('button', { name: /Continue Bingo/ }));
-    expect(dispatchLeafVerb).toHaveBeenCalledWith('playNow', 'plex:105', expect.objectContaining({ id: 'plex:105' }), {});
+    expect(dispatchLeafVerb).toHaveBeenCalledWith('playNow', 'plex:105', expect.objectContaining({ id: 'plex:105' }));
   });
 
   it('a playable carry-on picture continues from its spot', async () => {
