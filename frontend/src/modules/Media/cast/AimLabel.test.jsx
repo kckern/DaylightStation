@@ -26,6 +26,19 @@ describe('AimLabel', () => {
     expect(screen.getByTestId('aim-label')).toHaveTextContent('2 screens');
   });
 
+  it('PLACE.4a/AC2: names the screens of a several-screen aim, "Kitchen + Living Room"', () => {
+    const kitchen = { id: 'kitchen', name: 'Kitchen' };
+    const living = { id: 'living', name: 'Living Room' };
+    render(<AimLabel targetIds={['kitchen', 'living']} devices={[kitchen, living]} />);
+    expect(screen.getByTestId('aim-label')).toHaveTextContent('Aim: Kitchen + Living Room');
+  });
+
+  it('falls back to a count beyond three screens, never a raw id', () => {
+    const devices = ['a', 'b', 'c', 'd'].map((id) => ({ id, name: id.toUpperCase() }));
+    render(<AimLabel targetIds={['a', 'b', 'c', 'd']} devices={devices} />);
+    expect(screen.getByTestId('aim-label')).toHaveTextContent('4 screens');
+  });
+
   it('makes a busy origin visible before a tap', () => {
     render(<AimLabel targetIds={['office-tv']} devices={[office]} busyOrigin="Family room tablet" />);
     expect(screen.getByTestId('aim-busy-origin')).toHaveTextContent('Busy');

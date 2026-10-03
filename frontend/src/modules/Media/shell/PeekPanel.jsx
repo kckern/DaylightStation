@@ -4,6 +4,7 @@
 // pending fields) rather than a second set of transport controls.
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Button, Title, Text, Group, Stack, Badge } from '@mantine/core';
+import { IconPlaylistAdd } from '@tabler/icons-react';
 import { useSessionController } from '../controller/useSessionController.js';
 import { usePeek } from '../peek/usePeek.js';
 import { useDevice } from '../fleet/useDevice.js';
@@ -18,6 +19,9 @@ import { useRemoteStopFeedback } from './useRemoteStopFeedback.js';
 import { SessionControlFrame } from '../controller/SessionControlFrame.jsx';
 import { GlobalAimLabel } from '../cast/AimLabel.jsx';
 import { SessionControlsPanel } from './SessionControlsPanel.jsx';
+import { useSearchLauncher } from './SearchLauncherContext.js';
+import { LineUpOffer } from './LineUpOffer.jsx';
+import { MoveToMenu } from './MoveToMenu.jsx';
 
 export function PeekPanel({ deviceId }) {
   const { enterPeek, exitPeek } = usePeek();
@@ -31,6 +35,7 @@ export function PeekPanel({ deviceId }) {
   const { device, entry } = useDevice(deviceId);
   const { pop, backDestination } = useNav();
   const queueRef = useRef(null);
+  const searchLauncher = useSearchLauncher();
   const { queueKeptCount, noteStop } = useRemoteStopFeedback(deviceId, realSnap, entry);
 
   // useStatusOverlay is map-based (it can serve multi-device admins); wrap
@@ -126,6 +131,7 @@ export function PeekPanel({ deviceId }) {
       />
 
       <SessionControlsPanel target={{ deviceId }} targetName={deviceName(device, deviceId)} />
+      <LineUpOffer target={{ deviceId }} targetName={deviceName(device, deviceId)} />
 
       {queueKeptCount != null && (
         <Group data-testid="peek-queue-kept" role="status" gap="xs">
@@ -143,6 +149,24 @@ export function PeekPanel({ deviceId }) {
           </Button>
         </Group>
       )}
+
+      <Group gap="xs">
+        {snap?.currentItem && (
+          <MoveToMenu sourceId={deviceId} available={availability.available !== false} title={itemTitle} />
+        )}
+        {searchLauncher && (
+          <Button
+            data-testid="peek-add-to-queue"
+            className="session-controls-btn"
+            variant="light"
+            leftSection={<IconPlaylistAdd size={16} />}
+            disabled={availability.available === false}
+            onClick={() => searchLauncher.openAddToQueue({ deviceId, name: deviceName(device, deviceId) })}
+          >
+            Add to this queue
+          </Button>
+        )}
+      </Group>
 
       <div ref={queueRef} tabIndex={-1}>
         <QueuePanel target={{ deviceId }} availability={availability} />

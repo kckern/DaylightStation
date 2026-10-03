@@ -33,8 +33,19 @@ vi.mock('../logging/mediaLog.js', () => {
   return { default: stub, mediaLog: stub };
 });
 
+vi.mock('../../../lib/api.mjs', () => ({
+  DaylightAPI: vi.fn(async (path) => (path === 'api/v1/media/screens'
+    ? { screens: [
+      { id: 'fleet:livingroom-tv', screenId: 'livingroom-tv', room: 'Living Room' },
+      { id: 'fleet:den-speaker', screenId: 'den-speaker', room: 'Living Room' },
+      { id: 'fleet:office-tv', screenId: 'office-tv', room: 'Office' },
+    ] }
+    : {})),
+}));
+
 import mediaLog from '../logging/mediaLog.js';
 import { DispatchTargetPicker } from './DispatchTargetPicker.jsx';
+import { resetScreenRoomsCache } from './screenRooms.js';
 
 // Wrap with a LocalSessionContext whose controller reports active local
 // playback — this is what makes useLocalPlaybackActive (and therefore the
@@ -226,5 +237,34 @@ describe('DispatchTargetPicker / useDispatchTargetPicker', () => {
       // Single-select by default: picking a second tile REPLACES the first.
       expect(screen.getByTestId('picker-submit')).toHaveTextContent('Set destination: Office TV');
     });
+  });
+});
+
+
+describe('DispatchTargetPicker — several screens (PLACE.4a)', () => {
+  beforeEach(() => {
+    resetScreenRoomsCache();
+    fleetDevices = [
+      { id: 'livingroom-tv', name: 'Living Room TV' },
+      { id: 'den-speaker', name: 'Den speaker' },
+      { id: 'office-tv', name: 'Office TV' },
+    ];
+  });
+
+  it('labels the choice "several screens", names them in the action, and warns when two share a room', async () => {
+    render(<DispatchTargetPicker source={{ play: 'plex:1', title: 'Song' }} />);
+    const toggle = screen.getByTestId('picker-multi-toggle');
+    expect(toggle).toHaveTextContent('Choose several screens');
+    fireEvent.click(toggle);
+    expect(screen.getByTestId('picker-multi-toggle')).toHaveTextContent('Several screens: on');
+    fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
+    fireEvent.click(screen.getByTestId('picker-device-office-tv'));
+    expect(screen.getByTestId('picker-submit')).toHaveTextContent('Living Room TV + Office TV');
+    expect(screen.queryByTestId('picker-drift-warning')).toBeNull();
+    fireEvent.click(screen.getByTestId('picker-device-den-speaker'));
+    expect(await screen.findByTestId('picker-drift-warning')).toHaveTextContent(
+      'Living Room TV and Den speaker are both in Living Room — they start together but can drift apart, and you may hear it.',
+    );
+    expect(mediaLog.aimDriftWarned).toHaveBeenCalledWith(expect.objectContaining({ state: 'shown', rooms: ['Living Room'] }));
   });
 });

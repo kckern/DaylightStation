@@ -117,3 +117,25 @@ describe('dispatchReducer', () => {
     expect(state.byId.get('d1').playback).toBeNull();
   });
 });
+
+describe('dispatchReducer — Add only (PLAY.10a, appliedAs)', () => {
+  it('a play the screen took as an add becomes an add outcome, resolved by its queue step', () => {
+    let state = reduceDispatch(initialDispatchState, {
+      type: 'INITIATED', dispatchId: 'd1', deviceId: 'lr', contentId: 'plex:1', title: 'Song', mode: 'fork',
+    });
+    expect(state.byId.get('d1').kind).toBe('play');
+    state = reduceDispatch(state, { type: 'STEP', dispatchId: 'd1', step: 'load', status: 'done', appliedAs: 'add' });
+    expect(state.byId.get('d1')).toMatchObject({ kind: 'add', operation: 'add', appliedAs: 'add' });
+    state = reduceDispatch(state, { type: 'SUCCEEDED', dispatchId: 'd1', appliedAs: 'add' });
+    state = reduceDispatch(state, { type: 'STEP', dispatchId: 'd1', step: 'queue', status: 'confirmed', queueLength: 5, ordinal: 5 });
+    expect(state.byId.get('d1')).toMatchObject({ phase: 'confirmed', appliedAs: 'add' });
+  });
+
+  it('learns it from the HTTP result too, when the progress step was missed', () => {
+    let state = reduceDispatch(initialDispatchState, {
+      type: 'INITIATED', dispatchId: 'd2', deviceId: 'lr', contentId: 'plex:1', mode: 'fork',
+    });
+    state = reduceDispatch(state, { type: 'SUCCEEDED', dispatchId: 'd2', appliedAs: 'add' });
+    expect(state.byId.get('d2')).toMatchObject({ kind: 'add', operation: 'add', appliedAs: 'add' });
+  });
+});

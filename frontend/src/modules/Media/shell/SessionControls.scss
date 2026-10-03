@@ -97,3 +97,14 @@
   color: var(--mantine-color-dark-1);
   white-space: nowrap;
 }
+
+// Add to this queue (STEER.1b/AC7): the one search, pointed at one screen.
+.search-mode-add-to {
+  margin: 0 var(--mantine-spacing-sm);
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  border: 1px solid var(--mantine-color-dark-4);
+  border-radius: var(--mantine-radius-md);
+  background: var(--mantine-color-dark-6);
+  color: var(--mantine-color-dark-0);
+  font-size: 14px;
+}

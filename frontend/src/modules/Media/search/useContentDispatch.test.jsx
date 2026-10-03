@@ -561,3 +561,17 @@ describe('useContentDispatch', () => {
     });
   });
 });
+
+describe('useContentDispatch — Add to this queue (STEER.1b/AC7)', () => {
+  it('adds to the one screen named, as an add, whatever the aim says', async () => {
+    castTargetState = { targetIds: ['office-tv'], mode: 'transfer' };
+    const { getCurrent } = setup();
+    act(() => { getCurrent().addToScreen('livingroom-tv', 'plex:1', { id: 'plex:1', title: 'Hospital' }); });
+    await vi.waitFor(() => expect(dispatchToTarget).toHaveBeenCalled());
+    expect(dispatchToTarget).toHaveBeenCalledWith(expect.objectContaining({
+      targetIds: ['livingroom-tv'], queue: 'plex:1', mode: 'fork', title: 'Hospital',
+      itemAction: expect.objectContaining({ kind: 'add' }),
+    }));
+    expect(dispatchToTarget.mock.calls[0][0].targetIds).not.toContain('office-tv');
+  });
+});

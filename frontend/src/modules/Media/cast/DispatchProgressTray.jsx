@@ -140,7 +140,7 @@ function farCopy(d, phase, name, kind) {
       const last = d.steps?.[d.steps.length - 1];
       return {
         primary: isAdd
-          ? (title ? `Adding ${title} to ${name}` : `Adding to ${name}`)
+          ? `${title ? `Adding ${title} to ${name}` : `Adding to ${name}`}${d.appliedAs === 'add' ? ' (Add only is on)' : ''}`
           : (title ? `Sending ${title} to ${name}` : `Sending to ${name}`),
         secondary: last ? friendlyStepLabel(last.step, kind) : 'Starting…',
       };
@@ -148,6 +148,14 @@ function farCopy(d, phase, name, kind) {
     case 'sent':
       return { primary: `Sent to ${name}`, secondary: title };
     case 'confirmed':
+      if (isAdd && d.appliedAs === 'add') {
+        // PLAY.10a/AC2: the screen's Add only turned this Play into an add.
+        const place = d.outcomeIdentity?.ordinal ?? d.outcomeIdentity?.queueLength;
+        return {
+          primary: `${title ? `Added ${title} to ${name}` : `Added to ${name}`} (Add only is on)`,
+          secondary: Number.isInteger(place) ? `${ordinal(place)} in line` : null,
+        };
+      }
       if (isAdd) {
         return {
           primary: title ? `Added ${title} to ${name}` : `Added to ${name}`,
