@@ -490,7 +490,9 @@ const contracts = [
         const wrapped = house.wrapWakeAndLoad(wakeAndLoad);
         await runWithRequestContext({ userAgent: 'HomeAssistant/2026.9 aiohttp/3.10' },
           () => wrapped.execute('livingroom-tv', { queue: 'morning-program', routine: 'Morning program' }, {}));
-        expect(wakeAndLoad.execute).toHaveBeenCalledWith('livingroom-tv', { queue: 'morning-program' }, {});
+        // The screen's command envelope names the routine, not a generic origin.
+        expect(wakeAndLoad.execute).toHaveBeenCalledWith('livingroom-tv', { queue: 'morning-program' },
+          { origin: { kind: 'routine', name: 'Morning program', triggerId: 'Morning program' } });
         const { items } = await house.routineHistory.list({});
         expect(items).toEqual([expect.objectContaining({
           routine: { id: null, name: 'Morning program' }, deviceId: 'fleet:livingroom-tv', outcome: 'started', screenName: 'Living Room TV',

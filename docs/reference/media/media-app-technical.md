@@ -697,8 +697,12 @@ each `GET|POST /device/:id/load`:
 3. `X-Daylight-Device` (`fleet:`/`browser:`, not the target itself) → a person
    sending from that screen (`{kind: "device", id}`).
 
-The origin is noted for the target's next ledger start (3 min; cleared when the
-load fails). A routine's load runs through the routine dedupe (same routine +
+A routine origin is handed to wake-and-load as `options.origin`
+(`{kind: "routine", name, id?, triggerId}`), so the screen's command envelope
+and session `meta.origin` name the routine rather than a generic one; a device
+origin the router already resolved from the request header is honoured as
+the asking device. The origin is noted for the target's next ledger start
+(3 min; cleared when the load fails). A routine's load runs through the routine dedupe (same routine +
 query to the same screen within **10 s** starts once; the repeat reports
 `deduplicated: true`) and its outcome is appended to
 `household[-{id}]/history/media-routines.yml` (30 days, 500 runs). The load

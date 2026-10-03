@@ -14,6 +14,10 @@
  *      from that screen.
  *   Otherwise unknown — recorded as nothing.
  *
+ * A routine origin is passed on to the wake-and-load as `opts.origin`, so the
+ * screen's command envelope names the routine; a device origin the router
+ * already put in `opts.origin` is honoured as the asking device.
+ *
  * Then: the origin is noted for the target screen's next play-ledger start
  * (LoadOriginHints); a routine's load goes through the routine dedupe (the
  * same trigger twice within 10 s starts once) and its outcome is written to
@@ -54,7 +58,7 @@ export class RoutineLoadRecorder {
     this.#logger = logger;
   }
 
-  async #classify(deviceId, query) {
+  async #classify(deviceId, query, callerOrigin = null) {
     const forwarded = { ...(query || {}) };
     const named = typeof forwarded.routine === 'string' && forwarded.routine.trim() ? forwarded.routine.trim().slice(0, 64) : null;
     const namedId = typeof forwarded.routineId === 'string' && forwarded.routineId.trim() ? forwarded.routineId.trim().slice(0, 96) : null;
@@ -78,6 +82,10 @@ export class RoutineLoadRecorder {
       };
       return { origin, query: forwarded };
     }
+    // The device router may already name the asking device (opts.origin).
+    if (callerOrigin?.kind === 'device' && typeof callerOrigin.id === 'string' && callerOrigin.id !== `fleet:${deviceId}`) {
+      return { origin: { kind: 'device', id: callerOrigin.id, name: callerOrigin.name ?? null }, query: forwarded };
+    }
     if (typeof ctx?.device === 'string' && DEVICE_ID.test(ctx.device) && ctx.device !== `fleet:${deviceId}`) {
       return { origin: { kind: 'device', id: ctx.device, name: null }, query: forwarded };
     }
@@ -90,7 +98,7 @@ export class RoutineLoadRecorder {
   async execute(deviceId, query, opts = {}) {
     let classified;
     try {
-      classified = await this.#classify(deviceId, query);
+      classified = await this.#classify(deviceId, query, opts?.origin && typeof opts.origin === 'object' ? opts.origin : null);
     } catch (error) {
       this.#logger.warn?.('media.routines.classify_failed', { deviceId, error: error.message });
       classified = { origin: null, query };
@@ -98,7 +106,12 @@ export class RoutineLoadRecorder {
     const { origin, query: forwarded } = classified;
     const ledgerId = `fleet:${deviceId}`;
     if (origin) this.#hints?.note?.(ledgerId, origin, this.#clock.now());
-    const run = () => this.#inner.execute(deviceId, forwarded, opts);
+    // A routine's own name rides on the screen's command envelope (the screen
+    // shows it in its notes and session meta) instead of a generic origin.
+    const innerOpts = origin?.kind === 'routine'
+      ? { ...opts, origin: { kind: 'routine', name: origin.name, ...(origin.id ? { id: origin.id } : {}), triggerId: origin.id ?? origin.name } }
+      : opts;
+    const run = () => this.#inner.execute(deviceId, forwarded, innerOpts);
 
     if (origin?.kind !== 'routine') {
       const result = await run();
