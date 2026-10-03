@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -42,11 +42,22 @@ const row = (over) => ({
 
 let dir, store;
 beforeEach(() => {
+  // The store decides "hot vs archived" from the real wall clock (its retention
+  // cutoff is `new Date() - 30 days`), not from the BudgetService clock above.
+  // Pin Date to NOW so HOT_DAY stays inside the window whatever day the suite
+  // runs on — without this the cost-guard test went red once the calendar
+  // passed 2026-10-01 and HOT_DAY aged out. Only Date is faked: fs and the
+  // promise queue stay real.
+  vi.useFakeTimers({ toFake: ['Date'], now: NOW });
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'day-archive-'));
   store = new YamlNutriListDatastore({
     dataService: { user: { resolveDir: (rel) => path.join(dir, rel) } },
     logger: silent,
   });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 const writeYaml = (rel, data) => {
