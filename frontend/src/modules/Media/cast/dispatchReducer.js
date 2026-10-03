@@ -168,6 +168,9 @@ export function reduceDispatch(state, action) {
           : null;
         return {
           steps: [...prev.steps, { step, status, elapsedMs, error: error ?? null, ts: now() }],
+          // PLAY.10a: the screen's Add only took this Play as an add; it is
+          // reported (and resolved by its queue step) as an add.
+          ...(action.appliedAs === 'add' ? { kind: 'add', operation: 'add', appliedAs: 'add' } : {}),
           ...(resolution ? { playback: resolution } : {}),
           ...(outcomeResolution ? {
             outcome: outcomeResolution,
@@ -188,7 +191,10 @@ export function reduceDispatch(state, action) {
     }
     case 'SUCCEEDED': {
       const { dispatchId, totalElapsedMs } = action;
-      return update(state, dispatchId, () => ({ status: 'success', totalElapsedMs: totalElapsedMs ?? null }));
+      return update(state, dispatchId, () => ({
+        status: 'success', totalElapsedMs: totalElapsedMs ?? null,
+        ...(action.appliedAs === 'add' ? { kind: 'add', operation: 'add', appliedAs: 'add' } : {}),
+      }));
     }
     case 'FAILED': {
       const { dispatchId, error, failedStep } = action;

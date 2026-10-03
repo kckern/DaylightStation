@@ -47,7 +47,13 @@ export function busyOriginName(targetIds = [], devices = [], entries = EMPTY_FLE
 
 export function aimName(targetIds = [], devices = [], localName = null) {
   if (targetIds.length === 0) return localName ? `This device · ${localName}` : 'This device';
-  if (targetIds.length > 1) return `${targetIds.length} screens`;
+  if (targetIds.length > 1) {
+    // PLACE.4a/AC2: "Kitchen + Living Room". A screen this device does not
+    // know (yet) or a long list reads as a count — never a raw id.
+    const known = targetIds.map((id) => devices.find((candidate) => candidate.id === id) ?? null);
+    if (targetIds.length <= 3 && known.every(Boolean)) return known.map((device) => deviceName(device, device.id)).join(' + ');
+    return `${targetIds.length} screens`;
+  }
   const targetId = targetIds[0];
   const device = devices.find((candidate) => candidate.id === targetId);
   const location = deviceLocation(device) || device?.room?.trim?.() || '';

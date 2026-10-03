@@ -106,18 +106,21 @@ export function useContentDispatch() {
   const runAction = useCallback((kind, id, item, opts = {}) => {
     const input = resultToQueueInput({ ...item, id }) ?? { contentId: id, title: item?.title };
     const operationId = createOperationId();
-    const remote = targetIds.length > 0;
+    // `opts.targetIds`: a one-off destination for this action only (Add to
+    // this queue, STEER.1b/AC7) — the aim itself is never read or changed.
+    const actionTargets = Array.isArray(opts.targetIds) ? opts.targetIds : targetIds;
+    const remote = actionTargets.length > 0;
     const destination = remote ? {
-      id: targetIds.join(','),
+      id: actionTargets.join(','),
       execute: command => {
-        castTo(targetIds, mode, id, item?.title, {
+        castTo(actionTargets, opts.targetIds ? 'fork' : mode, id, item?.title, {
           verb: ['add', 'playNext', 'playFirst'].includes(kind) ? 'queue' : 'play',
           shuffle: kind === 'shuffle', itemAction: command,
         });
         return { ok: true, pending: true, operationId: command.operationId };
       },
       undo: async operation => {
-        const results = await Promise.all(targetIds.map(target => peek?.getController?.(target)?.undo(operation)
+        const results = await Promise.all(actionTargets.map(target => peek?.getController?.(target)?.undo(operation)
           ?? { ok: false, code: 'ITEM_ACTION_UNSUPPORTED' }));
         return results.find(result => !result?.ok) ?? { ok: true };
       },
@@ -263,9 +266,18 @@ export function useContentDispatch() {
     return 'local';
   }, [targetIds, mode, queue, castTo, controller, runAction, confirmLocal]);
 
+  // Add to this queue (STEER.1b/AC7, RQ-STEER-22): one addition to one
+  // screen's queue — a leaf or a whole container — without touching the aim.
+  const addToScreen = useCallback((deviceId, id, item) => {
+    if (typeof deviceId !== 'string' || !deviceId || !id) return null;
+    const asItem = item && isContainer(item) ? { ...item, itemType: 'container' } : item;
+    runAction('add', id, asItem, { targetIds: [deviceId] });
+    return 'add-to-screen';
+  }, [runAction]);
+
   return useMemo(
-    () => ({ dispatch, dispatchLeafVerb, playContainerAsQueue, addContainerToQueue }),
-    [dispatch, dispatchLeafVerb, playContainerAsQueue, addContainerToQueue]
+    () => ({ dispatch, dispatchLeafVerb, playContainerAsQueue, addContainerToQueue, addToScreen }),
+    [dispatch, dispatchLeafVerb, playContainerAsQueue, addContainerToQueue, addToScreen]
   );
 }
 

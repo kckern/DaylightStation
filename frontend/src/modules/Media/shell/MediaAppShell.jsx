@@ -14,11 +14,23 @@ import { SearchMode } from '../search/SearchMode.jsx';
 import { ReconnectingNote } from './ReconnectingNote.jsx';
 import { LocalPlaybackOutcomes } from './LocalPlaybackOutcomes.jsx';
 import { LocalStopFeedbackProvider, useLocalStopFeedbackCount } from './LocalStopFeedbackContext.jsx';
+import { SearchLauncherContext } from './SearchLauncherContext.js';
+import mediaLog from '../logging/mediaLog.js';
 import './MediaShell.scss';
 
 function ShellInner() {
   const { pop, depth } = useNav();
   const [searchOpen, setSearchOpen] = useState(false);
+  // Add to this queue: the one search, for one addition to one screen.
+  const [searchAddTo, setSearchAddTo] = useState(null);
+  const searchLauncher = React.useMemo(() => ({
+    openAddToQueue: ({ deviceId, name = null }) => {
+      if (typeof deviceId !== 'string' || !deviceId) return;
+      mediaLog.addToQueueOpened({ deviceId });
+      setSearchAddTo({ deviceId, name });
+      setSearchOpen(true);
+    },
+  }), []);
   const queueKeptCount = useLocalStopFeedbackCount();
   const baseDismiss = useCallback(() => {
     if (depth > 1) pop();
@@ -38,6 +50,7 @@ function ShellInner() {
   }, []);
 
   return (
+    <SearchLauncherContext.Provider value={searchLauncher}>
     <DismissStackProvider onBaseDismiss={baseDismiss}>
       <div className="media-shell" data-testid="media-shell">
         <Dock onOpenSearch={() => setSearchOpen(true)} />
@@ -61,9 +74,10 @@ function ShellInner() {
           </div>
         )}
         <TabBar />
-        {searchOpen && <SearchMode onClose={() => setSearchOpen(false)} />}
+        {searchOpen && <SearchMode addTo={searchAddTo} onClose={() => { setSearchOpen(false); setSearchAddTo(null); }} />}
       </div>
     </DismissStackProvider>
+    </SearchLauncherContext.Provider>
   );
 }
 
