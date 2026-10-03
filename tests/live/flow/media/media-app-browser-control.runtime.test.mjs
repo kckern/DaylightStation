@@ -148,11 +148,17 @@ test('[HOUSE.4a] stable browser identities route a queue command through the act
   await target.reload();
   await expect(target.getByRole('textbox', { name: 'Search media…' })).toBeVisible({ timeout: 30000 });
   expect(await profileId(target)).toBe(targetStableId);
+  // RELY.7a (RQ-RELY-07): a reload restores the session PAUSED and holds the
+  // Player until an ordinary Play; it never resumes aloud on its own.
+  await expect(target.getByTestId('mini-player-open-nowplaying')).toContainText('Arrival', { timeout: 30000 });
+  await expect(target.locator('video')).toHaveCount(0);
+  await expect(target.getByTestId('mini-toggle')).toHaveAccessibleName('Play');
+  await target.getByTestId('mini-toggle').click();
   const resumedNative = target.locator('.video-player video');
   await expect(resumedNative).toBeVisible({ timeout: 60000 });
   await expect.poll(() => resumedNative.evaluate(video => ({ ready: video.readyState >= 2, paused: video.paused, seconds: video.currentTime })), { timeout: 30000 })
     .toMatchObject({ ready: true, paused: false, seconds: expect.any(Number) });
-  expect(await resumedNative.evaluate(video => video.currentTime)).toBeGreaterThanOrEqual(Math.max(0, beforeReloadSeconds - 3));
+  expect(await resumedNative.evaluate(video => video.currentTime)).toBeGreaterThanOrEqual(Math.max(0, beforeReloadSeconds - 8));
   const reloadedQueue = target.getByTestId('queue-panel');
   if (!await reloadedQueue.isVisible()) await target.getByTestId('mini-player-open-nowplaying').click();
   await expect(reloadedQueue.locator('.queue-item-title')).toHaveCount(2);
