@@ -31,10 +31,21 @@ const entries = [
     return { content, action: page.getByTestId('detail-play-now') };
   }],
   ['Home Recents', async (page, nav) => {
+    // Home's Recent is the household's list (GET /api/v1/media/household/recent,
+    // batch A), which the acceptance server blocks. Only that list is answered
+    // here — Arrival, last played on this device; the tap, aim and playback
+    // below stay real.
+    await page.route('**/api/v1/media/household/recent*', route => route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ items: [{ contentId: 'plex:55854', title: 'Arrival', type: 'movie', thumbnail: null,
+        lastPlayed: '2026-10-03 08:00:00', finished: false, playedOn: null, spots: [], plays: [] }] }),
+    }));
+    // Leave and re-enter Home so it reads the list afresh.
+    await page.getByTestId(nav('browse')).click();
     await page.getByTestId(nav('home')).click();
-    const content = page.getByTestId('recent-plex:55854');
+    const content = page.getByTestId('home-tile-recent-plex:55854');
     await expect(content).toBeVisible({ timeout: 10000 });
-    return { content, action: content };
+    return { content, action: page.getByTestId('home-tile-recent-plex:55854-picture') };
   }],
 ];
 

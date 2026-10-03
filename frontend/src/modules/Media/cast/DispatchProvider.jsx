@@ -336,8 +336,23 @@ export function DispatchProvider({ children }) {
     const targetId = record.targetId ?? record.deviceId;
     const controller = targetId === 'local' ? localController : peek?.getController?.(targetId);
     mediaLog.outcomeStartOver({ attemptId, targetId, contentId: record.item?.contentId ?? null });
-    if (!controller?.transport?.restartCurrent) return { ok: false, code: 'UNSUPPORTED' };
     try {
+      if (targetId === 'local') {
+        // Replay the item here from 0 with no server resume. A seek would be
+        // lost while the item is still loading: the Player applies its
+        // pending start offset when the media arrives.
+        const item = record.command?.item ?? record.item;
+        if (!controller?.execute || !item?.contentId) return { ok: false, code: 'UNSUPPORTED' };
+        const result = await executeItemAction({
+          kind: 'playNow', item: { ...item, seconds: 0, resume: false }, destination: controller, operationId: createOperationId(),
+        });
+        if (result?.ok === false) throw new Error(result.reason ?? result.code ?? 'Could not start over');
+        dispatch({ type: 'REMOVED', dispatchId: attemptId });
+        const startedId = uuid();
+        dispatch({ type: 'LOCAL', attemptId: startedId, kind: 'startOver', phase: 'confirmed', item: { contentId: item.contentId, title: item.title ?? record.item?.title ?? null } });
+        return { ok: true };
+      }
+      if (!controller?.transport?.restartCurrent) return { ok: false, code: 'UNSUPPORTED' };
       await controller.transport.restartCurrent();
       dispatch({ type: 'REMOVED', dispatchId: attemptId });
       return { ok: true };

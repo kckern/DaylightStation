@@ -16,9 +16,16 @@ test.describe('MediaApp — Resume and Recents on Home', () => {
     await page.getByTestId('mini-toggle').click();
     await expect(page.getByTestId('mini-toggle')).toHaveAccessibleName('Play');
 
+    // Recent is the household's list (blocked by the acceptance server; answered here).
+    await page.route('**/api/v1/media/household/recent*', route => route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ items: [{ contentId: 'plex:55854', title: 'Arrival', type: 'movie', thumbnail: null,
+        lastPlayed: '2026-10-03 08:00:00', finished: false, playedOn: null, spots: [], plays: [] }] }),
+    }));
+    await page.getByTestId('app-nav-browse').click();
     await page.getByTestId('app-nav-home').click();
     await expect(page.getByTestId('resume-card')).toBeVisible();
-    await expect(page.getByTestId('recents-row')).toBeVisible({ timeout: 8000 });
+    await expect(page.getByTestId('home-row-recent')).toBeVisible({ timeout: 8000 });
   });
 });
 

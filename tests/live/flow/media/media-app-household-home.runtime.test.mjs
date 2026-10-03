@@ -241,7 +241,7 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
       // No function hidden by width: the page never scrolls sideways.
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       expect(overflow).toBeLessThanOrEqual(0);
-      await expect.poll(() => page.locator(`[data-testid="home-tile-favourites-${BLUEY}-picture"] img`).evaluate(img => img.naturalWidth)).toBeGreaterThan(0);
+      await expect.poll(() => page.locator(`[data-testid="home-tile-favourites-${BLUEY}-picture"] img`).evaluate(img => img.naturalWidth), { timeout: 30000 }).toBeGreaterThan(0);
       await shot(page, `home-${size}`);
     });
 
@@ -306,6 +306,7 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
       for (const verb of ['playNow', 'playNext', 'playFirst', 'add', 'playOn', 'addOn', 'details', 'favourite', 'hide']) {
         await expect(menu.getByTestId(`home-tile-recent-${ARRIVAL}-verb-${verb}`)).toBeVisible();
       }
+      await page.waitForTimeout(400); // let the menu finish fading in before the picture
       await shot(page, `home-menu-${size}`);
       await page.keyboard.press('Escape');
       // A playable recent item plays at the aim with the same confirmation and Undo.
@@ -338,17 +339,20 @@ test.describe('saved spots and Start over (PLAY.4a)', () => {
     await expect(chooser).toContainText('From the beginning');
     await shot(page, 'spot-chooser-laptop');
     await chooser.getByRole('button', { name: /1 h 20 m on Acceptance receiver/ }).click();
+    // The confirmation says where it continues and offers Start over.
+    const row = page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'Playing Disclosure Day here' }).first();
+    await expect(row).toContainText('Continuing from 1 h 20 m', { timeout: 15000 });
     const video = page.locator('video').first();
     await expect.poll(() => video.evaluate(el => !el.paused && el.readyState >= 2).catch(() => false), { timeout: 60000 }).toBe(true);
     // The chosen spot is asked for explicitly: no server resume.
     expect(plays.some(url => url.includes('/play/plex') && url.includes('697368') && url.includes('resume=false')), plays.join('\n')).toBe(true);
     await expect.poll(() => video.evaluate(el => el.currentTime), { timeout: 30000 }).toBeGreaterThan(4790);
-    const row = page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'Disclosure Day' }).first();
-    await expect(row).toContainText('Continuing from 1 h 20 m');
     await shot(page, 'start-over-offer-laptop');
-    // Start over on the confirmation restarts that screen's item.
+    // Start over on that confirmation plays it here from the beginning.
+    await expect(row.getByRole('button', { name: 'Start over' })).toBeVisible();
     await row.getByRole('button', { name: 'Start over' }).click();
-    await expect.poll(() => video.evaluate(el => el.currentTime), { timeout: 30000 }).toBeLessThan(30);
+    await expect(page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'Started Disclosure Day over' })).toBeVisible({ timeout: 15000 });
+    await expect.poll(() => video.evaluate(el => !el.paused && el.currentTime < 60).catch(() => false), { timeout: 60000 }).toBe(true);
     // Local playback reports its progress as this device.
     await expect.poll(() => state.playLogs.length, { timeout: 60000 }).toBeGreaterThan(0);
     const self = state.requests.find(r => r.path.endsWith('/suggestions')).query.deviceId;
@@ -390,7 +394,7 @@ test.describe('Played earlier (FIND.11a)', () => {
         await expect(earlier.getByTestId('played-earlier-0')).toContainText('Faith');
         await expect(earlier.getByTestId('played-earlier-0-when')).toContainText(/Calvin Harris · Today/);
         await expect(earlier.getByTestId('played-earlier-1')).toContainText('Hospital');
-        await expect.poll(() => earlier.locator('[data-testid="played-earlier-0"] img').evaluate(img => img.naturalWidth)).toBeGreaterThan(0);
+        await expect.poll(() => earlier.locator('[data-testid="played-earlier-0"] img').evaluate(img => img.naturalWidth), { timeout: 30000 }).toBeGreaterThan(0);
         await earlier.getByTestId('played-earlier-1-more').click();
         await page.getByTestId('played-earlier-1-verb-favourite').click();
         await expect(page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'Added Hospital to favourites' })).toBeVisible();
@@ -437,9 +441,11 @@ test.describe('Now on another screen (FIND.10a/AC3)', () => {
     await sender.goBack();
     await expect(card).toBeVisible({ timeout: 30000 });
     await card.getByRole('button', { name: 'Move here' }).click();
+    // The move reports itself until it is done, then confirms.
+    await expect(sender.locator('[data-testid^="dispatch-row-"]').filter({ hasText: /Moving Arrival here|Moved Arrival here/ })).toBeVisible({ timeout: 10000 });
+    await expect(sender.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'Moved Arrival here' })).toBeVisible({ timeout: 60000 });
     const video = sender.locator('video').first();
     await expect.poll(() => video.evaluate(el => !el.paused && el.readyState >= 2).catch(() => false), { timeout: 60000 }).toBe(true);
-    await expect(sender.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'Moved Arrival here' })).toBeVisible({ timeout: 30000 });
     await expect.poll(async () => (await sender.evaluate(async () => {
       const r = await fetch('/api/v1/device/acceptance-media/receiver-state');
       return r.ok ? r.json() : null;

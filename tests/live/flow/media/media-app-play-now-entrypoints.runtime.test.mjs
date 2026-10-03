@@ -86,9 +86,17 @@ async function openPlayNowEntry(sender, entry) {
     await expect(sender.getByTestId('detail-view')).toBeVisible({ timeout: 30000 });
     await sender.getByTestId('detail-play-now').click();
   } else {
+    // Home's Recent is the household's list, which the acceptance server
+    // blocks; only that list is answered here (Arrival). The tap is real.
+    await sender.route('**/api/v1/media/household/recent*', route => route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ items: [{ contentId: 'plex:55854', title: 'Arrival', type: 'movie', thumbnail: null,
+        lastPlayed: '2026-10-03 08:00:00', finished: false, playedOn: null, spots: [], plays: [] }] }),
+    }));
+    await sender.getByTestId('app-nav-browse').click();
     await sender.getByTestId('app-nav-home').click();
-    await expect(sender.getByTestId('recent-plex:55854')).toBeVisible({ timeout: 10000 });
-    await sender.getByTestId('recent-plex:55854').click();
+    await expect(sender.getByTestId('home-tile-recent-plex:55854')).toBeVisible({ timeout: 10000 });
+    await sender.getByTestId('home-tile-recent-plex:55854-picture').click();
   }
 }
 

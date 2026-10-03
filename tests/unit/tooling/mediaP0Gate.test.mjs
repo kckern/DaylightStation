@@ -47,9 +47,19 @@ describe('Media P0 gate manifest', () => {
       expect.objectContaining({ story: 'RELY.7a', criteria: ['RELY.7a/AC1', 'RELY.7a/AC5'], file: 'media-app-resume.runtime.test.mjs' }),
       expect.objectContaining({ story: 'RELY.7a', criteria: ['RELY.7a/AC2'], file: 'media-app-aim-journey.runtime.test.mjs', grep: 'a closed app restores' }),
       expect.objectContaining({ story: 'RELY.8a', criteria: ['RELY.8a/AC1', 'RELY.8a/AC2', 'RELY.8a/AC3'], file: 'media-app-reset-confirm.runtime.test.mjs' }),
+      // Batch A (start page + item surfaces).
+      expect.objectContaining({ story: 'FIND.7a', criteria: ['FIND.7a/AC1', 'FIND.7a/AC2'], file: 'media-app-household-home.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'FIND.9a', criteria: ['FIND.9a/AC1', 'FIND.9a/AC2', 'FIND.9a/AC3'], file: 'media-app-household-home.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'FIND.10a', criteria: ['FIND.10a/AC1', 'FIND.10a/AC2', 'FIND.10a/AC4', 'FIND.10a/AC6'], file: 'media-app-household-home.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'FIND.10a', criteria: ['FIND.10a/AC3'], grep: 'Now on another screen' }),
+      expect.objectContaining({ story: 'FIND.11a', criteria: ['FIND.11a/AC1', 'FIND.11a/AC3'], grep: 'Played earlier' }),
+      expect.objectContaining({ story: 'FIND.12a', criteria: ['FIND.12a/AC1', 'FIND.12a/AC2'] }),
+      expect.objectContaining({ story: 'FIND.12b', criteria: ['FIND.12b/AC1', 'FIND.12b/AC2'] }),
+      expect.objectContaining({ story: 'FIND.13a', criteria: ['FIND.13a/AC1', 'FIND.13a/AC3'] }),
+      expect.objectContaining({ story: 'PLAY.4a', criteria: ['PLAY.4a/AC1', 'PLAY.4a/AC2', 'PLAY.4a/AC3'], grep: 'saved spots and Start over' }),
     ]));
-    expect(P0_EXTENSION_ENTRIES).toHaveLength(23);
-    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 31, criteria: 69 });
+    expect(P0_EXTENSION_ENTRIES).toHaveLength(32);
+    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 39, criteria: 90 });
   });
 
   it('rejects skipped, duplicated, weakened, or unjourneyed criteria', () => {

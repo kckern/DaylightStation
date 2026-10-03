@@ -895,7 +895,10 @@ How the Media frontend consumes §2.4–2.9 (`frontend/src/modules/Media/househo
   two or more → the person chooses (the play then carries `seconds` + `resume:false`, §9.4); one
   (or an unfinished entry with only a shared playhead) → continue with server resume and mark the
   outcome `startOver: true, resumedFrom`; none → plain play. Outcome records with `startOver`
-  offer **Start over**, which calls `transport.restartCurrent()` on that record's screen.
+  offer **Start over** for 15 s after confirmation: on this device it replays the item as Play now
+  with `seconds: 0, resume: false` (a seek would be lost while the item is still loading — the
+  Player applies its pending start offset when the media arrives) and records a `startOver`
+  outcome; on another screen it calls that screen's `transport.restartCurrent()`.
 - **Move here** adopts the fleet `device-state` snapshot of that screen through
   `lifecycle.adoptSnapshot`, waits up to 20 s for native playing evidence of the same content
   (`portability.getNativeObservation`), then stops the screen through its remote controller only
