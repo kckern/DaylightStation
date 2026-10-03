@@ -60,17 +60,6 @@
   cursor: pointer;
 }
 
-/* The music Player is parked off-screen, never display:none (a hidden media
-   element is throttled or refused playback). */
-.screen-music-behind {
-  position: fixed;
-  left: -10000px;
-  top: 0;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  pointer-events: none;
-}
 
 .screen-music-plaque {
   position: fixed;

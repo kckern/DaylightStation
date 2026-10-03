@@ -14,6 +14,7 @@ import { getPlayerSessionRegistry } from '../publishers/playerSessionRegistry.js
 import { isSlideshowItem } from '@shared-contracts/media/playerFeatures.mjs';
 import Player from '../../modules/Player/Player.jsx';
 import CameraOverlay from '../../modules/CameraFeed/CameraOverlay.jsx';
+import { MusicBehindLayer } from '../../modules/Player/components/MusicBehindLayer.jsx';
 import { requestRestore } from './ScreenSessionControlsHost.jsx';
 import getLogger from '../../lib/logging/Logger.js';
 import './ScreenPlayerFeatures.css';
@@ -24,7 +25,6 @@ function logger() {
   return _logger;
 }
 
-const MUSIC_POLL_MS = 1000;
 // Starts that take the screen: a brief that was up is superseded, not returned from.
 const SUPERSEDING_OPS = new Set(['play-now', 'item-action', 'jump']);
 
@@ -74,12 +74,10 @@ export function ScreenPlayerFeaturesHost({ features, source }) {
           return { ok: true };
         }
         if (!current) return { ok: false, code: 'NO_MUSIC', error: 'No music is playing behind' };
-        const player = musicRef.current;
         if (op === 'stop') { setMusic(null); features.setMusicState(null); return { ok: true }; }
-        if (op === 'pause') player?.pause?.();
-        else if (op === 'play') player?.play?.();
-        else if (op === 'next') player?.advance?.(1);
-        else if (op === 'prev') player?.advance?.(-1);
+        const layer = musicRef.current;
+        if (!layer) return { ok: false, code: 'MUSIC_LOADING', error: 'The music is still starting' };
+        layer[op]?.();
         return { ok: true };
       },
     });
@@ -146,32 +144,13 @@ export function ScreenPlayerFeaturesHost({ features, source }) {
     return () => unsubs.forEach((u) => u());
   }, [features]);
 
-  // --- Music layer state -----------------------------------------------------------
-  useEffect(() => {
-    if (!features || !music) return undefined;
-    const tick = () => {
-      const player = musicRef.current;
-      const el = player?.getMediaElement?.();
-      const now = player?.getNowPlaying?.()?.item ?? null;
-      const state = !el ? 'loading' : el.paused ? 'paused' : 'playing';
-      const next = { contentId: music.contentId, title: music.title ?? null, state, trackTitle: now?.title ?? null };
-      const prev = features.toPublished().musicBehind;
-      if (!prev || prev.state !== next.state || prev.trackTitle !== next.trackTitle) features.setMusicState(next);
-    };
-    tick();
-    const timer = setInterval(tick, MUSIC_POLL_MS);
-    return () => clearInterval(timer);
-  }, [features, music]);
-
   useEffect(() => {
     if (!music) return undefined;
     logger().info('music-behind.started', { ownerId, contentId: music.contentId });
     return () => logger().info('music-behind.stopped', { ownerId, contentId: music.contentId });
   }, [music, ownerId]);
 
-  // Stable per start: a fresh queue object each render would remount the Player.
-  const musicQueue = useMemo(() => (music ? { contentId: music.contentId } : null), [music]);
-
+  const onMusicState = useCallback((state) => features?.setMusicState(state), [features]);
   const onMusicEnded = useCallback(() => {
     setMusic(null);
     features?.setMusicState(null);
@@ -182,17 +161,14 @@ export function ScreenPlayerFeaturesHost({ features, source }) {
     <>
       <ScreenBriefSurface features={features} />
       {music && (
-        <div className="screen-music-behind" data-testid="screen-music-behind" aria-hidden="true">
-          <Player
-            ref={musicRef}
-            key={`${music.contentId}:${music.startedAt}`}
-            auxiliary
-            ignoreKeys
-            playerType="background"
-            queue={musicQueue}
-            clear={onMusicEnded}
-          />
-        </div>
+        <MusicBehindLayer
+          ref={musicRef}
+          key={`${music.contentId}:${music.startedAt}`}
+          contentId={music.contentId}
+          title={music.title}
+          onState={onMusicState}
+          onEnded={onMusicEnded}
+        />
       )}
       <ScreenMusicPlaque features={features} />
     </>

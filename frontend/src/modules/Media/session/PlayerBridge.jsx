@@ -27,6 +27,8 @@ import Player from '../../Player/Player.jsx';
 import { LocalSessionContext } from './LocalSessionContext.js';
 import { PlayerHostContext, PlayerHostPresentationContext } from './playerHostContext.js';
 import { TIMING } from '../constants.js';
+import { registerTrackOwner, createTrackPreferenceStore } from '../../Player/lib/trackPolicy.js';
+import { getLocalPlayerFeatures } from './localPlayerFeatures.js';
 
 const RENDERER_BOUNDARY_FORMATS = new Set(['video', 'hls_video', 'dash_video', 'audio']);
 // Media waits out a refused (unreadable) file for 60 s, then lets the queue
@@ -65,6 +67,26 @@ export function PlayerBridge() {
     sync();
     return controller.restore.subscribe(sync);
   }, [controller]);
+
+  // Subtitles and audio language (RQ-STEER-14): this device claims only its
+  // own Player; the choice is remembered per show on this device.
+  useEffect(() => {
+    const features = getLocalPlayerFeatures();
+    const preferences = createTrackPreferenceStore({ namespace: 'media-local' });
+    const unregisterOwner = registerTrackOwner({
+      isOwner: (instanceId) => !!instanceId && playerRef.current?.getPlayerInstanceId?.() === instanceId,
+      getPreference: (key) => preferences.get(key),
+      setPreference: (key, value) => preferences.set(key, value),
+      onTracks: (state) => features.setTrackState(state),
+    });
+    const unbind = features.bindPlayer({
+      setTracks: (selection) => playerRef.current?.setTracks?.(selection) ?? { ok: false, code: 'NO_PLAYBACK' },
+    });
+    return () => { unregisterOwner(); unbind(); features.setTrackState(null); };
+  }, []);
+  useEffect(() => {
+    if (!currentItem) getLocalPlayerFeatures().setTrackState(null);
+  }, [currentItem]);
 
   // Hand the controller its imperative player surface.
   useEffect(() => {
