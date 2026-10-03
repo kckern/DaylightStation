@@ -18,6 +18,7 @@ import { DispatchTargetPicker } from '../cast/DispatchTargetPicker.jsx';
 import { playbackStateLabel, queuePositionLabel } from './stateCopy.js';
 import { SessionControlFrame } from '../controller/SessionControlFrame.jsx';
 import { GlobalAimLabel } from '../cast/AimLabel.jsx';
+import { SessionControlsPanel } from './SessionControlsPanel.jsx';
 import './NowPlaying.scss';
 
 // Format enrichment may not arrive before a paused/autoplay-blocked video
@@ -157,6 +158,7 @@ export function NowPlayingView() {
           <TransportBar target="local" targetLabel="This device" />
         </>
         )}
+        {(item || snapshot?.queue?.items?.length > 0) && <SessionControlsPanel target="local" />}
 
         {!expanded && <QueuePanel target="local" />}
       </SessionControlFrame>

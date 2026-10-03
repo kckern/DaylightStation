@@ -11,12 +11,27 @@ import { createClientControlCorrelator } from '../externalControl/clientControlC
 import { subscribeTopicKind } from '../net/ws.js';
 import { wsService } from '../../../services/WebSocketService.js';
 import { FleetContext } from '../fleet/FleetProvider.jsx';
+import { ClientIdentityContext } from '../identity/ClientIdentityProvider.jsx';
 import mediaLog from '../logging/mediaLog.js';
 
 export function PeekProvider({ children }) {
   const fleet = useContext(FleetContext);
   if (!fleet) throw new Error('PeekProvider must be inside FleetProvider');
   const { store: fleetStore } = fleet;
+  // Every command names this device, so the screen can say who changed it
+  // ("Paused by Dad's phone", RQ-STEER-21). Read at send time: a rename or a
+  // late identity applies to controllers created before it.
+  const identity = useContext(ClientIdentityContext);
+  const originRef = useRef(null);
+  originRef.current = {
+    id: fleet.identity?.deviceId ?? (identity?.clientId ? `browser:${identity.clientId}` : null),
+    name: typeof identity?.displayName === "string" ? identity.displayName.slice(0, 80) : null,
+  };
+  const commandOrigin = useMemo(() => ({
+    kind: 'device',
+    get id() { return originRef.current.id ?? undefined; },
+    get name() { return originRef.current.name ?? undefined; },
+  }), [originRef]);
   const correlatorRef = useRef(null);
   if (!correlatorRef.current && fleet.identity?.clientId) {
     correlatorRef.current = createClientControlCorrelator({
@@ -84,11 +99,12 @@ export function PeekProvider({ children }) {
         })
         : createRemoteSessionController({
           deviceId, fleetStore, ackRouter, onSteeringActivity: recordSteeringActivity,
+          origin: originRef.current.id ? commandOrigin : null,
         });
       controllersRef.current.set(deviceId, ctl);
     }
     return ctl;
-  }, [fleetStore, ackRouter, recordSteeringActivity, fleet.identity?.deviceId]);
+  }, [fleetStore, ackRouter, recordSteeringActivity, fleet.identity?.deviceId, commandOrigin]);
 
   const enterPeek = useCallback((deviceId) => {
     mediaLog.peekEntered({ deviceId });

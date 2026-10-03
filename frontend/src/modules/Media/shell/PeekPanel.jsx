@@ -17,6 +17,7 @@ import { remoteStatusLine } from './stateCopy.js';
 import { useRemoteStopFeedback } from './useRemoteStopFeedback.js';
 import { SessionControlFrame } from '../controller/SessionControlFrame.jsx';
 import { GlobalAimLabel } from '../cast/AimLabel.jsx';
+import { SessionControlsPanel } from './SessionControlsPanel.jsx';
 
 export function PeekPanel({ deviceId }) {
   const { enterPeek, exitPeek } = usePeek();
@@ -123,6 +124,8 @@ export function PeekPanel({ deviceId }) {
         pendingActions={pendingActions}
         availability={availability}
       />
+
+      <SessionControlsPanel target={{ deviceId }} targetName={deviceName(device, deviceId)} />
 
       {queueKeptCount != null && (
         <Group data-testid="peek-queue-kept" role="status" gap="xs">

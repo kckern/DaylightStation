@@ -1,0 +1,99 @@
+// Session controls (sleep timer, countdown, stop after this one, Add only,
+// screen notes, end of queue, several-screen choices). Function over theme:
+// Mantine / design-system tokens only, 44 px targets, wraps at phone width
+// so no control is hidden by width.
+.session-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-xs);
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.session-controls-row {
+  justify-content: center;
+}
+
+.session-controls-btn {
+  min-height: 44px;
+}
+
+.session-controls-menu-item {
+  min-height: 44px;
+}
+
+.session-controls-hint {
+  color: var(--mantine-color-dark-1);
+  text-align: center;
+}
+
+.session-controls-countdown,
+.session-controls-resume {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--mantine-spacing-xs);
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  border: 1px solid var(--mantine-color-dark-4);
+  border-radius: var(--mantine-radius-md);
+  background: var(--mantine-color-dark-6);
+}
+
+.session-controls-notes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.session-controls-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mantine-spacing-xs);
+  min-height: 44px;
+  padding: 2px var(--mantine-spacing-xs);
+  border-radius: var(--mantine-radius-sm);
+  background: var(--mantine-color-dark-6);
+}
+
+.session-controls-note-age {
+  color: var(--mantine-color-dark-2);
+}
+
+// End of queue: the current choice at the bottom of the queue (STEER.13a).
+.queue-end-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: var(--mantine-spacing-xs);
+  padding-top: var(--mantine-spacing-xs);
+  border-top: 1px solid var(--mantine-color-dark-4);
+}
+
+.queue-end-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mantine-spacing-xs);
+}
+
+.queue-end-status {
+  color: var(--mantine-color-dark-1);
+}
+
+// The handle's sleep time left (STEER.10a/AC2).
+.mini-player-sleep {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: var(--mantine-spacing-xs);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--mantine-color-dark-1);
+  white-space: nowrap;
+}

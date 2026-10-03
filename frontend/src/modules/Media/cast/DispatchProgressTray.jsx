@@ -67,10 +67,15 @@ const LOCAL_VERB = {
   remove: (t, at) => `Removed ${t} from the queue ${at}`,
   clear: (_t, at) => `Cleared the queue ${at}`,
   undo: (t, at) => `Put back ${t} ${at}`,
+  // Batch B: session controls, line up and screen-to-screen moves.
+  control: (t, at) => `Changed ${t} ${at}`,
+  lineUp: (t, at) => `Lined up ${t} ${at}`,
+  move: (t, at) => `Moved ${t} ${at === 'here' ? 'here' : at.replace(/^on /, 'to ')}`,
 };
 const LOCAL_FAILED_VERB = {
   play: 'play', shuffle: 'shuffle', add: 'add', playNext: 'add', playFirst: 'add',
   remove: 'remove', clear: 'clear the queue for', undo: 'put back',
+  control: 'change', lineUp: 'line up', move: 'move',
 };
 
 function localCopy(d, phase, name) {
@@ -107,7 +112,7 @@ function localCopy(d, phase, name) {
   }
   if (phase === 'failed') {
     return {
-      primary: `Couldn't ${LOCAL_FAILED_VERB[d.kind] ?? 'do that for'} ${title} ${at}`,
+      primary: `Couldn't ${LOCAL_FAILED_VERB[d.kind] ?? 'do that for'} ${title} ${d.kind === 'move' && at !== 'here' ? at.replace(/^on /, 'to ') : at}`,
       secondary: d.reason ?? null,
     };
   }
