@@ -128,7 +128,7 @@ export function useSourceAvailability({
       } else if (decision === 'retry') {
         playbackLog('source-refusal-cleared', { contentId: id, reason }, { level: 'info' });
       }
-      onSettledRef.current?.(decision);
+      onSettledRef.current?.(decision, { reason, suspected });
       return decision;
     })().finally(() => {
       if (inflightRef.current === run) inflightRef.current = null;
