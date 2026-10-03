@@ -55,8 +55,9 @@ export function useItemVerbs() {
       setChoice({ item, spots: plan.spots });
       return 'choose';
     }
-    return dispatchLeafVerb('playNow', item.id, item,
-      plan.kind === 'continue' ? { resumedFrom: plan.spot.playhead } : {});
+    return plan.kind === 'continue'
+      ? dispatchLeafVerb('playNow', item.id, item, { resumedFrom: plan.spot.playhead })
+      : dispatchLeafVerb('playNow', item.id, item);
   }, [dispatchLeafVerb]);
 
   const run = useCallback((kind, item, ctx = {}) => {

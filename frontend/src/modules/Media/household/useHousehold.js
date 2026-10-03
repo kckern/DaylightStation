@@ -10,6 +10,7 @@ import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { getDeviceId } from '../../../lib/deviceIdentity.js';
 import { DispatchContext } from '../cast/DispatchProvider.jsx';
 import mediaLog from '../logging/mediaLog.js';
+import getLogger from '../../../lib/logging/Logger.js';
 import {
   HOUSEHOLD_PATHS, addFavourite, removeFavourite, removeFromHouseholdList,
   restoreToHouseholdList, markWatched as postWatched, refreshHouseholdViews,
@@ -18,11 +19,26 @@ import { createScreenNamer } from './householdModel.js';
 
 export const HOUSEHOLD_UNDO_MS = 10_000;
 
+// The logger every household read hands useApiResource: resolved lazily (no
+// import-time logger) and tolerant of a partial logger.
+let _resourceLog;
+function resourceLog() {
+  if (!_resourceLog) {
+    const root = getLogger();
+    _resourceLog = root?.child?.({ app: 'media', component: 'media-household' }) ?? root;
+  }
+  return _resourceLog;
+}
+export const householdResourceLogger = {
+  debug: (event, data) => resourceLog()?.debug?.(event, data),
+  warn: (event, data) => resourceLog()?.warn?.(event, data),
+};
+
 const EMPTY_SET = new Set();
 
 /** Ids of the household's favourites (items and collections). */
 export function useFavourites() {
-  const { data } = useApiResource(HOUSEHOLD_PATHS.favourites, { swr: true, label: 'media-favourites' });
+  const { data } = useApiResource(HOUSEHOLD_PATHS.favourites, { swr: true, label: 'media-favourites', logger: householdResourceLogger });
   return useMemo(() => {
     const items = Array.isArray(data?.items) ? data.items : null;
     return items ? new Set(items.map(item => item?.id).filter(Boolean)) : EMPTY_SET;
@@ -31,7 +47,7 @@ export function useFavourites() {
 
 /** `nameFor(deviceId)` from GET /api/v1/media/screens; this device is "this device". */
 export function useScreenNamer() {
-  const { data } = useApiResource(HOUSEHOLD_PATHS.screens, { swr: true, label: 'media-screens' });
+  const { data } = useApiResource(HOUSEHOLD_PATHS.screens, { swr: true, label: 'media-screens', logger: householdResourceLogger });
   return useMemo(() => createScreenNamer(data, { selfId: getDeviceId() }), [data]);
 }
 
