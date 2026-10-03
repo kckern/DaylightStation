@@ -51,7 +51,7 @@ export function createContinuationResolver({ api = DaylightAPI, ownerId, now = (
     }
   }
 
-  return async function resolveContinuation({ finished, queue = null } = {}) {
+  return async function resolveContinuation({ finished, queue = null, exclude: alreadyAdded = [] } = {}) {
     const finishedId = idOf(finished);
     if (!finishedId) return [];
     const [source, localId] = splitId(finishedId);
@@ -99,6 +99,7 @@ export function createContinuationResolver({ api = DaylightAPI, ownerId, now = (
     }
 
     const exclude = [
+      ...alreadyAdded,
       ...(queue?.items ?? []).map(idOf).filter(Boolean),
       ...(await playingElsewhere()),
     ];

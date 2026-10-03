@@ -247,7 +247,8 @@ export function ScreenSessionSurfaces({ controls }) {
   const fading = state.sleepTimer?.fading;
   const status = state.endOfQueueStatus;
   const statusVisible = !!status && now - Date.parse(status.at) < NOTE_VISIBLE_MS;
-  useTick(noteVisible || !!countdown || statusVisible || !!state.sleepTimer);
+  // Re-render once a second only while something time-based is on screen.
+  useTick(noteVisible || !!countdown || statusVisible || !!fading);
 
   // While the countdown is up, Back cancels it instead of leaving the player.
   useEffect(() => {

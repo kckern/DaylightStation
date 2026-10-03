@@ -100,6 +100,8 @@ export function useScreenCommands(wsConfig, actionBus, screenId, controls = null
     const isOriginless = command === 'config' && ORIGINLESS_SETTINGS.has(params.setting);
     if (ctl && !isOriginless && command !== 'system' && command !== 'display') {
       if (origin) ctl.stampOrigin(origin);
+      // Someone steered this screen: unattended auto-continue limits restart.
+      if (origin?.kind === 'device') ctl.markHumanInput?.();
     }
 
     // The screen's own origin (its fleet id) is local input, not "another

@@ -72,6 +72,9 @@ describe('createContinuationResolver', () => {
     const resolve = createContinuationResolver({ api, ownerId: 'tv', now: () => NOW });
     const batch = await resolve({ finished: { contentId: 'plex:1' }, queue: { items: [{ contentId: 'plex:2' }] } });
     expect(batch.map(i => i.contentId)).toEqual(['plex:4']);
+    // …nor anything auto-continue already added since the last human input.
+    expect(await resolve({ finished: { contentId: 'plex:1' }, queue: { items: [{ contentId: 'plex:2' }] }, exclude: ['plex:4'] }))
+      .toEqual([]);
     expect(api).not.toHaveBeenCalledWith('api/v1/device/tv/session');
     expect(api).not.toHaveBeenCalledWith('api/v1/device/cam/session');
   });

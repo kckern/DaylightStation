@@ -21,15 +21,19 @@ const EP_HOSPITAL = 'plex:266151';
 const EP_KEEPY = 'plex:266152';
 const phone = { kind: 'device', id: 'browser:acceptance-phone', name: 'Test phone' };
 
-async function call(request, method, path, body) {
+async function call(request, method, path, body, headers = undefined) {
   const response = await request.fetch(path, {
-    method, data: body ? { commandId: randomUUID(), ...body } : undefined,
+    method, data: body ? { commandId: randomUUID(), ...body } : undefined, headers,
   });
   const json = await response.json().catch(() => null);
   return { status: response.status(), body: json };
 }
 const state = async (request) => (await call(request, 'GET', `${base}/receiver-state`)).body?.snapshot ?? null;
-const load = (request, contentId) => call(request, 'GET', `${base}/load?play=${encodeURIComponent(contentId)}&dispatchId=${randomUUID()}`);
+// `asDevice` sends the device header every app request carries, so the
+// screen sees a person's device; without it the load is an automation (HA).
+const load = (request, contentId, { asDevice } = {}) => call(request, 'GET',
+  `${base}/load?play=${encodeURIComponent(contentId)}&dispatchId=${randomUUID()}`, undefined,
+  asDevice ? { 'X-Daylight-Device': asDevice } : undefined);
 
 // Opening the dev-server page can lose module fetches to a host network
 // change (Chromium net::ERR_NETWORK_CHANGED) and park the page in the app's
@@ -74,15 +78,22 @@ test('Add only: another device\'s Play is added, says so, and is published (RQ-P
   expect(set.status).toBe(200);
   await expect.poll(async () => (await state(request))?.controls?.addOnly, { timeout: 15000 }).toBe(true);
 
-  const dispatched = await load(request, DISCLOSURE);
+  const dispatched = await load(request, DISCLOSURE, { asDevice: phone.id });
   expect(dispatched.status).toBe(200);
   expect(dispatched.body).toMatchObject({ ok: true, appliedAs: 'add' });
   await expect.poll(async () => {
     const snap = await state(request);
     return snap?.currentItem?.contentId === EP_HOSPITAL && snap?.queue?.items?.some(item => item.contentId === DISCLOSURE);
   }, { timeout: 30000 }).toBe(true);
+  // An append reached the screen; nothing started.
   await expect.poll(async () => (await call(request, 'GET', `${base}/start-status`)).body?.status?.phase, { timeout: 30000 })
-    .toBe('started');
+    .toBe('queued');
+
+  // An automation (no device named — a Home Assistant button) always plays.
+  const automation = await load(request, EP_KEEPY);
+  expect(automation.status).toBe(200);
+  expect(automation.body).not.toHaveProperty('appliedAs');
+  await expect.poll(async () => (await state(request))?.currentItem?.contentId, { timeout: 120000 }).toBe(EP_KEEPY);
   await resetControls(request);
   await receiver.close();
 });
@@ -91,7 +102,7 @@ test('Screen notes name the change and its origin, group repeats, and Put it bac
   const receiver = await openReceiver(context, request);
   await startPlaying(request, EP_HOSPITAL);
   const volume = await call(request, 'PUT', `${base}/session/volume`, { level: 40, origin: phone });
-  expect([200, 403]).toContain(volume.status); // volume is not on the virtual allowlist; either way no note
+  expect(volume.status).toBe(200); // the screen applied it, and a volume change makes no note
   await expect(receiver.getByTestId('screen-note')).toHaveCount(0);
 
   expect((await call(request, 'POST', `${base}/session/transport`, { action: 'pause', origin: phone })).status).toBe(200);
