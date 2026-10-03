@@ -239,10 +239,11 @@ export function reduceDispatch(state, action) {
         title: item?.title ?? null,
         steps: [],
       };
+      // Only SETTLED confirmations are replaced: a running action still owns
+      // its Undo and may yet resolve to a failure that must be shown.
       if (record.phase === 'running' || record.phase === 'confirmed') {
         for (const [id, prior] of next) {
-          if (prior.targetId === targetId && prior.kind === kind
-            && (prior.phase === 'running' || prior.phase === 'confirmed')) next.delete(id);
+          if (prior.targetId === targetId && prior.kind === kind && prior.phase === 'confirmed') next.delete(id);
         }
       }
       next.set(attemptId, record);
@@ -260,6 +261,12 @@ export function reduceDispatch(state, action) {
         ordinal: ordinal ?? prev.ordinal,
         updatedAt: now(),
       });
+      if (phase === 'confirmed') {
+        for (const [id, prior] of next) {
+          if (id !== attemptId && prior.targetId === prev.targetId && prior.kind === prev.kind
+            && prior.phase === 'confirmed' && prior.createdAt <= prev.createdAt) next.delete(id);
+        }
+      }
       return { ...state, byId: next };
     }
     case 'REMOVED': {

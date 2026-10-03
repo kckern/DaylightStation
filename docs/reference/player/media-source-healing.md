@@ -162,7 +162,8 @@ Player's resilience config (`mediaResilienceConfig`) sets it; the default stays
 `SOURCE_UNAVAILABLE_MAX_MS` (30 min). The final poll is scheduled to land on the
 limit itself, not on the next 15 s step after it.
 
-**Owners hear the wait.** An owner that passes `onError` receives
+**Owners hear the wait.** An owner that passes the opt-in `onResilienceEvent`
+prop (only Media's `PlayerBridge`; `onError` owners see nothing new) receives
 `{ kind: 'source-wait', waiting: true, since, contentId }` when a wait opens and
 `{ kind: 'source-wait-ended', waiting: false, decision }` when it ends
 (`resume`, `retry`, `normal`, `gave-up`, or `abandoned` when the item changes).
@@ -176,19 +177,22 @@ back. At 60 s the item is skipped: "<title> skipped — file unavailable. Now
 playing <next>", with Retry (which plays the item again, re-asking the check).
 Storm guard: if the item after such a skip also enters a wait within 60 s, Media
 stops auto-skipping and holds on it with one "Library unavailable" notice.
-Fitness and the kiosks pass no option and no `onError`: they keep the 30-minute
-wait and the existing overlay.
+Fitness and the kiosks pass no option and no `onResilienceEvent`: they keep the
+30-minute wait and the existing overlay.
 
 **Readable but unplayable.** A code-4 element ("Format error") whose file the
 backend calls readable used to arm nothing: code 4 is outside the stall ladder,
 `normal` added nothing, and the pause that follows a failed load was read as the
 viewer's, which disarmed the startup deadline — the item sat on "Recovering…"
 forever and its owner never heard it failed (2026-10-03, found by the RELY.5a
-journey trace; not the healing wait). Now a pause while the Player itself is
-recovering is never a viewer pause, and such an element gets one fresh-URL
-reload (`media-error-unplayable`); the same failure again — a new error, or the
-startup-deadline re-check answering readable — exhausts with reason
-`media-error-unplayable`.
+journey trace; not the healing wait). Now a pause that lands on a dead pipeline
+(an element error that arrived while it was playing) is not a viewer pause —
+a real viewer pause always stands and also clears any armed startup deadline —
+and an element whose LIVE error is code 4 (never the latched signal, which
+survives an in-place reset) gets one fresh-URL remount
+(`media-error-unplayable`); the same failure again — a new error, or the
+startup-deadline re-check answering readable while the live element still
+reports code 4 — exhausts with reason `media-error-unplayable` (`attempts: 2`).
 
 ## Configuration
 

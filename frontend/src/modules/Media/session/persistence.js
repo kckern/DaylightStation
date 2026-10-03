@@ -52,14 +52,14 @@ const isText = (value) => typeof value === 'string' && value.length > 0;
 /**
  * Structural validity of a persisted snapshot (RELY.7a): only data this
  * generation can restore truthfully is accepted. Lenient on optional
- * metadata (the v1 contract never required it), strict on everything the
- * session, queue, config and resume spot are rebuilt from.
+ * metadata (the v1 contract never required it), strict on the structure the
+ * session, queue and config are rebuilt from. A bad resume spot is not
+ * structural breakage: it is coerced to 0 by `normalizePosition`.
  */
 export function isRestorableSnapshot(snapshot) {
   if (!snapshot || typeof snapshot !== 'object') return false;
   if (!isText(snapshot.sessionId) || !SESSION_STATES.has(snapshot.state)) return false;
   if (snapshot.currentItem !== null && (typeof snapshot.currentItem !== 'object' || !isText(snapshot.currentItem?.contentId))) return false;
-  if (typeof snapshot.position !== 'number' || !Number.isFinite(snapshot.position) || snapshot.position < 0) return false;
   const queue = snapshot.queue;
   if (!queue || !Array.isArray(queue.items)) return false;
   if (!queue.items.every((item) => item && isText(item.queueItemId) && isText(item.contentId))) return false;
@@ -85,8 +85,10 @@ export function readPersistedSession() {
   if (!parsed || typeof parsed !== 'object') return 'malformed';
   if (parsed.schemaVersion !== PERSIST_SCHEMA_VERSION) return 'schema-mismatch';
   if (!isRestorableSnapshot(parsed.snapshot)) return 'malformed';
+  const position = parsed.snapshot.position;
+  const safePosition = typeof position === 'number' && Number.isFinite(position) && position >= 0 ? position : 0;
   return {
-    snapshot: parsed.snapshot,
+    snapshot: safePosition === position ? parsed.snapshot : { ...parsed.snapshot, position: safePosition },
     wasPlayingOnUnload: !!parsed.wasPlayingOnUnload,
   };
 }

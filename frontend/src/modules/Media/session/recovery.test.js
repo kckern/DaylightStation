@@ -87,6 +87,16 @@ describe('persisted data is version-valid or discarded (RELY.7a)', () => {
     localStorage.setItem(PERSIST_KEY, JSON.stringify({ schemaVersion: 1, snapshot: persisted() }));
     expect(readPersistedSession().snapshot.sessionId).toBe('old');
   });
+
+  it('review (e): a non-finite or negative spot is coerced to 0, not discarded', () => {
+    for (const position of [null, 'abc', -5]) {
+      localStorage.setItem(PERSIST_KEY, JSON.stringify({ schemaVersion: 1, snapshot: { ...persisted(), position } }));
+      const read = readPersistedSession();
+      expect(read).not.toBe('malformed');
+      expect(read.snapshot.position).toBe(0);
+      expect(read.snapshot.queue.items).toHaveLength(2);
+    }
+  });
 });
 
 describe('local playback problems (RELY.5a)', () => {

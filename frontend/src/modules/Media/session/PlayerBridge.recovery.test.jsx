@@ -7,6 +7,7 @@ import { render, act } from '@testing-library/react';
 import { PlayerHostProvider } from './PlayerHostProvider.jsx';
 import { LocalSessionContext } from './LocalSessionContext.js';
 import { createLocalSessionController } from './LocalSessionController.js';
+import mediaLog from '../logging/mediaLog.js';
 
 vi.mock('../logging/mediaLog.js', () => {
   const stub = new Proxy({}, { get: (t, k) => (t[k] ??= vi.fn()) });
@@ -65,18 +66,19 @@ describe('PlayerBridge recovery', () => {
     mount(controller);
     act(() => { controller.transport.play(); });
     const spy = vi.spyOn(controller, 'onPlayerError');
-    act(() => { latestProps.onError({ kind: 'resilience-exhausted', reason: 'stall', attempts: 3 }); });
+    act(() => { latestProps.onResilienceEvent({ kind: 'resilience-exhausted', reason: 'stall', attempts: 3 }); });
     expect(spy).toHaveBeenCalledWith(expect.objectContaining({ code: 'resilience-exhausted' }));
     expect(controller.problems.get()).toEqual(expect.objectContaining({ kind: 'skipped', item: expect.objectContaining({ contentId: 'plex:1' }) }));
   });
 
-  it('ignores a non-terminal media error that resilience may still recover', () => {
+  it('ignores a non-terminal media error that resilience may still recover, and passes no onError', () => {
     const controller = createLocalSessionController({ clientId: 'c1', persistedSnapshot: structuredClone(restored) });
     mount(controller);
     act(() => { controller.transport.play(); });
     const spy = vi.spyOn(controller, 'onPlayerError');
-    act(() => { latestProps.onError({ kind: 'media-error', code: 2 }); });
+    act(() => { latestProps.onResilienceEvent({ kind: 'media-error', code: 2 }); });
     expect(spy).not.toHaveBeenCalled();
+    expect(latestProps.onError).toBeUndefined();
   });
 
   it('RELY.5a: gives the Player a 60 s refused-source limit and routes its wait reports to the controller', () => {
@@ -85,9 +87,9 @@ describe('PlayerBridge recovery', () => {
     act(() => { controller.transport.play(); });
     expect(latestProps.mediaResilienceConfig).toEqual(expect.objectContaining({ monitor: expect.objectContaining({ sourceUnavailableMaxMs: 60_000 }) }));
     const wait = vi.spyOn(controller, 'onPlayerSourceWait');
-    act(() => { latestProps.onError({ kind: 'source-wait', waiting: true, since: 1, contentId: 'plex:1' }); });
+    act(() => { latestProps.onResilienceEvent({ kind: 'source-wait', waiting: true, since: 1, contentId: 'plex:1' }); });
     expect(wait).toHaveBeenLastCalledWith(expect.objectContaining({ waiting: true, contentId: 'plex:1' }));
-    act(() => { latestProps.onError({ kind: 'source-wait-ended', waiting: false, decision: 'resume', contentId: 'plex:1' }); });
+    act(() => { latestProps.onResilienceEvent({ kind: 'source-wait-ended', waiting: false, decision: 'resume', contentId: 'plex:1' }); });
     expect(wait).toHaveBeenLastCalledWith(expect.objectContaining({ waiting: false, decision: 'resume' }));
   });
 
@@ -96,7 +98,33 @@ describe('PlayerBridge recovery', () => {
     mount(controller);
     act(() => { controller.transport.play(); });
     const spy = vi.spyOn(controller, 'onPlayerError');
-    act(() => { latestProps.onError({ kind: 'resilience-exhausted', reason: 'source-unavailable-gave-up' }); });
+    act(() => { latestProps.onResilienceEvent({ kind: 'resilience-exhausted', reason: 'source-unavailable-gave-up' }); });
     expect(spy).toHaveBeenCalledWith(expect.objectContaining({ code: 'source-unavailable-gave-up' }));
+  });
+
+  it('review nit: a give-up followed by the Player\'s own clear advances exactly once (repeat one)', () => {
+    const one = structuredClone(restored);
+    one.queue.items = [one.queue.items[0]];
+    one.config.repeat = 'one';
+    const controller = createLocalSessionController({ clientId: 'c1', persistedSnapshot: one });
+    mount(controller);
+    act(() => { controller.transport.play(); });
+    mediaLog.playbackAdvanced.mockClear();
+    act(() => { latestProps.onResilienceEvent({ kind: 'resilience-exhausted', reason: 'stall' }); });
+    // The same Player (same content) clears after the bridge has re-rendered.
+    act(() => { latestProps.clear(); });
+    expect(mediaLog.playbackAdvanced).toHaveBeenCalledTimes(1);
+  });
+
+  it('review nit: a give-up followed by clear advances exactly once when the next entry has the same content', () => {
+    const dup = structuredClone(restored);
+    dup.queue.items = [entry(1, 'Arrival'), { ...entry(1, 'Arrival'), queueItemId: 'q-1b' }, entry(2, 'Nova')];
+    const controller = createLocalSessionController({ clientId: 'c1', persistedSnapshot: dup });
+    mount(controller);
+    act(() => { controller.transport.play(); });
+    act(() => { latestProps.onResilienceEvent({ kind: 'resilience-exhausted', reason: 'stall' }); });
+    // The same Player (same content id) clears after the bridge re-rendered.
+    act(() => { latestProps.clear(); });
+    expect(controller.getSnapshot().queue.items[controller.getSnapshot().queue.currentIndex].queueItemId).toBe('q-1b');
   });
 });

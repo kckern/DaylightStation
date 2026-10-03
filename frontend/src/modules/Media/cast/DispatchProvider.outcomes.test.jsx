@@ -159,4 +159,36 @@ describe('DispatchProvider outcomes', () => {
     expect(controllers.get('den-tv')?.transport.stop.mock.calls.length ?? 0).toBe(0);
     expect(mediaLog.outcomeStopped).toHaveBeenCalledWith(expect.objectContaining({ attemptId: id, targetId: 'office-tv' }));
   });
+
+  it('review (c): Retry retires the failed record it replays', async () => {
+    DaylightAPI.mockResolvedValue({ ok: false, error: 'receiver rejected', failedStep: 'load' });
+    const { result } = harness();
+    let failed;
+    await act(async () => { [failed] = await result.current.dispatchToTarget({ targetIds: ['office'], play: arrival.contentId, mode: 'fork' }); });
+    await settle();
+    DaylightAPI.mockReturnValue(new Promise(() => {}));
+    let retried;
+    await act(async () => { [retried] = await result.current.retry(failed); });
+    expect(result.current.outcomes.has(failed)).toBe(false);
+    expect(result.current.outcomes.get(retried)).toEqual(expect.objectContaining({ targetId: 'office', phase: 'running' }));
+    // A second Retry on the retired id does nothing.
+    DaylightAPI.mockClear();
+    await act(async () => { await result.current.retry(failed); });
+    expect(DaylightAPI).not.toHaveBeenCalled();
+  });
+
+  it('review (d): a superseded attempt cannot be replayed afterwards', async () => {
+    DaylightAPI.mockResolvedValue({ ok: true });
+    const { result } = harness();
+    let first;
+    await act(async () => { [first] = await result.current.dispatchToTarget({ targetIds: ['office'], play: arrival.contentId, mode: 'fork' }); });
+    await settle();
+    act(() => homelineCallback({ dispatchId: first, topic: 'homeline:office', step: 'playback', status: 'confirmed' }));
+    await act(async () => { await result.current.dispatchToTarget({ targetIds: ['office'], play: disclosure.contentId, mode: 'fork' }); });
+    await settle();
+    expect(result.current.outcomes.has(first)).toBe(false);
+    DaylightAPI.mockClear();
+    await act(async () => { await result.current.retry(first); });
+    expect(DaylightAPI).not.toHaveBeenCalled();
+  });
 });

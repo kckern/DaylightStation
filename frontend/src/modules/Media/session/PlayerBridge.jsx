@@ -242,8 +242,20 @@ export function PlayerBridge() {
   }, [currentItem?.contentId, playbackGeneration]);
 
   const contentId = currentItem?.contentId ?? null;
+  // A Player that gives up reports it (onResilienceEvent) and THEN clears. The
+  // failure already advanced the queue; when the next visit has the same
+  // content (repeat one, or a duplicate entry) the same Player instance stays
+  // mounted and its clear lands on the NEW visit's callback, advancing twice
+  // (review nit). The clear that trails a forwarded failure is ignored.
+  const failureClearRef = useRef(null);
+  const STALE_CLEAR_WINDOW_MS = 2000;
   const onClear = useCallback(() => {
     if (playbackGenerationRef.current !== playbackGeneration) return;
+    const failure = failureClearRef.current;
+    if (failure && Date.now() - failure.at < STALE_CLEAR_WINDOW_MS) {
+      failureClearRef.current = null;
+      return;
+    }
     controller.onPlayerEnded(contentId);
   }, [controller, contentId, playbackGeneration]);
 
@@ -466,6 +478,7 @@ export function PlayerBridge() {
     }
     if (error?.kind !== 'resilience-exhausted') return;
     const sourceGaveUp = error.reason === 'source-unavailable-gave-up';
+    failureClearRef.current = { at: Date.now() };
     controller.onPlayerError?.({
       message: error.reason ? `Playback gave up (${error.reason})` : 'Playback gave up',
       code: sourceGaveUp ? 'source-unavailable-gave-up' : 'resilience-exhausted',
@@ -525,7 +538,7 @@ export function PlayerBridge() {
       play={playProp}
       clear={onClear}
       onProgress={onProgress}
-      onError={onPlayerError}
+      onResilienceEvent={onPlayerError}
       mediaResilienceConfig={MEDIA_RESILIENCE_CONFIG}
       forceShader={forceShader ?? undefined}
       ignoreKeys
