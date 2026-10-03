@@ -186,7 +186,7 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
     // spot.
     const previous = data[contentId];
     if (rest.spots === undefined && previous?.spots !== undefined) rest.spots = previous.spots;
-    if (!rest.lastDevice && previous?.lastDevice) rest.lastDevice = previous.lastDevice;
+    if (state.lastDevice === undefined && previous?.lastDevice) rest.lastDevice = previous.lastDevice;
 
     data[contentId] = rest;
     this._writeFile(storagePath, data);

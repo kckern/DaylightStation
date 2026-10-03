@@ -39,7 +39,7 @@ const spots = {
 };
 
 describe('MarkContentWatched', () => {
-  it('watched: full playhead, completedAt stamped, spots closed, lastPlayed kept', async () => {
+  it('watched: full playhead, completedAt stamped, spots and lastDevice cleared, lastPlayed kept', async () => {
     const mem = memory([{ namespaceId: 'plex/6_movies', progress: new MediaProgress({
       contentId: 'plex:1', playhead: 4800, duration: 7200, playCount: 2, lastPlayed: '2026-10-01 21:00:00', spots, lastDevice: 'fleet:livingroom-tv',
     }) }]);
@@ -50,7 +50,7 @@ describe('MarkContentWatched', () => {
     expect(state.isWatched()).toBe(true);
     expect(state.completedAt).toBe('2026-10-02 12:00:00');
     expect(state.spots).toEqual({});
-    expect(state.lastDevice).toBe('fleet:livingroom-tv');
+    expect(state.lastDevice).toBeNull();
     expect(state.lastPlayed).toBe('2026-10-01 21:00:00');
     expect(state.playCount).toBe(2);
     expect(result).toMatchObject({ contentId: 'plex:1', watched: true, namespaces: ['plex/6_movies'] });
@@ -115,6 +115,13 @@ describe('MarkContentWatched', () => {
     });
     await mark.execute({ contentId: 'abs:b1', watched: true });
     expect(progressSyncService.pushMarkedState).toHaveBeenCalledWith('abs:b1', 'b1', { currentTime: expect.any(Number), isFinished: true });
+  });
+
+  it('rejects an id whose source the catalog cannot resolve, writing nothing', async () => {
+    const mem = memory();
+    const mark = build({ mediaProgressMemory: mem, contentCatalog: catalog({ resolveSource: vi.fn(() => null) }) });
+    await expect(mark.execute({ contentId: 'nosuch:1', watched: true })).rejects.toMatchObject({ name: 'ValidationError', code: 'UNKNOWN_SOURCE' });
+    expect(mem.saveProgress).not.toHaveBeenCalled();
   });
 
   it('rejects an id without a source', async () => {

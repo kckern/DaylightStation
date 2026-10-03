@@ -11,9 +11,13 @@
  *                 deliberate exception to "completedAt is never cleared": the
  *                 rule protects first completion from playback writes, and a
  *                 person saying "I have not seen this" overrides it.
- * Both close every screen's spot (`spots: {}`) so the item leaves carry-on;
- * `lastDevice`, `lastPlayed`, `playCount` and `watchTime` are kept — marking
+ * Both close every screen's spot (`spots: {}`) and clear `lastDevice`, so the
+ * item leaves carry-on and later playback (with or without a device id) is
+ * judged afresh; `lastPlayed`, `playCount` and `watchTime` are kept — marking
  * is not playing.
+ *
+ * The source must resolve in the content catalog: an id nobody can play is
+ * refused (ValidationError UNKNOWN_SOURCE) rather than minting a progress file.
  *
  * Every namespace that already holds the item is updated (an item played from
  * a watchlist lives under the list's namespace as well as its source's); an
@@ -59,6 +63,9 @@ export class MarkContentWatched {
     }
     const source = id.slice(0, colon);
     const resolved = this.contentCatalog?.resolveSource?.(source, id) || null;
+    if (!resolved) {
+      throw new ValidationError(`Unknown content source: ${source}`, { code: 'UNKNOWN_SOURCE', field: 'contentId' });
+    }
 
     const holders = await this.#namespacesHolding(id);
     let targets = holders;
@@ -95,7 +102,7 @@ export class MarkContentWatched {
         watchTime: existing?.watchTime ?? 0,
         completedAt: watched ? (existing?.completedAt || at) : null,
         spots: {},
-        lastDevice: existing?.lastDevice ?? null,
+        lastDevice: null,
         now: this.nowEpoch(),
       });
       await this.mediaProgressMemory.saveProgress(state, namespaceId);

@@ -14,8 +14,9 @@ describe('normalizeSpotDeviceId', () => {
     expect(normalizeSpotDeviceId('fleet:livingroom-tv')).toBe('fleet:livingroom-tv');
     expect(normalizeSpotDeviceId('browser:c74fee96a6134c13')).toBe('browser:c74fee96a6134c13');
   });
-  it('treats a bare fleet name as a fleet device', () => {
-    expect(normalizeSpotDeviceId('livingroom-tv')).toBe('fleet:livingroom-tv');
+  it('requires the explicit prefix (no bare-name promotion)', () => {
+    expect(normalizeSpotDeviceId('livingroom-tv')).toBeNull();
+    expect(normalizeSpotDeviceId('legacy')).toBeNull();
   });
   it('refuses ephemeral ids, user-agent strings and junk', () => {
     expect(normalizeSpotDeviceId('ephemeral:abc')).toBeNull();
@@ -95,7 +96,11 @@ describe('openSpotsOf', () => {
     expect(spots).toEqual([{ deviceId: null, playhead: 1200, duration: 3600, percent: 33, lastPlayed: '2026-09-01 10:00:00' }]);
     expect(openSpotsOf({ playhead: 3500, duration: 3600 })).toEqual([]);
   });
-  it('a record whose spots were cleared (marked watched/unwatched) has no open spots', () => {
-    expect(openSpotsOf({ playhead: 1200, duration: 3600, spots: {}, lastDevice: 'fleet:a' })).toEqual([]);
+  it('history is a non-empty spots map: a cleared record falls back to its single playhead', () => {
+    // marked unwatched (playhead 0) / watched (100%): nothing open either way
+    expect(openSpotsOf({ playhead: 0, duration: 3600, spots: {}, lastDevice: 'fleet:a' })).toEqual([]);
+    expect(openSpotsOf({ playhead: 3600, duration: 3600, spots: {} })).toEqual([]);
+    // later header-less playback after a mark is still visible
+    expect(openSpotsOf({ playhead: 1200, duration: 3600, spots: {}, lastPlayed: 'x' })).toHaveLength(1);
   });
 });

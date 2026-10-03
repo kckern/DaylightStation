@@ -1,4 +1,6 @@
-import { normalizeSpotDeviceId, recordSpot } from '#domains/content/services/mediaSpots.mjs';
+import { normalizeSpotDeviceId, recordSpot, seedLegacySpot, retireLegacySpot } from '#domains/content/services/mediaSpots.mjs';
+
+const TERMINAL_STATUSES = new Set(['completed', 'stopped', 'ended']);
 
 /**
  * Record a playback heartbeat and coordinate its application-level side effects.
@@ -21,6 +23,9 @@ export class RecordPlaybackProgress {
     // Per-screen play ledger (PlayLedgerRecorder): one row per playback start.
     // Optional and advisory, like reportPlaybackSession.
     playLedger = null,
+    // (deviceId) => boolean. Composition answers from devices.yml for fleet
+    // ids; absent = every well-formed id is accepted.
+    isKnownSpotDevice = null,
     createMediaProgress = (props) => props,
     nowTimestamp,
     nowEpoch = () => Date.now(),
@@ -36,6 +41,7 @@ export class RecordPlaybackProgress {
     this.economyService = economyService;
     this.reportPlaybackSession = reportPlaybackSession;
     this.playLedger = playLedger;
+    this.isKnownSpotDevice = isKnownSpotDevice;
     this.createMediaProgress = createMediaProgress;
     this.nowTimestamp = nowTimestamp;
     this.nowEpoch = nowEpoch;
@@ -85,9 +91,18 @@ export class RecordPlaybackProgress {
     const estimatedDuration = normalizedPercent > 0
       ? Math.round(normalizedSeconds / (normalizedPercent / 100))
       : (itemMetadata?.duration ? Math.round(itemMetadata.duration / 1000) : 0);
+    let spotDevice = normalizeSpotDeviceId(spotDeviceId);
+    if (spotDevice && typeof this.isKnownSpotDevice === 'function' && !this.isKnownSpotDevice(spotDevice)) {
+      this.logger.warn?.('play.log.spot_device_unknown', { assetId, spotDeviceId: spotDevice });
+      spotDevice = null;
+    }
+    // With two screens on one item the shared playhead jumps between them, so
+    // the "how far did this report move" reference is this screen's own spot.
+    const ownSpot = spotDevice ? existingState?.spots?.[spotDevice] : null;
+    const referencePlayhead = ownSpot ? (Number(ownSpot.playhead) || 0) : (existingState?.playhead || 0);
     const sessionWatchTime = Number.isFinite(watched_duration)
       ? parseFloat(watched_duration)
-      : Math.max(0, normalizedSeconds - (existingState?.playhead || 0));
+      : Math.max(0, normalizedSeconds - referencePlayhead);
     const existingWatchTime = existingState?.watchTime ?? 0;
     const newWatchTime = existingWatchTime + sessionWatchTime;
     const statePercent = estimatedDuration > 0
@@ -95,15 +110,14 @@ export class RecordPlaybackProgress {
       : 0;
     const completedAt = existingState?.completedAt
       || (statePercent >= 90 ? this.nowTimestamp() : null);
-    const spotDevice = normalizeSpotDeviceId(spotDeviceId);
     const lastPlayed = this.nowTimestamp();
     const spotFields = spotDevice
       ? {
-        spots: recordSpot(existingState?.spots, spotDevice, {
+        spots: retireLegacySpot(recordSpot(seedLegacySpot(existingState), spotDevice, {
           playhead: normalizedSeconds,
           duration: estimatedDuration,
           at: lastPlayed,
-        }),
+        }), normalizedSeconds),
         lastDevice: spotDevice,
       }
       : {};
@@ -113,7 +127,7 @@ export class RecordPlaybackProgress {
       duration: estimatedDuration,
       percent: statePercent,
       playCount: (existingState?.playCount ?? 0)
-        + (!existingState || normalizedSeconds < (existingState.playhead || 0) ? 1 : 0),
+        + (!existingState || normalizedSeconds < referencePlayhead ? 1 : 0),
       lastPlayed,
       watchTime: newWatchTime > 0 ? Number(newWatchTime.toFixed(3)) : 0,
       completedAt,
@@ -156,7 +170,15 @@ export class RecordPlaybackProgress {
       }
     }
 
-    if (this.playLedger && spotDevice) {
+    const terminal = naturalEnd === true || TERMINAL_STATUSES.has(status);
+    if (this.playLedger && spotDevice && terminal) {
+      // A stop/finish report ends the screen's session; it is never a start.
+      try {
+        await this.playLedger.end?.({ deviceId: spotDevice, at: this.nowEpoch() });
+      } catch (error) {
+        this.logger.warn?.('play.log.ledger_failed', { assetId, error: error.message });
+      }
+    } else if (this.playLedger && spotDevice) {
       try {
         await this.playLedger.observe({
           deviceId: spotDevice,
