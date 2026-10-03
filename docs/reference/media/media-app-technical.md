@@ -1112,6 +1112,71 @@ opened after a failed start still shows it.
 - `backend/tests/unit/suite/0_system/eventbus/WebSocketEventBus.deviceStart.test.mjs` — routing + replay
 - `backend/src/5_composition/composition-contract-registry.test.mjs` (`devices.start-status-reaches-every-house-view`)
 
+### 4.11 Client side of the session controls, moves and several screens (batch B)
+
+**One controls surface.** `useSessionControls(target)` returns `{ controls,
+actions, available, reason, supports }` for this device or a screen:
+`controls` is the §9.14 block (this device: `controller.sessionControls.getState()`;
+a screen: its published `snapshot.controls`); `actions` mirrors
+`controller.sessionControls` on both. A screen that publishes no `controls`
+shows every control unavailable with a reason; a browser target has none.
+
+**This device's controls** (`session/localSessionControls.js`) run the same
+`createScreenSessionControls` state machine and `createContinuationResolver`
+as screens, bound by ports: the natural end (`onPlayerEnded`) consults it
+first; a minutes timer fades `controller.output` (a multiplier PlayerBridge
+applies on top of the volume, never the volume setting) and then **pauses**
+(item and spot kept); `resumeSleep` adopts the set position; a similar batch
+is one item action with `addedBy: "auto-continue"` (whitelisted, with
+`type: "episode"`, by `queueOps.toQueueItem`). `setAddOnly`/`putBack` answer
+`UNSUPPORTED` (they belong to a screen other devices play to). End of queue,
+stop after this one and the sleep resume point persist per browser in
+`localStorage` `media-app.session-controls.v1:browser:<clientId>`.
+
+**Origin.** `PeekProvider` gives every remote controller
+`origin: { kind: "device", id: "browser:<clientId>", name: <display name ≤ 80> }`,
+read at send time, so screens name the device in notes.
+
+**Add only result.** A `homeline` `load` step or `/load` result carrying
+`appliedAs: "add"` turns that attempt into an add (`kind`/`operation: "add"`,
+`appliedAs: "add"`), resolved by its `queue` step and read as
+"Added X to Y (Add only is on) · Nth in line".
+
+**Add to this queue.** `SearchLauncherContext.openAddToQueue({ deviceId, name })`
+(provided by the shell) opens `SearchMode` with `addTo`: every pick is
+`useContentDispatch().addToScreen(deviceId, id, item)` — an `add` item action
+to that one screen — and the surface closes. The aim is not read or written.
+
+**Several screens.** The aim names up to three known screens
+(`"Kitchen + Living Room"`), else `"N screens"`. Rooms come from
+`GET /api/v1/media/screens` (cached 60 s; fleet `location` as fallback); two
+or more chosen screens sharing a room show the drift warning. The registry
+holds no room adjacency, so "neighbouring" rooms are not detected.
+Line up seeks the steered target to another's reported spot
+(`cast/reportedSpot.js`: position + time since heard × rate, capped at the
+duration).
+
+**Move between screens** (`cast/screenMove.js`). Source = the screen's last
+published snapshot with its spot carried forward; it must carry
+`meta.playbackOwner`. Destination first: a screen through the typed hand-off
+(`capture` → `start`); if that is refused outright (an idle screen answers
+`INVALID_CAPTURE`) or the capture never confirms, through
+`POST /device/:id/load` `{ mode: "adopt" }`, counted only once that screen
+reports the same item (45 s). This device adopts locally. Only after the
+destination is adopted and the source still has the same owner revision is
+the source stopped, by `POST /session/claim` (stop with `intent: "move"`, so
+the source shows "Moved by …"). Any other result leaves the source playing.
+
+**Player completion guard.** `Player.beginRendererBoundary` (a new owner
+operation on the mounted content: sleep resume, Put it back, a same-item
+adopt) resets the duplicate-completion key, so the resumed item's next
+natural end is a new completion.
+
+**Lock screen** (`session/useMediaSession.js`). Local playback publishes
+`navigator.mediaSession` metadata (title, show/album or artist, artwork),
+`playbackState`, `setPositionState` (≤ every 5 s) and play / pause / stop /
+next / previous / seek handlers that call the same session controller.
+
 ---
 
 ## 5. Reserved
@@ -1203,6 +1268,12 @@ Device MUST:
 5. Broadcast adopted snapshot.
 
 On any failure mid-adoption, device MUST reset to idle and ack with error.
+
+Screens adopt it through the restore path (`ScreenActionHandler`
+`media:adopt-snapshot` → the same owner bootstrap + adopt as
+`media:restore-snapshot`, playing unless `autoplay: false`). Before 2026-10-03
+the command was acknowledged and then dropped, so a move to an idle screen
+could never start there.
 
 #### 6.2.5 `command: "system"`
 `reset`, `reload`, `sleep`, `wake`. Ported from existing `useScreenCommands`
@@ -1861,6 +1932,14 @@ Screen session controls (component `ScreenSessionControls` / `ScreenSessionContr
 | `natural-end-policy-handled` (playback log) | info | Player deferred to the screen policy. | `assetId`, `hasNext` |
 | `session-control.session` (backend) | info/warn | Session action outcome. | `deviceId`, `action`, `ok`, `code` |
 | `device-start-status.changed` (backend) | info/warn | Start status phase change. | `deviceId`, `dispatchId`, `phase`, `error` |
+| `session-controls.command` / `.result` / `.failed` | info/warn | A session control pressed for this device or a screen (sleep timer, countdown, stop after this one, Add only, end of queue, Put it back). | `target` (`local` \| deviceId), `action`, `value`, `code` |
+| `session-controls.sleep-timer` / `.countdown` / `.end-of-queue` | info | This device's controls changed state (set, fading, stopped, cleared; countdown started/ended; similar added / nothing similar / stopped after current). | `target`, `state`, `mode`, `minutes`, `code`, `count` |
+| `session-controls.natural-end` | info | This device's natural end was consulted. | `contentId`, `nextContentId`, `decision` (`session-controls` \| `advance`) |
+| `media-session.bound` / `.unavailable` / `.action` / `.failed` | info/warn | Lock-screen / system controls for local playback. | `actions`, `action`, `seekTime`, `error` |
+| `add-to-queue.opened` / `.closed` | info | Add to this queue opened from a Remote / closed (`added` \| `dismissed`). | `deviceId`, `reason`, `contentId` |
+| `line-up.requested` / `.failed` | info/warn | Line up with another screen. | `target`, `withId`, `contentId`, `seconds` |
+| `aim.drift-warned` | info | Several screens chosen in one room (or the registry was unreadable). | `targetIds`, `rooms`, `state` |
+| `screen-move.initiated` / `.succeeded` / `.failed` | info/warn | Move to… between screens / to this device. | `sourceId`, `destinationId`, `operationId`, `path`, `status`, `reason`, `sourceStopped` |
 
 ### 10.2 Sampling
 

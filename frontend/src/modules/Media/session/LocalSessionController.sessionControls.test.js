@@ -256,3 +256,25 @@ describe('end of queue: stop, repeat, keep similar playing (RQ-STEER-19)', () =>
     expect(await c.sessionControls.putBack()).toMatchObject({ ok: false, code: 'UNSUPPORTED' });
   });
 });
+
+
+describe('Play after an item ended here', () => {
+  it('replays it from the start as a new visit, so its next end is a new end', async () => {
+    const resolveContinuation = vi.fn(async () => [{ id: 'plex:9', title: 'Nine', type: 'track', duration: 180 }]);
+    const { c, player } = makeController({ resolveContinuation });
+    c.queue.playNow(song('a'));
+    playing(c);
+    await c.sessionControls.setStopAfterCurrent(true);
+    c.onPlayerEnded('a');
+    expect(c.getSnapshot().state).toBe('ended');
+    await c.sessionControls.setEndOfQueue('similar');
+    c.transport.play();
+    expect(c.getSnapshot().state).toBe('loading');
+    expect(c.getSnapshot().position).toBe(0);
+    expect(player.play).toHaveBeenCalled();
+    playing(c);
+    c.onPlayerEnded('a');
+    await flush(); await flush(); await flush();
+    expect(c.getSnapshot().currentItem?.contentId).toBe('plex:9');
+  });
+});
