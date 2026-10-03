@@ -298,7 +298,9 @@ function TrayRow({ d, retry, removeDispatch, sendElsewhere, recordLocal, stopAtt
   // hasn't seen isn't handled.
   useEffect(() => {
     let ms = null;
-    if (isLocal && (phase === 'confirmed' || phase === 'running')) {
+    // A local action normally resolves at once; Move here waits on two
+    // screens, so its running row stays until it resolves.
+    if (isLocal && (phase === 'confirmed' || (phase === 'running' && d.kind !== 'moveHere'))) {
       ms = Math.max(LOCAL_LINGER_MS, d.undo ? d.undo.expiresAt - Date.now() : 0);
     } else if (!isLocal && phase === 'confirmed') ms = Math.max(CONFIRMED_LINGER_MS, d.undo ? d.undo.expiresAt - Date.now() : 0);
     else if (!isLocal && phase === 'sent') ms = SENT_RESOLUTION_TIMEOUT_MS;
@@ -307,7 +309,7 @@ function TrayRow({ d, retry, removeDispatch, sendElsewhere, recordLocal, stopAtt
     if (ms == null) return undefined;
     const t = setTimeout(() => removeDispatch(attemptId), ms);
     return () => clearTimeout(t);
-  }, [phase, quiet, isLocal, attemptId, removeDispatch, d.undo, d.startOver]);
+  }, [phase, quiet, isLocal, attemptId, removeDispatch, d.undo, d.startOver, d.kind]);
 
   const openRemote = () => {
     push('peek', { deviceId: targetId });

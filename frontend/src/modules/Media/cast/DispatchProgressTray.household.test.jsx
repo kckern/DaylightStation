@@ -62,6 +62,13 @@ describe('household outcomes in the tray', () => {
     expect(screen.getByTestId('dispatch-row-m')).toHaveTextContent('Moved Arrival here');
   });
 
+  it('a move still in progress is never cleared before it resolves', () => {
+    outcomes.set('mr', local({ attemptId: 'mr', kind: 'moveHere', phase: 'running', item: { contentId: 'plex:9', title: 'Arrival' } }));
+    renderTray();
+    act(() => { vi.advanceTimersByTime(60_000); });
+    expect(removeDispatch).not.toHaveBeenCalledWith('mr');
+  });
+
   it('says plainly when a household change failed', () => {
     outcomes.set('f', local({ attemptId: 'f', kind: 'favourite', phase: 'failed', reason: 'HTTP 500', item: { contentId: 'plex:9', title: 'Bluey' } }));
     renderTray();
