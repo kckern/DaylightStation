@@ -23,6 +23,7 @@ function makeSource(initial) {
   const listeners = new Set();
   return {
     ownerId: 'tv',
+    getActionOwner: () => (snap?.currentItem ? { ownerInstanceId: 'bound-player' } : null),
     getBareSnapshot: () => snap,
     getSnapshot: () => snap,
     subscribe: ({ onChange }) => { listeners.add(onChange); return () => listeners.delete(onChange); },
@@ -115,11 +116,12 @@ describe('ScreenSessionControlsHost', () => {
     expect(failed).toHaveBeenCalledWith(expect.objectContaining({ commandId: 'p1', code: 'PUT_BACK_UNAVAILABLE' }));
   });
 
-  it('registers the Player natural-end policy while mounted', () => {
+  it('registers the natural-end policy for the bound owner only, while mounted', () => {
     const { view } = mount(makeSource(playing));
-    expect(getNaturalEndPolicy()).toBeTypeOf('function');
+    expect(getNaturalEndPolicy('bound-player')).toBeTypeOf('function');
+    expect(getNaturalEndPolicy('school-lesson-player')).toBeNull();
     view.unmount();
-    expect(getNaturalEndPolicy()).toBeNull();
+    expect(getNaturalEndPolicy('bound-player')).toBeNull();
   });
 
   it('shows a screen note with Put it back, and the button restores', async () => {

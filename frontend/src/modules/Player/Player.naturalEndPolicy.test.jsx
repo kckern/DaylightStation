@@ -26,7 +26,7 @@ afterEach(() => { unregister(); cleanup(); });
 describe('Player natural-end policy seam (screen end-of-queue / countdown / sleep)', () => {
   it('offers the policy the finished and next items and lets it hold the advance', async () => {
     const policy = vi.fn(() => true);
-    unregister = setNaturalEndPolicy(policy);
+    unregister = setNaturalEndPolicy(policy, { isOwner: () => true });
     const clear = vi.fn();
     render(<Player play={[{ contentId: 'plex:1', title: 'One' }, { contentId: 'plex:2', title: 'Two' }]} clear={clear} />);
     await waitFor(() => expect(latest()?.contentId).toBe('plex:1'));
@@ -46,7 +46,7 @@ describe('Player natural-end policy seam (screen end-of-queue / countdown / slee
   });
 
   it('falls through to the default advance when the policy declines', async () => {
-    unregister = setNaturalEndPolicy(() => false);
+    unregister = setNaturalEndPolicy(() => false, { isOwner: () => true });
     render(<Player play={[{ contentId: 'plex:1' }, { contentId: 'plex:2' }]} clear={() => {}} />);
     await waitFor(() => expect(latest()?.contentId).toBe('plex:1'));
     act(() => { latest().advance(); });
@@ -55,7 +55,7 @@ describe('Player natural-end policy seam (screen end-of-queue / countdown / slee
 
   it('reports no next item at the end of the queue; finish() ends it the default way', async () => {
     let held;
-    unregister = setNaturalEndPolicy((ctx, actions) => { held = { ctx, actions }; return true; });
+    unregister = setNaturalEndPolicy((ctx, actions) => { held = { ctx, actions }; return true; }, { isOwner: () => true });
     const clear = vi.fn();
     render(<Player play={[{ contentId: 'plex:1' }]} clear={clear} />);
     await waitFor(() => expect(latest()?.advance).toBeTypeOf('function'));
@@ -76,11 +76,34 @@ describe('Player natural-end policy seam (screen end-of-queue / countdown / slee
 
   it('a policy stop lets the same item complete again after it is replayed (countdown cancel, then play to the end)', async () => {
     const policy = vi.fn((_ctx, actions) => { actions.stop(); return true; });
-    unregister = setNaturalEndPolicy(policy);
+    unregister = setNaturalEndPolicy(policy, { isOwner: () => true });
     render(<Player play={[{ contentId: 'plex:1' }, { contentId: 'plex:2' }]} clear={() => {}} />);
     await waitFor(() => expect(latest()?.contentId).toBe('plex:1'));
     act(() => { latest().advance(); });
     act(() => { latest().advance(); });
     expect(policy).toHaveBeenCalledTimes(2);
+  });
+
+  it('never consults the policy for a Player that is not the bound screen owner (e.g. a school lesson Player)', async () => {
+    const policy = vi.fn(() => true);
+    const isOwner = vi.fn(() => false);
+    unregister = setNaturalEndPolicy(policy, { isOwner });
+    const clear = vi.fn();
+    render(<Player play={{ contentId: 'plex:620707' }} clear={clear} />);
+    await waitFor(() => expect(latest()?.advance).toBeTypeOf('function'));
+    act(() => { latest().advance(); });
+    expect(isOwner).toHaveBeenCalledWith(expect.any(String));
+    expect(policy).not.toHaveBeenCalled();
+    expect(clear).toHaveBeenCalledTimes(1);
+  });
+
+  it('never consults a policy registered without an owner check', async () => {
+    const policy = vi.fn(() => true);
+    unregister = setNaturalEndPolicy(policy);
+    const clear = vi.fn();
+    render(<Player play={{ contentId: 'plex:620707' }} clear={clear} />);
+    await waitFor(() => expect(latest()?.advance).toBeTypeOf('function'));
+    act(() => { latest().advance(); });
+    expect(policy).not.toHaveBeenCalled();
   });
 });
