@@ -75,6 +75,29 @@ describe('device screen override routes', () => {
     expect(override.get('yellow-room-tablet')?.state).toBe('off');
   });
 
+  it('DELETE override releases an off window and resumes midi-wake', async () => {
+    override.set('yellow-room-tablet', 'off', 30);
+    let resumed = 0;
+    const pianoMidiWakeService = { suppressWakeUntil() {}, resumeWake: () => { resumed += 1; } };
+    const app = makeApp({ device: makeDevice(false), screenOverrideService: override, pianoMidiWakeService });
+    const res = await request(app).delete('/device/yellow-room-tablet/screen/override');
+    expect(res.status).toBe(200);
+    expect(res.body.cleared?.state).toBe('off');
+    expect(override.get('yellow-room-tablet')).toBeNull();
+    expect(resumed).toBe(1);
+  });
+
+  it('DELETE override clears an on window without touching midi-wake', async () => {
+    override.set('yellow-room-tablet', 'on', 10);
+    let resumed = 0;
+    const pianoMidiWakeService = { suppressWakeUntil() {}, resumeWake: () => { resumed += 1; } };
+    const app = makeApp({ device: makeDevice(true), screenOverrideService: override, pianoMidiWakeService });
+    const res = await request(app).delete('/device/yellow-room-tablet/screen/override');
+    expect(res.body.cleared?.state).toBe('on');
+    expect(override.get('yellow-room-tablet')).toBeNull();
+    expect(resumed).toBe(0);
+  });
+
   it('GET override reflects the live window', async () => {
     override.set('yellow-room-tablet', 'off', 30);
     const app = makeApp({ device: makeDevice(false), screenOverrideService: override });

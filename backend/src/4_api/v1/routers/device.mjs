@@ -340,6 +340,8 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
     return result.kind === 'not_found' ? notFound(res) : res.json(result.body);
   }));
 
+  router.delete('/:deviceId/screen/override', asyncHandler(async (req, res) => res.json(screenService.clearOverride(req.params.deviceId))));
+
   router.get('/:deviceId/screen/:state', asyncHandler(async (req, res) => {
     const { deviceId, state } = req.params;
     if (state !== 'on' && state !== 'off') return res.status(400).json(buildErrorBody({ error: `Invalid screen state '${state}' (expected 'on' or 'off')` }));
