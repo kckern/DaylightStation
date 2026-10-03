@@ -45,6 +45,7 @@ describe('NotificationCategory', () => {
     expect(NotificationCategory.CEREMONY).toBe('ceremony');
     expect(NotificationCategory.DRIFT_ALERT).toBe('drift_alert');
     expect(NotificationCategory.GOAL_UPDATE).toBe('goal_update');
+    expect(NotificationCategory.SCHOOL).toBe('school');
     expect(NotificationCategory.SYSTEM).toBe('system');
   });
 
@@ -54,6 +55,8 @@ describe('NotificationCategory', () => {
   });
 
   it('returns all categories', () => {
-    expect(NotificationCategory.values()).toEqual(['ceremony', 'drift_alert', 'goal_update', 'system']);
+    // 'school' added in 703d64c52 for school pushes (teacher backlog nudge,
+    // card-ladder tuning); without it isValid() rejected their category.
+    expect(NotificationCategory.values()).toEqual(['ceremony', 'drift_alert', 'goal_update', 'school', 'system']);
   });
 });
