@@ -7,7 +7,7 @@ import {
   isRepeatMode,
   TRANSPORT_INTENTS,
 } from './commands.mjs';
-import { validateSessionActionParams, isEndOfQueueMode, END_OF_QUEUE_MODES } from './sessionControls.mjs';
+import { validateSessionActionParams, isEndOfQueueMode, END_OF_QUEUE_MODES, ORIGIN_NAME_MAX_LENGTH } from './sessionControls.mjs';
 import { validateSessionSnapshot, validatePlayableItem } from './shapes.mjs';
 import { validateHandoffParams, validateHandoffResult } from './handoff.mjs';
 
@@ -68,7 +68,9 @@ function validateOrigin(origin, errors, prefix = 'origin') {
     errors.push(`${prefix}: must be object when present`);
     return;
   }
-  if (origin.name !== undefined && !isStr(origin.name)) errors.push(`${prefix}.name: must be non-empty string when present`);
+  if (origin.name !== undefined && (!isStr(origin.name) || origin.name.length > ORIGIN_NAME_MAX_LENGTH)) {
+    errors.push(`${prefix}.name: must be a non-empty string of at most ${ORIGIN_NAME_MAX_LENGTH} characters when present`);
+  }
   if (origin.kind === 'device') {
     if (!isStr(origin.id)) errors.push(`${prefix}.id: required for device origin`);
   } else if (origin.kind === 'routine') {

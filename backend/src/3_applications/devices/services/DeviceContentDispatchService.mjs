@@ -19,13 +19,14 @@ export class DeviceContentDispatchService {
       error: `input device '${input.keyboard_id}' has no keymap entries`, keyboardId: input.keyboard_id };
     return { ok: true, keymapSize: entries.length };
   }
-  async load(deviceId, query) {
+  async load(deviceId, query, { origin } = {}) {
     const { dispatchId, ...contentQuery } = query;
     const action = typeof contentQuery.itemAction === 'string' ? JSON.parse(contentQuery.itemAction) : contentQuery.itemAction;
     const key = action?.operationId ? JSON.stringify([deviceId, action.operationId]) : null;
     if (key && !this.#itemActions.has(key)) this.#itemActions.set(key, { status: 'pending', tappedAt: action.tappedAt });
     const result = await this.#wake.execute(deviceId, contentQuery, {
       dispatchId,
+      ...(origin ? { origin } : {}),
       ...(key ? { isCancelled: () => this.#itemActions.get(key)?.cancelled === true } : {}),
     });
     this.#logger.info?.('device.router.load.complete', { deviceId, ok: result.ok,

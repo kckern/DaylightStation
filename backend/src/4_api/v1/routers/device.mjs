@@ -34,6 +34,13 @@ const notFound = res => res.status(404).json(buildErrorBody({ error: 'Device not
  */
 function commandOrigin(req) {
   const body = req.body || {};
+  // A fleet device that names itself in the header IS the caller; a body
+  // cannot claim to be another device. It may still supply a display name.
+  if (req.deviceIdSource === 'header' && /^fleet:/.test(req.deviceId || '')) {
+    const name = typeof body.origin?.name === 'string' && body.origin.name.length > 0 && body.origin.name.length <= 80
+      ? body.origin.name : undefined;
+    return { origin: { kind: 'device', id: req.deviceId, ...(name ? { name } : {}) } };
+  }
   if (body.origin !== undefined) {
     const checked = validateCommandEnvelope(buildCommandEnvelope({
       targetDevice: 'origin-check', commandId: 'origin-check', command: 'system', params: { action: 'wake' }, origin: body.origin,
@@ -447,7 +454,12 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
       dispatchService.logInputFailure(deviceId, input);
       return res.status(503).json({ ok: false, deviceId, failedStep: 'input', error: input.error, keyboardId: input.keyboardId });
     }
-    const result = await dispatchService.load(deviceId, query);
+    // Attribute the dispatch to the asking device (header). A caller that
+    // names no device (Home Assistant, a script) gets the automation origin
+    // WakeAndLoad stamps, which Add only exempts.
+    const loadOrigin = req.deviceIdSource === 'header' && nonEmpty(req.deviceId)
+      ? { origin: { kind: 'device', id: req.deviceId } } : {};
+    const result = await dispatchService.load(deviceId, query, loadOrigin);
     let status = 200; let extra = null;
     if (result.error === 'Device not found') status = 404;
     else if (result.failedStep === 'prewarm' && result.permanent === true) {

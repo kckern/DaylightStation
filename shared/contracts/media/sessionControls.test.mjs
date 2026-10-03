@@ -33,7 +33,7 @@ describe('session control enums', () => {
     expect(isEndOfQueueMode('similar')).toBe(true);
     expect(isEndOfQueueMode('shuffle')).toBe(false);
     expect(SCREEN_NOTE_KINDS).toEqual(['paused', 'stopped', 'replaced', 'moved']);
-    expect(START_PHASES).toEqual(['starting', 'delivered', 'started', 'failed']);
+    expect(START_PHASES).toEqual(['starting', 'delivered', 'queued', 'started', 'failed']);
   });
   it('adds the session command kind and the three session settings additively', () => {
     expect(COMMAND_KINDS).toContain('session');
@@ -94,6 +94,15 @@ describe('session command envelopes', () => {
     expect(validateCommandEnvelope(env('move')).valid).toBe(true);
     expect(validateCommandEnvelope(env('steal')).valid).toBe(false);
   });
+  it('caps the origin name length', () => {
+    const env = (name) => buildCommandEnvelope({
+      targetDevice: 'tv', command: 'transport', commandId: 'c', params: { action: 'pause' },
+      origin: { kind: 'device', id: 'x', name },
+    });
+    expect(validateCommandEnvelope(env('a'.repeat(80))).valid).toBe(true);
+    expect(validateCommandEnvelope(env('a'.repeat(81))).valid).toBe(false);
+  });
+
   it('rejects a non-string origin name', () => {
     const env = buildCommandEnvelope({
       targetDevice: 'tv', command: 'transport', commandId: 'c', params: { action: 'pause' },

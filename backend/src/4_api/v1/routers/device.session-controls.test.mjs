@@ -154,3 +154,39 @@ describe('GET /:deviceId/start-status', () => {
     expect(res.status).toBe(503);
   });
 });
+
+describe('origin precedence and the load route (B5)', () => {
+  it('prefers the fleet header over a body origin, keeping the body name', async () => {
+    const sessionService = service();
+    await request(appWith({ sessionService, deviceHeader: 'fleet:office-tv' }))
+      .post('/api/v1/device/tv-a/session/transport')
+      .send({ action: 'pause', commandId: 'c1', origin: { kind: 'device', id: 'fleet:livingroom-tv', name: 'Office' } });
+    expect(sessionService.transport).toHaveBeenCalledWith('tv-a', expect.objectContaining({
+      origin: { kind: 'device', id: 'fleet:office-tv', name: 'Office' },
+    }));
+  });
+
+  it('GET /load attributes the dispatch to the asking device', async () => {
+    const dispatchService = {
+      logLoadStart: vi.fn(), configured: () => true, checkInput: () => ({ ok: true }),
+      load: vi.fn().mockResolvedValue({ ok: true }),
+    };
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => { req.deviceId = 'browser:abc'; req.deviceIdSource = 'header'; next(); });
+    app.use('/api/v1/device', createDeviceRouter({ dispatchService }));
+    await request(app).get('/api/v1/device/tv-a/load?play=plex:1').expect(200);
+    expect(dispatchService.load).toHaveBeenCalledWith('tv-a', { play: 'plex:1' }, { origin: { kind: 'device', id: 'browser:abc' } });
+  });
+
+  it('GET /load from an un-named caller (HA) carries no device origin', async () => {
+    const dispatchService = {
+      logLoadStart: vi.fn(), configured: () => true, checkInput: () => ({ ok: true }),
+      load: vi.fn().mockResolvedValue({ ok: true }),
+    };
+    const app = express();
+    app.use('/api/v1/device', createDeviceRouter({ dispatchService }));
+    await request(app).get('/api/v1/device/tv-a/load?play=plex:1').expect(200);
+    expect(dispatchService.load).toHaveBeenCalledWith('tv-a', { play: 'plex:1' }, {});
+  });
+});
