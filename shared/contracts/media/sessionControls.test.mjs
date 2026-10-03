@@ -24,6 +24,7 @@ describe('session control enums', () => {
   it('lists every session action a screen accepts', () => {
     expect(SESSION_ACTIONS).toEqual([
       'sleep-timer', 'cancel-sleep-timer', 'resume-sleep', 'put-back', 'cancel-countdown', 'start-next-now',
+      'set-tracks', 'close-brief', 'music-behind',
     ]);
     expect(isSessionAction('put-back')).toBe(true);
     expect(isSessionAction('reboot')).toBe(false);
