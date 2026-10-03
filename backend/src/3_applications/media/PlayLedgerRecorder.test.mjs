@@ -42,3 +42,25 @@ describe('PlayLedgerRecorder', () => {
     await expect(recorder.observe({ deviceId: 'fleet:tv', contentId: 'plex:1', ...at(0) })).resolves.toEqual({ opened: true, written: false });
   });
 });
+
+describe('PlayLedgerRecorder live sessions (now playing for browsers and kiosks)', () => {
+  it('lists screens that reported within the window; end() and silence remove them', async () => {
+    const { recorder } = build();
+    await recorder.observe({ deviceId: 'browser:kid', contentId: 'plex:1', ...at(0) });
+    await recorder.observe({ deviceId: 'fleet:tv', contentId: 'plex:2', ...at(0) });
+    expect(recorder.nowPlaying({ nowEpoch: at(0).atEpoch + 30_000 })).toEqual([
+      { deviceId: 'browser:kid', screenId: null, contentId: 'plex:1', state: 'playing', position: null },
+      { deviceId: 'fleet:tv', screenId: 'tv', contentId: 'plex:2', state: 'playing', position: null },
+    ]);
+    recorder.end({ deviceId: 'browser:kid', at: at(1).atEpoch });
+    expect(recorder.nowPlaying({ nowEpoch: at(1).atEpoch }).map((s) => s.deviceId)).toEqual(['fleet:tv']);
+    expect(recorder.nowPlaying({ nowEpoch: at(0).atEpoch + 61_000 })).toEqual([]);
+  });
+
+  it('reaps sessions quiet past the resume gap so the registry does not grow', async () => {
+    const { recorder } = build();
+    for (let i = 0; i < 5; i += 1) await recorder.observe({ deviceId: `browser:b${i}`, contentId: 'plex:1', ...at(0) });
+    await recorder.observe({ deviceId: 'browser:late', contentId: 'plex:1', ...at(30) });
+    expect(recorder.liveCount).toBe(1);
+  });
+});

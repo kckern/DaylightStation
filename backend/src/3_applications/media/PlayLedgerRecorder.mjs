@@ -17,6 +17,9 @@ import { PlaybackSessionRegistry } from '#apps/content/runtime/PlaybackSessionRe
 import { buildPlayLedgerRow, selectPlays, PLAY_LEDGER_RETENTION_DAYS } from '#domains/media/playLedger.mjs';
 
 const DEFAULT_RESUME_GAP_MS = 15 * 60 * 1000;
+// A screen counts as "playing now" when it reported within this window
+// (play/log heartbeats arrive every few seconds, at worst ~20 s apart).
+const NOW_PLAYING_WINDOW_MS = 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export class PlayLedgerRecorder {
@@ -45,6 +48,9 @@ export class PlayLedgerRecorder {
    */
   async observe({ deviceId, contentId, atEpoch, startedAt, localTime, metadata = null, origin = null }) {
     if (!deviceId || !contentId) return { opened: false, written: false };
+    // Keep the registry bounded: sessions quiet past the resume gap are gone
+    // (and the next report for them is a new start anyway).
+    this.#registry.reapStale({ now: atEpoch, ttlMs: this.#resumeGapMs });
     const live = this.#registry.get(deviceId);
     if (live && live.contentId === contentId && live.isStale({ now: atEpoch, ttlMs: this.#resumeGapMs })) {
       this.#registry.close({ surfaceId: deviceId, at: atEpoch });
@@ -60,6 +66,36 @@ export class PlayLedgerRecorder {
       return { opened: true, written: false };
     }
   }
+
+  /**
+   * A screen stopped or finished: end its session (never a start).
+   * @param {{deviceId:string, at:number}} input
+   */
+  end({ deviceId, at }) {
+    if (!deviceId) return;
+    this.#registry.close({ surfaceId: deviceId, at });
+  }
+
+  /**
+   * What each play/log-reporting screen is playing now — the only live view
+   * of browsers and kiosks, which publish no device-state.
+   * @param {{nowEpoch:number, withinMs?:number}} input
+   * @returns {Array<{deviceId:string, screenId:string|null, contentId:string, state:'playing', position:null}>}
+   */
+  nowPlaying({ nowEpoch, withinMs = NOW_PLAYING_WINDOW_MS }) {
+    return this.#registry.live()
+      .filter((session) => !session.isStale({ now: nowEpoch, ttlMs: withinMs }))
+      .map((session) => ({
+        deviceId: session.surfaceId,
+        screenId: session.surfaceId.startsWith('fleet:') ? session.surfaceId.slice(6) : null,
+        contentId: session.contentId,
+        state: 'playing',
+        position: null,
+      }));
+  }
+
+  /** Open sessions held (for tests and diagnostics). */
+  get liveCount() { return this.#registry.size; }
 
   /**
    * Query the ledger: by device and/or ISO time window, newest first.

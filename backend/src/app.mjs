@@ -28,6 +28,7 @@ import { PlexSessionAdapter } from '#adapters/content/media/plex/PlexSessionAdap
 import { PlaybackSessionRegistry } from '#apps/content/runtime/PlaybackSessionRegistry.mjs';
 import { ReportPlaybackSession } from '#apps/content/usecases/ReportPlaybackSession.mjs';
 import { createPlexSurfaceIdentityResolver } from '#composition/modules/plexSurfaceIdentity.mjs';
+import { createSpotDevicePolicy } from '#composition/modules/spotDevicePolicy.mjs';
 import { createConfiguredLibbyRuntime } from '#composition/modules/libby.mjs';
 
 // Logging system
@@ -1213,6 +1214,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     economyService: economyApi.economyService,
     reportPlaybackSession,
     playLedger,
+    isKnownSpotDevice: createSpotDevicePolicy({ configService, householdId, logger: rootLogger.child({ module: 'content' }) }),
     libbyStreamService: libbyRuntime?.streamService,
     libbyCoverService: libbyRuntime?.coverService,
     logger: rootLogger.child({ module: 'content' })
@@ -1565,6 +1567,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   {
     const { HouseholdMediaMemoryService } = await import('./3_applications/media/HouseholdMediaMemoryService.mjs');
     const { LivenessNowPlayingReader } = await import('./3_applications/media/LivenessNowPlayingReader.mjs');
+    const { CompositeNowPlayingReader } = await import('./3_applications/media/CompositeNowPlayingReader.mjs');
     const { YamlHouseholdMediaListsDatastore } = await import('./1_adapters/persistence/yaml/YamlHouseholdMediaListsDatastore.mjs');
     const { nowTs24 } = await import('./0_system/utils/index.mjs');
     const { ProgressWriteRuntime } = await import('./1_adapters/content/ProgressWriteRuntime.mjs');
@@ -1573,7 +1576,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       listsStore: new YamlHouseholdMediaListsDatastore({ configService }),
       contentCatalog: contentServices.contentCatalog,
       markContentWatched: contentServices.markContentWatched,
-      nowPlaying: deviceLivenessService ? new LivenessNowPlayingReader({ livenessService: deviceLivenessService }) : null,
+      // Fleet device-state first, then play/log sessions — the only live view
+      // of browsers and kiosks.
+      nowPlaying: new CompositeNowPlayingReader([
+        ...(deviceLivenessService ? [new LivenessNowPlayingReader({ livenessService: deviceLivenessService })] : []),
+        ...(playLedger ? [{ list: () => playLedger.nowPlaying({ nowEpoch: Date.now() }) }] : []),
+      ]),
       nowTimestamp: nowTs24,
       runtime: new ProgressWriteRuntime(),
       playLedger,
