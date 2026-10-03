@@ -29,26 +29,27 @@ export function HomeTile({
           </span>
         )}
       </UnstyledButton>
-      <div className="home-tile-body">
-        <span className="home-tile-title" title={title}>{title}</span>
-        {lines.filter(Boolean).map((line, index) => (
-          <span key={index} className="home-tile-line" data-testid={`${testId}-line-${index}`}>{line}</span>
-        ))}
-      </div>
-      <div className="home-tile-actions">
-        {primary && (
-          <Button
-            size="sm"
-            className="home-tile-primary"
-            data-testid={primary.testId ?? `${testId}-play`}
-            leftSection={<IconPlayerPlayFilled size={14} aria-hidden />}
-            onClick={primary.onClick}
-          >
-            <span className="home-tile-primary-label">{primary.label}</span>
-          </Button>
-        )}
+      <div className="home-tile-head">
+        <div className="home-tile-body">
+          <span className="home-tile-title" title={title}>{title}</span>
+          {lines.filter(Boolean).map((line, index) => (
+            <span key={index} className="home-tile-line" data-testid={`${testId}-line-${index}`}>{line}</span>
+          ))}
+        </div>
         <ItemMenu item={item} onVerb={onVerb} favourite={favourite} watched={watched} removable={removable} testId={testId} />
       </div>
+      {primary && (
+        <Button
+          size="sm"
+          className="home-tile-primary"
+          data-testid={primary.testId ?? `${testId}-play`}
+          aria-label={primary.ariaLabel ?? primary.label}
+          leftSection={<IconPlayerPlayFilled size={14} aria-hidden />}
+          onClick={primary.onClick}
+        >
+          <span className="home-tile-primary-label">{primary.label}</span>
+        </Button>
+      )}
     </div>
   );
 }

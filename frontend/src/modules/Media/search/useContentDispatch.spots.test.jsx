@@ -44,6 +44,8 @@ describe('Play from a saved spot', () => {
     const { result } = renderHook(() => useContentDispatch());
     await act(async () => { result.current.dispatchLeafVerb('playNow', 'plex:1', { title: 'Arrival' }, { startAt: 4800 }); await Promise.resolve(); });
     expect(controller.getSnapshot().queue.items[0]).toMatchObject({ contentId: 'plex:1', seconds: 4800, resume: false });
+    // …and survives into the current item the Player is given.
+    expect(controller.getSnapshot().currentItem).toMatchObject({ contentId: 'plex:1', seconds: 4800, resume: false });
     expect(recordLocal).toHaveBeenCalledWith(expect.objectContaining({ startOver: true, resumedFrom: 4800 }));
   });
 

@@ -24,7 +24,7 @@ import { ResumeCard } from './ResumeCard.jsx';
 import { HomeTile } from './HomeTile.jsx';
 import { HOUSEHOLD_PATHS, suggestionsPath } from '../household/householdApi.js';
 import {
-  toItem, formatLeft, spotsSummary, whereLine, playedAtLabel, nowOnScreenIds, bareScreenId,
+  toItem, formatLeft, formatDuration, differingSpots, whereLine, playedAtLabel, nowOnScreenIds, bareScreenId,
 } from '../household/householdModel.js';
 import { useFavourites, householdResourceLogger } from '../household/useHousehold.js';
 import { useItemVerbs, isCollection } from '../household/useItemVerbs.jsx';
@@ -103,9 +103,14 @@ function suggestionLines(rowId, item, entry, nameFor) {
       return [item.grandparentTitle ?? entry?.grandparentTitle ?? null, 'Next episode'];
     }
     const source = entry ?? item;
-    const where = spotsSummary(entry, nameFor)
-      ?? [formatLeft(source.playhead, source.duration), whereLine(source, nameFor)].filter(Boolean).join(' · ');
-    return [item.grandparentTitle ?? entry?.grandparentTitle ?? null, where || null];
+    const spots = differingSpots(entry);
+    // FIND.10a/AC4: when screens hold different spots, each is its own line.
+    if (spots.length > 1) {
+      return [item.grandparentTitle ?? entry?.grandparentTitle ?? null,
+        ...spots.map(spot => `${formatDuration(spot.playhead)} on ${nameFor(spot.deviceId) ?? 'another screen'}`)];
+    }
+    return [item.grandparentTitle ?? entry?.grandparentTitle ?? null,
+      formatLeft(source.playhead, source.duration), whereLine(source, nameFor)];
   }
   if (rowId === 'time-of-day') return [item.days ? `${item.days} days at about this time` : null];
   if (rowId === 'new') return [item.latest?.title ? `New: ${item.latest.title}` : 'Recently added'];
@@ -156,7 +161,8 @@ export function HomeView() {
     const big = rowId === 'favourites';
     const cont = raw.continue?.contentId ? { id: raw.continue.contentId, title: raw.continue.title ?? null, itemType: 'leaf' } : null;
     let primary = null;
-    if (cont) primary = { label: `Continue ${cont.title ?? ''}`.trim(), onClick: () => run('playNow', cont) };
+    // R8: "Continue S2E7" — the part is named on its own line so the button never truncates it.
+    if (cont) primary = { label: 'Continue', ariaLabel: `Continue ${cont.title ?? ''}`.trim(), onClick: () => run('playNow', cont) };
     else if (collection || big) primary = { label: 'Play', onClick: () => run('playNow', item, { entry }) };
     const percent = raw.percent ?? entry?.percent ?? null;
     return (
@@ -165,7 +171,7 @@ export function HomeView() {
         item={item}
         size={big ? 'large' : 'normal'}
         testId={testId}
-        lines={suggestionLines(rowId, raw, entry, nameFor)}
+        lines={[...suggestionLines(rowId, raw, entry, nameFor), cont?.title ? `Next: ${cont.title}` : null]}
         progress={rowId === 'carry-on' ? percent : null}
         primary={primary}
         // FIND.12b: a favourite's picture opens it; elsewhere the tap rule.

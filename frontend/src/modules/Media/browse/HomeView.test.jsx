@@ -95,9 +95,11 @@ describe('HomeView start page', () => {
   it('carry on shows where it stopped, and both spots when screens differ', async () => {
     renderHome();
     const arrival = await screen.findByTestId('home-tile-carry-on-plex:1');
-    expect(arrival).toHaveTextContent('34 min left · Living Room TV');
-    await waitFor(() => expect(screen.getByTestId('home-tile-carry-on-plex:2'))
-      .toHaveTextContent("12 m on Kid's tablet · 1 h 20 m on Living Room TV"));
+    expect(arrival).toHaveTextContent('34 min left');
+    await waitFor(() => expect(arrival).toHaveTextContent('Living Room TV'));
+    const two = screen.getByTestId('home-tile-carry-on-plex:2');
+    await waitFor(() => expect(two).toHaveTextContent("12 m on Kid's tablet"));
+    expect(two).toHaveTextContent('1 h 20 m on Living Room TV');
   });
 
   it('shows playing items as "Now on <screen>" with Remote and Move here', async () => {
@@ -121,6 +123,7 @@ describe('HomeView start page', () => {
     const fav = await screen.findByTestId('home-tile-favourites-plex:100');
     fireEvent.click(within(fav).getByTestId('home-tile-favourites-plex:100-picture'));
     expect(dispatch).toHaveBeenCalledWith('plex:100', expect.objectContaining({ itemType: 'container' }));
+    expect(fav).toHaveTextContent('Next: Bingo');
     fireEvent.click(within(fav).getByRole('button', { name: /Continue Bingo/ }));
     expect(dispatchLeafVerb).toHaveBeenCalledWith('playNow', 'plex:105', expect.objectContaining({ id: 'plex:105' }));
   });

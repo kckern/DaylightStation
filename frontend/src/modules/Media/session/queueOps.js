@@ -74,6 +74,9 @@ function itemFields(entry) {
     ...(entry.album != null ? { album: entry.album } : {}),
     ...(entry.mediaType != null ? { mediaType: entry.mediaType } : {}),
     ...(entry.isLive != null ? { isLive: !!entry.isLive } : {}),
+    // PLAY.4a: an explicitly chosen start reaches the Player (see toQueueItem).
+    ...(Number.isFinite(entry.seconds) ? { seconds: entry.seconds } : {}),
+    ...(entry.resume === false ? { resume: false } : {}),
   };
 }
 

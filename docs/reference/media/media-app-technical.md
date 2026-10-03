@@ -875,6 +875,42 @@ Log events: `media.suggestions.built` (info: household build, counts, ms);
 `tests/isolated/adapter/persistence/{YamlScreenRegistryDatastore,YamlRoutineStores}.test.mjs`,
 composition contract `media.routine-loads-reach-history-and-ledger-origin`.
 
+### 2.10 Client use — start page, item verbs, Played earlier
+
+How the Media frontend consumes §2.4–2.9 (`frontend/src/modules/Media/household/`):
+
+- **Reads** go through `useApiResource` with `swr: true`: `suggestions?deviceId=<getDeviceId()>`,
+  `household/carry-on?limit=20`, `household/recent?limit=24`, `household/favourites`, `screens`,
+  `screens/<id>/played-earlier?limit=20` (Show more raises `limit` by 20, ≤ 200; refetched when
+  that screen's current item changes). A local queue panel asks for this device's id; a remote one
+  for its bare devices.yml key. The client applies no removed-filtering of its own.
+- **Writes** (`POST`/`DELETE household/favourites`, `POST household/removed`, `POST
+  household/watched`) each record one local outcome (`kind`: `favourite` | `unfavourite` | `hide`
+  | `watched` | `unwatched`), then invalidate every `media/household/*`, `media/suggestions*` and
+  `*/played-earlier` resource. A removal's outcome carries Undo for 10 s; Undo is `DELETE
+  household/removed?id=`.
+- **Screen names** come from `GET /screens` (id, bare `screenId`, and every alias); this device
+  reads "this device", an unregistered browser "another browser".
+- **Spots** (`householdModel.resumePlan`): open spots with playheads ≥ 30 s apart are different;
+  two or more → the person chooses (the play then carries `seconds` + `resume:false`, §9.4); one
+  (or an unfinished entry with only a shared playhead) → continue with server resume and mark the
+  outcome `startOver: true, resumedFrom`; none → plain play. Outcome records with `startOver`
+  offer **Start over**, which calls `transport.restartCurrent()` on that record's screen.
+- **Move here** adopts the fleet `device-state` snapshot of that screen through
+  `lifecycle.adoptSnapshot`, waits up to 20 s for native playing evidence of the same content
+  (`portability.getNativeObservation`), then stops the screen through its remote controller only
+  if `meta.playbackOwner` (owner + revision) is unchanged (`movePlayback.executeMove`).
+- **Progress**: every `play/log` carries `X-Daylight-Device`. When the session's `meta.origin` for
+  the current item is a routine or another device, PlayerBridge puts it on the Player's play prop
+  and `play/log` sends it as `origin` (`session/playOrigin.js`); this device's own default origin is
+  never sent.
+
+Log events (frontend, `mediaLog`): `home.shown`, `household.load-failed`,
+`household.favourite-toggled`, `household.removed`, `household.restored`,
+`household.watched-marked`, `household.action-failed`, `play.spot-choice-shown`,
+`play.spot-chosen`, `outcome.start-over`, `outcome.start-over-failed`, `move-here.initiated`,
+`move-here.succeeded`, `move-here.failed`, `played-earlier.shown`.
+
 ---
 
 ## 3. Reserved
@@ -1558,6 +1594,12 @@ Queue items added by "keep similar things playing" carry
   "priority": "upNext" | "queue"
 }
 ```
+
+Optional start fields (PLAY.4a): `seconds` (start offset, seconds) and
+`resume: false` are present only when the person chose where to start — a
+screen's saved spot, or `seconds: 0` for "From the beginning". The Player
+honours `seconds` over the server's `resume_position` and passes `resume=false`
+to `/play`. They ride `itemAction.item` to a remote Media receiver unchanged.
 
 ### 9.5 `DeviceConfig`
 ```json
