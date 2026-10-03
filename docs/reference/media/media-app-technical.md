@@ -815,7 +815,9 @@ through `modules/Player/lib/naturalEndPolicy.js`. A registration carries
 to (its action owner) is consulted — any other Player on the page (a school
 lesson, a composite view, the Media app) keeps its own end behaviour. Skips,
 failures and clears never reach it. A skip, seek, transport or queue command
-— or the current item changing by any route — supersedes a running countdown.
+— or the current item changing by any route — supersedes a running countdown,
+and the policy's `release()` lets go of the held end so the finished item can
+complete (and advance) again if it is played to its end once more.
 
 **Sleep timer (RQ-STEER-12).** `minutes` counts down (`remainingSeconds`
 published), fades the screen's output over the last 10 s (a transient
@@ -850,8 +852,13 @@ power, so **the screen persists its own session** in browser storage
   (never autoplay) through `media:restore-snapshot` — unless the page URL
   carried autoplay parameters, any start reached the screen since mount, or a
   playback owner is already registered;
+- the screen re-checks immediately before adopting: if any start reached it
+  after the restore began, or (power restore) the owner already holds an
+  item, the restore is refused with `RESTORE_SUPERSEDED`;
 - a restored session keeps its ORIGINAL `savedAt` and a `restored` mark until
-  somebody resumes it; a never-resumed one is not offered again. Records
+  a person or remote resumes it (a transport, seek, queue or local start
+  followed by `playing` — a transient `playing` report during the paused
+  adopt does not count); a never-resumed one is not offered again. Records
   older than 24 h and live items are never restored.
 
 **Verified by:**

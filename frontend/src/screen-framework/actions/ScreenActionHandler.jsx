@@ -213,12 +213,33 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
   // { snapshot, autoplay, reason, requestId } → `media:restore-snapshot-result`
   // { requestId, ok, code? }. Old owner proof is stripped: the owner mints a
   // new identity for the restored visit.
+  // Every start that can reach this screen bumps the epoch. A restore that
+  // sees the epoch move while it waited (owner bootstrap is async) was
+  // overtaken by a newer start — a WakeAndLoad play-now, a URL autoplay,
+  // local input — and must not adopt over it.
+  const startEpochRef = useRef(0);
+  useEffect(() => {
+    const bus = getActionBus();
+    const bump = () => { startEpochRef.current += 1; };
+    const unsubs = ['media:play', 'media:queue', 'media:queue-op', 'media:adopt-snapshot', 'media:handoff']
+      .map((event) => bus.subscribe(event, bump));
+    return () => unsubs.forEach((u) => u());
+  }, []);
+
   const handleRestoreSnapshot = useCallback((payload = {}) => {
     const { snapshot, autoplay = false, reason = 'restore', requestId } = payload;
     const reply = (result) => getActionBus().emit('media:restore-snapshot-result', { requestId, ...result });
     if (!snapshot?.queue?.items?.length) { reply({ ok: false, code: 'NOTHING_TO_RESTORE' }); return; }
+    const epochAtStart = startEpochRef.current;
     (async () => {
       if (!(await ensurePlaybackOwner(`restore-${reason}`))) return { ok: false, code: 'PLAYBACK_OWNER_UNAVAILABLE' };
+      // Re-checked immediately before adopting: nothing may have started here
+      // since the restore began, and a power restore never replaces an item
+      // the owner already holds.
+      const held = (sessionSource?.getBareSnapshot?.() ?? sessionSource?.getSnapshot?.())?.currentItem;
+      if (startEpochRef.current !== epochAtStart || (reason === 'power-restore' && held)) {
+        return { ok: false, code: 'RESTORE_SUPERSEDED' };
+      }
       const next = structuredClone(snapshot);
       next.meta = { ...next.meta };
       delete next.meta.playbackOwner;
