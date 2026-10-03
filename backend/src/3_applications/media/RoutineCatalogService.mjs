@@ -8,7 +8,9 @@
  *             when the app can see it; cached for `cacheTtlMs`
  *   snapshot  the last catalog imported through PUT /routines/catalog — the
  *             fallback where the app cannot see the HA config (the container)
- *   observed  routines seen in the routine history that neither of the above
+ *   observed  routines seen in the routine history, or as a routine origin
+ *             on play-ledger starts (last 30 days — e.g. a routine that drives
+ *             a browser left open on the wall), that neither of the above
  *             knows (e.g. a new HA automation since the last import)
  *
  * Routine → screen links come from #domains/media/routineCatalog.mjs and are
@@ -17,6 +19,7 @@
 import { extractRoutines, matchRoutines, routinesTargeting } from '#domains/media/routineCatalog.mjs';
 
 const DEFAULT_CACHE_TTL_MS = 60 * 1000;
+const LEDGER_OBSERVED_DAYS = 30;
 
 const slug = (text) => String(text ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'unnamed';
 const summary = ({ id, name, kind, source }) => ({ id, name, kind, source });
@@ -30,6 +33,7 @@ export class RoutineCatalogService {
   #live;
   #snapshots;
   #history;
+  #ledger;
   #clock;
   #ttl;
   #logger;
@@ -41,11 +45,13 @@ export class RoutineCatalogService {
    * @param {Array<{name:string, available:Function, read:Function}>} [deps.liveSources]
    * @param {import('./ports/IRoutineSnapshotDatastore.mjs').IRoutineSnapshotDatastore} [deps.snapshots]
    * @param {{load: Function}} [deps.history] - routine history runs (observed routines)
+   * @param {{plays: Function}} [deps.playLedger] - ledger starts with routine origins (observed routines)
    */
-  constructor({ liveSources = [], snapshots = null, history = null, clock = Date, cacheTtlMs = DEFAULT_CACHE_TTL_MS, logger = console } = {}) {
+  constructor({ liveSources = [], snapshots = null, history = null, playLedger = null, clock = Date, cacheTtlMs = DEFAULT_CACHE_TTL_MS, logger = console } = {}) {
     this.#live = liveSources;
     this.#snapshots = snapshots;
     this.#history = history;
+    this.#ledger = playLedger;
     this.#clock = clock;
     this.#ttl = cacheTtlMs;
     this.#logger = logger;
@@ -71,15 +77,34 @@ export class RoutineCatalogService {
     return { routines, sources, any: sources.some((s) => s.available) };
   }
 
-  async #observed(householdId, known) {
-    if (!this.#history?.load) return [];
-    let runs = [];
-    try {
-      runs = (await this.#history.load(householdId)) || [];
-    } catch (error) {
-      this.#logger.warn?.('media.routines.history_read_failed', { error: error.message });
-      return [];
+  async #observedRuns(householdId) {
+    const runs = [];
+    if (this.#history?.load) {
+      try {
+        runs.push(...((await this.#history.load(householdId)) || []));
+      } catch (error) {
+        this.#logger.warn?.('media.routines.history_read_failed', { error: error.message });
+      }
     }
+    if (this.#ledger?.plays) {
+      try {
+        const from = new Date(this.#clock.now() - LEDGER_OBSERVED_DAYS * 24 * 60 * 60 * 1000).toISOString();
+        for (const row of (await this.#ledger.plays({ from, limit: 100000, nowEpoch: this.#clock.now() })) || []) {
+          const origin = row?.origin;
+          if (origin && typeof origin === 'object' && origin.kind === 'routine') {
+            runs.push({ routine: { id: origin.id ?? null, name: origin.name ?? null }, deviceId: row.deviceId, what: {} });
+          }
+        }
+      } catch (error) {
+        this.#logger.warn?.('media.routines.ledger_read_failed', { error: error.message });
+      }
+    }
+    return runs;
+  }
+
+  async #observed(householdId, known) {
+    if (!this.#history?.load && !this.#ledger?.plays) return [];
+    const runs = await this.#observedRuns(householdId);
     const byKey = new Map();
     for (const run of runs) {
       const id = run?.routine?.id;
@@ -120,7 +145,7 @@ export class RoutineCatalogService {
     }
     if (!live.any && snapshot) routines = snapshot.routines.filter(validRoutine);
     const observed = await this.#observed(householdId, new Set(routines.map((r) => r.id)));
-    sources.push({ name: 'history', kind: 'observed', available: Boolean(this.#history), count: observed.length });
+    sources.push({ name: 'history', kind: 'observed', available: Boolean(this.#history || this.#ledger), count: observed.length });
     const value = { routines: [...routines, ...observed], sources };
     this.#cache.set(key, { at: this.#clock.now(), value });
     return value;
