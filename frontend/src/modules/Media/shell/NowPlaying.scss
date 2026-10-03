@@ -451,3 +451,16 @@ $np-amber-ink: #1a1300;
 .session-control-frame {
   display: contents;
 }
+
+// RELY.5a/AC3 — the handle's problem sign, until playback recovers. Shape
+// and an accessible name carry the meaning, not colour alone.
+.mini-player--problem {
+  box-shadow: inset 3px 0 0 var(--mantine-color-red-6);
+}
+
+.mini-player-problem {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--mantine-color-red-4);
+}

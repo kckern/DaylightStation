@@ -15,6 +15,12 @@
 //    snapshot position is written on the ≥5s cadence (§11.3).
 //  - Stall detection (C9.3) is suppressed for live content, which has no
 //    forward progress contract.
+//  - A restored session (reload/crash) is held: the Player is not mounted
+//    until an explicit Play, so restore never makes a sound (RELY.7a). It
+//    then mounts once, at the restored spot.
+//  - A terminal Player failure (resilience exhausted) reaches the controller
+//    as a failure, so it is reported and skipped, not mistaken for an end.
+//    Recoverable media errors are left to the Player's own resilience.
 import React, { useContext, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import Player from '../../Player/Player.jsx';
@@ -23,6 +29,10 @@ import { PlayerHostContext, PlayerHostPresentationContext } from './playerHostCo
 import { TIMING } from '../constants.js';
 
 const RENDERER_BOUNDARY_FORMATS = new Set(['video', 'hls_video', 'dash_video', 'audio']);
+// Media waits out a refused (unreadable) file for 60 s, then lets the queue
+// move on; kiosks keep the Player's 30-minute default (RELY.5a ruling).
+export const MEDIA_SOURCE_UNAVAILABLE_MAX_MS = 60_000;
+const MEDIA_RESILIENCE_CONFIG = Object.freeze({ monitor: Object.freeze({ sourceUnavailableMaxMs: MEDIA_SOURCE_UNAVAILABLE_MAX_MS }) });
 
 export function PlayerBridge() {
   const ctx = useContext(LocalSessionContext);
@@ -43,6 +53,18 @@ export function PlayerBridge() {
   const bindNativeOperationRef = useRef(null);
   const rendererOperationSequenceRef = useRef(0);
   const pendingInitialRendererOperationRef = useRef(null);
+  const [restoreHeld, setRestoreHeld] = useState(() => controller.restore?.isHeld?.() === true);
+  useEffect(() => {
+    if (!controller.restore?.subscribe) return undefined;
+    const sync = () => {
+      const held = controller.restore.isHeld();
+      // Start where the held session now says (a seek while held moved it).
+      if (!held) startSecondsRef.current = controller.getSnapshot().position ?? 0;
+      setRestoreHeld(held);
+    };
+    sync();
+    return controller.restore.subscribe(sync);
+  }, [controller]);
 
   // Hand the controller its imperative player surface.
   useEffect(() => {
@@ -220,8 +242,26 @@ export function PlayerBridge() {
   }, [currentItem?.contentId, playbackGeneration]);
 
   const contentId = currentItem?.contentId ?? null;
+  // A Player that gives up reports it (onResilienceEvent) and THEN clears. The
+  // failure already advanced the queue. In the normal order that trailing
+  // clear arrives on the failed visit's own callback and the generation guard
+  // drops it; when the next visit has the same content (repeat one, or a
+  // duplicate entry) the same Player instance may clear through the NEW
+  // visit's callback instead, advancing twice (review nit). So the failure is
+  // keyed to the generation that failed: a clear for the next visit is the
+  // stale one only until that visit shows progress; after that, its end is
+  // genuine (re-verify 1: never a wall-clock window).
+  const failureClearRef = useRef(null);
   const onClear = useCallback(() => {
-    if (playbackGenerationRef.current !== playbackGeneration) return;
+    const failure = failureClearRef.current;
+    if (playbackGenerationRef.current !== playbackGeneration) {
+      if (failure && failure.generation === playbackGeneration) failureClearRef.current = null;
+      return;
+    }
+    if (failure && failure.generation < playbackGeneration) {
+      failureClearRef.current = null;
+      return;
+    }
     controller.onPlayerEnded(contentId);
   }, [controller, contentId, playbackGeneration]);
 
@@ -229,6 +269,11 @@ export function PlayerBridge() {
   const onProgress = useCallback((payload) => {
     if (playbackGenerationRef.current !== playbackGeneration) return;
     if (!contentId || controller.getSnapshot().currentItem?.contentId !== contentId) return;
+    // This visit is playing: a pending failure from an earlier visit no
+    // longer stands in for its end.
+    if (failureClearRef.current && failureClearRef.current.generation < playbackGeneration) {
+      failureClearRef.current = null;
+    }
     if (typeof payload === 'object' && payload !== null) {
       controller.onPlayerObservation?.(contentId, payload);
     }
@@ -423,10 +468,33 @@ export function PlayerBridge() {
   // Stable play prop across re-renders of the same item. The platform
   // Player honors `seconds` as the start offset.
   const playProp = useMemo(() => {
-    if (!currentItem) return null;
+    if (!currentItem || restoreHeld) return null;
     const seconds = startSecondsRef.current;
     return seconds > 0 ? { ...currentItem, seconds } : { ...currentItem };
-  }, [currentItem]);
+  }, [currentItem, restoreHeld]);
+
+  // Only failures the Player has given up on are reported as failures;
+  // refused-source waits are reported as waits (RELY.5a ruling).
+  const onPlayerError = useCallback((error) => {
+    if (playbackGenerationRef.current !== playbackGeneration) return;
+    if (!contentId || controller.getSnapshot().currentItem?.contentId !== contentId) return;
+    if (error?.kind === 'source-wait' || error?.kind === 'source-wait-ended') {
+      controller.onPlayerSourceWait?.({
+        waiting: error.kind === 'source-wait',
+        since: error.since ?? null,
+        decision: error.decision ?? null,
+        contentId,
+      });
+      return;
+    }
+    if (error?.kind !== 'resilience-exhausted') return;
+    const sourceGaveUp = error.reason === 'source-unavailable-gave-up';
+    failureClearRef.current = { generation: playbackGeneration };
+    controller.onPlayerError?.({
+      message: error.reason ? `Playback gave up (${error.reason})` : 'Playback gave up',
+      code: sourceGaveUp ? 'source-unavailable-gave-up' : 'resilience-exhausted',
+    });
+  }, [controller, contentId, playbackGeneration]);
 
   const hostEl = useContext(PlayerHostContext);
   const { forceShader } = useContext(PlayerHostPresentationContext);
@@ -481,6 +549,8 @@ export function PlayerBridge() {
       play={playProp}
       clear={onClear}
       onProgress={onProgress}
+      onResilienceEvent={onPlayerError}
+      mediaResilienceConfig={MEDIA_RESILIENCE_CONFIG}
       forceShader={forceShader ?? undefined}
       ignoreKeys
       initialRendererOperation={pendingInitialRendererOperationRef.current}

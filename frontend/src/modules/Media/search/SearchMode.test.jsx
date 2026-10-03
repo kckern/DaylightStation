@@ -274,7 +274,7 @@ describe('SearchMode', () => {
     backSpy.mockRestore();
   });
 
-  it('shows a "Playing" toast for a local dispatch route', async () => {
+  it('leaves a local dispatch outcome to the one outcome system (no toast)', async () => {
     comboState = {
       search: 'bluey',
       results: [{ id: 'plex:685088', title: 'Bluey', type: 'episode', thumbnail: null }],
@@ -284,9 +284,8 @@ describe('SearchMode', () => {
     await screen.findByTestId('search-mode-result-plex:685088');
     fireEvent.click(screen.getByTestId('search-mode-result-plex:685088'));
 
-    expect(notificationsShow).toHaveBeenCalledWith(
-      expect.objectContaining({ title: 'Playing Bluey' })
-    );
+    expect(dispatchMock).toHaveBeenCalled();
+    expect(notificationsShow).not.toHaveBeenCalled();
   });
 
   it('does not double-toast or close for an aimed cast route', async () => {

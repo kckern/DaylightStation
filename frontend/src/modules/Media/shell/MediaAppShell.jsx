@@ -11,6 +11,8 @@ import { Canvas } from './Canvas.jsx';
 import { MiniPlayer } from './MiniPlayer.jsx';
 import { DispatchProgressTray } from '../cast/DispatchProgressTray.jsx';
 import { SearchMode } from '../search/SearchMode.jsx';
+import { ReconnectingNote } from './ReconnectingNote.jsx';
+import { LocalPlaybackOutcomes } from './LocalPlaybackOutcomes.jsx';
 import { LocalStopFeedbackProvider, useLocalStopFeedbackCount } from './LocalStopFeedbackContext.jsx';
 import './MediaShell.scss';
 
@@ -43,7 +45,15 @@ function ShellInner() {
           <NavRail />
           <Canvas />
         </div>
-        <DispatchProgressTray />
+        <ReconnectingNote />
+        <LocalPlaybackOutcomes />
+        {/* Outcome notices float over the canvas: a zero-height anchor sits
+            directly above the mini player (or tab bar), so a row appearing
+            never takes page space or moves anything, and never covers the
+            handle's controls. Only the row's own buttons take pointer input. */}
+        <div className="media-outcome-anchor" data-testid="media-outcome-anchor">
+          <DispatchProgressTray />
+        </div>
         <MiniPlayer />
         {queueKeptCount != null && (
           <div className="np-queue-kept" data-testid="np-queue-kept" role="status">

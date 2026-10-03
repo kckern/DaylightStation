@@ -36,7 +36,6 @@ import { useSessionController } from '../controller/useSessionController.js';
 import { useNav } from '../shell/NavProvider.jsx';
 import { applyResultRowVerb } from './resultRowVerbs.js';
 import { displayTitle, resultSubtitle } from './resultPresentation.js';
-import { notifications } from '@mantine/notifications';
 import getLogger from '../../../lib/logging/Logger.js';
 import mediaLog from '../logging/mediaLog.js';
 import { ItemDestinationPicker } from '../actions/ItemDestinationPicker.jsx';
@@ -115,19 +114,9 @@ export function SearchMode({ onClose }) {
     log.info('select', { contentId: id, title: item?.title ?? null, type: item?.type ?? null });
     const route = dispatch(id, item, { replaceHistoryEntry: true });
     log.info('dispatch', { contentId: id, route });
-    // Cast/peek dispatches already surface their own toast
-    // (useContentDispatch's confirmation/failure notifications); a local
-    // queue play has none today, and a bare close with no acknowledgement is
-    // exactly the "hidden state, silent tap" pattern this whole remediation
-    // exists to fix.
-    if (route === 'local') {
-      notifications.show({
-        id: 'search-mode-dispatch-local',
-        color: 'teal',
-        autoClose: 2500,
-        title: item?.title ? `Playing ${item.title}` : 'Playing',
-      });
-    }
+    // Every route reports its own outcome through the one outcome system
+    // (useContentDispatch → DispatchProvider): quiet "Playing X here" for
+    // this device, named with progress for a far screen.
     // Playback is not navigation: keep the surface (and therefore the exact
     // query/scope plus its marker entry) alive. A container row is the one
     // route that navigates, so it hands the marker entry to Browse and exits.
@@ -143,14 +132,6 @@ export function SearchMode({ onClose }) {
     log.info('select', { contentId: id, title: item?.title ?? null, type: item?.type ?? null, verb: 'playAll' });
     const route = playContainerAsQueue(id, item);
     log.info('dispatch', { contentId: id, route, verb: 'playAll' });
-    if (route === 'local') {
-      notifications.show({
-        id: 'search-mode-dispatch-local',
-        color: 'teal',
-        autoClose: 2500,
-        title: item?.title ? `Playing ${item.title}` : 'Playing',
-      });
-    }
   }, [playContainerAsQueue, log]);
 
   // Trailing ⋯ on a leaf row: Play Now / Play Next / Up Next / Add to Queue

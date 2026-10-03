@@ -394,14 +394,13 @@ describe('useContentDispatch', () => {
       expect(playNow).not.toHaveBeenCalled();
     });
 
-    it('shows the same named casting confirmation toast as a leaf cast', () => {
+    it('leaves the cast confirmation to the dispatch outcome record (no ad-hoc toast)', () => {
       castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
       dispatchToTarget.mockReturnValue(['d1']);
       const { playContainerAsQueue } = setup();
       act(() => { playContainerAsQueue('plex:5150', { id: 'plex:5150', title: 'Van Halen', type: 'album' }); });
-      expect(notificationsShow).toHaveBeenCalledWith(
-        expect.objectContaining({ title: 'Casting Van Halen', message: 'To Living Room TV' })
-      );
+      expect(dispatchToTarget).toHaveBeenCalledWith(expect.objectContaining({ play: 'plex:5150', title: 'Van Halen' }));
+      expect(notificationsShow).not.toHaveBeenCalled();
     });
 
     it('otherwise plays it locally as a queue, replacing the current one, with container markers preserved for expansion', () => {
@@ -499,7 +498,7 @@ describe('useContentDispatch', () => {
       expect(dispatchToTarget).not.toHaveBeenCalled();
     });
 
-    it('cast: sends the container as queue: (append), not play: (replace), with an "Adding" toast', () => {
+    it('cast: sends the container as queue: (append), not play: (replace), reported by its outcome record', () => {
       castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
       const { addContainerToQueue } = setup();
       let route;
@@ -511,9 +510,7 @@ describe('useContentDispatch', () => {
         expect.objectContaining({ targetIds: ['livingroom-tv'], queue: 'plex:5150', mode: 'fork' })
       );
       expect(dispatchToTarget.mock.calls[0][0].play).toBeUndefined();
-      expect(notificationsShow).toHaveBeenCalledWith(
-        expect.objectContaining({ title: 'Adding Van Halen to queue', message: 'To Living Room TV' })
-      );
+      expect(notificationsShow).not.toHaveBeenCalled();
     });
 
     it('PLACE.1a/STEER.1b Remote view appends a collection at the displayed local aim', () => {
@@ -542,140 +539,25 @@ describe('useContentDispatch', () => {
   // ── Named toasts (spec D4) — the incident this closes: a tap on a search
   // result went to hidden dock-chip state with no acknowledgement, success
   // or failure. ──
-  describe('cast toasts', () => {
-    // dispatchToTarget is fire-and-forget; give its .then() microtask a
-    // couple of ticks to run before asserting on pendingRef-driven state.
-    const flush = () => act(async () => { await Promise.resolve(); await Promise.resolve(); });
-
-    it('shows a confirmation toast naming title + destination the instant a cast routes', () => {
-      castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
-      dispatchToTarget.mockReturnValue(['d1']);
-      const { dispatch } = setup();
-      act(() => { dispatch('plex:1', { title: 'Bluey' }); });
-      expect(notificationsShow).toHaveBeenCalledWith(
-        expect.objectContaining({ title: 'Casting Bluey', message: 'To Living Room TV' })
-      );
-    });
-
-    it('joins multiple destination names in the confirmation toast', () => {
+  describe('cast outcomes (RELY.1a: one voice)', () => {
+    it('raises no ad-hoc toast for a cast; the dispatch outcome record names the screen', () => {
       castTargetState = { targetIds: ['livingroom-tv', 'office-tv'], mode: 'transfer' };
       dispatchToTarget.mockReturnValue(['d1', 'd2']);
       const { dispatch } = setup();
       act(() => { dispatch('plex:1', { title: 'Bluey' }); });
-      expect(notificationsShow).toHaveBeenCalledWith(
-        expect.objectContaining({ message: 'To Living Room TV, Office TV' })
-      );
-    });
-
-    it('does not toast on local playback — nothing hidden to confirm', () => {
-      const { dispatch } = setup();
-      act(() => { dispatch('plex:1', { title: 'Bluey' }); });
+      expect(dispatchToTarget).toHaveBeenCalledWith(expect.objectContaining({ targetIds: ['livingroom-tv', 'office-tv'], title: 'Bluey' }));
       expect(notificationsShow).not.toHaveBeenCalled();
     });
 
-    it('does not toast when Remote is open but the displayed aim is local', () => {
-      navState = { view: 'peek', params: { deviceId: 'shield-tv' } };
-      const { dispatch } = setup();
-      act(() => { dispatch('plex:1', { title: 'Bluey' }); });
-      expect(notificationsShow).not.toHaveBeenCalled();
-    });
-
-    it('shows a failure toast naming the device once the dispatch resolves to failed', async () => {
+    it('raises no toast for a failed dispatch either; the tray row carries its own Retry', () => {
       castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
       dispatchToTarget.mockReturnValue(['d1']);
       const { dispatch, rerender } = setup();
       act(() => { dispatch('plex:1', { title: 'Bluey' }); });
-      await flush();
-
-      notificationsShow.mockClear();
-      dispatchesState = new Map([['d1', { status: 'failed', error: 'FKB rejected credentials: Please login' }]]);
-      rerender();
-
-      expect(notificationsShow).toHaveBeenCalledWith(
-        expect.objectContaining({ title: "Couldn't cast to Living Room TV" })
-      );
-    });
-
-    it('passes the backend error through verbatim, never a generic substitute', async () => {
-      castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
-      dispatchToTarget.mockReturnValue(['d1']);
-      const { dispatch, rerender } = setup();
-      act(() => { dispatch('plex:1', { title: 'Bluey' }); });
-      await flush();
-
-      dispatchesState = new Map([['d1', { status: 'failed', error: 'FKB rejected credentials: Please login' }]]);
-      rerender();
-
-      const call = notificationsShow.mock.calls.find((c) => c[0].title === "Couldn't cast to Living Room TV");
-      expect(call).toBeTruthy();
-      const [textEl] = call[0].message.props.children;
-      expect(textEl.props.children).toBe('FKB rejected credentials: Please login');
-    });
-
-    it('RELY.6a Retry on a failure notice retries that dispatchId', async () => {
-      castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
-      dispatchToTarget.mockReturnValue(['d1']);
-      const { dispatch, rerender } = setup();
-      act(() => { dispatch('plex:1', { title: 'Bluey' }); });
-      await flush();
-
       dispatchesState = new Map([['d1', { status: 'failed', error: 'boom' }]]);
       rerender();
-
-      const call = notificationsShow.mock.calls.find((c) => c[0].title === "Couldn't cast to Living Room TV");
-      const [, retryButtonEl] = call[0].message.props.children;
-      retryButtonEl.props.onClick();
-      expect(retry).toHaveBeenCalledWith('d1');
-    });
-
-    it('RELY.6a several failure notices each retry their own attempt', async () => {
-      castTargetState = { targetIds: ['livingroom-tv', 'office-tv'], mode: 'transfer' };
-      dispatchToTarget.mockReturnValue(['d1', 'd2']);
-      const { dispatch, rerender } = setup();
-      act(() => { dispatch('plex:1', { title: 'Bluey' }); });
-      await flush();
-
-      dispatchesState = new Map([
-        ['d1', { status: 'failed', error: 'living room offline' }],
-        ['d2', { status: 'failed', error: 'office offline' }],
-      ]);
-      rerender();
-
-      const failures = notificationsShow.mock.calls.filter((c) => c[0].title.startsWith("Couldn't cast"));
-      expect(failures).toHaveLength(2);
-      failures.forEach((call) => call[0].message.props.children[1].props.onClick());
-      expect(retry).toHaveBeenNthCalledWith(1, 'd1');
-      expect(retry).toHaveBeenNthCalledWith(2, 'd2');
-    });
-
-    it('does not toast while the dispatch is still running', async () => {
-      castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
-      dispatchToTarget.mockReturnValue(['d1']);
-      const { dispatch, rerender } = setup();
-      act(() => { dispatch('plex:1', { title: 'Bluey' }); });
-      await flush();
-      notificationsShow.mockClear();
-
-      dispatchesState = new Map([['d1', { status: 'running' }]]);
-      rerender();
       expect(notificationsShow).not.toHaveBeenCalled();
-    });
-
-    it('does not re-toast the same failed dispatchId on a later rerender', async () => {
-      castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
-      dispatchToTarget.mockReturnValue(['d1']);
-      const { dispatch, rerender } = setup();
-      act(() => { dispatch('plex:1', { title: 'Bluey' }); });
-      await flush();
-
-      dispatchesState = new Map([['d1', { status: 'failed', error: 'boom' }]]);
-      rerender();
-      expect(notificationsShow).toHaveBeenCalledTimes(2); // confirmation + failure
-
-      notificationsShow.mockClear();
-      dispatchesState = new Map([['d1', { status: 'failed', error: 'boom' }]]); // fresh Map, same content
-      rerender();
-      expect(notificationsShow).not.toHaveBeenCalled();
+      expect(retry).not.toHaveBeenCalled();
     });
   });
 });

@@ -1,0 +1,151 @@
+// RELY.7a / RELY.5a at the bridge: a restored session never mounts the
+// Player until an explicit Play, and a terminal Player failure reaches the
+// controller as a failure rather than as a normal end.
+import React from 'react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, act } from '@testing-library/react';
+import { PlayerHostProvider } from './PlayerHostProvider.jsx';
+import { LocalSessionContext } from './LocalSessionContext.js';
+import { createLocalSessionController } from './LocalSessionController.js';
+import mediaLog from '../logging/mediaLog.js';
+
+vi.mock('../logging/mediaLog.js', () => {
+  const stub = new Proxy({}, { get: (t, k) => (t[k] ??= vi.fn()) });
+  return { default: stub, mediaLog: stub };
+});
+
+let latestProps = null;
+const mounts = vi.fn();
+vi.mock('../../Player/Player.jsx', () => ({
+  default: React.forwardRef(function MockPlayer(props, ref) {
+    latestProps = props;
+    React.useImperativeHandle(ref, () => ({
+      play: () => {}, pause: () => {}, seek: () => {}, getMediaElement: () => null,
+      getMountedContentId: () => props.play?.contentId ?? null,
+    }));
+    React.useEffect(() => { mounts(props.play); }, []);
+    return <audio data-testid="mock-player" />;
+  }),
+}));
+
+const { PlayerBridge } = await import('./PlayerBridge.jsx');
+
+const entry = (id, title) => ({ queueItemId: `q-${id}`, contentId: `plex:${id}`, format: 'audio', title, duration: 600, priority: 'queue', addedAt: '' });
+const restored = {
+  sessionId: 'old', state: 'playing', currentItem: { contentId: 'plex:1', format: 'audio', title: 'Arrival', duration: 600 },
+  position: 321,
+  queue: { items: [entry(1, 'Arrival'), entry(2, 'Nova')], currentIndex: 0, upNextCount: 0 },
+  config: { shuffle: false, repeat: 'off', shader: null, volume: 40, playbackRate: 1 },
+  meta: { ownerId: 'c1', updatedAt: '2026-10-01T00:00:00.000Z' },
+};
+
+function mount(controller) {
+  return render(
+    <LocalSessionContext.Provider value={{ controller }}>
+      <PlayerHostProvider><PlayerBridge /></PlayerHostProvider>
+    </LocalSessionContext.Provider>,
+  );
+}
+
+beforeEach(() => { latestProps = null; mounts.mockClear(); });
+
+describe('PlayerBridge recovery', () => {
+  it('does not mount the Player for a restored session until Play, then starts at the restored spot', () => {
+    const controller = createLocalSessionController({ clientId: 'c1', persistedSnapshot: structuredClone(restored) });
+    const view = mount(controller);
+    expect(view.queryByTestId('mock-player')).toBeNull();
+    expect(mounts).not.toHaveBeenCalled();
+    act(() => { controller.transport.play(); });
+    expect(view.getByTestId('mock-player')).toBeInTheDocument();
+    expect(mounts).toHaveBeenCalledTimes(1);
+    expect(mounts.mock.calls[0][0]).toEqual(expect.objectContaining({ contentId: 'plex:1', seconds: 321 }));
+  });
+
+  it('reports a terminal Player failure to the controller as a failure', () => {
+    const controller = createLocalSessionController({ clientId: 'c1', persistedSnapshot: structuredClone(restored) });
+    mount(controller);
+    act(() => { controller.transport.play(); });
+    const spy = vi.spyOn(controller, 'onPlayerError');
+    act(() => { latestProps.onResilienceEvent({ kind: 'resilience-exhausted', reason: 'stall', attempts: 3 }); });
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ code: 'resilience-exhausted' }));
+    expect(controller.problems.get()).toEqual(expect.objectContaining({ kind: 'skipped', item: expect.objectContaining({ contentId: 'plex:1' }) }));
+  });
+
+  it('ignores a non-terminal media error that resilience may still recover, and passes no onError', () => {
+    const controller = createLocalSessionController({ clientId: 'c1', persistedSnapshot: structuredClone(restored) });
+    mount(controller);
+    act(() => { controller.transport.play(); });
+    const spy = vi.spyOn(controller, 'onPlayerError');
+    act(() => { latestProps.onResilienceEvent({ kind: 'media-error', code: 2 }); });
+    expect(spy).not.toHaveBeenCalled();
+    expect(latestProps.onError).toBeUndefined();
+  });
+
+  it('RELY.5a: gives the Player a 60 s refused-source limit and routes its wait reports to the controller', () => {
+    const controller = createLocalSessionController({ clientId: 'c1', persistedSnapshot: structuredClone(restored) });
+    mount(controller);
+    act(() => { controller.transport.play(); });
+    expect(latestProps.mediaResilienceConfig).toEqual(expect.objectContaining({ monitor: expect.objectContaining({ sourceUnavailableMaxMs: 60_000 }) }));
+    const wait = vi.spyOn(controller, 'onPlayerSourceWait');
+    act(() => { latestProps.onResilienceEvent({ kind: 'source-wait', waiting: true, since: 1, contentId: 'plex:1' }); });
+    expect(wait).toHaveBeenLastCalledWith(expect.objectContaining({ waiting: true, contentId: 'plex:1' }));
+    act(() => { latestProps.onResilienceEvent({ kind: 'source-wait-ended', waiting: false, decision: 'resume', contentId: 'plex:1' }); });
+    expect(wait).toHaveBeenLastCalledWith(expect.objectContaining({ waiting: false, decision: 'resume' }));
+  });
+
+  it('RELY.5a: a source give-up reaches the controller as source-unavailable-gave-up', () => {
+    const controller = createLocalSessionController({ clientId: 'c1', persistedSnapshot: structuredClone(restored) });
+    mount(controller);
+    act(() => { controller.transport.play(); });
+    const spy = vi.spyOn(controller, 'onPlayerError');
+    act(() => { latestProps.onResilienceEvent({ kind: 'resilience-exhausted', reason: 'source-unavailable-gave-up' }); });
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ code: 'source-unavailable-gave-up' }));
+  });
+
+  it('review nit: a give-up followed by the Player\'s own clear advances exactly once (repeat one)', () => {
+    const one = structuredClone(restored);
+    one.queue.items = [one.queue.items[0]];
+    one.config.repeat = 'one';
+    const controller = createLocalSessionController({ clientId: 'c1', persistedSnapshot: one });
+    mount(controller);
+    act(() => { controller.transport.play(); });
+    mediaLog.playbackAdvanced.mockClear();
+    act(() => { latestProps.onResilienceEvent({ kind: 'resilience-exhausted', reason: 'stall' }); });
+    // The same Player (same content) clears after the bridge has re-rendered.
+    act(() => { latestProps.clear(); });
+    expect(mediaLog.playbackAdvanced).toHaveBeenCalledTimes(1);
+  });
+
+  it('review nit: a give-up followed by clear advances exactly once when the next entry has the same content', () => {
+    const dup = structuredClone(restored);
+    dup.queue.items = [entry(1, 'Arrival'), { ...entry(1, 'Arrival'), queueItemId: 'q-1b' }, entry(2, 'Nova')];
+    const controller = createLocalSessionController({ clientId: 'c1', persistedSnapshot: dup });
+    mount(controller);
+    act(() => { controller.transport.play(); });
+    act(() => { latestProps.onResilienceEvent({ kind: 'resilience-exhausted', reason: 'stall' }); });
+    // The same Player (same content id) clears after the bridge re-rendered.
+    act(() => { latestProps.clear(); });
+    expect(controller.getSnapshot().queue.items[controller.getSnapshot().queue.currentIndex].queueItemId).toBe('q-1b');
+  });
+
+  it('re-verify 1: in the prod order the stale clear is consumed, and the next item\'s genuine end soon after still advances', () => {
+    const three = structuredClone(restored);
+    three.queue.items = [entry(1, 'Arrival'), entry(2, 'Nova'), entry(3, 'Dune')];
+    const controller = createLocalSessionController({ clientId: 'c1', persistedSnapshot: three });
+    mount(controller);
+    act(() => { controller.transport.play(); });
+    // Prod order: the exhausted Player reports, the controller advances
+    // (LOAD_ITEM bumps the generation synchronously), then the SAME call
+    // stack runs the old visit's clear.
+    const staleClear = latestProps.clear;
+    act(() => {
+      latestProps.onResilienceEvent({ kind: 'resilience-exhausted', reason: 'stall' });
+      staleClear();
+    });
+    expect(controller.getSnapshot().currentItem.contentId).toBe('plex:2');
+    // B plays briefly and genuinely ends well inside the old 2 s window.
+    act(() => { latestProps.onProgress({ currentTime: 590, paused: false }); });
+    act(() => { latestProps.clear(); });
+    expect(controller.getSnapshot().currentItem.contentId).toBe('plex:3');
+  });
+});

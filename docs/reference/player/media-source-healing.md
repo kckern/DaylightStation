@@ -154,8 +154,45 @@ the part probe below, exist for that case.
 |---|---|
 | `resume` | Resets the recovery ledger, then one `source-restored` recovery with `refreshUrl` and `forceRemount`. It seeks to the last position that played, and works even from `exhausted`. It carries `resumePlayback` (the rebuilt element autoplays) unless the viewer had paused before the error: the refused load pauses the element itself, and before 2026-09-30 that pause was carried as the viewer's, so the restored video sat loaded and frozen until the 15s startup deadline remounted it again. |
 | `retry` | The refusal cleared before any wait: one `source-refusal-cleared` recovery. |
-| `normal` | Nothing extra; the ordinary ladder runs. |
-| `gave-up` | After 30 minutes the Player falls back to `exhausted` (Tap to Retry) and calls `onExhausted`. |
+| `normal` | Nothing extra; the ordinary ladder runs — except for a `MEDIA_ERR_SRC_NOT_SUPPORTED` (code 4) element the backend calls readable (see below). |
+| `gave-up` | After the maximum wait (default 30 minutes, an owner option) the Player falls back to `exhausted` (Tap to Retry) and calls `onExhausted` with reason `source-unavailable-gave-up`. |
+
+**The maximum wait is an owner option.** `monitor.sourceUnavailableMaxMs` in the
+Player's resilience config (`mediaResilienceConfig`) sets it; the default stays
+`SOURCE_UNAVAILABLE_MAX_MS` (30 min). The final poll is scheduled to land on the
+limit itself, not on the next 15 s step after it.
+
+**Owners hear the wait.** An owner that passes the opt-in `onResilienceEvent`
+prop (only Media's `PlayerBridge`; `onError` owners see nothing new) receives
+`{ kind: 'source-wait', waiting: true, since, contentId }` when a wait opens and
+`{ kind: 'source-wait-ended', waiting: false, decision }` when it ends
+(`resume`, `retry`, `normal`, `gave-up`, or `abandoned` when the item changes).
+`gave-up → exhausted → onExhausted` remains the only skip path.
+
+**Media's policy (`/media`, RELY.5a, 2026-10-03).** Media's `PlayerBridge` sets
+`sourceUnavailableMaxMs: 60000`. A wait longer than 3 s shows "Waiting for
+<title> — the file is being repaired" with Skip now and Retry, and the mini
+player's problem sign; both clear (and recovery is logged) when the file comes
+back. At 60 s the item is skipped: "<title> skipped — file unavailable. Now
+playing <next>", with Retry (which plays the item again, re-asking the check).
+Storm guard: if the item after such a skip also enters a wait within 60 s, Media
+stops auto-skipping and holds on it with one "Library unavailable" notice.
+Fitness and the kiosks pass no option and no `onResilienceEvent`: they keep the
+30-minute wait and the existing overlay.
+
+**Readable but unplayable.** A code-4 element ("Format error") whose file the
+backend calls readable used to arm nothing: code 4 is outside the stall ladder,
+`normal` added nothing, and the pause that follows a failed load was read as the
+viewer's, which disarmed the startup deadline — the item sat on "Recovering…"
+forever and its owner never heard it failed (2026-10-03, found by the RELY.5a
+journey trace; not the healing wait). Now a pause that lands on a dead pipeline
+(an element error that arrived while it was playing) is not a viewer pause —
+a real viewer pause always stands and also clears any armed startup deadline —
+and an element whose LIVE error is code 4 (never the latched signal, which
+survives an in-place reset) gets one fresh-URL remount
+(`media-error-unplayable`); the same failure again — a new error, or the
+startup-deadline re-check answering readable while the live element still
+reports code 4 — exhausts with reason `media-error-unplayable` (`attempts: 2`).
 
 ## Configuration
 

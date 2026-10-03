@@ -48,120 +48,60 @@
 // of `play:` on the dispatch payload — useUrlCommand.js's `cmd.queue` branch
 // on the receiving device already resolves that to controller.queue.add.
 //
-// The cast branches are exactly the moment the pre-fix incident was about:
-// a tap on a search result went to hidden dock-chip state with no
-// acknowledgement at all — success or failure. Two toasts close that gap:
-// a synchronous "Casting <title> to <device>" the instant a cast routes
-// (naming the destination the way DestinationLine/CastTargetChip already
-// show it), and — once the fleet dispatch actually resolves — a failure
-// toast naming the device and the SPECIFIC backend error (never a
-// substituted generic string), with Retry re-invoking the exact same
-// dispatch via DispatchProvider's retry(dispatchId).
-import React, { useCallback, useContext, useEffect, useMemo, useRef } from 'react';
-import { Button, Group, Text } from '@mantine/core';
-import { notifications } from '@mantine/notifications';
+// Every branch reports its outcome through the one outcome system
+// (DispatchProvider, RELY.1a / PR-6): a cast is an attempt record that the
+// tray names with the screen and its progress, then confirms or fails with
+// its own Retry; a local action is a quiet record naming the item "here",
+// carrying its Undo. No branch raises a second, ad-hoc toast.
+import React, { useCallback, useContext, useMemo } from 'react';
 import { useNav } from '../shell/NavProvider.jsx';
 import { useDispatch } from '../cast/useDispatch.js';
 import { useCastTarget } from '../cast/useCastTarget.js';
 import { useSessionController } from '../controller/useSessionController.js';
-import { useFleetContext } from '../fleet/useFleetContext.js';
-import { deviceName } from '../fleet/deviceDisplay.js';
 import { isContainer } from '../../Content/combobox/comboboxMachine.js';
 import { contentIdToBrowsePath } from '../browse/browsePath.js';
 import { resultToQueueInput } from './resultToQueueInput.js';
 import { PeekContext } from '../peek/PeekContext.js';
 import { executeItemAction, createOperationId } from '../actions/itemAction.js';
-import { offerActionUndo } from '../actions/actionNotice.jsx';
 
-function namesFor(ids, devices) {
-  return ids.map((id) => deviceName(devices.find((d) => d.id === id), id)).join(', ');
-}
-
-function notifyCastFailure({ name, error, onRetry }) {
-  notifications.show({
-    id: `content-dispatch-failed-${name}`,
-    color: 'red',
-    autoClose: false,
-    withCloseButton: true,
-    title: `Couldn't cast to ${name}`,
-    message: React.createElement(
-      Group,
-      { justify: 'space-between', gap: 'sm', wrap: 'nowrap' },
-      React.createElement(Text, { size: 'sm' }, error || 'Unknown error'),
-      React.createElement(
-        Button,
-        { size: 'xs', variant: 'subtle', 'data-testid': 'content-dispatch-retry', onClick: onRetry },
-        'Retry'
-      )
-    ),
-  });
-}
+const LOCAL_KIND = { playNow: 'play', shuffle: 'shuffle', add: 'add', playNext: 'playNext', playFirst: 'playFirst' };
 
 export function useContentDispatch() {
   const { push } = useNav();
-  const { dispatchToTarget, dispatches, retry } = useDispatch();
+  const { dispatchToTarget, recordLocal, resolveLocal } = useDispatch();
   const { targetIds, mode } = useCastTarget();
   const { controller, queue, config } = useSessionController('local');
   const peek = useContext(PeekContext);
-  const { devices } = useFleetContext();
-  // dispatchId -> deviceId, for dispatches THIS hook fired that haven't
-  // resolved yet. dispatchToTarget is fire-and-forget (it returns the
-  // dispatchIds before the HTTP call settles), so the only way to know a
-  // cast actually failed is to watch DispatchProvider's live `dispatches`
-  // map for the same dispatchId to flip to 'failed'.
-  const pendingRef = useRef(new Map());
 
-  useEffect(() => {
-    if (!dispatches || pendingRef.current.size === 0) return;
-    for (const [dispatchId, deviceId] of [...pendingRef.current]) {
-      const entry = dispatches.get(dispatchId);
-      if (!entry || entry.status === 'running') continue;
-      pendingRef.current.delete(dispatchId);
-      if (entry.status === 'failed') {
-        const name = deviceName(devices.find((d) => d.id === deviceId), deviceId);
-        notifyCastFailure({ name, error: entry.error, onRetry: () => retry(dispatchId) });
-      }
-    }
-  }, [dispatches, devices, retry]);
+  // A local action's outcome: one quiet record naming the item "here".
+  const confirmLocal = useCallback((kind, input) => recordLocal?.({
+    kind: LOCAL_KIND[kind] ?? kind,
+    phase: 'confirmed',
+    item: { contentId: input?.contentId ?? null, title: input?.title ?? null },
+    command: { kind, item: input },
+  }), [recordLocal]);
 
-  // Shared by both dispatch()'s cast branch and playContainerAsQueue()'s /
-  // addContainerToQueue()'s cast branches: fire the confirmation toast,
-  // dispatch, and register the resulting dispatchIds so the failure watcher
-  // above can name them. `verb: 'queue'` (Task 15's + button) sends the
-  // container as an append rather than a replace, and says so in the toast
-  // ("Adding" not "Casting") so the wording never claims an action it
-  // didn't take.
+  // Shared by dispatch()'s cast branch and playContainerAsQueue()'s /
+  // addContainerToQueue()'s cast branches. `verb: 'queue'` (Task 15's +
+  // button) sends the container as an append rather than a replace. The
+  // attempt's own outcome record (DispatchProvider) names the screen and its
+  // progress, so nothing else is shown here.
   const castTo = useCallback((castTargetIds, castMode, id, title, opts = {}) => {
     const { shuffle = false, verb = 'play', itemAction } = opts;
     // An aimed content pick starts new playback; it is not an ownership
     // transfer. Keep the transfer guard reserved for snapshot handoff while
     // allowing a fresh/default destination aim to dispatch normally.
     const mode = castMode === 'transfer' ? 'fork' : castMode;
-    const name = namesFor(castTargetIds, devices);
-    const label = verb === 'queue'
-      ? (title ? `Adding ${title} to queue` : 'Adding to queue')
-      : (title ? `Casting ${title}` : 'Casting');
-    notifications.show({
-      id: 'content-dispatch-confirmation',
-      color: 'blue',
-      autoClose: 3000,
-      title: label,
-      message: name ? `To ${name}` : null,
-    });
     const targetPayload = verb === 'queue' ? { queue: id } : { play: id };
-    Promise.resolve(dispatchToTarget({
+    return dispatchToTarget({
       targetIds: castTargetIds,
       ...targetPayload,
       mode,
       title,
       ...(shuffle ? { shuffle: true } : {}),
       ...(itemAction ? { itemAction } : {}),
-    })).then((dispatchIds) => {
-      (dispatchIds ?? []).forEach((dispatchId, i) => {
-        pendingRef.current.set(dispatchId, castTargetIds[i]);
-      });
     });
-  }, [dispatchToTarget, devices]);
+  }, [dispatchToTarget]);
 
   const runAction = useCallback((kind, id, item, opts = {}) => {
     const input = resultToQueueInput({ ...item, id }) ?? { contentId: id, title: item?.title };
@@ -191,15 +131,34 @@ export function useContentDispatch() {
       } else if (kind === 'playNext') queue.addUpNext?.(input);
       else if (kind === 'playFirst') queue.playNext?.(input);
       else queue.add(input);
+      confirmLocal(kind, input);
       return 'local';
     }
+    let attemptId = null;
     executeItemAction({ kind, item: input, destination, operationId, options: {
-      onStarted: () => { if (!remote) offerActionUndo({ operationId, targetName: 'Here', title: item?.title, undo: destination.undo }); },
+      onStarted: () => {
+        if (remote) return;
+        // Undo is offered at tap time, on the outcome itself (RELY.4a).
+        attemptId = recordLocal?.({
+          kind: LOCAL_KIND[kind] ?? kind,
+          phase: 'running',
+          item: { contentId: input.contentId, title: input.title ?? item?.title ?? null },
+          command: { kind, item: input },
+          undo: { operationId, expiresAt: Date.now() + 10000, run: destination.undo },
+        }) ?? null;
+      },
     } }).then(result => {
-      if (result?.ok === false) notifications.show({ color: 'red', title: 'Could not apply action', message: result.reason ?? result.code });
-    }).catch(error => notifications.show({ color: 'red', title: 'Could not apply action', message: error.message }));
+      if (remote) return;
+      if (result?.ok === false) {
+        resolveLocal?.(attemptId, { phase: 'failed', reason: result.reason ?? result.code ?? 'Could not apply action' });
+      } else {
+        resolveLocal?.(attemptId, { phase: 'confirmed', ordinal: Number.isInteger(result?.ordinal) ? result.ordinal : null });
+      }
+    }).catch(error => {
+      if (!remote) resolveLocal?.(attemptId, { phase: 'failed', reason: error?.message ?? 'Could not apply action' });
+    });
     return remote ? 'cast' : 'local';
-  }, [targetIds, mode, castTo, controller, queue, config, peek, devices]);
+  }, [targetIds, mode, castTo, controller, queue, config, peek, recordLocal, resolveLocal, confirmLocal]);
 
   // `opts.replaceHistoryEntry` is for a caller that is itself occupying the
   // current history entry and is about to close: the mobile Search Mode. Its
@@ -231,12 +190,11 @@ export function useContentDispatch() {
       castTo(targetIds, mode, id, title);
       return 'cast';
     }
-    queue.playNow(
-      { contentId: id, title, thumbnail: item?.thumbnail ?? null },
-      { clearRest: true }
-    );
+    const input = { contentId: id, title, thumbnail: item?.thumbnail ?? null };
+    queue.playNow(input, { clearRest: true });
+    confirmLocal('playNow', input);
     return 'local';
-  }, [push, targetIds, mode, queue, castTo, controller, runAction]);
+  }, [push, targetIds, mode, queue, castTo, controller, runAction, confirmLocal]);
 
   // Explicit leaf actions from the ResultRow ⋯ menu share the aimed-target
   // route without inheriting selection's clearRest policy: More → Play Now
@@ -255,8 +213,9 @@ export function useContentDispatch() {
       ?? { contentId: id, title, thumbnail: item?.thumbnail ?? null };
     if (verb === 'playNow') queue.playNow(input);
     else queue.add(input);
+    confirmLocal(verb === 'playNow' ? 'playNow' : 'add', input);
     return 'local';
-  }, [targetIds, mode, queue, castTo, controller, runAction]);
+  }, [targetIds, mode, queue, castTo, controller, runAction, confirmLocal]);
 
   // The ▶ verb on a container row: explicitly send the WHOLE container to
   // the current destination, replacing the queue. Same destination
@@ -281,8 +240,9 @@ export function useContentDispatch() {
     // shuffle still off after the 🔀 verb fired.
     if (shuffle) config?.setShuffle?.(true);
     queue.playNow(input, { clearRest: true });
+    confirmLocal(shuffle ? 'shuffle' : 'playNow', input);
     return 'local';
-  }, [targetIds, mode, queue, config, castTo, controller, runAction]);
+  }, [targetIds, mode, queue, config, castTo, controller, runAction, confirmLocal]);
 
   // The + verb on a container row (Task 15): append the WHOLE container to
   // the current destination's queue instead of replacing it. Same
@@ -299,8 +259,9 @@ export function useContentDispatch() {
     const input = (item && resultToQueueInput({ ...item, id: item.id ?? id }))
       ?? { contentId: id, title, thumbnail: item?.thumbnail ?? null };
     queue.add(input);
+    confirmLocal('add', input);
     return 'local';
-  }, [targetIds, mode, queue, castTo, controller, runAction]);
+  }, [targetIds, mode, queue, castTo, controller, runAction, confirmLocal]);
 
   return useMemo(
     () => ({ dispatch, dispatchLeafVerb, playContainerAsQueue, addContainerToQueue }),
