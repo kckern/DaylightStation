@@ -39,9 +39,17 @@ describe('Media P0 gate manifest', () => {
       expect.objectContaining({ story: 'HOUSE.4a', criteria: ['HOUSE.4a/AC2', 'HOUSE.4a/AC4'] }),
       expect.objectContaining({ story: 'AUTO.3a', criteria: ['AUTO.3a/AC1'] }),
       expect.objectContaining({ story: 'AUTO.3a', criteria: ['AUTO.3a/AC2'] }),
+      // Task 7 (outcomes, retry, paused restore, Start fresh).
+      expect.objectContaining({ story: 'RELY.3a', criteria: ['RELY.3a/AC1', 'RELY.3a/AC2', 'RELY.3a/AC3', 'RELY.3a/AC4'], file: 'media-app-outcomes.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'RELY.6a', criteria: ['RELY.6a/AC1'], file: 'media-app-outcomes.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'RELY.2a', criteria: ['RELY.2a/AC2'], file: 'media-app-outcomes.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'RELY.5a', criteria: ['RELY.5a/AC1', 'RELY.5a/AC2', 'RELY.5a/AC3'], file: 'media-app-local-failure.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'RELY.7a', criteria: ['RELY.7a/AC1', 'RELY.7a/AC5'], file: 'media-app-resume.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'RELY.7a', criteria: ['RELY.7a/AC2'], file: 'media-app-aim-journey.runtime.test.mjs', grep: 'a closed app restores' }),
+      expect.objectContaining({ story: 'RELY.8a', criteria: ['RELY.8a/AC1', 'RELY.8a/AC2', 'RELY.8a/AC3'], file: 'media-app-reset-confirm.runtime.test.mjs' }),
     ]));
-    expect(P0_EXTENSION_ENTRIES).toHaveLength(16);
-    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 25, criteria: 54 });
+    expect(P0_EXTENSION_ENTRIES).toHaveLength(23);
+    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 31, criteria: 69 });
   });
 
   it('rejects skipped, duplicated, weakened, or unjourneyed criteria', () => {
