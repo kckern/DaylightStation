@@ -95,6 +95,18 @@ export class PianoMidiWakeService {
     this.#lastRelay = Promise.resolve(this.#bridge.suppressWakeUntil(deadlineMs));
   }
 
+  /**
+   * End a suppression early — someone deliberately woke the panel. Drops the
+   * shared 'off' override (which PianoScreenAuthorityService otherwise keeps
+   * enforcing, darkening the panel every reconcile tick until it expires) and
+   * relays a past deadline so the APK's ScreenWaker is unmuted too.
+   */
+  resumeWake() {
+    this.#screenOverride?.clear(this.#deviceId);
+    this.#logger.info?.('piano-midi-wake.resumed', { deviceId: this.#deviceId });
+    this.#lastRelay = Promise.resolve(this.#bridge.suppressWakeUntil(this.#clock.now()));
+  }
+
   /** Test seam: await the in-flight APK config relay. */
   _relayDone() { return this.#lastRelay ?? Promise.resolve(); }
 

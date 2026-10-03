@@ -102,6 +102,34 @@ describe('usePianoScreensaver server on-override hold', () => {
     expect(offCalls().length).toBeGreaterThan(0);
   });
 
+  // 2026-10-02: after a screen-off the server 'off' window outlived the touch
+  // that woke the panel, and the authority reconcile darkened it every ~45s.
+  it('a touch during an off-override releases the server hold and wakes the screen', async () => {
+    withOverride('off');
+    render(
+      <PianoScreenControlProvider><Harness notes={new Map()} /></PianoScreenControlProvider>,
+    );
+    await act(async () => { await vi.advanceTimersByTimeAsync(4 * 60_000); }); // poll sees 'off', idle sleeps
+    DaylightAPI.mockClear();
+
+    await act(async () => { window.dispatchEvent(new Event('pointerdown')); });
+
+    const deletes = DaylightAPI.mock.calls.filter(([p, , m]) => p.endsWith('/screen/override') && m === 'DELETE');
+    expect(deletes).toHaveLength(1);
+    expect(wakeCalls()).toHaveLength(1);
+  });
+
+  it('a touch with no hold does not touch the server override', async () => {
+    withOverride(null);
+    render(
+      <PianoScreenControlProvider><Harness notes={new Map()} /></PianoScreenControlProvider>,
+    );
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+    await act(async () => { window.dispatchEvent(new Event('pointerdown')); });
+    const deletes = DaylightAPI.mock.calls.filter(([, , m]) => m === 'DELETE');
+    expect(deletes).toHaveLength(0);
+  });
+
   it('does not hold the screen awake for an off-override', async () => {
     withOverride('off');
     render(

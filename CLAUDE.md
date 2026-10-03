@@ -221,6 +221,7 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 | Media source healing (Plex refuses a file: proxy 503, Player waits, backend repair ladder) | `docs/reference/player/media-source-healing.md` |
 | Home Line video calling (state, signaling, recovery, observability) | `docs/reference/call/README.md` |
 | Piano Producer (jam/song builder) | `docs/reference/piano/producer.md` |
+| Piano tablet screen control (screensaver, manual off holds, power authority) | `docs/reference/piano/screen-control.md` |
 | Piano grid addressing (keys→squares: permutations, config, difficulty ladder) | `docs/reference/piano/grid-addressing.md` |
 | Piano game time budget + match gate (daily minutes, played challenge, day files) | `docs/reference/piano/games-budget-gate.md` |
 | Exercise library (shared corpus: Fitness workouts + School anatomy) | `docs/reference/fitness/exercise-library.md` |

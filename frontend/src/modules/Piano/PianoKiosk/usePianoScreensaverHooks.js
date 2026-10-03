@@ -190,9 +190,19 @@ export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeou
     const bump = () => {
       lastActivityRef.current = Date.now();
       // A deliberate touch clears the manual screen-off cooldown (they want it back).
-      if (midiSuppressedRef.current) {
+      // The cooldown also lives server-side as an 'off' override that the
+      // screen authority enforces every reconcile tick — release that too, or
+      // the panel goes dark again within ~45s for the rest of the window
+      // (2026-10-02: blacked out five times mid-play after a screen-off).
+      if (midiSuppressedRef.current || serverOffRef.current) {
+        const via = midiSuppressedRef.current ? 'local' : 'server';
         midiSuppressedRef.current = false;
-        logger().info('piano.screen-off-cooldown.cleared', { via: 'touch' });
+        serverOffRef.current = false;
+        logger().info('piano.screen-off-cooldown.cleared', { via: 'touch', hold: via });
+        if (deviceId) {
+          DaylightAPI(`api/v1/device/${deviceId}/screen/override`, {}, 'DELETE')
+            .catch((err) => logger().warn('piano.screen-off-cooldown.release-failed', { deviceId, error: err.message }));
+        }
       }
       if (!isWithinQuietHours(new Date(), quietRef.current)) setScreen(true);
     };
@@ -202,7 +212,7 @@ export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeou
       window.removeEventListener('pointerdown', bump, true);
       window.removeEventListener('keydown', bump, true);
     };
-  }, [enabled, setScreen]);
+  }, [enabled, setScreen, deviceId]);
 
   // Idle poll → sleep the screen (or keep awake while a wake lock is held).
   useEffect(() => {

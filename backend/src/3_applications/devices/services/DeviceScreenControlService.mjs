@@ -30,6 +30,16 @@ export class DeviceScreenControlService {
     const result = await device.setScreen(state === 'on');
     return { kind: 'ok', body: { ok: true, override: this.#overrides?.get(deviceId) ?? null, result } };
   }
+  // A deliberate wake (a touch on the panel) ends a manual hold early. Without
+  // this an 'off' window outlives the person who came back to the piano: the
+  // authority reconcile re-darkens the panel every tick until it expires.
+  clearOverride(deviceId) {
+    const cleared = this.#overrides?.get(deviceId) ?? null;
+    if (cleared?.state === 'off' && this.#midiWake?.resumeWake) this.#midiWake.resumeWake();
+    this.#overrides?.clear(deviceId);
+    this.#logger.info?.('device.router.screen.override.cleared', { deviceId, cleared: cleared?.state ?? null });
+    return { ok: true, cleared };
+  }
   async setScreen(deviceId, state) {
     const device = this.#devices.get(deviceId); if (!device) return { kind: 'not_found' };
     this.#logger.info?.('device.router.setScreen', { deviceId, state });

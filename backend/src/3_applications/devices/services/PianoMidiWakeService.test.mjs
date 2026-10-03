@@ -124,3 +124,18 @@ test('suppressWakeUntil FAILS SAFE — if the live config is unreadable it does 
   const posts = fetchCalls.filter(([, o]) => (o.method || 'GET') === 'POST');
   assert.equal(posts.length, 0, 'a blind partial POST is the clobber; skip it when config can not be read');
 });
+
+test('resumeWake clears the off override and relays a past deadline to the APK', async () => {
+  const { svc, screenCalls, screenOverride, store } = makeService();
+  svc.suppressWakeUntil(1_000_000 + 30 * 60_000);
+  await svc._relayDone();
+  svc.resumeWake();
+  await svc._relayDone();
+
+  assert.equal(screenOverride.get('yellow-room-tablet'), null);
+  assert.equal(String(store.fkbWakeSuppressUntilEpochMs), '1000000');
+  assert.equal(store.targetMac, '10:65:36:36:62:66', 'resume must merge, never clobber targetMac');
+  svc._handleNoteOnForTest();
+  await Promise.resolve();
+  assert.deepEqual(screenCalls, [true]);
+});
