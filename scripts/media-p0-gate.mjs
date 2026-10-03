@@ -108,6 +108,49 @@ export const P0_EXTENSION_ENTRIES = Object.freeze([
     criteria: ['AUTO.3a/AC2'],
     file: 'media-app-house-browser-session.runtime.test.mjs',
     grep: 'two browser devices agree on the local player title and state',
+  },  // Task 7 — outcomes, retry, paused restore, Start fresh. Only criteria with
+  // exact runtime evidence; see the acceptance ledger for the rest.
+  {
+    story: 'RELY.3a',
+    criteria: ['RELY.3a/AC1', 'RELY.3a/AC2', 'RELY.3a/AC3', 'RELY.3a/AC4'],
+    file: 'media-app-outcomes.runtime.test.mjs',
+    grep: 'RELY\\.3a',
+  },
+  {
+    story: 'RELY.6a',
+    criteria: ['RELY.6a/AC1'],
+    file: 'media-app-outcomes.runtime.test.mjs',
+    grep: 'RELY\\.3a',
+  },
+  {
+    story: 'RELY.2a',
+    criteria: ['RELY.2a/AC2'],
+    file: 'media-app-outcomes.runtime.test.mjs',
+    grep: 'RELY\\.2a',
+  },
+  {
+    story: 'RELY.5a',
+    criteria: ['RELY.5a/AC1', 'RELY.5a/AC2', 'RELY.5a/AC3'],
+    file: 'media-app-local-failure.runtime.test.mjs',
+    grep: 'RELY\\.5a',
+  },
+  {
+    story: 'RELY.7a',
+    criteria: ['RELY.7a/AC1', 'RELY.7a/AC5'],
+    file: 'media-app-resume.runtime.test.mjs',
+    grep: 'RELY\\.7a',
+  },
+  {
+    story: 'RELY.7a',
+    criteria: ['RELY.7a/AC2'],
+    file: 'media-app-aim-journey.runtime.test.mjs',
+    grep: 'a closed app restores',
+  },
+  {
+    story: 'RELY.8a',
+    criteria: ['RELY.8a/AC1', 'RELY.8a/AC2', 'RELY.8a/AC3'],
+    file: 'media-app-reset-confirm.runtime.test.mjs',
+    grep: 'RELY\\.8a',
   },
 ]);
 
