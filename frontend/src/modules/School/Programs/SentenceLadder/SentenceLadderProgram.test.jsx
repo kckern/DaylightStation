@@ -1,6 +1,7 @@
 import fs from 'node:fs';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
+import { act, render, screen, fireEvent, waitFor, configure, getConfig } from '@testing-library/react';
+import { createRoot } from 'react-dom/client';
 import SentenceLadderProgram from './SentenceLadderProgram.jsx';
 import TypedRung from './rungs/TypedRung.jsx';
 import HangulTypingProvider from '../../ime/HangulTypingProvider.jsx';
@@ -20,6 +21,46 @@ import ICONS from '../../home/icons/iconRegistry.js';
  * It is asserted against the source instead.
  */
 const SCSS_SOURCE = fs.readFileSync(new URL('./SentenceLadder.scss', import.meta.url), 'utf8');
+
+/**
+ * A `findBy*` / `waitFor` that sees the DOM is NOT a rung that can hear a key.
+ *
+ * The day arrives from a resolved promise, outside `act`, so React commits the
+ * rung's markup and schedules its passive effects for later. The finder
+ * resolves on the commit; the effects that make the controls live — the
+ * `keydown` listener, the `Audio` element `useSentenceAudio` plays through,
+ * the refs the key handlers read the phase from — run on a later scheduler
+ * task. On a loaded machine the test's very next `pressKey` or click could land
+ * in between: Space hit a window with no listener (Play never became Stop), or
+ * Play started a sequence with no element to play it (Stop forever, "Play
+ * again" never came). Which tests failed varied run to run, and only under load
+ * — the full gate, never a quiet single-file run.
+ *
+ * A person cannot act inside that gap; a test can. So every async finder in
+ * this file ends by letting the commit it observed finish: an update on ANY
+ * root makes React flush the pending passive effects first ("React will always
+ * flush a previous render's effects before starting a new update"), and doing
+ * that inside `act` flushes whatever those effects schedule too. Nothing is
+ * waited for longer and no assertion changes — the finders simply stop handing
+ * back a half-mounted rung.
+ */
+function flushPendingEffects() {
+  // Synchronous `act` on purpose: an async one yields a macrotask before it
+  // resolves, which lets a test's own 0ms "the clip ended" timer fire and moves
+  // the rung on before the test looks at it. This adds no time at all.
+  const root = createRoot(document.createElement('div'));
+  act(() => { root.render(null); });
+  act(() => { root.unmount(); });
+}
+const baseAsyncWrapper = getConfig().asyncWrapper;
+configure({
+  asyncWrapper: async (cb) => {
+    const result = await baseAsyncWrapper(cb);
+    flushPendingEffects();
+    return result;
+  },
+});
+afterAll(() => configure({ asyncWrapper: baseAsyncWrapper }));
 
 const col = (i) => document.querySelectorAll('.lang-strip__col')[i];
 const model = (i) => col(i).querySelector('.lang-strip__want').textContent;
