@@ -23,7 +23,7 @@ P0 extension manifest requires its `RELY.4a/AC1` and `RELY.4a/AC2` checks. This 
 pending exact-commit owned-server execution, not new Accepted evidence. Existing
 Task 2 and stable-core receipt evidence below remains unchanged.
 
-**Status:** In progress. **11 accepted stories / 41 accepted AC; 14 partial stories / 20 partial AC; 57 unverified stories / 227 unverified AC**. No component, test count or API response earns acceptance by itself.
+**Status:** In progress. Batch B (2026-10-03) adds 24 Accepted and 3 Partial AC across PLAY.10a, STEER.13a/b, RELY.4b, STEER.1b, PLACE.9a, PLACE.4a, STEER.10a, STEER.1a (`BATCH-B-CONTROLS`); the totals that follow predate it. **11 accepted stories / 41 accepted AC; 14 partial stories / 20 partial AC; 57 unverified stories / 227 unverified AC**. No component, test count or API response earns acceptance by itself.
 
 **Contract:** taxonomy §3 and accepted requirements. P0 first, then P1/P2. Each criterion must have evidence of the complete applicable path: user input → target → command → actual player/result → state → displayed feedback. Office is the only physical test screen authorized.
 
@@ -35,6 +35,7 @@ Task 2 and stable-core receipt evidence below remains unchanged.
 
 | Run | Scope | Red / baseline | Green / acceptance |
 |---|---|---|---|
+| BATCH-B-CONTROLS | Batch B (handle and controls, P1): session controls on this device and screens, Add only result, Put it back, Add to this queue, Move to…, several screens + line up, lock screen | Focused Vitest REDs per behaviour (local controls 15, whitelist 3, appliedAs 3, Player completion guard 1, screen adopt-snapshot 1, play-after-ended 1); runtime REDs found three real defects fixed here: screens acked `adopt-snapshot` without adopting, the Player's duplicate-completion guard swallowed the end of a resumed item, and a move to an idle screen had no path. | Exact preview of product SHA `67c40028e` (journey file edits after it are test-only). Every test of `media-app-handle-controls.runtime.test.mjs` passed on it, run singly where the host (load ≈ 30) stalled Plex streams: 9/10 in one full run (local journey stalled on "Having trouble streaming"), the local journey passed in a separate run at the same SHA. `screen-session-controls.runtime.test.mjs` (touched fixture) 7/7 on re-run (first run: one 4 s receiver-ack timeout under load). Logs and screenshots: `/tmp/daylight-media-p0-evidence/67c40028e59f93d3b6ce6e4fd0c82800769ca9b7/batch-b/`. |
 | TASK-7-OUTCOMES | Task 7: one outcome store, exact Retry, Stop after Undo, local skip notice, paused restore, Start fresh | Focused Vitest REDs (42 failing before implementation, plus 3 for O1 Stop and 1 for a load with no receiver); the existing stale resume journey used a removed testid. | Exact preview of product source `41afea7fe` with journeys at `d751db570`: outcomes 2/2, resume 4/4, Start fresh 2/2, local failure 1/1, run serially. Final product bytes (`562efd94f`/`e740a76f4`; later commits change only tests, manifest and docs): every P0 manifest journey passed serially, with load retries recorded in the Task 7 report; the first local-failure journey passed 2 of 4 runs; its hang was diagnosed (Player, not source healing) and fixed in `800ab005c`, after which the split RELY.5a journeys passed 9/9. |
 | TASK-2-EXACT-RUNTIME-603DD2E | Exact compiled Task 2 aim and remote-control journeys, including authoritative Add confirmation and queue traversal | Earlier Task 2 evidence stopped at focused tests because no owned runtime was available; the prior queue-skip run also exposed remote Previous restarting the current item instead of selecting the prior queue visit. | Controller-owned run on exact source `603dd2ebbd9f85e1faff1bd4336929c8f1d73e00`, compiled artifact `/tmp/daylight-media-preview-WbHQ4b`, passed 16/16 with no skips in 8.1m: `BASE_URL=http://127.0.0.1:41221 npx playwright test tests/live/flow/media/media-app-aim-persistence.runtime.test.mjs tests/live/flow/media/media-app-remote-controls.runtime.test.mjs --workers=1 --reporter=line`. The combined Add/Next/Previous journey observed authoritative queue growth/revision while preserving the current owner/playback, then displayed `Added Disclosure Day to Acceptance receiver` and `2nd in queue`; that exact item + screen + ordinal result accepts only `PLAY.6a/AC3`. Its Next/Previous, aim, seek, offline, and Stop evidence narrows known gaps but does not close broader any/every/surface/steering/live clauses: `PLACE.2a/AC4` and `/AC6`, `STEER.3a/AC1-4`, `STEER.4a/AC1-2`, `PLAY.6a/AC1-2`, `STEER.6a`, and `STEER.7a` remain Partial; `STEER.4a/AC3` remains Unverified. Evidence log `/tmp/daylight-media-p0-evidence/603dd2ebbd9f85e1faff1bd4336929c8f1d73e00/task2/runtime.log`. |
 | TASK-2-AIM-TRANSPORT-P0 | First-layout active aim, distinct Previous/restart-current, authoritative Add result/ordinal receipt, seek capability reasons, and stopped-queue handle | Behavioral REDs reproduced in focused Vitest: the brief suite failed 8/131, CastTargetProvider failed 1/10, LocalSessionController failed 4/73, and the Add receipt lacked an ordinal. | At the implementation checkpoint, focused tests passed 232/232 but no owned runtime was yet available, so statuses and the extension manifest remained unchanged. The later exact compiled acceptance run and its single justified promotion are recorded in `TASK-2-EXACT-RUNTIME-603DD2E` above. |
@@ -392,10 +393,10 @@ As a **Host**, I want a screen's queue set to "add only" during a party, so that
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLAY.10a/AC1 | Turning **Add only** on or off for a screen's queue takes one step. | Unverified | — |
-| PLAY.10a/AC2 | While it's on, **Play** from any other device adds to the queue and says "Added · 5th in line" instead of replacing. | Unverified | — |
+| PLAY.10a/AC1 | Turning **Add only** on or off for a screen's queue takes one step. | Accepted | `BATCH-B-CONTROLS`: Remote "Add only: off/on" toggled in one press at phone, tablet and laptop; the screen published `controls.addOnly`. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
+| PLAY.10a/AC2 | While it's on, **Play** from any other device adds to the queue and says "Added · 5th in line" instead of replacing. | Accepted | `BATCH-B-CONTROLS`: Add only on, an ordinary search Play aimed at the screen read "Added Keepy Uppy to Acceptance receiver (Add only is on)" · "2nd in line"; the screen kept playing Disclosure Day with Keepy Uppy queued. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
 | PLAY.10a/AC3 | The screen's row in the house view shows that add-only is on. | Unverified | — |
-| PLAY.10a/AC4 | This protects a host's queue; it is not a limit on children (Q11), and anyone can turn it off. | Unverified | — |
+| PLAY.10a/AC4 | This protects a host's queue; it is not a limit on children (Q11), and anyone can turn it off. | Accepted | `BATCH-B-CONTROLS`: Turned off again from a Remote in one press (any device may; Add only never gates by person). `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
 
 ### PLACE.1a
 
@@ -456,13 +457,13 @@ As a **Big-Screen Sender**, I want to play on several screens at once, so that t
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLACE.4a/AC1 | When choosing a screen, I can choose more than one, with the choice clearly labelled as "several screens". | Unverified | — |
-| PLACE.4a/AC2 | The aim then reads, for example, "Kitchen + Living Room". | Unverified | — |
-| PLACE.4a/AC3 | Progress and confirmation are shown per screen, so one failing doesn't hide the others succeeding. | Unverified | — |
-| PLACE.4a/AC4 | The screens start at about the same time, then each is steered on its own; they may drift apart (Q8). | Unverified | — |
-| PLACE.4a/AC5 | Either screen's Remote offers **Line up with Kitchen** to bring them back together (R29). | Unverified | — |
-| PLACE.4a/AC6 | Choosing screens in the same or neighbouring rooms warns that drift may be audible (R29). | Unverified | — |
-| PLACE.4a/AC7 | **Add to queue** with several screens aimed adds to each, and the confirmation says so (R29). | Unverified | — |
+| PLACE.4a/AC1 | When choosing a screen, I can choose more than one, with the choice clearly labelled as "several screens". | Accepted | `BATCH-B-CONTROLS`: Picker "Choose several screens" → "Several screens: on" (phone). `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
+| PLACE.4a/AC2 | The aim then reads, for example, "Kitchen + Living Room". | Accepted | `BATCH-B-CONTROLS`: Aim read "Aim: Acceptance receiver + Acceptance second". `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
+| PLACE.4a/AC3 | Progress and confirmation are shown per screen, so one failing doesn't hide the others succeeding. | Accepted | `BATCH-B-CONTROLS`: One outcome per screen: "Playing on Acceptance receiver" and "Playing on Acceptance second". `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
+| PLACE.4a/AC4 | The screens start at about the same time, then each is steered on its own; they may drift apart (Q8). | Accepted | `BATCH-B-CONTROLS`: Both started; seeking one left the other's spot untouched. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
+| PLACE.4a/AC5 | Either screen's Remote offers **Line up with Kitchen** to bring them back together (R29). | Accepted | `BATCH-B-CONTROLS`: A's Remote offered "Line up with Acceptance second"; afterwards the two spots were within 8 s; tray "Lined up …". `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
+| PLACE.4a/AC6 | Choosing screens in the same or neighbouring rooms warns that drift may be audible (R29). | Partial | `BATCH-B-CONTROLS`: Same-room warning shown for two screens in one registry room (journey screenshot `several-screens-drift-phone`). "Neighbouring" rooms cannot be detected: the screen registry has rooms but no adjacency. |
+| PLACE.4a/AC7 | **Add to queue** with several screens aimed adds to each, and the confirmation says so (R29). | Accepted | `BATCH-B-CONTROLS`: Add to Queue with both aimed: "Added Keepy Uppy to …" for each screen. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
 
 ### PLACE.5a
 
@@ -515,9 +516,9 @@ As a **House Watch**, I want to move playback between two other screens, so that
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLACE.9a/AC1 | From another screen's controls, "move to…" lists other screens, including this device. | Unverified | — |
-| PLACE.9a/AC2 | The destination picks up at the same moment; the original stops. | Unverified | — |
-| PLACE.9a/AC3 | Both screens' states update in the house overview. | Unverified | — |
+| PLACE.9a/AC1 | From another screen's controls, "move to…" lists other screens, including this device. | Accepted | `BATCH-B-CONTROLS`: Remote → Move to… listed "This device" and the other screen. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
+| PLACE.9a/AC2 | The destination picks up at the same moment; the original stops. | Accepted | `BATCH-B-CONTROLS`: Move A→B: B picked up Disclosure Day at ≥ A's spot, A stopped with "Moved by …"; then B→this device: Now Playing at B's spot, B stopped with "Moved by …". `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
+| PLACE.9a/AC3 | Both screens' states update in the house overview. | Accepted | `BATCH-B-CONTROLS`: House overview rows updated: B Playing/Paused, A not playing. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
 
 ### STEER.1a
 
@@ -529,7 +530,7 @@ As a **Hand-Held Viewer**, I want a persistent handle on what's playing here, so
 | STEER.1a/AC2 | Tapping it opens full controls and the queue. | Accepted | `TASK-5-EXACT-RUNTIME`: ordinary local playback exposed the compact handle; tapping its accessible title opened Now Playing with the shared transport and visible queue panel. `JOURNEY-TASK5-HANDOFF-PICKER`. |
 | STEER.1a/AC3 | When full controls are open, the compact handle doesn't duplicate them. | Accepted | `TASK-5-EXACT-RUNTIME`: after opening full controls from the compact handle, the journey asserted that `media-mini-player` had count zero while full transport and queue remained visible. `JOURNEY-TASK5-HANDOFF-PICKER`. |
 | STEER.1a/AC4 | The handle also covers the screen I most recently sent to or steered, so pausing the TV when the phone rings is one tap (R21). | Unverified | — |
-| STEER.1a/AC5 | The same controls are available from the lock screen and notifications (R21). | Unverified | — |
+| STEER.1a/AC5 | The same controls are available from the lock screen and notifications (R21). | Partial | `BATCH-B-CONTROLS`: Journey: `navigator.mediaSession` metadata title "Hospital" and `playbackState: playing` for local playback. System button presses are unit-only (`useMediaSession.test.js`); no physical lock screen was driven. |
 
 ### STEER.1b
 
@@ -541,9 +542,9 @@ As a **House Watch**, I want to steer another screen with the same controls I us
 | STEER.1b/AC2 | Controls the screen can't support are shown as unavailable with a short reason, not missing. | Unverified | — |
 | STEER.1b/AC3 | It is always obvious which screen I am steering, and I can switch to another in one step. | Unverified | — |
 | STEER.1b/AC4 | Leaving the controls of another screen never changes my aim. | Unverified | — |
-| STEER.1b/AC5 | When I pause, stop, replace, or move another screen's playback, that screen shows a brief note saying where it came from, for example "Paused from Dad's phone", with **Put it back** (Q7, R30). | Unverified | — |
+| STEER.1b/AC5 | When I pause, stop, replace, or move another screen's playback, that screen shows a brief note saying where it came from, for example "Paused from Dad's phone", with **Put it back** (Q7, R30). | Accepted | `BATCH-B-CONTROLS`: Note names the change and the device it came from ("Paused by Browser …") with Put it back. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
 | STEER.1b/AC6 | Volume changes don't produce notes, and repeated notes are grouped. A screen that can't show a note, such as a speaker, records it on its row in the house view (R30). | Unverified | — |
-| STEER.1b/AC7 | While controlling another screen, **Add to this queue** opens the one search pointed at that screen for that add only; my aim doesn't change (R23). | Unverified | — |
+| STEER.1b/AC7 | While controlling another screen, **Add to this queue** opens the one search pointed at that screen for that add only; my aim doesn't change (R23). | Accepted | `BATCH-B-CONTROLS`: Remote → Add to this queue opened the search ("Adding to the queue on Acceptance receiver — just this once"); a pick added it there (tray "Added Keepy Uppy to …"), search closed, aim label unchanged; phone and laptop. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
 
 ### STEER.1c
 
@@ -612,9 +613,9 @@ As a **Resumer**, I want a sleep timer, so that a bedtime audiobook stops once I
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| STEER.10a/AC1 | I can set it to stop after a number of minutes, or at the end of this chapter or episode. | Unverified | — |
-| STEER.10a/AC2 | Playback fades out rather than cutting off, and the time left shows on the handle. | Unverified | — |
-| STEER.10a/AC3 | Continue later offers both where it stopped and where the timer was set. | Unverified | — |
+| STEER.10a/AC1 | I can set it to stop after a number of minutes, or at the end of this chapter or episode. | Accepted | `BATCH-B-CONTROLS`: Menu offers 15–90 minutes and "At the end of this item"; minutes set on a Remote (published `minutes: 30`), end-of-item on this device stopped at the item end. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
+| STEER.10a/AC2 | Playback fades out rather than cutting off, and the time left shows on the handle. | Partial | `BATCH-B-CONTROLS`: Time left shows on the handle (end-of-item sleep, journey) and on a Remote ("Sleep in 30:00"). The 10 s fade is unit-only (`LocalSessionController.sessionControls.test.js`, `PlayerBridge.test.jsx`): no journey waits out a minutes timer. |
+| STEER.10a/AC3 | Continue later offers both where it stopped and where the timer was set. | Accepted | `BATCH-B-CONTROLS`: After the end-of-item stop: "Continue where it stopped" and "Continue from m:ss, where the timer was set"; the latter resumed within 15 s of the set spot. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
 
 ### STEER.11a
 
@@ -676,9 +677,9 @@ As an **Ambient listener**, I want to choose what happens when the queue ends, s
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| STEER.13a/AC1 | The end of the queue offers: stop, repeat, or keep similar things playing. | Unverified | — |
-| STEER.13a/AC2 | The current choice is shown at the bottom of the queue. | Unverified | — |
-| STEER.13a/AC3 | Items added by "keep similar things playing" are marked as added automatically. | Unverified | — |
+| STEER.13a/AC1 | The end of the queue offers: stop, repeat, or keep similar things playing. | Accepted | `BATCH-B-CONTROLS`: Stop / Repeat the queue / Keep similar playing offered at the bottom of the queue on a screen's Remote (3 viewports) and on this device. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
+| STEER.13a/AC2 | The current choice is shown at the bottom of the queue. | Accepted | `BATCH-B-CONTROLS`: The current choice is `aria-checked` and the screen published `controls.endOfQueue: similar`. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
+| STEER.13a/AC3 | Items added by "keep similar things playing" are marked as added automatically. | Accepted | `BATCH-B-CONTROLS`: This device, Keep similar playing at the queue end: status "Added N similar items…" and the added rows marked "added automatically". `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
 
 ### STEER.13b
 
@@ -686,8 +687,8 @@ As a **Resumer**, I want the next episode to start on its own after a countdown,
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| STEER.13b/AC1 | At the end of an episode, the next starts after a visible countdown that can be cancelled. | Unverified | — |
-| STEER.13b/AC2 | **Stop after this one** can be set during an episode, on this device or from a Remote. | Unverified | — |
+| STEER.13b/AC1 | At the end of an episode, the next starts after a visible countdown that can be cancelled. | Accepted | `BATCH-B-CONTROLS`: Screen Remote (phone) after a tap near the episode end: "Next: Keepy Uppy in Ns" with Cancel → banner gone, next not started; this device: countdown shown and cancelled, queue kept. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
+| STEER.13b/AC2 | **Stop after this one** can be set during an episode, on this device or from a Remote. | Accepted | `BATCH-B-CONTROLS`: Set from a screen's Remote (published `stopAfterCurrent: true`) and on this device, where it stopped at the item end and read "Stopped after that one, as asked". `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
 | STEER.13b/AC3 | Next-episode behaviour lives here; carry on only lists what's next (`FIND.10`). | Unverified | — |
 
 ### HOUSE.1a
@@ -813,9 +814,9 @@ As a **Bystander**, I want to put back what was on from the screen that was chan
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| RELY.4b/AC1 | The note on the changed screen offers **Put it back** (Q7, R30). | Unverified | — |
-| RELY.4b/AC2 | Any device's Remote for that screen offers the same (R13). | Unverified | — |
-| RELY.4b/AC3 | Putting it back restores the item, its spot, and its queue. | Unverified | — |
+| RELY.4b/AC1 | The note on the changed screen offers **Put it back** (Q7, R30). | Accepted | `BATCH-B-CONTROLS`: Pause from the Remote: the receiver page showed "Paused by Browser …" with its Put it back button. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
+| RELY.4b/AC2 | Any device's Remote for that screen offers the same (R13). | Accepted | `BATCH-B-CONTROLS`: The same notes (grouped "(2×)") listed on the Remote with Put it back. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
+| RELY.4b/AC3 | Putting it back restores the item, its spot, and its queue. | Accepted | `BATCH-B-CONTROLS`: After a replacing start, Put it back on the Remote restored Disclosure Day, its paused spot (±10 s) and the two-item queue; tray "Put back what was playing on Acceptance receiver". `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
 
 ### RELY.5a
 
