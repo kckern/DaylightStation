@@ -1534,6 +1534,29 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'display-api' })
   });
 
+  // Household media memory — recent across screens, carry on with per-screen
+  // spots, favourites, removal, watched marks (Media app P1). Reads progress
+  // from the same media memory play/log writes; lists live beside the
+  // household media queue. See docs/reference/media/media-app-technical.md §2.4.
+  let householdMediaMemory = null;
+  {
+    const { HouseholdMediaMemoryService } = await import('./3_applications/media/HouseholdMediaMemoryService.mjs');
+    const { LivenessNowPlayingReader } = await import('./3_applications/media/LivenessNowPlayingReader.mjs');
+    const { YamlHouseholdMediaListsDatastore } = await import('./1_adapters/persistence/yaml/YamlHouseholdMediaListsDatastore.mjs');
+    const { nowTs24 } = await import('./0_system/utils/index.mjs');
+    const { ProgressWriteRuntime } = await import('./1_adapters/content/ProgressWriteRuntime.mjs');
+    householdMediaMemory = new HouseholdMediaMemoryService({
+      progressMemory: mediaProgressMemory,
+      listsStore: new YamlHouseholdMediaListsDatastore({ configService }),
+      contentCatalog: contentServices.contentCatalog,
+      markContentWatched: contentServices.markContentWatched,
+      nowPlaying: deviceLivenessService ? new LivenessNowPlayingReader({ livenessService: deviceLivenessService }) : null,
+      nowTimestamp: nowTs24,
+      runtime: new ProgressWriteRuntime(),
+      logger: rootLogger.child({ module: 'household-media-memory' }),
+    });
+  }
+
   // Media queue management
   v1Routers.media = createMediaRouter({
     mediaQueueService: mediaServices.mediaQueueService,
@@ -1543,6 +1566,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     contentIdResolver: contentServices.contentIdResolver,
     mediaQueueEvents: new MediaQueueEvents({ publish: (topic, payload) => eventBus.broadcast(topic, payload) }),
     createMediaQueue: (props) => new MediaQueue(props),
+    householdMediaMemory,
     logger: rootLogger.child({ module: 'media-api' }),
   });
 

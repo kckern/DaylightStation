@@ -47,6 +47,7 @@ import { ContentAliasCatalogService } from '#apps/content/services/ContentAliasC
 import { ListBrowseService } from '#apps/content/services/ListBrowseService.mjs';
 import { PlaybackReadService } from '#apps/content/services/PlaybackReadService.mjs';
 import { UpdateContentProgress } from '#apps/content/usecases/UpdateContentProgress.mjs';
+import { MarkContentWatched } from '#apps/content/usecases/MarkContentWatched.mjs';
 import { RecordPlaybackProgress } from '#apps/content/usecases/RecordPlaybackProgress.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { generatePlaceholderImage } from '#rendering/placeholder/placeholderImage.mjs';
@@ -215,6 +216,18 @@ export function createApiRouters(config) {
     nowTimestamp: nowTs24,
     logger,
   });
+  // Watched / unwatched marks (Media app household list, RQ-FIND-13). Writes
+  // the same completion state play/log writes; see the use case header.
+  const markContentWatched = mediaProgressMemory
+    ? new MarkContentWatched({
+      contentCatalog,
+      mediaProgressMemory,
+      progressSyncSources: progressSyncSources || new Set(),
+      progressSyncService,
+      nowTimestamp: nowTs24,
+      logger,
+    })
+    : null;
   const contentDiscovery = new ContentDiscoveryService({ contentCatalog, logger });
   const listBrowse = new ListBrowseService({
     contentCatalog,
@@ -344,6 +357,7 @@ export function createApiRouters(config) {
       contentCatalog,
       savedQueryService,
       userVideoProgressStore,
+      markContentWatched,
     }
   };
 }
