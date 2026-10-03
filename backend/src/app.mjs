@@ -28,6 +28,7 @@ import { PlexSessionAdapter } from '#adapters/content/media/plex/PlexSessionAdap
 import { PlaybackSessionRegistry } from '#apps/content/runtime/PlaybackSessionRegistry.mjs';
 import { ReportPlaybackSession } from '#apps/content/usecases/ReportPlaybackSession.mjs';
 import { createPlexSurfaceIdentityResolver } from '#composition/modules/plexSurfaceIdentity.mjs';
+import { createSpotDevicePolicy } from '#composition/modules/spotDevicePolicy.mjs';
 import { createConfiguredLibbyRuntime } from '#composition/modules/libby.mjs';
 
 // Logging system
@@ -92,6 +93,7 @@ import { createFinanceApiRouter } from '#composition/modules/financeApi.mjs';
 import { createCostApiRouter } from '#composition/modules/costApi.mjs';
 import { createHomeAutomationApiRouter, createHomeDashboardApiRouter } from '#composition/modules/homeApi.mjs';
 import { createDeviceApiRouter } from '#composition/modules/deviceApi.mjs';
+import { createDeviceStartStatusService } from '#composition/modules/deviceStartStatus.mjs';
 import { createTriggerApiRouter } from '#composition/modules/triggerApi.mjs';
 import { declaredEntryActions } from '#domains/school/reachability.mjs';
 import { reportUnreachableSchoolPrograms } from '#composition/modules/schoolReachability.mjs';
@@ -810,6 +812,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'device-liveness' })
   });
 
+  // DeviceStartStatusService — folds WakeAndLoad's homeline:<id> step stream
+  // into one start status per screen on device-start:<id>, replayed to new
+  // subscribers, so every house view sees start progress / last failure.
+  const { startStatusService: deviceStartStatusService } = createDeviceStartStatusService({
+    eventBus,
+    logger: rootLogger.child({ module: 'device-start-status' }),
+  });
+
   // HubFleetBridge — translates playback-hub:status lane snapshots into
   // device-state:speaker-<lane> broadcasts so Bluetooth speaker lanes appear
   // live in the /media Devices (fleet) view. After liveness so the cache is
@@ -1167,6 +1177,28 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     })
     : null;
 
+  // Per-screen play ledger — one row per playback start per screen, fed by
+  // play/log (RecordPlaybackProgress) and read by the household media memory.
+  // Day files under history/media-plays, 90-day retention.
+  // See docs/reference/media/media-app-technical.md §2.4.
+  let playLedger = null;
+  {
+    const { PlayLedgerRecorder } = await import('./3_applications/media/PlayLedgerRecorder.mjs');
+    const { YamlPlayLedgerDatastore } = await import('./1_adapters/persistence/yaml/YamlPlayLedgerDatastore.mjs');
+    const { PLAY_LEDGER_RETENTION_DAYS } = await import('./2_domains/media/playLedger.mjs');
+    const { nowTs24 } = await import('./0_system/utils/index.mjs');
+    const playLedgerLogger = rootLogger.child({ module: 'play-ledger' });
+    playLedger = new PlayLedgerRecorder({
+      store: new YamlPlayLedgerDatastore({
+        root: configService.getHouseholdPath('history/media-plays', householdId),
+        retentionDays: PLAY_LEDGER_RETENTION_DAYS,
+        today: () => nowTs24().slice(0, 10),
+        logger: playLedgerLogger,
+      }),
+      logger: playLedgerLogger,
+    });
+  }
+
   const { routers: contentRouters, services: contentServices } = createApiRouters({
     registry: contentRegistry,
     menuMemoryRepository: new YamlMenuMemoryRepository({
@@ -1190,6 +1222,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     eventBus,
     economyService: economyApi.economyService,
     reportPlaybackSession,
+    playLedger,
+    isKnownSpotDevice: createSpotDevicePolicy({ configService, householdId, logger: rootLogger.child({ module: 'content' }) }),
     libbyStreamService: libbyRuntime?.streamService,
     libbyCoverService: libbyRuntime?.coverService,
     logger: rootLogger.child({ module: 'content' })
@@ -1534,6 +1568,36 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'display-api' })
   });
 
+  // Household media memory — recent across screens, carry on with per-screen
+  // spots, favourites, removal, watched marks (Media app P1). Reads progress
+  // from the same media memory play/log writes; lists live beside the
+  // household media queue. See docs/reference/media/media-app-technical.md §2.4.
+  let householdMediaMemory = null;
+  {
+    const { HouseholdMediaMemoryService } = await import('./3_applications/media/HouseholdMediaMemoryService.mjs');
+    const { LivenessNowPlayingReader } = await import('./3_applications/media/LivenessNowPlayingReader.mjs');
+    const { CompositeNowPlayingReader } = await import('./3_applications/media/CompositeNowPlayingReader.mjs');
+    const { YamlHouseholdMediaListsDatastore } = await import('./1_adapters/persistence/yaml/YamlHouseholdMediaListsDatastore.mjs');
+    const { nowTs24 } = await import('./0_system/utils/index.mjs');
+    const { ProgressWriteRuntime } = await import('./1_adapters/content/ProgressWriteRuntime.mjs');
+    householdMediaMemory = new HouseholdMediaMemoryService({
+      progressMemory: mediaProgressMemory,
+      listsStore: new YamlHouseholdMediaListsDatastore({ configService }),
+      contentCatalog: contentServices.contentCatalog,
+      markContentWatched: contentServices.markContentWatched,
+      // Fleet device-state first, then play/log sessions — the only live view
+      // of browsers and kiosks.
+      nowPlaying: new CompositeNowPlayingReader([
+        ...(deviceLivenessService ? [new LivenessNowPlayingReader({ livenessService: deviceLivenessService })] : []),
+        ...(playLedger ? [{ list: () => playLedger.nowPlaying({ nowEpoch: Date.now() }) }] : []),
+      ]),
+      nowTimestamp: nowTs24,
+      runtime: new ProgressWriteRuntime(),
+      playLedger,
+      logger: rootLogger.child({ module: 'household-media-memory' }),
+    });
+  }
+
   // Media queue management
   v1Routers.media = createMediaRouter({
     mediaQueueService: mediaServices.mediaQueueService,
@@ -1543,6 +1607,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     contentIdResolver: contentServices.contentIdResolver,
     mediaQueueEvents: new MediaQueueEvents({ publish: (topic, payload) => eventBus.broadcast(topic, payload) }),
     createMediaQueue: (props) => new MediaQueue(props),
+    householdMediaMemory,
     logger: rootLogger.child({ module: 'media-api' }),
   });
 
@@ -5098,6 +5163,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     loadFile,
     pianoMidiWakeService,
     kioskFrictionTracker,
+    startStatusService: deviceStartStatusService,
     logger: rootLogger.child({ module: 'device-api' })
   });
 

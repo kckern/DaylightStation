@@ -6,6 +6,10 @@ export function createScreenItemActions({ source, targetId }) {
     return { execute: unsupported, undo: unsupported };
   }
   let pendingCommit = null;
+  // operationId → addedBy marker (e.g. 'auto-continue' batches, RQ-STEER-19):
+  // stamped on every entry the operation inserts, so the published queue,
+  // persistence and logs can show "added automatically".
+  const markers = new Map();
   const owner = createItemActionOwner({
     targetId,
     getPendingCommit: () => pendingCommit,
@@ -27,6 +31,10 @@ export function createScreenItemActions({ source, targetId }) {
         format: item.format ?? (['audio', 'track', 'song'].includes(item.mediaType ?? item.type) ? 'audio' : 'video'),
       }));
       if (snapshot.currentItem) snapshot.currentItem.format ??= snapshot.queue.items[snapshot.queue.currentIndex]?.format ?? 'video';
+      if (operationId && markers.has(operationId)) {
+        const addedBy = markers.get(operationId);
+        snapshot.queue.items = snapshot.queue.items.map(item => (item.itemActionId === operationId ? { ...item, addedBy } : item));
+      }
       const result = playbackChanged || restore
         ? source.adopt(snapshot, { operationId: operationId ?? globalThis.crypto.randomUUID(), autoplay: !restore || snapshot.state !== 'paused' })
         : source.applyQueue(snapshot.queue);
@@ -51,8 +59,21 @@ export function createScreenItemActions({ source, targetId }) {
   // React setters issue a revision before the new queue is readable. Wait
   // only for that commit, not for content expansion or native playback, so
   // a newer Play can still supersede an unresolved older collection.
-  const execute = command => pendingCommit
-    ? pendingCommit.then(() => execute(command))
-    : owner.execute(command);
+  const execute = (command) => {
+    if (command?.addedBy && command.operationId) markers.set(command.operationId, command.addedBy);
+    return pendingCommit
+      ? pendingCommit.then(() => execute(command))
+      : owner.execute(command);
+  };
   return { ...owner, execute };
+}
+
+// One owner per session source: the ScreenActionHandler (remote item actions
+// and their Undo) and the session controls host (auto-continue batches) must
+// share a single undo ledger, or an Undo could not find a batch.
+const sharedOwners = new WeakMap();
+export function getScreenItemActions(source) {
+  if (!source || typeof source !== 'object') return createScreenItemActions({ source, targetId: undefined });
+  if (!sharedOwners.has(source)) sharedOwners.set(source, createScreenItemActions({ source, targetId: source.ownerId }));
+  return sharedOwners.get(source);
 }

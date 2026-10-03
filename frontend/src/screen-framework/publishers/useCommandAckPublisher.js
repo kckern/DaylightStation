@@ -73,7 +73,7 @@ export function useCommandAckPublisher({ deviceId, actionBus, handoffExecutor = 
       }
     };
 
-    const publishAck = ({ commandId, ok, error, code, handoff }) => {
+    const publishAck = ({ commandId, ok, error, code, handoff, appliedAs, requestedOp }) => {
       if (typeof commandId !== 'string' || commandId.length === 0) {
         logger().debug('ack-skipped-no-commandId', { ok });
         return;
@@ -93,10 +93,12 @@ export function useCommandAckPublisher({ deviceId, actionBus, handoffExecutor = 
           error,
           code,
           handoff,
+          appliedAs,
+          requestedOp,
           appliedAt: new Date().toISOString(),
         });
         wsService.send(ack);
-        logger().debug('ack-sent', { commandId, ok });
+        logger().debug('ack-sent', { commandId, ok, ...(appliedAs ? { appliedAs } : {}) });
       } catch (err) {
         logger().warn('ack-build-failed', { commandId, error: String(err?.message ?? err) });
       }
@@ -114,6 +116,17 @@ export function useCommandAckPublisher({ deviceId, actionBus, handoffExecutor = 
 
     const queueOpAppliedHandler = (payload) => {
       if (!['add', 'item-action', 'undo'].includes(payload?.op)) return;
+      // Add only (RQ-PLAY-10) rewrote a Play into an Add — the ack says so.
+      publishAck({
+        commandId: payload?.commandId, ok: true,
+        ...(payload?.appliedAs ? { appliedAs: payload.appliedAs } : {}),
+        ...(payload?.requestedOp ? { requestedOp: payload.requestedOp } : {}),
+      });
+    };
+
+    // Session controls (sleep timer, put-back, countdown, session flags) are
+    // acked by their outcome, emitted by ScreenSessionControlsHost.
+    const sessionControlAppliedHandler = (payload) => {
       publishAck({ commandId: payload?.commandId, ok: true });
     };
 
@@ -162,6 +175,7 @@ export function useCommandAckPublisher({ deviceId, actionBus, handoffExecutor = 
       unsubs.push(bus.subscribe(evt, successHandler));
     }
     unsubs.push(bus.subscribe('media:queue-op-applied', queueOpAppliedHandler));
+    unsubs.push(bus.subscribe('media:session-control-applied', sessionControlAppliedHandler));
     unsubs.push(bus.subscribe('media:handoff', handoffUnsupportedHandler));
     unsubs.push(bus.subscribe(ERROR_EVENT, errorHandler));
 

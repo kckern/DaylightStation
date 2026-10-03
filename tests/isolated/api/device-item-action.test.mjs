@@ -11,7 +11,7 @@ it('validates and forwards the exact item operation and exposes cold cancellatio
   app.use(express.json(), createDeviceRouter({ sessionService: { configured: () => true, queue }, dispatchService }));
   const body = { commandId: 'cmd', operationId: 'op', tappedAt: Date.now(), kind: 'playNext', item: { contentId: 'plex:a' }, clearRest: false };
   expect((await request(app).post('/tv/session/queue/item-action').send(body)).status).toBe(200);
-  expect(queue).toHaveBeenCalledWith('tv', 'cmd', { op: 'item-action', ...body, commandId: undefined });
+  expect(queue).toHaveBeenCalledWith('tv', 'cmd', { op: 'item-action', ...body, commandId: undefined }, undefined);
   expect((await request(app).post('/tv/session/queue/item-action').send({ ...body, kind: 'wrong' })).status).toBe(400);
   await dispatchService.load('tv', { itemAction: JSON.stringify(body) });
   expect((await request(app).post('/tv/session/item-action/op/cancel').send({})).body).toMatchObject({ ok: true, pending: true });

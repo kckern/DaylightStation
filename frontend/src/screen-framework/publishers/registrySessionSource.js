@@ -36,8 +36,11 @@ function randomSessionId() {
  * @param {object} opts.registry  — playerSessionRegistry instance.
  * @param {string} opts.ownerId   — deviceId; goes in snapshot.meta.ownerId.
  * @param {string} [opts.sessionId] — stable session id (generated if omitted).
+ * @param {object} [opts.controls] — screen session controls (session/screenSessionControls.js).
+ *   When given, every snapshot carries `controls` (tech doc §9.14) and the
+ *   latest command origin as `meta.origin`, and control changes re-publish.
  */
-export function createRegistrySessionSource({ registry, ownerId, sessionId } = {}) {
+export function createRegistrySessionSource({ registry, ownerId, sessionId, controls = null } = {}) {
   if (!registry || typeof registry.getCurrent !== 'function') {
     throw new TypeError('createRegistrySessionSource: registry is required');
   }
@@ -80,7 +83,26 @@ export function createRegistrySessionSource({ registry, ownerId, sessionId } = {
     }
   };
 
+  const decorate = (snapshot) => {
+    if (!snapshot || !controls) return snapshot;
+    try {
+      const origin = controls.getOrigin?.();
+      return {
+        ...snapshot,
+        controls: controls.toPublished(),
+        meta: { ...snapshot.meta, ...(origin ? { origin } : {}) },
+      };
+    } catch (err) {
+      logger().warn('controls-decorate-failed', { error: String(err?.message ?? err) });
+      return snapshot;
+    }
+  };
+
   function getSnapshot() {
+    return decorate(getBareSnapshot());
+  }
+
+  function getBareSnapshot() {
     try {
       return currentSource().getSnapshot();
     } catch (err) {
@@ -168,8 +190,18 @@ export function createRegistrySessionSource({ registry, ownerId, sessionId } = {
       logger().warn('registry-subscribe-failed', { error: String(err?.message ?? err) });
     }
 
+    let controlsUnsub = () => {};
+    if (controls?.subscribe && typeof onChange === 'function') {
+      controlsUnsub = controls.subscribe(() => {
+        try { onChange(); } catch (err) {
+          logger().warn('onChange-threw', { error: String(err?.message ?? err) });
+        }
+      });
+    }
+
     return () => {
       try { registryUnsub(); } catch { /* ignore */ }
+      try { controlsUnsub(); } catch { /* ignore */ }
       if (typeof innerUnsub === 'function') {
         try { innerUnsub(); } catch { /* ignore */ }
       }
@@ -178,6 +210,10 @@ export function createRegistrySessionSource({ registry, ownerId, sessionId } = {
 
   return {
     getSnapshot,
+    // Undecorated snapshot — what the playback owner holds, without the
+    // published controls block (used by the controls' own ports).
+    getBareSnapshot,
+    get controls() { return controls; },
     getActionOwner: () => invokeCurrent('getActionOwner', null),
     applyQueue: (snapshot) => invokeCurrent('applyQueue', { ok: false, code: 'ITEM_ACTION_UNSUPPORTED' }, snapshot),
     capture: () => {

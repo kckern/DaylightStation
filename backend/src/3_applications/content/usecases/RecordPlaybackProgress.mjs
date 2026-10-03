@@ -1,3 +1,7 @@
+import { normalizeSpotDeviceId, recordSpot, seedLegacySpot, retireLegacySpot } from '#domains/content/services/mediaSpots.mjs';
+
+const TERMINAL_STATUSES = new Set(['completed', 'stopped', 'ended']);
+
 /**
  * Record a playback heartbeat and coordinate its application-level side effects.
  *
@@ -16,6 +20,12 @@ export class RecordPlaybackProgress {
     // Reports this surface's playback to the media server as a real client.
     // Optional: absent in tests and wherever no media server is configured.
     reportPlaybackSession = null,
+    // Per-screen play ledger (PlayLedgerRecorder): one row per playback start.
+    // Optional and advisory, like reportPlaybackSession.
+    playLedger = null,
+    // (deviceId) => boolean. Composition answers from devices.yml for fleet
+    // ids; absent = every well-formed id is accepted.
+    isKnownSpotDevice = null,
     createMediaProgress = (props) => props,
     nowTimestamp,
     nowEpoch = () => Date.now(),
@@ -30,6 +40,8 @@ export class RecordPlaybackProgress {
     this.userVideoProgressStore = userVideoProgressStore;
     this.economyService = economyService;
     this.reportPlaybackSession = reportPlaybackSession;
+    this.playLedger = playLedger;
+    this.isKnownSpotDevice = isKnownSpotDevice;
     this.createMediaProgress = createMediaProgress;
     this.nowTimestamp = nowTimestamp;
     this.nowEpoch = nowEpoch;
@@ -43,9 +55,15 @@ export class RecordPlaybackProgress {
     // `naturalEnd`/`status` distinguish finishing from merely stopping — only a
     // natural end may be reported as watched.
     deviceId = null, naturalEnd = false, status = null,
+    // `spotDeviceId` keys this screen's own spot (per-screen progress,
+    // RQ-PLAY-09). Absent or unusable -> the legacy single-playhead write only.
+    spotDeviceId = null,
+    // How this playback started, when the caller knows (e.g. 'routine:<id>').
+    origin = null,
   }) {
     let progressNamespace = type;
     let itemMetadata = null;
+    let itemFacts = null;
     const compoundId = assetId.includes(':') ? assetId : `${type}:${assetId}`;
 
     const resolved = this.contentCatalog.resolveSource(type, compoundId);
@@ -54,6 +72,7 @@ export class RecordPlaybackProgress {
         progressNamespace = await this.contentCatalog.progressNamespace(resolved, compoundId);
         const item = await this.contentCatalog.getItem(resolved, compoundId);
         itemMetadata = item?.metadata;
+        itemFacts = item ? { title: item.title ?? null, type: item.type ?? null } : null;
       } catch (error) {
         this.logger.warn?.('play.log.metadata_fetch_failed', { assetId, error: error.message });
       }
@@ -72,9 +91,18 @@ export class RecordPlaybackProgress {
     const estimatedDuration = normalizedPercent > 0
       ? Math.round(normalizedSeconds / (normalizedPercent / 100))
       : (itemMetadata?.duration ? Math.round(itemMetadata.duration / 1000) : 0);
+    let spotDevice = normalizeSpotDeviceId(spotDeviceId);
+    if (spotDevice && typeof this.isKnownSpotDevice === 'function' && !this.isKnownSpotDevice(spotDevice)) {
+      this.logger.warn?.('play.log.spot_device_unknown', { assetId, spotDeviceId: spotDevice });
+      spotDevice = null;
+    }
+    // With two screens on one item the shared playhead jumps between them, so
+    // the "how far did this report move" reference is this screen's own spot.
+    const ownSpot = spotDevice ? existingState?.spots?.[spotDevice] : null;
+    const referencePlayhead = ownSpot ? (Number(ownSpot.playhead) || 0) : (existingState?.playhead || 0);
     const sessionWatchTime = Number.isFinite(watched_duration)
       ? parseFloat(watched_duration)
-      : Math.max(0, normalizedSeconds - (existingState?.playhead || 0));
+      : Math.max(0, normalizedSeconds - referencePlayhead);
     const existingWatchTime = existingState?.watchTime ?? 0;
     const newWatchTime = existingWatchTime + sessionWatchTime;
     const statePercent = estimatedDuration > 0
@@ -82,16 +110,28 @@ export class RecordPlaybackProgress {
       : 0;
     const completedAt = existingState?.completedAt
       || (statePercent >= 90 ? this.nowTimestamp() : null);
+    const lastPlayed = this.nowTimestamp();
+    const spotFields = spotDevice
+      ? {
+        spots: retireLegacySpot(recordSpot(seedLegacySpot(existingState), spotDevice, {
+          playhead: normalizedSeconds,
+          duration: estimatedDuration,
+          at: lastPlayed,
+        }), normalizedSeconds),
+        lastDevice: spotDevice,
+      }
+      : {};
     const newState = this.createMediaProgress({
       contentId: compoundId,
       playhead: normalizedSeconds,
       duration: estimatedDuration,
       percent: statePercent,
       playCount: (existingState?.playCount ?? 0)
-        + (!existingState || normalizedSeconds < (existingState.playhead || 0) ? 1 : 0),
-      lastPlayed: this.nowTimestamp(),
+        + (!existingState || normalizedSeconds < referencePlayhead ? 1 : 0),
+      lastPlayed,
       watchTime: newWatchTime > 0 ? Number(newWatchTime.toFixed(3)) : 0,
       completedAt,
+      ...spotFields,
     });
 
     if (this.mediaProgressMemory) {
@@ -130,12 +170,41 @@ export class RecordPlaybackProgress {
       }
     }
 
+    const terminal = naturalEnd === true || TERMINAL_STATUSES.has(status);
+    if (this.playLedger && spotDevice && terminal) {
+      // A stop/finish report ends the screen's session; it is never a start.
+      try {
+        await this.playLedger.end?.({ deviceId: spotDevice, at: this.nowEpoch() });
+      } catch (error) {
+        this.logger.warn?.('play.log.ledger_failed', { assetId, error: error.message });
+      }
+    } else if (this.playLedger && spotDevice) {
+      try {
+        await this.playLedger.observe({
+          deviceId: spotDevice,
+          contentId: compoundId,
+          atEpoch: this.nowEpoch(),
+          startedAt: this.nowIso(),
+          localTime: lastPlayed,
+          metadata: {
+            ...(itemMetadata || {}),
+            title: itemFacts?.title || itemMetadata?.title || title || null,
+            type: itemMetadata?.type || itemFacts?.type || null,
+          },
+          origin: typeof origin === 'string' ? origin : null,
+        });
+      } catch (error) {
+        this.logger.warn?.('play.log.ledger_failed', { assetId, error: error.message });
+      }
+    }
+
     this.logger.info?.('play.log.updated', {
       assetId,
       type,
       percent: normalizedPercent,
       playhead: normalizedSeconds,
       storagePath: progressNamespace,
+      spotDevice,
     });
 
     if (this.playbackPublications?.progressRecorded) {
@@ -205,6 +274,7 @@ export class RecordPlaybackProgress {
         playCount: newState.playCount,
         lastPlayed: newState.lastPlayed,
         watchTime: newState.watchTime,
+        ...(spotDevice ? { deviceId: spotDevice } : {}),
         userProgress: userProgressPublic,
       },
     };

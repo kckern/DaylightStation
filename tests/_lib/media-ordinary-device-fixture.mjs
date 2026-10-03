@@ -11,10 +11,18 @@ import { CommandHandlerLivenessService } from '../../backend/src/3_applications/
 import { DispatchIdempotencyService } from '../../backend/src/3_applications/devices/services/DispatchIdempotencyService.mjs';
 import { SessionControlService } from '../../backend/src/3_applications/devices/services/SessionControlService.mjs';
 import { DeviceSessionApiService } from '../../backend/src/3_applications/devices/services/DeviceSessionApiService.mjs';
+import { DeviceStartStatusService } from '../../backend/src/3_applications/devices/services/DeviceStartStatusService.mjs';
 import { createDeviceRouter } from '../../backend/src/4_api/v1/routers/device.mjs';
+import { deviceResolver } from '../../backend/src/4_api/middleware/deviceResolver.mjs';
 
 export const ORDINARY_DEVICE_ID = 'acceptance-media';
 const VIRTUAL_TRANSPORT_ACTIONS = new Set(['pause', 'play', 'seekAbs', 'seekRel', 'skipNext', 'skipPrev', 'stop']);
+// Screen session controls (P1): virtual receiver only, like transport.
+const VIRTUAL_SESSION_ROUTES = [
+  ['PUT', /^\/session\/(add-only|end-of-queue|stop-after-current|volume)$/],
+  ['POST', /^\/session\/(sleep-timer|sleep-timer\/cancel|sleep-timer\/resume|put-back|countdown\/cancel|countdown\/start-now)$/],
+  ['GET', /^\/start-status$/],
+];
 const quiet = { info() {}, warn() {}, error() {}, debug() {} };
 const scheduler = {
   wait: (ms) => new Promise(resolve => setTimeout(resolve, ms)),
@@ -55,6 +63,9 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet } = 
   eventBus.setLivenessService(deviceLiveness);
   const commandLiveness = new CommandHandlerLivenessService({ presenceGateway, logger });
   commandLiveness.start();
+  const startStatus = new DeviceStartStatusService({ progressGateway: presenceGateway, logger });
+  startStatus.start();
+  eventBus.setStartStatusService(startStatus);
   const device = virtualReceiver(eventBus, logger);
   const deviceService = { get: (id) => id === ORDINARY_DEVICE_ID ? device : null };
   const wakeAndLoad = new WakeAndLoadService({
@@ -94,10 +105,13 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet } = 
   const sessionService = new DeviceSessionApiService({ sessionControl, logger });
   const router = createDeviceRouter({
     fleetService, dispatchService, presenceService: unavailable, sessionService,
-    screenService: unavailable, recoveryService: unavailable,
+    screenService: unavailable, recoveryService: unavailable, startStatusService: startStatus,
   });
   const app = express();
   app.use(express.json());
+  // As in production: the X-Daylight-Device header names the asking device,
+  // which the device router turns into the command origin.
+  app.use(deviceResolver());
   app.get(`/${ORDINARY_DEVICE_ID}/receiver-ready`, (_req, res) => {
     const subscribers = eventBus.getTopicSubscriberCount(`homeline:${ORDINARY_DEVICE_ID}`);
     return res.json({ ready: subscribers > 0 && commandLiveness.isFresh(ORDINARY_DEVICE_ID), subscribers });
@@ -119,6 +133,10 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet } = 
       && VIRTUAL_TRANSPORT_ACTIONS.has(req.body?.action)) return next();
     if (req.method === 'POST'
       && path === `/${ORDINARY_DEVICE_ID}/session/handoff`) return next();
+    if (path.startsWith(`/${ORDINARY_DEVICE_ID}/`)) {
+      const rest = path.slice(ORDINARY_DEVICE_ID.length + 1);
+      if (VIRTUAL_SESSION_ROUTES.some(([method, pattern]) => method === req.method && pattern.test(rest))) return next();
+    }
     if (req.method === 'POST'
       && new RegExp(`^/${ORDINARY_DEVICE_ID}/session/item-action/[^/]+/claim$`).test(path)) return next();
     return res.status(403).json({ ok: false, error: 'ordinary acceptance blocks physical device routes' });
@@ -130,7 +148,7 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet } = 
     eventBus,
     app,
     async attach(httpServer) { await eventBus.start(httpServer); },
-    async stop() { commandLiveness.stop(); deviceLiveness.stop(); await eventBus.stop(); },
+    async stop() { startStatus.stop(); commandLiveness.stop(); deviceLiveness.stop(); await eventBus.stop(); },
     async middleware(req, res) {
       const path = new URL(req.url, upstream).pathname;
       if (path.startsWith('/api/v1/device/')) {

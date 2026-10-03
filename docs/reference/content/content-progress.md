@@ -34,6 +34,52 @@ Each interaction with playable content produces a progress record:
 | `playCount` | number | How many times the content has been played |
 | `isWatched` | boolean | Whether the content is considered "watched" |
 
+### Per-screen spots
+
+Beside the single playhead every record may carry a spot per screen, and the
+screen that last reported:
+
+```yaml
+plex:12345:
+  playhead: 720            # legacy single playhead = the latest report, any screen
+  duration: 7200
+  percent: 10
+  completedAt: null
+  spots:
+    'fleet:livingroom-tv': { playhead: 4800, duration: 7200, percent: 67, lastPlayed: '2026-10-01 21:00:00' }
+    'browser:c74fee96a6134c13': { playhead: 720, duration: 7200, percent: 10, lastPlayed: '2026-10-02 08:00:00' }
+  lastDevice: 'browser:c74fee96a6134c13'
+```
+
+- Keys are `X-Daylight-Device` ids (`frontend/src/lib/deviceIdentity.js`):
+  `fleet:<devices.yml key>` (must be declared) for a rendered screen,
+  `browser:<token>` for any other browser. `ephemeral:` ids and the
+  User-Agent fallback never key a spot. The reserved key `legacy` holds an
+  open pre-spots playhead until a screen plays past it.
+- `watchTime`/`playCount` deltas are measured against the reporting screen's
+  own spot.
+- Every existing reader keeps reading `playhead`/`percent`/`completedAt`; the
+  spot fields are additive.
+- Writers that do not know about spots (bookmarks, `UpdateContentProgress`,
+  remote sync) rebuild the entity without them; `YamlMediaProgressMemory`
+  carries the stored `spots`/`lastDevice` over (undefined = untouched). An
+  explicit `spots: {}` / `lastDevice: null` (mark watched/unwatched) clears
+  them; a record with an empty spots map is judged by its single playhead.
+- Unfinished / finished rules for a spot: `backend/src/2_domains/content/services/mediaSpots.mjs`
+  (≥ 5 min or ≥ 5% to count as unfinished; finished at the same 90% line as
+  `isWatched`).
+
+### Watched / unwatched marks
+
+`MarkContentWatched` (`POST /api/v1/media/household/watched`) writes the same
+completion state playback writes: watched = playhead at duration, percent
+100, `completedAt` kept or stamped; unwatched = playhead 0, percent 0,
+`completedAt` cleared (the one deliberate exception to "never cleared").
+Both close every screen's spot and clear `lastDevice`. Every namespace holding
+the item is updated; remote-synced sources receive the mark at once. An id
+whose source the catalog cannot resolve is refused. Fitness reads the same
+`completedAt` — see `docs/reference/fitness/fitness-system-architecture.md`.
+
 ---
 
 ## Classifiers
@@ -196,7 +242,13 @@ If an app doesn't report progress, the queue treats it as 0% until it calls `adv
 
 **Route**: `POST /api/v1/play/log`
 
-Logs a progress update from the frontend.
+Logs a progress update from the frontend. The screen is identified by the
+`X-Daylight-Device` header (sent by every `DaylightAPI` call) or an explicit
+body `deviceId`; with one, the heartbeat also updates that screen's spot and
+feeds the per-screen play ledger (see
+[media-app-technical.md §2.4](../media/media-app-technical.md)). An optional
+body `origin` says how the playback started. Without a device the write is the
+legacy single-playhead write.
 
 ```json
 {

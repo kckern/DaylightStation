@@ -6,6 +6,7 @@ import {
   deleteYaml,
   listYamlFiles,
   dirExists,
+  listDirs,
   resolveYamlPath,
   getStats
 } from '#system/utils/FileIO.mjs';
@@ -25,8 +26,14 @@ function dehydrateMediaProgress(state) {
   };
   if (state.completedAt) record.completedAt = state.completedAt;
   if (state.bookmark) record.bookmark = state.bookmark;
+  if (state.spots !== undefined) record.spots = { ...(state.spots || {}) };
+  if (state.lastDevice) record.lastDevice = state.lastDevice;
   return record;
 }
+
+// Dropbox writes "<name> (<host>'s conflicted copy <date>).yml" beside the
+// real file. Those are stale forks, never a namespace of their own.
+const CONFLICTED_COPY = /conflicted copy/i;
 
 /**
  * YAML-based media progress persistence
@@ -128,6 +135,8 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
       watchTime: data.watchTime ?? 0,
       completedAt: data.completedAt ?? null,
       bookmark: data.bookmark ?? null,
+      spots: data.spots === undefined ? undefined : (data.spots || {}),
+      lastDevice: data.lastDevice ?? null,
       now: Date.now(),
     });
   }
@@ -170,6 +179,14 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
         }
       );
     }
+
+    // Per-screen spots are owned by spot-aware writers (play/log with a device,
+    // mark watched/unwatched). Every other writer rebuilds the entity without
+    // them; carry the stored map over so those writes never erase a screen's
+    // spot.
+    const previous = data[contentId];
+    if (rest.spots === undefined && previous?.spots !== undefined) rest.spots = previous.spots;
+    if (state.lastDevice === undefined && previous?.lastDevice) rest.lastDevice = previous.lastDevice;
 
     data[contentId] = rest;
     this._writeFile(storagePath, data);
@@ -230,6 +247,34 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
     }
 
     return allProgress;
+  }
+
+  /**
+   * Every progress record in every namespace, with the namespace it lives in.
+   * Reads go through the mtime parse cache, so repeated household-list reads
+   * cost a stat per file once warm. Dropbox conflicted copies are skipped.
+   * @returns {Promise<Array<{namespaceId: string, progress: MediaProgress}>>}
+   */
+  async listAllProgress() {
+    if (!dirExists(this.basePath)) return [];
+    const namespaces = [];
+    for (const name of listYamlFiles(this.basePath, { stripExtension: true })) {
+      if (!CONFLICTED_COPY.test(name)) namespaces.push(name);
+    }
+    for (const dir of listDirs(this.basePath)) {
+      for (const name of listYamlFiles(`${this.basePath}/${dir}`, { stripExtension: true })) {
+        if (!CONFLICTED_COPY.test(name)) namespaces.push(`${dir}/${name}`);
+      }
+    }
+    const out = [];
+    for (const namespaceId of namespaces) {
+      const data = this._readFile(namespaceId);
+      for (const [contentId, stateData] of Object.entries(data || {})) {
+        if (!stateData || typeof stateData !== 'object') continue;
+        out.push({ namespaceId, progress: this._toDomainEntity(contentId, stateData) });
+      }
+    }
+    return out;
   }
 }
 

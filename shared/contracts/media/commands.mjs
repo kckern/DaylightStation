@@ -1,5 +1,8 @@
 export const COMMAND_KINDS = Object.freeze([
   'transport', 'queue', 'config', 'adopt-snapshot', 'system', 'display', 'handoff',
+  // Screen session controls (sleep timer, Put it back, next-episode countdown).
+  // Params are validated by `validateSessionActionParams` in sessionControls.mjs.
+  'session',
 ]);
 
 export const TRANSPORT_ACTIONS = Object.freeze([
@@ -12,7 +15,16 @@ export const QUEUE_OPS = Object.freeze([
   'item-action', 'undo',
 ]);
 
-export const CONFIG_SETTINGS = Object.freeze(['shuffle', 'repeat', 'shader', 'volume']);
+// addOnly / endOfQueue / stopAfterCurrent are screen session flags
+// (RQ-PLAY-10, RQ-STEER-19, RQ-STEER-20); see sessionControls.mjs.
+export const CONFIG_SETTINGS = Object.freeze([
+  'shuffle', 'repeat', 'shader', 'volume', 'addOnly', 'endOfQueue', 'stopAfterCurrent',
+]);
+
+// Optional `params.intent` on a transport command. `move` marks the stop that
+// takes playback away to another screen (claim / Move here), so the screen
+// can say "Moved" instead of "Stopped".
+export const TRANSPORT_INTENTS = Object.freeze(['move']);
 
 export const SYSTEM_ACTIONS = Object.freeze(['reset', 'reload', 'sleep', 'wake']);
 

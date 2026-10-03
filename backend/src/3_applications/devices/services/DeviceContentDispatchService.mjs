@@ -19,7 +19,7 @@ export class DeviceContentDispatchService {
       error: `input device '${input.keyboard_id}' has no keymap entries`, keyboardId: input.keyboard_id };
     return { ok: true, keymapSize: entries.length };
   }
-  async load(deviceId, query) {
+  async load(deviceId, query, { origin } = {}) {
     // `deferredRetry=0` is the Media app asking that a failed press stays
     // failed: no backend retry 45s later behind the person's back
     // (RQ-STEER-07). It is a delivery option, never part of the receiver query.
@@ -31,6 +31,7 @@ export class DeviceContentDispatchService {
     const result = await this.#wake.execute(deviceId, contentQuery, {
       dispatchId,
       ...(manualRetryOnly ? { deferredRetry: false } : {}),
+      ...(origin ? { origin } : {}),
       ...(key ? { isCancelled: () => this.#itemActions.get(key)?.cancelled === true } : {}),
     });
     this.#logger.info?.('device.router.load.complete', { deviceId, ok: result.ok,

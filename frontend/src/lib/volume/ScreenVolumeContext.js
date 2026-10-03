@@ -13,6 +13,8 @@ const DEFAULT_VALUE = Object.freeze({
   setMaster: noop,
   step: noop,
   toggleMute: noop,
+  fade: 1,
+  setFade: noop,
 });
 
 export const ScreenVolumeContext = createContext(DEFAULT_VALUE);

@@ -29,6 +29,10 @@ import { isDeviceTransportGateway } from '../ports/IDeviceTransportGateway.mjs';
 import { RoutineTriggerDedupeService } from './RoutineTriggerDedupeService.mjs';
 
 const DEFAULT_ACK_TIMEOUT_MS       = 5000;
+
+// Origin is optional on every command; never put `origin: undefined` on the
+// envelope (it would change the idempotency fingerprint shape for no reason).
+const originField = (origin) => (origin && typeof origin === 'object' ? { origin } : {});
 const DEFAULT_IDEMPOTENCY_TTL_MS   = 60000;
 
 /**
@@ -191,13 +195,30 @@ export class SessionControlService extends ISessionControl {
     return this.#livenessService.getLastSnapshot(deviceId);
   }
 
-  transport(deviceId, { action, value, commandId }) {
+  transport(deviceId, { action, value, commandId, origin }) {
     return this.sendCommand(this.#transport.buildCommand({ targetDevice: deviceId, command: 'transport', commandId,
-      params: { action, ...(value !== undefined ? { value } : {}) } }));
+      params: { action, ...(value !== undefined ? { value } : {}) }, ...originField(origin) }));
   }
 
-  queue(deviceId, commandId, params) {
-    return this.sendCommand(this.#transport.buildCommand({ targetDevice: deviceId, command: 'queue', commandId, params }));
+  queue(deviceId, commandId, params, origin) {
+    return this.sendCommand(this.#transport.buildCommand({ targetDevice: deviceId, command: 'queue', commandId, params, ...originField(origin) }));
+  }
+
+  /**
+   * Screen session actions — sleep timer, resume after sleep, Put it back,
+   * next-episode countdown control (tech doc §6.2.6). Logged on both outcomes
+   * so "did the sleep timer land?" is answerable from the log store.
+   */
+  async session(deviceId, { action, params = {}, commandId, origin }) {
+    const result = await this.sendCommand(this.#transport.buildCommand({
+      targetDevice: deviceId, command: 'session', commandId, params: { action, ...params }, ...originField(origin),
+    }));
+    const ok = result?.ok === true;
+    this.#logger[ok ? 'info' : 'warn']?.('session-control.session', {
+      deviceId, action, commandId, ok, originKind: origin?.kind ?? null,
+      ...(ok ? {} : { code: result?.code, error: result?.error }),
+    });
+    return result;
   }
 
   handoff(deviceId, { commandId, params }) {
@@ -214,9 +235,9 @@ export class SessionControlService extends ISessionControl {
    * asked "did the volume command land?", the log store could only answer "it
    * did not fail in one of four specific ways".
    */
-  async config(deviceId, { setting, value, commandId }) {
+  async config(deviceId, { setting, value, commandId, origin }) {
     const result = await this.sendCommand(this.#transport.buildCommand({
-      targetDevice: deviceId, command: 'config', commandId, params: { setting, value },
+      targetDevice: deviceId, command: 'config', commandId, params: { setting, value }, ...originField(origin),
     }));
     const ok = result?.ok === true;
     this.#logger[ok ? 'info' : 'warn']?.('session-control.config', {
@@ -285,9 +306,11 @@ export class SessionControlService extends ISessionControl {
       };
     }
 
-    // 2. Dispatch transport/stop.
+    // 2. Dispatch transport/stop. `intent: 'move'` lets the screen tell the
+    // people in front of it that playback moved away, not merely stopped.
     const envelope = this.#transport.buildCommand({ targetDevice: deviceId, command: 'transport', commandId,
-      params: { action: 'stop' }, ts: new Date(this.#clock.now()).toISOString() });
+      params: { action: 'stop', intent: 'move' }, ts: new Date(this.#clock.now()).toISOString(),
+      ...originField(opts?.origin) });
 
     const ack = await this.sendCommand(envelope);
     if (!ack || ack.ok !== true) {
