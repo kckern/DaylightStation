@@ -10,6 +10,7 @@ import {
   mergeScreens,
   retireScreen,
   restoreScreen,
+  unmergeScreen,
   resolveScreenId,
   aliasesOf,
   SCREEN_DEFAULTS,
@@ -128,7 +129,10 @@ describe('mergeScreens', () => {
     state = seen(state, 'browser:new', 'Kitchen tablet (new)', NOW - DAY);
     const { state: merged } = mergeScreens(state, 'browser:new', 'browser:old', { at: iso(NOW) });
     expect(merged.screens['browser:new']).toBeUndefined();
-    expect(merged.aliases['browser:new']).toEqual({ into: 'browser:old', mergedAt: iso(NOW) });
+    // The folded entry is kept on the alias, so the merge can be undone.
+    expect(merged.aliases['browser:new']).toEqual({
+      into: 'browser:old', mergedAt: iso(NOW), was: expect.objectContaining({ name: 'Kitchen tablet (new)', lastSeen: iso(NOW - DAY) }),
+    });
     expect(merged.screens['browser:old']).toMatchObject({ firstSeen: iso(NOW - 20 * DAY), lastSeen: iso(NOW - DAY) });
     expect(resolveScreenId(merged, 'browser:new')).toBe('browser:old');
     expect(aliasesOf(merged, 'browser:old')).toEqual(['browser:old', 'browser:new']);
@@ -155,6 +159,37 @@ describe('mergeScreens', () => {
     const state = seen(emptyRegistry(), 'browser:a', 'Office browser');
     const merged = mergeScreens(state, 'browser:a', 'fleet:office-tv', { at: iso(NOW), configured }).state;
     expect(aliasesOf(merged, 'fleet:office-tv')).toEqual(['fleet:office-tv', 'browser:a']);
+  });
+});
+
+describe('unmergeScreen', () => {
+  it('brings a merged duplicate back as its own screen, with its own name and times', () => {
+    let state = seen(emptyRegistry(), 'browser:old', 'Kitchen tablet', NOW - 20 * DAY);
+    state = seen(state, 'browser:new', 'Hall tablet', NOW - DAY);
+    state = mergeScreens(state, 'browser:new', 'browser:old', { at: iso(NOW) }).state;
+    const { state: back, screen, into } = unmergeScreen(state, 'browser:new', { at: iso(NOW + 1000), configured: [] });
+    expect(into).toBe('browser:old');
+    expect(back.aliases['browser:new']).toBeUndefined();
+    expect(back.screens['browser:new']).toMatchObject({ name: 'Hall tablet', lastSeen: iso(NOW - DAY) });
+    expect(screen).toMatchObject({ id: 'browser:new', name: 'Hall tablet' });
+    expect(aliasesOf(back, 'browser:old')).toEqual(['browser:old']);
+  });
+  it('duplicates that came along through it go back with it', () => {
+    let state = seen(emptyRegistry(), 'browser:a', 'A');
+    state = seen(state, 'browser:b', 'B');
+    state = seen(state, 'browser:c', 'C');
+    state = mergeScreens(state, 'browser:c', 'browser:b', { at: iso(NOW) }).state;
+    state = mergeScreens(state, 'browser:b', 'browser:a', { at: iso(NOW) }).state;
+    const back = unmergeScreen(state, 'browser:b', { at: iso(NOW), configured: [] }).state;
+    expect(resolveScreenId(back, 'browser:c')).toBe('browser:b');
+  });
+  it('suffixes its old name if another screen took it meanwhile; refuses an id that was never merged', () => {
+    let state = seen(emptyRegistry(), 'browser:old', 'Kitchen tablet');
+    state = seen(state, 'browser:new', 'Hall tablet');
+    state = mergeScreens(state, 'browser:new', 'browser:old', { at: iso(NOW) }).state;
+    state = seen(state, 'browser:third', 'Hall tablet');
+    expect(unmergeScreen(state, 'browser:new', { at: iso(NOW), configured: [] }).screen.name).toBe('Hall tablet (2)');
+    expect(() => unmergeScreen(state, 'browser:old', { at: iso(NOW), configured: [] })).toThrow(expect.objectContaining({ code: 'NOT_MERGED' }));
   });
 });
 

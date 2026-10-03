@@ -22,11 +22,13 @@ import {
   mergeScreens,
   retireScreen,
   restoreScreen,
+  unmergeScreen,
+  recordSpotFolds,
   resolveScreenId,
   aliasesOf,
   ScreenRegistryError,
 } from '#domains/media/screenRegistry.mjs';
-import { compareTimestamps } from '#domains/content/services/mediaSpots.mjs';
+import { foldSpot, unfoldSpot } from '#domains/content/services/mediaSpots.mjs';
 
 const PERSIST_SEEN_EVERY_MS = 10 * 60 * 1000;
 
@@ -36,7 +38,6 @@ export class ScreenRegistryService {
   #signals;
   #routines;
   #progress;
-  #createMediaProgress;
   #clock;
   #logger;
   /** @type {Map<string, Promise>} */
@@ -50,11 +51,10 @@ export class ScreenRegistryService {
    * @param {{list: Function}} deps.configuredScreens - devices.yml media screens
    * @param {{read: Function}|null} [deps.signals] - live lastSeen/online per id
    * @param {{targeting: Function}|null} [deps.routines] - RoutineCatalogService
-   * @param {{listAllProgress: Function, saveProgress: Function}|null} [deps.progress] - for merges
-   * @param {Function} [deps.createMediaProgress]
+   * @param {{listAllProgress: Function, updateSpots: Function}|null} [deps.progress] - spot folds on merge/unmerge
    */
   constructor({ store, configuredScreens, signals = null, routines = null, progress = null,
-    createMediaProgress = null, clock = Date, logger = console }) {
+    clock = Date, logger = console }) {
     if (!store) throw new TypeError('ScreenRegistryService requires store');
     if (typeof configuredScreens?.list !== 'function') throw new TypeError('ScreenRegistryService requires configuredScreens.list');
     this.#store = store;
@@ -62,7 +62,6 @@ export class ScreenRegistryService {
     this.#signals = signals;
     this.#routines = routines;
     this.#progress = progress;
-    this.#createMediaProgress = createMediaProgress;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -189,7 +188,8 @@ export class ScreenRegistryService {
     const entry = state.screens[target];
     const fresh = entry && Number.isFinite(Date.parse(entry.lastSeen))
       && this.#clock.now() - Date.parse(entry.lastSeen) < PERSIST_SEEN_EVERY_MS;
-    if (fresh && entry.name) {
+    // Browsers need a name before the fast path; fleet/added screens have one.
+    if (fresh && (entry.name || !target.startsWith('browser:'))) {
       this.#seen.set(key(target), at);
       return this.get({ householdId, id: target });
     }
@@ -254,21 +254,61 @@ export class ScreenRegistryService {
   }
 
   /**
-   * Fold a duplicate into its earlier self. Its id becomes an alias (plays and
-   * started-by follow it), and its per-screen spots move onto the target —
-   * the newer spot wins where both screens hold one.
+   * Fold a duplicate into its earlier self. Needs `confirm: true` (the
+   * routines targeting either screen are listed first). The duplicate's id
+   * becomes an alias (plays and started-by follow it) and its spots are folded
+   * onto the target by the shared spot rules (mediaSpots.foldSpot) — newest
+   * wins the target's key, the other is kept under the alias. Undo: unmerge.
    */
-  async merge({ householdId, fromId, intoId } = {}) {
+  async merge({ householdId, fromId, intoId, confirm = false } = {}) {
     const from = this.#qualify(fromId);
+    const into = await this.resolve(intoId, householdId);
+    if (confirm !== true) {
+      const routines = [...await this.routinesFor({ householdId, id: from }), ...await this.routinesFor({ householdId, id: into })];
+      throw new ScreenRegistryError('Merging folds one screen into another; confirm to merge', {
+        code: 'CONFIRM_REQUIRED', details: { action: 'merge', fromId: from, intoId: into, routines },
+      });
+    }
     const outcome = await this.#write(householdId, async () => {
-      const result = mergeScreens(await this.#state(householdId), from, this.#qualify(intoId),
+      const result = mergeScreens(await this.#state(householdId), from, into,
         { at: this.#iso(), configured: this.#configuredList(householdId) });
       await this.#store.save(result.state, householdId);
       return result;
     });
-    const movedSpots = await this.#moveSpots(from, outcome.into);
-    this.#logger.info?.('media.screens.merged', { householdId: householdId ?? null, from, into: outcome.into, movedSpots });
-    return { screen: await this.get({ householdId, id: outcome.into }), movedSpots };
+    const folds = await this.#foldSpots(from, outcome.into);
+    if (folds.length) {
+      await this.#write(householdId, async () => {
+        await this.#store.save(recordSpotFolds(await this.#state(householdId), from, folds), householdId);
+      });
+    }
+    this.#logger.info?.('media.screens.merged', { householdId: householdId ?? null, from, into: outcome.into, movedSpots: folds.length });
+    return { screen: await this.get({ householdId, id: outcome.into }), movedSpots: folds.length };
+  }
+
+  /**
+   * Undo a merge: the alias is its own screen again and the spots folded at
+   * merge time go back — unless the target has played on them since.
+   */
+  async unmerge({ householdId, id } = {}) {
+    const alias = this.#qualify(id);
+    const result = await this.#write(householdId, async () => {
+      const undone = unmergeScreen(await this.#state(householdId), alias,
+        { at: this.#iso(), configured: this.#configuredList(householdId) });
+      await this.#store.save(undone.state, householdId);
+      return undone;
+    });
+    let restored = 0;
+    for (const fold of result.was?.spotFolds || []) {
+      try {
+        const done = await this.#progress?.updateSpots?.(fold.contentId, fold.namespaceId,
+          (current) => unfoldSpot(current, alias, result.into, fold));
+        if (done) restored += 1;
+      } catch (error) {
+        this.#logger.warn?.('media.screens.spot_restore_failed', { id: alias, contentId: fold.contentId, error: error.message });
+      }
+    }
+    this.#logger.info?.('media.screens.unmerged', { householdId: householdId ?? null, id: alias, from: result.into, restoredSpots: restored });
+    return { screen: await this.get({ householdId, id: alias }), restoredSpots: restored };
   }
 
   async retire({ householdId, id, confirm = false } = {}) {
@@ -301,28 +341,30 @@ export class ScreenRegistryService {
     return id.includes(':') ? id : `fleet:${id}`;
   }
 
-  async #moveSpots(fromId, intoId) {
-    if (!this.#progress?.listAllProgress || !this.#progress?.saveProgress) return 0;
-    let moved = 0;
+  /**
+   * Fold the duplicate's spots record by record. Each fold runs inside the
+   * progress store's updateSpots — on the record as stored at that moment —
+   * so a play/log write that landed after the listing is neither lost nor
+   * overwritten. Returns what was folded (kept for unmerge).
+   */
+  async #foldSpots(fromId, intoId) {
+    if (!this.#progress?.listAllProgress || !this.#progress?.updateSpots) return [];
+    const folds = [];
     try {
       for (const { namespaceId, progress } of await this.#progress.listAllProgress()) {
-        const spots = progress?.spots;
-        if (!spots || !spots[fromId]) continue;
-        const next = { ...spots };
-        const mine = next[fromId];
-        delete next[fromId];
-        if (!next[intoId] || compareTimestamps(mine?.lastPlayed, next[intoId]?.lastPlayed) > 0) next[intoId] = mine;
-        const lastDevice = progress.lastDevice === fromId ? intoId : progress.lastDevice;
-        const entity = this.#createMediaProgress
-          ? this.#createMediaProgress({ ...progress, spots: next, lastDevice })
-          : { ...progress, spots: next, lastDevice };
-        await this.#progress.saveProgress(entity, namespaceId);
-        moved += 1;
+        if (!progress?.spots?.[fromId]) continue;
+        let fold = null;
+        await this.#progress.updateSpots(progress.contentId, namespaceId, (current) => {
+          const next = foldSpot(current, fromId, intoId);
+          if (next) fold = { move: next.move, lastPlayed: next.spots[intoId].lastPlayed, lastDevice: current.lastDevice ?? null };
+          return next ? { spots: next.spots, lastDevice: next.lastDevice } : null;
+        });
+        if (fold) folds.push({ namespaceId, contentId: progress.contentId, ...fold });
       }
     } catch (error) {
-      this.#logger.warn?.('media.screens.spot_move_failed', { from: fromId, into: intoId, moved, error: error.message });
+      this.#logger.warn?.('media.screens.spot_move_failed', { from: fromId, into: intoId, moved: folds.length, error: error.message });
     }
-    return moved;
+    return folds;
   }
 }
 

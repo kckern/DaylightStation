@@ -68,9 +68,17 @@ describe('screens API', () => {
     expect(added.status).toBe(201);
     expect(added.body.screen.id).toBe('screen:garage-tablet');
     await request(app).post('/api/v1/media/screens/announce').send({ id: 'browser:dup', name: 'Dup' });
-    const merged = await request(app).post('/api/v1/media/screens/browser:dup/merge').send({ into: 'screen:garage-tablet' });
+    const unconfirmed = await request(app).post('/api/v1/media/screens/browser:dup/merge').send({ into: 'screen:garage-tablet' });
+    expect(unconfirmed.status).toBe(409);
+    expect(unconfirmed.body).toMatchObject({ code: 'CONFIRM_REQUIRED', action: 'merge', routines: [] });
+    const merged = await request(app).post('/api/v1/media/screens/browser:dup/merge').send({ into: 'screen:garage-tablet', confirm: true });
     expect(merged.status).toBe(200);
     expect(merged.body.screen.aliases).toEqual(['browser:dup']);
+    const unmerged = await request(app).post('/api/v1/media/screens/browser:dup/unmerge');
+    expect(unmerged.status).toBe(200);
+    expect(unmerged.body.screen).toMatchObject({ id: 'browser:dup', name: 'Dup' });
+    expect((await request(app).post('/api/v1/media/screens/browser:dup/unmerge')).status).toBe(404);
+    await request(app).post('/api/v1/media/screens/browser:dup/merge').send({ into: 'screen:garage-tablet', confirm: true });
     const retired = await request(app).post('/api/v1/media/screens/screen:garage-tablet/retire').send({});
     expect(retired.body.screen.retiredAt).toBeTruthy();
     const restored = await request(app).post('/api/v1/media/screens/screen:garage-tablet/restore');

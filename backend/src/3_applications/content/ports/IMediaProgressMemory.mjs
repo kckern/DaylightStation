@@ -50,6 +50,19 @@ export class IMediaProgressMemory {
   async listSourceProgress(sourceId) {
     throw new Error('IMediaProgressMemory.listSourceProgress must be implemented');
   }
+
+  /**
+   * Rewrite one record's per-screen spots against the stored record, atomically
+   * with respect to other writes in this process (no await between read and
+   * write). Optional: callers check for it.
+   * @param {string} contentId
+   * @param {string} namespaceId
+   * @param {(current: {spots: Object, lastDevice: string|null}) => ({spots: Object, lastDevice?: string|null}|null)} update
+   * @returns {Promise<boolean>}
+   */
+  async updateSpots(contentId, namespaceId, update) {
+    throw new Error('IMediaProgressMemory.updateSpots must be implemented');
+  }
 }
 
 /**

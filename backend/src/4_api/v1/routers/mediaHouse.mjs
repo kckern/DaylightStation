@@ -9,7 +9,8 @@
  * - POST   /screens/announce            — a screen reporting in { id, name?, room? }
  * - GET    /screens/:id                 — one screen + the routines that target it
  * - PATCH  /screens/:id                 — { name?, room?, onCollision?, confirm? }
- * - POST   /screens/:id/merge           — { into } fold this duplicate into another screen
+ * - POST   /screens/:id/merge           — { into, confirm } fold this duplicate into another screen
+ * - POST   /screens/:id/unmerge         — undo a merge (:id = the merged duplicate)
  * - POST   /screens/:id/retire          — { confirm? }
  * - POST   /screens/:id/restore
  * - GET    /screens/:id/routines        — routines that target the screen
@@ -43,6 +44,8 @@ const ERROR_STATUS = {
   NAME_TAKEN: 409,
   SCREEN_MERGED: 409,
   ROUTINES_TARGET: 409,
+  CONFIRM_REQUIRED: 409,
+  NOT_MERGED: 404,
 };
 
 function sendDomainError(res, error) {
@@ -137,7 +140,11 @@ export function createMediaHouseRouter({ screenRegistry = null, routineCatalog =
   router.post('/screens/:id/merge', screens, guarded(async (req, res) => {
     const into = str(req.body?.into);
     if (!into) return res.status(400).json({ error: 'into is required', code: 'INVALID_MERGE' });
-    res.json(await screenRegistry.merge({ householdId: hid(req), fromId: req.params.id, intoId: into }));
+    res.json(await screenRegistry.merge({ householdId: hid(req), fromId: req.params.id, intoId: into, confirm: req.body?.confirm === true }));
+  }));
+
+  router.post('/screens/:id/unmerge', screens, guarded(async (req, res) => {
+    res.json(await screenRegistry.unmerge({ householdId: hid(req), id: req.params.id }));
   }));
 
   router.post('/screens/:id/retire', screens, guarded(async (req, res) => {
