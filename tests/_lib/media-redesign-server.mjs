@@ -182,8 +182,9 @@ app.use('/api/v1/play', createPlayRouter({
 // 266151/266152: two adjacent short episodes (Bluey S1E2/E3) for the screen
 // next-episode countdown and end-of-queue journeys.
 // 665638/665639: two adjacent episodes of one show with many subtitle streams
-// (3 Body Problem S1E1/E2) for the subtitles/audio language journey.
-export const BRANCH_ALLOWED_TITLES = ['55854', '697368', '675677', '584614', '266151', '266152', '665638', '665639'];
+// (3 Body Problem S1E1/E2) for the subtitles/audio language journey;
+// 703558: a film with three audio languages (French, Turkish, English).
+export const BRANCH_ALLOWED_TITLES = ['55854', '697368', '675677', '584614', '266151', '266152', '665638', '665639', '703558'];
 
 // A photo slideshow for the music-behind journey (RQ-PLAY-12): three
 // public-domain paintings from the household art collection, served as an
