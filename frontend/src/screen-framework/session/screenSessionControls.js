@@ -110,6 +110,8 @@ export function createScreenSessionControls({
   let countdown = null; // internal: { next, current, seconds, endsAt, actions, timer, ticker }
   let refillFor = null;
   let disposed = false;
+  let hadPlayback = false;
+  const seenCommandIds = [];
   const listeners = new Set();
 
   const notify = () => {
@@ -323,8 +325,26 @@ export function createScreenSessionControls({
   }
 
   /** Refill when the last auto-added item starts (batches of ≤5 / ~30 min). */
+  // Session modes belong to the session they were set in (B5): once that
+  // session is gone (queue idle) or a new local/URL start replaces it, they
+  // return to defaults rather than silently governing tomorrow's playback.
+  function resetModes(reason) {
+    if (!state.addOnly && state.endOfQueue === 'stop' && !state.stopAfterCurrent) return;
+    state.addOnly = false;
+    state.endOfQueue = 'stop';
+    state.stopAfterCurrent = false;
+    refillFor = null;
+    logger().info('modes.reset', { ownerId, reason });
+    notify();
+  }
+
   function observeSnapshot(snap) {
     const entry = currentEntry(snap);
+    if (entry || snap?.currentItem) hadPlayback = true;
+    else if (hadPlayback && (snap?.queue?.items?.length ?? 0) === 0) {
+      hadPlayback = false;
+      resetModes('queue-idle');
+    }
     // A countdown belongs to the item that just finished. If the owner has
     // moved on by any route (skip, jump, a newer Play), it no longer applies
     // and must never advance a second time (B4).
@@ -350,6 +370,12 @@ export function createScreenSessionControls({
   }
 
   function noteRemoteCommand(command) {
+    // A redelivered envelope is the same command, not a repeat (no double count).
+    if (command.commandId) {
+      if (seenCommandIds.includes(command.commandId)) return null;
+      seenCommandIds.push(command.commandId);
+      if (seenCommandIds.length > 50) seenCommandIds.shift();
+    }
     const before = snapshot();
     const kind = classifyRemoteCommand(command, before);
     if (!kind) return null;
@@ -450,6 +476,7 @@ export function createScreenSessionControls({
   }
 
   function markLocalPlayback() {
+    resetModes('local-start');
     generation += 1;
     restore = null;
     clearCountdown('local-playback');

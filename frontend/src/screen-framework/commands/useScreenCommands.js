@@ -102,10 +102,17 @@ export function useScreenCommands(wsConfig, actionBus, screenId, controls = null
       if (origin) ctl.stampOrigin(origin);
     }
 
-    // Add only (RQ-PLAY-10): another device's Play adds instead of replacing,
-    // and the ack says so (appliedAs). Nothing loaded → nothing to protect.
+    // The screen's own origin (its fleet id) is local input, not "another
+    // device": no Add-only rewrite and no screen note.
+    const ownId = g.device;
+    const isSelfOrigin = origin?.kind === 'device' && !!ownId
+      && String(origin.id ?? '').replace(/^fleet:/, '') === ownId;
+    // Add only (RQ-PLAY-10): another DEVICE's Play adds instead of replacing,
+    // and the ack says so (appliedAs). Routine and originless starts (HA
+    // buttons, triggers, schedules) are exempt — they always play (B5).
+    // Nothing loaded → nothing to protect.
     let effectiveParams = params;
-    if (ctl?.isAddOnly?.() && command === 'queue' && ctl.hasPlayback?.()) {
+    if (ctl?.isAddOnly?.() && command === 'queue' && origin?.kind === 'device' && !isSelfOrigin && ctl.hasPlayback?.()) {
       if (params.op === 'play-now') {
         effectiveParams = { op: 'add', contentId: params.contentId, appliedAs: 'add', requestedOp: 'play-now' };
       } else if (params.op === 'item-action' && (params.kind === 'playNow' || params.kind === 'shuffle')) {
@@ -116,8 +123,8 @@ export function useScreenCommands(wsConfig, actionBus, screenId, controls = null
         logger().info('commands.add-only-applied', { commandId, requestedOp: params.op, requestedKind: params.kind ?? null, contentId: params.contentId ?? params.item?.contentId ?? null, origin: origin ?? null });
       }
     }
-    if (ctl && effectiveParams === params) {
-      ctl.noteRemoteCommand?.({ command, params, origin });
+    if (ctl && effectiveParams === params && !isSelfOrigin) {
+      ctl.noteRemoteCommand?.({ command, params, origin, commandId });
     }
 
     if (command === 'transport') {
