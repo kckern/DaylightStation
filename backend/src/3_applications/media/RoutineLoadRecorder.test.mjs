@@ -25,7 +25,11 @@ describe('RoutineLoadRecorder', () => {
     const query = { queue: 'slow-tv', shader: 'minimal', volume: 10, shuffle: '1' };
     const result = await recorder.execute('livingroom-tv', query, { dispatchId: 'd1' });
     expect(result).toEqual({ ok: true, dispatchId: 'd1' });
-    expect(wakeAndLoad.execute).toHaveBeenCalledWith('livingroom-tv', query, { dispatchId: 'd1' });
+    // The routine's name rides on to the screen's command envelope.
+    expect(wakeAndLoad.execute).toHaveBeenCalledWith('livingroom-tv', query, {
+      dispatchId: 'd1',
+      origin: { kind: 'routine', id: 'automation:kitchen_button_4', name: 'Kitchen Button 4: Slow TV', triggerId: 'automation:kitchen_button_4' },
+    });
     expect(catalog.match).toHaveBeenCalledWith('livingroom-tv', query);
     expect(history.record).toHaveBeenCalledWith({
       routine: { kind: 'routine', id: 'automation:kitchen_button_4', name: 'Kitchen Button 4: Slow TV' },
@@ -74,6 +78,14 @@ describe('RoutineLoadRecorder', () => {
     await recorder.execute('livingroom-tv', { play: 'plex:1' }, { dispatchId: 'd' });
     expect(history.record).not.toHaveBeenCalled();
     expect(hints.take('fleet:livingroom-tv', 2_000)).toEqual({ kind: 'device', id: 'browser:abc', name: null });
+  });
+
+  it('a device origin the router already put in opts is honoured and passed through untouched', async () => {
+    const { recorder, wakeAndLoad, hints } = build();
+    const opts = { dispatchId: 'd', origin: { kind: 'device', id: 'fleet:office-tv' } };
+    await recorder.execute('livingroom-tv', { play: 'plex:1' }, opts);
+    expect(wakeAndLoad.execute).toHaveBeenCalledWith('livingroom-tv', { play: 'plex:1' }, opts);
+    expect(hints.take('fleet:livingroom-tv', 2_000)).toEqual({ kind: 'device', id: 'fleet:office-tv', name: null });
   });
 
   it('an unknown caller (no context) passes straight through with no origin', async () => {
