@@ -13,6 +13,7 @@ import { SessionControlService } from '../../backend/src/3_applications/devices/
 import { DeviceSessionApiService } from '../../backend/src/3_applications/devices/services/DeviceSessionApiService.mjs';
 import { DeviceStartStatusService } from '../../backend/src/3_applications/devices/services/DeviceStartStatusService.mjs';
 import { createDeviceRouter } from '../../backend/src/4_api/v1/routers/device.mjs';
+import { deviceResolver } from '../../backend/src/4_api/middleware/deviceResolver.mjs';
 
 export const ORDINARY_DEVICE_ID = 'acceptance-media';
 const VIRTUAL_TRANSPORT_ACTIONS = new Set(['pause', 'play', 'seekAbs', 'seekRel', 'skipNext', 'skipPrev', 'stop']);
@@ -108,6 +109,9 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet } = 
   });
   const app = express();
   app.use(express.json());
+  // As in production: the X-Daylight-Device header names the asking device,
+  // which the device router turns into the command origin.
+  app.use(deviceResolver());
   app.get(`/${ORDINARY_DEVICE_ID}/receiver-ready`, (_req, res) => {
     const subscribers = eventBus.getTopicSubscriberCount(`homeline:${ORDINARY_DEVICE_ID}`);
     return res.json({ ready: subscribers > 0 && commandLiveness.isFresh(ORDINARY_DEVICE_ID), subscribers });

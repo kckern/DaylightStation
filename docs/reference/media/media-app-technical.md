@@ -544,10 +544,18 @@ setAddOnly, setEndOfQueue, setStopAfterCurrent}` and sends its optional
 `origin` on every command (`peek/RemoteSessionController.js`).
 
 **Origin on every session route.** `transport`, `queue/:op`, the config PUTs,
-`claim` and the routes above accept `origin`. Without one, a request that
-names itself through the device header (`req.deviceIdSource === "header"`)
-is attributed to that device. A malformed origin is a 400. `claim`'s stop is
-sent with `intent: "move"` (§6.2.1).
+`claim` and the routes above accept `origin`. A fleet device naming itself in
+the `X-Daylight-Device` header (`fleet:<id>`) IS the origin — a body cannot
+claim another device, only supply its display `name`. Otherwise an explicit
+body origin is used, else any header device. A malformed origin (or a `name`
+over 80 characters) is a 400. `claim`'s stop is sent with `intent: "move"`
+(§6.2.1).
+
+**Load dispatches.** `GET /device/:id/load` attributes the dispatch to the
+header device. WakeAndLoad stamps every screen envelope with that origin, or
+with `{ kind: "routine", name: "Automation" }` when no caller was named (Home
+Assistant buttons, schedules, triggers, barcode fallbacks) — which Add only
+never rewrites.
 
 **Verified by:**
 - `backend/src/4_api/v1/routers/device.session-controls.test.mjs` — every route, validation, origin passthrough/fallback, refusal mapping
@@ -760,10 +768,17 @@ screen with a device identity). Everything below is published in
 `snapshot.controls` (§9.14) on every state broadcast; control changes
 re-publish immediately.
 
-**Add only (RQ-PLAY-10).** While on, a remote `queue` `play-now` — or an
+**Add only (RQ-PLAY-10).** While on, another DEVICE's `queue` `play-now` — or
 `item-action` `playNow`/`shuffle` — is applied as an add (`appliedAs: "add"`
-on the ack, §6.3). Local input on the screen is unaffected. When nothing is
-loaded there is no queue to protect, so the command plays normally.
+on the ack, §6.3; the start status reports `queued`). Exempt, so they always
+play: local input, routine and originless commands (automations), and the
+screen's own fleet origin. When nothing is loaded there is no queue to
+protect, so the command plays normally.
+
+**Session-scoped modes.** Add only, end-of-queue and stop-after-current belong
+to the session they were set in: they return to `false / stop / false` when
+that session's queue goes idle or a new local/URL start replaces it, and are
+restored only together with a power-cut restore (never on their own).
 
 **End of queue (RQ-STEER-19), exclusive setting `stop | repeat | similar`.**
 `stop` keeps today's end. `repeat` restarts the queue at its first item.
@@ -780,6 +795,9 @@ decision O2, revised) and plays on:
 - batches of at most 5 items or about 30 minutes, appended as ONE item
   action (one undo record) with every item marked `addedBy: "auto-continue"`;
   the next batch is fetched when the last auto-added item starts;
+- nothing it already added since the last human input is added again, so a
+  container is cycled at most once; after 4 unattended batches (~2 h) it
+  stops. Any device command or local start resets both;
 - nothing left → stop with `endOfQueueStatus: { code: "NOTHING_SIMILAR",
   message: "Nothing similar left" }`. Live items have no queue-end choice.
 Policy: `shared/contracts/media/continuation.mjs`; resolver:
@@ -792,8 +810,12 @@ button, or Back) and remotely (`cancel-countdown`, `start-next-now`). Cancel
 stops on the finished episode with the queue kept. `stopAfterCurrent` stops
 at the end of the current item once, then clears itself
 (`endOfQueueStatus.code: "STOPPED_AFTER_CURRENT"`). The Player consults these
-through `modules/Player/lib/naturalEndPolicy.js`, a page-level seam only
-screens register; skips, failures and clears never reach it.
+through `modules/Player/lib/naturalEndPolicy.js`. A registration carries
+`isOwner(playerInstanceId)` and only the Player the screen session is bound
+to (its action owner) is consulted — any other Player on the page (a school
+lesson, a composite view, the Media app) keeps its own end behaviour. Skips,
+failures and clears never reach it. A skip, seek, transport or queue command
+— or the current item changing by any route — supersedes a running countdown.
 
 **Sleep timer (RQ-STEER-12).** `minutes` counts down (`remainingSeconds`
 published), fades the screen's output over the last 10 s (a transient
@@ -817,13 +839,20 @@ house-view row.
 
 **Power cut (RQ-RELY-08).** The backend's last snapshot
 (`DeviceLivenessService`) is in server memory only and dies with the house
-power, so **the screen persists its own session**: item, spot, queue, config
-and the session modes, in browser storage (`daylight.screen-session.v1:<deviceId>`,
-written on change and every 5 s while loaded; `session/sessionPersistence.js`).
-On a cold start it waits 2.5 s and, if nothing else started playing, re-adopts
-the saved session **paused** (never autoplay) through
-`media:restore-snapshot`. Saved sessions older than 24 h and live items are
-not restored.
+power, so **the screen persists its own session** in browser storage
+(`daylight.screen-session.v2:<deviceId>`, `session/sessionPersistence.js`):
+- kept only while somebody is in a session — playing, paused, buffering,
+  loading or stalled. Stop (`ready`), Move here (which stops this screen),
+  the natural end of the queue and idle CLEAR the record;
+- the full queue is written on change; a 5 s tick moves only the current
+  item's spot while playing;
+- on a cold start the screen waits 2.5 s and re-adopts the session **paused**
+  (never autoplay) through `media:restore-snapshot` — unless the page URL
+  carried autoplay parameters, any start reached the screen since mount, or a
+  playback owner is already registered;
+- a restored session keeps its ORIGINAL `savedAt` and a `restored` mark until
+  somebody resumes it; a never-resumed one is not offered again. Records
+  older than 24 h and live items are never restored.
 
 **Verified by:**
 - `frontend/src/screen-framework/session/*.test.*` — state machine, resolver, host, persistence
@@ -1142,7 +1171,7 @@ Published on `device-start:<deviceId>`; validated by `validateDeviceStartStatus`
   "topic": "device-start",
   "deviceId": "<id>",
   "dispatchId": "<uuid>",
-  "phase": "starting" | "delivered" | "started" | "failed",
+  "phase": "starting" | "delivered" | "queued" | "started" | "failed",
   "step": "power" | "verify" | "volume" | "prepare" | "prewarm" | "load" | "playback" | "queue",
   "stepStatus": "<wake-progress status>",
   "error": "<string, required when failed>",
@@ -1152,9 +1181,10 @@ Published on `device-start:<deviceId>`; validated by `validateDeviceStartStatus`
   "updatedAt": "<ISO>"
 }
 ```
-`delivered` = the content reached the screen (`load` done); `started` =
-playback (or the queue add) confirmed; a playback/queue `timeout` is a
-failure. `lastFailure` stays until a later start succeeds. Late terminal
+`delivered` = the content reached the screen (`load` done); `queued` = it
+was taken as a queue add (Add only, or a requested add) — nothing started;
+`started` = playback confirmed; a playback/queue `timeout` is a failure. A
+dispatch never inherits an earlier dispatch's `contentId`. `lastFailure` stays until a later start succeeds. Late terminal
 events from a superseded dispatch are ignored.
 
 ---
