@@ -94,7 +94,14 @@ export default {
       '**/.{idea,git,cache,output,temp}/**',
       // Skipped when this config IS a worktree: the globs also match the
       // worktree's own path, which excluded every test in it.
-      ...(RUNNING_IN_WORKTREE ? [] : ['**/.claude/worktrees/**', '**/.claire/worktrees/**', '**/.worktrees/**']),
+      // Inside a worktree, the TRACKED `.claire/worktrees/` copies still sit
+      // under this root and match path filters (`vitest run a/b.test.js` also
+      // runs `.claire/worktrees/x/a/b.test.js`), which made the gate abort with
+      // a population/run MISMATCH in every `.worktrees/` checkout. Anchored to
+      // this root (no leading `**/`), so it can never match the worktree itself.
+      ...(RUNNING_IN_WORKTREE
+        ? ['.claire/worktrees/**']
+        : ['**/.claude/worktrees/**', '**/.claire/worktrees/**', '**/.worktrees/**']),
       // Scratch that is on its way out (CLAUDE.md: "can't delete? move to
       // _deleteme/"). A probe test parked here still got collected, inflating
       // counts and tearing down noisily mid-sweep.
