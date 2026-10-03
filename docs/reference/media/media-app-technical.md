@@ -582,8 +582,8 @@ unique household-wide (RQ-HOUSE-06, RQ-HOUSE-08, RQ-AUTO-02). Router:
 `backend/src/4_api/v1/routers/mediaHouse.mjs` (mounted on the media router);
 service: `backend/src/3_applications/media/ScreenRegistryService.mjs`; rules:
 `backend/src/2_domains/media/screenRegistry.mjs`. Every route in §2.5–2.9
-takes the optional `?household=<id>` and answers **501** when its service is
-not wired.
+takes the optional `?household=<id>` (**404** `HOUSEHOLD_NOT_FOUND` when it
+names no household) and answers **501** when its service is not wired.
 
 **Screen ids** are stable; routines and the ledger use them, never names.
 
@@ -641,23 +641,32 @@ null when unknown (browsers, or no heartbeat since the backend started).
 | `POST /screens/announce` | `{ id?, name?, room? }` — `id` defaults to `X-Daylight-Device` | `{ screen }` |
 | `GET /screens/:id` | — | `{ screen, routines }` (**404** unknown) |
 | `PATCH /screens/:id` | `{ name?, room?, onCollision?: "reject"\|"suffix", confirm? }` (`room: null` clears an override) | `{ screen, routines }` |
-| `POST /screens/:id/merge` | `{ into }` | `{ screen, movedSpots }` |
+| `POST /screens/:id/merge` | `{ into, confirm }` — without `confirm: true`, **409** `CONFIRM_REQUIRED` with `routines` targeting either screen | `{ screen, movedSpots }` |
+| `POST /screens/:id/unmerge` | — (`:id` = the merged duplicate) | `{ screen, restoredSpots }` (**404** `NOT_MERGED`) |
 | `POST /screens/:id/retire` | `{ confirm? }` | `{ screen, routines }` |
 | `POST /screens/:id/restore` | — | `{ screen }` (**409** if its name was taken meanwhile) |
 | `GET /screens/:id/routines` | — | `{ items: [{ id, name, kind, source }] }` |
 
-**Merge** folds a duplicate into its earlier self: the duplicate's id becomes
-an alias (plays, started-by, time-of-day and history follow it; chains are
-flattened), the earliest `firstSeen` and latest `lastSeen` are kept, and its
-per-screen spots move onto the target (newer spot wins where both hold one;
-`lastDevice` follows). A configured screen cannot be merged away — merge the
-duplicate into it. **Retire** removes a screen from the list and frees its
+**Merge** (confirmed) folds a duplicate into its earlier self: the
+duplicate's id becomes an alias (plays, started-by, time-of-day and history
+follow it; chains are flattened, each re-pointed duplicate remembering the
+hop in `via`), the earliest `firstSeen` and latest `lastSeen` are kept, and
+the folded entry is kept on the alias (`aliases[id].was`). Its per-screen
+spots are folded by `mediaSpots.foldSpot` through the progress store's
+`updateSpots` (read, change, write with no await between, so a concurrent
+`play/log` write is never lost): the newest spot takes the target's key and
+the other stays under the alias — nothing is dropped; `lastDevice` follows.
+The folds are recorded on the alias. **Unmerge** restores the duplicate as its
+own screen (its old name, suffixed if another screen took it meanwhile),
+points duplicates that came along through it back at it, and folds its spots
+back (`unfoldSpot`) unless the target has played on them since. A configured
+screen cannot be merged away — merge the duplicate into it. **Retire** removes a screen from the list and frees its
 name. Errors: **400** `INVALID_NAME` / `INVALID_SCREEN_ID` / `INVALID_MERGE`,
 **404** `SCREEN_NOT_FOUND`, **409** `NAME_TAKEN` / `ROUTINES_TARGET` /
-`SCREEN_MERGED`.
+`CONFIRM_REQUIRED` / `SCREEN_MERGED`, **404** `NOT_MERGED`.
 
-Log events: `media.screens.registered|renamed|room_set|added|merged|retired|restored`
-(info); `media.screens.spot_move_failed`, `.signals_failed`,
+Log events: `media.screens.registered|renamed|room_set|added|merged|unmerged|retired|restored`
+(info); `media.screens.spot_move_failed`, `.spot_restore_failed`, `.signals_failed`,
 `.configured_read_failed` (warn); `eventbus.screen_presence.failed` (warn).
 
 ### 2.6 Routines
@@ -672,13 +681,14 @@ starts went (RQ-AUTO-02, RQ-AUTO-05). Service:
 in `GET /api/v1/device/<id>/load?<query>`. The catalog follows each
 automation → script → `rest_command` chain, substituting the variables passed
 along it (`query: queue=morning-program` into
-`load?{{ query | default(...) }}`), to the target screen (`fleet:<id>`) and
-query. Sources, merged:
+`load?{{ query | default(...) }}`, and automation/script `variables:`), to
+the target screen (`fleet:<id>`) and query. Include directories are read
+recursively, as HA's `include_dir_*` do. Sources, merged:
 
 | Source | When |
 |---|---|
 | `live` | the HA config read in place (`rest_commands/` merged, `scripts/` named by file, `automations/` one per file) from system config `media-routines.yml` → `homeAssistant.configDir` (the HA `_includes` dir), cached 60 s. Unreadable → unavailable. |
-| `snapshot` | the last catalog imported via `PUT /routines/catalog`, stored at `household[-{id}]/media/routines.yml`; used when no live source is available (the container does not mount the HA config). Push it with `node cli/media-routines.cli.mjs push --dir <HA _includes> --url <app>`. |
+| `snapshot` | the last catalog imported via `PUT /routines/catalog`, stored at `household[-{id}]/media/routines.yml`; used when no live source is available (the container does not mount the HA config). Push it with `node cli/media-routines.cli.mjs push --dir <HA _includes> --url <app>` — the CLI extracts the routines locally and sends only `{routines}`, never the HA config. |
 | `observed` | routines neither knows, seen in the routine history or as a routine `origin` on play-ledger starts in the last 30 days (a routine driving a browser by command reaches the ledger this way) — `id: "observed:<slug>"` |
 
 `Routine`: `{ id: "automation:kitchen_button_4", name, kind: "automation"|"script"|"command"|"observed",
@@ -693,7 +703,9 @@ each `GET|POST /device/:id/load`:
    names itself; both params are stripped before the screen sees the query.
 2. User-Agent `HomeAssistant/…` → a routine, named by matching screen + query
    params (template values match anything; automations rank first) against
-   the catalog, else `"Home Assistant"`.
+   the **last catalog read** (`peekMatch`: a cache hit only — nothing is read
+   before the TV is woken; a missing or stale catalog is refreshed in the
+   background, and it is warmed at startup), else `"Home Assistant"`.
 3. `X-Daylight-Device` (`fleet:`/`browser:`, not the target itself) → a person
    sending from that screen (`{kind: "device", id}`).
 
@@ -705,8 +717,10 @@ the asking device. The origin is noted for the target's next ledger start
 (3 min; cleared when the load fails). A routine's load runs through the routine dedupe (same routine +
 query to the same screen within **10 s** starts once; the repeat reports
 `deduplicated: true`) and its outcome is appended to
-`household[-{id}]/history/media-routines.yml` (30 days, 500 runs). The load
-itself is never changed or failed by this.
+`household[-{id}]/history/media-routines.yml` (30 days, 500 runs) **after the
+load has answered** — Home Assistant never waits on the registry lookup or the
+YAML write. A run only invalidates the catalog when its routine is not
+already listed. The load itself is never changed or failed by this.
 
 `RoutineRun`:
 
@@ -742,14 +756,16 @@ Unknown state (no heartbeat since the backend started) raises no flag.
 | Route | Body / query | Response |
 |---|---|---|
 | `GET /routines` | — | `{ routines: [Routine], sources: [{ name, kind, available, count, readAt?/importedAt?, used?, from? }] }` |
-| `PUT /routines/catalog` | `{ config: {restCommands, scripts, automations} }` or `{ routines: [Routine] }`, `source?` | `{ count, dropped, importedAt }` (**400** `INVALID_ROUTINES`) |
+| `PUT /routines/catalog` | `{ routines: [Routine], source? }` — ≤ 500 routines; `id` ≤ 128 and `name` ≤ 120 chars (strings, required); 1–20 `targets`, each a screen-id `deviceId` and a string `query` ≤ 1000; `via` ≤ 10 strings | `{ count, importedAt }`; anything malformed is **400** `INVALID_ROUTINES` with `errors`, nothing stored |
 | `GET /routines/history` | `?limit=50 (≤500)&deviceId=&routineId=` | `{ items: [RoutineRun] }` newest first; `deviceId` includes merged duplicates |
 | `GET /routines/flags` | — | `{ items: [RoutineFlag] }` |
 
 Log events: `media.routines.load`, `media.routines.run` (info; warn when
 failed), `media.routines.snapshot_imported` (info);
-`media.routines.history_write_failed`, `.live_read_failed`,
-`.snapshot_read_failed`, `.ha_file_unreadable`, `.match_failed` (warn).
+`media.routines.history_write_failed`, `.history_record_failed`,
+`.live_read_failed`, `.refresh_failed`, `.snapshot_read_failed`,
+`.ha_file_unreadable` (file, error name, line — never the parser message,
+which quotes config), `.match_failed` (warn).
 
 ### 2.7 Started by
 
@@ -812,7 +828,9 @@ FIND.7a; owner-adopted definition of O3). Service:
 `backend/src/3_applications/media/MediaSuggestionsService.mjs`; rules:
 `backend/src/2_domains/media/mediaSuggestions.mjs`.
 
-`GET /suggestions?deviceId=` (`deviceId` defaults to `X-Daylight-Device`) →
+`GET /suggestions?deviceId=` (`deviceId` defaults to `X-Daylight-Device`;
+anything but a screen id `^(fleet|browser|screen):[A-Za-z0-9._-]{1,96}$` is
+**400** `INVALID_SCREEN_ID`) →
 
 ```json
 { "deviceId": "fleet:livingroom-tv", "generatedAt": "2026-10-03T08:29:34.859Z", "empty": false,
@@ -840,9 +858,11 @@ anything **removed from the household list** is left out. Nothing at all →
 `{ rows: [], empty: true }`: lead into Browse. The build (carry on, ledger
 scan, catalog lookups, recently added) is cached per household + screen for
 **5 min**; favourites, now-playing and removals are applied on every request.
-A failing section is logged and left empty.
+A failing section is logged and left empty. The household-wide parts (carry
+on, New, the ledger scan) are cached once per household; only "Usually here
+at this time" is cached per screen, in a map capped at 200 screens.
 
-Log events: `media.suggestions.built` (info: per-section counts, scope, ms);
+Log events: `media.suggestions.built` (info: household build, counts, ms);
 `media.suggestions.section_failed`, `.ledger_read_failed`,
 `.now_playing_failed`, `.removed_read_failed`, `plex.recently_added.failed` (warn).
 

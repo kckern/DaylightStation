@@ -16,6 +16,8 @@ import { timeOfDayGroups, assembleSuggestions } from '#domains/media/mediaSugges
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
+const DEFAULT_MAX_SCREENS = 200;
+const SCREEN_ID = /^(fleet|browser|screen):[A-Za-z0-9._-]{1,96}$/;
 const NEW_WITHIN_DAYS = 14;
 const LEDGER_DAYS = 31;
 const CANDIDATES_PER_ROW = 12;
@@ -39,8 +41,11 @@ export class MediaSuggestionsService {
   #clock;
   #ttl;
   #logger;
-  /** @type {Map<string, {at:number, value:Object}>} */
-  #cache = new Map();
+  #maxScreens;
+  /** household → {at, value} (carry on, new, ledger rows, parents) */
+  #households = new Map();
+  /** `${household}|${screen}` → {at, value} (time of day only); capped */
+  #screenCache = new Map();
   /** @type {Map<string, Promise<Object>>} */
   #building = new Map();
 
@@ -51,8 +56,10 @@ export class MediaSuggestionsService {
    * @param {{list: Function}} [deps.recentAdditions] - catalog additions ({since, limit} → entries with addedAt)
    * @param {Object} [deps.screens] - ScreenRegistryService (aliasesOf)
    * @param {Function} deps.nowLocal - local `YYYY-MM-DD HH:mm:ss`
+   * @param {number} [deps.maxScreens] - per-screen cache entries kept (oldest dropped)
    */
-  constructor({ memory, playLedger = null, recentAdditions = null, screens = null, nowLocal, clock = Date, ttlMs = DEFAULT_TTL_MS, logger = console }) {
+  constructor({ memory, playLedger = null, recentAdditions = null, screens = null, nowLocal, clock = Date,
+    ttlMs = DEFAULT_TTL_MS, maxScreens = DEFAULT_MAX_SCREENS, logger = console }) {
     if (!memory) throw new TypeError('MediaSuggestionsService requires memory');
     if (typeof nowLocal !== 'function') throw new TypeError('MediaSuggestionsService requires nowLocal');
     this.#memory = memory;
@@ -62,41 +69,60 @@ export class MediaSuggestionsService {
     this.#nowLocal = nowLocal;
     this.#clock = clock;
     this.#ttl = ttlMs;
+    this.#maxScreens = maxScreens;
     this.#logger = logger;
   }
+
+  /** Per-screen cache entries held (diagnostics/tests). */
+  get cachedScreens() { return this.#screenCache.size; }
 
   /**
    * @param {{householdId?: string, deviceId?: string|null}} q
    * @returns {Promise<{deviceId, generatedAt, rows, empty}>}
    */
   async suggest({ householdId, deviceId = null } = {}) {
-    const key = `${householdId ?? ''}|${deviceId ?? ''}`;
-    const cached = this.#cache.get(key);
-    const candidates = cached && this.#clock.now() - cached.at < this.#ttl ? cached.value : await this.#buildOnce(key, householdId, deviceId);
+    if (deviceId !== null && !SCREEN_ID.test(String(deviceId))) {
+      const error = new Error(`Not a screen id: ${deviceId}`);
+      error.code = 'INVALID_SCREEN_ID';
+      throw error;
+    }
+    const house = await this.#cached(this.#households, householdId ?? '', () => this.#buildHousehold(householdId));
+    const tod = await this.#cached(this.#screenCache, `${householdId ?? ''}|${deviceId ?? ''}`,
+      () => this.#section('time-of-day', () => this.#timeOfDay(householdId, deviceId, house.ledgerRows)), true);
     // Favourites and exclusions are cheap and change on a tap: read every time.
     const [favourites, exclude] = await Promise.all([
       this.#section('favourites', () => this.#favourites(householdId)),
-      this.#excluded(householdId, candidates.parentsOf),
+      this.#excluded(householdId, house.parentsOf),
     ]);
-    const { rows, empty } = assembleSuggestions({ ...candidates.rows, favourites, timeOfDayLabel: candidates.timeOfDayLabel, exclude });
-    return { deviceId, generatedAt: candidates.generatedAt, rows, empty };
+    const { rows, empty } = assembleSuggestions({
+      favourites, carryOn: house.carryOn, fresh: house.fresh, timeOfDay: tod.items ?? [],
+      timeOfDayLabel: tod.label ?? TIME_OF_DAY_LABELS.household, exclude,
+    });
+    return { deviceId, generatedAt: house.generatedAt, rows, empty };
   }
 
-  /** Drop cached candidates (e.g. after a favourite changes). */
+  /** Drop cached candidates for a household. */
   invalidate(householdId) {
-    for (const key of this.#cache.keys()) if (key.startsWith(`${householdId ?? ''}|`)) this.#cache.delete(key);
+    this.#households.delete(householdId ?? '');
+    for (const key of this.#screenCache.keys()) if (key.startsWith(`${householdId ?? ''}|`)) this.#screenCache.delete(key);
   }
 
-  #buildOnce(key, householdId, deviceId) {
-    if (this.#building.has(key)) return this.#building.get(key);
-    const run = this.#build(householdId, deviceId)
-      .then((value) => {
-        this.#cache.set(key, { at: this.#clock.now(), value });
-        return value;
-      })
-      .finally(() => this.#building.delete(key));
-    this.#building.set(key, run);
-    return run;
+  async #cached(map, key, build, capped = false) {
+    const hit = map.get(key);
+    if (hit && this.#clock.now() - hit.at < this.#ttl) return hit.value;
+    const flight = `${capped ? 's' : 'h'}|${key}`;
+    if (!this.#building.has(flight)) {
+      const run = Promise.resolve().then(build)
+        .then((value) => {
+          map.delete(key);
+          map.set(key, { at: this.#clock.now(), value });
+          if (capped) while (map.size > this.#maxScreens) map.delete(map.keys().next().value);
+          return value;
+        })
+        .finally(() => this.#building.delete(flight));
+      this.#building.set(flight, run);
+    }
+    return this.#building.get(flight);
   }
 
   async #section(name, fn) {
@@ -108,30 +134,21 @@ export class MediaSuggestionsService {
     }
   }
 
-  async #build(householdId, deviceId) {
+  async #buildHousehold(householdId) {
     const started = this.#clock.now();
-    const rows = await this.#ledgerRows();
-    const [carryOn, timeOfDay, fresh] = await Promise.all([
+    const ledgerRows = await this.#ledgerRows();
+    const [carryOn, fresh] = await Promise.all([
       this.#section('carry-on', () => this.#carryOn(householdId)),
-      this.#section('time-of-day', () => this.#timeOfDay(householdId, deviceId, rows)),
       this.#section('new', () => this.#fresh()),
     ]);
     const parentsOf = {};
-    for (const row of rows) {
+    for (const row of ledgerRows) {
       if (!parentsOf[row.contentId]) parentsOf[row.contentId] = [row.parentId, row.grandparentId].filter(Boolean);
     }
-    const value = {
-      generatedAt: new Date(this.#clock.now()).toISOString(),
-      timeOfDayLabel: timeOfDay.label,
-      rows: { carryOn, timeOfDay: timeOfDay.items ?? [], fresh },
-      parentsOf,
-    };
     this.#logger.info?.('media.suggestions.built', {
-      householdId: householdId ?? null, deviceId, ms: this.#clock.now() - started,
-      carryOn: carryOn.length, timeOfDay: value.rows.timeOfDay.length, fresh: fresh.length,
-      timeOfDayScope: timeOfDay.scope ?? null,
+      householdId: householdId ?? null, ms: this.#clock.now() - started, carryOn: carryOn.length, fresh: fresh.length, ledgerRows: ledgerRows.length,
     });
-    return value;
+    return { generatedAt: new Date(this.#clock.now()).toISOString(), ledgerRows, carryOn, fresh, parentsOf };
   }
 
   async #ledgerRows() {
