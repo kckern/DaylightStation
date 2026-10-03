@@ -114,6 +114,8 @@ The fitness system enables family workout sessions on a large touchscreen TV. He
 | **VoiceMemoTranscription** | `backend/src/1_adapters/fitness/VoiceMemoTranscriptionService.mjs` | Two-stage transcription: Whisper (with fitness context hints) → GPT-4o cleanup |
 | **ScreenshotService** | `backend/src/3_applications/fitness/services/ScreenshotService.mjs` | Saves session screenshots (base64 decode → file storage) |
 | **FitnessProgressClassifier** | `backend/src/2_domains/fitness/services/FitnessProgressClassifier.mjs` | Classifies workout viewing progress (50% for short, 95% for long workouts) |
+
+> **Shared watch state.** Workout progress is the household media memory (`media/memory/**`), which the Media app can also write: **marking an item unwatched there sets its playhead to 0 and clears `completedAt`**, which fitness reads (episode `completedAt` and watched state in show views). Marking watched sets 100% and keeps or stamps `completedAt`. See [content-progress.md](../content/content-progress.md#watched--unwatched-marks).
 | **FitnessAPI** | `backend/src/4_api/v1/routers/fitness.mjs` | REST endpoints (see API Reference below) |
 
 ### Frontend — Session Layer (`frontend/src/hooks/fitness/`)

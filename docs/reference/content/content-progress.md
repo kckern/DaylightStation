@@ -52,14 +52,19 @@ plex:12345:
 ```
 
 - Keys are `X-Daylight-Device` ids (`frontend/src/lib/deviceIdentity.js`):
-  `fleet:<devices.yml key>` for a rendered screen, `browser:<token>` for any
-  other browser. `ephemeral:` ids and the User-Agent fallback never key a spot.
+  `fleet:<devices.yml key>` (must be declared) for a rendered screen,
+  `browser:<token>` for any other browser. `ephemeral:` ids and the
+  User-Agent fallback never key a spot. The reserved key `legacy` holds an
+  open pre-spots playhead until a screen plays past it.
+- `watchTime`/`playCount` deltas are measured against the reporting screen's
+  own spot.
 - Every existing reader keeps reading `playhead`/`percent`/`completedAt`; the
   spot fields are additive.
 - Writers that do not know about spots (bookmarks, `UpdateContentProgress`,
   remote sync) rebuild the entity without them; `YamlMediaProgressMemory`
-  carries the stored `spots`/`lastDevice` over. An explicit `spots: {}` (mark
-  watched/unwatched) clears them.
+  carries the stored `spots`/`lastDevice` over (undefined = untouched). An
+  explicit `spots: {}` / `lastDevice: null` (mark watched/unwatched) clears
+  them; a record with an empty spots map is judged by its single playhead.
 - Unfinished / finished rules for a spot: `backend/src/2_domains/content/services/mediaSpots.mjs`
   (≥ 5 min or ≥ 5% to count as unfinished; finished at the same 90% line as
   `isWatched`).
@@ -70,8 +75,10 @@ plex:12345:
 completion state playback writes: watched = playhead at duration, percent
 100, `completedAt` kept or stamped; unwatched = playhead 0, percent 0,
 `completedAt` cleared (the one deliberate exception to "never cleared").
-Both close every screen's spot. Every namespace holding the item is updated;
-remote-synced sources receive the mark at once.
+Both close every screen's spot and clear `lastDevice`. Every namespace holding
+the item is updated; remote-synced sources receive the mark at once. An id
+whose source the catalog cannot resolve is refused. Fitness reads the same
+`completedAt` — see `docs/reference/fitness/fitness-system-architecture.md`.
 
 ---
 
