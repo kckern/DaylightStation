@@ -11,6 +11,17 @@
  * - PATCH  /queue/position         — Set playback position
  * - PATCH  /queue/state            — Update shuffle / repeat / volume
  * - DELETE  /queue                 — Clear the queue
+ *
+ * Household media memory (docs/reference/media/media-app-technical.md §2.4):
+ * - GET    /household/recent       — Played on any screen, newest first
+ * - GET    /household/carry-on     — Unfinished + next episodes; nowOn
+ * - GET    /household/favourites   — Household favourites
+ * - POST   /household/favourites   — Add {id, kind?, title?, thumbnail?, type?}
+ * - DELETE /household/favourites   — Remove {id} (body or ?id=)
+ * - GET    /household/removed      — Ids removed from the household list
+ * - POST   /household/removed      — Remove {id} from the household list
+ * - DELETE /household/removed      — Restore {id} (undo)
+ * - POST   /household/watched      — Mark {contentId, watched: boolean}
  */
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
@@ -44,6 +55,7 @@ export function createMediaRouter(config) {
     contentIdResolver,
     mediaQueueEvents,
     createMediaQueue,
+    householdMediaMemory = null,
     logger = console,
   } = config;
   if (typeof createMediaQueue !== 'function') throw new Error('createMediaRouter requires createMediaQueue');
@@ -216,6 +228,79 @@ export function createMediaRouter(config) {
     const queue = await mediaQueueService.clear(hid);
     broadcast(queue, mutationId);
     res.json(serializeMediaQueue(queue));
+  }));
+
+  // ── Household media memory ─────────────────────────────────────
+  // Ids travel in the body or query, never the path: content ids carry ':'
+  // and often '/' (files:clips/pullup).
+
+  function requireHouseholdMemory(res) {
+    if (householdMediaMemory) return true;
+    res.status(501).json({ error: 'Household media memory not configured' });
+    return false;
+  }
+
+  function idFrom(req, field = 'id') {
+    const raw = req.body?.[field] ?? req.query?.[field];
+    return typeof raw === 'string' && raw.trim() ? raw.trim() : null;
+  }
+
+  router.get('/household/recent', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    res.json(await householdMediaMemory.recent({ householdId: resolveHid(req), limit: req.query.limit }));
+  }));
+
+  router.get('/household/carry-on', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    res.json(await householdMediaMemory.carryOn({ householdId: resolveHid(req), limit: req.query.limit }));
+  }));
+
+  router.get('/household/favourites', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    res.json(await householdMediaMemory.listFavourites(resolveHid(req)));
+  }));
+
+  router.post('/household/favourites', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    const id = idFrom(req);
+    if (!id) return res.status(400).json({ error: 'id is required' });
+    const { kind, title, thumbnail, type } = req.body || {};
+    res.json(await householdMediaMemory.addFavourite(resolveHid(req), { id, kind, title, thumbnail, type }));
+  }));
+
+  router.delete('/household/favourites', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    const id = idFrom(req);
+    if (!id) return res.status(400).json({ error: 'id is required' });
+    res.json(await householdMediaMemory.removeFavourite(resolveHid(req), id));
+  }));
+
+  router.get('/household/removed', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    res.json(await householdMediaMemory.listRemoved(resolveHid(req)));
+  }));
+
+  router.post('/household/removed', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    const id = idFrom(req);
+    if (!id) return res.status(400).json({ error: 'id is required' });
+    res.json(await householdMediaMemory.removeFromList(resolveHid(req), id));
+  }));
+
+  router.delete('/household/removed', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    const id = idFrom(req);
+    if (!id) return res.status(400).json({ error: 'id is required' });
+    res.json(await householdMediaMemory.restoreToList(resolveHid(req), id));
+  }));
+
+  router.post('/household/watched', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    const contentId = idFrom(req, 'contentId');
+    const { watched } = req.body || {};
+    if (!contentId) return res.status(400).json({ error: 'contentId is required' });
+    if (typeof watched !== 'boolean') return res.status(400).json({ error: 'watched must be a boolean' });
+    res.json(await householdMediaMemory.markWatched(contentId, watched));
   }));
 
   return router;

@@ -201,6 +201,27 @@ export class ProgressSyncService {
   }
 
   /**
+   * Push an explicit watched/unwatched mark to the remote now.
+   *
+   * A mark is a deliberate act, not a heartbeat: it skips the 30 s debounce
+   * and the large-jump skepticism, and supersedes any heartbeat still
+   * buffered for the item (which would otherwise land later and undo it).
+   *
+   * @param {string} contentId
+   * @param {string} localId - Remote server-native item ID
+   * @param {{currentTime:number, isFinished:boolean}} progress
+   */
+  async pushMarkedState(contentId, localId, progress) {
+    const pending = this._debounceMap.get(contentId);
+    if (pending) {
+      this.#runtime.cancel(pending.timer);
+      this._debounceMap.delete(contentId);
+    }
+    this._skepticalMap.delete(contentId);
+    await this.#remoteProgressProvider.updateProgress(localId, progress);
+  }
+
+  /**
    * Called on SIGTERM. Immediately writes all pending debounced updates to remote.
    *
    * @param {number} [timeoutMs=5000]
