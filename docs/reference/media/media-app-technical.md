@@ -1112,6 +1112,61 @@ opened after a failed start still shows it.
 - `backend/tests/unit/suite/0_system/eventbus/WebSocketEventBus.deviceStart.test.mjs` — routing + replay
 - `backend/src/5_composition/composition-contract-registry.test.mjs` (`devices.start-status-reaches-every-house-view`)
 
+
+### 4.11 Player features on a screen (P2)
+
+Subtitles and audio language (RQ-STEER-14), Show briefly (RQ-PLAY-11) and
+music behind a slideshow (RQ-PLAY-12). Each route sends one `session`
+envelope (§6.2.6) and maps the ack like §4.9 (200 / 400 / 404 / 409 / 502
+with the screen's `code`). Every body takes `commandId` and optional
+`origin`. Params are validated by `validatePlayerFeatureParams`
+(`shared/contracts/media/playerFeatures.mjs`, wired into
+`validateSessionActionParams`). State is published in `snapshot.controls`
+(§9.14).
+
+| Route | Body | Envelope |
+|---|---|---|
+| `POST /api/v1/device/:id/session/tracks` | `{ audio?: "<track id>", subtitle?: "<track id>" \| "off" }` (at least one) | `session` `{ action: "set-tracks", … }` |
+| `POST /api/v1/device/:id/session/brief/close` | `{}` | `session` `{ action: "close-brief" }` |
+| `POST /api/v1/device/:id/session/music-behind` | `{ op: "start" \| "play" \| "pause" \| "next" \| "prev" \| "stop", contentId?, title? }` (`start` needs `contentId`) | `session` `{ action: "music-behind", … }` |
+
+Screen refusals (502): `NO_PLAYBACK`, `UNKNOWN_TRACK`, `TRACKS_NOT_OWNED`,
+`TRACK_SELECT_FAILED`, `NO_BRIEF`, `NOT_A_SLIDESHOW`, `NO_MUSIC`,
+`MUSIC_LOADING`, `INVALID_SESSION_COMMAND`.
+
+**Show briefly is a load option, not a route.** `GET|POST /device/:id/load`
+with `play=<contentId>&brief=1` (or `brief=<seconds>`, or `briefSeconds=`)
+shows the item OVER the screen's programme; `title=` names it on the
+screen. A camera is `play=camera:<cameraId>`: a camera started by a routine
+(a load with no device naming itself — Home Assistant, schedules) is brief by
+default (30 s); `brief=0` makes it take the screen instead (the programme
+stops). Anything else is brief only when asked. The screen acks with
+`appliedAs: "brief"` (§6.3); `WakeAndLoadService` then confirms playback on
+the published `controls.brief` (its current item never changes) and never
+sends a `camera:` ref to the transcode prewarm. The Media app sends
+`brief=1&title=…` from an item's **Show briefly on…**
+(`buildDispatchUrl({ brief, title })`).
+
+**Stream selection on the mint (Plex).** Plex ignores stream ids on the
+transcode URLs and plays the part's SELECTED streams. A stream mint
+`GET /api/v1/proxy/plex/stream/:ratingKey` may carry `audioStreamID` and/or
+`subtitleStreamID` (`0` = subtitles off; parsed by `parseStreamParams`).
+`PlexAdapter.loadMediaUrl(item, { tracks })` accepts only the item's own
+stream ids, selects them on the part first (`PlexClient.selectPartStreams` →
+`PUT /library/parts/:id?…&allParts=1`, the call every Plex client makes, so
+the choice is Plex's per-file selection for the server account), then mints
+with `subtitles=burn` for a chosen subtitle (no direct play; no direct stream
+when burning). A mint without these params is unchanged. Log events:
+`plex.loadMediaUrl.tracks-selected` (info), `.tracks-rejected`,
+`.tracks-select-failed` (warn).
+
+**Verified by:**
+- `shared/contracts/media/playerFeatures.test.mjs` — params, Plex track list, show-keyed carry-over, brief mode, published shapes
+- `backend/src/4_api/v1/routers/device.player-features.test.mjs` — the three routes, validation, refusal mapping
+- `backend/src/1_adapters/content/media/plex/PlexAdapter.tracks.test.mjs`, `backend/src/4_api/v1/routers/proxy.plexStreamTracks.test.mjs` — part selection, burn, unchanged default mint
+- `tests/isolated/application/devices/WakeAndLoadService.brief.test.mjs` — brief confirmation, no camera prewarm
+- `tests/live/flow/media/media-app-player-features.runtime.test.mjs` — every behaviour on the virtual receiver
+
 ---
 
 ## 5. Reserved
@@ -1216,6 +1271,9 @@ Screen session actions (§6.6). Validated by
 { "action": "sleep-timer", "atEnd": "item" }
 { "action": "cancel-sleep-timer" | "resume-sleep" | "cancel-countdown" | "start-next-now" }
 { "action": "put-back", "noteId": "<optional note id>" }
+{ "action": "set-tracks", "audio": "<track id>", "subtitle": "<track id>" | "off" }   /* P2, §6.7 */
+{ "action": "close-brief" }
+{ "action": "music-behind", "op": "start" | "play" | "pause" | "next" | "prev" | "stop", "contentId": "...", "title": "..." }
 ```
 Acked on the outcome (`media:session-control-applied`, or an `ok: false` ack
 with the refusal code).
@@ -1248,7 +1306,8 @@ Acks MUST be sent within 5 seconds of receiving the command. For long
 operations, ack indicates acceptance; completion observable via state feed.
 
 Optional `appliedAs` / `requestedOp` (queue ops) say how a command was
-actually applied when it differs from what was asked. Add only (§6.6) acks a
+actually applied when it differs from what was asked. `appliedAs: "brief"`
+says a play was shown briefly over the programme (§4.11). Add only (§6.6) acks a
 `play-now` with `{ appliedAs: "add", requestedOp: "play-now" }`. The device
 gateway and `SessionControlService` pass both through to the HTTP response,
 and `/device/:id/load` reports `appliedAs` on its result (WakeAndLoad then
@@ -1406,6 +1465,84 @@ power, so **the screen persists its own session** in browser storage
 - `frontend/src/screen-framework/actions/ScreenActionHandler.restore.test.jsx`, `screenItemActions.autoContinue.test.js`
 - `shared/contracts/media/sessionControls.test.mjs`, `continuation.test.mjs`
 - `tests/live/flow/media/screen-session-controls.runtime.test.mjs` — one browser journey per behaviour on the virtual receiver (run with `tests/_lib/media-redesign-server.mjs`)
+
+
+### 6.7 Player features on screens (P2)
+
+Implemented in `frontend/src/screen-framework/session/screenPlayerFeatures.js`
+(state machine with ports, attached to the session controls with
+`controls.attachExtension`, so its actions ride `handleSession` and its blocks
+are spread into `toPublished()`), bound by `ScreenPlayerFeaturesHost.jsx`.
+A screen without the extension behaves exactly as before.
+
+**Subtitles and audio language (RQ-STEER-14).** The Player side is OPT-IN
+(`modules/Player/lib/trackPolicy.js`, like `naturalEndPolicy.js`): an owner
+registers `{ isOwner(playerInstanceId), getPreference, setPreference,
+onTracks }`; only the Player it claims (the screen's bound playback owner, or
+the Media app's own Player) lists tracks, applies a remembered choice or
+accepts `setTracks`. Every other Player resolves, renders and registers as
+before, and a page with no owner runs no track work at all. Tracks are the
+item's Plex streams (`plexTracksFromMetadata`: first media, first part;
+subtitles named by their own title, e.g. "English [SDH]"), else the engine's
+own (`lib/engineTracks.js`: native `textTracks`/`audioTracks`, hls.js
+`audioTracks`/`subtitleTracks`, dash.js `getTracksFor`/`setCurrentTrack`/
+`setTextTrack`). A choice is remembered per device under the show
+(`show:<grandparentId>`; `item:<contentId>` otherwise) in browser storage
+(`daylight.track-preferences.v1:<namespace>`, 200 entries) and matched on the
+next episode by language and name — so it carries on. A Plex choice re-mints
+the stream at the same spot (a SinglePlayer remount with
+`reason: "track-change"`; pause state is kept); an engine choice switches in
+place. Player log events: `playback.tracks.selected`,
+`playback.tracks.remembered-applied`, `playback.tracks.select-refused`.
+
+**Show briefly (RQ-PLAY-11).** `useScreenCommands` turns a brief play
+(§4.11) into `media:brief` — not a replace, so it makes no screen note and
+leaves `meta.origin` alone. The programme is paused (not unmounted) and the
+camera (`CameraOverlay`) or clip (an auxiliary Player) is shown in a
+full-screen layer with a bar: `"<title> · from <origin>"`, "Back to
+<programme> in Ns / after this / when closed", and **Close** (Back closes it
+too). On Close, Back, the clip's end, its time running out or a remote
+`close-brief`, the programme comes back at its spot with its queue: resumed
+if it is still the loaded item, else restored from the snapshot taken when
+the brief began (the put-back restore path). A second interruption keeps the
+first programme to return to. Any other start on the screen (play, queue,
+play-now, item action Play, adopt) supersedes the brief and nothing returns.
+Log events: `brief.started`, `brief.ended` (`reason`, `returned`),
+`brief.superseded`.
+
+**Music behind a slideshow (RQ-PLAY-12).** `music-behind start` is accepted
+only while the current item is an image (`NOT_A_SLIDESHOW`). The music is a
+second, **auxiliary** Player (`modules/Player/components/MusicBehindLayer.jsx`,
+`auxiliary` prop: never registers for screen queue commands) with its own
+queue, steered only by `music-behind` ops; transport commands steer the
+photos. A remote Next on a slideshow now skips the photo (routed to the queue
+owner as `skip-next`; video and audio keep the synthetic Tab), and a running
+slideshow publishes `playing` (`playerSessionBridge`). The music outlives the
+slideshow: stopping the photos leaves it playing until `stop`. A plaque on
+the screen shows the song. The decision to keep it is the controller's
+(§ "Media app" below).
+
+**Composite content API, assessed.** `POST /api/v1/content/compose` (§2.1)
+resolves a *new* visual+audio presentation; it has no frontend consumer and
+no way to add music to a slideshow already playing or to steer the audio on
+its own, and the Player's `AudioLayer` (queue `audio`) dies with its parent
+and has no control surface. Music behind therefore reuses the Player itself
+as an auxiliary instance rather than `compose`.
+
+**Media app.** `PlayerFeatureControls` (mounted once in `TransportBar`, so
+for this device and every screen's Remote) reads `snapshot.controls.tracks /
+.musicBehind / .brief` for a screen and `session/localPlayerFeatures.js` for
+this device (`PlayerBridge` claims its Player; `MusicBehindHost` runs the
+local music layer). `useSlideshowStopGuard` asks "Keep the music playing?"
+when Stop is pressed on a slideshow with music behind. Log events:
+`media.player-feature.command`, `.failed`, `.state`.
+
+**Verified by:**
+- `frontend/src/screen-framework/session/screenPlayerFeatures.test.js` — tracks, brief return/resume/restore/supersede, music
+- `frontend/src/screen-framework/commands/useScreenCommands.brief.test.jsx` — which plays are brief; screens without the extension unchanged
+- `frontend/src/screen-framework/actions/ScreenActionHandler.test.jsx`, `publishers/playerSessionBridge.test.js` — slideshow skip and state
+- `frontend/src/modules/Player/Player.tracks.test.jsx`, `lib/playerTracks.test.js` — opt-in seam, unchanged default, re-stream, carry-over, auxiliary Players
+- `frontend/src/modules/Media/shell/PlayerFeatureControls.test.jsx`, `cast/DispatchTargetPicker.brief.test.jsx`
 
 ---
 
@@ -1704,9 +1841,26 @@ Every field is present on a published block.
     "label": "Paused by Dad's phone", "count": <int>, "at": "<ISO>",
     "origin": { /* §6.2.7 */ } | null,
     "putBack": null | { "availableUntil": "<ISO>" }
-  } ]
+  } ],
+  /* Player features (P2, §6.7) — present on screens with the extension; null when idle */
+  "tracks": null | {
+    "contentId": "...", "source": "plex" | "native" | "hls" | "dash",
+    "audio": [ { "id": "...", "language": "eng", "label": "English (EAC3 5.1)" } ],
+    "subtitles": [ { "id": "...", "language": "eng", "label": "English [SDH]", "forced": true? } ],
+    "selected": { "audio": "<id>" | null, "subtitle": "<id>" | null }
+  },
+  "brief": null | {
+    "id": "...", "kind": "camera" | "clip", "contentId": "...", "cameraId": "...",
+    "title": "...", "label": "Doorbell · from Automation", "origin": { /* §6.2.7 */ } | null,
+    "startedAt": "<ISO>", "endsAt": "<ISO>" | null, "remainingSeconds": <int> | null,
+    "returnTo": { "contentId": "...", "title": "..." } | null
+  },
+  "musicBehind": null | { "contentId": "...", "title": "...", "state": "loading" | "playing" | "paused", "trackTitle": "..." }
 }
 ```
+`tracks`, `brief` and `musicBehind` are validated by
+`validatePlayerFeatureControls` when present. A Plex subtitle is `selected`
+only when this stream burned it in.
 
 ### 9.15 `DeviceStartStatus`
 Published on `device-start:<deviceId>`; validated by `validateDeviceStartStatus`.
