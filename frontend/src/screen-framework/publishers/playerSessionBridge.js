@@ -479,6 +479,11 @@ export function createPlayerSessionBridge({
     try {
       if (el.ended) return 'ended';
       if (el.paused) return 'paused';
+      // An image slideshow has no media element to prove frames: ImageFrame's
+      // stand-in element says whether its own clock is running. Without this
+      // a running slideshow read "Buffering" forever on every Remote.
+      const native = typeof HTMLMediaElement !== 'undefined' && el instanceof HTMLMediaElement;
+      if (!native && getCurrentItem()?.format === 'image') return 'playing';
       return observedPlaying ? 'playing' : 'buffering';
     } catch {
       return 'loading';

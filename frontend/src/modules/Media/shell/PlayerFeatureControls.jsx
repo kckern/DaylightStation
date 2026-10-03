@@ -80,7 +80,9 @@ function TrackMenu({ kind, tracks, selected, onSelect, disabled }) {
   const current = list.find((t) => t.id === selected) ?? null;
   const label = isSubs ? `Subtitles: ${current?.label ?? 'Off'}` : `Audio: ${current?.label ?? list[0]?.label ?? '—'}`;
   return (
-    <Menu position="top" withinPortal>
+    // flip + size: open toward the larger free side and never past the
+    // viewport — a file can carry dozens of subtitle streams.
+    <Menu position="top" withinPortal middlewares={{ flip: true, shift: true, size: { padding: 8 } }}>
       <Menu.Target>
         <Button
           variant="default" size="sm" disabled={disabled}
@@ -91,7 +93,7 @@ function TrackMenu({ kind, tracks, selected, onSelect, disabled }) {
           {label}
         </Button>
       </Menu.Target>
-      <Menu.Dropdown data-testid={`pf-${isSubs ? 'subtitles' : 'audio'}-menu`}>
+      <Menu.Dropdown data-testid={`pf-${isSubs ? 'subtitles' : 'audio'}-menu`} className="pf-track-menu">
         {isSubs && (
           <Menu.Item data-testid="pf-subtitle-off" onClick={() => onSelect({ subtitle: SUBTITLES_OFF })}
             data-selected={!selected || undefined} leftSection={<Mark on={!selected} />}>Off</Menu.Item>
@@ -184,6 +186,8 @@ export function PlayerFeatureControls({ target, snapshot: snapshotOverride = nul
       {music ? (
         <Group className="pf-row pf-music" gap="sm" justify="center" data-testid="pf-music" data-music-state={music.state}>
           <IconMusic size={16} aria-hidden="true" />
+          {/* Named, so its Stop is never mistaken for the slideshow's. */}
+          <Text size="sm" c="dimmed">Music behind</Text>
           <Text size="sm" className="pf-music-title" data-testid="pf-music-title">{music.trackTitle ?? music.title ?? 'Music'}</Text>
           <Button size="sm" variant="default" data-testid="pf-music-toggle" aria-label={music.state === 'playing' ? 'Pause music' : 'Play music'}
             onClick={() => run('music-behind', music.state === 'playing' ? 'pause' : 'play',
