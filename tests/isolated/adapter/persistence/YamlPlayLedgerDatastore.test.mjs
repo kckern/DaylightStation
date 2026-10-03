@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, readdirSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { YamlPlayLedgerDatastore } from '#adapters/persistence/yaml/YamlPlayLedgerDatastore.mjs';
+import { PLAY_LEDGER_RETENTION_DAYS } from '#domains/media/playLedger.mjs';
 
 describe('YamlPlayLedgerDatastore', () => {
   let dir;
@@ -27,5 +28,13 @@ describe('YamlPlayLedgerDatastore', () => {
     const store = new YamlPlayLedgerDatastore({ root: dir, retentionDays: 90, today: () => '2026-10-02' });
     await store.append(row('2026-10-02 08:00:00', 'plex:2'));
     expect(readdirSync(dir).sort()).toEqual(['2026-07-05.yml', '2026-10-02.yml']);
+  });
+
+  test('with the production retention, day 90 is kept and day 91 is pruned', async () => {
+    writeFileSync(join(dir, '2026-07-03.yml'), '- contentId: day-91\n');
+    writeFileSync(join(dir, '2026-07-04.yml'), '- contentId: day-90\n');
+    const store = new YamlPlayLedgerDatastore({ root: dir, retentionDays: PLAY_LEDGER_RETENTION_DAYS, today: () => '2026-10-02' });
+    await store.append(row('2026-10-02 08:00:00', 'plex:2'));
+    expect(readdirSync(dir).sort()).toEqual(['2026-07-04.yml', '2026-10-02.yml']);
   });
 });

@@ -17,7 +17,6 @@ describe('buildPlayLedgerRow', () => {
     expect(row).toMatchObject({ title: null, kind: null, parentId: null, grandparentId: null });
     expect(row.origin).toHaveLength(64);
   });
-  it('keeps 90 days', () => expect(PLAY_LEDGER_RETENTION_DAYS).toBe(90));
 });
 
 describe('selectPlays', () => {

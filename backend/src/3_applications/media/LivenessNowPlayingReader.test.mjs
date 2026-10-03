@@ -22,7 +22,12 @@ describe('LivenessNowPlayingReader', () => {
       { deviceId: 'fleet:office-tv', screenId: 'office-tv', contentId: 'plex:2', state: 'paused', position: 5 },
     ]);
   });
-  it('counts paused as on the screen', () => {
-    expect(ACTIVE_STATES).toEqual(expect.arrayContaining(['playing', 'paused', 'buffering', 'loading', 'stalled']));
+  it('every active state counts; ready, ended, error and idle do not', async () => {
+    const states = ['playing', 'paused', 'buffering', 'loading', 'stalled', 'ready', 'ended', 'error', 'idle'];
+    const reader = new LivenessNowPlayingReader({ livenessService: liveness(Object.fromEntries(
+      states.map((state) => [`tv-${state}`, { online: true, snapshot: { state, currentItem: { contentId: `plex:${state}` } } }]),
+    )) });
+    expect((await reader.list()).map((r) => r.state)).toEqual(['playing', 'paused', 'buffering', 'loading', 'stalled']);
+    expect(ACTIVE_STATES).toHaveLength(5);
   });
 });
