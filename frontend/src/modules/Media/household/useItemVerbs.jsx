@@ -20,11 +20,6 @@ import { resumePlan } from './householdModel.js';
 import { useHouseholdActions, useScreenNamer } from './useHousehold.js';
 import { SpotChooser } from './SpotChooser.jsx';
 
-export const ITEM_VERBS = Object.freeze([
-  'open', 'tap', 'playNow', 'shuffle', 'playNext', 'playFirst', 'add', 'playOn', 'addOn', 'details',
-  'favourite', 'unfavourite', 'watched', 'unwatched', 'hide',
-]);
-
 /** The household entry (spots) for an item, from whatever the start page already loaded. */
 export function householdEntryFor(contentId) {
   if (!contentId) return null;
@@ -55,8 +50,10 @@ export function useItemVerbs() {
       setChoice({ item, spots: plan.spots });
       return 'choose';
     }
+    // Continue from the named spot itself: the server's resume is the
+    // record's last-written playhead, which may be another screen's.
     return plan.kind === 'continue'
-      ? dispatchLeafVerb('playNow', item.id, item, { resumedFrom: plan.spot.playhead })
+      ? dispatchLeafVerb('playNow', item.id, item, { startAt: plan.spot.playhead })
       : dispatchLeafVerb('playNow', item.id, item);
   }, [dispatchLeafVerb]);
 

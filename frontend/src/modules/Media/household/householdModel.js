@@ -31,6 +31,8 @@ export function createScreenNamer(screensResponse, { selfId = null } = {}) {
   }
   return function nameFor(id) {
     if (typeof id !== 'string' || !id) return null;
+    // The shared playhead kept from before per-screen spots existed.
+    if (id === 'legacy') return EARLIER;
     if (selfId && id === selfId) return 'this device';
     if (byId.has(id)) return byId.get(id);
     if (id.startsWith('browser:') || id.startsWith('ephemeral:')) return 'another browser';
@@ -38,6 +40,17 @@ export function createScreenNamer(screensResponse, { selfId = null } = {}) {
     if (byId.has(bare)) return byId.get(bare);
     return deviceName(null, bare);
   };
+}
+
+/** What a spot with no screen (written before per-screen spots) is called. */
+export const EARLIER = 'earlier';
+
+/** "1 h 20 m on Living Room TV", or "12 m, saved earlier" for a spot with no screen. */
+export function spotLine(spot, nameFor) {
+  const at = formatDuration(spot?.playhead);
+  const id = spot?.deviceId ?? null;
+  const where = id && id !== 'legacy' && spot?.kind !== 'unknown' ? (nameFor?.(id) ?? null) : EARLIER;
+  return !where || where === EARLIER ? `${at}, saved ${EARLIER}` : `${at} on ${where}`;
 }
 
 /** 4800 → "1 h 20 m"; 720 → "12 m". */
@@ -106,11 +119,7 @@ export function resumePlan(entry) {
 export function spotsSummary(entry, nameFor) {
   const spots = differingSpots(entry);
   if (spots.length < 2) return null;
-  return spots.map(spot => {
-    const where = nameFor?.(spot.deviceId) ?? null;
-    const at = formatDuration(spot.playhead);
-    return where ? `${at} on ${where}` : `${at} somewhere`;
-  }).join(' · ');
+  return spots.map(spot => spotLine(spot, nameFor)).join(' · ');
 }
 
 /** Household entry / suggestion / ledger row → the item every verb takes. */

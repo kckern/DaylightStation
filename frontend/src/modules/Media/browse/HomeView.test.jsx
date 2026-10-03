@@ -26,6 +26,7 @@ vi.mock('../logging/mediaLog.js', () => {
 });
 
 import { HomeView } from './HomeView.jsx';
+import { FleetContext } from '../fleet/FleetProvider.jsx';
 import { resetApiResourceCache } from '../../../lib/hooks/useApiResource.js';
 
 const SCREENS = { screens: [
@@ -46,7 +47,7 @@ function routes(overrides = {}) {
       { id: 'time-of-day', title: 'Usually here at this time', items: [{ id: 'plex:300', kind: 'collection', type: 'album', title: 'Morning Album', days: 4 }] },
       { id: 'new', title: 'New', items: [{ id: 'plex:400', kind: 'item', type: 'movie', title: 'Fresh Film' }] },
     ] },
-    'api/v1/media/household/carry-on?limit=20': { nowPlayingKnown: true,
+    'api/v1/media/household/carry-on?limit=12': { nowPlayingKnown: true,
       items: [
         { contentId: 'plex:1', playhead: 1800, duration: 3840, percent: 47, playedOn: { deviceId: 'fleet:livingroom-tv' }, spots: [
           { deviceId: 'fleet:livingroom-tv', playhead: 1800, duration: 3840, open: true, lastPlayed: '2026-10-02 21:00:00' }] },
@@ -70,12 +71,24 @@ function routes(overrides = {}) {
   });
 }
 
+let fleetEntries = {};
+const fleetStore = {
+  getEntry: (id) => fleetEntries[id] ?? null,
+  getAll: () => fleetEntries,
+  subscribeAll: () => () => {},
+};
+
 function renderHome() {
-  return render(<MantineProvider><HomeView /></MantineProvider>);
+  return render(
+    <MantineProvider>
+      <FleetContext.Provider value={{ store: fleetStore, devices: [] }}><HomeView /></FleetContext.Provider>
+    </MantineProvider>,
+  );
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fleetEntries = { 'livingroom-tv': { snapshot: { currentItem: { contentId: 'plex:9' }, meta: { playbackOwner: { ownerInstanceId: 'o', playbackRevision: 1 } } } } };
   resetApiResourceCache();
   routes();
 });
@@ -132,7 +145,8 @@ describe('HomeView start page', () => {
     renderHome();
     const tile = await screen.findByTestId('home-tile-carry-on-plex:1');
     fireEvent.click(within(tile).getByTestId('home-tile-carry-on-plex:1-picture'));
-    expect(dispatchLeafVerb).toHaveBeenCalledWith('playNow', 'plex:1', expect.objectContaining({ id: 'plex:1' }), { resumedFrom: 1800 });
+    // The named spot itself, not the server's last-write playhead (review B2).
+    expect(dispatchLeafVerb).toHaveBeenCalledWith('playNow', 'plex:1', expect.objectContaining({ id: 'plex:1' }), { startAt: 1800 });
   });
 
   it('asks which spot when screens hold different spots', async () => {
@@ -144,6 +158,33 @@ describe('HomeView start page', () => {
     expect(choice).toHaveTextContent('1 h 20 m on Living Room TV');
     fireEvent.click(choice);
     expect(dispatchLeafVerb).toHaveBeenCalledWith('playNow', 'plex:2', expect.objectContaining({ id: 'plex:2' }), { startAt: 4800 });
+  });
+
+  it('a screen whose playback cannot be steered from here shows "Now on" without Remote or Move here', async () => {
+    fleetEntries = {};
+    renderHome();
+    const card = await screen.findByTestId('home-tile-now-on-livingroom-tv-plex:9');
+    await waitFor(() => expect(card).toHaveTextContent('Now on Living Room TV'));
+    expect(within(card).queryByRole('button', { name: /Move here/ })).toBeNull();
+    expect(within(card).queryByRole('button', { name: /^Remote/ })).toBeNull();
+    expect(within(card).getByRole('button', { name: /More actions for Playing Thing/ })).toBeInTheDocument();
+  });
+
+  it('reloads once, about 10 s later, when the server says its answer was degraded', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      routes({ 'api/v1/media/household/recent?limit=24': { degraded: true, items: [] } });
+      renderHome();
+      await screen.findByTestId('home-row-favourites');
+      const count = () => apiMock.mock.calls.filter(c => c[0] === 'api/v1/media/household/recent?limit=24').length;
+      expect(count()).toBe(1);
+      await vi.advanceTimersByTimeAsync(10_500);
+      await waitFor(() => expect(count()).toBe(2));
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(count()).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('leads into Browse when there is nothing to suggest', async () => {

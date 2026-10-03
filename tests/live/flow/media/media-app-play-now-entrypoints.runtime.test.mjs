@@ -33,8 +33,6 @@ async function prepareQueuedArrival({ context, sender }) {
   await expect(localVideo).toBeVisible({ timeout: 60000 });
   await expect.poll(() => localVideo.evaluate(video => video.readyState >= 2 && video.currentTime > 0), { timeout: 30000 })
     .toBe(true);
-  await expect.poll(() => sender.evaluate(() => JSON.parse(localStorage.getItem('media-app.recents') || '[]')
-    .some(item => item.contentId === 'plex:55854')), { timeout: 10000 }).toBe(true);
 
   await expect(sender.getByTestId('cast-target-chip')).toBeVisible({ timeout: 30000 });
   await sender.getByTestId('cast-target-chip').click();

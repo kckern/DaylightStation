@@ -1,3 +1,4 @@
+import React from "react";
 // PLAY.4a — a Play that continues from a saved spot marks its outcome with
 // Start over; a chosen spot rides the item as an explicit start position.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -23,6 +24,13 @@ vi.mock('../logging/mediaLog.js', () => {
 
 import { createLocalSessionController } from '../session/LocalSessionController.js';
 import { useContentDispatch } from './useContentDispatch.js';
+import { FleetContext } from '../fleet/FleetProvider.jsx';
+
+const DEVICES = [
+  { id: 'office-tv', name: 'Office TV', content_control: { type: 'websocket' } },
+  { id: 'livingroom-tv', name: 'Living Room TV', content_control: { type: 'fkb' } },
+];
+const withFleet = ({ children }) => <FleetContext.Provider value={{ devices: DEVICES, store: null }}>{children}</FleetContext.Provider>;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -56,13 +64,24 @@ describe('Play from a saved spot', () => {
     expect(recordLocal.mock.calls[0][0].startOver).toBeFalsy();
   });
 
-  it('an aimed Play carries the spot and Start over to the far record', async () => {
+  it('an aimed Play carries the spot and Start over to a Media screen', async () => {
     aim = { targetIds: ['office-tv'], mode: 'fork' };
-    const { result } = renderHook(() => useContentDispatch());
+    const { result } = renderHook(() => useContentDispatch(), { wrapper: withFleet });
     await act(async () => { result.current.dispatchLeafVerb('playNow', 'plex:1', { title: 'Arrival' }, { startAt: 4800 }); await Promise.resolve(); });
     expect(dispatchToTarget).toHaveBeenCalledWith(expect.objectContaining({
       play: 'plex:1', startOver: true, resumedFrom: 4800,
       itemAction: expect.objectContaining({ item: expect.objectContaining({ seconds: 4800, resume: false }) }),
     }));
+  });
+});
+
+describe('screens that ignore a start position (review)', () => {
+  it('does not claim "Continuing from…" or offer Start over on a screen that is not a Media receiver', async () => {
+    aim = { targetIds: ['livingroom-tv'], mode: 'fork' };
+    const { result } = renderHook(() => useContentDispatch(), { wrapper: withFleet });
+    await act(async () => { result.current.dispatchLeafVerb('playNow', 'plex:1', { title: 'Arrival' }, { startAt: 4800 }); await Promise.resolve(); });
+    const call = dispatchToTarget.mock.calls.at(-1)[0];
+    expect(call.startOver).toBeUndefined();
+    expect(call.resumedFrom).toBeUndefined();
   });
 });

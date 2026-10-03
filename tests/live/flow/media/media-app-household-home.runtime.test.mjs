@@ -337,6 +337,9 @@ test.describe('saved spots and Start over (PLAY.4a)', () => {
     await expect(chooser).toContainText('12 m on Kid\'s tablet');
     await expect(chooser).toContainText('1 h 20 m on Acceptance receiver');
     await expect(chooser).toContainText('From the beginning');
+    for (const choice of await chooser.getByRole('button', { name: /on |beginning/ }).all()) {
+      expect((await choice.boundingBox()).height).toBeGreaterThanOrEqual(44);
+    }
     await shot(page, 'spot-chooser-laptop');
     await chooser.getByRole('button', { name: /1 h 20 m on Acceptance receiver/ }).click();
     // The confirmation says where it continues and offers Start over.
@@ -359,6 +362,22 @@ test.describe('saved spots and Start over (PLAY.4a)', () => {
     expect(state.playLogs.every(log => log.device === self)).toBe(true);
     expect(state.playLogs.some(log => String(log.body.assetId).includes('697368'))).toBe(true);
     expect(state.playLogs.every(log => !('origin' in log.body))).toBe(true);
+  });
+
+  test('[PLAY.4a/AC1] one saved spot: Continue starts from exactly that screen\'s spot, not the server\'s last playhead', async ({ page }) => {
+    test.setTimeout(180000);
+    await installHousehold(page);
+    const plays = [];
+    page.on('request', request => { if (/\/api\/v1\/play\/plex/.test(request.url())) plays.push(request.url()); });
+    await openHome(page);
+    await page.getByTestId(`home-tile-carry-on-${ARRIVAL}-picture`).click();
+    const row = page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'Playing Arrival here' }).first();
+    await expect(row).toContainText('Continuing from 30 m', { timeout: 15000 });
+    await expect(row.getByRole('button', { name: 'Start over' })).toBeVisible();
+    const video = page.locator('video').first();
+    await expect.poll(() => video.evaluate(el => !el.paused && el.readyState >= 2).catch(() => false), { timeout: 60000 }).toBe(true);
+    expect(plays.some(url => url.includes('55854') && url.includes('resume=false')), plays.join('\n')).toBe(true);
+    await expect.poll(() => video.evaluate(el => el.currentTime), { timeout: 30000 }).toBeGreaterThan(1790);
   });
 
   test('[PLAY.4a/AC3] no saved spot: it simply starts, with no Start over', async ({ page }) => {
@@ -434,6 +453,7 @@ test.describe('Now on another screen (FIND.10a/AC3)', () => {
     await openHome(sender);
     const card = sender.getByTestId(`home-tile-now-on-acceptance-media-${ARRIVAL}`);
     await expect(card).toContainText('Now on Acceptance receiver');
+    await expect(card.getByRole('button', { name: /More actions for Arrival/ })).toBeVisible();
     await expect(sender.getByTestId(`home-tile-carry-on-${ARRIVAL}`)).toHaveCount(0);
     await shot(sender, 'now-on-laptop');
     await card.getByRole('button', { name: 'Remote' }).click();

@@ -355,6 +355,8 @@ export function DispatchProvider({ children }) {
       if (!controller?.transport?.restartCurrent) return { ok: false, code: 'UNSUPPORTED' };
       await controller.transport.restartCurrent();
       dispatch({ type: 'REMOVED', dispatchId: attemptId });
+      dispatch({ type: 'LOCAL', attemptId: uuid(), kind: 'startOver', phase: 'confirmed', targetId,
+        item: { contentId: record.item?.contentId ?? null, title: record.item?.title ?? record.title ?? null } });
       return { ok: true };
     } catch (error) {
       mediaLog.outcomeStartOverFailed({ attemptId, targetId, error: error?.message ?? String(error) });

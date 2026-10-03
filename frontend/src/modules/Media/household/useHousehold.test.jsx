@@ -58,6 +58,15 @@ describe('useHouseholdActions', () => {
     expect(outcomes.recordLocal.mock.calls[1][0].kind).toBe('unfavourite');
   });
 
+  it('a show from search (type only, no itemType) is favourited as a collection', async () => {
+    apiMock.mockResolvedValue({ items: [] });
+    const { result } = renderHook(() => useHouseholdActions(), { wrapper: wrapperWith(outcomes) });
+    await act(() => result.current.toggleFavourite({ id: 'plex:9', title: 'Bluey', type: 'show' }, false));
+    expect(apiMock).toHaveBeenCalledWith('api/v1/media/household/favourites', expect.objectContaining({ id: 'plex:9', kind: 'collection' }), 'POST');
+    await act(() => result.current.toggleFavourite({ id: 'plex:5', title: 'Arrival', type: 'movie' }, false));
+    expect(apiMock).toHaveBeenLastCalledWith('api/v1/media/household/favourites', expect.objectContaining({ id: 'plex:5', kind: 'item' }), 'POST');
+  });
+
   it('marks watched and unwatched', async () => {
     apiMock.mockResolvedValue({ watched: true });
     const { result } = renderHook(() => useHouseholdActions(), { wrapper: wrapperWith(outcomes) });

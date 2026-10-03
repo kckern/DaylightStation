@@ -87,6 +87,19 @@ describe('useMoveHere', () => {
     expect(remote.transport.stop).not.toHaveBeenCalled();
   });
 
+  it('a second tap while a move is in flight does nothing', async () => {
+    local.lifecycle.adoptSnapshot = vi.fn(() => ({ ok: true }));
+    const { result } = harness();
+    let first; let second;
+    act(() => { first = result.current('fleet:livingroom-tv', { contentId: 'plex:9' }); });
+    await act(async () => { second = await result.current('fleet:livingroom-tv', { contentId: 'plex:9' }); });
+    expect(second).toMatchObject({ ok: false, code: 'IN_FLIGHT' });
+    expect(local.lifecycle.adoptSnapshot).toHaveBeenCalledTimes(1);
+    expect(outcomes.recordLocal).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(21_000); });
+    await first;
+  });
+
   it('refuses when the screen is no longer playing that item', async () => {
     fleetSnapshot = { ...remoteSnapshot(), currentItem: { contentId: 'plex:other' } };
     const { result } = harness();

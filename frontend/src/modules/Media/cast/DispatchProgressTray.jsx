@@ -80,13 +80,13 @@ const LOCAL_FAILED_VERB = {
 // they were made. They are not plays, so they never offer Retry or another
 // screen; a removal carries its Undo on the record itself.
 const HOUSEHOLD_COPY = {
-  favourite: { done: t => `Added ${t} to favourites`, failed: t => `Couldn't add ${t} to favourites` },
-  unfavourite: { done: t => `Removed ${t} from favourites`, failed: t => `Couldn't remove ${t} from favourites` },
-  hide: { done: t => `Removed ${t} from the household list`, failed: t => `Couldn't remove ${t} from the household list` },
-  watched: { done: t => `Marked ${t} watched`, failed: t => `Couldn't mark ${t} watched` },
-  unwatched: { done: t => `Marked ${t} unwatched`, failed: t => `Couldn't mark ${t} unwatched` },
+  favourite: { running: t => `Adding ${t} to favourites…`, done: t => `Added ${t} to favourites`, failed: t => `Couldn't add ${t} to favourites` },
+  unfavourite: { running: t => `Removing ${t} from favourites…`, done: t => `Removed ${t} from favourites`, failed: t => `Couldn't remove ${t} from favourites` },
+  hide: { running: t => `Removing ${t} from the household list…`, done: t => `Removed ${t} from the household list`, failed: t => `Couldn't remove ${t} from the household list` },
+  watched: { running: t => `Marking ${t} watched…`, done: t => `Marked ${t} watched`, failed: t => `Couldn't mark ${t} watched` },
+  unwatched: { running: t => `Marking ${t} unwatched…`, done: t => `Marked ${t} unwatched`, failed: t => `Couldn't mark ${t} unwatched` },
   moveHere: { running: t => `Moving ${t} here…`, done: t => `Moved ${t} here`, failed: t => `Couldn't move ${t} here` },
-  startOver: { done: t => `Started ${t} over`, failed: t => `Couldn't start ${t} over` },
+  startOver: { done: (t, at) => `Started ${t} over ${at}`, failed: (t, at) => `Couldn't start ${t} over ${at}` },
 };
 export const HOUSEHOLD_KINDS = new Set(Object.keys(HOUSEHOLD_COPY));
 
@@ -105,9 +105,9 @@ function localCopy(d, phase, name) {
   const at = d.distance === 'here' ? 'here' : `on ${d.targetName ?? name}`;
   if (HOUSEHOLD_COPY[d.kind]) {
     const copy = HOUSEHOLD_COPY[d.kind];
-    if (phase === 'failed') return { primary: copy.failed(title), secondary: d.reason ?? null };
-    if (phase === 'running' && copy.running) return { primary: copy.running(title), secondary: null };
-    return { primary: copy.done(title), secondary: null };
+    if (phase === 'failed') return { primary: copy.failed(title, at), secondary: d.reason ?? null };
+    if (phase === 'running' && copy.running) return { primary: copy.running(title, at), secondary: null };
+    return { primary: copy.done(title, at), secondary: null };
   }
   if (d.kind === 'playback') {
     // RELY.5a: name the item, this device, and what plays instead.
@@ -298,9 +298,10 @@ function TrayRow({ d, retry, removeDispatch, sendElsewhere, recordLocal, stopAtt
   // hasn't seen isn't handled.
   useEffect(() => {
     let ms = null;
-    // A local action normally resolves at once; Move here waits on two
-    // screens, so its running row stays until it resolves.
-    if (isLocal && (phase === 'confirmed' || (phase === 'running' && d.kind !== 'moveHere'))) {
+    // A local queue action resolves at once; a household write or Move here
+    // waits on the server or two screens, so its running row stays until it
+    // resolves (a failure must never be dropped unseen).
+    if (isLocal && (phase === 'confirmed' || (phase === 'running' && !HOUSEHOLD_KINDS.has(d.kind)))) {
       ms = Math.max(LOCAL_LINGER_MS, d.undo ? d.undo.expiresAt - Date.now() : 0);
     } else if (!isLocal && phase === 'confirmed') ms = Math.max(CONFIRMED_LINGER_MS, d.undo ? d.undo.expiresAt - Date.now() : 0);
     else if (!isLocal && phase === 'sent') ms = SENT_RESOLUTION_TIMEOUT_MS;

@@ -292,3 +292,42 @@ describe('shared views for other household lists', () => {
     expect(await build({ nowPlayingAvailable: false }).service.nowPlaying()).toEqual({ known: false, list: [] });
   });
 });
+
+describe('list-change listeners and degraded reads (batch A review)', () => {
+  it('tells listeners when the household list changes: remove, restore, watched marks', async () => {
+    const { service } = build();
+    const seen = [];
+    const off = service.onListChanged((change) => seen.push(change));
+    await service.removeFromList('h1', 'plex:1');
+    await service.restoreToList('h1', 'plex:1');
+    await service.markWatched('plex:1', true);
+    expect(seen).toEqual([
+      { householdId: 'h1', reason: 'removed', id: 'plex:1' },
+      { householdId: 'h1', reason: 'restored', id: 'plex:1' },
+      { householdId: null, reason: 'watched', id: 'plex:1' },
+    ]);
+    off();
+    await service.removeFromList('h1', 'plex:2');
+    expect(seen).toHaveLength(3);
+  });
+
+  it('a throwing listener never fails the write', async () => {
+    const { service } = build();
+    service.onListChanged(() => { throw new Error('boom'); });
+    await expect(service.removeFromList(undefined, 'plex:1')).resolves.toMatchObject({ id: 'plex:1' });
+  });
+
+  it('carry on and recent say degraded when a catalog lookup ran out of time', async () => {
+    const { deps } = build({ records: [P('plex:film', { playhead: 4800, duration: 7200, lastPlayed: '2026-10-01 21:00:00' })] });
+    deps.contentCatalog.getItem = vi.fn(() => new Promise(() => {}));
+    const runtime = { withDeadline: (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('t')), ms))]) };
+    const service = new HouseholdMediaMemoryService({ ...deps, clock: Date, runtime, describeTimeoutMs: 60_000, carryOnDeadlineMs: 50 });
+    expect((await service.carryOn({})).degraded).toBe(true);
+    expect((await service.recent({})).degraded).toBe(true);
+  });
+
+  it('is not degraded when every lookup answered (even "not found")', async () => {
+    const { service } = build({ records: [P('plex:missing', { playhead: 4800, duration: 7200, lastPlayed: '2026-10-01 21:00:00' })] });
+    expect((await service.carryOn({})).degraded).toBe(false);
+  });
+});

@@ -63,6 +63,17 @@ import { contentIdToBrowsePath } from '../browse/browsePath.js';
 import { resultToQueueInput } from './resultToQueueInput.js';
 import { PeekContext } from '../peek/PeekContext.js';
 import { executeItemAction, createOperationId } from '../actions/itemAction.js';
+import { FleetContext } from '../fleet/FleetProvider.jsx';
+
+// Screens that apply an item action's start position: Media sessions (named
+// browsers, and screens commanded over the websocket). Others load by URL and
+// ignore `seconds`, so a play there must not claim where it continues.
+function honoursStartPosition(targetId, devices) {
+  if (typeof targetId !== 'string') return false;
+  if (targetId.startsWith('browser:')) return true;
+  const device = (devices ?? []).find(d => d?.id === targetId);
+  return device?.content_control?.type === 'websocket';
+}
 
 const LOCAL_KIND = { playNow: 'play', shuffle: 'shuffle', add: 'add', playNext: 'playNext', playFirst: 'playFirst' };
 
@@ -72,6 +83,7 @@ export function useContentDispatch() {
   const { targetIds, mode } = useCastTarget();
   const { controller, queue, config } = useSessionController('local');
   const peek = useContext(PeekContext);
+  const fleetDevices = useContext(FleetContext)?.devices ?? null;
 
   // A local action's outcome: one quiet record naming the item "here".
   const confirmLocal = useCallback((kind, input) => recordLocal?.({
@@ -113,7 +125,8 @@ export function useContentDispatch() {
     const resumedFrom = kind !== 'playNow' ? null
       : Number.isFinite(opts.startAt) ? (opts.startAt > 0 ? opts.startAt : null)
         : (Number.isFinite(opts.resumedFrom) && opts.resumedFrom > 0 ? opts.resumedFrom : null);
-    const resume = resumedFrom != null ? { startOver: true, resumedFrom } : {};
+    const honoured = targetIds.length === 0 || targetIds.every(id => honoursStartPosition(id, fleetDevices));
+    const resume = resumedFrom != null && honoured ? { startOver: true, resumedFrom } : {};
     const operationId = createOperationId();
     const remote = targetIds.length > 0;
     const destination = remote ? {
@@ -168,7 +181,7 @@ export function useContentDispatch() {
       if (!remote) resolveLocal?.(attemptId, { phase: 'failed', reason: error?.message ?? 'Could not apply action' });
     });
     return remote ? 'cast' : 'local';
-  }, [targetIds, mode, castTo, controller, queue, config, peek, recordLocal, resolveLocal, confirmLocal]);
+  }, [targetIds, mode, castTo, controller, queue, config, peek, recordLocal, resolveLocal, confirmLocal, fleetDevices]);
 
   // `opts.replaceHistoryEntry` is for a caller that is itself occupying the
   // current history entry and is about to close: the mobile Search Mode. Its

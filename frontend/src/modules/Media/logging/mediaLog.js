@@ -130,6 +130,8 @@ export const mediaLog = {
   moveHereSucceeded:      info('move-here.succeeded'),
   moveHereFailed:         warn('move-here.failed'),
   playedEarlierShown:     debug('played-earlier.shown'),
+  householdDegradedReload: info('household.degraded-reload'),
+  moveHereIgnored:        debug('move-here.ignored'),
 };
 
 export default mediaLog;

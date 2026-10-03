@@ -4,7 +4,7 @@
 // played — shuffled and "keep similar things playing" runs included, because
 // every start is a ledger row (GET /api/v1/media/screens/:id/played-earlier).
 // Each row has the same verbs as anywhere else, including favourites.
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Button, Text, UnstyledButton } from '@mantine/core';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import mediaLog from '../logging/mediaLog.js';
@@ -17,6 +17,8 @@ import './PlayedEarlier.scss';
 
 const PAGE = 20;
 const MAX = 200;
+// A music queue moves on every few minutes; refresh at most this often.
+export const REFRESH_MIN_MS = 60_000;
 
 /**
  * @param {object} props
@@ -27,8 +29,20 @@ export function PlayedEarlier({ screenId, currentContentId = null }) {
   const [limit, setLimit] = useState(PAGE);
   const path = screenId ? playedEarlierPath(screenId, { limit }) : null;
   const { data, loading, error, reload } = useApiResource(path, {
-    swr: true, label: 'media-played-earlier', deps: [currentContentId], logger: householdResourceLogger,
+    swr: true, label: 'media-played-earlier', logger: householdResourceLogger,
   });
+  // When the screen moves on, what it played becomes "earlier" — refresh,
+  // but not on every track of a music queue.
+  const lastRefreshRef = useRef(Date.now());
+  const firstItemRef = useRef(currentContentId);
+  useEffect(() => {
+    if (currentContentId === firstItemRef.current) return;
+    firstItemRef.current = currentContentId;
+    const now = Date.now();
+    if (now - lastRefreshRef.current < REFRESH_MIN_MS) return;
+    lastRefreshRef.current = now;
+    reload();
+  }, [currentContentId, reload]);
   const favourites = useFavourites();
   const { run, overlays } = useItemVerbs();
   const items = Array.isArray(data?.items) ? data.items : [];
