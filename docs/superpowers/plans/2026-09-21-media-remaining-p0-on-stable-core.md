@@ -2,7 +2,7 @@
 
 > **Status (2026-10-02):** Tasks 1–6 are in production (Task 6 at `757102abb`, repaired under
 > `docs/superpowers/plans/2026-09-28-media-task6-salvage.md`). Task 7 was scheduled and implemented on
-> branch `media/p0-task7` (P0 manifest 30 stories / 66 criteria; see the acceptance ledger for exactly
+> branch `media/p0-task7` (P0 manifest 31 stories / 69 criteria; see the acceptance ledger for exactly
 > which criteria were promoted); merge/deploy is the orchestrator's. Task 8 is not started.
 
 

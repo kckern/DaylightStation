@@ -128,10 +128,12 @@ export const P0_EXTENSION_ENTRIES = Object.freeze([
     file: 'media-app-outcomes.runtime.test.mjs',
     grep: 'RELY\\.2a',
   },
-  // RELY.5a is deliberately NOT promoted: media-app-local-failure passes
-  // intermittently (2 of 4 runs on the final product bytes) because a
-  // withheld direct part sometimes enters the Player's source-healing wait
-  // instead of the stall skip. See the acceptance ledger.
+  {
+    story: 'RELY.5a',
+    criteria: ['RELY.5a/AC1', 'RELY.5a/AC2', 'RELY.5a/AC3'],
+    file: 'media-app-local-failure.runtime.test.mjs',
+    grep: 'RELY\\.5a',
+  },
   {
     story: 'RELY.7a',
     criteria: ['RELY.7a/AC1', 'RELY.7a/AC5'],

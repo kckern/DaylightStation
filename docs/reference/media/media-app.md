@@ -66,7 +66,15 @@ whichever control started it. Each record is one attempt at one screen, keyed
 - **Local playback failures:** when an item on this device stops making progress
   or the Player gives up on it, it is skipped and a notice names the item, this
   device and what plays instead. The mini player shows a problem sign until
-  playback is moving again.
+  playback is moving again. A file the server refuses to read is waited out
+  first: after 3 s a notice reads "Waiting for <title> — the file is being
+  repaired" (Skip now, Retry); it resumes if the file comes back, or after 60 s
+  is skipped as "file unavailable". If the next item also waits within 60 s,
+  Media holds on it with one "Library unavailable" notice instead of skipping
+  through the queue.
+- **Never in the way:** notices float over the page just above the mini player
+  (or tab bar). They take no page space, move nothing when they appear, and
+  only their own buttons take taps, so the handle's controls stay reachable.
 - Screen readers hear the newest outcome through one polite live region.
 
 ## Keeping your place
