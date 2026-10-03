@@ -213,18 +213,16 @@ describe('MediaContentSearch', () => {
       expect(playContainerAsQueue).not.toHaveBeenCalled();
     });
 
-    it('▶ calls playContainerAsQueue and toasts on a local route', () => {
+    it('▶ calls playContainerAsQueue; its local outcome is reported by the outcome system, not a toast', () => {
       playContainerAsQueue.mockReturnValue('local');
       render(<MediaContentSearch />);
       fireEvent.click(screen.getByTestId('play-all-container'));
 
       expect(playContainerAsQueue).toHaveBeenCalledWith('plex:663508', expect.objectContaining({ id: 'plex:663508' }));
-      expect(notificationsShow).toHaveBeenCalledWith(
-        expect.objectContaining({ title: 'Playing Tuttle Twins' })
-      );
+      expect(notificationsShow).not.toHaveBeenCalled();
     });
 
-    it('▶ does not toast on a cast route (useContentDispatch already toasts it)', () => {
+    it('▶ does not toast on a cast route (its dispatch outcome reports it)', () => {
       playContainerAsQueue.mockReturnValue('cast');
       render(<MediaContentSearch />);
       fireEvent.click(screen.getByTestId('play-all-container'));

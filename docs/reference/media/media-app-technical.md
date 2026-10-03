@@ -1020,6 +1020,27 @@ Content-Type: application/json
 **Idempotency (C9.8).** Repeating a dispatch with the same `dispatchId`
 within 60s MUST be a no-op.
 
+**No deferred retry for Media presses (RQ-STEER-07).** The GET form accepts
+`deferredRetry=0`. `DeviceContentDispatchService` strips it from the receiver
+query and passes `deferredRetry: false` to `WakeAndLoadService`, so a press that
+fails (for example "Display did not turn on") is never replayed by the backend
+45 s later. The Media app always sends it; routines that omit it keep the
+one-shot deferred retry. Retry is only ever the person's explicit Retry.
+
+**No receiver, no "sent".** `WebSocketContentAdapter.load` refuses to broadcast
+to a screen topic with zero subscribed clients (`getTopicSubscriberCount`), and
+returns `{ ok: false, error: "Screen not connected (no receiver subscribed)" }`
+instead of reporting a vanished message as delivered. Wildcard (`*`) subscribers
+count as subscribers, so a sender that monitors every topic still keeps this
+path "sent"; the receiver-outcome watchdog then decides (§9.14).
+`WakeAndLoadService` does not turn that adapter error into a WebSocket-fallback
+broadcast either: it returns `{ ok: false, failedStep: 'load', error: 'Screen
+not connected' }` (a terminal "Not sent" in Media). A zero subscriber count
+alone still takes the fallback, because a cold FKB screen has no subscriber
+until the page the fallback loads subscribes; but if that base-page load also
+fails and the count is still zero, the load fails the same way instead of
+broadcasting to no one.
+
 **Verified by:**
 - `backend/tests/unit/suite/4_api/v1/routers/device.load-adopt.test.mjs` — adopt body validation + idempotency-conflict mapping
 - `backend/tests/unit/suite/3_applications/devices/DispatchIdempotencyService.test.mjs` — 60s TTL cache semantics
@@ -1712,6 +1733,46 @@ events from a superseded dispatch are ignored.
 
 ---
 
+### 9.14 `OutcomeRecord` (client-side, RELY.1a–RELY.6a)
+
+The one outcome store (`cast/dispatchReducer.js`, owned by `DispatchProvider`).
+One record per attempt at one target:
+
+```
+{ attemptId, targetId, kind, phase, item: { contentId, title }, command, snapshot,
+  reason, createdAt, updatedAt, distance, replacement?, ordinal?, undo? }
+```
+
+- `distance`: `far` (a dispatch to another screen, with wake progress),
+  `here` (this device, quiet), `direct` (a Remote queue edit on another screen).
+- `phase`: `running` · `sent` · `confirmed` · `unconfirmed` · `failed` ·
+  `not-sent` · `skipped`, plus `waiting` / `library-unavailable` for a local
+  item whose file the server refuses to read (Skip now via `skipLocal`). For far records it is derived from the dispatch
+  status and the trailing watchdog step; a failure before delivery
+  (`power`/`verify`/`prepare`/`input`, or an offline/not-connected error) is a
+  terminal `not-sent`.
+- `command` is a frozen deep copy of the replay input. `retry(attemptId)`
+  replays exactly it at exactly `targetId` (fan-out siblings are separate
+  records) and retires the record it replayed; `sendElsewhere(attemptId,
+  targetId)` replays it at another screen. Replay inputs live only as long as
+  their record. Nothing is ever replayed automatically.
+- Late homeline steps update a record only when their topic names the same
+  `targetId`.
+- Replacement: a newer confirmation of the same kind for the same target drops
+  settled confirmations (never a running action, which still owns its Undo); one `unconfirmed` per screen (newest wins); failures
+  are never replaced. An `unconfirmed` play clears to `confirmed` (reason
+  `screen-reported-playing`) when that screen's fresh `device-state` reports
+  the same `contentId` playing.
+- `undo: { operationId, expiresAt, run }` puts Undo on the row while the
+  ten-second window is open. After it, a far record still `running`/`sent`
+  offers Stop (`stopAttempt(attemptId)` → that screen's `transport.stop`,
+  which keeps its queue — O1).
+- The tray announces the newest record through one polite live region
+  (`media-outcome-announcer`).
+- Placement: the tray hangs from a zero-height anchor (`media-outcome-anchor`)
+  directly above the mini player (or tab bar) and floats over the canvas; it
+  takes no layout space, and only each row's own controls take pointer input.
+
 ## 10. Log Event Taxonomy
 
 All diagnostic output via `frontend/src/lib/logging/`. Event names use
@@ -1734,6 +1795,10 @@ dot-delimited namespaces. Every event SHOULD include `clientId`,
 | `session.created` | info | New local session started. | `sessionId`, `contentId` |
 | `session.reset` | info | User explicitly reset session. | — |
 | `session.resumed` | info | Session restored from localStorage. | `sessionId`, `resumedPosition` |
+| `session.restored-paused` | info | A restored session is held paused (no Player). | `sessionId`, `contentId`, `position`, `queueLength` |
+| `session.restore-released` | info | The hold ended. | `sessionId`, `reason` (`play`, `load_item`, …) |
+| `session.restore-discarded` | warn | Persisted session discarded. | `reason` (`schema-mismatch` \| `malformed`) |
+| `session.start-fresh` | info | Itemised Start fresh confirmed. | `sessionId`, `kept[]`, `cleared[]` |
 | `session.state-change` | debug | Session state transition. | `from`, `to` |
 | `session.persisted` | debug | State flushed. | `size` |
 | `queue.mutated` | debug | Queue modified. | `op`, `queueItemId?`, `contentId?`, `queueSize` |
@@ -1742,6 +1807,9 @@ dot-delimited namespaces. Every event SHOULD include `clientId`,
 | `playback.stalled` | warn | Stall detected. | `contentId`, `stalledAt`, `stallDurationMs` |
 | `playback.error` | error | Load/play error. | `contentId`, `error`, `code` |
 | `playback.advanced` | info | Auto-advance fired. | `reason`, `fromContentId`, `toContentId` |
+| `playback.problem` | warn | Local item failed, was skipped, or is waiting on a refused file (RELY.5a). | `kind` (`skipped`\|`failed`\|`waiting`\|`library-unavailable`), `reason` (`stalled`\|`error`\|`file-unavailable`\|`source-unavailable`), `contentId`, `replacementContentId` |
+| `playback.recovered` | info | Problem cleared (playing again, file restored, skipped by person, Start fresh, dismissed). | `contentId`, `reason` |
+| `outcome.skipped` | info | Skip now on a waiting local item. | `attemptId` |
 | `search.issued` | debug | Search query sent. | `text`, `scopeKey` |
 | `search.result-chunk` | debug | One SSE results event. | `source`, `itemCount` |
 | `search.completed` | info | Search stream ended. | `totalMs`, `resultCount` |
@@ -1749,6 +1817,14 @@ dot-delimited namespaces. Every event SHOULD include `clientId`,
 | `dispatch.step` | debug | Wake-progress event. | `dispatchId`, `step`, `status`, `elapsedMs` |
 | `dispatch.succeeded` | info | Dispatch succeeded. | `dispatchId`, `totalElapsedMs` |
 | `dispatch.failed` | warn | Dispatch failed. | `dispatchId`, `failedStep`, `error` |
+| `outcome.recorded` | info | An outcome record was created (far or local). | `attemptId`, `targetId`, `kind`, `phase`, `contentId` |
+| `outcome.resolved` | info | Watchdog/queue step or local result resolved it. | `attemptId`, `targetId`, `step?`, `status?`, `phase?` |
+| `outcome.cleared` | info | Unconfirmed start cleared by the screen's own playing state. | `attemptId`, `targetId`, `contentId`, `reason` |
+| `outcome.retried` / `outcome.sent-elsewhere` | info | Retry / another screen for one attempt. | `attemptId`, `targetId` / `fromTargetId` |
+| `outcome.stopped` / `outcome.stop-failed` | info / warn | Stop on an in-flight far start (O1). | `attemptId`, `targetId` |
+| `outcome.undo` / `outcome.undo-failed` | info / warn | Undo from an outcome row. | `attemptId`, `operationId` |
+| `outcome.dismissed` | debug | Row dismissed. | `attemptId`, `phase` |
+| `ws.reconnecting-shown` / `ws.reconnecting-cleared` | info | Quiet reconnecting note (RELY.7a/AC4). | `graceMs` |
 | `peek.entered` / `peek.exited` | info | Peek lifecycle. | `deviceId` |
 | `peek.command` | debug | Command issued in peek. | `deviceId`, `command`, `commandId` |
 | `peek.command-ack` | debug | Ack received. | `deviceId`, `commandId`, `ok`, `error?` |
@@ -1857,10 +1933,31 @@ Two related traps, both fixed and both worth not re-introducing:
 - **Atomicity:** single `JSON.stringify` → single `setItem`. No partial state.
 - **Size bound:** persisted session MUST fit in 1 MB. If queue grows larger,
   truncate past-played items first.
-- **Versioning:** on load, mismatched `schemaVersion` → discard and start fresh
-  (log `session.reset` with `reason: "schema-mismatch"`).
-- **Reset:** C2.3 reset removes `media-app.session` and
-  `media-app.url-command-token`. Other keys preserved.
+- **Versioning and shape (RELY.7a):** on load, a mismatched `schemaVersion`
+  (`'schema-mismatch'`) or a record that is not valid JSON or whose snapshot is
+  not restorable (`'malformed'` — `isRestorableSnapshot` in `persistence.js`:
+  session id, state, current item id, finite non-negative position, queue items
+  with ids, in-range `currentIndex`, `shuffle`/`repeat` config, `meta`) is
+  discarded, removed, and logged (a bad resume spot is not structural: it is
+  coerced to 0) (`session.restore-discarded`, `session.reset`
+  with the reason). Nothing is guessed at.
+- **Paused restore (RELY.7a):** a restorable session with a current item comes
+  back with `state: "paused"` (from `playing`/`buffering`/`stalled`/`loading`)
+  and *held*: `controller.restore.isHeld()` is true and `PlayerBridge` does not
+  mount the Player at all, so no media is requested and nothing can sound. Only
+  an explicit Play (or a new LOAD/ADOPT/STOP/RESET) releases the hold; a seek
+  while held moves the restored spot. Play then mounts once at the restored
+  position. `wasPlayingOnUnload` is still written for compatibility and never
+  causes autoplay. Navigation (URL + `history.state.mediaNavStack`) and the aim
+  (`media-app.cast-target`, two-hour idle expiry) restore through their own keys.
+- **Reset / Start fresh (RELY.8a):** `lifecycle.reset({ keep: { playing,
+  queue, spot } })` clears whatever is not kept. Clearing everything starts a new
+  session and removes `media-app.session` and `media-app.url-command-token`
+  (other keys preserved). Keeping the queue but not what's playing removes the
+  current entry and stops; keeping what's playing but not the queue leaves only
+  the current entry; a spot is kept only with what's playing, otherwise the
+  position returns to 0. The aim is cleared by the dialog through
+  `clearTargets()` when ticked.
 - **Quota errors:** on `QuotaExceededError`, retry once after clearing
   past-played items. On second failure, surface warning and fall back to
   in-memory-only state.

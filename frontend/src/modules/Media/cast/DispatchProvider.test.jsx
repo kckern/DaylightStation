@@ -279,11 +279,10 @@ describe('DispatchProvider — duplicate suppression', () => {
 
     pendingLoad();
     await act(async () => { await result.current.retry(dispatchIds[0]); });
+    // The first Retry retires the failed row it replayed, so a repeated tap
+    // on it can no longer start a second load.
     await act(async () => { await result.current.retry(dispatchIds[0]); });
     expect(DaylightAPI).toHaveBeenCalledTimes(2);
-    expect(mediaLog.dispatchDeduplicated).toHaveBeenCalledWith(
-      expect.objectContaining({ reason: 'in-flight' })
-    );
   });
 
   it.each([

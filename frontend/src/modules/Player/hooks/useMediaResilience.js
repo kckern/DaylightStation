@@ -65,6 +65,8 @@ export function useMediaResilience({
   onStateChange,
   onReload,
   onExhausted,       // NEW: called when all recovery attempts are exhausted
+  // Owner report of a refused-source wait: ({ waiting, since?, decision? }).
+  onSourceWait,
   configOverrides,
   controllerRef,
   plexId,
@@ -203,6 +205,8 @@ export function useMediaResilience({
   // (wired after triggerRecovery exists) turns its answer into one reload.
   // See lib/sourceAvailability.js and docs/reference/player/media-source-healing.md.
   const sourceSettledRef = useRef(null);
+  const onSourceWaitRef = useRef(onSourceWait);
+  onSourceWaitRef.current = onSourceWait;
   const sourceAvailability = useSourceAvailability({
     contentId: meta?.contentId || null,
     plexId,
@@ -210,7 +214,9 @@ export function useMediaResilience({
     errorMessage: playbackHealth.elementSignals?.errorMessage ?? null,
     mediaType: mediaTypeHint || meta?.mediaType || null,
     disabled,
-    onSettled: (decision) => sourceSettledRef.current?.(decision),
+    onSettled: (decision, context) => sourceSettledRef.current?.(decision, context),
+    maxWaitMs: monitorSettings.sourceUnavailableMaxMs,
+    onWaitChange: (event) => onSourceWaitRef.current?.(event),
   });
   const sourceUnavailable = sourceAvailability.isUnavailable;
   const sourceUnavailableRef = useRef(false);
@@ -232,15 +238,22 @@ export function useMediaResilience({
 
   // User Intent tracking
   const [userIntent, setUserIntent] = useState(USER_INTENT.playing);
+  // A pause that lands on a DEAD PIPELINE (any element error that arrived
+  // while it was playing) is the error's, not a person's. Only that pause is
+  // exempt: a real viewer pause during an ordinary network stall must stand,
+  // or the ladder keeps running and skips the item mid-workout (review B1).
+  // Recovery status is deliberately not part of this.
+  const deadPipelinePause = playbackHealth.elementSignals?.errorCode != null
+    && playbackHealth.elementSignals?.errorWhilePlaying === true;
   useEffect(() => {
     if (isSeeking) {
       setUserIntent(USER_INTENT.seeking);
-    } else if (isPaused && pauseIntent !== 'system' && !mediaErrorStoppedPlayback && !sourceUnavailable) {
+    } else if (isPaused && pauseIntent !== 'system' && !mediaErrorStoppedPlayback && !sourceUnavailable && !deadPipelinePause) {
       setUserIntent(USER_INTENT.paused);
     } else {
       setUserIntent(USER_INTENT.playing);
     }
-  }, [isPaused, isSeeking, pauseIntent, mediaErrorStoppedPlayback, sourceUnavailable]);
+  }, [isPaused, isSeeking, pauseIntent, mediaErrorStoppedPlayback, sourceUnavailable, deadPipelinePause]);
 
   // Stable boolean for dep array — avoids re-runs from meta object reference changes
   const hasMediaMeta = shouldArmStartupDeadline({ meta, disabled });
@@ -420,7 +433,41 @@ export function useMediaResilience({
       || userIntent !== USER_INTENT.paused;
   }
   sourceWaitWasOpenRef.current = sourceUnavailable;
-  sourceSettledRef.current = (decision) => {
+  // A source error the backend says is NOT a refusal (the file is readable)
+  // but the element calls unplayable (MEDIA_ERR_SRC_NOT_SUPPORTED, e.g. a load
+  // that failed mid-stream) used to arm nothing: code 4 is outside the stall
+  // ladder and `normal` was ignored here, so the item sat on "Recovering…"
+  // forever and its owner never heard it failed (2026-10-03 RELY.5a trace).
+  // One fresh-URL remount is worth it; a second such failure is final.
+  // Judged on the LIVE element's own error, never on the latched signal (it
+  // latches until `playing` and survives an in-place reset), so a slow but
+  // healthy reload after a cleared refusal is not mistaken for one (review B2).
+  const unsupportedRetryRef = useRef({ sessionKey: null, retried: false });
+  sourceSettledRef.current = (decision, context = {}) => {
+    const fromMediaError = context.reason === 'media-error' || context.reason === 'media-error-suspected';
+    // The same failure seen again only through the startup deadline (a
+    // refreshed URL that fails the same way raises no NEW error event).
+    const readableAtDeadline = decision === 'retry' && context.reason === 'startup-deadline';
+    const liveEl = getMediaEl?.();
+    const liveUnplayable = liveEl?.error?.code === 4;
+    if (((decision === 'normal' && fromMediaError) || readableAtDeadline) && liveUnplayable) {
+      const tracker = unsupportedRetryRef.current;
+      if (tracker.sessionKey !== playbackSessionKey) {
+        tracker.sessionKey = playbackSessionKey;
+        tracker.retried = false;
+      }
+      if (!tracker.retried) {
+        tracker.retried = true;
+        triggerRecovery('media-error-unplayable', { refreshUrl: true, forceRemount: true, bypassCooldown: true });
+        return;
+      }
+      actions.setStatus(STATUS.exhausted);
+      if (!exhaustedNotifiedRef.current) {
+        exhaustedNotifiedRef.current = true;
+        onExhausted?.({ reason: 'media-error-unplayable', attempts: 2, waitKey });
+      }
+      return;
+    }
     if (decision === 'resume') {
       getRecoveryLedger().userReset(playbackSessionKey);
       exhaustedNotifiedRef.current = false;
@@ -478,6 +525,10 @@ export function useMediaResilience({
     }
 
     if (userIntent === USER_INTENT.paused) {
+      // A viewer's pause stands: a deadline armed before it (e.g. by a
+      // recovery already in flight) must not fire another reload (review B1).
+      clearTimeout(startupDeadlineRef.current);
+      startupDeadlineRef.current = null;
       if (status !== STATUS.paused) actions.setStatus(STATUS.paused);
       return;
     }

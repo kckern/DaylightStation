@@ -1,28 +1,45 @@
 // frontend/src/modules/Media/cast/DispatchProgressTray.jsx
-// Live dispatch progress strip (C6.3), in words a person on a couch can
-// read: "Turning on TV…" → "Sent to Living Room TV" → "▶ Playing on Living
-// Room TV". A row is NOT cleared the instant the load succeeds — it waits
-// for the backend playback watchdog's trailing `playback` step so the user
-// gets honest confirmation (or an honest "the TV may not have started
-// playing"). Failures and unconfirmed playback never auto-clear; confirmed
-// playback lingers briefly with a Steer it shortcut. Never modal (N1.3).
-import React, { useEffect } from 'react';
-import { IconAlertCircle, IconRefresh, IconX, IconDeviceRemote, IconPlayerPlayFilled } from '@tabler/icons-react';
+// The one outcome tray for /media (PR-6, RELY.1a–RELY.6a). Every play, add,
+// send, queue edit and playback problem reports here, the same way whichever
+// control started it:
+//  - this device: quiet and brief ("Playing Arrival here"), with Undo while
+//    its window is open;
+//  - another screen: named, with its steps in words that fit the screen
+//    ("Turning on TV…" / "Waking the speaker…"), then "▶ Playing on <screen>"
+//    with Steer it. A row is NOT cleared the instant the load succeeds — it
+//    waits for the backend playback watchdog's trailing `playback` step so the
+//    person gets honest confirmation, or "may not have started" with Steer it
+//    and Try again;
+//  - problems (failed, not sent, skipped) never auto-clear; each has its own
+//    Retry and a way to send that attempt to another screen.
+// One polite live region announces the newest outcome. Never modal (N1.3).
+import React, { useEffect, useMemo, useState } from 'react';
+import { UnstyledButton } from '@mantine/core';
+import { IconAlertCircle, IconRefresh, IconX, IconDeviceRemote, IconPlayerPlayFilled, IconArrowBackUp, IconDevices, IconCheck, IconPlayerStopFilled, IconPlayerSkipForwardFilled } from '@tabler/icons-react';
 import { useDispatch } from './useDispatch.js';
 import { useDevice } from '../fleet/useDevice.js';
+import { useFleetContext } from '../fleet/useFleetContext.js';
 import { deviceName } from '../fleet/deviceDisplay.js';
 import { useNav } from '../shell/NavProvider.jsx';
-import { friendlyStepLabel, friendlyStepPhrase } from './castCopy.js';
+import { friendlyStepLabel, friendlyStepPhrase, deviceKind, deviceKindNoun } from './castCopy.js';
 import { rowPhase } from './dispatchRowPhase.js';
+import mediaLog from '../logging/mediaLog.js';
 import './Cast.scss';
 
 // Confirmed playback lingers long enough to be seen, then clears.
 export const CONFIRMED_LINGER_MS = 8_000;
+// A quiet confirmation on this device: the result is already visible here.
+export const LOCAL_LINGER_MS = 2_500;
 // "Sent" rows without a playback resolution eventually clear on their own:
 // the backend watchdog resolves within ~90s (a 'confirmed' or 'timeout'
 // broadcast), so a row still unresolved past that will never get one.
 // Generous, not 3 seconds.
 export const SENT_RESOLUTION_TIMEOUT_MS = 100_000;
+
+const PROBLEM_PHASES = new Set(['failed', 'not-sent', 'skipped', 'unconfirmed', 'waiting', 'library-unavailable']);
+const RETRYABLE_PHASES = new Set(['failed', 'not-sent', 'skipped', 'unconfirmed', 'waiting', 'library-unavailable']);
+// A local item the Player is waiting on can be skipped by the person.
+const SKIPPABLE_PHASES = new Set(['waiting', 'library-unavailable']);
 
 function ordinal(value) {
   const tens = value % 100;
@@ -33,55 +50,123 @@ function ordinal(value) {
   return `${value}th`;
 }
 
-function StatusIcon({ phase }) {
-  if (phase === 'running' || phase === 'sent') {
-    return <span className="cast-tray-spinner" aria-hidden />;
-  }
-  if (phase === 'confirmed') {
-    return <IconPlayerPlayFilled size={16} className="cast-tray-icon--ok" />;
-  }
-  if (phase === 'unconfirmed') {
-    return <IconAlertCircle size={16} className="cast-tray-icon--warn" />;
-  }
-  return <IconAlertCircle size={16} className="cast-tray-icon--fail" />;
+function StatusIcon({ phase, quiet }) {
+  if (quiet) return <IconCheck size={14} className="cast-tray-icon--quiet" aria-hidden />;
+  if (phase === 'running' || phase === 'sent') return <span className="cast-tray-spinner" aria-hidden />;
+  if (phase === 'confirmed') return <IconPlayerPlayFilled size={16} className="cast-tray-icon--ok" aria-hidden />;
+  if (phase === 'unconfirmed') return <IconAlertCircle size={16} className="cast-tray-icon--warn" aria-hidden />;
+  return <IconAlertCircle size={16} className="cast-tray-icon--fail" aria-hidden />;
 }
 
-function rowCopy(d, phase, name) {
+const LOCAL_VERB = {
+  play: (t, at) => `Playing ${t} ${at}`,
+  shuffle: (t, at) => `Shuffling ${t} ${at}`,
+  add: (t, at) => `Added ${t} ${at}`,
+  playNext: (t, at) => `${t} plays next ${at}`,
+  playFirst: (t, at) => `${t} plays first ${at}`,
+  remove: (t, at) => `Removed ${t} from the queue ${at}`,
+  clear: (_t, at) => `Cleared the queue ${at}`,
+  undo: (t, at) => `Put back ${t} ${at}`,
+};
+const LOCAL_FAILED_VERB = {
+  play: 'play', shuffle: 'shuffle', add: 'add', playNext: 'add', playFirst: 'add',
+  remove: 'remove', clear: 'clear the queue for', undo: 'put back',
+};
+
+function localCopy(d, phase, name) {
+  const title = d.item?.title ?? d.title ?? 'it';
+  const at = d.distance === 'here' ? 'here' : `on ${d.targetName ?? name}`;
+  if (d.kind === 'playback') {
+    // RELY.5a: name the item, this device, and what plays instead.
+    if (phase === 'waiting') {
+      return { primary: `Waiting for ${title} — the file is being repaired`, secondary: 'On this device' };
+    }
+    if (phase === 'library-unavailable') {
+      return { primary: 'Library unavailable', secondary: `${title} is waiting for its file on this device` };
+    }
+    if (phase === 'skipped' && d.reason === 'file-unavailable') {
+      return {
+        primary: `${title} skipped — file unavailable`,
+        secondary: d.replacement?.title ? `Now playing ${d.replacement.title}` : 'Nothing else is queued.',
+      };
+    }
+    if (phase === 'skipped') {
+      return {
+        primary: d.reason === 'stalled'
+          ? `${title} stopped making progress on this device`
+          : `Couldn't keep playing ${title} on this device`,
+        secondary: d.replacement?.title
+          ? `Skipped it. Now playing ${d.replacement.title}`
+          : 'Skipped it.',
+      };
+    }
+    return {
+      primary: `Couldn't play ${title} on this device`,
+      secondary: d.replacement?.title ? `Now playing ${d.replacement.title}` : 'Nothing else is queued.',
+    };
+  }
+  if (phase === 'failed') {
+    return {
+      primary: `Couldn't ${LOCAL_FAILED_VERB[d.kind] ?? 'do that for'} ${title} ${at}`,
+      secondary: d.reason ?? null,
+    };
+  }
+  const verb = LOCAL_VERB[d.kind] ?? LOCAL_VERB.play;
+  return {
+    primary: verb(title, at),
+    secondary: Number.isInteger(d.ordinal) && ['add', 'playNext', 'playFirst'].includes(d.kind)
+      ? `${ordinal(d.ordinal)} in queue`
+      : null,
+  };
+}
+
+function notSentReason(d, kind) {
+  const noun = deviceKindNoun(kind);
+  if (d.failedStep === 'power' || d.failedStep === 'verify') return `The ${noun} did not turn on`;
+  if (d.failedStep === 'input') return `The ${noun}'s remote input is not ready`;
+  return `The ${noun} isn't connected`;
+}
+
+function farCopy(d, phase, name, kind) {
+  const title = d.item?.title ?? d.title ?? null;
+  const isAdd = d.kind === 'add' || d.operation === 'add';
   switch (phase) {
     case 'running': {
-      const last = d.steps[d.steps.length - 1];
+      const last = d.steps?.[d.steps.length - 1];
       return {
-        primary: d.title ? `Casting ${d.title} to ${name}` : `Casting to ${name}`,
-        secondary: last ? friendlyStepLabel(last.step) : 'Starting…',
+        primary: isAdd
+          ? (title ? `Adding ${title} to ${name}` : `Adding to ${name}`)
+          : (title ? `Sending ${title} to ${name}` : `Sending to ${name}`),
+        secondary: last ? friendlyStepLabel(last.step, kind) : 'Starting…',
       };
     }
     case 'sent':
-      return { primary: `Sent to ${name}`, secondary: d.title ?? null };
+      return { primary: `Sent to ${name}`, secondary: title };
     case 'confirmed':
-      if (d.operation === 'add') {
+      if (isAdd) {
         return {
-          primary: d.title ? `Added ${d.title} to ${name}` : `Added to ${name}`,
+          primary: title ? `Added ${title} to ${name}` : `Added to ${name}`,
           secondary: Number.isInteger(d.outcomeIdentity?.queueLength)
             ? `${ordinal(d.outcomeIdentity.ordinal ?? d.outcomeIdentity.queueLength)} in queue`
             : null,
         };
       }
-      return { primary: `▶ Playing on ${name}`, secondary: d.title ?? null };
+      return { primary: `▶ Playing on ${name}`, secondary: title };
     case 'unconfirmed':
-      if (d.operation === 'add') {
-        return {
-          primary: `The item may not have been added to ${name}`,
-          secondary: d.title ?? null,
-        };
-      }
+      if (isAdd) return { primary: `The item may not have been added to ${name}`, secondary: title };
       return {
-        primary: 'The TV may not have started playing — check it or open the remote',
-        secondary: d.title ? `Sent to ${name} · ${d.title}` : `Sent to ${name}`,
+        primary: `It may not have started on ${name}`,
+        secondary: title ? `${title} · check it or try again` : 'Check it or try again',
+      };
+    case 'not-sent':
+      return {
+        primary: `Not sent to ${name}`,
+        secondary: [title, notSentReason(d, kind)].filter(Boolean).join(' · '),
       };
     case 'failed': {
-      const phrase = friendlyStepPhrase(d.failedStep);
+      const phrase = friendlyStepPhrase(d.failedStep, kind);
       return {
-        primary: `Couldn't cast to ${name}`,
+        primary: isAdd ? `Couldn't add ${title ?? 'it'} to ${name}` : `Couldn't play ${title ?? 'it'} on ${name}`,
         secondary: phrase ? `Stopped while ${phrase.charAt(0).toLowerCase()}${phrase.slice(1)}` : (d.error ?? null),
       };
     }
@@ -90,82 +175,225 @@ function rowCopy(d, phase, name) {
   }
 }
 
-function TrayRow({ d, retry, removeDispatch }) {
-  const { device } = useDevice(d.deviceId);
-  const name = deviceName(device, d.deviceId);
+/** Other screens this attempt can be sent to: content screens, not browsers. */
+function otherScreens(devices, targetId) {
+  return (devices ?? []).filter((device) => typeof device?.id === 'string'
+    && device.id !== targetId
+    && !device.id.startsWith('browser:')
+    && (device.content_control || device.fleet === true));
+}
+
+function SendElsewhere({ d, sendElsewhere }) {
+  const { devices } = useFleetContext();
+  const [open, setOpen] = useState(false);
+  const choices = otherScreens(devices, d.targetId ?? d.deviceId);
+  if (choices.length === 0) return null;
+  return (
+    <>
+      <UnstyledButton
+        data-testid={`dispatch-elsewhere-${d.attemptId ?? d.dispatchId}`}
+        className="cast-tray-action"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <IconDevices size={14} aria-hidden /> Another screen…
+      </UnstyledButton>
+      {open && (
+        <div className="cast-tray-elsewhere" data-testid={`dispatch-elsewhere-list-${d.attemptId ?? d.dispatchId}`} role="group" aria-label="Send to another screen">
+          {choices.map((device) => (
+            <UnstyledButton
+              key={device.id}
+              className="cast-tray-action"
+              onClick={() => { setOpen(false); sendElsewhere?.(d.attemptId ?? d.dispatchId, device.id); }}
+            >
+              {deviceName(device, device.id)}
+            </UnstyledButton>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function UndoAction({ d, removeDispatch, recordLocal }) {
+  const undo = d.undo;
+  const [, force] = useState(0);
+  const remaining = undo ? undo.expiresAt - Date.now() : 0;
+  useEffect(() => {
+    if (!undo || remaining <= 0) return undefined;
+    const timer = setTimeout(() => force((n) => n + 1), remaining);
+    return () => clearTimeout(timer);
+  }, [undo, remaining]);
+  if (!undo || typeof undo.run !== 'function' || remaining <= 0) return null;
+  const run = async () => {
+    const attemptId = d.attemptId ?? d.dispatchId;
+    mediaLog.outcomeUndo({ attemptId, targetId: d.targetId ?? d.deviceId, operationId: undo.operationId });
+    try {
+      const result = await undo.run(undo.operationId);
+      if (result?.ok === false) throw new Error(result.reason ?? result.code ?? 'Undo failed');
+      removeDispatch(attemptId);
+    } catch (error) {
+      mediaLog.outcomeUndoFailed({ attemptId, operationId: undo.operationId, error: error?.message ?? String(error) });
+      recordLocal?.({ kind: 'undo', phase: 'failed', item: d.item, reason: error?.message ?? 'Undo failed' });
+    }
+  };
+  return (
+    <UnstyledButton data-testid="item-action-undo" className="cast-tray-action" onClick={run}>
+      <IconArrowBackUp size={14} aria-hidden /> Undo
+    </UnstyledButton>
+  );
+}
+
+function rowText(d, phase, name, kind) {
+  return d.distance === 'here' || d.distance === 'direct' ? localCopy(d, phase, name) : farCopy(d, phase, name, kind);
+}
+
+function TrayRow({ d, retry, removeDispatch, sendElsewhere, recordLocal, stopAttempt, skipLocal }) {
+  const isLocal = d.distance === 'here' || d.distance === 'direct';
+  const targetId = d.targetId ?? d.deviceId;
+  const { device } = useDevice(d.distance === 'here' ? null : targetId);
+  const name = deviceName(device, targetId);
+  const kind = deviceKind(device);
   const { push } = useNav();
   const phase = rowPhase(d);
+  const attemptId = d.attemptId ?? d.dispatchId;
+  const quiet = d.distance === 'here' && !PROBLEM_PHASES.has(phase);
 
   // Row lifecycle: confirmed lingers briefly; "sent" clears only after the
-  // watchdog window has certainly passed. Failed/unconfirmed NEVER auto-clear
-  // — a problem the user hasn't seen isn't handled.
+  // watchdog window has certainly passed; a quiet local confirmation clears
+  // after its Undo window. Problems NEVER auto-clear — a problem the person
+  // hasn't seen isn't handled.
   useEffect(() => {
-    if (phase !== 'confirmed' && phase !== 'sent') return undefined;
-    const ms = phase === 'confirmed' ? CONFIRMED_LINGER_MS : SENT_RESOLUTION_TIMEOUT_MS;
-    const t = setTimeout(() => removeDispatch(d.dispatchId), ms);
+    let ms = null;
+    if (isLocal && (phase === 'confirmed' || phase === 'running')) {
+      ms = Math.max(LOCAL_LINGER_MS, d.undo ? d.undo.expiresAt - Date.now() : 0);
+    } else if (!isLocal && phase === 'confirmed') ms = Math.max(CONFIRMED_LINGER_MS, d.undo ? d.undo.expiresAt - Date.now() : 0);
+    else if (!isLocal && phase === 'sent') ms = SENT_RESOLUTION_TIMEOUT_MS;
+    if (ms == null) return undefined;
+    const t = setTimeout(() => removeDispatch(attemptId), ms);
     return () => clearTimeout(t);
-  }, [phase, d.dispatchId, removeDispatch]);
+  }, [phase, quiet, isLocal, attemptId, removeDispatch, d.undo]);
 
   const openRemote = () => {
-    push('peek', { deviceId: d.deviceId });
-    removeDispatch(d.dispatchId);
+    push('peek', { deviceId: targetId });
+    removeDispatch(attemptId);
   };
 
-  const { primary, secondary } = rowCopy(d, phase, name);
-  const showRemote = phase === 'confirmed' || phase === 'unconfirmed';
-  const dismissible = phase === 'failed' || phase === 'unconfirmed';
+  // O1: inside the 10s window a far start offers Undo; once it has passed,
+  // a start that is still waking/loading offers Stop (queue kept,
+  // RQ-STEER-10) so a mis-sent cold wake can be aborted from here.
+  const [, rerender] = useState(0);
+  const undoLeft = d.undo ? d.undo.expiresAt - Date.now() : 0;
+  useEffect(() => {
+    if (undoLeft <= 0) return undefined;
+    const timer = setTimeout(() => rerender((n) => n + 1), undoLeft + 1);
+    return () => clearTimeout(timer);
+  }, [undoLeft]);
+  const showStop = !isLocal && (phase === 'running' || phase === 'sent') && undoLeft <= 0 && typeof stopAttempt === 'function';
+
+  const { primary, secondary } = rowText(d, phase, name, kind);
+  const showRemote = !isLocal && (phase === 'confirmed' || phase === 'unconfirmed');
+  const retryLabel = phase === 'unconfirmed' ? 'Try again' : 'Retry';
+  const showRetry = RETRYABLE_PHASES.has(phase) && (isLocal ? !!(d.command?.item ?? d.item)?.contentId : true);
+  const dismissible = PROBLEM_PHASES.has(phase);
 
   return (
-    <div data-testid={`dispatch-row-${d.dispatchId}`} className={`cast-tray-row cast-tray-row--${phase}`}>
-      <StatusIcon phase={phase} />
+    <div
+      data-testid={`dispatch-row-${attemptId}`}
+      data-phase={phase}
+      data-target={targetId}
+      className={`cast-tray-row cast-tray-row--${phase}${quiet ? ' cast-tray-row--quiet' : ''}`}
+    >
+      <StatusIcon phase={phase} quiet={quiet} />
       <div className="cast-tray-text">
         <span className="cast-tray-primary">{primary}</span>
         {secondary && <span className="cast-tray-secondary">{secondary}</span>}
       </div>
-      {showRemote && (
-        <button
-          type="button"
-          data-testid={`dispatch-remote-${d.dispatchId}`}
-          onClick={openRemote}
-          className="cast-tray-action"
-        >
-          <IconDeviceRemote size={14} /> Steer it
-        </button>
-      )}
-      {phase === 'failed' && (
-        <button
-          type="button"
-          data-testid={`dispatch-retry-${d.dispatchId}`}
-          onClick={() => retry(d.dispatchId)}
-          className="cast-tray-action"
-        >
-          <IconRefresh size={14} /> Retry
-        </button>
-      )}
-      {dismissible && (
-        <button
-          type="button"
-          data-testid={`dispatch-dismiss-${d.dispatchId}`}
-          aria-label="Dismiss"
-          onClick={() => removeDispatch(d.dispatchId)}
-          className="cast-tray-dismiss"
-        >
-          <IconX size={14} />
-        </button>
-      )}
+      <div className="cast-tray-actions">
+        <UndoAction d={d} removeDispatch={removeDispatch} recordLocal={recordLocal} />
+        {showStop && (
+          <UnstyledButton data-testid={`dispatch-stop-${attemptId}`} aria-label={`Stop ${name}`} onClick={() => stopAttempt(attemptId)} className="cast-tray-action">
+            <IconPlayerStopFilled size={14} aria-hidden /> Stop
+          </UnstyledButton>
+        )}
+        {showRemote && (
+          <UnstyledButton data-testid={`dispatch-remote-${attemptId}`} onClick={openRemote} className="cast-tray-action">
+            <IconDeviceRemote size={14} aria-hidden /> Steer it
+          </UnstyledButton>
+        )}
+        {d.distance === 'here' && SKIPPABLE_PHASES.has(phase) && typeof skipLocal === 'function' && (
+          <UnstyledButton data-testid={`dispatch-skip-${attemptId}`} onClick={() => skipLocal(attemptId)} className="cast-tray-action">
+            <IconPlayerSkipForwardFilled size={14} aria-hidden /> Skip now
+          </UnstyledButton>
+        )}
+        {showRetry && (
+          <UnstyledButton data-testid={`dispatch-retry-${attemptId}`} onClick={() => retry(attemptId)} className="cast-tray-action">
+            <IconRefresh size={14} aria-hidden /> {retryLabel}
+          </UnstyledButton>
+        )}
+        {showRetry && phase !== 'unconfirmed' && <SendElsewhere d={d} sendElsewhere={sendElsewhere} />}
+        {dismissible && (
+          <UnstyledButton
+            data-testid={`dispatch-dismiss-${attemptId}`}
+            aria-label="Dismiss"
+            onClick={() => removeDispatch(attemptId)}
+            className="cast-tray-dismiss"
+          >
+            <IconX size={14} aria-hidden />
+          </UnstyledButton>
+        )}
+      </div>
     </div>
   );
 }
 
-export function DispatchProgressTray() {
-  const { dispatches, retry, removeDispatch } = useDispatch();
-  if (dispatches.size === 0) return null;
+/** Words for the live region: the newest outcome, as one sentence. */
+function Announcer({ records }) {
+  const latest = useMemo(() => {
+    let newest = null;
+    for (const d of records) {
+      if (!newest || String(d.updatedAt ?? d.createdAt ?? '') >= String(newest.updatedAt ?? newest.createdAt ?? '')) newest = d;
+    }
+    return newest;
+  }, [records]);
   return (
-    <div data-testid="dispatch-tray" className="cast-tray">
-      {[...dispatches.values()].map((d) => (
-        <TrayRow key={d.dispatchId} d={d} retry={retry} removeDispatch={removeDispatch} />
-      ))}
+    <div data-testid="media-outcome-announcer" className="media-sr-only" role="status" aria-live="polite" aria-atomic="true">
+      {latest ? <AnnouncedText d={latest} /> : null}
     </div>
+  );
+}
+
+function AnnouncedText({ d }) {
+  const targetId = d.targetId ?? d.deviceId;
+  const { device } = useDevice(d.distance === 'here' ? null : targetId);
+  const phase = rowPhase(d);
+  const { primary, secondary } = rowText(d, phase, deviceName(device, targetId), deviceKind(device));
+  return <>{[primary, secondary].filter(Boolean).join('. ')}</>;
+}
+
+export function DispatchProgressTray() {
+  const { dispatches, outcomes, retry, removeDispatch, sendElsewhere, recordLocal, stopAttempt, skipLocal } = useDispatch();
+  const records = [...(outcomes ?? dispatches).values()];
+  return (
+    <>
+      <Announcer records={records} />
+      {records.length > 0 && (
+        <div data-testid="dispatch-tray" className="cast-tray">
+          {records.map((d) => (
+            <TrayRow
+              key={d.attemptId ?? d.dispatchId}
+              d={d}
+              retry={retry}
+              removeDispatch={removeDispatch}
+              sendElsewhere={sendElsewhere}
+              recordLocal={recordLocal}
+              stopAttempt={stopAttempt}
+              skipLocal={skipLocal}
+            />
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 

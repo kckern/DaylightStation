@@ -38,10 +38,14 @@ export function LocalSessionProvider({ children }) {
   const { clientId } = useClientIdentity();
 
   const controller = useMemo(() => {
+    // Restore hydrates before any default persistence is attached: an
+    // older or malformed record is discarded (and logged), never guessed at.
     const persisted = readPersistedSession();
-    const persistedSnapshot = persisted && persisted !== 'schema-mismatch' ? persisted.snapshot : null;
-    if (persisted === 'schema-mismatch') {
-      mediaLog.sessionReset({ reason: 'schema-mismatch' });
+    const discarded = persisted === 'schema-mismatch' || persisted === 'malformed';
+    const persistedSnapshot = persisted && !discarded ? persisted.snapshot : null;
+    if (discarded) {
+      mediaLog.sessionRestoreDiscarded({ reason: persisted });
+      mediaLog.sessionReset({ reason: persisted });
       clearPersistedSession();
     }
     const ctl = createLocalSessionController({

@@ -34,7 +34,6 @@ import { useSessionController } from '../controller/useSessionController.js';
 import { useNav } from '../shell/NavProvider.jsx';
 import { useDismissLayer } from '../shell/useDismissLayer.js';
 import { applyResultRowVerb } from './resultRowVerbs.js';
-import { notifications } from '@mantine/notifications';
 import getLogger from '../../../lib/logging/Logger.js';
 import { ItemDestinationPicker } from '../actions/ItemDestinationPicker.jsx';
 import './Search.scss';
@@ -91,22 +90,14 @@ export function MediaContentSearch() {
   }, [dispatch, log]);
 
   // Trailing ▶ on a container row: send the whole thing to the current
-  // destination. Same toast treatment as a local leaf dispatch — a cast
-  // already toasts via useContentDispatch itself.
+  // destination. Its outcome is reported by useContentDispatch through the
+  // one outcome system, the same as every other entry point.
   const handlePlayAll = useCallback((item) => {
     const id = item?.id;
     if (!id) return;
     log.info('select', { contentId: id, title: item?.title ?? null, type: item?.type ?? null, verb: 'playAll' });
     const route = playContainerAsQueue(id, item);
     log.info('dispatch', { contentId: id, route, verb: 'playAll' });
-    if (route === 'local') {
-      notifications.show({
-        id: 'media-content-search-dispatch-local',
-        color: 'teal',
-        autoClose: 2500,
-        title: item?.title ? `Playing ${item.title}` : 'Playing',
-      });
-    }
   }, [playContainerAsQueue, log]);
 
   // Trailing ⋯ on a leaf row: Play Now / Play Next / Up Next / Add to Queue

@@ -26,14 +26,72 @@ playback owner captures the prior native position and queue generations before
 mutation, guards restoration by its applied revision, and rejects late delivery
 after cancellation. Queue-only Undo preserves current native playback; playback
 replacement Undo restores the prior position (live streams return to live edge).
-Action notices appear at the top, keeping the bottom mini-player controls
-clickable throughout the immediate ten-second Undo window.
+Undo appears on the action's own outcome row in the outcome tray (below), a
+separate row above the mini player, so the mini-player controls stay clickable
+throughout the immediate ten-second Undo window.
 Remote content operations retain WakeAndLoad readiness and progress handling;
 cold-wake cancellation is coordinated before receiver claim. A claim/ACK alone
 does not confirm playback: progress still requires authoritative owner state.
 
 The ordinary-input queue journey covers the minimum Undo path; exact-build runtime
 verification remains required before claiming acceptance.
+
+## One voice for outcomes
+
+Every play, add, send, queue edit and playback problem reports through one
+outcome system (`DispatchProvider` + `DispatchProgressTray`), the same way
+whichever control started it. Each record is one attempt at one screen, keyed
+`{attemptId, targetId}`, holding the frozen command it was made with.
+
+- **This device:** a quiet, brief row naming the item and "here" ("Playing
+  Arrival here", "Added Nova here · 2nd in queue"), with Undo while its
+  ten-second window is open. No separate toast.
+- **Another screen:** the row names the screen and shows its steps in words that
+  fit the kind of screen ("Turning on TV…", "Waking the speaker…", "Getting
+  ready…", "Loading…"). It stays visible in every area of the app until the
+  outcome is known. Confirmed playback reads "▶ Playing on <screen>" with Steer
+  it. A start that cannot be confirmed reads "It may not have started on
+  <screen>" with Steer it and Try again, and stays until dismissed; a newer one
+  for the same screen replaces it, and it clears itself when that screen reports
+  the same item playing.
+- **Still starting after the Undo window:** a far start that is still waking or
+  loading offers Stop (that screen's Stop, which keeps its queue), so a mis-sent
+  cold wake can be aborted from the sending device.
+- **Problems** never clear on their own. A press that never reached the screen
+  reads "Not sent to <screen>" and is never replayed later: Media asks the
+  backend for no deferred retry, and a screen with no connected receiver is not
+  called "sent". Every failure has its own Retry, which replays exactly that
+  attempt (same item, same screen), and "Another screen…" to send that attempt
+  elsewhere. Several failures stay separate.
+- **Local playback failures:** when an item on this device stops making progress
+  or the Player gives up on it, it is skipped and a notice names the item, this
+  device and what plays instead. The mini player shows a problem sign until
+  playback is moving again. A file the server refuses to read is waited out
+  first: after 3 s a notice reads "Waiting for <title> — the file is being
+  repaired" (Skip now, Retry); it resumes if the file comes back, or after 60 s
+  is skipped as "file unavailable". If the next item also waits within 60 s,
+  Media holds on it with one "Library unavailable" notice instead of skipping
+  through the queue.
+- **Never in the way:** notices float over the page just above the mini player
+  (or tab bar). They take no page space, move nothing when they appear, and
+  only their own buttons take taps, so the handle's controls stay reachable.
+- Screen readers hear the newest outcome through one polite live region.
+
+## Keeping your place
+
+A reload or crash restores what was playing, its spot, its queue, repeat and
+shuffle, the aim (unless its two-hour idle time has passed) and the area of the
+app — **paused**. Nothing loads or sounds until Play: the Player is not mounted
+for a restored session until the person presses Play, and then it starts at the
+restored spot. Saved data from an older version or in a broken shape is
+discarded and the app starts clean. A network loss that lasts more than three
+seconds shows a quiet "Reconnecting…" note; the app never reloads itself.
+
+**Start fresh** (Settings, from any area) lists exactly what it will clear on this
+device — what's playing, the queue, the spot, the aim — each ticked and each
+keepable, and changes nothing until confirmed. The spot can be kept only with
+what's playing. Clearing everything starts a new session. Other screens are
+never touched.
 
 ## Browser identity and house presence
 

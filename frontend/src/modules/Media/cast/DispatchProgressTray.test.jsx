@@ -1,6 +1,6 @@
 import React from 'react';
 import { beforeEach, describe, it, expect, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 
 const { push, retry, removeDispatch } = vi.hoisted(() => ({
   push: vi.fn(),
@@ -27,7 +27,9 @@ vi.mock('../fleet/useDevice.js', () => ({
   useDevice: (id) => ({ device: { id, name: id === 'livingroom-tv' ? 'Living Room TV' : 'Office TV' } }),
 }));
 vi.mock('../shell/NavProvider.jsx', () => ({ useNav: () => ({ push }) }));
+vi.mock('../fleet/useFleetContext.js', () => ({ useFleetContext: () => ({ devices: [] }) }));
 
+import { MantineProvider } from '@mantine/core';
 import { DispatchProgressTray } from './DispatchProgressTray.jsx';
 
 describe('DispatchProgressTray', () => {
@@ -43,13 +45,14 @@ describe('DispatchProgressTray', () => {
       operation: 'add', status: 'success', outcome: 'confirmed', steps: [],
       outcomeIdentity: { queueLength: 2, queueRevision: 7 },
     });
-    render(<DispatchProgressTray />);
-    expect(screen.getByText(/Added Arrival to/i)).toBeTruthy();
-    expect(screen.getByText('2nd in queue')).toBeTruthy();
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    const tray = screen.getByTestId('dispatch-tray');
+    expect(within(tray).getByText(/Added Arrival to/i)).toBeTruthy();
+    expect(within(tray).getByText('2nd in queue')).toBeTruthy();
     expect(screen.queryByText(/Playing on/i)).toBeNull();
   });
   it('RELY.6a each failed tray row retries its own dispatchId', () => {
-    render(<DispatchProgressTray />);
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
 
     fireEvent.click(screen.getByTestId('dispatch-retry-d-living'));
     fireEvent.click(screen.getByTestId('dispatch-retry-d-office'));
@@ -69,7 +72,7 @@ describe('DispatchProgressTray', () => {
       contentId: 'plex:3', title: 'Bluey', status: 'success',
       outcome: 'confirmed', steps: [],
     });
-    render(<DispatchProgressTray />);
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
     const control = screen.getByTestId('dispatch-remote-confirmed-office');
     expect(control).toHaveTextContent('Steer it');
     fireEvent.click(control);

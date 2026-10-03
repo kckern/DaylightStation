@@ -161,6 +161,11 @@ const Player = forwardRef(function Player(props, ref) {
     plexClientSession: externalPlexClientSession,
     onPlaybackCompleted,
     onError,
+    // Opt-in resilience events for an owner that manages its own queue
+    // (Media's PlayerBridge): 'resilience-exhausted' before a clear, and
+    // 'source-wait' / 'source-wait-ended' for a refused file. Existing
+    // onError owners never see these.
+    onResilienceEvent,
     mediaLoadTimeoutMs,
     forceShader,
     initialRendererOperation = null,
@@ -1489,9 +1494,12 @@ const Player = forwardRef(function Player(props, ref) {
         action: isQueue ? 'queue-end' : 'clear',
         queueRemaining: playQueue?.length ?? 0
       }, { level: 'warn' });
+      // Tell an owner that listens (Media's PlayerBridge) this is a failure,
+      // not a natural end, before the clear it would otherwise read as one.
+      onResilienceEvent?.({ kind: 'resilience-exhausted', reason, attempts });
       clear();
     }
-  }, [isQueue, hasNextQueueItem, advance, clear, playQueue]);
+  }, [isQueue, hasNextQueueItem, advance, clear, playQueue, onResilienceEvent]);
 
   // Self-contained formats (titlecard, etc.) have no media element —
   // suppress the resilience overlay which would never exit startup.
@@ -1510,6 +1518,9 @@ const Player = forwardRef(function Player(props, ref) {
     onStateChange: compositeAwareOnState,
     onReload: handleResilienceReload,
     onExhausted: handleResilienceExhausted,
+    // An owner that opts in (Media) hears when a refused source is being
+    // waited out and when that wait ends; other owners see nothing new.
+    onSourceWait: (event) => onResilienceEvent?.({ kind: event.waiting ? 'source-wait' : 'source-wait-ended', ...event }),
     configOverrides: resolvedResilience.config,
     controllerRef: resilienceControllerRef,
     plexId,
@@ -2419,6 +2430,7 @@ Player.propTypes = {
   }),
   mediaResilienceConfig: PropTypes.object,
   onResilienceState: PropTypes.func,
+  onResilienceEvent: PropTypes.func,
   mediaResilienceRef: PropTypes.shape({ current: PropTypes.any }),
   onProgress: PropTypes.func,
   onMediaRef: PropTypes.func,

@@ -675,6 +675,21 @@ export class WakeAndLoadService {
           ...(wsSkipReason === 'ws-error' ? { wsError: 'ack-timeout' } : {}),
         };
         this.#emitProgress(topic, dispatchId, 'load', 'done');
+      } else if (hasContentQuery && /not connected/i.test(String(loadResult.error ?? ''))) {
+        // The content adapter itself says no receiver is subscribed (a
+        // WebSocket-only screen has no page it could load first): a fallback
+        // broadcast would reach no one and then report ok. A press that
+        // reached nothing is not delivered (PR-10, RELY.6a). A zero subscriber
+        // count ALONE is not this: a cold FKB screen has none until its page
+        // loads, which is exactly what the fallback below does.
+        this.#emitProgress(topic, dispatchId, 'load', 'failed', { error: 'Screen not connected' });
+        this.#logger.warn?.('wake-and-load.load.no-receiver', {
+          deviceId, dispatchId, wsSkipReason, urlError: loadResult.error ?? null,
+        });
+        result.error = 'Screen not connected';
+        result.failedStep = 'load';
+        result.totalElapsedMs = this.#clock.now() - startTime;
+        return result;
       } else if (hasContentQuery) {
         // --- WebSocket Fallback (existing) ---
         // URL load failed but there IS content to deliver. The screen may already
@@ -693,6 +708,18 @@ export class WakeAndLoadService {
         const baseLoadResult = await device.loadContent(screenPath, {});
         if (baseLoadResult.ok) {
           this.#logger.info?.('wake-and-load.load.baseUrlLoaded', { deviceId, dispatchId });
+        } else if (this.#eventBus?.getTopicSubscriberCount?.(topic) === 0) {
+          // The base page could not be loaded either (e.g. FKB unreachable) and
+          // still nothing is subscribed: a fallback broadcast would reach no
+          // one and then report ok. Not delivered (PR-10, re-verify 2).
+          this.#emitProgress(topic, dispatchId, 'load', 'failed', { error: 'Screen not connected' });
+          this.#logger.warn?.('wake-and-load.load.no-receiver', {
+            deviceId, dispatchId, urlError: loadResult.error ?? null, baseError: baseLoadResult.error ?? null,
+          });
+          result.error = 'Screen not connected';
+          result.failedStep = 'load';
+          result.totalElapsedMs = this.#clock.now() - startTime;
+          return result;
         }
 
         // Give the screen framework time to mount and subscribe to WS

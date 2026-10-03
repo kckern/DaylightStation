@@ -7,6 +7,9 @@ export function buildDispatchUrl({
   volume,
   shuffle,
   itemAction,
+  // A Media press is never replayed later behind the person's back: ask the
+  // backend to skip its 45s deferred retry (RQ-STEER-07). Retry is explicit.
+  manualRetryOnly = false,
 }) {
   if (!deviceId) throw new Error('buildDispatchUrl: deviceId is required');
   if (!dispatchId) throw new Error('buildDispatchUrl: dispatchId is required');
@@ -23,6 +26,7 @@ export function buildDispatchUrl({
   if (typeof volume === 'number' && Number.isFinite(volume)) params.set('volume', String(volume));
   if (shuffle) params.set('shuffle', '1');
   if (itemAction) params.set('itemAction', JSON.stringify(itemAction));
+  if (manualRetryOnly) params.set('deferredRetry', '0');
   return `api/v1/device/${deviceId}/load?${params.toString()}`;
 }
 
