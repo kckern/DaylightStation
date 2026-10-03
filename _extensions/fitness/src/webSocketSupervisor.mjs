@@ -154,13 +154,14 @@ export function createWebSocketSupervisor({
       phase = 'open';
       attempts = 0;
       lastHeardAt = now();
+      const recoveredAfterMs = outageStartedAt == null ? 0 : Math.max(0, now() - outageStartedAt);
       endOutage();
       clearHeartbeat();
       heartbeatTimer = timers.setInterval(() => {
         if (ownedGeneration !== generation || socket !== ws) return;
         if (ws.readyState !== socketStates.OPEN) return;
         const silentMs = now() - lastHeardAt;
-        if (silentMs > options.heartbeatDeadMs) {
+        if (silentMs >= options.heartbeatDeadMs) {
           rejectCurrent(ws, ownedGeneration, `silent for ${Math.round(silentMs / 1000)}s`);
           return;
         }
@@ -168,7 +169,7 @@ export function createWebSocketSupervisor({
           rejectCurrent(ws, ownedGeneration, `ping failed: ${error.message}`);
         }
       }, options.heartbeatPingMs);
-      logger.info?.('WebSocket connection operational');
+      logger.info?.(`WebSocket connection operational after ${recoveredAfterMs}ms outage`);
     });
     ws.on('error', (error) => {
       if (ownedGeneration !== generation || socket !== ws) return;

@@ -145,10 +145,26 @@ test('an open socket with no replies is terminated and recovery begins', () => {
   supervisor.start();
   sockets[0].open();
 
-  clock.advance(25_000);
+  clock.advance(20_000);
   assert.equal(sockets[0].terminated, 1);
   clock.advance(1_000);
   assert.equal(sockets.length, 2);
+});
+
+test('a recovered connection logs the completed outage duration', () => {
+  const messages = [];
+  const { clock, sockets, supervisor } = setup({
+    logger: {
+      info: (message) => messages.push(message),
+      warn() {},
+      error() {},
+    },
+  });
+  supervisor.start();
+  clock.advance(7_000);
+  sockets[0].open();
+
+  assert.deepEqual(messages, ['WebSocket connection operational after 7000ms outage']);
 });
 
 test('events from an obsolete socket cannot replace or retry over the active socket', () => {
