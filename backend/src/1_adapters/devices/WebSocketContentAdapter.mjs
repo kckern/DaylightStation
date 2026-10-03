@@ -57,6 +57,18 @@ export class WebSocketContentAdapter extends IContentControl {
     const startTime = Date.now();
     this.#metrics.loads++;
 
+    // A broadcast to a topic nobody subscribes to reaches nothing. Report it
+    // as not delivered (PR-10: a failed press never reads as sent) instead of
+    // returning ok for a message that vanished.
+    const subscribers = typeof this.#wsBus.getTopicSubscriberCount === 'function'
+      ? this.#wsBus.getTopicSubscriberCount(this.#topic)
+      : null;
+    if (subscribers === 0) {
+      this.#metrics.errors++;
+      this.#logger.warn?.('websocket.load.no-receiver', { topic: this.#topic, deviceId: this.#deviceId });
+      return { ok: false, topic: this.#topic, error: 'Screen not connected (no receiver subscribed)' };
+    }
+
     // Display/scene delivery: `display=<contentId>` carries no media contentId;
     // broadcast a `display` command the screen routes to display:content.
     if (typeof query.display === 'string' && query.display.length > 0) {
