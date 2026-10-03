@@ -228,6 +228,21 @@ so a state transition can always be traced to its cause.
   appears, and hold a beat — `release_scan_start` in the logs confirms the re-arm
   fired. A `503 unlock-service-unavailable` means the garage unlock service isn't
   wired (dev mode / bridge down) — there's no reader to arm.
+- **Reader ignores touches for ~30s at a time / `reader overheated` in the
+  garage logs.** libfprint runs a *software* thermal model per open device
+  (`temp_hot_seconds`, default 180s): a single identify left open for 3 minutes
+  fails with `fp-device-error-quark 257` ("Device disabled to prevent
+  overheating") — no matter whether anyone touched it. Until 2026-10-02 the
+  continuous scan loop ran one unbounded identify, so it tripped this every 3:00
+  and sat blind through a 30s cooldown, around the clock (unlock prompts timed out
+  in `scanning` with no `biometric.scan`). The loop now bounds each identify to
+  `IDENTIFY_WINDOW_S` (150s, `continuousScanLoop.mjs`). The helper reports an
+  untouched window as reason `timeout`, and the loop re-arms a fresh, cold helper
+  process immediately. Expect a new helper PID about every 150s. A
+  `reader overheated` line now means something is holding the device past its
+  window, not normal duty. The same old cycle made untouched overheats pile up
+  into a **false** `reader likely wedged` alert after ~35 idle minutes. Timeouts
+  now clear the fault streak.
 - **Commit returns 409 `no-pending-detection`.** Commit must follow a real
   detection within ~30s. If the ceremony ran long or the detection expired,
   re-press the fingerprint.
