@@ -456,21 +456,6 @@ const contracts = [
     },
   },
   {
-    id: 'school.production-semantic-service-composer',
-    verify() {
-      const services = createSchoolApiServices({ schoolService: {} });
-      expect(services).toMatchObject({
-        schoolResourceService: expect.any(Object),
-        schoolPrintAccess: expect.any(Object),
-        schoolRecordsQuery: expect.any(Object),
-        schoolReportDocuments: expect.any(Object),
-        schoolCurriculumQuery: expect.any(Object),
-        schoolArtifactService: expect.any(Object),
-        schoolApiSessions: expect.any(Object),
-      });
-    },
-  },
-  {
     // A Home Assistant routine calling GET /device/:id/load must reach the
     // routine history and stamp the screen's next ledger start. The device
     // router only sees the wrapped wake-and-load, so a composition that passes
@@ -501,6 +486,21 @@ const contracts = [
       } finally {
         fs.rmSync(dir, { recursive: true, force: true });
       }
+    },
+  },
+  {
+    id: 'school.production-semantic-service-composer',
+    verify() {
+      const services = createSchoolApiServices({ schoolService: {} });
+      expect(services).toMatchObject({
+        schoolResourceService: expect.any(Object),
+        schoolPrintAccess: expect.any(Object),
+        schoolRecordsQuery: expect.any(Object),
+        schoolReportDocuments: expect.any(Object),
+        schoolCurriculumQuery: expect.any(Object),
+        schoolArtifactService: expect.any(Object),
+        schoolApiSessions: expect.any(Object),
+      });
     },
   },
 ];
