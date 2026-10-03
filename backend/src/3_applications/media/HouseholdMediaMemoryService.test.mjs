@@ -275,3 +275,20 @@ describe('review fixes', () => {
     expect(new HouseholdMediaMemoryService({ ...deps, markContentWatched: null }).canMarkWatched).toBe(false);
   });
 });
+
+describe('shared views for other household lists', () => {
+  it('describeMany looks each id up once, through the cache; a miss is null', async () => {
+    const { service, deps } = build();
+    const first = await service.describeMany(['plex:21', 'plex:21', 'plex:nope', null]);
+    expect([...first.keys()]).toEqual(['plex:21', 'plex:nope']);
+    expect(first.get('plex:nope')).toBeNull();
+    expect(first.get('plex:21')).toEqual(expect.objectContaining({ title: EPISODES['plex:21'].title }));
+    await service.describeMany(['plex:21']);
+    expect(deps.contentCatalog.getItem.mock.calls.filter(([, id]) => id === 'plex:21')).toHaveLength(1);
+  });
+  it('nowPlaying reports what is on screens, or that it cannot know', async () => {
+    expect(await build({ nowPlaying: [{ deviceId: 'fleet:tv', contentId: 'plex:1' }] }).service.nowPlaying())
+      .toEqual({ known: true, list: [{ deviceId: 'fleet:tv', contentId: 'plex:1' }] });
+    expect(await build({ nowPlayingAvailable: false }).service.nowPlaying()).toEqual({ known: false, list: [] });
+  });
+});

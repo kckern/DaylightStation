@@ -7,6 +7,8 @@ import {
   recordSpot,
   openSpotsOf,
   spotDeviceKind,
+  foldSpot,
+  unfoldSpot,
 } from './mediaSpots.mjs';
 
 describe('normalizeSpotDeviceId', () => {
@@ -102,5 +104,35 @@ describe('openSpotsOf', () => {
     expect(openSpotsOf({ playhead: 3600, duration: 3600, spots: {} })).toEqual([]);
     // later header-less playback after a mark is still visible
     expect(openSpotsOf({ playhead: 1200, duration: 3600, spots: {}, lastPlayed: 'x' })).toHaveLength(1);
+  });
+});
+
+describe('foldSpot / unfoldSpot (merging a duplicate screen)', () => {
+  const old = { playhead: 5, duration: 100, percent: 5, lastPlayed: '2026-10-01 10:00:00' };
+  const newer = { playhead: 50, duration: 100, percent: 50, lastPlayed: '2026-10-02 10:00:00' };
+
+  it('moves the duplicate\'s spot when the target has none; lastDevice follows', () => {
+    const folded = foldSpot({ spots: { 'browser:dup': newer }, lastDevice: 'browser:dup' }, 'browser:dup', 'browser:a');
+    expect(folded).toEqual({ spots: { 'browser:a': newer }, lastDevice: 'browser:a', move: 'moved' });
+    expect(unfoldSpot(folded, 'browser:dup', 'browser:a', { move: 'moved', lastPlayed: newer.lastPlayed, lastDevice: 'browser:dup' }))
+      .toEqual({ spots: { 'browser:dup': newer }, lastDevice: 'browser:dup' });
+  });
+
+  it('a newer duplicate spot takes the target key and the older one is kept under the duplicate — nothing dropped', () => {
+    const folded = foldSpot({ spots: { 'browser:dup': newer, 'browser:a': old }, lastDevice: 'browser:dup' }, 'browser:dup', 'browser:a');
+    expect(folded).toEqual({ spots: { 'browser:a': newer, 'browser:dup': old }, lastDevice: 'browser:a', move: 'swapped' });
+    expect(unfoldSpot(folded, 'browser:dup', 'browser:a', { move: 'swapped', lastPlayed: newer.lastPlayed, lastDevice: 'browser:dup' }))
+      .toEqual({ spots: { 'browser:a': old, 'browser:dup': newer }, lastDevice: 'browser:dup' });
+  });
+
+  it('an older duplicate spot is left where it is; nothing to fold', () => {
+    expect(foldSpot({ spots: { 'browser:dup': old, 'browser:a': newer } }, 'browser:dup', 'browser:a')).toBeNull();
+    expect(foldSpot({ spots: { 'browser:a': newer } }, 'browser:dup', 'browser:a')).toBeNull();
+  });
+
+  it('unfold leaves a spot the target has played on since the merge', () => {
+    const later = { ...newer, playhead: 80, lastPlayed: '2026-10-05 10:00:00' };
+    expect(unfoldSpot({ spots: { 'browser:a': later }, lastDevice: 'browser:a' }, 'browser:dup', 'browser:a', { move: 'moved', lastPlayed: newer.lastPlayed }))
+      .toBeNull();
   });
 });

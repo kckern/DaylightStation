@@ -97,6 +97,17 @@ describe('RecordPlaybackProgress feeds the play ledger', () => {
       origin: 'routine:morning',
     });
   });
+  it('passes a structured origin ({kind, id, name}) through to the ledger', async () => {
+    const playLedger = { observe: vi.fn().mockResolvedValue({ opened: true, written: true }) };
+    const use = new RecordPlaybackProgress({
+      contentCatalog: { resolveSource: () => null }, mediaProgressMemory: memoryWith(), playLedger,
+      createMediaProgress: (p) => new MediaProgress(p), nowTimestamp: () => 't', nowEpoch: () => 1, nowIso: () => 'i',
+      logger: { info: vi.fn(), warn: vi.fn(), debug: vi.fn() },
+    });
+    const origin = { kind: 'device', id: 'browser:abc', name: 'Kitchen tablet' };
+    await use.execute(heartbeat({ spotDeviceId: 'fleet:livingroom-tv', origin }));
+    expect(playLedger.observe.mock.calls[0][0].origin).toEqual(origin);
+  });
   it('a heartbeat with no spot device never reaches the ledger', async () => {
     const playLedger = { observe: vi.fn() };
     const use = new RecordPlaybackProgress({

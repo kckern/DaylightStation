@@ -17,6 +17,18 @@ describe('buildPlayLedgerRow', () => {
     expect(row).toMatchObject({ title: null, kind: null, parentId: null, grandparentId: null });
     expect(row.origin).toHaveLength(64);
   });
+  it('keeps a structured origin as {kind, id, name}, bounded, and drops a malformed one', () => {
+    const routine = buildPlayLedgerRow({ deviceId: 'fleet:tv', contentId: 'plex:1', startedAt: 't', localTime: 'l',
+      origin: { kind: 'routine', id: 'automation:kitchen_button_1', name: 'Kitchen button 1', triggerId: 'x', extra: 1 } });
+    expect(routine.origin).toEqual({ kind: 'routine', id: 'automation:kitchen_button_1', name: 'Kitchen button 1' });
+    const device = buildPlayLedgerRow({ deviceId: 'fleet:tv', contentId: 'plex:1', startedAt: 't', localTime: 'l',
+      origin: { kind: 'device', id: 'browser:abc', name: 'n'.repeat(100) } });
+    expect(device.origin).toEqual({ kind: 'device', id: 'browser:abc', name: 'n'.repeat(64) });
+    expect(buildPlayLedgerRow({ deviceId: 'a', contentId: 'b', startedAt: 't', localTime: 'l', origin: { kind: 'device' } }).origin).toBeNull();
+    expect(buildPlayLedgerRow({ deviceId: 'a', contentId: 'b', startedAt: 't', localTime: 'l', origin: { kind: 'robot', id: 'x' } }).origin).toBeNull();
+    expect(buildPlayLedgerRow({ deviceId: 'a', contentId: 'b', startedAt: 't', localTime: 'l', origin: { kind: 'routine', id: 'r' } }).origin)
+      .toEqual({ kind: 'routine', id: 'r', name: null });
+  });
 });
 
 describe('selectPlays', () => {
@@ -29,5 +41,8 @@ describe('selectPlays', () => {
     expect(selectPlays(rows, { deviceId: 'fleet:a' }).map((r) => r.contentId)).toEqual(['plex:3', 'plex:1']);
     expect(selectPlays(rows, { from: '2026-10-02T00:00:00Z', to: '2026-10-02T23:59:59Z' }).map((r) => r.contentId)).toEqual(['plex:2']);
     expect(selectPlays(rows, { limit: 1 }).map((r) => r.contentId)).toEqual(['plex:3']);
+  });
+  it('accepts several device ids (a screen and the duplicates merged into it)', () => {
+    expect(selectPlays(rows, { deviceId: ['fleet:a', 'browser:b'] }).map((r) => r.contentId)).toEqual(['plex:3', 'plex:2', 'plex:1']);
   });
 });
