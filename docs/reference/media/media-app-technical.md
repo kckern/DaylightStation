@@ -669,6 +669,25 @@ Log events: `media.screens.registered|renamed|room_set|added|merged|unmerged|ret
 (info); `media.screens.spot_move_failed`, `.spot_restore_failed`, `.signals_failed`,
 `.configured_read_failed` (warn); `eventbus.screen_presence.failed` (warn).
 
+**Client.** `frontend/src/modules/Media/house/houseApi.js` calls every route
+above (the whole 409 body — `heldBy`, `suggestion`, `routines` — stays on the
+error; `DaylightAPI` truncates bodies). `house/useScreenRegistry.js` holds the
+list (read on mount, on tab focus, every 2 min, after every change made here,
+and when a browser's live heartbeat name differs from it) inside
+`FleetProvider`, whose rows take the registry `name`, `room` and `wasName`.
+`ClientIdentityProvider` announces `browser:<clientId>` on start and adopts the
+answer; `adoptBrowserDeviceId` (`lib/deviceIdentity.js`) makes that same id the
+`X-Daylight-Device` header of every request, so the server's announce default,
+load origin and suggestions all name the screen the registry knows. Renames
+send `PATCH` and hand `NAME_TAKEN` / `ROUTINES_TARGET` back to the dialog
+(resend with the suggestion, or `confirm: true`). Screen admin
+(`house/useScreenAdmin.js`) sends merges with `confirm: true` only after the
+dialog showed the routines of both screens (`GET /screens/:id/routines`),
+and retires likewise. Client events: `house.registry-loaded|failed`,
+`house.screen-announced`, `house.announce-failed`, `house.screen-renamed`,
+`house.rename-conflict`, `house.room-set`, `house.screen-added|merged|unmerged|retired|restored`,
+`house.admin-action-failed`, `house.first-use-shown|named|skipped`.
+
 ### 2.6 Routines
 
 **Exists.** Which routines start playback on which screen, and how their
@@ -767,6 +786,13 @@ failed), `media.routines.snapshot_imported` (info);
 `.ha_file_unreadable` (file, error name, line — never the parser message,
 which quotes config), `.match_failed` (warn).
 
+**Client.** `house/RoutineHistoryView.jsx` (view `routines`) reads
+`/routines/history?limit=50` and `/routines/flags` together; `houseCopy.routineRunLine`
+words each run (`started` + `played` → "Played"; `started` with no `played`
+after 5 min → "Started, not seen playing"; `failed` → "Failed: <reason>";
+`deduplicated` → "Repeat ignored"). Flags with `severity: warn` lead as
+"Needs attention". Events `house.routines-loaded|failed`, `house.view-opened`.
+
 ### 2.7 Started by
 
 **Exists.** How a screen's playback started — by which device or routine, and
@@ -794,6 +820,13 @@ start before origins were recorded). `kind` may be `unknown` for legacy text.
 |---|---|
 | `GET /screens/:id/started-by` | the object above |
 | `GET /started-by` | `{ items: [ … ] }` for every screen playing now |
+
+**Client.** The house view reads `GET /started-by` when it opens, whenever what
+plays on any row changes, and every 60 s, and shows
+`houseCopy.startedByText` — "Started by <name>, <h:mm>" (weekday added when not
+today) — on rows that are active. `StartedByLine` with only a `deviceId`
+reads `GET /screens/:id/started-by` itself (re-read when the item changes), for
+a screen's controls header. Events `house.started-by-loaded|failed`.
 
 ### 2.8 Played earlier
 
@@ -1106,6 +1139,32 @@ Start progress or last failure for one screen, readable by every device
 (§9.15); 503 when not wired. Live updates ride `device-start:<deviceId>`
 (§7.2), replayed to new exact and wildcard subscribers — so a house view
 opened after a failed start still shows it.
+
+**Client.** `house/useHouseSignals.useStartStatuses` reads this route once per
+fleet row when the house view opens (the app's `*` subscription predates the
+view, so the wildcard replay alone would not reach it) and then follows
+`device-start:*`, keeping the newest `updatedAt` per screen.
+`houseCopy.startStatusLine`: `starting`/`delivered` → "Starting: <step label>";
+`stale` → "A start stopped reporting at …"; `failed` (or a `lastFailure`) →
+"Couldn't start at <time>: <error sentence, or step + code>"; `queued` /
+`started` → "Added to its queue" / "Started" for one minute.
+
+**House-wide actions (client, RQ-STEER-13).** `house/houseQuiet.js`: Pause all
+sends `transport.pause` to every row playing/buffering, Stop all
+`transport.stop` to every active row, each through that screen's session
+controller (§4.3, or the browser route), plus this device's local session.
+Offline rows are not sent anything and are reported "not reachable"; a refusal
+or no answer within 8 s is "didn't answer". The ids actually paused are kept
+in `FleetProvider` (`quiet.resumable`) and Resume all sends `transport.play`
+to exactly those. One outcome record (`kind: pauseAll|stopAll|resumeAll`,
+`command.copy`) carries the sentence; a record with `command.copy` is shown
+as-is by the tray. Events `house.quiet-all`, `house.quiet-all-unreached`.
+Stop "and turn the screen off" (RQ-STEER-11) is offered for configured screens
+with `device_control` that are not speakers: `transport.stop` then
+`GET /device/:id/off` (events `house.screen-off|screen-off-failed`). Put it
+back from a row calls `sessionControls.putBack(noteId)` (§4.9); Add only off,
+`sessionControls.setAddOnly(false)` (events `house.put-back*`,
+`house.add-only-off*`).
 
 **Verified by:**
 - `backend/src/3_applications/devices/services/DeviceStartStatusService.test.mjs` — phase folding, lastFailure lifetime, superseded dispatches, staleness
