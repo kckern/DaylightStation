@@ -153,11 +153,10 @@ export const P0_EXTENSION_ENTRIES = Object.freeze([
     grep: 'RELY\\.8a',
   },
   // Batch D, player features (P2) — exact-SHA runtime evidence on the virtual
-  // receiver. STEER.12a/AC1 stays out: audio-language choice has no
-  // multi-audio title in the acceptance set (subtitles alone are proven).
+  // receiver (subtitles + audio language on a screen; subtitles on this device).
   {
     story: 'STEER.12a',
-    criteria: ['STEER.12a/AC2', 'STEER.12a/AC3'],
+    criteria: ['STEER.12a/AC1', 'STEER.12a/AC2', 'STEER.12a/AC3'],
     file: 'media-app-player-features.runtime.test.mjs',
     grep: 'STEER\\.12a',
   },

@@ -35,6 +35,7 @@ Task 2 and stable-core receipt evidence below remains unchanged.
 
 | Run | Scope | Red / baseline | Green / acceptance |
 |---|---|---|---|
+| TASK-D-PLAYER-FEATURES | Batch D player features (P2): STEER.12a, PLAY.8a, PLAY.8b, PLAY.9a | Focused Vitest for contract, Plex mint, routes, WakeAndLoad, screen features, Player seam, Media controls; dev-server runs exposed an off-screen 44-item menu, a slideshow remote Next that never skipped, and slideshows published as buffering (all fixed). | Exact preview of `8cd380a3b` (`media-redesign-server.mjs --build`, header `accepted-8cd380a3b6d8…`), `media-app-player-features.runtime.test.mjs`: full-file run 5/7 (audio journey and the tablet music journey failed on Plex/search load and passed alone: audio 1/1, PLAY.9a 2/2); the earlier full run on `2b8c1f173` passed 6/6. Regression on `2b8c1f173`: screen-session-controls, remote-controls, playback-journey 29/32 — two passed alone; the Office test needs a real Office device absent from the fixture (unrelated). Screenshots under the run's evidence dir. |
 | TASK-7-OUTCOMES | Task 7: one outcome store, exact Retry, Stop after Undo, local skip notice, paused restore, Start fresh | Focused Vitest REDs (42 failing before implementation, plus 3 for O1 Stop and 1 for a load with no receiver); the existing stale resume journey used a removed testid. | Exact preview of product source `41afea7fe` with journeys at `d751db570`: outcomes 2/2, resume 4/4, Start fresh 2/2, local failure 1/1, run serially. Final product bytes (`562efd94f`/`e740a76f4`; later commits change only tests, manifest and docs): every P0 manifest journey passed serially, with load retries recorded in the Task 7 report; the first local-failure journey passed 2 of 4 runs; its hang was diagnosed (Player, not source healing) and fixed in `800ab005c`, after which the split RELY.5a journeys passed 9/9. |
 | TASK-2-EXACT-RUNTIME-603DD2E | Exact compiled Task 2 aim and remote-control journeys, including authoritative Add confirmation and queue traversal | Earlier Task 2 evidence stopped at focused tests because no owned runtime was available; the prior queue-skip run also exposed remote Previous restarting the current item instead of selecting the prior queue visit. | Controller-owned run on exact source `603dd2ebbd9f85e1faff1bd4336929c8f1d73e00`, compiled artifact `/tmp/daylight-media-preview-WbHQ4b`, passed 16/16 with no skips in 8.1m: `BASE_URL=http://127.0.0.1:41221 npx playwright test tests/live/flow/media/media-app-aim-persistence.runtime.test.mjs tests/live/flow/media/media-app-remote-controls.runtime.test.mjs --workers=1 --reporter=line`. The combined Add/Next/Previous journey observed authoritative queue growth/revision while preserving the current owner/playback, then displayed `Added Disclosure Day to Acceptance receiver` and `2nd in queue`; that exact item + screen + ordinal result accepts only `PLAY.6a/AC3`. Its Next/Previous, aim, seek, offline, and Stop evidence narrows known gaps but does not close broader any/every/surface/steering/live clauses: `PLACE.2a/AC4` and `/AC6`, `STEER.3a/AC1-4`, `STEER.4a/AC1-2`, `PLAY.6a/AC1-2`, `STEER.6a`, and `STEER.7a` remain Partial; `STEER.4a/AC3` remains Unverified. Evidence log `/tmp/daylight-media-p0-evidence/603dd2ebbd9f85e1faff1bd4336929c8f1d73e00/task2/runtime.log`. |
 | TASK-2-AIM-TRANSPORT-P0 | First-layout active aim, distinct Previous/restart-current, authoritative Add result/ordinal receipt, seek capability reasons, and stopped-queue handle | Behavioral REDs reproduced in focused Vitest: the brief suite failed 8/131, CastTargetProvider failed 1/10, LocalSessionController failed 4/73, and the Add receipt lacked an ordinal. | At the implementation checkpoint, focused tests passed 232/232 but no owned runtime was yet available, so statuses and the extension manifest remained unchanged. The later exact compiled acceptance run and its single justified promotion are recorded in `TASK-2-EXACT-RUNTIME-603DD2E` above. |
@@ -333,9 +334,9 @@ As a **Bystander**, I want a doorbell camera or clip shown on the TV to go back 
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLAY.8a/AC1 | **Show briefly** puts the camera or clip over what's playing on that screen. | Unverified | — |
-| PLAY.8a/AC2 | Closing it, or its time running out, returns the previous programme at its spot, with its queue. | Unverified | — |
-| PLAY.8a/AC3 | The note on the screen says what interrupted and where it came from. | Unverified | — |
+| PLAY.8a/AC1 | **Show briefly** puts the camera or clip over what's playing on that screen. | Accepted | TASK-D-PLAYER-FEATURES: **Show briefly on…** from an item's detail sent `brief=1`; the clip played over the paused programme (receiver `controls.brief`, current item unchanged); routine camera likewise |
+| PLAY.8a/AC2 | Closing it, or its time running out, returns the previous programme at its spot, with its queue. | Accepted | TASK-D-PLAYER-FEATURES: camera time-out and clip Close from the Remote both returned Hospital at its spot (±10 s), same queue, playing |
+| PLAY.8a/AC3 | The note on the screen says what interrupted and where it came from. | Accepted | TASK-D-PLAYER-FEATURES: screen bar "Doorbell · from Automation" / "Keepy Uppy · from <device>" + "Back to Hospital …". Caveat: a sending browser with no name shows its id |
 
 ### PLAY.8b
 
@@ -343,8 +344,8 @@ As a **Routine Setter**, I want a doorbell routine to show the camera briefly an
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLAY.8b/AC1 | A routine can choose "show briefly, then return" for any screen. | Unverified | — |
-| PLAY.8b/AC2 | Cameras started by routines use it unless the routine says otherwise. | Unverified | — |
+| PLAY.8b/AC1 | A routine can choose "show briefly, then return" for any screen. | Accepted | TASK-D-PLAYER-FEATURES: routine loads choose it with `brief=1|<seconds>`; acked `appliedAs: "brief"`, confirmed by WakeAndLoad on the published brief |
+| PLAY.8b/AC2 | Cameras started by routines use it unless the routine says otherwise. | Accepted | TASK-D-PLAYER-FEATURES: routine `play=camera:doorbell` brief by default (30 s, returns); `brief=0` takes the screen and nothing returns |
 
 ### PLAY.9a
 
@@ -352,9 +353,9 @@ As a **Host**, I want music playing behind a photo slideshow, so that a birthday
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLAY.9a/AC1 | While a slideshow plays, **Add music behind** lets me choose a song, album, or playlist. | Unverified | — |
-| PLAY.9a/AC2 | Photos and music are steered separately: skipping a photo doesn't skip a song. | Unverified | — |
-| PLAY.9a/AC3 | Stopping the slideshow asks whether to keep the music playing. | Unverified | — |
+| PLAY.9a/AC1 | While a slideshow plays, **Add music behind** lets me choose a song, album, or playlist. | Accepted | TASK-D-PLAYER-FEATURES: on a screen slideshow, Remote **Add music behind** → music search → Faith; plays under the photos (screen plaque, `controls.musicBehind`). This-device path built + unit-tested only (no local slideshow source in the acceptance set) |
+| PLAY.9a/AC2 | Photos and music are steered separately: skipping a photo doesn't skip a song. | Accepted | TASK-D-PLAYER-FEATURES: Remote Next skipped a photo while the song kept its source and time; pausing the song left the slideshow playing |
+| PLAY.9a/AC3 | Stopping the slideshow asks whether to keep the music playing. | Accepted | TASK-D-PLAYER-FEATURES: Stop asked "Keep the music playing?"; Keep music stopped only the photos (tablet); Stop music too stopped both (phone) |
 
 ### PLAY.5a
 
@@ -632,9 +633,9 @@ As a **House Watch**, I want to turn subtitles on and choose the audio language 
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| STEER.12a/AC1 | Subtitles and audio language are available for this device and for any screen through its Remote. | Unverified | — |
-| STEER.12a/AC2 | Only the languages the item actually has are offered. | Unverified | — |
-| STEER.12a/AC3 | The choice carries on to the next episode of the same show. | Unverified | — |
+| STEER.12a/AC1 | Subtitles and audio language are available for this device and for any screen through its Remote. | Accepted | TASK-D-PLAYER-FEATURES: a screen through its Remote (subtitles on 3 Body Problem S1E1; audio language on a French/Turkish/English film, re-minted with `audioStreamID`) and this device (phone Now Playing, same control) — `media-app-player-features.runtime.test.mjs` |
+| STEER.12a/AC2 | Only the languages the item actually has are offered. | Accepted | TASK-D-PLAYER-FEATURES: the menu holds exactly the file's subtitle streams + Off (43+1); a one-audio file shows no Audio control; the film shows its 3 languages |
+| STEER.12a/AC3 | The choice carries on to the next episode of the same show. | Accepted | TASK-D-PLAYER-FEATURES: after choosing English [SDH] on S1E1, a routine load of S1E2 minted with that episode's own English stream (`subtitleStreamID=1278403`) with no person input; screenshot shows burned subtitles |
 
 ### STEER.7a
 
