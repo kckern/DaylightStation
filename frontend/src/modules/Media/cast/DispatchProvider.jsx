@@ -1,19 +1,26 @@
 // frontend/src/modules/Media/cast/DispatchProvider.jsx
-// Dispatch orchestration: client-side fan-out (one /load per target,
-// independent dispatchIds), live wake-progress via homeline:* broadcasts,
-// idempotency dedupe window (C9.8), and retry by exact dispatch attempt
-// (C6.4). M0 blocks destructive transfer until an owner-qualified handoff
-// exists; explicit fork/keep dispatch remains available.
-// Hand-off sends the full SessionSnapshot with mode:"adopt" (§4.7).
+// The one outcome system for /media (PR-6, RELY.1a–RELY.6a). It owns:
+//  - dispatch orchestration: client-side fan-out (one /load per target,
+//    independent attempt ids), live wake-progress via homeline:* broadcasts,
+//    idempotency dedupe window (C9.8), and retry of the exact attempt (C6.4);
+//  - the immutable outcome record per {attemptId, targetId}, far or local
+//    (dispatchReducer.js), its Retry / another-screen replay and its Undo;
+//  - clearing a "may not have started" notice once that screen itself
+//    reports the same item playing (fleet device-state).
+// M0 blocks destructive transfer until an owner-qualified handoff exists;
+// explicit fork/keep dispatch remains available. Hand-off sends the full
+// SessionSnapshot with mode:"adopt" (§4.7).
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { parseDeviceTopic, subscribeTopicKind } from '../net/ws.js';
-import { reduceDispatch, initialDispatchState } from './dispatchReducer.js';
+import { reduceDispatch, initialDispatchState, outcomePhase } from './dispatchReducer.js';
 import { buildDispatchUrl } from './dispatchUrl.js';
 import { TIMING } from '../constants.js';
 import mediaLog from '../logging/mediaLog.js';
 import { PeekContext } from '../peek/PeekContext.js';
-import { offerActionUndo } from '../actions/actionNotice.jsx';
+import { FleetContext } from '../fleet/FleetProvider.jsx';
+import { LocalSessionContext } from '../session/LocalSessionContext.js';
+import { executeItemAction, createOperationId } from '../actions/itemAction.js';
 
 export const DispatchContext = createContext(null);
 
@@ -62,6 +69,13 @@ function buildDedupKey({ targetIds, play, queue, mode, shader, volume, shuffle, 
 export function DispatchProvider({ children }) {
   const [state, dispatch] = useReducer(reduceDispatch, initialDispatchState);
   const peek = useContext(PeekContext);
+  const fleet = useContext(FleetContext);
+  const fleetStore = fleet?.store ?? null;
+  const localController = useContext(LocalSessionContext)?.controller ?? null;
+  // The reducer's records are the source of truth; callbacks read them
+  // through this mirror so their identities stay stable.
+  const recordsRef = useRef(state.byId);
+  recordsRef.current = state.byId;
   // Fan-out rows retain independent replay inputs so one failed target can
   // be retried without replaying successful siblings.
   const attemptsRef = useRef(new Map());
@@ -101,9 +115,14 @@ export function DispatchProvider({ children }) {
         });
       }
       mediaLog.dispatchStep({ dispatchId, step, status, elapsedMs });
+      if ((step === 'playback' || step === 'queue') && attempt) {
+        mediaLog.outcomeResolved({ attemptId: dispatchId, targetId: topicDeviceId ?? attempt.targetIds?.[0] ?? null, step, status });
+      }
       dispatch({
         type: 'STEP', dispatchId, step, status, elapsedMs, error, operation, queueLength, ordinal, count,
         sessionId, ownerId, ownerInstanceId, playbackRevision, queueRevision,
+        // A late step must locate its exact {attemptId, targetId}.
+        targetId: topicDeviceId ?? (typeof msg.deviceId === 'string' ? msg.deviceId : undefined),
       });
     });
   }, [peek]);
@@ -143,10 +162,16 @@ export function DispatchProvider({ children }) {
       return firstDispatchIds;
     }
 
-    if (itemAction) offerActionUndo({ operationId: itemAction.operationId, title, targetName: 'Selected screen', expiresAt: itemAction.tappedAt + 10000, undo: async operationId => {
-      const results = await Promise.all(targetIds.map(id => peek?.getController?.(id)?.undo(operationId) ?? { ok: false, code: 'ITEM_ACTION_UNSUPPORTED' }));
-      return results.find(result => !result?.ok) ?? { ok: true };
-    } });
+    // Undo rides the outcome itself, offered at tap time while the owner's
+    // ACK is still outstanding (RELY.4a); it is not a second voice.
+    const undo = itemAction ? {
+      operationId: itemAction.operationId,
+      expiresAt: itemAction.tappedAt + 10000,
+      run: async operationId => {
+        const results = await Promise.all(targetIds.map(id => peek?.getController?.(id)?.undo(operationId) ?? { ok: false, code: 'ITEM_ACTION_UNSUPPORTED' }));
+        return results.find(result => !result?.ok) ?? { ok: true };
+      },
+    } : null;
 
     const isAdopt = !!snapshot;
     const contentId = play ?? queue ?? (isAdopt ? (snapshot?.currentItem?.contentId ?? 'adopt-snapshot') : null);
@@ -173,12 +198,16 @@ export function DispatchProvider({ children }) {
       dispatch({
         type: 'INITIATED', dispatchId, deviceId, contentId, title: contentTitle,
         mode: mode ?? 'transfer', operation: queue ? 'add' : 'play-now',
+        command: { targetIds: [deviceId], play, queue, mode, shader, volume, shuffle, snapshot: retrySnapshot, title, itemAction },
+        snapshot: retrySnapshot,
+        undo,
       });
       mediaLog.dispatchInitiated({ dispatchId, deviceId, contentId, mode });
+      mediaLog.outcomeRecorded({ attemptId: dispatchId, targetId: deviceId, kind: queue ? 'add' : (isAdopt ? 'move' : 'play'), phase: 'running', contentId });
 
       const httpPromise = isAdopt
         ? DaylightAPI(`api/v1/device/${deviceId}/load`, { dispatchId, snapshot, mode: 'adopt' }, 'POST')
-        : DaylightAPI(buildDispatchUrl({ deviceId, play, queue, dispatchId, shader, volume, shuffle, itemAction }));
+        : DaylightAPI(buildDispatchUrl({ deviceId, play, queue, dispatchId, shader, volume, shuffle, itemAction, manualRetryOnly: true }));
       httpPromise
         .then((res) => {
           settle(dispatchId);
@@ -209,20 +238,112 @@ export function DispatchProvider({ children }) {
     return dispatchIds;
   }, [peek]);
 
-  const retry = useCallback((dispatchId) => {
-    const attempt = attemptsRef.current.get(dispatchId);
+  const retry = useCallback((attemptId) => {
+    const record = recordsRef.current.get(attemptId);
+    if (record && record.distance !== 'far') {
+      // A local or direct record's Retry replays exactly that command at
+      // exactly that screen (a playback problem replays its item there).
+      const item = record.command?.item ?? record.item;
+      const kind = record.kind === 'playback' ? 'playNow' : (record.command?.kind ?? 'playNow');
+      mediaLog.outcomeRetried({ attemptId, targetId: record.targetId, contentId: item?.contentId ?? null });
+      const destination = record.targetId === 'local' ? localController : peek?.getController?.(record.targetId);
+      if (!destination?.execute || !item?.contentId) return [];
+      return executeItemAction({ kind, item: { ...item }, destination, operationId: createOperationId() })
+        .then(() => [], () => []);
+    }
+    const attempt = attemptsRef.current.get(attemptId);
     if (!attempt) return [];
+    mediaLog.outcomeRetried({ attemptId, targetId: attempt.targetIds?.[0] ?? null, contentId: attempt.play ?? attempt.queue ?? null });
     return dispatchToTarget(attempt, { bypassDedupe: true });
+  }, [dispatchToTarget, localController, peek]);
+
+  // RELY.6a/AC2: the same attempt, sent to another chosen screen instead.
+  const sendElsewhere = useCallback((attemptId, targetId) => {
+    if (typeof targetId !== 'string' || !targetId) return [];
+    const record = recordsRef.current.get(attemptId);
+    const attempt = attemptsRef.current.get(attemptId);
+    const fromTarget = record?.targetId ?? attempt?.targetIds?.[0] ?? null;
+    if (attempt) {
+      mediaLog.outcomeSentElsewhere({ attemptId, fromTargetId: fromTarget, targetId });
+      return dispatchToTarget({ ...attempt, targetIds: [targetId], mode: attempt.mode === 'transfer' ? 'fork' : attempt.mode }, { bypassDedupe: true });
+    }
+    const item = record?.command?.item ?? record?.item;
+    if (!item?.contentId) return [];
+    mediaLog.outcomeSentElsewhere({ attemptId, fromTargetId: fromTarget, targetId });
+    return dispatchToTarget({ targetIds: [targetId], play: item.contentId, mode: 'fork', title: item.title ?? undefined }, { bypassDedupe: true });
   }, [dispatchToTarget]);
 
-  const removeDispatch = useCallback((dispatchId) => {
-    attemptsRef.current.delete(dispatchId);
-    dispatch({ type: 'REMOVED', dispatchId });
+  // O1: after its undo window, a far start still waking/loading can be
+  // stopped from this device. Stop keeps that screen's queue (RQ-STEER-10)
+  // and touches only this attempt's target.
+  const stopAttempt = useCallback(async (attemptId) => {
+    const record = recordsRef.current.get(attemptId);
+    const targetId = record?.targetId ?? attemptsRef.current.get(attemptId)?.targetIds?.[0] ?? null;
+    if (!targetId || record?.distance !== 'far') return { ok: false, code: 'NO_TARGET' };
+    mediaLog.outcomeStopped({ attemptId, targetId, phase: record.phase });
+    const controller = peek?.getController?.(targetId);
+    if (!controller?.transport?.stop) return { ok: false, code: 'UNSUPPORTED' };
+    try {
+      const result = await controller.transport.stop();
+      dispatch({ type: 'REMOVED', dispatchId: attemptId });
+      return result ?? { ok: true };
+    } catch (error) {
+      mediaLog.outcomeStopFailed({ attemptId, targetId, error: error?.message ?? String(error) });
+      return { ok: false, error: error?.message };
+    }
+  }, [peek]);
+
+  const removeDispatch = useCallback((attemptId) => {
+    const record = recordsRef.current.get(attemptId);
+    if (record) mediaLog.outcomeDismissed({ attemptId, targetId: record.targetId, phase: record.phase });
+    attemptsRef.current.delete(attemptId);
+    dispatch({ type: 'REMOVED', dispatchId: attemptId });
   }, []);
 
+  // Local outcomes: this device's own plays, adds, queue edits and playback
+  // problems, through the same records as far screens.
+  const recordLocal = useCallback(({ attemptId = uuid(), kind, phase = 'confirmed', item, command = null, reason = null, replacement = null, undo = null, ordinal = null, targetId = 'local', targetName = null } = {}) => {
+    dispatch({ type: 'LOCAL', attemptId, kind, phase, item, command, reason, replacement, undo, ordinal, targetId, targetName });
+    mediaLog.outcomeRecorded({ attemptId, targetId, kind, phase, contentId: item?.contentId ?? null, reason });
+    return attemptId;
+  }, []);
+
+  const resolveLocal = useCallback((attemptId, { phase, reason = null, ordinal = null } = {}) => {
+    if (!attemptId || !phase) return;
+    dispatch({ type: 'LOCAL_RESOLVED', attemptId, phase, reason, ordinal });
+    mediaLog.outcomeResolved({ attemptId, targetId: recordsRef.current.get(attemptId)?.targetId ?? 'local', phase, reason });
+  }, []);
+
+  // RELY.3a/AC4: an unconfirmed start clears once that screen reports the
+  // same item playing. Reads the fleet store directly so a state that was
+  // already playing when the watchdog timed out also clears it.
+  const reconcileScreens = useCallback(() => {
+    if (!fleetStore) return;
+    for (const record of recordsRef.current.values()) {
+      if (record.distance === 'here' || outcomePhase(record) !== 'unconfirmed') continue;
+      const entry = fleetStore.getEntry(record.targetId);
+      const snapshot = entry?.snapshot;
+      if (!snapshot || entry.offline || entry.isStale) continue;
+      const contentId = snapshot.currentItem?.contentId ?? null;
+      if (snapshot.state !== 'playing' || !contentId || contentId !== record.item?.contentId) continue;
+      mediaLog.outcomeCleared({ attemptId: record.attemptId, targetId: record.targetId, contentId, reason: 'screen-reported-playing' });
+      dispatch({ type: 'SCREEN_STATE', targetId: record.targetId, state: snapshot.state, contentId });
+    }
+  }, [fleetStore]);
+
+  useEffect(() => {
+    if (!fleetStore?.subscribeAll) return undefined;
+    return fleetStore.subscribeAll(() => reconcileScreens());
+  }, [fleetStore, reconcileScreens]);
+  useEffect(() => { reconcileScreens(); }, [state.byId, reconcileScreens]);
+
   const value = useMemo(
-    () => ({ dispatches: state.byId, dispatchToTarget, retry, removeDispatch }),
-    [state.byId, dispatchToTarget, retry, removeDispatch]
+    () => ({
+      dispatches: state.byId,
+      outcomes: state.byId,
+      dispatchToTarget, retry, sendElsewhere, removeDispatch, recordLocal, resolveLocal, stopAttempt,
+    }),
+    [state.byId, dispatchToTarget, retry, sendElsewhere, removeDispatch, recordLocal, resolveLocal, stopAttempt]
   );
 
   return <DispatchContext.Provider value={value}>{children}</DispatchContext.Provider>;

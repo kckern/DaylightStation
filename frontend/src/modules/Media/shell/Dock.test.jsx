@@ -92,7 +92,7 @@ describe('Dock', () => {
     expect(screen.getByTestId('aim-probe')).toHaveTextContent('office');
     fireEvent.click(screen.getByTestId('settings-menu-trigger'));
     fireEvent.click(await screen.findByTestId('settings-reset-session'));
-    expect(await screen.findByLabelText('Return aim to this device')).toBeChecked();
+    expect(await screen.findByLabelText(/return aim to this device/i)).toBeChecked();
     fireEvent.click(await screen.findByTestId('confirm-ok'));
 
     expect(lifecycleReset).toHaveBeenCalledTimes(1);
@@ -107,7 +107,7 @@ describe('Dock', () => {
 
     fireEvent.click(screen.getByTestId('settings-menu-trigger'));
     fireEvent.click(await screen.findByTestId('settings-reset-session'));
-    fireEvent.click(await screen.findByLabelText('Return aim to this device'));
+    fireEvent.click(await screen.findByLabelText(/return aim to this device/i));
     fireEvent.click(await screen.findByTestId('confirm-ok'));
 
     expect(lifecycleReset).toHaveBeenCalledTimes(1);

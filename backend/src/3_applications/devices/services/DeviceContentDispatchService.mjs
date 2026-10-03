@@ -20,12 +20,17 @@ export class DeviceContentDispatchService {
     return { ok: true, keymapSize: entries.length };
   }
   async load(deviceId, query) {
-    const { dispatchId, ...contentQuery } = query;
+    // `deferredRetry=0` is the Media app asking that a failed press stays
+    // failed: no backend retry 45s later behind the person's back
+    // (RQ-STEER-07). It is a delivery option, never part of the receiver query.
+    const { dispatchId, deferredRetry, ...contentQuery } = query;
+    const manualRetryOnly = deferredRetry === '0' || deferredRetry === 'false' || deferredRetry === false || deferredRetry === 0;
     const action = typeof contentQuery.itemAction === 'string' ? JSON.parse(contentQuery.itemAction) : contentQuery.itemAction;
     const key = action?.operationId ? JSON.stringify([deviceId, action.operationId]) : null;
     if (key && !this.#itemActions.has(key)) this.#itemActions.set(key, { status: 'pending', tappedAt: action.tappedAt });
     const result = await this.#wake.execute(deviceId, contentQuery, {
       dispatchId,
+      ...(manualRetryOnly ? { deferredRetry: false } : {}),
       ...(key ? { isCancelled: () => this.#itemActions.get(key)?.cancelled === true } : {}),
     });
     this.#logger.info?.('device.router.load.complete', { deviceId, ok: result.ok,

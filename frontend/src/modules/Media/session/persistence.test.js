@@ -70,9 +70,9 @@ describe('persistence — schema + quota', () => {
     expect(readPersistedSession()).toBe('schema-mismatch');
   });
 
-  it('returns null on corrupt JSON', () => {
+  it('reports corrupt JSON as malformed so the caller discards it (RELY.7a)', () => {
     localStorage.setItem(PERSIST_KEY, '{not-json');
-    expect(readPersistedSession()).toBeNull();
+    expect(readPersistedSession()).toBe('malformed');
   });
 
   it('truncates past-played items and retries on QuotaExceededError', () => {

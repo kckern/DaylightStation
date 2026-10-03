@@ -76,7 +76,13 @@ export function createLocalSessionController({
   clearPersisted = () => {},
   fetchImpl = undefined, // container expansion; defaults to globalThis.fetch
 } = {}) {
-  const restored = persistedSnapshot ?? createIdleSessionSnapshot({
+  // RELY.7a: a restored session comes back PAUSED, never playing aloud. The
+  // Player is held unmounted (PlayerBridge) until an explicit start.
+  const RESTORE_ACTIVE_STATES = new Set(['playing', 'buffering', 'stalled', 'loading']);
+  const restoredPaused = persistedSnapshot?.currentItem && RESTORE_ACTIVE_STATES.has(persistedSnapshot.state)
+    ? { ...persistedSnapshot, state: 'paused' }
+    : persistedSnapshot;
+  const restored = restoredPaused ?? createIdleSessionSnapshot({
     sessionId: randomUuid(),
     ownerId: clientId,
     now: nowFn(),
@@ -116,6 +122,66 @@ export function createLocalSessionController({
     meta: { ...restored.meta, revision: canonicalRevision },
   };
   const store = createSessionStore(initial);
+
+  // ---- Restore hold (RELY.7a) ----
+  let restoreHeld = !!initial.currentItem && !!persistedSnapshot;
+  const restoreListeners = new Set();
+  const releaseRestore = (reason) => {
+    if (!restoreHeld) return;
+    restoreHeld = false;
+    mediaLog.sessionRestoreReleased({ sessionId: store.getSnapshot().sessionId, reason });
+    for (const fn of [...restoreListeners]) fn(false);
+  };
+  if (restoreHeld) {
+    mediaLog.sessionRestoredPaused({
+      sessionId: initial.sessionId,
+      contentId: initial.currentItem.contentId,
+      position: initial.position ?? 0,
+      queueLength: initial.queue?.items?.length ?? 0,
+    });
+  }
+  // Anything that starts different playback ends the hold too.
+  store.onTransition((_prev, _next, action) => {
+    if (['LOAD_ITEM', 'SET_CURRENT_ITEM', 'ADOPT_SNAPSHOT', 'RESET', 'STOP'].includes(action?.type)) {
+      releaseRestore(String(action.type).toLowerCase());
+    }
+  });
+
+  // ---- Local playback problems (RELY.5a) ----
+  let problem = null;
+  const problemListeners = new Set();
+  const setProblem = (next) => {
+    problem = next;
+    for (const fn of [...problemListeners]) fn(problem);
+  };
+  const raiseProblem = (failedItem, reason) => {
+    const afterSnap = store.getSnapshot();
+    const after = afterSnap.state === 'ended' ? null : afterSnap.currentItem;
+    const sameVisit = after && (after.queueItemId && failedItem.queueItemId
+      ? after.queueItemId === failedItem.queueItemId
+      : after === failedItem);
+    const replacement = after && after.contentId && !sameVisit
+      ? { contentId: after.contentId, title: after.title ?? null, queueItemId: after.queueItemId ?? null }
+      : null;
+    const next = {
+      kind: replacement ? 'skipped' : 'failed',
+      reason,
+      item: { contentId: failedItem.contentId, title: failedItem.title ?? null, queueItemId: failedItem.queueItemId ?? null },
+      replacement,
+      at: Date.now(),
+    };
+    mediaLog.playbackProblem({
+      sessionId: store.getSnapshot().sessionId,
+      kind: next.kind, reason, contentId: failedItem.contentId,
+      replacementContentId: replacement?.contentId ?? null,
+    });
+    setProblem(next);
+  };
+  const clearProblem = (reason) => {
+    if (!problem) return;
+    mediaLog.playbackRecovered({ sessionId: store.getSnapshot().sessionId, contentId: problem.item.contentId, reason });
+    setProblem(null);
+  };
   const position = createPositionChannel();
   position.set(initial.position ?? 0);
   let playbackRevision = 0;
@@ -614,11 +680,25 @@ export function createLocalSessionController({
     clearOrigin: () => { pendingOrigin = null; },
     position: { get: position.get, subscribe: position.subscribe },
 
+    // RELY.7a: whether a restored session is still held paused (no Player).
+    restore: {
+      isHeld: () => restoreHeld,
+      subscribe: (fn) => { restoreListeners.add(fn); return () => restoreListeners.delete(fn); },
+    },
+    // RELY.5a: the current local playback problem, until playback recovers.
+    problems: {
+      get: () => problem,
+      subscribe: (fn) => { problemListeners.add(fn); return () => problemListeners.delete(fn); },
+      clear: () => clearProblem('dismissed'),
+    },
+
     transport: {
       play: () => {
         beginAction();
         const opOrigin = pendingOrigin;
         mediaLog.transportCommand({ action: 'play', target: 'local' });
+        // Only an explicit Play ends a restored session's paused hold.
+        releaseRestore('play');
         // Playing from a stopped/ready session starts the queue head — this
         // branch dispatches LOAD_ITEM synchronously (via moveCurrentTo),
         // which already stamps `opOrigin` via the ambient mechanism above
@@ -661,6 +741,12 @@ export function createLocalSessionController({
         beginAction();
         const opOrigin = pendingOrigin;
         mediaLog.transportCommand({ action: 'seekAbs', value: seconds, target: 'local' });
+        if (restoreHeld) {
+          // No Player is mounted yet: move the restored spot it will start at.
+          const target = Math.max(0, Number(seconds) || 0);
+          setDurablePosition(target);
+          return;
+        }
         // A seek dispatches nothing synchronously either — stamp
         // provenance directly, same as play/pause above.
         stampOrigin(opOrigin);
@@ -751,12 +837,52 @@ export function createLocalSessionController({
     },
 
     lifecycle: {
-      reset: () => {
+      // RELY.8a: Start fresh, itemised. `keep` names the parts to keep
+      // ({ playing, queue, spot }); everything else is cleared. Clearing
+      // everything starts a brand-new session (and forgets the persisted
+      // one). A spot is only kept together with what's playing.
+      reset: ({ keep = {} } = {}) => {
         beginAction();
-        mediaLog.sessionReset({ sessionId: snap().sessionId });
-        clearPersisted();
-        store.dispatch({ type: 'RESET', newSessionId: randomUuid() });
-        position.set(0);
+        const before = snap();
+        const current = before.queue.items[before.queue.currentIndex] ?? null;
+        const keepPlaying = !!keep.playing && !!before.currentItem;
+        const keepQueue = !!keep.queue;
+        const keepSpot = keepPlaying && !!keep.spot;
+        const kept = [keepPlaying && 'playing', keepQueue && 'queue', keepSpot && 'spot'].filter(Boolean);
+        const cleared = ['playing', 'queue', 'spot'].filter((part) => !kept.includes(part));
+        mediaLog.sessionStartFresh({ sessionId: before.sessionId, kept, cleared });
+        clearProblem('start-fresh');
+        if (!keepPlaying && !keepQueue) {
+          mediaLog.sessionReset({ sessionId: before.sessionId });
+          player.pause();
+          clearPersisted();
+          store.dispatch({ type: 'RESET', newSessionId: randomUuid() });
+          position.set(0);
+          return;
+        }
+        if (!keepPlaying) {
+          player.pause();
+          if (current) store.replace(qOps.remove(before, current.queueItemId));
+          store.dispatch({ type: 'STOP' });
+          position.set(0);
+          return;
+        }
+        if (!keepQueue) {
+          const items = current ? [current] : [];
+          store.replace({
+            ...before,
+            queue: {
+              ...before.queue,
+              items,
+              currentIndex: current ? 0 : -1,
+              upNextCount: items.filter((item) => item.priority === 'upNext').length,
+            },
+          });
+        }
+        if (!keepSpot) {
+          setDurablePosition(0);
+          if (!restoreHeld) player.seek(0);
+        }
       },
       adoptSnapshot: (snapshot, { autoplay = true } = {}) => {
         beginAction();
@@ -847,6 +973,8 @@ export function createLocalSessionController({
     onPlayerStateChange: (state, contentId = null) => {
       if (contentId != null && snap().currentItem?.contentId !== contentId) return;
       store.dispatch({ type: 'PLAYER_STATE', playerState: state, __playerDriven: true });
+      // Playback is moving again: the handle's problem sign clears.
+      if (state === 'playing') clearProblem('playing');
     },
     onPlayerEnded: (contentId = null) => {
       if (contentId != null && snap().currentItem?.contentId !== contentId) return;
@@ -859,8 +987,10 @@ export function createLocalSessionController({
         error: message ?? 'unknown',
         code: code ?? null,
       });
+      const failed = snap().currentItem;
       store.dispatch({ type: 'ITEM_ERROR', error: message ?? 'unknown', code: code ?? null, __playerDriven: true });
       advance('item-error', { playerDriven: true });
+      if (failed) raiseProblem(failed, 'error');
     },
     onPlayerStalled: ({ stalledMs } = {}) => {
       const current = snap().currentItem;
@@ -872,6 +1002,7 @@ export function createLocalSessionController({
       });
       store.dispatch({ type: 'PLAYER_STATE', playerState: 'stalled', __playerDriven: true });
       advance('stall-auto-advance', { playerDriven: true });
+      raiseProblem(current, 'stalled');
     },
     /** Durable (≥5s cadence) position write. */
     onPlayerProgress: (seconds, contentId = null) => {

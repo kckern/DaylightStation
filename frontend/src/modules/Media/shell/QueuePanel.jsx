@@ -2,12 +2,14 @@
 // THE queue component — written once against the controller interface and
 // bound to the local session (Now Playing) or a remote session (Peek). Queue
 // semantics are identical either way by design (J2 ≡ J5).
-import React from 'react';
+import React, { useContext } from 'react';
 import { ActionIcon, Button, Group, Text, Badge } from '@mantine/core';
 import { IconX, IconArrowsShuffle, IconRepeat, IconRepeatOnce, IconClearAll, IconChevronUp, IconChevronDown } from '@tabler/icons-react';
 import { useSessionController } from '../controller/useSessionController.js';
 import { createOperationId } from '../actions/itemAction.js';
-import { offerActionUndo } from '../actions/actionNotice.jsx';
+import { DispatchContext } from '../cast/DispatchProvider.jsx';
+import { FleetContext } from '../fleet/FleetProvider.jsx';
+import { deviceName } from '../fleet/deviceDisplay.js';
 
 const REPEAT_NEXT = { off: 'all', all: 'one', one: 'off' };
 const REPEAT_LABEL = { off: 'Repeat off', all: 'Repeat all', one: 'Repeat one' };
@@ -19,6 +21,10 @@ const fire = (thunk) => { try { Promise.resolve(thunk()).catch(() => {}); } catc
 
 export function QueuePanel({ target = 'local', availability = null }) {
   const { controller, snapshot, queue, config } = useSessionController(target);
+  const outcomes = useContext(DispatchContext);
+  const remoteId = target === 'local' ? null : target?.deviceId ?? null;
+  const fleet = useContext(FleetContext);
+  const remoteDevice = remoteId ? fleet?.devices?.find((device) => device.id === remoteId) ?? null : null;
   const q = snapshot?.queue;
   const controlsAvailable = availability?.available !== false;
   const dispatch = (thunk) => {
@@ -28,8 +34,27 @@ export function QueuePanel({ target = 'local', availability = null }) {
     if (!controlsAvailable) return;
     if (!controller?.execute) { dispatch(() => kind === 'clear' ? queue.clear?.() : queue.remove?.(queueItemId)); return; }
     const operationId = createOperationId();
-    offerActionUndo({ operationId, targetName: target === 'local' ? 'Here' : 'This screen', title: kind === 'clear' ? 'Clear queue' : 'Remove item', undo: controller.undo });
-    fire(() => controller.execute({ kind, queueItemId, operationId, tappedAt: Date.now() }));
+    const entry = q?.items?.find((item) => item.queueItemId === queueItemId);
+    // The edit reports through the one outcome system, with its Undo on the
+    // outcome itself (RELY.1a, RELY.4a).
+    const attemptId = outcomes?.recordLocal?.({
+      kind,
+      phase: 'running',
+      item: kind === 'clear' ? { title: 'the queue' } : { contentId: entry?.contentId ?? null, title: entry?.title ?? 'the item' },
+      command: { kind, queueItemId },
+      undo: { operationId, expiresAt: Date.now() + 10000, run: controller.undo },
+      targetId: remoteId ?? 'local',
+      targetName: remoteId ? deviceName(remoteDevice, remoteId) : null,
+    }) ?? null;
+    let pending;
+    try { pending = controller.execute({ kind, queueItemId, operationId, tappedAt: Date.now() }); }
+    catch (error) { pending = { ok: false, reason: error?.message }; }
+    Promise.resolve(pending).then(
+      (result) => outcomes?.resolveLocal?.(attemptId, result?.ok === false
+        ? { phase: 'failed', reason: result.reason ?? result.code ?? 'Could not change the queue' }
+        : { phase: 'confirmed' }),
+      (error) => outcomes?.resolveLocal?.(attemptId, { phase: 'failed', reason: error?.message ?? 'Could not change the queue' }),
+    );
   };
 
   if (!q || !Array.isArray(q.items) || q.items.length === 0) {
