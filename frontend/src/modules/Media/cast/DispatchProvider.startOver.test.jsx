@@ -61,6 +61,10 @@ describe('Start over', () => {
     expect(result.current.outcomes.get(id)).toMatchObject({ startOver: true, resumedFrom: 600 });
     await act(async () => { await result.current.startOver(id); });
     expect(remote.transport.restartCurrent).toHaveBeenCalled();
+    // …and leaves a confirmation naming that screen.
+    expect([...result.current.outcomes.values()]).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'startOver', targetId: 'livingroom-tv', phase: 'confirmed' }),
+    ]));
   });
 
   it('does nothing for a record that did not resume', async () => {

@@ -88,6 +88,8 @@ export class HouseholdMediaMemoryService {
   #requestDeadlineMs;
   /** @type {Map<string, {at:number, ttl:number, value:Object|null}>} */
   #describeCache = new Map();
+  // Who wants to hear that the household list changed (suggestions cache).
+  #listChanged = new Set();
   #active = 0;
   /** @type {Function[]} */
   #waiters = [];
@@ -146,7 +148,28 @@ export class HouseholdMediaMemoryService {
   }
 
   #budget() {
-    return { deadlineAt: this.#clock.now() + this.#requestDeadlineMs };
+    // `degraded` turns true when a lookup ran out of time or failed, so a
+    // caller can say its display fields are incomplete (not "not found").
+    return { deadlineAt: this.#clock.now() + this.#requestDeadlineMs, degraded: false };
+  }
+
+  /**
+   * Listen for household-list changes (removal, restore, watched marks).
+   * @param {(change: {householdId: string|null, reason: string, id: string}) => void} listener
+   * @returns {() => void} unsubscribe
+   */
+  onListChanged(listener) {
+    if (typeof listener !== 'function') return () => {};
+    this.#listChanged.add(listener);
+    return () => this.#listChanged.delete(listener);
+  }
+
+  #emitListChanged(change) {
+    for (const listener of [...this.#listChanged]) {
+      try { listener(change); } catch (error) {
+        this.#logger.warn?.('media.household-list.listener_failed', { reason: change.reason, error: error.message });
+      }
+    }
   }
 
   // ── Reads ────────────────────────────────────────────────────────────────
@@ -158,7 +181,9 @@ export class HouseholdMediaMemoryService {
       this.#ledgerPlays({ from: new Date(this.#clock.now() - RECENT_LEDGER_DAYS * DAY_MS).toISOString() }),
     ]);
     const entries = buildHouseholdRecent(records, { removed, plays, limit: clampLimit(limit, 24) });
-    return { items: await this.#withDisplay(entries, this.#budget()) };
+    const budget = this.#budget();
+    const items = await this.#withDisplay(entries, budget);
+    return { items, degraded: budget.degraded };
   }
 
   async carryOn({ householdId, limit } = {}) {
@@ -189,6 +214,7 @@ export class HouseholdMediaMemoryService {
       items: merged,
       nowOn: await this.#withDisplay(nowOn, budget),
       nowPlayingKnown: live.known,
+      degraded: budget.degraded,
     };
   }
 
@@ -266,6 +292,7 @@ export class HouseholdMediaMemoryService {
     const next = markRemoved(await this.#listsStore.loadRemoved(householdId), id, at);
     await this.#listsStore.saveRemoved(next, householdId);
     this.#logger.info?.('media.household-list.removed', { householdId: householdId ?? null, id });
+    this.#emitListChanged({ householdId: householdId ?? null, reason: 'removed', id });
     return { id, removedAt: at };
   }
 
@@ -274,12 +301,16 @@ export class HouseholdMediaMemoryService {
     const existed = Object.prototype.hasOwnProperty.call(before, id);
     if (existed) await this.#listsStore.saveRemoved(restoreRemoved(before, id), householdId);
     this.#logger.info?.('media.household-list.restored', { householdId: householdId ?? null, id, existed });
+    this.#emitListChanged({ householdId: householdId ?? null, reason: 'restored', id });
     return { id, restored: existed };
   }
 
   async markWatched(contentId, watched) {
     if (!this.#mark) throw new Error('markContentWatched is not configured');
-    return this.#mark.execute({ contentId, watched: !!watched });
+    const result = await this.#mark.execute({ contentId, watched: !!watched });
+    // Marks are household-wide progress: every household's lists may change.
+    this.#emitListChanged({ householdId: null, reason: 'watched', id: contentId });
+    return result;
   }
 
   // ── Internals ────────────────────────────────────────────────────────────
@@ -429,10 +460,10 @@ export class HouseholdMediaMemoryService {
   async #describe(contentId, budget) {
     const cached = this.#describeCache.get(contentId);
     if (cached && this.#clock.now() - cached.at < cached.ttl) return cached.value;
-    if (this.#expired(budget)) return null;
+    if (this.#expired(budget)) { budget.degraded = true; return null; }
     await this.#acquire();
     try {
-      if (this.#expired(budget)) return null;
+      if (this.#expired(budget)) { budget.degraded = true; return null; }
       const source = contentId.split(':')[0];
       const resolution = this.#catalog?.resolveSource?.(source, contentId);
       const item = resolution ? await this.#withTimeout(this.#catalog.getItem(resolution, contentId), budget) : null;
@@ -441,6 +472,7 @@ export class HouseholdMediaMemoryService {
       return value;
     } catch (error) {
       // Not cached: a timeout or an unreachable server says nothing about the item.
+      if (budget) budget.degraded = true;
       const data = { contentId, error: error.message };
       if (typeof this.#logger.sampled === 'function') {
         this.#logger.sampled('media.household-list.describe_failed', data, { maxPerMinute: 10, aggregate: true });

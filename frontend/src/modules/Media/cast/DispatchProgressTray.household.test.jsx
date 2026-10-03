@@ -62,11 +62,37 @@ describe('household outcomes in the tray', () => {
     expect(screen.getByTestId('dispatch-row-m')).toHaveTextContent('Moved Arrival here');
   });
 
+  it('a household write still in progress is never cleared before it resolves', () => {
+    outcomes.set('hw', local({ attemptId: 'hw', kind: 'hide', phase: 'running', item: { contentId: 'plex:9', title: 'Arrival' } }));
+    renderTray();
+    act(() => { vi.advanceTimersByTime(30_000); });
+    expect(removeDispatch).not.toHaveBeenCalledWith('hw');
+  });
+
   it('a move still in progress is never cleared before it resolves', () => {
     outcomes.set('mr', local({ attemptId: 'mr', kind: 'moveHere', phase: 'running', item: { contentId: 'plex:9', title: 'Arrival' } }));
     renderTray();
     act(() => { vi.advanceTimersByTime(60_000); });
     expect(removeDispatch).not.toHaveBeenCalledWith('mr');
+  });
+
+  it.each([
+    ['favourite', 'Adding Bluey to favourites…'],
+    ['unfavourite', 'Removing Bluey from favourites…'],
+    ['hide', 'Removing Bluey from the household list…'],
+    ['watched', 'Marking Bluey watched…'],
+    ['unwatched', 'Marking Bluey unwatched…'],
+  ])('says what a running %s is doing', (kind, text) => {
+    outcomes.set('r', local({ attemptId: 'r', kind, phase: 'running', item: { contentId: 'plex:9', title: 'Bluey' } }));
+    renderTray();
+    expect(screen.getByTestId('dispatch-row-r')).toHaveTextContent(text);
+  });
+
+  it('a far Start over confirms on that screen', () => {
+    outcomes.set('so', { ...local({ attemptId: 'so', kind: 'startOver', phase: 'confirmed', item: { contentId: 'plex:5', title: 'Arrival' } }),
+      targetId: 'livingroom-tv', deviceId: 'livingroom-tv', distance: 'direct' });
+    renderTray();
+    expect(screen.getByTestId('dispatch-row-so')).toHaveTextContent('Started Arrival over on Living Room TV');
   });
 
   it('says plainly when a household change failed', () => {

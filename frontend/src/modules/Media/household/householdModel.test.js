@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   createScreenNamer, formatDuration, formatLeft, differingSpots, resumePlan,
-  toItem, spotsSummary, whereLine, playedAtLabel, nowOnScreenIds, bareScreenId,
+  toItem, spotsSummary, whereLine, playedAtLabel, nowOnScreenIds, bareScreenId, spotLine,
 } from './householdModel.js';
 
 const screens = {
@@ -103,5 +103,19 @@ describe('where and when', () => {
     expect(map.get('plex:1')).toEqual(['fleet:livingroom-tv']);
     expect(bareScreenId('fleet:livingroom-tv')).toBe('livingroom-tv');
     expect(bareScreenId('browser:x')).toBe('browser:x');
+  });
+});
+
+describe('spots saved before per-screen spots (review)', () => {
+  const name = createScreenNamer(screens);
+  it('never calls them "Legacy" or "another screen"', () => {
+    expect(name('legacy')).toBe('earlier');
+    expect(spotLine({ deviceId: null, playhead: 720 }, name)).toBe('12 m, saved earlier');
+    expect(spotLine({ deviceId: 'legacy', kind: 'unknown', playhead: 720 }, name)).toBe('12 m, saved earlier');
+    expect(spotLine({ deviceId: 'fleet:livingroom-tv', playhead: 4800 }, name)).toBe('1 h 20 m on Living Room TV');
+    expect(spotsSummary({ spots: [
+      { deviceId: 'legacy', playhead: 720, open: true, lastPlayed: '2026-10-02 08:00:00' },
+      { deviceId: 'fleet:livingroom-tv', playhead: 4800, open: true, lastPlayed: '2026-10-01 21:00:00' },
+    ] }, name)).toBe('12 m, saved earlier · 1 h 20 m on Living Room TV');
   });
 });

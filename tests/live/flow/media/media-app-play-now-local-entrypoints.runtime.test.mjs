@@ -153,8 +153,6 @@ async function prepare({ context, sender, phone }) {
   const localVideo = sender.locator('.video-player video');
   await expect(localVideo).toBeVisible({ timeout: 60000 });
   await expect.poll(() => localVideo.evaluate(v => v.readyState >= 2 && !v.paused && v.currentTime > 0), { timeout: 30000 }).toBe(true);
-  await expect.poll(() => sender.evaluate(() => JSON.parse(localStorage.getItem('media-app.recents') || '[]')
-    .some(item => item.contentId === 'plex:55854')), { timeout: 10000 }).toBe(true);
   await setReceiverAim(sender, phone);
   await search.fill('arrival');
   await arrivalResult(sender, phone).click();

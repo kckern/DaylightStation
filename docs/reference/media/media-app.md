@@ -122,8 +122,9 @@ where it played. From the top:
 
 - **Resume** — this device's own session, when it has one.
 - **Playing now** — anything playing on another screen right now, as "Now on
-  <screen>" with **Remote** (opens that screen's remote) and **Move here**. Such
-  an item is never offered as Carry on. Move here adopts that screen's session
+  <screen>" with **Remote** (opens that screen's remote) and **Move here** when
+  this device can steer that screen (otherwise just "Now on <screen>" and the ⋯
+  verbs). Such an item is never offered as Carry on. Move here adopts that screen's session
   on this device and stops the screen only after this device is actually
   playing the item, and only if the screen is still on the same playback; if
   either is not true the other screen keeps playing and the notice says so.
@@ -148,11 +149,13 @@ anyone can remove one. Each of these changes reports through the one outcome
 system, never a separate toast.
 
 **Saved spots.** Each screen keeps its own place. Playing an item with one saved
-spot continues from it and the confirmation offers **Start over** (for 15
+spot continues from exactly that spot and the confirmation offers **Start over** (for 15
 seconds; it restarts the item from the beginning on that screen); when screens
 hold different spots the person chooses ("1 h 20 m on Living Room TV", "12 m on
 Kid's tablet", or From the beginning); with no spot it simply starts. A chosen
-spot plays from exactly there on whichever screen is aimed at. Details show how
+spot plays from exactly there on this device and on Media screens; a spot saved
+before screens kept their own reads "saved earlier". Screens that load by URL
+ignore a start position, so a play there makes no "Continuing from" claim. Details show how
 far each screen has got when the household lists know the item.
 
 **Played earlier.** Every screen's queue panel — this device's and any remote

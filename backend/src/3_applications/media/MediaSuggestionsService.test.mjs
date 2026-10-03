@@ -118,3 +118,28 @@ describe('MediaSuggestionsService', () => {
     expect(result.rows[0].items.map((i) => i.id)).toEqual(['plex:new']);
   });
 });
+
+describe('cache invalidation and degraded builds (batch A review)', () => {
+  it('invalidateAll drops every household and screen cache', async () => {
+    const { service, memory } = build();
+    await service.suggest({ deviceId: 'browser:a' });
+    await service.suggest({ householdId: 'h2', deviceId: 'browser:a' });
+    expect(memory.carryOn).toHaveBeenCalledTimes(2);
+    service.invalidateAll();
+    await service.suggest({ deviceId: 'browser:a' });
+    await service.suggest({ householdId: 'h2', deviceId: 'browser:a' });
+    expect(memory.carryOn).toHaveBeenCalledTimes(4);
+  });
+
+  it('a degraded carry on is flagged and cached only briefly', async () => {
+    const { service, memory, advance } = build();
+    memory.carryOn.mockResolvedValue({ items: [], nowOn: [], nowPlayingKnown: true, degraded: true });
+    const first = await service.suggest({ deviceId: 'browser:a' });
+    expect(first.degraded).toBe(true);
+    advance(11_000);
+    memory.carryOn.mockResolvedValue({ items: [], nowOn: [], nowPlayingKnown: true, degraded: false });
+    const second = await service.suggest({ deviceId: 'browser:a' });
+    expect(memory.carryOn).toHaveBeenCalledTimes(2);
+    expect(second.degraded).toBe(false);
+  });
+});

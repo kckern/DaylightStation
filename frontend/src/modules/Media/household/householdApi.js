@@ -5,12 +5,14 @@
 // this device's X-Daylight-Device id.
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { invalidateApiResources } from '../../../lib/hooks/useApiResource.js';
+import { isContainer } from '../../Content/combobox/comboboxMachine.js';
 
 const BASE = 'api/v1/media';
 
 export const HOUSEHOLD_PATHS = Object.freeze({
   recent: `${BASE}/household/recent?limit=24`,
-  carryOn: `${BASE}/household/carry-on?limit=20`,
+  // 12, not 20: each carry-on entry costs a catalog lookup on a cold start.
+  carryOn: `${BASE}/household/carry-on?limit=12`,
   favourites: `${BASE}/household/favourites`,
   screens: `${BASE}/screens`,
 });
@@ -19,9 +21,8 @@ export function suggestionsPath(deviceId) {
   return `${BASE}/suggestions?deviceId=${encodeURIComponent(deviceId)}`;
 }
 
-export function playedEarlierPath(screenId, { limit = 20, before = null } = {}) {
+export function playedEarlierPath(screenId, { limit = 20 } = {}) {
   const query = new URLSearchParams({ limit: String(limit) });
-  if (before) query.set('before', before);
   return `${BASE}/screens/${encodeURIComponent(screenId)}/played-earlier?${query.toString()}`;
 }
 
@@ -35,7 +36,7 @@ export function refreshHouseholdViews() {
 export function addFavourite(item) {
   return DaylightAPI(`${BASE}/household/favourites`, {
     id: item.id,
-    kind: item.itemType === 'container' || item.kind === 'collection' ? 'collection' : 'item',
+    kind: item.kind === 'collection' || (item.itemType !== 'leaf' && isContainer(item)) ? 'collection' : 'item',
     ...(item.title ? { title: item.title } : {}),
     ...(item.thumbnail ? { thumbnail: item.thumbnail } : {}),
     ...(item.type ? { type: item.type } : {}),

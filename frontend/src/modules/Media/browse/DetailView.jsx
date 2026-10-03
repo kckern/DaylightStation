@@ -103,6 +103,7 @@ export function DetailView({ contentId }) {
         <Button
           data-testid="detail-favourite"
           variant="default"
+          mih={44}
           aria-pressed={favourite}
           leftSection={favourite ? <IconHeartFilled size={16} /> : <IconHeart size={16} />}
           onClick={() => run(favourite ? 'unfavourite' : 'favourite', detailItem)}
@@ -111,11 +112,11 @@ export function DetailView({ contentId }) {
         </Button>
         {!collection && (
           <>
-            <Button data-testid="detail-watched" variant="default" leftSection={<IconEye size={16} />}
+            <Button data-testid="detail-watched" variant="default" mih={44} leftSection={<IconEye size={16} />}
                     onClick={() => run('watched', detailItem)}>
               Mark watched
             </Button>
-            <Button data-testid="detail-unwatched" variant="default" leftSection={<IconEyeOff size={16} />}
+            <Button data-testid="detail-unwatched" variant="default" mih={44} leftSection={<IconEyeOff size={16} />}
                     onClick={() => run('unwatched', detailItem)}>
               Mark unwatched
             </Button>

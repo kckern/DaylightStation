@@ -6,7 +6,7 @@
 import React from 'react';
 import { Button, Modal, Stack, Text } from '@mantine/core';
 import { IconPlayerPlayFilled, IconRotate } from '@tabler/icons-react';
-import { formatDuration } from './householdModel.js';
+import { spotLine } from './householdModel.js';
 
 export function SpotChooser({ choice, nameFor, onChoose, onClose }) {
   if (!choice) return null;
@@ -15,18 +15,18 @@ export function SpotChooser({ choice, nameFor, onChoose, onClose }) {
     <Modal opened onClose={onClose} title={`Continue ${title} from…`} data-testid="spot-chooser" centered>
       <Stack gap="sm">
         {choice.spots.map((spot, index) => {
-          const where = nameFor?.(spot.deviceId) ?? 'another screen';
           return (
             <Button
               key={`${spot.deviceId ?? 'spot'}-${index}`}
               data-testid={`spot-choice-${index}`}
               variant={index === 0 ? 'filled' : 'default'}
               size="md"
+              mih={44}
               justify="flex-start"
               leftSection={<IconPlayerPlayFilled size={16} aria-hidden />}
               onClick={() => onChoose(spot.playhead, spot)}
             >
-              {formatDuration(spot.playhead)} on {where}
+              {spotLine(spot, nameFor)}
             </Button>
           );
         })}
@@ -34,6 +34,7 @@ export function SpotChooser({ choice, nameFor, onChoose, onClose }) {
           data-testid="spot-choice-beginning"
           variant="default"
           size="md"
+          mih={44}
           justify="flex-start"
           leftSection={<IconRotate size={16} aria-hidden />}
           onClick={() => onChoose(0, null)}

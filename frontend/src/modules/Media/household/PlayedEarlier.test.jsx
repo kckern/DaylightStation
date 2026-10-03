@@ -1,7 +1,7 @@
 // FIND.11a — Played earlier: newest first, picture, title, time played, full verbs.
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 const apiMock = vi.fn();
@@ -54,5 +54,28 @@ describe('PlayedEarlier', () => {
     fireEvent.click(screen.getByTestId('played-earlier-0-more'));
     fireEvent.click(await screen.findByTestId('played-earlier-0-verb-favourite'));
     expect(apiMock).toHaveBeenCalledWith('api/v1/media/household/favourites', expect.objectContaining({ id: 'plex:2', kind: 'item' }), 'POST');
+  });
+});
+
+describe('PlayedEarlier refresh (review)', () => {
+  it('does not refetch on every track change; at most once a minute', async () => {
+    const calls = () => apiMock.mock.calls.filter(c => String(c[0]).includes('/played-earlier')).length;
+    const base = Date.now();
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(base);
+    try {
+      const { rerender } = render(<MantineProvider><PlayedEarlier screenId="livingroom-tv" currentContentId="plex:a" /></MantineProvider>);
+      await screen.findByTestId('played-earlier-0');
+      expect(calls()).toBe(1);
+      for (const id of ['plex:b', 'plex:c', 'plex:d']) {
+        rerender(<MantineProvider><PlayedEarlier screenId="livingroom-tv" currentContentId={id} /></MantineProvider>);
+      }
+      await new Promise(r => setTimeout(r, 50));
+      expect(calls()).toBe(1);
+      nowSpy.mockReturnValue(base + 61_000);
+      rerender(<MantineProvider><PlayedEarlier screenId="livingroom-tv" currentContentId="plex:e" /></MantineProvider>);
+      await waitFor(() => expect(calls()).toBe(2));
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 });

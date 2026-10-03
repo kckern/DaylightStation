@@ -11,7 +11,7 @@
 // Every item has the whole verb set (⋯) and follows the one tap rule: a
 // collection's picture opens it and its inline Play/Continue plays it; a
 // playable item's picture plays it at the aim.
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useContext, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { Button, Group, Stack, Title } from '@mantine/core';
 import { IconDeviceRemote, IconArrowBarToDown, IconLayoutGrid } from '@tabler/icons-react';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
@@ -24,12 +24,16 @@ import { ResumeCard } from './ResumeCard.jsx';
 import { HomeTile } from './HomeTile.jsx';
 import { HOUSEHOLD_PATHS, suggestionsPath } from '../household/householdApi.js';
 import {
-  toItem, formatLeft, formatDuration, differingSpots, whereLine, playedAtLabel, nowOnScreenIds, bareScreenId,
+  toItem, formatLeft, spotLine, differingSpots, whereLine, playedAtLabel, nowOnScreenIds, bareScreenId,
 } from '../household/householdModel.js';
 import { useFavourites, householdResourceLogger } from '../household/useHousehold.js';
 import { useItemVerbs, isCollection } from '../household/useItemVerbs.jsx';
 import { useMoveHere } from '../household/useMoveHere.js';
+import { ItemMenu } from '../household/ItemMenu.jsx';
+import { FleetContext } from '../fleet/FleetProvider.jsx';
 import './Home.scss';
+
+export const DEGRADED_RELOAD_MS = 10_000;
 
 function rowTestId(rowId) {
   return `home-row-${rowId}`;
@@ -59,43 +63,67 @@ function RowSkeleton() {
   );
 }
 
-/** "Now on Living Room TV · Remote · Move here" — never offered as carry on. */
-function NowOnRow({ entries, nameFor }) {
+/**
+ * "Now on Living Room TV · Remote · Move here" — never offered as carry on.
+ * Remote and Move here need that screen's live session here (the fleet
+ * store, keyed by its fleet/peek id) with a playback-owner identity; a
+ * screen we cannot steer (e.g. a browser known only by its request id) shows
+ * "Now on <screen>" with its ⋯ verbs only.
+ */
+function NowOnRow({ entries, nameFor, run, favourites }) {
   const { push } = useNav();
   const moveHere = useMoveHere();
+  const fleet = useContext(FleetContext);
+  const store = fleet?.store ?? null;
+  // Re-render when screens report state, so the verbs appear once they can work.
+  useSyncExternalStore(store?.subscribeAll ?? noSubscribe, store?.getAll ?? noSnapshot, store?.getAll ?? noSnapshot);
   if (!entries.length) return null;
   return (
     <TileRow rowId="now-on" title="Playing now">
       {entries.map((entry) => {
         const screen = nameFor(entry.deviceId) ?? 'another screen';
-        const testId = tileTestId('now-on', `${bareScreenId(entry.deviceId)}-${entry.contentId}`);
+        const deviceId = bareScreenId(entry.deviceId);
+        const steerable = Boolean(store?.getEntry?.(deviceId)?.snapshot?.meta?.playbackOwner);
+        const testId = tileTestId('now-on', `${deviceId}-${entry.contentId}`);
+        const item = toItem(entry);
         return (
           <div key={`${entry.deviceId}-${entry.contentId}`} className="home-tile home-tile--now" data-testid={testId}>
             <div className="home-tile-picture home-tile-picture--static" aria-hidden>
               {entry.thumbnail ? <img src={entry.thumbnail} alt="" loading="lazy" /> : null}
             </div>
-            <div className="home-tile-body">
-              <span className="home-tile-title">{entry.title ?? 'Something'}</span>
-              <span className="home-tile-line" data-testid={`${testId}-where`}>Now on {screen}</span>
+            <div className="home-tile-head">
+              <div className="home-tile-body">
+                <span className="home-tile-title">{entry.title ?? 'Something'}</span>
+                <span className="home-tile-line" data-testid={`${testId}-where`}>Now on {screen}</span>
+              </div>
+              {item && (
+                <ItemMenu item={{ ...item, title: entry.title ?? item.title }} onVerb={kind => run(kind, item, { entry })}
+                  favourite={favourites.has(item.id)} testId={testId} />
+              )}
             </div>
-            <Group gap={6} className="home-tile-actions">
-              <Button size="sm" variant="default" data-testid={`${testId}-remote`}
-                leftSection={<IconDeviceRemote size={14} aria-hidden />}
-                onClick={() => push('peek', { deviceId: bareScreenId(entry.deviceId) })}>
-                Remote
-              </Button>
-              <Button size="sm" variant="default" data-testid={`${testId}-move-here`}
-                leftSection={<IconArrowBarToDown size={14} aria-hidden />}
-                onClick={() => moveHere(entry.deviceId, entry)}>
-                Move here
-              </Button>
-            </Group>
+            {steerable && (
+              <Group gap={6} className="home-tile-actions">
+                <Button size="sm" variant="default" data-testid={`${testId}-remote`}
+                  leftSection={<IconDeviceRemote size={14} aria-hidden />}
+                  onClick={() => push('peek', { deviceId })}>
+                  Remote
+                </Button>
+                <Button size="sm" variant="default" data-testid={`${testId}-move-here`}
+                  leftSection={<IconArrowBarToDown size={14} aria-hidden />}
+                  onClick={() => moveHere(entry.deviceId, entry)}>
+                  Move here
+                </Button>
+              </Group>
+            )}
           </div>
         );
       })}
     </TileRow>
   );
 }
+
+const noSubscribe = () => () => {};
+const noSnapshot = () => null;
 
 function suggestionLines(rowId, item, entry, nameFor) {
   if (rowId === 'carry-on') {
@@ -107,7 +135,7 @@ function suggestionLines(rowId, item, entry, nameFor) {
     // FIND.10a/AC4: when screens hold different spots, each is its own line.
     if (spots.length > 1) {
       return [item.grandparentTitle ?? entry?.grandparentTitle ?? null,
-        ...spots.map(spot => `${formatDuration(spot.playhead)} on ${nameFor(spot.deviceId) ?? 'another screen'}`)];
+        ...spots.map(spot => spotLine(spot, nameFor))];
     }
     return [item.grandparentTitle ?? entry?.grandparentTitle ?? null,
       formatLeft(source.playhead, source.duration), whereLine(source, nameFor)];
@@ -118,7 +146,8 @@ function suggestionLines(rowId, item, entry, nameFor) {
 }
 
 export function HomeView() {
-  const deviceId = useMemo(() => getDeviceId(), []);
+  // Read each render: the app may adopt its browser id after first paint.
+  const deviceId = getDeviceId();
   const suggestions = useApiResource(suggestionsPath(deviceId), { swr: true, label: 'media-suggestions', logger: householdResourceLogger });
   const carryOn = useApiResource(HOUSEHOLD_PATHS.carryOn, { swr: true, label: 'media-carry-on', logger: householdResourceLogger });
   const recent = useApiResource(HOUSEHOLD_PATHS.recent, { swr: true, label: 'media-recent', logger: householdResourceLogger });
@@ -145,6 +174,19 @@ export function HomeView() {
       recent: recentItems.length,
     });
   }, [suggestions.data, shownKey, deviceId, rows, nowOn.length, recentItems.length]);
+  // A degraded answer (the server's catalog lookups ran out of time on a cold
+  // start) is reloaded once, ~10 s later, so missing titles fill in.
+  const reloadedRef = useRef(false);
+  const degraded = [suggestions.data, carryOn.data, recent.data].some(data => data?.degraded === true);
+  useEffect(() => {
+    if (!degraded || reloadedRef.current) return undefined;
+    const timer = setTimeout(() => {
+      reloadedRef.current = true;
+      mediaLog.householdDegradedReload({ deviceId });
+      for (const resource of [suggestions, carryOn, recent]) if (resource.data?.degraded) resource.reload();
+    }, DEGRADED_RELOAD_MS);
+    return () => clearTimeout(timer);
+  }, [degraded]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     for (const [section, resource] of [['suggestions', suggestions], ['carry-on', carryOn], ['recent', recent]]) {
       if (resource.error) mediaLog.householdLoadFailed({ section, error: resource.error.message });
@@ -210,7 +252,7 @@ export function HomeView() {
   return (
     <Stack data-testid="home-view" className="home-view" gap="lg">
       <ResumeCard />
-      <NowOnRow entries={nowOn} nameFor={nameFor} />
+      <NowOnRow entries={nowOn} nameFor={nameFor} run={run} favourites={favourites} />
       {suggestionBody}
       {recentItems.length > 0 && (
         <TileRow rowId="recent" title="Recent">
