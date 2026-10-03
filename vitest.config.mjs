@@ -94,7 +94,12 @@ export default {
       '**/.{idea,git,cache,output,temp}/**',
       // Skipped when this config IS a worktree: the globs also match the
       // worktree's own path, which excluded every test in it.
-      ...(RUNNING_IN_WORKTREE ? [] : ['**/.claude/worktrees/**', '**/.claire/worktrees/**', '**/.worktrees/**']),
+      // A worktree still excludes worktree copies NESTED inside it (the tracked
+      // `.claire/worktrees/` tree is one), anchored at this config's own root so
+      // they cannot match the worktree's own path.
+      ...(RUNNING_IN_WORKTREE
+        ? ['.claude/worktrees', '.claire/worktrees', '.worktrees'].map((dir) => `${path.join(__dirname, dir)}/**`)
+        : ['**/.claude/worktrees/**', '**/.claire/worktrees/**', '**/.worktrees/**']),
       // Scratch that is on its way out (CLAUDE.md: "can't delete? move to
       // _deleteme/"). A probe test parked here still got collected, inflating
       // counts and tearing down noisily mid-sweep.
