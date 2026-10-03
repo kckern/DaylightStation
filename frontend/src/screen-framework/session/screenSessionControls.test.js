@@ -150,6 +150,35 @@ describe('end of queue and next episode (RQ-STEER-19, RQ-STEER-20)', () => {
     expect(b.actions.advance).toHaveBeenCalledTimes(1);
   });
 
+  it('a skip during the countdown supersedes it — the countdown never advances a second time (B4)', () => {
+    const { controls, actions } = setup();
+    controls.naturalEndPolicy({ isQueue: true, current: episode(1), next: episode(2) }, actions);
+    // The person skipped: the owner moved on to episode 2 by itself.
+    controls.observeSnapshot(snapshotWith({ items: [episode(1), episode(2)], currentIndex: 1 }));
+    expect(controls.toPublished().countdown).toBeNull();
+    vi.advanceTimersByTime(20_000);
+    expect(actions.advance).not.toHaveBeenCalled();
+  });
+
+  it('any transport, seek or queue command interrupts the countdown (B4)', () => {
+    for (const reason of ['media:playback', 'media:seek-abs', 'media:queue-op']) {
+      const { controls, actions } = setup();
+      controls.naturalEndPolicy({ isQueue: true, current: episode(1), next: episode(2) }, actions);
+      controls.interrupt(reason);
+      vi.advanceTimersByTime(20_000);
+      expect(actions.advance).not.toHaveBeenCalled();
+      expect(controls.toPublished().countdown).toBeNull();
+    }
+  });
+
+  it('keeps the countdown while the finished episode is still current', () => {
+    const { controls, actions } = setup();
+    controls.naturalEndPolicy({ isQueue: true, current: episode(1), next: episode(2) }, actions);
+    controls.observeSnapshot(snapshotWith({ items: [episode(1), episode(2)], currentIndex: 0 }));
+    vi.advanceTimersByTime(10_000);
+    expect(actions.advance).toHaveBeenCalledTimes(1);
+  });
+
   it('stop after this one stops once and clears itself', () => {
     const { controls, actions } = setup();
     controls.applyConfig('stopAfterCurrent', true);

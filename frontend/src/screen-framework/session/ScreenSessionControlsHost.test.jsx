@@ -136,6 +136,17 @@ describe('ScreenSessionControlsHost', () => {
     expect(view.queryByTestId('screen-note-put-back')).toBeNull();
   });
 
+  it('a transport command on the bus interrupts a countdown (B4)', () => {
+    const { controls, view } = mount(makeSource(playing));
+    const actions = { advance: vi.fn(), stop: vi.fn(), finish: vi.fn(), restartQueue: vi.fn() };
+    const ep = (n) => ({ contentId: `plex:${n}`, title: `Ep ${n}`, type: 'episode' });
+    act(() => { controls.naturalEndPolicy({ isQueue: true, current: ep(1), next: ep(2) }, actions); });
+    act(() => { getActionBus().emit('media:playback', { command: 'skipNext', commandId: 'c1' }); });
+    expect(view.queryByTestId('screen-next-countdown')).toBeNull();
+    act(() => { vi.advanceTimersByTime(20_000); });
+    expect(actions.advance).not.toHaveBeenCalled();
+  });
+
   it('renders a cancellable countdown and lets Back cancel it', async () => {
     const { controls, view } = mount(makeSource(playing));
     const actions = { advance: vi.fn(), stop: vi.fn(), finish: vi.fn(), restartQueue: vi.fn() };
