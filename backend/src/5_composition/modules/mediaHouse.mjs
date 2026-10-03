@@ -9,7 +9,6 @@ import { ScreenSignalsReader } from '#apps/media/ScreenSignalsReader.mjs';
 import { YamlScreenRegistryDatastore } from '#adapters/persistence/yaml/YamlScreenRegistryDatastore.mjs';
 import { ConfigMediaScreenCatalog } from '#adapters/devices/ConfigMediaScreenCatalog.mjs';
 import { EventBusScreenPresence } from '#adapters/eventbus/EventBusScreenPresence.mjs';
-import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
 import { RoutineCatalogService } from '#apps/media/RoutineCatalogService.mjs';
 import { RoutineHistoryService } from '#apps/media/RoutineHistoryService.mjs';
 import { RoutineLoadRecorder } from '#apps/media/RoutineLoadRecorder.mjs';
@@ -28,8 +27,7 @@ import { MediaSuggestionsService } from '#apps/media/MediaSuggestionsService.mjs
  * @param {Object} [deps.eventBus] - browsers' playback_state frames refresh the registry
  * @param {Object} [deps.livenessService] - DeviceLivenessService
  * @param {Object} [deps.playLedger] - PlayLedgerRecorder
- * @param {Object} [deps.progressMemory] - media progress (spot moves on merge)
- * @param {Function} [deps.createMediaProgress]
+ * @param {Object} [deps.progressMemory] - media progress (spot folds on merge/unmerge; needs updateSpots)
  * @param {LoadOriginHints} [deps.originHints] - shared with the PlayLedgerRecorder
  * @param {Object} [deps.householdMediaMemory] - HouseholdMediaMemoryService (display fields, now playing)
  * @param {{getRecentlyAdded: Function}|null} [deps.plexAdapter] - "New" suggestions
@@ -44,7 +42,6 @@ export function createMediaHouseModule({
   livenessService = null,
   playLedger = null,
   progressMemory = null,
-  createMediaProgress = (props) => new MediaProgress(props),
   originHints = new LoadOriginHints(),
   householdMediaMemory = null,
   plexAdapter = null,
@@ -58,7 +55,6 @@ export function createMediaHouseModule({
     configuredScreens: new ConfigMediaScreenCatalog({ configService }),
     signals: new ScreenSignalsReader({ livenessService, playLedger, logger: log('media-screens') }),
     progress: progressMemory,
-    createMediaProgress,
     logger: log('media-screens'),
   });
 

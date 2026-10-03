@@ -80,7 +80,7 @@ function clone(state) {
   const base = state || emptyRegistry();
   return {
     screens: Object.fromEntries(Object.entries(base.screens || {}).map(([id, s]) => [id, { ...s, renames: [...(s.renames || [])] }])),
-    aliases: Object.fromEntries(Object.entries(base.aliases || {}).map(([id, a]) => [id, { ...a }])),
+    aliases: Object.fromEntries(Object.entries(base.aliases || {}).map(([id, a]) => [id, structuredClone(a)])),
   };
 }
 
@@ -342,6 +342,8 @@ export function addScreen(state, { name: rawName, room = null, at } = {}, { conf
 /**
  * Fold a duplicate into its earlier self (RQ-HOUSE-08). The duplicate's id
  * becomes an alias: its plays and spots count for the target from now on.
+ * The folded entry is kept on the alias (`was`) and duplicates that came
+ * along through it remember the hop (`via`), so unmergeScreen can undo it.
  * A configured screen cannot be merged away (devices.yml owns it).
  */
 export function mergeScreens(state, fromId, intoId, { at, configured = [] } = {}) {
@@ -374,9 +376,13 @@ export function mergeScreens(state, fromId, intoId, { at, configured = [] } = {}
   target.lastSeen = times(target.lastSeen, from.lastSeen, 'max');
   if (!target.room && from.room) target.room = from.room;
   delete next.screens[fromId];
-  next.aliases[fromId] = { into, mergedAt: at ?? null };
+  // The folded entry rides on the alias so the merge can be undone.
+  next.aliases[fromId] = { into, mergedAt: at ?? null, was: structuredClone(from) };
   for (const alias of Object.values(next.aliases)) {
-    if (alias.into === fromId) alias.into = into;
+    if (alias.into === fromId) {
+      alias.into = into;
+      alias.via = [...(alias.via || []), fromId];
+    }
   }
   return { state: next, into, screen: findView(next, into, configured, nowOf(at)) };
 }
@@ -402,4 +408,43 @@ export function restoreScreen(state, id, { configured = [], at = null } = {}) {
   }
   entry.retiredAt = null;
   return { state: next, screen: findView(next, id, configured, nowOf(at)) };
+}
+
+/**
+ * Undo a merge: the alias becomes its own screen again, with the entry it had
+ * when it was folded (its name suffixed if another screen took it since), and
+ * duplicates that came along through it point back at it.
+ * @returns {{state, into:string, screen:Object, was:Object}}
+ */
+export function unmergeScreen(state, id, { at, configured = [] } = {}) {
+  requireId(id);
+  const next = clone(state);
+  const alias = next.aliases[id];
+  if (!alias?.was) {
+    throw new ScreenRegistryError(`${id} is not a merged screen`, { code: 'NOT_MERGED', details: { id } });
+  }
+  const { into, was } = alias;
+  delete next.aliases[id];
+  const restored = { ...was, renames: [...(was.renames || [])] };
+  delete restored.spotFolds;
+  if (restored.name) {
+    const taken = takenNames(next, configured, id);
+    if (taken.has(nameKey(restored.name))) restored.name = numberedSuggestion(restored.name, taken);
+  }
+  next.screens[id] = restored;
+  for (const other of Object.values(next.aliases)) {
+    if (other.via?.[other.via.length - 1] === id) {
+      other.into = id;
+      other.via = other.via.slice(0, -1);
+      if (!other.via.length) delete other.via;
+    }
+  }
+  return { state: next, into, was, screen: findView(next, id, configured, nowOf(at)) };
+}
+
+/** Record which progress records a merge folded spots in (for unmerge). */
+export function recordSpotFolds(state, id, folds) {
+  const next = clone(state);
+  if (next.aliases[id]?.was) next.aliases[id].was.spotFolds = folds;
+  return next;
 }

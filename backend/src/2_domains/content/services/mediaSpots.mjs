@@ -203,3 +203,49 @@ export function compareTimestamps(a, b) {
   if (va === vb) return 0;
   return va < vb ? -1 : 1;
 }
+
+/**
+ * Fold a merged duplicate screen's spot onto the screen it was merged into.
+ * Newest spot wins the target key; nothing is dropped — when both screens
+ * hold a spot, the older one stays under the duplicate's key (the registry
+ * lists that id as an alias), so an unmerge can swap them back.
+ *
+ * @param {{spots?:Object, lastDevice?:string|null}} record
+ * @param {string} fromId - the duplicate (merged away)
+ * @param {string} intoId - the screen it was merged into
+ * @returns {{spots:Object, lastDevice:string|null, move:'moved'|'swapped'}|null} null = nothing to fold
+ */
+export function foldSpot(record, fromId, intoId) {
+  const spots = record?.spots || {};
+  const mine = spots[fromId];
+  if (!mine) return null;
+  const theirs = spots[intoId];
+  if (theirs && compareTimestamps(mine.lastPlayed, theirs.lastPlayed) <= 0) return null;
+  const next = { ...spots, [intoId]: mine };
+  if (theirs) next[fromId] = theirs;
+  else delete next[fromId];
+  const lastDevice = record?.lastDevice === fromId ? intoId : (record?.lastDevice ?? null);
+  return { spots: next, lastDevice, move: theirs ? 'swapped' : 'moved' };
+}
+
+/**
+ * Undo foldSpot after an unmerge. Only when the target's spot is still the
+ * one that was folded (`lastPlayed` unchanged) — a spot the target has played
+ * on since belongs to the target now and is left alone.
+ *
+ * @param {{spots?:Object, lastDevice?:string|null}} record
+ * @param {string} fromId
+ * @param {string} intoId
+ * @param {{move:'moved'|'swapped', lastPlayed:string, lastDevice?:string|null}} fold - what foldSpot did
+ * @returns {{spots:Object, lastDevice:string|null}|null}
+ */
+export function unfoldSpot(record, fromId, intoId, fold) {
+  const spots = record?.spots || {};
+  const folded = spots[intoId];
+  if (!folded || folded.lastPlayed !== fold?.lastPlayed) return null;
+  const next = { ...spots, [fromId]: folded };
+  if (fold.move === 'swapped' && spots[fromId]) next[intoId] = spots[fromId];
+  else delete next[intoId];
+  const lastDevice = fold.lastDevice !== undefined && record?.lastDevice === intoId ? fold.lastDevice : (record?.lastDevice ?? null);
+  return { spots: next, lastDevice };
+}
