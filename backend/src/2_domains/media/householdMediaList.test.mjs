@@ -164,3 +164,29 @@ describe('buildHouseholdRecent with the play ledger', () => {
     expect(out[0].playedOn.screenId).toBe('office-tv');
   });
 });
+
+describe('one item, two namespaces (watchlist list + library)', () => {
+  const records = [
+    rec('plex:film', {
+      namespaceId: 'plex/6_movies', lastPlayed: '2026-10-02 08:00:00', playhead: 720, duration: 7200, lastDevice: 'browser:kid',
+      spots: { 'browser:kid': { playhead: 720, duration: 7200, lastPlayed: '2026-10-02 08:00:00' } },
+    }),
+    rec('plex:film', {
+      namespaceId: 'movie-night', lastPlayed: '2026-10-01 21:00:00', playhead: 4800, duration: 7200, lastDevice: 'fleet:livingroom-tv',
+      spots: {
+        'fleet:livingroom-tv': { playhead: 4800, duration: 7200, lastPlayed: '2026-10-01 21:00:00' },
+        'browser:kid': { playhead: 100, duration: 7200, lastPlayed: '2026-09-30 08:00:00' },
+      },
+    }),
+  ];
+  it('carry on keeps every screen\'s open spot, newest per screen', () => {
+    const { items } = buildCarryOn(records, {});
+    expect(items).toHaveLength(1);
+    expect(items[0].spots.map((s) => [s.deviceId, s.playhead])).toEqual([['browser:kid', 720], ['fleet:livingroom-tv', 4800]]);
+  });
+  it('recent shows the merged spots under the newest record', () => {
+    const [entry] = buildHouseholdRecent(records, {});
+    expect(entry.namespaceId).toBe('plex/6_movies');
+    expect(entry.spots.map((s) => s.deviceId).sort()).toEqual(['browser:kid', 'fleet:livingroom-tv']);
+  });
+});

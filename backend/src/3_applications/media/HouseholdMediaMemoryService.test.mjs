@@ -206,3 +206,72 @@ describe('carry on ordering and songs', () => {
     expect((await service.carryOn({})).items).toEqual([]);
   });
 });
+
+describe('review fixes', () => {
+  it('next episode is found even when newer finished items are songs (type filter before the cap)', async () => {
+    const songs = Array.from({ length: 12 }, (_, i) => P(`plex:song${i}`, { playhead: 200, duration: 200, lastPlayed: `2026-10-02 20:${String(i).padStart(2, '0')}:00`, completedAt: 'x' }));
+    const { deps } = build({ records: [...songs, P('plex:11', { playhead: 1400, duration: 1400, lastPlayed: '2026-10-01 18:00:00', completedAt: 'x' })] });
+    const getItem = deps.contentCatalog.getItem;
+    deps.contentCatalog.getItem = vi.fn(async (r, id) => (id.startsWith('plex:song') ? { id, title: id, metadata: { type: 'track' } } : getItem(r, id)));
+    const service = new HouseholdMediaMemoryService(deps);
+    expect((await service.carryOn({})).items.map((i) => i.contentId)).toContain('plex:12');
+  });
+
+  it('a failed lookup is not remembered: the next read tries again', async () => {
+    const { deps } = build({ records: [P('plex:film', { playhead: 4800, duration: 7200, lastPlayed: '2026-10-01 21:00:00' })] });
+    deps.contentCatalog.getItem = vi.fn()
+      .mockRejectedValueOnce(new Error('plex down'))
+      .mockResolvedValue({ id: 'plex:film', title: 'Film', metadata: { type: 'movie' } });
+    const service = new HouseholdMediaMemoryService(deps);
+    expect((await service.recent({})).items[0].title).toBeNull();
+    expect((await service.recent({})).items[0].title).toBe('Film');
+  });
+
+  it('a failed lookup warns through the sampled logger', async () => {
+    const { deps } = build({ records: [P('plex:film', { playhead: 4800, duration: 7200, lastPlayed: '2026-10-01 21:00:00' })] });
+    deps.contentCatalog.getItem = vi.fn().mockRejectedValue(new Error('plex down'));
+    deps.logger.sampled = vi.fn();
+    await new HouseholdMediaMemoryService(deps).recent({});
+    expect(deps.logger.sampled).toHaveBeenCalledWith('media.household-list.describe_failed', expect.objectContaining({ contentId: 'plex:film' }), expect.objectContaining({ maxPerMinute: expect.any(Number) }));
+  });
+
+  it('never runs more than 4 catalog lookups at once', async () => {
+    const records = Array.from({ length: 12 }, (_, i) => P(`plex:m${i}`, { playhead: 10, duration: 100, lastPlayed: `2026-10-02 10:00:${String(i).padStart(2, '0')}` }));
+    const { deps } = build({ records });
+    let inFlight = 0; let peak = 0;
+    deps.contentCatalog.getItem = vi.fn(async (_r, id) => {
+      inFlight += 1; peak = Math.max(peak, inFlight);
+      await new Promise((r) => setImmediate(r));
+      inFlight -= 1;
+      return { id, title: id, metadata: { type: 'movie' } };
+    });
+    await new HouseholdMediaMemoryService(deps).recent({ limit: 12 });
+    expect(peak).toBeLessThanOrEqual(4);
+    expect(peak).toBeGreaterThan(1);
+  });
+
+  it('carry on answers within its overall deadline even when the catalog hangs', async () => {
+    const { deps } = build({ records: [P('plex:film', { playhead: 4800, duration: 7200, lastPlayed: '2026-10-01 21:00:00' })] });
+    deps.contentCatalog.getItem = vi.fn(() => new Promise(() => {}));
+    const runtime = { withDeadline: (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('t')), ms))]) };
+    const service = new HouseholdMediaMemoryService({ ...deps, clock: Date, runtime, describeTimeoutMs: 60_000, carryOnDeadlineMs: 50 });
+    const started = Date.now();
+    const { items } = await service.carryOn({});
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(items[0]).toMatchObject({ contentId: 'plex:film', title: null });
+  });
+
+  it('recent reads only the last 14 days of the ledger', async () => {
+    const playLedger = { plays: vi.fn(async () => []) };
+    const { deps } = build();
+    const now = Date.UTC(2026, 9, 2);
+    await new HouseholdMediaMemoryService({ ...deps, playLedger, clock: { now: () => now } }).recent({});
+    expect(playLedger.plays).toHaveBeenCalledWith(expect.objectContaining({ from: new Date(now - 14 * 86_400_000).toISOString() }));
+  });
+
+  it('says whether marks are available', () => {
+    const { deps } = build();
+    expect(new HouseholdMediaMemoryService(deps).canMarkWatched).toBe(true);
+    expect(new HouseholdMediaMemoryService({ ...deps, markContentWatched: null }).canMarkWatched).toBe(false);
+  });
+});

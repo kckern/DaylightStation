@@ -317,6 +317,9 @@ export function createMediaRouter(config) {
     const { watched } = req.body || {};
     if (!contentId) return res.status(400).json({ error: 'contentId is required' });
     if (typeof watched !== 'boolean') return res.status(400).json({ error: 'watched must be a boolean' });
+    if (householdMediaMemory.canMarkWatched === false) {
+      return res.status(501).json({ error: 'Watched marks not configured' });
+    }
     res.json(await householdMediaMemory.markWatched(contentId, watched));
   }));
 

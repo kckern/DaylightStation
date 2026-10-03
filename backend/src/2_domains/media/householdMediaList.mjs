@@ -111,15 +111,34 @@ function allSpotsOf(record) {
     .sort((a, b) => compareTimestamps(b.lastPlayed, a.lastPlayed));
 }
 
-/** One record per content id — the newest wins when an id sits in two namespaces. */
+/**
+ * One record per content id. The newest record supplies the fields; spots are
+ * MERGED across every record of the id (newest per screen), because one item
+ * can live in two namespaces (a watchlist's and its library's) with different
+ * screens' spots in each — keeping only the newest record would drop a
+ * screen's open spot.
+ */
 function latestPerContent(records) {
-  const byId = new Map();
+  const groups = new Map();
   for (const record of records || []) {
     if (!record?.contentId) continue;
-    const prev = byId.get(record.contentId);
-    if (!prev || compareTimestamps(record.lastPlayed, prev.lastPlayed) > 0) byId.set(record.contentId, record);
+    if (!groups.has(record.contentId)) groups.set(record.contentId, []);
+    groups.get(record.contentId).push(record);
   }
-  return [...byId.values()];
+  const out = [];
+  for (const group of groups.values()) {
+    let newest = group[0];
+    for (const record of group) if (compareTimestamps(record.lastPlayed, newest.lastPlayed) > 0) newest = record;
+    if (group.length === 1) { out.push(newest); continue; }
+    const spots = {};
+    for (const record of group) {
+      for (const [deviceId, spot] of Object.entries(record.spots || {})) {
+        if (!spots[deviceId] || compareTimestamps(spot?.lastPlayed, spots[deviceId]?.lastPlayed) > 0) spots[deviceId] = spot;
+      }
+    }
+    out.push(Object.keys(spots).length ? { ...newest, spots } : newest);
+  }
+  return out;
 }
 
 function baseEntry(record) {
