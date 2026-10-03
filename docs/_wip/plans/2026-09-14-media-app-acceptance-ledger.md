@@ -1,5 +1,10 @@
 # Media redesign — acceptance ledger
 
+Task 7 (2026-10-02, branch `media/p0-task7`): the P0 manifest grows to 31 stories / 69 criteria
+(+RELY.2a/AC2, RELY.3a/AC1–AC4, RELY.5a/AC1–AC3, RELY.6a/AC1, RELY.7a/AC1+AC2+AC5, RELY.8a/AC1–AC3),
+each with exact-SHA runtime evidence (`TASK-7-OUTCOMES`). The other RELY.1a/2a/5a/6a/7a criteria keep
+their verdicts below with unit evidence noted.
+
 P0 close-out (2026-09-29): the P0 manifest — 25 stories / 54 criteria in 22 grouped
 journeys (stable core + `P0_EXTENSION_ENTRIES`, counted by `validateP0Manifest`) — has passing
 evidence on the exact production commit `757102abb`, certified **piecewise** because Plex was
@@ -30,6 +35,7 @@ Task 2 and stable-core receipt evidence below remains unchanged.
 
 | Run | Scope | Red / baseline | Green / acceptance |
 |---|---|---|---|
+| TASK-7-OUTCOMES | Task 7: one outcome store, exact Retry, Stop after Undo, local skip notice, paused restore, Start fresh | Focused Vitest REDs (42 failing before implementation, plus 3 for O1 Stop and 1 for a load with no receiver); the existing stale resume journey used a removed testid. | Exact preview of product source `41afea7fe` with journeys at `d751db570`: outcomes 2/2, resume 4/4, Start fresh 2/2, local failure 1/1, run serially. The final-SHA P0 gate result is recorded in the Task 7 report. |
 | TASK-2-EXACT-RUNTIME-603DD2E | Exact compiled Task 2 aim and remote-control journeys, including authoritative Add confirmation and queue traversal | Earlier Task 2 evidence stopped at focused tests because no owned runtime was available; the prior queue-skip run also exposed remote Previous restarting the current item instead of selecting the prior queue visit. | Controller-owned run on exact source `603dd2ebbd9f85e1faff1bd4336929c8f1d73e00`, compiled artifact `/tmp/daylight-media-preview-WbHQ4b`, passed 16/16 with no skips in 8.1m: `BASE_URL=http://127.0.0.1:41221 npx playwright test tests/live/flow/media/media-app-aim-persistence.runtime.test.mjs tests/live/flow/media/media-app-remote-controls.runtime.test.mjs --workers=1 --reporter=line`. The combined Add/Next/Previous journey observed authoritative queue growth/revision while preserving the current owner/playback, then displayed `Added Disclosure Day to Acceptance receiver` and `2nd in queue`; that exact item + screen + ordinal result accepts only `PLAY.6a/AC3`. Its Next/Previous, aim, seek, offline, and Stop evidence narrows known gaps but does not close broader any/every/surface/steering/live clauses: `PLACE.2a/AC4` and `/AC6`, `STEER.3a/AC1-4`, `STEER.4a/AC1-2`, `PLAY.6a/AC1-2`, `STEER.6a`, and `STEER.7a` remain Partial; `STEER.4a/AC3` remains Unverified. Evidence log `/tmp/daylight-media-p0-evidence/603dd2ebbd9f85e1faff1bd4336929c8f1d73e00/task2/runtime.log`. |
 | TASK-2-AIM-TRANSPORT-P0 | First-layout active aim, distinct Previous/restart-current, authoritative Add result/ordinal receipt, seek capability reasons, and stopped-queue handle | Behavioral REDs reproduced in focused Vitest: the brief suite failed 8/131, CastTargetProvider failed 1/10, LocalSessionController failed 4/73, and the Add receipt lacked an ordinal. | At the implementation checkpoint, focused tests passed 232/232 but no owned runtime was yet available, so statuses and the extension manifest remained unchanged. The later exact compiled acceptance run and its single justified promotion are recorded in `TASK-2-EXACT-RUNTIME-603DD2E` above. |
 | JOURNEY-REMOTE-CONTROLS-C21 | Actual fleet Peek Pause/Resume/±10, absolute seek, track drag and receiver playback | The preceding e63 run had failed on drag pause preservation and a stale stop receipt. The corrected final c21 journeys both passed; the evidence covers one 1440px fleet Peek surface and one virtual receiver item/queue, not all controls or viewports. | Compiled source `c21e90a0587e65799488a2b748ef1ebc75466980`, preview `44059`: Pause changed receiver state/native `paused`, paused relative ±10 in each direction and 35% absolute seek reached matching native time; a real 12% drag displayed matching elapsed time and settled at native position while remaining paused; Play ACK returned, receiver resumed, and native video advanced. Raw log `/tmp/daylight-controls-final-c21e90a-20260920-0907.log`, 2/2 journeys passed in 57.8s. Stop→queue retention/Open queue→Play same-item native resume is detailed in `JOURNEY-REMOTE-STOP-PLAY`. |
@@ -763,11 +769,11 @@ As a **Seeker**, I want every play, add, and send to confirm in the same way, so
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| RELY.1a/AC1 | Every action that changes what's playing or lined up gives a short confirmation naming the item and the screen. | Partial | `JOURNEY-ORDINARY-REMOTE-PLAY-ADD`: the aimed search Play showed “Playing on Acceptance receiver” and aimed Add showed its Added tray after receiver queue mutation. Broader controls/sizes and complete wording parity remain unverified. |
-| RELY.1a/AC2 | The same outcome confirms the same way, whichever control started it, on every device size. | Unverified | — |
-| RELY.1a/AC3 | When the result is already obvious on this device (it visibly starts playing here), the confirmation is brief and unobtrusive. | Unverified | — |
-| RELY.1a/AC4 | Confirmations don't pile up; a newer one replaces an older one of the same kind. | Unverified | — |
-| RELY.1a/AC5 | "The same outcome" includes where it happened: playing here confirms quietly, while playing on another screen confirms with that screen's name and progress (T8). | Unverified | — |
+| RELY.1a/AC1 | Every action that changes what's playing or lined up gives a short confirmation naming the item and the screen. | Partial | `JOURNEY-ORDINARY-REMOTE-PLAY-ADD` (earlier) plus Task 7: every play/add/send/queue edit/problem reports through one outcome record (`DispatchProvider`); ad-hoc `notifications.show` call sites removed. Unit/component evidence only (Task 7) for local confirmations: `useContentDispatch.outcomes.test.jsx`, `DispatchProgressTray.outcomes.test.jsx`, `QueuePanel.test.jsx`, `MediaApp.test.jsx`. |
+| RELY.1a/AC2 | The same outcome confirms the same way, whichever control started it, on every device size. | Unverified | Unit/component evidence only (Task 7): Search pick, More → Add and container ▶ record through the same `recordLocal`/dispatch path (`useContentDispatch.outcomes.test.jsx`). Size parity is Task 8. |
+| RELY.1a/AC3 | When the result is already obvious on this device (it visibly starts playing here), the confirmation is brief and unobtrusive. | Unverified | Unit/component evidence only (Task 7): local rows are quiet (`cast-tray-row--quiet`, “Playing X here”, clear after 2.5 s or the Undo window). |
+| RELY.1a/AC4 | Confirmations don't pile up; a newer one replaces an older one of the same kind. | Unverified | Unit/component evidence only (Task 7): same-kind confirmations for the same screen replace each other (`outcomeRecords.test.js`). |
+| RELY.1a/AC5 | "The same outcome" includes where it happened: playing here confirms quietly, while playing on another screen confirms with that screen's name and progress (T8). | Unverified | Unit/component evidence only (Task 7): quiet “here” rows vs named far rows with step progress (`DispatchProgressTray.outcomes.test.jsx`). |
 
 ### RELY.2a
 
@@ -775,9 +781,9 @@ As a **Big-Screen Sender**, I want to see progress while a TV turns on and loads
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| RELY.2a/AC1 | While a far screen gets ready, I see its steps in plain words ("Turning on", "Loading"). | Unverified | — |
-| RELY.2a/AC2 | Progress is visible wherever I go in the app until the outcome is known. | Unverified | — |
-| RELY.2a/AC3 | The wording fits the screen type (it doesn't say "TV" for a speaker). | Unverified | — |
+| RELY.2a/AC1 | While a far screen gets ready, I see its steps in plain words ("Turning on", "Loading"). | Unverified | Unit/component evidence only (Task 7): step wording (`castCopy.kind.test.js`). The runtime row reads “Sending Arrival to Acceptance receiver / Starting…”, but the held request never reached the wake steps, so step words are not runtime-proven. |
+| RELY.2a/AC2 | Progress is visible wherever I go in the app until the outcome is known. | Accepted | Task 7 exact-SHA runtime (`TASK-7-OUTCOMES`): product source `41afea7fe`, journeys at `d751db570`, owned preview, ordinary input, virtual Acceptance receiver: `media-app-outcomes.runtime.test.mjs` “[RELY.2a]…” holds the real load request, sees the running row on Devices, Browse and Home, then “▶ Playing on Acceptance receiver” with Steer it and the receiver's own state. P0 manifest entry. |
+| RELY.2a/AC3 | The wording fits the screen type (it doesn't say "TV" for a speaker). | Unverified | Unit/component evidence only (Task 7): speaker/screen never read “TV” (`castCopy.kind.test.js`, tray test). The fixture has only a TV-kind screen. |
 
 ### RELY.3a
 
@@ -785,10 +791,10 @@ As a **Big-Screen Sender**, I want to know it actually started, so that I can pu
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| RELY.3a/AC1 | When playback is confirmed, I see "Playing on Living Room TV" with a way to steer it. | Unverified | — |
-| RELY.3a/AC2 | If it can't be confirmed, I'm told it may not have started, with options to check (steer it) or try again. | Unverified | — |
-| RELY.3a/AC3 | An unconfirmed outcome stays visible until I dismiss it. | Unverified | — |
-| RELY.3a/AC4 | "May not have started" notices for the same screen replace each other, and clear once that screen reports playing (R37). | Unverified | — |
+| RELY.3a/AC1 | When playback is confirmed, I see "Playing on Living Room TV" with a way to steer it. | Accepted | Task 7 exact-SHA runtime (`TASK-7-OUTCOMES`): product source `41afea7fe`, journeys at `d751db570`, owned preview, ordinary input, virtual Acceptance receiver: “[RELY.3a][RELY.6a]…” ends with the confirmed row “▶ Playing on Acceptance receiver” and its Steer it, after native receiver playback. P0 manifest entry. |
+| RELY.3a/AC2 | If it can't be confirmed, I'm told it may not have started, with options to check (steer it) or try again. | Accepted | Task 7 exact-SHA runtime (`TASK-7-OUTCOMES`): product source `41afea7fe`, journeys at `d751db570`, owned preview, ordinary input, virtual Acceptance receiver: with no receiver open the start stays Sent, then (watchdog) reads “It may not have started on Acceptance receiver” with Steer it and Try again. P0 manifest entry. |
+| RELY.3a/AC3 | An unconfirmed outcome stays visible until I dismiss it. | Accepted | Task 7 exact-SHA runtime (`TASK-7-OUTCOMES`): product source `41afea7fe`, journeys at `d751db570`, owned preview, ordinary input, virtual Acceptance receiver: the unconfirmed row is still present 10 s later and only changes on Try again/screen state; problems never auto-clear (unit-pinned). P0 manifest entry. |
+| RELY.3a/AC4 | "May not have started" notices for the same screen replace each other, and clear once that screen reports playing (R37). | Accepted | Task 7 exact-SHA runtime (`TASK-7-OUTCOMES`): product source `41afea7fe`, journeys at `d751db570`, owned preview, ordinary input, virtual Acceptance receiver: after Try again the receiver reports the same item playing and the “may not have started” notice clears. Replacement of an older notice for the same screen is unit-pinned (`outcomeRecords.test.js`). P0 manifest entry. |
 
 ### RELY.4a
 
@@ -817,10 +823,10 @@ As a **Hand-Held Viewer**, I want to be told when playback fails or skips an ite
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| RELY.5a/AC1 | A failure shows a notice naming the item and screen, in plain words, even if I'm in another part of the app. | Unverified | — |
-| RELY.5a/AC2 | If an item was skipped because it failed, the notice says so and what's playing instead. | Unverified | — |
-| RELY.5a/AC3 | The handle on my playback shows a problem sign until things recover. | Unverified | — |
-| RELY.5a/AC4 | The same applies to failures on other screens I started or am steering. | Unverified | — |
+| RELY.5a/AC1 | A failure shows a notice naming the item and screen, in plain words, even if I'm in another part of the app. | Accepted | Task 7 exact-SHA runtime (`TASK-7-OUTCOMES`): product source `41afea7fe`, journeys at `d751db570`, owned preview, ordinary input, virtual Acceptance receiver: `media-app-local-failure.runtime.test.mjs` withholds Arrival's real part bytes mid-play; on the Devices tab a notice names Arrival and “this device”. P0 manifest entry. |
+| RELY.5a/AC2 | If an item was skipped because it failed, the notice says so and what's playing instead. | Accepted | Task 7 exact-SHA runtime (`TASK-7-OUTCOMES`): product source `41afea7fe`, journeys at `d751db570`, owned preview, ordinary input, virtual Acceptance receiver: the same notice says it was skipped and “Now playing Disclosure Day”; the mini player shows Disclosure Day. P0 manifest entry. |
+| RELY.5a/AC3 | The handle on my playback shows a problem sign until things recover. | Accepted | Task 7 exact-SHA runtime (`TASK-7-OUTCOMES`): product source `41afea7fe`, journeys at `d751db570`, owned preview, ordinary input, virtual Acceptance receiver: `mini-player--problem` and “Arrival was skipped” sign while the replacement loads, gone once the replacement actually plays; the notice stays until dismissed. P0 manifest entry. |
+| RELY.5a/AC4 | The same applies to failures on other screens I started or am steering. | Unverified | Far-screen failures are reported by the outcome tray (unit); failures that a steered screen raises on its own are not observed from the sender yet. |
 
 ### RELY.6a
 
@@ -828,9 +834,9 @@ As a **Fixer**, I want to retry exactly the attempt that failed, so that fixing 
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| RELY.6a/AC1 | Every failure notice has its own retry, which retries that attempt (same item, same screen), no other. | Unverified | — |
-| RELY.6a/AC2 | Next to retry, I can choose another screen for that attempt. | Unverified | — |
-| RELY.6a/AC3 | Several failures are each shown separately with their own retry. | Unverified | — |
+| RELY.6a/AC1 | Every failure notice has its own retry, which retries that attempt (same item, same screen), no other. | Accepted | Task 7 exact-SHA runtime (`TASK-7-OUTCOMES`): product source `41afea7fe`, journeys at `d751db570`, owned preview, ordinary input, virtual Acceptance receiver: Try again on the unconfirmed attempt issues exactly one new load for the same item and screen (`deferredRetry=0`) and the receiver plays it; fan-out sibling exclusion and Not sent never replayed are unit-pinned (`DispatchProvider.outcomes.test.jsx`). P0 manifest entry. |
+| RELY.6a/AC2 | Next to retry, I can choose another screen for that attempt. | Unverified | Unit/component evidence only (Task 7): “Another screen…” sends that attempt to the chosen screen only (`DispatchProvider.outcomes.test.jsx`, tray test). The ordinary fixture has a single screen. |
+| RELY.6a/AC3 | Several failures are each shown separately with their own retry. | Unverified | Unit/component evidence only (Task 7): several failures render separately with their own Retry (`DispatchProgressTray.outcomes.test.jsx`). |
 
 ### RELY.7a
 
@@ -838,11 +844,11 @@ As a **Hand-Held Viewer**, I want everything to survive a reload or a network hi
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| RELY.7a/AC1 | After a reload or crash, what was playing, its position, its queue, and repeat and shuffle are as they were, with playback paused rather than suddenly playing aloud (R38). | Unverified | — |
-| RELY.7a/AC2 | My aim is restored too, unless the idle time has passed (R7). | Unverified | — |
-| RELY.7a/AC3 | Every screen keeps its spot and queue through a power cut (R38). | Unverified | — |
-| RELY.7a/AC4 | A brief network hiccup doesn't reload the app or interrupt what I'm doing; I see a quiet "reconnecting" note if it lasts. | Unverified | — |
-| RELY.7a/AC5 | The part of the app I was in is restored. | Unverified | — |
+| RELY.7a/AC1 | After a reload or crash, what was playing, its position, its queue, and repeat and shuffle are as they were, with playback paused rather than suddenly playing aloud (R38). | Accepted | Task 7 exact-SHA runtime (`TASK-7-OUTCOMES`): product source `41afea7fe`, journeys at `d751db570`, owned preview, ordinary input, virtual Acceptance receiver: `media-app-resume.runtime.test.mjs` “[RELY.7a] a reload restores…”: reload while Arrival plays restores title, spot (within the 5 s cadence), 2-item queue, shuffle, Repeat all — with no media element and no playback/media request until Play, then resumes at the spot. Malformed/older saves are discarded (same file). P0 manifest entry. |
+| RELY.7a/AC2 | My aim is restored too, unless the idle time has passed (R7). | Accepted | The resume journey above shows the aim restored after reload; the expiry half is the accepted closed-app journey (`media-app-aim-journey.runtime.test.mjs` “a closed app restores”), now also listed for this criterion in the P0 manifest. |
+| RELY.7a/AC3 | Every screen keeps its spot and queue through a power cut (R38). | Unverified | P1 (power-cut survival per screen). |
+| RELY.7a/AC4 | A brief network hiccup doesn't reload the app or interrupt what I'm doing; I see a quiet "reconnecting" note if it lasts. | Unverified | Unit/component evidence only (Task 7): `ReconnectingNote.test.jsx` (silent under 3 s, quiet note after). The app already suppresses WS auto-reload. No runtime network-loss journey yet. |
+| RELY.7a/AC5 | The part of the app I was in is restored. | Accepted | Task 7 exact-SHA runtime (`TASK-7-OUTCOMES`): product source `41afea7fe`, journeys at `d751db570`, owned preview, ordinary input, virtual Acceptance receiver: the same reload returns to Now Playing with the identical URL view. P0 manifest entry. |
 
 ### RELY.8a
 
@@ -850,9 +856,9 @@ As a **Fixer**, I want to start fresh knowing what will be cleared, so that I ge
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| RELY.8a/AC1 | "Start fresh" is in this device's settings, reachable in one step from anywhere (R46). | Unverified | — |
-| RELY.8a/AC2 | It lists exactly what will be cleared (what's playing, queue, position, aim) and lets me keep some of it. | Unverified | — |
-| RELY.8a/AC3 | It asks for confirmation, then everything reads as new. | Unverified | — |
+| RELY.8a/AC1 | "Start fresh" is in this device's settings, reachable in one step from anywhere (R46). | Accepted | Task 7 exact-SHA runtime (`TASK-7-OUTCOMES`): product source `41afea7fe`, journeys at `d751db570`, owned preview, ordinary input, virtual Acceptance receiver: `media-app-reset-confirm.runtime.test.mjs` “[RELY.8a]…” opens Start fresh from the Devices area via the dock's settings gear. P0 manifest entry. |
+| RELY.8a/AC2 | It lists exactly what will be cleared (what's playing, queue, position, aim) and lets me keep some of it. | Accepted | Task 7 exact-SHA runtime (`TASK-7-OUTCOMES`): product source `41afea7fe`, journeys at `d751db570`, owned preview, ordinary input, virtual Acceptance receiver: the dialog lists “What's playing: Arrival”, “Queue: 2 more items”, “Spot: 2:05 into Arrival”, “Aim: Acceptance receiver …”, all ticked; unticking queue and aim keeps them (“2 items ready”, aim unchanged). P0 manifest entry. |
+| RELY.8a/AC3 | It asks for confirmation, then everything reads as new. | Accepted | Task 7 exact-SHA runtime (`TASK-7-OUTCOMES`): product source `41afea7fe`, journeys at `d751db570`, owned preview, ordinary input, virtual Acceptance receiver: Cancel changes nothing; confirming everything leaves no session or aim, and a reload stays fresh. P0 manifest entry. |
 
 ### RELY.9a
 

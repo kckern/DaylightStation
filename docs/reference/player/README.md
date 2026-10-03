@@ -124,6 +124,11 @@ actuator. Its budget model:
 - **Session cap 5** (`RECOVERY_MAX_ATTEMPTS`) — total recovery attempts across
   all actors for one playback session; hitting it drives the `exhausted`
   overlay.
+  On a single item (not a queue) the exhausted Player calls the owner's
+  `onError({ kind: 'resilience-exhausted', reason, attempts })` *before*
+  `clear()`, so an owner that listens (Media's `PlayerBridge`) can report a
+  failure and skip instead of mistaking the clear for a natural end. Owners
+  that pass no `onError` see no change.
 - **Cooldown with backoff** — 4s × 3ⁿ between attempts, anchored at the first
   retry (attempt 2 waits 4s, attempt 3 waits 12s, …). Denied callers get a
   `waitMs` they can reschedule against.

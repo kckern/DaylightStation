@@ -1,9 +1,9 @@
 # Media Remaining P0 on Stable Core Implementation Plan
 
-> **Status (2026-09-29): closed.** Tasks 1–6 are in production (Task 6 at `757102abb`, repaired under
-> `docs/superpowers/plans/2026-09-28-media-task6-salvage.md`). Tasks 7–8 are **deferred, not scheduled**:
-> their briefs stay in `.superpowers/sdd/2026-09-21-media-remaining-p0-on-stable-core/` (task-7-brief.md;
-> Task 8 is the section below). Nothing in them is claimed as done.
+> **Status (2026-10-02):** Tasks 1–6 are in production (Task 6 at `757102abb`, repaired under
+> `docs/superpowers/plans/2026-09-28-media-task6-salvage.md`). Task 7 was scheduled and implemented on
+> branch `media/p0-task7` (P0 manifest 31 stories / 69 criteria; see the acceptance ledger for exactly
+> which criteria were promoted); merge/deploy is the orchestrator's. Task 8 is not started.
 
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
