@@ -1,3 +1,5 @@
+import { normalizeSpotDeviceId, recordSpot } from '#domains/content/services/mediaSpots.mjs';
+
 /**
  * Record a playback heartbeat and coordinate its application-level side effects.
  *
@@ -43,6 +45,9 @@ export class RecordPlaybackProgress {
     // `naturalEnd`/`status` distinguish finishing from merely stopping — only a
     // natural end may be reported as watched.
     deviceId = null, naturalEnd = false, status = null,
+    // `spotDeviceId` keys this screen's own spot (per-screen progress,
+    // RQ-PLAY-09). Absent or unusable -> the legacy single-playhead write only.
+    spotDeviceId = null,
   }) {
     let progressNamespace = type;
     let itemMetadata = null;
@@ -82,6 +87,18 @@ export class RecordPlaybackProgress {
       : 0;
     const completedAt = existingState?.completedAt
       || (statePercent >= 90 ? this.nowTimestamp() : null);
+    const spotDevice = normalizeSpotDeviceId(spotDeviceId);
+    const lastPlayed = this.nowTimestamp();
+    const spotFields = spotDevice
+      ? {
+        spots: recordSpot(existingState?.spots, spotDevice, {
+          playhead: normalizedSeconds,
+          duration: estimatedDuration,
+          at: lastPlayed,
+        }),
+        lastDevice: spotDevice,
+      }
+      : {};
     const newState = this.createMediaProgress({
       contentId: compoundId,
       playhead: normalizedSeconds,
@@ -89,9 +106,10 @@ export class RecordPlaybackProgress {
       percent: statePercent,
       playCount: (existingState?.playCount ?? 0)
         + (!existingState || normalizedSeconds < (existingState.playhead || 0) ? 1 : 0),
-      lastPlayed: this.nowTimestamp(),
+      lastPlayed,
       watchTime: newWatchTime > 0 ? Number(newWatchTime.toFixed(3)) : 0,
       completedAt,
+      ...spotFields,
     });
 
     if (this.mediaProgressMemory) {
@@ -136,6 +154,7 @@ export class RecordPlaybackProgress {
       percent: normalizedPercent,
       playhead: normalizedSeconds,
       storagePath: progressNamespace,
+      spotDevice,
     });
 
     if (this.playbackPublications?.progressRecorded) {
@@ -205,6 +224,7 @@ export class RecordPlaybackProgress {
         playCount: newState.playCount,
         lastPlayed: newState.lastPlayed,
         watchTime: newState.watchTime,
+        ...(spotDevice ? { deviceId: spotDevice } : {}),
         userProgress: userProgressPublic,
       },
     };
