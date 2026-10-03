@@ -35,6 +35,9 @@ export const LOCAL_LINGER_MS = 2_500;
 // broadcast), so a row still unresolved past that will never get one.
 // Generous, not 3 seconds.
 export const SENT_RESOLUTION_TIMEOUT_MS = 100_000;
+// A play that continued from a saved spot keeps its Start over reachable long
+// enough to notice the position once the picture is up (PLAY.4a).
+export const START_OVER_LINGER_MS = 15_000;
 
 const PROBLEM_PHASES = new Set(['failed', 'not-sent', 'skipped', 'unconfirmed', 'waiting', 'library-unavailable']);
 const RETRYABLE_PHASES = new Set(['failed', 'not-sent', 'skipped', 'unconfirmed', 'waiting', 'library-unavailable']);
@@ -82,7 +85,7 @@ const HOUSEHOLD_COPY = {
   hide: { done: t => `Removed ${t} from the household list`, failed: t => `Couldn't remove ${t} from the household list` },
   watched: { done: t => `Marked ${t} watched`, failed: t => `Couldn't mark ${t} watched` },
   unwatched: { done: t => `Marked ${t} unwatched`, failed: t => `Couldn't mark ${t} unwatched` },
-  moveHere: { done: t => `Moved ${t} here`, failed: t => `Couldn't move ${t} here` },
+  moveHere: { running: t => `Moving ${t} here…`, done: t => `Moved ${t} here`, failed: t => `Couldn't move ${t} here` },
   startOver: { done: t => `Started ${t} over`, failed: t => `Couldn't start ${t} over` },
 };
 export const HOUSEHOLD_KINDS = new Set(Object.keys(HOUSEHOLD_COPY));
@@ -102,9 +105,9 @@ function localCopy(d, phase, name) {
   const at = d.distance === 'here' ? 'here' : `on ${d.targetName ?? name}`;
   if (HOUSEHOLD_COPY[d.kind]) {
     const copy = HOUSEHOLD_COPY[d.kind];
-    return phase === 'failed'
-      ? { primary: copy.failed(title), secondary: d.reason ?? null }
-      : { primary: copy.done(title), secondary: null };
+    if (phase === 'failed') return { primary: copy.failed(title), secondary: d.reason ?? null };
+    if (phase === 'running' && copy.running) return { primary: copy.running(title), secondary: null };
+    return { primary: copy.done(title), secondary: null };
   }
   if (d.kind === 'playback') {
     // RELY.5a: name the item, this device, and what plays instead.
@@ -300,7 +303,7 @@ function TrayRow({ d, retry, removeDispatch, sendElsewhere, recordLocal, stopAtt
     } else if (!isLocal && phase === 'confirmed') ms = Math.max(CONFIRMED_LINGER_MS, d.undo ? d.undo.expiresAt - Date.now() : 0);
     else if (!isLocal && phase === 'sent') ms = SENT_RESOLUTION_TIMEOUT_MS;
     // Start over (PLAY.4a) must stay reachable long enough to be tapped.
-    if (ms != null && d.startOver === true && phase !== 'sent') ms = Math.max(ms, CONFIRMED_LINGER_MS);
+    if (ms != null && d.startOver === true && phase !== 'sent') ms = Math.max(ms, START_OVER_LINGER_MS);
     if (ms == null) return undefined;
     const t = setTimeout(() => removeDispatch(attemptId), ms);
     return () => clearTimeout(t);

@@ -3,7 +3,7 @@
 // continued from a saved spot offers Start over on its confirmation.
 import React from 'react';
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 const { push, retry, removeDispatch, sendElsewhere, stopAttempt, skipLocal, startOver, recordLocal } = vi.hoisted(() => ({
   push: vi.fn(), retry: vi.fn(), removeDispatch: vi.fn(), sendElsewhere: vi.fn(), stopAttempt: vi.fn(),
@@ -53,6 +53,15 @@ describe('household outcomes in the tray', () => {
     expect(screen.getByTestId('dispatch-row-k')).toHaveTextContent(text);
   });
 
+  it('a move in progress says it is moving, then that it moved', () => {
+    outcomes.set('m', local({ attemptId: 'm', kind: 'moveHere', phase: 'running', item: { contentId: 'plex:9', title: 'Arrival' } }));
+    const { rerender } = renderTray();
+    expect(screen.getByTestId('dispatch-row-m')).toHaveTextContent('Moving Arrival here…');
+    outcomes.set('m', local({ attemptId: 'm', kind: 'moveHere', phase: 'confirmed', item: { contentId: 'plex:9', title: 'Arrival' } }));
+    rerender(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    expect(screen.getByTestId('dispatch-row-m')).toHaveTextContent('Moved Arrival here');
+  });
+
   it('says plainly when a household change failed', () => {
     outcomes.set('f', local({ attemptId: 'f', kind: 'favourite', phase: 'failed', reason: 'HTTP 500', item: { contentId: 'plex:9', title: 'Bluey' } }));
     renderTray();
@@ -77,6 +86,15 @@ describe('household outcomes in the tray', () => {
     renderTray();
     fireEvent.click(screen.getByTestId('dispatch-start-over-fp'));
     expect(startOver).toHaveBeenCalledWith('fp');
+  });
+
+  it('keeps Start over reachable for 15 s after the confirmation', () => {
+    outcomes.set('s', local({ attemptId: 's', kind: 'play', phase: 'confirmed', item: { contentId: 'plex:5', title: 'Arrival' }, startOver: true, resumedFrom: 600 }));
+    renderTray();
+    act(() => { vi.advanceTimersByTime(14_000); });
+    expect(removeDispatch).not.toHaveBeenCalledWith('s');
+    act(() => { vi.advanceTimersByTime(2_000); });
+    expect(removeDispatch).toHaveBeenCalledWith('s');
   });
 
   it('no Start over when nothing was resumed', () => {

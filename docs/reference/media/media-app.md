@@ -148,7 +148,8 @@ anyone can remove one. Each of these changes reports through the one outcome
 system, never a separate toast.
 
 **Saved spots.** Each screen keeps its own place. Playing an item with one saved
-spot continues from it and the confirmation offers **Start over**; when screens
+spot continues from it and the confirmation offers **Start over** (for 15
+seconds; it restarts the item from the beginning on that screen); when screens
 hold different spots the person chooses ("1 h 20 m on Living Room TV", "12 m on
 Kid's tablet", or From the beginning); with no spot it simply starts. A chosen
 spot plays from exactly there on whichever screen is aimed at. Details show how
