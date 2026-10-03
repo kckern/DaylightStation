@@ -109,4 +109,29 @@ describe('media ordinary device fixture', () => {
       .expect(403);
     await fixture.stop();
   });
+
+  it.each([
+    ['put', '/session/add-only', { enabled: true }],
+    ['put', '/session/end-of-queue', { mode: 'similar' }],
+    ['post', '/session/sleep-timer', { minutes: 1 }],
+    ['post', '/session/put-back', {}],
+    ['post', '/session/countdown/cancel', {}],
+  ])('routes virtual session control %s %s and blocks it for physical devices', async (method, path, body) => {
+    const fixture = createMediaOrdinaryDeviceFixture({ upstream: 'http://127.0.0.1:3111' });
+    fixture.eventBus.subscribe('screen:acceptance-media', command => {
+      fixture.eventBus.broadcast('device-ack:acceptance-media', { deviceId: 'acceptance-media', commandId: command.commandId, ok: true });
+    });
+    await request(fixture.app)[method](`/acceptance-media${path}`).send({ ...body, commandId: `virtual-${path}` }).expect(200);
+    await request(fixture.app)[method](`/livingroom-tv${path}`).send({ ...body, commandId: 'physical' })
+      .expect(403, { ok: false, error: 'ordinary acceptance blocks physical device routes' });
+    await fixture.stop();
+  });
+
+  it('serves the virtual start status from the wake-progress stream', async () => {
+    const fixture = createMediaOrdinaryDeviceFixture({ upstream: 'http://127.0.0.1:3111' });
+    fixture.eventBus.broadcast('homeline:acceptance-media', { type: 'wake-progress', dispatchId: 'd1', step: 'load', status: 'done' });
+    const response = await request(fixture.app).get('/acceptance-media/start-status').expect(200);
+    expect(response.body).toMatchObject({ ok: true, status: { phase: 'delivered', dispatchId: 'd1' } });
+    await fixture.stop();
+  });
 });

@@ -8,33 +8,42 @@ export class DeviceSessionApiService {
   constructor({ sessionControl = null, logger = console } = {}) { this.#sessions = sessionControl; this.#logger = logger; }
   configured() { return !!this.#sessions; }
   snapshot(deviceId) { return this.#sessions.getSnapshot(deviceId); }
-  transport(deviceId, { action, value, commandId }) {
-    this.#logger.info?.('device.router.session.transport', { deviceId, action, commandId });
+  transport(deviceId, { action, value, commandId, origin }) {
+    this.#logger.info?.('device.router.session.transport', { deviceId, action, commandId, originKind: origin?.kind ?? null });
     if (typeof this.#sessions.transport === 'function') {
-      return this.#sessions.transport(deviceId, { action, value, commandId });
+      return this.#sessions.transport(deviceId, { action, value, commandId, origin });
     }
     return this.#sessions.sendCommand({ targetDevice: deviceId, command: 'transport', commandId,
-      params: { action, ...(value !== undefined ? { value } : {}) } });
+      params: { action, ...(value !== undefined ? { value } : {}) }, ...(origin ? { origin } : {}) });
   }
-  queue(deviceId, commandId, params) {
-    this.#logger.info?.('device.router.session.queue', { deviceId, op: params.op, commandId });
-    if (typeof this.#sessions.queue === 'function') return this.#sessions.queue(deviceId, commandId, params);
-    return this.#sessions.sendCommand({ targetDevice: deviceId, command: 'queue', commandId, params });
+  queue(deviceId, commandId, params, origin) {
+    this.#logger.info?.('device.router.session.queue', { deviceId, op: params.op, commandId, originKind: origin?.kind ?? null });
+    if (typeof this.#sessions.queue === 'function') return this.#sessions.queue(deviceId, commandId, params, origin);
+    return this.#sessions.sendCommand({ targetDevice: deviceId, command: 'queue', commandId, params, ...(origin ? { origin } : {}) });
   }
-  config(deviceId, { setting, value, commandId }) {
+  config(deviceId, { setting, value, commandId, origin }) {
     const field = setting === 'shuffle' ? 'enabled'
       : setting === 'repeat' ? 'mode'
         : setting === 'volume' ? 'level' : setting;
     this.#logger.info?.(`device.router.session.${setting}`, { deviceId, [field]: value, commandId });
     if (typeof this.#sessions.config === 'function') {
-      return this.#sessions.config(deviceId, { setting, value, commandId });
+      return this.#sessions.config(deviceId, { setting, value, commandId, origin });
     }
     return this.#sessions.sendCommand({ targetDevice: deviceId, command: 'config', commandId,
-      params: { setting, value } });
+      params: { setting, value }, ...(origin ? { origin } : {}) });
   }
-  claim(deviceId, commandId) {
+  /** Screen session actions: sleep timer, resume-sleep, put-back, countdown (tech doc §6.2.6). */
+  session(deviceId, { action, params = {}, commandId, origin }) {
+    this.#logger.info?.('device.router.session.action', { deviceId, action, commandId, originKind: origin?.kind ?? null });
+    if (typeof this.#sessions.session === 'function') {
+      return this.#sessions.session(deviceId, { action, params, commandId, origin });
+    }
+    return this.#sessions.sendCommand({ targetDevice: deviceId, command: 'session', commandId,
+      params: { action, ...params }, ...(origin ? { origin } : {}) });
+  }
+  claim(deviceId, commandId, origin) {
     this.#logger.info?.('device.router.session.claim', { deviceId, commandId });
-    return this.#sessions.claim(deviceId, { commandId });
+    return this.#sessions.claim(deviceId, { commandId, ...(origin ? { origin } : {}) });
   }
   handoff(deviceId, request) {
     const { commandId, params } = request ?? {};

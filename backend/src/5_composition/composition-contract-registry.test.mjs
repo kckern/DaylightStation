@@ -24,6 +24,8 @@ import { INSTALLED_STATE_GATES_POLICY } from './modules/installedStateGatesPolic
 import { YamlStateGatesPolicySource } from '#adapters/state-gates/index.mjs';
 import { createLibbyRuntime } from './modules/libby.mjs';
 import { LibbyStreamGateway } from '#adapters/content/media/libby/LibbyStreamGateway.mjs';
+import { WebSocketEventBus } from '#adapters/eventbus/WebSocketEventBus.mjs';
+import { createDeviceStartStatusService, stopDeviceStartStatusService } from './modules/deviceStartStatus.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -466,6 +468,28 @@ const contracts = [
         schoolArtifactService: expect.any(Object),
         schoolApiSessions: expect.any(Object),
       });
+    },
+  },
+  {
+    id: 'devices.start-status-reaches-every-house-view',
+    async verify() {
+      // RQ-HOUSE-04: WakeAndLoad progress on homeline:<id> must become a
+      // device-start:<id> status that a LATE subscriber still receives.
+      stopDeviceStartStatusService();
+      const eventBus = new WebSocketEventBus({ logger: logger() });
+      eventBus._testSetServerAttached();
+      const { startStatusService } = createDeviceStartStatusService({ eventBus, logger: logger() });
+      try {
+        eventBus.broadcast('homeline:tv', { type: 'wake-progress', dispatchId: 'd1', step: 'power', status: 'failed', error: 'TV did not turn on' });
+        expect(startStatusService.get('tv')).toMatchObject({ phase: 'failed', error: 'TV did not turn on' });
+        const ws = { readyState: 1, OPEN: 1, send: vi.fn() };
+        eventBus._testSetClientPool(new Map([['late', { ws, meta: { subscriptions: new Set() } }]]));
+        eventBus.subscribeClient('late', ['*']);
+        const replayed = ws.send.mock.calls.map(([raw]) => JSON.parse(raw)).find((m) => m.topic === 'device-start:tv');
+        expect(replayed).toMatchObject({ phase: 'failed', lastFailure: { error: 'TV did not turn on' } });
+      } finally {
+        stopDeviceStartStatusService();
+      }
     },
   },
 ];
