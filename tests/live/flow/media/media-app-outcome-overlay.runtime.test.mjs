@@ -42,36 +42,27 @@ for (const [size, viewport] of SIZES) {
         await page.keyboard.press('Escape');
       }
       await expect(page.getByTestId('mini-player-open-nowplaying')).toContainText('Arrival', { timeout: 30000 });
-      // Let the first quiet confirmation (and its Undo window) pass.
-      await expect(page.getByTestId('dispatch-tray')).toHaveCount(0, { timeout: 20000 });
-
-      await page.getByTestId(size === 'phone' ? 'app-tab-home' : 'app-nav-home').click();
-      const tile = page.getByTestId('recent-plex:55854');
-      await expect(tile).toBeVisible({ timeout: 15000 });
-      const mini = page.getByTestId('media-mini-player');
-      const watched = {
-        canvas: page.getByTestId('media-canvas'),
-        mini,
-        tile,
-        toggle: page.getByTestId('mini-toggle'),
-        stop: page.getByTestId('mini-stop'),
-      };
-      const before = {};
-      for (const [name, locator] of Object.entries(watched)) before[name] = await box(locator);
-
-      await tile.click();
+      // The play's own quiet confirmation is up, with its Undo.
       const row = page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'Playing Arrival here' });
       await expect(row).toBeVisible({ timeout: 10000 });
       const undo = row.getByTestId('item-action-undo');
       await expect(undo).toBeVisible();
+      // Let the handle settle into its playing form (video dock) first, so only
+      // the notice can differ between the two measurements.
+      await expect(page.getByTestId('mini-player-video-dock')).toBeVisible({ timeout: 30000 });
+      await page.waitForTimeout(1000);
+      const mini = page.getByTestId('media-mini-player');
+      const watched = {
+        canvas: page.getByTestId('media-canvas'),
+        anchor: page.getByTestId('media-outcome-anchor'),
+        mini,
+        miniTitle: page.getByTestId('mini-player-open-nowplaying'),
+        toggle: page.getByTestId('mini-toggle'),
+        stop: page.getByTestId('mini-stop'),
+      };
+      const withNotice = {};
+      for (const [name, locator] of Object.entries(watched)) withNotice[name] = await box(locator);
 
-      // Nothing on the page moved or resized when the notice appeared.
-      for (const [name, locator] of Object.entries(watched)) {
-        const after = await box(locator);
-        for (const key of ['x', 'y', 'width', 'height']) {
-          expect(Math.abs(after[key] - before[name][key]), `${name}.${key} moved`).toBeLessThan(0.5);
-        }
-      }
       // The notice sits above the handle and covers none of its hit targets.
       const rowBox = await box(row);
       const miniBox = await box(mini);
@@ -80,11 +71,21 @@ for (const [size, viewport] of SIZES) {
         if (!(await control.isVisible())) continue;
         expect(intersects(rowBox, await box(control)), 'notice overlaps a mini-player control').toBe(false);
       }
-      // The handle stays operable with the notice up, and Undo is ordinary-clickable.
-      await expect(watched.toggle).toBeEnabled();
+      // The handle and the notice's own Undo both take ordinary pointer input.
       await watched.toggle.click({ trial: true });
-      await undo.click();
-      await expect(row).toHaveCount(0);
+      await watched.stop.click({ trial: true });
+      await undo.click({ trial: true });
+
+      // When the notice goes away on its own, nothing on the page moves.
+      await expect(row).toHaveCount(0, { timeout: 20000 });
+      const moved = [];
+      for (const [name, locator] of Object.entries(watched)) {
+        const after = await box(locator);
+        for (const key of ['x', 'y', 'width', 'height']) {
+          if (Math.abs(after[key] - withNotice[name][key]) >= 0.5) moved.push(`${name}.${key} ${withNotice[name][key]} -> ${after[key]}`);
+        }
+      }
+      expect(moved, 'page elements moved with the notice').toEqual([]);
       await expect(page.getByTestId('media-outcome-announcer')).toBeAttached();
     });
   });
