@@ -6,7 +6,7 @@ const NOW = Date.parse('2026-10-03T14:30:00.000Z'); // 07:30 local in the fixtur
 const local = (day, time) => `2026-10-${String(day).padStart(2, '0')} ${time}`;
 const iso = (day) => `2026-10-${String(day).padStart(2, '0')}T14:00:00.000Z`;
 
-function build({ rows = [], favourites = [], carry = [], nowPlaying = [], removed = [], fresh = [] } = {}) {
+function build({ rows = [], favourites = [], carry = [], nowPlaying = [], removed = [], fresh = [], maxScreens } = {}) {
   let now = NOW;
   const memory = {
     listFavourites: vi.fn(async () => ({ items: favourites })),
@@ -24,6 +24,7 @@ function build({ rows = [], favourites = [], carry = [], nowPlaying = [], remove
     nowLocal: () => '2026-10-03 07:30:00',
     clock: { now: () => now },
     logger: { info: vi.fn(), warn: vi.fn() },
+    ...(maxScreens ? { maxScreens } : {}),
   });
   return { service, memory, recentAdditions, advance: (ms) => { now += ms; } };
 }
@@ -74,6 +75,26 @@ describe('MediaSuggestionsService', () => {
     advance(5 * 60_000 + 1);
     await service.suggest({ deviceId: 'fleet:livingroom-tv' });
     expect(memory.carryOn).toHaveBeenCalledTimes(2);
+  });
+
+  it('household-wide parts are built once per household; only time of day is per screen', async () => {
+    const { service, memory, recentAdditions } = build({ rows: blueyRows('fleet:livingroom-tv') });
+    await service.suggest({ deviceId: 'fleet:livingroom-tv' });
+    await service.suggest({ deviceId: 'fleet:office-tv' });
+    await service.suggest({ deviceId: 'browser:a' });
+    expect(memory.carryOn).toHaveBeenCalledTimes(1);
+    expect(recentAdditions.list).toHaveBeenCalledTimes(1);
+  });
+
+  it('the per-screen cache is capped', async () => {
+    const { service } = build({ maxScreens: 2 });
+    for (const id of ['browser:a', 'browser:b', 'browser:c', 'browser:d']) await service.suggest({ deviceId: id });
+    expect(service.cachedScreens).toBe(2);
+  });
+
+  it('refuses a device id that is not a screen id', async () => {
+    const { service } = build();
+    await expect(service.suggest({ deviceId: 'nope' })).rejects.toMatchObject({ code: 'INVALID_SCREEN_ID' });
   });
 
   it('a household with nothing yet → { rows: [], empty: true }', async () => {
