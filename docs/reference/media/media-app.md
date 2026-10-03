@@ -93,6 +93,46 @@ keepable, and changes nothing until confirmed. The spot can be kept only with
 what's playing. Clearing everything starts a new session. Other screens are
 never touched.
 
+## Subtitles, Show briefly, and music behind a slideshow
+
+These live in the one set of playback controls, so they work the same for
+playback on this device and for any screen through its Remote
+(contracts: technical doc §4.11 and §6.7).
+
+**Subtitles and audio language (STEER.12a).** Under the transport, a
+**Subtitles** button opens a menu of exactly the subtitles the item has, each
+by its own name ("English [SDH]", "European Spanish"), plus **Off**; an
+**Audio** button appears only when the item has more than one audio track.
+The list fits the screen and scrolls. Choosing one restarts the stream at the
+same spot with the subtitle drawn into the picture (Plex), or switches the
+track in place (streams that carry their own tracks). The choice is
+remembered for the show, on that device or screen: the next episode starts
+with it (its own matching stream), and **Off** is remembered too. Players
+nobody steers from here — the garage display, the piano tablet, a school
+lesson — are untouched.
+
+**Show briefly (PLAY.8a, PLAY.8b).** An item's detail page has **Show
+briefly on…**: pick a screen and the item plays OVER what is on it. The
+programme pauses underneath; a bar on the screen says what is showing and
+where it came from ("Keepy Uppy · from Dad's phone") and when the programme
+comes back. Close it on the screen (Close or Back), from the screen's Remote
+(the controls show "Showing …" with **Close**), or let it finish: the
+programme returns at its spot, with its queue, playing if it was playing.
+Routines use the same thing: a routine that starts a camera on a screen
+(`play=camera:<id>`) shows it briefly by default — 30 seconds, then back —
+unless the routine says `brief=0`, which makes the camera take the screen.
+Anything else that starts on the screen meanwhile wins, and nothing comes
+back.
+
+**Music behind a slideshow (PLAY.9a).** While a photo slideshow plays,
+**Add music behind** opens a music search; choose a song, album or playlist
+and it plays under the photos. The music has its own row ("Music behind ·
+Faith" with play/pause, next and stop), so skipping a photo never skips a
+song and pausing the song never stops the photos. On a screen a small plaque
+shows the song. Pressing **Stop** on the slideshow asks **Keep the music
+playing?** — **Keep music** stops only the photos; **Stop music too** stops
+both; **Cancel** stops nothing.
+
 ## Browser identity and house presence
 
 Each browser is a first-class named screen with one persisted identity:
