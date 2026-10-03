@@ -51,7 +51,7 @@ describe('session persistence (power cut, RQ-RELY-08)', () => {
   });
 
   it('round-trips and expires the snapshot after a day but keeps the modes', () => {
-    savePersistedSession('tv', playing, { addOnly: true }, Date.parse('2026-10-01T00:00:00Z'));
+    savePersistedSession('tv', playing, { addOnly: true }, { now: Date.parse('2026-10-01T00:00:00Z') });
     expect(loadPersistedSession('tv', Date.parse('2026-10-01T01:00:00Z')).snapshot).toMatchObject({ position: 77 });
     const old = loadPersistedSession('tv', Date.parse('2026-10-03T00:00:00Z'));
     expect(old.snapshot).toBeNull();
@@ -68,8 +68,8 @@ describe('ScreenSessionControlsHost', () => {
       getActionBus().emit('media:restore-snapshot-result', { requestId: p.requestId, ok: true });
     });
     const { controls } = mount(makeSource(idle));
-    expect(controls.toPublished()).toMatchObject({ addOnly: true, endOfQueue: 'repeat' });
     await act(async () => { vi.advanceTimersByTime(POWER_RESTORE_DELAY_MS + 10); });
+    expect(controls.toPublished()).toMatchObject({ addOnly: true, endOfQueue: 'repeat' });
     expect(restores).toHaveLength(1);
     expect(restores[0]).toMatchObject({ autoplay: false, reason: 'power-restore', snapshot: { state: 'paused', position: 77 } });
   });

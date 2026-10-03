@@ -12,7 +12,10 @@ import { getPlayerQueueOpRegistry } from '../../modules/Player/lib/queueOpRegist
 import { setNaturalEndPolicy } from '../../modules/Player/lib/naturalEndPolicy.js';
 import { getScreenItemActions } from '../actions/screenItemActions.js';
 import { createContinuationResolver } from './continuationResolver.js';
-import { loadPersistedSession, savePersistedSession, POWER_RESTORE_DELAY_MS } from './sessionPersistence.js';
+import {
+  loadPersistedSession, savePersistedSession, updatePersistedSpot, clearPersistedSession, POWER_RESTORE_DELAY_MS,
+} from './sessionPersistence.js';
+import { parseAutoplayParams, AUTOPLAY_ACTIONS } from '../../lib/parseAutoplayParams.js';
 import getLogger from '../../lib/logging/Logger.js';
 import './ScreenSessionControls.css';
 
@@ -119,16 +122,37 @@ export function ScreenSessionControlsHost({ controls, source }) {
   useEffect(() => {
     if (!controls || !source || !ownerId) return undefined;
     const saved = loadPersistedSession(ownerId);
-    if (saved?.modes) controls.hydrate(saved.modes);
+    // Anything that starts playback here after mount wins over yesterday's
+    // session (B2): a URL autoplay, a dispatched load, local input.
+    const urlAutoplay = typeof window !== 'undefined'
+      && !!parseAutoplayParams(window.location?.search ?? '', AUTOPLAY_ACTIONS);
+    let startedSinceMount = null;
+    const bus = getActionBus();
+    const startWatch = ['media:play', 'media:queue', 'media:queue-op', 'media:adopt-snapshot', 'media:handoff']
+      .map((event) => bus.subscribe(event, () => { startedSinceMount ??= event; }));
 
+    // A restored session that has not been resumed keeps its original save
+    // time and is never offered again (B3).
+    let restoredMark = null;
     let lastWrite = 0;
     let pending = null;
+    const writeFull = () => {
+      lastWrite = Date.now();
+      pending = null;
+      const snapshot = source.getBareSnapshot?.();
+      if (restoredMark && snapshot?.state === 'playing') {
+        logger().info('power-restore.resumed', { ownerId });
+        restoredMark = null;
+      }
+      const outcome = savePersistedSession(ownerId, snapshot, controls.persistable(), restoredMark
+        ? { restored: true, savedAt: restoredMark.savedAt } : {});
+      if (outcome === 'cleared') logger().debug('persistence.cleared', { ownerId, state: snapshot?.state ?? null });
+    };
     const persist = () => {
       if (!restoredRef.current) return; // never overwrite the record before it was offered back
       const now = Date.now();
-      const write = () => { lastWrite = Date.now(); pending = null; savePersistedSession(ownerId, source.getBareSnapshot?.(), controls.persistable()); };
-      if (now - lastWrite >= PERSIST_THROTTLE_MS) write();
-      else if (!pending) pending = setTimeout(write, PERSIST_THROTTLE_MS - (now - lastWrite));
+      if (now - lastWrite >= PERSIST_THROTTLE_MS) writeFull();
+      else if (!pending) pending = setTimeout(writeFull, PERSIST_THROTTLE_MS - (now - lastWrite));
     };
     const onChange = () => {
       try { controls.observeSnapshot(source.getBareSnapshot?.() ?? null); } catch (err) {
@@ -139,26 +163,42 @@ export function ScreenSessionControlsHost({ controls, source }) {
     const unsubscribeSource = source.subscribe({ onChange, onStateTransition: onChange });
     const unsubscribeControls = controls.subscribe(persist);
     // The spot moves without any snapshot "change" — a power cut gives no
-    // unload event — so keep the persisted position fresh while loaded.
+    // unload event — so the spot (only) is refreshed while playing.
     const spotTimer = setInterval(() => {
-      if (source.getBareSnapshot?.()?.currentItem) persist();
+      if (!restoredRef.current) return;
+      const snapshot = source.getBareSnapshot?.();
+      if (restoredMark) { if (snapshot?.state === 'playing') writeFull(); return; }
+      if (snapshot?.state === 'playing') updatePersistedSpot(ownerId, snapshot);
     }, SPOT_PERSIST_INTERVAL_MS);
 
     // Power-cut survival (RQ-RELY-08): re-adopt the persisted session PAUSED,
-    // never autoplaying, unless something already started playing here (a
-    // URL autoplay, a dispatched load) in the meantime.
+    // never autoplaying — and only when nothing else is starting here.
     const restoreTimer = setTimeout(async () => {
-      const current = source.getBareSnapshot?.();
       const candidate = saved?.snapshot;
-      if (candidate && !current?.currentItem) {
+      const current = source.getBareSnapshot?.();
+      const skip = !candidate ? null
+        : saved.restored ? 'already-offered-never-resumed'
+          : urlAutoplay ? 'url-autoplay'
+            : startedSinceMount ? `start-since-mount:${startedSinceMount}`
+              : (source.getActionOwner?.() || current?.currentItem) ? 'playback-owner-present'
+                : null;
+      if (candidate && !skip) {
         const result = await requestRestore({ ...candidate, state: 'paused' }, { autoplay: false, reason: 'power-restore' });
         logger()[result.ok ? 'info' : 'warn']('power-restore', {
           ownerId, ok: result.ok, code: result.code ?? null, contentId: candidate.currentItem?.contentId ?? null,
           position: candidate.position ?? null, savedAt: saved.savedAt,
         });
+        if (result.ok) {
+          // Session modes belong to the session: they come back only with it (B5).
+          if (saved.modes) controls.hydrate(saved.modes);
+          restoredMark = { savedAt: saved.savedAt };
+          savePersistedSession(ownerId, candidate, saved.modes, { restored: true, savedAt: saved.savedAt });
+        }
       } else if (candidate) {
-        logger().info('power-restore.skipped', { ownerId, reason: 'playback-already-started' });
+        logger().info('power-restore.skipped', { ownerId, reason: skip });
+        if (skip === 'already-offered-never-resumed') clearPersistedSession(ownerId);
       }
+      startWatch.forEach((u) => u());
       restoredRef.current = true;
       persist();
     }, POWER_RESTORE_DELAY_MS);
@@ -167,6 +207,7 @@ export function ScreenSessionControlsHost({ controls, source }) {
       clearTimeout(restoreTimer);
       clearInterval(spotTimer);
       if (pending) clearTimeout(pending);
+      startWatch.forEach((u) => u());
       unsubscribeSource?.();
       unsubscribeControls?.();
     };

@@ -306,6 +306,38 @@ describe('screen notes and Put it back (RQ-STEER-21)', () => {
   });
 });
 
+describe('session-scoped modes (B5)', () => {
+  const setModes = (controls) => {
+    controls.applyConfig('addOnly', true);
+    controls.applyConfig('endOfQueue', 'similar');
+    controls.applyConfig('stopAfterCurrent', true);
+  };
+  const defaults = { addOnly: false, endOfQueue: 'stop', stopAfterCurrent: false };
+
+  it('clears the modes when the session it belonged to goes idle', () => {
+    const { controls } = setup();
+    setModes(controls);
+    controls.observeSnapshot(snapshotWith());
+    expect(controls.toPublished().addOnly).toBe(true);
+    controls.observeSnapshot(snapshotWith({ state: 'idle', items: [], currentIndex: -1 }));
+    expect(controls.toPublished()).toMatchObject(defaults);
+  });
+
+  it('keeps modes set on an idle screen until a session has come and gone', () => {
+    const { controls } = setup({ snapshot: snapshotWith({ state: 'idle', items: [], currentIndex: -1 }) });
+    setModes(controls);
+    controls.observeSnapshot(snapshotWith({ state: 'idle', items: [], currentIndex: -1 }));
+    expect(controls.toPublished().addOnly).toBe(true);
+  });
+
+  it('clears the modes on a new local or URL start', () => {
+    const { controls } = setup();
+    setModes(controls);
+    controls.markLocalPlayback();
+    expect(controls.toPublished()).toMatchObject(defaults);
+  });
+});
+
 describe('persistence', () => {
   it('persists and re-hydrates the session modes and the sleep resume point', async () => {
     const { controls } = setup();

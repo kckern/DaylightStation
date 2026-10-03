@@ -51,7 +51,7 @@ describe('useScreenCommands — screen session controls', () => {
     mount();
     act(() => capturedCallback(env('queue', {
       op: 'item-action', kind: 'playNow', item: { contentId: 'plex:9' }, operationId: 'op1', tappedAt: 1,
-    })));
+    }, { origin: phone })));
     expect(actionBus.emit).toHaveBeenCalledWith('media:queue-op', expect.objectContaining({
       op: 'item-action', kind: 'add', appliedAs: 'add', requestedKind: 'playNow',
     }));
@@ -86,5 +86,31 @@ describe('useScreenCommands — screen session controls', () => {
     expect(actionBus.emit).toHaveBeenCalledWith('media:session-control', {
       kind: 'session', action: 'sleep-timer', params: { minutes: 15 }, commandId: 's1', origin: phone,
     });
+  });
+
+  it('exempts routine and originless starts from Add only — they play (B5)', () => {
+    controls.applyConfig('addOnly', true);
+    mount();
+    act(() => capturedCallback(env('queue', { op: 'play-now', contentId: 'plex:9' }, { commandId: 'r1', origin: { kind: 'routine', name: 'Morning' } })));
+    expect(actionBus.emit).toHaveBeenCalledWith('media:queue-op', expect.objectContaining({ op: 'play-now', commandId: 'r1' }));
+    act(() => capturedCallback(env('queue', { op: 'play-now', contentId: 'plex:8' }, { commandId: 'n1' })));
+    expect(actionBus.emit).toHaveBeenCalledWith('media:queue-op', expect.objectContaining({ op: 'play-now', commandId: 'n1' }));
+  });
+
+  it('treats the screen\'s own origin as local: no Add-only rewrite and no note', () => {
+    controls.applyConfig('addOnly', true);
+    mount();
+    act(() => capturedCallback(env('queue', { op: 'play-now', contentId: 'plex:9' }, { origin: { kind: 'device', id: 'fleet:tv-1' } })));
+    expect(actionBus.emit).toHaveBeenCalledWith('media:queue-op', expect.objectContaining({ op: 'play-now' }));
+    act(() => capturedCallback(env('transport', { action: 'pause' }, { commandId: 'c9', origin: { kind: 'device', id: 'tv-1' } })));
+    expect(controls.toPublished().notes).toEqual([]);
+  });
+
+  it('a redelivered envelope (same commandId) never bumps a note twice', () => {
+    mount();
+    const pause = env('transport', { action: 'pause' }, { commandId: 'dup', origin: phone });
+    act(() => capturedCallback(pause));
+    act(() => capturedCallback(pause));
+    expect(controls.toPublished().notes[0].count).toBe(1);
   });
 });
