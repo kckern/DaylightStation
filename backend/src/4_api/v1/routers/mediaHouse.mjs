@@ -14,6 +14,12 @@
  * - POST   /screens/:id/restore
  * - GET    /screens/:id/routines        — routines that target the screen
  *
+ * Routines (RQ-AUTO-02, RQ-AUTO-05):
+ * - GET    /routines                    — { routines, sources }
+ * - PUT    /routines/catalog            — import { config } (parsed HA routine config) or { routines }
+ * - GET    /routines/history            — recent routine starts (?limit=&deviceId=&routineId=)
+ * - GET    /routines/flags              — routines pointed at screens that are off/unreachable/retired
+ *
  * Every route takes the optional `?household=<id>`. Each section answers 501
  * when its service is not wired.
  */
@@ -24,6 +30,7 @@ const ERROR_STATUS = {
   INVALID_NAME: 400,
   INVALID_SCREEN_ID: 400,
   INVALID_MERGE: 400,
+  INVALID_ROUTINES: 400,
   SCREEN_NOT_FOUND: 404,
   NAME_TAKEN: 409,
   SCREEN_MERGED: 409,
@@ -40,10 +47,12 @@ function sendDomainError(res, error) {
 /**
  * @param {Object} config
  * @param {Object} [config.screenRegistry] - ScreenRegistryService
+ * @param {Object} [config.routineCatalog] - RoutineCatalogService
+ * @param {Object} [config.routineHistory] - RoutineHistoryService
  * @param {Object} [config.logger]
  * @returns {express.Router}
  */
-export function createMediaHouseRouter({ screenRegistry = null, logger = console } = {}) {
+export function createMediaHouseRouter({ screenRegistry = null, routineCatalog = null, routineHistory = null, logger = console } = {}) {
   const router = express.Router();
   const hid = (req) => (typeof req.query.household === 'string' && req.query.household ? req.query.household : undefined);
   const str = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
@@ -130,6 +139,32 @@ export function createMediaHouseRouter({ screenRegistry = null, logger = console
 
   router.get('/screens/:id/routines', screens, guarded(async (req, res) => {
     res.json({ items: await screenRegistry.routinesFor({ householdId: hid(req), id: req.params.id }) });
+  }));
+
+  // ── Routines ─────────────────────────────────────────────────────────────
+  const catalog = requireService(routineCatalog, 'Routine catalog');
+  const history = requireService(routineHistory, 'Routine history');
+
+  router.get('/routines', catalog, guarded(async (req, res) => {
+    res.json(await routineCatalog.list({ householdId: hid(req) }));
+  }));
+
+  router.put('/routines/catalog', catalog, guarded(async (req, res) => {
+    const body = req.body || {};
+    const config = body.config && typeof body.config === 'object' ? body.config : null;
+    const routines = Array.isArray(body.routines) ? body.routines : null;
+    if (!config && !routines) return res.status(400).json({ error: 'config or routines is required', code: 'INVALID_ROUTINES' });
+    res.json(await routineCatalog.importSnapshot({ householdId: hid(req), config, routines, source: str(body.source) || 'import' }));
+  }));
+
+  router.get('/routines/history', history, guarded(async (req, res) => {
+    res.json(await routineHistory.list({
+      householdId: hid(req), limit: req.query.limit, deviceId: str(req.query.deviceId), routineId: str(req.query.routineId),
+    }));
+  }));
+
+  router.get('/routines/flags', history, guarded(async (req, res) => {
+    res.json(await routineHistory.flags({ householdId: hid(req) }));
   }));
 
   return router;

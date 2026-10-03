@@ -158,7 +158,7 @@ import { WakeScreenForBroadcast } from '#apps/devices/services/WakeScreenForBroa
 import { EventBusDeviceTransportGateway } from '#adapters/devices/EventBusDeviceTransportGateway.mjs';
 
 // HTTP middleware
-import { errorHandlerMiddleware, requestLoggerMiddleware, aiOriginMiddleware } from './0_system/http/middleware/index.mjs';
+import { errorHandlerMiddleware, requestLoggerMiddleware, aiOriginMiddleware, withRequestContext } from './0_system/http/middleware/index.mjs';
 import { runWithOrigin } from './0_system/runtime/aiContext.mjs';
 import { scopedGateway } from '#apps/common/ports/IAIGateway.mjs';
 import { createDevProxy } from '#api/v1/middleware/createDevProxy.mjs';
@@ -1173,6 +1173,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Day files under history/media-plays, 90-day retention.
   // See docs/reference/media/media-app-technical.md §2.4.
   let playLedger = null;
+  // Who asked for a load (a routine, another screen) → the screen's next
+  // ledger start. Written by the device router's load recorder (mediaHouse).
+  const { LoadOriginHints } = await import('./3_applications/media/LoadOriginHints.mjs');
+  const loadOriginHints = new LoadOriginHints();
   {
     const { PlayLedgerRecorder } = await import('./3_applications/media/PlayLedgerRecorder.mjs');
     const { YamlPlayLedgerDatastore } = await import('./1_adapters/persistence/yaml/YamlPlayLedgerDatastore.mjs');
@@ -1186,6 +1190,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         today: () => nowTs24().slice(0, 10),
         logger: playLedgerLogger,
       }),
+      originHints: loadOriginHints,
       logger: playLedgerLogger,
     });
   }
@@ -1613,6 +1618,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       livenessService: deviceLivenessService,
       playLedger,
       progressMemory: mediaProgressMemory,
+      originHints: loadOriginHints,
       logger: rootLogger,
     });
   })();
@@ -5158,12 +5164,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'dispatch-idempotency' })
   });
 
-  v1Routers.device = createDeviceApiRouter({
+  // Loads run inside a request context (User-Agent, X-Daylight-Device) so the
+  // media load recorder can tell a Home Assistant routine from a person, name
+  // the routine, record its outcome and stamp the screen's next start.
+  // See docs/reference/media/media-app-technical.md §2.6.
+  v1Routers.device = withRequestContext(createDeviceApiRouter({
     presenceStore,
     // "It locked and I don't know why" needs an endpoint, not a log grep.
     readGate: () => languageStudyService.describeGate(),
     deviceServices,
-    wakeAndLoadService,
+    wakeAndLoadService: mediaHouse.wrapWakeAndLoad(wakeAndLoadService),
     sessionControlService,
     dispatchIdempotencyService,
     configService,
@@ -5171,7 +5181,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     pianoMidiWakeService,
     kioskFrictionTracker,
     logger: rootLogger.child({ module: 'device-api' })
-  });
+  }));
 
   // Home Line has no user provisioning, no sign-in and no identification by
   // design: it is a tin can between two ends of the house, reachable only on
