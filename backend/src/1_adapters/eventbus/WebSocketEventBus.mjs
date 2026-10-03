@@ -117,6 +117,10 @@ export class WebSocketEventBus {
   // Optional DeviceLivenessService used for last-snapshot replay on subscribe
   #livenessService = null;
 
+  // Optional DeviceStartStatusService used for device-start:<id> replay
+  // (RQ-HOUSE-04: a house view opened late still sees the last start/failure).
+  #startStatusService = null;
+
   /**
    * @param {Object} [options]
    * @param {string} [options.path='/ws'] - WebSocket path
@@ -136,6 +140,15 @@ export class WebSocketEventBus {
    */
   setLivenessService(svc) {
     this.#livenessService = svc || null;
+  }
+
+  /**
+   * Inject the DeviceStartStatusService ({ get(id), knownDeviceIds() }) used
+   * to replay `device-start:<id>` to new subscribers.
+   * @param {Object|null} svc
+   */
+  setStartStatusService(svc) {
+    this.#startStatusService = svc || null;
   }
 
   /**
@@ -622,6 +635,12 @@ export class WebSocketEventBus {
     // Replay last known device-state snapshot to the new subscriber.
     for (const topic of topicList) {
       this.#maybeReplayDeviceState(client, topic);
+      this.#maybeReplayStartStatus(client, topic);
+    }
+    if (topicList.includes('*') && this.#startStatusService?.knownDeviceIds) {
+      for (const deviceId of this.#startStatusService.knownDeviceIds()) {
+        this.#maybeReplayStartStatus(client, `device-start:${deviceId}`);
+      }
     }
 
     // Wildcard subscribers (every /media tab — predicate filters sync as
@@ -631,6 +650,25 @@ export class WebSocketEventBus {
       for (const deviceId of this.#livenessService.knownDeviceIds()) {
         this.#maybeReplayDeviceState(client, `device-state:${deviceId}`);
       }
+    }
+  }
+
+  /**
+   * Replay the last start status for `device-start:<id>` to a new subscriber.
+   * @private
+   */
+  #maybeReplayStartStatus(client, topic) {
+    const parsed = parseDeviceTopic(topic);
+    if (!parsed || parsed.kind !== 'device-start') return;
+    const status = this.#startStatusService?.get?.(parsed.deviceId);
+    if (!status) return;
+    try {
+      if (client.ws?.readyState === client.ws?.OPEN) {
+        client.ws.send(JSON.stringify({ ...status, topic, timestamp: nowTs(), replay: true }));
+        this.#logger.debug?.('eventbus.replay.start_status', { topic, phase: status.phase });
+      }
+    } catch (err) {
+      this.#logger.warn?.('eventbus.replay.start_status_error', { topic, error: err?.message });
     }
   }
 
