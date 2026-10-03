@@ -29,6 +29,7 @@ const pop = vi.fn();
 let backDestination = 'Browse';
 vi.mock('./NavProvider.jsx', () => ({ useNav: () => ({ pop, push: vi.fn(), view: 'nowPlaying', backDestination }) }));
 vi.mock('./QueuePanel.jsx', () => ({ QueuePanel: () => <div data-testid="queue-stub" /> }));
+vi.mock('./SessionControlsPanel.jsx', () => ({ SessionControlsPanel: () => <div data-testid="session-controls-stub" /> }));
 vi.mock('../cast/DispatchTargetPicker.jsx', () => ({
   DispatchTargetPicker: () => <div data-testid="picker-stub" />,
 }));

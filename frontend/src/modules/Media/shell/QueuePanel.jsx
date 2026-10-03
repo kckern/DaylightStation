@@ -10,6 +10,7 @@ import { createOperationId } from '../actions/itemAction.js';
 import { DispatchContext } from '../cast/DispatchProvider.jsx';
 import { FleetContext } from '../fleet/FleetProvider.jsx';
 import { deviceName } from '../fleet/deviceDisplay.js';
+import { EndOfQueueChoice } from './EndOfQueueChoice.jsx';
 
 const REPEAT_NEXT = { off: 'all', all: 'one', one: 'off' };
 const REPEAT_LABEL = { off: 'Repeat off', all: 'Repeat all', one: 'Repeat one' };
@@ -70,6 +71,8 @@ export function QueuePanel({ target = 'local', availability = null }) {
             ? 'Nothing queued up next.'
             : 'Queue is empty — add something from search or browse.'}
         </Text>
+        {/* A single playing item still ends: its end-of-queue choice applies. */}
+        {playingSolo && <EndOfQueueChoice target={target} targetName={remoteId ? deviceName(remoteDevice, remoteId) : null} />}
       </div>
     );
   }
@@ -141,6 +144,11 @@ export function QueuePanel({ target = 'local', availability = null }) {
               {it.priority === 'upNext' && (
                 <Badge size="xs" color="amber" variant="light" className="queue-badge">up next</Badge>
               )}
+              {it.addedBy === 'auto-continue' && (
+                <Badge size="xs" color="gray" variant="light" className="queue-badge" data-testid={`queue-auto-${it.queueItemId}`}>
+                  added automatically
+                </Badge>
+              )}
               {/* Reorder: discrete tap targets, not drag (touch-first) */}
               <ActionIcon
                 size="md"
@@ -173,6 +181,7 @@ export function QueuePanel({ target = 'local', availability = null }) {
           );
         })}
       </ul>
+      <EndOfQueueChoice target={target} targetName={remoteId ? deviceName(remoteDevice, remoteId) : null} />
     </div>
   );
 }
