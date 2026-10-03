@@ -237,6 +237,9 @@ describe('useMediaResilience — refused source', () => {
       args = { ...args, isPaused: true };
       await act(async () => { el.paused = true; el._fire('pause'); rerender(args); });
       await flush();
+      // Some time passes between the viewer's pause and the file going away
+      // (in the same instant, the pause would be read as the error's own).
+      await advance(2000);
       await act(async () => {
         el.error = { code: 4, message: 'MEDIA_ELEMENT_ERROR: Format error' };
         el._fire('error');
@@ -294,5 +297,22 @@ describe('useMediaResilience — refused source', () => {
 
     expect(result.current.overlayProps.sourceNotice).not.toBeNull();
     expect(args.onReload).not.toHaveBeenCalled();
+  });
+
+  // B2 (review): the code-4 element error latches until `playing`. A reload
+  // after a cleared refusal that is merely SLOW must not be judged unplayable
+  // off that stale latch — only the live element's own error counts.
+  it('a slow reload after a cleared refusal is not judged unplayable from the latched error', async () => {
+    const el = makeFakeEl({ paused: true });
+    const args = baseArgs(el);
+    api.DaylightAPI.mockResolvedValue(answer('readable'));
+    renderHook(() => useMediaResilience(args));
+    await refuse(el);
+    expect(args.onReload).toHaveBeenCalledWith(expect.objectContaining({ reason: 'source-refusal-cleared' }));
+    // The fresh URL is loading slowly: no live error, no progress yet.
+    el.error = null;
+    await advance(40_000);
+    expect(args.onReload.mock.calls.some(([opts]) => opts?.reason === 'media-error-unplayable')).toBe(false);
+    expect(args.onExhausted).not.toHaveBeenCalledWith(expect.objectContaining({ reason: 'media-error-unplayable' }));
   });
 });

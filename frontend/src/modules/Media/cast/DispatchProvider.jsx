@@ -248,13 +248,19 @@ export function DispatchProvider({ children }) {
       mediaLog.outcomeRetried({ attemptId, targetId: record.targetId, contentId: item?.contentId ?? null });
       const destination = record.targetId === 'local' ? localController : peek?.getController?.(record.targetId);
       if (!destination?.execute || !item?.contentId) return [];
+      // The replay replaces the failed record (review c).
+      dispatch({ type: 'REMOVED', dispatchId: attemptId });
       return executeItemAction({ kind, item: { ...item }, destination, operationId: createOperationId() })
         .then(() => [], () => []);
     }
     const attempt = attemptsRef.current.get(attemptId);
     if (!attempt) return [];
     mediaLog.outcomeRetried({ attemptId, targetId: attempt.targetIds?.[0] ?? null, contentId: attempt.play ?? attempt.queue ?? null });
-    return dispatchToTarget(attempt, { bypassDedupe: true });
+    const replay = dispatchToTarget(attempt, { bypassDedupe: true });
+    // Retire the record Retry replayed once the new attempt is initiated.
+    attemptsRef.current.delete(attemptId);
+    dispatch({ type: 'REMOVED', dispatchId: attemptId });
+    return replay;
   }, [dispatchToTarget, localController, peek]);
 
   // RELY.6a/AC2: the same attempt, sent to another chosen screen instead.
@@ -343,6 +349,14 @@ export function DispatchProvider({ children }) {
     return fleetStore.subscribeAll(() => reconcileScreens());
   }, [fleetStore, reconcileScreens]);
   useEffect(() => { reconcileScreens(); }, [state.byId, reconcileScreens]);
+
+  // Replay inputs live only as long as their record (review d): a record the
+  // reducer superseded or removed can never be replayed afterwards.
+  useEffect(() => {
+    for (const id of attemptsRef.current.keys()) {
+      if (!state.byId.has(id)) attemptsRef.current.delete(id);
+    }
+  }, [state.byId]);
 
   const value = useMemo(
     () => ({

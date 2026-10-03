@@ -721,6 +721,11 @@ returns `{ ok: false, error: "Screen not connected (no receiver subscribed)" }`
 instead of reporting a vanished message as delivered. Wildcard (`*`) subscribers
 count as subscribers, so a sender that monitors every topic still keeps this
 path "sent"; the receiver-outcome watchdog then decides (§9.14).
+`WakeAndLoadService` does not turn that adapter error into a WebSocket-fallback
+broadcast either: it returns `{ ok: false, failedStep: 'load', error: 'Screen
+not connected' }` (a terminal "Not sent" in Media). A zero subscriber count
+alone still takes the fallback, because a cold FKB screen has no subscriber
+until the page the fallback loads subscribes.
 
 **Verified by:**
 - `backend/tests/unit/suite/4_api/v1/routers/device.load-adopt.test.mjs` — adopt body validation + idempotency-conflict mapping
@@ -1434,12 +1439,13 @@ One record per attempt at one target:
   terminal `not-sent`.
 - `command` is a frozen deep copy of the replay input. `retry(attemptId)`
   replays exactly it at exactly `targetId` (fan-out siblings are separate
-  records); `sendElsewhere(attemptId, targetId)` replays it at another screen.
-  Nothing is ever replayed automatically.
+  records) and retires the record it replayed; `sendElsewhere(attemptId,
+  targetId)` replays it at another screen. Replay inputs live only as long as
+  their record. Nothing is ever replayed automatically.
 - Late homeline steps update a record only when their topic names the same
   `targetId`.
 - Replacement: a newer confirmation of the same kind for the same target drops
-  settled confirmations; one `unconfirmed` per screen (newest wins); failures
+  settled confirmations (never a running action, which still owns its Undo); one `unconfirmed` per screen (newest wins); failures
   are never replaced. An `unconfirmed` play clears to `confirmed` (reason
   `screen-reported-playing`) when that screen's fresh `device-state` reports
   the same `contentId` playing.
@@ -1618,7 +1624,8 @@ Two related traps, both fixed and both worth not re-introducing:
   not restorable (`'malformed'` — `isRestorableSnapshot` in `persistence.js`:
   session id, state, current item id, finite non-negative position, queue items
   with ids, in-range `currentIndex`, `shuffle`/`repeat` config, `meta`) is
-  discarded, removed, and logged (`session.restore-discarded`, `session.reset`
+  discarded, removed, and logged (a bad resume spot is not structural: it is
+  coerced to 0) (`session.restore-discarded`, `session.reset`
   with the reason). Nothing is guessed at.
 - **Paused restore (RELY.7a):** a restorable session with a current item comes
   back with `state: "paused"` (from `playing`/`buffering`/`stalled`/`loading`)

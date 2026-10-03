@@ -132,4 +132,19 @@ describe('outcome records', () => {
     expect(state.byId.get('f1').replacement).toEqual({ contentId: 'plex:3', title: 'Dune' });
     expect(state.byId.get('f2').phase).toBe('failed');
   });
+
+  it('review (b): a newer local action never supersedes a RUNNING one — its Undo and later failure survive', () => {
+    let state = reduceDispatch(initialDispatchState, {
+      type: 'LOCAL', attemptId: 'r1', kind: 'add', phase: 'running', item: { contentId: 'plex:1', title: 'Arrival' },
+      undo: { operationId: 'op-1', expiresAt: Date.now() + 10000, run: () => {} },
+    });
+    state = reduceDispatch(state, { type: 'LOCAL', attemptId: 'r2', kind: 'add', phase: 'running', item: { contentId: 'plex:2', title: 'Nova' } });
+    expect(state.byId.has('r1')).toBe(true);
+    state = reduceDispatch(state, { type: 'LOCAL_RESOLVED', attemptId: 'r1', phase: 'failed', reason: 'busy' });
+    expect(state.byId.get('r1').phase).toBe('failed');
+    state = reduceDispatch(state, { type: 'LOCAL_RESOLVED', attemptId: 'r2', phase: 'confirmed' });
+    state = reduceDispatch(state, { type: 'LOCAL', attemptId: 'r3', kind: 'add', phase: 'running', item: { contentId: 'plex:3', title: 'Dune' } });
+    expect(state.byId.has('r2')).toBe(false);
+    expect(state.byId.get('r1').phase).toBe('failed');
+  });
 });

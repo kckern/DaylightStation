@@ -675,6 +675,21 @@ export class WakeAndLoadService {
           ...(wsSkipReason === 'ws-error' ? { wsError: 'ack-timeout' } : {}),
         };
         this.#emitProgress(topic, dispatchId, 'load', 'done');
+      } else if (hasContentQuery && /not connected/i.test(String(loadResult.error ?? ''))) {
+        // The content adapter itself says no receiver is subscribed (a
+        // WebSocket-only screen has no page it could load first): a fallback
+        // broadcast would reach no one and then report ok. A press that
+        // reached nothing is not delivered (PR-10, RELY.6a). A zero subscriber
+        // count ALONE is not this: a cold FKB screen has none until its page
+        // loads, which is exactly what the fallback below does.
+        this.#emitProgress(topic, dispatchId, 'load', 'failed', { error: 'Screen not connected' });
+        this.#logger.warn?.('wake-and-load.load.no-receiver', {
+          deviceId, dispatchId, wsSkipReason, urlError: loadResult.error ?? null,
+        });
+        result.error = 'Screen not connected';
+        result.failedStep = 'load';
+        result.totalElapsedMs = this.#clock.now() - startTime;
+        return result;
       } else if (hasContentQuery) {
         // --- WebSocket Fallback (existing) ---
         // URL load failed but there IS content to deliver. The screen may already
