@@ -22,6 +22,7 @@
  * - POST   /household/removed      — Remove {id} from the household list
  * - DELETE /household/removed      — Restore {id} (undo)
  * - POST   /household/watched      — Mark {contentId, watched: boolean}
+ * - GET    /household/plays        — Play ledger (?deviceId=&from=&to=&limit=)
  */
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
@@ -253,6 +254,22 @@ export function createMediaRouter(config) {
   router.get('/household/carry-on', asyncHandler(async (req, res) => {
     if (!requireHouseholdMemory(res)) return;
     res.json(await householdMediaMemory.carryOn({ householdId: resolveHid(req), limit: req.query.limit }));
+  }));
+
+  router.get('/household/plays', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    const { deviceId, from, to, limit } = req.query;
+    for (const [name, value] of [['from', from], ['to', to]]) {
+      if (value !== undefined && !Number.isFinite(Date.parse(value))) {
+        return res.status(400).json({ error: `${name} must be an ISO-8601 timestamp` });
+      }
+    }
+    res.json(await householdMediaMemory.plays({
+      deviceId: typeof deviceId === 'string' && deviceId ? deviceId : null,
+      from: from || null,
+      to: to || null,
+      limit,
+    }));
   }));
 
   router.get('/household/favourites', asyncHandler(async (req, res) => {

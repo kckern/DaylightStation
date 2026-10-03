@@ -66,6 +66,7 @@ export class HouseholdMediaMemoryService {
   #logger;
   #describeTimeoutMs;
   #runtime;
+  #playLedger;
   #describeTtlMs;
   /** @type {Map<string, {at:number, value:Object|null}>} */
   #describeCache = new Map();
@@ -95,6 +96,8 @@ export class HouseholdMediaMemoryService {
     // { withDeadline(promise, ms, message) } — bounds each catalog lookup.
     // Injected (timers live in adapters); absent = unbounded.
     runtime = null,
+    // PlayLedgerRecorder — per-screen start history; null = progress only.
+    playLedger = null,
   }) {
     if (typeof progressMemory?.listAllProgress !== 'function') throw new TypeError('HouseholdMediaMemoryService requires progressMemory.listAllProgress');
     if (!listsStore) throw new TypeError('HouseholdMediaMemoryService requires listsStore');
@@ -110,13 +113,18 @@ export class HouseholdMediaMemoryService {
     this.#describeTimeoutMs = describeTimeoutMs;
     this.#describeTtlMs = describeTtlMs;
     this.#runtime = runtime;
+    this.#playLedger = playLedger;
   }
 
   // ── Reads ────────────────────────────────────────────────────────────────
 
   async recent({ householdId, limit } = {}) {
-    const [records, removed] = await Promise.all([this.#records(), this.#listsStore.loadRemoved(householdId)]);
-    const entries = buildHouseholdRecent(records, { removed, limit: clampLimit(limit, 24) });
+    const [records, removed, plays] = await Promise.all([
+      this.#records(),
+      this.#listsStore.loadRemoved(householdId),
+      this.#ledgerPlays({}),
+    ]);
+    const entries = buildHouseholdRecent(records, { removed, plays, limit: clampLimit(limit, 24) });
     return { items: await this.#withDisplay(entries) };
   }
 
@@ -136,6 +144,16 @@ export class HouseholdMediaMemoryService {
       nowOn: await this.#withDisplay(nowOn),
       nowPlayingKnown: live.known,
     };
+  }
+
+  /**
+   * Play-ledger query: starts by screen and/or time window, newest first.
+   * @param {{deviceId?:string, from?:string, to?:string, limit?:number}} q
+   */
+  async plays({ deviceId = null, from = null, to = null, limit } = {}) {
+    if (!this.#playLedger) return { items: [], ledger: false };
+    const rows = await this.#playLedger.plays({ deviceId, from, to, limit: clampLimit(limit, 100, 1000), nowEpoch: this.#clock.now() });
+    return { items: rows, ledger: true };
   }
 
   async listFavourites(householdId) {
@@ -210,6 +228,16 @@ export class HouseholdMediaMemoryService {
       spots: progress.spots,
       lastDevice: progress.lastDevice,
     }));
+  }
+
+  async #ledgerPlays(query) {
+    if (!this.#playLedger) return [];
+    try {
+      return await this.#playLedger.plays({ ...query, limit: 5000, nowEpoch: this.#clock.now() });
+    } catch (error) {
+      this.#logger.warn?.('media.household-list.ledger_read_failed', { error: error.message });
+      return [];
+    }
   }
 
   async #readNowPlaying() {

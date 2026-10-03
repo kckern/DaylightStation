@@ -70,3 +70,40 @@ describe('RecordPlaybackProgress per-screen spots', () => {
     expect(memory.saved[0].spots).toBeUndefined();
   });
 });
+
+describe('RecordPlaybackProgress feeds the play ledger', () => {
+  it('reports each heartbeat with a spot device, with item facts and origin', async () => {
+    const memory = memoryWith();
+    const playLedger = { observe: vi.fn().mockResolvedValue({ opened: true, written: true }) };
+    const use = new RecordPlaybackProgress({
+      contentCatalog: {
+        resolveSource: () => ({ source: 'plex', localId: '1' }),
+        progressNamespace: async () => 'plex/8_tv-shows',
+        getItem: async () => ({ title: 'S1E2', type: 'episode', metadata: { type: 'episode', parentId: '10', grandparentId: '100' } }),
+      },
+      mediaProgressMemory: memory,
+      playLedger,
+      createMediaProgress: (props) => new MediaProgress(props),
+      nowTimestamp: () => '2026-10-02 08:00:00',
+      nowEpoch: () => 1_790_000_000_000,
+      nowIso: () => '2026-10-02T15:00:00.000Z',
+      logger: { info: vi.fn(), warn: vi.fn(), debug: vi.fn() },
+    });
+    await use.execute(heartbeat({ spotDeviceId: 'fleet:livingroom-tv', origin: 'routine:morning' }));
+    expect(playLedger.observe).toHaveBeenCalledWith({
+      deviceId: 'fleet:livingroom-tv', contentId: 'plex:1', atEpoch: 1_790_000_000_000,
+      startedAt: '2026-10-02T15:00:00.000Z', localTime: '2026-10-02 08:00:00',
+      metadata: expect.objectContaining({ title: 'S1E2', type: 'episode', parentId: '10', grandparentId: '100' }),
+      origin: 'routine:morning',
+    });
+  });
+  it('a heartbeat with no spot device never reaches the ledger', async () => {
+    const playLedger = { observe: vi.fn() };
+    const use = new RecordPlaybackProgress({
+      contentCatalog: { resolveSource: () => null }, mediaProgressMemory: memoryWith(), playLedger,
+      createMediaProgress: (p) => new MediaProgress(p), nowTimestamp: () => 't', logger: { info: vi.fn(), warn: vi.fn() },
+    });
+    await use.execute(heartbeat());
+    expect(playLedger.observe).not.toHaveBeenCalled();
+  });
+});

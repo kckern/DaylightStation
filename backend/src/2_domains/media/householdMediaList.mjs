@@ -139,14 +139,42 @@ function baseEntry(record) {
 /**
  * Household recent: everything played on any screen, newest first.
  * Records with no lastPlayed (e.g. only ever marked watched) are not "played".
+ *
+ * `plays` are play-ledger rows (one per playback start per screen). They
+ * label each entry with its start history (`plays`, newest first, up to
+ * PLAYS_PER_ENTRY), supply `playedOn` for records that predate per-screen
+ * spots, and contribute items the ledger saw but progress never stored.
  */
-export function buildHouseholdRecent(records, { removed = {}, limit = 50 } = {}) {
-  return latestPerContent(records)
+export const PLAYS_PER_ENTRY = 5;
+
+export function buildHouseholdRecent(records, { removed = {}, limit = 50, plays = [] } = {}) {
+  const playsById = new Map();
+  for (const row of [...(plays || [])].sort((a, b) => (Date.parse(b.startedAt) || 0) - (Date.parse(a.startedAt) || 0))) {
+    if (!row?.contentId || !row.deviceId) continue;
+    if (!playsById.has(row.contentId)) playsById.set(row.contentId, []);
+    playsById.get(row.contentId).push(row);
+  }
+  const known = new Set((records || []).map((r) => r?.contentId));
+  const ledgerOnly = [...playsById.entries()]
+    .filter(([contentId]) => !known.has(contentId))
+    .map(([contentId, rows]) => ({ contentId, namespaceId: null, lastPlayed: rows[0].localTime ?? rows[0].startedAt, lastDevice: rows[0].deviceId }));
+
+  return latestPerContent([...(records || []), ...ledgerOnly])
     .filter((r) => Number.isFinite(timestampEpoch(r.lastPlayed)))
     .filter((r) => !isHiddenByRemoval(removed, r.contentId, r.lastPlayed))
     .sort((a, b) => compareTimestamps(b.lastPlayed, a.lastPlayed))
     .slice(0, Math.max(0, limit))
-    .map((r) => ({ ...baseEntry(r), spots: allSpotsOf(r) }));
+    .map((r) => {
+      const rows = playsById.get(r.contentId) || [];
+      const entry = { ...baseEntry(r), spots: allSpotsOf(r) };
+      if (!entry.playedOn && rows.length) entry.playedOn = playedOnOf(rows[0].deviceId);
+      entry.plays = rows.slice(0, PLAYS_PER_ENTRY).map((row) => ({
+        ...playedOnOf(row.deviceId),
+        startedAt: row.startedAt,
+        origin: row.origin ?? null,
+      }));
+      return entry;
+    });
 }
 
 /**

@@ -166,3 +166,23 @@ describe('slow catalog', () => {
     expect(items).toEqual([expect.objectContaining({ contentId: 'plex:film', title: null })]);
   });
 });
+
+describe('play ledger (per-screen start history)', () => {
+  it('recent carries each item\'s starts; plays() queries by screen', async () => {
+    const rows = [
+      { startedAt: '2026-10-02T15:00:00.000Z', localTime: '2026-10-02 08:00:00', deviceId: 'fleet:livingroom-tv', contentId: 'plex:film', origin: null },
+    ];
+    const playLedger = { plays: vi.fn(async ({ deviceId }) => rows.filter((r) => !deviceId || r.deviceId === deviceId)) };
+    const { deps } = build({ records: [P('plex:film', { playhead: 4800, duration: 7200, lastPlayed: '2026-10-02 09:00:00' })] });
+    const service = new HouseholdMediaMemoryService({ ...deps, playLedger });
+    const { items } = await service.recent({});
+    expect(items[0].playedOn).toEqual({ deviceId: 'fleet:livingroom-tv', kind: 'screen', screenId: 'livingroom-tv' });
+    expect(items[0].plays).toHaveLength(1);
+    expect((await service.plays({ deviceId: 'browser:x' }))).toEqual({ items: [], ledger: true });
+    expect((await service.plays({ deviceId: 'fleet:livingroom-tv' })).items).toHaveLength(1);
+  });
+  it('without a ledger, plays() says so', async () => {
+    const { service } = build();
+    expect(await service.plays({})).toEqual({ items: [], ledger: false });
+  });
+});

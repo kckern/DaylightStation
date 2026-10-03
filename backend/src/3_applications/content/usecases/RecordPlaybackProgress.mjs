@@ -18,6 +18,9 @@ export class RecordPlaybackProgress {
     // Reports this surface's playback to the media server as a real client.
     // Optional: absent in tests and wherever no media server is configured.
     reportPlaybackSession = null,
+    // Per-screen play ledger (PlayLedgerRecorder): one row per playback start.
+    // Optional and advisory, like reportPlaybackSession.
+    playLedger = null,
     createMediaProgress = (props) => props,
     nowTimestamp,
     nowEpoch = () => Date.now(),
@@ -32,6 +35,7 @@ export class RecordPlaybackProgress {
     this.userVideoProgressStore = userVideoProgressStore;
     this.economyService = economyService;
     this.reportPlaybackSession = reportPlaybackSession;
+    this.playLedger = playLedger;
     this.createMediaProgress = createMediaProgress;
     this.nowTimestamp = nowTimestamp;
     this.nowEpoch = nowEpoch;
@@ -48,9 +52,12 @@ export class RecordPlaybackProgress {
     // `spotDeviceId` keys this screen's own spot (per-screen progress,
     // RQ-PLAY-09). Absent or unusable -> the legacy single-playhead write only.
     spotDeviceId = null,
+    // How this playback started, when the caller knows (e.g. 'routine:<id>').
+    origin = null,
   }) {
     let progressNamespace = type;
     let itemMetadata = null;
+    let itemFacts = null;
     const compoundId = assetId.includes(':') ? assetId : `${type}:${assetId}`;
 
     const resolved = this.contentCatalog.resolveSource(type, compoundId);
@@ -59,6 +66,7 @@ export class RecordPlaybackProgress {
         progressNamespace = await this.contentCatalog.progressNamespace(resolved, compoundId);
         const item = await this.contentCatalog.getItem(resolved, compoundId);
         itemMetadata = item?.metadata;
+        itemFacts = item ? { title: item.title ?? null, type: item.type ?? null } : null;
       } catch (error) {
         this.logger.warn?.('play.log.metadata_fetch_failed', { assetId, error: error.message });
       }
@@ -145,6 +153,26 @@ export class RecordPlaybackProgress {
         this.logger.warn?.('play.log.session_report_failed', {
           assetId, deviceId, error: error.message,
         });
+      }
+    }
+
+    if (this.playLedger && spotDevice) {
+      try {
+        await this.playLedger.observe({
+          deviceId: spotDevice,
+          contentId: compoundId,
+          atEpoch: this.nowEpoch(),
+          startedAt: this.nowIso(),
+          localTime: lastPlayed,
+          metadata: {
+            ...(itemMetadata || {}),
+            title: itemFacts?.title || itemMetadata?.title || title || null,
+            type: itemMetadata?.type || itemFacts?.type || null,
+          },
+          origin: typeof origin === 'string' ? origin : null,
+        });
+      } catch (error) {
+        this.logger.warn?.('play.log.ledger_failed', { assetId, error: error.message });
       }
     }
 
