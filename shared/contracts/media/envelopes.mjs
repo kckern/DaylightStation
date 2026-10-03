@@ -5,7 +5,9 @@ import {
   isConfigSetting,
   isSystemAction,
   isRepeatMode,
+  TRANSPORT_INTENTS,
 } from './commands.mjs';
+import { validateSessionActionParams, isEndOfQueueMode, END_OF_QUEUE_MODES } from './sessionControls.mjs';
 import { validateSessionSnapshot, validatePlayableItem } from './shapes.mjs';
 import { validateHandoffParams, validateHandoffResult } from './handoff.mjs';
 
@@ -66,6 +68,7 @@ function validateOrigin(origin, errors, prefix = 'origin') {
     errors.push(`${prefix}: must be object when present`);
     return;
   }
+  if (origin.name !== undefined && !isStr(origin.name)) errors.push(`${prefix}.name: must be non-empty string when present`);
   if (origin.kind === 'device') {
     if (!isStr(origin.id)) errors.push(`${prefix}.id: required for device origin`);
   } else if (origin.kind === 'routine') {
@@ -90,6 +93,9 @@ function validateCommandParams(command, params, errors) {
     }
     if ((p.action === 'seekAbs' || p.action === 'seekRel') && !isNum(p.value)) {
       errors.push(`params.value: required finite number for action "${p.action}"`);
+    }
+    if (p.intent !== undefined && !TRANSPORT_INTENTS.includes(p.intent)) {
+      errors.push(`params.intent: must be one of ${TRANSPORT_INTENTS.join('|')} when present`);
     }
     return;
   }
@@ -170,6 +176,13 @@ function validateCommandParams(command, params, errors) {
           errors.push('params.value: volume requires integer 0..100');
         }
         break;
+      case 'addOnly':
+      case 'stopAfterCurrent':
+        if (!isBool(p.value)) errors.push(`params.value: ${p.setting} requires boolean`);
+        break;
+      case 'endOfQueue':
+        if (!isEndOfQueueMode(p.value)) errors.push(`params.value: endOfQueue requires enum (${END_OF_QUEUE_MODES.join('|')})`);
+        break;
       default:
         errors.push(`params.setting: unhandled setting "${String(p.setting)}"`);
     }
@@ -200,6 +213,12 @@ function validateCommandParams(command, params, errors) {
 
   if (command === 'handoff') {
     const checked = validateHandoffParams(p);
+    if (!checked.valid) errors.push(...checked.errors.map((error) => `params.${error}`));
+    return;
+  }
+
+  if (command === 'session') {
+    const checked = validateSessionActionParams(p);
     if (!checked.valid) errors.push(...checked.errors.map((error) => `params.${error}`));
     return;
   }
@@ -254,6 +273,8 @@ export function buildCommandAck({
   code,
   appliedAt,
   handoff,
+  appliedAs,
+  requestedOp,
 } = {}) {
   const ack = {
     topic: 'device-ack',
@@ -265,6 +286,10 @@ export function buildCommandAck({
   if (error !== undefined) ack.error = error;
   if (code !== undefined) ack.code = code;
   if (handoff !== undefined) ack.handoff = handoff;
+  // How a queue command was actually applied, when it differs from what was
+  // asked — e.g. Add only turns a `play-now` into an `add` (RQ-PLAY-10).
+  if (appliedAs !== undefined) ack.appliedAs = appliedAs;
+  if (requestedOp !== undefined) ack.requestedOp = requestedOp;
   return ack;
 }
 
@@ -292,6 +317,8 @@ export function validateCommandAck(ack) {
   if (ack.appliedAt !== undefined && !isStr(ack.appliedAt)) {
     errors.push('appliedAt: must be ISO string when present');
   }
+  if (ack.appliedAs !== undefined && !isQueueOp(ack.appliedAs)) errors.push('appliedAs: must be a queue op when present');
+  if (ack.requestedOp !== undefined && !isQueueOp(ack.requestedOp)) errors.push('requestedOp: must be a queue op when present');
   if (ack.handoff !== undefined) {
     const checked = validateHandoffResult(ack.handoff);
     if (!checked.valid) errors.push(...checked.errors.map((error) => `handoff.${error}`));
