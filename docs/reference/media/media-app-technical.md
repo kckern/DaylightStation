@@ -1427,7 +1427,8 @@ One record per attempt at one target:
 - `distance`: `far` (a dispatch to another screen, with wake progress),
   `here` (this device, quiet), `direct` (a Remote queue edit on another screen).
 - `phase`: `running` · `sent` · `confirmed` · `unconfirmed` · `failed` ·
-  `not-sent` · `skipped`. For far records it is derived from the dispatch
+  `not-sent` · `skipped`, plus `waiting` / `library-unavailable` for a local
+  item whose file the server refuses to read (Skip now via `skipLocal`). For far records it is derived from the dispatch
   status and the trailing watchdog step; a failure before delivery
   (`power`/`verify`/`prepare`/`input`, or an offline/not-connected error) is a
   terminal `not-sent`.
@@ -1448,6 +1449,9 @@ One record per attempt at one target:
   which keeps its queue — O1).
 - The tray announces the newest record through one polite live region
   (`media-outcome-announcer`).
+- Placement: the tray hangs from a zero-height anchor (`media-outcome-anchor`)
+  directly above the mini player (or tab bar) and floats over the canvas; it
+  takes no layout space, and only each row's own controls take pointer input.
 
 ## 10. Log Event Taxonomy
 
@@ -1483,8 +1487,9 @@ dot-delimited namespaces. Every event SHOULD include `clientId`,
 | `playback.stalled` | warn | Stall detected. | `contentId`, `stalledAt`, `stallDurationMs` |
 | `playback.error` | error | Load/play error. | `contentId`, `error`, `code` |
 | `playback.advanced` | info | Auto-advance fired. | `reason`, `fromContentId`, `toContentId` |
-| `playback.problem` | warn | Local item failed or was skipped (RELY.5a). | `kind` (`skipped`\|`failed`), `reason` (`stalled`\|`error`), `contentId`, `replacementContentId` |
-| `playback.recovered` | info | Problem cleared (playing again, Start fresh, dismissed). | `contentId`, `reason` |
+| `playback.problem` | warn | Local item failed, was skipped, or is waiting on a refused file (RELY.5a). | `kind` (`skipped`\|`failed`\|`waiting`\|`library-unavailable`), `reason` (`stalled`\|`error`\|`file-unavailable`\|`source-unavailable`), `contentId`, `replacementContentId` |
+| `playback.recovered` | info | Problem cleared (playing again, file restored, skipped by person, Start fresh, dismissed). | `contentId`, `reason` |
+| `outcome.skipped` | info | Skip now on a waiting local item. | `attemptId` |
 | `search.issued` | debug | Search query sent. | `text`, `scopeKey` |
 | `search.result-chunk` | debug | One SSE results event. | `source`, `itemCount` |
 | `search.completed` | info | Search stream ended. | `totalMs`, `resultCount` |
