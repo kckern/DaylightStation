@@ -1,6 +1,6 @@
 # Media App redesign — separation of concerns in the `/media` UX
 
-**Status:** Remaining-P0 Tasks 1–6 are in production (Task 6 at `757102abb`). Task 7 (one voice for outcomes, retry, paused restore, itemised Start fresh) was implemented on branch `media/p0-task7` on 2026-10-02 and extends the P0 manifest to 31 stories / 69 criteria; it is not merged or deployed by this task (the orchestrator merges and deploys). Task 8 (accessibility, size parity, final certification) is not started. P1/P2 are not started.
+**Status:** Remaining-P0 Tasks 1–6 are in production (Task 6 at `757102abb`). Task 7 (one voice for outcomes, retry, paused restore, itemised Start fresh) was implemented on branch `media/p0-task7` on 2026-10-02 and extends the P0 manifest to 30 stories / 66 criteria; it is not merged or deployed by this task (the orchestrator merges and deploys). Task 8 (accessibility, size parity, final certification) is not started. P1/P2 are not started.
 
 **Started:** 2026-09-14 · **Planning baseline:** `b2ff8a460` (the code the baseline audit describes)
 **Authorised by:** the owner, 2026-09-14. They accepted the requirements and their P0/P1/P2 phasing, chose to evolve the app in place, and gave the implementer authority to commit to `main` and deploy only when the deploy gate is clear.
@@ -121,7 +121,7 @@ Update a row when its step lands: date, commit, tests, deploy, and notes (includ
 | P0 · 4 | One search, browse | RQ-FIND-01–08 | Complete (partial criteria) | `4d23d766a` | Task 4. |
 | P0 · 5 | One handle, one set of controls | RQ-STEER-01–03, 05–10, 15–18 | Complete (partial criteria) | `7c3031367` | Task 5. |
 | P0 · 6 | House view, browsers as screens, origin attribution, minimum naming | RQ-HOUSE-01–03, 05; RQ-AUTO-01, 03, 04; O6 | Complete | `757102abb` | Task 6 (salvaged 2026-09-28/29), in production; P0 manifest 25 stories / 54 criteria. Promoted only HOUSE.2a/AC3, HOUSE.3a/AC1+AC3, HOUSE.4a/AC2+AC4, and AUTO.3a/AC1+AC2. AUTO.1a/1b/2a, unique-name history/warnings, Move here, and whole-house reconnect acceptance remain unclaimed. |
-| P0 · 7 | One voice for outcomes | RQ-RELY-01–03, 05, 06 | Implemented, not merged | branch `media/p0-task7` | Task 7. Promoted RELY.2a/AC2, RELY.3a/AC1–AC4, RELY.5a/AC1–AC3, RELY.6a/AC1 on exact-SHA runtime. RELY.1a, RELY.2a/AC1+AC3, RELY.5a/AC4, RELY.6a/AC2+AC3 have unit evidence only (see ledger). |
+| P0 · 7 | One voice for outcomes | RQ-RELY-01–03, 05, 06 | Implemented, not merged | branch `media/p0-task7` | Task 7. Promoted RELY.2a/AC2, RELY.3a/AC1–AC4, RELY.6a/AC1 on exact-SHA runtime. RELY.5a has a runtime journey that passes intermittently (Player source-healing wait vs stall skip), so it is not promoted. RELY.1a, RELY.2a/AC1+AC3, RELY.6a/AC2+AC3 have unit evidence only (see ledger). |
 | P0 · 8 | Keep your place, orientation | RQ-RELY-07, 09–11 | Implemented, not merged | branch `media/p0-task7` | Task 7: RELY.7a/AC1, AC2, AC5 and RELY.8a/AC1–AC3 promoted. RELY.9a/RELY.10a were already accepted (`ee0e38db9`). RELY.7a/AC3 (power cut) is P1; AC4 (reconnecting note) is unit-only. |
 | P0 · 9 | Comfortable use, device-size parity | RQ-RELY-13–15; NF-A11Y; NF-DEV | Not started | — | |
 | P0 · 10 | Close-out: tap budgets, persona walkthroughs, deletions, reference docs | NF-TAP | Not started | — | |
