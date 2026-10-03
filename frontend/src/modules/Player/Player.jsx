@@ -1007,6 +1007,11 @@ const Player = forwardRef(function Player(props, ref) {
     }
     cancelPendingRendererOperation('superseded');
     clearRemountTimer();
+    // An owner starting a new visit of the mounted content (Media's sleep
+    // resume, Put it back, a same-item adopt) makes its next natural end a
+    // NEW completion; the duplicate guard only collapses the terminal signals
+    // of one visit. A repeat restart still waits on its own reset gate.
+    completedMediaKeyRef.current = null;
 
     const operation = {
       operationId,

@@ -82,3 +82,18 @@ describe('ScreenActionHandler — media:restore-snapshot', () => {
     expect(source.adopt).not.toHaveBeenCalled();
   });
 });
+
+describe('ScreenActionHandler — media:adopt-snapshot (§6.2.4)', () => {
+  beforeEach(() => { resetActionBus(); __resetPlayerQueueOpRegistryForTests(); });
+
+  it('an idle screen adopts a moved snapshot (PLACE.9a): mounts a player and adopts it, playing', async () => {
+    const { source, view } = setup();
+    act(() => getActionBus().emit('media:adopt-snapshot', { snapshot: { ...snapshot, state: 'playing' }, autoplay: true, commandId: 'move-1:adopt' }));
+    await view.findByTestId('player');
+    await waitFor(() => expect(source.adopt).toHaveBeenCalled());
+    const [adopted, options] = source.adopt.mock.calls[0];
+    expect(adopted).toMatchObject({ position: 321, currentItem: { contentId: 'plex:1' } });
+    expect(adopted.meta).not.toHaveProperty('playbackOwner');
+    expect(options).toMatchObject({ autoplay: true });
+  });
+});

@@ -4,7 +4,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createFleetStore } from '../fleet/fleetStore.js';
 import { createLocalSessionController } from '../session/LocalSessionController.js';
-import { moveScreenPlayback, moveFailureReason } from './screenMove.js';
+import { moveScreenPlayback, moveFailureReason, createLoadAdoptDestination, createScreenMoveDestination } from './screenMove.js';
 
 vi.mock('../logging/mediaLog.js', () => {
   const stub = new Proxy({}, { get: (t, k) => (t[k] ??= vi.fn()) });
@@ -78,5 +78,39 @@ describe('moveScreenPlayback', () => {
     const result = await moveScreenPlayback({ sourceId: 'kitchen', destinationId: 'den', fleetStore: storeWith(snapshot), http, destination: { adopt: vi.fn() } });
     expect(result).toMatchObject({ ok: false, reason: 'no-owner-identity' });
     expect(http).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('moving to an idle screen (no owner to capture)', () => {
+  it('adopts through the adopt load, and counts only once the screen reports the same item', async () => {
+    const store = createFleetStore();
+    store.receive({ deviceId: 'den', snapshot: { sessionId: 'den-idle', state: 'idle', currentItem: null, queue: { items: [], currentIndex: -1 } }, ts: new Date().toISOString() });
+    const http = vi.fn(async () => ({ ok: true }));
+    const destination = createLoadAdoptDestination({ deviceId: 'den', fleetStore: store, http, observeMs: 2000 });
+    const snapshot = published();
+    const pending = destination.adopt({ operationId: 'op', snapshot });
+    await vi.waitFor(() => expect(http).toHaveBeenCalled());
+    expect(http).toHaveBeenCalledWith('api/v1/device/den/load', { dispatchId: 'op:adopt', snapshot, mode: 'adopt' }, 'POST');
+    store.receive({ deviceId: 'den', snapshot: published({ sessionId: 'sess-a', meta: { ownerId: 'den' } }), ts: new Date().toISOString() });
+    await expect(pending).resolves.toEqual({ status: 'adopted' });
+  });
+
+  it('is uncertain when the screen never reports it', async () => {
+    const store = createFleetStore();
+    const destination = createLoadAdoptDestination({ deviceId: 'den', fleetStore: store, http: async () => ({ ok: true }), observeMs: 20 });
+    await expect(destination.adopt({ operationId: 'op', snapshot: published() })).resolves.toMatchObject({ status: 'uncertain' });
+  });
+
+  it('uses the typed hand-off first and falls back only when there is nothing to capture', async () => {
+    const store = createFleetStore();
+    const http = vi.fn(async (url) => (url.endsWith('/session/handoff')
+      ? { ok: false, code: 'INVALID_CAPTURE', handoff: { transferId: 'op', phase: 'failed', code: 'INVALID_CAPTURE' } }
+      : { ok: true }));
+    const destination = createScreenMoveDestination({ deviceId: 'den', fleetStore: store, http });
+    const pending = destination.adopt({ operationId: 'op', destinationId: 'den', snapshot: published() });
+    await vi.waitFor(() => expect(http.mock.calls.map((c) => c[0])).toContain('api/v1/device/den/load'));
+    store.receive({ deviceId: 'den', snapshot: published({ sessionId: 'new' }), ts: new Date().toISOString() });
+    await expect(pending).resolves.toEqual({ status: 'adopted' });
   });
 });

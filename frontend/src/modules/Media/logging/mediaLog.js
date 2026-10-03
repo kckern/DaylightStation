@@ -115,6 +115,7 @@ export const mediaLog = {
   transportCommand:       sampled('transport.command', { maxPerMinute: 60, aggregate: true }),
   // Batch B — handle and controls (screen session controls, lock screen,
   // several-screen aim, moves between screens).
+  naturalEndConsulted:    info('session-controls.natural-end'),
   sessionControlCommand:  info('session-controls.command'),
   sessionControlResult:   info('session-controls.result'),
   sessionControlFailed:   warn('session-controls.failed'),
