@@ -9,9 +9,11 @@
  *   automation:   !include_dir_list automations/            → one automation per file
  *                                                             (a file holding a list is accepted)
  *
- * HA's custom tags (`!secret`, `!include`, `!input`, ...) are read as plain
- * values — nothing here needs them. A file that fails to parse is skipped and
- * logged; the rest still load.
+ * Subdirectories are read too (HA's include_dir_* recurse); a script is still
+ * named by its file name. HA's custom tags (`!secret`, `!include`, `!input`,
+ * ...) are read as plain values — nothing here needs them. A file that fails
+ * to parse is skipped and logged by file and line (never the parser message,
+ * which quotes config); the rest still load.
  *
  * The directory is configured (system config `media-routines.yml`,
  * `homeAssistant.configDir`). Where it is not reachable (the container does
@@ -20,7 +22,7 @@
  */
 import path from 'path';
 import yaml from 'js-yaml';
-import { dirExists, listFiles, readTextFromPath } from '#system/utils/FileIO.mjs';
+import { dirExists, listFiles, listDirs, readTextFromPath } from '#system/utils/FileIO.mjs';
 
 const HA_TAGS = ['secret', 'include', 'include_dir_list', 'include_dir_named', 'include_dir_merge_list',
   'include_dir_merge_named', 'input', 'env_var'];
@@ -54,14 +56,22 @@ export class HomeAssistantRoutineFileSource {
     try {
       return yaml.load(readTextFromPath(file), { schema: HA_SCHEMA });
     } catch (error) {
-      this.#logger.warn?.('media.routines.ha_file_unreadable', { file, error: error.message });
+      // Never the parser's message: js-yaml quotes the offending config line.
+      this.#logger.warn?.('media.routines.ha_file_unreadable', {
+        file, error: error?.name ?? 'Error', line: Number.isFinite(error?.mark?.line) ? error.mark.line + 1 : null,
+      });
       return undefined;
     }
   }
 
-  #files(sub) {
+  /** YAML files under `sub`, recursively, as HA's include_dir_* reads them. */
+  #files(sub, depth = 0) {
     const dir = path.join(this.#dir, sub);
-    return listFiles(dir).filter(isYaml).sort().map((name) => ({ name, file: path.join(dir, name) }));
+    const here = listFiles(dir).filter(isYaml).sort().map((name) => ({ name, file: path.join(dir, name) }));
+    if (depth >= 8) return here;
+    const nested = listDirs(dir).filter((d) => !d.startsWith('.')).sort()
+      .flatMap((d) => this.#files(path.join(sub, d), depth + 1));
+    return [...here, ...nested];
   }
 
   /**

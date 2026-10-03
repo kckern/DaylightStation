@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { RoutineCatalogService } from './RoutineCatalogService.mjs';
+import { extractRoutines } from '#domains/media/routineCatalog.mjs';
 
 const haConfig = {
   restCommands: { device_livingroom_tv: { url: 'http://x/api/v1/device/livingroom-tv/{{ action }}' } },
@@ -28,39 +29,42 @@ describe('RoutineCatalogService', () => {
     expect(live.read).toHaveBeenCalledTimes(1);
   });
 
+  it('peekMatch answers from the last catalog without reading anything (stale is fine) and refreshes in the background', async () => {
+    let now = 0;
+    const live = { name: 'home-assistant', available: () => true, read: vi.fn(async () => haConfig) };
+    const service = new RoutineCatalogService({ liveSources: [live], clock: { now: () => now } });
+    expect(service.peekMatch('livingroom-tv', { queue: 'morning-program' })).toBeNull(); // cold: nothing yet, a read starts
+    await new Promise((r) => setImmediate(r));
+    expect(service.peekMatch('livingroom-tv', { queue: 'morning-program' })).toMatchObject({ id: 'automation:kitchen_button_1' });
+    expect(live.read).toHaveBeenCalledTimes(1);
+    now = 10 * 60_000; // stale: still answers at once, refresh behind
+    expect(service.peekMatch('livingroom-tv', { queue: 'morning-program' })).toMatchObject({ id: 'automation:kitchen_button_1' });
+    await new Promise((r) => setImmediate(r));
+    expect(live.read).toHaveBeenCalledTimes(2);
+    expect(service.knows('automation:kitchen_button_1')).toBe(true);
+    expect(service.knows('automation:new_one')).toBe(false);
+  });
+
   it('falls back to the imported snapshot where the live config is out of reach', async () => {
     const store = snapshots();
     const live = { name: 'home-assistant', available: () => false, read: vi.fn() };
     const service = new RoutineCatalogService({ liveSources: [live], snapshots: store, clock: { now: () => Date.parse('2026-10-03T00:00:00Z') }, logger: { info: vi.fn(), warn: vi.fn() } });
     expect((await service.list({})).routines).toEqual([]);
-    const imported = await service.importSnapshot({ config: haConfig, source: 'cli' });
-    expect(imported).toEqual({ count: 1, dropped: 0, importedAt: '2026-10-03T00:00:00.000Z' });
+    const imported = await service.importSnapshot({ routines: extractRoutines(haConfig), source: 'cli' });
+    expect(imported).toEqual({ count: 1, importedAt: '2026-10-03T00:00:00.000Z' });
     const { routines, sources } = await service.list({});
     expect(routines.map((r) => r.id)).toEqual(['automation:kitchen_button_1']);
     expect(sources.find((s) => s.kind === 'snapshot')).toMatchObject({ used: true, count: 1, from: 'cli' });
     expect(live.read).not.toHaveBeenCalled();
   });
 
-  it('import validates: no input is an error, malformed routines are dropped', async () => {
-    const service = new RoutineCatalogService({ snapshots: snapshots(), logger: { info: vi.fn() } });
+  it('import refuses malformed routines outright (nothing stored)', async () => {
+    const store = snapshots();
+    const service = new RoutineCatalogService({ snapshots: store, logger: { info: vi.fn() } });
     await expect(service.importSnapshot({})).rejects.toMatchObject({ code: 'INVALID_ROUTINES' });
-    const result = await service.importSnapshot({ routines: [{ id: 'a', name: 'A', targets: [{ deviceId: 'fleet:x' }] }, { id: 7 }, null] });
-    expect(result).toMatchObject({ count: 1, dropped: 2 });
-  });
-
-  it('adds routines only the history has seen, as observed', async () => {
-    const history = { load: async () => [
-      { routine: { id: null, name: 'Home Assistant' }, deviceId: 'fleet:office-tv', what: { key: 'queue', value: 'x' } },
-      { routine: { id: 'automation:kitchen_button_1', name: 'Kitchen Button 1' }, deviceId: 'fleet:livingroom-tv', what: {} },
-    ] };
-    const live = { name: 'home-assistant', available: () => true, read: async () => haConfig };
-    const service = new RoutineCatalogService({ liveSources: [live], history });
-    const { routines } = await service.list({});
-    expect(routines.map((r) => [r.id, r.kind])).toEqual([
-      ['automation:kitchen_button_1', 'automation'],
-      ['observed:home_assistant', 'observed'],
-    ]);
-    expect(routines[1].targets).toEqual([{ deviceId: 'fleet:office-tv', screenId: 'office-tv', query: 'queue=x' }]);
+    await expect(service.importSnapshot({ routines: [{ id: 'a', name: 'A', targets: [{ deviceId: 'fleet:x', query: '' }] }, { id: 7 }] }))
+      .rejects.toMatchObject({ code: 'INVALID_ROUTINES', details: { errors: expect.arrayContaining([expect.stringContaining('routines[1].id')]) } });
+    expect(store.save).not.toHaveBeenCalled();
   });
 
   it('a routine origin seen on ledger starts (a routine driving a wall browser) is observed too', async () => {

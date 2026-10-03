@@ -52,11 +52,12 @@ async function main() {
     return;
   }
   if (command === 'push') {
-    const config = await readConfig();
+    // Extract here; only the routines leave this machine, never the HA config.
+    const routines = extractRoutines(await readConfig());
     const res = await fetch(`${url}/api/v1/media/routines/catalog`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config, source: 'media-routines.cli' }),
+      body: JSON.stringify({ routines, source: 'media-routines.cli' }),
     });
     const body = await res.json().catch(() => ({}));
     process.stdout.write(`${res.status} ${JSON.stringify(body)}\n`);

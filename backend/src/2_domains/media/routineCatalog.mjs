@@ -96,6 +96,12 @@ function scriptTargetsOf(node) {
   return list.map((e) => String(e).trim()).filter((e) => e.startsWith('script.')).map((e) => e.slice(7));
 }
 
+/** Plain (non-object) `variables:` values; templates among them stay as text. */
+function plainVars(variables) {
+  if (!isObject(variables)) return {};
+  return Object.fromEntries(Object.entries(variables).filter(([, v]) => v !== null && typeof v !== 'object'));
+}
+
 function scriptDefaults(script) {
   const out = {};
   for (const [name, field] of Object.entries(isObject(script?.fields) ? script.fields : {})) {
@@ -137,7 +143,7 @@ function walk(node, ctx, vars, via, depth, stack) {
     for (const [name, passed] of called) {
       const script = ctx.scripts[name];
       if (!isObject(script) || stack.includes(name)) continue;
-      const scriptVars = { ...scriptDefaults(script), ...passed };
+      const scriptVars = { ...scriptDefaults(script), ...plainVars(script.variables), ...passed };
       out.push(...walk(script.sequence, ctx, scriptVars, [...via, `script:${name}`], depth + 1, [...stack, name]));
     }
   }
@@ -180,7 +186,8 @@ export function extractRoutines({ restCommands = {}, scripts = {}, automations =
   const routines = [];
   for (const automation of Array.isArray(automations) ? automations : []) {
     if (!isObject(automation)) continue;
-    const raw = walk(automation.actions ?? automation.action ?? automation.sequence, ctx, {}, [], 0, []);
+    // Automation-level `variables:` are in scope for every action below.
+    const raw = walk(automation.actions ?? automation.action ?? automation.sequence, ctx, plainVars(automation.variables), [], 0, []);
     if (!raw.length) continue;
     const key = automation.id ?? slug(automation.alias ?? '');
     routines.push({
@@ -190,7 +197,7 @@ export function extractRoutines({ restCommands = {}, scripts = {}, automations =
   }
   for (const [name, script] of Object.entries(ctx.scripts)) {
     if (!isObject(script)) continue;
-    const raw = walk(script.sequence, ctx, scriptDefaults(script), [], 0, [name]);
+    const raw = walk(script.sequence, ctx, { ...scriptDefaults(script), ...plainVars(script.variables) }, [], 0, [name]);
     if (!raw.length) continue;
     routines.push({
       id: `script:${name}`, name: script.alias || name, kind: 'script', source: 'home-assistant',
@@ -259,4 +266,46 @@ export function matchRoutines(routines, deviceId, params) {
 export function routinesTargeting(routines, id) {
   const screenId = bare(id);
   return (routines || []).filter((routine) => (routine.targets || []).some((t) => t.deviceId === id || t.screenId === screenId));
+}
+
+export const ROUTINE_IMPORT_LIMITS = Object.freeze({
+  maxRoutines: 500, maxId: 128, maxName: 120, maxTargets: 20, maxQuery: 1000, maxVia: 10,
+});
+const ROUTINE_KINDS = new Set(['automation', 'script', 'command', 'observed']);
+const SCREEN_ID = /^(fleet|browser|screen):[A-Za-z0-9._-]{1,96}$/;
+
+const boundedString = (value, max, { allowEmpty = false } = {}) => typeof value === 'string'
+  && (allowEmpty || value.length > 0) && value.length <= max;
+
+/**
+ * Validate routines posted to the catalog (PUT /routines/catalog): strings
+ * where strings belong, every length bounded, the count capped.
+ * @param {unknown} routines
+ * @returns {string[]} errors (empty = valid)
+ */
+export function validateRoutineImport(routines) {
+  const L = ROUTINE_IMPORT_LIMITS;
+  if (!Array.isArray(routines)) return ['routines must be an array'];
+  if (routines.length > L.maxRoutines) return [`at most ${L.maxRoutines} routines`];
+  const errors = [];
+  routines.forEach((r, i) => {
+    const at = `routines[${i}]`;
+    if (!isObject(r)) { errors.push(`${at}: must be an object`); return; }
+    if (!boundedString(r.id, L.maxId)) errors.push(`${at}.id: string of 1-${L.maxId} chars`);
+    if (!boundedString(r.name, L.maxName)) errors.push(`${at}.name: string of 1-${L.maxName} chars`);
+    if (r.kind !== undefined && !ROUTINE_KINDS.has(r.kind)) errors.push(`${at}.kind: one of ${[...ROUTINE_KINDS].join('|')}`);
+    if (r.source !== undefined && !boundedString(r.source, L.maxId)) errors.push(`${at}.source: string of 1-${L.maxId} chars`);
+    if (r.via !== undefined && (!Array.isArray(r.via) || r.via.length > L.maxVia || !r.via.every((v) => boundedString(v, L.maxId)))) {
+      errors.push(`${at}.via: up to ${L.maxVia} strings of 1-${L.maxId} chars`);
+    }
+    if (!Array.isArray(r.targets) || r.targets.length < 1 || r.targets.length > L.maxTargets) {
+      errors.push(`${at}.targets: 1-${L.maxTargets} targets`);
+      return;
+    }
+    r.targets.forEach((t, j) => {
+      if (!isObject(t) || !SCREEN_ID.test(String(t.deviceId ?? ''))) errors.push(`${at}.targets[${j}].deviceId: a screen id`);
+      else if (!boundedString(t.query, L.maxQuery, { allowEmpty: true })) errors.push(`${at}.targets[${j}].query: string of at most ${L.maxQuery} chars`);
+    });
+  });
+  return errors;
 }

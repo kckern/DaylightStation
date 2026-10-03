@@ -80,6 +80,8 @@ export function createMediaHouseModule({
     logger: routineLog,
   });
   screenRegistry.setRoutineCatalog(routineCatalog);
+  // Warm it: the load path only ever takes a cache hit (peekMatch).
+  routineCatalog.peek();
   const routineHistory = new RoutineHistoryService({
     store: historyStore, catalog: routineCatalog, screens: screenRegistry, playLedger, logger: routineLog,
   });
@@ -117,7 +119,9 @@ export function createMediaHouseModule({
     : null;
 
   const router = createMediaHouseRouter({
-    screenRegistry, routineCatalog, routineHistory, screenPlayback, suggestions, logger: log('media-house-api'),
+    screenRegistry, routineCatalog, routineHistory, screenPlayback, suggestions,
+    householdExists: typeof configService.householdExists === 'function' ? (h) => configService.householdExists(h) : null,
+    logger: log('media-house-api'),
   });
 
   return { router, screenRegistry, routineCatalog, routineHistory, screenPlayback, suggestions, originHints, wrapWakeAndLoad };

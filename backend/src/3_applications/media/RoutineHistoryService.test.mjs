@@ -15,6 +15,7 @@ function build({ plays = [], screensView = null } = {}) {
   };
   const catalog = {
     invalidate: vi.fn(),
+    knows: vi.fn((id) => id === 'automation:kitchen_button_1'),
     list: async () => ({ routines: [{ id: 'automation:kitchen_button_1', name: 'Kitchen Button 1', targets: [{ deviceId: 'fleet:livingroom-tv' }] }] }),
   };
   const playLedger = { plays: vi.fn(async () => plays) };
@@ -35,7 +36,8 @@ describe('RoutineHistoryService', () => {
     advance(3_600_000);
     await service.record({ routine, deviceId: 'fleet:livingroom-tv', query: { queue: 'morning-program' }, result: { ok: false, failedStep: 'power' } });
     expect(logger.warn).toHaveBeenCalledWith('media.routines.run', expect.objectContaining({ outcome: 'failed', reason: 'Living Room TV did not turn on' }));
-    expect(catalog.invalidate).toHaveBeenCalled();
+    // A run of a routine the catalog already knows does not throw the catalog away.
+    expect(catalog.invalidate).not.toHaveBeenCalled();
     const { items } = await service.list({});
     expect(items.map((r) => r.outcome)).toEqual(['failed', 'started']);
     expect(items[1]).toMatchObject({
@@ -45,6 +47,8 @@ describe('RoutineHistoryService', () => {
       played: { contentId: 'plex:99', title: 'Morning Hymn' },
     });
     expect(items[0].played).toBeNull();
+    await service.record({ routine: { id: null, name: 'Brand new' }, deviceId: 'fleet:livingroom-tv', result: { ok: true } });
+    expect(catalog.invalidate).toHaveBeenCalledTimes(1);
   });
 
   it('filters by screen (including merged duplicates) and routine', async () => {

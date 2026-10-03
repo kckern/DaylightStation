@@ -41,7 +41,7 @@ export class RoutineLoadRecorder {
    * @param {Object} deps
    * @param {{execute: Function}} deps.wakeAndLoad
    * @param {() => ({userAgent?:string, device?:string}|null)} [deps.context] - current request context
-   * @param {{match: Function}} [deps.catalog] - RoutineCatalogService
+   * @param {{peekMatch: Function}} [deps.catalog] - RoutineCatalogService (cache-only match)
    * @param {{record: Function}} [deps.history] - RoutineHistoryService
    * @param {{note: Function}} [deps.hints] - LoadOriginHints
    * @param {{run: Function}} [deps.dedupe] - RoutineTriggerDedupeService
@@ -67,10 +67,11 @@ export class RoutineLoadRecorder {
     try { ctx = this.#context?.() ?? null; } catch { ctx = null; }
 
     if (named || namedId || HOME_ASSISTANT_UA.test(ctx?.userAgent ?? '')) {
+      // A cache hit only: nothing is read before the TV is woken.
       let matched = null;
       if (!named || !namedId) {
         try {
-          matched = await this.#catalog?.match?.(deviceId, forwarded);
+          matched = this.#catalog?.peekMatch?.(deviceId, forwarded) ?? null;
         } catch (error) {
           this.#logger.warn?.('media.routines.match_failed', { deviceId, error: error.message });
         }
@@ -134,8 +135,15 @@ export class RoutineLoadRecorder {
       failure = error;
     }
     if (result?.ok === false || failure) this.#hints?.note?.(ledgerId, null, this.#clock.now());
+    // Recorded after answering: Home Assistant never waits on the registry
+    // lookup or the history YAML write.
     if (this.#history?.record) {
-      await this.#history.record({ routine: origin, deviceId: ledgerId, query: forwarded, result, error: failure });
+      const fail = (error) => this.#logger.warn?.('media.routines.history_record_failed', { deviceId, error: error?.message });
+      try {
+        Promise.resolve(this.#history.record({ routine: origin, deviceId: ledgerId, query: forwarded, result, error: failure })).catch(fail);
+      } catch (error) {
+        fail(error);
+      }
     }
     if (failure) throw failure;
     return result;
