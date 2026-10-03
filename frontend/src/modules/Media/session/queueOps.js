@@ -41,6 +41,11 @@ function toQueueItem(input, { priority = 'queue' } = {}) {
     ...(input.album != null ? { album: input.album } : {}),
     ...(input.mediaType != null ? { mediaType: input.mediaType } : {}),
     ...(input.isLive != null ? { isLive: !!input.isLive } : {}),
+    // PLAY.4a: an explicitly chosen start (a screen's spot, or the
+    // beginning) rides the item to the Player, which honours `seconds` as
+    // the start offset and `resume: false` as "don't apply the server's".
+    ...(Number.isFinite(input.seconds) ? { seconds: input.seconds } : {}),
+    ...(input.resume === false ? { resume: false } : {}),
   };
 }
 

@@ -113,6 +113,23 @@ export const mediaLog = {
   urlCommandIgnored:      debug('url-command.ignored'),
   navPushed:              debug('nav.pushed'),
   transportCommand:       sampled('transport.command', { maxPerMinute: 60, aggregate: true }),
+  // Household media memory on the start page and item menus (batch A:
+  // FIND.7a/9a/10a/11a/12a/13a, PLAY.4a).
+  homeShown:              info('home.shown'),
+  householdLoadFailed:    warn('household.load-failed'),
+  favouriteToggled:       info('household.favourite-toggled'),
+  householdRemoved:       info('household.removed'),
+  householdRestored:      info('household.restored'),
+  watchedMarked:          info('household.watched-marked'),
+  householdActionFailed:  warn('household.action-failed'),
+  spotChoiceShown:        info('play.spot-choice-shown'),
+  spotChosen:             info('play.spot-chosen'),
+  outcomeStartOver:       info('outcome.start-over'),
+  outcomeStartOverFailed: warn('outcome.start-over-failed'),
+  moveHereInitiated:      info('move-here.initiated'),
+  moveHereSucceeded:      info('move-here.succeeded'),
+  moveHereFailed:         warn('move-here.failed'),
+  playedEarlierShown:     debug('played-earlier.shown'),
 };
 
 export default mediaLog;

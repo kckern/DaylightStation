@@ -87,7 +87,7 @@ export function useContentDispatch() {
   // attempt's own outcome record (DispatchProvider) names the screen and its
   // progress, so nothing else is shown here.
   const castTo = useCallback((castTargetIds, castMode, id, title, opts = {}) => {
-    const { shuffle = false, verb = 'play', itemAction } = opts;
+    const { shuffle = false, verb = 'play', itemAction, startOver = false, resumedFrom = null } = opts;
     // An aimed content pick starts new playback; it is not an ownership
     // transfer. Keep the transfer guard reserved for snapshot handoff while
     // allowing a fresh/default destination aim to dispatch normally.
@@ -100,11 +100,20 @@ export function useContentDispatch() {
       title,
       ...(shuffle ? { shuffle: true } : {}),
       ...(itemAction ? { itemAction } : {}),
+      ...(startOver ? { startOver: true, resumedFrom } : {}),
     });
   }, [dispatchToTarget]);
 
   const runAction = useCallback((kind, id, item, opts = {}) => {
-    const input = resultToQueueInput({ ...item, id }) ?? { contentId: id, title: item?.title };
+    let input = resultToQueueInput({ ...item, id }) ?? { contentId: id, title: item?.title };
+    // PLAY.4a: `startAt` is an explicit start the person chose (a screen's
+    // spot, or 0 for the beginning) and rides the item; `resumedFrom` says the
+    // play continues from a saved spot, so its confirmation offers Start over.
+    if (kind === 'playNow' && Number.isFinite(opts.startAt)) input = { ...input, seconds: opts.startAt, resume: false };
+    const resumedFrom = kind !== 'playNow' ? null
+      : Number.isFinite(opts.startAt) ? (opts.startAt > 0 ? opts.startAt : null)
+        : (Number.isFinite(opts.resumedFrom) && opts.resumedFrom > 0 ? opts.resumedFrom : null);
+    const resume = resumedFrom != null ? { startOver: true, resumedFrom } : {};
     const operationId = createOperationId();
     const remote = targetIds.length > 0;
     const destination = remote ? {
@@ -112,7 +121,7 @@ export function useContentDispatch() {
       execute: command => {
         castTo(targetIds, mode, id, item?.title, {
           verb: ['add', 'playNext', 'playFirst'].includes(kind) ? 'queue' : 'play',
-          shuffle: kind === 'shuffle', itemAction: command,
+          shuffle: kind === 'shuffle', itemAction: command, ...resume,
         });
         return { ok: true, pending: true, operationId: command.operationId };
       },
@@ -145,6 +154,7 @@ export function useContentDispatch() {
           item: { contentId: input.contentId, title: input.title ?? item?.title ?? null },
           command: { kind, item: input },
           undo: { operationId, expiresAt: Date.now() + 10000, run: destination.undo },
+          ...resume,
         }) ?? null;
       },
     } }).then(result => {
@@ -200,10 +210,10 @@ export function useContentDispatch() {
   // route without inheriting selection's clearRest policy: More → Play Now
   // starts this item while retaining the local queue tail. Only these two
   // verbs are centralized here; Play Next/Up Next remain local queue edits.
-  const dispatchLeafVerb = useCallback((verb, id, item) => {
+  const dispatchLeafVerb = useCallback((verb, id, item, opts = {}) => {
     const kind = ({ upNext: 'playFirst', playOn: 'playNow', addOn: 'add' })[verb] ?? verb;
     if (!['playNow', 'add', 'playNext', 'playFirst', 'shuffle'].includes(kind)) return undefined;
-    if (controller || !['playNow', 'add'].includes(kind)) return runAction(kind, id, item);
+    if (controller || !['playNow', 'add'].includes(kind)) return runAction(kind, id, item, opts);
     const title = item?.title ?? null;
     if (targetIds.length > 0) {
       castTo(targetIds, mode, id, title, { verb: verb === 'add' ? 'queue' : 'play' });
