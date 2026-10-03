@@ -752,7 +752,12 @@ export function createLocalSessionController({
       release: () => {},
     };
     try {
-      return controls.naturalEnd({ current, next }, actions) === true;
+      const handled = controls.naturalEnd({ current, next }, actions) === true;
+      mediaLog.naturalEndConsulted({
+        sessionId: s.sessionId, contentId: current.contentId, nextContentId: next?.contentId ?? null,
+        decision: handled ? 'session-controls' : 'advance',
+      });
+      return handled;
     } catch (error) {
       mediaLog.sessionControlFailed({ target: 'local', action: 'natural-end', error: error?.message ?? String(error) });
       return false;
@@ -1244,10 +1249,13 @@ export function createLocalSessionController({
     ownerId: `browser:${clientId}`,
     ...sessionControlsOptions,
     ports: {
+      // The spot comes from the native media element when it is bound to
+      // the current item (capture()), else the hot position tier.
       getSnapshot: () => {
         const current = snap();
-        const hot = position.get().seconds;
-        return Number.isFinite(hot) && current.currentItem ? { ...current, position: hot } : current;
+        if (!current.currentItem) return current;
+        const spot = capture().snapshot.position;
+        return Number.isFinite(spot) ? { ...current, position: spot } : current;
       },
       // A sleep stop here PAUSES: the item and its spot stay, so "continue
       // from where it stopped" is ordinary Play.

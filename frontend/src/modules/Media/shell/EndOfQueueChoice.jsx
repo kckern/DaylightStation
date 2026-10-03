@@ -37,12 +37,12 @@ export function EndOfQueueChoice({ target, targetName = null }) {
   const choose = async (mode) => {
     if (disabled || mode === current || pending) return;
     setPending(mode);
-    mediaLog.sessionControlCommand({ target: targetId, action: 'setEndOfQueue', value: mode });
+    if (kind !== 'local') mediaLog.sessionControlCommand({ target: targetId, action: 'setEndOfQueue', value: mode });
     let result;
     try { result = await actions.setEndOfQueue(mode); } catch (error) { result = { ok: false, error: error?.message }; }
     setPending(null);
     if (result?.ok === false) {
-      mediaLog.sessionControlFailed({ target: targetId, action: 'setEndOfQueue', code: result.code ?? null, error: result.error ?? null });
+      if (kind !== 'local') mediaLog.sessionControlFailed({ target: targetId, action: 'setEndOfQueue', code: result.code ?? null, error: result.error ?? null });
       outcomes?.recordLocal?.({
         kind: 'control', phase: 'failed', item: { title: 'what happens when the queue ends' },
         reason: result.error ?? result.code ?? 'The screen did not confirm the change',

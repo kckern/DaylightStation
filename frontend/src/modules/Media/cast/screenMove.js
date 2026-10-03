@@ -29,6 +29,77 @@ function uuid() {
   return `move-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+const ADOPT_OBSERVE_MS = 45_000;
+
+/**
+ * A screen that is idle has no playback owner to capture, so the typed
+ * hand-off cannot start there. It adopts through the ordinary adopt load
+ * instead (§4.7), and counts as adopted only once the screen itself reports
+ * the same item (fresh state) — positive evidence, never the HTTP result
+ * alone.
+ */
+export function createLoadAdoptDestination({ deviceId, fleetStore, http = DaylightAPI, observeMs = ADOPT_OBSERVE_MS }) {
+  return {
+    async adopt(request) {
+      const contentId = request.snapshot?.currentItem?.contentId;
+      const before = fleetStore?.getEntry?.(deviceId)?.snapshot ?? null;
+      const adopted = (entry) => {
+        const snap = entry?.snapshot;
+        return !!snap && !entry.offline && !entry.isStale
+          && snap.currentItem?.contentId === contentId
+          && ['playing', 'paused', 'buffering'].includes(snap.state)
+          && (before?.sessionId == null || snap.sessionId !== before.sessionId
+            || before.currentItem?.contentId !== contentId);
+      };
+      let response;
+      try {
+        response = await http(`api/v1/device/${deviceId}/load`, {
+          dispatchId: `${request.operationId}:adopt`, snapshot: request.snapshot, mode: 'adopt',
+        }, 'POST');
+      } catch (error) {
+        return { status: 'uncertain', reason: error?.message ?? 'adopt-not-confirmed' };
+      }
+      if (response?.ok === false) return { status: 'rejected', reason: response.error ?? 'adopt-refused' };
+      if (adopted(fleetStore?.getEntry?.(deviceId))) return { status: 'adopted' };
+      return new Promise((resolve) => {
+        let done = false;
+        const finish = (result) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          unsubscribe?.();
+          resolve(result);
+        };
+        const unsubscribe = fleetStore?.subscribeDevice?.(deviceId, (entry) => {
+          if (adopted(entry)) finish({ status: 'adopted' });
+        });
+        const timer = setTimeout(() => finish({ status: 'uncertain', reason: 'adopt-not-observed' }), observeMs);
+      });
+    },
+  };
+}
+
+/** A screen: the typed hand-off when it has an owner to capture, else the adopt load. */
+export function createScreenMoveDestination({ deviceId, fleetStore, http = DaylightAPI }) {
+  const handoff = createRemoteMoveDestination({ deviceId, http });
+  const viaLoad = createLoadAdoptDestination({ deviceId, fleetStore, http });
+  return {
+    async adopt(request) {
+      const result = await handoff.adopt(request);
+      // An explicit refusal (an idle screen answers INVALID_CAPTURE: there is
+      // no owner to hand over to) or a capture that never confirmed started
+      // nothing, so the adopt load is safe. An uncertain START is not: it may
+      // have started, and is reported as such.
+      if (result.status === 'rejected'
+        || (result.status === 'uncertain' && result.reason === 'capture-not-confirmed')) {
+        mediaLog.screenMoveInitiated({ destinationId: deviceId, operationId: request.operationId, path: 'adopt-load' });
+        return viaLoad.adopt(request);
+      }
+      return result;
+    },
+  };
+}
+
 /** This device as a move destination: adopt the snapshot in the local session. */
 export function createLocalMoveDestination({ localController }) {
   return {
@@ -79,7 +150,7 @@ export async function moveScreenPlayback({
 
   const destination = destinationOverride ?? (destinationId === 'local'
     ? createLocalMoveDestination({ localController })
-    : createRemoteMoveDestination({ deviceId: destinationId, http }));
+    : createScreenMoveDestination({ deviceId: destinationId, fleetStore, http }));
   const source = {
     getIdentity: () => ownerIdentity(fleetStore.getEntry(sourceId)?.snapshot),
     stopIfCurrent: async () => {

@@ -677,6 +677,13 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
   useScreenAction('media:queue', handleMediaQueue);
   useScreenAction('media:queue-op', handleMediaQueueOp);
   useScreenAction('media:restore-snapshot', handleRestoreSnapshot);
+  // §6.2.4 adopt-snapshot (a move here from another screen, PLACE.9a): the
+  // command was acknowledged but never adopted. It is the restore path —
+  // bootstrap an owner when idle, then adopt — playing unless told otherwise.
+  const handleAdoptSnapshot = useCallback((payload = {}) => handleRestoreSnapshot({
+    snapshot: payload.snapshot, autoplay: payload.autoplay !== false, reason: 'adopt', requestId: payload.commandId,
+  }), [handleRestoreSnapshot]);
+  useScreenAction('media:adopt-snapshot', handleAdoptSnapshot);
   useScreenAction('media:seek-abs', handleMediaSeekAbs);
   useScreenAction('media:seek-rel', handleMediaSeekRel);
   useScreenAction('media:playback', handleMediaPlayback);

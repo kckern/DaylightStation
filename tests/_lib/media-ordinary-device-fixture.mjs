@@ -81,8 +81,15 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet } = 
   eventBus.setStartStatusService(startStatus);
   const receivers = new Map(VIRTUAL_DEVICES.map(({ id, screen }) => [id, virtualReceiver(eventBus, logger, id, screen)]));
   const deviceService = { get: (id) => receivers.get(id) ?? null };
+  // Wired as in production (bootstrap): the adopt load (§4.7) needs it.
+  const sessionControl = new SessionControlService({
+    transportGateway: presenceGateway,
+    livenessService: deviceLiveness,
+    logger,
+  });
   const wakeAndLoad = new WakeAndLoadService({
     deviceService,
+    sessionControlService: sessionControl,
     readinessPolicy: { isReady: async () => ({ ready: true }) },
     broadcast: (message) => eventBus.broadcast(message.topic, message),
     eventBus,
@@ -110,11 +117,6 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet } = 
     list: () => VIRTUAL_DEVICES.map(({ id, name }) => ({ id, name, fleet: true })),
   };
   const unavailable = { configured: () => false };
-  const sessionControl = new SessionControlService({
-    transportGateway: presenceGateway,
-    livenessService: deviceLiveness,
-    logger,
-  });
   const sessionService = new DeviceSessionApiService({ sessionControl, logger });
   const router = createDeviceRouter({
     fleetService, dispatchService, presenceService: unavailable, sessionService,
@@ -141,6 +143,8 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet } = 
     const id = VIRTUAL_DEVICES.map((device) => device.id).find((candidate) => path.startsWith(`/${candidate}/`));
     if (!id) return res.status(403).json({ ok: false, error: 'ordinary acceptance blocks physical device routes' });
     if (req.method === 'GET' && path === `/${id}/load`) return next();
+    // The adopt load (§4.7): a move to an idle virtual screen.
+    if (req.method === 'POST' && path === `/${id}/load` && req.body?.mode === 'adopt') return next();
     if (req.method === 'GET' && [`/${id}/receiver-ready`, `/${id}/receiver-state`].includes(path)) return next();
     if (req.method === 'POST'
       && path === `/${id}/session/transport`

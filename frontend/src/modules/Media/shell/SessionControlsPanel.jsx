@@ -74,18 +74,19 @@ export function SessionControlsPanel({ target, targetName = null }) {
   const run = async (action, label, thunk, value) => {
     if (!actions || busy) return;
     setBusy(action);
-    mediaLog.sessionControlCommand({ target: targetId, action, ...(value !== undefined ? { value } : {}) });
+    // This device's controls log their own commands (localSessionControls).
+    if (!isLocal) mediaLog.sessionControlCommand({ target: targetId, action, ...(value !== undefined ? { value } : {}) });
     let result;
     try { result = await thunk(); } catch (error) { result = { ok: false, error: error?.message ?? String(error) }; }
     setBusy(null);
     if (result?.ok === false) {
-      mediaLog.sessionControlFailed({ target: targetId, action, code: result.code ?? null, error: result.error ?? null });
+      if (!isLocal) mediaLog.sessionControlFailed({ target: targetId, action, code: result.code ?? null, error: result.error ?? null });
       outcomes?.recordLocal?.({
         kind: 'control', phase: 'failed', item: { title: label },
         reason: result.error ?? result.code ?? 'The screen did not confirm the change',
         targetId, targetName: isLocal ? null : targetName,
       });
-    } else {
+    } else if (!isLocal) {
       mediaLog.sessionControlResult({ target: targetId, action, ok: true });
     }
     return result;

@@ -450,4 +450,25 @@ describe('Player explicit renderer boundary', () => {
     subscription.unsubscribe();
   });
 
+
+  it('a new renderer operation on the same content makes its next natural end a new completion (Media sleep resume, Put it back)', async () => {
+    const ref = createRef();
+    const clear = vi.fn();
+    render(<Player ref={ref} play={{ contentId: 'plex:a', format: 'video' }} clear={clear} />);
+    await waitFor(() => expect(mounts).toHaveLength(1));
+    act(() => { latestProps.advance(); });
+    const firstEnd = clear.mock.calls.length;
+    expect(firstEnd).toBeGreaterThan(0);
+    const subscription = ref.current.subscribeMountedMediaOperations((binding) => ({ ready: true, ...binding }));
+    act(() => {
+      ref.current.beginRendererBoundary({
+        operationId: 'resume-1', expectedContentId: 'plex:a', targetSeconds: 40,
+        requiredObserverIds: [subscription.observerId],
+      });
+    });
+    await waitFor(() => expect(mounts).toHaveLength(2));
+    act(() => { latestProps.advance(); });
+    expect(clear.mock.calls.length).toBeGreaterThan(firstEnd);
+    subscription.unsubscribe();
+  });
 });
