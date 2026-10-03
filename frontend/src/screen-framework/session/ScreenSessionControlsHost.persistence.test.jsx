@@ -137,12 +137,24 @@ describe('B3 — a stopped, moved or already-offered session is never resurrecte
     expect(restores).toHaveLength(1);
   });
 
-  it('once the restored session is resumed it is a live session again', async () => {
+  it('a transient playing report during the paused adopt is not a resume', async () => {
     savePersistedSession('tv', { ...playing, state: 'paused' }, null);
     answerRestores();
     const source = makeSource(idle);
     mount(source);
     await pastRestore();
+    act(() => source.set(playing)); // renderer blips "playing" while settling paused
+    await act(async () => { vi.advanceTimersByTime(7_100); });
+    expect(loadPersistedSession('tv').restored).toBe(true);
+  });
+
+  it('once a person or remote resumes the restored session it is a live session again', async () => {
+    savePersistedSession('tv', { ...playing, state: 'paused' }, null);
+    answerRestores();
+    const source = makeSource(idle);
+    mount(source);
+    await pastRestore();
+    act(() => { getActionBus().emit('media:playback', { command: 'play', commandId: 'c1' }); });
     act(() => source.set(playing));
     await act(async () => { vi.advanceTimersByTime(2_100); });
     expect(loadPersistedSession('tv').restored).toBe(false);

@@ -134,13 +134,19 @@ export function ScreenSessionControlsHost({ controls, source }) {
     // A restored session that has not been resumed keeps its original save
     // time and is never offered again (B3).
     let restoredMark = null;
+    // A restored session is "resumed" only when a person or remote acted on
+    // it after the restore — never because the renderer briefly reported
+    // `playing` while settling the paused adopt.
+    let resumeIntent = false;
+    const resumeWatch = ['media:playback', 'media:seek-abs', 'media:seek-rel', 'media:queue-op', 'media:play', 'media:queue']
+      .map((event) => bus.subscribe(event, () => { if (restoredMark) resumeIntent = true; }));
     let lastWrite = 0;
     let pending = null;
     const writeFull = () => {
       lastWrite = Date.now();
       pending = null;
       const snapshot = source.getBareSnapshot?.();
-      if (restoredMark && snapshot?.state === 'playing') {
+      if (restoredMark && resumeIntent && snapshot?.state === 'playing') {
         logger().info('power-restore.resumed', { ownerId });
         restoredMark = null;
       }
@@ -167,7 +173,7 @@ export function ScreenSessionControlsHost({ controls, source }) {
     const spotTimer = setInterval(() => {
       if (!restoredRef.current) return;
       const snapshot = source.getBareSnapshot?.();
-      if (restoredMark) { if (snapshot?.state === 'playing') writeFull(); return; }
+      if (restoredMark) { if (resumeIntent && snapshot?.state === 'playing') writeFull(); return; }
       if (snapshot?.state === 'playing') updatePersistedSpot(ownerId, snapshot);
     }, SPOT_PERSIST_INTERVAL_MS);
 
@@ -208,6 +214,7 @@ export function ScreenSessionControlsHost({ controls, source }) {
       clearInterval(spotTimer);
       if (pending) clearTimeout(pending);
       startWatch.forEach((u) => u());
+      resumeWatch.forEach((u) => u());
       unsubscribeSource?.();
       unsubscribeControls?.();
     };

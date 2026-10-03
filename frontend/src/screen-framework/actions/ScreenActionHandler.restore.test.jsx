@@ -65,4 +65,20 @@ describe('ScreenActionHandler — media:restore-snapshot', () => {
     act(() => getActionBus().emit('media:restore-snapshot', { snapshot, autoplay: true, requestId: 'r2' }));
     await waitFor(() => expect(results).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'r2', ok: false, code: 'INVALID_SNAPSHOT' })));
   });
+
+  it('refuses to adopt when a start arrived after the restore began (WakeAndLoad play-now in the window)', async () => {
+    const { source, results } = setup();
+    act(() => getActionBus().emit('media:restore-snapshot', { snapshot, autoplay: false, reason: 'power-restore', requestId: 'r3' }));
+    act(() => getActionBus().emit('media:queue-op', { op: 'play-now', contentId: 'plex:new', commandId: 'wake-1' }));
+    await waitFor(() => expect(results).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'r3', ok: false, code: 'RESTORE_SUPERSEDED' })));
+    expect(source.adopt).not.toHaveBeenCalled();
+  });
+
+  it('a power restore refuses when the owner already holds an item at adopt time', async () => {
+    const { source, results } = setup();
+    source.getSnapshot = () => ({ currentItem: { contentId: 'plex:new' } });
+    act(() => getActionBus().emit('media:restore-snapshot', { snapshot, autoplay: false, reason: 'power-restore', requestId: 'r4' }));
+    await waitFor(() => expect(results).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'r4', ok: false, code: 'RESTORE_SUPERSEDED' })));
+    expect(source.adopt).not.toHaveBeenCalled();
+  });
 });
