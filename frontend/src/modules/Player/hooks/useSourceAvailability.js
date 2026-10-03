@@ -140,7 +140,16 @@ export function useSourceAvailability({
   // A refused source raises MediaError 4 ("404: Not Found"), which the recovery
   // ladder deliberately ignores (usePlaybackHealth RECOVERABLE_MEDIA_ERROR_CODES)
   // — so without this, nothing reacts until the 15s startup deadline.
+  // The element error is latched per load cycle and reset only after the
+  // render that switches items, so on that first render it still belongs to
+  // the PREVIOUS item. Never ask about the new file on the old element's error
+  // (2026-10-03: the next queue item was force-remounted and never started).
+  const errorOwnerRef = useRef(healableId);
   useEffect(() => {
+    if (errorOwnerRef.current !== healableId) {
+      errorOwnerRef.current = healableId;
+      return;
+    }
     if (!healableId) return;
     if (sinceRef.current !== null) return; // already waiting; the poll owns it
     if (isSourceRefusal({ errorCode, errorMessage })) {
