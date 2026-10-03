@@ -186,3 +186,23 @@ describe('play ledger (per-screen start history)', () => {
     expect(await service.plays({})).toEqual({ items: [], ledger: false });
   });
 });
+
+describe('carry on ordering and songs', () => {
+  it('a recent next episode is not crowded out by older unfinished items', async () => {
+    const records = [
+      P('plex:12', { playhead: 1400, duration: 1400, lastPlayed: '2026-10-02 18:00:00', completedAt: 'x' }),
+      P('plex:film', { playhead: 4800, duration: 7200, lastPlayed: '2026-09-01 21:00:00' }),
+      P('plex:doc', { playhead: 4800, duration: 7200, lastPlayed: '2026-09-02 21:00:00' }),
+    ];
+    const { service } = build({ records });
+    const { items } = await service.carryOn({ limit: 2 });
+    expect(items.map((i) => [i.contentId, i.reason])).toEqual([['plex:21', 'next-episode'], ['plex:doc', 'unfinished']]);
+    expect(items[0].afterPlayedAt).toBe('2026-10-02 18:00:00');
+  });
+  it('songs (type track) are never "carry on"', async () => {
+    const { deps } = build({ records: [P('plex:song', { playhead: 120, duration: 240, lastPlayed: '2026-10-02 18:00:00' })] });
+    deps.contentCatalog.getItem = vi.fn(async () => ({ id: 'plex:song', title: 'Song', metadata: { type: 'track' } }));
+    const service = new HouseholdMediaMemoryService(deps);
+    expect((await service.carryOn({})).items).toEqual([]);
+  });
+});

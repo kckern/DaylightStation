@@ -35,6 +35,8 @@ import { openSpotsOf, isSpotFinished, compareTimestamps } from '#domains/content
 const DEFAULT_DESCRIBE_TIMEOUT_MS = 4000;
 const DEFAULT_DESCRIBE_TTL_MS = 5 * 60 * 1000;
 const NEXT_EPISODE_CANDIDATES = 8;
+// Songs are replayed, not resumed: a half-played track is not "carry on".
+const NOT_RESUMABLE_TYPES = new Set(['track']);
 
 function clampLimit(value, fallback, max = 200) {
   const n = Number.parseInt(value, 10);
@@ -135,12 +137,24 @@ export class HouseholdMediaMemoryService {
       this.#listsStore.loadRemoved(householdId),
       this.#readNowPlaying(),
     ]);
-    const { items, nowOn } = buildCarryOn(records, { removed, nowPlaying: live.list, limit: max });
-    const nextEpisodes = items.length < max
-      ? await this.#nextEpisodes(records, removed, live.list, max - items.length)
-      : [];
+    // Unfinished items and next episodes compete on recency (the time the
+    // spot was left / the previous episode was finished), so a series the
+    // household is in the middle of is never crowded out by old leftovers.
+    // Display lookups hit the media server (whose requests serialize), so only
+    // the newest few times the limit are described; songs filtered out of
+    // those leave room without a second pass.
+    const { items, nowOn } = buildCarryOn(records, { removed, nowPlaying: live.list, limit: max * 3 });
+    const unfinished = (await this.#withDisplay(items))
+      .filter((item) => !NOT_RESUMABLE_TYPES.has(item.type))
+      .map((item) => ({ item, at: item.spots?.[0]?.lastPlayed ?? item.lastPlayed }));
+    const nextEpisodes = (await this.#nextEpisodes(records, removed, live.list, Math.min(max, NEXT_EPISODE_CANDIDATES)))
+      .map((item) => ({ item, at: item.afterPlayedAt }));
+    const merged = [...unfinished, ...nextEpisodes]
+      .sort((a, b) => compareTimestamps(b.at, a.at))
+      .slice(0, max)
+      .map(({ item }) => item);
     return {
-      items: [...(await this.#withDisplay(items)), ...nextEpisodes],
+      items: merged,
       nowOn: await this.#withDisplay(nowOn),
       nowPlayingKnown: live.known,
     };
@@ -281,6 +295,7 @@ export class HouseholdMediaMemoryService {
         contentId: next.id,
         reason: 'next-episode',
         after: candidate.contentId,
+        afterPlayedAt: candidate.lastPlayed ?? null,
         namespaceId: null,
         lastPlayed: null,
         playhead: 0,
