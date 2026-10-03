@@ -101,7 +101,12 @@ export function ScreenSessionControlsHost({ controls, source }) {
       controls.markLocalPlayback();
       if (ownerId) controls.stampOrigin({ kind: 'device', id: ownerId });
     };
+    const interruptFor = (reason) => () => controls.interrupt(reason);
     const unsubs = [
+      bus.subscribe('media:playback', interruptFor('media:playback')),
+      bus.subscribe('media:seek-abs', interruptFor('media:seek-abs')),
+      bus.subscribe('media:seek-rel', interruptFor('media:seek-rel')),
+      bus.subscribe('media:queue-op', interruptFor('media:queue-op')),
       bus.subscribe('media:session-control', onSessionControl),
       bus.subscribe('media:play', onLocalPlayback),
       bus.subscribe('media:queue', onLocalPlayback),

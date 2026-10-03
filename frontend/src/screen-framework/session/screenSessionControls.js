@@ -324,8 +324,17 @@ export function createScreenSessionControls({
 
   /** Refill when the last auto-added item starts (batches of ≤5 / ~30 min). */
   function observeSnapshot(snap) {
-    if (state.endOfQueue !== 'similar') return;
     const entry = currentEntry(snap);
+    // A countdown belongs to the item that just finished. If the owner has
+    // moved on by any route (skip, jump, a newer Play), it no longer applies
+    // and must never advance a second time (B4).
+    if (countdown) {
+      const finished = countdown.current;
+      const same = entry && finished
+        && (finished.queueItemId ? entry.queueItemId === finished.queueItemId : entry.contentId === finished.contentId);
+      if (!same) clearCountdown('current-item-changed');
+    }
+    if (state.endOfQueue !== 'similar') return;
     const order = snap?.queue?.executionOrder;
     const isLast = Array.isArray(order) ? order.length <= 1 : snap?.queue?.currentIndex === (snap?.queue?.items?.length ?? 0) - 1;
     if (!entry || entry.addedBy !== AUTO_CONTINUE_ADDED_BY || !isLast) return;
@@ -433,6 +442,13 @@ export function createScreenSessionControls({
     }
   }
 
+  /** A transport / seek / queue command arrived: a pending countdown is superseded (B4). */
+  function interrupt(reason) {
+    if (!countdown) return;
+    generation += 1;
+    clearCountdown(reason ?? 'interrupted');
+  }
+
   function markLocalPlayback() {
     generation += 1;
     restore = null;
@@ -481,6 +497,7 @@ export function createScreenSessionControls({
     handleSession,
     noteRemoteCommand,
     markLocalPlayback,
+    interrupt,
     naturalEndPolicy,
     observeSnapshot,
     stampOrigin(origin) { if (origin && typeof origin === 'object') lastOrigin = origin; },
