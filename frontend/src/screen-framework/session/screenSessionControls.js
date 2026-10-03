@@ -120,6 +120,8 @@ export function createScreenSessionControls({
   let unattendedBatches = 0;
   const seenCommandIds = [];
   const listeners = new Set();
+  // Player features (P2: tracks, Show briefly, music behind) — screenPlayerFeatures.js.
+  let extension = null;
 
   const notify = () => {
     for (const fn of [...listeners]) {
@@ -483,7 +485,9 @@ export function createScreenSessionControls({
         ended.actions.advance();
         return { ok: true };
       }
-      default: return { ok: false, code: 'INVALID_SESSION_COMMAND' };
+      default:
+        if (extension?.handles?.(action)) return extension.handleSession(action, params);
+        return { ok: false, code: 'INVALID_SESSION_COMMAND' };
     }
   }
 
@@ -541,6 +545,7 @@ export function createScreenSessionControls({
         ...note,
         putBack: restoreAvailable(note.id) ? { availableUntil: iso(restore.expiresAt) } : null,
       })),
+      ...(extension ? extension.toPublished() : {}),
     };
   }
 
@@ -573,8 +578,16 @@ export function createScreenSessionControls({
       logger().info('hydrated', { ownerId, addOnly: state.addOnly, endOfQueue: state.endOfQueue });
       notify();
     },
+    /** Attach the player-features extension: its actions, its published blocks, its changes. */
+    attachExtension(ext) {
+      if (!ext || extension) return;
+      extension = ext;
+      ext.subscribe?.(() => notify());
+    },
+    get extension() { return extension; },
     dispose() {
       disposed = true;
+      extension?.dispose?.();
       clearSleepTimers();
       setFade(1);
       clearCountdown('dispose');

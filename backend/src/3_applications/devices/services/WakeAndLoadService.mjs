@@ -400,7 +400,10 @@ export class WakeAndLoadService {
     // Bluey dispatch).
     let prewarmResult = null;
     const prewarmRef = contentQuery.queue || contentQuery.play;
-    if (!isAdopt && this.#prewarmService && prewarmRef) {
+    // A camera (Show briefly, RQ-PLAY-11) is a live feed, not catalog content:
+    // there is nothing to resolve or transcode.
+    const isCameraRef = typeof prewarmRef === 'string' && prewarmRef.startsWith('camera:');
+    if (!isAdopt && this.#prewarmService && prewarmRef && !isCameraRef) {
       this.#emitProgress(topic, dispatchId, 'prewarm', 'running');
       this.#logger.info?.('wake-and-load.prewarm.start', { deviceId, dispatchId, contentRef: prewarmRef });
 
@@ -929,6 +932,19 @@ export class WakeAndLoadService {
       if (resolved) return;
       if (!commandAcknowledged || payload?.deviceId !== deviceId) return;
       const snapshot = payload?.snapshot;
+      // Show briefly (RQ-PLAY-11): the screen shows it OVER its programme, so
+      // the evidence is the published brief, not a new current item.
+      if (appliedAs === 'brief') {
+        const brief = snapshot?.controls?.brief;
+        if (brief && contentMatches(brief.contentId)) {
+          cleanup();
+          this.#logger.info?.('wake-and-load.playback.confirmed', { deviceId, dispatchId, contentId: expectedContentId, appliedAs: 'brief' });
+          this.#emitProgress(topic, dispatchId, 'playback', 'confirmed', {
+            operation: 'brief', contentId: brief.contentId, sessionId: snapshot.sessionId ?? null, ownerId: snapshot.meta?.ownerId ?? null,
+          });
+        }
+        return;
+      }
       const owner = ownerIdentity(snapshot) ?? (itemAction ? snapshot?.meta?.queueOwner : null);
       if (!snapshot?.sessionId || !snapshot?.meta?.ownerId || !owner?.ownerInstanceId
         || !Number.isInteger(owner.playbackRevision) || !Number.isInteger(owner.queueRevision)) return;

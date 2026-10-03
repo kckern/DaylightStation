@@ -2,6 +2,7 @@ import { useCallback, useRef } from 'react';
 import { useWebSocketSubscription } from '../../hooks/useWebSocket.js';
 import getLogger from '../../lib/logging/Logger.js';
 import { validateCommandEnvelope } from '@shared-contracts/media/envelopes.mjs';
+import { resolveBriefMode } from '@shared-contracts/media/playerFeatures.mjs';
 
 let _logger;
 function logger() {
@@ -94,6 +95,29 @@ export function useScreenCommands(wsConfig, actionBus, screenId, controls = null
     const origin = data.origin;
     const withOrigin = (payload) => (origin ? { ...payload, origin } : payload);
     const ctl = controlsRef.current;
+
+    // Show briefly (RQ-PLAY-11): a camera, or a clip asked to be brief, goes
+    // OVER what is playing and then returns it — it is not a replace, so it
+    // makes no screen note and leaves "started by" alone. Only a screen with
+    // the player features attached knows how; any other screen is unchanged.
+    if (command === 'queue' && params.op === 'play-now' && ctl?.extension && typeof params.contentId === 'string') {
+      const isCamera = params.contentId.startsWith('camera:');
+      const mode = resolveBriefMode({ brief: params.brief, briefSeconds: params.briefSeconds, origin, kind: isCamera ? 'camera' : 'clip' });
+      if (isCamera || mode.brief) {
+        logger().info('commands.brief', { commandId, contentId: params.contentId, brief: mode.brief, seconds: mode.seconds, origin: origin ?? null });
+        bus.emit('media:brief', withOrigin({
+          kind: isCamera ? 'camera' : 'clip',
+          contentId: params.contentId,
+          ...(isCamera ? { cameraId: params.contentId.slice('camera:'.length) } : {}),
+          ...(typeof params.title === 'string' ? { title: params.title } : {}),
+          seconds: mode.seconds,
+          // A camera that is NOT brief takes the screen: the programme stops.
+          replace: isCamera && !mode.brief,
+          commandId,
+        }));
+        return;
+      }
+    }
 
     // Provenance + screen notes (RQ-STEER-21). Volume/shader changes are
     // neither "who is playing this" nor note-worthy.
