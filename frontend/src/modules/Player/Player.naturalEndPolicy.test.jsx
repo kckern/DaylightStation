@@ -35,7 +35,7 @@ describe('Player natural-end policy seam (screen end-of-queue / countdown / slee
     expect(policy).toHaveBeenCalledTimes(1);
     const [ctx, actions] = policy.mock.calls[0];
     expect(ctx).toMatchObject({ isQueue: true, current: { contentId: 'plex:1' }, next: { contentId: 'plex:2' } });
-    expect(Object.keys(actions).sort()).toEqual(['advance', 'finish', 'restartQueue', 'stop']);
+    expect(Object.keys(actions).sort()).toEqual(['advance', 'finish', 'release', 'restartQueue', 'stop']);
     // Held: still on the first item.
     await new Promise((r) => setTimeout(r, 30));
     expect(latest().contentId).toBe('plex:1');
@@ -105,5 +105,22 @@ describe('Player natural-end policy seam (screen end-of-queue / countdown / slee
     await waitFor(() => expect(latest()?.advance).toBeTypeOf('function'));
     act(() => { latest().advance(); });
     expect(policy).not.toHaveBeenCalled();
+  });
+
+  it('release() lets a held item complete again: countdown interrupted, item replayed to its end, it advances', async () => {
+    let held = null;
+    const policy = vi.fn((_ctx, actions) => {
+      if (!held) { held = actions; return true; } // first end: the countdown holds
+      return false;                              // second end: default advance
+    });
+    unregister = setNaturalEndPolicy(policy, { isOwner: () => true });
+    render(<Player play={[{ contentId: 'plex:1' }, { contentId: 'plex:2' }]} clear={() => {}} />);
+    await waitFor(() => expect(latest()?.contentId).toBe('plex:1'));
+    act(() => { latest().advance(); });
+    expect(Object.keys(held)).toContain('release');
+    act(() => { held.release(); }); // an Add / seek / play interrupted the countdown
+    act(() => { latest().advance(); }); // the same item reached its end again
+    expect(policy).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(latest()?.contentId).toBe('plex:2'));
   });
 });

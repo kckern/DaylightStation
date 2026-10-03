@@ -27,7 +27,7 @@ function setup(overrides = {}) {
     ...overrides.ports,
   };
   const controls = createScreenSessionControls({ ownerId: 'tv', ports, countdownSeconds: 10 });
-  const actions = { advance: vi.fn(), stop: vi.fn(), finish: vi.fn(), restartQueue: vi.fn(() => true) };
+  const actions = { advance: vi.fn(), stop: vi.fn(), finish: vi.fn(), restartQueue: vi.fn(() => true), release: vi.fn() };
   return { controls, ports, actions, setSnapshot: (s) => { snapshot = s; } };
 }
 
@@ -185,6 +185,17 @@ describe('end of queue and next episode (RQ-STEER-19, RQ-STEER-20)', () => {
       expect(actions.advance).not.toHaveBeenCalled();
       expect(controls.toPublished().countdown).toBeNull();
     }
+  });
+
+  it('an interrupted or superseded countdown releases the finished item so it can complete again', () => {
+    const a = setup();
+    a.controls.naturalEndPolicy({ isQueue: true, current: episode(1), next: episode(2) }, a.actions);
+    a.controls.interrupt('media:queue-op');
+    expect(a.actions.release).toHaveBeenCalledTimes(1);
+    const b = setup();
+    b.controls.naturalEndPolicy({ isQueue: true, current: episode(1), next: episode(2) }, b.actions);
+    b.controls.observeSnapshot(snapshotWith({ items: [episode(1), episode(2)], currentIndex: 1 }));
+    expect(b.actions.release).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the countdown while the finished episode is still current', () => {

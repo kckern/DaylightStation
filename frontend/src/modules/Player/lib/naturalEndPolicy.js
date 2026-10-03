@@ -14,8 +14,10 @@
 //
 // policy(ctx, actions) → boolean
 //   ctx:     { isQueue, current, next }   (queue items; next is null at queue end)
-//   actions: { advance(), stop(), finish(), restartQueue() } — always read the
+//   actions: { advance(), stop(), finish(), restartQueue(), release() } — always read the
 //            Player's latest state, so they are safe to call later (countdown).
+//            release() lets go of a held end without stopping, so the same
+//            item can complete again.
 // Return true when the policy took responsibility for what happens next.
 let current = null;
 

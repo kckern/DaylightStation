@@ -1672,6 +1672,10 @@ const Player = forwardRef(function Player(props, ref) {
     // A stop at a natural end leaves the item in place; replaying it to the
     // end must be a NEW completion, so release the duplicate-completion guard.
     stop: () => { completedMediaKeyRef.current = null; return stopOwner(); },
+    // The policy let go of a held natural end without stopping (its countdown
+    // was interrupted): the same item reaching its end again is a new
+    // completion, not a duplicate.
+    release: () => { completedMediaKeyRef.current = null; },
     restartQueue: (mediaKey) => {
       const first = queueSnapshot.items[0];
       if (!first) return false;
@@ -1689,6 +1693,7 @@ const Player = forwardRef(function Player(props, ref) {
     advance: () => naturalEndActionsRef.current.advance(),
     finish: () => naturalEndActionsRef.current.finish(),
     stop: () => naturalEndActionsRef.current.stop(),
+    release: () => naturalEndActionsRef.current.release(),
     restartQueue: () => naturalEndActionsRef.current.restartQueue(mediaKey),
   });
   const naturalAdvance = useCallback(() => {
