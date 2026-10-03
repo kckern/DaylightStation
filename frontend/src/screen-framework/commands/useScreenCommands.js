@@ -23,8 +23,16 @@ function logger() {
  * @param {object} wsConfig   - The `websocket:` block from screen YAML config
  * @param {object} actionBus  - ActionBus instance to emit events on
  * @param {string} screenId   - This screen's id; used for targetScreen matching
+ * @param {object} [controls] - Screen session controls (session/screenSessionControls.js):
+ *   Add only rewrites remote Play into Add, remote pause/stop/replace/move
+ *   leave a screen note, and every playback command stamps its origin.
  */
-export function useScreenCommands(wsConfig, actionBus, screenId) {
+const SESSION_SETTINGS = new Set(['addOnly', 'endOfQueue', 'stopAfterCurrent']);
+const ORIGINLESS_SETTINGS = new Set(['volume', 'shader']);
+
+export function useScreenCommands(wsConfig, actionBus, screenId, controls = null) {
+  const controlsRef = useRef(controls);
+  controlsRef.current = controls;
   const enabled = wsConfig?.commands === true;
   const guardrailsRef = useRef(wsConfig?.guardrails || {});
   guardrailsRef.current = wsConfig?.guardrails || {};
@@ -83,32 +91,73 @@ export function useScreenCommands(wsConfig, actionBus, screenId) {
     }
 
     const { command, commandId, params = {} } = data;
+    const origin = data.origin;
+    const withOrigin = (payload) => (origin ? { ...payload, origin } : payload);
+    const ctl = controlsRef.current;
+
+    // Provenance + screen notes (RQ-STEER-21). Volume/shader changes are
+    // neither "who is playing this" nor note-worthy.
+    const isOriginless = command === 'config' && ORIGINLESS_SETTINGS.has(params.setting);
+    if (ctl && !isOriginless && command !== 'system' && command !== 'display') {
+      if (origin) ctl.stampOrigin(origin);
+    }
+
+    // Add only (RQ-PLAY-10): another device's Play adds instead of replacing,
+    // and the ack says so (appliedAs). Nothing loaded → nothing to protect.
+    let effectiveParams = params;
+    if (ctl?.isAddOnly?.() && command === 'queue' && ctl.hasPlayback?.()) {
+      if (params.op === 'play-now') {
+        effectiveParams = { op: 'add', contentId: params.contentId, appliedAs: 'add', requestedOp: 'play-now' };
+      } else if (params.op === 'item-action' && (params.kind === 'playNow' || params.kind === 'shuffle')) {
+        const { clearRest: _clearRest, ...rest } = params;
+        effectiveParams = { ...rest, kind: 'add', appliedAs: 'add', requestedKind: params.kind };
+      }
+      if (effectiveParams !== params) {
+        logger().info('commands.add-only-applied', { commandId, requestedOp: params.op, requestedKind: params.kind ?? null, contentId: params.contentId ?? params.item?.contentId ?? null, origin: origin ?? null });
+      }
+    }
+    if (ctl && effectiveParams === params) {
+      ctl.noteRemoteCommand?.({ command, params, origin });
+    }
 
     if (command === 'transport') {
       const { action, value } = params;
       logger().info('commands.transport', { commandId, params });
       if (action === 'seekAbs') {
-        bus.emit('media:seek-abs', { value, commandId });
+        bus.emit('media:seek-abs', withOrigin({ value, commandId }));
         return;
       }
       if (action === 'seekRel') {
-        bus.emit('media:seek-rel', { value, commandId });
+        bus.emit('media:seek-rel', withOrigin({ value, commandId }));
         return;
       }
       // play | pause | stop | skipNext | skipPrev
-      bus.emit('media:playback', { command: action, commandId });
+      bus.emit('media:playback', withOrigin({ command: action, commandId }));
       return;
     }
 
     if (command === 'queue') {
-      logger().info('commands.queue', { commandId, params });
-      bus.emit('media:queue-op', { ...params, commandId });
+      logger().info('commands.queue', { commandId, params: effectiveParams });
+      bus.emit('media:queue-op', withOrigin({ ...effectiveParams, commandId }));
       return;
     }
 
     if (command === 'display') {
       logger().info('commands.display', { commandId, params });
       bus.emit('display:content', { id: params.contentId, commandId });
+      return;
+    }
+
+    if (command === 'session') {
+      const { action, ...rest } = params;
+      logger().info('commands.session', { commandId, action, origin: origin ?? null });
+      bus.emit('media:session-control', withOrigin({ kind: 'session', action, params: rest, commandId }));
+      return;
+    }
+
+    if (command === 'config' && SESSION_SETTINGS.has(params.setting)) {
+      logger().info('commands.session-config', { commandId, setting: params.setting, value: params.value });
+      bus.emit('media:session-control', withOrigin({ kind: 'config', setting: params.setting, value: params.value, commandId }));
       return;
     }
 

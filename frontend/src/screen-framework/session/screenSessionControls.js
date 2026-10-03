@@ -486,6 +486,8 @@ export function createScreenSessionControls({
     stampOrigin(origin) { if (origin && typeof origin === 'object') lastOrigin = origin; },
     getOrigin: () => lastOrigin,
     isAddOnly: () => state.addOnly,
+    /** True while something is loaded here — Add only has a queue to protect. */
+    hasPlayback: () => hasPlayback(snapshot()),
     persistable: () => ({
       addOnly: state.addOnly, endOfQueue: state.endOfQueue, stopAfterCurrent: state.stopAfterCurrent,
       sleepResume: state.sleepResume,
@@ -504,6 +506,8 @@ export function createScreenSessionControls({
       clearCountdown('dispose');
       listeners.clear();
     },
+    /** Late-bind ports that need the React tree (fade, restore, playback owner). */
+    setPorts(partial = {}) { Object.assign(ports, partial); },
     get ownerId() { return ownerId; },
   };
 }

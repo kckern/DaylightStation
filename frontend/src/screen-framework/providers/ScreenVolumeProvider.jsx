@@ -54,6 +54,11 @@ export function ScreenVolumeProvider({
   // preMute = the most recent non-zero master. Used to restore on unmute.
   const preMuteRef = useRef(master > 0 ? master : clamp(defaultMaster));
   const muted = master === 0;
+  // Transient output multiplier for the sleep timer's fade-out (RQ-STEER-12).
+  // Never persisted, never shown in the volume toast, applies in fixed mode
+  // too — it scales the output, not the user's dial.
+  const [fade, setFadeState] = useState(1);
+  const setFade = useCallback((next) => setFadeState(clamp(next)), []);
 
   // Track latest non-zero master as the unmute target.
   useEffect(() => {
@@ -70,7 +75,7 @@ export function ScreenVolumeProvider({
   const shaped = curve
     ? volumeCurve(master, curve)
     : Math.pow(master, curveExponent);
-  const effectiveMaster = shaped * clamp(outputCeiling);
+  const effectiveMaster = shaped * clamp(outputCeiling) * fade;
 
   // Mirror state into module scope for non-React consumers (sound effects, etc).
   // Logged at info, not debug: debug never reaches the store, and the one
@@ -139,8 +144,8 @@ export function ScreenVolumeProvider({
   }, [fixed]);
 
   const value = useMemo(
-    () => ({ master, effectiveMaster, muted, setMaster, step, toggleMute, stepSize }),
-    [master, effectiveMaster, muted, setMaster, step, toggleMute, stepSize],
+    () => ({ master, effectiveMaster, muted, setMaster, step, toggleMute, stepSize, fade, setFade }),
+    [master, effectiveMaster, muted, setMaster, step, toggleMute, stepSize, fade, setFade],
   );
 
   return (

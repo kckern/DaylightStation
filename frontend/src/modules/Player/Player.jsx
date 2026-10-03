@@ -27,6 +27,7 @@ import { createIdentityChurnCounter } from './lib/identityChurn.js';
 import { getLogger } from '../../lib/logging/Logger.js';
 import { OnDeckCard } from './components/OnDeckCard.jsx';
 import { getPlayerQueueOpRegistry } from './lib/queueOpRegistry.js';
+import { getNaturalEndPolicy } from './lib/naturalEndPolicy.js';
 import { usePlayerConfig } from './hooks/usePlayerConfig.js';
 import { REVIEW_ACTIVE } from '../../lib/Player/reviewParams.js';
 import { DaylightAPI } from '../../lib/api.mjs';
@@ -1657,6 +1658,37 @@ const Player = forwardRef(function Player(props, ref) {
     if (!result.ok) repeatRestartGateRef.current = null;
   }, [activeSource?.format, activeSource?.isLive, beginRendererBoundary, completionAssetId,
     effectiveMeta?.format, effectiveMeta?.isLive, issueOwnerRevision, playbackMetrics.seconds]);
+  // Latest-state actions handed to a natural-end policy. Held in a ref so a
+  // policy acting seconds later (countdown, similar lookup) never runs a
+  // stale closure.
+  const naturalEndActionsRef = useRef(null);
+  naturalEndActionsRef.current = {
+    advance: () => {
+      ownerStoppedRef.current = false;
+      if (isQueue || (queueSnapshot.executionOrder?.length ?? 0) > 1) advance();
+      else singleAdvance();
+    },
+    finish: () => (isQueue ? advance() : singleAdvance()),
+    stop: () => stopOwner(),
+    restartQueue: (mediaKey) => {
+      const first = queueSnapshot.items[0];
+      if (!first) return false;
+      const currentId = queueSnapshot.executionOrder?.[0];
+      if (queueSnapshot.items.length === 1 || first.queueItemId === currentId) {
+        restartNativeVisit(mediaKey);
+        return true;
+      }
+      ownerStoppedRef.current = false;
+      setQueueHasAdvanced(true);
+      return rawJumpTo(first.contentId, 0);
+    },
+  };
+  const naturalEndPolicyActions = (mediaKey) => ({
+    advance: () => naturalEndActionsRef.current.advance(),
+    finish: () => naturalEndActionsRef.current.finish(),
+    stop: () => naturalEndActionsRef.current.stop(),
+    restartQueue: () => naturalEndActionsRef.current.restartQueue(mediaKey),
+  });
   const naturalAdvance = useCallback(() => {
     const identity = currentMediaGuid ?? completionAssetId ?? 'player-media-unknown';
     // Queue position distinguishes two adjacent entries that intentionally point
@@ -1694,6 +1726,29 @@ const Player = forwardRef(function Player(props, ref) {
           assetId: completionAssetId,
           error: error?.message ?? String(error),
         }, { level: 'warn' });
+      }
+    }
+
+    // Screen session policy (sleep at end of item, stop after this one,
+    // next-episode countdown, end-of-queue stop/repeat/similar). Consulted
+    // only when no player-level repeat already decides; see
+    // lib/naturalEndPolicy.js. `naturalEndActionsRef` always reads the latest
+    // render, so a policy may act later (after a countdown or a fetch).
+    const policy = getNaturalEndPolicy();
+    if (policy && repeatMode !== 'one') {
+      const order = queueSnapshot.executionOrder ?? [];
+      const byId = new Map(queueSnapshot.items.map((item) => [item.queueItemId, item]));
+      const current = byId.get(order[0]) ?? queueSnapshot.items[queueSnapshot.currentIndex] ?? null;
+      const next = isQueue ? (byId.get(order[1]) ?? null) : null;
+      let handled = false;
+      try {
+        handled = policy({ isQueue, current, next }, naturalEndPolicyActions(mediaKey)) === true;
+      } catch (error) {
+        playbackLog('natural-end-policy-failed', { assetId: completionAssetId, error: error?.message ?? String(error) }, { level: 'warn' });
+      }
+      if (handled) {
+        playbackLog('natural-end-policy-handled', { assetId: completionAssetId, hasNext: !!next }, { level: 'info' });
+        return;
       }
     }
 

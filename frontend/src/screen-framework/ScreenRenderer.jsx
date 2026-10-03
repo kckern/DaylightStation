@@ -24,6 +24,8 @@ import { ScreenExit } from './ScreenExit.jsx';
 import { ScreenPresencePublisher } from './publishers/ScreenPresencePublisher.jsx';
 import { SessionSourceProvider } from './publishers/SessionSourceContext.jsx';
 import { createRegistrySessionSource } from './publishers/registrySessionSource.js';
+import { createScreenSessionControls } from './session/screenSessionControls.js';
+import { ScreenSessionControlsHost } from './session/ScreenSessionControlsHost.jsx';
 import { getPlayerSessionRegistry } from './publishers/playerSessionRegistry.js';
 import { ScreenSceneProvider } from './providers/ScreenSceneContext.jsx';
 import { ScreenAmbientProvider } from './ambient/ScreenAmbientContext.jsx';
@@ -149,9 +151,9 @@ export function ScreenAutoplay({ routes, layout }) {
  *
  * This is a renderless component (returns null).
  */
-function ScreenCommandHandler({ wsConfig, screenId }) {
+function ScreenCommandHandler({ wsConfig, screenId, controls }) {
   const bus = useMemo(() => getActionBus(), []);
-  useScreenCommands(wsConfig, bus, screenId);
+  useScreenCommands(wsConfig, bus, screenId, controls);
   return null;
 }
 
@@ -362,12 +364,20 @@ export function ScreenRenderer({ screenId: propScreenId }) {
   // SessionSourceContext. Idle snapshot when nothing is registered. Only
   // built when the screen has a device identity to publish as.
   const sessionDeviceId = config?.websocket?.guardrails?.device || null;
+  // Screen session controls (sleep timer, Add only, end of queue, notes, …):
+  // one per device identity, published inside every snapshot. Ports needing
+  // the React tree are bound by <ScreenSessionControlsHost>.
+  const sessionControls = useMemo(() => (
+    sessionDeviceId ? createScreenSessionControls({ ownerId: sessionDeviceId }) : null
+  ), [sessionDeviceId]);
+  useEffect(() => () => sessionControls?.dispose(), [sessionControls]);
   const sessionSource = useMemo(() => {
     if (!sessionDeviceId) return null;
     try {
       return createRegistrySessionSource({
         registry: getPlayerSessionRegistry(),
         ownerId: sessionDeviceId,
+        controls: sessionControls,
       });
     } catch (err) {
       getLogger().child({ component: 'ScreenRenderer', screenId }).warn(
@@ -376,7 +386,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
       );
       return null;
     }
-  }, [sessionDeviceId, screenId]);
+  }, [sessionDeviceId, screenId, sessionControls]);
 
   // Convert theme to --screen-* CSS custom properties
   const themeStyle = useMemo(() => {
@@ -455,7 +465,10 @@ export function ScreenRenderer({ screenId: propScreenId }) {
                 <PipManager config={config.pip}>
                   <ScreenAutoplay routes={config.routes} layout={config.layout} />
                   <ScreenActionHandler actions={config.actions} inputType={config.input?.type} />
-                  <ScreenCommandHandler wsConfig={config.websocket} screenId={screenId} />
+                  <ScreenCommandHandler wsConfig={config.websocket} screenId={screenId} controls={sessionControls} />
+                  {sessionControls && sessionSource && (
+                    <ScreenSessionControlsHost controls={sessionControls} source={sessionSource} />
+                  )}
                   <ScreenSessionPublishers wsConfig={config.websocket} />
                   <ScreenSubscriptionHandler subscriptions={config.subscriptions} />
                   <ScreenScreensaver config={config.screensaver} />
