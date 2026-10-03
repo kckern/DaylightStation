@@ -74,6 +74,9 @@ const LOCAL_FAILED_VERB = {
 };
 
 function localCopy(d, phase, name) {
+  // House-wide actions (Pause all, Stop all, …) carry their own sentence:
+  // they name several screens, not one item on one screen.
+  if (d.command?.copy?.primary) return { primary: d.command.copy.primary, secondary: d.command.copy.secondary ?? null };
   const title = d.item?.title ?? d.title ?? 'it';
   const at = d.distance === 'here' ? 'here' : `on ${d.targetName ?? name}`;
   if (d.kind === 'playback') {
