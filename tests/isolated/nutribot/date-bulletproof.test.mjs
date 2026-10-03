@@ -80,12 +80,20 @@ function aiJson(date, items = [{ name: 'Peas', noom_color: 'green', quantity: 1,
   return JSON.stringify({ date, time: 'morning', items });
 }
 
+// Since 758e01421 the model's `date` is honoured only when it also reports
+// `dateExplicit: true` — i.e. the person NAMED a day ("yesterday"). That is the
+// response the prompt now asks for in those cases, so the "yesterday" fixtures
+// must carry it; a bare date is (correctly) overridden by the entry/pinned day.
+function aiJsonNamedDay(date, items) {
+  return JSON.stringify({ ...JSON.parse(aiJson(date, items)), dateExplicit: true });
+}
+
 describe('Date bulletproofing — initial logging', () => {
   afterEach(() => resetClock());
 
   it('uses AI-inferred date when user says "yesterday I ate" on Thursday', async () => {
     mockClock(THU_NOON_PT);
-    const deps = buildTextDeps(aiJson('2026-04-15'));
+    const deps = buildTextDeps(aiJsonNamedDay('2026-04-15'));
     const useCase = new LogFoodFromText(deps);
     await useCase.execute({
       userId: 'u1', conversationId: 'c1', text: 'yesterday I ate peas', messageId: 'm1',
@@ -216,7 +224,7 @@ describe('Date bulletproofing — revision', () => {
     mockClock(THU_NOON_PT);
     const deps = buildTextDeps(
       aiJson('2026-04-16'),
-      aiJson('2026-04-15'), // AI correctly subtracts 1 from pinned Thu
+      aiJsonNamedDay('2026-04-15'), // AI correctly subtracts 1 from pinned Thu
     );
     const useCase = new LogFoodFromText(deps);
     await useCase.execute({ userId: 'u1', conversationId: 'c1', text: 'peas', messageId: 'm1', responseContext: deps.responseContext });
