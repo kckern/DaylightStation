@@ -94,9 +94,12 @@ export default {
       '**/.{idea,git,cache,output,temp}/**',
       // Skipped when this config IS a worktree: the globs also match the
       // worktree's own path, which excluded every test in it.
-      // A worktree still excludes worktree copies NESTED inside it (the tracked
-      // `.claire/worktrees/` tree is one), anchored at this config's own root so
-      // they cannot match the worktree's own path.
+      // Inside a worktree, the TRACKED `.claire/worktrees/` copies (and any other
+      // worktree copy nested under this root) still match path filters
+      // (`vitest run a/b.test.js` also runs `.claire/worktrees/x/a/b.test.js`),
+      // which made the gate abort with a population/run MISMATCH in every
+      // `.worktrees/` checkout. Anchored to this config's own root (absolute
+      // paths, no leading `**/`), so they can never match the worktree itself.
       ...(RUNNING_IN_WORKTREE
         ? ['.claude/worktrees', '.claire/worktrees', '.worktrees'].map((dir) => `${path.join(__dirname, dir)}/**`)
         : ['**/.claude/worktrees/**', '**/.claire/worktrees/**', '**/.worktrees/**']),

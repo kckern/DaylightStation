@@ -13,7 +13,7 @@ import {
 
 describe('command enums', () => {
   it('lists every command kind', () => {
-    expect(COMMAND_KINDS).toEqual(['transport', 'queue', 'config', 'adopt-snapshot', 'system', 'display', 'handoff']);
+    expect(COMMAND_KINDS).toEqual(['transport', 'queue', 'config', 'adopt-snapshot', 'system', 'display', 'handoff', 'session']);
   });
   it('lists every transport action', () => {
     expect(TRANSPORT_ACTIONS).toEqual(
@@ -26,7 +26,7 @@ describe('command enums', () => {
     );
   });
   it('lists every config setting', () => {
-    expect(CONFIG_SETTINGS).toEqual(['shuffle', 'repeat', 'shader', 'volume']);
+    expect(CONFIG_SETTINGS).toEqual(['shuffle', 'repeat', 'shader', 'volume', 'addOnly', 'endOfQueue', 'stopAfterCurrent']);
   });
   it('lists every system action', () => {
     expect(SYSTEM_ACTIONS).toEqual(['reset', 'reload', 'sleep', 'wake']);

@@ -126,6 +126,7 @@ Update a row when its step lands: date, commit, tests, deploy, and notes (includ
 | P0 · 9 | Comfortable use, device-size parity | RQ-RELY-13–15; NF-A11Y; NF-DEV | Not started | — | |
 | P0 · 10 | Close-out: tap budgets, persona walkthroughs, deletions, reference docs | NF-TAP | Not started | — | |
 | P1 | Household list and per-screen spots; favourites and removal; undo and Put it back; screen notes; Add to this queue; sleep timer; pause all; queue end and next episode; several-screen aim; move between screens; lock-screen controls; naming part 2 and "started by"; power-cut survival; first use; add-only | See handoff §6 | Not started | — | |
+| P1 · screen | Screen player capabilities: sleep timer, Add only, end of queue (stop/repeat/similar per revised O2), next-episode countdown + stop after this one, screen notes + Put it back, power-cut survival, start status to everyone | RQ-STEER-12, 19, 20, 21; RQ-PLAY-10; RQ-RELY-08; RQ-HOUSE-04 | Built on `media/p1-screen`, not merged | see branch | Screen + backend + contracts done (tech doc §4.9–4.10, §6.2.6–6.2.7, §6.6, §9.14–9.15). Media frontend controls/house-view wiring is the next batch. 7/7 browser journeys pass on the virtual receiver (`tests/live/flow/media/screen-session-controls.runtime.test.mjs`). |
 | P2 | Suggestions; played earlier; show briefly; music behind a slideshow; turn screen off; subtitles and audio language; screen admin; routine history; line up screens | See handoff §7 | Not started | — | |
 
 ## Open items

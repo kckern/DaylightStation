@@ -61,6 +61,7 @@ export function createDeviceApiRouter(config) {
     pianoMidiWakeService,
     kioskFrictionTracker,
     callControl,
+    startStatusService = null,
     logger = console
   } = config;
 
@@ -105,6 +106,7 @@ export function createDeviceApiRouter(config) {
       scheduler: new NodeApplicationScheduler(), logger,
     }),
     kioskFrictionTracker,
+    startStatusService,
     excursionGuard: new AndroidExcursionGuard({
       probeFor: createExcursionProbes({ configService, logger }),
       policies: EXCURSION_POLICIES,

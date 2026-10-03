@@ -85,7 +85,15 @@ export function createPlayRouter(config) {
       // ONLY thing that says which screen this progress came from — the body
       // carries no device. Without it a playback session cannot be attributed to
       // a surface, so it is threaded here rather than left on the request.
-      res.json(await recordPlaybackProgress.execute({ ...req.body, deviceId: req.deviceId }));
+      //
+      // The spot device keys this screen's own spot (per-screen progress). An
+      // explicit body `deviceId` wins; otherwise the X-Daylight-Device header,
+      // but only when the client really sent one — the User-Agent fallback is
+      // not an identity. The use case validates the shape.
+      const spotDeviceId = (typeof req.body.deviceId === 'string' && req.body.deviceId)
+        || (req.deviceIdSource === 'header' ? req.deviceId : null)
+        || null;
+      res.json(await recordPlaybackProgress.execute({ ...req.body, deviceId: req.deviceId, spotDeviceId }));
   }));
 
   /**

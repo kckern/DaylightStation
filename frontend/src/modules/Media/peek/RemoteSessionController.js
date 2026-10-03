@@ -33,6 +33,9 @@ export function createRemoteSessionController({
   setIntervalFn = setInterval,
   clearIntervalFn = clearInterval,
   onSteeringActivity = null,
+  // Optional `{ kind: 'device', id, name? }` naming this controller, sent on
+  // every command so the screen can say who changed it (RQ-STEER-21).
+  origin = null,
 }) {
   const base = `api/v1/device/${deviceId}/session`;
   const position = createPositionChannel();
@@ -183,7 +186,7 @@ export function createRemoteSessionController({
     const playAttempt = action === 'play' ? beginPlayAttempt() : null;
     const commandId = randomUuid();
     const ackPromise = ackRouter.register(commandId, { action, deviceId });
-    const httpPromise = http(path, { ...body, commandId }, method);
+    const httpPromise = http(path, { ...body, commandId, ...(origin ? { origin } : {}) }, method);
     if (typeof onPositiveAck === 'function') {
       ackPromise.then(
         () => onPositiveAck(),
@@ -379,6 +382,21 @@ export function createRemoteSessionController({
         logCommand('setVolume', clamped);
         return send('PUT', `${base}/volume`, { level: clamped }, 'setVolume');
       },
+    },
+
+    // Screen session controls (P1, tech doc §4.9). Additive: published state
+    // arrives in `snapshot.controls`; each call resolves on the device ack.
+    sessionControls: {
+      setSleepTimer: ({ minutes, atEnd } = {}) => send('POST', `${base}/sleep-timer`,
+        atEnd !== undefined ? { atEnd } : { minutes }, 'sleepTimer'),
+      cancelSleepTimer: () => send('POST', `${base}/sleep-timer/cancel`, {}, 'cancelSleepTimer'),
+      resumeSleep: () => send('POST', `${base}/sleep-timer/resume`, {}, 'resumeSleep'),
+      putBack: (noteId) => send('POST', `${base}/put-back`, noteId ? { noteId } : {}, 'putBack'),
+      cancelCountdown: () => send('POST', `${base}/countdown/cancel`, {}, 'cancelCountdown'),
+      startNextNow: () => send('POST', `${base}/countdown/start-now`, {}, 'startNextNow'),
+      setAddOnly: (enabled) => send('PUT', `${base}/add-only`, { enabled: !!enabled }, 'setAddOnly'),
+      setEndOfQueue: (mode) => send('PUT', `${base}/end-of-queue`, { mode }, 'setEndOfQueue'),
+      setStopAfterCurrent: (enabled) => send('PUT', `${base}/stop-after-current`, { enabled: !!enabled }, 'setStopAfterCurrent'),
     },
 
     lifecycle: {
