@@ -774,3 +774,27 @@ describe('PlayerBridge real Player contract', () => {
     expect(controller.getSnapshot().state).toBe('playing');
   });
 });
+
+describe('PlayerBridge — sleep-timer fade (RQ-STEER-12)', () => {
+  it('applies the fade on top of the session volume and never changes the volume setting', async () => {
+    vi.useFakeTimers();
+    const controller = makeRealController();
+    controller.queue.playNow({ contentId: 'plex:fade', title: 'Fade', duration: 600, format: 'audio' });
+    controller.config.setVolume(80);
+    mediaElement = document.createElement('audio');
+    mediaElement.play = () => Promise.resolve();
+    mediaElement.pause = () => {};
+    render(<Harness controller={controller} />);
+    await act(async () => { vi.advanceTimersByTime(50); });
+    expect(mediaElement.volume).toBeCloseTo(0.8);
+    await act(async () => {
+      await controller.sessionControls.setSleepTimer({ minutes: 1 });
+      vi.advanceTimersByTime(55_000);
+    });
+    expect(mediaElement.volume).toBeLessThan(0.8);
+    expect(controller.getSnapshot().config.volume).toBe(80);
+    await act(async () => { await controller.sessionControls.cancelSleepTimer(); });
+    expect(mediaElement.volume).toBeCloseTo(0.8);
+    mediaElement = null;
+  });
+});

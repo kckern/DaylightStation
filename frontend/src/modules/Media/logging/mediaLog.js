@@ -113,6 +113,26 @@ export const mediaLog = {
   urlCommandIgnored:      debug('url-command.ignored'),
   navPushed:              debug('nav.pushed'),
   transportCommand:       sampled('transport.command', { maxPerMinute: 60, aggregate: true }),
+  // Batch B — handle and controls (screen session controls, lock screen,
+  // several-screen aim, moves between screens).
+  sessionControlCommand:  info('session-controls.command'),
+  sessionControlResult:   info('session-controls.result'),
+  sessionControlFailed:   warn('session-controls.failed'),
+  sleepTimerChanged:      info('session-controls.sleep-timer'),
+  countdownChanged:       info('session-controls.countdown'),
+  endOfQueueResult:       info('session-controls.end-of-queue'),
+  mediaSessionBound:      info('media-session.bound'),
+  mediaSessionUnavailable: info('media-session.unavailable'),
+  mediaSessionAction:     info('media-session.action'),
+  mediaSessionFailed:     warn('media-session.failed'),
+  addToQueueOpened:       info('add-to-queue.opened'),
+  addToQueueClosed:       info('add-to-queue.closed'),
+  lineUpRequested:        info('line-up.requested'),
+  lineUpFailed:           warn('line-up.failed'),
+  aimDriftWarned:         info('aim.drift-warned'),
+  screenMoveInitiated:    info('screen-move.initiated'),
+  screenMoveSucceeded:    info('screen-move.succeeded'),
+  screenMoveFailed:       warn('screen-move.failed'),
 };
 
 export default mediaLog;
