@@ -24,6 +24,7 @@ function logger() {
 
 const RESTORE_TIMEOUT_MS = 8_000;
 const PERSIST_THROTTLE_MS = 2_000;
+const SPOT_PERSIST_INTERVAL_MS = 5_000;
 const NOTE_VISIBLE_MS = 10_000;
 
 function requestRestore(snapshot, { autoplay, reason }) {
@@ -126,6 +127,11 @@ export function ScreenSessionControlsHost({ controls, source }) {
     };
     const unsubscribeSource = source.subscribe({ onChange, onStateTransition: onChange });
     const unsubscribeControls = controls.subscribe(persist);
+    // The spot moves without any snapshot "change" — a power cut gives no
+    // unload event — so keep the persisted position fresh while loaded.
+    const spotTimer = setInterval(() => {
+      if (source.getBareSnapshot?.()?.currentItem) persist();
+    }, SPOT_PERSIST_INTERVAL_MS);
 
     // Power-cut survival (RQ-RELY-08): re-adopt the persisted session PAUSED,
     // never autoplaying, unless something already started playing here (a
@@ -148,6 +154,7 @@ export function ScreenSessionControlsHost({ controls, source }) {
 
     return () => {
       clearTimeout(restoreTimer);
+      clearInterval(spotTimer);
       if (pending) clearTimeout(pending);
       unsubscribeSource?.();
       unsubscribeControls?.();

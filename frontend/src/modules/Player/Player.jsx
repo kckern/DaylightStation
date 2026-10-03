@@ -1669,7 +1669,9 @@ const Player = forwardRef(function Player(props, ref) {
       else singleAdvance();
     },
     finish: () => (isQueue ? advance() : singleAdvance()),
-    stop: () => stopOwner(),
+    // A stop at a natural end leaves the item in place; replaying it to the
+    // end must be a NEW completion, so release the duplicate-completion guard.
+    stop: () => { completedMediaKeyRef.current = null; return stopOwner(); },
     restartQueue: (mediaKey) => {
       const first = queueSnapshot.items[0];
       if (!first) return false;

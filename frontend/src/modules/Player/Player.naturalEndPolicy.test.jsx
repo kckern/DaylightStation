@@ -73,4 +73,14 @@ describe('Player natural-end policy seam (screen end-of-queue / countdown / slee
     act(() => { latest().advance(); });
     expect(clear).toHaveBeenCalledTimes(1);
   });
+
+  it('a policy stop lets the same item complete again after it is replayed (countdown cancel, then play to the end)', async () => {
+    const policy = vi.fn((_ctx, actions) => { actions.stop(); return true; });
+    unregister = setNaturalEndPolicy(policy);
+    render(<Player play={[{ contentId: 'plex:1' }, { contentId: 'plex:2' }]} clear={() => {}} />);
+    await waitFor(() => expect(latest()?.contentId).toBe('plex:1'));
+    act(() => { latest().advance(); });
+    act(() => { latest().advance(); });
+    expect(policy).toHaveBeenCalledTimes(2);
+  });
 });
