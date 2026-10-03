@@ -35,4 +35,27 @@ describe('LocalPlaybackOutcomes', () => {
       item: expect.objectContaining({ title: 'Arrival' }), replacement: expect.objectContaining({ title: 'Nova' }),
     }));
   });
+
+  it('RELY.5a: a waiting notice is withdrawn when the file comes back', () => {
+    vi.useFakeTimers();
+    const controller = createLocalSessionController({ clientId: 'c1', persistedSnapshot: {
+      sessionId: 's', state: 'paused', currentItem: { contentId: 'plex:1', format: 'audio', title: 'Arrival', duration: 600 }, position: 0,
+      queue: { items: [entry(1, 'Arrival'), entry(2, 'Nova')], currentIndex: 0, upNextCount: 0 },
+      config: { shuffle: false, repeat: 'off', shader: null, volume: 50, playbackRate: 1 },
+      meta: { ownerId: 'c1', updatedAt: '2026-10-01T00:00:00.000Z' },
+    } });
+    controller.setPlayerHandle({ play: vi.fn(), pause: vi.fn(), seek: vi.fn() });
+    const recordLocal = vi.fn(() => 'wait-row');
+    const removeDispatch = vi.fn();
+    render(
+      <LocalSessionContext.Provider value={{ controller }}>
+        <DispatchContext.Provider value={{ recordLocal, removeDispatch }}><LocalPlaybackOutcomes /></DispatchContext.Provider>
+      </LocalSessionContext.Provider>,
+    );
+    act(() => { controller.transport.play(); controller.onPlayerSourceWait({ waiting: true, contentId: 'plex:1' }); vi.advanceTimersByTime(3_100); });
+    expect(recordLocal).toHaveBeenCalledWith(expect.objectContaining({ phase: 'waiting', item: expect.objectContaining({ title: 'Arrival' }) }));
+    act(() => { controller.onPlayerSourceWait({ waiting: false, decision: 'resume', contentId: 'plex:1' }); });
+    expect(removeDispatch).toHaveBeenCalledWith('wait-row');
+    vi.useRealTimers();
+  });
 });

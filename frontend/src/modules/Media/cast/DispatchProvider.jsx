@@ -293,6 +293,13 @@ export function DispatchProvider({ children }) {
     }
   }, [peek]);
 
+  // RELY.5a: Skip now on a local item the Player is waiting on.
+  const skipLocal = useCallback((attemptId) => {
+    mediaLog.outcomeSkipped?.({ attemptId, targetId: 'local' });
+    localController?.transport?.skipNext?.();
+    dispatch({ type: 'REMOVED', dispatchId: attemptId });
+  }, [localController]);
+
   const removeDispatch = useCallback((attemptId) => {
     const record = recordsRef.current.get(attemptId);
     if (record) mediaLog.outcomeDismissed({ attemptId, targetId: record.targetId, phase: record.phase });
@@ -341,9 +348,9 @@ export function DispatchProvider({ children }) {
     () => ({
       dispatches: state.byId,
       outcomes: state.byId,
-      dispatchToTarget, retry, sendElsewhere, removeDispatch, recordLocal, resolveLocal, stopAttempt,
+      dispatchToTarget, retry, sendElsewhere, removeDispatch, recordLocal, resolveLocal, stopAttempt, skipLocal,
     }),
-    [state.byId, dispatchToTarget, retry, sendElsewhere, removeDispatch, recordLocal, resolveLocal, stopAttempt]
+    [state.byId, dispatchToTarget, retry, sendElsewhere, removeDispatch, recordLocal, resolveLocal, stopAttempt, skipLocal]
   );
 
   return <DispatchContext.Provider value={value}>{children}</DispatchContext.Provider>;

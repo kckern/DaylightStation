@@ -3,8 +3,8 @@ import React from 'react';
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
-const { push, retry, removeDispatch, sendElsewhere, stopAttempt } = vi.hoisted(() => ({
-  push: vi.fn(), retry: vi.fn(), removeDispatch: vi.fn(), sendElsewhere: vi.fn(), stopAttempt: vi.fn(),
+const { push, retry, removeDispatch, sendElsewhere, stopAttempt, skipLocal } = vi.hoisted(() => ({
+  push: vi.fn(), retry: vi.fn(), removeDispatch: vi.fn(), sendElsewhere: vi.fn(), stopAttempt: vi.fn(), skipLocal: vi.fn(),
 }));
 const outcomes = new Map();
 const DEVICES = [
@@ -15,7 +15,7 @@ const DEVICES = [
 ];
 
 vi.mock('./useDispatch.js', () => ({
-  useDispatch: () => ({ dispatches: outcomes, outcomes, retry, removeDispatch, sendElsewhere, stopAttempt }),
+  useDispatch: () => ({ dispatches: outcomes, outcomes, retry, removeDispatch, sendElsewhere, stopAttempt, skipLocal }),
 }));
 vi.mock('../fleet/useDevice.js', () => ({
   useDevice: (id) => ({ device: DEVICES.find(d => d.id === id) ?? null }),
@@ -133,5 +133,32 @@ describe('DispatchProgressTray outcomes', () => {
     render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
     fireEvent.click(screen.getByTestId('dispatch-stop-s2'));
     expect(stopAttempt).toHaveBeenCalledWith('s2');
+  });
+
+  it('RELY.5a: a refused file shows "Waiting for … being repaired" with Skip now and Retry', () => {
+    outcomes.set('w1', record({ attemptId: 'w1', dispatchId: 'w1', targetId: 'local', deviceId: 'local', distance: 'here', kind: 'playback', phase: 'waiting', reason: 'source-unavailable', item: { contentId: 'plex:1', title: 'Arrival' }, title: 'Arrival', command: { kind: 'playNow', item: { contentId: 'plex:1', title: 'Arrival' } } }));
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    const row = screen.getByTestId('dispatch-row-w1');
+    expect(row).toHaveTextContent('Waiting for Arrival — the file is being repaired');
+    expect(row).not.toHaveClass('cast-tray-row--quiet');
+    fireEvent.click(screen.getByTestId('dispatch-skip-w1'));
+    expect(skipLocal).toHaveBeenCalledWith('w1');
+    expect(screen.getByTestId('dispatch-retry-w1')).toBeInTheDocument();
+  });
+
+  it('RELY.5a: an unavailable file reads "skipped — file unavailable" with what plays next', () => {
+    outcomes.set('u1', record({ attemptId: 'u1', dispatchId: 'u1', targetId: 'local', deviceId: 'local', distance: 'here', kind: 'playback', phase: 'skipped', reason: 'file-unavailable', item: { contentId: 'plex:1', title: 'Arrival' }, title: 'Arrival', replacement: { contentId: 'plex:2', title: 'Nova' }, command: { kind: 'playNow', item: { contentId: 'plex:1' } } }));
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    const row = screen.getByTestId('dispatch-row-u1');
+    expect(row).toHaveTextContent('Arrival skipped — file unavailable');
+    expect(row).toHaveTextContent('Now playing Nova');
+    expect(screen.getByTestId('dispatch-retry-u1')).toBeInTheDocument();
+  });
+
+  it('RELY.5a: a library outage holds with one "Library unavailable" notice', () => {
+    outcomes.set('l1', record({ attemptId: 'l1', dispatchId: 'l1', targetId: 'local', deviceId: 'local', distance: 'here', kind: 'playback', phase: 'library-unavailable', reason: 'source-unavailable', item: { contentId: 'plex:2', title: 'Nova' }, title: 'Nova', command: { kind: 'playNow', item: { contentId: 'plex:2' } } }));
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    expect(screen.getByTestId('dispatch-row-l1')).toHaveTextContent('Library unavailable');
+    expect(screen.getByTestId('dispatch-skip-l1')).toBeInTheDocument();
   });
 });

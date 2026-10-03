@@ -30,6 +30,12 @@ export function useSourceAvailability({
   mediaType = null,
   disabled = false,
   onSettled,
+  // Owner option (monitor.sourceUnavailableMaxMs): how long to wait before
+  // `gave-up`. The final check is scheduled to land on the limit itself.
+  maxWaitMs = SOURCE_UNAVAILABLE_MAX_MS,
+  // Owner report: ({ waiting: true, since }) when a wait opens and
+  // ({ waiting: false, decision }) when it ends (resume/normal/gave-up/abandoned).
+  onWaitChange,
 }) {
   const healableId = disabled ? null : toHealableContentId(contentId, plexId);
   const [unavailableSince, setUnavailableSince] = useState(null);
@@ -43,6 +49,10 @@ export function useSourceAvailability({
   idRef.current = healableId;
   const onSettledRef = useRef(onSettled);
   onSettledRef.current = onSettled;
+  const onWaitChangeRef = useRef(onWaitChange);
+  onWaitChangeRef.current = onWaitChange;
+  const maxWaitRef = useRef(maxWaitMs);
+  maxWaitRef.current = Number.isFinite(maxWaitMs) && maxWaitMs > 0 ? maxWaitMs : SOURCE_UNAVAILABLE_MAX_MS;
 
   const clearPoll = () => {
     if (pollTimerRef.current) {
@@ -86,16 +96,18 @@ export function useSourceAvailability({
           sinceRef.current = Date.now();
           attemptRef.current = 0;
           setUnavailableSince(sinceRef.current);
-          playbackLog('source-unavailable-entered', { contentId: id, reason, mediaType, backendUnreadableMs: unreadableMs }, { level: 'warn' });
+          playbackLog('source-unavailable-entered', { contentId: id, reason, mediaType, backendUnreadableMs: unreadableMs, maxWaitMs: maxWaitRef.current }, { level: 'warn' });
+          onWaitChangeRef.current?.({ waiting: true, since: sinceRef.current, contentId: id });
         }
         const waitedMs = Date.now() - sinceRef.current;
-        if (waitedMs >= SOURCE_UNAVAILABLE_MAX_MS) {
-          playbackLog('source-unavailable-gave-up', { contentId: id, waitedMs, attempts: attemptRef.current }, { level: 'warn' });
+        if (waitedMs >= maxWaitRef.current) {
+          playbackLog('source-unavailable-gave-up', { contentId: id, waitedMs, attempts: attemptRef.current, maxWaitMs: maxWaitRef.current }, { level: 'warn' });
           endWait();
+          onWaitChangeRef.current?.({ waiting: false, decision: 'gave-up', contentId: id, waitedMs });
           onSettledRef.current?.('gave-up');
           return 'gave-up';
         }
-        const delayMs = sourcePollDelayMs(attemptRef.current);
+        const delayMs = Math.max(250, Math.min(sourcePollDelayMs(attemptRef.current), maxWaitRef.current - waitedMs));
         attemptRef.current += 1;
         playbackLog('source-unavailable-poll', { contentId: id, state, attempt: attemptRef.current, nextCheckMs: delayMs, waitedMs }, { level: 'debug' });
         clearPoll();
@@ -107,10 +119,12 @@ export function useSourceAvailability({
       }
 
       if (waiting) {
+        const unavailableMs = Date.now() - sinceRef.current;
         playbackLog('source-unavailable-resolved', {
-          contentId: id, state, decision, unavailableMs: Date.now() - sinceRef.current, attempts: attemptRef.current,
+          contentId: id, state, decision, unavailableMs, attempts: attemptRef.current,
         }, { level: 'info' });
         endWait();
+        onWaitChangeRef.current?.({ waiting: false, decision, contentId: id, waitedMs: unavailableMs });
       } else if (decision === 'retry') {
         playbackLog('source-refusal-cleared', { contentId: id, reason }, { level: 'info' });
       }
@@ -148,6 +162,9 @@ export function useSourceAvailability({
     return () => {
       aliveRef.current = false;
       clearPoll();
+      if (sinceRef.current !== null) {
+        onWaitChangeRef.current?.({ waiting: false, decision: 'abandoned', contentId: idRef.current });
+      }
       sinceRef.current = null;
       attemptRef.current = 0;
       inflightRef.current = null;

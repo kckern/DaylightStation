@@ -12,12 +12,22 @@ export function LocalPlaybackOutcomes() {
   const outcomes = useContext(DispatchContext);
   const seenRef = useRef(null);
   const recordLocal = outcomes?.recordLocal;
+  const removeDispatch = outcomes?.removeDispatch;
+  // A waiting/held notice is withdrawn when the file comes back or when a
+  // skip notice replaces it; skip and failure notices stay until dismissed.
+  const heldRowRef = useRef(null);
   useEffect(() => {
     if (!controller?.problems?.subscribe || !recordLocal) return undefined;
+    const withdrawHeld = () => {
+      if (heldRowRef.current) removeDispatch?.(heldRowRef.current);
+      heldRowRef.current = null;
+    };
     const report = (problem) => {
-      if (!problem || seenRef.current === problem) return;
+      if (!problem) { withdrawHeld(); seenRef.current = null; return; }
+      if (seenRef.current === problem) return;
       seenRef.current = problem;
-      recordLocal({
+      withdrawHeld();
+      const attemptId = recordLocal({
         kind: 'playback',
         phase: problem.kind,
         reason: problem.reason,
@@ -25,10 +35,11 @@ export function LocalPlaybackOutcomes() {
         replacement: problem.replacement,
         command: { kind: 'playNow', item: { contentId: problem.item?.contentId, title: problem.item?.title ?? null } },
       });
+      if (problem.kind === 'waiting' || problem.kind === 'library-unavailable') heldRowRef.current = attemptId ?? null;
     };
     report(controller.problems.get());
     return controller.problems.subscribe(report);
-  }, [controller, recordLocal]);
+  }, [controller, recordLocal, removeDispatch]);
   return null;
 }
 
