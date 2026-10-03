@@ -65,6 +65,8 @@ export function useMediaResilience({
   onStateChange,
   onReload,
   onExhausted,       // NEW: called when all recovery attempts are exhausted
+  // Owner report of a refused-source wait: ({ waiting, since?, decision? }).
+  onSourceWait,
   configOverrides,
   controllerRef,
   plexId,
@@ -203,6 +205,8 @@ export function useMediaResilience({
   // (wired after triggerRecovery exists) turns its answer into one reload.
   // See lib/sourceAvailability.js and docs/reference/player/media-source-healing.md.
   const sourceSettledRef = useRef(null);
+  const onSourceWaitRef = useRef(onSourceWait);
+  onSourceWaitRef.current = onSourceWait;
   const sourceAvailability = useSourceAvailability({
     contentId: meta?.contentId || null,
     plexId,
@@ -211,6 +215,8 @@ export function useMediaResilience({
     mediaType: mediaTypeHint || meta?.mediaType || null,
     disabled,
     onSettled: (decision) => sourceSettledRef.current?.(decision),
+    maxWaitMs: monitorSettings.sourceUnavailableMaxMs,
+    onWaitChange: (event) => onSourceWaitRef.current?.(event),
   });
   const sourceUnavailable = sourceAvailability.isUnavailable;
   const sourceUnavailableRef = useRef(false);

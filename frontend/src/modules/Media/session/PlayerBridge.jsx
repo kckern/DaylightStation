@@ -29,6 +29,10 @@ import { PlayerHostContext, PlayerHostPresentationContext } from './playerHostCo
 import { TIMING } from '../constants.js';
 
 const RENDERER_BOUNDARY_FORMATS = new Set(['video', 'hls_video', 'dash_video', 'audio']);
+// Media waits out a refused (unreadable) file for 60 s, then lets the queue
+// move on; kiosks keep the Player's 30-minute default (RELY.5a ruling).
+export const MEDIA_SOURCE_UNAVAILABLE_MAX_MS = 60_000;
+const MEDIA_RESILIENCE_CONFIG = Object.freeze({ monitor: Object.freeze({ sourceUnavailableMaxMs: MEDIA_SOURCE_UNAVAILABLE_MAX_MS }) });
 
 export function PlayerBridge() {
   const ctx = useContext(LocalSessionContext);
@@ -446,14 +450,25 @@ export function PlayerBridge() {
     return seconds > 0 ? { ...currentItem, seconds } : { ...currentItem };
   }, [currentItem, restoreHeld]);
 
-  // Only failures the Player has given up on are reported as failures.
+  // Only failures the Player has given up on are reported as failures;
+  // refused-source waits are reported as waits (RELY.5a ruling).
   const onPlayerError = useCallback((error) => {
     if (playbackGenerationRef.current !== playbackGeneration) return;
-    if (error?.kind !== 'resilience-exhausted') return;
     if (!contentId || controller.getSnapshot().currentItem?.contentId !== contentId) return;
+    if (error?.kind === 'source-wait' || error?.kind === 'source-wait-ended') {
+      controller.onPlayerSourceWait?.({
+        waiting: error.kind === 'source-wait',
+        since: error.since ?? null,
+        decision: error.decision ?? null,
+        contentId,
+      });
+      return;
+    }
+    if (error?.kind !== 'resilience-exhausted') return;
+    const sourceGaveUp = error.reason === 'source-unavailable-gave-up';
     controller.onPlayerError?.({
       message: error.reason ? `Playback gave up (${error.reason})` : 'Playback gave up',
-      code: 'resilience-exhausted',
+      code: sourceGaveUp ? 'source-unavailable-gave-up' : 'resilience-exhausted',
     });
   }, [controller, contentId, playbackGeneration]);
 
@@ -511,6 +526,7 @@ export function PlayerBridge() {
       clear={onClear}
       onProgress={onProgress}
       onError={onPlayerError}
+      mediaResilienceConfig={MEDIA_RESILIENCE_CONFIG}
       forceShader={forceShader ?? undefined}
       ignoreKeys
       initialRendererOperation={pendingInitialRendererOperationRef.current}

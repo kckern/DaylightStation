@@ -1,4 +1,5 @@
 import { createContext, useContext, useMemo } from 'react';
+import { SOURCE_UNAVAILABLE_MAX_MS } from '../lib/sourceAvailability.js';
 
 export const DEFAULT_MEDIA_RESILIENCE_CONFIG = {
   overlay: {
@@ -13,7 +14,11 @@ export const DEFAULT_MEDIA_RESILIENCE_CONFIG = {
     // Poisoned-segment escape: nudge the recovery seek forward after this many
     // consecutive same-position startup failures.
     maxSamePositionRetries: 2,
-    recoverySeekNudgeSeconds: 6
+    recoverySeekNudgeSeconds: 6,
+    // How long a refused (unreadable) source is waited out before the item
+    // falls back to `exhausted`. An owner option: kiosks keep the long wait,
+    // Media gives up sooner so a queue can move on (RELY.5a ruling).
+    sourceUnavailableMaxMs: SOURCE_UNAVAILABLE_MAX_MS
   },
   // Attempt cap + cooldown/backoff are NOT configurable here — they are owned
   // by lib/recoveryLedger.js (RECOVERY_MAX_ATTEMPTS et al.), the single
@@ -77,7 +82,8 @@ export function useResilienceConfig({ configOverrides, runtimeOverrides } = {}) 
         epsilonSeconds: coerceNumber(monitorConfig.progressEpsilonSeconds, 0.25),
         hardRecoverLoadingGraceMs: coerceNumber(monitorConfig.hardRecoverLoadingGraceMs, 15000),
         maxSamePositionRetries: coerceNumber(monitorConfig.maxSamePositionRetries, 2),
-        recoverySeekNudgeSeconds: coerceNumber(monitorConfig.recoverySeekNudgeSeconds, 6)
+        recoverySeekNudgeSeconds: coerceNumber(monitorConfig.recoverySeekNudgeSeconds, 6),
+        sourceUnavailableMaxMs: coerceNumber(monitorConfig.sourceUnavailableMaxMs, SOURCE_UNAVAILABLE_MAX_MS)
       },
       recoveryConfig: {
         enabled: recoveryConfig.enabled ?? true

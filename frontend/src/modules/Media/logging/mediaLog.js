@@ -81,6 +81,7 @@ export const mediaLog = {
   outcomeDismissed:       debug('outcome.dismissed'),
   outcomeUndo:            info('outcome.undo'),
   outcomeStopped:         info('outcome.stopped'),
+  outcomeSkipped:         info('outcome.skipped'),
   outcomeStopFailed:      warn('outcome.stop-failed'),
   outcomeUndoFailed:      warn('outcome.undo-failed'),
   destinationChanged:     info('dispatch.destination_changed'),

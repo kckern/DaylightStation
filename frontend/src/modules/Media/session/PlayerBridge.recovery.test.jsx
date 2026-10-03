@@ -78,4 +78,25 @@ describe('PlayerBridge recovery', () => {
     act(() => { latestProps.onError({ kind: 'media-error', code: 2 }); });
     expect(spy).not.toHaveBeenCalled();
   });
+
+  it('RELY.5a: gives the Player a 60 s refused-source limit and routes its wait reports to the controller', () => {
+    const controller = createLocalSessionController({ clientId: 'c1', persistedSnapshot: structuredClone(restored) });
+    mount(controller);
+    act(() => { controller.transport.play(); });
+    expect(latestProps.mediaResilienceConfig).toEqual(expect.objectContaining({ monitor: expect.objectContaining({ sourceUnavailableMaxMs: 60_000 }) }));
+    const wait = vi.spyOn(controller, 'onPlayerSourceWait');
+    act(() => { latestProps.onError({ kind: 'source-wait', waiting: true, since: 1, contentId: 'plex:1' }); });
+    expect(wait).toHaveBeenLastCalledWith(expect.objectContaining({ waiting: true, contentId: 'plex:1' }));
+    act(() => { latestProps.onError({ kind: 'source-wait-ended', waiting: false, decision: 'resume', contentId: 'plex:1' }); });
+    expect(wait).toHaveBeenLastCalledWith(expect.objectContaining({ waiting: false, decision: 'resume' }));
+  });
+
+  it('RELY.5a: a source give-up reaches the controller as source-unavailable-gave-up', () => {
+    const controller = createLocalSessionController({ clientId: 'c1', persistedSnapshot: structuredClone(restored) });
+    mount(controller);
+    act(() => { controller.transport.play(); });
+    const spy = vi.spyOn(controller, 'onPlayerError');
+    act(() => { latestProps.onError({ kind: 'resilience-exhausted', reason: 'source-unavailable-gave-up' }); });
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ code: 'source-unavailable-gave-up' }));
+  });
 });

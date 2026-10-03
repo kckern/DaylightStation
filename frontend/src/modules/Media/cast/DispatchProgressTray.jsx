@@ -15,7 +15,7 @@
 // One polite live region announces the newest outcome. Never modal (N1.3).
 import React, { useEffect, useMemo, useState } from 'react';
 import { UnstyledButton } from '@mantine/core';
-import { IconAlertCircle, IconRefresh, IconX, IconDeviceRemote, IconPlayerPlayFilled, IconArrowBackUp, IconDevices, IconCheck, IconPlayerStopFilled } from '@tabler/icons-react';
+import { IconAlertCircle, IconRefresh, IconX, IconDeviceRemote, IconPlayerPlayFilled, IconArrowBackUp, IconDevices, IconCheck, IconPlayerStopFilled, IconPlayerSkipForwardFilled } from '@tabler/icons-react';
 import { useDispatch } from './useDispatch.js';
 import { useDevice } from '../fleet/useDevice.js';
 import { useFleetContext } from '../fleet/useFleetContext.js';
@@ -36,8 +36,10 @@ export const LOCAL_LINGER_MS = 2_500;
 // Generous, not 3 seconds.
 export const SENT_RESOLUTION_TIMEOUT_MS = 100_000;
 
-const PROBLEM_PHASES = new Set(['failed', 'not-sent', 'skipped', 'unconfirmed']);
-const RETRYABLE_PHASES = new Set(['failed', 'not-sent', 'skipped', 'unconfirmed']);
+const PROBLEM_PHASES = new Set(['failed', 'not-sent', 'skipped', 'unconfirmed', 'waiting', 'library-unavailable']);
+const RETRYABLE_PHASES = new Set(['failed', 'not-sent', 'skipped', 'unconfirmed', 'waiting', 'library-unavailable']);
+// A local item the Player is waiting on can be skipped by the person.
+const SKIPPABLE_PHASES = new Set(['waiting', 'library-unavailable']);
 
 function ordinal(value) {
   const tens = value % 100;
@@ -76,6 +78,18 @@ function localCopy(d, phase, name) {
   const at = d.distance === 'here' ? 'here' : `on ${d.targetName ?? name}`;
   if (d.kind === 'playback') {
     // RELY.5a: name the item, this device, and what plays instead.
+    if (phase === 'waiting') {
+      return { primary: `Waiting for ${title} — the file is being repaired`, secondary: 'On this device' };
+    }
+    if (phase === 'library-unavailable') {
+      return { primary: 'Library unavailable', secondary: `${title} is waiting for its file on this device` };
+    }
+    if (phase === 'skipped' && d.reason === 'file-unavailable') {
+      return {
+        primary: `${title} skipped — file unavailable`,
+        secondary: d.replacement?.title ? `Now playing ${d.replacement.title}` : 'Nothing else is queued.',
+      };
+    }
     if (phase === 'skipped') {
       return {
         primary: d.reason === 'stalled'
@@ -234,7 +248,7 @@ function rowText(d, phase, name, kind) {
   return d.distance === 'here' || d.distance === 'direct' ? localCopy(d, phase, name) : farCopy(d, phase, name, kind);
 }
 
-function TrayRow({ d, retry, removeDispatch, sendElsewhere, recordLocal, stopAttempt }) {
+function TrayRow({ d, retry, removeDispatch, sendElsewhere, recordLocal, stopAttempt, skipLocal }) {
   const isLocal = d.distance === 'here' || d.distance === 'direct';
   const targetId = d.targetId ?? d.deviceId;
   const { device } = useDevice(d.distance === 'here' ? null : targetId);
@@ -307,6 +321,11 @@ function TrayRow({ d, retry, removeDispatch, sendElsewhere, recordLocal, stopAtt
             <IconDeviceRemote size={14} aria-hidden /> Steer it
           </UnstyledButton>
         )}
+        {d.distance === 'here' && SKIPPABLE_PHASES.has(phase) && typeof skipLocal === 'function' && (
+          <UnstyledButton data-testid={`dispatch-skip-${attemptId}`} onClick={() => skipLocal(attemptId)} className="cast-tray-action">
+            <IconPlayerSkipForwardFilled size={14} aria-hidden /> Skip now
+          </UnstyledButton>
+        )}
         {showRetry && (
           <UnstyledButton data-testid={`dispatch-retry-${attemptId}`} onClick={() => retry(attemptId)} className="cast-tray-action">
             <IconRefresh size={14} aria-hidden /> {retryLabel}
@@ -353,7 +372,7 @@ function AnnouncedText({ d }) {
 }
 
 export function DispatchProgressTray() {
-  const { dispatches, outcomes, retry, removeDispatch, sendElsewhere, recordLocal, stopAttempt } = useDispatch();
+  const { dispatches, outcomes, retry, removeDispatch, sendElsewhere, recordLocal, stopAttempt, skipLocal } = useDispatch();
   const records = [...(outcomes ?? dispatches).values()];
   return (
     <>
@@ -369,6 +388,7 @@ export function DispatchProgressTray() {
               sendElsewhere={sendElsewhere}
               recordLocal={recordLocal}
               stopAttempt={stopAttempt}
+              skipLocal={skipLocal}
             />
           ))}
         </div>

@@ -1513,6 +1513,9 @@ const Player = forwardRef(function Player(props, ref) {
     onStateChange: compositeAwareOnState,
     onReload: handleResilienceReload,
     onExhausted: handleResilienceExhausted,
+    // An owner that listens (Media) hears when a refused source is being
+    // waited out and when that wait ends; owners without onError see nothing.
+    onSourceWait: (event) => onError?.({ kind: event.waiting ? 'source-wait' : 'source-wait-ended', ...event }),
     configOverrides: resolvedResilience.config,
     controllerRef: resilienceControllerRef,
     plexId,

@@ -177,6 +177,34 @@ export function createLocalSessionController({
     });
     setProblem(next);
   };
+  // ---- Refused-source waits (RELY.5a ruling) ----
+  // The Player waits out a file the server refuses to read (Media caps that
+  // wait at 60 s). A wait longer than 3 s shows as `waiting`; if the item
+  // after a "file unavailable" skip also waits within 60 s, the library is
+  // probably down: hold on it with one `library-unavailable` problem instead
+  // of skipping through the whole queue.
+  const SOURCE_WAIT_NOTICE_MS = 3_000;
+  const SOURCE_STORM_WINDOW_MS = 60_000;
+  let sourceWaitTimer = null;
+  let lastSourceSkipAt = null;
+  let holdContentId = null;
+  const clearSourceWaitTimer = () => {
+    if (sourceWaitTimer) { clearTimeout(sourceWaitTimer); sourceWaitTimer = null; }
+  };
+  const problemItem = (item) => ({ contentId: item.contentId, title: item.title ?? null, queueItemId: item.queueItemId ?? null });
+  const raiseHeldProblem = (kind, item) => {
+    const next = { kind, reason: 'source-unavailable', item: problemItem(item), replacement: null, at: Date.now() };
+    mediaLog.playbackProblem({ sessionId: store.getSnapshot().sessionId, kind, reason: 'source-unavailable', contentId: item.contentId, replacementContentId: null });
+    setProblem(next);
+  };
+  store.onTransition((_prev, _next, action) => {
+    if (['LOAD_ITEM', 'SET_CURRENT_ITEM', 'ADOPT_SNAPSHOT', 'RESET', 'STOP'].includes(action?.type)) {
+      clearSourceWaitTimer();
+      const current = store.getSnapshot().currentItem;
+      if (holdContentId && current?.contentId !== holdContentId) holdContentId = null;
+    }
+  });
+
   const clearProblem = (reason) => {
     if (!problem) return;
     mediaLog.playbackRecovered({ sessionId: store.getSnapshot().sessionId, contentId: problem.item.contentId, reason });
@@ -765,7 +793,11 @@ export function createLocalSessionController({
         beginAction();
         const opOrigin = pendingOrigin;
         mediaLog.transportCommand({ action: 'skipNext', target: 'local' });
+        // A person moving on (e.g. Skip now on a waiting file) ends any hold.
+        clearSourceWaitTimer();
+        holdContentId = null;
         advance('skip-next', { opOrigin });
+        clearProblem('skipped-by-person');
       },
       skipPrev: () => {
         beginAction();
@@ -978,9 +1010,27 @@ export function createLocalSessionController({
     },
     onPlayerEnded: (contentId = null) => {
       if (contentId != null && snap().currentItem?.contentId !== contentId) return;
+      // Holding on a refused file during a library outage: its clear is not an end.
+      if (holdContentId && snap().currentItem?.contentId === holdContentId) return;
       advance('item-ended', { playerDriven: true });
     },
     onPlayerError: ({ message, code } = {}) => {
+      if (code === 'source-unavailable-gave-up') {
+        clearSourceWaitTimer();
+        const failedItem = snap().currentItem;
+        if (!failedItem) return;
+        if (holdContentId && failedItem.contentId === holdContentId) {
+          // Storm hold: stay on the item; the library-unavailable problem stands.
+          mediaLog.playbackError({ sessionId: snap().sessionId, contentId: failedItem.contentId, error: 'source unavailable (held)', code });
+          return;
+        }
+        mediaLog.playbackError({ sessionId: snap().sessionId, contentId: failedItem.contentId, error: message ?? 'source unavailable', code });
+        store.dispatch({ type: 'ITEM_ERROR', error: message ?? 'source unavailable', code, __playerDriven: true });
+        advance('source-unavailable', { playerDriven: true });
+        lastSourceSkipAt = Date.now();
+        raiseProblem(failedItem, 'file-unavailable');
+        return;
+      }
       mediaLog.playbackError({
         sessionId: snap().sessionId,
         contentId: snap().currentItem?.contentId,
@@ -991,6 +1041,33 @@ export function createLocalSessionController({
       store.dispatch({ type: 'ITEM_ERROR', error: message ?? 'unknown', code: code ?? null, __playerDriven: true });
       advance('item-error', { playerDriven: true });
       if (failed) raiseProblem(failed, 'error');
+    },
+    onPlayerSourceWait: ({ waiting, contentId = null, decision = null } = {}) => {
+      const current = snap().currentItem;
+      if (!current) return;
+      if (contentId != null && current.contentId !== contentId) return;
+      if (waiting) {
+        clearSourceWaitTimer();
+        if (lastSourceSkipAt != null && Date.now() - lastSourceSkipAt < SOURCE_STORM_WINDOW_MS) {
+          holdContentId = current.contentId;
+          raiseHeldProblem('library-unavailable', current);
+          return;
+        }
+        const waitingFor = current.contentId;
+        sourceWaitTimer = setTimeout(() => {
+          sourceWaitTimer = null;
+          const now = snap().currentItem;
+          if (now?.contentId !== waitingFor) return;
+          raiseHeldProblem('waiting', now);
+        }, SOURCE_WAIT_NOTICE_MS);
+        return;
+      }
+      clearSourceWaitTimer();
+      if (decision === 'gave-up') return; // onPlayerError reports it
+      if (problem && ['waiting', 'library-unavailable'].includes(problem.kind) && problem.item?.contentId === current.contentId) {
+        holdContentId = null;
+        clearProblem('source-restored');
+      }
     },
     onPlayerStalled: ({ stalledMs } = {}) => {
       const current = snap().currentItem;
