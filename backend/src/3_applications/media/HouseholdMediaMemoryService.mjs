@@ -202,6 +202,29 @@ export class HouseholdMediaMemoryService {
     return { items: rows, ledger: true };
   }
 
+  /**
+   * Display fields for several content ids under one request budget — the
+   * same cache, concurrency limit and deadlines as recent / carry on. A miss
+   * maps to null. For other household views (played earlier, suggestions).
+   * @param {string[]} contentIds
+   * @returns {Promise<Map<string, Object|null>>}
+   */
+  async describeMany(contentIds) {
+    const budget = this.#budget();
+    const unique = [...new Set((contentIds || []).filter((id) => typeof id === 'string' && id))];
+    const out = new Map();
+    await Promise.all(unique.map(async (id) => { out.set(id, await this.#describe(id, budget)); }));
+    return out;
+  }
+
+  /**
+   * What is on a screen right now (same sources as carry on's `nowOn`).
+   * @returns {Promise<{known: boolean, list: Array<{deviceId, screenId, contentId, state, position}>}>}
+   */
+  async nowPlaying() {
+    return this.#readNowPlaying();
+  }
+
   async listFavourites(householdId) {
     return { items: await this.#listsStore.loadFavourites(householdId) };
   }
