@@ -113,6 +113,10 @@ export const mediaLog = {
   urlCommandIgnored:      debug('url-command.ignored'),
   navPushed:              debug('nav.pushed'),
   transportCommand:       sampled('transport.command', { maxPerMinute: 60, aggregate: true }),
+  // Player features (P2): tracks, Show briefly, music behind.
+  playerFeature:          info('player-feature.command'),
+  playerFeatureFailed:    warn('player-feature.failed'),
+  playerFeatureState:     debug('player-feature.state'),
 };
 
 export default mediaLog;

@@ -20,6 +20,7 @@ import {
 } from '@tabler/icons-react';
 import { useSessionController } from '../controller/useSessionController.js';
 import { playbackRateLabel } from './stateCopy.js';
+import { PlayerFeatureControls, useSlideshowStopGuard } from './PlayerFeatureControls.jsx';
 import './NowPlaying.scss';
 
 const PLAYING_STATES = new Set(['playing', 'buffering']);
@@ -49,6 +50,7 @@ export function TransportBar({ target, snapshot: snapshotOverride = null, onComm
   const snapshot = snapshotOverride ?? session.snapshot;
   const { transport, config, capabilities } = session;
   const [commandFeedback, setCommandFeedback] = useState(null);
+  const [guardStop, stopGuardDialog] = useSlideshowStopGuard(target, snapshotOverride);
   const commandGeneration = useRef(0);
   const targetKey = target === 'local' ? 'local' : target?.deviceId ?? 'unknown';
   const targetGeneration = useRef(0);
@@ -261,7 +263,7 @@ export function TransportBar({ target, snapshot: snapshotOverride = null, onComm
           className="np-icon-btn"
           aria-label="Stop"
           disabled={!controlsAvailable || typeof transport.stop !== 'function' || isPending('stop')}
-          onClick={() => runCommand('stop', () => transport.stop?.())}
+          onClick={() => guardStop(() => runCommand('stop', () => transport.stop?.()))}
         >
           <IconPlayerStopFilled size={20} />
         </button>
@@ -270,6 +272,8 @@ export function TransportBar({ target, snapshot: snapshotOverride = null, onComm
         <div className="np-control-unavailable" role="status">{unavailableReason}</div>
       )}
       {commandFeedback && <div className="np-command-feedback" data-testid="np-command-feedback" role="status">{commandFeedback}</div>}
+      <PlayerFeatureControls target={target} snapshot={snapshotOverride} />
+      {stopGuardDialog}
     </div>
   );
 }

@@ -7,6 +7,8 @@ export function buildDispatchUrl({
   volume,
   shuffle,
   itemAction,
+  // Show briefly (RQ-PLAY-11): shown over the screen's programme, which returns.
+  brief = false,
   // A Media press is never replayed later behind the person's back: ask the
   // backend to skip its 45s deferred retry (RQ-STEER-07). Retry is explicit.
   manualRetryOnly = false,
@@ -26,6 +28,7 @@ export function buildDispatchUrl({
   if (typeof volume === 'number' && Number.isFinite(volume)) params.set('volume', String(volume));
   if (shuffle) params.set('shuffle', '1');
   if (itemAction) params.set('itemAction', JSON.stringify(itemAction));
+  if (brief && play) params.set('brief', '1');
   if (manualRetryOnly) params.set('deferredRetry', '0');
   return `api/v1/device/${deviceId}/load?${params.toString()}`;
 }
