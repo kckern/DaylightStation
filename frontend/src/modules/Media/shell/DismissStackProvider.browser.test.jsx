@@ -33,7 +33,18 @@ beforeAll(async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   origin = `http://127.0.0.1:${server.address().port}`;
   browser = await chromium.launch({ headless: true });
-}, 120000);
+  // Warm-up: the first request makes Vite optimize the fixture's dependencies
+  // from cold (and may reload the page when they change). That is setup cost,
+  // not the behaviour under test, so pay it here and keep the test's own
+  // timeouts strict.
+  const warm = await browser.newPage();
+  try {
+    await warm.goto(`${origin}/dismiss-stack-browser-fixture.html`, { waitUntil: 'commit', timeout: 60000 });
+    await warm.locator('#escape-target').waitFor({ timeout: 90000 });
+  } finally {
+    await warm.close();
+  }
+}, 180000);
 
 afterAll(async () => {
   await browser?.close();
