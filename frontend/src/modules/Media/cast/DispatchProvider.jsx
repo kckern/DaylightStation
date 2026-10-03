@@ -208,7 +208,7 @@ export function DispatchProvider({ children }) {
 
       const httpPromise = isAdopt
         ? DaylightAPI(`api/v1/device/${deviceId}/load`, { dispatchId, snapshot, mode: 'adopt' }, 'POST')
-        : DaylightAPI(buildDispatchUrl({ deviceId, play, queue, dispatchId, shader, volume, shuffle, itemAction, brief, manualRetryOnly: true }));
+        : DaylightAPI(buildDispatchUrl({ deviceId, play, queue, dispatchId, shader, volume, shuffle, itemAction, brief, title: brief ? contentTitle : null, manualRetryOnly: true }));
       httpPromise
         .then((res) => {
           settle(dispatchId);

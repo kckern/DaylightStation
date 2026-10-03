@@ -220,7 +220,8 @@ export function ScreenBriefSurface({ features }) {
         <span className="screen-brief__label" data-testid="screen-brief-label">{brief.label}</span>
         {brief.returnTo && (
           <span className="screen-brief__return" data-testid="screen-brief-return">
-            {`Back to ${brief.returnTo.title ?? 'your programme'}${remaining != null ? ` in ${remaining}s` : ' when closed'}`}
+            {`Back to ${brief.returnTo.title ?? 'your programme'}${remaining != null ? ` in ${remaining}s`
+              : brief.kind === 'clip' ? ' after this' : ' when closed'}`}
           </span>
         )}
         {!brief.returnTo && remaining != null && (

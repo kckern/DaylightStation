@@ -16,6 +16,18 @@
 //   onTracks(state, { instanceId }) → the current item's tracks changed
 
 const registrations = [];
+const changeListeners = new Set();
+const notifyChanged = () => { for (const fn of [...changeListeners]) { try { fn(); } catch { /* listener's problem */ } } };
+
+/** True while any owner is registered (a page with no owner does no track work at all). */
+export function hasTrackOwners() { return registrations.length > 0; }
+
+/** Called whenever an owner registers or leaves. Returns an unsubscribe. */
+export function subscribeTrackOwners(fn) {
+  if (typeof fn !== 'function') return () => {};
+  changeListeners.add(fn);
+  return () => changeListeners.delete(fn);
+}
 
 /**
  * Register a track owner. Returns an unregister that removes only this entry.
@@ -24,9 +36,10 @@ export function registerTrackOwner(owner) {
   if (!owner || typeof owner.isOwner !== 'function') return () => {};
   const entry = { owner };
   registrations.push(entry);
+  notifyChanged();
   return () => {
     const index = registrations.indexOf(entry);
-    if (index >= 0) registrations.splice(index, 1);
+    if (index >= 0) { registrations.splice(index, 1); notifyChanged(); }
   };
 }
 
@@ -47,6 +60,7 @@ export function getTrackOwner(instanceId) {
 /** Test helper. */
 export function __resetTrackOwners() {
   registrations.splice(0, registrations.length);
+  notifyChanged();
 }
 
 // --- Remembered choices (per device, browser storage) -------------------------

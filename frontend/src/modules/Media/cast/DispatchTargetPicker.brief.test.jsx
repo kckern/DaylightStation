@@ -37,6 +37,7 @@ describe('Show briefly on…', () => {
     expect(url.pathname).toBe('/api/v1/device/livingroom-tv/load');
     expect(url.searchParams.get('play')).toBe('plex:77');
     expect(url.searchParams.get('brief')).toBe('1');
+    expect(url.searchParams.get('title')).toBe('Clip');
     expect(url.searchParams.has('itemAction')).toBe(false);
   });
 

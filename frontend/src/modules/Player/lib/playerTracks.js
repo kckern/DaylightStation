@@ -53,9 +53,11 @@ export function trackStateFor(info, { applied = null, engine = null } = {}) {
   }
   if (!base) return null;
   const selected = { ...base.selected };
-  if (plex && applied) {
-    if (applied.audio) selected.audio = applied.audio;
-    if (applied.subtitle) selected.subtitle = applied.subtitle === SUBTITLES_OFF ? null : applied.subtitle;
+  if (plex) {
+    // A Plex subtitle shows only when this mint burned it in: Plex's own
+    // "selected" flag on the file says nothing about what is on screen.
+    selected.subtitle = applied?.subtitle && applied.subtitle !== SUBTITLES_OFF ? applied.subtitle : null;
+    if (applied?.audio) selected.audio = applied.audio;
   }
   return {
     contentId: contentIdOf(info),

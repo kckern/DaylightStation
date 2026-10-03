@@ -28,7 +28,7 @@ import { getLogger } from '../../lib/logging/Logger.js';
 import { OnDeckCard } from './components/OnDeckCard.jsx';
 import { getPlayerQueueOpRegistry } from './lib/queueOpRegistry.js';
 import { getNaturalEndPolicy } from './lib/naturalEndPolicy.js';
-import { getTrackOwner } from './lib/trackPolicy.js';
+import { getTrackOwner, hasTrackOwners, subscribeTrackOwners } from './lib/trackPolicy.js';
 import { trackEngineFor } from './lib/engineTracks.js';
 import { applyRememberedTracks, trackStateFor, checkSelection, rememberSelection } from './lib/playerTracks.js';
 import { usePlayerConfig } from './hooks/usePlayerConfig.js';
@@ -757,20 +757,28 @@ const Player = forwardRef(function Player(props, ref) {
   }, [resolvedMeta]);
   const lastPublishedTracksRef = useRef(null);
   useEffect(() => {
-    const owner = getTrackOwner(playerInstanceId);
-    if (!owner || typeof owner.onTracks !== 'function') return undefined;
+    // The owner may bind this Player after it mounts (the screen registers its
+    // playback owner later), so ownership is asked on every publish.
     const publish = () => {
+      const owner = getTrackOwner(playerInstanceId);
+      if (!owner || typeof owner.onTracks !== 'function') return;
       const { state } = currentTrackState();
       const serialized = JSON.stringify(state);
       if (serialized === lastPublishedTracksRef.current) return;
       lastPublishedTracksRef.current = serialized;
       try { owner.onTracks(state, { instanceId: playerInstanceId }); } catch { /* owner's problem */ }
     };
-    publish();
     // Engine tracks appear once a manifest is parsed; Plex tracks are known
-    // up front. A slow poll covers both without touching the renderer.
-    const timer = setInterval(publish, 2000);
-    return () => clearInterval(timer);
+    // up front. A slow poll covers both — and runs only while some owner is
+    // registered on the page, so an unclaimed Player does no track work.
+    let timer = null;
+    const sync = () => {
+      if (hasTrackOwners() && !timer) { publish(); timer = setInterval(publish, 2000); }
+      else if (!hasTrackOwners() && timer) { clearInterval(timer); timer = null; }
+    };
+    sync();
+    const unsubscribe = subscribeTrackOwners(sync);
+    return () => { unsubscribe(); if (timer) clearInterval(timer); };
   }, [playerInstanceId, currentTrackState]);
 
   const handlePlaybackMetrics = useCallback((metrics = {}) => {

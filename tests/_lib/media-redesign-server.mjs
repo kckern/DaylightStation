@@ -38,6 +38,8 @@ const ORDINARY_READ_PATHS = [
   // browser media reads. Keep control endpoints (notably `stop`) outside this
   // allowlist even when callers use GET for them.
   /^\/api\/v1\/proxy\/plex\/video\/:\/transcode\/universal\/start\.(?:mpd|m3u8)$/,
+  // Public-domain paintings for the slideshow fixture (music behind, RQ-PLAY-12).
+  /^\/api\/v1\/static\/img\/art\/classic\/[^/]+\/[^/]+\.jpg$/,
   /^\/api\/v1\/proxy\/plex\/video\/:\/transcode\/universal\/session\/[0-9a-f-]{36}\/base\/[^/]+\.(?:m3u8|m4s|mp4|ts)$/,
 ];
 
@@ -179,7 +181,48 @@ app.use('/api/v1/play', createPlayRouter({
 // as well as its runtime test selector; titles alone are not stable identity.
 // 266151/266152: two adjacent short episodes (Bluey S1E2/E3) for the screen
 // next-episode countdown and end-of-queue journeys.
-export const BRANCH_ALLOWED_TITLES = ['55854', '697368', '675677', '584614', '266151', '266152'];
+// 665638/665639: two adjacent episodes of one show with many subtitle streams
+// (3 Body Problem S1E1/E2) for the subtitles/audio language journey.
+export const BRANCH_ALLOWED_TITLES = ['55854', '697368', '675677', '584614', '266151', '266152', '665638', '665639'];
+
+// A photo slideshow for the music-behind journey (RQ-PLAY-12): three
+// public-domain paintings from the household art collection, served as an
+// ordinary queue of `image` items. Read-only; no personal photos.
+const SLIDESHOW_ART = [
+  'Adolphe Schreyer - 1880 - Man with Lance Riding through the Snow/Man with Lance Riding through the Snow.jpg',
+  'Adriaen van de Velde - 1664 - Pastoral Landscape with Ruins/Pastoral Landscape with Ruins.jpg',
+  'Agostino Brunias - 1770 - View on the River Roseau Dominica/View on the River Roseau Dominica.jpg',
+];
+export function slideshowFixtureItem(index) {
+  const file = SLIDESHOW_ART[index];
+  if (!file) return null;
+  const [folder] = file.split('/');
+  return {
+    id: `fixture:art-${index + 1}`, contentId: `fixture:art-${index + 1}`, assetId: `fixture:art-${index + 1}`,
+    title: folder.split(' - ').at(-1), mediaType: 'image', format: 'image',
+    mediaUrl: `/api/v1/static/img/art/classic/${file.split('/').map(encodeURIComponent).join('/')}`,
+    slideshow: { duration: 8, effect: 'none', zoom: 1 },
+  };
+}
+function serveSlideshowFixture(rawPath, res) {
+  let path = rawPath;
+  try { path = decodeURIComponent(rawPath); } catch { /* keep raw */ }
+  if (path === '/api/v1/queue/fixture:slideshow') {
+    const items = SLIDESHOW_ART.map((_f, i) => slideshowFixtureItem(i));
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ source: 'fixture', id: 'fixture:slideshow', count: items.length, totalDuration: 0, items }));
+    return true;
+  }
+  const match = /^\/api\/v1\/play\/fixture:art-(\d)$/.exec(path);
+  if (match) {
+    const item = slideshowFixtureItem(Number(match[1]) - 1);
+    res.statusCode = item ? 200 : 404;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(item ?? { error: 'not found' }));
+    return true;
+  }
+  return false;
+}
 const allowedTitles = new Set(policy === 'branch' ? BRANCH_ALLOWED_TITLES
   : policy === 'hls-copy-55854' ? ['55854'] : ['675677']);
 
@@ -195,6 +238,7 @@ export function createAcceptancePreviewPlugin({ app, allowedTitles, policy, sour
     res.setHeader('X-Media-Acceptance-Source', acceptanceSource);
     if (ordinaryDeviceFixture && await ordinaryDeviceFixture.middleware(req, res)) return;
     const path = new URL(req.url, upstream).pathname;
+    if (req.method === 'GET' && serveSlideshowFixture(path, res)) return;
     // The ordinary journey gets only catalog/config/media reads. This also
     // blocks GET-shaped command routes outside `/device` (which the fixture
     // consumes separately) rather than trusting HTTP method alone.
