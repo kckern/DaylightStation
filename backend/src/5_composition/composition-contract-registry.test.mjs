@@ -478,7 +478,12 @@ const contracts = [
         // The screen's command envelope names the routine, not a generic origin.
         expect(wakeAndLoad.execute).toHaveBeenCalledWith('livingroom-tv', { queue: 'morning-program' },
           { origin: { kind: 'routine', name: 'Morning program', triggerId: 'Morning program' } });
-        const { items } = await house.routineHistory.list({});
+        // The history write runs after the load answers (HA never waits on it).
+        let items = [];
+        for (let i = 0; i < 50 && !items.length; i += 1) {
+          await new Promise((r) => setTimeout(r, 10));
+          ({ items } = await house.routineHistory.list({}));
+        }
         expect(items).toEqual([expect.objectContaining({
           routine: { id: null, name: 'Morning program' }, deviceId: 'fleet:livingroom-tv', outcome: 'started', screenName: 'Living Room TV',
         })]);

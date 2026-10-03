@@ -16,7 +16,7 @@
  * Routine → screen links come from #domains/media/routineCatalog.mjs and are
  * by stable screen id, so renames never break them.
  */
-import { extractRoutines, matchRoutines, routinesTargeting } from '#domains/media/routineCatalog.mjs';
+import { extractRoutines, matchRoutines, routinesTargeting, validateRoutineImport } from '#domains/media/routineCatalog.mjs';
 
 const DEFAULT_CACHE_TTL_MS = 60 * 1000;
 const LEDGER_OBSERVED_DAYS = 30;
@@ -39,6 +39,8 @@ export class RoutineCatalogService {
   #logger;
   /** @type {Map<string, {at:number, value:Object}>} */
   #cache = new Map();
+  /** @type {Map<string, Promise<Object>>} */
+  #refreshing = new Map();
 
   /**
    * @param {Object} deps
@@ -124,10 +126,10 @@ export class RoutineCatalogService {
   /**
    * @returns {Promise<{routines: Object[], sources: Object[]}>}
    */
-  async list({ householdId } = {}) {
+  async list({ householdId, force = false } = {}) {
     const key = householdId ?? '';
     const cached = this.#cache.get(key);
-    if (cached && this.#clock.now() - cached.at < this.#ttl) return cached.value;
+    if (!force && cached && this.#clock.now() - cached.at < this.#ttl) return cached.value;
     const live = await this.#readLive();
     let routines = live.routines;
     const sources = [...live.sources];
@@ -151,6 +153,38 @@ export class RoutineCatalogService {
     return value;
   }
 
+  /**
+   * The last catalog read, without reading anything now (stale is fine); a
+   * missing or stale one is refreshed in the background. For the load path,
+   * which must not wait on files before the TV is woken.
+   * @returns {Object|null} `{routines, sources}` or null when never read
+   */
+  peek(householdId) {
+    const key = householdId ?? '';
+    const cached = this.#cache.get(key);
+    if ((!cached || this.#clock.now() - cached.at >= this.#ttl) && !this.#refreshing.has(key)) {
+      const run = this.list({ householdId, force: true })
+        .catch((error) => { this.#logger.warn?.('media.routines.refresh_failed', { error: error.message }); })
+        .finally(() => this.#refreshing.delete(key));
+      this.#refreshing.set(key, run);
+    }
+    return cached?.value ?? null;
+  }
+
+  /** match() from the last catalog read only (see peek). */
+  peekMatch(deviceId, params, householdId) {
+    const value = this.peek(householdId);
+    if (!value) return null;
+    const [best] = matchRoutines(value.routines.filter((r) => r.kind !== 'observed'), deviceId, params);
+    return best ? summary(best) : null;
+  }
+
+  /** Whether the last catalog read lists this routine id (observed ones included). */
+  knows(routineId, householdId) {
+    const value = this.#cache.get(householdId ?? '')?.value;
+    return Boolean(routineId && value?.routines?.some((r) => r.id === routineId));
+  }
+
   /** Routines with a target on this screen id. */
   async targeting(id, householdId) {
     const { routines } = await this.list({ householdId });
@@ -168,23 +202,29 @@ export class RoutineCatalogService {
   }
 
   /**
-   * Replace the stored snapshot: either parsed routine config
-   * (`{ restCommands, scripts, automations }`) or already-extracted routines.
+   * Replace the stored snapshot with routines extracted elsewhere (where the
+   * HA config is readable — cli/media-routines.cli.mjs). Validated strictly:
+   * a malformed import is refused whole, nothing stored.
    */
-  async importSnapshot({ householdId, config = null, routines = null, source = 'import' } = {}) {
+  async importSnapshot({ householdId, routines, source = 'import' } = {}) {
     if (!this.#snapshots) throw new Error('Routine snapshots are not configured');
-    const list = config ? extractRoutines(config) : (Array.isArray(routines) ? routines : null);
-    if (!list) {
-      const error = new Error('config or routines is required');
+    const errors = validateRoutineImport(routines);
+    if (errors.length) {
+      const error = new Error(`Invalid routines: ${errors[0]}`);
       error.code = 'INVALID_ROUTINES';
+      error.details = { errors: errors.slice(0, 20) };
       throw error;
     }
-    const valid = list.filter(validRoutine);
     const importedAt = new Date(this.#clock.now()).toISOString();
-    await this.#snapshots.save({ routines: valid, importedAt, source }, householdId);
+    const clean = routines.map(({ id, name, kind, source: from, targets, via }) => ({
+      id, name, kind: kind ?? 'automation', source: from ?? 'home-assistant',
+      targets: targets.map(({ deviceId, query }) => ({ deviceId, screenId: deviceId.startsWith('fleet:') ? deviceId.slice(6) : null, query })),
+      via: via ?? [],
+    }));
+    await this.#snapshots.save({ routines: clean, importedAt, source: String(source).slice(0, 64) }, householdId);
     this.#cache.delete(householdId ?? '');
-    this.#logger.info?.('media.routines.snapshot_imported', { householdId: householdId ?? null, count: valid.length, dropped: list.length - valid.length, source });
-    return { count: valid.length, dropped: list.length - valid.length, importedAt };
+    this.#logger.info?.('media.routines.snapshot_imported', { householdId: householdId ?? null, count: clean.length, source });
+    return { count: clean.length, importedAt };
   }
 
   /** Forget cached reads (after the history gains a run, say). */

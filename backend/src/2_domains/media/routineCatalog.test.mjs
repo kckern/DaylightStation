@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractRoutines, matchRoutines, routinesTargeting, parseLoadQuery } from './routineCatalog.mjs';
+import { extractRoutines, matchRoutines, routinesTargeting, parseLoadQuery, validateRoutineImport, ROUTINE_IMPORT_LIMITS } from './routineCatalog.mjs';
 
 // Shapes copied from the household's Home Assistant config (_includes/):
 // rest_commands are a merged map, scripts are named by file, automations a list.
@@ -99,5 +99,27 @@ describe('matchRoutines / routinesTargeting', () => {
   it('lists routines that target a screen by stable id', () => {
     expect(routinesTargeting(routines, 'fleet:office-tv').map((r) => r.id)).toEqual(['automation:office_morning_program_auto_start']);
     expect(routinesTargeting(routines, 'fleet:livingroom-tv').length).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe('validateRoutineImport', () => {
+  const ok = { id: 'automation:a', name: 'A', kind: 'automation', targets: [{ deviceId: 'fleet:tv', screenId: 'tv', query: 'queue=x' }], via: [] };
+  it('accepts well-formed routines and bounds everything', () => {
+    expect(validateRoutineImport([ok])).toEqual([]);
+    expect(validateRoutineImport('nope')).toEqual(['routines must be an array']);
+    expect(validateRoutineImport(Array(ROUTINE_IMPORT_LIMITS.maxRoutines + 1).fill(ok))[0]).toMatch(/at most/);
+    expect(validateRoutineImport([{ ...ok, kind: 'virus' }])[0]).toMatch(/kind/);
+    expect(validateRoutineImport([{ ...ok, via: ['x'.repeat(200)] }])[0]).toMatch(/via/);
+  });
+});
+
+describe('automation variables', () => {
+  it('honours automation-level variables passed down the chain', () => {
+    const routines = extractRoutines({
+      restCommands: { tv: { url: 'http://h/api/v1/device/livingroom-tv/{{ action }}' } },
+      scripts: { seq: { alias: 'Seq', sequence: [{ service: 'rest_command.tv', data: { action: 'load?{{ query }}' } }] } },
+      automations: [{ id: 'v', alias: 'V', variables: { q: 'queue=evening' }, actions: [{ action: 'script.seq', data: { query: '{{ q }}' } }] }],
+    });
+    expect(routines.find((r) => r.id === 'automation:v').targets[0].query).toBe('queue=evening');
   });
 });

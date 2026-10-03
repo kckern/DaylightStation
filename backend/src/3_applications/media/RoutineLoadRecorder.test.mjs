@@ -7,7 +7,7 @@ function build({ ctx = null, match = null, result = { ok: true, dispatchId: 'd1'
   const wakeAndLoad = { execute: vi.fn(async () => result) };
   const history = { record: vi.fn(async (run) => run) };
   const hints = new LoadOriginHints();
-  const catalog = { match: vi.fn(async () => match) };
+  const catalog = { peekMatch: vi.fn(() => match) };
   const recorder = new RoutineLoadRecorder({
     wakeAndLoad, context: () => ctx, catalog, history, hints,
     dedupe: new RoutineTriggerDedupeService({ clock: { now } }),
@@ -30,7 +30,7 @@ describe('RoutineLoadRecorder', () => {
       dispatchId: 'd1',
       origin: { kind: 'routine', id: 'automation:kitchen_button_4', name: 'Kitchen Button 4: Slow TV', triggerId: 'automation:kitchen_button_4' },
     });
-    expect(catalog.match).toHaveBeenCalledWith('livingroom-tv', query);
+    expect(catalog.peekMatch).toHaveBeenCalledWith('livingroom-tv', query);
     expect(history.record).toHaveBeenCalledWith({
       routine: { kind: 'routine', id: 'automation:kitchen_button_4', name: 'Kitchen Button 4: Slow TV' },
       deviceId: 'fleet:livingroom-tv', query, result, error: null,
@@ -48,7 +48,7 @@ describe('RoutineLoadRecorder', () => {
     const { recorder, wakeAndLoad, history, catalog } = build();
     await recorder.execute('livingroom-tv', { queue: 'morning-program', routine: 'Morning', routineId: 'automation:morning' });
     expect(wakeAndLoad.execute.mock.calls[0][1]).toEqual({ queue: 'morning-program' });
-    expect(catalog.match).not.toHaveBeenCalled();
+    expect(catalog.peekMatch).not.toHaveBeenCalled();
     expect(history.record.mock.calls[0][0].routine).toEqual({ kind: 'routine', id: 'automation:morning', name: 'Morning' });
   });
 
@@ -86,6 +86,24 @@ describe('RoutineLoadRecorder', () => {
     await recorder.execute('livingroom-tv', { play: 'plex:1' }, opts);
     expect(wakeAndLoad.execute).toHaveBeenCalledWith('livingroom-tv', { play: 'plex:1' }, opts);
     expect(hints.take('fleet:livingroom-tv', 2_000)).toEqual({ kind: 'device', id: 'fleet:office-tv', name: null });
+  });
+
+  it('Home Assistant never waits on the history write (registry/YAML) after the load', async () => {
+    const { recorder, history, wakeAndLoad } = build({ ctx: { userAgent: 'HomeAssistant/1' } });
+    history.record.mockImplementation(() => new Promise(() => {})); // never settles
+    await expect(recorder.execute('livingroom-tv', { queue: 'x' })).resolves.toEqual({ ok: true, dispatchId: 'd1' });
+    expect(wakeAndLoad.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('a history write failure is logged, not thrown', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const history = { record: vi.fn(async () => { throw new Error('EROFS'); }) };
+    const recorder = new RoutineLoadRecorder({
+      wakeAndLoad: { execute: async () => ({ ok: true }) }, context: () => ({ userAgent: 'HomeAssistant/1' }), history, logger,
+    });
+    await recorder.execute('livingroom-tv', { queue: 'x' });
+    await new Promise((r) => setImmediate(r));
+    expect(logger.warn).toHaveBeenCalledWith('media.routines.history_record_failed', expect.objectContaining({ error: 'EROFS' }));
   });
 
   it('an unknown caller (no context) passes straight through with no origin', async () => {

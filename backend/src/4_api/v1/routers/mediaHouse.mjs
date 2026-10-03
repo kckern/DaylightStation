@@ -25,7 +25,7 @@
  *
  * Routines (RQ-AUTO-02, RQ-AUTO-05):
  * - GET    /routines                    — { routines, sources }
- * - PUT    /routines/catalog            — import { config } (parsed HA routine config) or { routines }
+ * - PUT    /routines/catalog            — import { routines, source? } (extracted where the HA config is readable)
  * - GET    /routines/history            — recent routine starts (?limit=&deviceId=&routineId=)
  * - GET    /routines/flags              — routines pointed at screens that are off/unreachable/retired
  *
@@ -34,6 +34,8 @@
  */
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
+
+const SCREEN_ID = /^(fleet|browser|screen):[A-Za-z0-9._-]{1,96}$/;
 
 const ERROR_STATUS = {
   INVALID_NAME: 400,
@@ -46,6 +48,7 @@ const ERROR_STATUS = {
   ROUTINES_TARGET: 409,
   CONFIRM_REQUIRED: 409,
   NOT_MERGED: 404,
+  HOUSEHOLD_NOT_FOUND: 404,
 };
 
 function sendDomainError(res, error) {
@@ -62,12 +65,21 @@ function sendDomainError(res, error) {
  * @param {Object} [config.routineHistory] - RoutineHistoryService
  * @param {Object} [config.screenPlayback] - ScreenPlaybackService
  * @param {Object} [config.suggestions] - MediaSuggestionsService
+ * @param {(householdId: string) => boolean} [config.householdExists] - unknown `?household=` → 404
  * @param {Object} [config.logger]
  * @returns {express.Router}
  */
 export function createMediaHouseRouter({ screenRegistry = null, routineCatalog = null, routineHistory = null,
-  screenPlayback = null, suggestions = null, logger = console } = {}) {
+  screenPlayback = null, suggestions = null, householdExists = null, logger = console } = {}) {
   const router = express.Router();
+
+  // `?household=` must name a household: 404 before any service touches paths.
+  router.use((req, res, next) => {
+    const household = req.query.household;
+    if (household === undefined || !householdExists) return next();
+    if (typeof household === 'string' && household && householdExists(household)) return next();
+    return res.status(404).json({ error: `Household not found: ${household}`, code: 'HOUSEHOLD_NOT_FOUND' });
+  });
   const hid = (req) => (typeof req.query.household === 'string' && req.query.household ? req.query.household : undefined);
   const str = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
 
@@ -181,6 +193,9 @@ export function createMediaHouseRouter({ screenRegistry = null, routineCatalog =
   // ── Suggestions ──────────────────────────────────────────────────────────
   router.get('/suggestions', requireService(suggestions, 'Suggestions'), guarded(async (req, res) => {
     const deviceId = str(req.query.deviceId) || str(req.get('X-Daylight-Device'));
+    if (deviceId && !SCREEN_ID.test(deviceId)) {
+      return res.status(400).json({ error: 'deviceId must be a screen id (fleet:|browser:|screen:)', code: 'INVALID_SCREEN_ID' });
+    }
     res.json(await suggestions.suggest({ householdId: hid(req), deviceId }));
   }));
 
@@ -194,10 +209,10 @@ export function createMediaHouseRouter({ screenRegistry = null, routineCatalog =
 
   router.put('/routines/catalog', catalog, guarded(async (req, res) => {
     const body = req.body || {};
-    const config = body.config && typeof body.config === 'object' ? body.config : null;
-    const routines = Array.isArray(body.routines) ? body.routines : null;
-    if (!config && !routines) return res.status(400).json({ error: 'config or routines is required', code: 'INVALID_ROUTINES' });
-    res.json(await routineCatalog.importSnapshot({ householdId: hid(req), config, routines, source: str(body.source) || 'import' }));
+    if (!Array.isArray(body.routines)) {
+      return res.status(400).json({ error: 'routines (array) is required; push extracted routines, not a config', code: 'INVALID_ROUTINES' });
+    }
+    res.json(await routineCatalog.importSnapshot({ householdId: hid(req), routines: body.routines, source: str(body.source) || 'import' }));
   }));
 
   router.get('/routines/history', history, guarded(async (req, res) => {

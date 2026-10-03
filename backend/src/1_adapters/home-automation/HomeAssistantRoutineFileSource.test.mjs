@@ -19,6 +19,10 @@ describe('HomeAssistantRoutineFileSource', () => {
     writeFileSync(join(dir, 'automations', 'listed.yaml'), '- alias: Two\n  id: two\n  actions: []\n');
     writeFileSync(join(dir, 'automations', 'broken.yaml'), 'alias: [unterminated\n');
     writeFileSync(join(dir, 'automations', 'notes.txt'), 'ignored');
+    mkdirSync(join(dir, 'automations', 'kitchen'));
+    writeFileSync(join(dir, 'automations', 'kitchen', 'nested.yaml'), 'alias: Nested\nid: nested\nactions: []\n');
+    mkdirSync(join(dir, 'scripts', 'tv'));
+    writeFileSync(join(dir, 'scripts', 'tv', 'deep_script.yaml'), 'alias: Deep\nsequence: []\n');
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -28,8 +32,13 @@ describe('HomeAssistantRoutineFileSource', () => {
     const config = await source.read();
     expect(Object.keys(config.restCommands).sort()).toEqual(['device_livingroom_tv', 'other']);
     expect(config.scripts.livingroom_tv_sequence.alias).toBe('Living Room TV Sequence');
-    expect(config.automations.map((a) => a.id).sort()).toEqual(['kitchen_button_1', 'two']);
-    expect(logger.warn).toHaveBeenCalledWith('media.routines.ha_file_unreadable', expect.objectContaining({ file: expect.stringContaining('broken.yaml') }));
+    // include_dir_* recurse into subdirectories; scripts are named by file.
+    expect(config.automations.map((a) => a.id).sort()).toEqual(['kitchen_button_1', 'nested', 'two']);
+    expect(config.scripts.deep_script.alias).toBe('Deep');
+    const [, logged] = logger.warn.mock.calls.find(([event]) => event === 'media.routines.ha_file_unreadable');
+    expect(logged).toMatchObject({ file: expect.stringContaining('broken.yaml'), error: 'YAMLException', line: expect.any(Number) });
+    // js-yaml's message quotes the offending config line; it is never logged.
+    expect(JSON.stringify(logged)).not.toContain('unterminated');
   });
 
   it('reports unavailable when the directory is not there (e.g. inside the container)', async () => {

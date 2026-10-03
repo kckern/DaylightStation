@@ -95,6 +95,22 @@ describe('screens API', () => {
     expect((await request(app).post('/api/v1/media/screens/screen:nope/retire').send({})).status).toBe(404);
   });
 
+  it('an unknown household is 404, never 500', async () => {
+    const screenRegistry = { list: vi.fn() };
+    const app = express();
+    app.use('/api/v1/media', createMediaHouseRouter({ screenRegistry, householdExists: (h) => h === 'jones' }));
+    const res = await request(app).get('/api/v1/media/screens?household=nope');
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe('HOUSEHOLD_NOT_FOUND');
+    expect(screenRegistry.list).not.toHaveBeenCalled();
+    // A config lookup failing the same way deeper down maps to 404 too.
+    const thrower = { list: vi.fn(async () => { const e = new Error('Household not found: x'); e.code = 'HOUSEHOLD_NOT_FOUND'; throw e; }) };
+    const app2 = express();
+    app2.use('/api/v1/media', createMediaHouseRouter({ screenRegistry: thrower }));
+    app2.use(errorHandlerMiddleware({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
+    expect((await request(app2).get('/api/v1/media/screens?household=x')).status).toBe(404);
+  });
+
   it('501 when the registry is not wired', async () => {
     const app = express();
     app.use('/api/v1/media', createMediaHouseRouter({}));

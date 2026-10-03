@@ -70,7 +70,9 @@ export class RoutineHistoryService {
     this.#queue = write.catch(() => {});
     try {
       await write;
-      this.#catalog?.invalidate?.(householdId);
+      // Only a routine the catalog does not list yet changes it (observed).
+      const knownId = run.routine.id ?? `observed:${String(run.routine.name ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'unnamed'}`;
+      if (!this.#catalog?.knows?.(knownId, householdId)) this.#catalog?.invalidate?.(householdId);
     } catch (writeError) {
       this.#logger.warn?.('media.routines.history_write_failed', { deviceId, error: writeError.message });
     }
