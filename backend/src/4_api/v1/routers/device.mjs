@@ -347,6 +347,18 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
   sessionAction('put-back', 'put-back', (body) => (nonEmpty(body.noteId) ? { noteId: body.noteId } : {}));
   sessionAction('countdown/cancel', 'cancel-countdown');
   sessionAction('countdown/start-now', 'start-next-now');
+  // Player features (P2, tech doc §4.11): subtitles/audio language, Show
+  // briefly, music behind a slideshow.
+  sessionAction('tracks', 'set-tracks', (body) => ({
+    ...(body.audio !== undefined ? { audio: body.audio } : {}),
+    ...(body.subtitle !== undefined ? { subtitle: body.subtitle } : {}),
+  }));
+  sessionAction('brief/close', 'close-brief');
+  sessionAction('music-behind', 'music-behind', (body) => ({
+    op: body.op,
+    ...(body.contentId !== undefined ? { contentId: body.contentId } : {}),
+    ...(typeof body.title === 'string' ? { title: body.title.slice(0, 200) } : {}),
+  }));
 
   // Start progress / last failure for one screen, readable by every device
   // (RQ-HOUSE-04). Live updates ride `device-start:<deviceId>`.

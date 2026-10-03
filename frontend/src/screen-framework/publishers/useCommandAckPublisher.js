@@ -127,7 +127,8 @@ export function useCommandAckPublisher({ deviceId, actionBus, handoffExecutor = 
     // Session controls (sleep timer, put-back, countdown, session flags) are
     // acked by their outcome, emitted by ScreenSessionControlsHost.
     const sessionControlAppliedHandler = (payload) => {
-      publishAck({ commandId: payload?.commandId, ok: true });
+      // Show briefly (RQ-PLAY-11) answers a play with `appliedAs: "brief"`.
+      publishAck({ commandId: payload?.commandId, ok: true, ...(payload?.appliedAs ? { appliedAs: payload.appliedAs } : {}) });
     };
 
     const errorHandler = (payload) => {
