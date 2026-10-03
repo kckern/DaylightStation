@@ -127,7 +127,7 @@ export function DispatchProvider({ children }) {
     });
   }, [peek]);
 
-  const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot, title, itemAction }, { bypassDedupe = false } = {}) => {
+  const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot, title, itemAction, startOver = false, resumedFrom = null }, { bypassDedupe = false } = {}) => {
     if (!Array.isArray(targetIds) || targetIds.length === 0) return [];
     if (itemAction && !itemAction.operationId) {
       itemAction = { ...itemAction, operationId: uuid(), tappedAt: Date.now() };
@@ -201,6 +201,7 @@ export function DispatchProvider({ children }) {
         command: { targetIds: [deviceId], play, queue, mode, shader, volume, shuffle, snapshot: retrySnapshot, title, itemAction },
         snapshot: retrySnapshot,
         undo,
+        ...(startOver ? { startOver: true, resumedFrom } : {}),
       });
       mediaLog.dispatchInitiated({ dispatchId, deviceId, contentId, mode });
       mediaLog.outcomeRecorded({ attemptId: dispatchId, targetId: deviceId, kind: queue ? 'add' : (isAdopt ? 'move' : 'play'), phase: 'running', contentId });
@@ -315,8 +316,8 @@ export function DispatchProvider({ children }) {
 
   // Local outcomes: this device's own plays, adds, queue edits and playback
   // problems, through the same records as far screens.
-  const recordLocal = useCallback(({ attemptId = uuid(), kind, phase = 'confirmed', item, command = null, reason = null, replacement = null, undo = null, ordinal = null, targetId = 'local', targetName = null } = {}) => {
-    dispatch({ type: 'LOCAL', attemptId, kind, phase, item, command, reason, replacement, undo, ordinal, targetId, targetName });
+  const recordLocal = useCallback(({ attemptId = uuid(), kind, phase = 'confirmed', item, command = null, reason = null, replacement = null, undo = null, ordinal = null, targetId = 'local', targetName = null, startOver = false, resumedFrom = null } = {}) => {
+    dispatch({ type: 'LOCAL', attemptId, kind, phase, item, command, reason, replacement, undo, ordinal, targetId, targetName, startOver, resumedFrom });
     mediaLog.outcomeRecorded({ attemptId, targetId, kind, phase, contentId: item?.contentId ?? null, reason });
     return attemptId;
   }, []);
@@ -326,6 +327,25 @@ export function DispatchProvider({ children }) {
     dispatch({ type: 'LOCAL_RESOLVED', attemptId, phase, reason, ordinal });
     mediaLog.outcomeResolved({ attemptId, targetId: recordsRef.current.get(attemptId)?.targetId ?? 'local', phase, reason });
   }, []);
+
+  // PLAY.4a: Start over on the confirmation of a play that continued from a
+  // saved spot restarts the current item on exactly that screen.
+  const startOver = useCallback(async (attemptId) => {
+    const record = recordsRef.current.get(attemptId);
+    if (!record?.startOver) return { ok: false, code: 'NOT_RESUMED' };
+    const targetId = record.targetId ?? record.deviceId;
+    const controller = targetId === 'local' ? localController : peek?.getController?.(targetId);
+    mediaLog.outcomeStartOver({ attemptId, targetId, contentId: record.item?.contentId ?? null });
+    if (!controller?.transport?.restartCurrent) return { ok: false, code: 'UNSUPPORTED' };
+    try {
+      await controller.transport.restartCurrent();
+      dispatch({ type: 'REMOVED', dispatchId: attemptId });
+      return { ok: true };
+    } catch (error) {
+      mediaLog.outcomeStartOverFailed({ attemptId, targetId, error: error?.message ?? String(error) });
+      return { ok: false, error: error?.message };
+    }
+  }, [localController, peek]);
 
   // RELY.3a/AC4: an unconfirmed start clears once that screen reports the
   // same item playing. Reads the fleet store directly so a state that was
@@ -362,9 +382,9 @@ export function DispatchProvider({ children }) {
     () => ({
       dispatches: state.byId,
       outcomes: state.byId,
-      dispatchToTarget, retry, sendElsewhere, removeDispatch, recordLocal, resolveLocal, stopAttempt, skipLocal,
+      dispatchToTarget, retry, sendElsewhere, removeDispatch, recordLocal, resolveLocal, stopAttempt, skipLocal, startOver,
     }),
-    [state.byId, dispatchToTarget, retry, sendElsewhere, removeDispatch, recordLocal, resolveLocal, stopAttempt, skipLocal]
+    [state.byId, dispatchToTarget, retry, sendElsewhere, removeDispatch, recordLocal, resolveLocal, stopAttempt, skipLocal, startOver]
   );
 
   return <DispatchContext.Provider value={value}>{children}</DispatchContext.Provider>;

@@ -323,3 +323,16 @@ describe('batch ops (playNowMany / playNextMany / addUpNextMany / addMany)', () 
     expect('album' in snap.queue.items[snap.queue.items.length - 1]).toBe(false);
   });
 });
+
+describe('start position (PLAY.4a)', () => {
+  it('keeps an explicit chosen spot and resume:false on the queue item', () => {
+    const next = q.playNowMany(createIdleSessionSnapshot({ sessionId: 's', ownerId: 'o' }),
+      [{ contentId: 'plex:1', title: 'A', seconds: 4800, resume: false }]);
+    expect(next.queue.items[0]).toMatchObject({ contentId: 'plex:1', seconds: 4800, resume: false });
+  });
+  it('leaves plain items without start fields', () => {
+    const next = q.playNowMany(createIdleSessionSnapshot({ sessionId: 's', ownerId: 'o' }), [{ contentId: 'plex:1' }]);
+    expect(next.queue.items[0]).not.toHaveProperty('seconds');
+    expect(next.queue.items[0]).not.toHaveProperty('resume');
+  });
+});

@@ -15,7 +15,7 @@
 // One polite live region announces the newest outcome. Never modal (N1.3).
 import React, { useEffect, useMemo, useState } from 'react';
 import { UnstyledButton } from '@mantine/core';
-import { IconAlertCircle, IconRefresh, IconX, IconDeviceRemote, IconPlayerPlayFilled, IconArrowBackUp, IconDevices, IconCheck, IconPlayerStopFilled, IconPlayerSkipForwardFilled } from '@tabler/icons-react';
+import { IconAlertCircle, IconRefresh, IconX, IconDeviceRemote, IconPlayerPlayFilled, IconArrowBackUp, IconDevices, IconCheck, IconPlayerStopFilled, IconPlayerSkipForwardFilled, IconRotate } from '@tabler/icons-react';
 import { useDispatch } from './useDispatch.js';
 import { useDevice } from '../fleet/useDevice.js';
 import { useFleetContext } from '../fleet/useFleetContext.js';
@@ -73,9 +73,39 @@ const LOCAL_FAILED_VERB = {
   remove: 'remove', clear: 'clear the queue for', undo: 'put back',
 };
 
+// Household list edits (FIND.12a/13a, FIND.10a/AC6): named plainly, wherever
+// they were made. They are not plays, so they never offer Retry or another
+// screen; a removal carries its Undo on the record itself.
+const HOUSEHOLD_COPY = {
+  favourite: { done: t => `Added ${t} to favourites`, failed: t => `Couldn't add ${t} to favourites` },
+  unfavourite: { done: t => `Removed ${t} from favourites`, failed: t => `Couldn't remove ${t} from favourites` },
+  hide: { done: t => `Removed ${t} from the household list`, failed: t => `Couldn't remove ${t} from the household list` },
+  watched: { done: t => `Marked ${t} watched`, failed: t => `Couldn't mark ${t} watched` },
+  unwatched: { done: t => `Marked ${t} unwatched`, failed: t => `Couldn't mark ${t} unwatched` },
+  moveHere: { done: t => `Moved ${t} here`, failed: t => `Couldn't move ${t} here` },
+  startOver: { done: t => `Started ${t} over`, failed: t => `Couldn't start ${t} over` },
+};
+export const HOUSEHOLD_KINDS = new Set(Object.keys(HOUSEHOLD_COPY));
+
+// PLAY.4a: a play that continued from a saved spot says where it continued.
+function resumedLine(d) {
+  if (!d.startOver || !Number.isFinite(d.resumedFrom) || d.resumedFrom <= 0) return null;
+  const minutes = Math.floor(d.resumedFrom / 60);
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  const at = minutes < 1 ? 'the start' : h ? `${h} h${m ? ` ${m} m` : ''}` : `${m} m`;
+  return `Continuing from ${at}`;
+}
+
 function localCopy(d, phase, name) {
   const title = d.item?.title ?? d.title ?? 'it';
   const at = d.distance === 'here' ? 'here' : `on ${d.targetName ?? name}`;
+  if (HOUSEHOLD_COPY[d.kind]) {
+    const copy = HOUSEHOLD_COPY[d.kind];
+    return phase === 'failed'
+      ? { primary: copy.failed(title), secondary: d.reason ?? null }
+      : { primary: copy.done(title), secondary: null };
+  }
   if (d.kind === 'playback') {
     // RELY.5a: name the item, this device, and what plays instead.
     if (phase === 'waiting') {
@@ -116,7 +146,7 @@ function localCopy(d, phase, name) {
     primary: verb(title, at),
     secondary: Number.isInteger(d.ordinal) && ['add', 'playNext', 'playFirst'].includes(d.kind)
       ? `${ordinal(d.ordinal)} in queue`
-      : null,
+      : resumedLine(d),
   };
 }
 
@@ -248,7 +278,7 @@ function rowText(d, phase, name, kind) {
   return d.distance === 'here' || d.distance === 'direct' ? localCopy(d, phase, name) : farCopy(d, phase, name, kind);
 }
 
-function TrayRow({ d, retry, removeDispatch, sendElsewhere, recordLocal, stopAttempt, skipLocal }) {
+function TrayRow({ d, retry, removeDispatch, sendElsewhere, recordLocal, stopAttempt, skipLocal, startOver }) {
   const isLocal = d.distance === 'here' || d.distance === 'direct';
   const targetId = d.targetId ?? d.deviceId;
   const { device } = useDevice(d.distance === 'here' ? null : targetId);
@@ -269,10 +299,12 @@ function TrayRow({ d, retry, removeDispatch, sendElsewhere, recordLocal, stopAtt
       ms = Math.max(LOCAL_LINGER_MS, d.undo ? d.undo.expiresAt - Date.now() : 0);
     } else if (!isLocal && phase === 'confirmed') ms = Math.max(CONFIRMED_LINGER_MS, d.undo ? d.undo.expiresAt - Date.now() : 0);
     else if (!isLocal && phase === 'sent') ms = SENT_RESOLUTION_TIMEOUT_MS;
+    // Start over (PLAY.4a) must stay reachable long enough to be tapped.
+    if (ms != null && d.startOver === true && phase !== 'sent') ms = Math.max(ms, CONFIRMED_LINGER_MS);
     if (ms == null) return undefined;
     const t = setTimeout(() => removeDispatch(attemptId), ms);
     return () => clearTimeout(t);
-  }, [phase, quiet, isLocal, attemptId, removeDispatch, d.undo]);
+  }, [phase, quiet, isLocal, attemptId, removeDispatch, d.undo, d.startOver]);
 
   const openRemote = () => {
     push('peek', { deviceId: targetId });
@@ -294,7 +326,11 @@ function TrayRow({ d, retry, removeDispatch, sendElsewhere, recordLocal, stopAtt
   const { primary, secondary } = rowText(d, phase, name, kind);
   const showRemote = !isLocal && (phase === 'confirmed' || phase === 'unconfirmed');
   const retryLabel = phase === 'unconfirmed' ? 'Try again' : 'Retry';
-  const showRetry = RETRYABLE_PHASES.has(phase) && (isLocal ? !!(d.command?.item ?? d.item)?.contentId : true);
+  const showRetry = RETRYABLE_PHASES.has(phase) && !HOUSEHOLD_KINDS.has(d.kind)
+    && (isLocal ? !!(d.command?.item ?? d.item)?.contentId : true);
+  // PLAY.4a: the confirmation of a play that continued from a saved spot.
+  const showStartOver = d.startOver === true && typeof startOver === 'function'
+    && ['running', 'sent', 'confirmed'].includes(phase);
   const dismissible = PROBLEM_PHASES.has(phase);
 
   return (
@@ -311,6 +347,11 @@ function TrayRow({ d, retry, removeDispatch, sendElsewhere, recordLocal, stopAtt
       </div>
       <div className="cast-tray-actions">
         <UndoAction d={d} removeDispatch={removeDispatch} recordLocal={recordLocal} />
+        {showStartOver && (
+          <UnstyledButton data-testid={`dispatch-start-over-${attemptId}`} onClick={() => startOver(attemptId)} className="cast-tray-action">
+            <IconRotate size={14} aria-hidden /> Start over
+          </UnstyledButton>
+        )}
         {showStop && (
           <UnstyledButton data-testid={`dispatch-stop-${attemptId}`} aria-label={`Stop ${name}`} onClick={() => stopAttempt(attemptId)} className="cast-tray-action">
             <IconPlayerStopFilled size={14} aria-hidden /> Stop
@@ -372,7 +413,7 @@ function AnnouncedText({ d }) {
 }
 
 export function DispatchProgressTray() {
-  const { dispatches, outcomes, retry, removeDispatch, sendElsewhere, recordLocal, stopAttempt, skipLocal } = useDispatch();
+  const { dispatches, outcomes, retry, removeDispatch, sendElsewhere, recordLocal, stopAttempt, skipLocal, startOver } = useDispatch();
   const records = [...(outcomes ?? dispatches).values()];
   return (
     <>
@@ -389,6 +430,7 @@ export function DispatchProgressTray() {
               recordLocal={recordLocal}
               stopAttempt={stopAttempt}
               skipLocal={skipLocal}
+              startOver={startOver}
             />
           ))}
         </div>
