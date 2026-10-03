@@ -16,7 +16,7 @@ import getLogger from '../../lib/logging/Logger.js';
 import { dispatchCyclePlaybackRate } from './cyclePlaybackRate.js';
 import { getActionBus } from '../input/ActionBus.js';
 import { useSessionSourceContext } from '../publishers/useSessionSourceContext.js';
-import { createScreenItemActions } from './screenItemActions.js';
+import { getScreenItemActions } from './screenItemActions.js';
 
 let _logger;
 function logger() {
@@ -82,7 +82,7 @@ const toMenuRoot = (menuId) => (
 
 export function ScreenActionHandler({ actions = {}, inputType = null }) {
   const sessionSource = useSessionSourceContext();
-  const itemActions = useMemo(() => createScreenItemActions({ source: sessionSource, targetId: sessionSource?.ownerId }), [sessionSource]);
+  const itemActions = useMemo(() => getScreenItemActions(sessionSource), [sessionSource]);
   const { showOverlay, dismissOverlay, hasOverlay, escapeInterceptorRef } = useScreenOverlay();
   const pip = usePip();
   const hasMenuNav = useHasMenuNavigationContext();
@@ -188,6 +188,58 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     }, { chrome: 'media', suspendsNavStack: true });
   }, [showOverlay, dismissOverlay, isMediaDuplicate]);
 
+  // Register an idle playback owner when none is mounted. It holds a queue
+  // without starting media and lets a later adoption start (or not) exactly
+  // once. Screensavers and other idle fullscreen content must yield first:
+  // ScreenOverlayProvider intentionally refuses a normal-priority overlay
+  // while one is already mounted. Notify the screensaver controller before
+  // replacing its overlay so it rearms its timer.
+  const ensurePlaybackOwner = useCallback(async (reason) => {
+    const hasOwner = () => !!(sessionSource?.getActionOwner?.() ?? sessionSource?.capture?.()?.identity);
+    if (!sessionSource) return true;
+    if (hasOwner()) return true;
+    getActionBus().emit('screen:screensaver-dismiss', { reason });
+    dismissOverlay();
+    showOverlay(Player, { play: [], clear: () => dismissOverlay() }, { chrome: 'media', suspendsNavStack: true });
+    const deadline = Date.now() + 3000;
+    while (!hasOwner() && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    return hasOwner();
+  }, [sessionSource, showOverlay, dismissOverlay]);
+
+  // --- Restore a snapshot (Put it back, resume after sleep, power-cut) ---
+  // Request/response over the ActionBus: `media:restore-snapshot`
+  // { snapshot, autoplay, reason, requestId } → `media:restore-snapshot-result`
+  // { requestId, ok, code? }. Old owner proof is stripped: the owner mints a
+  // new identity for the restored visit.
+  const handleRestoreSnapshot = useCallback((payload = {}) => {
+    const { snapshot, autoplay = false, reason = 'restore', requestId } = payload;
+    const reply = (result) => getActionBus().emit('media:restore-snapshot-result', { requestId, ...result });
+    if (!snapshot?.queue?.items?.length) { reply({ ok: false, code: 'NOTHING_TO_RESTORE' }); return; }
+    (async () => {
+      if (!(await ensurePlaybackOwner(`restore-${reason}`))) return { ok: false, code: 'PLAYBACK_OWNER_UNAVAILABLE' };
+      const next = structuredClone(snapshot);
+      next.meta = { ...next.meta };
+      delete next.meta.playbackOwner;
+      delete next.meta.queueOwner;
+      delete next.controls;
+      next.queue.items = next.queue.items.map(item => ({ ...item, format: item.format ?? 'video' }));
+      if (next.currentItem) next.currentItem.format ??= next.queue.items[next.queue.currentIndex]?.format ?? 'video';
+      const result = sessionSource?.adopt?.(next, { operationId: `restore-${requestId ?? Date.now()}`, autoplay: !!autoplay })
+        ?? { ok: false, code: 'UNSUPPORTED' };
+      return result?.ok === false ? { ok: false, code: result.code ?? 'RESTORE_FAILED' } : { ok: true };
+    })().then((result) => {
+      logger()[result.ok ? 'info' : 'warn']('media.restore-snapshot', {
+        reason, autoplay: !!autoplay, contentId: snapshot.currentItem?.contentId ?? null, position: snapshot.position ?? null, ...result,
+      });
+      reply(result);
+    }, (error) => {
+      logger().warn('media.restore-snapshot', { reason, ok: false, error: error?.message });
+      reply({ ok: false, code: 'RESTORE_FAILED' });
+    });
+  }, [ensurePlaybackOwner, sessionSource]);
+
   // --- Queue ops (envelope command=queue) ---
   // Both play-now and play-next share the same active-vs-idle routing.
   // Active player → dispatch to the single registered owner; the running Player
@@ -200,22 +252,8 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     if (op === 'item-action' || op === 'undo') {
       const execute = async () => {
         if (op === 'undo') return itemActions.undo(payload.operationId);
-        const hasOwner = () => !!(sessionSource?.getActionOwner?.() ?? sessionSource?.capture()?.identity);
-        if (sessionSource && !hasOwner()) {
-          // Register an idle playback owner first. It holds Add without
-          // starting media and lets Play adopt exactly once after readiness.
-          // Screensavers and other idle fullscreen content must yield first:
-          // ScreenOverlayProvider intentionally refuses a normal-priority
-          // overlay while one is already mounted. Notify the screensaver
-          // controller before replacing its overlay so it rearms its timer.
-          getActionBus().emit('screen:screensaver-dismiss', { reason: 'item-action-owner-bootstrap' });
-          dismissOverlay();
-          showOverlay(Player, { play: [], clear: () => dismissOverlay() }, { chrome: 'media', suspendsNavStack: true });
-          const deadline = Date.now() + 3000;
-          while (!hasOwner() && Date.now() < deadline) {
-            await new Promise(resolve => setTimeout(resolve, 20));
-          }
-          if (!hasOwner()) return { ok: false, code: 'ITEM_ACTION_UNSUPPORTED', reason: 'The screen playback owner did not become ready.' };
+        if (!(await ensurePlaybackOwner('item-action-owner-bootstrap'))) {
+          return { ok: false, code: 'ITEM_ACTION_UNSUPPORTED', reason: 'The screen playback owner did not become ready.' };
         }
         if (sessionSource?.ownerId) {
           const claimed = await DaylightAPI(`api/v1/device/${encodeURIComponent(sessionSource.ownerId)}/session/item-action/${encodeURIComponent(payload.operationId)}/claim`, {}, 'POST');
@@ -272,7 +310,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     }
 
     logger().debug('media.queue-op.unhandled', { op, contentId: payload?.contentId });
-  }, [showOverlay, dismissOverlay, isMediaDuplicate, itemActions, sessionSource]);
+  }, [showOverlay, dismissOverlay, isMediaDuplicate, itemActions, sessionSource, ensurePlaybackOwner]);
 
   // --- Media playback controls ---
   const handleMediaSeek = useCallback((op, payload) => {
@@ -617,6 +655,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
   useScreenAction('media:play', handleMediaPlay);
   useScreenAction('media:queue', handleMediaQueue);
   useScreenAction('media:queue-op', handleMediaQueueOp);
+  useScreenAction('media:restore-snapshot', handleRestoreSnapshot);
   useScreenAction('media:seek-abs', handleMediaSeekAbs);
   useScreenAction('media:seek-rel', handleMediaSeekRel);
   useScreenAction('media:playback', handleMediaPlayback);
