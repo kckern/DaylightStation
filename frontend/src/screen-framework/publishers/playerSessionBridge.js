@@ -565,6 +565,8 @@ export function createPlayerSessionBridge({
     getPosition,
     getDuration,
     getConfig,
+    // Subtitles and audio language (RQ-STEER-14) on the bound Player.
+    setTracks: (selection) => readHandle()?.setTracks?.(selection) ?? null,
     subscribe(cb) {
       if (typeof cb !== 'function') return () => {};
       playerSubs.add(cb);

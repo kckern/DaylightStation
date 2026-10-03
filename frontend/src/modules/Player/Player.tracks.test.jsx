@@ -105,6 +105,16 @@ describe('Player tracks — an opted-in owner', () => {
     expect(latest().resolveTracks(EP2).mediaUrl).toMatch(/subtitleStreamID=1278403$/);
   });
 
+  it('reports to an owner that binds the Player after it resolved (a screen binds its owner late)', async () => {
+    const ref = createRef();
+    render(<Player ref={ref} play={{ contentId: 'plex:665638' }} clear={() => {}} />);
+    await waitFor(() => expect(latest()?.onResolvedMeta).toBeTypeOf('function'));
+    act(() => { latest().onResolvedMeta(EP1); });
+    const onTracks = vi.fn();
+    act(() => { registerTrackOwner({ isOwner: (id) => id === ref.current.getPlayerInstanceId(), onTracks }); });
+    await waitFor(() => expect(onTracks).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'plex:665638' }), expect.anything()));
+  });
+
   it('refuses a track the item does not have', async () => {
     const ref = createRef();
     owned(ref);
