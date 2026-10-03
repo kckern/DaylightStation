@@ -1736,7 +1736,7 @@ const Player = forwardRef(function Player(props, ref) {
     // only when no player-level repeat already decides; see
     // lib/naturalEndPolicy.js. `naturalEndActionsRef` always reads the latest
     // render, so a policy may act later (after a countdown or a fetch).
-    const policy = getNaturalEndPolicy();
+    const policy = getNaturalEndPolicy(playerInstanceId);
     if (policy && repeatMode !== 'one') {
       const order = queueSnapshot.executionOrder ?? [];
       const byId = new Map(queueSnapshot.items.map((item) => [item.queueItemId, item]));
@@ -1766,7 +1766,7 @@ const Player = forwardRef(function Player(props, ref) {
       if (nextVisitRepeatsCurrent) restartNativeVisit(mediaKey);
     }
     else singleAdvance();
-  }, [advance, completionAssetId, currentMediaGuid, isQueue, onPlaybackCompleted, queuePosition, queueSnapshot, remainingVisitCount, repeatMode, restartNativeVisit, singleAdvance]);
+  }, [advance, completionAssetId, currentMediaGuid, isQueue, onPlaybackCompleted, queuePosition, queueSnapshot, remainingVisitCount, repeatMode, restartNativeVisit, singleAdvance, playerInstanceId]);
 
   // Renderers use this only for user-driven navigation and non-completion
   // failures. Keeping it separate from `naturalAdvance` is the contract that

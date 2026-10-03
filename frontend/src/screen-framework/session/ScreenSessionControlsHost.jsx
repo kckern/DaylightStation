@@ -65,7 +65,13 @@ export function ScreenSessionControlsHost({ controls, source }) {
         return { ...(result ?? {}), operationId };
       },
     });
-    const unregister = setNaturalEndPolicy((ctx, actions) => controls.naturalEndPolicy(ctx, actions));
+    // Only the Player this screen's session is bound to (overlay or nav-stack
+    // owner) consults the policy; any other Player on the page keeps its own
+    // end behaviour (B1: a school lesson Player must still reach its checkpoint).
+    const unregister = setNaturalEndPolicy(
+      (ctx, actions) => controls.naturalEndPolicy(ctx, actions),
+      { isOwner: (instanceId) => !!instanceId && source?.getActionOwner?.()?.ownerInstanceId === instanceId },
+    );
     logger().info('mounted', { ownerId });
     return () => { unregister(); logger().info('unmounted', { ownerId }); };
   }, [controls, source, resolveContinuation, ownerId]);
