@@ -47,6 +47,7 @@ import { ContentAliasCatalogService } from '#apps/content/services/ContentAliasC
 import { ListBrowseService } from '#apps/content/services/ListBrowseService.mjs';
 import { PlaybackReadService } from '#apps/content/services/PlaybackReadService.mjs';
 import { UpdateContentProgress } from '#apps/content/usecases/UpdateContentProgress.mjs';
+import { MarkContentWatched } from '#apps/content/usecases/MarkContentWatched.mjs';
 import { RecordPlaybackProgress } from '#apps/content/usecases/RecordPlaybackProgress.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { generatePlaceholderImage } from '#rendering/placeholder/placeholderImage.mjs';
@@ -89,7 +90,7 @@ import { buildBareContentNameMap, CONTENT_SEARCH_BUDGET, LEGACY_CONTENT_ALIASES 
  * @returns {Object} Router configuration
  */
 export function createApiRouters(config) {
-  const { registry, mediaProgressMemory, progressSyncService, progressSyncSources, menuMemoryRepository, cacheBasePath, dataPath, mediaBasePath, proxyService, retroarchProxy, composePresentationUseCase, configService, prefixAliases = {}, savedQueryService = null, eventBus = null, economyService = null, reportPlaybackSession = null, libbyStreamService = null, libbyCoverService = null, logger = console } = config;
+  const { registry, mediaProgressMemory, progressSyncService, progressSyncSources, menuMemoryRepository, cacheBasePath, dataPath, mediaBasePath, proxyService, retroarchProxy, composePresentationUseCase, configService, prefixAliases = {}, savedQueryService = null, eventBus = null, economyService = null, reportPlaybackSession = null, playLedger = null, isKnownSpotDevice = null, libbyStreamService = null, libbyCoverService = null, logger = console } = config;
 
   // Register prefix aliases (e.g., hymn → singalong:hymn) from config
   // This enables the content API to resolve aliased prefixes via registry.resolveFromPrefix()
@@ -208,6 +209,8 @@ export function createApiRouters(config) {
     // because the Plex credentials and httpClient live there, not here. Null
     // when no media server is configured — the use case simply never fires.
     reportPlaybackSession,
+    playLedger,
+    isKnownSpotDevice,
     playbackPublications: new PlaybackPublications({ eventBus }),
     userVideoProgressStore,
     economyService,
@@ -215,6 +218,18 @@ export function createApiRouters(config) {
     nowTimestamp: nowTs24,
     logger,
   });
+  // Watched / unwatched marks (Media app household list, RQ-FIND-13). Writes
+  // the same completion state play/log writes; see the use case header.
+  const markContentWatched = mediaProgressMemory
+    ? new MarkContentWatched({
+      contentCatalog,
+      mediaProgressMemory,
+      progressSyncSources: progressSyncSources || new Set(),
+      progressSyncService,
+      nowTimestamp: nowTs24,
+      logger,
+    })
+    : null;
   const contentDiscovery = new ContentDiscoveryService({ contentCatalog, logger });
   const listBrowse = new ListBrowseService({
     contentCatalog,
@@ -344,6 +359,7 @@ export function createApiRouters(config) {
       contentCatalog,
       savedQueryService,
       userVideoProgressStore,
+      markContentWatched,
     }
   };
 }

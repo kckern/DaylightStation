@@ -359,6 +359,210 @@ Live volume on a remote surface without re-dispatch. **Deprecated** — use
 retained for backward compatibility and emits a `device.volume.deprecated`
 warn on every call.
 
+### 2.4 Household media memory
+
+**Exists.** The household's shared memory of what has played on every screen:
+recent (RQ-FIND-11), carry on with per-screen spots (RQ-FIND-12, RQ-PLAY-08/09),
+watched marks (RQ-FIND-13), favourites (RQ-FIND-14) and removal from the
+household list (RQ-FIND-15). Router: `backend/src/4_api/v1/routers/media.mjs`;
+service: `backend/src/3_applications/media/HouseholdMediaMemoryService.mjs`;
+list rules: `backend/src/2_domains/media/householdMediaList.mjs`; spot rules:
+`backend/src/2_domains/content/services/mediaSpots.mjs`.
+
+All routes take the optional `?household=<id>` used by the rest of
+`/api/v1/media`. Content ids travel in the **body or query, never the path**
+(they contain `:` and often `/`). Without the service wired, every route
+answers **501**.
+
+#### Where the data comes from
+
+| Data | Written by | Stored |
+|---|---|---|
+| Per-screen spots | `POST /api/v1/play/log` with a device | `spots` / `lastDevice` on the progress record (household `media/memory/**`) |
+| Play ledger | `POST /api/v1/play/log` with a device, on each playback **start** | `history/media-plays/<local YYYY-MM-DD>.yml`, 90-day retention |
+| Favourites | `POST/DELETE /household/favourites` | `media/favourites.yml` (`items: [...]`) |
+| Removed ids | `POST/DELETE /household/removed` | `media/removed.yml` (`items: {<id>: {removedAt}}`) |
+| What is on a screen now | `device-state:<id>` broadcasts | in memory (`DeviceLivenessService`) |
+
+**Screen identity.** `play/log` keys a spot by an explicit body `deviceId`,
+else the `X-Daylight-Device` header when the client sent it (every
+`DaylightAPI` call does: `fleet:<devices.yml key>` on a rendered screen,
+`browser:<token>` elsewhere). The prefix is required (no bare names), and a
+`fleet:` id must be declared in the household's `devices.yml`.
+`ephemeral:` ids and the User-Agent fallback never key a spot. No device →
+legacy single-playhead write only. `play/log` also accepts an optional
+`origin` string (≤ 64 chars) recorded on the ledger row; no caller sends one
+yet.
+
+**Defaults** (NF-DEF): unfinished after **5 min or 5%** played; finished at
+**90%** — the line `MediaProgress.isWatched`, `completedAt` and Plex
+next-episode selection already use, read as "the credits have started". An
+item leaves carry on only when no screen holds an open spot. A same-item
+report after **15 quiet minutes** on a screen is a new ledger start; a
+terminal report (`naturalEnd`, or `status` `completed`/`stopped`/`ended`)
+ends that screen's session and is never a start.
+
+**Per-screen accounting.** `watchTime` and `playCount` are measured against
+the reporting screen's own spot, so two screens on one item do not inflate
+them. A screen's first report (no spot yet) is measured against the shared
+playhead, as before spots existed. On the first spot-aware write to a record
+whose single playhead is still open, that playhead is kept as a reserved
+`legacy` spot (`kind: "unknown"`); it retires once any screen plays past it.
+Records from several namespaces with the same id (a watchlist's and the
+library's) are merged: newest record's fields, every screen's newest spot.
+
+#### Shapes
+
+`HouseholdEntry` (recent and carry on):
+
+```json
+{
+  "contentId": "plex:12345",
+  "namespaceId": "plex/6_movies",
+  "lastPlayed": "2026-10-02 08:00:00",
+  "playhead": 720, "duration": 7200, "percent": 10,
+  "finished": false, "completedAt": null,
+  "playedOn": { "deviceId": "browser:c74f…", "kind": "browser", "screenId": null },
+  "spots": [
+    { "deviceId": "browser:c74f…", "kind": "browser", "screenId": null,
+      "playhead": 720, "duration": 7200, "percent": 10,
+      "lastPlayed": "2026-10-02 08:00:00", "open": true },
+    { "deviceId": "fleet:livingroom-tv", "kind": "screen", "screenId": "livingroom-tv",
+      "playhead": 4800, "duration": 7200, "percent": 67,
+      "lastPlayed": "2026-10-01 21:00:00", "open": true }
+  ],
+  "title": "…", "thumbnail": "/api/v1/proxy/plex/…", "type": "movie",
+  "parentTitle": null, "grandparentTitle": null,
+  "parentId": null, "grandparentId": null, "itemIndex": null
+}
+```
+
+- `lastPlayed` uses the progress store's local `YYYY-MM-DD HH:mm:ss`
+  (not ISO); ledger `startedAt` is ISO UTC.
+- `kind` is `screen` (`fleet:`), `browser`, or `unknown`; `screenId` is the
+  `devices.yml` key for screens, null otherwise. The UI names the screen.
+- `spots` in **recent** lists every screen's spot (`open` says whether it
+  still counts as unfinished); in **carry on** only open spots, newest first.
+  Records written before spots existed have `spots: []` in recent and one
+  spot with `deviceId: null` in carry on.
+- Display fields come from the content catalog: cached 5 min when found,
+  10 s when the catalog has no such item, **never** after a failed lookup;
+  at most 4 lookups in flight; each bounded at 4 s and the whole
+  recent/carry-on request at 8 s. On a miss the fields are `null` and the
+  entry is still returned.
+
+`PlayLedgerRow`:
+
+```json
+{ "startedAt": "2026-10-03T04:54:07.081Z", "localTime": "2026-10-02 21:54:07",
+  "deviceId": "fleet:livingroom-tv", "contentId": "plex:12",
+  "title": "S1E2", "kind": "episode",
+  "parentId": "plex:10", "grandparentId": "plex:100", "origin": null }
+```
+
+#### `GET /household/recent?limit=24`
+
+Everything played on any screen, newest first (`limit` ≤ 200). Each entry is
+a `HouseholdEntry` plus `plays`: that item's ledger starts from the last 14
+days, newest first, up to 5, each `{deviceId, kind, screenId, startedAt, origin}`. `playedOn` is the
+screen that last reported progress, else the screen that last started it.
+Items the ledger saw but progress never stored are included. Removed items
+are hidden.
+
+**Response:** `{ "items": [HouseholdEntry] }`
+
+#### `GET /household/carry-on?limit=20`
+
+```json
+{ "items": [HouseholdEntry & { "reason": "unfinished" | "next-episode" }],
+  "nowOn": [HouseholdEntry & { "deviceId", "screenId", "state", "position" }],
+  "nowPlayingKnown": true }
+```
+
+- `unfinished`: at least one open spot.
+- `next-episode`: the episode after a recently finished one (season, then
+  the first episode of the next season via the show), offered when it is
+  neither started nor finished; carries `after` (the finished episode id) and
+  `afterPlayedAt`, and empty `spots`. At most one per show and 8 in all,
+  scanning up to 40 recently finished items (24 lookups) so finished songs
+  cannot hide an episode.
+- Both kinds are ranked together by recency (when the spot was left / the
+  previous episode finished), then cut to `limit`.
+- Songs (`type: "track"`) are never carry on.
+- `nowOn`: items on a screen right now — online, with `state` in
+  `playing | paused | buffering | loading | stalled` — are moved here instead
+  of `items` ("Now on <screen> · Remote · Move here"). Two sources, fleet
+  `device-state` first: screens that publish it, and any device whose
+  `play/log` reported within the last 60 s (browsers and kiosks; these have
+  `state: "playing"`, `position: null`). `nowPlayingKnown: false` means no
+  source could be read.
+
+#### `GET /household/plays?deviceId=&from=&to=&limit=100`
+
+The play ledger: starts by screen and/or ISO time window (inclusive),
+newest first, `limit` ≤ 1000, default window the 90-day retention. Basis for
+Played earlier (RQ-FIND-17), how it started (RQ-HOUSE-07) and time-of-day
+suggestions. **400** on an unparseable `from`/`to`.
+
+**Response:** `{ "items": [PlayLedgerRow], "ledger": true }` (`ledger: false`
+with no ledger wired).
+
+#### Favourites
+
+| Route | Body / query | Response |
+|---|---|---|
+| `GET /household/favourites` | — | `{ items: [Favourite] }` newest first |
+| `POST /household/favourites` | `{ id, kind?: "item" \| "collection", title?, thumbnail?, type? }` | `{ item, items }` |
+| `DELETE /household/favourites` | `id` (body or query) | `{ removed: boolean, items }` |
+
+`Favourite`: `{ id, kind, title, thumbnail, type, addedAt }`. Adding an id
+already present refreshes it (no duplicates). Missing `title`/`thumbnail` are
+filled from the catalog at add time. **400**: missing `id`, unknown `kind`.
+
+#### Removal from the household list
+
+| Route | Body / query | Response |
+|---|---|---|
+| `GET /household/removed` | — | `{ items: [{ id, removedAt }] }` |
+| `POST /household/removed` | `{ id }` | `{ id, removedAt }` |
+| `DELETE /household/removed` (undo) | `id` (body or query) | `{ id, restored: boolean }` |
+
+A removal hides what was played **up to** `removedAt` from recent and carry
+on; playing the item again brings it back. Suggestions are built in the
+client today, so the client filters them with `GET /household/removed`.
+The 10 s undo window is a client concern: undo is `DELETE`.
+
+#### `POST /household/watched`
+
+Body `{ contentId, watched: boolean }`. **400** unless `watched` is a boolean
+and `contentId` carries a source the content catalog resolves
+(`UNKNOWN_SOURCE`; nothing is written). **501** when marks are not wired.
+
+```json
+{ "contentId": "plex:12345", "watched": true, "namespaces": ["plex/6_movies"],
+  "playhead": 7200, "duration": 7200, "percent": 100, "completedAt": "2026-10-02 12:00:00" }
+```
+
+See [content-progress.md](../content/content-progress.md) for what a mark
+writes. No undo field: undo is the opposite mark, which cannot restore the
+screens' previous spots.
+
+#### Log events
+
+`media.favourite.added|removed`, `media.household-list.removed|restored`,
+`media.mark.written` (info); `media.play-ledger.started` (info) and
+`.write_failed` (warn); `media.household-list.next_episode_failed`,
+`.now_playing_failed`, `.ledger_read_failed`, `media.mark.remote_push_failed`
+(warn). `play.log.updated` carries `spotDevice`.
+
+**Verified by:** `backend/src/2_domains/content/services/mediaSpots.test.mjs`,
+`backend/src/2_domains/media/{householdMediaList,playLedger}.test.mjs`,
+`backend/src/3_applications/media/{HouseholdMediaMemoryService,PlayLedgerRecorder,LivenessNowPlayingReader}.test.mjs`,
+`backend/src/3_applications/content/usecases/{MarkContentWatched,RecordPlaybackProgress.spots}.test.mjs`,
+`backend/src/4_api/v1/routers/{media.household,play.spots}.test.mjs`,
+`tests/isolated/adapter/persistence/{YamlMediaProgressMemory.spots,YamlHouseholdMediaListsDatastore,YamlPlayLedgerDatastore}.test.mjs`.
+
+
 ---
 
 ## 3. Reserved
