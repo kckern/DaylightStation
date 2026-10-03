@@ -553,3 +553,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-10-02 | fix/chess-homegrown-offthread | 3c442e933 | Homegrown chess opponent on worker thread (merged) |
 | 2026-10-02 | fix/headline-og-image-light | 32ac4ffe0 | Headline og:image via meta tags, not readable extraction (merged) |
 | 2026-10-02 | fix/fitness-session-transport-stall | 30ebb05ac | Fitness: link outage no longer ends workout; garage bridge heartbeat; retroactive memo review |
+| 2026-10-03 | fix/gate-main-failures | 4ca26f424 | Four stale/flaky tests that kept the vitest gate red (merged ce24e65c4) |
