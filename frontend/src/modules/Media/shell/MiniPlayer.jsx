@@ -4,12 +4,13 @@
 // Playing), queue position, play/pause, next, and stop. A stopped session with
 // retained queue items keeps a ready handle; an actually empty session renders
 // nothing instead of wasting phone space on dead "Idle" chrome.
-import React, { useRef } from 'react';
+import React, { useCallback, useRef, useSyncExternalStore } from 'react';
 import {
   IconPlayerPlayFilled,
   IconPlayerPauseFilled,
   IconPlayerStopFilled,
   IconPlayerSkipForwardFilled,
+  IconAlertTriangle,
 } from '@tabler/icons-react';
 import { useSessionController } from '../controller/useSessionController.js';
 import { usePlaybackPosition } from '../controller/usePlaybackPosition.js';
@@ -18,10 +19,27 @@ import { usePlayerHost } from '../session/usePlayerHost.js';
 import './NowPlaying.scss';
 
 const PLAYING_STATES = new Set(['playing', 'buffering']);
+const NO_PROBLEM = () => null;
+const NO_SUBSCRIBE = () => () => {};
+
+// RELY.5a/AC3: the local playback problem, until playback recovers.
+function useLocalProblem(controller) {
+  const subscribe = useCallback((cb) => controller?.problems?.subscribe?.(cb) ?? NO_SUBSCRIBE(), [controller]);
+  const get = useCallback(() => controller?.problems?.get?.() ?? null, [controller]);
+  return useSyncExternalStore(controller?.problems ? subscribe : NO_SUBSCRIBE, controller?.problems ? get : NO_PROBLEM, controller?.problems ? get : NO_PROBLEM);
+}
+
+function problemLabel(problem) {
+  const title = problem.item?.title ?? 'An item';
+  return problem.kind === 'skipped'
+    ? `Playback problem: ${title} was skipped${problem.replacement?.title ? `, now ${problem.replacement.title}` : ''}`
+    : `Playback problem: ${title} could not play`;
+}
 
 export function MiniPlayer() {
   const { controller, snapshot, transport } = useSessionController('local');
   const live = usePlaybackPosition(controller);
+  const problem = useLocalProblem(controller);
   const { push, view } = useNav();
   const item = snapshot?.currentItem;
   const queueItems = Array.isArray(snapshot?.queue?.items) ? snapshot.queue.items : [];
@@ -68,8 +86,13 @@ export function MiniPlayer() {
   return (
     <div
       data-testid="media-mini-player"
-      className={`mini-player ${isNowPlayingOpen ? 'mini-player--active' : ''}`}
+      className={`mini-player ${isNowPlayingOpen ? 'mini-player--active' : ''}${problem ? ' mini-player--problem' : ''}`}
     >
+      {problem && (
+        <span className="mini-player-problem" data-testid="mini-problem" role="img" aria-label={problemLabel(problem)} title={problemLabel(problem)}>
+          <IconAlertTriangle size={18} aria-hidden />
+        </span>
+      )}
       {progressFraction != null && (
         <div className="mini-player-progress" aria-hidden="true">
           <div

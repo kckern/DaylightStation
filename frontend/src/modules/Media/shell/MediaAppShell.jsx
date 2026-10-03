@@ -11,6 +11,8 @@ import { Canvas } from './Canvas.jsx';
 import { MiniPlayer } from './MiniPlayer.jsx';
 import { DispatchProgressTray } from '../cast/DispatchProgressTray.jsx';
 import { SearchMode } from '../search/SearchMode.jsx';
+import { ReconnectingNote } from './ReconnectingNote.jsx';
+import { LocalPlaybackOutcomes } from './LocalPlaybackOutcomes.jsx';
 import { LocalStopFeedbackProvider, useLocalStopFeedbackCount } from './LocalStopFeedbackContext.jsx';
 import './MediaShell.scss';
 
@@ -43,6 +45,8 @@ function ShellInner() {
           <NavRail />
           <Canvas />
         </div>
+        <ReconnectingNote />
+        <LocalPlaybackOutcomes />
         <DispatchProgressTray />
         <MiniPlayer />
         {queueKeptCount != null && (

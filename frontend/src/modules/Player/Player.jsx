@@ -1488,9 +1488,12 @@ const Player = forwardRef(function Player(props, ref) {
         action: isQueue ? 'queue-end' : 'clear',
         queueRemaining: playQueue?.length ?? 0
       }, { level: 'warn' });
+      // Tell an owner that listens (Media's PlayerBridge) this is a failure,
+      // not a natural end, before the clear it would otherwise read as one.
+      onError?.({ kind: 'resilience-exhausted', reason, attempts });
       clear();
     }
-  }, [isQueue, hasNextQueueItem, advance, clear, playQueue]);
+  }, [isQueue, hasNextQueueItem, advance, clear, playQueue, onError]);
 
   // Self-contained formats (titlecard, etc.) have no media element —
   // suppress the resilience overlay which would never exit startup.

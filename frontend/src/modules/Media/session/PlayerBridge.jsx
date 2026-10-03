@@ -15,6 +15,12 @@
 //    snapshot position is written on the ≥5s cadence (§11.3).
 //  - Stall detection (C9.3) is suppressed for live content, which has no
 //    forward progress contract.
+//  - A restored session (reload/crash) is held: the Player is not mounted
+//    until an explicit Play, so restore never makes a sound (RELY.7a). It
+//    then mounts once, at the restored spot.
+//  - A terminal Player failure (resilience exhausted) reaches the controller
+//    as a failure, so it is reported and skipped, not mistaken for an end.
+//    Recoverable media errors are left to the Player's own resilience.
 import React, { useContext, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import Player from '../../Player/Player.jsx';
@@ -43,6 +49,18 @@ export function PlayerBridge() {
   const bindNativeOperationRef = useRef(null);
   const rendererOperationSequenceRef = useRef(0);
   const pendingInitialRendererOperationRef = useRef(null);
+  const [restoreHeld, setRestoreHeld] = useState(() => controller.restore?.isHeld?.() === true);
+  useEffect(() => {
+    if (!controller.restore?.subscribe) return undefined;
+    const sync = () => {
+      const held = controller.restore.isHeld();
+      // Start where the held session now says (a seek while held moved it).
+      if (!held) startSecondsRef.current = controller.getSnapshot().position ?? 0;
+      setRestoreHeld(held);
+    };
+    sync();
+    return controller.restore.subscribe(sync);
+  }, [controller]);
 
   // Hand the controller its imperative player surface.
   useEffect(() => {
@@ -423,10 +441,21 @@ export function PlayerBridge() {
   // Stable play prop across re-renders of the same item. The platform
   // Player honors `seconds` as the start offset.
   const playProp = useMemo(() => {
-    if (!currentItem) return null;
+    if (!currentItem || restoreHeld) return null;
     const seconds = startSecondsRef.current;
     return seconds > 0 ? { ...currentItem, seconds } : { ...currentItem };
-  }, [currentItem]);
+  }, [currentItem, restoreHeld]);
+
+  // Only failures the Player has given up on are reported as failures.
+  const onPlayerError = useCallback((error) => {
+    if (playbackGenerationRef.current !== playbackGeneration) return;
+    if (error?.kind !== 'resilience-exhausted') return;
+    if (!contentId || controller.getSnapshot().currentItem?.contentId !== contentId) return;
+    controller.onPlayerError?.({
+      message: error.reason ? `Playback gave up (${error.reason})` : 'Playback gave up',
+      code: 'resilience-exhausted',
+    });
+  }, [controller, contentId, playbackGeneration]);
 
   const hostEl = useContext(PlayerHostContext);
   const { forceShader } = useContext(PlayerHostPresentationContext);
@@ -481,6 +510,7 @@ export function PlayerBridge() {
       play={playProp}
       clear={onClear}
       onProgress={onProgress}
+      onError={onPlayerError}
       forceShader={forceShader ?? undefined}
       ignoreKeys
       initialRendererOperation={pendingInitialRendererOperationRef.current}

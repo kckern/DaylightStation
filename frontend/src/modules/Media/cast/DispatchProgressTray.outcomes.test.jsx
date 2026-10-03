@@ -1,0 +1,137 @@
+// RELY.1a/2a/3a/5a/6a — the one outcome tray: quiet here, named + progress far.
+import React from 'react';
+import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
+
+const { push, retry, removeDispatch, sendElsewhere, stopAttempt } = vi.hoisted(() => ({
+  push: vi.fn(), retry: vi.fn(), removeDispatch: vi.fn(), sendElsewhere: vi.fn(), stopAttempt: vi.fn(),
+}));
+const outcomes = new Map();
+const DEVICES = [
+  { id: 'livingroom-tv', name: 'Living Room TV', type: 'shield-tv', content_control: { type: 'fkb' } },
+  { id: 'kitchen-speaker', name: 'Kitchen Speaker', type: 'speaker', content_control: { type: 'hub' } },
+  { id: 'office-tv', name: 'Office TV', type: 'linux-pc', content_control: { type: 'websocket' } },
+  { id: 'browser:phone', name: 'Phone', type: 'browser' },
+];
+
+vi.mock('./useDispatch.js', () => ({
+  useDispatch: () => ({ dispatches: outcomes, outcomes, retry, removeDispatch, sendElsewhere, stopAttempt }),
+}));
+vi.mock('../fleet/useDevice.js', () => ({
+  useDevice: (id) => ({ device: DEVICES.find(d => d.id === id) ?? null }),
+}));
+vi.mock('../fleet/useFleetContext.js', () => ({ useFleetContext: () => ({ devices: DEVICES }) }));
+vi.mock('../shell/NavProvider.jsx', () => ({ useNav: () => ({ push }) }));
+
+import { MantineProvider } from '@mantine/core';
+import { DispatchProgressTray } from './DispatchProgressTray.jsx';
+
+const record = (overrides) => ({
+  steps: [], playback: null, outcome: null, error: null, failedStep: null, operation: 'play-now',
+  kind: 'play', distance: 'far', createdAt: '2026-10-02T00:00:00.000Z', ...overrides,
+});
+
+describe('DispatchProgressTray outcomes', () => {
+  beforeEach(() => { vi.clearAllMocks(); outcomes.clear(); vi.useFakeTimers(); });
+  afterEach(() => vi.useRealTimers());
+
+  it('names a far screen and its progress in words that fit the screen type', () => {
+    outcomes.set('tv', record({ dispatchId: 'tv', attemptId: 'tv', deviceId: 'livingroom-tv', targetId: 'livingroom-tv', title: 'Arrival', status: 'running', phase: 'running', steps: [{ step: 'power', status: 'running' }] }));
+    outcomes.set('spk', record({ dispatchId: 'spk', attemptId: 'spk', deviceId: 'kitchen-speaker', targetId: 'kitchen-speaker', title: 'Faith', status: 'running', phase: 'running', steps: [{ step: 'power', status: 'running' }] }));
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    const tv = screen.getByTestId('dispatch-row-tv');
+    expect(tv).toHaveTextContent('Living Room TV');
+    expect(tv).toHaveTextContent('Turning on TV');
+    const speaker = screen.getByTestId('dispatch-row-spk');
+    expect(speaker).toHaveTextContent('Kitchen Speaker');
+    expect(speaker).not.toHaveTextContent(/\bTV\b/);
+  });
+
+  it('confirms a local result quietly, names the item and this device, and clears itself', () => {
+    outcomes.set('l1', record({ attemptId: 'l1', dispatchId: 'l1', targetId: 'local', deviceId: 'local', distance: 'here', phase: 'confirmed', item: { contentId: 'plex:1', title: 'Arrival' }, title: 'Arrival' }));
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    const row = screen.getByTestId('dispatch-row-l1');
+    expect(row).toHaveClass('cast-tray-row--quiet');
+    expect(row).toHaveTextContent('Playing Arrival here');
+    act(() => { vi.advanceTimersByTime(3_000); });
+    expect(removeDispatch).toHaveBeenCalledWith('l1');
+  });
+
+  it('an unconfirmed start says it may not have started, offers Steer it and Try again, and stays', () => {
+    outcomes.set('u1', record({ attemptId: 'u1', dispatchId: 'u1', targetId: 'livingroom-tv', deviceId: 'livingroom-tv', title: 'Arrival', status: 'success', outcome: 'timeout', phase: 'unconfirmed' }));
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    const row = screen.getByTestId('dispatch-row-u1');
+    expect(row).toHaveTextContent('may not have started');
+    expect(row).toHaveTextContent('Living Room TV');
+    expect(within(row).getByRole('button', { name: /Steer it/ })).toBeInTheDocument();
+    fireEvent.click(within(row).getByRole('button', { name: /Try again/ }));
+    expect(retry).toHaveBeenCalledWith('u1');
+    act(() => { vi.advanceTimersByTime(10 * 60_000); });
+    expect(removeDispatch).not.toHaveBeenCalledWith('u1');
+  });
+
+  it('each failure is shown separately with its own Retry and another-screen choice', () => {
+    outcomes.set('f1', record({ attemptId: 'f1', dispatchId: 'f1', targetId: 'livingroom-tv', deviceId: 'livingroom-tv', title: 'Arrival', status: 'failed', phase: 'not-sent', failedStep: 'power', error: 'Device offline' }));
+    outcomes.set('f2', record({ attemptId: 'f2', dispatchId: 'f2', targetId: 'office-tv', deviceId: 'office-tv', title: 'Nova', status: 'failed', phase: 'failed', failedStep: 'load', error: 'receiver rejected' }));
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    expect(screen.getByTestId('dispatch-row-f1')).toHaveTextContent('Not sent');
+    expect(screen.getByTestId('dispatch-row-f1')).toHaveTextContent('Arrival');
+    fireEvent.click(screen.getByTestId('dispatch-retry-f2'));
+    expect(retry).toHaveBeenCalledWith('f2');
+    fireEvent.click(screen.getByTestId('dispatch-elsewhere-f1'));
+    const choices = screen.getByTestId('dispatch-elsewhere-list-f1');
+    expect(within(choices).queryByText('Living Room TV')).toBeNull();
+    expect(within(choices).queryByText('Phone')).toBeNull();
+    fireEvent.click(within(choices).getByRole('button', { name: 'Office TV' }));
+    expect(sendElsewhere).toHaveBeenCalledWith('f1', 'office-tv');
+  });
+
+  it('a local skip names the failed item, this device and what plays instead', () => {
+    outcomes.set('s1', record({ attemptId: 's1', dispatchId: 's1', targetId: 'local', deviceId: 'local', distance: 'here', kind: 'playback', phase: 'skipped', reason: 'stalled', item: { contentId: 'plex:1', title: 'Arrival' }, title: 'Arrival', replacement: { contentId: 'plex:2', title: 'Nova' } }));
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    const row = screen.getByTestId('dispatch-row-s1');
+    expect(row).toHaveTextContent('Arrival');
+    expect(row).toHaveTextContent('this device');
+    expect(row).toHaveTextContent('Now playing Nova');
+    expect(row).not.toHaveClass('cast-tray-row--quiet');
+    expect(screen.getByTestId('dispatch-retry-s1')).toBeInTheDocument();
+  });
+
+  it('announces outcome text through one live region', () => {
+    outcomes.set('u1', record({ attemptId: 'u1', dispatchId: 'u1', targetId: 'livingroom-tv', deviceId: 'livingroom-tv', title: 'Arrival', status: 'success', outcome: 'timeout', phase: 'unconfirmed' }));
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    const live = screen.getByTestId('media-outcome-announcer');
+    expect(live).toHaveAttribute('aria-live', 'polite');
+    expect(live).toHaveTextContent('may not have started');
+  });
+
+  it('offers Undo on the outcome itself while the undo window is open', () => {
+    const undo = vi.fn(() => ({ ok: true }));
+    outcomes.set('q1', record({ attemptId: 'q1', dispatchId: 'q1', targetId: 'local', deviceId: 'local', distance: 'here', kind: 'remove', phase: 'confirmed', item: { title: 'Remove item' }, title: 'Remove item', undo: { operationId: 'op-1', expiresAt: Date.now() + 10_000, run: undo } }));
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    fireEvent.click(screen.getByTestId('item-action-undo'));
+    expect(undo).toHaveBeenCalledWith('op-1');
+  });
+
+  it('O1: a far start still in progress offers Undo inside its window, then Stop (queue kept) after it expires', () => {
+    outcomes.set('w1', record({ attemptId: 'w1', dispatchId: 'w1', targetId: 'office-tv', deviceId: 'office-tv', title: 'Arrival', status: 'running', phase: 'running',
+      steps: [{ step: 'power', status: 'running' }],
+      undo: { operationId: 'op-w1', expiresAt: Date.now() + 10_000, run: vi.fn() } }));
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    expect(screen.getByTestId('item-action-undo')).toBeInTheDocument();
+    expect(screen.queryByTestId('dispatch-stop-w1')).toBeNull();
+    act(() => { vi.advanceTimersByTime(10_500); });
+    expect(screen.queryByTestId('item-action-undo')).toBeNull();
+    const stop = screen.getByTestId('dispatch-stop-w1');
+    expect(stop).toHaveAccessibleName(/Stop/);
+    fireEvent.click(stop);
+    expect(stopAttempt).toHaveBeenCalledWith('w1');
+  });
+
+  it('a plain far send in progress can be stopped from this device', () => {
+    outcomes.set('s2', record({ attemptId: 's2', dispatchId: 's2', targetId: 'livingroom-tv', deviceId: 'livingroom-tv', title: 'Arrival', status: 'success', phase: 'sent' }));
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    fireEvent.click(screen.getByTestId('dispatch-stop-s2'));
+    expect(stopAttempt).toHaveBeenCalledWith('s2');
+  });
+});

@@ -337,10 +337,9 @@ describe('SearchMode history × dispatch', () => {
     dispatches.set('dispatch-2', { status: 'failed', error: 'receiver unavailable' });
     rerender(<Harness />);
 
-    await waitFor(() => expect(notificationsShow).toHaveBeenCalledWith(expect.objectContaining({
-      id: 'content-dispatch-failed-Living Room TV',
-      color: 'red',
-    })));
+    // The failure is reported by its own outcome row in the tray (RELY.1a:
+    // one voice), never by an ad-hoc toast; search stays open either way.
+    expect(notificationsShow).not.toHaveBeenCalled();
     expect(screen.getByTestId('search-mode')).toBeInTheDocument();
     expect(screen.getByTestId('search-mode-input')).toHaveValue('bluey');
   });
