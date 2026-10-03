@@ -47,7 +47,13 @@ function ShellInner() {
         </div>
         <ReconnectingNote />
         <LocalPlaybackOutcomes />
-        <DispatchProgressTray />
+        {/* Outcome notices float over the canvas: a zero-height anchor sits
+            directly above the mini player (or tab bar), so a row appearing
+            never takes page space or moves anything, and never covers the
+            handle's controls. Only the row's own buttons take pointer input. */}
+        <div className="media-outcome-anchor" data-testid="media-outcome-anchor">
+          <DispatchProgressTray />
+        </div>
         <MiniPlayer />
         {queueKeptCount != null && (
           <div className="np-queue-kept" data-testid="np-queue-kept" role="status">

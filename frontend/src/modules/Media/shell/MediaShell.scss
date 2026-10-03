@@ -1159,3 +1159,42 @@ $amber-ink: #1a1300;
   background: var(--mantine-color-dark-6);
   text-align: center;
 }
+
+// Outcome notices (RELY.1a/PR-6) are an overlay, never page space (owner
+// rule): a zero-height anchor in the shell column between the canvas and
+// the mini player; the tray hangs upward from it over the canvas.
+.media-outcome-anchor {
+  position: relative;
+  height: 0;
+  flex-shrink: 0;
+  z-index: 150;
+
+  .cast-tray {
+    position: absolute;
+    bottom: 6px;
+    left: 0;
+    right: 0;
+    width: min(560px, calc(100% - 2 * var(--mantine-spacing-sm)));
+    margin-inline: auto;
+    padding: 0;
+    background: none;
+    border-top: none;
+    gap: 4px;
+    pointer-events: none;
+  }
+
+  .cast-tray-row {
+    pointer-events: none;
+    padding: 4px var(--mantine-spacing-xs);
+    background: var(--mantine-color-dark-6);
+    border: 1px solid var(--mantine-color-dark-4);
+    border-radius: var(--mantine-radius-md);
+    box-shadow: var(--mantine-shadow-md);
+  }
+
+  // Only the row's own controls take pointer input.
+  .cast-tray-actions,
+  .cast-tray-elsewhere {
+    pointer-events: auto;
+  }
+}
