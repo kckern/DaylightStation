@@ -405,6 +405,15 @@ export function VideoPlayer({
     }
   }, [containerRef, getMediaEl, isHls, hlsLogger]);
 
+  // The engine that owns this element's tracks (RQ-STEER-14). Read only by
+  // an opted-in owner (modules/Player/lib/trackPolicy.js).
+  const getTrackEngine = useCallback(() => {
+    if (isHls) return hlsOwnerRef.current?.hls ? { kind: 'hls', hls: hlsOwnerRef.current.hls } : null;
+    if (isDash) return containerRef.current?.api ? { kind: 'dash', api: containerRef.current.api } : null;
+    const el = getMediaEl();
+    return el ? { kind: 'native', el } : null;
+  }, [isHls, isDash, containerRef, getMediaEl]);
+
   // Register accessors with resilience bridge
   useEffect(() => {
     if (resilienceBridge?.registerAccessors) {
@@ -419,10 +428,11 @@ export function VideoPlayer({
         autoplayBlocked,
         onAutoplayResolved: handleAutoplayResolved,
         beginMountedPlaybackOperation,
-        cancelMountedPlaybackOperation
+        cancelMountedPlaybackOperation,
+        getTrackEngine
       });
     }
-  }, [resilienceBridge, getMediaEl, getContainerEl, hardReset, fetchVideoInfo, autoplayBlocked, handleAutoplayResolved, beginMountedPlaybackOperation, cancelMountedPlaybackOperation]);
+  }, [resilienceBridge, getMediaEl, getContainerEl, hardReset, fetchVideoInfo, autoplayBlocked, handleAutoplayResolved, beginMountedPlaybackOperation, cancelMountedPlaybackOperation, getTrackEngine]);
 
   useEffect(() => {
     return () => {
