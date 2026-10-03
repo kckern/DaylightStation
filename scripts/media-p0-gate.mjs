@@ -151,6 +151,55 @@ export const P0_EXTENSION_ENTRIES = Object.freeze([
     criteria: ['RELY.8a/AC1', 'RELY.8a/AC2', 'RELY.8a/AC3'],
     file: 'media-app-reset-confirm.runtime.test.mjs',
     grep: 'RELY\\.8a',
+  },  // Media P1/P2 batch C — house view, naming, admin, routines. Only criteria
+  // the house-view journey proves at runtime; see the acceptance ledger.
+  {
+    story: 'HOUSE.2a',
+    criteria: ['HOUSE.2a/AC5', 'HOUSE.2a/AC6'],
+    file: 'media-app-house-view.runtime.test.mjs',
+    grep: 'STEER\\.11a',
+  },
+  {
+    story: 'HOUSE.5a',
+    criteria: ['HOUSE.5a/AC1'],
+    file: 'media-app-house-view.runtime.test.mjs',
+    grep: 'STEER\\.11a',
+  },
+  {
+    story: 'PLAY.10a',
+    criteria: ['PLAY.10a/AC3', 'PLAY.10a/AC4'],
+    file: 'media-app-house-view.runtime.test.mjs',
+    grep: 'STEER\\.11a',
+  },
+  {
+    story: 'STEER.11a',
+    criteria: ['STEER.11a/AC1', 'STEER.11a/AC2'],
+    file: 'media-app-house-view.runtime.test.mjs',
+    grep: 'STEER\\.11a',
+  },
+  {
+    story: 'RELY.14a',
+    criteria: ['RELY.14a/AC1', 'RELY.14a/AC2'],
+    file: 'media-app-house-view.runtime.test.mjs',
+    grep: 'HOUSE\\.4a',
+  },
+  {
+    story: 'HOUSE.4a',
+    criteria: ['HOUSE.4a/AC3'],
+    file: 'media-app-house-view.runtime.test.mjs',
+    grep: 'HOUSE\\.4a',
+  },
+  {
+    story: 'HOUSE.6a',
+    criteria: ['HOUSE.6a/AC1', 'HOUSE.6a/AC2', 'HOUSE.6a/AC3'],
+    file: 'media-app-house-view.runtime.test.mjs',
+    grep: 'HOUSE\\.4a',
+  },
+  {
+    story: 'AUTO.4a',
+    criteria: ['AUTO.4a/AC1', 'AUTO.4a/AC2'],
+    file: 'media-app-house-view.runtime.test.mjs',
+    grep: 'HOUSE\\.4a',
   },
 ]);
 

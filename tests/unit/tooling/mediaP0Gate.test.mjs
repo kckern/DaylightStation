@@ -47,9 +47,18 @@ describe('Media P0 gate manifest', () => {
       expect.objectContaining({ story: 'RELY.7a', criteria: ['RELY.7a/AC1', 'RELY.7a/AC5'], file: 'media-app-resume.runtime.test.mjs' }),
       expect.objectContaining({ story: 'RELY.7a', criteria: ['RELY.7a/AC2'], file: 'media-app-aim-journey.runtime.test.mjs', grep: 'a closed app restores' }),
       expect.objectContaining({ story: 'RELY.8a', criteria: ['RELY.8a/AC1', 'RELY.8a/AC2', 'RELY.8a/AC3'], file: 'media-app-reset-confirm.runtime.test.mjs' }),
+      // Media P1/P2 batch C (house view, naming, admin, routines).
+      expect.objectContaining({ story: 'HOUSE.2a', criteria: ['HOUSE.2a/AC5', 'HOUSE.2a/AC6'], file: 'media-app-house-view.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'HOUSE.5a', criteria: ['HOUSE.5a/AC1'], file: 'media-app-house-view.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'PLAY.10a', criteria: ['PLAY.10a/AC3', 'PLAY.10a/AC4'], file: 'media-app-house-view.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'STEER.11a', criteria: ['STEER.11a/AC1', 'STEER.11a/AC2'], file: 'media-app-house-view.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'RELY.14a', criteria: ['RELY.14a/AC1', 'RELY.14a/AC2'], file: 'media-app-house-view.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'HOUSE.4a', criteria: ['HOUSE.4a/AC3'], file: 'media-app-house-view.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'HOUSE.6a', criteria: ['HOUSE.6a/AC1', 'HOUSE.6a/AC2', 'HOUSE.6a/AC3'], file: 'media-app-house-view.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'AUTO.4a', criteria: ['AUTO.4a/AC1', 'AUTO.4a/AC2'], file: 'media-app-house-view.runtime.test.mjs' }),
     ]));
-    expect(P0_EXTENSION_ENTRIES).toHaveLength(23);
-    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 31, criteria: 69 });
+    expect(P0_EXTENSION_ENTRIES).toHaveLength(31);
+    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 37, criteria: 84 });
   });
 
   it('rejects skipped, duplicated, weakened, or unjourneyed criteria', () => {
