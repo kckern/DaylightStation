@@ -104,4 +104,36 @@ describe('a pause caused by a failed recovery load', () => {
     expect(args.onReload.mock.calls.length).toBe(reloadsAtPause);
     expect(args.onExhausted).not.toHaveBeenCalled();
   });
+
+  // Gate run 2026-10-03 (1a272f3c3): after an unplayable item is skipped, the
+  // NEXT item's first render still carried the old element's latched code 4,
+  // so the Player asked about the new file and force-remounted its fresh
+  // load — Disclosure Day then never started.
+  it('a latched error from the previous item is never judged against the next item', async () => {
+    let current = makeFakeEl({ paused: true, currentTime: 0, duration: 6982 });
+    const base = {
+      onReload: vi.fn(), onExhausted: vi.fn(),
+      meta: { contentId: 'plex:55854', mediaType: 'video', title: 'Arrival' },
+      waitKey: 'plex:55854:1', playbackSessionKey: 'session-a',
+      disabled: false, getMediaEl: () => current, seconds: 0, isPaused: true, isSeeking: false,
+      pauseIntent: null, mediaTypeHint: 'video', registrationSignal: {},
+    };
+    const { rerender } = renderHook((props) => useMediaResilience(props), { initialProps: base });
+    await act(async () => {
+      current.readyState = 0;
+      current.error = { code: 4, message: 'MEDIA_ELEMENT_ERROR: Format error' };
+      current._fire('error');
+    });
+    await flush();
+    api.DaylightAPI.mockClear();
+    base.onReload.mockClear();
+    // The queue moves on: new content, new session; the old element is still
+    // the one the accessor returns for this first render.
+    rerender({ ...base, meta: { contentId: 'plex:697368', mediaType: 'video', title: 'Disclosure Day' }, waitKey: 'plex:697368:0', playbackSessionKey: 'session-b', isPaused: false });
+    await flush();
+    await advance(2000);
+    const checksForNext = api.DaylightAPI.mock.calls.filter(([url, body]) => url === 'api/v1/media-source/check' && body?.contentId === 'plex:697368');
+    expect(checksForNext).toEqual([]);
+    expect(base.onReload.mock.calls.some(([opts]) => opts?.reason === 'media-error-unplayable')).toBe(false);
+  });
 });
