@@ -27,6 +27,9 @@ import { ParticipantRoster } from './ParticipantRoster.js';
 import { TimelineRecorder } from './TimelineRecorder.js';
 import { PersistenceManager } from './PersistenceManager.js';
 
+// Pre-timeline events older than this at session start are stale (see flush in ensureStarted).
+const PENDING_EVENT_MAX_AGE_MS = 60 * 1000;
+
 // -------------------- Timeout Configuration --------------------
 const FITNESS_TIMEOUTS = {
   inactive: 60000,
@@ -1893,12 +1896,22 @@ export class FitnessSession {
     this.timebase.startAbsMs = this.timeline.timebase.startTime;
     this._pendingSnapshotRef = null;
 
-    // Flush any events that were queued before the timeline was ready
+    // Flush any events that were queued before the timeline was ready. The queue
+    // only bridges the seconds between the pre-session buffer filling and the
+    // timeline existing; anything older belongs to no session (e.g. the media-end of
+    // a video closed after the previous session ended) and is dropped, not grafted
+    // onto this one. Age is measured against the wall clock, not `now`, which is the
+    // ORIGINAL start time on a resume.
     if (this._pendingEvents.length > 0) {
+      const cutoff = Date.now() - PENDING_EVENT_MAX_AGE_MS;
+      const fresh = this._pendingEvents.filter(evt => !(evt.timestamp < cutoff));
       getLogger().info('fitness.session.flush_pending_events', {
-        sessionId: this.sessionId, count: this._pendingEvents.length
+        sessionId: this.sessionId,
+        count: fresh.length,
+        droppedStale: this._pendingEvents.length - fresh.length,
+        droppedTypes: this._pendingEvents.filter(evt => evt.timestamp < cutoff).map(evt => evt.type)
       });
-      for (const evt of this._pendingEvents) {
+      for (const evt of fresh) {
         this.timeline.logEvent(evt.type, evt.data, evt.timestamp);
       }
       this._pendingEvents = [];
