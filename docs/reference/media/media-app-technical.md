@@ -387,7 +387,8 @@ answers **501**.
 **Screen identity.** `play/log` keys a spot by an explicit body `deviceId`,
 else the `X-Daylight-Device` header when the client sent it (every
 `DaylightAPI` call does: `fleet:<devices.yml key>` on a rendered screen,
-`browser:<token>` elsewhere). A bare name becomes `fleet:<name>`.
+`browser:<token>` elsewhere). The prefix is required (no bare names), and a
+`fleet:` id must be declared in the household's `devices.yml`.
 `ephemeral:` ids and the User-Agent fallback never key a spot. No device →
 legacy single-playhead write only. `play/log` also accepts an optional
 `origin` string (≤ 64 chars) recorded on the ledger row; no caller sends one
@@ -397,7 +398,18 @@ yet.
 **90%** — the line `MediaProgress.isWatched`, `completedAt` and Plex
 next-episode selection already use, read as "the credits have started". An
 item leaves carry on only when no screen holds an open spot. A same-item
-report after **15 quiet minutes** on a screen is a new ledger start.
+report after **15 quiet minutes** on a screen is a new ledger start; a
+terminal report (`naturalEnd`, or `status` `completed`/`stopped`/`ended`)
+ends that screen's session and is never a start.
+
+**Per-screen accounting.** `watchTime` and `playCount` are measured against
+the reporting screen's own spot, so two screens on one item do not inflate
+them. A screen's first report (no spot yet) is measured against the shared
+playhead, as before spots existed. On the first spot-aware write to a record
+whose single playhead is still open, that playhead is kept as a reserved
+`legacy` spot (`kind: "unknown"`); it retires once any screen plays past it.
+Records from several namespaces with the same id (a watchlist's and the
+library's) are merged: newest record's fields, every screen's newest spot.
 
 #### Shapes
 
@@ -433,8 +445,11 @@ report after **15 quiet minutes** on a screen is a new ledger start.
   still counts as unfinished); in **carry on** only open spots, newest first.
   Records written before spots existed have `spots: []` in recent and one
   spot with `deviceId: null` in carry on.
-- Display fields come from the content catalog, cached 5 min, each lookup
-  bounded at 4 s; on a miss they are `null` and the entry is still returned.
+- Display fields come from the content catalog: cached 5 min when found,
+  10 s when the catalog has no such item, **never** after a failed lookup;
+  at most 4 lookups in flight; each bounded at 4 s and the whole
+  recent/carry-on request at 8 s. On a miss the fields are `null` and the
+  entry is still returned.
 
 `PlayLedgerRow`:
 
@@ -448,8 +463,8 @@ report after **15 quiet minutes** on a screen is a new ledger start.
 #### `GET /household/recent?limit=24`
 
 Everything played on any screen, newest first (`limit` ≤ 200). Each entry is
-a `HouseholdEntry` plus `plays`: that item's ledger starts, newest first, up
-to 5, each `{deviceId, kind, screenId, startedAt, origin}`. `playedOn` is the
+a `HouseholdEntry` plus `plays`: that item's ledger starts from the last 14
+days, newest first, up to 5, each `{deviceId, kind, screenId, startedAt, origin}`. `playedOn` is the
 screen that last reported progress, else the screen that last started it.
 Items the ledger saw but progress never stored are included. Removed items
 are hidden.
@@ -468,16 +483,19 @@ are hidden.
 - `next-episode`: the episode after a recently finished one (season, then
   the first episode of the next season via the show), offered when it is
   neither started nor finished; carries `after` (the finished episode id) and
-  `afterPlayedAt`, and empty `spots`. At most one per show, from the 8 most
-  recent finished items.
+  `afterPlayedAt`, and empty `spots`. At most one per show and 8 in all,
+  scanning up to 40 recently finished items (24 lookups) so finished songs
+  cannot hide an episode.
 - Both kinds are ranked together by recency (when the spot was left / the
   previous episode finished), then cut to `limit`.
 - Songs (`type: "track"`) are never carry on.
 - `nowOn`: items on a screen right now — online, with `state` in
   `playing | paused | buffering | loading | stalled` — are moved here instead
-  of `items` ("Now on <screen> · Remote · Move here"). Only screens that
-  publish `device-state` are visible; **a browser playing locally is not**.
-  `nowPlayingKnown: false` means live screen state could not be read at all.
+  of `items` ("Now on <screen> · Remote · Move here"). Two sources, fleet
+  `device-state` first: screens that publish it, and any device whose
+  `play/log` reported within the last 60 s (browsers and kiosks; these have
+  `state: "playing"`, `position: null`). `nowPlayingKnown: false` means no
+  source could be read.
 
 #### `GET /household/plays?deviceId=&from=&to=&limit=100`
 
@@ -517,7 +535,8 @@ The 10 s undo window is a client concern: undo is `DELETE`.
 #### `POST /household/watched`
 
 Body `{ contentId, watched: boolean }`. **400** unless `watched` is a boolean
-and `contentId` carries its source.
+and `contentId` carries a source the content catalog resolves
+(`UNKNOWN_SOURCE`; nothing is written). **501** when marks are not wired.
 
 ```json
 { "contentId": "plex:12345", "watched": true, "namespaces": ["plex/6_movies"],
