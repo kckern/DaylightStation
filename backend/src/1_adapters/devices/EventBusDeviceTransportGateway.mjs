@@ -1,6 +1,6 @@
 import { buildCommandEnvelope, buildDeviceStateBroadcast, validateCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
 import { validateHandoffCommandAck } from '#shared-contracts/media/handoff.mjs';
-import { COMMAND_HANDLER_PRESENCE_TOPIC_PREFIX, DEVICE_ACK_TOPIC, DEVICE_STATE_TOPIC, SCREEN_COMMAND_TOPIC, parseDeviceTopic } from '#shared-contracts/media/topics.mjs';
+import { COMMAND_HANDLER_PRESENCE_TOPIC_PREFIX, DEVICE_ACK_TOPIC, DEVICE_START_TOPIC, DEVICE_STATE_TOPIC, SCREEN_COMMAND_TOPIC, parseDeviceTopic } from '#shared-contracts/media/topics.mjs';
 import { ERROR_CODES } from '#shared-contracts/media/errors.mjs';
 
 const HOMELINE_TOPIC = (deviceId) => `homeline:${deviceId}`;
@@ -32,7 +32,9 @@ export class EventBusDeviceTransportGateway {
           ...(payload.appliedAt !== undefined ? { appliedAt: payload.appliedAt } : {}),
           ...(payload.error !== undefined ? { error: payload.error } : {}),
           ...(payload.code !== undefined ? { code: payload.code } : {}),
-          ...(payload.handoff !== undefined ? { handoff: payload.handoff } : {}) });
+          ...(payload.handoff !== undefined ? { handoff: payload.handoff } : {}),
+          ...(payload.appliedAs !== undefined ? { appliedAs: payload.appliedAs } : {}),
+          ...(payload.requestedOp !== undefined ? { requestedOp: payload.requestedOp } : {}) });
       };
       if (typeof this.#eventBus?.subscribePattern !== 'function') {
         resolve({ ok: false, code: 'BUS_MISCONFIGURED', error: 'eventBus lacks subscribePattern' }); return;
@@ -72,6 +74,18 @@ export class EventBusDeviceTransportGateway {
     if (typeof this.#eventBus?.subscribePattern !== 'function') return null;
     return this.#eventBus.subscribePattern((topic) => parseDeviceTopic(topic)?.kind === 'device-state',
       (payload, topic) => listener({ deviceId: payload?.deviceId, snapshot: payload?.snapshot, reason: payload?.reason, ts: payload?.ts, topic }));
+  }
+  /** WakeAndLoad `wake-progress` events on homeline:<deviceId> (RQ-HOUSE-04). */
+  subscribeWakeProgress(listener) {
+    if (typeof this.#eventBus?.subscribePattern !== 'function') return () => {};
+    return this.#eventBus.subscribePattern(
+      (topic) => parseDeviceTopic(topic)?.kind === 'homeline',
+      (payload, topic) => { if (payload?.type === 'wake-progress') listener(parseDeviceTopic(topic).deviceId, payload); },
+    );
+  }
+  publishStartStatus(deviceId, status) {
+    const publish = this.#eventBus.broadcast?.bind(this.#eventBus) ?? this.#eventBus.publish?.bind(this.#eventBus);
+    return publish?.(DEVICE_START_TOPIC(deviceId), status);
   }
   publishDeviceState({ deviceId, snapshot, reason, ts }) {
     const publish = this.#eventBus.broadcast?.bind(this.#eventBus) ?? this.#eventBus.publish?.bind(this.#eventBus);

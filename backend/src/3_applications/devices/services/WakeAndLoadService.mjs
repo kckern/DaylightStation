@@ -541,6 +541,9 @@ export class WakeAndLoadService {
     let wsDelivered = false;
     let wsSkipReason = null;
     let outcomeCommandAcknowledged = false;
+    // Set when the receiver applied the command differently than asked —
+    // Add only turns a play-now into an add (RQ-PLAY-10).
+    let receiverAppliedAs = null;
     const outcomeBaseline = this.#deviceLivenessService?.getLastSnapshot?.(deviceId)?.snapshot ?? null;
 
     if (warmPrepare) {
@@ -595,11 +598,13 @@ export class WakeAndLoadService {
             throw new Error(ack?.error || ack?.code || 'receiver rejected command');
           }
           outcomeCommandAcknowledged = true;
+          receiverAppliedAs = typeof ack.appliedAs === 'string' && ack.appliedAs !== requestedOp ? ack.appliedAs : null;
 
           const ackMs = this.#clock.now() - ackStart;
-          this.#logger.info?.('wake-and-load.load.ws-ack', { deviceId, dispatchId, ackMs });
+          this.#logger.info?.('wake-and-load.load.ws-ack', { deviceId, dispatchId, ackMs, ...(receiverAppliedAs ? { appliedAs: receiverAppliedAs, requestedOp } : {}) });
 
-          result.steps.load = { ok: true, method: 'websocket', ackMs };
+          result.steps.load = { ok: true, method: 'websocket', ackMs, ...(receiverAppliedAs ? { appliedAs: receiverAppliedAs } : {}) };
+          if (receiverAppliedAs) result.appliedAs = receiverAppliedAs;
           wsDelivered = true;
           this.#emitProgress(topic, dispatchId, 'load', 'done', { method: 'websocket' });
         } catch (err) {
@@ -757,6 +762,7 @@ export class WakeAndLoadService {
       this.#armReceiverOutcomeWatchdog({
         deviceId, dispatchId, topic, contentQuery, outcomeBaseline,
         commandAcknowledged: outcomeCommandAcknowledged,
+        appliedAs: receiverAppliedAs,
       });
     }
 
@@ -839,7 +845,7 @@ export class WakeAndLoadService {
    */
   #armReceiverOutcomeWatchdog({
     deviceId, dispatchId, topic, contentQuery, outcomeBaseline,
-    commandAcknowledged, timeoutMs = 90_000,
+    commandAcknowledged, appliedAs = null, timeoutMs = 90_000,
   }) {
     if (!this.#eventBus || typeof this.#eventBus.subscribe !== 'function') return;
 
@@ -861,7 +867,7 @@ export class WakeAndLoadService {
     if (!expectedContentIds.length) return;
     const expectedContentId = expectedContentIds[0];
     const itemAction = decodeItemAction(contentQuery.itemAction);
-    const operation = contentQuery.op === 'add' ? 'add' : 'play-now';
+    const operation = contentQuery.op === 'add' || appliedAs === 'add' ? 'add' : 'play-now';
     const resultStep = operation === 'add' ? 'queue' : 'playback';
 
     let resolved = false;

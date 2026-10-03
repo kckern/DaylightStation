@@ -92,6 +92,7 @@ import { createFinanceApiRouter } from '#composition/modules/financeApi.mjs';
 import { createCostApiRouter } from '#composition/modules/costApi.mjs';
 import { createHomeAutomationApiRouter, createHomeDashboardApiRouter } from '#composition/modules/homeApi.mjs';
 import { createDeviceApiRouter } from '#composition/modules/deviceApi.mjs';
+import { createDeviceStartStatusService } from '#composition/modules/deviceStartStatus.mjs';
 import { createTriggerApiRouter } from '#composition/modules/triggerApi.mjs';
 import { declaredEntryActions } from '#domains/school/reachability.mjs';
 import { reportUnreachableSchoolPrograms } from '#composition/modules/schoolReachability.mjs';
@@ -808,6 +809,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     eventBus,
     presenceGateway: devicePresenceGateway,
     logger: rootLogger.child({ module: 'device-liveness' })
+  });
+
+  // DeviceStartStatusService — folds WakeAndLoad's homeline:<id> step stream
+  // into one start status per screen on device-start:<id>, replayed to new
+  // subscribers, so every house view sees start progress / last failure.
+  const { startStatusService: deviceStartStatusService } = createDeviceStartStatusService({
+    eventBus,
+    logger: rootLogger.child({ module: 'device-start-status' }),
   });
 
   // HubFleetBridge — translates playback-hub:status lane snapshots into
@@ -5098,6 +5107,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     loadFile,
     pianoMidiWakeService,
     kioskFrictionTracker,
+    startStatusService: deviceStartStatusService,
     logger: rootLogger.child({ module: 'device-api' })
   });
 

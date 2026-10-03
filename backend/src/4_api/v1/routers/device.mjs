@@ -6,6 +6,7 @@ import { validateHandoffCommandAck, validateHandoffParams } from '#shared-contra
 import { validateSessionSnapshot } from '#shared-contracts/media/shapes.mjs';
 import { buildCommandEnvelope, validateCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
 import { TRANSPORT_ACTIONS, QUEUE_OPS, REPEAT_MODES, isTransportAction, isQueueOp, isRepeatMode } from '#shared-contracts/media/commands.mjs';
+import { END_OF_QUEUE_MODES, isEndOfQueueMode, validateSessionActionParams } from '#shared-contracts/media/sessionControls.mjs';
 
 const nonEmpty = value => typeof value === 'string' && value.length > 0;
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -24,6 +25,29 @@ const parseLoadQuery = (query = {}) => {
 };
 const parseRequestedMinutes = value => Number(value) > 0 ? Number(value) : undefined;
 const notFound = res => res.status(404).json(buildErrorBody({ error: 'Device not found', code: ERROR_CODES.DEVICE_NOT_FOUND }));
+
+/**
+ * Who issued a session command (RQ-STEER-21, RQ-HOUSE-07). An explicit body
+ * `origin` wins; otherwise a request that named itself with the fleet device
+ * header is attributed to that device. Returns `{ origin }` or `{ error }`.
+ * Validation reuses the envelope contract so the router and the screen agree.
+ */
+function commandOrigin(req) {
+  const body = req.body || {};
+  if (body.origin !== undefined) {
+    const checked = validateCommandEnvelope(buildCommandEnvelope({
+      targetDevice: 'origin-check', commandId: 'origin-check', command: 'system', params: { action: 'wake' }, origin: body.origin,
+    }));
+    if (!checked.valid) return { error: checked.errors[0] };
+    return { origin: body.origin };
+  }
+  if (req.deviceIdSource === 'header' && nonEmpty(req.deviceId)) {
+    return { origin: { kind: 'device', id: req.deviceId } };
+  }
+  return { origin: undefined };
+}
+
+const badRequest = (res, error, code = 'VALIDATION') => res.status(400).json(buildErrorBody({ error, code }));
 
 function mapCommand(result, res) {
   if (result?.ok === true) return res.status(200).json(result);
@@ -65,7 +89,7 @@ function requireSessions(service, res) {
 }
 
 export function createDeviceRouter({ fleetService, presenceService, sessionService, screenService,
-  dispatchService, recoveryService, kioskFrictionTracker, excursionGuard } = {}) {
+  dispatchService, recoveryService, kioskFrictionTracker, excursionGuard, startStatusService } = {}) {
   const router = express.Router();
 
   router.get('/config', (req, res) => res.json(fleetService.configuration(req.query.householdId)));
@@ -195,7 +219,9 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
     if ((action === 'seekAbs' || action === 'seekRel') && !(typeof value === 'number' && Number.isFinite(value))) {
       return res.status(400).json(buildErrorBody({ error: `value must be a finite number for action "${action}"` }));
     }
-    return mapCommand(await sessionService.transport(req.params.deviceId, { action, value, commandId }), res);
+    const { origin, error: originError } = commandOrigin(req);
+    if (originError) return badRequest(res, originError);
+    return mapCommand(await sessionService.transport(req.params.deviceId, { action, value, commandId, origin }), res);
   }));
 
   // Cancellation is coordinated before a cold screen owns a session. A claim
@@ -214,12 +240,14 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
     const { contentId, queueItemId, from, to, items, clearRest, commandId } = req.body || {};
     if (!isQueueOp(op)) return res.status(400).json(buildErrorBody({ error: `Unknown queue op "${op}"; must be one of: ${QUEUE_OPS.join(', ')}`, code: 'VALIDATION' }));
     if (!nonEmpty(commandId)) return res.status(400).json(buildErrorBody({ error: 'commandId required (non-empty string)' }));
+    const { origin, error: originError } = commandOrigin(req);
+    if (originError) return badRequest(res, originError);
     if (op === 'item-action' || op === 'undo') {
       const { kind, item, collectionItems, operationId, tappedAt } = req.body;
       const params = { op, operationId, ...(op === 'item-action' ? { kind, item, collectionItems, tappedAt, clearRest, queueItemId } : {}) };
       const checked = validateCommandEnvelope(buildCommandEnvelope({ targetDevice: deviceId, commandId, command: 'queue', params }));
       if (!checked.valid) return res.status(400).json(buildErrorBody({ error: checked.errors.join('; '), code: 'VALIDATION' }));
-      return mapCommand(await sessionService.queue(deviceId, commandId, params), res);
+      return mapCommand(await sessionService.queue(deviceId, commandId, params, origin), res);
     }
     if (['play-now', 'play-next', 'add-up-next', 'add'].includes(op) && !nonEmpty(contentId)) {
       return res.status(400).json(buildErrorBody({ error: `contentId required (non-empty string) for op "${op}"` }));
@@ -239,7 +267,7 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
     if (to !== undefined) params.to = to;
     if (items !== undefined) params.items = items;
     if (clearRest !== undefined) params.clearRest = clearRest;
-    return mapCommand(await sessionService.queue(deviceId, commandId, params), res);
+    return mapCommand(await sessionService.queue(deviceId, commandId, params, origin), res);
   }));
 
   router.put('/:deviceId/session/shuffle', asyncHandler(async (req, res) => {
@@ -267,11 +295,68 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
     return mapCommand(await sessionService.config(req.params.deviceId, { setting: 'shader', value: shader, commandId }), res);
   }));
 
+  // --- Screen session flags (RQ-PLAY-10, RQ-STEER-19, RQ-STEER-20) -------
+  // Each is a `config` command; the screen publishes the result in
+  // `snapshot.controls` (tech doc §6.6).
+  const sessionFlag = (path, setting, field, isValid, describe) => {
+    router.put(`/:deviceId/session/${path}`, asyncHandler(async (req, res) => {
+      if (!requireSessions(sessionService, res)) return;
+      const body = req.body || {};
+      if (!nonEmpty(body.commandId)) return badRequest(res, 'commandId required (non-empty string)');
+      if (!isValid(body[field])) return badRequest(res, `${field} ${describe}`);
+      const { origin, error: originError } = commandOrigin(req);
+      if (originError) return badRequest(res, originError);
+      return mapCommand(await sessionService.config(req.params.deviceId, {
+        setting, value: body[field], commandId: body.commandId, origin,
+      }), res);
+    }));
+  };
+  sessionFlag('add-only', 'addOnly', 'enabled', v => typeof v === 'boolean', 'must be a boolean');
+  sessionFlag('end-of-queue', 'endOfQueue', 'mode', isEndOfQueueMode, `must be one of: ${END_OF_QUEUE_MODES.join(', ')}`);
+  sessionFlag('stop-after-current', 'stopAfterCurrent', 'enabled', v => typeof v === 'boolean', 'must be a boolean');
+
+  // --- Screen session actions (RQ-STEER-12, RQ-STEER-20, RQ-STEER-21) -----
+  const sessionAction = (path, action, pickParams = () => ({})) => {
+    router.post(`/:deviceId/session/${path}`, asyncHandler(async (req, res) => {
+      if (!requireSessions(sessionService, res)) return;
+      const body = req.body || {};
+      if (!nonEmpty(body.commandId)) return badRequest(res, 'commandId required (non-empty string)');
+      const params = pickParams(body);
+      const checked = validateSessionActionParams({ action, ...params });
+      if (!checked.valid) return badRequest(res, checked.errors.join('; '));
+      const { origin, error: originError } = commandOrigin(req);
+      if (originError) return badRequest(res, originError);
+      return mapCommand(await sessionService.session(req.params.deviceId, {
+        action, params, commandId: body.commandId, origin,
+      }), res);
+    }));
+  };
+  sessionAction('sleep-timer', 'sleep-timer', (body) => ({
+    ...(body.minutes !== undefined ? { minutes: body.minutes } : {}),
+    ...(body.atEnd !== undefined ? { atEnd: body.atEnd } : {}),
+  }));
+  sessionAction('sleep-timer/cancel', 'cancel-sleep-timer');
+  sessionAction('sleep-timer/resume', 'resume-sleep');
+  sessionAction('put-back', 'put-back', (body) => (nonEmpty(body.noteId) ? { noteId: body.noteId } : {}));
+  sessionAction('countdown/cancel', 'cancel-countdown');
+  sessionAction('countdown/start-now', 'start-next-now');
+
+  // Start progress / last failure for one screen, readable by every device
+  // (RQ-HOUSE-04). Live updates ride `device-start:<deviceId>`.
+  router.get('/:deviceId/start-status', (req, res) => {
+    if (!startStatusService?.get) {
+      return res.status(503).json(buildErrorBody({ error: 'Start status not configured', code: 'START_STATUS_UNAVAILABLE' }));
+    }
+    return res.json({ ok: true, status: startStatusService.get(req.params.deviceId) ?? null });
+  });
+
   router.post('/:deviceId/session/claim', asyncHandler(async (req, res) => {
     if (!requireSessions(sessionService, res)) return;
     const { commandId } = req.body || {};
     if (!nonEmpty(commandId)) return res.status(400).json(buildErrorBody({ error: 'commandId required (non-empty string)', code: 'VALIDATION' }));
-    const result = await sessionService.claim(req.params.deviceId, commandId);
+    const { origin, error: originError } = commandOrigin(req);
+    if (originError) return badRequest(res, originError);
+    const result = await sessionService.claim(req.params.deviceId, commandId, origin);
     if (result?.ok === true) return res.status(200).json({ ok: true, commandId: result.commandId ?? commandId,
       snapshot: result.snapshot, stoppedAt: result.stoppedAt });
     return mapCommand(result, res);
