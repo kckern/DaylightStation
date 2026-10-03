@@ -58,6 +58,12 @@ describe('YamlMediaProgressMemory per-screen spots', () => {
     expect(loaded.lastDevice).toBe('browser:kid');
   });
 
+  test('an explicit null lastDevice clears it (mark watched/unwatched)', async () => {
+    await memory.saveProgress(new MediaProgress({ contentId: 'plex:1', playhead: 720, duration: 7200, spots, lastDevice: 'browser:kid' }), 'plex/6_movies');
+    await memory.saveProgress(new MediaProgress({ contentId: 'plex:1', playhead: 0, duration: 7200, spots: {}, lastDevice: null }), 'plex/6_movies');
+    expect((await memory.findProgress('plex:1', 'plex/6_movies')).lastDevice).toBeNull();
+  });
+
   test('legacy records read with spots undefined and lastDevice null', async () => {
     await memory.saveProgress(new MediaProgress({ contentId: 'plex:2', playhead: 10, duration: 100 }), 'plex');
     const loaded = await memory.findProgress('plex:2', 'plex');

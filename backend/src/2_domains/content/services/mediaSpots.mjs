@@ -12,9 +12,13 @@
  *
  * Device ids are the `X-Daylight-Device` values minted by
  * `frontend/src/lib/deviceIdentity.js`: `fleet:<devices.yml key>` for a
- * rendered screen, `browser:<token>` for any other browser. `ephemeral:` ids
- * die with the page, so a spot keyed by one could never be continued and is
- * refused; so is a User-Agent fallback, which is not an identity.
+ * rendered screen, `browser:<token>` for any other browser. The prefix is
+ * required. `ephemeral:` ids die with the page, so a spot keyed by one could
+ * never be continued and is refused; so is a User-Agent fallback, which is not
+ * an identity.
+ *
+ * One reserved key, `legacy`, holds the single playhead a record had before
+ * its first spot-aware write (see seedLegacySpot). No client can write it.
  *
  * Thresholds are the RQ-FIND-12 defaults (requirements NF-DEF):
  *   - unfinished once 5 minutes OR 5% has been played;
@@ -33,21 +37,20 @@ export const SPOT_DEFAULTS = Object.freeze({
 });
 
 const DEVICE_ID_PATTERN = /^(fleet|browser):[A-Za-z0-9._-]{1,96}$/;
-const BARE_FLEET_PATTERN = /^[A-Za-z0-9._-]{1,96}$/;
+
+/** Reserved spot key for a pre-spots single playhead. */
+export const LEGACY_SPOT_KEY = 'legacy';
 
 /**
- * Accept a device id that can key a spot, or null.
- * A bare name (no prefix) is a devices.yml key and becomes `fleet:<name>`.
+ * Accept a device id that can key a spot, or null. The `fleet:` / `browser:`
+ * prefix is required — a bare name is not promoted.
  * @param {unknown} raw
  * @returns {string|null}
  */
 export function normalizeSpotDeviceId(raw) {
   if (typeof raw !== 'string') return null;
   const value = raw.trim();
-  if (!value) return null;
-  if (DEVICE_ID_PATTERN.test(value)) return value;
-  if (!value.includes(':') && BARE_FLEET_PATTERN.test(value)) return `fleet:${value}`;
-  return null;
+  return DEVICE_ID_PATTERN.test(value) ? value : null;
 }
 
 /**
@@ -110,11 +113,41 @@ export function recordSpot(spots, deviceId, { playhead, duration, at }) {
 }
 
 /**
- * Whether a record has ever been written with per-screen spots. A record that
- * has (even one whose spots were since cleared) is judged by its spots only.
+ * Whether a record's spots speak for it: a NON-EMPTY spots map. A record whose
+ * spots were cleared (marked watched/unwatched) is judged by its single
+ * playhead again, so later playback without a device id still shows.
  */
 export function hasSpotHistory(record) {
-  return Boolean(record && (record.spots || record.lastDevice));
+  return Boolean(record?.spots && Object.keys(record.spots).length > 0);
+}
+
+/**
+ * On the first spot-aware write to a record without spot history, its open
+ * single playhead becomes a `legacy` spot so the place someone stopped before
+ * spots existed is not lost. Returns the spots to start from.
+ */
+export function seedLegacySpot(record, policy = SPOT_DEFAULTS) {
+  if (!record || hasSpotHistory(record) || !isSpotOpen(record, policy)) return { ...(record?.spots || {}) };
+  return {
+    [LEGACY_SPOT_KEY]: {
+      playhead: Number(record.playhead) || 0,
+      duration: Number(record.duration) || 0,
+      percent: spotPercent(record),
+      lastPlayed: record.lastPlayed ?? null,
+    },
+  };
+}
+
+/**
+ * Drop the legacy spot once any screen has played past it — that viewing has
+ * evidently been carried on.
+ */
+export function retireLegacySpot(spots, playhead) {
+  const legacy = spots?.[LEGACY_SPOT_KEY];
+  if (!legacy || !(Number(playhead) >= (Number(legacy.playhead) || 0))) return spots;
+  const next = { ...spots };
+  delete next[LEGACY_SPOT_KEY];
+  return next;
 }
 
 /**

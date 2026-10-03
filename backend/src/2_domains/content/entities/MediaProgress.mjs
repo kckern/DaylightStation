@@ -16,7 +16,8 @@ import { ValidationError } from '#domains/core/errors/index.mjs';
  *   Per-screen spots keyed by device id (see services/mediaSpots.mjs). LEFT
  *   UNDEFINED by writers that do not know about spots; persistence keeps the
  *   stored map in that case. An explicit `{}` clears them.
- * @property {string|null} [lastDevice] - Device id that last recorded a spot
+ * @property {string|null} [lastDevice] - Device id that last recorded a spot.
+ *   Undefined = "not touched" (persistence keeps the stored value); null clears.
  * @property {number} [now] - Current time in ms (for bookmark expiry check; avoids impure Date.now())
  */
 
@@ -40,7 +41,7 @@ export class MediaProgress {
     this._storedPercent = props.percent ?? null;
     // Undefined (not {}) means "this writer did not touch spots".
     this.spots = props.spots === undefined ? undefined : { ...(props.spots || {}) };
-    this.lastDevice = props.lastDevice ?? null;
+    this.lastDevice = props.lastDevice === undefined ? undefined : (props.lastDevice || null);
 
     // Bookmark for position recovery (optional, expires after 7 days)
     const rawBookmark = props.bookmark ?? null;
