@@ -132,8 +132,15 @@ def cmd_identify(args):
     # bare kill skips close_sync and the reader stays claimed, so the next scan
     # fails to open.
     cancellable = Gio_new_cancellable()
+    timed_out = []  # set by the capture timer so an expiry reports 'timeout', not 'cancelled'
+
+    def on_timeout():
+        timed_out.append(True)
+        cancellable.cancel()
+        return False
+
     if args.timeout and args.timeout > 0:
-        GLib.timeout_add_seconds(int(args.timeout), lambda: (cancellable.cancel(), False)[1])
+        GLib.timeout_add_seconds(int(args.timeout), on_timeout)
     for sig in (signal.SIGTERM, signal.SIGINT):
         GLib.unix_signal_add(GLib.PRIORITY_HIGH, sig,
                              lambda *_: (cancellable.cancel(), False)[1])
@@ -144,7 +151,7 @@ def cmd_identify(args):
             matched, _scanned = dev.identify_sync(gallery, cancellable, None, None)
         except GLib.Error as e:
             if cancellable.is_cancelled():
-                print(json.dumps({'matched': False, 'reason': 'cancelled'}))
+                print(json.dumps({'matched': False, 'reason': 'timeout' if timed_out else 'cancelled'}))
                 return 0
             print(json.dumps({'matched': False, 'reason': 'identify-error', 'error': str(e)}))
             return 0

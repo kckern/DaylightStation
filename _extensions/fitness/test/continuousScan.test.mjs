@@ -193,3 +193,31 @@ test('reader-busy logs once on transition, not every iteration', async () => {
   const busyLines = logger.logs.filter((m) => /reader-busy/.test(m));
   assert.equal(busyLines.length, 1);
 });
+
+test('a bounded-window timeout re-arms immediately, quietly, and clears the fault streak', async () => {
+  // The continuous identify runs in windows shorter than libfprint's 180s thermal
+  // model, so it never trips TOO_HOT. A window that expires untouched is healthy
+  // progress: no broadcast, no log line, no backoff, and it must not let unrelated
+  // faults accumulate into a false "reader wedged" alert.
+  const sent = [];
+  const delays = [];
+  const logger = { logs: [], warns: [], errors: [], log(m) { this.logs.push(m); }, warn(m) { this.warns.push(m); }, error(m) { this.errors.push(m); } };
+  const overheat = { ok: true, value: { matched: false, reason: 'identify-error', error: 'Device disabled to prevent overheating.' } };
+  const timeout = { ok: true, value: { matched: false, reason: 'timeout' } };
+  // 9 overheats separated by timeouts would have hit the wedged alert at #10 before.
+  const seq = [];
+  for (let k = 0; k < 12; k += 1) seq.push(overheat, timeout);
+  let i = 0;
+  const loop = createContinuousScanLoop({
+    runScan: async () => seq[i++],
+    sendBus: (topic, payload) => sent.push({ topic, payload }),
+    delay: async (ms) => { delays.push(ms); },
+    logger,
+    maxIterations: seq.length,
+  });
+  await loop.run();
+  assert.equal(sent.length, 0);
+  assert.equal(logger.errors.filter((m) => /likely wedged/.test(m)).length, 0);
+  // every timeout re-armed with no delay
+  assert.deepEqual(delays.filter((_, idx) => idx % 2 === 1), new Array(12).fill(0));
+});
