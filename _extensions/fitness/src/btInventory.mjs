@@ -137,10 +137,12 @@ export function startBtInventoryBroadcast({ send, intervalMs = 3000, exec, logge
       return;
     }
     const json = JSON.stringify(devices);
-    if (json === lastJson) return; // unchanged — skip the broadcast.
-    lastJson = json;
+    if (json === lastJson) return; // unchanged AND delivered — skip the broadcast.
     try {
-      send('bt_inventory', { devices });
+      // Only a delivered inventory counts as sent. sendBus returns false when
+      // the WS is not open; recording it anyway meant an unchanged inventory
+      // was never sent at all (first poll races the initial connect).
+      if (send('bt_inventory', { devices }) !== false) lastJson = json;
     } catch (err) {
       logger?.error?.(`❌ bt_inventory send failed: ${err.message}`);
     }
@@ -152,6 +154,11 @@ export function startBtInventoryBroadcast({ send, intervalMs = 3000, exec, logge
   tick();
 
   return {
+    /** Re-send the current inventory, e.g. after the WS reconnects. */
+    resend() {
+      lastJson = null;
+      return tick();
+    },
     stop() {
       stopped = true;
       clearInterval(timer);

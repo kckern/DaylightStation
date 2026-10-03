@@ -245,6 +245,8 @@ async function connectWebSocket() {
           websocketClient.send(JSON.stringify({ type: 'bus_command', action: 'subscribe', topic }));
         }
         console.log('🔐 Subscribed to unlock / enroll / delete / bt.pair / bt.remove request topics');
+        // Inventory is sent on change only; a fresh connection needs the current one.
+        btInventoryBroadcast?.resend();
       } catch (error) {
         console.error('❌ Failed to subscribe to fingerprint requests:', error.message);
       }

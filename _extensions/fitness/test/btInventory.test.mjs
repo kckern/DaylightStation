@@ -4,6 +4,7 @@ import {
   parseConnectedDevices,
   parseBattery,
   pollBtInventory,
+  startBtInventoryBroadcast,
 } from '../src/btInventory.mjs';
 
 // ── parseConnectedDevices ─────────────────────────────────────────────────
@@ -119,4 +120,30 @@ test('pollBtInventory: a failing info call does not sink the whole poll', async 
 test('pollBtInventory: bluetoothctl entirely unavailable → []', async () => {
   const exec = async () => { throw new Error('command not found: bluetoothctl'); };
   assert.deepEqual(await pollBtInventory({ exec }), []);
+});
+
+// ── startBtInventoryBroadcast ─────────────────────────────────────────────
+
+const flush = () => new Promise((r) => setImmediate(r));
+const fakeExec = async (cmd) => (cmd === 'bluetoothctl devices Connected'
+  ? { stdout: 'Device E4:17:D8:C6:54:F0 8Bitdo SFC30 GamePad' }
+  : { stdout: 'Connected: yes' });
+
+test('startBtInventoryBroadcast: a failed send is retried, not recorded as sent', async () => {
+  // Garage, 2026-10-02: the first poll ran before the WS opened, the send
+  // failed, and the unchanged inventory was then never sent at all.
+  let open = false;
+  const sent = [];
+  const handle = startBtInventoryBroadcast({
+    intervalMs: 60000, exec: fakeExec, logger: null,
+    send: (topic, payload) => { if (!open) return false; sent.push(payload); return true; },
+  });
+  await flush();
+  assert.equal(sent.length, 0);
+  open = true;
+  await handle.resend();
+  assert.equal(sent.length, 1);
+  await handle.resend(); // unchanged + already delivered → resend() still forces it
+  assert.equal(sent.length, 2);
+  handle.stop();
 });
