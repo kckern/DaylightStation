@@ -371,7 +371,7 @@ export function createScreenSessionControls({
       const finished = countdown.current;
       const same = entry && finished
         && (finished.queueItemId ? entry.queueItemId === finished.queueItemId : entry.contentId === finished.contentId);
-      if (!same) clearCountdown('current-item-changed');
+      if (!same) clearCountdown('current-item-changed')?.actions?.release?.();
     }
     if (state.endOfQueue !== 'similar') return;
     const order = snap?.queue?.executionOrder;
@@ -399,7 +399,7 @@ export function createScreenSessionControls({
     const kind = classifyRemoteCommand(command, before);
     if (!kind) return null;
     generation += 1;
-    clearCountdown('remote-command');
+    clearCountdown('remote-command')?.actions?.release?.();
     const at = now();
     const origin = command.origin ?? null;
     const last = state.notes[0];
@@ -491,7 +491,9 @@ export function createScreenSessionControls({
   function interrupt(reason) {
     if (!countdown) return;
     generation += 1;
-    clearCountdown(reason ?? 'interrupted');
+    // Release the held end, so the finished item can complete (and advance)
+    // again if it is played to its end once more.
+    clearCountdown(reason ?? 'interrupted')?.actions?.release?.();
   }
 
   /** A person acted (remote command or local input): auto-continue limits restart. */
@@ -505,7 +507,7 @@ export function createScreenSessionControls({
     resetModes('local-start');
     generation += 1;
     restore = null;
-    clearCountdown('local-playback');
+    clearCountdown('local-playback')?.actions?.release?.();
     notify();
   }
 
