@@ -1,0 +1,138 @@
+/**
+ * Media house router — screens, routines, how playback started, played
+ * earlier and suggestions. Mounted under /api/v1/media beside the media
+ * router (see docs/reference/media/media-app-technical.md §2.5–2.9).
+ *
+ * Screens (RQ-HOUSE-06/08, RQ-AUTO-02):
+ * - GET    /screens                     — { screens, notSeenLately, retired }
+ * - POST   /screens                     — add { name, room? }
+ * - POST   /screens/announce            — a screen reporting in { id, name?, room? }
+ * - GET    /screens/:id                 — one screen + the routines that target it
+ * - PATCH  /screens/:id                 — { name?, room?, onCollision?, confirm? }
+ * - POST   /screens/:id/merge           — { into } fold this duplicate into another screen
+ * - POST   /screens/:id/retire          — { confirm? }
+ * - POST   /screens/:id/restore
+ * - GET    /screens/:id/routines        — routines that target the screen
+ *
+ * Every route takes the optional `?household=<id>`. Each section answers 501
+ * when its service is not wired.
+ */
+import express from 'express';
+import { asyncHandler } from '#system/http/middleware/index.mjs';
+
+const ERROR_STATUS = {
+  INVALID_NAME: 400,
+  INVALID_SCREEN_ID: 400,
+  INVALID_MERGE: 400,
+  SCREEN_NOT_FOUND: 404,
+  NAME_TAKEN: 409,
+  SCREEN_MERGED: 409,
+  ROUTINES_TARGET: 409,
+};
+
+function sendDomainError(res, error) {
+  const status = ERROR_STATUS[error?.code];
+  if (!status) return false;
+  res.status(status).json({ error: error.message, code: error.code, ...(error.details || {}) });
+  return true;
+}
+
+/**
+ * @param {Object} config
+ * @param {Object} [config.screenRegistry] - ScreenRegistryService
+ * @param {Object} [config.logger]
+ * @returns {express.Router}
+ */
+export function createMediaHouseRouter({ screenRegistry = null, logger = console } = {}) {
+  const router = express.Router();
+  const hid = (req) => (typeof req.query.household === 'string' && req.query.household ? req.query.household : undefined);
+  const str = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
+
+  const requireService = (service, name) => (req, res, next) => {
+    if (service) return next();
+    return res.status(501).json({ error: `${name} not configured` });
+  };
+
+  /** Run a handler, mapping registry rule violations to 4xx. */
+  const guarded = (fn) => asyncHandler(async (req, res) => {
+    try {
+      await fn(req, res);
+    } catch (error) {
+      if (sendDomainError(res, error)) {
+        logger.debug?.('media.house.rejected', { path: req.path, code: error.code });
+        return;
+      }
+      throw error;
+    }
+  });
+
+  // ── Screens ──────────────────────────────────────────────────────────────
+  const screens = requireService(screenRegistry, 'Screen registry');
+
+  router.get('/screens', screens, guarded(async (req, res) => {
+    res.json(await screenRegistry.list({ householdId: hid(req) }));
+  }));
+
+  router.post('/screens', screens, guarded(async (req, res) => {
+    const name = str(req.body?.name);
+    if (!name) return res.status(400).json({ error: 'name is required', code: 'INVALID_NAME' });
+    res.status(201).json(await screenRegistry.add({ householdId: hid(req), name, room: str(req.body?.room) }));
+  }));
+
+  router.post('/screens/announce', screens, guarded(async (req, res) => {
+    const id = str(req.body?.id) || str(req.get('X-Daylight-Device'));
+    if (!id) return res.status(400).json({ error: 'id is required', code: 'INVALID_SCREEN_ID' });
+    res.json({ screen: await screenRegistry.announce({ householdId: hid(req), id, name: str(req.body?.name), room: str(req.body?.room) }) });
+  }));
+
+  router.get('/screens/:id', screens, guarded(async (req, res) => {
+    const householdId = hid(req);
+    const screen = await screenRegistry.get({ householdId, id: req.params.id });
+    if (!screen) return res.status(404).json({ error: 'Unknown screen', code: 'SCREEN_NOT_FOUND' });
+    res.json({ screen, routines: await screenRegistry.routinesFor({ householdId, id: screen.id }) });
+  }));
+
+  router.patch('/screens/:id', screens, guarded(async (req, res) => {
+    const householdId = hid(req);
+    const body = req.body || {};
+    const hasName = body.name !== undefined;
+    const hasRoom = body.room !== undefined;
+    if (!hasName && !hasRoom) return res.status(400).json({ error: 'name or room is required', code: 'INVALID_NAME' });
+    if (body.onCollision !== undefined && !['reject', 'suffix'].includes(body.onCollision)) {
+      return res.status(400).json({ error: 'onCollision must be reject or suffix', code: 'INVALID_NAME' });
+    }
+    let result = null;
+    if (hasName) {
+      result = await screenRegistry.rename({
+        householdId, id: req.params.id, name: body.name, onCollision: body.onCollision ?? 'reject', confirm: body.confirm === true,
+      });
+    }
+    if (hasRoom) {
+      const roomResult = await screenRegistry.setRoom({ householdId, id: req.params.id, room: body.room });
+      result = { routines: [], ...result, screen: roomResult.screen };
+    }
+    res.json(result);
+  }));
+
+  router.post('/screens/:id/merge', screens, guarded(async (req, res) => {
+    const into = str(req.body?.into);
+    if (!into) return res.status(400).json({ error: 'into is required', code: 'INVALID_MERGE' });
+    res.json(await screenRegistry.merge({ householdId: hid(req), fromId: req.params.id, intoId: into }));
+  }));
+
+  router.post('/screens/:id/retire', screens, guarded(async (req, res) => {
+    res.json(await screenRegistry.retire({ householdId: hid(req), id: req.params.id, confirm: req.body?.confirm === true }));
+  }));
+
+  router.post('/screens/:id/restore', screens, guarded(async (req, res) => {
+    res.json(await screenRegistry.restore({ householdId: hid(req), id: req.params.id }));
+  }));
+
+  router.get('/screens/:id/routines', screens, guarded(async (req, res) => {
+    res.json({ items: await screenRegistry.routinesFor({ householdId: hid(req), id: req.params.id }) });
+  }));
+
+  return router;
+}
+
+export default createMediaHouseRouter;
