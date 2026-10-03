@@ -63,6 +63,20 @@ describe('RoutineCatalogService', () => {
     expect(routines[1].targets).toEqual([{ deviceId: 'fleet:office-tv', screenId: 'office-tv', query: 'queue=x' }]);
   });
 
+  it('a routine origin seen on ledger starts (a routine driving a wall browser) is observed too', async () => {
+    const playLedger = { plays: async () => [
+      { deviceId: 'browser:kitchen', origin: { kind: 'routine', id: null, name: 'Morning radio' } },
+      { deviceId: 'browser:kitchen', origin: { kind: 'device', id: 'browser:dad' } },
+      { deviceId: 'fleet:livingroom-tv', origin: 'routine:legacy text' },
+    ] };
+    const service = new RoutineCatalogService({ playLedger, clock: { now: () => Date.parse('2026-10-03T00:00:00Z') } });
+    const { routines } = await service.list({});
+    expect(routines.map((r) => [r.id, r.name, r.targets.map((t) => t.deviceId)])).toEqual([
+      ['observed:morning_radio', 'Morning radio', ['browser:kitchen']],
+    ]);
+    expect(await service.targeting('browser:kitchen')).toEqual([{ id: 'observed:morning_radio', name: 'Morning radio', kind: 'observed', source: 'history' }]);
+  });
+
   it('a live read failure is logged and leaves the snapshot in charge', async () => {
     const logger = { warn: vi.fn(), info: vi.fn() };
     const live = { name: 'home-assistant', available: () => true, read: async () => { throw new Error('EACCES'); } };

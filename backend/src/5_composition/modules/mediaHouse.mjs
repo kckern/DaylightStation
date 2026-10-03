@@ -80,6 +80,7 @@ export function createMediaHouseModule({
     liveSources: [new HomeAssistantRoutineFileSource({ ...(routinesConfig.homeAssistant || {}), logger: routineLog })],
     snapshots: new YamlRoutineSnapshotDatastore({ configService }),
     history: historyStore,
+    playLedger,
     logger: routineLog,
   });
   screenRegistry.setRoutineCatalog(routineCatalog);
