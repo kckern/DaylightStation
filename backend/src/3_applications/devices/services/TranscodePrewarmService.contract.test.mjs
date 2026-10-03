@@ -36,6 +36,9 @@ describe('TranscodePrewarmService semantic unsupported result', () => {
     await expect(service.prewarm('poem:remedy/01')).resolves.toEqual({
       status: 'skipped',
       reason: 'not plex',
+      // The resolved queue is still reported: the wake-and-load playback
+      // watchdog confirms a queue dispatch against these concrete ids.
+      queueContentIds: ['poem:remedy/01'],
     });
   });
 });
