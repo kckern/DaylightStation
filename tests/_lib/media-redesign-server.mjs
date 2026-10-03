@@ -201,7 +201,7 @@ export function slideshowFixtureItem(index) {
     id: `fixture:art-${index + 1}`, contentId: `fixture:art-${index + 1}`, assetId: `fixture:art-${index + 1}`,
     title: folder.split(' - ').at(-1), mediaType: 'image', format: 'image',
     mediaUrl: `/api/v1/static/img/art/classic/${file.split('/').map(encodeURIComponent).join('/')}`,
-    slideshow: { duration: 8, effect: 'none', zoom: 1 },
+    slideshow: { duration: 20, effect: 'none', zoom: 1 },
   };
 }
 function serveSlideshowFixture(rawPath, res) {

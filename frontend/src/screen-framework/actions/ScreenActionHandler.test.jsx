@@ -653,6 +653,31 @@ describe('ScreenActionHandler', () => {
       expect(pressKeysFor('prev')).toEqual(['Backspace']);
     });
 
+    it('routes WS skipNext to the queue owner only for a photo slideshow; video keeps Tab', () => {
+      const owner = vi.fn();
+      getPlayerQueueOpRegistry().register(owner);
+      let current = { contentId: 'fixture:art-1', format: 'image' };
+      const source = { getBareSnapshot: () => ({ currentItem: current }), subscribe: () => () => {} };
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+      const { unmount } = render(
+        <SessionSourceProvider source={source}>
+          <ScreenOverlayProvider>
+            <ScreenActionHandler actions={{ playback: { when_idle: 'dispatch' } }} />
+          </ScreenOverlayProvider>
+        </SessionSourceProvider>
+      );
+      act(() => getActionBus().emit('media:playback', { command: 'skipNext', commandId: 'next-1' }));
+      expect(owner).toHaveBeenCalledWith(expect.objectContaining({ op: 'skip-next', commandId: 'next-1' }));
+      expect(dispatchSpy.mock.calls.some(([event]) => event instanceof KeyboardEvent && event.key === 'Tab')).toBe(false);
+      current = { contentId: 'plex:1', format: 'video' };
+      owner.mockClear();
+      act(() => getActionBus().emit('media:playback', { command: 'skipNext', commandId: 'next-2' }));
+      expect(owner).not.toHaveBeenCalledWith(expect.objectContaining({ op: 'skip-next' }));
+      expect(dispatchSpy.mock.calls.some(([event]) => event instanceof KeyboardEvent && event.key === 'Tab')).toBe(true);
+      dispatchSpy.mockRestore();
+      unmount();
+    });
+
     it('routes remote Stop to the active Player owner without synthesizing Escape', () => {
       const owner = vi.fn();
       getPlayerQueueOpRegistry().register(owner);

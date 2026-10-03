@@ -66,8 +66,14 @@ function streamsOf(metadata) {
   return Array.isArray(part?.Stream) ? part.Stream : [];
 }
 
+// A subtitle's own title is the most specific name ("English [SDH]",
+// "European Spanish", "Chinese Traditional"); an audio track's display title
+// carries the useful detail ("English (EAC3 5.1)").
 function trackLabel(stream) {
-  return stream.displayTitle || stream.extendedDisplayTitle || stream.title || stream.language || stream.languageCode || 'Unknown';
+  const preferred = stream.streamType === PLEX_SUBTITLE
+    ? [stream.title, stream.displayTitle]
+    : [stream.displayTitle, stream.title];
+  return [...preferred, stream.extendedDisplayTitle, stream.language, stream.languageCode].find((v) => typeof v === 'string' && v) ?? 'Unknown';
 }
 
 /**
