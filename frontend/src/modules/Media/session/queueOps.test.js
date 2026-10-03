@@ -323,3 +323,19 @@ describe('batch ops (playNowMany / playNextMany / addUpNextMany / addMany)', () 
     expect('album' in snap.queue.items[snap.queue.items.length - 1]).toBe(false);
   });
 });
+
+describe('auto-continue and episode markers (RQ-STEER-19/20)', () => {
+  it('keeps addedBy:auto-continue on queued items so the queue can mark them', () => {
+    const next = q.addMany(seed('a*'), [{ contentId: 'c:x', title: 'X', addedBy: 'auto-continue' }]);
+    expect(next.queue.items.at(-1).addedBy).toBe('auto-continue');
+  });
+  it('keeps an episode type so the next-episode countdown can recognise it', () => {
+    const next = q.addMany(seed('a*'), [{ contentId: 'c:e', title: 'E', type: 'episode' }]);
+    expect(next.queue.items.at(-1).type).toBe('episode');
+  });
+  it('omits both when absent, so plain items keep their exact shape', () => {
+    const next = q.addMany(seed('a*'), [{ contentId: 'c:y', title: 'Y' }]);
+    expect(next.queue.items.at(-1)).not.toHaveProperty('addedBy');
+    expect(next.queue.items.at(-1)).not.toHaveProperty('type');
+  });
+});

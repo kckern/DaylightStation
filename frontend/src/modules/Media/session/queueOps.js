@@ -41,6 +41,11 @@ function toQueueItem(input, { priority = 'queue' } = {}) {
     ...(input.album != null ? { album: input.album } : {}),
     ...(input.mediaType != null ? { mediaType: input.mediaType } : {}),
     ...(input.isLive != null ? { isLive: !!input.isLive } : {}),
+    // "Keep similar things playing" marks what it added (RQ-STEER-19) and the
+    // next-episode countdown recognises episodes (RQ-STEER-20); both are
+    // whitelisted like the fields above and omitted when absent.
+    ...(input.addedBy === 'auto-continue' ? { addedBy: 'auto-continue' } : {}),
+    ...(input.type === 'episode' ? { type: 'episode' } : {}),
   };
 }
 

@@ -129,11 +129,15 @@ export function PlayerBridge() {
       setSessionShader((prev) => (prev === nextShader ? prev : nextShader));
     });
   }, [controller]);
+  // Sleep-timer fade (RQ-STEER-12): a transient multiplier on top of the
+  // session volume, never a change to the person's volume setting.
+  const [outputFade, setOutputFade] = useState(() => controller.output?.getFade?.() ?? 1);
+  useEffect(() => controller.output?.subscribe?.((value) => setOutputFade(value)) ?? undefined, [controller]);
   useEffect(() => { playerRef.current?.setPlaybackRate?.(playbackRate); }, [playbackRate, currentItem?.contentId]);
   useEffect(() => { playerRef.current?.setShader?.(sessionShader); }, [sessionShader, currentItem?.contentId]);
   useEffect(() => {
     let cancelled = false;
-    const target = Math.max(0, Math.min(1, volume / 100));
+    const target = Math.max(0, Math.min(1, (volume / 100) * outputFade));
     const apply = () => {
       const el = playerRef.current?.getMediaElement?.();
       if (el) {
@@ -146,7 +150,7 @@ export function PlayerBridge() {
     const id = setInterval(() => { if (cancelled || apply()) clearInterval(id); }, TIMING.VOLUME_APPLY_RETRY_MS);
     const timeout = setTimeout(() => clearInterval(id), TIMING.VOLUME_APPLY_GIVE_UP_MS);
     return () => { cancelled = true; clearInterval(id); clearTimeout(timeout); };
-  }, [volume, currentItem?.contentId]);
+  }, [volume, outputFade, currentItem?.contentId]);
 
   useEffect(() => () => {
     if (stallTimerRef.current) {
