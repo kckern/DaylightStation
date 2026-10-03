@@ -8,6 +8,7 @@ import { ClientIdentityProvider, FIRST_USE_KEY } from './ClientIdentityProvider.
 import { useClientIdentity } from './useClientIdentity.js';
 import { HouseApiError } from '../house/houseApi.js';
 import { STORAGE_KEYS } from '../constants.js';
+import { getDeviceId } from '../../../lib/deviceIdentity.js';
 
 vi.mock('../externalControl/useControlRegistration.js', () => ({ useControlRegistration: () => ({ ready: false }) }));
 
@@ -39,6 +40,11 @@ describe('ClientIdentityProvider and the screen registry', () => {
     await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('Kitchen tablet|Kitchen|'));
     // Persisted: the name survives a reload.
     expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.BROWSER_IDENTITY)).name).toBe('Kitchen tablet');
+  });
+
+  it('makes every request name this browser by its registry id (X-Daylight-Device)', () => {
+    render(<ClientIdentityProvider api={api()}><Probe /></ClientIdentityProvider>);
+    expect(getDeviceId()).toBe('browser:aaaa1111-2222');
   });
 
   it('renames through the registry and keeps the registry answer', async () => {

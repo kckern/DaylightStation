@@ -75,6 +75,25 @@ export function getDeviceId() {
   }
 }
 
+/**
+ * Make an app-held browser identity the id this browser reports.
+ *
+ * The Media app gives each browser a stable `clientId` that the household
+ * screen registry, playback broadcasts and remote control all know it by
+ * (`browser:<clientId>`). The backend reads "which screen asked" from this
+ * header (a load's origin, `POST /media/screens/announce`, suggestions), so the
+ * two must be one id or "Started by" can't name the device a person used.
+ * A named fleet screen keeps its `fleet:` id.
+ *
+ * @param {string} token - the browser's clientId
+ */
+export function adoptBrowserDeviceId(token) {
+  if (typeof token !== 'string' || !token.trim()) return;
+  const value = token.trim();
+  inMemoryId = `browser:${value}`;
+  try { window.localStorage.setItem(STORAGE_KEY, value); } catch { /* in-memory id still holds for this page */ }
+}
+
 /** Test seam: drop the memoised value so a fresh environment can be exercised. */
 export function _resetDeviceIdForTests() {
   inMemoryId = null;

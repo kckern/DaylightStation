@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, waitFor, act } from '@testing-library/react';
-import { useScreenRegistry, mergeRegistryNames } from './useScreenRegistry.js';
+import { useScreenRegistry, mergeRegistryNames, registryLagsLiveNames } from './useScreenRegistry.js';
 import { HouseApiError } from './houseApi.js';
 
 let captured;
@@ -48,5 +48,13 @@ describe('mergeRegistryNames', () => {
     expect(merged[0]).toMatchObject({ name: 'Den TV', location: 'Den', wasName: 'Living Room TV', screenId: 'fleet:livingroom-tv' });
     expect(merged[1]).toMatchObject({ name: 'Kitchen tablet', wasName: null, screenId: 'browser:a' });
     expect(merged[2]).toMatchObject({ name: 'Office', screenId: 'fleet:office-tv' });
+  });
+
+  it('trusts a browser\'s live name over an older copy of the list, and says the copy is stale', () => {
+    const byId = new Map([['browser:a', { id: 'browser:a', name: 'Hall phone', wasName: null }]]);
+    const merged = mergeRegistryNames([{ id: 'browser:a', name: 'Den phone', liveName: 'Den phone', type: 'browser' }], byId);
+    expect(merged[0].name).toBe('Den phone');
+    expect(registryLagsLiveNames(merged, byId)).toBe(true);
+    expect(registryLagsLiveNames([{ id: 'browser:a', screenId: 'browser:a', liveName: 'Hall phone' }], byId)).toBe(false);
   });
 });

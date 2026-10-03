@@ -62,6 +62,15 @@ export function useScreenRegistry({ api = defaultApi, pollMs = REGISTRY_POLL_MS 
   return useMemo(() => ({ ...state, byId, refresh }), [state, byId, refresh]);
 }
 
+/** Browser rows whose live name differs from the cached registry: it is stale. */
+export function registryLagsLiveNames(devices, byId) {
+  return devices.some((device) => {
+    if (!device.liveName) return false;
+    const entry = byId?.get?.(device.screenId ?? device.id);
+    return !!entry && entry.name !== device.liveName;
+  });
+}
+
 /**
  * Fleet rows named by the registry (RQ-HOUSE-06): a configured screen's
  * rename/room override and a browser's registered name win over devices.yml
@@ -75,7 +84,9 @@ export function mergeRegistryNames(devices, byId) {
     return {
       ...device,
       screenId,
-      name: entry.name || device.name,
+      // A browser adopts its registry name and reports it on every heartbeat,
+      // so its live name is never older than this (polled) copy of the list.
+      name: device.liveName || entry.name || device.name,
       ...(entry.room ? { location: entry.room, room: entry.room } : {}),
       wasName: entry.wasName ?? null,
       renamedAt: entry.renamedAt ?? null,
