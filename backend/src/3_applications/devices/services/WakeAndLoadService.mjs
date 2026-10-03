@@ -708,6 +708,18 @@ export class WakeAndLoadService {
         const baseLoadResult = await device.loadContent(screenPath, {});
         if (baseLoadResult.ok) {
           this.#logger.info?.('wake-and-load.load.baseUrlLoaded', { deviceId, dispatchId });
+        } else if (this.#eventBus?.getTopicSubscriberCount?.(topic) === 0) {
+          // The base page could not be loaded either (e.g. FKB unreachable) and
+          // still nothing is subscribed: a fallback broadcast would reach no
+          // one and then report ok. Not delivered (PR-10, re-verify 2).
+          this.#emitProgress(topic, dispatchId, 'load', 'failed', { error: 'Screen not connected' });
+          this.#logger.warn?.('wake-and-load.load.no-receiver', {
+            deviceId, dispatchId, urlError: loadResult.error ?? null, baseError: baseLoadResult.error ?? null,
+          });
+          result.error = 'Screen not connected';
+          result.failedStep = 'load';
+          result.totalElapsedMs = this.#clock.now() - startTime;
+          return result;
         }
 
         // Give the screen framework time to mount and subscribe to WS

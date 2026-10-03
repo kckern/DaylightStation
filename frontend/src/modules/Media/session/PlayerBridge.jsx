@@ -243,16 +243,22 @@ export function PlayerBridge() {
 
   const contentId = currentItem?.contentId ?? null;
   // A Player that gives up reports it (onResilienceEvent) and THEN clears. The
-  // failure already advanced the queue; when the next visit has the same
-  // content (repeat one, or a duplicate entry) the same Player instance stays
-  // mounted and its clear lands on the NEW visit's callback, advancing twice
-  // (review nit). The clear that trails a forwarded failure is ignored.
+  // failure already advanced the queue. In the normal order that trailing
+  // clear arrives on the failed visit's own callback and the generation guard
+  // drops it; when the next visit has the same content (repeat one, or a
+  // duplicate entry) the same Player instance may clear through the NEW
+  // visit's callback instead, advancing twice (review nit). So the failure is
+  // keyed to the generation that failed: a clear for the next visit is the
+  // stale one only until that visit shows progress; after that, its end is
+  // genuine (re-verify 1: never a wall-clock window).
   const failureClearRef = useRef(null);
-  const STALE_CLEAR_WINDOW_MS = 2000;
   const onClear = useCallback(() => {
-    if (playbackGenerationRef.current !== playbackGeneration) return;
     const failure = failureClearRef.current;
-    if (failure && Date.now() - failure.at < STALE_CLEAR_WINDOW_MS) {
+    if (playbackGenerationRef.current !== playbackGeneration) {
+      if (failure && failure.generation === playbackGeneration) failureClearRef.current = null;
+      return;
+    }
+    if (failure && failure.generation < playbackGeneration) {
       failureClearRef.current = null;
       return;
     }
@@ -263,6 +269,11 @@ export function PlayerBridge() {
   const onProgress = useCallback((payload) => {
     if (playbackGenerationRef.current !== playbackGeneration) return;
     if (!contentId || controller.getSnapshot().currentItem?.contentId !== contentId) return;
+    // This visit is playing: a pending failure from an earlier visit no
+    // longer stands in for its end.
+    if (failureClearRef.current && failureClearRef.current.generation < playbackGeneration) {
+      failureClearRef.current = null;
+    }
     if (typeof payload === 'object' && payload !== null) {
       controller.onPlayerObservation?.(contentId, payload);
     }
@@ -478,7 +489,7 @@ export function PlayerBridge() {
     }
     if (error?.kind !== 'resilience-exhausted') return;
     const sourceGaveUp = error.reason === 'source-unavailable-gave-up';
-    failureClearRef.current = { at: Date.now() };
+    failureClearRef.current = { generation: playbackGeneration };
     controller.onPlayerError?.({
       message: error.reason ? `Playback gave up (${error.reason})` : 'Playback gave up',
       code: sourceGaveUp ? 'source-unavailable-gave-up' : 'resilience-exhausted',

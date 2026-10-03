@@ -725,7 +725,9 @@ path "sent"; the receiver-outcome watchdog then decides (§9.14).
 broadcast either: it returns `{ ok: false, failedStep: 'load', error: 'Screen
 not connected' }` (a terminal "Not sent" in Media). A zero subscriber count
 alone still takes the fallback, because a cold FKB screen has no subscriber
-until the page the fallback loads subscribes.
+until the page the fallback loads subscribes; but if that base-page load also
+fails and the count is still zero, the load fails the same way instead of
+broadcasting to no one.
 
 **Verified by:**
 - `backend/tests/unit/suite/4_api/v1/routers/device.load-adopt.test.mjs` — adopt body validation + idempotency-conflict mapping

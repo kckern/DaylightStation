@@ -127,4 +127,25 @@ describe('PlayerBridge recovery', () => {
     act(() => { latestProps.clear(); });
     expect(controller.getSnapshot().queue.items[controller.getSnapshot().queue.currentIndex].queueItemId).toBe('q-1b');
   });
+
+  it('re-verify 1: in the prod order the stale clear is consumed, and the next item\'s genuine end soon after still advances', () => {
+    const three = structuredClone(restored);
+    three.queue.items = [entry(1, 'Arrival'), entry(2, 'Nova'), entry(3, 'Dune')];
+    const controller = createLocalSessionController({ clientId: 'c1', persistedSnapshot: three });
+    mount(controller);
+    act(() => { controller.transport.play(); });
+    // Prod order: the exhausted Player reports, the controller advances
+    // (LOAD_ITEM bumps the generation synchronously), then the SAME call
+    // stack runs the old visit's clear.
+    const staleClear = latestProps.clear;
+    act(() => {
+      latestProps.onResilienceEvent({ kind: 'resilience-exhausted', reason: 'stall' });
+      staleClear();
+    });
+    expect(controller.getSnapshot().currentItem.contentId).toBe('plex:2');
+    // B plays briefly and genuinely ends well inside the old 2 s window.
+    act(() => { latestProps.onProgress({ currentTime: 590, paused: false }); });
+    act(() => { latestProps.clear(); });
+    expect(controller.getSnapshot().currentItem.contentId).toBe('plex:3');
+  });
 });

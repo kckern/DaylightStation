@@ -8,7 +8,7 @@ import { testApplicationRuntime } from '../../../_lib/applicationRuntime.mjs';
 
 const logger = () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() });
 
-function setup({ subscribers = 0, loadResult = { ok: false, error: 'Screen not connected (no receiver subscribed)' } } = {}) {
+function setup({ subscribers = 0, loadResult = { ok: false, error: 'Screen not connected (no receiver subscribed)' }, loads = null } = {}) {
   const broadcast = vi.fn();
   const eventBus = {
     getTopicSubscriberCount: vi.fn().mockReturnValue(subscribers),
@@ -21,10 +21,12 @@ function setup({ subscribers = 0, loadResult = { ok: false, error: 'Screen not c
     powerOn: vi.fn().mockResolvedValue({ ok: true, skipped: 'no_device_control' }),
     setVolume: vi.fn(),
     prepareForContent: vi.fn().mockResolvedValue({ ok: true, coldRestart: false, cameraSkipped: true }),
-    loadContent: vi.fn().mockResolvedValue(loadResult),
+    loadContent: loads ?? vi.fn().mockResolvedValue(loadResult),
   };
+  const runtime = testApplicationRuntime();
+  runtime.scheduler.wait = vi.fn().mockResolvedValue(undefined);
   const svc = new WakeAndLoadService({
-    ...testApplicationRuntime(),
+    ...runtime,
     deviceService: { get: vi.fn().mockReturnValue(device) },
     readinessPolicy: { isReady: vi.fn().mockResolvedValue({ ready: true }) },
     broadcast, eventBus,
@@ -47,6 +49,26 @@ describe('WakeAndLoadService with no receiver', () => {
   it('keeps the existing WebSocket fallback for a URL failure while a receiver is subscribed', async () => {
     const { svc, broadcast } = setup({ subscribers: 1, loadResult: { ok: false, error: 'FKB unreachable' } });
     const result = await svc.execute('tv', { play: 'plex:1' }, { dispatchId: 'd-2', deferredRetry: false });
+    expect(queueBroadcasts(broadcast).length).toBeGreaterThan(0);
+    expect(result.ok).toBe(true);
+  });
+
+  it('re-verify 2: FKB unreachable for both the URL and the base page, still nobody subscribed: Screen not connected, no void broadcast', async () => {
+    const loads = vi.fn()
+      .mockResolvedValueOnce({ ok: false, error: 'FKB unreachable' })
+      .mockResolvedValueOnce({ ok: false, error: 'FKB unreachable' });
+    const { svc, broadcast } = setup({ subscribers: 0, loads });
+    const result = await svc.execute('tv', { play: 'plex:1' }, { dispatchId: 'd-3', deferredRetry: false });
+    expect(result).toMatchObject({ ok: false, failedStep: 'load', error: 'Screen not connected' });
+    expect(queueBroadcasts(broadcast)).toEqual([]);
+  });
+
+  it('re-verify 2: cold FKB whose base page loads keeps the WebSocket fallback', async () => {
+    const loads = vi.fn()
+      .mockResolvedValueOnce({ ok: false, error: 'url failed' })
+      .mockResolvedValueOnce({ ok: true });
+    const { svc, broadcast } = setup({ subscribers: 0, loads });
+    const result = await svc.execute('tv', { play: 'plex:1' }, { dispatchId: 'd-4', deferredRetry: false });
     expect(queueBroadcasts(broadcast).length).toBeGreaterThan(0);
     expect(result.ok).toBe(true);
   });
