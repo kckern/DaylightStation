@@ -8,6 +8,14 @@ const ERROR_BACKOFF_CAP_MS = 30000; // ceiling for escalating fault backoff
 const ERROR_ALERT_THRESHOLD = 10;   // consecutive faults → one prominent "reader wedged" alert
 const OVERHEAT_COOLDOWN_MS = 30000; // thermal fault: rest this long (device closed, LED off) to cool
 
+// libfprint's software thermal model (temp_hot_seconds, default 180s) disables a
+// device that has been active for 3 minutes straight — per FpDevice, i.e. per
+// helper process. An unbounded identify therefore tripped TOO_HOT every 3:00 and
+// left the reader blind for the 30s cooldown, every 3.5 minutes, around the clock.
+// The caller bounds each identify to IDENTIFY_WINDOW_S (below 180s) and the loop
+// re-arms a fresh, cold process the instant a window expires untouched.
+export const IDENTIFY_WINDOW_S = 150;
+
 // The uru4000 firmware disables the device when it overheats (error quark 257).
 // Re-probing on the normal escalating backoff keeps the illumination LED cycling
 // and never lets it cool, so one thermal trip snowballs into a persistent fault.
@@ -44,7 +52,7 @@ export function createContinuousScanLoop({
   async function run() {
     active = true;
     let n = 0;
-    const stats = { matched: 0, unrecognized: 0, identifyErrors: 0, throws: 0, busy: 0, cancelled: 0, noTemplates: 0 };
+    const stats = { timeouts: 0, matched: 0, unrecognized: 0, identifyErrors: 0, throws: 0, busy: 0, cancelled: 0, noTemplates: 0 };
     let consecutiveErrors = 0;
     let lastQuietReason = null; // throttle repetitive busy/no-templates lines to state transitions only
     let wedgedAlerted = false;  // emit the "reader likely wedged" alert once per fault streak
@@ -66,7 +74,7 @@ export function createContinuousScanLoop({
 
     const heartbeat = () => {
       logger.log?.(
-        `🔐 scan-loop heartbeat: iter=${n} matched=${stats.matched} unrecognized=${stats.unrecognized} `
+        `🔐 scan-loop heartbeat: iter=${n} timeouts=${stats.timeouts} matched=${stats.matched} unrecognized=${stats.unrecognized} `
         + `identifyErrors=${stats.identifyErrors} throws=${stats.throws} busy=${stats.busy} cancelled=${stats.cancelled}`
       );
     };
@@ -122,6 +130,13 @@ export function createContinuousScanLoop({
               lastQuietReason = 'no-templates';
             }
             await delay(NO_TEMPLATES_BACKOFF_MS);
+          } else if (result.reason === 'timeout') {
+            // The bounded identify window expired with no touch: the reader was open
+            // and healthy the whole time. Re-arm at once (no blind gap) and count it
+            // as progress so spaced-out faults never add up to a false wedge alert.
+            stats.timeouts += 1;
+            clearFaults();
+            await delay(0);
           } else if (result.reason === 'cancelled') {
             // Preempted by enroll/manage — expected; reset the error streak and stay quiet.
             stats.cancelled += 1;

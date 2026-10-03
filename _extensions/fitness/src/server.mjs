@@ -8,7 +8,7 @@ import { ANTPlusManager } from './ant.mjs';
 import { BLEManager } from './ble.mjs';
 import { selectSimCandidate } from './unlockSim.mjs';
 import { createReaderArbiter } from './readerArbiter.mjs';
-import { createContinuousScanLoop } from './continuousScanLoop.mjs';
+import { createContinuousScanLoop, IDENTIFY_WINDOW_S } from './continuousScanLoop.mjs';
 import { startBtInventoryBroadcast } from './btInventory.mjs';
 import { handleBtPairRequest, handleBtRemoveRequest } from './btPairing.mjs';
 import { exec as nodeExec } from 'child_process';
@@ -102,10 +102,14 @@ function runIdentifyScan(uuids, { signal }) {
       : { matched: false, reason: 'identify-error', error: err.message }));
 }
 
-// Blocking full-store identify for the continuous loop. No --uuids (full store),
-// no helper timeout (--timeout 0); the arbiter cancels it via signal when preempted.
+// Blocking full-store identify for the continuous loop. No --uuids (full store).
+// Each call is bounded to IDENTIFY_WINDOW_S so the helper never reaches libfprint's
+// 180s TOO_HOT threshold; an untouched window resolves reason 'timeout' and the loop
+// re-arms a fresh process. The node-side kill is a backstop for a helper that hangs
+// past its own timer. The arbiter cancels it via signal when preempted.
 function runContinuousIdentify({ signal }) {
-  return runFingerprintHelper(['identify', '--timeout', '0'], { timeoutMs: 0, signal })
+  return runFingerprintHelper(['identify', '--timeout', String(IDENTIFY_WINDOW_S)],
+    { timeoutMs: (IDENTIFY_WINDOW_S + 20) * 1000, signal })
     .then((r) => (r && r.matched && r.uuid)
       ? { matched: true, uuid: r.uuid }
       // Carry the helper's error through (e.g. the underlying GLib/USB message) so
