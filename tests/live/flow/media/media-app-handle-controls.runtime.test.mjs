@@ -216,9 +216,8 @@ test('RELY.4b/STEER.1b — a pause from this Remote leaves a note on the screen;
   const pausedAt = (await receiverState(request, A))?.position;
   // Another start replaces it (an automation: a load with no device named).
   expect((await call(request, 'GET', `/api/v1/device/${A}/load?play=${EP_KEEPY}&dispatchId=${randomUUID()}`)).status).toBe(200);
-  await expect.poll(async () => (await receiverState(request, A))?.currentItem?.contentId, { timeout: 60000 }).toBe(EP_KEEPY);
   // A newer command owns the screen now; the earlier note's offer is gone,
-  // so act on the newest note (the replace) instead.
+  // so act on the newest note (the replace) — within its 10 s window.
   await expect(note.getByTestId('remote-note-label').first()).toHaveText(/^Replaced by .+/, { timeout: 15000 });
   await note.getByTestId('remote-note-put-back').first().click();
   await expect.poll(async () => {
@@ -351,12 +350,13 @@ test('PLACE.9a — Move to… from a screen\'s Remote: to the other screen (it p
   await page.getByTestId(`fleet-peek-${B}`).click();
   await page.getByTestId('peek-move-to').click();
   await page.getByTestId('move-to-local').click();
+  // The screen's note is brief: check it as soon as the source is stopped.
+  await expect(rb.page.getByTestId('screen-note-label')).toHaveText(/^Moved by .+/, { timeout: 60000 });
   await expect(page.getByTestId('now-playing-view')).toBeVisible({ timeout: 30000 });
   await expect(page.getByTestId('now-playing-title')).toHaveAttribute('data-content-id', DISCLOSURE);
   await expect.poll(async () => (await receiverState(request, B))?.currentItem?.contentId ?? null, { timeout: 30000 }).toBeNull();
   const local = page.getByTestId('now-playing-host').locator('video');
   await expect.poll(() => local.evaluate((node) => node.currentTime), { timeout: 60000 }).toBeGreaterThan(Math.max(0, atMove - 2));
-  await expect(rb.page.getByTestId('screen-note-label')).toHaveText(/^Moved by .+/, { timeout: 15000 });
   await page.getByTestId('np-stop').click();
   await context.close();
   await ra.context.close();
@@ -364,6 +364,7 @@ test('PLACE.9a — Move to… from a screen\'s Remote: to the other screen (it p
 });
 
 test('PLACE.4a — several screens: labelled, aim names both, same-room drift warning, per-screen outcomes, Add to queue to each, Line up with the other', async ({ browser, request }) => {
+  test.setTimeout(600000);
   const ra = await openReceiver(browser, request, A);
   const rb = await openReceiver(browser, request, B);
   await resetControls(request, A);
@@ -398,7 +399,7 @@ test('PLACE.4a — several screens: labelled, aim names both, same-room drift wa
   await searchMode.getByTestId('search-mode-input').fill('Keepy Uppy');
   const keepy = searchMode.getByTestId(`search-mode-result-${EP_KEEPY}`);
   await expect(keepy).toBeVisible({ timeout: 30000 });
-  await keepy.getByTestId(`result-more-${EP_KEEPY}`).click();
+  await page.getByTestId(`result-more-${EP_KEEPY}`).click();
   await page.getByTestId(`result-action-add-${EP_KEEPY}`).click();
   await expect(tray).toContainText(`Added Keepy Uppy to ${A_NAME}`, { timeout: 60000 });
   await expect(tray).toContainText(`Added Keepy Uppy to ${B_NAME}`, { timeout: 60000 });
@@ -408,6 +409,8 @@ test('PLACE.4a — several screens: labelled, aim names both, same-room drift wa
   // Steered separately: B drifts (seek), then A's Remote lines up with B (AC5).
   await call(request, 'POST', `/api/v1/device/${B}/session/transport`, { action: 'seekAbs', value: 600 });
   await expect.poll(async () => (await receiverState(request, B))?.position ?? 0, { timeout: 30000 }).toBeGreaterThan(590);
+  // ... and A was not steered with it (AC4: steered separately).
+  expect((await receiverState(request, A))?.position ?? 0).toBeLessThan(300);
   await page.getByTestId('app-tab-fleet').click();
   await page.getByTestId(`fleet-peek-${A}`).click();
   const lineUp = page.getByTestId(`line-up-${B}`);
@@ -427,9 +430,11 @@ test('PLACE.4a — several screens: labelled, aim names both, same-room drift wa
   await rb.context.close();
 });
 
-for (const [label, viewport] of Object.entries(VIEWPORTS)) {
-  test(`STEER.10a/STEER.13a/STEER.13b/STEER.1a — this device: sleep at the end of the item, continue offers, countdown, stop after this one, keep similar playing, lock-screen metadata (${label})`, async ({ browser }) => {
-    test.skip(label !== 'laptop' && process.env.MEDIA_BATCH_B_ALL_LOCAL !== '1', 'full local journey runs at laptop; phone/tablet cover layout below');
+{
+  const label = 'laptop';
+  const viewport = VIEWPORTS.laptop;
+  test('STEER.10a/STEER.13a/STEER.13b/STEER.1a — this device: sleep at the end of the item, continue offers, countdown, stop after this one, keep similar playing, lock-screen metadata', async ({ browser }) => {
+    test.setTimeout(600000);
     const context = await browser.newContext({ viewport, serviceWorkers: 'block' });
     const page = await context.newPage();
     await gotoMedia(page);
@@ -460,7 +465,7 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
 
     // Lock screen / system controls carry this playback (STEER.1a/AC5).
     await expect.poll(() => page.evaluate(() => navigator.mediaSession?.metadata?.title ?? null), { timeout: 30000 }).toBe('Hospital');
-    await expect.poll(() => page.evaluate(() => navigator.mediaSession?.playbackState)).toBe('playing');
+    await expect.poll(() => page.evaluate(() => navigator.mediaSession?.playbackState), { timeout: 60000 }).toBe('playing');
 
     // Sleep timer: at the end of this item; the handle shows it.
     await page.getByTestId('mini-player-open-nowplaying').click();

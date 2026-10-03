@@ -7,7 +7,7 @@
 import { useEffect } from 'react';
 import mediaLog from '../logging/mediaLog.js';
 
-const PLAYING = new Set(['playing', 'buffering']);
+const PLAYING = new Set(['playing', 'buffering', 'loading']);
 const SEEK_STEP_S = 10;
 const POSITION_PUSH_MS = 5_000;
 
