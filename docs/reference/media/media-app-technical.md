@@ -719,6 +719,66 @@ within 60s MUST be a no-op.
 parallel `POST /api/v1/device/:id/load` calls with independent `dispatchId`s.
 Failure isolation is per-device.
 
+### 4.9 Screen session controls (P1)
+
+Each route sends one envelope to the screen and maps its ack exactly like
+§4.3 (200 / 400 / 404 / 409 / 502 with the screen's `code`). Every body takes
+`commandId` (required) and `origin` (optional, §6.2.7). The screen publishes
+the resulting state in `snapshot.controls` (§9.14).
+
+| Route | Body | Envelope |
+|---|---|---|
+| `PUT /api/v1/device/:id/session/add-only` | `{ enabled: bool }` | `config` `{ setting: "addOnly", value }` |
+| `PUT /api/v1/device/:id/session/end-of-queue` | `{ mode: "stop" \| "repeat" \| "similar" }` | `config` `{ setting: "endOfQueue", value }` |
+| `PUT /api/v1/device/:id/session/stop-after-current` | `{ enabled: bool }` | `config` `{ setting: "stopAfterCurrent", value }` |
+| `POST /api/v1/device/:id/session/sleep-timer` | `{ minutes: 0 < n <= 720 }` **or** `{ atEnd: "item" }` | `session` `{ action: "sleep-timer", … }` |
+| `POST /api/v1/device/:id/session/sleep-timer/cancel` | `{}` | `session` `{ action: "cancel-sleep-timer" }` |
+| `POST /api/v1/device/:id/session/sleep-timer/resume` | `{}` | `session` `{ action: "resume-sleep" }` — continue from where the timer was set |
+| `POST /api/v1/device/:id/session/put-back` | `{ noteId? }` | `session` `{ action: "put-back" }` |
+| `POST /api/v1/device/:id/session/countdown/cancel` | `{}` | `session` `{ action: "cancel-countdown" }` |
+| `POST /api/v1/device/:id/session/countdown/start-now` | `{}` | `session` `{ action: "start-next-now" }` |
+
+Screen refusals (502): `PUT_BACK_UNAVAILABLE` (no restore snapshot, older than
+10 s, or a newer playback owns the screen), `SLEEP_RESUME_UNAVAILABLE`,
+`NO_COUNTDOWN`, `INVALID_SESSION_COMMAND`.
+
+The remote controller exposes these as `controller.sessionControls.{setSleepTimer,
+cancelSleepTimer, resumeSleep, putBack, cancelCountdown, startNextNow,
+setAddOnly, setEndOfQueue, setStopAfterCurrent}` and sends its optional
+`origin` on every command (`peek/RemoteSessionController.js`).
+
+**Origin on every session route.** `transport`, `queue/:op`, the config PUTs,
+`claim` and the routes above accept `origin`. A fleet device naming itself in
+the `X-Daylight-Device` header (`fleet:<id>`) IS the origin — a body cannot
+claim another device, only supply its display `name`. Otherwise an explicit
+body origin is used, else any header device. A malformed origin (or a `name`
+over 80 characters) is a 400. `claim`'s stop is sent with `intent: "move"`
+(§6.2.1).
+
+**Load dispatches.** `GET /device/:id/load` attributes the dispatch to the
+header device. WakeAndLoad stamps every screen envelope with that origin, or
+with `{ kind: "routine", name: "Automation" }` when no caller was named (Home
+Assistant buttons, schedules, triggers, barcode fallbacks) — which Add only
+never rewrites.
+
+**Verified by:**
+- `backend/src/4_api/v1/routers/device.session-controls.test.mjs` — every route, validation, origin passthrough/fallback, refusal mapping
+- `backend/src/3_applications/devices/services/SessionControlService.session-controls.test.mjs` — envelopes, origin, claim intent, appliedAs passthrough
+- `frontend/src/modules/Media/peek/RemoteSessionController.sessionControls.test.js` — remote methods + origin
+
+### 4.10 `GET /api/v1/device/:id/start-status`
+
+Start progress or last failure for one screen, readable by every device
+(RQ-HOUSE-04). Response: `{ ok: true, status: DeviceStartStatus | null }`
+(§9.15); 503 when not wired. Live updates ride `device-start:<deviceId>`
+(§7.2), replayed to new exact and wildcard subscribers — so a house view
+opened after a failed start still shows it.
+
+**Verified by:**
+- `backend/src/3_applications/devices/services/DeviceStartStatusService.test.mjs` — phase folding, lastFailure lifetime, superseded dispatches, staleness
+- `backend/tests/unit/suite/0_system/eventbus/WebSocketEventBus.deviceStart.test.mjs` — routing + replay
+- `backend/src/5_composition/composition-contract-registry.test.mjs` (`devices.start-status-reaches-every-house-view`)
+
 ---
 
 ## 5. Reserved
@@ -749,8 +809,9 @@ shape consumed by `useScreenCommands`):
   "targetDevice": "<deviceId>",
   "targetScreen": "<screenId>",
   "commandId": "<uuid>",
-  "command": "transport" | "queue" | "config" | "adopt-snapshot" | "system",
+  "command": "transport" | "queue" | "config" | "adopt-snapshot" | "system" | "display" | "handoff" | "session",
   "params": { /* command-specific */ },
+  "origin": { /* optional, §6.2.7 */ },
   "ts": "<ISO-8601>"
 }
 ```
@@ -770,7 +831,8 @@ shape consumed by `useScreenCommands`):
 #### 6.2.1 `command: "transport"`
 ```json
 { "action": "play" | "pause" | "stop" | "seekAbs" | "seekRel" | "skipNext" | "skipPrev",
-  "value": <number> }
+  "value": <number>,
+  "intent": "move" /* optional: this stop takes playback to another screen */ }
 ```
 Device routes to the active renderer via the ActionBus. Seek values in seconds.
 
@@ -787,9 +849,12 @@ Device routes to the active renderer via the ActionBus. Seek values in seconds.
 
 #### 6.2.3 `command: "config"`
 ```json
-{ "setting": "shuffle" | "repeat" | "shader" | "volume",
+{ "setting": "shuffle" | "repeat" | "shader" | "volume" | "addOnly" | "endOfQueue" | "stopAfterCurrent",
   "value": <per-setting> }
 ```
+`addOnly` and `stopAfterCurrent` take a boolean, `endOfQueue` one of
+`stop | repeat | similar` (§6.6). Screens route these three to their session
+controls and ack them on the outcome, not on receipt.
 
 #### 6.2.4 `command: "adopt-snapshot"`
 Used for Hand Off (C7.2). Atomic replace of current session.
@@ -810,6 +875,29 @@ On any failure mid-adoption, device MUST reset to idle and ack with error.
 `reset`, `reload`, `sleep`, `wake`. Ported from existing `useScreenCommands`
 into the envelope.
 
+#### 6.2.6 `command: "session"`
+Screen session actions (§6.6). Validated by
+`validateSessionActionParams` in `shared/contracts/media/sessionControls.mjs`.
+```json
+{ "action": "sleep-timer", "minutes": <0 < n <= 720> }
+{ "action": "sleep-timer", "atEnd": "item" }
+{ "action": "cancel-sleep-timer" | "resume-sleep" | "cancel-countdown" | "start-next-now" }
+{ "action": "put-back", "noteId": "<optional note id>" }
+```
+Acked on the outcome (`media:session-control-applied`, or an `ok: false` ack
+with the refusal code).
+
+#### 6.2.7 Command `origin`
+Optional on every envelope: who issued the command.
+```json
+{ "kind": "device", "id": "browser:<clientId>" | "fleet:<deviceId>" | "<deviceId>", "name": "<optional human name>" }
+{ "kind": "routine", "name": "<routine name>", "triggerId": "<optional>" }
+```
+Screens stamp the latest playback-relevant command's origin into
+`snapshot.meta.origin` (volume and shader changes do not count) and use it to
+name screen notes. Local input on the screen stamps `{ kind: "device", id:
+<the screen's own deviceId> }`.
+
 ### 6.3 Published topic — device acks
 
 ```json
@@ -825,6 +913,13 @@ into the envelope.
 ```
 Acks MUST be sent within 5 seconds of receiving the command. For long
 operations, ack indicates acceptance; completion observable via state feed.
+
+Optional `appliedAs` / `requestedOp` (queue ops) say how a command was
+actually applied when it differs from what was asked. Add only (§6.6) acks a
+`play-now` with `{ appliedAs: "add", requestedOp: "play-now" }`. The device
+gateway and `SessionControlService` pass both through to the HTTP response,
+and `/device/:id/load` reports `appliedAs` on its result (WakeAndLoad then
+watches for the queue append rather than a playback start).
 
 **Verified by:**
 - `shared/contracts/media/envelopes.test.mjs` — `buildCommandAck` + `validateCommandAck`
@@ -869,6 +964,116 @@ Payload:
 | New hook: `useCommandAckPublisher()` — publishes acks on `device-ack:<id>` when ActionBus handlers complete. | Per-command acknowledgement. |
 | `sessionSource` contract — device's queue controller and player expose a stable read interface the publisher subscribes to. | Decouple publisher from player internals. |
 
+### 6.6 Screen session controls (P1)
+
+Implemented in `frontend/src/screen-framework/session/` (state machine
+`screenSessionControls.js`, bound by `ScreenSessionControlsHost.jsx`, one per
+screen with a device identity). Everything below is published in
+`snapshot.controls` (§9.14) on every state broadcast; control changes
+re-publish immediately.
+
+**Add only (RQ-PLAY-10).** While on, another DEVICE's `queue` `play-now` — or
+`item-action` `playNow`/`shuffle` — is applied as an add (`appliedAs: "add"`
+on the ack, §6.3; the start status reports `queued`). Exempt, so they always
+play: local input, routine and originless commands (automations), and the
+screen's own fleet origin. When nothing is loaded there is no queue to
+protect, so the command plays normally.
+
+**Session-scoped modes.** Add only, end-of-queue and stop-after-current belong
+to the session they were set in: they return to `false / stop / false` when
+that session's queue goes idle or a new local/URL start replaces it, and are
+restored only together with a power-cut restore (never on their own).
+
+**End of queue (RQ-STEER-19), exclusive setting `stop | repeat | similar`.**
+`stop` keeps today's end. `repeat` restarts the queue at its first item.
+`similar` adds the next batch from the finished item's container (owner
+decision O2, revised) and plays on:
+- siblings API → parent container; a parent id starting `library:` is the
+  adapter's whole-library fallback, so nothing similar;
+- episodes climb from the season into the show, tracks from the album into
+  the artist (queue API of that ancestor, natural season/disc + index order);
+  a playlist plays its remainder and then stops;
+- preference, never a gate: never-played items after the finished one →
+  items not played within 7 days (household `lastPlayed`) → least recently
+  played; never something queued here or playing on another screen;
+- batches of at most 5 items or about 30 minutes, appended as ONE item
+  action (one undo record) with every item marked `addedBy: "auto-continue"`;
+  the next batch is fetched when the last auto-added item starts;
+- nothing it already added since the last human input is added again, so a
+  container is cycled at most once; after 4 unattended batches (~2 h) it
+  stops. Any device command or local start resets both;
+- nothing left → stop with `endOfQueueStatus: { code: "NOTHING_SIMILAR",
+  message: "Nothing similar left" }`. Live items have no queue-end choice.
+Policy: `shared/contracts/media/continuation.mjs`; resolver:
+`screen-framework/session/continuationResolver.js`.
+
+**Next episode and stop after this one (RQ-STEER-20).** At the natural end of
+an episode whose next queue item is also an episode, the screen shows a
+10-second countdown (`controls.countdown`), cancellable from the screen (its
+button, or Back) and remotely (`cancel-countdown`, `start-next-now`). Cancel
+stops on the finished episode with the queue kept. `stopAfterCurrent` stops
+at the end of the current item once, then clears itself
+(`endOfQueueStatus.code: "STOPPED_AFTER_CURRENT"`). The Player consults these
+through `modules/Player/lib/naturalEndPolicy.js`. A registration carries
+`isOwner(playerInstanceId)` and only the Player the screen session is bound
+to (its action owner) is consulted — any other Player on the page (a school
+lesson, a composite view, the Media app) keeps its own end behaviour. Skips,
+failures and clears never reach it. A skip, seek, transport or queue command
+— or the current item changing by any route — supersedes a running countdown,
+and the policy's `release()` lets go of the held end so the finished item can
+complete (and advance) again if it is played to its end once more.
+
+**Sleep timer (RQ-STEER-12).** `minutes` counts down (`remainingSeconds`
+published), fades the screen's output over the last 10 s (a transient
+multiplier in `ScreenVolumeProvider`, never the user's master), stops with
+the queue kept, then restores full output. `atEnd: "item"` stops at the end
+of the current item. Both record `setPosition` when set and leave
+`sleepResume` after stopping; `resume-sleep` restores that item and spot and
+plays.
+
+**Screen notes and Put it back (RQ-STEER-21).** A remote pause, stop, replace
+(`play-now`, item-action Play/Shuffle, adopt, handoff start) or move (stop
+with `intent: "move"`, handoff `commit-stop`) of loaded playback adds a note
+`"<Paused|Stopped|Replaced|Moved> by <origin name>"`; repeats of the same
+kind from the same origin within 60 s are grouped (`count`). Volume and
+shader changes never make notes. The pre-change snapshot is kept for 10 s:
+`put-back` (or the note's button) restores item, spot and queue — playing
+if it was playing — unless a newer remote command or local playback has
+since taken the screen. The last five notes are published in
+`controls.notes`, so a screen that cannot render them still shows them on its
+house-view row.
+
+**Power cut (RQ-RELY-08).** The backend's last snapshot
+(`DeviceLivenessService`) is in server memory only and dies with the house
+power, so **the screen persists its own session** in browser storage
+(`daylight.screen-session.v2:<deviceId>`, `session/sessionPersistence.js`):
+- kept only while somebody is in a session — playing, paused, buffering,
+  loading or stalled. Stop (`ready`), Move here (which stops this screen),
+  the natural end of the queue and idle CLEAR the record;
+- the full queue is written on change; a 5 s tick moves only the current
+  item's spot while playing;
+- on a cold start the screen waits 2.5 s and re-adopts the session **paused**
+  (never autoplay) through `media:restore-snapshot` — unless the page URL
+  carried autoplay parameters, any start reached the screen since mount, or a
+  playback owner is already registered;
+- the screen re-checks immediately before adopting: if any start reached it
+  after the restore began, or (power restore) the owner already holds an
+  item, the restore is refused with `RESTORE_SUPERSEDED`;
+- a restored session keeps its ORIGINAL `savedAt` and a `restored` mark until
+  a person or remote resumes it (a transport, seek, queue or local start
+  followed by `playing` — a transient `playing` report during the paused
+  adopt does not count); a never-resumed one is not offered again. Records
+  older than 24 h and live items are never restored.
+
+**Verified by:**
+- `frontend/src/screen-framework/session/*.test.*` — state machine, resolver, host, persistence
+- `frontend/src/modules/Player/Player.naturalEndPolicy.test.jsx` — Player seam
+- `frontend/src/screen-framework/commands/useScreenCommands.sessionControls.test.jsx` — Add only, notes, origin, routing
+- `frontend/src/screen-framework/publishers/useCommandAckPublisher.sessionControls.test.jsx`, `registrySessionSource.controls.test.js`
+- `frontend/src/screen-framework/actions/ScreenActionHandler.restore.test.jsx`, `screenItemActions.autoContinue.test.js`
+- `shared/contracts/media/sessionControls.test.mjs`, `continuation.test.mjs`
+- `tests/live/flow/media/screen-session-controls.runtime.test.mjs` — one browser journey per behaviour on the virtual receiver (run with `tests/_lib/media-redesign-server.mjs`)
+
 ---
 
 ## 7. WebSocket — Topics & Envelope
@@ -892,6 +1097,7 @@ Unknown fields MUST be ignored.
 | `device-state:<deviceId>` | backend → subscribers | device (via relay) | `DeviceStateBroadcast` | Reactive + heartbeat per §6.4. Replay last snapshot to new subscribers. |
 | `device-ack:<deviceId>` | backend → subscribers | device (via relay) | `CommandAck` | Ack for every command. |
 | `homeline:<deviceId>` | backend → subscribers | backend | `WakeProgressEvent` | Dispatch orchestration steps. |
+| `device-start:<deviceId>` | backend → subscribers | backend (`DeviceStartStatusService`) | `DeviceStartStatus` (§9.15) | Start progress / last failure per screen; replayed on subscribe (exact and wildcard). |
 | `screen:<deviceId>` | backend → device | backend | `CommandEnvelope` (§6.2) | Only targeted device subscribes. |
 | `playback_state` | broadcast | controller app | `PlaybackStateBroadcast` | Local (browser) session heartbeat. |
 | `client-control:<clientId>` | backend → controller app | external systems | `CommandEnvelope` (§6.2) targeted at `clientId` | Inbound commands targeting this browser's local session (C8.4). |
@@ -987,10 +1193,15 @@ Central portable type.
   },
   "meta": {
     "updatedAt": "<ISO-8601>",
-    "ownerId": "<deviceId>" | "<clientId>"
-  }
+    "ownerId": "<deviceId>" | "<clientId>",
+    "origin": { /* optional — who last commanded it, §6.2.7 */ }
+  },
+  "controls": { /* optional — screen session controls, §9.14 */ }
 }
 ```
+
+Queue items added by "keep similar things playing" carry
+`addedBy: "auto-continue"` and the batch's `itemActionId`.
 
 ### 9.3 `QueueSnapshot`
 ```json
@@ -1066,7 +1277,9 @@ Central portable type.
   "ok": <bool>,
   "error": "<string, optional>",
   "code": "<string, optional>",
-  "appliedAt": "<ISO-8601>"
+  "appliedAt": "<ISO-8601>",
+  "appliedAs": "<queue op, optional — e.g. add>",
+  "requestedOp": "<queue op, optional — e.g. play-now>"
 }
 ```
 
@@ -1128,6 +1341,63 @@ Not a strict shape — adapter-specific. Minimum:
 }
 ```
 
+### 9.14 `SessionSnapshot.controls`
+Validated by `validateSessionControls` (`shared/contracts/media/sessionControls.mjs`).
+Every field is present on a published block.
+```json
+{
+  "addOnly": <bool>,
+  "endOfQueue": "stop" | "repeat" | "similar",
+  "stopAfterCurrent": <bool>,
+  "sleepTimer": null | {
+    "mode": "minutes" | "atEnd",
+    "minutes": <n>, "endsAt": "<ISO>", "remainingSeconds": <int>,   /* minutes mode */
+    "atEnd": "item",                                                 /* atEnd mode */
+    "setAt": "<ISO>", "fading": <bool>,
+    "setPosition": { "contentId": "...", "queueItemId": "...", "position": <s> } | null
+  },
+  "sleepResume": null | { "contentId": "...", "queueItemId": "...", "position": <s>, "setAt": "<ISO>", "stoppedAt": "<ISO>" },
+  "countdown": null | {
+    "seconds": 10, "endsAt": "<ISO>", "remainingSeconds": <int>,
+    "next": { "contentId": "...", "title": "...", "queueItemId": "..." },
+    "current": { "contentId": "...", "title": "..." }
+  },
+  "endOfQueueStatus": null | {
+    "code": "NOTHING_SIMILAR" | "SIMILAR_ADDED" | "STOPPED_AFTER_CURRENT",
+    "message": "Nothing similar left", "count": <n>, "contentIds": [...], "title": "...", "at": "<ISO>"
+  },
+  "notes": [ {
+    "id": "...", "kind": "paused" | "stopped" | "replaced" | "moved",
+    "label": "Paused by Dad's phone", "count": <int>, "at": "<ISO>",
+    "origin": { /* §6.2.7 */ } | null,
+    "putBack": null | { "availableUntil": "<ISO>" }
+  } ]
+}
+```
+
+### 9.15 `DeviceStartStatus`
+Published on `device-start:<deviceId>`; validated by `validateDeviceStartStatus`.
+```json
+{
+  "topic": "device-start",
+  "deviceId": "<id>",
+  "dispatchId": "<uuid>",
+  "phase": "starting" | "delivered" | "queued" | "started" | "failed",
+  "step": "power" | "verify" | "volume" | "prepare" | "prewarm" | "load" | "playback" | "queue",
+  "stepStatus": "<wake-progress status>",
+  "error": "<string, required when failed>",
+  "contentId": "<optional>",
+  "lastFailure": null | { "dispatchId": "...", "step": "...", "error": "...", "at": "<ISO>" },
+  "stale": <bool — non-terminal and quiet for 2 minutes>,
+  "updatedAt": "<ISO>"
+}
+```
+`delivered` = the content reached the screen (`load` done); `queued` = it
+was taken as a queue add (Add only, or a requested add) — nothing started;
+`started` = playback confirmed; a playback/queue `timeout` is a failure. A
+dispatch never inherits an earlier dispatch's `contentId`. `lastFailure` stays until a later start succeeds. Late terminal
+events from a superseded dispatch are ignored.
+
 ---
 
 ## 10. Log Event Taxonomy
@@ -1182,6 +1452,27 @@ dot-delimited namespaces. Every event SHOULD include `clientId`,
 | `external-control.rejected` | warn | Rejected command. | `commandId`, `reason` |
 | `url-command.processed` | info | URL param triggered action. | `param`, `value` |
 | `url-command.ignored` | debug | Duplicate or unsupported URL param. | `param` |
+
+Screen session controls (component `ScreenSessionControls` / `ScreenSessionControlsHost` /
+`ScreenContinuation` / `ScreenCommands`, screen side; `session-control.*` and
+`device-start-status.*` backend side):
+
+| Event | Level | Emitted when | Key fields |
+|---|---|---|---|
+| `setting.changed` | info | Add only / end-of-queue / stop-after-current set. | `ownerId`, `setting`, `value` |
+| `commands.add-only-applied` | info | A remote Play was applied as an Add. | `commandId`, `requestedOp`, `contentId`, `origin` |
+| `note.recorded` | info | A screen note was made or grouped. | `kind`, `count`, `origin`, `contentId` |
+| `put-back.restored` / `put-back.refused` / `put-back.failed` | info/warn | Put it back outcome. | `noteId`, `contentId`, `code` |
+| `sleep-timer.set` / `.fading` / `.stopped` / `.cancelled` / `.resumed` | info | Sleep timer lifecycle. | `mode`, `minutes`, `setPosition`, `resume` |
+| `countdown.started` / `countdown.ended` | info | Next-episode countdown. | `current`, `next`, `reason` |
+| `stop-after-current.stopped`, `end-of-queue.repeat`, `end-of-queue.similar` | info | Natural-end policy decisions. | `contentId` |
+| `continuation.resolved` / `.no-container` | info | Similar batch resolution. | `parentId`, `containerId`, `kind`, `batch` |
+| `auto-continue.added` / `.nothing-similar` / `.abandoned` / `.refill` | info | Auto-continue outcomes. | `count`, `contentIds`, `operationId` |
+| `power-restore` / `power-restore.skipped` | info/warn | Cold-start re-adoption. | `ok`, `contentId`, `position`, `savedAt` |
+| `media.restore-snapshot` | info/warn | Screen adopted a restore snapshot. | `reason`, `autoplay`, `ok`, `code` |
+| `natural-end-policy-handled` (playback log) | info | Player deferred to the screen policy. | `assetId`, `hasNext` |
+| `session-control.session` (backend) | info/warn | Session action outcome. | `deviceId`, `action`, `ok`, `code` |
+| `device-start-status.changed` (backend) | info/warn | Start status phase change. | `deviceId`, `dispatchId`, `phase`, `error` |
 
 ### 10.2 Sampling
 

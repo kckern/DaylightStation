@@ -177,7 +177,9 @@ app.use('/api/v1/play', createPlayRouter({
 // only in a virtual browser, never on the configured garage screen.
 // Read-only virtual-browser fixtures. The audio track is pinned by rating key
 // as well as its runtime test selector; titles alone are not stable identity.
-export const BRANCH_ALLOWED_TITLES = ['55854', '697368', '675677', '584614'];
+// 266151/266152: two adjacent short episodes (Bluey S1E2/E3) for the screen
+// next-episode countdown and end-of-queue journeys.
+export const BRANCH_ALLOWED_TITLES = ['55854', '697368', '675677', '584614', '266151', '266152'];
 const allowedTitles = new Set(policy === 'branch' ? BRANCH_ALLOWED_TITLES
   : policy === 'hls-copy-55854' ? ['55854'] : ['675677']);
 
@@ -260,6 +262,13 @@ export function createAcceptancePreviewPlugin({ app, allowedTitles, policy, sour
       // Read-only timestamp evidence; engine selection is production code.
       return { code: code.replace(anchor, anchor + observation), map: null };
     },
+    // frontend/vite.config.js proxies /ws to the household dev backend. In
+    // the acceptance dev server /ws belongs to the fixture-local EventBus;
+    // leaving that proxy in place made it answer every screen socket upgrade
+    // with a refused backend connection, so no screen ever subscribed.
+    config(userConfig) {
+      if (userConfig?.server?.proxy && '/ws' in userConfig.server.proxy) delete userConfig.server.proxy['/ws'];
+    },
     configureServer: install,
     configurePreviewServer: install,
   };
@@ -298,6 +307,11 @@ export async function runAcceptanceServer() {
   const plugin = createAcceptancePreviewPlugin({ app, allowedTitles, policy, sourceSha, upstream, ordinaryDeviceFixture });
   const shared = {
     root: 'frontend', configFile: 'frontend/vite.config.js', plugins: [plugin],
+    // Worktrees symlink frontend/node_modules to the main checkout, so the
+    // default dep-optimizer cache is shared by every concurrent dev server and
+    // they re-optimize (and reload the page) under each other. A worktree run
+    // can point at its own cache directory.
+    ...(process.env.MEDIA_ACCEPTANCE_VITE_CACHE_DIR ? { cacheDir: process.env.MEDIA_ACCEPTANCE_VITE_CACHE_DIR } : {}),
   };
   const server = dist ? await preview({ ...shared, build: { outDir: dist }, preview: {
     host: '127.0.0.1', port: 0, strictPort: false, headers: {
@@ -307,7 +321,10 @@ export async function runAcceptanceServer() {
     // Parallel workers may save unrelated files during a journey. Tests load
     // current source on navigation, but an HMR remount must not masquerade as
     // a user-visible state-loss defect in the middle of ordinary interaction.
-    host: '127.0.0.1', port: 0, strictPort: false, hmr: false,
+    // `ws: false` too: with only `hmr: false` the Vite client still opens its
+    // socket, the fixture EventBus answers that upgrade, the client sees a
+    // bad frame, decides the server restarted and reloads the page forever.
+    host: '127.0.0.1', port: 0, strictPort: false, hmr: false, ws: false,
     // /ws belongs to the fixture-local EventBus below. Do not proxy it to
     // the household server: that would make the virtual screen claim a real
     // device route and defeat the acceptance boundary.

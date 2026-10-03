@@ -12,6 +12,17 @@ export class IDeviceTransportGateway {
   deliverQueue(_request) { throw new Error('deliverQueue must be implemented'); }
   publishProgress(_progress) { throw new Error('publishProgress must be implemented'); }
   watchPlayback(_options) { throw new Error('watchPlayback must be implemented'); }
+  /** WakeAndLoad `wake-progress` events per device (RQ-HOUSE-04). */
+  subscribeWakeProgress(_listener) { throw new Error('subscribeWakeProgress must be implemented'); }
+  /** Publish a device start status on `device-start:<deviceId>`. */
+  publishStartStatus(_deviceId, _status) { throw new Error('publishStartStatus must be implemented'); }
+}
+
+/** The slice of the transport gateway DeviceStartStatusService depends on. */
+export function isDeviceStartProgressGateway(value) {
+  return value != null
+    && typeof value.subscribeWakeProgress === 'function'
+    && typeof value.publishStartStatus === 'function';
 }
 
 export function isDeviceTransportGateway(value) {
