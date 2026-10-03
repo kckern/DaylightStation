@@ -330,6 +330,11 @@ Dispatches content to a remote surface.
 | `repeat` | `1` | Enable repeat. |
 | `open` | path | Route the target to a specific app surface before dispatching. |
 | `dispatchId` | UUID | **(amended)** Correlates WS `wake-progress` events. |
+| `routine` | string ≤ 64 | Names the routine sending this load; stripped before the screen sees the query (§2.6). |
+| `routineId` | string ≤ 96 | Optional stable id for that routine (e.g. `automation:kitchen_button_1`). |
+
+A Home Assistant caller (User-Agent `HomeAssistant/…`) is treated as a routine
+even without `routine=`; see §2.6 for how it is named, deduped and recorded.
 
 **Which screen loads.** A kiosk-driven target is navigated to its screen route
 (`/screen/<name>`). The route comes from the device's `screen_path` in
@@ -391,8 +396,11 @@ else the `X-Daylight-Device` header when the client sent it (every
 `fleet:` id must be declared in the household's `devices.yml`.
 `ephemeral:` ids and the User-Agent fallback never key a spot. No device →
 legacy single-playhead write only. `play/log` also accepts an optional
-`origin` string (≤ 64 chars) recorded on the ledger row; no caller sends one
-yet.
+`origin` recorded on the ledger row: structured `{kind: "device"|"routine",
+id, name}` (ids ≤ 96, names ≤ 64 chars; a device needs `id`, a routine `id`
+or `name`; anything else is dropped to null) or legacy free text (≤ 64).
+When a start reports none, the ledger takes the origin a load noted for that
+screen within the last 3 min (routine or remote send, §2.6).
 
 **Defaults** (NF-DEF): unfinished after **5 min or 5%** played; finished at
 **90%** — the line `MediaProgress.isWatched`, `completedAt` and Plex
@@ -457,8 +465,12 @@ library's) are merged: newest record's fields, every screen's newest spot.
 { "startedAt": "2026-10-03T04:54:07.081Z", "localTime": "2026-10-02 21:54:07",
   "deviceId": "fleet:livingroom-tv", "contentId": "plex:12",
   "title": "S1E2", "kind": "episode",
-  "parentId": "plex:10", "grandparentId": "plex:100", "origin": null }
+  "parentId": "plex:10", "grandparentId": "plex:100",
+  "origin": { "kind": "routine", "id": "automation:kitchen_button_1", "name": "Kitchen Button 1: Morning Program" } }
 ```
+
+`origin` is null when unknown; rows written before 2026-10-03 may hold a
+legacy string.
 
 #### `GET /household/recent?limit=24`
 
@@ -528,9 +540,9 @@ filled from the catalog at add time. **400**: missing `id`, unknown `kind`.
 | `DELETE /household/removed` (undo) | `id` (body or query) | `{ id, restored: boolean }` |
 
 A removal hides what was played **up to** `removedAt` from recent and carry
-on; playing the item again brings it back. Suggestions are built in the
-client today, so the client filters them with `GET /household/removed`.
-The 10 s undo window is a client concern: undo is `DELETE`.
+on; playing the item again brings it back. Server-side suggestions (§2.9)
+leave removed ids out. The 10 s undo window is a client concern: undo is
+`DELETE`.
 
 #### `POST /household/watched`
 
@@ -562,6 +574,306 @@ screens' previous spots.
 `backend/src/4_api/v1/routers/{media.household,play.spots}.test.mjs`,
 `tests/isolated/adapter/persistence/{YamlMediaProgressMemory.spots,YamlHouseholdMediaListsDatastore,YamlPlayLedgerDatastore}.test.mjs`.
 
+
+### 2.5 Household screen registry
+
+**Exists.** One list of every screen in the house under a human name that is
+unique household-wide (RQ-HOUSE-06, RQ-HOUSE-08, RQ-AUTO-02). Router:
+`backend/src/4_api/v1/routers/mediaHouse.mjs` (mounted on the media router);
+service: `backend/src/3_applications/media/ScreenRegistryService.mjs`; rules:
+`backend/src/2_domains/media/screenRegistry.mjs`. Every route in §2.5–2.9
+takes the optional `?household=<id>` (**404** `HOUSEHOLD_NOT_FOUND` when it
+names no household) and answers **501** when its service is not wired.
+
+**Screen ids** are stable; routines and the ledger use them, never names.
+
+| Id | Screen | Source of name/room |
+|---|---|---|
+| `fleet:<devices.yml key>` | a configured TV, kiosk, tablet or speaker — devices with `content_control`, a `fleet` lane, a `plex` client or a playback type | `devices.yml` `name` / `location` (read-only); an app rename or room change is an **override stored in the registry**, never a `devices.yml` write |
+| `browser:<clientId>` | a browser running the app | registered the first time it announces itself (or publishes `playback_state`); the registry name is then authoritative |
+| `screen:<slug>` | a screen added by hand | the registry |
+
+Bare devices.yml keys are accepted wherever a screen id is (`livingroom-tv`
+→ `fleet:livingroom-tv`).
+
+**Stored** at `household[-{id}]/media/screens.yml` (`{ screens: {<id>: …},
+aliases: {<duplicate id>: {into, mergedAt}} }`), written only through the app.
+An announce from a known screen refreshes an in-memory `lastSeen` and
+persists it at most every 10 min. `lastSeen` also comes from fleet
+`device-state` heartbeats (online/offline) and each screen's newest play-ledger
+start.
+
+**Names.** Trimmed, single-spaced, ≤ 48 chars, unique case-insensitively among
+live (not retired) screens, including configured names. A rename to a taken
+name is **409 `NAME_TAKEN`** with `heldBy` and a free `suggestion`
+(`"Kitchen tablet (2)"`), unless `onCollision: "suffix"` takes the suggestion.
+A browser registering under a taken name is suffixed with its id prefix
+(`"Kitchen tablet (aaaa1111)"`), as the client's `renameBrowserIdentity` does.
+Renames are recorded (`renames: [{from, to, at}]`, last 10); `wasName` is the
+name the screen had at the start of the last week's renames, shown as
+"Poo (was Kitchen tablet)" for **7 days** *(default)*.
+
+**Routine warning.** Renaming or retiring a screen that a routine targets
+(§2.6, including duplicates merged into it) is **409 `ROUTINES_TARGET`** with
+the `routines` until repeated with `confirm: true`. Routines follow the id, so
+a confirmed rename never breaks them.
+
+`Screen`:
+
+```json
+{ "id": "fleet:livingroom-tv", "kind": "screen", "screenId": "livingroom-tv",
+  "name": "Den TV", "configuredName": "Living Room TV",
+  "wasName": "Living Room TV", "renamedAt": "2026-10-03T08:00:00.000Z",
+  "room": "Living Room", "type": "shield-tv", "configured": true, "wakeable": true,
+  "source": "configured", "firstSeen": null, "lastSeen": "2026-10-03T05:00:00.000Z",
+  "online": true, "retiredAt": null, "aliases": ["browser:c74f…"] }
+```
+
+`kind`: `screen` (fleet) | `browser` | `added`. `wakeable`: devices.yml has
+`device_control` (a routine can turn it on). `online`: from fleet liveness,
+null when unknown (browsers, or no heartbeat since the backend started).
+`aliases`: duplicates merged into it.
+
+| Route | Body / query | Response |
+|---|---|---|
+| `GET /screens` | — | `{ screens: [Screen], notSeenLately: [Screen], retired: [Screen] }` — by name; `notSeenLately` = silent > **30 days** *(default)* and not online |
+| `POST /screens` | `{ name, room? }` | **201** `{ screen }` (`screen:<slug>`) |
+| `POST /screens/announce` | `{ id?, name?, room? }` — `id` defaults to `X-Daylight-Device` | `{ screen }` |
+| `GET /screens/:id` | — | `{ screen, routines }` (**404** unknown) |
+| `PATCH /screens/:id` | `{ name?, room?, onCollision?: "reject"\|"suffix", confirm? }` (`room: null` clears an override) | `{ screen, routines }` |
+| `POST /screens/:id/merge` | `{ into, confirm }` — without `confirm: true`, **409** `CONFIRM_REQUIRED` with `routines` targeting either screen | `{ screen, movedSpots }` |
+| `POST /screens/:id/unmerge` | — (`:id` = the merged duplicate) | `{ screen, restoredSpots }` (**404** `NOT_MERGED`) |
+| `POST /screens/:id/retire` | `{ confirm? }` | `{ screen, routines }` |
+| `POST /screens/:id/restore` | — | `{ screen }` (**409** if its name was taken meanwhile) |
+| `GET /screens/:id/routines` | — | `{ items: [{ id, name, kind, source }] }` |
+
+**Merge** (confirmed) folds a duplicate into its earlier self: the
+duplicate's id becomes an alias (plays, started-by, time-of-day and history
+follow it; chains are flattened, each re-pointed duplicate remembering the
+hop in `via`), the earliest `firstSeen` and latest `lastSeen` are kept, and
+the folded entry is kept on the alias (`aliases[id].was`). Its per-screen
+spots are folded by `mediaSpots.foldSpot` through the progress store's
+`updateSpots` (read, change, write with no await between, so a concurrent
+`play/log` write is never lost): the newest spot takes the target's key and
+the other stays under the alias — nothing is dropped; `lastDevice` follows.
+The folds are recorded on the alias. **Unmerge** restores the duplicate as its
+own screen (its old name, suffixed if another screen took it meanwhile),
+points duplicates that came along through it back at it, and folds its spots
+back (`unfoldSpot`) unless the target has played on them since. A configured
+screen cannot be merged away — merge the duplicate into it. **Retire** removes a screen from the list and frees its
+name. Errors: **400** `INVALID_NAME` / `INVALID_SCREEN_ID` / `INVALID_MERGE`,
+**404** `SCREEN_NOT_FOUND`, **409** `NAME_TAKEN` / `ROUTINES_TARGET` /
+`CONFIRM_REQUIRED` / `SCREEN_MERGED`, **404** `NOT_MERGED`.
+
+Log events: `media.screens.registered|renamed|room_set|added|merged|unmerged|retired|restored`
+(info); `media.screens.spot_move_failed`, `.spot_restore_failed`, `.signals_failed`,
+`.configured_read_failed` (warn); `eventbus.screen_presence.failed` (warn).
+
+### 2.6 Routines
+
+**Exists.** Which routines start playback on which screen, and how their
+starts went (RQ-AUTO-02, RQ-AUTO-05). Service:
+`RoutineCatalogService`, `RoutineHistoryService`, `RoutineLoadRecorder`
+(`backend/src/3_applications/media/`); rules:
+`backend/src/2_domains/media/routineCatalog.mjs`, `routineHistory.mjs`.
+
+**Where routines come from.** Home Assistant automations and scripts that end
+in `GET /api/v1/device/<id>/load?<query>`. The catalog follows each
+automation → script → `rest_command` chain, substituting the variables passed
+along it (`query: queue=morning-program` into
+`load?{{ query | default(...) }}`, and automation/script `variables:`), to
+the target screen (`fleet:<id>`) and query. Include directories are read
+recursively, as HA's `include_dir_*` do. Sources, merged:
+
+| Source | When |
+|---|---|
+| `live` | the HA config read in place (`rest_commands/` merged, `scripts/` named by file, `automations/` one per file) from system config `media-routines.yml` → `homeAssistant.configDir` (the HA `_includes` dir), cached 60 s. Unreadable → unavailable. |
+| `snapshot` | the last catalog imported via `PUT /routines/catalog`, stored at `household[-{id}]/media/routines.yml`; used when no live source is available (the container does not mount the HA config). Push it with `node cli/media-routines.cli.mjs push --dir <HA _includes> --url <app>` — the CLI extracts the routines locally and sends only `{routines}`, never the HA config. |
+| `observed` | routines neither knows, seen in the routine history or as a routine `origin` on play-ledger starts in the last 30 days (a routine driving a browser by command reaches the ledger this way) — `id: "observed:<slug>"` |
+
+`Routine`: `{ id: "automation:kitchen_button_4", name, kind: "automation"|"script"|"command"|"observed",
+source, targets: [{ deviceId: "fleet:livingroom-tv", screenId, query }], via: ["script:…", "rest_command:…"] }`.
+A loading `rest_command` that nothing calls is listed as `kind: "command"`.
+
+**Who asked for a load.** The device router's wake-and-load runs inside a
+request context (`withRequestContext`: User-Agent, `X-Daylight-Device`). For
+each `GET|POST /device/:id/load`:
+
+1. `routine=<name>` (optional `routineId=`) in the query → a routine that
+   names itself; both params are stripped before the screen sees the query.
+2. User-Agent `HomeAssistant/…` → a routine, named by matching screen + query
+   params (template values match anything; automations rank first) against
+   the **last catalog read** (`peekMatch`: a cache hit only — nothing is read
+   before the TV is woken; a missing or stale catalog is refreshed in the
+   background, and it is warmed at startup), else `"Home Assistant"`.
+3. `X-Daylight-Device` (`fleet:`/`browser:`, not the target itself) → a person
+   sending from that screen (`{kind: "device", id}`).
+
+A routine origin is handed to wake-and-load as `options.origin`
+(`{kind: "routine", name, id?, triggerId}`), so the screen's command envelope
+and session `meta.origin` name the routine rather than a generic one; a device
+origin the router already resolved from the request header is honoured as
+the asking device. The origin is noted for the target's next ledger start
+(3 min; cleared when the load fails). A routine's load runs through the routine dedupe (same routine +
+query to the same screen within **10 s** starts once; the repeat reports
+`deduplicated: true`) and its outcome is appended to
+`household[-{id}]/history/media-routines.yml` (30 days, 500 runs) **after the
+load has answered** — Home Assistant never waits on the registry lookup or the
+YAML write. A run only invalidates the catalog when its routine is not
+already listed. The load itself is never changed or failed by this.
+
+`RoutineRun`:
+
+```json
+{ "at": "2026-10-03T14:02:00.000Z",
+  "routine": { "id": "automation:kitchen_button_4", "name": "Kitchen Button 4: Slow TV" },
+  "deviceId": "fleet:livingroom-tv", "screenName": "Living Room TV",
+  "what": { "key": "queue", "value": "slow-tv", "contentId": null },
+  "outcome": "failed", "reason": "Living Room TV did not turn on",
+  "failedStep": "power", "elapsedMs": 19, "dispatchId": "7e04…",
+  "played": null }
+```
+
+`outcome`: `started` | `failed` | `deduplicated`. `reason` (plain, names the
+screen): power → "did not turn on"; verify → "turned on but didn't come up";
+prepare → "could not get ready"; load → "didn't respond — it may be asleep or
+closed"; prewarm → "Couldn't find <what>"; unknown device → "isn't set up";
+thrown → "Something went wrong (…)". `played`: the first ledger start on that
+screen within 5 min after a started run (`{contentId, title, startedAt}`).
+
+`RoutineFlag`: `{ routine: {id, name}, deviceId, screenName, problem, severity, reason }`.
+
+| `problem` | `severity` | When |
+|---|---|---|
+| `unknown-screen` | warn | target is not a screen in the registry |
+| `retired` | warn | target was retired |
+| `last-start-failed` | warn | the routine's last run on that screen failed (its reason) |
+| `unreachable` | warn | a browser not heard from in 10 min ("isn't open right now"), or a non-wakeable fleet screen reported offline |
+| `off` | info | a wakeable screen reported offline ("…is off; the routine will turn it on") |
+
+Unknown state (no heartbeat since the backend started) raises no flag.
+
+| Route | Body / query | Response |
+|---|---|---|
+| `GET /routines` | — | `{ routines: [Routine], sources: [{ name, kind, available, count, readAt?/importedAt?, used?, from? }] }` |
+| `PUT /routines/catalog` | `{ routines: [Routine], source? }` — ≤ 500 routines; `id` ≤ 128 and `name` ≤ 120 chars (strings, required); 1–20 `targets`, each a screen-id `deviceId` and a string `query` ≤ 1000; `via` ≤ 10 strings | `{ count, importedAt }`; anything malformed is **400** `INVALID_ROUTINES` with `errors`, nothing stored |
+| `GET /routines/history` | `?limit=50 (≤500)&deviceId=&routineId=` | `{ items: [RoutineRun] }` newest first; `deviceId` includes merged duplicates |
+| `GET /routines/flags` | — | `{ items: [RoutineFlag] }` |
+
+Log events: `media.routines.load`, `media.routines.run` (info; warn when
+failed), `media.routines.snapshot_imported` (info);
+`media.routines.history_write_failed`, `.history_record_failed`,
+`.live_read_failed`, `.refresh_failed`, `.snapshot_read_failed`,
+`.ha_file_unreadable` (file, error name, line — never the parser message,
+which quotes config), `.match_failed` (warn).
+
+### 2.7 Started by
+
+**Exists.** How a screen's playback started — by which device or routine, and
+when (RQ-HOUSE-07, HOUSE.5a). Service: `ScreenPlaybackService.startedBy`.
+
+Order: the screen's live session snapshot `meta.origin` (fleet
+`device-state`), else the ledger: the screen's starts (merged duplicates
+included) in the last 24 h are walked back through the **current run** —
+starts no more than 30 min apart — to the first carrying an origin, so every
+item of a queue a routine started reads "Started by Kitchen button, 7:02".
+A device origin is named from the registry.
+
+```json
+{ "deviceId": "fleet:livingroom-tv",
+  "playing": { "contentId": "plex:3", "title": "Third" },
+  "startedBy": { "kind": "routine", "id": "automation:kitchen_button_1", "name": "Kitchen Button 1: Morning Program" },
+  "at": "2026-10-03T14:02:31.000Z", "source": "ledger", "runStartedAt": "2026-10-03T14:02:31.000Z" }
+```
+
+`playing` is null when nothing reports playing now; `startedBy`/`at`/`source`
+are null when the run has no known origin (a person at the screen itself, or a
+start before origins were recorded). `kind` may be `unknown` for legacy text.
+
+| Route | Response |
+|---|---|
+| `GET /screens/:id/started-by` | the object above |
+| `GET /started-by` | `{ items: [ … ] }` for every screen playing now |
+
+### 2.8 Played earlier
+
+**Exists.** Each screen's plays, newest first, with picture, title and time
+played (RQ-FIND-17, FIND.11a). Every start is a row, so shuffled and "keep
+similar things playing" runs are included. Service:
+`ScreenPlaybackService.playedEarlier`.
+
+`GET /screens/:id/played-earlier?limit=50 (≤200)&before=<ISO>` →
+
+```json
+{ "deviceId": "fleet:livingroom-tv",
+  "items": [ { "contentId": "plex:59498", "startedAt": "2026-10-02T07:50:00.000Z",
+    "localTime": "2026-10-02 00:50:00", "title": "Bike",
+    "thumbnail": "/api/v1/proxy/plex/library/metadata/59498/thumb/17", "type": "episode",
+    "parentTitle": "Season 1", "grandparentTitle": "Bluey (2018)",
+    "parentId": "plex:59494", "grandparentId": "plex:59493",
+    "playedOn": "fleet:livingroom-tv", "origin": null } ] }
+```
+
+The item playing now is left out (it is not "earlier"). `before` pages back
+(**400** when unparseable). Display fields come from
+`HouseholdMediaMemoryService.describeMany` — the same catalog cache,
+concurrency (4) and deadlines (4 s each, 8 s per request) as §2.4; a miss keeps
+the ledger title and a null picture. Merged duplicates are included
+(`playedOn` says which id).
+
+### 2.9 Suggestions
+
+**Exists.** The start page's suggestions, built server-side (RQ-FIND-16,
+FIND.7a; owner-adopted definition of O3). Service:
+`backend/src/3_applications/media/MediaSuggestionsService.mjs`; rules:
+`backend/src/2_domains/media/mediaSuggestions.mjs`.
+
+`GET /suggestions?deviceId=` (`deviceId` defaults to `X-Daylight-Device`;
+anything but a screen id `^(fleet|browser|screen):[A-Za-z0-9._-]{1,96}$` is
+**400** `INVALID_SCREEN_ID`) →
+
+```json
+{ "deviceId": "fleet:livingroom-tv", "generatedAt": "2026-10-03T08:29:34.859Z", "empty": false,
+  "rows": [
+    { "id": "favourites", "title": "Favourites", "items": [ { "id": "plex:59493", "kind": "collection", "type": "show", "title": "Bluey", "thumbnail": "…", "continue": { "contentId": "plex:59535", "title": "Bingo" } } ] },
+    { "id": "carry-on", "title": "Carry on", "items": [ { "id": "plex:672414", "kind": "item", "type": "movie", "title": "…", "thumbnail": "…", "reason": "unfinished", "percent": 40, "playhead": 720, "duration": 1800, "playedOn": "fleet:livingroom-tv", "parentId": null, "grandparentId": null } ] },
+    { "id": "time-of-day", "title": "Usually here at this time", "items": [ { "id": "plex:59493", "kind": "collection", "type": "show", "title": "Bluey (2018)", "thumbnail": "…", "days": 3, "lastPlayedAt": "2026-10-02 00:50:00", "continue": { "contentId": "plex:59498", "title": "Bike" } } ] },
+    { "id": "new", "title": "New", "items": [ { "id": "plex:707595", "kind": "item", "type": "movie", "title": "The Terminators", "thumbnail": "…", "addedAt": "2026-10-01T…", "latest": null } ] } ] }
+```
+
+Rows, in order, empty rows hidden:
+
+| Row | From |
+|---|---|
+| Favourites | `GET /household/favourites` (read on every request) |
+| Carry on | `GET /household/carry-on` items |
+| Usually here at this time | ledger starts **on this screen** (and its merged duplicates) whose local start time is within **±90 min** of now (wrapping midnight), last **30 days**; grouped by collection (episode → show, track → album, else the item) and ranked by **distinct days**, not play count; at least **3** days; `continue` = the group's newest item. A screen with none falls back to the whole household, titled **"Usually at this time"**. |
+| New | catalog additions in the last **14 days** (Plex `/library/recentlyAdded`), episodes/seasons collapsed to their show and tracks to their album; `latest` = the newest item added to it (null when it is the item itself). Plex items now carry `metadata.addedAt` (ISO). |
+
+Rules: **≤ 6 per row, ≤ 20 in all**; duplicates removed with precedence
+favourites > carry on > time of day > new, matching through show/album ids (a
+dropped carry-on episode of a favourite show becomes that favourite's
+`continue`); anything **playing on any screen now** (and its show/album) and
+anything **removed from the household list** is left out. Nothing at all →
+`{ rows: [], empty: true }`: lead into Browse. The build (carry on, ledger
+scan, catalog lookups, recently added) is cached per household + screen for
+**5 min**; favourites, now-playing and removals are applied on every request.
+A failing section is logged and left empty. The household-wide parts (carry
+on, New, the ledger scan) are cached once per household; only "Usually here
+at this time" is cached per screen, in a map capped at 200 screens.
+
+Log events: `media.suggestions.built` (info: household build, counts, ms);
+`media.suggestions.section_failed`, `.ledger_read_failed`,
+`.now_playing_failed`, `.removed_read_failed`, `plex.recently_added.failed` (warn).
+
+**Verified by (§2.5–2.9):**
+`backend/src/2_domains/media/{screenRegistry,routineCatalog,routineHistory,mediaSuggestions,playLedger}.test.mjs`,
+`backend/src/3_applications/media/{ScreenRegistryService,ScreenSignalsReader,RoutineCatalogService,RoutineHistoryService,RoutineLoadRecorder,LoadOriginHints,ScreenPlaybackService,MediaSuggestionsService,PlayLedgerRecorder,HouseholdMediaMemoryService}.test.mjs`,
+`backend/src/4_api/v1/routers/mediaHouse.{screens,routines,playback,suggestions}.test.mjs`,
+`backend/src/1_adapters/{devices/ConfigMediaScreenCatalog,eventbus/EventBusScreenPresence,home-automation/HomeAssistantRoutineFileSource,content/media/plex/PlexAdapter.recentlyAdded}.test.mjs`,
+`backend/src/0_system/http/middleware/requestContext.test.mjs`,
+`tests/isolated/adapter/persistence/{YamlScreenRegistryDatastore,YamlRoutineStores}.test.mjs`,
+composition contract `media.routine-loads-reach-history-and-ledger-origin`.
 
 ---
 

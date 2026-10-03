@@ -71,6 +71,7 @@ data/
 │   ├── adapters.yml            # Shared service config
 │   ├── secrets.yml             # System-wide API keys
 │   ├── logging.yml             # Log levels
+│   ├── media-routines.yml      # homeAssistant.configDir — where the Media app reads HA routines (media-app-technical §2.6)
 │   └── apps/                   # App-specific config
 │
 ├── household/                  # Default household — DOMAIN-FIRST
@@ -87,7 +88,9 @@ data/
 │   ├── school/  piano/  finance/  weather/  automotive/    …one per domain
 │   ├── hardware/               #   scales.yml, barcode/, omr/, pressure-mats/
 │   ├── gaming/                 #   rules, content, manifests, profiles, assets
-│   ├── media/                  #   config.yml = DOMAIN, app.yml = SURFACE
+│   ├── media/                  #   config.yml = DOMAIN, app.yml = SURFACE; screens.yml (screen registry),
+│   │                           #   routines.yml (imported routine catalog) — written by the app only
+│   ├── history/                #   media-plays/<day>.yml (play ledger), media-routines.yml (routine runs)
 │   ├── triggers/               #   sources/responses/endpoints + bindings/ + state/
 │
 ├── household-jones/            # Secondary household

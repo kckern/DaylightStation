@@ -58,7 +58,9 @@ export class RecordPlaybackProgress {
     // `spotDeviceId` keys this screen's own spot (per-screen progress,
     // RQ-PLAY-09). Absent or unusable -> the legacy single-playhead write only.
     spotDeviceId = null,
-    // How this playback started, when the caller knows (e.g. 'routine:<id>').
+    // How this playback started, when the caller knows: a structured
+    // {kind:'device'|'routine', id, name} or legacy free text. The ledger
+    // normalizes it (see #domains/media/playLedger normalizeLedgerOrigin).
     origin = null,
   }) {
     let progressNamespace = type;
@@ -191,7 +193,7 @@ export class RecordPlaybackProgress {
             title: itemFacts?.title || itemMetadata?.title || title || null,
             type: itemMetadata?.type || itemFacts?.type || null,
           },
-          origin: typeof origin === 'string' ? origin : null,
+          origin: typeof origin === 'string' || (origin && typeof origin === 'object') ? origin : null,
         });
       } catch (error) {
         this.logger.warn?.('play.log.ledger_failed', { assetId, error: error.message });

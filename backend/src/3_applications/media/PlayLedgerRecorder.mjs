@@ -26,18 +26,23 @@ export class PlayLedgerRecorder {
   #store;
   #registry;
   #resumeGapMs;
+  #originHints;
   #logger;
 
   /**
    * @param {Object} deps
    * @param {import('./ports/IPlayLedgerDatastore.mjs').IPlayLedgerDatastore} deps.store
    * @param {number} [deps.resumeGapMs]
+   * @param {{take: Function}|null} [deps.originHints] - LoadOriginHints: the
+   *   origin a routine / remote load noted for the screen, used when the start
+   *   itself reports none
    */
-  constructor({ store, resumeGapMs = DEFAULT_RESUME_GAP_MS, registry = new PlaybackSessionRegistry(), logger = console }) {
+  constructor({ store, resumeGapMs = DEFAULT_RESUME_GAP_MS, registry = new PlaybackSessionRegistry(), originHints = null, logger = console }) {
     if (!store) throw new TypeError('PlayLedgerRecorder requires store');
     this.#store = store;
     this.#registry = registry;
     this.#resumeGapMs = resumeGapMs;
+    this.#originHints = originHints;
     this.#logger = logger;
   }
 
@@ -57,6 +62,7 @@ export class PlayLedgerRecorder {
     }
     const { opened } = this.#registry.record({ surfaceId: deviceId, contentId, at: atEpoch });
     if (!opened) return { opened: false, written: false };
+    if (!origin && this.#originHints) origin = this.#originHints.take(deviceId, atEpoch);
     try {
       await this.#store.append(buildPlayLedgerRow({ deviceId, contentId, startedAt, localTime, metadata, origin }));
       this.#logger.info?.('media.play-ledger.started', { deviceId, contentId, origin: origin ?? null });

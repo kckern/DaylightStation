@@ -23,6 +23,8 @@ import { ProviderFitnessContentCatalog } from '#adapters/fitness/ProviderFitness
 import { INSTALLED_STATE_GATES_POLICY } from './modules/installedStateGatesPolicy.mjs';
 import { YamlStateGatesPolicySource } from '#adapters/state-gates/index.mjs';
 import { createLibbyRuntime } from './modules/libby.mjs';
+import { createMediaHouseModule } from './modules/mediaHouse.mjs';
+import { runWithRequestContext } from '#system/runtime/requestContext.mjs';
 import { LibbyStreamGateway } from '#adapters/content/media/libby/LibbyStreamGateway.mjs';
 import { WebSocketEventBus } from '#adapters/eventbus/WebSocketEventBus.mjs';
 import { createDeviceStartStatusService, stopDeviceStartStatusService } from './modules/deviceStartStatus.mjs';
@@ -453,6 +455,44 @@ const contracts = [
       const applicationSource = fs.readFileSync(new URL('../3_applications/proxy/LibraryMediaStreamService.mjs', import.meta.url), 'utf8');
       expect(applicationSource).not.toMatch(/\bfetch\b|new URL|listen\.libbyapp|overdrive\.com|redirect:\s*['"]manual/);
       runtime.leases.dispose();
+    },
+  },
+  {
+    // A Home Assistant routine calling GET /device/:id/load must reach the
+    // routine history and stamp the screen's next ledger start. The device
+    // router only sees the wrapped wake-and-load, so a composition that passes
+    // the bare service (or drops the request context) records nothing and
+    // every routine start looks like an unknown one.
+    id: 'media.routine-loads-reach-history-and-ledger-origin',
+    async verify() {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'media-house-contract-'));
+      try {
+        const configService = {
+          getHouseholdPath: (rel) => path.join(dir, rel),
+          getHouseholdDevices: () => ({ devices: { 'livingroom-tv': { name: 'Living Room TV', type: 'shield-tv', device_control: {} } } }),
+          getAppConfig: () => null,
+        };
+        const house = createMediaHouseModule({ configService, logger: logger() });
+        const wakeAndLoad = { execute: vi.fn().mockResolvedValue({ ok: true, dispatchId: 'd1' }) };
+        const wrapped = house.wrapWakeAndLoad(wakeAndLoad);
+        await runWithRequestContext({ userAgent: 'HomeAssistant/2026.9 aiohttp/3.10' },
+          () => wrapped.execute('livingroom-tv', { queue: 'morning-program', routine: 'Morning program' }, {}));
+        // The screen's command envelope names the routine, not a generic origin.
+        expect(wakeAndLoad.execute).toHaveBeenCalledWith('livingroom-tv', { queue: 'morning-program' },
+          { origin: { kind: 'routine', name: 'Morning program', triggerId: 'Morning program' } });
+        // The history write runs after the load answers (HA never waits on it).
+        let items = [];
+        for (let i = 0; i < 50 && !items.length; i += 1) {
+          await new Promise((r) => setTimeout(r, 10));
+          ({ items } = await house.routineHistory.list({}));
+        }
+        expect(items).toEqual([expect.objectContaining({
+          routine: { id: null, name: 'Morning program' }, deviceId: 'fleet:livingroom-tv', outcome: 'started', screenName: 'Living Room TV',
+        })]);
+        expect(house.originHints.take('fleet:livingroom-tv', Date.now())).toEqual({ kind: 'routine', id: null, name: 'Morning program' });
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
     },
   },
   {

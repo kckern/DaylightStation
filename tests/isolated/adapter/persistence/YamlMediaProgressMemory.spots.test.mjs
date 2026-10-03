@@ -80,4 +80,36 @@ describe('YamlMediaProgressMemory per-screen spots', () => {
     const ids = all.map((e) => `${e.namespaceId}|${e.progress.contentId}`).sort();
     expect(ids).toEqual(['files|files:a', 'plex/6_movies|plex:1']);
   });
+
+  test('updateSpots rewrites only spots/lastDevice against the record as stored now', async () => {
+    await memory.saveProgress(new MediaProgress({
+      contentId: 'plex:1', playhead: 720, duration: 7200, lastPlayed: '2026-10-02 08:00:00', spots, lastDevice: 'browser:kid',
+    }), 'plex/6_movies');
+    // A play/log write lands after a caller listed the records but before it updates.
+    await memory.saveProgress(new MediaProgress({
+      contentId: 'plex:1', playhead: 900, duration: 7200, lastPlayed: '2026-10-02 08:05:00',
+      spots: { ...spots, 'browser:kid': { ...spots['browser:kid'], playhead: 900 } }, lastDevice: 'browser:kid',
+    }), 'plex/6_movies');
+    const seen = [];
+    const changed = await memory.updateSpots('plex:1', 'plex/6_movies', (current) => {
+      seen.push(current);
+      const next = { ...current.spots, 'browser:kitchen': current.spots['browser:kid'] };
+      delete next['browser:kid'];
+      return { spots: next, lastDevice: 'browser:kitchen' };
+    });
+    expect(changed).toBe(true);
+    expect(seen[0].spots['browser:kid'].playhead).toBe(900);
+    const loaded = await memory.findProgress('plex:1', 'plex/6_movies');
+    expect(loaded.playhead).toBe(900);
+    expect(loaded.spots['browser:kitchen'].playhead).toBe(900);
+    expect(loaded.spots['browser:kid']).toBeUndefined();
+    expect(loaded.lastDevice).toBe('browser:kitchen');
+  });
+
+  test('updateSpots: a missing record or a null answer writes nothing', async () => {
+    expect(await memory.updateSpots('plex:nope', 'plex/6_movies', () => ({ spots: {} }))).toBe(false);
+    await memory.saveProgress(new MediaProgress({ contentId: 'plex:2', playhead: 1, duration: 10, spots }), 'plex/6_movies');
+    expect(await memory.updateSpots('plex:2', 'plex/6_movies', () => null)).toBe(false);
+    expect((await memory.findProgress('plex:2', 'plex/6_movies')).spots).toEqual(spots);
+  });
 });

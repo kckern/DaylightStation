@@ -14,6 +14,20 @@ function build() {
 const at = (min) => ({ atEpoch: Date.UTC(2026, 9, 2, 20, min), startedAt: new Date(Date.UTC(2026, 9, 2, 20, min)).toISOString(), localTime: `2026-10-02 13:${String(min).padStart(2, '0')}:00` });
 
 describe('PlayLedgerRecorder', () => {
+  it('stamps a start that reports no origin with the pending load hint for that screen', async () => {
+    const rows = [];
+    const store = { append: vi.fn(async (row) => { rows.push(row); }), list: vi.fn(async () => rows) };
+    const hints = { take: vi.fn((deviceId) => (deviceId === 'fleet:tv' ? { kind: 'routine', id: 'r1', name: 'Morning' } : null)) };
+    const recorder = new PlayLedgerRecorder({ store, originHints: hints, logger: { info: vi.fn(), warn: vi.fn() } });
+    await recorder.observe({ deviceId: 'fleet:tv', contentId: 'plex:1', ...at(0) });
+    await recorder.observe({ deviceId: 'fleet:tv', contentId: 'plex:1', ...at(1) });
+    await recorder.observe({ deviceId: 'browser:b', contentId: 'plex:2', origin: 'given', ...at(2) });
+    expect(rows[0].origin).toEqual({ kind: 'routine', id: 'r1', name: 'Morning' });
+    expect(rows[1].origin).toBe('given');
+    // Heartbeats and starts that carry their own origin never consume a hint.
+    expect(hints.take).toHaveBeenCalledTimes(1);
+  });
+
   it('writes a row when a screen starts an item, not on every heartbeat', async () => {
     const { recorder, rows } = build();
     await recorder.observe({ deviceId: 'fleet:tv', contentId: 'plex:1', ...at(0) });

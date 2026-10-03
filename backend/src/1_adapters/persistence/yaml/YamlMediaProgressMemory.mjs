@@ -193,6 +193,29 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
   }
 
   /**
+   * Rewrite one record's per-screen spots against the record as stored NOW.
+   * Read, `update`, write with no await in between, so a play/log write that
+   * landed after the caller listed the records is neither lost nor
+   * overwritten: only `spots` / `lastDevice` change. `update` returns null to
+   * leave the record alone.
+   * @param {string} contentId
+   * @param {string} storagePath
+   * @param {(current: {spots: Object, lastDevice: string|null}) => ({spots: Object, lastDevice?: string|null}|null)} update
+   * @returns {Promise<boolean>} whether anything was written
+   */
+  async updateSpots(contentId, storagePath, update) {
+    const data = this._readFile(storagePath);
+    const record = data[contentId];
+    if (!record || typeof record !== 'object') return false;
+    const next = update({ spots: { ...(record.spots || {}) }, lastDevice: record.lastDevice ?? null });
+    if (!next) return false;
+    const written = { ...record, spots: next.spots };
+    if (next.lastDevice !== undefined) written.lastDevice = next.lastDevice;
+    this._writeFile(storagePath, { ...data, [contentId]: written });
+    return true;
+  }
+
+  /**
    * Get all media progress entries for a storage path
    * @param {string} storagePath
    * @returns {Promise<MediaProgress[]>}
