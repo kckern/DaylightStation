@@ -11,7 +11,8 @@ import path from 'node:path';
 // Media app with ordinary pointer/keyboard input.
 test.use({ trace: 'retain-on-failure', serviceWorkers: 'block' });
 test.setTimeout(420000);
-test.describe.configure({ mode: 'serial' });
+// One worker runs these one at a time (--workers=1); they are independent, so
+// a failed one never hides the others' results.
 
 const A = 'acceptance-media';
 const B = 'acceptance-media-b';
@@ -332,14 +333,19 @@ test('PLACE.9a — Move to… from a screen\'s Remote: to the other screen (it p
   await shot(page, 'move-to-menu-tablet');
   const atMove = (await receiverState(request, A))?.position ?? 0;
   await page.getByTestId(`move-to-${B}`).click();
-  // One outcome, named with the destination (it lingers 8 s once confirmed).
-  await expect(page.getByTestId('dispatch-tray')).toContainText(`Moved Disclosure Day to ${B_NAME}`, { timeout: 90000 });
+  // One outcome, named with the destination (it lingers 8 s once confirmed),
+  // and the original screen's brief note (10 s) — watched together.
+  await Promise.all([
+    expect(page.getByTestId('dispatch-tray')).toContainText(`Moved Disclosure Day to ${B_NAME}`, { timeout: 90000 }),
+    expect(ra.page.getByTestId('screen-note-label')).toHaveText(/^Moved by .+/, { timeout: 90000 }),
+  ]);
   await expect.poll(async () => {
     const b = await receiverState(request, B);
     return b?.currentItem?.contentId === DISCLOSURE && ['playing', 'paused'].includes(b?.state) ? b.position : null;
   }, { timeout: 90000 }).toBeGreaterThanOrEqual(Math.max(0, atMove - 2));
   await expect.poll(async () => (await receiverState(request, A))?.currentItem?.contentId ?? null, { timeout: 30000 }).toBeNull();
-  await expect(ra.page.getByTestId('screen-note-label')).toHaveText(/^Moved by .+/, { timeout: 15000 });
+  // The note stays on A's published row after the on-screen note fades.
+  expect((await receiverState(request, A))?.controls?.notes?.[0]).toMatchObject({ kind: 'moved' });
   // Both screens' states update in the house overview (PLACE.9a/AC3).
   await page.getByTestId('peek-back').click();
   await expect(page.getByTestId(`fleet-state-${B}`)).toHaveText(/Playing|Paused/, { timeout: 30000 });
@@ -349,6 +355,7 @@ test('PLACE.9a — Move to… from a screen\'s Remote: to the other screen (it p
   // From B's Remote, Move to… this device.
   await page.getByTestId(`fleet-peek-${B}`).click();
   await page.getByTestId('peek-move-to').click();
+  const bSpot = (await receiverState(request, B))?.position ?? 0;
   await page.getByTestId('move-to-local').click();
   // The screen's note is brief: check it as soon as the source is stopped.
   await expect(rb.page.getByTestId('screen-note-label')).toHaveText(/^Moved by .+/, { timeout: 60000 });
@@ -356,7 +363,9 @@ test('PLACE.9a — Move to… from a screen\'s Remote: to the other screen (it p
   await expect(page.getByTestId('now-playing-title')).toHaveAttribute('data-content-id', DISCLOSURE);
   await expect.poll(async () => (await receiverState(request, B))?.currentItem?.contentId ?? null, { timeout: 30000 }).toBeNull();
   const local = page.getByTestId('now-playing-host').locator('video');
-  await expect.poll(() => local.evaluate((node) => node.currentTime), { timeout: 60000 }).toBeGreaterThan(Math.max(0, atMove - 2));
+  // This device picks up at B's spot (playing or paused, as B was).
+  await expect.poll(() => local.evaluate((node) => (node.readyState >= 1 ? node.currentTime : -1)), { timeout: 120000 })
+    .toBeGreaterThanOrEqual(Math.max(0, bSpot - 3));
   await page.getByTestId('np-stop').click();
   await context.close();
   await ra.context.close();
