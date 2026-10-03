@@ -1,0 +1,112 @@
+// frontend/src/modules/Media/house/House.scss
+// House view additions (start status, started by, notes, Add only, house-wide
+// actions, screen admin, routine history). Tokens only; no motion.
+
+.house-line {
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.house-line--progress { color: var(--mantine-color-amber-3); }
+.house-line--ok { color: var(--ds-success); }
+.house-line--failed { color: var(--ds-danger); font-weight: 600; }
+
+// Every control a person touches here is a full 44px target.
+.house-action.mantine-Button-root,
+.fleet-card-actions .mantine-Button-root {
+  min-height: 44px;
+}
+.house-action--icon.mantine-Button-root { min-width: 44px; padding-inline: 0; }
+
+.house-notice {
+  padding: var(--mantine-spacing-xs);
+  border-radius: var(--mantine-radius-sm);
+  background: var(--mantine-color-dark-6);
+  border: 1px solid var(--ds-border);
+}
+.house-notice-text { flex: 1; min-width: 0; }
+
+.house-notes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.house-note {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  padding: 4px var(--mantine-spacing-xs);
+  border-radius: var(--mantine-radius-sm);
+  background: var(--mantine-color-dark-6);
+}
+.house-note-text { flex: 1; min-width: 0; }
+
+.house-was-name {
+  font-size: 12px;
+  color: var(--ds-text-mid);
+  font-weight: 400;
+}
+
+.house-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mantine-spacing-xs);
+  margin-bottom: var(--mantine-spacing-md);
+}
+
+.house-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-sm);
+  margin-bottom: var(--mantine-spacing-lg);
+}
+
+.house-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-xs);
+}
+
+.house-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--mantine-spacing-sm);
+  border-radius: var(--mantine-radius-md);
+  background: var(--mantine-color-dark-5);
+  border: 1px solid var(--ds-border);
+}
+
+.house-item-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px var(--mantine-spacing-xs);
+}
+
+.house-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mantine-spacing-xs);
+}
+
+.house-tone--failed { color: var(--ds-danger); font-weight: 600; }
+.house-tone--warn { color: var(--ds-warning); font-weight: 600; }
+.house-tone--ok { color: var(--ds-success); }
+.house-tone--muted { color: var(--ds-text-mid); }
+
+.house-first-use {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-sm);
+  padding: var(--mantine-spacing-md);
+  margin-bottom: var(--mantine-spacing-md);
+  border-radius: var(--mantine-radius-md);
+  background: var(--mantine-color-dark-5);
+  border: 1px solid var(--ds-border);
+}
