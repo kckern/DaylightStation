@@ -143,3 +143,24 @@ describe('finishedEpisodeCandidates', () => {
     expect(finishedEpisodeCandidates(records, { removed, limit: 5 }).map((r) => r.contentId)).toEqual(['plex:e2', 'plex:e1']);
   });
 });
+
+describe('buildHouseholdRecent with the play ledger', () => {
+  const plays = [
+    { startedAt: '2026-10-01T03:00:00.000Z', localTime: '2026-09-30 20:00:00', deviceId: 'fleet:livingroom-tv', contentId: 'plex:legacy', origin: null },
+    { startedAt: '2026-10-02T15:00:00.000Z', localTime: '2026-10-02 08:00:00', deviceId: 'browser:kid', contentId: 'plex:legacy', origin: 'cast' },
+    { startedAt: '2026-10-02T16:00:00.000Z', localTime: '2026-10-02 09:00:00', deviceId: 'fleet:office-tv', contentId: 'plex:ledger-only', origin: null },
+  ];
+  const records = [rec('plex:legacy', { lastPlayed: '2026-10-02 08:30:00', playhead: 100, duration: 1000 })];
+
+  it('labels a pre-spots record with the screen that last started it, and lists starts newest first', () => {
+    const out = buildHouseholdRecent(records, { removed: {}, plays });
+    const legacy = out.find((e) => e.contentId === 'plex:legacy');
+    expect(legacy.playedOn).toEqual({ deviceId: 'browser:kid', kind: 'browser', screenId: null });
+    expect(legacy.plays.map((p) => [p.deviceId, p.origin])).toEqual([['browser:kid', 'cast'], ['fleet:livingroom-tv', null]]);
+  });
+  it('includes items only the ledger saw', () => {
+    const out = buildHouseholdRecent(records, { removed: {}, plays });
+    expect(out.map((e) => e.contentId)).toEqual(['plex:ledger-only', 'plex:legacy']);
+    expect(out[0].playedOn.screenId).toBe('office-tv');
+  });
+});

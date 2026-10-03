@@ -134,3 +134,12 @@ describe('without the household memory wired', () => {
     await request(app).get('/api/v1/media/household/recent').expect(501);
   });
 });
+
+describe('GET /media/household/plays', () => {
+  it('400 on a bad time bound; otherwise the service answer', async () => {
+    const { app } = makeApp();
+    await request(app).get('/api/v1/media/household/plays?from=yesterday').expect(400);
+    const res = await request(app).get('/api/v1/media/household/plays?deviceId=fleet:tv').expect(200);
+    expect(res.body).toEqual({ items: [], ledger: false });
+  });
+});
