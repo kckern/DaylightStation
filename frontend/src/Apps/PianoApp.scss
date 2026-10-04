@@ -2646,6 +2646,45 @@
   &[data-state='locked'] { opacity: 0.48; cursor: not-allowed; }
   &.is-selected { box-shadow: 0 0 0 2px var(--piano-stage-panel), 0 0 0 5px var(--piano-warn); }
 }
+.piano-learn-progress {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 0.42rem 0.7rem;
+  color: var(--piano-fg);
+  background: var(--piano-surface-1);
+  border-top: 1px solid var(--piano-border);
+
+  &__track {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.42rem;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    &::-webkit-scrollbar { display: none; }
+  }
+
+  &__pill {
+    flex: 0 0 2.25rem;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    border: 2px solid var(--piano-border);
+    border-radius: 999px;
+    background: var(--piano-surface-2);
+    color: var(--piano-fg);
+    font: inherit;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+
+    &[data-state='learning'] { border-color: var(--piano-info, var(--piano-accent)); background: color-mix(in srgb, var(--piano-info, var(--piano-accent)) 14%, var(--piano-surface-2)); }
+    &[data-state='learned'] { border-color: var(--piano-accent); background: color-mix(in srgb, var(--piano-accent) 18%, var(--piano-surface-2)); }
+    &[data-state='mastered'] { border-color: var(--piano-accent); background: var(--piano-accent); color: var(--piano-bg); }
+    &[data-state='locked'] { border-style: dashed; opacity: 0.42; }
+    &[aria-current='step'] { box-shadow: 0 0 0 2px var(--piano-surface-1), 0 0 0 4px var(--piano-warn); }
+  }
+}
 .piano-learn-segment-rail {
   flex: 0 0 auto; display: grid; gap: 0.4rem; max-width: 100%; padding: 0.5rem 0.75rem;
   color: var(--piano-fg); background: color-mix(in srgb, var(--piano-surface-1) 96%, transparent); border-top: 1px solid var(--piano-border);

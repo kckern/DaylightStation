@@ -32,6 +32,7 @@ import { CustomLearnSession } from './LearnRoadmap.jsx';
 import LearnLab from './LearnLab.jsx';
 import LearnPassageLayer from './LearnPassageLayer.jsx';
 import LearnSegmentRail, { segmentNavigationState } from './LearnSegmentRail.jsx';
+import LearnProgressStrip from './LearnProgressStrip.jsx';
 import { resolveLearnPlan } from './resolveLearnPlan.js';
 import { buildEngravedMeasureRects, measureAtPosition } from './focusRangeGeometry.js';
 import { completeBarSelection, moveBarEdge, validBarRange } from './learnBarSelection.js';
@@ -2420,13 +2421,15 @@ export default function ScorePlayer({ score: scoreMeta }) {
       </div>
 
       {roadmapLearn && practiceLoaded && (layout.measures?.length ?? 0) > 0 && (
-        <LearnSegmentRail
-          segments={learnPassages}
-          selectedId={selectedPassage?.id ?? null}
-          onSelect={openLearnPassage}
-          onSelectRung={openLearnRung}
-          onClose={closeLearnPassage}
-        />
+        <>
+          <LearnSegmentRail
+            segments={learnPassages}
+            selectedId={selectedPassage?.id ?? null}
+            onSelectRung={openLearnRung}
+            onClose={closeLearnPassage}
+          />
+          <LearnProgressStrip segments={learnPassages} selectedId={selectedPassage?.id ?? null} onOpenSegment={openLearnPassage} />
+        </>
       )}
 
       {keyboardVisible && !roadmapLearn && (
