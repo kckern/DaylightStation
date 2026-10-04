@@ -20,23 +20,32 @@ export default function LearnPassageLayer({
       style={{ left: band.left, top: Math.max(2, band.top - 7), width: Math.max(band.right - band.left, 8), height: 7 }}
     />)}
     {passages.map((passage) => {
-      const first = notationRangeBands(measures, stepBoxes, {
-        inMeasure: passage.inMeasure,
-        outMeasure: passage.inMeasure,
-      }, measureRects)[0];
+      const bands = notationRangeBands(measures, stepBoxes, passage, measureRects);
+      const first = bands[0];
       if (!first) return null;
       const [state, stateLabel] = passageState(passage);
-      return <button
-        key={passage.id}
-        type="button"
-        className={`piano-learn-passage-map${passage.id === selectedId ? ' is-selected' : ''}${passage.id === achievementId ? ' is-achievement' : ''}`}
-        data-state={state}
-        disabled={passage.locked}
-        aria-label={[passage.label, passage.name, passage.barLabel, stateLabel].filter(Boolean).join(', ')}
-        style={{ left: first.left + 4, top: Math.max(2, first.top - 46) }}
-        onClick={(event) => { event.stopPropagation(); onSelect?.(passage.id); }}
-        onAnimationEnd={() => { if (passage.id === achievementId) onAchievementEnd?.(passage.id); }}
-      ><span aria-hidden="true">{passage.number ?? passage.order}</span></button>;
+      const label = [passage.label, passage.name, passage.barLabel, stateLabel].filter(Boolean).join(', ');
+      const select = (event) => { event.stopPropagation(); onSelect?.(passage.id); };
+      return <span key={passage.id} className="piano-learn-passage-target">
+        {bands.map((band, index) => <span
+          key={`${passage.id}-hitbox-${index}`}
+          className="piano-learn-passage-hitbox"
+          aria-hidden="true"
+          data-disabled={passage.locked || undefined}
+          style={{ left: band.left, top: band.top, width: Math.max(band.right - band.left, 8), height: Math.max(band.bottom - band.top, 8) }}
+          onClick={passage.locked ? undefined : select}
+        />)}
+        <button
+          type="button"
+          className={`piano-learn-passage-map${passage.id === selectedId ? ' is-selected' : ''}${passage.id === achievementId ? ' is-achievement' : ''}`}
+          data-state={state}
+          disabled={passage.locked}
+          aria-label={label}
+          style={{ left: first.left + 4, top: Math.max(2, first.top - 54) }}
+          onClick={select}
+          onAnimationEnd={() => { if (passage.id === achievementId) onAchievementEnd?.(passage.id); }}
+        ><span aria-hidden="true">{passage.number ?? passage.order}</span></button>
+      </span>;
     })}
   </>;
 }

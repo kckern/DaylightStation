@@ -34,6 +34,10 @@ describe('LearnSegmentRail', () => {
     expect(screen.getByText('Segment 1')).toBeInTheDocument();
     expect(screen.getByText('Opening · Bars 1–4')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Continue Right hand' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Continue Right hand' }).querySelector('.piano-icon')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Test out/ }).querySelector('.piano-icon')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Show practice ladder' }).querySelector('.piano-icon')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Done' }).querySelector('.piano-icon')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Left hand/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Test out/ }));
     expect(onSelectRung).toHaveBeenCalledWith('test-out');

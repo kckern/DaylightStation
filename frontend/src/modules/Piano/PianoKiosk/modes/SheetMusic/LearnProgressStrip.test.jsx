@@ -36,11 +36,11 @@ describe('LearnProgressStrip', () => {
     expect(onOpenSegment).toHaveBeenCalledWith('learned');
   });
 
-  it('start-aligns overflowing pills so the earliest segment remains scrollable', () => {
-    const styles = readFileSync(resolve(process.cwd(), 'src/Apps/PianoApp.scss'), 'utf8');
+  it('centers the track without stranding the earliest pill when it overflows', () => {
+    const frontend = process.cwd().endsWith('/frontend') ? process.cwd() : resolve(process.cwd(), 'frontend');
+    const styles = readFileSync(resolve(frontend, 'src/Apps/PianoApp.scss'), 'utf8');
     const progressStyles = styles.slice(styles.indexOf('.piano-learn-progress'), styles.indexOf('.piano-learn-segment-rail'));
     const track = progressStyles.match(/&__track\s*\{([\s\S]*?)\n\s*\}/)?.[1] ?? '';
-    expect(track).toContain('justify-content: flex-start');
-    expect(track).not.toContain('justify-content: center');
+    expect(track).toContain('justify-content: safe center');
   });
 });

@@ -2632,7 +2632,7 @@
 .piano-learn-passage-map {
   position: absolute; z-index: 6;
   display: grid; place-items: center;
-  width: 2rem; height: 2rem; aspect-ratio: 1; padding: 0; margin: 0;
+  width: 2.5rem; height: 2.5rem; aspect-ratio: 1; padding: 0; margin: 0;
   background: color-mix(in srgb, var(--piano-stage-panel) 92%, transparent);
   border: 2px solid var(--piano-border); border-radius: 50%;
   color: var(--piano-stage-fg);
@@ -2646,6 +2646,13 @@
   &[data-state='locked'] { opacity: 0.48; cursor: not-allowed; }
   &.is-selected { box-shadow: 0 0 0 2px var(--piano-stage-panel), 0 0 0 5px var(--piano-warn); }
 }
+.piano-learn-passage-hitbox {
+  position: absolute; z-index: 5;
+  display: block; margin: 0; padding: 0;
+  border: 0; border-radius: 0.45rem;
+  background: transparent; cursor: pointer;
+  &[data-disabled] { cursor: not-allowed; }
+}
 .piano-learn-progress {
   flex: 0 0 auto;
   min-width: 0;
@@ -2657,7 +2664,7 @@
   &__track {
     display: flex;
     align-items: center;
-    justify-content: flex-start;
+    justify-content: safe center;
     gap: 0.42rem;
     min-width: 0;
     overflow-x: auto;
@@ -2692,7 +2699,7 @@
   &__summary { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
   &__identity { flex: 1 1 auto; display: grid; min-width: 7rem; }
   &__identity span { color: var(--piano-muted); font-size: 0.72rem; white-space: nowrap; }
-  &__summary > button { flex: 0 0 auto; min-height: 2.35rem; padding: 0.35rem 0.7rem; border: 1px solid var(--piano-border); border-radius: var(--r-sm); background: transparent; }
+  &__summary > button { flex: 0 0 auto; min-height: 2.35rem; padding: 0.35rem 0.7rem; border: 1px solid var(--piano-border); border-radius: var(--r-sm); background: transparent; display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; }
   &__start { border-color: var(--piano-accent) !important; background: color-mix(in srgb, var(--piano-accent) 16%, transparent) !important; font-weight: 750 !important; }
   &__toggle { width: 2.35rem; padding: 0 !important; border-radius: 50% !important; }
   &__done { color: var(--piano-muted) !important; border-color: transparent !important; }
