@@ -55,6 +55,40 @@ export function balancedSystemBreak(measureBounds = []) {
   return best === currentBreak ? null : best;
 }
 
+// Pure geometry is exported for regression coverage alongside the component.
+// eslint-disable-next-line react-refresh/only-export-components
+export function systemBreakMatches(measureBounds = [], breakBefore) {
+  if (!Number.isInteger(breakBefore) || breakBefore <= 0 || breakBefore >= measureBounds.length) return false;
+  const tops = measureBounds.map((bound) => bound?.top);
+  if (tops.some((top) => !Number.isFinite(top))) return false;
+  const firstTop = tops[0];
+  const actual = tops.findIndex((top) => Math.abs(top - firstTop) > 1);
+  return actual === breakBefore && tops.slice(breakBefore).every((top) => Math.abs(top - tops[breakBefore]) <= 1);
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function passageCursorBounds({ noteBounds = [], staffBoxes = [], activeStaffs = [], onsetStaffs = [] }) {
+  const notes = noteBounds.filter((box) => [box.left, box.right, box.top, box.bottom].every(Number.isFinite));
+  if (!notes.length) return null;
+  const noteTop = Math.min(...notes.map((box) => box.top));
+  const noteBottom = Math.max(...notes.map((box) => box.bottom));
+  const noteCenter = (noteTop + noteBottom) / 2;
+  const systemCandidates = staffBoxes.filter((box) => !onsetStaffs.length || onsetStaffs.includes(box.staff));
+  const system = systemCandidates.reduce((nearest, box) => {
+    const distance = Math.abs(noteCenter - (box.top + (box.lineSpacing * 2)));
+    return !nearest || distance < nearest.distance ? { system: box.system, distance } : nearest;
+  }, null)?.system;
+  const active = staffBoxes.filter((box) => box.system === system && activeStaffs.includes(box.staff));
+  const spacing = Math.max(6, ...active.map((box) => box.lineSpacing || 0));
+  const staffTop = active.length ? Math.min(...active.map((box) => box.top)) - spacing : noteTop - spacing * 2;
+  const staffBottom = active.length ? Math.max(...active.map((box) => box.top + (box.lineSpacing * 4))) + spacing : noteBottom + spacing * 2;
+  const left = Math.min(...notes.map((box) => box.left)) - 6;
+  const right = Math.max(...notes.map((box) => box.right)) + 6;
+  const top = Math.min(staffTop, noteTop - spacing);
+  const bottom = Math.max(staffBottom, noteBottom + spacing);
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
 /**
  * ScorePassage — a few bars of REAL sheet music standing at the gate.
  *
@@ -141,6 +175,11 @@ export default function ScorePassage({
         logger().info('piano.score-passage-balanced', {
           id: sourceId ?? null, measures, breakBefore: balancedBreak, scale: renderScale,
         });
+        return;
+      }
+      if (systemBreakBefore != null && !systemBreakMatches(result.measureBounds ?? [], systemBreakBefore)) {
+        setLayout(null);
+        setFitError('passage-layout-unbalanced');
         return;
       }
       setFitError(null); setLayout(result); return;
@@ -308,33 +347,41 @@ export default function ScorePassage({
   // raw step indices, keep tied notes and selected measure ranges aligned.
   useLayoutEffect(() => {
     if (!showCursor) return undefined;
-    const rectangles = [];
-    for (const note of currentStep?.notes ?? []) {
-      const el = note.el;
-      const svg = el?.ownerSVGElement;
+    const notes = currentStep?.notes ?? [];
+    const svg = notes.find((note) => note.el?.ownerSVGElement)?.el?.ownerSVGElement;
+    let rectangle = null;
+    if (svg) {
       const matrix = svg?.getScreenCTM?.();
-      if (!matrix) continue;
-      const bounds = el.getBoundingClientRect();
-      if (!bounds.width || !bounds.height) continue;
-      const inverse = matrix.inverse();
-      const point = svg.createSVGPoint();
-      point.x = bounds.left; point.y = bounds.top;
-      const start = point.matrixTransform(inverse);
-      point.x = bounds.right; point.y = bounds.bottom;
-      const end = point.matrixTransform(inverse);
-      const rectangle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      rectangle.setAttribute('class', `piano-score-passage__cursor${windowOpen === true ? ' is-window-open' : windowOpen === false ? ' is-window-closed' : ''}`);
-      rectangle.setAttribute('x', start.x - 6);
-      rectangle.setAttribute('y', start.y - 12);
-      rectangle.setAttribute('width', end.x - start.x + 12);
-      rectangle.setAttribute('height', end.y - start.y + 24);
-      rectangle.setAttribute('rx', 4);
-      rectangle.setAttribute('aria-hidden', 'true');
-      svg.insertBefore(rectangle, svg.firstChild);
-      rectangles.push(rectangle);
+      if (matrix) {
+        const inverse = matrix.inverse();
+        const point = svg.createSVGPoint();
+        const noteBounds = notes.flatMap(({ el }) => {
+          const bounds = el?.getBoundingClientRect?.();
+          if (!bounds?.width || !bounds?.height) return [];
+          point.x = bounds.left; point.y = bounds.top;
+          const start = point.matrixTransform(inverse);
+          point.x = bounds.right; point.y = bounds.bottom;
+          const end = point.matrixTransform(inverse);
+          return [{ left: start.x, right: end.x, top: start.y, bottom: end.y }];
+        });
+        const cursor = passageCursorBounds({
+          noteBounds,
+          staffBoxes: layout?.staffBoxes ?? [],
+          activeStaffs: [...new Set((layout?.steps ?? []).flatMap((step) => (step.notes ?? []).map((note) => note.staff ?? 0)))],
+          onsetStaffs: [...new Set(notes.map((note) => note.staff ?? 0))],
+        });
+        if (cursor) {
+          rectangle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          rectangle.setAttribute('class', `piano-score-passage__cursor${windowOpen === true ? ' is-window-open' : windowOpen === false ? ' is-window-closed' : ''}`);
+          Object.entries(cursor).forEach(([name, value]) => rectangle.setAttribute(name, value));
+          rectangle.setAttribute('rx', 4);
+          rectangle.setAttribute('aria-hidden', 'true');
+          svg.insertBefore(rectangle, svg.firstChild);
+        }
+      }
     }
-    return () => { for (const rectangle of rectangles) rectangle.remove(); };
-  }, [currentStep, showCursor, windowOpen]);
+    return () => rectangle?.remove();
+  }, [currentStep, layout?.staffBoxes, layout?.steps, showCursor, windowOpen]);
 
   // Part selection happened in the MusicXML itself; every remaining staff is active.
   const activeParts = useMemo(() => {
@@ -396,7 +443,7 @@ export default function ScorePassage({
   return (
     <div className="piano-score-passage" data-system-count={systemCount || undefined} data-cursor-enabled={String(showCursor)}>
       {focused.musicXml ? (
-        <MusicXmlRenderer musicXml={focused.musicXml} scale={renderScale} onLayout={handleLayout} onFailed={handleEngraveFailed}>
+        <MusicXmlRenderer key={`${systemBreakBefore ?? 'auto'}:${renderScale}`} musicXml={focused.musicXml} scale={renderScale} onLayout={handleLayout} onFailed={handleEngraveFailed}>
           <NoteHighlightLayer step={currentStep} activeParts={activeParts} />
         </MusicXmlRenderer>
       ) : (

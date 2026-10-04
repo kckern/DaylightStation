@@ -16,7 +16,8 @@ describe('LearnPassageLayer', () => {
     render(<LearnPassageLayer passages={[{ id: 'm0-1', number: 1, label: 'Segment 1', barLabel: 'Bars 1–2', name: 'Theme', inMeasure: 0, outMeasure: 1, complete: true }]} measures={measures} stepBoxes={stepBoxes} onSelect={onSelect} />);
     const marker = screen.getByRole('button', { name: 'Segment 1, Theme, Bars 1–2, Mastered' });
     expect(marker).toHaveAttribute('data-state', 'mastered');
-    expect(marker).toHaveTextContent('1✓');
+    expect(marker).toHaveTextContent('1');
+    expect(marker).not.toHaveTextContent('✓');
     expect(marker).not.toHaveTextContent('Mastered');
     expect(marker.style.width).toBe('');
     expect(document.querySelector('.piano-learn-selection-outline')).toBeNull();
@@ -44,7 +45,7 @@ describe('LearnPassageLayer', () => {
     expect(work).toHaveAttribute('data-state', 'in-progress');
     expect(tested).toHaveAttribute('data-state', 'tested-out');
     expect(locked).toBeDisabled();
-    expect([next, work, tested, locked].map((marker) => marker.textContent)).toEqual(['1›', '2◐', '3★', '4▣']);
+    expect([next, work, tested, locked].map((marker) => marker.textContent)).toEqual(['1', '2', '3', '4']);
     for (const marker of [next, work, tested, locked]) {
       expect(marker).not.toHaveTextContent(/Next|progress|Tested|Locked/);
     }
@@ -75,8 +76,8 @@ describe('LearnPassageLayer', () => {
     expect(outlines).toHaveLength(1);
     expect(outlines[0].style.left).toBe('100px');
     expect(outlines[0].style.width).toBe('100px');
-    expect(outlines[0].style.top).toBe('88px');
-    expect(outlines[0].style.height).toBe('104px');
+    expect(outlines[0].style.top).toBe('81px');
+    expect(outlines[0].style.height).toBe('7px');
   });
 
   it('draws separate tight outlines when a selected segment wraps systems', () => {
@@ -102,8 +103,8 @@ describe('LearnPassageLayer', () => {
     const outlines = [...container.querySelectorAll('.piano-learn-selection-outline')];
     expect(outlines).toHaveLength(2);
     expect(outlines.map((outline) => ({ top: outline.style.top, height: outline.style.height }))).toEqual([
-      { top: '88px', height: '104px' },
-      { top: '348px', height: '104px' },
+      { top: '81px', height: '7px' },
+      { top: '341px', height: '7px' },
     ]);
   });
 
@@ -124,8 +125,8 @@ describe('LearnPassageLayer', () => {
     />);
     const outlines = [...container.querySelectorAll('.piano-learn-selection-outline')];
     expect(outlines.map((outline) => ({ top: outline.style.top, height: outline.style.height }))).toEqual([
-      { top: '88px', height: '104px' },
-      { top: '348px', height: '104px' },
+      { top: '81px', height: '7px' },
+      { top: '341px', height: '7px' },
     ]);
   });
 
