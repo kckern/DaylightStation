@@ -438,7 +438,7 @@ export default function ScorePassage({
   return (
     <div className="piano-score-passage" data-system-count={systemCount || undefined} data-cursor-enabled={String(showCursor)}>
       {focused.musicXml ? (
-        <MusicXmlRenderer key={`${systemBreakBefore ?? 'auto'}:${renderScale}`} musicXml={focused.musicXml} scale={renderScale} onLayout={handleLayout} onFailed={handleEngraveFailed}>
+        <MusicXmlRenderer key={`${systemBreakBefore ?? 'auto'}:${renderScale}`} musicXml={focused.musicXml} scale={renderScale} newSystemFromXML onLayout={handleLayout} onFailed={handleEngraveFailed}>
           <NoteHighlightLayer step={currentStep} activeParts={activeParts} />
         </MusicXmlRenderer>
       ) : (

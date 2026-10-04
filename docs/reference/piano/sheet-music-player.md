@@ -237,6 +237,9 @@ keyboard footer remains neutral until the learner plays a wrong pitch at the
 current event, then reveals the still-owed key or chord only until the cursor
 advances. Two-system excerpts choose a width-balanced break and avoid a
 one-measure second-system orphan when a legal two-or-more-measure split exists.
+The passage extractor writes that break as MusicXML `new-system` metadata and
+the lab renderer explicitly enables OSMD's `newSystemFromXML` option; the normal
+full-score viewer continues to use responsive automatic wrapping.
 
 Lab context lives in one compact toolbar rather than floating controls: Back,
 segment and bar identity, rung, set/rep position, and (for timed work) tempo.

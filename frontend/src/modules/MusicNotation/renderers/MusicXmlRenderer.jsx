@@ -31,6 +31,8 @@ function logger() {
  *   reading one: every bar drawn separately (no multi-measure-rest collapse) and
  *   systems stretched to the full width, so empty bars read as ruled paper. Off
  *   by default — only the Composer opts in. See osmdRender's applyManuscriptRules.
+ * @param {boolean} [newSystemFromXML] - honor MusicXML `new-system` print hints.
+ *   Off by default; focused score passages opt in after inserting a balanced break.
  * @param {(res:{width,height,events,notes,steps,tempoEntries,flow,scale,transpose}) => void} [onLayout]
  *   — `flow`/`scale`/`transpose` report WHICH engrave the geometry belongs to, so
  *   a consumer can tell a stale layout from a current one.
@@ -52,7 +54,7 @@ function logger() {
  *   extraction runs once `holdExtraction` flips back to false.
  * @param {React.ReactNode} [children] - overlay content positioned over the SVG
  */
-export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1, transpose = 0, manuscript = false, onLayout, onProgress, onReady, onFailed, holdExtraction = false, children }) {
+export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1, transpose = 0, manuscript = false, newSystemFromXML = false, onLayout, onProgress, onReady, onFailed, holdExtraction = false, children }) {
   const hostRef = useRef(null);
   const onFailedRef = useRef(onFailed); onFailedRef.current = onFailed;
   const holdRef = useRef(holdExtraction); holdRef.current = holdExtraction;
@@ -98,7 +100,7 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
     // Transpose is part of the cache key: a key change misses the reuse check and
     // takes the full engrave path (clean re-parse in the new key), never a stale
     // same-key cache hit. Zoom/flow/resize at a fixed key still hit the repaint path.
-    const cacheKey = `${flow}::${transpose}::${musicXml}`;
+    const cacheKey = `${flow}::${transpose}::${newSystemFromXML}::${musicXml}`;
 
     // Progress + result plumbing shared by both paths. Every setState is
     // stale-guarded so a superseded render can never clobber the live one.
@@ -148,7 +150,7 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
         // Full path: PAINT the engraved sheet first (Manual mode usable at once),
         // THEN extract geometry in yielded slices with progress.
         setRendering(true);
-        const eng = await osmdEngrave(host, musicXml, { width: w, flow, scale, transpose, manuscript, shouldAbort: stale });
+        const eng = await osmdEngrave(host, musicXml, { width: w, flow, scale, transpose, manuscript, newSystemFromXML, shouldAbort: stale });
         if (!eng || stale()) return;
         osmdRef.current = eng.osmd;
         osmdKeyRef.current = cacheKey;
@@ -183,7 +185,7 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
     // would defeat the check.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     return () => { if (renderSeq.current === seq) renderSeq.current++; };
-  }, [musicXml, width, flow, scale, transpose, manuscript, onLayout, onProgress, onReady, resizeKey]);
+  }, [musicXml, width, flow, scale, transpose, manuscript, newSystemFromXML, onLayout, onProgress, onReady, resizeKey]);
 
   // Release: once holding ends and an extraction is owed, re-run the render effect
   // (cheap repaint + the deferred geometry walk) so overlays catch up. NOTE:
