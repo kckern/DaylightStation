@@ -2535,6 +2535,16 @@
   background: #0e0e16;
 }
 
+.piano-score-player__notice {
+  position: absolute; z-index: 12; top: 0.75rem; left: 50%;
+  transform: translateX(-50%);
+  max-width: min(90%, 34rem); padding: 0.7rem 1rem;
+  border: 1px solid var(--piano-border); border-radius: var(--r-sm);
+  color: var(--piano-text); background: var(--piano-surface-2);
+  box-shadow: var(--shadow-md);
+  text-align: center; font-weight: 700;
+}
+
 // Score loading splash — the sidecar scan, right-sized to fit with NO scrolling.
 // As a standalone stage (XML fetch) it fills the flex area; as an overlay it covers
 // the engraving until it's ready. object-fit: contain guarantees no overflow either way.

@@ -136,6 +136,7 @@ vi.mock('./LearnLab.jsx', () => ({
     return <section role="dialog" aria-label={`${props.segment.label} · ${props.rung.label}`}>
       <button type="button" onClick={props.onClose}>Close lab</button>
       <button type="button" onClick={() => { props.onMastered(props.segment.id); props.onClose(); }}>Master segment</button>
+      <button type="button" onClick={() => props.onUnavailable('passage-too-dense')}>Fail segment</button>
     </section>;
   },
 }));
@@ -341,6 +342,21 @@ describe('ScorePlayer — score-native Learn roadmap', () => {
     expect(achieved).toHaveClass('is-achievement');
     fireEvent.animationEnd(achieved);
     expect(achieved).not.toHaveClass('is-achievement');
+  });
+
+  it('returns from an unrunnable lab with an explanation', async () => {
+    h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: {} } };
+    h.layoutExtras = {
+      measures: [{ number: 1, firstStep: 0, lastStep: 1 }, { number: 2, firstStep: 2, lastStep: 3 }],
+      measureBounds: [{ left: 80, right: 190, top: 10, bottom: 210 }, { left: 190, right: 310, top: 10, bottom: 210 }],
+    };
+    renderPlayer();
+    pickMode('Learn');
+    fireEvent.click(screen.getAllByRole('button', { name: /Segment 1/ })[0]);
+    fireEvent.click(screen.getByRole('button', { name: /Right hand/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Fail segment' }));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('too much music to fit'));
+    expect(screen.getByTestId('renderer')).toBeInTheDocument();
   });
 });
 

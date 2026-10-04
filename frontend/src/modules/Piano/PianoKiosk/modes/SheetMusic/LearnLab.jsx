@@ -32,7 +32,7 @@ export function learnPracticeRequirement(rung) {
   return { mode: rung.mode, rubric: { id: 'sheet-music-learn-passage', version: '1', criteria: { ...(rung.criteria || {}) } } };
 }
 
-export default function LearnLab({ score, revision, segment, segments = {}, rung, tempo = {}, onRecord, onClose, onRungPassed, onMastered }) {
+export default function LearnLab({ score, revision, segment, segments = {}, rung, tempo = {}, onRecord, onClose, onRungPassed, onMastered, onUnavailable }) {
   const [take, setTake] = useState(0);
   const masteryTempo = rung.mastery === true || rung.completion === 'tested-out';
   const setIndex = Math.min(rung.sets - 1, Math.floor((rung.passCount ?? 0) / Math.max(1, rung.reps)));
@@ -89,7 +89,8 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       framing={`${segment.label} · ${rung.label}`}
       ask={rung.mode === 'free' ? 'Play the passage accurately.' : 'Play the passage with the beat.'}
       traceContext={{ tempoPercent, tempoSource: tempo.tempoSource ?? 'inferred' }} bare
-      onExit={onClose} onPassed={settle} onFailed={settle} onUnavailable={onClose}
+      onExit={onClose} onPassed={settle} onFailed={settle}
+      onUnavailable={(reason, detail) => onUnavailable?.(detail || reason)}
     />
   </section>;
 }

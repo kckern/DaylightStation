@@ -106,7 +106,14 @@ describe('canonical compilation', () => {
       ],
     });
     expect(compiled.source).toEqual({ kind: 'score', id: 'three-staff-score', revision: 'rev-2' });
-    expect(compiled.events[0].notes.map((note) => note.part)).toEqual(['rh', 'lh', 'staff-2']);
+    expect(compiled.events[0].notes.map((note) => note.part)).toEqual(['rh', 'lh', 'p3']);
+    const thirdOnly = compileScoreExpectation({
+      source: { id: 'three-staff-score' }, activeParts: ['p3'], notes: [
+        { midi: 60, staff: 0, onsetQuarter: 0, durationQuarters: 1 },
+        { midi: 36, staff: 2, onsetQuarter: 0, durationQuarters: 1 },
+      ],
+    });
+    expect(thirdOnly.events[0].notes).toMatchObject([{ midi: 36, part: 'p3', staff: 2 }]);
     expect(compiled.tempoMap).toEqual([{ onsetQuarter: 0, bpm: 72 }, { onsetQuarter: 8, bpm: 96 }]);
   });
 
