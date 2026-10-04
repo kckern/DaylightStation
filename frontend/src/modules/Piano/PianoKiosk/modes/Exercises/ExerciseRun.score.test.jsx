@@ -75,9 +75,21 @@ vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => 
     MusicXmlRenderer: ({ musicXml, onLayout, onReady, onFailed, children }) => {
       useEffect(() => {
         if (h.engraveFails) { onFailed?.({ error: 'Could not read this score.' }); return; }
+        const shownNumbers = [...new DOMParser().parseFromString(musicXml, 'application/xml')
+          .querySelectorAll('part:first-of-type > measure')]
+          .map((measure) => Number(measure.getAttribute('number')))
+          .filter(Number.isFinite);
+        const shown = h.steps.filter((step) => shownNumbers.includes(step.number));
+        const firstOnset = shown[0]?.onsetQuarter ?? 0;
+        const firstMeasure = shown[0]?.measure ?? 0;
+        const localSteps = shown.map((step) => ({
+          ...step,
+          onsetQuarter: step.onsetQuarter - firstOnset,
+          measure: step.measure - firstMeasure,
+        }));
         onLayout?.({
           width: 800, height: 300, flow: 'wrapped', scale: 1, transpose: 0,
-          tempoEntries: [], measures: [0, 1, 2, 3], events: [], notes: [], steps: h.steps,
+          tempoEntries: [], measures: shownNumbers.map((_, index) => index), events: [], notes: [], steps: localSteps,
         });
         onReady?.();
         // `onFailed` is held in a ref by the real renderer, not a dep — mirrored.

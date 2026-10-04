@@ -5,6 +5,7 @@ import { parseMusicXml } from '../../../../MusicNotation/parseMusicXml.js';
 import NoteHighlightLayer from '../SheetMusic/NoteHighlightLayer.jsx';
 import { compileScoreExpectation } from '../../../performance/assessmentAttempt.js';
 import { excerptMusicXml, selectMusicXmlParts } from './scorePassageXml.js';
+import { scaleScoreTempoMap, scaledScoreBpm } from './scoreTempo.js';
 
 let _logger;
 function logger() {
@@ -79,7 +80,7 @@ export function fitPassageLayout({ layout, scale, minScale, maxSystems }) {
  */
 export default function ScorePassage({
   musicXml, sourceId, measures = null, onExpectation, onUnrunnable, cursorIndex = 0, wrongMidi = null, showCursor = false,
-  verdicts = null, windowOpen = undefined, activeParts: requestedParts = null, rangeIndices = null,
+  verdicts = null, windowOpen = undefined, activeParts: requestedParts = null, rangeIndices = null, tempoPercent = 100,
 }) {
   const judged = verdicts instanceof Map;
   const [layout, setLayout] = useState(null);
@@ -188,8 +189,8 @@ export default function ScorePassage({
       const expectation = compileScoreExpectation({
         notes,
         source: { id: sourceId },
-        tempoMap: layout.tempoEntries?.length ? layout.tempoEntries : excerpt.inheritedTempoMap,
-        fallbackBpm,
+        tempoMap: scaleScoreTempoMap(layout.tempoEntries?.length ? layout.tempoEntries : excerpt.inheritedTempoMap, tempoPercent),
+        fallbackBpm: scaledScoreBpm(fallbackBpm, tempoPercent),
         range: null,
         activeParts: requestedParts,
       });
@@ -204,7 +205,7 @@ export default function ScorePassage({
     } catch (error) {
       return { state: 'dead', reason: 'expectation-uncompilable', error: error?.message ?? String(error) };
     }
-  }, [layout, notes, sourceId, fallbackBpm, requestedParts, excerpt.inheritedTempoMap]);
+  }, [layout, notes, sourceId, fallbackBpm, requestedParts, excerpt.inheritedTempoMap, tempoPercent]);
 
   const expectation = compiled.state === 'ready' ? compiled.expectation : null;
   const systemCount = useMemo(
