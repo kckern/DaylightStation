@@ -45,8 +45,11 @@ export function learnPracticeRequirement(rung) {
   };
 }
 
-export function LearnPassageSession({ score, revision, passage, rung, onRecord, onBack }) {
+export function LearnPassageSession({ score, revision, passage, rung, tempo = {}, onRecord, onBack }) {
   const [take, setTake] = useState(0);
+  const masteryTempo = rung.mastery === true || rung.completion === 'tested-out';
+  const initialPercent = masteryTempo ? 100 : (rung.tempoPercent ?? 100);
+  const [tempoPercent, setTempoPercent] = useState(initialPercent);
   const projection = useMemo(() => learnDrillProjection(passage, rung), [passage, rung]);
   const requirement = useMemo(() => learnPracticeRequirement(rung), [rung]);
   const printedStart = passage.printedMeasures?.[0] ?? null;
@@ -57,7 +60,8 @@ export function LearnPassageSession({ score, revision, passage, rung, onRecord, 
     measures: [printedStart, printedEnd],
     rangeIndices: { start: passage.inMeasure, end: passage.outMeasure },
     activeParts: partsKey ? partsKey.split('\u0000') : [],
-  }), [score, printedStart, printedEnd, passage.inMeasure, passage.outMeasure, partsKey]);
+    tempoPercent,
+  }), [score, printedStart, printedEnd, passage.inMeasure, passage.outMeasure, partsKey, tempoPercent]);
   const stepIndex = Math.min(rung.sets - 1, Math.floor((rung.passCount ?? 0) / Math.max(1, rung.reps)));
   const settle = useCallback((result) => {
     const outcome = onRecord({
@@ -73,10 +77,22 @@ export function LearnPassageSession({ score, revision, passage, rung, onRecord, 
     if (outcome?.rungComplete || outcome?.passage?.complete) onBack();
     else setTake((value) => value + 1);
   }, [onBack, onRecord, passage.id, revision, rung]);
+  const scoreBpm = Number(tempo.tempoMap?.[0]?.bpm);
+  const effectiveBpm = scoreBpm > 0 ? Math.round(scoreBpm * tempoPercent / 100) : null;
+  const adjustable = rung.mode === 'cued' && tempo.adjustable !== false && !masteryTempo;
+  const minimumPercent = tempo.minimumPercent ?? 40;
+  const maximumPercent = tempo.maximumPercent ?? 100;
 
   return (
     <div className="piano-learn-session">
-      <button className="piano-learn-session__back" type="button" onClick={onBack}>Back to roadmap</button>
+      <button className="piano-learn-session__back" type="button" onClick={onBack} aria-label="Close practice">Close</button>
+      {rung.mode === 'cued' && <div className="piano-learn-session__tempo" role="status">
+        {adjustable && <button type="button" aria-label="Decrease tempo" disabled={tempoPercent <= minimumPercent}
+          onClick={() => setTempoPercent((value) => Math.max(minimumPercent, value - 5))}>−</button>}
+        <strong>{tempoPercent}% of {tempo.tempoSource === 'musicxml' ? 'score tempo' : 'fallback tempo'}{effectiveBpm ? ` · ${effectiveBpm} BPM` : ''}</strong>
+        {adjustable && <button type="button" aria-label="Increase tempo" disabled={tempoPercent >= maximumPercent}
+          onClick={() => setTempoPercent((value) => Math.min(maximumPercent, value + 5))}>+</button>}
+      </div>}
       <ExerciseRun
         key={`${passage.id}:${rung.id}:${take}`}
         instance={null}
@@ -89,6 +105,7 @@ export function LearnPassageSession({ score, revision, passage, rung, onRecord, 
         drillProjection={projection}
         framing={`${passage.label} · ${rung.label}`}
         ask={rung.mode === 'free' ? 'Play the passage accurately.' : 'Play the passage with the beat.'}
+        traceContext={{ tempoPercent, tempoSource: tempo.tempoSource ?? 'inferred' }}
         bare
         onExit={onBack}
         onPassed={settle}

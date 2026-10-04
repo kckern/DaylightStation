@@ -409,6 +409,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     learnerId: typeof currentUser === 'string' ? currentUser : currentUser?.id ?? null,
     hostAttemptId: traceContext?.attemptId ?? null,
     hostSessionId: traceContext?.sessionId ?? null,
+    tempoPercent: traceContext?.tempoPercent ?? null,
+    tempoSource: traceContext?.tempoSource ?? null,
     subjectId: instance?.id ?? score?.id ?? null,
     intent,
   };
@@ -1530,6 +1532,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
             measures={score.measures}
             rangeIndices={score.rangeIndices ?? null}
             activeParts={score.activeParts ?? null}
+            tempoPercent={score.tempoPercent ?? 100}
             onExpectation={takeScoreExpectation}
             onUnrunnable={handleScoreUnrunnable}
             cursorIndex={visualCursor.index}

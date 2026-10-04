@@ -2649,6 +2649,14 @@
     padding: 0.5rem 0.8rem; color: var(--piano-fg); background: var(--piano-surface);
     border: 1px solid var(--piano-border); border-radius: 999px; font: inherit;
   }
+  &__tempo {
+    position: absolute; z-index: 20; top: 0.7rem; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 0.55rem; padding: 0.35rem 0.55rem;
+    color: var(--piano-fg); background: color-mix(in srgb, var(--piano-surface) 94%, transparent);
+    border: 1px solid var(--piano-border); border-radius: 999px;
+    button { width: 2rem; height: 2rem; border-radius: 50%; border: 1px solid var(--piano-border); background: transparent; color: inherit; font: inherit; }
+    strong { white-space: nowrap; font-size: 0.9rem; }
+  }
 }
 
 
