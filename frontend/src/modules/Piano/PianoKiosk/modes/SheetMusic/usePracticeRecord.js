@@ -10,6 +10,23 @@ const fpMatches = (a, b) => !!a && !!b
   && typeof a.contentSha256 === 'string'
   && typeof b.contentSha256 === 'string'
   && a.contentSha256 === b.contentSha256;
+const UNSAFE_KEY = new Set(['__proto__', 'constructor', 'prototype']);
+
+export function compatibleLearnPassages(learn = {}, plan = {}) {
+  const passages = learn?.passages || {};
+  if (learn?.revision === plan?.revision) return passages;
+  const planned = Array.isArray(plan?.segments)
+    ? Object.fromEntries(plan.segments.filter((segment) => !UNSAFE_KEY.has(segment.id)).map((segment) => [segment.id, segment]))
+    : (plan?.segments || {});
+  const result = {};
+  for (const id of Object.keys(passages)) {
+    if (UNSAFE_KEY.has(id)) continue;
+    const before = learn?.segments?.[id]?.fingerprint;
+    const after = planned?.[id]?.fingerprint;
+    if (before && after && before === after) result[id] = passages[id];
+  }
+  return result;
+}
 
 /**
  * usePracticeRecord — per-user, per-score practice history (wave-3 C).
@@ -85,11 +102,13 @@ export default function usePracticeRecord({ scoreId, fingerprint }) {
   /** Bank one complete passage take into the config-defined Learn ladder. */
   const recordLearnRep = useCallback(({
     revision, passageId, rungId, result, requiredPasses = 1, consecutive = false, completesPassage = false, completion = 'standard',
+    segments = {},
   }) => {
     if (!revision || !passageId || !rungId) return null;
-    const currentLearn = recordRef.current.learn?.revision === revision
-      ? recordRef.current.learn
-      : { revision, passages: {} };
+    const previousLearn = recordRef.current.learn || {};
+    const compatible = compatibleLearnPassages(previousLearn, { revision, segments });
+    const safeSegments = Object.fromEntries(Object.entries(segments).filter(([id]) => !UNSAFE_KEY.has(id)));
+    const currentLearn = { revision, segments: safeSegments, passages: compatible };
     const currentPassage = currentLearn.passages?.[passageId] || { rungs: {}, complete: false };
     const currentRung = currentPassage.rungs?.[rungId] || { attempts: 0, passCount: 0 };
     const passed = Boolean(result?.verdict?.passed);
@@ -105,11 +124,15 @@ export default function usePracticeRecord({ scoreId, fingerprint }) {
       ...((completesPassage && rungComplete) ? { completedBy: rungId } : {}),
       ...((completesPassage && rungComplete && completion === 'tested-out') ? { testedOut: true } : {}),
     };
-    const learn = { ...currentLearn, revision, passages: { ...(currentLearn.passages || {}), [passageId]: passage } };
+    const learn = { ...currentLearn, revision, segments: safeSegments, passages: { ...(currentLearn.passages || {}), [passageId]: passage } };
     const next = { ...recordRef.current, fingerprint: fpRef.current, learn };
     recordRef.current = next;
     setRecord(next);
-    put({ fingerprint: fpRef.current, learn: { revision, passages: { [passageId]: passage } } });
+    const revisionChanged = previousLearn.revision && previousLearn.revision !== revision;
+    put({ fingerprint: fpRef.current, learn: {
+      revision, segments: safeSegments,
+      passages: revisionChanged ? learn.passages : { [passageId]: passage },
+    } });
     return { rung, rungComplete, passage };
   }, [put]);
 

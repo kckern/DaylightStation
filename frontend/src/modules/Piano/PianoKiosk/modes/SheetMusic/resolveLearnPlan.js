@@ -136,7 +136,13 @@ export function resolveLearnPlan({ defaults = SHEET_MUSIC_DEFAULTS.learn, catego
   };
   const ladder = configuredLadder.filter((rung) => rung.id !== 'test-out');
   const authored = authoredSegments(merged.segments, score, ladder);
-  const segments = authored ?? generatedSegments(score, normalized.passages, ladder);
+  const segments = (authored ?? generatedSegments(score, normalized.passages, ladder)).map((segment) => ({
+    ...segment,
+    fingerprint: sha256(JSON.stringify(stable({
+      id: segment.id, inMeasure: segment.inMeasure, outMeasure: segment.outMeasure,
+      ladder: segment.ladder.map(behaviorRung),
+    }))).toString(),
+  }));
   const tempo = normalizeTempoMap(score, normalized.tempo.fallbackBpm);
   const navigation = { sequential: normalized.navigation.sequential };
   const behavior = {

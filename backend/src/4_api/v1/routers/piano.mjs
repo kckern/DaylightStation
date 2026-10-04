@@ -949,7 +949,14 @@ export function createPianoRouter({ pianoContainer, schoolLearnerDirectory = nul
         rungs: mergeBuckets(currentPassage.rungs, patchPassage.rungs),
       };
     }
-    return { ...cur, ...patch, passages };
+    const segments = {};
+    for (const id of Object.keys(cur.segments || {})) {
+      if (!UNSAFE_KEY.has(id)) segments[id] = cur.segments[id];
+    }
+    for (const id of Object.keys(patch.segments || {})) {
+      if (!UNSAFE_KEY.has(id)) segments[id] = patch.segments[id];
+    }
+    return { ...cur, ...patch, passages, segments };
   };
 
   router.get('/users/:userId/practice/:scoreKey', (req, res) => {

@@ -3,6 +3,7 @@ import ExerciseRun from '../Exercises/ExerciseRun.jsx';
 
 const handCode = (parts) => parts.length > 1 ? 'RL' : parts[0] === 'lh' ? 'L' : parts[0] === 'rh' ? 'R' : null;
 
+// eslint-disable-next-line react-refresh/only-export-components -- pure projection is exported for focused contract tests
 export function learnDrillProjection(segment, rung) {
   const reps = Math.max(1, rung.reps);
   const sets = Math.max(1, rung.sets);
@@ -26,11 +27,12 @@ export function learnDrillProjection(segment, rung) {
   };
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- pure adapter is exported for focused contract tests
 export function learnPracticeRequirement(rung) {
   return { mode: rung.mode, rubric: { id: 'sheet-music-learn-passage', version: '1', criteria: { ...(rung.criteria || {}) } } };
 }
 
-export default function LearnLab({ score, revision, segment, rung, tempo = {}, onRecord, onClose, onRungPassed, onMastered }) {
+export default function LearnLab({ score, revision, segment, segments = {}, rung, tempo = {}, onRecord, onClose, onRungPassed, onMastered }) {
   const [take, setTake] = useState(0);
   const masteryTempo = rung.mastery === true || rung.completion === 'tested-out';
   const setIndex = Math.min(rung.sets - 1, Math.floor((rung.passCount ?? 0) / Math.max(1, rung.reps)));
@@ -53,6 +55,7 @@ export default function LearnLab({ score, revision, segment, rung, tempo = {}, o
       revision, passageId: segment.id, rungId: rung.id, result,
       requiredPasses: rung.required, consecutive: rung.consecutive,
       completesPassage: rung.completes === 'passage', completion: rung.completion,
+      segments,
     });
     if (outcome?.passage?.complete) {
       onMastered?.(segment.id);
@@ -60,7 +63,7 @@ export default function LearnLab({ score, revision, segment, rung, tempo = {}, o
     } else if (outcome?.rungComplete) {
       onRungPassed?.({ segmentId: segment.id, rungId: rung.id, outcome });
     } else setTake((value) => value + 1);
-  }, [onClose, onMastered, onRecord, onRungPassed, revision, rung, segment.id]);
+  }, [onClose, onMastered, onRecord, onRungPassed, revision, rung, segment.id, segments]);
   const scoreBpm = Number(tempo.tempoMap?.[0]?.bpm);
   const effectiveBpm = scoreBpm > 0 ? Math.round(scoreBpm * tempoPercent / 100) : null;
   const adjustable = rung.mode === 'cued' && tempo.adjustable !== false && !masteryTempo;
