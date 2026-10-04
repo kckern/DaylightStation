@@ -27,8 +27,10 @@ import { bucketOf } from './practiceKey.js';
 import { pickLearnRange } from './learnRange.js';
 import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
 import { buildLearnPassages, projectLearnPassage } from './learnRoadmap.js';
-import LearnRoadmap, { LearnPassageSession } from './LearnRoadmap.jsx';
+import LearnRoadmap, { LearnPassageSession, CustomLearnSession } from './LearnRoadmap.jsx';
 import LearnPassageLayer from './LearnPassageLayer.jsx';
+import { buildEngravedMeasureRects, measureAtPosition } from './focusRangeGeometry.js';
+import { completeBarSelection, moveBarEdge, validBarRange } from './learnBarSelection.js';
 import {
   compileScoreExpectation,
   createAssessmentAttempt,
@@ -201,6 +203,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     recordTierBest,
     recordLearnRep,
     recordAssessmentAttempt,
+    saveCustomRange,
   } = usePracticeRecord({ scoreId: scoreMeta.id, fingerprint });
 
   // Resolved sheetmusic config (defaults filled). Hoisted above the mode state so
@@ -243,6 +246,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Listen/Learn/Polish practice range (measure INDICES) | null = whole piece.
   // Practice loops are per-session by design — never restored (audit M1).
   const [focus, setFocus] = useState(null);
+  const [selectionPhase, setSelectionPhase] = useState(null);
+  const [selectionAnchor, setSelectionAnchor] = useState(null);
+  const [armedSelectionEdge, setArmedSelectionEdge] = useState(null);
+  const [customRunOpen, setCustomRunOpen] = useState(false);
+  const [customResult, setCustomResult] = useState(null);
   // Is the loop ON (wave-2: loop is a direct toggle, separate from whether a
   // range exists — audit L2 follow-up)? A defined range keeps showing its tint
   // and its handles even when looping is off (both layers read `focus`, not the
@@ -348,6 +356,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   const events = layout.events;
   const steps = layout.steps;
+  const selectionStepBoxes = useMemo(() => layout.steps.map((item, index) => ({
+    x: layout.events[index]?.x ?? item.x,
+    top: layout.events[index]?.top ?? item.top,
+    bottom: layout.events[index]?.bottom ?? item.bottom,
+  })), [layout.events, layout.steps]);
+  const measureRects = useMemo(() => buildEngravedMeasureRects(
+    layout.measures, layout.measureBounds, layout.staffBoxes, layout.steps, selectionStepBoxes,
+  ), [layout.measures, layout.measureBounds, layout.staffBoxes, layout.steps, selectionStepBoxes]);
   const current = events[step] || null;
   const onLayout = useCallback((res) => { setLayout(res); }, []);
 
@@ -1436,6 +1452,25 @@ export default function ScorePlayer({ score: scoreMeta }) {
     }
     if (!rdr || !events.length) return;
     const r = rdr.getBoundingClientRect();
+    if (roadmapLearn && (selectionPhase || armedSelectionEdge)) {
+      const mi = measureAtPosition(measureRects, e.clientX - r.left, e.clientY - r.top);
+      if (mi < 0) return;
+      if (armedSelectionEdge) {
+        const currentRange = validBarRange(practice?.customRange, layout.measures?.length ?? 0) ? practice.customRange : null;
+        if (currentRange) saveCustomRange(moveBarEdge(currentRange, armedSelectionEdge, mi));
+        setArmedSelectionEdge(null);
+        setCustomResult(null);
+      } else if (selectionPhase === 'in') {
+        setSelectionAnchor(mi);
+        setSelectionPhase('out');
+      } else {
+        saveCustomRange(completeBarSelection(selectionAnchor ?? mi, mi));
+        setSelectionPhase(null);
+        setSelectionAnchor(null);
+        setCustomResult(null);
+      }
+      return;
+    }
     // An ARMED endpoint (wave-3 F): this tap names the measure for that edge of
     // the loop and sets it — it does not seek. Hit-testing is coarse by design
     // (measureAtPoint): any x inside a system's band resolves to the nearest
@@ -1487,7 +1522,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // Transport timeline is tempo-scaled (playTimeline uses factor 1/tempoMult);
     // seek positions come from the unscaled stepTimeline, so scale to match.
     transport.seek((stepTimeline[target]?.t ?? 0) / tempoMult);
-  }, [mode, sendsAudio, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, arming, commitEndpoint, layout.measures, range, logger, countIn, scale, tapIntent, voidCycle]);
+  }, [mode, sendsAudio, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, arming, commitEndpoint, layout.measures, range, logger, countIn, scale, tapIntent, voidCycle, roadmapLearn, selectionPhase, selectionAnchor, armedSelectionEdge, measureRects, practice, saveCustomRange]);
 
   // Single unmount teardown: immediate silence + one delayed panic (see the
   // silenceScheduled note above), so a note-on already dispatched into the
@@ -2109,6 +2144,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const selectedRungId = searchParams.get('learnRung');
   const selectedPassage = learnPassages.find((passage) => passage.id === selectedPassageId) ?? null;
   const selectedRung = selectedPassage?.rungs.find((rung) => rung.id === selectedRungId && rung.state !== 'locked') ?? null;
+  const customRange = practiceLoaded && validBarRange(practice?.customRange, layout.measures?.length ?? 0) ? practice.customRange : null;
   const updateLearnSelection = useCallback((passageId, rungId = null) => {
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
@@ -2121,6 +2157,26 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const openLearnRung = useCallback((rungId) => {
     if (selectedPassage) updateLearnSelection(selectedPassage.id, rungId);
   }, [selectedPassage, updateLearnSelection]);
+  const startCustomSelection = useCallback(() => {
+    updateLearnSelection(null);
+    setArmedSelectionEdge(null);
+    setSelectionAnchor(null);
+    setSelectionPhase('in');
+    setCustomResult(null);
+  }, [updateLearnSelection]);
+  const selectedRange = useMemo(() => selectionPhase === 'in' ? null
+    : selectionPhase === 'out' && selectionAnchor != null
+      ? { inMeasure: selectionAnchor, outMeasure: selectionAnchor }
+      : selectedPassage
+      ? { inMeasure: selectedPassage.inMeasure, outMeasure: selectedPassage.outMeasure }
+      : customRange, [selectionPhase, selectionAnchor, selectedPassage, customRange]);
+  const commitCustomEdge = useCallback((edge, mi) => {
+    if (!selectedRange || mi < 0) return;
+    saveCustomRange(moveBarEdge(selectedRange, edge, mi));
+    updateLearnSelection(null);
+    setArmedSelectionEdge(null);
+    setCustomResult(null);
+  }, [selectedRange, saveCustomRange, updateLearnSelection]);
 
   useEffect(() => {
     if (smCfg.learn.configFallback) logger.warn('score.learn.config-fallback', { scoreId: scoreMeta.id });
@@ -2136,10 +2192,21 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onBack={() => updateLearnSelection(selectedPassage.id)}
       />
   ) : null;
+  const customSession = mode === 'learn' && customRunOpen && customRange ? (
+    <CustomLearnSession
+      score={{ id: scoreMeta.id, title: meta.title, musicXml: scoreMeta.musicXml }}
+      range={customRange}
+      measures={layout.measures}
+      activeParts={activePartIds}
+      onResult={(result) => { setCustomResult(result); setCustomRunOpen(false); }}
+      onBack={() => setCustomRunOpen(false)}
+    />
+  ) : null;
 
   return (
     <div className="piano-score-player">
       {learnSession}
+      {customSession}
       {scoreMeta.splashImage && !engraveReady && (
         <div className="piano-score-splash piano-score-splash--overlay" aria-hidden="true">
           <img className="piano-score-splash__img" src={scoreMeta.splashImage} alt="" decoding="async" />
@@ -2248,13 +2315,24 @@ export default function ScorePlayer({ score: scoreMeta }) {
             <LearnPassageLayer
               passages={learnPassages}
               measures={layout.measures}
-              stepBoxes={layout.steps.map((item, index) => ({
-                x: events[index]?.x ?? item.x,
-                top: events[index]?.top ?? item.top,
-                bottom: events[index]?.bottom ?? item.bottom,
-              }))}
+              stepBoxes={selectionStepBoxes}
+              measureRects={measureRects}
+              selectedRange={selectedRange}
               selectedId={selectedPassage?.id ?? null}
-              onSelect={(passageId) => updateLearnSelection(passageId)}
+              onSelect={(passageId) => { setSelectionPhase(null); setArmedSelectionEdge(null); updateLearnSelection(passageId); }}
+            />
+          )}
+          {roadmapLearn && layoutFresh && customRange && !selectedPassage && !selectionPhase && (
+            <RangeHandleLayer
+              measures={layout.measures}
+              stepBoxes={selectionStepBoxes}
+              measureRects={measureRects}
+              range={selectedRange}
+              labelPrefix="Selection"
+              onArm={(edge) => setArmedSelectionEdge(edge)}
+              onCommit={commitCustomEdge}
+              scrollRef={scrollRef}
+              scale={scale}
             />
           )}
         </MusicXmlRenderer>
@@ -2263,14 +2341,22 @@ export default function ScorePlayer({ score: scoreMeta }) {
         <StuckPrompt open={stuckOpen && mode === 'learn' && !roadmapLearn} onPick={onStuckPick} onDismiss={onStuckDismiss} />
       </div>
 
-      {mode === 'learn' && practiceLoaded && learnPassages.length > 0 && (
+      {roadmapLearn && practiceLoaded && (layout.measures?.length ?? 0) > 0 && (
         <LearnRoadmap
           passages={learnPassages}
           recommendedId={recommendedPassage?.id}
           selectedId={selectedPassage?.id ?? null}
-          onSelectPassage={(passageId) => updateLearnSelection(passageId)}
+          onSelectPassage={(passageId) => { setSelectionPhase(null); setArmedSelectionEdge(null); updateLearnSelection(passageId); }}
           onSelectRung={openLearnRung}
           onClosePassage={closeLearnPassage}
+          customRange={customRange}
+          measures={layout.measures}
+          customResult={customResult}
+          selectionPhase={selectionPhase}
+          onStartSelection={startCustomSelection}
+          onCancelSelection={() => { setSelectionPhase(null); setSelectionAnchor(null); }}
+          onPracticeCustom={() => setCustomRunOpen(true)}
+          onClearCustom={() => { saveCustomRange(null); setCustomResult(null); }}
         />
       )}
 
