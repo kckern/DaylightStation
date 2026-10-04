@@ -75,6 +75,7 @@ const h = vi.hoisted(() => ({
   // sets it and notifies midiNotesListeners so components re-render with it.
   activeNotes: new Map(),
   midiNotesListeners: new Set(),
+  config: { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: { roadmap: false } } },
 }));
 
 // Derive per-onset full-staff steps from the melody events: the first pitch of
@@ -128,7 +129,7 @@ vi.mock('../../PianoMidiContext.jsx', async () => {
   };
 });
 vi.mock('../../usePianoPlayback.js', () => ({ usePianoPlayback: () => ({ setPlaying: () => {} }) }));
-vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: { roadmap: false } } } }) }));
+vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: h.config }) }));
 vi.mock('../../PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumb: (crumbs) => { h.crumbs = crumbs || []; } }));
 vi.mock('../../useReloadGuard.js', () => ({ default: () => {} }));
 // Spyable click scheduler: useMetronomeClick creates one per enable, so hand it
@@ -276,6 +277,30 @@ beforeEach(() => {
   h.prefsListeners = new Set();
   h.activeNotes = new Map();
   h.midiNotesListeners = new Set();
+  h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: { roadmap: false } } };
+});
+
+describe('ScorePlayer — score-native Learn roadmap', () => {
+  it('uses the score overlay and compact rail instead of generic roadmap cards by default', () => {
+    h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: {} } };
+    h.layoutExtras = {
+      measures: [
+        { number: 1, firstStep: 0, lastStep: 1 },
+        { number: 2, firstStep: 2, lastStep: 3 },
+      ],
+      measureBounds: [
+        { left: 80, right: 190, top: 10, bottom: 210 },
+        { left: 190, right: 310, top: 10, bottom: 210 },
+      ],
+    };
+    renderPlayer();
+    pickMode('Learn');
+    expect(screen.getByRole('navigation', { name: 'Piece segments' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Learn roadmap' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: /Segment 1/ })[0]);
+    expect(screen.getByRole('group', { name: 'Segment 1 practice ladder' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Test out/ })).toBeEnabled();
+  });
 });
 
 // Mode switching now lives in the header crumb → ModeSheet (wave-2 B), not a
