@@ -6,11 +6,10 @@ light-up. Lives in `frontend/src/modules/Piano/PianoKiosk/modes/SheetMusic/`,
 engraving through the shared OSMD renderer in
 `frontend/src/modules/MusicNotation/renderers/`.
 
-Listen is the only mode that sends demonstration MIDI. Learn is always silent
-wait-for-correct: with no selected loop it advances through the whole score;
-with a loop it wraps inside the selected range. Its optional metronome is a
-reference and never creates placement evidence. Polish remains transport-driven
-and timing-aware; Perform remains presentation-only.
+Listen is the only mode that sends demonstration MIDI. Learn uses the engraved
+score as an open passage roadmap and launches focused `ExerciseRun` training
+modules from it. Polish remains transport-driven and timing-aware; Perform
+remains presentation-only.
 
 ## Chrome layout
 
@@ -76,7 +75,7 @@ the truth about what that job is:
 | Mode | Identity | Transport chrome |
 |------|----------|-------------------|
 | **Listen** | Pure playback — a jukebox that performs the score | Restart/Play · metronome (session-local, off by default) · hand toggles · Key/Tempo/View/Volume. No looping. |
-| **Learn** | Untimed practice at the frontier of what's been learned | Listen's chrome **plus** the loop group and range handles on the score |
+| **Learn** | Open passage roadmap with a config-defined hand/timing ladder | Score roadmap plus passage ladder; a selected rung opens a dedicated `ExerciseRun` |
 | **Polish** | Real-time scored runs, always whole-piece | Play + count-in · metronome (on by default, persisted) · hand toggles · settings. No looping. |
 | **Perform** | The music stand | Zero chrome; the left pedal turns pages |
 
@@ -209,6 +208,61 @@ Green means one thing only: you are playing the right note, right now.
 
 ## Learn: landing and the state matrix
 
+### Passage roadmap and learning ladder
+
+The score remains visible as the roadmap. Rehearsal regions are never crossed;
+within each region, the planner creates balanced passages targeting four bars
+(normally three to five) and avoids accidental one-bar tails. Every passage is
+open from the start. The first incomplete passage is marked Recommended, but a
+player can open any passage and return to the same ladder with Back.
+
+The default ladder is:
+
+| Rung | Work | Requirement |
+|---|---|---|
+| Right hand | free, RH | 2 sets × 3 reps |
+| Left hand | free, LH | 2 sets × 3 reps |
+| Hands together | free, RH+LH | 2 sets × 3 reps |
+| Together with the beat | cued at score tempo, RH+LH | 1 set × 3 reps; completes the passage |
+| Test out | cued at score tempo, RH+LH | 1 set × 3 consecutive reps; always available and completes the passage |
+
+Normal rungs unlock sequentially inside a passage. Test Out is always
+selectable; a failed take resets only its own streak. Single-staff and other
+non-grand-staff passages omit impossible hand-specific rungs and run their
+combined work against the parts actually present.
+
+Selection lives in `learnPassage` and `learnRung` query parameters. The run
+receives the original MusicXML, printed passage boundaries, active parts, the
+configured rubric, and a set/rep projection. `ExerciseRun` is therefore the one
+assessment and feedback surface rather than a second Learn-only judge.
+
+All ladder behavior is configurable under `sheetmusic.learn`; the following is
+the shape, not a second source of defaults:
+
+```yaml
+sheetmusic:
+  learn:
+    passages: { targetMeasures: 4, minMeasures: 3, maxMeasures: 5 }
+    ladder:
+      - id: right
+        label: Right hand
+        parts: [rh]
+        mode: free              # free | metronome | cued
+        sets: 2
+        reps: 3
+        availability: sequential # sequential | always
+        consecutive: false
+        criteria: { completeness: 1, cleanliness: 1 }
+        completes: rung          # rung | passage
+```
+
+The normalized passage sizing and complete ladder are hashed into a revision.
+Changing either starts a compatible new Learn program instead of reusing stale
+rung completion. Invalid ladder entries fall back to the complete default
+ladder and emit `score.learn.config-fallback`.
+
+### Direct score practice
+
 Opening Learn on a score already lands you somewhere useful: an **auto-range**
 heuristic picks a loop range the moment Learn is entered with no range set,
 in priority order —
@@ -309,11 +363,18 @@ once a range exists.
 ## Practice history
 
 Progress is tracked per user, per score, and read back to drive the Learn
-auto-range and the Polish tier bests:
+roadmap/direct-practice frontier and the Polish tier bests:
 
-- A **guest / no selected user is exempt** — the practice heuristics run
-  history-less, and nothing is read or written on their behalf. Only a
-  persistent (roster) user's practice is ever recorded.
+- A **guest / no selected user** gets full session-local roadmap progress but
+  no server reads or writes. Persistent roster users keep the same progress
+  across sessions.
+- Roadmap progress is keyed by ladder revision, passage id, and rung id. Each
+  rung stores attempts and banked passes; passage completion records the rung
+  that completed it. PUTs merge at passage/rung depth so one take cannot erase
+  sibling progress.
+- Existing per-measure history can seed compatible free rungs when every bar
+  in the passage was already learned for that hands bucket. It never seeds a
+  timed rung or Test Out.
 - **Attempts and passes** are tallied per measure, per hands bucket
   (`both`/`rh`/`lh`; non-grand-staff scores always use `both`). One trip
   through a loop (in → out, with the gate active) is an **attempt** for every
@@ -324,7 +385,7 @@ auto-range and the Polish tier bests:
   the cycle — a single slip on measure 9 of a 12-measure loop costs only
   measure 9 its pass, so broad practice keeps advancing the frontier
   elsewhere. A measure counts as "learned" (and drops out of the auto-range
-  frontier) once it has accumulated **three passes** for the relevant hands
+  frontier) once it has accumulated **two passes** for the relevant hands
   bucket.
 - **Polish best scores** are also kept per hands bucket, one best per tempo
   tier (see "Polish" below) — an RH-only run is never compared against a
