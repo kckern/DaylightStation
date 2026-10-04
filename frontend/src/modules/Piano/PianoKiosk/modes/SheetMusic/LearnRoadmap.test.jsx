@@ -71,12 +71,45 @@ describe('CustomLearnSession', () => {
 });
 
 describe('LearnPassageSession', () => {
+  it('keeps the same score descriptor while its parent rerenders the lab', () => {
+    const score = { id: 'score-1', musicXml: '<score />' };
+    const props = { score, revision: 'rev', passage, rung: passage.rungs[0], onRecord: () => ({ rungComplete: false }), onBack: () => {} };
+    const view = render(<LearnPassageSession {...props} />);
+    const first = exercise.props.score;
+
+    view.rerender(<LearnPassageSession {...props} />);
+
+    expect(exercise.props.score).toBe(first);
+  });
+
   it('runs the selected score passage with parts, rubric, and set/rep projection', () => {
     render(<LearnPassageSession score={{ id: 'score-1', musicXml: '<score />' }} revision="rev" passage={passage} rung={passage.rungs[0]} onRecord={() => ({ rungComplete: false })} onBack={() => {}} />);
     expect(exercise.props.score).toMatchObject({ id: 'score-1', measures: [1, 4], activeParts: ['rh'] });
     expect(exercise.props.practiceRequirement).toMatchObject({ mode: 'free', rubric: { criteria: { completeness: 1 } } });
     expect(exercise.props.drillProjection.steps).toHaveLength(2);
     expect(exercise.props.drillProjection.steps[0].pass_count).toBe(1);
+  });
+
+  it('runs timed practice at a visible adjustable percentage of score tempo', () => {
+    const timed = { ...passage.rungs[2], id: 'timed', label: 'With the beat', completion: 'standard', mastery: false, tempoPercent: 60 };
+    render(<LearnPassageSession score={{ id: 'score-1', musicXml: '<score />' }} revision="rev" passage={passage} rung={timed}
+      tempo={{ tempoMap: [{ onsetQuarter: 0, bpm: 100 }], tempoSource: 'musicxml', minimumPercent: 40, maximumPercent: 100, adjustable: true }}
+      onRecord={() => ({ rungComplete: false })} onBack={() => {}} />);
+    expect(screen.getByText(/60% of score tempo · 60 BPM/)).toBeInTheDocument();
+    expect(exercise.props.score.tempoPercent).toBe(60);
+    fireEvent.click(screen.getByRole('button', { name: 'Increase tempo' }));
+    expect(screen.getByText(/65% of score tempo · 65 BPM/)).toBeInTheDocument();
+    expect(exercise.props.score.tempoPercent).toBe(65);
+  });
+
+  it('locks mastery and Test Out to the MusicXML tempo', () => {
+    const mastery = { ...passage.rungs[2], id: 'mastery', label: 'Mastery', mastery: true, tempoPercent: 60 };
+    render(<LearnPassageSession score={{ id: 'score-1', musicXml: '<score />' }} revision="rev" passage={passage} rung={mastery}
+      tempo={{ tempoMap: [{ onsetQuarter: 0, bpm: 92 }], tempoSource: 'musicxml', minimumPercent: 40, maximumPercent: 100, adjustable: true }}
+      onRecord={() => ({ rungComplete: false })} onBack={() => {}} />);
+    expect(screen.getByText(/100% of score tempo · 92 BPM/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Decrease tempo' })).not.toBeInTheDocument();
+    expect(exercise.props.score.tempoPercent).toBe(100);
   });
 
   it('banks a rep and returns to the roadmap when a rung completes', () => {

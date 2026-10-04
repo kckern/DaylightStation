@@ -2188,6 +2188,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         revision={smCfg.learn.revision}
         passage={selectedPassage}
         rung={selectedRung}
+        tempo={{ ...smCfg.learn.tempo, tempoMap, tempoSource: parsed?.tempo ? 'musicxml' : 'inferred' }}
         onRecord={recordLearnRep}
         onBack={() => updateLearnSelection(selectedPassage.id)}
       />

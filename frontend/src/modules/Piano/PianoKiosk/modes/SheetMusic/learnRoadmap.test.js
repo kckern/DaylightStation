@@ -51,7 +51,7 @@ describe('buildLearnPassages', () => {
   it('uses canonical part ids for additional staves', () => {
     const input = score(3);
     input.steps[0].notes.push({ midi: 36, staff: 2 });
-    expect(buildLearnPassages(input)[0].playableParts).toContain('staff-2');
+    expect(buildLearnPassages(input)[0].playableParts).toContain('p3');
   });
 });
 

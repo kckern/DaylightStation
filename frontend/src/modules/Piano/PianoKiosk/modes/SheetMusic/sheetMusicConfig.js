@@ -9,8 +9,9 @@ const DEFAULT_LADDER = [
   { id: 'right', label: 'Right hand', parts: ['rh'], mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 1 }, completes: 'rung', legacySeed: 'rh' },
   { id: 'left', label: 'Left hand', parts: ['lh'], mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 1 }, completes: 'rung', legacySeed: 'lh' },
   { id: 'together', label: 'Hands together', parts: ['rh', 'lh'], scope: 'all-parts', mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 1 }, completes: 'rung', legacySeed: 'both' },
-  { id: 'timed', label: 'Together with the beat', parts: ['rh', 'lh'], scope: 'all-parts', mode: 'cued', sets: 1, reps: 3, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 1, placement: 0.8 }, completes: 'passage' },
-  { id: 'test-out', label: 'Test out', parts: ['rh', 'lh'], scope: 'all-parts', mode: 'cued', sets: 1, reps: 3, availability: 'always', consecutive: true, criteria: { completeness: 1, cleanliness: 1, placement: 0.8 }, completes: 'passage', completion: 'tested-out' },
+  { id: 'timed', label: 'Together with the beat', parts: ['rh', 'lh'], scope: 'all-parts', mode: 'cued', sets: 1, reps: 3, tempoPercent: 60, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 1, placement: 0.8 }, completes: 'rung' },
+  { id: 'mastery', label: 'Mastery', parts: ['rh', 'lh'], scope: 'all-parts', mode: 'cued', sets: 1, reps: 3, tempoPercent: 100, mastery: true, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 1, placement: 0.8 }, completes: 'passage' },
+  { id: 'test-out', label: 'Test out', parts: ['rh', 'lh'], scope: 'all-parts', mode: 'cued', sets: 1, reps: 3, tempoPercent: 100, mastery: true, availability: 'always', consecutive: true, criteria: { completeness: 1, cleanliness: 1, placement: 0.8 }, completes: 'passage', completion: 'tested-out' },
 ];
 
 export const SHEET_MUSIC_DEFAULTS = {
@@ -21,7 +22,9 @@ export const SHEET_MUSIC_DEFAULTS = {
   // no `learnHands` preference of their own. 'both' keeps today's behavior.
   learn: {
     defaultHands: 'both',
+    navigation: { sequential: false },
     passages: { targetMeasures: 4, minMeasures: 3, maxMeasures: 5 },
+    tempo: { fallbackBpm: 90, minimumPercent: 40, maximumPercent: 100, adjustable: true },
     ladder: DEFAULT_LADDER,
   },
 };
@@ -39,6 +42,7 @@ function normalizeRung(rung) {
   if (rung.legacySeed != null && !['rh', 'lh', 'both'].includes(rung.legacySeed)) return null;
   if (rung.scope != null && rung.scope !== 'all-parts') return null;
   if (rung.criteria != null && (!isObj(rung.criteria) || Object.values(rung.criteria).some((value) => !Number.isFinite(value) || value < 0 || value > 1))) return null;
+  if (rung.tempoPercent != null && (!Number.isFinite(rung.tempoPercent) || rung.tempoPercent <= 0 || rung.tempoPercent > 100)) return null;
   return {
     ...rung,
     id: rung.id.trim(),
@@ -50,6 +54,8 @@ function normalizeRung(rung) {
     completes: rung.completes ?? 'rung',
     completion: rung.completion ?? 'standard',
     legacySeed: rung.legacySeed ?? null,
+    tempoPercent: rung.mode === 'cued' ? (rung.mastery === true || rung.completion === 'tested-out' ? 100 : rung.tempoPercent ?? 60) : null,
+    mastery: rung.mastery === true || rung.completion === 'tested-out',
   };
 }
 
@@ -70,7 +76,18 @@ function normalizeLearn(rawLearn) {
     !requested || requested.length === 0 || requested.some((rung) => !rung) || new Set(ids).size !== ids.length
   );
   const ladder = requested && !configFallback ? requested : DEFAULT_LADDER.map((rung) => normalizeRung(rung));
-  const behavior = { passages, ladder };
+  const rawNavigation = isObj(raw.navigation) ? raw.navigation : {};
+  const navigation = { sequential: rawNavigation.sequential === true };
+  const rawTempo = isObj(raw.tempo) ? raw.tempo : {};
+  const tempo = {
+    ...SHEET_MUSIC_DEFAULTS.learn.tempo,
+    ...(Number.isFinite(rawTempo.fallbackBpm) && rawTempo.fallbackBpm > 0 ? { fallbackBpm: rawTempo.fallbackBpm } : {}),
+    ...(Number.isFinite(rawTempo.minimumPercent) && rawTempo.minimumPercent > 0 && rawTempo.minimumPercent <= 100 ? { minimumPercent: rawTempo.minimumPercent } : {}),
+    ...(Number.isFinite(rawTempo.maximumPercent) && rawTempo.maximumPercent > 0 && rawTempo.maximumPercent <= 100 ? { maximumPercent: rawTempo.maximumPercent } : {}),
+    ...(typeof rawTempo.adjustable === 'boolean' ? { adjustable: rawTempo.adjustable } : {}),
+  };
+  if (tempo.minimumPercent > tempo.maximumPercent) tempo.minimumPercent = tempo.maximumPercent;
+  const behavior = { navigation, passages, tempo, ladder };
   return {
     defaultHands: raw.defaultHands ?? SHEET_MUSIC_DEFAULTS.learn.defaultHands,
     roadmap: raw.roadmap !== false,
