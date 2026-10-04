@@ -10,7 +10,7 @@ function partsInRange(steps, measures, start, end) {
     for (let stepIndex = measure.firstStep; stepIndex <= measure.lastStep; stepIndex += 1) {
       for (const note of steps?.[stepIndex]?.notes ?? []) {
         const staff = Number.isInteger(note.staff) ? note.staff : 0;
-        parts.add(staff === 0 ? 'rh' : staff === 1 ? 'lh' : `staff-${staff}`);
+        parts.add(staff === 0 ? 'rh' : staff === 1 ? 'lh' : `p${staff + 1}`);
       }
     }
   }

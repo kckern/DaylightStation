@@ -16,6 +16,8 @@ describe('resolveSheetMusicConfig', () => {
       learn: {
         defaultHands: 'both',
         passages: { targetMeasures: 4, minMeasures: 3, maxMeasures: 5 },
+        navigation: { sequential: false },
+        tempo: { fallbackBpm: 90 },
       },
     });
     expect(resolved.learn.ladder.map(({ id, mode, sets, reps, availability, consecutive, completes }) => (
@@ -24,7 +26,8 @@ describe('resolveSheetMusicConfig', () => {
       { id: 'right', mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, completes: 'rung' },
       { id: 'left', mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, completes: 'rung' },
       { id: 'together', mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, completes: 'rung' },
-      { id: 'timed', mode: 'cued', sets: 1, reps: 3, availability: 'sequential', consecutive: false, completes: 'passage' },
+      { id: 'timed', mode: 'cued', sets: 1, reps: 3, availability: 'sequential', consecutive: false, completes: 'rung' },
+      { id: 'mastery', mode: 'cued', sets: 1, reps: 3, availability: 'sequential', consecutive: false, completes: 'passage' },
       { id: 'test-out', mode: 'cued', sets: 1, reps: 3, availability: 'always', consecutive: true, completes: 'passage' },
     ]);
     expect(resolved.learn.revision).toMatch(/^[a-f0-9]{64}$/);
@@ -60,7 +63,7 @@ describe('resolveSheetMusicConfig', () => {
       { id: 'valid', label: 'Valid', parts: ['rh'], mode: 'free', sets: 1, reps: 1 },
       { id: 'broken', label: 'Broken', parts: ['rh'], mode: 'warp', sets: 1, reps: 1 },
     ] } });
-    expect(c.learn.ladder.map((rung) => rung.id)).toEqual(['right', 'left', 'together', 'timed', 'test-out']);
+    expect(c.learn.ladder.map((rung) => rung.id)).toEqual(['right', 'left', 'together', 'timed', 'mastery', 'test-out']);
   });
 
   it.each([
@@ -72,6 +75,6 @@ describe('resolveSheetMusicConfig', () => {
   ])('rejects an empty or duplicate-id ladder override atomically', (ladder) => {
     const c = resolveSheetMusicConfig({ learn: { ladder } });
     expect(c.learn.configFallback).toBe(true);
-    expect(c.learn.ladder.map((rung) => rung.id)).toEqual(['right', 'left', 'together', 'timed', 'test-out']);
+    expect(c.learn.ladder.map((rung) => rung.id)).toEqual(['right', 'left', 'together', 'timed', 'mastery', 'test-out']);
   });
 });
