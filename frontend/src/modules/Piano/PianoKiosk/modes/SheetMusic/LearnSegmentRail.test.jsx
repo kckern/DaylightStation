@@ -9,21 +9,9 @@ const segments = [
 ];
 
 describe('LearnSegmentRail', () => {
-  it('shows numbered segments first, bar ranges second, and optional authored names', () => {
+  it('stays out of the way until a score-native segment is selected', () => {
     render(<LearnSegmentRail segments={segmentNavigationState(segments, {})} onSelect={vi.fn()} />);
-    const first = screen.getByRole('button', { name: /Segment 1, Opening, Bars 1–4, Next/ });
-    expect(first).toHaveClass('piano-learn-segment-rail__segment');
-    expect(first).toHaveTextContent('1');
-    expect(first).not.toHaveTextContent('Bars 1–4');
-    expect(screen.getByRole('button', { name: /Segment 3, Theme, Bars 9–12, Tested out/ })).toHaveAttribute('data-state', 'tested-out');
-  });
-
-  it('selects every segment in open navigation and disables only explicit locks', () => {
-    const onSelect = vi.fn();
-    const projected = segmentNavigationState(segments, { sequential: false });
-    render(<LearnSegmentRail segments={projected} onSelect={onSelect} />);
-    for (const number of [1, 2, 3]) fireEvent.click(screen.getByRole('button', { name: new RegExp(`Segment ${number}`) }));
-    expect(onSelect.mock.calls.map(([id]) => id)).toEqual(['a', 'b', 'c']);
+    expect(screen.queryByRole('navigation', { name: 'Selected segment' })).not.toBeInTheDocument();
   });
 
   it('sequential navigation locks only segments after the first incomplete one', () => {
@@ -35,14 +23,7 @@ describe('LearnSegmentRail', () => {
     ]);
   });
 
-  it('collapses without removing the score-native navigation contract', () => {
-    render(<LearnSegmentRail segments={segments} onSelect={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse segment rail' }));
-    expect(screen.queryByText('Bars 1–4')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Expand segment rail' })).toBeInTheDocument();
-  });
-
-  it('opens the selected segment ladder and keeps Test Out available', () => {
+  it('opens a compact selected-segment sheet with one primary action and separate Test out', () => {
     const onSelectRung = vi.fn();
     const selected = { ...segments[0], rungs: [
       { id: 'right', label: 'Right hand', state: 'current', passCount: 1, required: 6 },
@@ -52,9 +33,11 @@ describe('LearnSegmentRail', () => {
     render(<LearnSegmentRail segments={[selected]} selectedId="a" onSelectRung={onSelectRung} onClose={vi.fn()} />);
     expect(screen.getByText('Segment 1')).toBeInTheDocument();
     expect(screen.getByText('Opening · Bars 1–4')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Right hand/ })).toBeEnabled();
-    expect(screen.getByRole('button', { name: /Left hand/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Continue Right hand' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /Left hand/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Test out/ }));
     expect(onSelectRung).toHaveBeenCalledWith('test-out');
+    fireEvent.click(screen.getByRole('button', { name: 'Show practice ladder' }));
+    expect(screen.getByRole('button', { name: /Left hand/ })).toBeDisabled();
   });
 });

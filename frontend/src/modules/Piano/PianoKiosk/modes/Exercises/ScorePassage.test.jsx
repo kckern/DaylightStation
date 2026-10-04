@@ -91,7 +91,7 @@ vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => 
   };
 });
 
-const { default: ScorePassage, fitPassageLayout, balancedSystemBreak } = await import('./ScorePassage.jsx');
+const { default: ScorePassage, fitPassageLayout, balancedSystemBreak, passageCursorBounds, systemBreakMatches } = await import('./ScorePassage.jsx');
 
 const midisOf = (expectation) => expectation.events.flatMap((event) => event.notes.map((note) => note.midi));
 const measuresOf = (expectation) => expectation.events.flatMap((event) => event.notes.map((note) => note.measureIndex));
@@ -121,6 +121,15 @@ beforeEach(() => {
 });
 
 describe('ScorePassage layout fitting', () => {
+  it('only accepts a forced breakpoint when the second engraving actually used it', () => {
+    const split = (at) => Array.from({ length: 5 }, (_, index) => ({
+      left: index < at ? index * 100 : (index - at) * 100,
+      right: index < at ? (index + 1) * 100 : (index - at + 1) * 100,
+      top: index < at ? 0 : 200,
+    }));
+    expect(systemBreakMatches(split(3), 3)).toBe(true);
+    expect(systemBreakMatches(split(4), 3)).toBe(false);
+  });
   it('rebalances a five-bar 4+1 orphan to the width-balanced 3+2 breakpoint', () => {
     const bounds = [
       { left: 0, right: 100, top: 0 }, { left: 100, right: 200, top: 0 },
@@ -325,6 +334,41 @@ describe('ScorePassage terminal failures', () => {
 });
 
 describe('ScorePassage cursor feedback', () => {
+  it('builds one onset cursor spanning the active staff, including chord width and ledger notes', () => {
+    expect(passageCursorBounds({
+      noteBounds: [{ left: 120, right: 132, top: 42, bottom: 54 }, { left: 129, right: 143, top: 18, bottom: 31 }],
+      staffBoxes: [
+        { system: 0, staff: 0, left: 20, right: 760, top: 50, lineSpacing: 10 },
+        { system: 0, staff: 1, left: 20, right: 760, top: 150, lineSpacing: 10 },
+      ],
+      activeStaffs: [0],
+    })).toEqual({ x: 114, y: 8, width: 35, height: 92 });
+  });
+
+  it('spans both staves for a hands-together onset but not another system', () => {
+    expect(passageCursorBounds({
+      noteBounds: [{ left: 200, right: 212, top: 70, bottom: 82 }],
+      staffBoxes: [
+        { system: 0, staff: 0, top: 50, lineSpacing: 10 },
+        { system: 0, staff: 1, top: 150, lineSpacing: 10 },
+        { system: 1, staff: 0, top: 350, lineSpacing: 10 },
+      ],
+      activeStaffs: [0, 1],
+      onsetStaffs: [0],
+    })).toEqual({ x: 194, y: 40, width: 24, height: 160 });
+  });
+
+  it('uses the onset staff to identify the system when ledger notes sit between staves', () => {
+    expect(passageCursorBounds({
+      noteBounds: [{ left: 200, right: 212, top: 118, bottom: 130 }],
+      staffBoxes: [
+        { system: 0, staff: 0, top: 50, lineSpacing: 10 },
+        { system: 1, staff: 1, top: 150, lineSpacing: 10 },
+      ],
+      activeStaffs: [0, 1],
+      onsetStaffs: [1],
+    })?.y).toBe(108);
+  });
   it('exposes whether the score-position cursor is enabled', async () => {
     const view = renderPassage({ onExpectation: vi.fn(), showCursor: false });
     await waitFor(() => expect(lit()).toEqual([64]));

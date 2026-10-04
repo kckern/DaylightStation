@@ -315,10 +315,11 @@ describe('ScorePlayer — score-native Learn roadmap', () => {
     };
     renderPlayer();
     pickMode('Learn');
-    expect(screen.getByRole('navigation', { name: 'Piece segments' })).toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Selected segment' })).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Learn roadmap' })).not.toBeInTheDocument();
     fireEvent.click(screen.getAllByRole('button', { name: /Segment 1/ })[0]);
-    expect(screen.getByRole('group', { name: 'Segment 1 practice ladder' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Selected segment' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Segment 1 practice ladder' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Test out/ })).toBeEnabled();
   });
 
@@ -362,7 +363,8 @@ describe('ScorePlayer — score-native Learn roadmap', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(h.locationSearch).toContain('learnPassage=m0-1');
     expect(h.locationSearch).not.toContain('learnRung=');
-    expect(screen.getByRole('group', { name: 'Segment 1 practice ladder' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Selected segment' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Segment 1 practice ladder' })).not.toBeInTheDocument();
   });
 
   it('returns from an unrunnable lab with an explanation', async () => {
