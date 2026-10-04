@@ -82,6 +82,14 @@ describe('selectMusicXmlParts', () => {
     expect(document.querySelector('staves')?.textContent).toBe('2');
   });
 
+  it('preserves cursor movements that place multiple voices on a retained staff', () => {
+    const polyphonic = `<?xml version="1.0"?><score-partwise><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1"><measure number="1"><attributes><divisions>1</divisions><staves>2</staves></attributes><note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><staff>1</staff></note><backup><duration>2</duration></backup><note><pitch><step>E</step><octave>5</octave></pitch><duration>1</duration><voice>2</voice><staff>1</staff></note><forward><duration>1</duration></forward><note><pitch><step>C</step><octave>3</octave></pitch><duration>2</duration><voice>3</voice><staff>2</staff></note></measure></part></score-partwise>`;
+    const document = parse(selectMusicXmlParts(polyphonic, ['rh']).musicXml);
+    expect([...document.querySelectorAll('note voice')].map((node) => node.textContent)).toEqual(['1', '2']);
+    expect(document.querySelector('backup duration')?.textContent).toBe('2');
+    expect(document.querySelector('forward duration')?.textContent).toBe('1');
+  });
+
   it('retains an explicitly selected third part and removes the other part definitions', () => {
     const threeParts = `<?xml version="1.0"?><score-partwise><part-list>${[1, 2, 3].map((n) => `<score-part id="P${n}"><part-name>P${n}</part-name></score-part>`).join('')}</part-list>${[1, 2, 3].map((n) => `<part id="P${n}"><measure number="1"><note><pitch><step>C</step><octave>${n + 2}</octave></pitch><duration>1</duration></note></measure></part>`).join('')}</score-partwise>`;
     const document = parse(selectMusicXmlParts(threeParts, ['p3']).musicXml);

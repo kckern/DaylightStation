@@ -363,7 +363,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   const [lastWrong, setLastWrong] = useState(null);
   const [clockNow, setClockNow] = useState(() => Date.now());
   const countdownHeldRef = useRef(new Set());
-  const [unrunnable, setUnrunnable] = useState(false);
+  const [unrunnable, setUnrunnable] = useState(null);
   /**
    * WHAT THE DRILL IS CALLED — the run's title, when there is a drill to name.
    *
@@ -441,7 +441,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   if (subjectSources.instance !== instance || subjectSources.score !== score) {
     setSubjectSources({ instance, score });
     setScoreExpectation(null);
-    setUnrunnable(false);
+    setUnrunnable(null);
   }
 
   /**
@@ -474,7 +474,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     // read off the score rather than off the material descriptor, because a
     // host that resolved above no longer passes one.
     logger.warn('piano.exercise-score-unrunnable', { id: score?.id ?? null, reason });
-    setUnrunnable(true);
+    setUnrunnable(reason || 'unrunnable');
   }, [logger, score]);
 
   /**
@@ -527,7 +527,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       // this catch the throw escapes installRuntime's effect and blanks the
       // whole kiosk. Same posture as unresolvable material: log, degrade.
       logger.warn('piano.exercise-attempt-unbuildable', { id: subject?.id ?? null, mode, reason: error?.message ?? String(error) });
-      setUnrunnable(true);
+      setUnrunnable('attempt-unbuildable');
       return null;
     }
   }, [access.allowed, challenge, instance, logger, runRequirement, score, scoreExpectation, selectedMode, subject]);
@@ -535,7 +535,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   const installRuntime = useCallback(() => {
     const attempt = buildAttempt();
     if (!attempt) return;
-    setUnrunnable(false);
+    setUnrunnable(null);
     runtimeRef.current?.dispose();
     assessmentIdRef.current = makeId('attempt');
     const next = createAssessmentRuntime({
@@ -839,8 +839,9 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   useEffect(() => {
     if (!unavailableReason || reportedUnavailableRef.current === unavailableReason) return;
     reportedUnavailableRef.current = unavailableReason;
-    onUnavailable?.(unavailableReason);
-  }, [onUnavailable, unavailableReason]);
+    if (unavailableReason === 'unrunnable') onUnavailable?.(unavailableReason, unrunnable);
+    else onUnavailable?.(unavailableReason);
+  }, [onUnavailable, unavailableReason, unrunnable]);
 
   /**
    * A `tier` this surface cannot use — `'2'`, `2.5`, `4`, `-1` — falls back to

@@ -22,13 +22,17 @@ import useCountIn from './useCountIn.js';
 import { countInPlan } from './countIn.js';
 import useScoreTelemetry from './useScoreTelemetry.js';
 import useScoreEvaluator from './useScoreEvaluator.js';
-import usePracticeRecord from './usePracticeRecord.js';
+import usePracticeRecord, { compatibleLearnPassages } from './usePracticeRecord.js';
 import { bucketOf } from './practiceKey.js';
 import { pickLearnRange } from './learnRange.js';
 import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
-import { buildLearnPassages, projectLearnPassage } from './learnRoadmap.js';
-import LearnRoadmap, { LearnPassageSession, CustomLearnSession } from './LearnRoadmap.jsx';
+import { partIdForStaff } from '../../../performance/partIdentity.js';
+import { projectLearnPassage } from './learnRoadmap.js';
+import { CustomLearnSession } from './LearnRoadmap.jsx';
+import LearnLab from './LearnLab.jsx';
 import LearnPassageLayer from './LearnPassageLayer.jsx';
+import LearnSegmentRail, { segmentNavigationState } from './LearnSegmentRail.jsx';
+import { resolveLearnPlan } from './resolveLearnPlan.js';
 import { buildEngravedMeasureRects, measureAtPosition } from './focusRangeGeometry.js';
 import { completeBarSelection, moveBarEdge, validBarRange } from './learnBarSelection.js';
 import {
@@ -131,7 +135,7 @@ export const NOTE_INK = '#23262b';
 // identity on every render, which would re-render FocusRangeLayer (and defeat any
 // future memoisation of it) on every transport tick just to draw no ticks.
 const NO_MARKS = [];
-const staffPartId = (staff) => staff === 0 ? 'rh' : staff === 1 ? 'lh' : `staff-${staff}`;
+const staffPartId = partIdForStaff;
 const attemptId = () => `attempt-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
 
 /**
@@ -250,7 +254,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const [selectionAnchor, setSelectionAnchor] = useState(null);
   const [armedSelectionEdge, setArmedSelectionEdge] = useState(null);
   const [customRunOpen, setCustomRunOpen] = useState(false);
-  const [customResult, setCustomResult] = useState(null);
+  const [, setCustomResult] = useState(null);
   // Is the loop ON (wave-2: loop is a direct toggle, separate from whether a
   // range exists — audit L2 follow-up)? A defined range keeps showing its tint
   // and its handles even when looping is off (both layers read `focus`, not the
@@ -2124,26 +2128,36 @@ export default function ScorePlayer({ score: scoreMeta }) {
     [parts, activeParts],
   );
 
+  const learnPlan = useMemo(() => resolveLearnPlan({
+    defaults: config?.sheetmusic?.learn,
+    category: config?.sheetmusic?.learn?.categories?.[scoreMeta.category],
+    piece: scoreMeta.learn ?? config?.sheetmusic?.learn?.pieces?.[scoreMeta.id],
+    user: config?.user?.piano?.learn,
+    userPiece: config?.user?.piano?.learn?.pieces?.[scoreMeta.id],
+    score: {
+      id: scoreMeta.id, measures: layout.measures, steps: layout.steps, sections,
+      tempoMap: layout.tempoEntries, tempo: parsed?.tempo,
+    },
+  }), [config, layout.measures, layout.steps, layout.tempoEntries, parsed?.tempo, scoreMeta.category, scoreMeta.id, scoreMeta.learn, sections]);
   const learnPassages = useMemo(() => {
-    const planned = buildLearnPassages({
-      sections,
-      measures: layout.measures,
-      steps: layout.steps,
-      passages: smCfg.learn.passages,
-    });
-    const compatible = practice?.learn?.revision === smCfg.learn.revision ? practice.learn.passages : {};
-    return planned.map((passage) => {
-      const initial = projectLearnPassage({ passage, ladder: smCfg.learn.ladder });
+    const compatible = compatibleLearnPassages(practice?.learn, learnPlan);
+    const projected = learnPlan.segments.map((passage) => {
+      const ladder = [...passage.ladder, learnPlan.testOut];
+      const initial = projectLearnPassage({ passage, ladder });
       const progress = compatible?.[passage.id]
         ?? legacyLearnProgress(passage, initial.rungs, layout.measures, practice?.measures);
-      return projectLearnPassage({ passage, ladder: smCfg.learn.ladder, progress });
+      const result = projectLearnPassage({ passage, ladder, progress });
+      return { ...result, inProgress: result.rungs.some((rung) => rung.passCount > 0 && rung.state !== 'complete') };
     });
-  }, [layout.measures, layout.steps, practice, sections, smCfg.learn]);
-  const recommendedPassage = learnPassages.find((passage) => !passage.complete) ?? learnPassages[0] ?? null;
+    return segmentNavigationState(projected, learnPlan.navigation);
+  }, [layout.measures, learnPlan, practice]);
   const selectedPassageId = searchParams.get('learnPassage');
   const selectedRungId = searchParams.get('learnRung');
   const selectedPassage = learnPassages.find((passage) => passage.id === selectedPassageId) ?? null;
   const selectedRung = selectedPassage?.rungs.find((rung) => rung.id === selectedRungId && rung.state !== 'locked') ?? null;
+  const [restoreLearnAnchor, setRestoreLearnAnchor] = useState(null);
+  const [learnAchievement, setLearnAchievement] = useState(null);
+  const [learnNotice, setLearnNotice] = useState(null);
   const customRange = practiceLoaded && validBarRange(practice?.customRange, layout.measures?.length ?? 0) ? practice.customRange : null;
   const updateLearnSelection = useCallback((passageId, rungId = null) => {
     setSearchParams((current) => {
@@ -2155,15 +2169,37 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [setSearchParams]);
   const closeLearnPassage = useCallback(() => updateLearnSelection(null), [updateLearnSelection]);
   const openLearnRung = useCallback((rungId) => {
-    if (selectedPassage) updateLearnSelection(selectedPassage.id, rungId);
+    if (selectedPassage) {
+      setRestoreLearnAnchor(scrollRef.current?.scrollTop ?? 0);
+      updateLearnSelection(selectedPassage.id, rungId);
+    }
   }, [selectedPassage, updateLearnSelection]);
-  const startCustomSelection = useCallback(() => {
-    updateLearnSelection(null);
-    setArmedSelectionEdge(null);
-    setSelectionAnchor(null);
-    setSelectionPhase('in');
-    setCustomResult(null);
-  }, [updateLearnSelection]);
+  const closeLearnLab = useCallback(() => {
+    if (selectedPassage) updateLearnSelection(selectedPassage.id);
+  }, [selectedPassage, updateLearnSelection]);
+  const handleLearnUnavailable = useCallback((reason) => {
+    const message = reason === 'passage-too-dense'
+      ? 'This segment has too much music to fit. Try a shorter segment.'
+      : reason === 'parts-empty'
+        ? 'This segment has no notes for the selected part.'
+        : 'This segment could not be opened. Choose another segment or try again.';
+    setLearnNotice(message);
+    closeLearnLab();
+  }, [closeLearnLab]);
+  useEffect(() => {
+    if (!learnNotice) return undefined;
+    const timer = setTimeout(() => setLearnNotice(null), 5000);
+    return () => clearTimeout(timer);
+  }, [learnNotice]);
+  const advanceLearnRung = useCallback(({ rungId }) => {
+    const index = selectedPassage?.rungs.findIndex((candidate) => candidate.id === rungId) ?? -1;
+    const next = index >= 0 ? selectedPassage?.rungs[index + 1] : null;
+    if (next) updateLearnSelection(selectedPassage.id, next.id);
+    else closeLearnLab();
+  }, [closeLearnLab, selectedPassage, updateLearnSelection]);
+  const masterLearnSegment = useCallback((segmentId) => {
+    setLearnAchievement(segmentId);
+  }, []);
   const selectedRange = useMemo(() => selectionPhase === 'in' ? null
     : selectionPhase === 'out' && selectionAnchor != null
       ? { inMeasure: selectionAnchor, outMeasure: selectionAnchor }
@@ -2179,23 +2215,33 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [selectedRange, saveCustomRange, updateLearnSelection]);
 
   useEffect(() => {
-    if (smCfg.learn.configFallback) logger.warn('score.learn.config-fallback', { scoreId: scoreMeta.id });
-  }, [logger, scoreMeta.id, smCfg.learn.configFallback]);
+    if (learnPlan.configFallback) logger.warn('score.learn.config-fallback', { scoreId: scoreMeta.id });
+  }, [logger, scoreMeta.id, learnPlan.configFallback]);
 
-  const learnSession = mode === 'learn' && selectedPassage && selectedRung ? (
-      <LearnPassageSession
-        score={{ id: scoreMeta.id, title: meta.title, musicXml: scoreMeta.musicXml }}
-        revision={smCfg.learn.revision}
-        passage={selectedPassage}
+  const learnScore = useMemo(() => ({ id: scoreMeta.id, title: meta.title, musicXml: scoreMeta.musicXml }), [meta.title, scoreMeta.id, scoreMeta.musicXml]);
+  const learnSegmentMetadata = useMemo(() => Object.fromEntries(
+    learnPlan.segments.map((segment) => [segment.id, { fingerprint: segment.fingerprint }]),
+  ), [learnPlan.segments]);
+  const learnSessionOpen = Boolean(mode === 'learn' && selectedPassage && selectedRung);
+  const learnSession = learnSessionOpen ? (
+      <LearnLab
+        key={`${selectedPassage.id}:${selectedRung.id}`}
+        score={learnScore}
+        revision={learnPlan.revision}
+        segment={selectedPassage}
+        segments={learnSegmentMetadata}
         rung={selectedRung}
-        tempo={{ ...smCfg.learn.tempo, tempoMap, tempoSource: parsed?.tempo ? 'musicxml' : 'inferred' }}
+        tempo={{ ...learnPlan.settings.tempo, tempoMap: learnPlan.tempoMap, tempoSource: learnPlan.tempoSource }}
         onRecord={recordLearnRep}
-        onBack={() => updateLearnSelection(selectedPassage.id)}
+        onClose={closeLearnLab}
+        onRungPassed={advanceLearnRung}
+        onMastered={masterLearnSegment}
+        onUnavailable={handleLearnUnavailable}
       />
   ) : null;
   const customSession = mode === 'learn' && customRunOpen && customRange ? (
     <CustomLearnSession
-      score={{ id: scoreMeta.id, title: meta.title, musicXml: scoreMeta.musicXml }}
+      score={learnScore}
       range={customRange}
       measures={layout.measures}
       activeParts={activePartIds}
@@ -2204,10 +2250,22 @@ export default function ScorePlayer({ score: scoreMeta }) {
     />
   ) : null;
 
+  useEffect(() => {
+    if (learnSessionOpen || restoreLearnAnchor == null) return undefined;
+    const frame = requestAnimationFrame(() => {
+      if (scrollRef.current) scrollRef.current.scrollTop = restoreLearnAnchor;
+      setRestoreLearnAnchor(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [learnSessionOpen, restoreLearnAnchor]);
+
+  if (learnSession) return <div className="piano-score-player piano-score-player--learn-lab">{learnSession}</div>;
+
   return (
     <div className="piano-score-player">
       {learnSession}
       {customSession}
+      {learnNotice && <div className="piano-score-player__notice" role="status">{learnNotice}</div>}
       {scoreMeta.splashImage && !engraveReady && (
         <div className="piano-score-splash piano-score-splash--overlay" aria-hidden="true">
           <img className="piano-score-splash__img" src={scoreMeta.splashImage} alt="" decoding="async" />
@@ -2320,6 +2378,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
               measureRects={measureRects}
               selectedRange={selectedRange}
               selectedId={selectedPassage?.id ?? null}
+              achievementId={learnAchievement}
+              onAchievementEnd={() => setLearnAchievement(null)}
               onSelect={(passageId) => { setSelectionPhase(null); setArmedSelectionEdge(null); updateLearnSelection(passageId); }}
             />
           )}
@@ -2343,21 +2403,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
       </div>
 
       {roadmapLearn && practiceLoaded && (layout.measures?.length ?? 0) > 0 && (
-        <LearnRoadmap
-          passages={learnPassages}
-          recommendedId={recommendedPassage?.id}
+        <LearnSegmentRail
+          segments={learnPassages}
           selectedId={selectedPassage?.id ?? null}
-          onSelectPassage={(passageId) => { setSelectionPhase(null); setArmedSelectionEdge(null); updateLearnSelection(passageId); }}
+          onSelect={(passageId) => { setSelectionPhase(null); setArmedSelectionEdge(null); updateLearnSelection(passageId); }}
           onSelectRung={openLearnRung}
-          onClosePassage={closeLearnPassage}
-          customRange={customRange}
-          measures={layout.measures}
-          customResult={customResult}
-          selectionPhase={selectionPhase}
-          onStartSelection={startCustomSelection}
-          onCancelSelection={() => { setSelectionPhase(null); setSelectionAnchor(null); }}
-          onPracticeCustom={() => setCustomRunOpen(true)}
-          onClearCustom={() => { saveCustomRange(null); setCustomResult(null); }}
+          onClose={closeLearnPassage}
         />
       )}
 

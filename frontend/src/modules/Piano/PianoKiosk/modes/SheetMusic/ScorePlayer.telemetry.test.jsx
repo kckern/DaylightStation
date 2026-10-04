@@ -8,7 +8,7 @@ import { MemoryRouter } from 'react-router-dom';
 // and drive the config through a mutable holder so ON and OFF paths are both
 // exercised without a second file.
 
-const cfg = vi.hoisted(() => ({ value: { keyboard: { startNote: 21, endNote: 108 } } }));
+const cfg = vi.hoisted(() => ({ value: { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: { roadmap: false } } } }));
 
 const rec = vi.hoisted(() => ({
   startRecorder: vi.fn(),
@@ -92,7 +92,12 @@ vi.mock('./clickScheduler.js', () => ({ createClickScheduler: () => ({ start: vi
 // ScorePlayer in a PianoUserProvider — mock the module out entirely (this file
 // doesn't assert on the practice record, only that mounting doesn't throw).
 vi.mock('./usePracticeRecord.js', () => ({
-  default: () => ({ record: {}, loaded: true, persistent: true, recordCycle: vi.fn(), recordTierBest: vi.fn() }),
+  compatibleLearnPassages: (learn, plan) => (
+    learn?.revision === plan?.revision ? (learn.passages || {}) : {}
+  ),
+  default: () => ({
+    record: {}, loaded: true, persistent: true, recordCycle: vi.fn(), recordTierBest: vi.fn(), recordLearnRep: vi.fn(),
+  }),
 }));
 // usePianoPreferences (Task 15) reaches usePianoUser exactly like
 // usePracticeRecord — mock it out for the same reason (no PianoUserProvider in
@@ -150,7 +155,7 @@ const clearAutoRange = () => {
 
 beforeEach(() => {
   telMode.real = false;
-  cfg.value = { keyboard: { startNote: 21, endNote: 108 } };
+  cfg.value = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: { roadmap: false } } };
   rec.startRecorder.mockClear();
   rec.stopRecorder.mockClear();
   h.layoutExtras = null;
@@ -185,7 +190,7 @@ describe('ScorePlayer — recorder gate (Task 13)', () => {
   });
 
   it('starts the recorder exactly once on mount when inputTelemetry is enabled', () => {
-    cfg.value = { keyboard: { startNote: 21, endNote: 108 }, inputTelemetry: { enabled: true } };
+    cfg.value = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: { roadmap: false } }, inputTelemetry: { enabled: true } };
     renderPlayer();
     expect(rec.startRecorder).toHaveBeenCalledTimes(1);
     const arg = rec.startRecorder.mock.calls[0][0];

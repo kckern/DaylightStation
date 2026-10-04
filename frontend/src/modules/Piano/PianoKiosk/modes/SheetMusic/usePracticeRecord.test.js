@@ -17,7 +17,7 @@ vi.mock('../../../../../lib/api.mjs', () => ({
       }
     }
     if (data.learn) {
-      next.learn = { ...(store.learn || {}), ...data.learn, passages: { ...(store.learn?.passages || {}) } };
+      next.learn = { ...(store.learn || {}), ...data.learn, passages: { ...(store.learn?.passages || {}) }, segments: { ...(store.learn?.segments || {}), ...(data.learn.segments || {}) } };
       for (const [passageId, passage] of Object.entries(data.learn.passages || {})) {
         next.learn.passages[passageId] = {
           ...(next.learn.passages[passageId] || {}), ...passage,
@@ -35,13 +35,27 @@ vi.mock('../../PianoUserContext.jsx', () => ({
   usePianoUser: () => ({ currentUser: mockUser }),
 }));
 
-import usePracticeRecord from './usePracticeRecord.js';
+import usePracticeRecord, { compatibleLearnPassages } from './usePracticeRecord.js';
 
 const FP = { version: 2, measureCount: 40, xmlBytes: 12345, contentSha256: 'a'.repeat(64) };
 
 beforeEach(() => { calls.length = 0; store = {}; mockUser = 'kc'; });
 
 describe('usePracticeRecord', () => {
+  it('retains only segments whose boundary/ladder fingerprint is still compatible', () => {
+    const learn = {
+      revision: 'old',
+      segments: { a: { fingerprint: 'same-a' }, b: { fingerprint: 'old-b' } },
+      passages: { a: { complete: true }, b: { complete: true } },
+    };
+    const plan = { revision: 'new', segments: [{ id: 'a', fingerprint: 'same-a' }, { id: 'b', fingerprint: 'new-b' }] };
+    expect(compatibleLearnPassages(learn, plan)).toEqual({ a: { complete: true } });
+  });
+
+  it('keeps revision-only progress when the plan revision is unchanged', () => {
+    const passages = { a: { complete: true } };
+    expect(compatibleLearnPassages({ revision: 'same', passages }, { revision: 'same', segments: [] })).toBe(passages);
+  });
   it('loads the record for a persistent user', async () => {
     store = { fingerprint: FP, measures: { 3: { both: { attempts: 2, passes: 1 } } } };
     const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
@@ -61,6 +75,24 @@ describe('usePracticeRecord', () => {
     });
     expect(calls).toHaveLength(0);
     expect(result.current.record.measures['1'].both).toEqual({ attempts: 1, passes: 1 });
+  });
+
+  it('guest: applies the same segment compatibility rules without persistence', async () => {
+    mockUser = 'guest';
+    const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    act(() => result.current.recordLearnRep({
+      revision: 'old', passageId: 'a', rungId: 'right', result: { verdict: { passed: true } }, requiredPasses: 1,
+      completesPassage: true,
+      segments: { a: { fingerprint: 'same-a' }, b: { fingerprint: 'old-b' } },
+    }));
+    act(() => result.current.recordLearnRep({
+      revision: 'new', passageId: 'b', rungId: 'right', result: { verdict: { passed: true } }, requiredPasses: 2,
+      segments: { a: { fingerprint: 'same-a' }, b: { fingerprint: 'new-b' } },
+    }));
+    expect(result.current.record.learn.passages.a.complete).toBe(true);
+    expect(result.current.record.learn.passages.b.complete).toBe(false);
+    expect(calls).toHaveLength(0);
   });
 
   it('a null user (roster pending or failed) runs history-less but LOADED — Learn auto-range must not wait on the roster', async () => {
@@ -147,15 +179,16 @@ describe('usePracticeRecord', () => {
     await waitFor(() => expect(result.current.loaded).toBe(true));
     act(() => result.current.recordLearnRep({
       revision: 'ladder-a', passageId: 'm0-3', rungId: 'timed', result: { verdict: { passed: true } },
-      requiredPasses: 2, completesPassage: true,
+      requiredPasses: 2, completesPassage: true, segments: { 'm0-3': { fingerprint: 'segment-a' } },
     }));
     act(() => result.current.recordLearnRep({
       revision: 'ladder-a', passageId: 'm0-3', rungId: 'timed', result: { verdict: { passed: true } },
-      requiredPasses: 2, completesPassage: true,
+      requiredPasses: 2, completesPassage: true, segments: { 'm0-3': { fingerprint: 'segment-a' } },
     }));
     expect(result.current.record.learn.passages['m0-3']).toMatchObject({
       complete: true, completedBy: 'timed', rungs: { timed: { attempts: 2, passCount: 2 } },
     });
+    expect(result.current.record.learn.segments).toEqual({ 'm0-3': { fingerprint: 'segment-a' } });
     expect(calls.filter((call) => call.method === 'PUT')).toHaveLength(2);
   });
 
@@ -203,7 +236,23 @@ describe('usePracticeRecord', () => {
     }));
     expect(result.current.record.measures['0'].rh.passes).toBe(3);
     expect(result.current.record.learn).toEqual({
-      revision: 'new', passages: { 'm0-3': { rungs: { right: { attempts: 1, passCount: 1 } }, complete: false } },
+      revision: 'new', segments: {}, passages: { 'm0-3': { rungs: { right: { attempts: 1, passCount: 1 } }, complete: false } },
     });
+  });
+
+  it('a changed revision carries compatible sibling segments and invalidates only changed ones', async () => {
+    store = { fingerprint: FP, learn: {
+      revision: 'old',
+      segments: { a: { fingerprint: 'same-a' }, b: { fingerprint: 'old-b' } },
+      passages: { a: { complete: true, rungs: {} }, b: { complete: true, rungs: {} } },
+    } };
+    const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    act(() => result.current.recordLearnRep({
+      revision: 'new', passageId: 'b', rungId: 'right', result: { verdict: { passed: true } }, requiredPasses: 2,
+      segments: { a: { fingerprint: 'same-a' }, b: { fingerprint: 'new-b' } },
+    }));
+    expect(result.current.record.learn.passages.a.complete).toBe(true);
+    expect(result.current.record.learn.passages.b).toMatchObject({ complete: false, rungs: { right: { passCount: 1 } } });
   });
 });

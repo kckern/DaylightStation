@@ -1,4 +1,5 @@
 import { isFractionPolicy, judgeTimedOnset, timedReachMs, timedTarget, timedWindowMs } from './timedJudge.js';
+import { partIdForStaff } from './partIdentity.js';
 
 const MODES = new Set(['free', 'metronome', 'cued']);
 const MATCHERS = new Set(['cursor', 'timed', 'held']);
@@ -15,7 +16,6 @@ const median = (values) => {
   const middle = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 };
-const partForStaff = (staff) => staff === 0 ? 'rh' : staff === 1 ? 'lh' : `staff-${staff}`;
 const authoredPart = (note) => note.part || (note.hand === 'right' ? 'rh' : note.hand === 'left' ? 'lh' : 'unassigned');
 const noteKey = (eventId, part, midi, index) => `${eventId}-${part}-${midi}-${index}`;
 
@@ -126,7 +126,7 @@ export function compileScoreExpectation({ notes = [], source, tempoMap, fallback
     const event = groups.get(key) || { onsetQuarter: onset, durationQuarters: 0, spanId: Number.isFinite(measure) ? `measure:${measure}` : null, notes: [] };
     event.durationQuarters = Math.max(event.durationQuarters, duration);
     if (!scoreNote.rest && Number.isFinite(Number(scoreNote.midi))) {
-      const note = { ...scoreNote, midi: Number(scoreNote.midi), durationQuarters: duration, part: partForStaff(staff) };
+      const note = { ...scoreNote, midi: Number(scoreNote.midi), durationQuarters: duration, part: partIdForStaff(staff) };
       event.notes.push(note);
       if (scoreNote.tie === 'start') tiedAttacks.set(tieKey, { event, note, onset });
     }

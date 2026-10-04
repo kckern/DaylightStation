@@ -43,6 +43,8 @@ function normalizeRung(rung) {
   if (rung.scope != null && rung.scope !== 'all-parts') return null;
   if (rung.criteria != null && (!isObj(rung.criteria) || Object.values(rung.criteria).some((value) => !Number.isFinite(value) || value < 0 || value > 1))) return null;
   if (rung.tempoPercent != null && (!Number.isFinite(rung.tempoPercent) || rung.tempoPercent <= 0 || rung.tempoPercent > 100)) return null;
+  if (rung.tempoPercents != null && (!Array.isArray(rung.tempoPercents) || !rung.tempoPercents.length
+    || rung.tempoPercents.some((value) => !Number.isFinite(value) || value <= 0 || value > 100))) return null;
   return {
     ...rung,
     id: rung.id.trim(),
@@ -55,6 +57,9 @@ function normalizeRung(rung) {
     completion: rung.completion ?? 'standard',
     legacySeed: rung.legacySeed ?? null,
     tempoPercent: rung.mode === 'cued' ? (rung.mastery === true || rung.completion === 'tested-out' ? 100 : rung.tempoPercent ?? 60) : null,
+    tempoPercents: rung.mode === 'cued' && Array.isArray(rung.tempoPercents)
+      ? (rung.mastery === true || rung.completion === 'tested-out' ? rung.tempoPercents.map(() => 100) : [...rung.tempoPercents])
+      : null,
     mastery: rung.mastery === true || rung.completion === 'tested-out',
   };
 }
