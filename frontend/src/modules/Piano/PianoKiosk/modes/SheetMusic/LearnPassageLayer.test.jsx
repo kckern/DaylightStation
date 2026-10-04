@@ -36,13 +36,21 @@ describe('LearnPassageLayer', () => {
       ]}
       measures={measures} stepBoxes={stepBoxes} onSelect={vi.fn()}
     />);
-    expect(screen.getByRole('button', { name: /Segment 1.*Next/ })).toHaveAttribute('data-state', 'next');
-    expect(screen.getByRole('button', { name: /Segment 2.*In progress/ })).toHaveAttribute('data-state', 'in-progress');
-    expect(screen.getByRole('button', { name: /Segment 3.*Tested out/ })).toHaveAttribute('data-state', 'tested-out');
-    expect(screen.getByRole('button', { name: /Segment 4.*Locked/ })).toBeDisabled();
+    const next = screen.getByRole('button', { name: /Segment 1.*Next/ });
+    const work = screen.getByRole('button', { name: /Segment 2.*In progress/ });
+    const tested = screen.getByRole('button', { name: /Segment 3.*Tested out/ });
+    const locked = screen.getByRole('button', { name: /Segment 4.*Locked/ });
+    expect(next).toHaveAttribute('data-state', 'next');
+    expect(work).toHaveAttribute('data-state', 'in-progress');
+    expect(tested).toHaveAttribute('data-state', 'tested-out');
+    expect(locked).toBeDisabled();
+    expect([next, work, tested, locked].map((marker) => marker.textContent)).toEqual(['1›', '2◐', '3★', '4▣']);
+    for (const marker of [next, work, tested, locked]) {
+      expect(marker).not.toHaveTextContent(/Next|progress|Tested|Locked/);
+    }
   });
 
-  it('outlines only the selected full-bar range, including out-of-staff notes', () => {
+  it('uses engraved barlines but hugs the selected notation vertically', () => {
     const measures = [
       { firstStep: 0, lastStep: 0 },
       { firstStep: 1, lastStep: 1 },
@@ -67,7 +75,82 @@ describe('LearnPassageLayer', () => {
     expect(outlines).toHaveLength(1);
     expect(outlines[0].style.left).toBe('100px');
     expect(outlines[0].style.width).toBe('100px');
-    expect(outlines[0].style.top).toBe('70px');
-    expect(outlines[0].style.height).toBe('160px');
+    expect(outlines[0].style.top).toBe('88px');
+    expect(outlines[0].style.height).toBe('104px');
+  });
+
+  it('draws separate tight outlines when a selected segment wraps systems', () => {
+    const measures = [
+      { firstStep: 0, lastStep: 0 },
+      { firstStep: 1, lastStep: 1 },
+    ];
+    const stepBoxes = [
+      { x: 170, top: 100, bottom: 180 },
+      { x: 40, top: 360, bottom: 440 },
+    ];
+    const measureRects = [
+      { left: 120, right: 220, top: 60, bottom: 300, system: 0 },
+      { left: 20, right: 110, top: 320, bottom: 560, system: 1 },
+    ];
+    const { container } = render(<LearnPassageLayer
+      passages={[]}
+      measures={measures}
+      stepBoxes={stepBoxes}
+      measureRects={measureRects}
+      selectedRange={{ inMeasure: 0, outMeasure: 1 }}
+    />);
+    const outlines = [...container.querySelectorAll('.piano-learn-selection-outline')];
+    expect(outlines).toHaveLength(2);
+    expect(outlines.map((outline) => ({ top: outline.style.top, height: outline.style.height }))).toEqual([
+      { top: '88px', height: '104px' },
+      { top: '348px', height: '104px' },
+    ]);
+  });
+
+  it('keeps wrapped outlines separate while engraved barlines are still loading', () => {
+    const measures = [
+      { firstStep: 0, lastStep: 0 },
+      { firstStep: 1, lastStep: 1 },
+    ];
+    const stepBoxes = [
+      { x: 170, top: 100, bottom: 180 },
+      { x: 40, top: 360, bottom: 440 },
+    ];
+    const { container } = render(<LearnPassageLayer
+      passages={[]}
+      measures={measures}
+      stepBoxes={stepBoxes}
+      selectedRange={{ inMeasure: 0, outMeasure: 1 }}
+    />);
+    const outlines = [...container.querySelectorAll('.piano-learn-selection-outline')];
+    expect(outlines.map((outline) => ({ top: outline.style.top, height: outline.style.height }))).toEqual([
+      { top: '88px', height: '104px' },
+      { top: '348px', height: '104px' },
+    ]);
+  });
+
+  it('detects a fallback wrap from its vertical system even when x increases', () => {
+    const measures = [{ firstStep: 0, lastStep: 0 }, { firstStep: 1, lastStep: 1 }];
+    const stepBoxes = [
+      { x: 40, top: 100, bottom: 180 },
+      { x: 60, top: 360, bottom: 440 },
+    ];
+    const { container } = render(<LearnPassageLayer passages={[]} measures={measures} stepBoxes={stepBoxes}
+      selectedRange={{ inMeasure: 0, outMeasure: 1 }} />);
+    expect(container.querySelectorAll('.piano-learn-selection-outline')).toHaveLength(2);
+  });
+
+  it('preserves available engraved barlines while neighboring rectangles are still loading', () => {
+    const measures = [{ firstStep: 0, lastStep: 0 }, { firstStep: 1, lastStep: 1 }];
+    const stepBoxes = [
+      { x: 40, top: 100, bottom: 180 },
+      { x: 150, top: 100, bottom: 180 },
+    ];
+    const measureRects = [{ left: 10, right: 100, top: 70, bottom: 230, system: 0 }];
+    const { container } = render(<LearnPassageLayer passages={[]} measures={measures} stepBoxes={stepBoxes}
+      measureRects={measureRects} selectedRange={{ inMeasure: 0, outMeasure: 1 }} />);
+    const outline = container.querySelector('.piano-learn-selection-outline');
+    expect(outline.style.left).toBe('10px');
+    expect(Number.parseFloat(outline.style.width)).toBeGreaterThan(140);
   });
 });

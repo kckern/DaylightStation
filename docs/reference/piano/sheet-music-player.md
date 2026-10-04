@@ -217,11 +217,14 @@ open from the start unless sequential navigation is explicitly configured. The
 first incomplete segment is marked Next, but a player can open any unlocked
 segment.
 
-The score shows numbered, state-labelled tabs at segment starts, supplemented
-by a compact collapsible segment rail. Segment number is primary; an authored
-name is optional and the printed bar range is secondary. A thin outline appears
-only for the selected segment. It follows engraved barlines and the full
-vertical extent of each system, including notes above or below the staff.
+The score shows compact numbered circles at segment starts, supplemented by a
+collapsible circle rail. Color and small glyphs distinguish next, in-progress,
+mastered, tested-out, and locked states; the corresponding words remain in
+accessible labels instead of covering the notation. Segment number is primary;
+an authored name is optional and the printed bar range is secondary. A thin
+outline appears only for the selected segment. It follows engraved barlines
+horizontally and hugs the active notation vertically with a small clearance.
+Wrapped passages receive one outline per system and never bridge page whitespace.
 
 Choosing a rung plucks the segment into a full-screen lab. The rest of the score
 is unmounted: the lab engraves only the selected bars, in one or at most two
