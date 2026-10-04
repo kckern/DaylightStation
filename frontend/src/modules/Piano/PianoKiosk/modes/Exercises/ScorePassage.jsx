@@ -4,12 +4,21 @@ import { MusicXmlRenderer } from '../../../../MusicNotation/renderers/MusicXmlRe
 import { parseMusicXml } from '../../../../MusicNotation/parseMusicXml.js';
 import NoteHighlightLayer from '../SheetMusic/NoteHighlightLayer.jsx';
 import { compileScoreExpectation } from '../../../performance/assessmentAttempt.js';
-import { excerptMusicXml } from './scorePassageXml.js';
+import { excerptMusicXml, selectMusicXmlParts } from './scorePassageXml.js';
 
 let _logger;
 function logger() {
   if (!_logger) _logger = getLogger().child({ component: 'piano-score-passage' });
   return _logger;
+}
+
+export function fitPassageLayout({ layout, scale, minScale, maxSystems }) {
+  const systems = new Set((layout?.staves ?? []).map((staff) => staff.system).filter(Number.isInteger));
+  const count = systems.size || 1;
+  if (count <= maxSystems) return { accepted: true, nextScale: null };
+  if (scale <= minScale) return { accepted: false, nextScale: null };
+  const candidate = Math.max(minScale, Math.round(scale * (maxSystems / count) * 100) / 100);
+  return { accepted: false, nextScale: candidate < scale ? candidate : null };
 }
 
 /**
@@ -84,8 +93,16 @@ export default function ScorePassage({
    */
   const reportedRef = useRef(null);
 
-  // A stable identity, or the renderer's engrave effect re-fires every render.
-  const handleLayout = useCallback((result) => setLayout(result), []);
+  const [renderScale, setRenderScale] = useState(1);
+  const [fitError, setFitError] = useState(null);
+
+  const handleLayout = useCallback((result) => {
+    const fit = fitPassageLayout({ layout: result, scale: renderScale, minScale: MIN_PASSAGE_SCALE, maxSystems: MAX_PASSAGE_SYSTEMS });
+    if (fit.accepted) { setFitError(null); setLayout(result); return; }
+    setLayout(null);
+    if (fit.nextScale != null) setRenderScale(fit.nextScale);
+    else setFitError('passage-too-dense');
+  }, [renderScale]);
 
   /**
    * The one place a dead end is announced. Every caller of this is a decision to
@@ -135,6 +152,10 @@ export default function ScorePassage({
   }, [measures, rangeIndices]);
 
   const excerpt = useMemo(() => excerptMusicXml(musicXml, range), [musicXml, range]);
+  const focused = useMemo(
+    () => (excerpt.musicXml ? selectMusicXmlParts(excerpt.musicXml, requestedParts) : { musicXml: null, originalStaffIndices: [], error: excerpt.error }),
+    [excerpt.error, excerpt.musicXml, requestedParts],
+  );
 
   /**
    * Every engraved note, in the shape the score compiler reads: the note as the
@@ -144,9 +165,10 @@ export default function ScorePassage({
    */
   const notes = useMemo(() => (layout?.steps ?? []).flatMap((step) => (step.notes ?? []).map((note) => ({
     ...note,
+    staff: focused.originalStaffIndices?.[note.staff ?? 0] ?? note.staff,
     onsetQuarter: step.onsetQuarter ?? 0,
     measureIndex: excerpt.originalMeasureIndices[step.measure] ?? step.measure,
-  }))), [excerpt.originalMeasureIndices, layout]);
+  }))), [excerpt.originalMeasureIndices, focused.originalStaffIndices, layout]);
 
   /**
    * The compile, as a DISCRIMINATED answer rather than an expectation-or-null.
@@ -185,10 +207,15 @@ export default function ScorePassage({
   }, [layout, notes, sourceId, fallbackBpm, requestedParts, excerpt.inheritedTempoMap]);
 
   const expectation = compiled.state === 'ready' ? compiled.expectation : null;
+  const systemCount = useMemo(
+    () => new Set((layout?.staves ?? []).map((staff) => staff.system).filter(Number.isInteger)).size,
+    [layout],
+  );
 
   useLayoutEffect(() => {
-    if (excerpt.error) {
-      reportUnrunnable(excerpt.error);
+    const terminalError = excerpt.error || focused.error || fitError;
+    if (terminalError) {
+      reportUnrunnable(terminalError);
       return;
     }
     if (compiled.state === 'pending') return;
@@ -199,7 +226,7 @@ export default function ScorePassage({
     if (publishedRef.current === compiled.expectation) return;
     publishedRef.current = compiled.expectation;
     onExpectation?.(compiled.expectation);
-  }, [compiled, excerpt.error, onExpectation, reportUnrunnable]);
+  }, [compiled, excerpt.error, fitError, focused.error, onExpectation, reportUnrunnable]);
 
   /** Engraved noteheads by onset, so a cursor position can find its ink. */
   const elsByOnset = useMemo(() => {
@@ -260,28 +287,15 @@ export default function ScorePassage({
     return () => { for (const rectangle of rectangles) rectangle.remove(); };
   }, [currentStep, showCursor, windowOpen]);
 
-  // Every staff the engraving has is lit; a gate passage has no hands control.
+  // Part selection happened in the MusicXML itself; every remaining staff is active.
   const activeParts = useMemo(() => {
     const parts = {};
-    const selected = requestedParts ? new Set(requestedParts) : null;
     for (const step of layout?.steps ?? []) for (const note of step.notes ?? []) {
       const staff = note.staff ?? 0;
-      const part = staff === 0 ? 'rh' : staff === 1 ? 'lh' : `p${staff + 1}`;
-      parts[staff] = !selected || selected.has(part);
+      parts[staff] = true;
     }
     return parts;
-  }, [layout, requestedParts]);
-
-  useLayoutEffect(() => {
-    if (!requestedParts) return undefined;
-    const inactive = [];
-    for (const step of layout?.steps ?? []) for (const note of step.notes ?? []) {
-      if (!note.el || activeParts[note.staff ?? 0]) continue;
-      note.el.classList.add(INACTIVE);
-      inactive.push(note.el);
-    }
-    return () => { for (const el of inactive) el.classList.remove(INACTIVE); };
-  }, [activeParts, layout, requestedParts]);
+  }, [layout]);
 
   /** The wrong flash, on the note that was owed. Same pattern as the lit layer. */
   useLayoutEffect(() => {
@@ -331,17 +345,24 @@ export default function ScorePassage({
   }, [elsByOnset, expectation, judged, verdicts]);
 
   return (
-    <div className="piano-score-passage">
-      <MusicXmlRenderer musicXml={excerpt.musicXml} onLayout={handleLayout} onFailed={handleEngraveFailed}>
-        <NoteHighlightLayer step={currentStep} activeParts={activeParts} />
-      </MusicXmlRenderer>
+    <div className="piano-score-passage" data-system-count={systemCount || undefined}>
+      {focused.musicXml ? (
+        <MusicXmlRenderer musicXml={focused.musicXml} scale={renderScale} onLayout={handleLayout} onFailed={handleEngraveFailed}>
+          <NoteHighlightLayer step={currentStep} activeParts={activeParts} />
+        </MusicXmlRenderer>
+      ) : (
+        <div className="musicxml-renderer musicxml-renderer--placeholder" role="status">
+          <p>Could not read this score.</p>
+        </div>
+      )}
     </div>
   );
 }
 
 /** The tempo a score that names none is counted at — the Sheet Music surface's own. */
 const DEFAULT_BPM = 90;
-const INACTIVE = 'piano-score-passage__inactive';
+const MAX_PASSAGE_SYSTEMS = 2;
+const MIN_PASSAGE_SCALE = 0.65;
 /** A recorded verdict state → the class suffix painted on its engraved note. */
 const VERDICT_KIND = Object.freeze({ hit: 'hit', early: 'early', late: 'late', lapsed: 'unplayed', miss: 'unplayed' });
 const DRIFT_TICK = Object.freeze({ early: '\u25C2', late: '\u25B8' });

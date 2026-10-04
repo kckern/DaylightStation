@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { excerptMusicXml } from './scorePassageXml.js';
+import { excerptMusicXml, selectMusicXmlParts } from './scorePassageXml.js';
 
 const measures = (count, { labels = [], prefix = '' } = {}) => Array.from({ length: count }, (_, index) => `
   <measure number="${labels[index] ?? index + 1}">
@@ -41,6 +41,7 @@ describe('excerptMusicXml', () => {
     expect([...attributes.querySelectorAll('clef')].map((clef) => clef.getAttribute('number'))).toEqual(['1', '2']);
     expect(attributes.querySelector('transpose chromatic')?.textContent).toBe('2');
     expect(first.querySelector('direction sound')?.getAttribute('tempo')).toBe('84');
+    expect(first.querySelector('direction-type metronome per-minute')?.textContent).toBe('84');
     expect(result.inheritedTempoMap).toEqual([{ onsetQuarter: 0, bpm: 84 }]);
   });
 
@@ -58,5 +59,33 @@ describe('excerptMusicXml', () => {
     expect(excerptMusicXml(score({ count: 2 }), { start: 4, end: 6 })).toEqual({
       musicXml: null, originalMeasureIndices: [], inheritedTempoMap: [], error: 'passage-empty',
     });
+  });
+});
+
+describe('selectMusicXmlParts', () => {
+  const grandStaff = `<?xml version="1.0"?><score-partwise><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1"><measure number="1"><attributes><divisions>1</divisions><staves>2</staves><clef number="1"><sign>G</sign></clef><clef number="2"><sign>F</sign></clef></attributes><note><pitch><step>C</step><octave>5</octave></pitch><duration>1</duration><staff>1</staff></note><backup><duration>1</duration></backup><note><pitch><step>C</step><octave>3</octave></pitch><duration>1</duration><staff>2</staff></note></measure></part></score-partwise>`;
+
+  it.each([
+    [['rh'], '5'],
+    [['lh'], '3'],
+  ])('engraves only %j and remaps it onto one visible staff', (parts, octave) => {
+    const document = parse(selectMusicXmlParts(grandStaff, parts).musicXml);
+    expect([...document.querySelectorAll('note pitch octave')].map((node) => node.textContent)).toEqual([octave]);
+    expect([...document.querySelectorAll('note staff')].map((node) => node.textContent)).toEqual(['1']);
+    expect(document.querySelector('staves')?.textContent).toBe('1');
+    expect([...document.querySelectorAll('clef')]).toHaveLength(1);
+  });
+
+  it('retains both staves for together work', () => {
+    const document = parse(selectMusicXmlParts(grandStaff, ['rh', 'lh']).musicXml);
+    expect([...document.querySelectorAll('note staff')].map((node) => node.textContent)).toEqual(['1', '2']);
+    expect(document.querySelector('staves')?.textContent).toBe('2');
+  });
+
+  it('retains an explicitly selected third part and removes the other part definitions', () => {
+    const threeParts = `<?xml version="1.0"?><score-partwise><part-list>${[1, 2, 3].map((n) => `<score-part id="P${n}"><part-name>P${n}</part-name></score-part>`).join('')}</part-list>${[1, 2, 3].map((n) => `<part id="P${n}"><measure number="1"><note><pitch><step>C</step><octave>${n + 2}</octave></pitch><duration>1</duration></note></measure></part>`).join('')}</score-partwise>`;
+    const document = parse(selectMusicXmlParts(threeParts, ['p3']).musicXml);
+    expect([...document.querySelectorAll('part')].map((part) => part.getAttribute('id'))).toEqual(['P3']);
+    expect([...document.querySelectorAll('score-part')].map((part) => part.getAttribute('id'))).toEqual(['P3']);
   });
 });
