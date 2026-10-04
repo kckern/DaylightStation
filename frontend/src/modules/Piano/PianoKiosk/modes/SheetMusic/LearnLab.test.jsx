@@ -67,4 +67,13 @@ describe('LearnLab', () => {
     expect(exercise.props.score.tempoPercent).toBe(100);
     expect(screen.queryByRole('button', { name: 'Decrease tempo' })).not.toBeInTheDocument();
   });
+
+  it('reports the passage failure detail instead of silently closing itself', () => {
+    const onUnavailable = vi.fn();
+    const onClose = vi.fn();
+    render(<LearnLab {...base} onUnavailable={onUnavailable} onClose={onClose} />);
+    exercise.props.onUnavailable('unrunnable', 'passage-too-dense');
+    expect(onUnavailable).toHaveBeenCalledWith('passage-too-dense');
+    expect(onClose).not.toHaveBeenCalled();
+  });
 });

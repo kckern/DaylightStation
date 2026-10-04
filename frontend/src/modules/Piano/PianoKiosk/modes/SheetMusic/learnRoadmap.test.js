@@ -72,8 +72,8 @@ describe('roadmap ladder projection', () => {
   it('expands an all-parts rung to every staff on a non-grand score', () => {
     const projected = applicableLearnLadder([
       { id: 'all', parts: ['rh', 'lh'], scope: 'all-parts' },
-    ], ['rh', 'lh', 'staff-2']);
-    expect(projected[0].effectiveParts).toEqual(['rh', 'lh', 'staff-2']);
+    ], ['rh', 'lh', 'p3']);
+    expect(projected[0].effectiveParts).toEqual(['rh', 'lh', 'p3']);
   });
 
   it('unlocks only the first sequential rung plus always-available Test Out', () => {

@@ -508,7 +508,9 @@ describe('ExerciseRun shared assessment wiring', () => {
     render(<ExerciseRun {...props} />);
 
     expect(await screen.findByText(copy)).toBeInTheDocument();
-    await waitFor(() => expect(props.onUnavailable).toHaveBeenCalledWith(reason));
+    await waitFor(() => expect(props.onUnavailable).toHaveBeenCalledWith(
+      reason, ...(reason === 'unrunnable' ? ['attempt-unbuildable'] : []),
+    ));
     expect(props.onUnavailable).toHaveBeenCalledTimes(1);
   });
 

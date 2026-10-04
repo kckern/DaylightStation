@@ -26,6 +26,7 @@ import usePracticeRecord, { compatibleLearnPassages } from './usePracticeRecord.
 import { bucketOf } from './practiceKey.js';
 import { pickLearnRange } from './learnRange.js';
 import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
+import { partIdForStaff } from '../../../performance/partIdentity.js';
 import { projectLearnPassage } from './learnRoadmap.js';
 import { CustomLearnSession } from './LearnRoadmap.jsx';
 import LearnLab from './LearnLab.jsx';
@@ -134,7 +135,7 @@ export const NOTE_INK = '#23262b';
 // identity on every render, which would re-render FocusRangeLayer (and defeat any
 // future memoisation of it) on every transport tick just to draw no ticks.
 const NO_MARKS = [];
-const staffPartId = (staff) => staff === 0 ? 'rh' : staff === 1 ? 'lh' : `staff-${staff}`;
+const staffPartId = partIdForStaff;
 const attemptId = () => `attempt-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
 
 /**
@@ -2156,6 +2157,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const selectedRung = selectedPassage?.rungs.find((rung) => rung.id === selectedRungId && rung.state !== 'locked') ?? null;
   const [restoreLearnAnchor, setRestoreLearnAnchor] = useState(null);
   const [learnAchievement, setLearnAchievement] = useState(null);
+  const [learnNotice, setLearnNotice] = useState(null);
   const customRange = practiceLoaded && validBarRange(practice?.customRange, layout.measures?.length ?? 0) ? practice.customRange : null;
   const updateLearnSelection = useCallback((passageId, rungId = null) => {
     setSearchParams((current) => {
@@ -2175,6 +2177,20 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const closeLearnLab = useCallback(() => {
     if (selectedPassage) updateLearnSelection(selectedPassage.id);
   }, [selectedPassage, updateLearnSelection]);
+  const handleLearnUnavailable = useCallback((reason) => {
+    const message = reason === 'passage-too-dense'
+      ? 'This segment has too much music to fit. Try a shorter segment.'
+      : reason === 'parts-empty'
+        ? 'This segment has no notes for the selected part.'
+        : 'This segment could not be opened. Choose another segment or try again.';
+    setLearnNotice(message);
+    closeLearnLab();
+  }, [closeLearnLab]);
+  useEffect(() => {
+    if (!learnNotice) return undefined;
+    const timer = setTimeout(() => setLearnNotice(null), 5000);
+    return () => clearTimeout(timer);
+  }, [learnNotice]);
   const advanceLearnRung = useCallback(({ rungId }) => {
     const index = selectedPassage?.rungs.findIndex((candidate) => candidate.id === rungId) ?? -1;
     const next = index >= 0 ? selectedPassage?.rungs[index + 1] : null;
@@ -2220,6 +2236,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onClose={closeLearnLab}
         onRungPassed={advanceLearnRung}
         onMastered={masterLearnSegment}
+        onUnavailable={handleLearnUnavailable}
       />
   ) : null;
   const customSession = mode === 'learn' && customRunOpen && customRange ? (
@@ -2248,6 +2265,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     <div className="piano-score-player">
       {learnSession}
       {customSession}
+      {learnNotice && <div className="piano-score-player__notice" role="status">{learnNotice}</div>}
       {scoreMeta.splashImage && !engraveReady && (
         <div className="piano-score-splash piano-score-splash--overlay" aria-hidden="true">
           <img className="piano-score-splash__img" src={scoreMeta.splashImage} alt="" decoding="async" />

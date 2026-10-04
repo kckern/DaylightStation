@@ -331,11 +331,11 @@ describe('ExerciseRun — score material, handed down as props', () => {
    * (which fail later, from the passage's own compile) stay green.
    */
   describe.each([
-    ['the engraver could not read the document', () => { h.engraveFails = true; }, {}],
-    ['the engraving carried no notes', () => { h.steps = []; }, {}],
-    ['the range names bars the document does not have', () => {}, { measures: [9, 12] }],
-    ['the passage is nothing but rests', () => { h.steps = fourBarSteps().filter((s) => s.measure < 2); }, { measures: [3, 4] }],
-  ])('when %s', (_label, arrange, scoreOver) => {
+    ['the engraver could not read the document', () => { h.engraveFails = true; }, {}, 'engrave-failed'],
+    ['the engraving carried no notes', () => { h.steps = []; }, {}, 'no-engraved-notes'],
+    ['the range names bars the document does not have', () => {}, { measures: [9, 12] }, 'passage-empty'],
+    ['the passage is nothing but rests', () => { h.steps = fourBarSteps().filter((s) => s.measure < 2); }, { measures: [3, 4] }, 'no-engraved-notes'],
+  ])('when %s', (_label, arrange, scoreOver, detail) => {
     it('ends the run as unrunnable instead of waiting forever', async () => {
       arrange();
       const onUnavailable = vi.fn();
@@ -345,7 +345,7 @@ describe('ExerciseRun — score material, handed down as props', () => {
       // `unrunnable`, not `instance-not-found`: the document arrived, it simply
       // cannot become an ask. Either way the gate reads it as infrastructure
       // and grants the match.
-      await waitFor(() => expect(onUnavailable).toHaveBeenCalledWith('unrunnable'));
+      await waitFor(() => expect(onUnavailable).toHaveBeenCalledWith('unrunnable', detail));
       expect(screen.queryByText('Getting the music ready…')).toBeNull();
       expect(h.log.warn).toHaveBeenCalledWith(
         'piano.exercise-score-unrunnable',
