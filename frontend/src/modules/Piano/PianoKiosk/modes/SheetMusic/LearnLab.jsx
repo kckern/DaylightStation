@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ExerciseRun from '../Exercises/ExerciseRun.jsx';
+import RepInterstitial from '../Games/RepInterstitial.jsx';
 import { SHEET_MUSIC_DEFAULTS } from './sheetMusicConfig.js';
 
 const handCode = (parts) => parts.length > 1 ? 'RL' : parts[0] === 'lh' ? 'L' : parts[0] === 'rh' ? 'R' : null;
@@ -36,6 +37,7 @@ export function learnPracticeRequirement(rung) {
 export default function LearnLab({ score, revision, segment, segments = {}, rung, tempo = {}, feedback = SHEET_MUSIC_DEFAULTS.learn.feedback, onRecord, onClose, onRungPassed, onMastered, onUnavailable }) {
   const [take, setTake] = useState(0);
   const [success, setSuccess] = useState(null);
+  const [repCard, setRepCard] = useState(null);
   const returnTimerRef = useRef(null);
   const masteryTempo = rung.mastery === true || rung.completion === 'tested-out';
   const setIndex = Math.min(rung.sets - 1, Math.floor((rung.passCount ?? 0) / Math.max(1, rung.reps)));
@@ -64,13 +66,14 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
+  const recordResult = useCallback((result) => onRecord({
+    revision, passageId: segment.id, rungId: rung.id, result,
+    requiredPasses: rung.required, consecutive: rung.consecutive,
+    completesPassage: rung.completes === 'passage', completion: rung.completion,
+    segments,
+  }), [onRecord, revision, rung, segment.id, segments]);
   const settle = useCallback((result) => {
-    const outcome = onRecord({
-      revision, passageId: segment.id, rungId: rung.id, result,
-      requiredPasses: rung.required, consecutive: rung.consecutive,
-      completesPassage: rung.completes === 'passage', completion: rung.completion,
-      segments,
-    });
+    const outcome = recordResult(result);
     if (outcome?.passage?.complete) {
       onMastered?.(segment.id);
       setSuccess(`${segment.label} mastered`);
@@ -78,8 +81,23 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
     } else if (outcome?.rungComplete) {
       setSuccess(`${rung.label} complete`);
       returnAfterSuccess(() => onRungPassed?.({ segmentId: segment.id, rungId: rung.id, outcome }));
-    } else setTake((value) => value + 1);
-  }, [onClose, onMastered, onRecord, onRungPassed, returnAfterSuccess, revision, rung, segment.id, segment.label, segments]);
+    } else {
+      const completedRep = Math.min(rung.reps, ((rung.passCount ?? 0) % rung.reps) + 1);
+      const setClear = completedRep >= rung.reps;
+      setRepCard({
+        score: result?.score ?? null,
+        setIndex: setIndex + 1,
+        setCount: rung.sets,
+        repIndex: completedRep,
+        repCount: rung.reps,
+        setClear,
+        next: setClear
+          ? { key: `Set ${Math.min(rung.sets, setIndex + 2)}`, hand: handCode(rung.effectiveParts) }
+          : null,
+      });
+      setTake((value) => value + 1);
+    }
+  }, [onClose, onMastered, onRungPassed, recordResult, returnAfterSuccess, rung, segment.id, segment.label, setIndex]);
   const scoreBpm = Number(tempo.tempoMap?.[0]?.bpm);
   const effectiveBpm = scoreBpm > 0 ? Math.round(scoreBpm * tempoPercent / 100) : null;
   const adjustable = rung.mode === 'cued' && tempo.adjustable !== false && !masteryTempo;
@@ -107,11 +125,13 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       stepId={projection.steps[stepIndex]?.id} drillProjection={projection}
       framing={`${segment.label} · ${rung.label}`}
       ask={rung.mode === 'free' ? 'Play the passage accurately.' : 'Play the passage with the beat.'}
-      traceContext={{ tempoPercent, tempoSource: tempo.tempoSource ?? 'inferred' }} bare surface="learn-lab"
+      traceContext={{ tempoPercent, tempoSource: tempo.tempoSource ?? 'inferred' }} surface="learn-lab"
       scoreCursorPolicy="always" keyboardHintPolicy="after-wrong"
-      onExit={onClose} onPassed={settle} onFailed={settle}
+      failurePresentation="local" onExit={onClose} onPassed={settle}
+      onFailed={recordResult}
       onUnavailable={(reason, detail) => onUnavailable?.(detail || reason)}
     />
+    {repCard && !success && <RepInterstitial {...repCard} onDone={() => setRepCard(null)} />}
     {success && <div className="piano-learn-lab__success" role="status"><strong>{success}</strong><span>Returning to the score…</span></div>}
   </section>;
 }

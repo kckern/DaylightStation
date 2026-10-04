@@ -583,6 +583,24 @@ describe('ExerciseRun shared assessment wiring', () => {
     expect(screen.getByText(/Release the keys, then play any key to try again\./)).toBeInTheDocument();
   });
 
+  it('can report a failure to its host while retaining the shared local retry experience', async () => {
+    const requirement = withPassScore({ passScore: 0.8 });
+    const props = {
+      instance: subject(), score: null, intent: 'challenge', requirement,
+      failurePresentation: 'local', onExit: vi.fn(), onPassed: vi.fn(), onFailed: vi.fn(),
+    };
+    const view = render(<ExerciseRun {...props} />);
+    await armFree(view, props);
+    press(view, props, 61);
+    press(view, props, 61);
+    press(view, props, 61);
+    press(view, props, 62);
+
+    await waitFor(() => expect(props.onFailed).toHaveBeenCalledTimes(1));
+    expect(screen.getByText('Keep working')).toBeInTheDocument();
+    expect(screen.getByText(/Release the keys, then play any key to try again\./)).toBeInTheDocument();
+  });
+
   it('a host that took onFailed still gets the run’s own pass panel', async () => {
     // Only the FAILURE panel is the host's business. `onPassed` is
     // automatic, with no additional input required.

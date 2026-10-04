@@ -1335,6 +1335,40 @@ describe('the score stage, engraved by the real OSMD in Chromium', () => {
       'the lab retained grey out-of-range bars').toBe(0);
     expectNoPageErrors();
   }, 120000);
+
+  it('keeps drill progress visible and the keyboard at the bottom on a Learn Lab run', async () => {
+    const drillProjection = {
+      id: 'learn:segment:right',
+      title: 'Right hand',
+      displaySingleStep: true,
+      steps: [
+        { id: 'right:set-1', title: 'Set 1', display: { key: 'Set 1', hand: 'R', hand_label: 'Right hand' }, requirement: { required_passes: 3 }, pass_count: 0, state: 'current' },
+        { id: 'right:set-2', title: 'Set 2', display: { key: 'Set 2', hand: 'R', hand_label: 'Right hand' }, requirement: { required_passes: 3 }, pass_count: 0, state: 'locked' },
+      ],
+    };
+    await run({
+      scoreXml: fourBars,
+      props: {
+        material: SCORE_MATERIAL,
+        tier: 2,
+        ask: 'Play the passage accurately.',
+        intent: 'practice',
+        requirementOverride: { mode: 'free' },
+        programId: drillProjection.id,
+        stepId: 'right:set-1',
+        drillProjection,
+        surface: 'learn-lab',
+      },
+    }, 'Set 1');
+
+    const root = await probe.one('.piano-exercise-run');
+    const rail = await probe.one('.piano-exercise-run__rail');
+    const keyboard = await probe.one('.piano-exercise-run__keys');
+    expect(rail?.painted, `the rep/set rail is not visible: ${say(rail)}`).toBe(true);
+    expect(await probe.count('.drill-pill')).toBe(6);
+    expect(keyboard?.painted, `the virtual keyboard is not visible: ${say(keyboard)}`).toBe(true);
+    expect(Math.abs(root.bottom - keyboard.bottom), `the keyboard is not pinned to the run bottom: run ${say(root)}, keyboard ${say(keyboard)}`).toBeLessThan(1);
+  }, 120000);
 });
 
 // Both engraving engines must show the same inert count-in and clock-led run.
