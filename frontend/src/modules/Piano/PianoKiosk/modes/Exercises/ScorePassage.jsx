@@ -23,6 +23,39 @@ export function fitPassageLayout({ layout, scale, minScale, maxSystems }) {
 }
 
 /**
+ * Pick a single forced break that balances engraved notation width. The first
+ * unforced render supplies intrinsic-ish measure widths; equal candidates favor
+ * the longer first system (five bars becomes 3+2, never 2+3 or 4+1).
+ */
+export function balancedSystemBreak(measureBounds = []) {
+  const bounds = measureBounds.filter((bound) => bound
+    && Number.isFinite(bound.left) && Number.isFinite(bound.right) && Number.isFinite(bound.top)
+    && bound.right > bound.left);
+  if (bounds.length !== measureBounds.length || bounds.length < 3) return null;
+  const firstTop = bounds[0].top;
+  const currentBreak = bounds.findIndex((bound) => Math.abs(bound.top - firstTop) > 1);
+  if (currentBreak < 0) return null;
+  const minPerSystem = bounds.length >= 4 ? 2 : 1;
+  const lastBreak = bounds.length - minPerSystem;
+  if (lastBreak < minPerSystem) return null;
+  const widths = bounds.map((bound) => bound.right - bound.left);
+  const total = widths.reduce((sum, width) => sum + width, 0);
+  let left = 0;
+  let best = null;
+  let bestDifference = Infinity;
+  for (let index = 1; index < bounds.length; index += 1) {
+    left += widths[index - 1];
+    if (index < minPerSystem || index > lastBreak) continue;
+    const difference = Math.abs(left - (total - left));
+    if (difference < bestDifference || (difference === bestDifference && index > best)) {
+      best = index;
+      bestDifference = difference;
+    }
+  }
+  return best === currentBreak ? null : best;
+}
+
+/**
  * ScorePassage — a few bars of REAL sheet music standing at the gate.
  *
  * The third material kind. `keys` synthesizes its ask and `exercise` reads one
@@ -95,15 +128,27 @@ export default function ScorePassage({
   const reportedRef = useRef(null);
 
   const [renderScale, setRenderScale] = useState(1);
+  const [systemBreakBefore, setSystemBreakBefore] = useState(null);
   const [fitError, setFitError] = useState(null);
 
   const handleLayout = useCallback((result) => {
     const fit = fitPassageLayout({ layout: result, scale: renderScale, minScale: MIN_PASSAGE_SCALE, maxSystems: MAX_PASSAGE_SYSTEMS });
-    if (fit.accepted) { setFitError(null); setLayout(result); return; }
+    if (fit.accepted) {
+      const balancedBreak = systemBreakBefore == null ? balancedSystemBreak(result.measureBounds ?? []) : null;
+      if (balancedBreak != null) {
+        setLayout(null);
+        setSystemBreakBefore(balancedBreak);
+        logger().info('piano.score-passage-balanced', {
+          id: sourceId ?? null, measures, breakBefore: balancedBreak, scale: renderScale,
+        });
+        return;
+      }
+      setFitError(null); setLayout(result); return;
+    }
     setLayout(null);
     if (fit.nextScale != null) setRenderScale(fit.nextScale);
     else setFitError('passage-too-dense');
-  }, [renderScale]);
+  }, [measures, renderScale, sourceId, systemBreakBefore]);
 
   /**
    * The one place a dead end is announced. Every caller of this is a decision to
@@ -152,7 +197,10 @@ export default function ScorePassage({
     return { start: start - 1, end: end - 1 };
   }, [measures, rangeIndices]);
 
-  const excerpt = useMemo(() => excerptMusicXml(musicXml, range), [musicXml, range]);
+  const excerpt = useMemo(
+    () => excerptMusicXml(musicXml, range, { systemBreakBefore }),
+    [musicXml, range, systemBreakBefore],
+  );
   const focused = useMemo(
     () => (excerpt.musicXml ? selectMusicXmlParts(excerpt.musicXml, requestedParts) : { musicXml: null, originalStaffIndices: [], error: excerpt.error }),
     [excerpt.error, excerpt.musicXml, requestedParts],
@@ -346,7 +394,7 @@ export default function ScorePassage({
   }, [elsByOnset, expectation, judged, verdicts]);
 
   return (
-    <div className="piano-score-passage" data-system-count={systemCount || undefined}>
+    <div className="piano-score-passage" data-system-count={systemCount || undefined} data-cursor-enabled={String(showCursor)}>
       {focused.musicXml ? (
         <MusicXmlRenderer musicXml={focused.musicXml} scale={renderScale} onLayout={handleLayout} onFailed={handleEngraveFailed}>
           <NoteHighlightLayer step={currentStep} activeParts={activeParts} />

@@ -13,8 +13,14 @@ export function CustomLearnSession({ score, range, measures = [], activeParts = 
   const start = measures[range.inMeasure]?.number ?? range.inMeasure + 1;
   const end = measures[range.outMeasure]?.number ?? range.outMeasure + 1;
   const label = `Bars ${start}–${end}`;
-  return <div className="piano-learn-session">
-    <button className="piano-learn-session__back" type="button" onClick={onBack}>Back to selection</button>
+  return <section className="piano-learn-lab" role="dialog" aria-modal="true" aria-label={`${label} · Custom practice`}>
+    <header className="piano-learn-lab__toolbar">
+      <button className="piano-learn-lab__back" type="button" onClick={onBack} aria-label="Back to selected bars">
+        <span aria-hidden="true">‹</span><span>Back</span>
+      </button>
+      <div className="piano-learn-lab__identity"><strong>Selected bars</strong><span>{label}</span></div>
+      <div className="piano-learn-lab__task"><strong>Custom practice</strong><span>Play accurately at your own pace</span></div>
+    </header>
     <ExerciseRun
       instance={null}
       score={{ ...score, measures: [start, end], rangeIndices: { start: range.inMeasure, end: range.outMeasure }, activeParts }}
@@ -25,13 +31,13 @@ export function CustomLearnSession({ score, range, measures = [], activeParts = 
       stepId={`bars:${range.inMeasure}-${range.outMeasure}`}
       framing={`${label} · Custom practice`}
       ask="Play the selected bars at your own pace."
-      bare
+      bare surface="learn-lab" scoreCursorPolicy="always" keyboardHintPolicy="after-wrong"
       onExit={onBack}
       onPassed={onResult}
       onFailed={onResult}
       onUnavailable={onBack}
     />
-  </div>;
+  </section>;
 }
 
 function PassageButton({ passage, recommended, selected, onClick }) {

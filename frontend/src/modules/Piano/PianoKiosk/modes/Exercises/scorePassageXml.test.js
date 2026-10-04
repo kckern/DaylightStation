@@ -52,6 +52,16 @@ describe('excerptMusicXml', () => {
     expect(print?.hasAttribute('new-page')).toBe(false);
   });
 
+  it('adds one lab-owned system break to the same local bar in every part', () => {
+    const result = excerptMusicXml(score({ count: 6 }), { start: 0, end: 4 }, { systemBreakBefore: 3 });
+    const document = parse(result.musicXml);
+    const breaks = [...document.querySelectorAll('part')].map((part) => directMeasures(part)
+      .map((measure, index) => measure.querySelector('print')?.getAttribute('new-system') === 'yes' ? index : null)
+      .filter((index) => index != null));
+
+    expect(breaks).toEqual([[3], [3]]);
+  });
+
   it('returns explicit invalid and empty answers instead of engraving unrelated music', () => {
     expect(excerptMusicXml('<score-partwise><broken>', { start: 0, end: 1 })).toEqual({
       musicXml: null, originalMeasureIndices: [], inheritedTempoMap: [], error: 'invalid-xml',

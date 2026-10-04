@@ -2631,43 +2631,60 @@
 
 .piano-learn-passage-map {
   position: absolute; z-index: 6;
-  display: flex; align-items: baseline; gap: 0.3rem;
-  min-width: 2.8rem; height: 1.8rem; padding: 0 0.45rem; margin: 0;
+  display: grid; place-items: center;
+  width: 2.4rem; height: 2.4rem; aspect-ratio: 1; padding: 0; margin: 0;
   background: color-mix(in srgb, var(--piano-stage-panel) 92%, transparent);
-  border: 1px solid var(--piano-warn); border-left-width: 4px;
-  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  border: 2px solid var(--piano-border); border-radius: 50%;
   color: var(--piano-stage-fg);
   font-weight: 800; cursor: pointer;
-  small { font-size: 0.58rem; font-weight: 650; white-space: nowrap; }
+  small { position: absolute; right: -0.2rem; bottom: -0.2rem; display: grid; place-items: center; width: 1rem; height: 1rem; border-radius: 50%; background: var(--piano-stage-panel); color: var(--piano-accent-text); font-size: 0.6rem; }
 
   &[data-state='mastered'], &[data-state='tested-out'] {
     border-color: var(--piano-accent);
+    background: color-mix(in srgb, var(--piano-accent) 22%, var(--piano-stage-panel));
   }
+  &[data-state='next'] { border-color: var(--piano-warn); }
+  &[data-state='in-progress'] { border-color: var(--piano-info, var(--piano-accent)); }
   &[data-state='locked'] { opacity: 0.48; cursor: not-allowed; }
-  &.is-selected { box-shadow: 0 0 0 3px var(--piano-warn); }
+  &.is-selected { box-shadow: 0 0 0 2px var(--piano-stage-panel), 0 0 0 5px var(--piano-warn); }
 }
 .piano-learn-segment-rail {
-  flex: 0 0 auto; display: flex; align-items: stretch; gap: 0.45rem;
-  max-width: 100%; padding: 0.45rem 0.6rem;
+  flex: 0 0 auto; display: flex; flex-direction: column; gap: 0.35rem;
+  max-width: 100%; padding: 0.4rem 0.6rem 0.5rem;
   color: var(--piano-fg); background: var(--piano-surface-1); border-top: 1px solid var(--piano-border);
   button { font: inherit; color: inherit; }
-  &__toggle, &__close { flex: 0 0 auto; border: 1px solid var(--piano-border); border-radius: 999px; background: transparent; }
-  &__toggle { padding: 0.35rem 0.65rem; }
-  &__close { width: 2rem; height: 2rem; }
-  &__track, &__ladder { min-width: 0; display: flex; gap: 0.4rem; overflow-x: auto; }
-  &__segment, &__ladder > button:not(.piano-learn-segment-rail__close) {
-    flex: 0 0 auto; min-height: 2.8rem; padding: 0.35rem 0.65rem;
-    display: grid; grid-template-columns: auto auto; column-gap: 0.4rem; align-content: center;
-    text-align: left; background: var(--piano-surface-2); border: 1px solid var(--piano-border); border-radius: var(--r-sm);
-    small, .piano-learn-segment-rail__state { color: var(--piano-muted); font-size: 0.68rem; }
+  &__primary { display: flex; align-items: center; gap: 0.45rem; min-width: 0; }
+  &__toggle, &__close { flex: 0 0 auto; border: 1px solid var(--piano-border); border-radius: 50%; background: transparent; }
+  &__toggle { width: 2.25rem; height: 2.25rem; padding: 0; }
+  &__close { width: 2rem; height: 2rem; margin-left: auto; }
+  &__track { min-width: 0; display: flex; align-items: center; gap: 0.45rem; overflow-x: auto; scrollbar-width: thin; }
+  &__segment {
+    position: relative; flex: 0 0 2.75rem; width: 2.75rem; height: 2.75rem; aspect-ratio: 1;
+    display: grid; place-items: center; padding: 0;
+    background: var(--piano-surface-2); border: 2px solid var(--piano-border); border-radius: 50%;
+    font-weight: 850;
     &:disabled { opacity: 0.45; }
-    &[data-state='mastered'], &[data-state='tested-out'], &[data-state='complete'] { border-color: var(--piano-accent); }
-    &[data-state='next'], &[data-state='current'], &[data-state='available'] { border-color: var(--piano-warn); }
+    &[data-state='mastered'], &[data-state='complete'] { border-color: var(--piano-accent); background: color-mix(in srgb, var(--piano-accent) 18%, var(--piano-surface-2)); }
+    &[data-state='tested-out'] { border-color: var(--piano-accent); background: color-mix(in srgb, var(--piano-accent) 32%, var(--piano-surface-2)); }
+    &[data-state='in-progress'] { border-color: var(--piano-info, var(--piano-accent)); }
+    &[data-state='next'] { border-color: var(--piano-warn); background: color-mix(in srgb, var(--piano-warn) 15%, var(--piano-surface-2)); }
+    &[data-state='locked'] { border-style: dashed; }
+    &.is-selected { box-shadow: 0 0 0 3px var(--piano-surface-1), 0 0 0 5px var(--piano-warn); }
   }
-  &__title { font-weight: 800; }
-  &__name { font-weight: 650; }
-  &__state { grid-column: 2; }
-  &__ladder { padding-left: 0.45rem; border-left: 1px solid var(--piano-border); }
+  &__number { line-height: 1; }
+  &__glyph { position: absolute; right: -0.15rem; bottom: -0.15rem; display: grid; place-items: center; width: 1.1rem; height: 1.1rem; border-radius: 50%; background: var(--piano-surface-1); color: var(--piano-accent-text); font-size: 0.7rem; }
+  &__ladder { min-width: 0; display: flex; align-items: center; gap: 0.4rem; overflow-x: auto; padding-top: 0.35rem; border-top: 1px solid var(--piano-border); }
+  &__identity { flex: 0 0 auto; display: grid; min-width: 7.5rem; padding-right: 0.45rem; border-right: 1px solid var(--piano-border); }
+  &__identity span { color: var(--piano-muted); font-size: 0.72rem; white-space: nowrap; }
+  &__ladder > button:not(.piano-learn-segment-rail__close) {
+    flex: 0 0 auto; min-height: 2.4rem; padding: 0.3rem 0.65rem;
+    display: grid; align-content: center; text-align: left;
+    background: var(--piano-surface-2); border: 1px solid var(--piano-border); border-radius: 999px;
+    small { color: var(--piano-muted); font-size: 0.68rem; }
+    &:disabled { opacity: 0.45; }
+    &[data-state='complete'] { border-color: var(--piano-accent); }
+    &[data-state='current'], &[data-state='available'] { border-color: var(--piano-warn); }
+  }
   &.is-collapsed { flex-grow: 0; }
 }
 .piano-learn-selection-outline {
@@ -2698,20 +2715,24 @@
 .piano-learn-lab {
   position: absolute; inset: 0; z-index: 30; min-height: 0;
   display: flex; flex-direction: column; background: var(--piano-bg);
-  &__close {
-    position: absolute; z-index: 20; top: 0.7rem; left: 0.7rem;
-    padding: 0.5rem 0.8rem; color: var(--piano-fg); background: var(--piano-surface);
-    border: 1px solid var(--piano-border); border-radius: 999px; font: inherit;
-  }
-  &__status {
-    position: absolute; z-index: 20; top: 0.7rem; left: 50%; transform: translateX(-50%);
-    display: flex; align-items: center; gap: 0.55rem; padding: 0.35rem 0.55rem;
-    color: var(--piano-fg); background: color-mix(in srgb, var(--piano-surface) 94%, transparent);
-    border: 1px solid var(--piano-border); border-radius: 999px;
-    > span { color: var(--piano-muted); white-space: nowrap; }
-  }
-  &__tempo { display: flex; align-items: center; gap: 0.4rem; }
+  > .piano-exercise-run { flex: 1 1 auto; min-height: 0; }
+  &__toolbar { z-index: 20; flex: 0 0 auto; min-height: 3.25rem; display: flex; align-items: center; gap: 0.7rem; padding: 0.35rem 0.65rem; color: var(--piano-fg); background: var(--piano-surface-1); border-bottom: 1px solid var(--piano-border); }
+  &__back { display: flex; align-items: center; gap: 0.25rem; min-height: 2.35rem; padding: 0.25rem 0.6rem; color: inherit; background: transparent; border: 1px solid var(--piano-border); border-radius: var(--r-sm); font: inherit; }
+  &__back span:first-child { font-size: 1.5rem; line-height: 0.7; }
+  &__identity, &__task { display: grid; min-width: 0; line-height: 1.1; }
+  &__identity { padding-right: 0.7rem; border-right: 1px solid var(--piano-border); }
+  &__identity span, &__task span { overflow: hidden; color: var(--piano-muted); font-size: 0.72rem; text-overflow: ellipsis; white-space: nowrap; }
+  &__task { flex: 1 1 auto; }
+  &__tempo { flex: 0 0 auto; display: flex; align-items: center; gap: 0.4rem; }
   &__tempo button { width: 2rem; height: 2rem; border-radius: 50%; border: 1px solid var(--piano-border); background: transparent; color: inherit; font: inherit; }
+  &__tempo strong { white-space: nowrap; font-size: 0.85rem; }
+  &__success { position: absolute; z-index: 35; inset: 3.25rem 0 0; display: grid; place-content: center; justify-items: center; gap: 0.3rem; background: color-mix(in srgb, var(--piano-bg) 82%, transparent); color: var(--piano-fg); }
+  &__success strong { color: var(--piano-accent-text); font-size: clamp(1.8rem, 5vw, 3.5rem); }
+  &__success span { color: var(--piano-muted); }
+  @media (max-width: 760px) {
+    &__back span:last-child, &__identity span { display: none; }
+    &__toolbar { gap: 0.45rem; }
+  }
 }
 .piano-learn-passage-map.is-achievement {
   border-color: var(--piano-accent);
@@ -2739,6 +2760,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .piano-score-countin__beat { animation: none; }
+  .piano-learn-passage-map.is-achievement { animation: none; }
 }
 
 .piano-score-cursor {

@@ -65,6 +65,8 @@ describe('CustomLearnSession', () => {
     expect(exercise.props.score.rangeIndices).toEqual({ start: 2, end: 6 });
     expect(exercise.props.score.activeParts).toEqual(['rh', 'lh']);
     expect(exercise.props.practiceMode).toBe('free');
+    expect(exercise.props).toMatchObject({ scoreCursorPolicy: 'always', keyboardHintPolicy: 'after-wrong', surface: 'learn-lab' });
+    expect(document.querySelector('.piano-learn-lab__toolbar')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Finish take' }));
     expect(onResult).toHaveBeenCalledWith(expect.objectContaining({ verdict: { passed: true } }));
   });
@@ -113,12 +115,16 @@ describe('LearnPassageSession', () => {
   });
 
   it('banks a rep and returns to the roadmap when a rung completes', () => {
+    vi.useFakeTimers();
     const onRecord = vi.fn(() => ({ rungComplete: true, passage: { complete: false } }));
     const onBack = vi.fn();
     render(<LearnPassageSession score={{ id: 'score-1', musicXml: '<score />' }} revision="rev" passage={passage} rung={passage.rungs[0]} onRecord={onRecord} onBack={onBack} />);
     fireEvent.click(screen.getByRole('button', { name: 'Finish take' }));
     expect(onRecord).toHaveBeenCalledWith(expect.objectContaining({ passageId: 'm0-3', rungId: 'right', requiredPasses: 6 }));
+    expect(onBack).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(900);
     expect(onBack).toHaveBeenCalled();
+    vi.useRealTimers();
   });
 
   it('records a failed Test Out take for streak reset and retries in place', () => {

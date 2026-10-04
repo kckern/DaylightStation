@@ -57,8 +57,17 @@ function removeForcedBreaks(measure) {
   }
 }
 
+function addForcedSystemBreak(document, measure) {
+  let print = directChildren(measure, 'print')[0];
+  if (!print) {
+    print = document.createElement('print');
+    measure.insertBefore(print, measure.firstChild);
+  }
+  print.setAttribute('new-system', 'yes');
+}
+
 /** Build a self-contained MusicXML document for one inclusive canonical measure range. */
-export function excerptMusicXml(musicXml, range) {
+export function excerptMusicXml(musicXml, range, { systemBreakBefore = null } = {}) {
   if (typeof musicXml !== 'string' || !musicXml.trim()) return empty('invalid-xml');
   const document = new DOMParser().parseFromString(musicXml, 'application/xml');
   if (document.getElementsByTagName('parsererror').length) return empty('invalid-xml');
@@ -90,6 +99,9 @@ export function excerptMusicXml(musicXml, range) {
     if (direction) first.insertBefore(direction, first.firstChild);
     if (inherited) first.insertBefore(inherited, first.firstChild);
     for (const measure of selected) removeForcedBreaks(measure);
+    if (Number.isInteger(systemBreakBefore) && systemBreakBefore > 0 && systemBreakBefore < selected.length) {
+      addForcedSystemBreak(document, selected[systemBreakBefore]);
+    }
   }
 
   return {

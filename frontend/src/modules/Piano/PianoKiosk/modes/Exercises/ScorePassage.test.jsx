@@ -91,7 +91,7 @@ vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => 
   };
 });
 
-const { default: ScorePassage, fitPassageLayout } = await import('./ScorePassage.jsx');
+const { default: ScorePassage, fitPassageLayout, balancedSystemBreak } = await import('./ScorePassage.jsx');
 
 const midisOf = (expectation) => expectation.events.flatMap((event) => event.notes.map((note) => note.midi));
 const measuresOf = (expectation) => expectation.events.flatMap((event) => event.notes.map((note) => note.measureIndex));
@@ -121,6 +121,24 @@ beforeEach(() => {
 });
 
 describe('ScorePassage layout fitting', () => {
+  it('rebalances a five-bar 4+1 orphan to the width-balanced 3+2 breakpoint', () => {
+    const bounds = [
+      { left: 0, right: 100, top: 0 }, { left: 100, right: 200, top: 0 },
+      { left: 200, right: 300, top: 0 }, { left: 300, right: 400, top: 0 },
+      { left: 0, right: 100, top: 200 },
+    ];
+    expect(balancedSystemBreak(bounds)).toBe(3);
+  });
+
+  it('does not re-engrave an already balanced two-system passage or a one-system passage', () => {
+    const balanced = [
+      { left: 0, right: 100, top: 0 }, { left: 100, right: 200, top: 0 }, { left: 200, right: 300, top: 0 },
+      { left: 0, right: 100, top: 200 }, { left: 100, right: 200, top: 200 },
+    ];
+    expect(balancedSystemBreak(balanced)).toBeNull();
+    expect(balancedSystemBreak(balanced.map((bound) => ({ ...bound, top: 0 })))).toBeNull();
+  });
+
   it('accepts one or two systems without changing scale', () => {
     expect(fitPassageLayout({ layout: { staves: [{ system: 0 }, { system: 1 }] }, scale: 1, minScale: 0.65, maxSystems: 2 }))
       .toEqual({ accepted: true, nextScale: null });
@@ -307,6 +325,15 @@ describe('ScorePassage terminal failures', () => {
 });
 
 describe('ScorePassage cursor feedback', () => {
+  it('exposes whether the score-position cursor is enabled', async () => {
+    const view = renderPassage({ onExpectation: vi.fn(), showCursor: false });
+    await waitFor(() => expect(lit()).toEqual([64]));
+    expect(view.container.querySelector('.piano-score-passage')).toHaveAttribute('data-cursor-enabled', 'false');
+    view.rerender(<ScorePassage musicXml={fourBars} sourceId="score" measures={[2, 3]}
+      cursorIndex={0} showCursor onExpectation={vi.fn()} />);
+    expect(view.container.querySelector('.piano-score-passage')).toHaveAttribute('data-cursor-enabled', 'true');
+  });
+
   it('lights the note the cursor is sitting on, and moves with it', async () => {
     const view = renderPassage({ onExpectation: vi.fn(), cursorIndex: 0 });
     await waitFor(() => expect(lit()).toEqual([64]));

@@ -2,7 +2,7 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act, cleanup, fireEvent, within, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { __resetRecorder, __snapshotForTest, KIND } from '../../../../../lib/logging/inputRecorder.js';
 
@@ -77,6 +77,7 @@ const h = vi.hoisted(() => ({
   midiNotesListeners: new Set(),
   config: { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: { roadmap: false } } },
   learnLabProps: null,
+  locationSearch: '',
 }));
 
 // Derive per-onset full-staff steps from the melody events: the first pitch of
@@ -135,6 +136,7 @@ vi.mock('./LearnLab.jsx', () => ({
     h.learnLabProps = props;
     return <section role="dialog" aria-label={`${props.segment.label} · ${props.rung.label}`}>
       <button type="button" onClick={props.onClose}>Close lab</button>
+      <button type="button" onClick={() => props.onRungPassed({ segmentId: props.segment.id, rungId: props.rung.id, outcome: {} })}>Complete rung</button>
       <button type="button" onClick={() => { props.onMastered(props.segment.id); props.onClose(); }}>Master segment</button>
       <button type="button" onClick={() => props.onUnavailable('passage-too-dense')}>Fail segment</button>
     </section>;
@@ -251,8 +253,9 @@ import ScorePlayer from './ScorePlayer.jsx';
 // undefined-ish.
 const emitNote = (evt) => act(() => { [...h.noteCbs].forEach((fn) => fn(evt)); });
 const play = (note) => emitNote({ type: 'note_on', note, velocity: 80 });
+const LocationProbe = () => { h.locationSearch = useLocation().search; return null; };
 const renderPlayer = () =>
-  render(<MemoryRouter><ScorePlayer score={{ title: 'Mary', musicXml: '<score/>' }} /></MemoryRouter>);
+  render(<MemoryRouter><LocationProbe /><ScorePlayer score={{ title: 'Mary', musicXml: '<score/>' }} /></MemoryRouter>);
 
 // Sets the mocked live-note store's activeNotes and notifies every subscribed
 // component (see the usePianoMidiNotes mock above) so it re-renders holding
@@ -294,6 +297,7 @@ beforeEach(() => {
   h.midiNotesListeners = new Set();
   h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: { roadmap: false } } };
   h.learnLabProps = null;
+  h.locationSearch = '';
 });
 
 describe('ScorePlayer — score-native Learn roadmap', () => {
@@ -340,8 +344,25 @@ describe('ScorePlayer — score-native Learn roadmap', () => {
     await waitFor(() => expect(document.querySelector('.piano-score-player__scroll').scrollTop).toBe(137));
     const achieved = screen.getAllByRole('button', { name: /Segment 1/ }).find((button) => button.classList.contains('piano-learn-passage-map'));
     expect(achieved).toHaveClass('is-achievement');
-    fireEvent.animationEnd(achieved);
-    expect(achieved).not.toHaveClass('is-achievement');
+    await waitFor(() => expect(achieved).not.toHaveClass('is-achievement'), { timeout: 1800 });
+  });
+
+  it('returns to the selected segment ladder after a rung instead of opening the next run', async () => {
+    h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: {} } };
+    h.layoutExtras = {
+      measures: [{ number: 1, firstStep: 0, lastStep: 1 }, { number: 2, firstStep: 2, lastStep: 3 }],
+      measureBounds: [{ left: 80, right: 190, top: 10, bottom: 210 }, { left: 190, right: 310, top: 10, bottom: 210 }],
+    };
+    renderPlayer();
+    pickMode('Learn');
+    fireEvent.click(screen.getAllByRole('button', { name: /Segment 1/ })[0]);
+    fireEvent.click(screen.getByRole('button', { name: /Right hand/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Complete rung' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(h.locationSearch).toContain('learnPassage=m0-1');
+    expect(h.locationSearch).not.toContain('learnRung=');
+    expect(screen.getByRole('group', { name: 'Segment 1 practice ladder' })).toBeInTheDocument();
   });
 
   it('returns from an unrunnable lab with an explanation', async () => {

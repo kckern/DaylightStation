@@ -38,6 +38,12 @@ describe('resolveSheetMusicConfig', () => {
     expect(c.scoring.thresholds).toEqual({ green: 0.95, yellow: 0.6 });
     expect(c.scoring.silentMeasuresToStop).toBe(4);
   });
+  it('does not invalidate mastery when only feedback timing changes', () => {
+    const base = resolveSheetMusicConfig({});
+    const adjusted = resolveSheetMusicConfig({ learn: { feedback: { successReturnMs: 1400 } } });
+    expect(adjusted.learn.feedback.successReturnMs).toBe(1400);
+    expect(adjusted.learn.revision).toBe(base.learn.revision);
+  });
   it('ignores null/garbage and returns full defaults', () => {
     expect(resolveSheetMusicConfig(null).defaultMode).toBe('listen');
     expect(resolveSheetMusicConfig('nope').perform.backPedalCC).toBe(66);
