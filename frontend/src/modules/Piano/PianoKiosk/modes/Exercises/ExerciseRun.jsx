@@ -326,7 +326,7 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   player on a dead end. Both callbacks are optional and additive: omit them
  *   and the surface behaves exactly as it did before.
  */
-export default function ExerciseRun({ instance, score, requirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, ask = null, askTuple = null, tier = null, traceContext = null, onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, ask = null, askTuple = null, tier = null, traceContext = null, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
@@ -417,7 +417,8 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   }, [logger]);
   const access = resolveExerciseRunAccess(intent, currentUser);
   const { challenge } = access;
-  const selectedMode = challenge ? requirement?.mode : practiceMode;
+  const runRequirement = challenge ? requirement : practiceRequirement;
+  const selectedMode = runRequirement?.mode ?? practiceMode;
 
   /**
    * A NEW subject clears the last one's engraving and its degraded state — a
@@ -492,7 +493,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     // work, and the run picks this up again the moment it lands.
     if (!instance && !(score && scoreExpectation)) return null;
     const mode = selectedMode;
-    const activeRequirement = challenge ? requirement : null;
+    const activeRequirement = runRequirement;
     // The requirement wins over the surface's defaults — a gate rung can widen
     // `wrongWindow`, allow extras, or loosen the timing windows without this
     // component knowing which knob it turned. Practice is deliberately left on
@@ -527,7 +528,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
       setUnrunnable(true);
       return null;
     }
-  }, [access.allowed, challenge, instance, logger, requirement, score, scoreExpectation, selectedMode, subject]);
+  }, [access.allowed, challenge, instance, logger, runRequirement, score, scoreExpectation, selectedMode, subject]);
 
   const installRuntime = useCallback(() => {
     const attempt = buildAttempt();
@@ -695,7 +696,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     // one is persisted above and reported nowhere — there is nothing in it to
     // judge, and a host counting failures must not count a walk-away.
     if (!JUDGED_STATUSES.has(snapshot.result.status)) return;
-    const passed = runPassed(snapshot.result, { challenge, passScore: requirement?.passScore });
+    const passed = runPassed(snapshot.result, { challenge, passScore: runRequirement?.passScore });
     // `traceEvent`, not a bare `logger.info`: this is the event that says how a
     // run ENDED, and without the trace fields it said so about nobody. See the
     // note in `persist`.
@@ -734,13 +735,13 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     // it can offer its own ways forward — and so a host counting failures
     // counts only attempts that actually happened.
     if (!passed) onFailed?.(snapshot.result);
-  }, [challenge, traceEvent, onFailed, persist, requirement, resultReady, snapshot, subject]);
+  }, [challenge, traceEvent, onFailed, persist, resultReady, runRequirement, snapshot, subject]);
 
   // Completion belongs to the host whenever it supplied a callback. Every
   // host advances automatically; this piano surface has no pointer controls.
   const passTakenRef = useRef(false);
   const judgedResult = resultReady && JUDGED_STATUSES.has(snapshot.result?.status) ? snapshot.result : null;
-  const resultPassed = runPassed(judgedResult, { challenge, passScore: requirement?.passScore });
+  const resultPassed = runPassed(judgedResult, { challenge, passScore: runRequirement?.passScore });
   const hostOwnsResult = resultPassed ? Boolean(onPassed) : Boolean(onFailed);
   const localRetry = Boolean(judgedResult && !hostOwnsResult);
   useEffect(() => {
@@ -853,7 +854,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   }, [logger, tier, tierUsable]);
 
   const held = useMemo(() => [...activeNotes.keys()].sort((a, b) => a - b), [activeNotes]);
-  const clickBpm = Number(requirement?.gates?.pace?.target_bpm ?? instance?.tempo?.start_bpm);
+  const clickBpm = Number(runRequirement?.gates?.pace?.target_bpm ?? instance?.tempo?.start_bpm);
   // KNOWN GAP: a score reaches here with no `instance` and therefore no meter,
   // so a cued passage is always counted in over FOUR beats — a 3/4 passage gets
   // one beat too many. Only the count-in is affected: the tempo the attempt is
@@ -1205,7 +1206,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   // changes. The keyboard footer wants the pitch itself.
   const isWrong = !countingDown && lastWrong !== null;
   const wrongNotes = countingDown || lastWrong === null ? null : new Set([lastWrong.midi]);
-  const passed = runPassed(result, { challenge, passScore: requirement?.passScore });
+  const passed = runPassed(result, { challenge, passScore: runRequirement?.passScore });
   // A timed run that failed on TIMING says so, in the child's terms. Anything
   // else (a missing or wrong note) keeps the copy below.
   const timingCopy = timed && result && !passed
@@ -1381,7 +1382,9 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
    * deck answered here, or a drill whose host handed one down. A drill left to
    * fetch its own is unknowable at this point and keeps its heading.
    */
-  const chromeDrawn = Boolean(deckProgram) || (drillProjection?.steps?.length ?? 0) >= 2;
+  const chromeDrawn = Boolean(deckProgram)
+    || (drillProjection?.steps?.length ?? 0) >= 2
+    || drillProjection?.displaySingleStep === true;
   /**
    * A percentage belongs to a STAGE, not to a tier.
    *
@@ -1525,6 +1528,8 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
             musicXml={score.musicXml}
             sourceId={score.id}
             measures={score.measures}
+            rangeIndices={score.rangeIndices ?? null}
+            activeParts={score.activeParts ?? null}
             onExpectation={takeScoreExpectation}
             onUnrunnable={handleScoreUnrunnable}
             cursorIndex={visualCursor.index}

@@ -128,7 +128,7 @@ vi.mock('../../PianoMidiContext.jsx', async () => {
   };
 });
 vi.mock('../../usePianoPlayback.js', () => ({ usePianoPlayback: () => ({ setPlaying: () => {} }) }));
-vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: { keyboard: { startNote: 21, endNote: 108 } } }) }));
+vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: { roadmap: false } } } }) }));
 vi.mock('../../PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumb: (crumbs) => { h.crumbs = crumbs || []; } }));
 vi.mock('../../useReloadGuard.js', () => ({ default: () => {} }));
 // Spyable click scheduler: useMetronomeClick creates one per enable, so hand it

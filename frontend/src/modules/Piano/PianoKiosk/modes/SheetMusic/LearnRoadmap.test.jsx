@@ -1,0 +1,82 @@
+import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import LearnRoadmap, { LearnPassageSession, learnDrillProjection } from './LearnRoadmap.jsx';
+
+const exercise = vi.hoisted(() => ({ props: null }));
+vi.mock('../Exercises/ExerciseRun.jsx', () => ({
+  default: (props) => {
+    exercise.props = props;
+    return <>
+      <button type="button" onClick={() => props.onPassed({ verdict: { passed: true } })}>Finish take</button>
+      <button type="button" onClick={() => props.onFailed({ verdict: { passed: false } })}>Miss take</button>
+    </>;
+  },
+}));
+
+const passage = {
+  id: 'm0-3', order: 1, label: 'Bars 1–4', printedMeasures: [1, 4], playableParts: ['rh', 'lh'],
+  complete: false,
+  rungs: [
+    { id: 'right', label: 'Right hand', effectiveParts: ['rh'], mode: 'free', sets: 2, reps: 3, passCount: 1, required: 6, state: 'current', criteria: { completeness: 1 } },
+    { id: 'left', label: 'Left hand', effectiveParts: ['lh'], mode: 'free', sets: 2, reps: 3, passCount: 0, required: 6, state: 'locked', criteria: { completeness: 1 } },
+    { id: 'test-out', label: 'Test out', effectiveParts: ['rh', 'lh'], mode: 'cued', sets: 1, reps: 3, passCount: 0, required: 3, state: 'available', consecutive: true, completes: 'passage', criteria: { completeness: 1, placement: 0.8 } },
+  ],
+};
+
+describe('LearnRoadmap', () => {
+  it('keeps every passage open while showing completion and recommendation', () => {
+    const onSelectPassage = vi.fn();
+    render(<LearnRoadmap passages={[passage, { ...passage, id: 'm4-7', order: 2, label: 'Bars 5–8', complete: true }]} recommendedId="m0-3" onSelectPassage={onSelectPassage} />);
+    expect(screen.getByRole('button', { name: /Bars 1–4.*Recommended/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Bars 5–8.*Complete/ })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: /Bars 5–8/ }));
+    expect(onSelectPassage).toHaveBeenCalledWith('m4-7');
+  });
+
+  it('locks later normal rungs but leaves Test Out selectable', () => {
+    const onSelectRung = vi.fn();
+    render(<LearnRoadmap passages={[passage]} selectedId="m0-3" onSelectPassage={() => {}} onSelectRung={onSelectRung} onClosePassage={() => {}} />);
+    expect(screen.getByRole('button', { name: /Right hand/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Left hand/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Test out/ })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: /Test out/ }));
+    expect(onSelectRung).toHaveBeenCalledWith('test-out');
+  });
+});
+
+describe('LearnPassageSession', () => {
+  it('runs the selected score passage with parts, rubric, and set/rep projection', () => {
+    render(<LearnPassageSession score={{ id: 'score-1', musicXml: '<score />' }} revision="rev" passage={passage} rung={passage.rungs[0]} onRecord={() => ({ rungComplete: false })} onBack={() => {}} />);
+    expect(exercise.props.score).toMatchObject({ id: 'score-1', measures: [1, 4], activeParts: ['rh'] });
+    expect(exercise.props.practiceRequirement).toMatchObject({ mode: 'free', rubric: { criteria: { completeness: 1 } } });
+    expect(exercise.props.drillProjection.steps).toHaveLength(2);
+    expect(exercise.props.drillProjection.steps[0].pass_count).toBe(1);
+  });
+
+  it('banks a rep and returns to the roadmap when a rung completes', () => {
+    const onRecord = vi.fn(() => ({ rungComplete: true, passage: { complete: false } }));
+    const onBack = vi.fn();
+    render(<LearnPassageSession score={{ id: 'score-1', musicXml: '<score />' }} revision="rev" passage={passage} rung={passage.rungs[0]} onRecord={onRecord} onBack={onBack} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Finish take' }));
+    expect(onRecord).toHaveBeenCalledWith(expect.objectContaining({ passageId: 'm0-3', rungId: 'right', requiredPasses: 6 }));
+    expect(onBack).toHaveBeenCalled();
+  });
+
+  it('records a failed Test Out take for streak reset and retries in place', () => {
+    const testOut = passage.rungs[2];
+    const onRecord = vi.fn(() => ({ rungComplete: false, passage: { complete: false } }));
+    const onBack = vi.fn();
+    render(<LearnPassageSession score={{ id: 'score-1', musicXml: '<score />' }} revision="rev" passage={passage} rung={testOut} onRecord={onRecord} onBack={onBack} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Miss take' }));
+    expect(onRecord).toHaveBeenCalledWith(expect.objectContaining({ consecutive: true, completesPassage: true }));
+    expect(onBack).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Finish take' })).toBeInTheDocument();
+  });
+
+  it('projects reps across configured sets', () => {
+    const projection = learnDrillProjection(passage, { ...passage.rungs[0], passCount: 4 });
+    expect(projection.steps.map((step) => [step.pass_count, step.passed, step.state])).toEqual([
+      [3, true, 'complete'], [1, false, 'current'],
+    ]);
+  });
+});

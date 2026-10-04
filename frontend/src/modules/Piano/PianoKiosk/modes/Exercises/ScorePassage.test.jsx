@@ -87,6 +87,7 @@ const measuresOf = (expectation) => expectation.events.flatMap((event) => event.
 const lit = () => [...document.querySelectorAll('.mock-notehead.piano-note-lit')].map((el) => Number(el.dataset.midi));
 const wrong = () => [...document.querySelectorAll('.mock-notehead.piano-note-wrong')].map((el) => Number(el.dataset.midi));
 const dimmed = () => [...document.querySelectorAll('.mock-notehead.piano-score-passage__dim')].map((el) => Number(el.dataset.midi));
+const inactive = () => [...document.querySelectorAll('.mock-notehead.piano-score-passage__inactive')].map((el) => Number(el.dataset.midi));
 
 const renderPassage = (props = {}) => render(
   <ScorePassage
@@ -120,6 +121,13 @@ describe('ScorePassage expectation', () => {
     expect(expectation.source).toMatchObject({ kind: 'score', id: 'files:docs/sheet-music/four-bars.musicxml' });
   });
 
+  it('accepts canonical measure indices without interpreting printed numbering', async () => {
+    const onExpectation = vi.fn();
+    renderPassage({ measures: [0, 0], rangeIndices: { start: 1, end: 2 }, onExpectation });
+    await waitFor(() => expect(onExpectation).toHaveBeenCalled());
+    expect(midisOf(onExpectation.mock.calls.at(-1)[0])).toEqual([64, 65, 67, 69]);
+  });
+
   it('takes its tempo from the score itself when the engraver reports none', async () => {
     const onExpectation = vi.fn();
     renderPassage({ onExpectation });
@@ -138,6 +146,25 @@ describe('ScorePassage expectation', () => {
 
     await waitFor(() => expect(onExpectation).toHaveBeenCalled());
     expect(midisOf(onExpectation.mock.calls.at(-1)[0])).toEqual([60, 62, 64, 65, 67, 69, 71, 72]);
+  });
+
+  it('filters the expectation to selected score parts and recesses the inactive staff', async () => {
+    h.steps = [
+      { onsetQuarter: 0, measure: 1, notes: [
+        { midi: 64, staff: 0, durationQuarters: 1, el: notehead(64) },
+        { midi: 48, staff: 1, durationQuarters: 1, el: notehead(48) },
+      ] },
+      { onsetQuarter: 1, measure: 1, notes: [
+        { midi: 65, staff: 0, durationQuarters: 1, el: notehead(65) },
+        { midi: 50, staff: 1, durationQuarters: 1, el: notehead(50) },
+      ] },
+    ];
+    const onExpectation = vi.fn();
+    renderPassage({ measures: [2, 2], activeParts: ['lh'], onExpectation });
+
+    await waitFor(() => expect(onExpectation).toHaveBeenCalled());
+    expect(midisOf(onExpectation.mock.calls.at(-1)[0])).toEqual([48, 50]);
+    expect(inactive()).toEqual([64, 65]);
   });
 
   it('does not publish while the engraver is still working — that is not an answer', async () => {

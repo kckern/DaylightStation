@@ -55,7 +55,7 @@ export default function usePracticeRecord({ scoreId, fingerprint }) {
   /** One completed, non-voided gate cycle: attempts for every measure in the
    *  range; a pass wherever the cycle logged no wrong for that measure. */
   const recordCycle = useCallback(({ measureIndices, wrongMeasures, bucket }) => {
-    if (!isPersistentUser(currentUser) || !measureIndices?.length) return;
+    if (!measureIndices?.length) return;
     const touched = {};
     const next = { ...recordRef.current, fingerprint: fpRef.current, measures: { ...(recordRef.current.measures || {}) } };
     for (const m of measureIndices) {
@@ -65,20 +65,53 @@ export default function usePracticeRecord({ scoreId, fingerprint }) {
       next.measures[k] = { ...(next.measures[k] || {}), [bucket]: entry };
       touched[k] = next.measures[k];
     }
+    recordRef.current = next;
     setRecord(next);
     put({ fingerprint: fpRef.current, measures: touched });
-  }, [currentUser, put]);
+  }, [put]);
 
   /** Tier best for the current hands bucket; only improvements write. */
   const recordTierBest = useCallback(({ bucket, tier, score }) => {
-    if (!isPersistentUser(currentUser)) return;
     const cur = recordRef.current?.polish?.[bucket]?.[tier];
     if (Number.isFinite(cur) && cur >= score) return;
     const polish = { ...(recordRef.current.polish || {}) };
     polish[bucket] = { ...(polish[bucket] || {}), [tier]: score };
-    setRecord({ ...recordRef.current, polish });
+    const next = { ...recordRef.current, polish };
+    recordRef.current = next;
+    setRecord(next);
     put({ fingerprint: fpRef.current, polish: { [bucket]: { [tier]: score } } });
-  }, [currentUser, put]);
+  }, [put]);
+
+  /** Bank one complete passage take into the config-defined Learn ladder. */
+  const recordLearnRep = useCallback(({
+    revision, passageId, rungId, result, requiredPasses = 1, consecutive = false, completesPassage = false, completion = 'standard',
+  }) => {
+    if (!revision || !passageId || !rungId) return null;
+    const currentLearn = recordRef.current.learn?.revision === revision
+      ? recordRef.current.learn
+      : { revision, passages: {} };
+    const currentPassage = currentLearn.passages?.[passageId] || { rungs: {}, complete: false };
+    const currentRung = currentPassage.rungs?.[rungId] || { attempts: 0, passCount: 0 };
+    const passed = Boolean(result?.verdict?.passed);
+    const passCount = passed
+      ? Math.min(currentRung.passCount + 1, Math.max(1, requiredPasses))
+      : consecutive ? 0 : currentRung.passCount;
+    const rung = { attempts: currentRung.attempts + 1, passCount };
+    const rungComplete = passCount >= Math.max(1, requiredPasses);
+    const passage = {
+      ...currentPassage,
+      rungs: { ...(currentPassage.rungs || {}), [rungId]: rung },
+      complete: currentPassage.complete === true || (completesPassage && rungComplete),
+      ...((completesPassage && rungComplete) ? { completedBy: rungId } : {}),
+      ...((completesPassage && rungComplete && completion === 'tested-out') ? { testedOut: true } : {}),
+    };
+    const learn = { ...currentLearn, revision, passages: { ...(currentLearn.passages || {}), [passageId]: passage } };
+    const next = { ...recordRef.current, fingerprint: fpRef.current, learn };
+    recordRef.current = next;
+    setRecord(next);
+    put({ fingerprint: fpRef.current, learn: { revision, passages: { [passageId]: passage } } });
+    return { rung, rungComplete, passage };
+  }, [put]);
 
   /** Persist portable assessment evidence alongside the compact frontier. */
   const recordAssessmentAttempt = useCallback(async (attempt, { keepalive = false } = {}) => {
@@ -91,5 +124,5 @@ export default function usePracticeRecord({ scoreId, fingerprint }) {
   // wasn't an improvement are indistinguishable — both leave the record empty and
   // both no-op silently. It is NOT a gate callers should re-implement; recordCycle
   // and recordTierBest already refuse to write on their own.
-  return { record, loaded, persistent: isPersistentUser(currentUser), recordCycle, recordTierBest, recordAssessmentAttempt };
+  return { record, loaded, persistent: isPersistentUser(currentUser), recordCycle, recordTierBest, recordLearnRep, recordAssessmentAttempt };
 }
