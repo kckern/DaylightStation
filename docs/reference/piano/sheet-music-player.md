@@ -216,6 +216,15 @@ within each region, the planner creates balanced passages targeting four bars
 open from the start. The first incomplete passage is marked Recommended, but a
 player can open any passage and return to the same ladder with Back.
 
+The score shows small numbered markers at passage starts. A thin outline appears
+only for the selected passage or a custom range. It follows engraved barlines and
+the full vertical extent of each system, including notes above or below the
+staff. **Select bars** starts a custom range: tap its first and last measure, then
+drag either score handle to adjust it. Ordinary taps still seek when selection is
+off. **Practice selection** opens an untimed free practice run for those bars;
+its result does not advance the preset passage ladder. The custom range is saved
+per player and score in the practice record.
+
 The default ladder is:
 
 | Rung | Work | Requirement |

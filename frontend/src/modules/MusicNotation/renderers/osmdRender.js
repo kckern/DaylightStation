@@ -191,6 +191,27 @@ export function extractPerStaffGeometry(osmd) {
   }
 }
 
+/** Rendered measure bounds in the SVG's pixel coordinate space, by source index. */
+export function extractMeasureBounds(osmd) {
+  const zoom = osmd?.Zoom ?? osmd?.zoom ?? 1;
+  const px = (units) => units * OSMD_UNIT_PX * zoom;
+  return (osmd?.GraphicSheet?.MeasureList || []).map((staffMeasures) => {
+    let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+    for (const measure of staffMeasures || []) {
+      const box = measure?.PositionAndShape;
+      const pos = box?.AbsolutePosition;
+      if (!Number.isFinite(pos?.x) || !Number.isFinite(pos?.y)) continue;
+      left = Math.min(left, pos.x + (box.BorderLeft ?? 0));
+      right = Math.max(right, pos.x + (box.BorderRight ?? box.Size?.width ?? 0));
+      top = Math.min(top, pos.y + (box.BorderTop ?? 0));
+      bottom = Math.max(bottom, pos.y + (box.BorderBottom ?? box.Size?.height ?? 0));
+    }
+    return Number.isFinite(left) && right > left
+      ? { left: px(left), right: px(right), top: px(top), bottom: px(bottom) }
+      : null;
+  });
+}
+
 /**
  * Stamp each engraved staff group in the rendered SVG with the staff id the
  * rest of the app speaks — OSMD's `ParentStaff.idInMusicSheet` (sheet-global,
@@ -406,7 +427,7 @@ function makeCursorWalk(osmd) {
         bottom: box.bottom,
       };
     });
-    return { events, notes, tempoEntries, steps, measures, staves: extractStaffGeometry(osmd), staffBoxes: extractPerStaffGeometry(osmd) };
+    return { events, notes, tempoEntries, steps, measures, staves: extractStaffGeometry(osmd), staffBoxes: extractPerStaffGeometry(osmd), measureBounds: extractMeasureBounds(osmd) };
   }
 
   return { cursor, processStep, finalize };

@@ -1,5 +1,5 @@
 import React, { useRef, useState, useCallback } from 'react';
-import { measureExtent } from './focusRangeGeometry.js';
+import { measureExtent, measureAtPosition } from './focusRangeGeometry.js';
 
 // A press that never travels this far is a TAP, not a drag (wave-3 F). Generous
 // on purpose: a finger on a kiosk glass always wobbles a pixel or three, and the
@@ -53,7 +53,8 @@ const BAND_SLACK_PX = 40;
  * @param {number} [p.scale] - engrave zoom; the vertical band slack is in on-screen px, so it scales with the sheet the way measureAtPoint's call site already does (40 * scale)
  */
 export default function RangeHandleLayer({
-  measures = [], stepBoxes = [], range = null, onArm, onCommit, onPreview, scrollRef, scale = 1,
+  measures = [], stepBoxes = [], measureRects = [], range = null, onArm, onCommit, onPreview, scrollRef, scale = 1,
+  labelPrefix = 'Loop',
 }) {
   const rootRef = useRef(null);
   const dragRef = useRef(null); // { edge, startX, startY, moved, lastMeasure }
@@ -75,6 +76,8 @@ export default function RangeHandleLayer({
   // gutter reads as the handle having come off the finger — so the vertical
   // distance is merely weighted and the nearest system always wins.
   const measureUnder = useCallback((pt) => {
+    const engraved = measureAtPosition(measureRects, pt.x, pt.y);
+    if (engraved >= 0) return engraved;
     let bestI = -1;
     let bestD = Infinity;
     const slack = BAND_SLACK_PX * scale; // on-screen px — tracks the engrave zoom (see measureAtPoint's call site)
@@ -88,7 +91,7 @@ export default function RangeHandleLayer({
     }
     if (bestI < 0) return -1;
     return measures.findIndex((mm) => bestI >= mm.firstStep && bestI <= mm.lastStep);
-  }, [stepBoxes, measures, scale]);
+  }, [stepBoxes, measures, measureRects, scale]);
 
   const endDrag = useCallback((edge) => {
     dragRef.current = null;
@@ -147,8 +150,8 @@ export default function RangeHandleLayer({
   if (!range) return null;
   const inM = measures[range.inMeasure];
   const outM = measures[range.outMeasure];
-  const inExt = inM && measureExtent(inM, stepBoxes);
-  const outExt = outM && measureExtent(outM, stepBoxes);
+  const inExt = inM && measureExtent(inM, stepBoxes, measureRects[range.inMeasure]);
+  const outExt = outM && measureExtent(outM, stepBoxes, measureRects[range.outMeasure]);
   if (!inExt || !outExt) return null;
 
   // Where each grip sits when it is not being dragged. Normally the boundary it
@@ -174,7 +177,7 @@ export default function RangeHandleLayer({
       <div
         className={`piano-score-range-handle piano-score-range-handle--${edge}${dragPos?.edge === edge ? ' is-dragging' : ''}`}
         role="slider"
-        aria-label={edge === 'in' ? 'Loop start handle' : 'Loop end handle'}
+        aria-label={`${labelPrefix} ${edge === 'in' ? 'start' : 'end'} handle`}
         aria-valuenow={(edge === 'in' ? range.inMeasure : range.outMeasure) + 1}
         aria-valuetext={`Measure ${(edge === 'in' ? range.inMeasure : range.outMeasure) + 1}`}
         style={{ left: x - HANDLE_HALF_PX, top: ext.top - 12, height: ext.bottom - ext.top + 24 }}

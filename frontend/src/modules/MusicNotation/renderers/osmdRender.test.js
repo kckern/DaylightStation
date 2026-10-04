@@ -5,6 +5,7 @@ import {
   collectOnsetNotes,
   extractStaffGeometry,
   extractPerStaffGeometry,
+  extractMeasureBounds,
   extractEvents,
   extractLayoutSliced,
   tagStaffGroups,
@@ -88,6 +89,25 @@ const staffLineWithId = ({ x, y, width, staffId }) => ({
 const sheet = (systems, zoom) => ({
   Zoom: zoom,
   GraphicSheet: { MusicPages: [{ MusicSystems: systems }] },
+});
+
+describe('extractMeasureBounds', () => {
+  it('uses engraved measure edges across both staves, scaled into overlay pixels', () => {
+    const osmd = {
+      Zoom: 2,
+      GraphicSheet: { MeasureList: [[
+        { PositionAndShape: { AbsolutePosition: { x: 10, y: 5 }, BorderLeft: -1, BorderRight: 9, BorderTop: -2, BorderBottom: 6 } },
+        { PositionAndShape: { AbsolutePosition: { x: 10, y: 15 }, BorderLeft: -1, BorderRight: 9, BorderTop: -1, BorderBottom: 7 } },
+      ]] },
+    };
+    expect(extractMeasureBounds(osmd)).toEqual([
+      { left: 180, right: 380, top: 60, bottom: 440 },
+    ]);
+  });
+
+  it('leaves missing graphical measures empty so the cursor fallback can render', () => {
+    expect(extractMeasureBounds({ GraphicSheet: { MeasureList: [null, []] } })).toEqual([null, null]);
+  });
 });
 
 describe('extractStaffGeometry', () => {
