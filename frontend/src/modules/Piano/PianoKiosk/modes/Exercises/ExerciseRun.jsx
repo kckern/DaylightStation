@@ -1382,7 +1382,9 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
    * deck answered here, or a drill whose host handed one down. A drill left to
    * fetch its own is unknowable at this point and keeps its heading.
    */
-  const chromeDrawn = Boolean(deckProgram) || (drillProjection?.steps?.length ?? 0) >= 2;
+  const chromeDrawn = Boolean(deckProgram)
+    || (drillProjection?.steps?.length ?? 0) >= 2
+    || drillProjection?.displaySingleStep === true;
   /**
    * A percentage belongs to a STAGE, not to a tier.
    *
