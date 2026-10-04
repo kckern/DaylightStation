@@ -228,6 +228,18 @@ is unmounted: the lab engraves only the selected bars, in one or at most two
 systems, and physically removes inactive staves for single-hand work. Close
 returns to the prior score position. A completed segment pulses once on return.
 
+The lab leads with notation. Its existing assessment cursor is visible on free
+and timed rungs; timed work adds beat-window state to that same cursor. The
+keyboard footer remains neutral until the learner plays a wrong pitch at the
+current event, then reveals the still-owed key or chord only until the cursor
+advances. Two-system excerpts choose a width-balanced break and avoid a
+one-measure second-system orphan when a legal two-or-more-measure split exists.
+
+Lab context lives in one compact toolbar rather than floating controls: Back,
+segment and bar identity, rung, set/rep position, and (for timed work) tempo.
+Completing a rung holds a brief success state and returns to the selected
+segment's ladder; it never auto-starts the next training run.
+
 The default ladder is:
 
 | Rung | Work | Requirement |
@@ -265,6 +277,7 @@ sheetmusic:
   learn:
     roadmap: true
     passages: { targetMeasures: 4, minMeasures: 3, maxMeasures: 5 }
+    feedback: { successReturnMs: 900 }
     ladder:
       - id: right
         label: Right hand

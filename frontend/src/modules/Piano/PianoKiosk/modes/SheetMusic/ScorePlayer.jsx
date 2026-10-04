@@ -2191,12 +2191,18 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const timer = setTimeout(() => setLearnNotice(null), 5000);
     return () => clearTimeout(timer);
   }, [learnNotice]);
-  const advanceLearnRung = useCallback(({ rungId }) => {
-    const index = selectedPassage?.rungs.findIndex((candidate) => candidate.id === rungId) ?? -1;
-    const next = index >= 0 ? selectedPassage?.rungs[index + 1] : null;
-    if (next) updateLearnSelection(selectedPassage.id, next.id);
-    else closeLearnLab();
-  }, [closeLearnLab, selectedPassage, updateLearnSelection]);
+  useEffect(() => {
+    if (!learnAchievement) return undefined;
+    // CSS animation events are absent when the OS requests reduced motion.
+    // Keep the animation callback as an early exit, but always clear this
+    // transient state independently so it can never become permanent chrome.
+    const timer = setTimeout(() => setLearnAchievement(null), 1200);
+    return () => clearTimeout(timer);
+  }, [learnAchievement]);
+  // A finished rung returns the learner to this segment's ladder. The next rung
+  // is now available there, but starting another take remains an intentional
+  // choice rather than an automatic jump into a new exercise.
+  const advanceLearnRung = useCallback(() => closeLearnLab(), [closeLearnLab]);
   const masterLearnSegment = useCallback((segmentId) => {
     setLearnAchievement(segmentId);
   }, []);
@@ -2232,6 +2238,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         segments={learnSegmentMetadata}
         rung={selectedRung}
         tempo={{ ...learnPlan.settings.tempo, tempoMap: learnPlan.tempoMap, tempoSource: learnPlan.tempoSource }}
+        feedback={learnPlan.settings.feedback}
         onRecord={recordLearnRep}
         onClose={closeLearnLab}
         onRungPassed={advanceLearnRung}

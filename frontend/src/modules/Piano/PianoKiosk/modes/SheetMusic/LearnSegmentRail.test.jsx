@@ -11,10 +11,10 @@ const segments = [
 describe('LearnSegmentRail', () => {
   it('shows numbered segments first, bar ranges second, and optional authored names', () => {
     render(<LearnSegmentRail segments={segmentNavigationState(segments, {})} onSelect={vi.fn()} />);
-    expect(screen.getByRole('button', { name: /Segment 1, Opening, Bars 1–4, Next/ })).toBeInTheDocument();
-    expect(screen.getByText('Segment 1')).toBeInTheDocument();
-    expect(screen.getByText('Opening')).toBeInTheDocument();
-    expect(screen.getByText('Bars 1–4')).toBeInTheDocument();
+    const first = screen.getByRole('button', { name: /Segment 1, Opening, Bars 1–4, Next/ });
+    expect(first).toHaveClass('piano-learn-segment-rail__segment');
+    expect(first).toHaveTextContent('1');
+    expect(first).not.toHaveTextContent('Bars 1–4');
     expect(screen.getByRole('button', { name: /Segment 3, Theme, Bars 9–12, Tested out/ })).toHaveAttribute('data-state', 'tested-out');
   });
 
@@ -50,6 +50,8 @@ describe('LearnSegmentRail', () => {
       { id: 'test-out', label: 'Test out', state: 'available', passCount: 0, required: 3 },
     ] };
     render(<LearnSegmentRail segments={[selected]} selectedId="a" onSelectRung={onSelectRung} onClose={vi.fn()} />);
+    expect(screen.getByText('Segment 1')).toBeInTheDocument();
+    expect(screen.getByText('Opening · Bars 1–4')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Right hand/ })).toBeEnabled();
     expect(screen.getByRole('button', { name: /Left hand/ })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: /Test out/ }));

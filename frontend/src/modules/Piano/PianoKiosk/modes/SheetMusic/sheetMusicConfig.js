@@ -25,6 +25,7 @@ export const SHEET_MUSIC_DEFAULTS = {
     navigation: { sequential: false },
     passages: { targetMeasures: 4, minMeasures: 3, maxMeasures: 5 },
     tempo: { fallbackBpm: 90, minimumPercent: 40, maximumPercent: 100, adjustable: true },
+    feedback: { successReturnMs: 900 },
     ladder: DEFAULT_LADDER,
   },
 };
@@ -92,10 +93,19 @@ function normalizeLearn(rawLearn) {
     ...(typeof rawTempo.adjustable === 'boolean' ? { adjustable: rawTempo.adjustable } : {}),
   };
   if (tempo.minimumPercent > tempo.maximumPercent) tempo.minimumPercent = tempo.maximumPercent;
+  const rawFeedback = isObj(raw.feedback) ? raw.feedback : {};
+  const feedback = {
+    successReturnMs: Number.isInteger(rawFeedback.successReturnMs)
+      && rawFeedback.successReturnMs >= 0 && rawFeedback.successReturnMs <= 10000
+      ? rawFeedback.successReturnMs : SHEET_MUSIC_DEFAULTS.learn.feedback.successReturnMs,
+  };
+  // Feedback timing is presentation-only; changing it must not invalidate
+  // earned passage/rung progress.
   const behavior = { navigation, passages, tempo, ladder };
   return {
     defaultHands: raw.defaultHands ?? SHEET_MUSIC_DEFAULTS.learn.defaultHands,
     roadmap: raw.roadmap !== false,
+    feedback,
     ...behavior,
     revision: sha256(JSON.stringify(behavior)).toString(),
     configFallback,

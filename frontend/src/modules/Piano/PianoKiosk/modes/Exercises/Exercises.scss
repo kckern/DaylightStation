@@ -294,6 +294,11 @@
    by the engraving's own aspect ratio, so the two insets compounded and a
    two-hand exercise was engraved across two thirds of the glass. */
 .piano-exercise-run { display: grid; grid-template-rows: auto minmax(0, 1fr) clamp(5.25rem, 12vh, 6.5rem) clamp(5.25rem, 12vh, 6.5rem); gap: 0.55rem; height: 100%; padding: 0.65rem var(--sp-3, 0.75rem) 0; background: var(--ex-bg); overflow: hidden; }
+.piano-exercise-run[data-surface='learn-lab'] {
+  grid-template-rows: minmax(0, 1fr) clamp(3.5rem, 9vh, 5rem) clamp(4.5rem, 10vh, 5.75rem);
+  padding-top: 0.45rem;
+  .piano-exercise-run__head { display: none; }
+}
 .piano-exercise-run__head { display: flex; align-items: center; gap: 0.8rem; }
 .piano-exercise-run__head > div:nth-child(2) { display: grid; gap: 0.05rem; }
 .piano-exercise-run__head > div:nth-child(2) > span { color: var(--ex-accent-text); font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; }

@@ -20,7 +20,7 @@ const resolve = (over = {}) => resolveLearnPlan({ defaults: SHEET_MUSIC_DEFAULTS
 describe('resolveLearnPlan', () => {
   it('deep-merges layers in defaults → category → piece → user → user-piece order', () => {
     const plan = resolve({
-      category: { passages: { targetMeasures: 3 }, navigation: { sequential: true }, tempo: { fallbackBpm: 70 } },
+      category: { passages: { targetMeasures: 3 }, navigation: { sequential: true }, tempo: { fallbackBpm: 70 }, feedback: { successReturnMs: 1200 } },
       piece: { passages: { maxMeasures: 6 }, navigation: { sequential: false } },
       user: { passages: { minMeasures: 2 }, tempo: { fallbackBpm: 75 } },
       userPiece: { passages: { targetMeasures: 5 }, tempo: { fallbackBpm: 80 } },
@@ -28,6 +28,7 @@ describe('resolveLearnPlan', () => {
     expect(plan.navigation.sequential).toBe(false);
     expect(plan.settings.passages).toEqual({ targetMeasures: 5, minMeasures: 2, maxMeasures: 6 });
     expect(plan.settings.tempo.fallbackBpm).toBe(80);
+    expect(plan.settings.feedback.successReturnMs).toBe(1200);
   });
 
   it('defaults segment navigation to open and labels generated segments by number before bars', () => {

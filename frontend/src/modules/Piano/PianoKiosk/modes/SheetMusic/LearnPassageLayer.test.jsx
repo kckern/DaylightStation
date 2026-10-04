@@ -16,6 +16,8 @@ describe('LearnPassageLayer', () => {
     render(<LearnPassageLayer passages={[{ id: 'm0-1', number: 1, label: 'Segment 1', barLabel: 'Bars 1–2', name: 'Theme', inMeasure: 0, outMeasure: 1, complete: true }]} measures={measures} stepBoxes={stepBoxes} onSelect={onSelect} />);
     const marker = screen.getByRole('button', { name: 'Segment 1, Theme, Bars 1–2, Mastered' });
     expect(marker).toHaveAttribute('data-state', 'mastered');
+    expect(marker).toHaveTextContent('1✓');
+    expect(marker).not.toHaveTextContent('Mastered');
     expect(marker.style.width).toBe('');
     expect(document.querySelector('.piano-learn-selection-outline')).toBeNull();
     fireEvent.click(marker);

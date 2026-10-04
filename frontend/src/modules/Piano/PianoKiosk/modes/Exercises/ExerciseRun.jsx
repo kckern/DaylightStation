@@ -325,8 +325,13 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   power. All three render a `PianoEmpty`, so a host without a recovery callback could strand a
  *   player on a dead end. Both callbacks are optional and additive: omit them
  *   and the surface behaves exactly as it did before.
+ * @param {'default'|'learn-lab'} [props.surface='default'] Host presentation.
+ * @param {'timed'|'always'} [props.scoreCursorPolicy='timed'] Whether a score
+ *   passage draws its position cursor only for clocked work or for every run.
+ * @param {'always'|'after-wrong'} [props.keyboardHintPolicy='always'] Whether
+ *   the footer keyboard proactively names the target or reveals it as help.
  */
-export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, ask = null, askTuple = null, tier = null, traceContext = null, onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', keyboardHintPolicy = 'always', onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
@@ -1219,7 +1224,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   // panel so it cannot flash a retry instruction before that transition.
   const hostOwnsFailure = Boolean(onFailed) && !passed;
   const currentEvent = askEvents[Math.min(visualCursor.index, askEvents.length - 1)] || askEvents[0];
-  const targetNotes = new Map((currentEvent?.notes || []).map((note) => [note.midi, { velocity: 1 }]));
+  const revealKeyboardTarget = keyboardHintPolicy !== 'after-wrong' || lastWrong !== null;
+  const targetNotes = new Map(((revealKeyboardTarget ? currentEvent?.notes : []) ?? []).map((note) => [note.midi, { velocity: 1 }]));
 
   /**
    * The rung decides what the screen is. A `tier` prop is the host's own
@@ -1410,7 +1416,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     && Number.isFinite(result?.score);
 
   return (
-    <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}`} data-tier={runTier} data-stage={stage} data-phase={phase} data-armed={runtime ? 'true' : undefined} data-expected-cursor={timeline?.expectedCursor ?? eventIndex} data-displayed-cursor={visualCursor.index} data-hunting={countingDown ? undefined : huntHelp ?? undefined}>
+    <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}`} data-tier={runTier} data-stage={stage} data-surface={surface} data-phase={phase} data-armed={runtime ? 'true' : undefined} data-expected-cursor={timeline?.expectedCursor ?? eventIndex} data-displayed-cursor={visualCursor.index} data-hunting={countingDown ? undefined : huntHelp ?? undefined}>
       <header className="piano-exercise-run__head">
         {/* WHY YOU ARE HERE, AND NOTHING ELSE, WHEN THERE IS CHROME.
             The sentence under the eyebrow is the run's second line of standing
@@ -1527,7 +1533,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
              built from. It is mounted before there is a runtime, deliberately —
              see the guard above. */
           <ScorePassage
-            showCursor={timed}
+            showCursor={scoreCursorPolicy === 'always' || timed}
             musicXml={score.musicXml}
             sourceId={score.id}
             measures={score.measures}

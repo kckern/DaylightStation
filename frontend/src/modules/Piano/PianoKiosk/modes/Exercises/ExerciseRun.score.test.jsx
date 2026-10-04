@@ -58,7 +58,9 @@ vi.mock('../../PianoMidiContext.jsx', () => ({
 }));
 vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: 'learner4' }) }));
 vi.mock('../../../components/PianoKeyboard.jsx', () => ({
-  PianoKeyboard: ({ startNote, endNote }) => <div data-testid="keyboard" data-range={`${startNote}-${endNote}`} />,
+  PianoKeyboard: ({ startNote, endNote, targetNotes }) => <div data-testid="keyboard"
+    data-range={`${startNote}-${endNote}`}
+    data-target={[...(targetNotes ?? new Map()).keys()].join(',')} />,
 }));
 // NO `pianoLearningApi` DOUBLE: this surface no longer reaches the bank for
 // anything. `DaylightAPIText` is still doubled, and that one has teeth — the
@@ -271,6 +273,42 @@ describe('ExerciseRun — score material, handed down as props', () => {
 
     press(view, current, 64);
     await waitFor(() => expect(lit()).toEqual([65]));
+  });
+
+  it('keeps the existing score cursor visible during untimed Learn practice', async () => {
+    render(<ExerciseRun {...props({
+      intent: 'practice', practiceMode: 'free', requirement: null,
+      scoreCursorPolicy: 'always',
+    })} />);
+
+    await screen.findByText('Play the first note to begin.');
+    expect(document.querySelector('.piano-score-passage')).toHaveAttribute('data-cursor-enabled', 'true');
+  });
+
+  it('uses the keyboard as after-wrong help instead of an advance answer', async () => {
+    const current = props({
+      intent: 'practice', practiceMode: 'free', requirement: null,
+      keyboardHintPolicy: 'after-wrong',
+    });
+    const view = render(<ExerciseRun {...current} />);
+    await screen.findByText('Play the first note to begin.');
+
+    expect(screen.getByTestId('keyboard')).toHaveAttribute('data-target', '');
+    press(view, current, 64);
+    await waitFor(() => expect(document.querySelector('.piano-exercise-run')).toHaveAttribute('data-displayed-cursor', '1'));
+    expect(screen.getByTestId('keyboard')).toHaveAttribute('data-target', '');
+
+    press(view, current, 61);
+    await waitFor(() => expect(screen.getByTestId('keyboard')).toHaveAttribute('data-target', '65'));
+
+    press(view, current, 65);
+    await waitFor(() => expect(screen.getByTestId('keyboard')).toHaveAttribute('data-target', ''));
+  });
+
+  it('keeps the legacy always-visible keyboard target as the default', async () => {
+    render(<ExerciseRun {...props()} />);
+    await screen.findByText('Play the first note to begin.');
+    expect(screen.getByTestId('keyboard')).toHaveAttribute('data-target', '64');
   });
 
   /**

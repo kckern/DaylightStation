@@ -159,7 +159,7 @@ export function resolveLearnPlan({ defaults = SHEET_MUSIC_DEFAULTS.learn, catego
   return Object.freeze({
     revision: sha256(JSON.stringify(stable(behavior))).toString(),
     navigation, segments, ladder, testOut, ...tempo,
-    settings: { passages: normalized.passages, tempo: normalized.tempo },
+    settings: { passages: normalized.passages, tempo: normalized.tempo, feedback: normalized.feedback },
     configFallback: normalized.configFallback || (Array.isArray(merged.segments) && authored == null),
   });
 }

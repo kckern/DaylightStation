@@ -6,6 +6,10 @@ const passageState = (passage) => passage.locked ? ['locked', 'Locked']
   : passage.inProgress ? ['in-progress', 'In progress']
   : passage.recommended ? ['next', 'Next'] : ['unstarted', 'Unstarted'];
 
+const STATE_GLYPH = Object.freeze({
+  locked: '▣', 'tested-out': '★', mastered: '✓', 'in-progress': '◐', next: '›', unstarted: '',
+});
+
 export default function LearnPassageLayer({
   passages = [], measures = [], stepBoxes = [], measureRects = [], selectedId = null,
   selectedRange = null, achievementId = null, onAchievementEnd, onSelect,
@@ -36,7 +40,8 @@ export default function LearnPassageLayer({
         style={{ left: first.left + 4, top: first.top + 4 }}
         onClick={(event) => { event.stopPropagation(); onSelect?.(passage.id); }}
         onAnimationEnd={() => { if (passage.id === achievementId) onAchievementEnd?.(passage.id); }}
-      ><span aria-hidden="true">{passage.number ?? passage.order}</span><small aria-hidden="true">{stateLabel}</small></button>;
+      ><span aria-hidden="true">{passage.number ?? passage.order}</span>{STATE_GLYPH[state]
+        && <small aria-hidden="true">{STATE_GLYPH[state]}</small>}</button>;
     })}
   </>;
 }
