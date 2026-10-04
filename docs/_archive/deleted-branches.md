@@ -559,3 +559,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-10-03 | media/house-registry | 45794ee8b | Media screen registry, routines, started-by, played earlier, suggestions (merged) |
 | 2026-10-03 | media/p0-task7 | af3836435 | Media P0 Task 7 outcomes/recovery (merged 69a780e83, deployed) |
 | 2026-10-04 | feature/learn-lab-ux | 83eb66f54 | Sheet-music Learn Lab UX, balanced excerpts, cursor/hint policies, and compact segment navigation (merged) |
+| 2026-10-04 | fix/learn-roadmap-polish | d8898fc3f | Tight Learn passage outlines and compact accessible marker-state verification (merged) |
