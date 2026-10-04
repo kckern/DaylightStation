@@ -40,4 +40,31 @@ describe('LearnLab', () => {
     expect(onMastered).toHaveBeenCalledWith('m0-3');
     expect(onClose).toHaveBeenCalled();
   });
+
+  it('advances through configured set percentages and carries the full score tempo source', () => {
+    const timed = { ...rung, mode: 'cued', sets: 3, reps: 1, passCount: 1, required: 3, tempoPercent: 60, tempoPercents: [60, 75, 90] };
+    render(<LearnLab {...base} rung={timed} tempo={{ tempoMap: [{ onsetQuarter: 0, bpm: 100 }, { onsetQuarter: 8, bpm: 80 }], tempoSource: 'musicxml', minimumPercent: 40, maximumPercent: 100 }} />);
+    expect(screen.getByText('75% of score tempo · 75 BPM')).toBeInTheDocument();
+    expect(exercise.props.score.tempoPercent).toBe(75);
+  });
+
+  it('keeps learner controls within configured bounds', () => {
+    const timed = { ...rung, mode: 'cued', tempoPercent: 60 };
+    render(<LearnLab {...base} rung={timed} tempo={{ tempoMap: [{ onsetQuarter: 0, bpm: 100 }], tempoSource: 'musicxml', minimumPercent: 55, maximumPercent: 65 }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Increase tempo' }));
+    expect(exercise.props.score.tempoPercent).toBe(65);
+    expect(screen.getByRole('button', { name: 'Increase tempo' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Decrease tempo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Decrease tempo' }));
+    expect(exercise.props.score.tempoPercent).toBe(55);
+    expect(screen.getByRole('button', { name: 'Decrease tempo' })).toBeDisabled();
+  });
+
+  it('forces mastery to 100% and labels an inferred fallback honestly', () => {
+    const mastery = { ...rung, mode: 'cued', mastery: true, tempoPercent: 40 };
+    render(<LearnLab {...base} rung={mastery} tempo={{ tempoMap: [{ onsetQuarter: 0, bpm: 90 }], tempoSource: 'inferred' }} />);
+    expect(screen.getByText('100% of fallback tempo · 90 BPM')).toBeInTheDocument();
+    expect(exercise.props.score.tempoPercent).toBe(100);
+    expect(screen.queryByRole('button', { name: 'Decrease tempo' })).not.toBeInTheDocument();
+  });
 });

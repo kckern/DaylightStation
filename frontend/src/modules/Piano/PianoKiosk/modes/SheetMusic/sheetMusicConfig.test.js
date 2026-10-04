@@ -58,6 +58,16 @@ describe('resolveSheetMusicConfig', () => {
     expect(c.learn.ladder[0]).toMatchObject({ id: 'play', reps: 2, consecutive: false });
   });
 
+  it('normalizes config-driven tempo progressions while keeping mastery at score tempo', () => {
+    const rung = (over) => ({ id: 'timed', label: 'Timed', parts: ['rh', 'lh'], mode: 'cued', sets: 3, reps: 1, ...over });
+    const c = resolveSheetMusicConfig({ learn: { ladder: [
+      rung({ tempoPercent: 60, tempoPercents: [60, 75, 90] }),
+      rung({ id: 'mastery', label: 'Mastery', mastery: true, tempoPercent: 60, tempoPercents: [60, 80, 90] }),
+    ] } });
+    expect(c.learn.ladder[0].tempoPercents).toEqual([60, 75, 90]);
+    expect(c.learn.ladder[1]).toMatchObject({ tempoPercent: 100, tempoPercents: [100, 100, 100] });
+  });
+
   it('falls back to the complete default ladder when any override rung is malformed', () => {
     const c = resolveSheetMusicConfig({ learn: { ladder: [
       { id: 'valid', label: 'Valid', parts: ['rh'], mode: 'free', sets: 1, reps: 1 },
