@@ -11,6 +11,7 @@
 // with their own MIDI time — the path the kiosk takes.
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { scaleScoreTempoMap } from './scoreTempo.js';
 
 const h = vi.hoisted(() => ({
   activeNotes: new Map(),
@@ -58,6 +59,14 @@ const LEAD_IN_MS = 4 * 60000 / 120;
 const GAP_MS = 500;
 
 const props = { instance: INSTANCE, score: null, intent: 'practice', practiceMode: 'cued', tier: 2 };
+
+describe('timed score tempo maps', () => {
+  it('scales every encoded tempo entry without changing the source expectation', () => {
+    const source = [{ onsetQuarter: 0, bpm: 100 }, { onsetQuarter: 8, bpm: 80 }];
+    expect(scaleScoreTempoMap(source, 60)).toEqual([{ onsetQuarter: 0, bpm: 60 }, { onsetQuarter: 8, bpm: 48 }]);
+    expect(source).toEqual([{ onsetQuarter: 0, bpm: 100 }, { onsetQuarter: 8, bpm: 80 }]);
+  });
+});
 
 let view;
 let armedAt;

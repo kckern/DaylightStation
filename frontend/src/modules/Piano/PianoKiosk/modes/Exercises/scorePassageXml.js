@@ -100,8 +100,6 @@ export function excerptMusicXml(musicXml, range) {
   };
 }
 
-const partCode = (globalStaffIndex) => (globalStaffIndex === 0 ? 'rh' : globalStaffIndex === 1 ? 'lh' : `p${globalStaffIndex + 1}`);
-
 function staffCount(part) {
   const declared = Math.max(0, ...[...part.getElementsByTagName('staves')].map((node) => Number(node.textContent) || 0));
   const used = Math.max(0, ...[...part.querySelectorAll('note > staff')].map((node) => Number(node.textContent) || 0));
@@ -132,7 +130,7 @@ export function selectMusicXmlParts(musicXml, requestedParts) {
   for (const part of [...document.getElementsByTagName('part')]) {
     const count = staffCount(part);
     const selectedLocal = Array.from({ length: count }, (_, index) => index + 1)
-      .filter((local) => selectedCodes.has(partCode(globalOffset + local - 1)));
+      .filter((local) => selectedCodes.has(partIdForStaff(globalOffset + local - 1)));
     if (!selectedLocal.length) {
       const id = part.getAttribute('id');
       part.remove();
@@ -162,9 +160,6 @@ export function selectMusicXmlParts(musicXml, requestedParts) {
           if (!mapping.has(oldNumber)) direction.remove();
           else staff.textContent = String(mapping.get(oldNumber));
         }
-        if (selectedLocal.length === 1) {
-          for (const cursorMove of [...directChildren(measure, 'backup'), ...directChildren(measure, 'forward')]) cursorMove.remove();
-        }
         for (const attributes of directChildren(measure, 'attributes')) {
           for (const staves of directChildren(attributes, 'staves')) staves.textContent = String(selectedLocal.length);
           remapNumberedChildren(attributes, 'clef', mapping);
@@ -180,3 +175,4 @@ export function selectMusicXmlParts(musicXml, requestedParts) {
   }
   return { musicXml: new XMLSerializer().serializeToString(document), originalStaffIndices, error: null };
 }
+import { partIdForStaff } from '../../../performance/partIdentity.js';

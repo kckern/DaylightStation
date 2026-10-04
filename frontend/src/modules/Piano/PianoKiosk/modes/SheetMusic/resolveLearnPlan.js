@@ -1,6 +1,7 @@
 import sha256 from 'crypto-js/sha256.js';
 import { applicableLearnLadder, buildLearnPassages } from './learnRoadmap.js';
 import { resolveSheetMusicConfig, SHEET_MUSIC_DEFAULTS } from './sheetMusicConfig.js';
+import { partIdForStaff } from '../../../performance/partIdentity.js';
 
 const BLOCKED_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 const isObject = (value) => value != null && typeof value === 'object' && !Array.isArray(value);
@@ -58,7 +59,7 @@ function authoredSegments(raw, score, ladder) {
       for (let stepIndex = measure?.firstStep ?? 0; stepIndex <= (measure?.lastStep ?? -1); stepIndex += 1) {
         for (const note of score.steps?.[stepIndex]?.notes ?? []) {
           const staff = Number.isInteger(note.staff) ? note.staff : 0;
-          parts.add(staff === 0 ? 'rh' : staff === 1 ? 'lh' : `p${staff + 1}`);
+          parts.add(partIdForStaff(staff));
         }
       }
     }
@@ -115,6 +116,7 @@ const behaviorRung = (rung) => ({
   mode: rung.mode, sets: rung.sets, reps: rung.reps, consecutive: rung.consecutive,
   availability: rung.availability, criteria: rung.criteria, completes: rung.completes,
   completion: rung.completion, tempoPercent: rung.tempoPercent, mastery: rung.mastery,
+  tempoPercents: rung.tempoPercents,
 });
 
 /** Resolve every Learn configuration layer into the one immutable UI/runtime plan. */
@@ -134,9 +136,16 @@ export function resolveLearnPlan({ defaults = SHEET_MUSIC_DEFAULTS.learn, catego
     completion: 'tested-out', availability: 'always', completes: 'passage',
   };
   const ladder = configuredLadder.filter((rung) => rung.id !== 'test-out');
-  const authored = authoredSegments(merged.segments, score, ladder);
-  const segments = authored ?? generatedSegments(score, normalized.passages, ladder);
   const tempo = normalizeTempoMap(score, normalized.tempo.fallbackBpm);
+  const authored = authoredSegments(merged.segments, score, ladder);
+  const segments = (authored ?? generatedSegments(score, normalized.passages, ladder)).map((segment) => ({
+    ...segment,
+    fingerprint: sha256(JSON.stringify(stable({
+      id: segment.id, inMeasure: segment.inMeasure, outMeasure: segment.outMeasure,
+      ladder: segment.ladder.map(behaviorRung), testOut: behaviorRung(testOut),
+      tempoMap: tempo.tempoMap, tempoSource: tempo.tempoSource,
+    }))).toString(),
+  }));
   const navigation = { sequential: normalized.navigation.sequential };
   const behavior = {
     navigation,

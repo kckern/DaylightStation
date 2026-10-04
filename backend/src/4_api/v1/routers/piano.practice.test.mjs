@@ -97,6 +97,17 @@ describe('piano practice endpoints', () => {
     });
   });
 
+  it('PUT deep-merges Learn segment metadata without losing sibling segments', async () => {
+    const a = app();
+    await request(a).put('/api/v1/piano/users/kc/practice/files-x').send({ learn: {
+      revision: 'a', segments: { 'm0-3': { fingerprint: 'one' } }, passages: { 'm0-3': { complete: true } },
+    } });
+    const result = await request(a).put('/api/v1/piano/users/kc/practice/files-x').send({ learn: {
+      revision: 'a', segments: { 'm4-7': { fingerprint: 'two' } }, passages: { 'm4-7': { complete: false } },
+    } });
+    expect(result.body.learn.segments).toEqual({ 'm0-3': { fingerprint: 'one' }, 'm4-7': { fingerprint: 'two' } });
+  });
+
   it('a changed Learn revision replaces only Learn progress', async () => {
     const a = app();
     await request(a).put('/api/v1/piano/users/kc/practice/files-x').send({
@@ -107,18 +118,20 @@ describe('piano practice endpoints', () => {
       learn: { revision: 'b', passages: { fresh: { complete: false } } },
     });
     expect(result.body.measures['0']).toBeTruthy();
-    expect(result.body.learn).toEqual({ revision: 'b', passages: { fresh: { complete: false, rungs: {} } } });
+    expect(result.body.learn).toEqual({ revision: 'b', passages: { fresh: { complete: false, rungs: {} } }, segments: {} });
   });
 
   it('unsafe Learn passage and rung keys are ignored without prototype pollution', async () => {
     const a = app();
     const result = await request(a).put('/api/v1/piano/users/kc/practice/files-x')
       .set('Content-Type', 'application/json')
-      .send('{"learn":{"revision":"a","passages":{"safe":{"rungs":{"right":{"passCount":1},"__proto__":{"polluted":true}}},"__proto__":{"complete":true}}}}');
+      .send('{"learn":{"revision":"a","segments":{"safe":{"fingerprint":"ok"},"__proto__":{"polluted":true}},"passages":{"safe":{"rungs":{"right":{"passCount":1},"__proto__":{"polluted":true}}},"__proto__":{"complete":true}}}}');
     expect(result.status).toBe(200);
     expect(result.body.learn.passages.safe.rungs.right.passCount).toBe(1);
     expect(Object.prototype.hasOwnProperty.call(result.body.learn.passages, '__proto__')).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(result.body.learn.passages.safe.rungs, '__proto__')).toBe(false);
+    expect(result.body.learn.segments.safe.fingerprint).toBe('ok');
+    expect(Object.prototype.hasOwnProperty.call(result.body.learn.segments, '__proto__')).toBe(false);
     expect({}.polluted).toBeUndefined();
   });
 

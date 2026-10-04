@@ -13,13 +13,31 @@ describe('LearnPassageLayer', () => {
       { x: 20, top: 10, bottom: 100 },
       { x: 80, top: 10, bottom: 100 },
     ];
-    render(<LearnPassageLayer passages={[{ id: 'm0-1', order: 1, label: 'Bars 1–2', inMeasure: 0, outMeasure: 1, complete: true }]} measures={measures} stepBoxes={stepBoxes} onSelect={onSelect} />);
-    const marker = screen.getByRole('button', { name: 'Bars 1–2, complete' });
-    expect(marker).toHaveAttribute('data-state', 'complete');
+    render(<LearnPassageLayer passages={[{ id: 'm0-1', number: 1, label: 'Segment 1', barLabel: 'Bars 1–2', name: 'Theme', inMeasure: 0, outMeasure: 1, complete: true }]} measures={measures} stepBoxes={stepBoxes} onSelect={onSelect} />);
+    const marker = screen.getByRole('button', { name: 'Segment 1, Theme, Bars 1–2, Mastered' });
+    expect(marker).toHaveAttribute('data-state', 'mastered');
     expect(marker.style.width).toBe('');
     expect(document.querySelector('.piano-learn-selection-outline')).toBeNull();
     fireEvent.click(marker);
     expect(onSelect).toHaveBeenCalledWith('m0-1');
+  });
+
+  it('exposes Next, in-progress, tested-out, and locked states without relying on color', () => {
+    const measures = Array.from({ length: 4 }, (_, index) => ({ firstStep: index, lastStep: index }));
+    const stepBoxes = measures.map((_, index) => ({ x: 20 + index * 60, top: 10, bottom: 100 }));
+    render(<LearnPassageLayer
+      passages={[
+        { id: 'next', number: 1, label: 'Segment 1', barLabel: 'Bars 1–1', inMeasure: 0, outMeasure: 0, recommended: true },
+        { id: 'work', number: 2, label: 'Segment 2', barLabel: 'Bars 2–2', inMeasure: 1, outMeasure: 1, inProgress: true },
+        { id: 'test', number: 3, label: 'Segment 3', barLabel: 'Bars 3–3', inMeasure: 2, outMeasure: 2, testedOut: true },
+        { id: 'lock', number: 4, label: 'Segment 4', barLabel: 'Bars 4–4', inMeasure: 3, outMeasure: 3, locked: true },
+      ]}
+      measures={measures} stepBoxes={stepBoxes} onSelect={vi.fn()}
+    />);
+    expect(screen.getByRole('button', { name: /Segment 1.*Next/ })).toHaveAttribute('data-state', 'next');
+    expect(screen.getByRole('button', { name: /Segment 2.*In progress/ })).toHaveAttribute('data-state', 'in-progress');
+    expect(screen.getByRole('button', { name: /Segment 3.*Tested out/ })).toHaveAttribute('data-state', 'tested-out');
+    expect(screen.getByRole('button', { name: /Segment 4.*Locked/ })).toBeDisabled();
   });
 
   it('outlines only the selected full-bar range, including out-of-staff notes', () => {

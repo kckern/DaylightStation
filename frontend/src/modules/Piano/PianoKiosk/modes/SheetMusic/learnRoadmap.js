@@ -1,4 +1,5 @@
 import { sectionToRange } from './focusRange.js';
+import { partIdForStaff } from '../../../performance/partIdentity.js';
 
 const DEFAULT_SIZING = Object.freeze({ targetMeasures: 4, minMeasures: 3, maxMeasures: 5 });
 
@@ -10,7 +11,7 @@ function partsInRange(steps, measures, start, end) {
     for (let stepIndex = measure.firstStep; stepIndex <= measure.lastStep; stepIndex += 1) {
       for (const note of steps?.[stepIndex]?.notes ?? []) {
         const staff = Number.isInteger(note.staff) ? note.staff : 0;
-        parts.add(staff === 0 ? 'rh' : staff === 1 ? 'lh' : `p${staff + 1}`);
+        parts.add(partIdForStaff(staff));
       }
     }
   }
