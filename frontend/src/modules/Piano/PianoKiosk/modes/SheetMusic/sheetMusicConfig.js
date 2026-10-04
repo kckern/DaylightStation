@@ -6,11 +6,11 @@
 import sha256 from 'crypto-js/sha256.js';
 
 const DEFAULT_LADDER = [
-  { id: 'right', label: 'Right hand', parts: ['rh'], mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 1 }, completes: 'rung' },
-  { id: 'left', label: 'Left hand', parts: ['lh'], mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 1 }, completes: 'rung' },
-  { id: 'together', label: 'Hands together', parts: ['rh', 'lh'], mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 1 }, completes: 'rung' },
+  { id: 'right', label: 'Right hand', parts: ['rh'], mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 1 }, completes: 'rung', legacySeed: 'rh' },
+  { id: 'left', label: 'Left hand', parts: ['lh'], mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 1 }, completes: 'rung', legacySeed: 'lh' },
+  { id: 'together', label: 'Hands together', parts: ['rh', 'lh'], mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 1 }, completes: 'rung', legacySeed: 'both' },
   { id: 'timed', label: 'Together with the beat', parts: ['rh', 'lh'], mode: 'cued', sets: 1, reps: 3, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 1, placement: 0.8 }, completes: 'passage' },
-  { id: 'test-out', label: 'Test out', parts: ['rh', 'lh'], mode: 'cued', sets: 1, reps: 3, availability: 'always', consecutive: true, criteria: { completeness: 1, cleanliness: 1, placement: 0.8 }, completes: 'passage' },
+  { id: 'test-out', label: 'Test out', parts: ['rh', 'lh'], mode: 'cued', sets: 1, reps: 3, availability: 'always', consecutive: true, criteria: { completeness: 1, cleanliness: 1, placement: 0.8 }, completes: 'passage', completion: 'tested-out' },
 ];
 
 export const SHEET_MUSIC_DEFAULTS = {
@@ -35,6 +35,8 @@ function normalizeRung(rung) {
   if (!['free', 'metronome', 'cued'].includes(rung.mode) || !positiveWhole(rung.sets) || !positiveWhole(rung.reps)) return null;
   if (rung.availability != null && !['sequential', 'always'].includes(rung.availability)) return null;
   if (rung.completes != null && !['rung', 'passage'].includes(rung.completes)) return null;
+  if (rung.completion != null && !['standard', 'tested-out'].includes(rung.completion)) return null;
+  if (rung.legacySeed != null && !['rh', 'lh', 'both'].includes(rung.legacySeed)) return null;
   if (rung.criteria != null && (!isObj(rung.criteria) || Object.values(rung.criteria).some((value) => !Number.isFinite(value) || value < 0 || value > 1))) return null;
   return {
     ...rung,
@@ -45,6 +47,8 @@ function normalizeRung(rung) {
     consecutive: rung.consecutive === true,
     criteria: { ...(rung.criteria || {}) },
     completes: rung.completes ?? 'rung',
+    completion: rung.completion ?? 'standard',
+    legacySeed: rung.legacySeed ?? null,
   };
 }
 
@@ -58,8 +62,12 @@ function normalizeLearn(rawLearn) {
   if (passages.minMeasures > passages.maxMeasures) passages.minMeasures = SHEET_MUSIC_DEFAULTS.learn.passages.minMeasures;
   passages.targetMeasures = Math.max(passages.minMeasures, Math.min(passages.targetMeasures, passages.maxMeasures));
 
-  const requested = Array.isArray(raw.ladder) && raw.ladder.length ? raw.ladder.map(normalizeRung) : null;
-  const configFallback = Boolean(requested?.some((rung) => !rung));
+  const hasLadderOverride = Object.prototype.hasOwnProperty.call(raw, 'ladder');
+  const requested = Array.isArray(raw.ladder) ? raw.ladder.map(normalizeRung) : null;
+  const ids = requested?.filter(Boolean).map((rung) => rung.id) ?? [];
+  const configFallback = hasLadderOverride && (
+    !requested || requested.length === 0 || requested.some((rung) => !rung) || new Set(ids).size !== ids.length
+  );
   const ladder = requested && !configFallback ? requested : DEFAULT_LADDER.map((rung) => normalizeRung(rung));
   const behavior = { passages, ladder };
   return {

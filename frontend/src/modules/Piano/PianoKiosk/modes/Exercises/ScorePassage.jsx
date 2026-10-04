@@ -69,7 +69,7 @@ function logger() {
  */
 export default function ScorePassage({
   musicXml, sourceId, measures = null, onExpectation, onUnrunnable, cursorIndex = 0, wrongMidi = null, showCursor = false,
-  verdicts = null, windowOpen = undefined, activeParts: requestedParts = null,
+  verdicts = null, windowOpen = undefined, activeParts: requestedParts = null, rangeIndices = null,
 }) {
   const judged = verdicts instanceof Map;
   const [layout, setLayout] = useState(null);
@@ -125,11 +125,13 @@ export default function ScorePassage({
    * is always playable.
    */
   const range = useMemo(() => {
+    if (rangeIndices && Number.isInteger(rangeIndices.start) && Number.isInteger(rangeIndices.end)
+      && rangeIndices.start >= 0 && rangeIndices.end >= rangeIndices.start) return rangeIndices;
     if (!Array.isArray(measures) || measures.length !== 2) return null;
     const [start, end] = measures;
     if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start) return null;
     return { start: start - 1, end: end - 1 };
-  }, [measures]);
+  }, [measures, rangeIndices]);
 
   /**
    * Every engraved note, in the shape the score compiler reads: the note as the

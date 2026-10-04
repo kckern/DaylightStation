@@ -121,6 +121,13 @@ describe('ScorePassage expectation', () => {
     expect(expectation.source).toMatchObject({ kind: 'score', id: 'files:docs/sheet-music/four-bars.musicxml' });
   });
 
+  it('accepts canonical measure indices without interpreting printed numbering', async () => {
+    const onExpectation = vi.fn();
+    renderPassage({ measures: [0, 0], rangeIndices: { start: 1, end: 2 }, onExpectation });
+    await waitFor(() => expect(onExpectation).toHaveBeenCalled());
+    expect(midisOf(onExpectation.mock.calls.at(-1)[0])).toEqual([64, 65, 67, 69]);
+  });
+
   it('takes its tempo from the score itself when the engraver reports none', async () => {
     const onExpectation = vi.fn();
     renderPassage({ onExpectation });

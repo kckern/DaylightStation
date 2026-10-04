@@ -254,9 +254,13 @@ sheetmusic:
         consecutive: false
         criteria: { completeness: 1, cleanliness: 1 }
         completes: rung          # rung | passage
+        completion: standard     # standard | tested-out
+        legacySeed: rh           # optional: rh | lh | both
 ```
 
-The normalized passage sizing and complete ladder are hashed into a revision.
+`legacySeed` is opt-in migration metadata; custom free rungs are not inferred to
+be compatible with old per-measure history. The normalized passage sizing and
+complete ladder are hashed into a revision.
 Changing either starts a compatible new Learn program instead of reusing stale
 rung completion. Invalid ladder entries fall back to the complete default
 ladder and emit `score.learn.config-fallback`.

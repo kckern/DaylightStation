@@ -57,4 +57,16 @@ describe('resolveSheetMusicConfig', () => {
     ] } });
     expect(c.learn.ladder.map((rung) => rung.id)).toEqual(['right', 'left', 'together', 'timed', 'test-out']);
   });
+
+  it.each([
+    [],
+    [
+      { id: 'same', label: 'One', parts: ['rh'], mode: 'free', sets: 1, reps: 1 },
+      { id: ' same ', label: 'Two', parts: ['lh'], mode: 'free', sets: 1, reps: 1 },
+    ],
+  ])('rejects an empty or duplicate-id ladder override atomically', (ladder) => {
+    const c = resolveSheetMusicConfig({ learn: { ladder } });
+    expect(c.learn.configFallback).toBe(true);
+    expect(c.learn.ladder.map((rung) => rung.id)).toEqual(['right', 'left', 'together', 'timed', 'test-out']);
+  });
 });

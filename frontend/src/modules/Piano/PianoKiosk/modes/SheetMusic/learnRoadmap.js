@@ -10,7 +10,7 @@ function partsInRange(steps, measures, start, end) {
     for (let stepIndex = measure.firstStep; stepIndex <= measure.lastStep; stepIndex += 1) {
       for (const note of steps?.[stepIndex]?.notes ?? []) {
         const staff = Number.isInteger(note.staff) ? note.staff : 0;
-        parts.add(staff === 0 ? 'rh' : staff === 1 ? 'lh' : `p${staff + 1}`);
+        parts.add(staff === 0 ? 'rh' : staff === 1 ? 'lh' : `staff-${staff}`);
       }
     }
   }
@@ -20,7 +20,12 @@ function partsInRange(steps, measures, start, end) {
 function balancedRanges(start, end, sizing) {
   const count = end - start + 1;
   if (count <= sizing.maxMeasures) return [[start, end]];
-  const chunks = Math.max(1, Math.ceil(count / sizing.maxMeasures));
+  const minimumChunks = Math.max(1, Math.ceil(count / sizing.maxMeasures));
+  const maximumChunks = Math.max(1, Math.floor(count / sizing.minMeasures));
+  const targetChunks = Math.max(1, Math.round(count / sizing.targetMeasures));
+  const chunks = minimumChunks <= maximumChunks
+    ? Math.max(minimumChunks, Math.min(targetChunks, maximumChunks))
+    : minimumChunks;
   const base = Math.floor(count / chunks);
   const remainder = count % chunks;
   const result = [];

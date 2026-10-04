@@ -38,7 +38,20 @@ describe('buildLearnPassages', () => {
 
   it('omits all-rest passages but retains empty bars inside a playable passage', () => {
     const input = score(10, new Set([0, 1, 2, 3, 4, 7]));
-    expect(buildLearnPassages(input).map((p) => [p.inMeasure, p.outMeasure])).toEqual([[5, 9]]);
+    expect(buildLearnPassages(input).map((p) => [p.inMeasure, p.outMeasure])).toEqual([[4, 6], [7, 9]]);
+  });
+
+  it('honors overridden target and minimum sizes when a feasible partition exists', () => {
+    expect(buildLearnPassages({ ...score(10), passages: { targetMeasures: 3, minMeasures: 3, maxMeasures: 5 } })
+      .map((p) => p.outMeasure - p.inMeasure + 1)).toEqual([4, 3, 3]);
+    expect(buildLearnPassages({ ...score(8), passages: { targetMeasures: 4, minMeasures: 4, maxMeasures: 5 } })
+      .map((p) => p.outMeasure - p.inMeasure + 1)).toEqual([4, 4]);
+  });
+
+  it('uses canonical part ids for additional staves', () => {
+    const input = score(3);
+    input.steps[0].notes.push({ midi: 36, staff: 2 });
+    expect(buildLearnPassages(input)[0].playableParts).toContain('staff-2');
   });
 });
 
