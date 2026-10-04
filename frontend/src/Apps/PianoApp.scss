@@ -2669,7 +2669,7 @@
 }
 .piano-learn-selection-outline {
   position: absolute; z-index: 6; pointer-events: none;
-  border: 0; border-left: 2px solid color-mix(in srgb, var(--piano-warn) 70%, transparent);
+  border: 0; border-top: 2px solid color-mix(in srgb, var(--piano-warn) 70%, transparent);
   background: color-mix(in srgb, var(--piano-warn) 7%, transparent);
 }
 

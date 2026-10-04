@@ -80,6 +80,20 @@ describe('LearnPassageLayer', () => {
     expect(outlines[0].style.height).toBe('7px');
   });
 
+  it('keeps the segment marker clear above the selected passage bracket', () => {
+    const { container } = render(<LearnPassageLayer
+      passages={[{ id: 'a', number: 1, label: 'Segment 1', inMeasure: 0, outMeasure: 0 }]}
+      measures={[{ firstStep: 0, lastStep: 0 }]}
+      stepBoxes={[{ x: 30, top: 100, bottom: 180 }]}
+      measureRects={[{ left: 10, right: 100, top: 70, bottom: 230, system: 0 }]}
+      selectedId="a"
+    />);
+    const marker = screen.getByRole('button', { name: /Segment 1/ });
+    const bracket = container.querySelector('.piano-learn-selection-bracket');
+    const markerBottom = Number.parseFloat(marker.style.top) + 32;
+    expect(markerBottom).toBeLessThanOrEqual(Number.parseFloat(bracket.style.top) - 6);
+  });
+
   it('draws separate tight outlines when a selected segment wraps systems', () => {
     const measures = [
       { firstStep: 0, lastStep: 0 },

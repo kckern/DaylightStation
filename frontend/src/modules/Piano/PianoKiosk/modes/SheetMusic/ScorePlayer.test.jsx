@@ -301,7 +301,7 @@ beforeEach(() => {
 });
 
 describe('ScorePlayer — score-native Learn roadmap', () => {
-  it('uses the score overlay and compact rail instead of generic roadmap cards by default', () => {
+  it('opens the first available practice rung directly from a score marker', () => {
     h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: {} } };
     h.layoutExtras = {
       measures: [
@@ -318,9 +318,9 @@ describe('ScorePlayer — score-native Learn roadmap', () => {
     expect(screen.queryByRole('navigation', { name: 'Selected segment' })).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Learn roadmap' })).not.toBeInTheDocument();
     fireEvent.click(screen.getAllByRole('button', { name: /Segment 1/ })[0]);
-    expect(screen.getByRole('navigation', { name: 'Selected segment' })).toBeInTheDocument();
-    expect(screen.queryByRole('group', { name: 'Segment 1 practice ladder' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Test out/ })).toBeEnabled();
+    expect(screen.getByRole('dialog', { name: 'Segment 1 · Right hand' })).toBeInTheDocument();
+    expect(h.locationSearch).toContain('learnPassage=m0-1');
+    expect(h.locationSearch).toContain('learnRung=right');
   });
 
   it('plucks a segment into the lab, restores the score anchor, and celebrates only that segment once', async () => {
@@ -337,7 +337,6 @@ describe('ScorePlayer — score-native Learn roadmap', () => {
     const scroll = document.querySelector('.piano-score-player__scroll');
     scroll.scrollTop = 137;
     fireEvent.click(screen.getAllByRole('button', { name: /Segment 1/ })[0]);
-    fireEvent.click(screen.getByRole('button', { name: /Right hand/ }));
     expect(screen.getByRole('dialog', { name: 'Segment 1 · Right hand' })).toBeInTheDocument();
     expect(screen.queryByTestId('renderer')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Master segment' }));
@@ -357,7 +356,6 @@ describe('ScorePlayer — score-native Learn roadmap', () => {
     renderPlayer();
     pickMode('Learn');
     fireEvent.click(screen.getAllByRole('button', { name: /Segment 1/ })[0]);
-    fireEvent.click(screen.getByRole('button', { name: /Right hand/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Complete rung' }));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
@@ -376,7 +374,6 @@ describe('ScorePlayer — score-native Learn roadmap', () => {
     renderPlayer();
     pickMode('Learn');
     fireEvent.click(screen.getAllByRole('button', { name: /Segment 1/ })[0]);
-    fireEvent.click(screen.getByRole('button', { name: /Right hand/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Fail segment' }));
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('too much music to fit'));
     expect(screen.getByTestId('renderer')).toBeInTheDocument();
