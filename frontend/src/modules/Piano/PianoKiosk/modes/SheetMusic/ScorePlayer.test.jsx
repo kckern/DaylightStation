@@ -301,7 +301,7 @@ beforeEach(() => {
 });
 
 describe('ScorePlayer — score-native Learn roadmap', () => {
-  it('opens the first available practice rung directly from a score marker', () => {
+  it('keeps piece progress visible and opens the first available rung from a progress pill', () => {
     h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: {} } };
     h.layoutExtras = {
       measures: [
@@ -317,7 +317,8 @@ describe('ScorePlayer — score-native Learn roadmap', () => {
     pickMode('Learn');
     expect(screen.queryByRole('navigation', { name: 'Selected segment' })).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Learn roadmap' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getAllByRole('button', { name: /Segment 1/ })[0]);
+    const progress = screen.getByRole('navigation', { name: 'Piece learning progress' });
+    fireEvent.click(within(progress).getByRole('button', { name: /Segment 1/ }));
     expect(screen.getByRole('dialog', { name: 'Segment 1 · Right hand' })).toBeInTheDocument();
     expect(h.locationSearch).toContain('learnPassage=m0-1');
     expect(h.locationSearch).toContain('learnRung=right');
