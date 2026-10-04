@@ -148,6 +148,9 @@ vi.mock('./clickScheduler.js', () => ({ createClickScheduler: () => h.clickSched
 // Observe recordCycle calls without touching usePianoUser/DaylightAPI — see the
 // rationale on h.recordCycle above.
 vi.mock('./usePracticeRecord.js', () => ({
+  compatibleLearnPassages: (learn, plan) => (
+    learn?.revision === plan?.revision ? (learn.passages || {}) : {}
+  ),
   // `record` reads h.practice so a test can seed per-bucket pass history before
   // render (Task 15's frontier-follows-the-seeded-bucket test) — {} by default,
   // matching every OTHER test's prior no-history behavior exactly.
@@ -158,6 +161,7 @@ vi.mock('./usePracticeRecord.js', () => ({
     recordCycle: h.recordCycle,
     recordTierBest: h.recordTierBest,
     recordAssessmentAttempt: h.recordAssessmentAttempt,
+    recordLearnRep: vi.fn(),
   }),
 }));
 // usePianoPreferences (Task 15) reaches usePianoUser exactly like

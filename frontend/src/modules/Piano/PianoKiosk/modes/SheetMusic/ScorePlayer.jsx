@@ -22,7 +22,7 @@ import useCountIn from './useCountIn.js';
 import { countInPlan } from './countIn.js';
 import useScoreTelemetry from './useScoreTelemetry.js';
 import useScoreEvaluator from './useScoreEvaluator.js';
-import usePracticeRecord from './usePracticeRecord.js';
+import usePracticeRecord, { compatibleLearnPassages } from './usePracticeRecord.js';
 import { bucketOf } from './practiceKey.js';
 import { pickLearnRange } from './learnRange.js';
 import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
@@ -253,7 +253,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const [selectionAnchor, setSelectionAnchor] = useState(null);
   const [armedSelectionEdge, setArmedSelectionEdge] = useState(null);
   const [customRunOpen, setCustomRunOpen] = useState(false);
-  const [customResult, setCustomResult] = useState(null);
+  const [, setCustomResult] = useState(null);
   // Is the loop ON (wave-2: loop is a direct toggle, separate from whether a
   // range exists — audit L2 follow-up)? A defined range keeps showing its tint
   // and its handles even when looping is off (both layers read `focus`, not the
@@ -2139,7 +2139,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     },
   }), [config, layout.measures, layout.steps, layout.tempoEntries, parsed?.tempo, scoreMeta.category, scoreMeta.id, scoreMeta.learn, sections]);
   const learnPassages = useMemo(() => {
-    const compatible = practice?.learn?.revision === learnPlan.revision ? practice.learn.passages : {};
+    const compatible = compatibleLearnPassages(practice?.learn, learnPlan);
     const projected = learnPlan.segments.map((passage) => {
       const ladder = [...passage.ladder, learnPlan.testOut];
       const initial = projectLearnPassage({ passage, ladder });
@@ -2203,12 +2203,17 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [logger, scoreMeta.id, learnPlan.configFallback]);
 
   const learnScore = useMemo(() => ({ id: scoreMeta.id, title: meta.title, musicXml: scoreMeta.musicXml }), [meta.title, scoreMeta.id, scoreMeta.musicXml]);
-  const learnSession = mode === 'learn' && selectedPassage && selectedRung ? (
+  const learnSegmentMetadata = useMemo(() => Object.fromEntries(
+    learnPlan.segments.map((segment) => [segment.id, { fingerprint: segment.fingerprint }]),
+  ), [learnPlan.segments]);
+  const learnSessionOpen = Boolean(mode === 'learn' && selectedPassage && selectedRung);
+  const learnSession = learnSessionOpen ? (
       <LearnLab
         key={`${selectedPassage.id}:${selectedRung.id}`}
         score={learnScore}
         revision={learnPlan.revision}
         segment={selectedPassage}
+        segments={learnSegmentMetadata}
         rung={selectedRung}
         tempo={{ ...learnPlan.settings.tempo, tempoMap: learnPlan.tempoMap, tempoSource: learnPlan.tempoSource }}
         onRecord={recordLearnRep}
@@ -2229,13 +2234,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
   ) : null;
 
   useEffect(() => {
-    if (learnSession || restoreLearnAnchor == null) return undefined;
+    if (learnSessionOpen || restoreLearnAnchor == null) return undefined;
     const frame = requestAnimationFrame(() => {
       if (scrollRef.current) scrollRef.current.scrollTop = restoreLearnAnchor;
       setRestoreLearnAnchor(null);
     });
     return () => cancelAnimationFrame(frame);
-  }, [learnSession, restoreLearnAnchor]);
+  }, [learnSessionOpen, restoreLearnAnchor]);
 
   if (learnSession) return <div className="piano-score-player piano-score-player--learn-lab">{learnSession}</div>;
 

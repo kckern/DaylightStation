@@ -95,8 +95,11 @@ describe('resolveLearnPlan', () => {
     const moved = resolve({ piece: { segments: [{ id: 'a', start: 0, end: 6, name: 'A' }] } });
     const changedRung = resolve({ piece: { segments: [{ id: 'a', start: 0, end: 7 }], ladder: [{ id: 'x', label: 'X', parts: ['rh', 'lh'], scope: 'all-parts', mode: 'free', sets: 1, reps: 1 }] } });
     expect(renamed.revision).toBe(base.revision);
+    expect(renamed.segments[0].fingerprint).toBe(base.segments[0].fingerprint);
     expect(moved.revision).not.toBe(base.revision);
+    expect(moved.segments[0].fingerprint).not.toBe(base.segments[0].fingerprint);
     expect(changedRung.revision).not.toBe(base.revision);
+    expect(changedRung.segments[0].fingerprint).not.toBe(base.segments[0].fingerprint);
     expect({}.sequential).toBeUndefined();
   });
 });

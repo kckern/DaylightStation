@@ -212,18 +212,21 @@ Green means one thing only: you are playing the right note, right now.
 
 The score remains visible as the roadmap. Rehearsal regions are never crossed;
 within each region, the planner creates balanced passages targeting four bars
-(normally three to five) and avoids accidental one-bar tails. Every passage is
-open from the start. The first incomplete passage is marked Recommended, but a
-player can open any passage and return to the same ladder with Back.
+(normally three to five) and avoids accidental one-bar tails. Every segment is
+open from the start unless sequential navigation is explicitly configured. The
+first incomplete segment is marked Next, but a player can open any unlocked
+segment.
 
-The score shows small numbered markers at passage starts. A thin outline appears
-only for the selected passage or a custom range. It follows engraved barlines and
-the full vertical extent of each system, including notes above or below the
-staff. **Select bars** starts a custom range: tap its first and last measure, then
-drag either score handle to adjust it. Ordinary taps still seek when selection is
-off. **Practice selection** opens an untimed free practice run for those bars;
-its result does not advance the preset passage ladder. The custom range is saved
-per player and score in the practice record.
+The score shows numbered, state-labelled tabs at segment starts, supplemented
+by a compact collapsible segment rail. Segment number is primary; an authored
+name is optional and the printed bar range is secondary. A thin outline appears
+only for the selected segment. It follows engraved barlines and the full
+vertical extent of each system, including notes above or below the staff.
+
+Choosing a rung plucks the segment into a full-screen lab. The rest of the score
+is unmounted: the lab engraves only the selected bars, in one or at most two
+systems, and physically removes inactive staves for single-hand work. Close
+returns to the prior score position. A completed segment pulses once on return.
 
 The default ladder is:
 
@@ -232,20 +235,29 @@ The default ladder is:
 | Right hand | free, RH | 2 sets × 3 reps |
 | Left hand | free, LH | 2 sets × 3 reps |
 | Hands together | free, RH+LH | 2 sets × 3 reps |
-| Together with the beat | cued at score tempo, RH+LH | 1 set × 3 reps; completes the passage |
-| Test out | cued at score tempo, RH+LH | 1 set × 3 consecutive reps; always available and completes the passage |
+| Together with the beat | cued at 60% of the MusicXML tempo map, RH+LH | 1 set × 3 reps |
+| Mastery | cued at 100% of the MusicXML tempo map, RH+LH | 1 set × 3 reps; completes the segment |
+| Test out | cued at 100% of the MusicXML tempo map, RH+LH | 1 set × 3 consecutive reps; always available and completes the segment |
 
 Normal rungs unlock sequentially inside a passage. Test Out is always
 selectable; a failed take resets only its own streak. Single-staff and other
 non-grand-staff passages omit impossible hand-specific rungs and run their
 combined work against the parts actually present.
 
+Timed rungs may configure a `tempoPercents` value per set. Learners can adjust
+non-mastery timed work in five-percent steps within configured bounds. Every
+entry in a score's tempo map is scaled proportionally; Mastery and Test Out are
+always exactly 100%, regardless of user or piece overrides. If MusicXML provides
+no tempo, the lab labels and uses the configured fallback explicitly.
+
 Selection lives in `learnPassage` and `learnRung` query parameters. The run
 receives the original MusicXML, printed passage boundaries, active parts, the
 configured rubric, and a set/rep projection. `ExerciseRun` is therefore the one
 assessment and feedback surface rather than a second Learn-only judge.
 
-All ladder behavior is configurable under `sheetmusic.learn`; the following is
+Learn configuration is deep-merged in order: built-in defaults, category,
+piece, user, then user-plus-piece. All ladder behavior is configurable under
+`sheetmusic.learn`; the following is
 the shape, not a second source of defaults:
 
 ```yaml
@@ -272,12 +284,18 @@ sheetmusic:
 effective parts to every playable staff, including staves beyond a grand staff.
 `legacySeed` is opt-in migration metadata; custom free rungs are not inferred to
 be compatible with old per-measure history. The normalized passage sizing and
-complete ladder are hashed into a revision.
-Changing either starts a compatible new Learn program instead of reusing stale
-rung completion. Invalid ladder entries fall back to the complete default
-ladder and emit `score.learn.config-fallback`.
+complete ladder are hashed into a plan revision. Each segment also stores a
+fingerprint of its boundaries and effective ladder. A harmless label change
+retains progress; changing one segment's boundaries or ladder invalidates only
+that segment while compatible siblings survive the new plan revision. Invalid
+ladder entries fall back to the complete default ladder and emit
+`score.learn.config-fallback`.
 
-### Direct score practice
+### Legacy direct score practice (`roadmap: false`)
+
+Setting `sheetmusic.learn.roadmap: false` keeps the older in-score range
+workflow as a compatibility escape hatch. It does not use the score-native
+segment labs described above.
 
 Opening Learn on a score already lands you somewhere useful: an **auto-range**
 heuristic picks a loop range the moment Learn is entered with no range set,
@@ -384,7 +402,12 @@ roadmap/direct-practice frontier and the Polish tier bests:
 - A **guest / no selected user** gets full session-local roadmap progress but
   no server reads or writes. Persistent roster users keep the same progress
   across sessions.
-- Roadmap progress is keyed by ladder revision, passage id, and rung id. Each
+- Roadmap progress is keyed by plan revision, stable segment id, a per-segment
+  boundary/ladder fingerprint, and rung id. A harmless segment rename retains
+  progress. When a plan changes, unchanged segment fingerprints retain their
+  progress while changed boundaries or ladder meaning invalidate only the
+  incompatible segments. Revision-only records migrate when first written
+  against a compatible plan. Each
   rung stores attempts and banked passes; passage completion records the rung
   that completed it. PUTs merge at passage/rung depth so one take cannot erase
   sibling progress.
