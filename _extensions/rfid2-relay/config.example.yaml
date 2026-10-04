@@ -1,0 +1,9 @@
+# Copy into private household hardware data; never commit real credentials.
+device:
+  id: garage-rfid2
+provisioning:
+  wifi_ssid: ""
+  wifi_password: ""
+ota:
+  enabled: true
+  password: ""
