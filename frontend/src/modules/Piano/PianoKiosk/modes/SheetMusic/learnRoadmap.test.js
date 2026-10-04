@@ -69,6 +69,13 @@ describe('roadmap ladder projection', () => {
     ]);
   });
 
+  it('expands an all-parts rung to every staff on a non-grand score', () => {
+    const projected = applicableLearnLadder([
+      { id: 'all', parts: ['rh', 'lh'], scope: 'all-parts' },
+    ], ['rh', 'lh', 'staff-2']);
+    expect(projected[0].effectiveParts).toEqual(['rh', 'lh', 'staff-2']);
+  });
+
   it('unlocks only the first sequential rung plus always-available Test Out', () => {
     const passage = { id: 'm0-3', playableParts: ['rh', 'lh'] };
     const projected = projectLearnPassage({ passage, ladder, progress: { rungs: { right: { passCount: 6 } } } });

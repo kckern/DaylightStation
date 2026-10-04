@@ -242,6 +242,7 @@ the shape, not a second source of defaults:
 ```yaml
 sheetmusic:
   learn:
+    roadmap: true
     passages: { targetMeasures: 4, minMeasures: 3, maxMeasures: 5 }
     ladder:
       - id: right
@@ -258,6 +259,8 @@ sheetmusic:
         legacySeed: rh           # optional: rh | lh | both
 ```
 
+`scope: all-parts` is available for together/timed rungs and expands their
+effective parts to every playable staff, including staves beyond a grand staff.
 `legacySeed` is opt-in migration metadata; custom free rungs are not inferred to
 be compatible with old per-measure history. The normalized passage sizing and
 complete ladder are hashed into a revision.

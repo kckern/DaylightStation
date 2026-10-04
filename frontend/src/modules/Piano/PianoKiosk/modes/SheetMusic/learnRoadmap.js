@@ -83,6 +83,7 @@ export function applicableLearnLadder(ladder = [], playableParts = []) {
   const singlePart = available.size < 2;
   return ladder.flatMap((rung) => {
     const requested = rung.parts ?? [];
+    if (rung.scope === 'all-parts') return [{ ...rung, effectiveParts: [...available] }];
     if (singlePart && requested.length === 1) return [];
     const effectiveParts = singlePart ? [...available] : requested.filter((part) => available.has(part));
     if (!effectiveParts.length || (!singlePart && effectiveParts.length !== requested.length)) return [];
