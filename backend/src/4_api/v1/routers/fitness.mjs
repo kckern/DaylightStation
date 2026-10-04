@@ -142,6 +142,7 @@ function sendFingerprintOutcome(res, outcome) {
  * @param {string|null} [config.defaultHouseholdId] - Default household selected at composition
  * @param {Object} config.fitnessContentService - Semantic content/config facade
  * @param {Object} config.fitnessHardwareService - Semantic room-hardware facade
+ * @param {Object} [config.garageHumanActivity] - Garage TV automatic shutdown guard
  * @param {Object} config.fitnessWebhookService - Semantic provider-event facade
  * @param {Object} [config.stravaSyncHealth] - Strava sync-health monitor (report())
  * @param {Object} [config.fitnessConfigService] - FitnessConfigService for config + playlist enrichment
@@ -173,6 +174,7 @@ export function createFitnessRouter(config) {
     defaultHouseholdId = null,
     fitnessContentService,
     fitnessHardwareService,
+    garageHumanActivity = null,
     fitnessWebhookService,
     stravaSyncHealth = null,
     fitnessConfigService,
@@ -216,6 +218,17 @@ export function createFitnessRouter(config) {
   } = config;
 
   const router = express.Router();
+
+  router.post('/garage-human-activity', asyncHandler(async (req, res) => {
+    const { deviceId, emulationOpen, hrSessionActive } = req.body ?? {};
+    if (deviceId !== 'garage-tv' || typeof emulationOpen !== 'boolean' || typeof hrSessionActive !== 'boolean') {
+      return res.status(400).json({ error: 'invalid garage activity report' });
+    }
+    if (!garageHumanActivity) return res.status(503).json({ error: 'garage activity unavailable' });
+    const result = await garageHumanActivity.update({ deviceId, emulationOpen, hrSessionActive });
+    if (!result.ok) return res.status(503).json({ error: result.reason });
+    return res.json(result);
+  }));
 
   // Resolve the default household id ONCE — handlers read `req.query.household ||
   // defaultHouseholdId` rather than reloading configuration in the API layer.
