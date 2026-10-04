@@ -8,7 +8,7 @@ const passageState = (passage) => passage.locked ? ['locked', 'Locked']
 
 export default function LearnPassageLayer({
   passages = [], measures = [], stepBoxes = [], measureRects = [], selectedId = null,
-  selectedRange = null, onSelect,
+  selectedRange = null, achievementId = null, onAchievementEnd, onSelect,
 }) {
   const selected = selectedRange || passages.find((passage) => passage.id === selectedId);
   const outlines = selected ? rangeBands(measures, stepBoxes, selected, measureRects) : [];
@@ -29,12 +29,13 @@ export default function LearnPassageLayer({
       return <button
         key={passage.id}
         type="button"
-        className={`piano-learn-passage-map${passage.id === selectedId ? ' is-selected' : ''}`}
+        className={`piano-learn-passage-map${passage.id === selectedId ? ' is-selected' : ''}${passage.id === achievementId ? ' is-achievement' : ''}`}
         data-state={state}
         disabled={passage.locked}
         aria-label={[passage.label, passage.name, passage.barLabel, stateLabel].filter(Boolean).join(', ')}
         style={{ left: first.left + 4, top: first.top + 4 }}
         onClick={(event) => { event.stopPropagation(); onSelect?.(passage.id); }}
+        onAnimationEnd={() => { if (passage.id === achievementId) onAchievementEnd?.(passage.id); }}
       ><span aria-hidden="true">{passage.number ?? passage.order}</span><small aria-hidden="true">{stateLabel}</small></button>;
     })}
   </>;

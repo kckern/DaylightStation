@@ -1,7 +1,7 @@
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, act, cleanup, fireEvent, within } from '@testing-library/react';
+import { render, screen, act, cleanup, fireEvent, within, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { __resetRecorder, __snapshotForTest, KIND } from '../../../../../lib/logging/inputRecorder.js';
@@ -76,6 +76,7 @@ const h = vi.hoisted(() => ({
   activeNotes: new Map(),
   midiNotesListeners: new Set(),
   config: { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: { roadmap: false } } },
+  learnLabProps: null,
 }));
 
 // Derive per-onset full-staff steps from the melody events: the first pitch of
@@ -129,6 +130,15 @@ vi.mock('../../PianoMidiContext.jsx', async () => {
   };
 });
 vi.mock('../../usePianoPlayback.js', () => ({ usePianoPlayback: () => ({ setPlaying: () => {} }) }));
+vi.mock('./LearnLab.jsx', () => ({
+  default: (props) => {
+    h.learnLabProps = props;
+    return <section role="dialog" aria-label={`${props.segment.label} · ${props.rung.label}`}>
+      <button type="button" onClick={props.onClose}>Close lab</button>
+      <button type="button" onClick={() => { props.onMastered(props.segment.id); props.onClose(); }}>Master segment</button>
+    </section>;
+  },
+}));
 vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: h.config }) }));
 vi.mock('../../PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumb: (crumbs) => { h.crumbs = crumbs || []; } }));
 vi.mock('../../useReloadGuard.js', () => ({ default: () => {} }));
@@ -278,6 +288,7 @@ beforeEach(() => {
   h.activeNotes = new Map();
   h.midiNotesListeners = new Set();
   h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: { roadmap: false } } };
+  h.learnLabProps = null;
 });
 
 describe('ScorePlayer — score-native Learn roadmap', () => {
@@ -300,6 +311,32 @@ describe('ScorePlayer — score-native Learn roadmap', () => {
     fireEvent.click(screen.getAllByRole('button', { name: /Segment 1/ })[0]);
     expect(screen.getByRole('group', { name: 'Segment 1 practice ladder' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Test out/ })).toBeEnabled();
+  });
+
+  it('plucks a segment into the lab, restores the score anchor, and celebrates only that segment once', async () => {
+    h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: {} } };
+    h.layoutExtras = {
+      measures: [
+        { number: 1, firstStep: 0, lastStep: 1 },
+        { number: 2, firstStep: 2, lastStep: 3 },
+      ],
+      measureBounds: [{ left: 80, right: 190, top: 10, bottom: 210 }, { left: 190, right: 310, top: 10, bottom: 210 }],
+    };
+    renderPlayer();
+    pickMode('Learn');
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    scroll.scrollTop = 137;
+    fireEvent.click(screen.getAllByRole('button', { name: /Segment 1/ })[0]);
+    fireEvent.click(screen.getByRole('button', { name: /Right hand/ }));
+    expect(screen.getByRole('dialog', { name: 'Segment 1 · Right hand' })).toBeInTheDocument();
+    expect(screen.queryByTestId('renderer')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Master segment' }));
+    await waitFor(() => expect(screen.getByTestId('renderer')).toBeInTheDocument());
+    await waitFor(() => expect(document.querySelector('.piano-score-player__scroll').scrollTop).toBe(137));
+    const achieved = screen.getAllByRole('button', { name: /Segment 1/ }).find((button) => button.classList.contains('piano-learn-passage-map'));
+    expect(achieved).toHaveClass('is-achievement');
+    fireEvent.animationEnd(achieved);
+    expect(achieved).not.toHaveClass('is-achievement');
   });
 });
 

@@ -2685,6 +2685,30 @@
   }
 }
 
+.piano-learn-lab {
+  position: absolute; inset: 0; z-index: 30; min-height: 0;
+  display: flex; flex-direction: column; background: var(--piano-bg);
+  &__close {
+    position: absolute; z-index: 20; top: 0.7rem; left: 0.7rem;
+    padding: 0.5rem 0.8rem; color: var(--piano-fg); background: var(--piano-surface);
+    border: 1px solid var(--piano-border); border-radius: 999px; font: inherit;
+  }
+  &__status {
+    position: absolute; z-index: 20; top: 0.7rem; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 0.55rem; padding: 0.35rem 0.55rem;
+    color: var(--piano-fg); background: color-mix(in srgb, var(--piano-surface) 94%, transparent);
+    border: 1px solid var(--piano-border); border-radius: 999px;
+    > span { color: var(--piano-muted); white-space: nowrap; }
+  }
+  &__tempo { display: flex; align-items: center; gap: 0.4rem; }
+  &__tempo button { width: 2rem; height: 2rem; border-radius: 50%; border: 1px solid var(--piano-border); background: transparent; color: inherit; font: inherit; }
+}
+.piano-learn-passage-map.is-achievement {
+  border-color: var(--piano-accent);
+  box-shadow: 0 0 0 0.5rem color-mix(in srgb, var(--piano-accent) 28%, transparent);
+  animation: piano-score-countin-pop calc(var(--ds-motion-base) * 3.5) var(--ds-motion-easing) both;
+}
+
 
 // Count-in overlay (audit J1): a big centered beat number flashed over the score
 // while the metronome counts the player in before a run. Fixed + pointer-events:
