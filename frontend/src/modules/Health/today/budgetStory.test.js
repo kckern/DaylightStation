@@ -163,3 +163,31 @@ describe('budgetStory — pricing a portion while it is dragged', () => {
     expect(budgetStory(day(1470), { ...live, baseline: day(1470) }).sub).toBe('then 311 workout · 500 deficit · 1,132 to break even');
   });
 });
+
+describe('budgetStory — exact boundaries and log trust', () => {
+  it('says when intake sits exactly at the exercise-adjusted plan limit', () => {
+    const story = budgetStory(day(2102), live);
+    expect(story.text).toBe('At plan limit');
+    expect(story.sub).toContain('500 deficit');
+  });
+
+  it('says when intake sits exactly at break even, retaining the over-plan amount', () => {
+    const story = budgetStory(day(2602, 311, { zone: 'over' }), live);
+    expect(story.text).toBe('At break even');
+    expect(story.sub).toBe('500 over plan');
+  });
+
+  it('does not say zero free when a capped limit is below the log floor', () => {
+    const capped = { food: 1100, exercise: 0, maintenance: 1100,
+      range: { floor: 1200, top: 1200 }, zone: 'incomplete', declared: null };
+    const story = budgetStory(capped, live);
+    expect(story.text).toBe('At plan limit · break even');
+    expect(story.sub).toContain('100 under the 1,200 floor');
+    expect(story.tentative).toBe(true);
+  });
+
+  it('calls a finished boundary break even instead of zero under it', () => {
+    const story = budgetStory(day(2602, 311, { zone: 'over' }), past);
+    expect(story.sub).toBe('ended at break even');
+  });
+});
