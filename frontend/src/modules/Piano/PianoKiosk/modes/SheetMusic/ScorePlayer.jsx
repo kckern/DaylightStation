@@ -1,4 +1,5 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import sha256 from 'crypto-js/sha256.js';
 import { parseMusicXml } from '../../../../MusicNotation/parseMusicXml.js';
 import { MusicXmlRenderer } from '../../../../MusicNotation/renderers/MusicXmlRenderer.jsx';
@@ -25,6 +26,8 @@ import usePracticeRecord from './usePracticeRecord.js';
 import { bucketOf } from './practiceKey.js';
 import { pickLearnRange } from './learnRange.js';
 import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
+import { buildLearnPassages, projectLearnPassage } from './learnRoadmap.js';
+import LearnRoadmap, { LearnPassageSession } from './LearnRoadmap.jsx';
 import {
   compileScoreExpectation,
   createAssessmentAttempt,
@@ -78,6 +81,19 @@ const STUCK_PROMPT_MS = 5000;
 // neutral trace are retired (Task 4, live input viz) — the held-note live layer
 // draws both cases now, for as long as the key stays down, not on a timer.
 const INK_TTL = { wrong: 900 };
+
+function legacyLearnProgress(passage, ladder, measures, history) {
+  const rungs = {};
+  for (const rung of ladder) {
+    if (rung.mode !== 'free') continue;
+    const bucket = rung.effectiveParts.length > 1 ? 'both' : rung.effectiveParts[0];
+    const learned = measures
+      .slice(passage.inMeasure, passage.outMeasure + 1)
+      .every((measure) => (history?.[String(measure.index)]?.[bucket]?.passes ?? 0) >= 2);
+    if (learned) rungs[rung.id] = { attempts: 0, passCount: rung.sets * rung.reps };
+  }
+  return { rungs };
+}
 
 // How long a landed note wears the match colour when the cursor advances out from
 // under it. Long enough to register as a flash, short enough not to trail behind
@@ -182,12 +198,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
     persistent: practicePersistent,
     recordCycle,
     recordTierBest,
+    recordLearnRep,
     recordAssessmentAttempt,
   } = usePracticeRecord({ scoreId: scoreMeta.id, fingerprint });
 
   // Resolved sheetmusic config (defaults filled). Hoisted above the mode state so
   // the initial mode can come from `defaultMode` — the ladder starts at Listen.
   const smCfg = useMemo(() => resolveSheetMusicConfig(config?.sheetmusic), [config]);
+  const [searchParams, setSearchParams] = useSearchParams();
   const VALID_MODES = ['listen', 'learn', 'polish', 'perform'];
   // Per-score practice settings restored device-locally (mode/tempo/hands), so a
   // walk-up user finds the piece the way they left it (Task 2.5). The practice
@@ -2069,6 +2087,56 @@ export default function ScorePlayer({ score: scoreMeta }) {
     [parts, activeParts],
   );
 
+  const learnPassages = useMemo(() => {
+    const planned = buildLearnPassages({
+      sections,
+      measures: layout.measures,
+      steps: layout.steps,
+      passages: smCfg.learn.passages,
+    });
+    const compatible = practice?.learn?.revision === smCfg.learn.revision ? practice.learn.passages : {};
+    return planned.map((passage) => {
+      const initial = projectLearnPassage({ passage, ladder: smCfg.learn.ladder });
+      const progress = compatible?.[passage.id]
+        ?? legacyLearnProgress(passage, initial.rungs, layout.measures, practice?.measures);
+      return projectLearnPassage({ passage, ladder: smCfg.learn.ladder, progress });
+    });
+  }, [layout.measures, layout.steps, practice, sections, smCfg.learn]);
+  const recommendedPassage = learnPassages.find((passage) => !passage.complete) ?? learnPassages[0] ?? null;
+  const selectedPassageId = searchParams.get('learnPassage');
+  const selectedRungId = searchParams.get('learnRung');
+  const selectedPassage = learnPassages.find((passage) => passage.id === selectedPassageId) ?? null;
+  const selectedRung = selectedPassage?.rungs.find((rung) => rung.id === selectedRungId && rung.state !== 'locked') ?? null;
+  const updateLearnSelection = useCallback((passageId, rungId = null) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (passageId) next.set('learnPassage', passageId); else next.delete('learnPassage');
+      if (rungId) next.set('learnRung', rungId); else next.delete('learnRung');
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+  const closeLearnPassage = useCallback(() => updateLearnSelection(null), [updateLearnSelection]);
+  const openLearnRung = useCallback((rungId) => {
+    if (selectedPassage) updateLearnSelection(selectedPassage.id, rungId);
+  }, [selectedPassage, updateLearnSelection]);
+
+  useEffect(() => {
+    if (smCfg.learn.configFallback) logger.warn('score.learn.config-fallback', { scoreId: scoreMeta.id });
+  }, [logger, scoreMeta.id, smCfg.learn.configFallback]);
+
+  if (mode === 'learn' && selectedPassage && selectedRung) {
+    return (
+      <LearnPassageSession
+        score={{ id: scoreMeta.id, title: meta.title, musicXml: scoreMeta.musicXml }}
+        revision={smCfg.learn.revision}
+        passage={selectedPassage}
+        rung={selectedRung}
+        onRecord={recordLearnRep}
+        onBack={() => updateLearnSelection(selectedPassage.id)}
+      />
+    );
+  }
+
   return (
     <div className="piano-score-player">
       {scoreMeta.splashImage && !engraveReady && (
@@ -2180,6 +2248,17 @@ export default function ScorePlayer({ score: scoreMeta }) {
         <SelectBanner edge={arming} rejects={armRejects} onCancel={onCancelArm} />
         <StuckPrompt open={stuckOpen && mode === 'learn'} onPick={onStuckPick} onDismiss={onStuckDismiss} />
       </div>
+
+      {mode === 'learn' && practiceLoaded && learnPassages.length > 0 && (
+        <LearnRoadmap
+          passages={learnPassages}
+          recommendedId={recommendedPassage?.id}
+          selectedId={selectedPassage?.id ?? null}
+          onSelectPassage={(passageId) => updateLearnSelection(passageId)}
+          onSelectRung={openLearnRung}
+          onClosePassage={closeLearnPassage}
+        />
+      )}
 
       {keyboardVisible && (
         <div className="piano-score-player__keys">

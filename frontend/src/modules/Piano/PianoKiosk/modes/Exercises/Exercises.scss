@@ -393,6 +393,10 @@
   .piano-score-passage__dim {
     path, rect, ellipse, text { fill: #b6b4ae; }
   }
+
+  .piano-score-passage__inactive {
+    opacity: 0.28;
+  }
 }
 
 /* Tier 2: the sequence staff IS the screen. It fills the stage row, and the
