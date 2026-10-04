@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import LearnRoadmap, { LearnPassageSession, learnDrillProjection } from './LearnRoadmap.jsx';
+import LearnRoadmap, { CustomLearnSession, LearnPassageSession, learnDrillProjection } from './LearnRoadmap.jsx';
 
 const exercise = vi.hoisted(() => ({ props: null }));
 vi.mock('../Exercises/ExerciseRun.jsx', () => ({
@@ -24,6 +24,18 @@ const passage = {
 };
 
 describe('LearnRoadmap', () => {
+  it('offers two-tap bar selection and a reviewable custom practice range', () => {
+    const onStartSelection = vi.fn();
+    const onPracticeCustom = vi.fn();
+    render(<LearnRoadmap passages={[passage]} customRange={{ inMeasure: 2, outMeasure: 6 }}
+      onStartSelection={onStartSelection} onPracticeCustom={onPracticeCustom} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Select bars' }));
+    expect(onStartSelection).toHaveBeenCalled();
+    expect(screen.getByText('Bars 3–7')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Practice selection' }));
+    expect(onPracticeCustom).toHaveBeenCalled();
+  });
+
   it('keeps every passage open while showing completion and recommendation', () => {
     const onSelectPassage = vi.fn();
     render(<LearnRoadmap passages={[passage, { ...passage, id: 'm4-7', order: 2, label: 'Bars 5–8', complete: true }]} recommendedId="m0-3" onSelectPassage={onSelectPassage} />);
@@ -41,6 +53,20 @@ describe('LearnRoadmap', () => {
     expect(screen.getByRole('button', { name: /Test out/ })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: /Test out/ }));
     expect(onSelectRung).toHaveBeenCalledWith('test-out');
+  });
+});
+
+describe('CustomLearnSession', () => {
+  it('runs the selected bars untimed without banking preset ladder credit', () => {
+    const onResult = vi.fn();
+    render(<CustomLearnSession score={{ id: 'score-1', musicXml: '<score />' }}
+      range={{ inMeasure: 2, outMeasure: 6 }} measures={Array.from({ length: 8 }, (_, i) => ({ number: i + 1 }))}
+      activeParts={['rh', 'lh']} onResult={onResult} onBack={() => {}} />);
+    expect(exercise.props.score.rangeIndices).toEqual({ start: 2, end: 6 });
+    expect(exercise.props.score.activeParts).toEqual(['rh', 'lh']);
+    expect(exercise.props.practiceMode).toBe('free');
+    fireEvent.click(screen.getByRole('button', { name: 'Finish take' }));
+    expect(onResult).toHaveBeenCalledWith(expect.objectContaining({ verdict: { passed: true } }));
   });
 });
 

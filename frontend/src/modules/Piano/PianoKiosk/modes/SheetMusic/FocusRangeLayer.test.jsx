@@ -1,9 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
 import FocusRangeLayer from './FocusRangeLayer.jsx';
-import { rangeBands } from './focusRangeGeometry.js';
+import { buildEngravedMeasureRects, measureAtPosition, rangeBands } from './focusRangeGeometry.js';
 
 const measures = [
   { index: 0, firstStep: 0, lastStep: 1 },
@@ -126,12 +125,53 @@ describe('rangeBands — the band lands between notes, never through them', () =
   });
 });
 
+describe('rangeBands — engraved measure bounds', () => {
+  const measures = [
+    { index: 0, firstStep: 0, lastStep: 0 },
+    { index: 1, firstStep: 1, lastStep: 1 },
+    { index: 2, firstStep: 2, lastStep: 2 },
+  ];
+  const steps = [
+    { x: 42, top: 100, bottom: 180 },
+    { x: 142, top: 100, bottom: 180 },
+    { x: 242, top: 100, bottom: 180 },
+  ];
+  const engraved = [
+    { left: 20, right: 100, top: 70, bottom: 230, system: 0 },
+    { left: 100, right: 200, top: 70, bottom: 230, system: 0 },
+    { left: 200, right: 300, top: 70, bottom: 230, system: 0 },
+  ];
+
+  it('uses barlines and the full notation height instead of cursor centres', () => {
+    expect(rangeBands(measures, steps, { inMeasure: 1, outMeasure: 1 }, engraved))
+      .toEqual([{ left: 100, right: 200, top: 70, bottom: 230 }]);
+  });
+
+  it('keeps a final dotted note inside the last measure', () => {
+    expect(rangeBands(measures, steps, { inMeasure: 2, outMeasure: 2 }, engraved)[0].right).toBe(300);
+  });
+
+  it('includes ledger notes below the staff across the whole system', () => {
+    const rects = buildEngravedMeasureRects(measures, engraved, [
+      { system: 0, top: 100, lineSpacing: 10 },
+      { system: 0, top: 170, lineSpacing: 10 },
+    ], [
+      { notes: [{ top: 105, bottom: 115 }] },
+      { notes: [{ top: 210, bottom: 245 }] },
+      { notes: [{ top: 80, bottom: 90 }] },
+    ], steps);
+    expect(rects[0].top).toBeLessThan(80);
+    expect(rects[2].bottom).toBeGreaterThan(245);
+    expect(measureAtPosition(rects, 150, 240)).toBe(1);
+  });
+});
+
 describe('PianoApp.scss — the loop wears its own colour', () => {
   // Pinned by SELECTOR, not by a colour value appearing somewhere in the file.
   // The first attempt at this recoloured `.piano-empty__action` instead, because
   // it happened to carry the same background value earlier in the stylesheet.
   const rule = (selector) => {
-    const scss = readFileSync(fileURLToPath(new URL('../../../../../Apps/PianoApp.scss', import.meta.url)), 'utf8');
+    const scss = readFileSync('src/Apps/PianoApp.scss', 'utf8');
     const m = scss.match(new RegExp(`\\${selector}\\s*\\{[^}]*\\}`, 's'));
     return m?.[0] ?? null;
   };

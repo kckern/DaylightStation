@@ -113,6 +113,14 @@ export default function usePracticeRecord({ scoreId, fingerprint }) {
     return { rung, rungComplete, passage };
   }, [put]);
 
+  /** Last self-directed bar range; separate from preset passage progress. */
+  const saveCustomRange = useCallback((customRange) => {
+    const next = { ...recordRef.current, fingerprint: fpRef.current, customRange };
+    recordRef.current = next;
+    setRecord(next);
+    put({ fingerprint: fpRef.current, customRange });
+  }, [put]);
+
   /** Persist portable assessment evidence alongside the compact frontier. */
   const recordAssessmentAttempt = useCallback(async (attempt, { keepalive = false } = {}) => {
     if (!isPersistentUser(currentUser)) return { ok: false, skipped: 'guest' };
@@ -124,5 +132,5 @@ export default function usePracticeRecord({ scoreId, fingerprint }) {
   // wasn't an improvement are indistinguishable — both leave the record empty and
   // both no-op silently. It is NOT a gate callers should re-implement; recordCycle
   // and recordTierBest already refuse to write on their own.
-  return { record, loaded, persistent: isPersistentUser(currentUser), recordCycle, recordTierBest, recordLearnRep, recordAssessmentAttempt };
+  return { record, loaded, persistent: isPersistentUser(currentUser), recordCycle, recordTierBest, recordLearnRep, saveCustomRange, recordAssessmentAttempt };
 }
