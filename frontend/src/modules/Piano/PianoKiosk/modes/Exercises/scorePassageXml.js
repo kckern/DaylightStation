@@ -36,9 +36,17 @@ function effectiveTempo(measures, start) {
 function tempoDirection(document, bpm) {
   if (!bpm) return null;
   const direction = document.createElement('direction');
+  const directionType = document.createElement('direction-type');
+  const metronome = document.createElement('metronome');
+  const beatUnit = document.createElement('beat-unit');
+  const perMinute = document.createElement('per-minute');
+  beatUnit.textContent = 'quarter';
+  perMinute.textContent = String(bpm);
+  metronome.append(beatUnit, perMinute);
+  directionType.appendChild(metronome);
   const sound = document.createElement('sound');
   sound.setAttribute('tempo', String(bpm));
-  direction.appendChild(sound);
+  direction.append(directionType, sound);
   return direction;
 }
 
@@ -90,4 +98,85 @@ export function excerptMusicXml(musicXml, range) {
     inheritedTempoMap: inheritedBpm == null ? [] : [{ onsetQuarter: 0, bpm: inheritedBpm }],
     error: null,
   };
+}
+
+const partCode = (globalStaffIndex) => (globalStaffIndex === 0 ? 'rh' : globalStaffIndex === 1 ? 'lh' : `p${globalStaffIndex + 1}`);
+
+function staffCount(part) {
+  const declared = Math.max(0, ...[...part.getElementsByTagName('staves')].map((node) => Number(node.textContent) || 0));
+  const used = Math.max(0, ...[...part.querySelectorAll('note > staff')].map((node) => Number(node.textContent) || 0));
+  return Math.max(1, declared, used);
+}
+
+function remapNumberedChildren(attributes, name, mapping) {
+  for (const child of directChildren(attributes, name)) {
+    const oldNumber = Number(child.getAttribute('number') || 1);
+    if (!mapping.has(oldNumber)) child.remove();
+    else child.setAttribute('number', String(mapping.get(oldNumber)));
+  }
+}
+
+/** Remove unrequested score staves/parts before engraving, returning the original staff mapping. */
+export function selectMusicXmlParts(musicXml, requestedParts) {
+  if (!Array.isArray(requestedParts) || !requestedParts.length) {
+    return { musicXml, originalStaffIndices: null, error: null };
+  }
+  const document = new DOMParser().parseFromString(musicXml, 'application/xml');
+  if (document.getElementsByTagName('parsererror').length) {
+    return { musicXml: null, originalStaffIndices: [], error: 'invalid-xml' };
+  }
+  const selectedCodes = new Set(requestedParts);
+  const originalStaffIndices = [];
+  let globalOffset = 0;
+
+  for (const part of [...document.getElementsByTagName('part')]) {
+    const count = staffCount(part);
+    const selectedLocal = Array.from({ length: count }, (_, index) => index + 1)
+      .filter((local) => selectedCodes.has(partCode(globalOffset + local - 1)));
+    if (!selectedLocal.length) {
+      const id = part.getAttribute('id');
+      part.remove();
+      for (const definition of [...document.getElementsByTagName('score-part')]) {
+        if (definition.getAttribute('id') === id) definition.remove();
+      }
+      globalOffset += count;
+      continue;
+    }
+
+    const mapping = new Map(selectedLocal.map((oldNumber, index) => [oldNumber, index + 1]));
+    for (const local of selectedLocal) originalStaffIndices.push(globalOffset + local - 1);
+    if (selectedLocal.length !== count) {
+      for (const measure of directChildren(part, 'measure')) {
+        for (const note of directChildren(measure, 'note')) {
+          const oldNumber = Number(note.querySelector(':scope > staff')?.textContent || 1);
+          if (!mapping.has(oldNumber)) note.remove();
+          else {
+            const staff = note.querySelector(':scope > staff');
+            if (staff) staff.textContent = String(mapping.get(oldNumber));
+          }
+        }
+        for (const direction of directChildren(measure, 'direction')) {
+          const staff = direction.querySelector(':scope > staff');
+          if (!staff) continue;
+          const oldNumber = Number(staff.textContent || 1);
+          if (!mapping.has(oldNumber)) direction.remove();
+          else staff.textContent = String(mapping.get(oldNumber));
+        }
+        if (selectedLocal.length === 1) {
+          for (const cursorMove of [...directChildren(measure, 'backup'), ...directChildren(measure, 'forward')]) cursorMove.remove();
+        }
+        for (const attributes of directChildren(measure, 'attributes')) {
+          for (const staves of directChildren(attributes, 'staves')) staves.textContent = String(selectedLocal.length);
+          remapNumberedChildren(attributes, 'clef', mapping);
+          remapNumberedChildren(attributes, 'staff-details', mapping);
+        }
+      }
+    }
+    globalOffset += count;
+  }
+
+  if (!document.getElementsByTagName('part').length) {
+    return { musicXml: null, originalStaffIndices: [], error: 'parts-empty' };
+  }
+  return { musicXml: new XMLSerializer().serializeToString(document), originalStaffIndices, error: null };
 }

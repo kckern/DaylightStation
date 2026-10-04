@@ -352,9 +352,7 @@
    passage is short enough to fit the row, and anything that let a child move
    the page would be one more thing between them and the game.
 
-   The bars either side of the passage stay ENGRAVED, only greyed back: erasing
-   them would leave the ask floating with no clue where in the piece it came
-   from, and a child who reads music reads the run-up. */
+   The stage receives a standalone excerpt containing only the assigned bars. */
 .piano-score-passage {
   width: 100%;
   height: 100%;
@@ -390,13 +388,6 @@
     pointer-events: none;
   }
 
-  .piano-score-passage__dim {
-    path, rect, ellipse, text { fill: #b6b4ae; }
-  }
-
-  .piano-score-passage__inactive {
-    opacity: 0.28;
-  }
 }
 
 /* Tier 2: the sequence staff IS the screen. It fills the stage row, and the
