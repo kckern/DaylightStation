@@ -6,12 +6,12 @@
 import sha256 from 'crypto-js/sha256.js';
 
 const DEFAULT_LADDER = [
-  { id: 'right', label: 'Right hand', parts: ['rh'], mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 1 }, completes: 'rung', legacySeed: 'rh' },
-  { id: 'left', label: 'Left hand', parts: ['lh'], mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 1 }, completes: 'rung', legacySeed: 'lh' },
-  { id: 'together', label: 'Hands together', parts: ['rh', 'lh'], scope: 'all-parts', mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 1 }, completes: 'rung', legacySeed: 'both' },
-  { id: 'timed', label: 'Together with the beat', parts: ['rh', 'lh'], scope: 'all-parts', mode: 'cued', sets: 1, reps: 3, tempoPercent: 60, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 1, placement: 0.8 }, completes: 'rung' },
-  { id: 'mastery', label: 'Mastery', parts: ['rh', 'lh'], scope: 'all-parts', mode: 'cued', sets: 1, reps: 3, tempoPercent: 100, mastery: true, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 1, placement: 0.8 }, completes: 'passage' },
-  { id: 'test-out', label: 'Test out', parts: ['rh', 'lh'], scope: 'all-parts', mode: 'cued', sets: 1, reps: 3, tempoPercent: 100, mastery: true, availability: 'always', consecutive: true, criteria: { completeness: 1, cleanliness: 1, placement: 0.8 }, completes: 'passage', completion: 'tested-out' },
+  { id: 'right', label: 'Right hand', parts: ['rh'], mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, criteria: { completeness: 1 }, completes: 'rung', legacySeed: 'rh' },
+  { id: 'left', label: 'Left hand', parts: ['lh'], mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, criteria: { completeness: 1 }, completes: 'rung', legacySeed: 'lh' },
+  { id: 'together', label: 'Hands together', parts: ['rh', 'lh'], scope: 'all-parts', mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, criteria: { completeness: 1 }, completes: 'rung', legacySeed: 'both' },
+  { id: 'timed', label: 'Together with the beat', parts: ['rh', 'lh'], scope: 'all-parts', mode: 'cued', sets: 1, reps: 3, tempoPercent: 60, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 0.8, placement: 0.8 }, completes: 'rung' },
+  { id: 'mastery', label: 'Mastery', parts: ['rh', 'lh'], scope: 'all-parts', mode: 'cued', sets: 1, reps: 3, tempoPercent: 100, mastery: true, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 0.8, placement: 0.8 }, completes: 'passage' },
+  { id: 'test-out', label: 'Test out', parts: ['rh', 'lh'], scope: 'all-parts', mode: 'cued', sets: 1, reps: 3, tempoPercent: 100, mastery: true, availability: 'always', consecutive: true, criteria: { completeness: 1, cleanliness: 0.8, placement: 0.8 }, completes: 'passage', completion: 'tested-out' },
 ];
 
 export const SHEET_MUSIC_DEFAULTS = {

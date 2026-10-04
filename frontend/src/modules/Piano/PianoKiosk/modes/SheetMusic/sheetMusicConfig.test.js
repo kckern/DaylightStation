@@ -32,6 +32,17 @@ describe('resolveSheetMusicConfig', () => {
     ]);
     expect(resolved.learn.revision).toMatch(/^[a-f0-9]{64}$/);
   });
+  it('grades Learn with the same tolerances as standard Exercise Runs', () => {
+    const ladder = resolveSheetMusicConfig({}).learn.ladder;
+    expect(Object.fromEntries(ladder.map(({ id, criteria }) => [id, criteria]))).toEqual({
+      right: { completeness: 1 },
+      left: { completeness: 1 },
+      together: { completeness: 1 },
+      timed: { completeness: 1, cleanliness: 0.8, placement: 0.8 },
+      mastery: { completeness: 1, cleanliness: 0.8, placement: 0.8 },
+      'test-out': { completeness: 1, cleanliness: 0.8, placement: 0.8 },
+    });
+  });
   it('merges partial overrides', () => {
     const c = resolveSheetMusicConfig({ perform: { advancePedalCC: 64 }, scoring: { thresholds: { green: 0.95 } } });
     expect(c.perform).toEqual({ advancePedalCC: 64, backPedalCC: 66 });

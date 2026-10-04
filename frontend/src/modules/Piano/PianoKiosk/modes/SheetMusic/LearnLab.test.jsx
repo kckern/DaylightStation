@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import LearnLab from './LearnLab.jsx';
 
@@ -27,6 +27,8 @@ describe('LearnLab', () => {
     expect(screen.queryByText(/roadmap/i)).not.toBeInTheDocument();
     expect(exercise.props.score).toMatchObject({ rangeIndices: { start: 0, end: 3 }, activeParts: ['rh'] });
     expect(exercise.props).toMatchObject({ scoreCursorPolicy: 'always', keyboardHintPolicy: 'after-wrong', surface: 'learn-lab' });
+    expect(exercise.props.bare).toBeUndefined();
+    expect(exercise.props.failurePresentation).toBe('local');
   });
 
   it('reports rung completion so the host can advance according to its resolved plan', () => {
@@ -39,6 +41,31 @@ describe('LearnLab', () => {
     expect(onRungPassed).not.toHaveBeenCalled();
     vi.advanceTimersByTime(900);
     expect(onRungPassed).toHaveBeenCalledWith(expect.objectContaining({ segmentId: 'm0-3', rungId: 'right' }));
+  });
+
+  it('covers the next take with the shared rep interstitial instead of looking like a reload', () => {
+    vi.useFakeTimers();
+    const drill = { ...rung, sets: 2, reps: 2, required: 4, passCount: 0 };
+    const onRecord = vi.fn(() => ({ rungComplete: false, passage: { complete: false } }));
+    render(<LearnLab {...base} rung={drill} onRecord={onRecord} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Finish take' }));
+
+    expect(screen.getByRole('status', { name: 'Rep 1 of 2. Passed. Rep 2 of 2.' })).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(2199));
+    expect(screen.getByRole('status', { name: 'Rep 1 of 2. Passed. Rep 2 of 2.' })).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(1));
+    expect(screen.queryByRole('status', { name: 'Rep 1 of 2. Passed. Rep 2 of 2.' })).not.toBeInTheDocument();
+  });
+
+  it('marks the boundary between sets in the interstitial', () => {
+    const drill = { ...rung, sets: 2, reps: 2, required: 4, passCount: 1 };
+    const onRecord = vi.fn(() => ({ rungComplete: false, passage: { complete: false } }));
+    render(<LearnLab {...base} rung={drill} onRecord={onRecord} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Finish take' }));
+
+    expect(screen.getByRole('status', { name: 'Set 1 of 2 clear. Passed. Next: Set 2, R.' })).toBeInTheDocument();
   });
 
   it('reports mastery separately and closes the lab', () => {

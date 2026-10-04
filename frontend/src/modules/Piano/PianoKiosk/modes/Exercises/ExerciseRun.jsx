@@ -330,8 +330,11 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   passage draws its position cursor only for clocked work or for every run.
  * @param {'always'|'after-wrong'} [props.keyboardHintPolicy='always'] Whether
  *   the footer keyboard proactively names the target or reveals it as help.
+ * @param {'host'|'local'} [props.failurePresentation='host'] Whether an
+ *   `onFailed` consumer replaces the result screen or records it while the run
+ *   retains its standard feedback and piano-driven retry.
  */
-export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', keyboardHintPolicy = 'always', onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', keyboardHintPolicy = 'always', failurePresentation = 'host', onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
@@ -749,7 +752,9 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   const passTakenRef = useRef(false);
   const judgedResult = resultReady && JUDGED_STATUSES.has(snapshot.result?.status) ? snapshot.result : null;
   const resultPassed = runPassed(judgedResult, { challenge, passScore: runRequirement?.passScore });
-  const hostOwnsResult = resultPassed ? Boolean(onPassed) : Boolean(onFailed);
+  const hostOwnsResult = resultPassed
+    ? Boolean(onPassed)
+    : Boolean(onFailed) && failurePresentation !== 'local';
   const localRetry = Boolean(judgedResult && !hostOwnsResult);
   useEffect(() => {
     passTakenRef.current = false;
@@ -1220,9 +1225,9 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   const timingCopy = timed && result && !passed
     ? timingSentence(timedRunSummary(result, snapshot), expected.length)
     : null;
-  // A host handling failures owns the next screen. Suppress the local result
-  // panel so it cannot flash a retry instruction before that transition.
-  const hostOwnsFailure = Boolean(onFailed) && !passed;
+  // A host handling failures normally owns the next screen. A recording-only
+  // host explicitly keeps this panel and the run's piano-driven retry.
+  const hostOwnsFailure = Boolean(onFailed) && failurePresentation !== 'local' && !passed;
   const currentEvent = askEvents[Math.min(visualCursor.index, askEvents.length - 1)] || askEvents[0];
   const revealKeyboardTarget = keyboardHintPolicy !== 'after-wrong' || lastWrong !== null;
   const targetNotes = new Map(((revealKeyboardTarget ? currentEvent?.notes : []) ?? []).map((note) => [note.midi, { velocity: 1 }]));
