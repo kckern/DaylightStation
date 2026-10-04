@@ -159,6 +159,17 @@ describe('usePracticeRecord', () => {
     expect(calls.filter((call) => call.method === 'PUT')).toHaveLength(2);
   });
 
+  it('saves a custom range per player and score without altering preset progress', async () => {
+    store = { fingerprint: FP, learn: { revision: 'ladder-a', passages: { 'm0-3': { complete: true } } } };
+    const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    act(() => result.current.saveCustomRange({ inMeasure: 2, outMeasure: 6 }));
+    expect(result.current.record.customRange).toEqual({ inMeasure: 2, outMeasure: 6 });
+    expect(result.current.record.learn.passages['m0-3'].complete).toBe(true);
+    const put = calls.find((call) => call.method === 'PUT');
+    expect(put.data).toEqual({ fingerprint: FP, customRange: { inMeasure: 2, outMeasure: 6 } });
+  });
+
   it('a failed consecutive rung resets only that rung while a normal rung keeps banked reps', async () => {
     store = { fingerprint: FP, learn: { revision: 'ladder-a', passages: { 'm0-3': { rungs: {
       right: { attempts: 2, passCount: 2 }, 'test-out': { attempts: 2, passCount: 2 },

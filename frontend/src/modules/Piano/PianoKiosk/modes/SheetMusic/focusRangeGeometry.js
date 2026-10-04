@@ -2,7 +2,8 @@
 // RangeHandleLayer.jsx, which shares the measure-extent math for its drag
 // handles), split out so Fast Refresh can hot-reload the layer on its own.
 
-export function measureExtent(m, stepBoxes) {
+export function measureExtent(m, stepBoxes, measureRect = null) {
+  if (measureRect && Number.isFinite(measureRect.left) && Number.isFinite(measureRect.right)) return measureRect;
   let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
   for (let i = m.firstStep; i <= m.lastStep; i++) {
     const b = stepBoxes[i];
@@ -14,6 +15,51 @@ export function measureExtent(m, stepBoxes) {
   }
   if (!Number.isFinite(left) || !Number.isFinite(top)) return null;
   return { left, right, top, bottom };
+}
+
+/** Join OSMD barline bounds to a full-system notation envelope. */
+export function buildEngravedMeasureRects(measures = [], bounds = [], staffBoxes = [], steps = [], stepBoxes = []) {
+  const rects = measures.map((measure, index) => {
+    const box = bounds[measure.index ?? index] || bounds[index];
+    if (!box || !Number.isFinite(box.left) || !Number.isFinite(box.right) || box.right <= box.left) return null;
+    const staff = staffBoxes.find((item) => box.top <= item.top + item.lineSpacing * 4 && box.bottom >= item.top);
+    return { ...box, system: staff?.system ?? 0 };
+  });
+  const envelopes = new Map();
+  for (const staff of staffBoxes) {
+    const span = envelopes.get(staff.system) || { top: Infinity, bottom: -Infinity, pad: staff.lineSpacing || 10 };
+    span.top = Math.min(span.top, staff.top);
+    span.bottom = Math.max(span.bottom, staff.top + 4 * (staff.lineSpacing || 10));
+    envelopes.set(staff.system, span);
+  }
+  rects.forEach((rect, index) => {
+    if (!rect) return;
+    const span = envelopes.get(rect.system) || { top: Infinity, bottom: -Infinity, pad: 10 };
+    span.top = Math.min(span.top, rect.top);
+    span.bottom = Math.max(span.bottom, rect.bottom);
+    const measure = measures[index];
+    for (let i = measure.firstStep; i <= measure.lastStep; i++) {
+      for (const note of steps[i]?.notes || []) {
+        if (Number.isFinite(note.top)) span.top = Math.min(span.top, note.top);
+        if (Number.isFinite(note.bottom)) span.bottom = Math.max(span.bottom, note.bottom);
+      }
+      const cursor = stepBoxes[i];
+      if (cursor) {
+        span.top = Math.min(span.top, cursor.top);
+        span.bottom = Math.max(span.bottom, cursor.bottom);
+      }
+    }
+    envelopes.set(rect.system, span);
+  });
+  return rects.map((rect) => {
+    if (!rect) return null;
+    const span = envelopes.get(rect.system);
+    return { ...rect, top: span.top - span.pad, bottom: span.bottom + span.pad };
+  });
+}
+
+export function measureAtPosition(rects = [], x, y) {
+  return rects.findIndex((rect) => rect && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom);
 }
 
 /**
@@ -43,10 +89,27 @@ function halfGapTo(stepBoxes, from, to) {
   return gap > 0 ? gap / 2 : null;
 }
 
-export function rangeBands(measures, stepBoxes, { inMeasure, outMeasure }) {
+export function rangeBands(measures, stepBoxes, { inMeasure, outMeasure }, measureRects = []) {
   const inM = measures[inMeasure];
   const outM = measures[outMeasure];
   if (!inM || !outM) return [];
+  if (measureRects.length && measures.slice(inMeasure, outMeasure + 1).every((_, offset) => measureRects[inMeasure + offset])) {
+    const bands = [];
+    for (let i = inMeasure; i <= outMeasure; i++) {
+      const rect = measureRects[i];
+      let band = bands[bands.length - 1];
+      if (!band || rect.system !== band.system || rect.left < band.left) {
+        band = { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, system: rect.system };
+        bands.push(band);
+      } else {
+        band.left = Math.min(band.left, rect.left);
+        band.right = Math.max(band.right, rect.right);
+        band.top = Math.min(band.top, rect.top);
+        band.bottom = Math.max(band.bottom, rect.bottom);
+      }
+    }
+    return bands.map(({ left, right, top, bottom }) => ({ left, right, top, bottom }));
+  }
   const bands = [];
   let cur = null;
   let prevX = -Infinity;
@@ -82,4 +145,3 @@ export function rangeBands(measures, stepBoxes, { inMeasure, outMeasure }) {
   last.right += rightPad ?? EDGE_FALLBACK_PX;
   return bands;
 }
-
