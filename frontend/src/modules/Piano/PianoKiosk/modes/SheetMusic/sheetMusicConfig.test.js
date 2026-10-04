@@ -2,6 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
 
 describe('resolveSheetMusicConfig', () => {
+  it('enables the roadmap by default while retaining an explicit legacy escape hatch', () => {
+    expect(resolveSheetMusicConfig({}).learn.roadmap).toBe(true);
+    expect(resolveSheetMusicConfig({ learn: { roadmap: false } }).learn.roadmap).toBe(false);
+  });
+
   it('applies defaults when unset', () => {
     const resolved = resolveSheetMusicConfig(undefined);
     expect(resolved).toMatchObject({

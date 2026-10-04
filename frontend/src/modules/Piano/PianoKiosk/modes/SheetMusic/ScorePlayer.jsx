@@ -381,7 +381,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Learn always means silent wait-for-correct. A focused loop changes the
   // cursor range, never who performs the music; machine demonstration belongs
   // exclusively to Listen.
-  const roadmapLearn = mode === 'learn';
+  const roadmapLearn = mode === 'learn' && config?.sheetmusic?.learn?.roadmap !== false;
   const learnGate = mode === 'learn' && !roadmapLearn;
   // The audio plane's one predicate: who actually sends notes to the piano. Every
   // flush/panic guard reads THIS, never a literal mode check (wave-3 §0).
@@ -1576,9 +1576,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // without a range. Runs once per Learn entry — the learnAutoRef arms on entry
   // and disarms after the pick (or when the user sets a range themselves).
   const learnAutoRef = useRef(false);
-  useEffect(() => { if (mode === 'learn' && !focus) learnAutoRef.current = true; else if (mode !== 'learn') learnAutoRef.current = false; }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (mode === 'learn' && !roadmapLearn && !focus) learnAutoRef.current = true; else learnAutoRef.current = false; }, [mode, roadmapLearn]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (!learnAutoRef.current || mode !== 'learn' || focus || !layout.measures?.length || !practiceLoaded) return;
+    if (roadmapLearn || !learnAutoRef.current || mode !== 'learn' || focus || !layout.measures?.length || !practiceLoaded) return;
     // Wait for a hand-preference seed requested THIS pass (above) to actually
     // land in `activeParts` — picking now would read the pre-seed value and
     // frontier off the wrong hands' practice history (audit: wave-3 E).
@@ -1593,7 +1593,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setFocus({ kind: 'custom', inMeasure: picked.inMeasure, outMeasure: picked.outMeasure });
     setLoopOn(true); // the landing IS the gate state — ready to play
     logger.info('score.learn.auto-range', { ...picked });
-  }, [mode, focus, layout.measures, layout.steps, practiceLoaded, practice, activeParts, grandStaff, sections, logger]);
+  }, [mode, roadmapLearn, focus, layout.measures, layout.steps, practiceLoaded, practice, activeParts, grandStaff, sections, logger]);
 
   // An arm must not outlive the user's intent. `arming` gates the seek branch of
   // onScoreClick, so a forgotten arm silently disables tap-to-seek — one user
@@ -2292,7 +2292,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onPick={onMode}
       />
 
-      {mode !== 'learn' && <ScoreTransportBar
+      {!roadmapLearn && <ScoreTransportBar
         mode={mode}
         running={running}
         playLocked={learnGate}

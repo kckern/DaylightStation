@@ -8,9 +8,9 @@ import sha256 from 'crypto-js/sha256.js';
 const DEFAULT_LADDER = [
   { id: 'right', label: 'Right hand', parts: ['rh'], mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 1 }, completes: 'rung', legacySeed: 'rh' },
   { id: 'left', label: 'Left hand', parts: ['lh'], mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 1 }, completes: 'rung', legacySeed: 'lh' },
-  { id: 'together', label: 'Hands together', parts: ['rh', 'lh'], mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 1 }, completes: 'rung', legacySeed: 'both' },
-  { id: 'timed', label: 'Together with the beat', parts: ['rh', 'lh'], mode: 'cued', sets: 1, reps: 3, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 1, placement: 0.8 }, completes: 'passage' },
-  { id: 'test-out', label: 'Test out', parts: ['rh', 'lh'], mode: 'cued', sets: 1, reps: 3, availability: 'always', consecutive: true, criteria: { completeness: 1, cleanliness: 1, placement: 0.8 }, completes: 'passage', completion: 'tested-out' },
+  { id: 'together', label: 'Hands together', parts: ['rh', 'lh'], scope: 'all-parts', mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 1 }, completes: 'rung', legacySeed: 'both' },
+  { id: 'timed', label: 'Together with the beat', parts: ['rh', 'lh'], scope: 'all-parts', mode: 'cued', sets: 1, reps: 3, availability: 'sequential', consecutive: false, criteria: { completeness: 1, cleanliness: 1, placement: 0.8 }, completes: 'passage' },
+  { id: 'test-out', label: 'Test out', parts: ['rh', 'lh'], scope: 'all-parts', mode: 'cued', sets: 1, reps: 3, availability: 'always', consecutive: true, criteria: { completeness: 1, cleanliness: 1, placement: 0.8 }, completes: 'passage', completion: 'tested-out' },
 ];
 
 export const SHEET_MUSIC_DEFAULTS = {
@@ -37,6 +37,7 @@ function normalizeRung(rung) {
   if (rung.completes != null && !['rung', 'passage'].includes(rung.completes)) return null;
   if (rung.completion != null && !['standard', 'tested-out'].includes(rung.completion)) return null;
   if (rung.legacySeed != null && !['rh', 'lh', 'both'].includes(rung.legacySeed)) return null;
+  if (rung.scope != null && rung.scope !== 'all-parts') return null;
   if (rung.criteria != null && (!isObj(rung.criteria) || Object.values(rung.criteria).some((value) => !Number.isFinite(value) || value < 0 || value > 1))) return null;
   return {
     ...rung,
@@ -72,6 +73,7 @@ function normalizeLearn(rawLearn) {
   const behavior = { passages, ladder };
   return {
     defaultHands: raw.defaultHands ?? SHEET_MUSIC_DEFAULTS.learn.defaultHands,
+    roadmap: raw.roadmap !== false,
     ...behavior,
     revision: sha256(JSON.stringify(behavior)).toString(),
     configFallback,
