@@ -1,4 +1,4 @@
-import { rangeBands } from './focusRangeGeometry.js';
+import { notationRangeBands, rangeBands } from './focusRangeGeometry.js';
 
 const passageState = (passage) => passage.locked ? ['locked', 'Locked']
   : passage.testedOut ? ['tested-out', 'Tested out']
@@ -15,7 +15,7 @@ export default function LearnPassageLayer({
   selectedRange = null, achievementId = null, onAchievementEnd, onSelect,
 }) {
   const selected = selectedRange || passages.find((passage) => passage.id === selectedId);
-  const outlines = selected ? rangeBands(measures, stepBoxes, selected, measureRects) : [];
+  const outlines = selected ? notationRangeBands(measures, stepBoxes, selected, measureRects) : [];
   return <>
     {outlines.map((band, index) => <div
       key={`outline-${index}`}

@@ -145,3 +145,55 @@ export function rangeBands(measures, stepBoxes, { inMeasure, outMeasure }, measu
   last.right += rightPad ?? EDGE_FALLBACK_PX;
   return bands;
 }
+
+const NOTATION_PAD_PX = 12;
+
+/**
+ * Learn selection geometry keeps OSMD's exact barline edges, but avoids using
+ * its full system-height hit rectangles as visible chrome. The latter include
+ * inter-system whitespace and made short passages look vertically displaced.
+ */
+export function notationRangeBands(measures, stepBoxes, range, measureRects = []) {
+  const bands = [];
+  for (let measureIndex = range.inMeasure; measureIndex <= range.outMeasure; measureIndex++) {
+    const measure = measures[measureIndex];
+    if (!measure) continue;
+    const boxes = [];
+    for (let step = measure.firstStep; step <= measure.lastStep; step++) {
+      if (stepBoxes[step]) boxes.push(stepBoxes[step]);
+    }
+    // A rest-only system has no selected notation to outline. Suppressing it is
+    // preferable to resurrecting the oversized full-system envelope.
+    if (!boxes.length) continue;
+
+    const rect = measureRects[measureIndex];
+    const hasBarlines = rect && Number.isFinite(rect.left) && Number.isFinite(rect.right) && rect.right > rect.left;
+    const extent = {
+      left: hasBarlines ? rect.left : Math.min(...boxes.map((box) => box.x)) - EDGE_FALLBACK_PX,
+      right: hasBarlines ? rect.right : Math.max(...boxes.map((box) => box.x)) + EDGE_FALLBACK_PX,
+      top: Math.min(...boxes.map((box) => box.top)),
+      bottom: Math.max(...boxes.map((box) => box.bottom)),
+      system: hasBarlines && rect.system != null ? rect.system : null,
+    };
+    const prior = bands[bands.length - 1];
+    const verticalOverlap = prior && extent.top <= prior.bottom && extent.bottom >= prior.top;
+    const sameSystem = prior && prior.system != null && extent.system != null
+      ? prior.system === extent.system
+      : verticalOverlap;
+    if (!sameSystem) {
+      bands.push(extent);
+      continue;
+    }
+    prior.left = Math.min(prior.left, extent.left);
+    prior.right = Math.max(prior.right, extent.right);
+    prior.top = Math.min(prior.top, extent.top);
+    prior.bottom = Math.max(prior.bottom, extent.bottom);
+    if (prior.system == null) prior.system = extent.system;
+  }
+  return bands.map(({ left, right, top, bottom }) => ({
+    left,
+    right,
+    top: top - NOTATION_PAD_PX,
+    bottom: bottom + NOTATION_PAD_PX,
+  }));
+}
