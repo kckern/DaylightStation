@@ -16,6 +16,15 @@ vi.mock('../../../../../lib/api.mjs', () => ({
         next.polish[bucket] = { ...(next.polish[bucket] || {}), ...data.polish[bucket] };
       }
     }
+    if (data.learn) {
+      next.learn = { ...(store.learn || {}), ...data.learn, passages: { ...(store.learn?.passages || {}) } };
+      for (const [passageId, passage] of Object.entries(data.learn.passages || {})) {
+        next.learn.passages[passageId] = {
+          ...(next.learn.passages[passageId] || {}), ...passage,
+          rungs: { ...(next.learn.passages[passageId]?.rungs || {}), ...(passage.rungs || {}) },
+        };
+      }
+    }
     store = next;
     return { ...store };
   }),
@@ -42,7 +51,7 @@ describe('usePracticeRecord', () => {
     expect(result.current.record.measures['3'].both).toEqual({ attempts: 2, passes: 1 });
   });
 
-  it('guest: no GET fired, loaded true, recordCycle is a no-op', async () => {
+  it('guest: no GET or PUT fires, but progress remains available for the session', async () => {
     mockUser = 'guest';
     const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
     await waitFor(() => expect(result.current.loaded).toBe(true));
@@ -51,7 +60,7 @@ describe('usePracticeRecord', () => {
       result.current.recordCycle({ measureIndices: [1, 2], wrongMeasures: new Set(), bucket: 'both' });
     });
     expect(calls).toHaveLength(0);
-    expect(result.current.record).toEqual({});
+    expect(result.current.record.measures['1'].both).toEqual({ attempts: 1, passes: 1 });
   });
 
   it('a null user (roster pending or failed) runs history-less but LOADED — Learn auto-range must not wait on the roster', async () => {
@@ -131,5 +140,49 @@ describe('usePracticeRecord', () => {
     const put = calls.find((c) => c.method === 'PUT');
     expect(put).toBeTruthy();
     expect(put.data).toEqual({ fingerprint: FP, polish: { rh: { full: 97 } } });
+  });
+
+  it('recordLearnRep banks cumulative reps and completes a passage at the configured requirement', async () => {
+    const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    act(() => result.current.recordLearnRep({
+      revision: 'ladder-a', passageId: 'm0-3', rungId: 'timed', result: { verdict: { passed: true } },
+      requiredPasses: 2, completesPassage: true,
+    }));
+    act(() => result.current.recordLearnRep({
+      revision: 'ladder-a', passageId: 'm0-3', rungId: 'timed', result: { verdict: { passed: true } },
+      requiredPasses: 2, completesPassage: true,
+    }));
+    expect(result.current.record.learn.passages['m0-3']).toMatchObject({
+      complete: true, completedBy: 'timed', rungs: { timed: { attempts: 2, passCount: 2 } },
+    });
+    expect(calls.filter((call) => call.method === 'PUT')).toHaveLength(2);
+  });
+
+  it('a failed consecutive rung resets only that rung while a normal rung keeps banked reps', async () => {
+    store = { fingerprint: FP, learn: { revision: 'ladder-a', passages: { 'm0-3': { rungs: {
+      right: { attempts: 2, passCount: 2 }, 'test-out': { attempts: 2, passCount: 2 },
+    } } } } };
+    const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    act(() => result.current.recordLearnRep({
+      revision: 'ladder-a', passageId: 'm0-3', rungId: 'test-out', result: { verdict: { passed: false } }, consecutive: true, requiredPasses: 3,
+    }));
+    expect(result.current.record.learn.passages['m0-3'].rungs).toMatchObject({
+      right: { passCount: 2 }, 'test-out': { attempts: 3, passCount: 0 },
+    });
+  });
+
+  it('a new ladder revision starts fresh passage progress without discarding measure history', async () => {
+    store = { fingerprint: FP, measures: { 0: { rh: { attempts: 3, passes: 3 } } }, learn: { revision: 'old', passages: { old: { complete: true } } } };
+    const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    act(() => result.current.recordLearnRep({
+      revision: 'new', passageId: 'm0-3', rungId: 'right', result: { verdict: { passed: true } }, requiredPasses: 6,
+    }));
+    expect(result.current.record.measures['0'].rh.passes).toBe(3);
+    expect(result.current.record.learn).toEqual({
+      revision: 'new', passages: { 'm0-3': { rungs: { right: { attempts: 1, passCount: 1 } }, complete: false } },
+    });
   });
 });
