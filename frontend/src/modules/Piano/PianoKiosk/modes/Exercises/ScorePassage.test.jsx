@@ -28,6 +28,7 @@ const h = vi.hoisted(() => ({
   publishes: 0,
   /** Reproduce the placeholder state: OSMD threw, no layout is ever published. */
   engraveFails: false,
+  engravedXml: null,
 }));
 
 /** A notehead the engraver would have produced, attached so classes are findable. */
@@ -52,11 +53,16 @@ vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => 
   return {
     MusicXmlRenderer: ({ musicXml, onLayout, onReady, onFailed, children }) => {
       useEffect(() => {
+        h.engravedXml = musicXml;
+        if (!musicXml) return;
         // The real renderer's terminal failure: it raises its placeholder and
         // NEVER calls onLayout. That is the exact state real OSMD reaches under
         // happy-dom, and the state a gate used to hang in.
         if (h.engraveFails) { onFailed?.({ error: 'Could not read this score.' }); return; }
         h.publishes += 1;
+        const shown = [...new DOMParser().parseFromString(musicXml, 'application/xml').querySelectorAll('part:first-of-type > measure')]
+          .map((measure) => Number(measure.getAttribute('number')) - 1);
+        const first = shown[0] ?? 0;
         onLayout?.({
           width: 800,
           height: 300,
@@ -67,7 +73,7 @@ vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => 
           measures: [0, 1, 2, 3],
           events: [],
           notes: [],
-          steps: h.steps,
+          steps: h.steps.filter((step) => shown.includes(step.measure)).map((step) => ({ ...step, measure: step.measure - first })),
         });
         onReady?.();
         // `onFailed` is deliberately NOT a dep — the real renderer holds it in a
@@ -104,10 +110,21 @@ beforeEach(() => {
   document.body.innerHTML = '';
   h.publishes = 0;
   h.engraveFails = false;
+  h.engravedXml = null;
   h.steps = fourBarSteps();
 });
 
 describe('ScorePassage expectation', () => {
+  it('engraves only the requested passage instead of greying the rest of the score', async () => {
+    renderPassage({ onExpectation: vi.fn() });
+    await waitFor(() => expect(h.engravedXml).toBeTruthy());
+
+    const document = new DOMParser().parseFromString(h.engravedXml, 'application/xml');
+    expect([...document.querySelectorAll('part')].map((part) => (
+      [...part.querySelectorAll(':scope > measure')].map((measure) => measure.getAttribute('number'))
+    ))).toEqual([['2', '3']]);
+  });
+
   it('compiles the measure range the level asked for, and nothing outside it', async () => {
     const onExpectation = vi.fn();
     renderPassage({ onExpectation });
@@ -218,15 +235,15 @@ describe('ScorePassage terminal failures', () => {
     expect(onExpectation).not.toHaveBeenCalled();
   });
 
-  it('reports a passage of nothing but rests', async () => {
-    // The geometry walk does not emit rests, so a rest-only bar contributes no
-    // notes and the range selects nothing playable. Bars 3-4 here are silent.
+  it('reports an excerpt whose engraver returned no playable notes', async () => {
+    // Once the selected document is a standalone excerpt, an empty geometry
+    // answer has the same terminal meaning as any other engraving with no notes.
     h.steps = fourBarSteps().filter((step) => step.measure < 2);
     const onExpectation = vi.fn();
     const onUnrunnable = vi.fn();
     renderPassage({ measures: [3, 4], onExpectation, onUnrunnable });
 
-    await waitFor(() => expect(onUnrunnable).toHaveBeenCalledWith('passage-empty'));
+    await waitFor(() => expect(onUnrunnable).toHaveBeenCalledWith('no-engraved-notes'));
     expect(onExpectation).not.toHaveBeenCalled();
   });
 
@@ -287,10 +304,10 @@ describe('ScorePassage cursor feedback', () => {
     await waitFor(() => expect(wrong()).toEqual([65]));
   });
 
-  it('dims the bars either side of the passage so the ask is the focused thing', async () => {
+  it('does not keep out-of-passage bars around as grey context', async () => {
     renderPassage({ onExpectation: vi.fn() });
     await waitFor(() => expect(lit()).toEqual([64]));
-    expect(dimmed()).toEqual([60, 62, 71, 72]);
+    expect(dimmed()).toEqual([]);
   });
 });
 
