@@ -140,7 +140,7 @@ export function resolveLearnPlan({ defaults = SHEET_MUSIC_DEFAULTS.learn, catego
     ...segment,
     fingerprint: sha256(JSON.stringify(stable({
       id: segment.id, inMeasure: segment.inMeasure, outMeasure: segment.outMeasure,
-      ladder: segment.ladder.map(behaviorRung),
+      ladder: segment.ladder.map(behaviorRung), testOut: behaviorRung(testOut),
     }))).toString(),
   }));
   const tempo = normalizeTempoMap(score, normalized.tempo.fallbackBpm);
