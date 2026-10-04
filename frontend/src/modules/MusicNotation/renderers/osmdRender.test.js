@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   midiOfHalfTone,
   pickMelodyNote,
@@ -10,7 +10,30 @@ import {
   extractLayoutSliced,
   tagStaffGroups,
   staffGroups,
+  osmdEngrave,
 } from './osmdRender.js';
+
+let constructorOptions;
+vi.mock('opensheetmusicdisplay', () => ({
+  OpenSheetMusicDisplay: class {
+    constructor(_host, options) {
+      constructorOptions = options;
+      this.EngravingRules = {};
+      this.Sheet = {};
+    }
+    async load() {}
+    render() {}
+  },
+  TransposeCalculator: class {},
+}));
+
+describe('OSMD document layout options', () => {
+  it('honors MusicXML system breaks inserted for a balanced score passage', async () => {
+    const host = document.createElement('div');
+    await osmdEngrave(host, '<score-partwise/>', { newSystemFromXML: true });
+    expect(constructorOptions.newSystemFromXML).toBe(true);
+  });
+});
 
 const note = ({ halfTone, rest = false, grace = false, tieCont = false, staff = 0 }) => {
   const n = {

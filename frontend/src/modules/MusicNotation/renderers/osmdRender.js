@@ -642,7 +642,8 @@ function applyManuscriptRules(osmd, manuscript) {
  * @param {HTMLElement} host
  * @param {string} xml - raw MusicXML
  * @param {{ width?:number, flow?:'wrapped'|'horizontal', scale?:number,
- *           transpose?:number, manuscript?:boolean, shouldAbort?:() => boolean }} [opts]
+ *           transpose?:number, manuscript?:boolean, newSystemFromXML?:boolean,
+ *           shouldAbort?:() => boolean }} [opts]
  *   transpose is an integer semitone offset (default 0) re-engraving the score in
  *   a new key — the notation AND the extracted pitches follow it.
  *   manuscript opts into the writing-surface rules — see applyManuscriptRules.
@@ -675,6 +676,7 @@ export async function osmdEngrave(host, xml, opts = {}) {
     drawMetronomeMarks: false,
     followCursor: false,
     renderSingleHorizontalStaffline: flow === 'horizontal',
+    newSystemFromXML: opts.newSystemFromXML === true,
   });
   // Mid-system measure numbers pile onto tight chords; system-start only.
   osmd.EngravingRules.RenderMeasureNumbersOnlyAtSystemStart = true;
