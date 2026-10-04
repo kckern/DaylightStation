@@ -22,6 +22,7 @@ const h = vi.hoisted(() => ({
   activeNotes: new Map(),
   record: vi.fn(),
   createAttempt: vi.fn(),
+  createRuntime: vi.fn(),
   // The two runtime calls the start model is made of. Spied through, never
   // replaced: the real engine still grades every note.
   start: vi.fn(),
@@ -159,6 +160,7 @@ vi.mock('../../../performance/assessmentSession.js', async (importOriginal) => {
     // and the spies only record how it was driven (start's lead-in, and which
     // notes reached observe).
     createAssessmentRuntime: (...args) => {
+      h.createRuntime(...args);
       const runtime = actual.createAssessmentRuntime(...args);
       return {
         ...runtime,
@@ -183,6 +185,7 @@ function resetHarness() {
   // mockClear, not mockReset — the implementation is installed once by the
   // module factory and must survive between tests.
   h.createAttempt.mockClear();
+  h.createRuntime.mockClear();
   for (const logger of Object.values(h.log)) logger.mockClear();
 }
 
@@ -219,6 +222,18 @@ describe('ExerciseRun shared assessment wiring', () => {
     await screen.findByText('Play the first note to begin.');
     press(view, props, midi);
   };
+
+  it('keeps one assessment runtime across note-on and note-off rerenders', async () => {
+    const props = { instance: subject(), score: null, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+    expect(h.createRuntime).toHaveBeenCalledTimes(1);
+
+    act(() => { h.activeNotes = new Map([[61, { velocity: 1 }]]); view.rerender(<ExerciseRun {...props} />); });
+    act(() => { h.activeNotes = new Map(); view.rerender(<ExerciseRun {...props} />); });
+
+    expect(h.createRuntime).toHaveBeenCalledTimes(1);
+  });
 
   it('drives MIDI through the shared cursor runtime and persists completed practice evidence', async () => {
     const props = { instance: subject(), score: null, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };

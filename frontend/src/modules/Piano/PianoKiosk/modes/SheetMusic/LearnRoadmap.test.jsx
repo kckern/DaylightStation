@@ -45,6 +45,17 @@ describe('LearnRoadmap', () => {
 });
 
 describe('LearnPassageSession', () => {
+  it('keeps the same score descriptor while its parent rerenders the lab', () => {
+    const score = { id: 'score-1', musicXml: '<score />' };
+    const props = { score, revision: 'rev', passage, rung: passage.rungs[0], onRecord: () => ({ rungComplete: false }), onBack: () => {} };
+    const view = render(<LearnPassageSession {...props} />);
+    const first = exercise.props.score;
+
+    view.rerender(<LearnPassageSession {...props} />);
+
+    expect(exercise.props.score).toBe(first);
+  });
+
   it('runs the selected score passage with parts, rubric, and set/rep projection', () => {
     render(<LearnPassageSession score={{ id: 'score-1', musicXml: '<score />' }} revision="rev" passage={passage} rung={passage.rungs[0]} onRecord={() => ({ rungComplete: false })} onBack={() => {}} />);
     expect(exercise.props.score).toMatchObject({ id: 'score-1', measures: [1, 4], activeParts: ['rh'] });

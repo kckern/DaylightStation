@@ -49,6 +49,15 @@ export function LearnPassageSession({ score, revision, passage, rung, onRecord, 
   const [take, setTake] = useState(0);
   const projection = useMemo(() => learnDrillProjection(passage, rung), [passage, rung]);
   const requirement = useMemo(() => learnPracticeRequirement(rung), [rung]);
+  const printedStart = passage.printedMeasures?.[0] ?? null;
+  const printedEnd = passage.printedMeasures?.[1] ?? null;
+  const partsKey = (rung.effectiveParts ?? []).join('\u0000');
+  const runScore = useMemo(() => ({
+    ...score,
+    measures: [printedStart, printedEnd],
+    rangeIndices: { start: passage.inMeasure, end: passage.outMeasure },
+    activeParts: partsKey ? partsKey.split('\u0000') : [],
+  }), [score, printedStart, printedEnd, passage.inMeasure, passage.outMeasure, partsKey]);
   const stepIndex = Math.min(rung.sets - 1, Math.floor((rung.passCount ?? 0) / Math.max(1, rung.reps)));
   const settle = useCallback((result) => {
     const outcome = onRecord({
@@ -71,7 +80,7 @@ export function LearnPassageSession({ score, revision, passage, rung, onRecord, 
       <ExerciseRun
         key={`${passage.id}:${rung.id}:${take}`}
         instance={null}
-        score={{ ...score, measures: passage.printedMeasures, rangeIndices: { start: passage.inMeasure, end: passage.outMeasure }, activeParts: rung.effectiveParts }}
+        score={runScore}
         intent="practice"
         practiceMode={rung.mode}
         practiceRequirement={requirement}
