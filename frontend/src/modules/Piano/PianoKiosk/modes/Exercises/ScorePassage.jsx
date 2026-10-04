@@ -69,7 +69,7 @@ function logger() {
  */
 export default function ScorePassage({
   musicXml, sourceId, measures = null, onExpectation, onUnrunnable, cursorIndex = 0, wrongMidi = null, showCursor = false,
-  verdicts = null, windowOpen = undefined,
+  verdicts = null, windowOpen = undefined, activeParts: requestedParts = null,
 }) {
   const judged = verdicts instanceof Map;
   const [layout, setLayout] = useState(null);
@@ -164,6 +164,7 @@ export default function ScorePassage({
         tempoMap: layout.tempoEntries,
         fallbackBpm,
         range,
+        activeParts: requestedParts,
       });
       // A range that selected nothing playable: bars the document does not have,
       // or a passage of nothing but rests. An expectation of no notes builds an
@@ -176,7 +177,7 @@ export default function ScorePassage({
     } catch (error) {
       return { state: 'dead', reason: 'expectation-uncompilable', error: error?.message ?? String(error) };
     }
-  }, [layout, notes, sourceId, fallbackBpm, range]);
+  }, [layout, notes, sourceId, fallbackBpm, range, requestedParts]);
 
   const expectation = compiled.state === 'ready' ? compiled.expectation : null;
 
@@ -253,9 +254,25 @@ export default function ScorePassage({
   // Every staff the engraving has is lit; a gate passage has no hands control.
   const activeParts = useMemo(() => {
     const parts = {};
-    for (const step of layout?.steps ?? []) for (const note of step.notes ?? []) parts[note.staff ?? 0] = true;
+    const selected = requestedParts ? new Set(requestedParts) : null;
+    for (const step of layout?.steps ?? []) for (const note of step.notes ?? []) {
+      const staff = note.staff ?? 0;
+      const part = staff === 0 ? 'rh' : staff === 1 ? 'lh' : `p${staff + 1}`;
+      parts[staff] = !selected || selected.has(part);
+    }
     return parts;
-  }, [layout]);
+  }, [layout, requestedParts]);
+
+  useLayoutEffect(() => {
+    if (!requestedParts) return undefined;
+    const inactive = [];
+    for (const step of layout?.steps ?? []) for (const note of step.notes ?? []) {
+      if (!note.el || activeParts[note.staff ?? 0]) continue;
+      note.el.classList.add(INACTIVE);
+      inactive.push(note.el);
+    }
+    return () => { for (const el of inactive) el.classList.remove(INACTIVE); };
+  }, [activeParts, layout, requestedParts]);
 
   /** The bars either side of the passage, greyed back so the ask is the page. */
   useLayoutEffect(() => {
@@ -332,6 +349,7 @@ export default function ScorePassage({
 const DEFAULT_BPM = 90;
 /** Out of the passage: engraved, readable, and plainly not what is being asked for. */
 const DIM = 'piano-score-passage__dim';
+const INACTIVE = 'piano-score-passage__inactive';
 /** A recorded verdict state → the class suffix painted on its engraved note. */
 const VERDICT_KIND = Object.freeze({ hit: 'hit', early: 'early', late: 'late', lapsed: 'unplayed', miss: 'unplayed' });
 const DRIFT_TICK = Object.freeze({ early: '\u25C2', late: '\u25B8' });

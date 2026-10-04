@@ -182,6 +182,30 @@ describe('ExerciseRun — score material, handed down as props', () => {
     expect(config.requirement).toBe(requirement);
   });
 
+  it('applies an explicit practice requirement without changing legacy practice defaults', async () => {
+    const practiceRequirement = { mode: 'free', rubric: { id: 'learn-passage-v1', version: '1', criteria: { completeness: 1, cleanliness: 1 } } };
+    const onPassed = vi.fn();
+    const onFailed = vi.fn();
+    const current = props({
+      intent: 'practice', practiceMode: 'free', requirement: null, practiceRequirement,
+      score: settledScore({ activeParts: ['rh'] }), onPassed, onFailed,
+    });
+    const view = render(<ExerciseRun {...current} />);
+    await screen.findByText('Play the first note to begin.');
+    expect(h.createAttempt.mock.calls.at(-1)[0].requirement).toBe(practiceRequirement);
+
+    press(view, current, 64); // the first expected note arms the free attempt
+    press(view, current, 61); // wrong input counts only after the attempt exists
+    for (const midi of [65, 67, 69]) press(view, current, midi);
+    await waitFor(() => expect(onFailed).toHaveBeenCalledTimes(1));
+    expect(onPassed).not.toHaveBeenCalled();
+
+    h.createAttempt.mockClear();
+    render(<ExerciseRun {...props({ intent: 'practice', practiceMode: 'free', requirement: null, onPassed: undefined })} />);
+    await waitFor(() => expect(h.createAttempt).toHaveBeenCalled());
+    expect(h.createAttempt.mock.calls.at(-1)[0].requirement).toBeNull();
+  });
+
   it('grades a cued passage against the score’s own tempo, not the surface’s', async () => {
     // `createAssessmentAttempt` rejects a timed attempt whose tempo map does not
     // start at onset zero, so a cued score is only buildable at all because the
