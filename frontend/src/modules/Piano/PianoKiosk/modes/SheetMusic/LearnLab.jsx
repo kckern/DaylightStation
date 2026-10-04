@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import ExerciseRun from '../Exercises/ExerciseRun.jsx';
 
 const handCode = (parts) => parts.length > 1 ? 'RL' : parts[0] === 'lh' ? 'L' : parts[0] === 'rh' ? 'R' : null;
@@ -33,7 +33,10 @@ export function learnPracticeRequirement(rung) {
 export default function LearnLab({ score, revision, segment, rung, tempo = {}, onRecord, onClose, onRungPassed, onMastered }) {
   const [take, setTake] = useState(0);
   const masteryTempo = rung.mastery === true || rung.completion === 'tested-out';
-  const [tempoPercent, setTempoPercent] = useState(masteryTempo ? 100 : (rung.tempoPercent ?? 100));
+  const setIndex = Math.min(rung.sets - 1, Math.floor((rung.passCount ?? 0) / Math.max(1, rung.reps)));
+  const configuredPercent = masteryTempo ? 100 : (rung.tempoPercents?.[setIndex] ?? rung.tempoPercent ?? 100);
+  const [tempoPercent, setTempoPercent] = useState(configuredPercent);
+  useEffect(() => { setTempoPercent(configuredPercent); }, [configuredPercent]);
   const projection = useMemo(() => learnDrillProjection(segment, rung), [segment, rung]);
   const requirement = useMemo(() => learnPracticeRequirement(rung), [rung]);
   const partsKey = (rung.effectiveParts ?? []).join('\u0000');
@@ -44,7 +47,7 @@ export default function LearnLab({ score, revision, segment, rung, tempo = {}, o
     activeParts: partsKey ? partsKey.split('\u0000') : [],
     tempoPercent,
   }), [score, segment.printedMeasures, segment.inMeasure, segment.outMeasure, partsKey, tempoPercent]);
-  const stepIndex = Math.min(rung.sets - 1, Math.floor((rung.passCount ?? 0) / Math.max(1, rung.reps)));
+  const stepIndex = setIndex;
   const settle = useCallback((result) => {
     const outcome = onRecord({
       revision, passageId: segment.id, rungId: rung.id, result,

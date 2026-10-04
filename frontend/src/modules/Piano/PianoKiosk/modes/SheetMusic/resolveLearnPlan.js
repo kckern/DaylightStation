@@ -115,6 +115,7 @@ const behaviorRung = (rung) => ({
   mode: rung.mode, sets: rung.sets, reps: rung.reps, consecutive: rung.consecutive,
   availability: rung.availability, criteria: rung.criteria, completes: rung.completes,
   completion: rung.completion, tempoPercent: rung.tempoPercent, mastery: rung.mastery,
+  tempoPercents: rung.tempoPercents,
 });
 
 /** Resolve every Learn configuration layer into the one immutable UI/runtime plan. */
