@@ -27,7 +27,8 @@ import { bucketOf } from './practiceKey.js';
 import { pickLearnRange } from './learnRange.js';
 import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
 import { projectLearnPassage } from './learnRoadmap.js';
-import { LearnPassageSession, CustomLearnSession } from './LearnRoadmap.jsx';
+import { CustomLearnSession } from './LearnRoadmap.jsx';
+import LearnLab from './LearnLab.jsx';
 import LearnPassageLayer from './LearnPassageLayer.jsx';
 import LearnSegmentRail, { segmentNavigationState } from './LearnSegmentRail.jsx';
 import { resolveLearnPlan } from './resolveLearnPlan.js';
@@ -2153,6 +2154,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const selectedRungId = searchParams.get('learnRung');
   const selectedPassage = learnPassages.find((passage) => passage.id === selectedPassageId) ?? null;
   const selectedRung = selectedPassage?.rungs.find((rung) => rung.id === selectedRungId && rung.state !== 'locked') ?? null;
+  const [restoreLearnAnchor, setRestoreLearnAnchor] = useState(null);
+  const [learnAchievement, setLearnAchievement] = useState(null);
   const customRange = practiceLoaded && validBarRange(practice?.customRange, layout.measures?.length ?? 0) ? practice.customRange : null;
   const updateLearnSelection = useCallback((passageId, rungId = null) => {
     setSearchParams((current) => {
@@ -2164,8 +2167,23 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [setSearchParams]);
   const closeLearnPassage = useCallback(() => updateLearnSelection(null), [updateLearnSelection]);
   const openLearnRung = useCallback((rungId) => {
-    if (selectedPassage) updateLearnSelection(selectedPassage.id, rungId);
+    if (selectedPassage) {
+      setRestoreLearnAnchor(scrollRef.current?.scrollTop ?? 0);
+      updateLearnSelection(selectedPassage.id, rungId);
+    }
   }, [selectedPassage, updateLearnSelection]);
+  const closeLearnLab = useCallback(() => {
+    if (selectedPassage) updateLearnSelection(selectedPassage.id);
+  }, [selectedPassage, updateLearnSelection]);
+  const advanceLearnRung = useCallback(({ rungId }) => {
+    const index = selectedPassage?.rungs.findIndex((candidate) => candidate.id === rungId) ?? -1;
+    const next = index >= 0 ? selectedPassage?.rungs[index + 1] : null;
+    if (next) updateLearnSelection(selectedPassage.id, next.id);
+    else closeLearnLab();
+  }, [closeLearnLab, selectedPassage, updateLearnSelection]);
+  const masterLearnSegment = useCallback((segmentId) => {
+    setLearnAchievement(segmentId);
+  }, []);
   const selectedRange = useMemo(() => selectionPhase === 'in' ? null
     : selectionPhase === 'out' && selectionAnchor != null
       ? { inMeasure: selectionAnchor, outMeasure: selectionAnchor }
@@ -2184,20 +2202,24 @@ export default function ScorePlayer({ score: scoreMeta }) {
     if (learnPlan.configFallback) logger.warn('score.learn.config-fallback', { scoreId: scoreMeta.id });
   }, [logger, scoreMeta.id, learnPlan.configFallback]);
 
+  const learnScore = useMemo(() => ({ id: scoreMeta.id, title: meta.title, musicXml: scoreMeta.musicXml }), [meta.title, scoreMeta.id, scoreMeta.musicXml]);
   const learnSession = mode === 'learn' && selectedPassage && selectedRung ? (
-      <LearnPassageSession
-        score={{ id: scoreMeta.id, title: meta.title, musicXml: scoreMeta.musicXml }}
+      <LearnLab
+        key={`${selectedPassage.id}:${selectedRung.id}`}
+        score={learnScore}
         revision={learnPlan.revision}
-        passage={selectedPassage}
+        segment={selectedPassage}
         rung={selectedRung}
         tempo={{ ...learnPlan.settings.tempo, tempoMap: learnPlan.tempoMap, tempoSource: learnPlan.tempoSource }}
         onRecord={recordLearnRep}
-        onBack={() => updateLearnSelection(selectedPassage.id)}
+        onClose={closeLearnLab}
+        onRungPassed={advanceLearnRung}
+        onMastered={masterLearnSegment}
       />
   ) : null;
   const customSession = mode === 'learn' && customRunOpen && customRange ? (
     <CustomLearnSession
-      score={{ id: scoreMeta.id, title: meta.title, musicXml: scoreMeta.musicXml }}
+      score={learnScore}
       range={customRange}
       measures={layout.measures}
       activeParts={activePartIds}
@@ -2205,6 +2227,17 @@ export default function ScorePlayer({ score: scoreMeta }) {
       onBack={() => setCustomRunOpen(false)}
     />
   ) : null;
+
+  useEffect(() => {
+    if (learnSession || restoreLearnAnchor == null) return undefined;
+    const frame = requestAnimationFrame(() => {
+      if (scrollRef.current) scrollRef.current.scrollTop = restoreLearnAnchor;
+      setRestoreLearnAnchor(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [learnSession, restoreLearnAnchor]);
+
+  if (learnSession) return <div className="piano-score-player piano-score-player--learn-lab">{learnSession}</div>;
 
   return (
     <div className="piano-score-player">
@@ -2322,6 +2355,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
               measureRects={measureRects}
               selectedRange={selectedRange}
               selectedId={selectedPassage?.id ?? null}
+              achievementId={learnAchievement}
+              onAchievementEnd={() => setLearnAchievement(null)}
               onSelect={(passageId) => { setSelectionPhase(null); setArmedSelectionEdge(null); updateLearnSelection(passageId); }}
             />
           )}
