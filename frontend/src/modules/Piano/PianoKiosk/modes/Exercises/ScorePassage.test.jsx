@@ -130,6 +130,15 @@ describe('ScorePassage layout fitting', () => {
     expect(systemBreakMatches(split(3), 3)).toBe(true);
     expect(systemBreakMatches(split(4), 3)).toBe(false);
   });
+
+  it('accepts the mirrored balanced split when notation density moves the extra bar', () => {
+    const split = (at) => Array.from({ length: 5 }, (_, index) => ({
+      left: index < at ? index * 100 : (index - at) * 100,
+      right: index < at ? (index + 1) * 100 : (index - at + 1) * 100,
+      top: index < at ? 0 : 200,
+    }));
+    expect(systemBreakMatches(split(2), 3)).toBe(true);
+  });
   it('rebalances a five-bar 4+1 orphan to the width-balanced 3+2 breakpoint', () => {
     const bounds = [
       { left: 0, right: 100, top: 0 }, { left: 100, right: 200, top: 0 },

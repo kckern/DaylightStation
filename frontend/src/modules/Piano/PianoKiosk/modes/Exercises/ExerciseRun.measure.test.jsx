@@ -1179,6 +1179,7 @@ describe('the score stage, engraved by the real OSMD in Chromium', () => {
   it('engraves a five-bar lab excerpt on no more than two systems', async () => {
     const fiveBars = fourBars.replace('</part>', '<measure number="5"><note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>half</type><staff>1</staff></note><note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>half</type><staff>1</staff></note></measure></part>');
     await openStage(css, js);
+    await page.setViewportSize({ width: 800, height: 800 });
     await page.evaluate(PROBE);
     await page.evaluate((xml) => window.__stage.mountPassage({ musicXml: xml, measures: [1, 5] }), fiveBars);
     await page.waitForFunction(
@@ -1186,6 +1187,7 @@ describe('the score stage, engraved by the real OSMD in Chromium', () => {
       undefined,
       { timeout: 60_000 },
     );
+    await page.waitForTimeout(1000);
 
     const calls = await probe.calls();
     expect(calls.find((call) => call.name === 'unrunnable'), 'the five-bar excerpt could not be fitted').toBeUndefined();

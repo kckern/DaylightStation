@@ -47,7 +47,8 @@ export function systemBreakMatches(measureBounds = [], breakBefore) {
   const wraps = measureBounds.flatMap((bound, index) => (
     index > 0 && bound.left < measureBounds[index - 1].left - 1 ? [index] : []
   ));
-  return wraps.length === 1 && wraps[0] === breakBefore;
+  const mirroredBreak = measureBounds.length - breakBefore;
+  return wraps.length === 1 && (wraps[0] === breakBefore || wraps[0] === mirroredBreak);
 }
 
 function firstHorizontalWrap(bounds) {
@@ -166,6 +167,12 @@ export default function ScorePassage({
         return;
       }
       if (systemBreakBefore != null && !systemBreakMatches(result.measureBounds ?? [], systemBreakBefore)) {
+        logger().warn('piano.score-passage-break-mismatch', {
+          id: sourceId ?? null,
+          measures,
+          breakBefore: systemBreakBefore,
+          measureBounds: (result.measureBounds ?? []).map(({ left, right, top, bottom }) => ({ left, right, top, bottom })),
+        });
         setLayout(null);
         setFitError('passage-layout-unbalanced');
         return;
