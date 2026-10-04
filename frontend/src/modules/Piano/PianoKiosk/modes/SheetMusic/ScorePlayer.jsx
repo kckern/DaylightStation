@@ -26,9 +26,11 @@ import usePracticeRecord from './usePracticeRecord.js';
 import { bucketOf } from './practiceKey.js';
 import { pickLearnRange } from './learnRange.js';
 import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
-import { buildLearnPassages, projectLearnPassage } from './learnRoadmap.js';
-import LearnRoadmap, { LearnPassageSession, CustomLearnSession } from './LearnRoadmap.jsx';
+import { projectLearnPassage } from './learnRoadmap.js';
+import { LearnPassageSession, CustomLearnSession } from './LearnRoadmap.jsx';
 import LearnPassageLayer from './LearnPassageLayer.jsx';
+import LearnSegmentRail, { segmentNavigationState } from './LearnSegmentRail.jsx';
+import { resolveLearnPlan } from './resolveLearnPlan.js';
 import { buildEngravedMeasureRects, measureAtPosition } from './focusRangeGeometry.js';
 import { completeBarSelection, moveBarEdge, validBarRange } from './learnBarSelection.js';
 import {
@@ -2124,22 +2126,29 @@ export default function ScorePlayer({ score: scoreMeta }) {
     [parts, activeParts],
   );
 
+  const learnPlan = useMemo(() => resolveLearnPlan({
+    defaults: config?.sheetmusic?.learn,
+    category: config?.sheetmusic?.learn?.categories?.[scoreMeta.category],
+    piece: scoreMeta.learn ?? config?.sheetmusic?.learn?.pieces?.[scoreMeta.id],
+    user: config?.user?.piano?.learn,
+    userPiece: config?.user?.piano?.learn?.pieces?.[scoreMeta.id],
+    score: {
+      id: scoreMeta.id, measures: layout.measures, steps: layout.steps, sections,
+      tempoMap: layout.tempoEntries, tempo: parsed?.tempo,
+    },
+  }), [config, layout.measures, layout.steps, layout.tempoEntries, parsed?.tempo, scoreMeta.category, scoreMeta.id, scoreMeta.learn, sections]);
   const learnPassages = useMemo(() => {
-    const planned = buildLearnPassages({
-      sections,
-      measures: layout.measures,
-      steps: layout.steps,
-      passages: smCfg.learn.passages,
-    });
-    const compatible = practice?.learn?.revision === smCfg.learn.revision ? practice.learn.passages : {};
-    return planned.map((passage) => {
-      const initial = projectLearnPassage({ passage, ladder: smCfg.learn.ladder });
+    const compatible = practice?.learn?.revision === learnPlan.revision ? practice.learn.passages : {};
+    const projected = learnPlan.segments.map((passage) => {
+      const ladder = [...passage.ladder, learnPlan.testOut];
+      const initial = projectLearnPassage({ passage, ladder });
       const progress = compatible?.[passage.id]
         ?? legacyLearnProgress(passage, initial.rungs, layout.measures, practice?.measures);
-      return projectLearnPassage({ passage, ladder: smCfg.learn.ladder, progress });
+      const result = projectLearnPassage({ passage, ladder, progress });
+      return { ...result, inProgress: result.rungs.some((rung) => rung.passCount > 0 && rung.state !== 'complete') };
     });
-  }, [layout.measures, layout.steps, practice, sections, smCfg.learn]);
-  const recommendedPassage = learnPassages.find((passage) => !passage.complete) ?? learnPassages[0] ?? null;
+    return segmentNavigationState(projected, learnPlan.navigation);
+  }, [layout.measures, learnPlan, practice]);
   const selectedPassageId = searchParams.get('learnPassage');
   const selectedRungId = searchParams.get('learnRung');
   const selectedPassage = learnPassages.find((passage) => passage.id === selectedPassageId) ?? null;
@@ -2157,13 +2166,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const openLearnRung = useCallback((rungId) => {
     if (selectedPassage) updateLearnSelection(selectedPassage.id, rungId);
   }, [selectedPassage, updateLearnSelection]);
-  const startCustomSelection = useCallback(() => {
-    updateLearnSelection(null);
-    setArmedSelectionEdge(null);
-    setSelectionAnchor(null);
-    setSelectionPhase('in');
-    setCustomResult(null);
-  }, [updateLearnSelection]);
   const selectedRange = useMemo(() => selectionPhase === 'in' ? null
     : selectionPhase === 'out' && selectionAnchor != null
       ? { inMeasure: selectionAnchor, outMeasure: selectionAnchor }
@@ -2179,16 +2181,16 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [selectedRange, saveCustomRange, updateLearnSelection]);
 
   useEffect(() => {
-    if (smCfg.learn.configFallback) logger.warn('score.learn.config-fallback', { scoreId: scoreMeta.id });
-  }, [logger, scoreMeta.id, smCfg.learn.configFallback]);
+    if (learnPlan.configFallback) logger.warn('score.learn.config-fallback', { scoreId: scoreMeta.id });
+  }, [logger, scoreMeta.id, learnPlan.configFallback]);
 
   const learnSession = mode === 'learn' && selectedPassage && selectedRung ? (
       <LearnPassageSession
         score={{ id: scoreMeta.id, title: meta.title, musicXml: scoreMeta.musicXml }}
-        revision={smCfg.learn.revision}
+        revision={learnPlan.revision}
         passage={selectedPassage}
         rung={selectedRung}
-        tempo={{ ...smCfg.learn.tempo, tempoMap, tempoSource: parsed?.tempo ? 'musicxml' : 'inferred' }}
+        tempo={{ ...learnPlan.settings.tempo, tempoMap: learnPlan.tempoMap, tempoSource: learnPlan.tempoSource }}
         onRecord={recordLearnRep}
         onBack={() => updateLearnSelection(selectedPassage.id)}
       />
@@ -2343,21 +2345,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
       </div>
 
       {roadmapLearn && practiceLoaded && (layout.measures?.length ?? 0) > 0 && (
-        <LearnRoadmap
-          passages={learnPassages}
-          recommendedId={recommendedPassage?.id}
+        <LearnSegmentRail
+          segments={learnPassages}
           selectedId={selectedPassage?.id ?? null}
-          onSelectPassage={(passageId) => { setSelectionPhase(null); setArmedSelectionEdge(null); updateLearnSelection(passageId); }}
+          onSelect={(passageId) => { setSelectionPhase(null); setArmedSelectionEdge(null); updateLearnSelection(passageId); }}
           onSelectRung={openLearnRung}
-          onClosePassage={closeLearnPassage}
-          customRange={customRange}
-          measures={layout.measures}
-          customResult={customResult}
-          selectionPhase={selectionPhase}
-          onStartSelection={startCustomSelection}
-          onCancelSelection={() => { setSelectionPhase(null); setSelectionAnchor(null); }}
-          onPracticeCustom={() => setCustomRunOpen(true)}
-          onClearCustom={() => { saveCustomRange(null); setCustomResult(null); }}
+          onClose={closeLearnPassage}
         />
       )}
 

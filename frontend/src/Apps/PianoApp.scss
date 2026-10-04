@@ -2621,18 +2621,44 @@
 
 .piano-learn-passage-map {
   position: absolute; z-index: 6;
-  display: grid; place-items: center;
-  width: 2rem; height: 2rem; padding: 0; margin: 0;
-  background: var(--piano-stage-panel);
-  border: 2px solid var(--piano-warn);
-  border-radius: 50%;
+  display: flex; align-items: baseline; gap: 0.3rem;
+  min-width: 2.8rem; height: 1.8rem; padding: 0 0.45rem; margin: 0;
+  background: color-mix(in srgb, var(--piano-stage-panel) 92%, transparent);
+  border: 1px solid var(--piano-warn); border-left-width: 4px;
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
   color: var(--piano-stage-fg);
-  font-weight: 700; cursor: pointer;
+  font-weight: 800; cursor: pointer;
+  small { font-size: 0.58rem; font-weight: 650; white-space: nowrap; }
 
-  &[data-state='complete'], &[data-state='tested-out'] {
+  &[data-state='mastered'], &[data-state='tested-out'] {
     border-color: var(--piano-accent);
   }
+  &[data-state='locked'] { opacity: 0.48; cursor: not-allowed; }
   &.is-selected { box-shadow: 0 0 0 3px var(--piano-warn); }
+}
+.piano-learn-segment-rail {
+  flex: 0 0 auto; display: flex; align-items: stretch; gap: 0.45rem;
+  max-width: 100%; padding: 0.45rem 0.6rem;
+  color: var(--piano-fg); background: var(--piano-surface-1); border-top: 1px solid var(--piano-border);
+  button { font: inherit; color: inherit; }
+  &__toggle, &__close { flex: 0 0 auto; border: 1px solid var(--piano-border); border-radius: 999px; background: transparent; }
+  &__toggle { padding: 0.35rem 0.65rem; }
+  &__close { width: 2rem; height: 2rem; }
+  &__track, &__ladder { min-width: 0; display: flex; gap: 0.4rem; overflow-x: auto; }
+  &__segment, &__ladder > button:not(.piano-learn-segment-rail__close) {
+    flex: 0 0 auto; min-height: 2.8rem; padding: 0.35rem 0.65rem;
+    display: grid; grid-template-columns: auto auto; column-gap: 0.4rem; align-content: center;
+    text-align: left; background: var(--piano-surface-2); border: 1px solid var(--piano-border); border-radius: var(--r-sm);
+    small, .piano-learn-segment-rail__state { color: var(--piano-muted); font-size: 0.68rem; }
+    &:disabled { opacity: 0.45; }
+    &[data-state='mastered'], &[data-state='tested-out'], &[data-state='complete'] { border-color: var(--piano-accent); }
+    &[data-state='next'], &[data-state='current'], &[data-state='available'] { border-color: var(--piano-warn); }
+  }
+  &__title { font-weight: 800; }
+  &__name { font-weight: 650; }
+  &__state { grid-column: 2; }
+  &__ladder { padding-left: 0.45rem; border-left: 1px solid var(--piano-border); }
+  &.is-collapsed { flex-grow: 0; }
 }
 .piano-learn-selection-outline {
   position: absolute; z-index: 6; pointer-events: none;
