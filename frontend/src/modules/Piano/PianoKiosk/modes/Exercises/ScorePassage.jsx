@@ -23,35 +23,19 @@ export function fitPassageLayout({ layout, scale, minScale, maxSystems }) {
 }
 
 /**
- * Pick a single forced break that balances engraved notation width. The first
- * unforced render supplies intrinsic-ish measure widths; equal candidates favor
- * the longer first system (five bars becomes 3+2, never 2+3 or 4+1).
+ * Pick a single forced break that balances bar count. A system wrap is the
+ * horizontal reset between adjacent measure boxes; their vertical bounds are
+ * ink extents and legitimately vary between measures on the same system.
  */
 export function balancedSystemBreak(measureBounds = []) {
   const bounds = measureBounds.filter((bound) => bound
     && Number.isFinite(bound.left) && Number.isFinite(bound.right) && Number.isFinite(bound.top)
     && bound.right > bound.left);
   if (bounds.length !== measureBounds.length || bounds.length < 3) return null;
-  const firstTop = bounds[0].top;
-  const currentBreak = bounds.findIndex((bound) => Math.abs(bound.top - firstTop) > 1);
+  const currentBreak = firstHorizontalWrap(bounds);
   if (currentBreak < 0) return null;
   const minPerSystem = bounds.length >= 4 ? 2 : 1;
-  const lastBreak = bounds.length - minPerSystem;
-  if (lastBreak < minPerSystem) return null;
-  const widths = bounds.map((bound) => bound.right - bound.left);
-  const total = widths.reduce((sum, width) => sum + width, 0);
-  let left = 0;
-  let best = null;
-  let bestDifference = Infinity;
-  for (let index = 1; index < bounds.length; index += 1) {
-    left += widths[index - 1];
-    if (index < minPerSystem || index > lastBreak) continue;
-    const difference = Math.abs(left - (total - left));
-    if (difference < bestDifference || (difference === bestDifference && index > best)) {
-      best = index;
-      bestDifference = difference;
-    }
-  }
+  const best = Math.min(bounds.length - minPerSystem, Math.max(minPerSystem, Math.ceil(bounds.length / 2)));
   return best === currentBreak ? null : best;
 }
 
@@ -59,11 +43,15 @@ export function balancedSystemBreak(measureBounds = []) {
 // eslint-disable-next-line react-refresh/only-export-components
 export function systemBreakMatches(measureBounds = [], breakBefore) {
   if (!Number.isInteger(breakBefore) || breakBefore <= 0 || breakBefore >= measureBounds.length) return false;
-  const tops = measureBounds.map((bound) => bound?.top);
-  if (tops.some((top) => !Number.isFinite(top))) return false;
-  const firstTop = tops[0];
-  const actual = tops.findIndex((top) => Math.abs(top - firstTop) > 1);
-  return actual === breakBefore && tops.slice(breakBefore).every((top) => Math.abs(top - tops[breakBefore]) <= 1);
+  if (measureBounds.some((bound) => !Number.isFinite(bound?.left))) return false;
+  const wraps = measureBounds.flatMap((bound, index) => (
+    index > 0 && bound.left < measureBounds[index - 1].left - 1 ? [index] : []
+  ));
+  return wraps.length === 1 && wraps[0] === breakBefore;
+}
+
+function firstHorizontalWrap(bounds) {
+  return bounds.findIndex((bound, index) => index > 0 && bound.left < bounds[index - 1].left - 1);
 }
 
 // eslint-disable-next-line react-refresh/only-export-components

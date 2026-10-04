@@ -125,7 +125,7 @@ describe('ScorePassage layout fitting', () => {
     const split = (at) => Array.from({ length: 5 }, (_, index) => ({
       left: index < at ? index * 100 : (index - at) * 100,
       right: index < at ? (index + 1) * 100 : (index - at + 1) * 100,
-      top: index < at ? 0 : 200,
+      top: index < at ? index * 3 : 200 + index * 4,
     }));
     expect(systemBreakMatches(split(3), 3)).toBe(true);
     expect(systemBreakMatches(split(4), 3)).toBe(false);
@@ -135,6 +135,15 @@ describe('ScorePassage layout fitting', () => {
       { left: 0, right: 100, top: 0 }, { left: 100, right: 200, top: 0 },
       { left: 200, right: 300, top: 0 }, { left: 300, right: 400, top: 0 },
       { left: 0, right: 100, top: 200 },
+    ];
+    expect(balancedSystemBreak(bounds)).toBe(3);
+  });
+
+  it('balances by bar count even when notation widths and vertical ink bounds vary', () => {
+    const bounds = [
+      { left: 0, right: 220, top: 4 }, { left: 220, right: 280, top: -7 },
+      { left: 280, right: 340, top: 8 }, { left: 340, right: 400, top: 2 },
+      { left: 0, right: 80, top: 205 },
     ];
     expect(balancedSystemBreak(bounds)).toBe(3);
   });
