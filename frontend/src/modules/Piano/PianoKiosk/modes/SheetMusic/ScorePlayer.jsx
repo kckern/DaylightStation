@@ -2168,6 +2168,16 @@ export default function ScorePlayer({ score: scoreMeta }) {
     }, { replace: true });
   }, [setSearchParams]);
   const closeLearnPassage = useCallback(() => updateLearnSelection(null), [updateLearnSelection]);
+  const openLearnPassage = useCallback((passageId) => {
+    const passage = learnPassages.find((candidate) => candidate.id === passageId);
+    const rung = passage?.rungs.find((candidate) => candidate.id !== 'test-out'
+      && candidate.state !== 'locked' && candidate.state !== 'complete')
+      ?? passage?.rungs.find((candidate) => candidate.id !== 'test-out' && candidate.state !== 'locked');
+    setSelectionPhase(null);
+    setArmedSelectionEdge(null);
+    setRestoreLearnAnchor(scrollRef.current?.scrollTop ?? 0);
+    updateLearnSelection(passageId, rung?.id ?? null);
+  }, [learnPassages, updateLearnSelection]);
   const openLearnRung = useCallback((rungId) => {
     if (selectedPassage) {
       setRestoreLearnAnchor(scrollRef.current?.scrollTop ?? 0);
@@ -2387,7 +2397,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
               selectedId={selectedPassage?.id ?? null}
               achievementId={learnAchievement}
               onAchievementEnd={() => setLearnAchievement(null)}
-              onSelect={(passageId) => { setSelectionPhase(null); setArmedSelectionEdge(null); updateLearnSelection(passageId); }}
+              onSelect={openLearnPassage}
             />
           )}
           {roadmapLearn && layoutFresh && customRange && !selectedPassage && !selectionPhase && (
@@ -2413,7 +2423,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         <LearnSegmentRail
           segments={learnPassages}
           selectedId={selectedPassage?.id ?? null}
-          onSelect={(passageId) => { setSelectionPhase(null); setArmedSelectionEdge(null); updateLearnSelection(passageId); }}
+          onSelect={openLearnPassage}
           onSelectRung={openLearnRung}
           onClose={closeLearnPassage}
         />

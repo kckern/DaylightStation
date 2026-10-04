@@ -33,7 +33,7 @@ export default function LearnPassageLayer({
         data-state={state}
         disabled={passage.locked}
         aria-label={[passage.label, passage.name, passage.barLabel, stateLabel].filter(Boolean).join(', ')}
-        style={{ left: first.left + 4, top: Math.max(2, first.top - 34) }}
+        style={{ left: first.left + 4, top: Math.max(2, first.top - 46) }}
         onClick={(event) => { event.stopPropagation(); onSelect?.(passage.id); }}
         onAnimationEnd={() => { if (passage.id === achievementId) onAchievementEnd?.(passage.id); }}
       ><span aria-hidden="true">{passage.number ?? passage.order}</span></button>;
