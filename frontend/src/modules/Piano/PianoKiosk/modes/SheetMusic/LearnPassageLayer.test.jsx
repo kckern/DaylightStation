@@ -90,7 +90,7 @@ describe('LearnPassageLayer', () => {
     />);
     const marker = screen.getByRole('button', { name: /Segment 1/ });
     const bracket = container.querySelector('.piano-learn-selection-bracket');
-    const markerBottom = Number.parseFloat(marker.style.top) + 32;
+    const markerBottom = Number.parseFloat(marker.style.top) + 40;
     expect(markerBottom).toBeLessThanOrEqual(Number.parseFloat(bracket.style.top) - 6);
   });
 
@@ -120,6 +120,27 @@ describe('LearnPassageLayer', () => {
       { top: '81px', height: '7px' },
       { top: '341px', height: '7px' },
     ]);
+  });
+
+  it('makes every engraved band in a wrapped segment a selectable hotspot', () => {
+    const onSelect = vi.fn();
+    const { container } = render(<LearnPassageLayer
+      passages={[{ id: 'a', number: 1, label: 'Segment 1', barLabel: 'Bars 1–2', inMeasure: 0, outMeasure: 1 }]}
+      measures={[{ firstStep: 0, lastStep: 0 }, { firstStep: 1, lastStep: 1 }]}
+      stepBoxes={[{ x: 170, top: 100, bottom: 180 }, { x: 40, top: 360, bottom: 440 }]}
+      measureRects={[
+        { left: 120, right: 220, top: 60, bottom: 300, system: 0 },
+        { left: 20, right: 110, top: 320, bottom: 560, system: 1 },
+      ]}
+      onSelect={onSelect}
+    />);
+    const hotspots = [...container.querySelectorAll('.piano-learn-passage-hitbox')];
+    expect(hotspots).toHaveLength(2);
+    expect(hotspots.map((hotspot) => [hotspot.style.left, hotspot.style.width])).toEqual([
+      ['120px', '100px'], ['20px', '90px'],
+    ]);
+    fireEvent.click(hotspots[1]);
+    expect(onSelect).toHaveBeenCalledWith('a');
   });
 
   it('keeps wrapped outlines separate while engraved barlines are still loading', () => {
