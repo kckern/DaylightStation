@@ -1,9 +1,12 @@
+/* eslint-disable react-refresh/only-export-components -- pure projections are exported beside their sole host for focused contract tests. */
 import { useCallback, useMemo, useState } from 'react';
 import ExerciseRun from '../Exercises/ExerciseRun.jsx';
 
 const handCode = (parts) => {
   if (parts.length > 1) return 'RL';
-  return parts[0] === 'lh' ? 'L' : 'R';
+  if (parts[0] === 'lh') return 'L';
+  if (parts[0] === 'rh') return 'R';
+  return null;
 };
 
 export function learnDrillProjection(passage, rung) {
@@ -56,6 +59,7 @@ export function LearnPassageSession({ score, revision, passage, rung, onRecord, 
       requiredPasses: rung.required,
       consecutive: rung.consecutive,
       completesPassage: rung.completes === 'passage',
+      completion: rung.completion,
     });
     if (outcome?.rungComplete || outcome?.passage?.complete) onBack();
     else setTake((value) => value + 1);
@@ -67,7 +71,7 @@ export function LearnPassageSession({ score, revision, passage, rung, onRecord, 
       <ExerciseRun
         key={`${passage.id}:${rung.id}:${take}`}
         instance={null}
-        score={{ ...score, measures: passage.printedMeasures, activeParts: rung.effectiveParts }}
+        score={{ ...score, measures: passage.printedMeasures, rangeIndices: { start: passage.inMeasure, end: passage.outMeasure }, activeParts: rung.effectiveParts }}
         intent="practice"
         practiceMode={rung.mode}
         practiceRequirement={requirement}
@@ -87,7 +91,7 @@ export function LearnPassageSession({ score, revision, passage, rung, onRecord, 
 }
 
 function PassageButton({ passage, recommended, selected, onClick }) {
-  const state = passage.complete ? 'Complete' : recommended ? 'Recommended' : 'Open';
+  const state = passage.testedOut ? 'Tested out' : passage.complete ? 'Complete' : recommended ? 'Recommended' : 'Open';
   return (
     <button
       type="button"

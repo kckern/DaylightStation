@@ -28,6 +28,7 @@ import { pickLearnRange } from './learnRange.js';
 import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
 import { buildLearnPassages, projectLearnPassage } from './learnRoadmap.js';
 import LearnRoadmap, { LearnPassageSession } from './LearnRoadmap.jsx';
+import LearnPassageLayer from './LearnPassageLayer.jsx';
 import {
   compileScoreExpectation,
   createAssessmentAttempt,
@@ -85,8 +86,8 @@ const INK_TTL = { wrong: 900 };
 function legacyLearnProgress(passage, ladder, measures, history) {
   const rungs = {};
   for (const rung of ladder) {
-    if (rung.mode !== 'free') continue;
-    const bucket = rung.effectiveParts.length > 1 ? 'both' : rung.effectiveParts[0];
+    if (!rung.legacySeed) continue;
+    const bucket = rung.legacySeed;
     const learned = measures
       .slice(passage.inMeasure, passage.outMeasure + 1)
       .every((measure) => (history?.[String(measure.index)]?.[bucket]?.passes ?? 0) >= 2);
@@ -380,7 +381,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Learn always means silent wait-for-correct. A focused loop changes the
   // cursor range, never who performs the music; machine demonstration belongs
   // exclusively to Listen.
-  const learnGate = mode === 'learn';
+  const roadmapLearn = mode === 'learn';
+  const learnGate = mode === 'learn' && !roadmapLearn;
   // The audio plane's one predicate: who actually sends notes to the piano. Every
   // flush/panic guard reads THIS, never a literal mode check (wave-3 §0).
   const sendsAudio = mode === 'listen';
@@ -2124,8 +2126,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     if (smCfg.learn.configFallback) logger.warn('score.learn.config-fallback', { scoreId: scoreMeta.id });
   }, [logger, scoreMeta.id, smCfg.learn.configFallback]);
 
-  if (mode === 'learn' && selectedPassage && selectedRung) {
-    return (
+  const learnSession = mode === 'learn' && selectedPassage && selectedRung ? (
       <LearnPassageSession
         score={{ id: scoreMeta.id, title: meta.title, musicXml: scoreMeta.musicXml }}
         revision={smCfg.learn.revision}
@@ -2134,11 +2135,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onRecord={recordLearnRep}
         onBack={() => updateLearnSelection(selectedPassage.id)}
       />
-    );
-  }
+  ) : null;
 
   return (
     <div className="piano-score-player">
+      {learnSession}
       {scoreMeta.splashImage && !engraveReady && (
         <div className="piano-score-splash piano-score-splash--overlay" aria-hidden="true">
           <img className="piano-score-splash__img" src={scoreMeta.splashImage} alt="" decoding="async" />
@@ -2161,7 +2162,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
               layoutToken={layout}
             />
           )}
-          {mode !== 'perform' && current && layoutFresh && (
+          {mode !== 'perform' && !roadmapLearn && current && layoutFresh && (
             <div
               ref={cursorRef}
               className={`piano-score-cursor${wrong ? ' is-wrong' : ''}${jump ? ' is-jump' : ''}`}
@@ -2176,7 +2177,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
           {/* Learn only (wave-3 D) — Listen/Polish/Perform have no user-input ink.
               Mounted AFTER the cursor div so the ink paints above the cursor band
               at the same z-index rather than under it. */}
-          {mode === 'learn' && layoutFresh && (
+          {mode === 'learn' && !roadmapLearn && layoutFresh && (
             <LearnInkLayer
               inks={inks}
               staffBoxes={layout.staffBoxes}
@@ -2187,7 +2188,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
           {/* The notes being held RIGHT NOW (Task 4) — live in Listen, Learn and
               Polish; absent in Perform, which has no chrome. Mounted AFTER the wet
               ink so live marks paint above it. */}
-          {mode !== 'perform' && layoutFresh && (
+          {mode !== 'perform' && !roadmapLearn && layoutFresh && (
             <LiveInputLayer
               step={steps?.[step] || null}
               cursorX={events?.[step]?.x ?? 0}
@@ -2211,7 +2212,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
               handles below, and the first endpoint commits a real one-measure
               range. Mounted while ARMING even with no range yet — the ticks are
               precisely what a first endpoint lands on. */}
-          {showFocusLayer && layoutFresh && (focus || arming) && (
+          {!roadmapLearn && showFocusLayer && layoutFresh && (focus || arming) && (
             <FocusRangeLayer
               measures={layout.measures}
               stepBoxes={stepBoxes}
@@ -2222,7 +2223,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
           {/* The range's two draggable ends. AFTER FocusRangeLayer so the grips sit
               above the tint; the layer root is inert, so only the 48px handles take
               the gesture (and they swallow it, keeping tap-to-seek off them). */}
-          {mode === 'learn' && layoutFresh && focus && (
+          {mode === 'learn' && !roadmapLearn && layoutFresh && focus && (
             <RangeHandleLayer
               measures={layout.measures}
               stepBoxes={stepBoxes}
@@ -2234,7 +2235,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
               scale={scale}
             />
           )}
-          {mode !== 'perform' && layoutFresh && (
+          {mode !== 'perform' && !roadmapLearn && layoutFresh && (
             <NoteHighlightLayer
               step={steps[step]}
               activeParts={activeParts}
@@ -2243,10 +2244,23 @@ export default function ScorePlayer({ score: scoreMeta }) {
               showPending={mode === 'learn'}
             />
           )}
+          {roadmapLearn && layoutFresh && (
+            <LearnPassageLayer
+              passages={learnPassages}
+              measures={layout.measures}
+              stepBoxes={layout.steps.map((item, index) => ({
+                x: events[index]?.x ?? item.x,
+                top: events[index]?.top ?? item.top,
+                bottom: events[index]?.bottom ?? item.bottom,
+              }))}
+              selectedId={selectedPassage?.id ?? null}
+              onSelect={(passageId) => updateLearnSelection(passageId)}
+            />
+          )}
         </MusicXmlRenderer>
         <CountInOverlay active={countIn.active} beat={countIn.beat} />
         <SelectBanner edge={arming} rejects={armRejects} onCancel={onCancelArm} />
-        <StuckPrompt open={stuckOpen && mode === 'learn'} onPick={onStuckPick} onDismiss={onStuckDismiss} />
+        <StuckPrompt open={stuckOpen && mode === 'learn' && !roadmapLearn} onPick={onStuckPick} onDismiss={onStuckDismiss} />
       </div>
 
       {mode === 'learn' && practiceLoaded && learnPassages.length > 0 && (
@@ -2260,7 +2274,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         />
       )}
 
-      {keyboardVisible && (
+      {keyboardVisible && !roadmapLearn && (
         <div className="piano-score-player__keys">
           <LiveKeyboard
             targetNotes={targetNotes}
@@ -2278,7 +2292,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onPick={onMode}
       />
 
-      <ScoreTransportBar
+      {mode !== 'learn' && <ScoreTransportBar
         mode={mode}
         running={running}
         playLocked={learnGate}
@@ -2322,7 +2336,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         keyFifths={parsed?.key?.fifths}
         keyMode={parsed?.key?.mode}
         scoreLabel={scoreLabel}
-      />
+      />}
 
       {mode === 'polish' && (
         <RunSummary

@@ -84,7 +84,7 @@ export default function usePracticeRecord({ scoreId, fingerprint }) {
 
   /** Bank one complete passage take into the config-defined Learn ladder. */
   const recordLearnRep = useCallback(({
-    revision, passageId, rungId, result, requiredPasses = 1, consecutive = false, completesPassage = false,
+    revision, passageId, rungId, result, requiredPasses = 1, consecutive = false, completesPassage = false, completion = 'standard',
   }) => {
     if (!revision || !passageId || !rungId) return null;
     const currentLearn = recordRef.current.learn?.revision === revision
@@ -103,6 +103,7 @@ export default function usePracticeRecord({ scoreId, fingerprint }) {
       rungs: { ...(currentPassage.rungs || {}), [rungId]: rung },
       complete: currentPassage.complete === true || (completesPassage && rungComplete),
       ...((completesPassage && rungComplete) ? { completedBy: rungId } : {}),
+      ...((completesPassage && rungComplete && completion === 'tested-out') ? { testedOut: true } : {}),
     };
     const learn = { ...currentLearn, revision, passages: { ...(currentLearn.passages || {}), [passageId]: passage } };
     const next = { ...recordRef.current, fingerprint: fpRef.current, learn };

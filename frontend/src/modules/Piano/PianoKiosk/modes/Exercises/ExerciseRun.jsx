@@ -1528,6 +1528,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
             musicXml={score.musicXml}
             sourceId={score.id}
             measures={score.measures}
+            rangeIndices={score.rangeIndices ?? null}
             activeParts={score.activeParts ?? null}
             onExpectation={takeScoreExpectation}
             onUnrunnable={handleScoreUnrunnable}

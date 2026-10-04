@@ -173,6 +173,16 @@ describe('usePracticeRecord', () => {
     });
   });
 
+  it('records declarative Test Out completion without branching on its rung id', async () => {
+    const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    act(() => result.current.recordLearnRep({
+      revision: 'ladder-a', passageId: 'm0-3', rungId: 'audition', result: { verdict: { passed: true } },
+      requiredPasses: 1, completesPassage: true, completion: 'tested-out',
+    }));
+    expect(result.current.record.learn.passages['m0-3']).toMatchObject({ complete: true, testedOut: true, completedBy: 'audition' });
+  });
+
   it('a new ladder revision starts fresh passage progress without discarding measure history', async () => {
     store = { fingerprint: FP, measures: { 0: { rh: { attempts: 3, passes: 3 } } }, learn: { revision: 'old', passages: { old: { complete: true } } } };
     const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
