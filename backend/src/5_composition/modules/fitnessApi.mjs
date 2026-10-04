@@ -50,6 +50,7 @@ import { EmergencyLockdownService } from '#apps/fitness/services/EmergencyLockdo
 import { FitnessVoiceMemoService } from '#apps/fitness/services/FitnessVoiceMemoService.mjs';
 import { VoiceMemoRetryWorker } from '#apps/fitness/services/VoiceMemoRetryWorker.mjs';
 import { FitnessSessionOperations } from '#apps/fitness/services/FitnessSessionOperations.mjs';
+import { GarageHumanActivityService } from '#apps/fitness/services/GarageHumanActivityService.mjs';
 import { CycleRaceApiService } from '#apps/fitness/services/CycleRaceApiService.mjs';
 import { GetFitnessMenuMusic } from '#apps/fitness/usecases/GetFitnessMenuMusic.mjs';
 import { PrintFitnessReceipt } from '#apps/fitness/usecases/PrintFitnessReceipt.mjs';
@@ -96,6 +97,7 @@ export function createFitnessApiRouter(config) {
     releaseEmergencyLockdown = null,
     getLockdownState = null,
     identityRelay = null,
+    garageHumanActivityGateway = null,
     eventBus = null,
     // Workout persistence + its save-time slug guard, both built in app.mjs and passed
     // straight through — this module composes fitness services, and these are already
@@ -406,6 +408,7 @@ export function createFitnessApiRouter(config) {
     manageAccess,
     isScreenshotValidationError: (error) => error?.name === 'ScreenshotValidationError',
     fitnessHardwareService,
+    garageHumanActivity: new GarageHumanActivityService({ gateway: garageHumanActivityGateway, logger }),
     voiceMemoOperations,
     screenshotService,
     fitnessConfigService,
