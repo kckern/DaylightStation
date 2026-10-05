@@ -1,19 +1,18 @@
 /**
- * CountInOverlay — the large centered beat number shown over the score while a
- * count-in is running (before a Polish/play-along run starts). Renders nothing
- * when inactive. Any tap on the score cancels the count-in (handled in the
- * player's onScoreClick), so this layer is non-interactive.
- *
- * @param {object} p
- * @param {boolean} p.active
- * @param {number}  p.beat - current 1-based beat
+ * Countdown and PLAY are projections supplied by the owning transport. This
+ * non-interactive presentation has no clock. `beat` keeps existing ScorePlayer
+ * callers working until they migrate to the countdown API.
  */
-export default function CountInOverlay({ active, beat }) {
+export default function CountInOverlay({ active, remaining, progress, play = false, beat }) {
   if (!active) return null;
+  const numeral = remaining ?? beat;
+  const announcement = play ? 'PLAY' : `Starting in ${numeral}`;
   return (
-    <div className="piano-score-countin" aria-live="polite" aria-label={`Count in, beat ${beat}`}>
-      {/* key on the beat remounts the span each tick so the pop animation re-fires */}
-      <span key={beat} className="piano-score-countin__beat">{beat}</span>
+    <div className={`piano-score-countin${play ? ' is-play' : ''}`} aria-live="polite" aria-atomic="true"
+      aria-label={announcement} style={progress == null ? undefined : { '--countdown-progress': progress }}>
+      <span className="piano-score-countin__announcement">{announcement}</span>
+      <span key={play ? 'play' : numeral} className="piano-score-countin__beat" aria-hidden="true">{play ? 'PLAY' : numeral}</span>
+      {progress != null && !play && <span className="piano-score-countin__bar" aria-hidden="true" />}
     </div>
   );
 }
