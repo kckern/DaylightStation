@@ -30,4 +30,16 @@ export function isCurfewActive(now, curfew) {
   return isWithinWindow(now, curfew);
 }
 
+/**
+ * Sheet music is the one curfew-safe workspace: a score left open at night
+ * should still be on the stand when the tablet wakes. Curfew continues to
+ * close the home-menu launchers; this only prevents the ordinary idle return
+ * from dismantling an already-open score.
+ */
+export function shouldPreserveCurfewRoute(pathname, basePath, curfewActive) {
+  if (!curfewActive || typeof pathname !== 'string' || typeof basePath !== 'string') return false;
+  const root = `${basePath.replace(/\/$/, '')}/sheetmusic`;
+  return pathname === root || pathname.startsWith(`${root}/`);
+}
+
 export default isCurfewActive;
