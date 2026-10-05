@@ -31,7 +31,13 @@ export function learnDrillProjection(segment, rung) {
 
 // eslint-disable-next-line react-refresh/only-export-components -- pure adapter is exported for focused contract tests
 export function learnPracticeRequirement(rung) {
-  return { mode: rung.mode, rubric: { id: 'sheet-music-learn-passage', version: '1', criteria: { ...(rung.criteria || {}) } } };
+  const criteria = { ...(rung.criteria || {}) };
+  if (rung.mode === 'free' && criteria.cleanliness == null) criteria.cleanliness = 0.8;
+  return {
+    mode: rung.mode,
+    rubric: { id: 'sheet-music-learn-passage', version: '2', criteria },
+    ...((rung.effectiveParts?.length ?? 0) > 1 ? { policy: { requireConcurrentOnset: true } } : {}),
+  };
 }
 
 export default function LearnLab({ score, revision, segment, segments = {}, rung, tempo = {}, feedback = SHEET_MUSIC_DEFAULTS.learn.feedback, onRecord, onClose, onRungPassed, onMastered, onUnavailable }) {

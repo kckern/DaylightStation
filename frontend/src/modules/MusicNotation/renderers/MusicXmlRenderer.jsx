@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useLayoutEffect, useState } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 import { osmdEngrave, osmdRepaint, extractLayoutSliced, scheduleYield } from './osmdRender.js';
 import StaffSkeleton from './StaffSkeleton.jsx';
@@ -54,7 +54,7 @@ function logger() {
  *   extraction runs once `holdExtraction` flips back to false.
  * @param {React.ReactNode} [children] - overlay content positioned over the SVG
  */
-export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1, transpose = 0, manuscript = false, newSystemFromXML = false, onLayout, onProgress, onReady, onFailed, holdExtraction = false, children }) {
+export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1, transpose = 0, manuscript = false, newSystemFromXML = false, presentationViewBox = null, fillContainer = false, onLayout, onProgress, onReady, onFailed, holdExtraction = false, children }) {
   const hostRef = useRef(null);
   const onFailedRef = useRef(onFailed); onFailedRef.current = onFailed;
   const holdRef = useRef(holdExtraction); holdRef.current = holdExtraction;
@@ -69,6 +69,20 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
   const osmdRef = useRef(null);    // loaded OSMD instance (reused for zoom/resize)
   const osmdKeyRef = useRef(null); // `${flow}::${musicXml}` the instance was loaded for
   useEffect(() => () => { osmdRef.current = null; }, []);
+
+  // Presentation fitting is deliberately separate from engraving. Changing the
+  // visible system must not reload MusicXML, move note geometry, or restart an
+  // assessment; it only changes the SVG camera over the already engraved page.
+  useLayoutEffect(() => {
+    const svg = hostRef.current?.querySelector('svg');
+    if (!svg || !presentationViewBox) return;
+    const { x, y, width: boxWidth, height: boxHeight } = presentationViewBox;
+    if (![x, y, boxWidth, boxHeight].every(Number.isFinite) || boxWidth <= 0 || boxHeight <= 0) return;
+    svg.setAttribute('viewBox', `${x} ${y} ${boxWidth} ${boxHeight}`);
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    svg.style.width = '100%';
+    svg.style.height = '100%';
+  }, [presentationViewBox, dims]);
 
   // Resize watchdog: re-fit when the container width changes (wrapped mode reflows
   // its systems to the new width). Debounced; ignores sub-pixel jitter.
@@ -203,7 +217,8 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
   return (
     <div
       className={`musicxml-renderer${showPlaceholder ? ' musicxml-renderer--placeholder' : ''}`}
-      style={{ position: 'relative', width: showPlaceholder || !dims.width ? '100%' : dims.width }}
+      data-fill-container={fillContainer || undefined}
+      style={{ position: 'relative', width: fillContainer || showPlaceholder || !dims.width ? '100%' : dims.width, ...(fillContainer ? { height: '100%' } : {}) }}
     >
       {showPlaceholder && <p>{musicXml ? 'Could not read this score.' : 'No score provided.'}</p>}
       {/* Host stays mounted even on failure so a new document can render into it. */}

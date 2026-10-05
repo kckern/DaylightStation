@@ -1100,7 +1100,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       // the runtime's own clock reading: a `Date.now()` sampled a millisecond
       // earlier is `before_start` to the engine, which silently drops the note.
       const armedAt = runtime.getSnapshot().startedAt ?? time;
-      if (snapshot.matcher === 'held') {
+      if (snapshot.matcher === 'held' || snapshot.policy?.requireConcurrentOnset === true) {
         // Only the chord's own members are handed over at the boundary. A key
         // already down from before — inert while the run was ready — would
         // otherwise be graded as an extra the moment the child reaches the
@@ -1129,7 +1129,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       return;
     }
     if (snapshot.status !== 'running') return;
-    if (snapshot.matcher === 'held') {
+    if (snapshot.matcher === 'held' || snapshot.policy?.requireConcurrentOnset === true) {
       if (lastHeldObservedRef.current === heldKey) return;
       lastHeldObservedRef.current = heldKey;
       runtime.observe({ held: activeNotes, time, clock: 'date-now' });
