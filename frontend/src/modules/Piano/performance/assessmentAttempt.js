@@ -94,15 +94,22 @@ export function compileAssessmentExpectation(input = {}) {
   }).sort((a, b) => a.onsetQuarter - b.onsetQuarter);
   const source = Object.freeze({ kind: sourceKind, id: sourceId, revision: input.source?.revision == null ? null : String(input.source.revision) });
   const tempoMap = Object.freeze(normalizeTempoMap(input.tempoMap, input.bpm).map((entry) => Object.freeze(entry)));
+  const measureMap = Object.freeze((input.measureMap ?? [])
+    .filter((entry) => Number.isInteger(entry.index) && entry.index >= 0
+      && Number.isFinite(entry.onsetQuarter) && entry.onsetQuarter >= 0
+      && Number.isFinite(entry.durationQuarters) && entry.durationQuarters > 0)
+    .map(({ index, onsetQuarter, durationQuarters }) => Object.freeze({ index, onsetQuarter, durationQuarters }))
+    .sort((a, b) => a.onsetQuarter - b.onsetQuarter));
   return Object.freeze({
     version: 1,
     source,
     events: Object.freeze(events),
     tempoMap,
+    measureMap,
   });
 }
 
-export function compileScoreExpectation({ notes = [], source, tempoMap, fallbackBpm, activeParts, range } = {}) {
+export function compileScoreExpectation({ notes = [], source, tempoMap, fallbackBpm, activeParts, range, measureMap } = {}) {
   const groups = new Map();
   const tiedAttacks = new Map();
   const ordered = [...notes].filter(Boolean).sort((a, b) => (Number(a.onsetQuarter) || 0) - (Number(b.onsetQuarter) || 0));
@@ -132,7 +139,7 @@ export function compileScoreExpectation({ notes = [], source, tempoMap, fallback
     }
     groups.set(key, event);
   }
-  return compileAssessmentExpectation({ source: { kind: 'score', id: source?.id || 'score', revision: source?.revision ?? null }, events: [...groups.values()], tempoMap: normalizeTempoMap(tempoMap, fallbackBpm), activeParts });
+  return compileAssessmentExpectation({ source: { kind: 'score', id: source?.id || 'score', revision: source?.revision ?? null }, events: [...groups.values()], tempoMap: normalizeTempoMap(tempoMap, fallbackBpm), activeParts, measureMap });
 }
 
 export function prepareExerciseAssessment({ instance, mode = 'free', purpose = 'practice', requirement = null, activeParts } = {}) {
@@ -160,7 +167,15 @@ export function prepareExerciseAssessment({ instance, mode = 'free', purpose = '
   if (mode === 'cued' && !(bpm > 0)) throw new Error('Cued assessment requires a usable tempo');
   if (mode !== 'cued' && requirement?.rubric?.criteria?.placement != null) throw new Error('Placement cannot be required for an untimed attempt');
   if (mode !== 'cued' && requirement?.gates?.pace) throw new Error('A pace gate requires cued mode');
-  const expectation = compileAssessmentExpectation({ source: { kind: 'exercise', id: instance.id, revision: instance.revision ?? null }, events, bpm, activeParts });
+  const meter = /^(\d+)\/(\d+)$/.exec(instance.meter ?? '');
+  const barQuarters = meter && Number(meter[1]) * 4 / Number(meter[2]);
+  const measureMap = [];
+  if (Number.isFinite(barQuarters) && barQuarters > 0) {
+    for (let index = 0; index * barQuarters < onsetQuarter; index += 1) {
+      measureMap.push({ index, onsetQuarter: index * barQuarters, durationQuarters: barQuarters });
+    }
+  }
+  const expectation = compileAssessmentExpectation({ source: { kind: 'exercise', id: instance.id, revision: instance.revision ?? null }, events, bpm, activeParts, measureMap });
   const generatedRequirement = requirement || {
     exercise_id: instance.id, mode, required_passes: 1,
     rubric: { id: 'exercise-pass-v2', version: '2', criteria: { completeness: 1, cleanliness: 1, ...(mode === 'cued' ? { placement: 0.8 } : {}) } },

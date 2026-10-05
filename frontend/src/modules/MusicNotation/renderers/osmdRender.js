@@ -413,6 +413,14 @@ function makeCursorWalk(osmd) {
     logger().debug('notation.geometry', { total: graphicalHits + fallbackHits, graphical: graphicalHits, fallback: fallbackHits });
     const steps = buildSteps(onsetRecords);
     const measures = buildMeasures(steps);
+    // Read bar boundaries from the score, not its first sounding notes: a bar
+    // can begin with rests, be a pickup, or change length with a new meter.
+    const measureMap = (osmd.Sheet?.SourceMeasures ?? []).map((measure, index) => ({
+      index,
+      onsetQuarter: measure.AbsoluteTimestamp?.RealValue * 4,
+      durationQuarters: measure.Duration?.RealValue * 4,
+    })).filter(({ onsetQuarter, durationQuarters }) => Number.isFinite(onsetQuarter) && onsetQuarter >= 0
+      && Number.isFinite(durationQuarters) && durationQuarters > 0);
     // One cursor event per step, index-aligned. `midi` is the cursor's
     // representative pitch: the top-staff (melody) highest, or — when this onset
     // has no top-staff note (a left-hand passage) — the overall highest pitch.
@@ -427,7 +435,7 @@ function makeCursorWalk(osmd) {
         bottom: box.bottom,
       };
     });
-    return { events, notes, tempoEntries, steps, measures, staves: extractStaffGeometry(osmd), staffBoxes: extractPerStaffGeometry(osmd), measureBounds: extractMeasureBounds(osmd) };
+    return { events, notes, tempoEntries, steps, measures, measureMap, staves: extractStaffGeometry(osmd), staffBoxes: extractPerStaffGeometry(osmd), measureBounds: extractMeasureBounds(osmd) };
   }
 
   return { cursor, processStep, finalize };

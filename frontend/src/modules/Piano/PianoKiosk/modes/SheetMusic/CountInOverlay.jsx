@@ -6,7 +6,7 @@
 export default function CountInOverlay({ active, remaining, progress, play = false, beat }) {
   if (!active) return null;
   const numeral = remaining ?? beat;
-  const announcement = play ? 'PLAY' : `Starting in ${numeral}`;
+  const announcement = play ? 'PLAY' : remaining != null ? `Starting in ${remaining}` : `Count in, beat ${beat}`;
   return (
     <div className={`piano-score-countin${play ? ' is-play' : ''}`} aria-live="polite" aria-atomic="true"
       aria-label={announcement} style={progress == null ? undefined : { '--countdown-progress': progress }}>

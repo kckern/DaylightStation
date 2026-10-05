@@ -5,6 +5,7 @@ import { SHEET_MUSIC_DEFAULTS } from './sheetMusicConfig.js';
 import LearnTempoSheet from './LearnTempoSheet.jsx';
 import { TEMPO_STAGES, availableTempoStages, nearestTempoStage } from './tempoStages.js';
 import { CLICK_LEVELS, readClickLevel, writeClickLevel } from './clickLevel.js';
+import getLogger from '../../../../../lib/logging/Logger.js';
 
 const handCode = (parts) => parts.length > 1 ? 'RL' : parts[0] === 'lh' ? 'L' : parts[0] === 'rh' ? 'R' : null;
 const clickStorage = () => {
@@ -48,6 +49,7 @@ export function learnPracticeRequirement(rung) {
 }
 
 export default function LearnLab({ score, revision, segment, segments = {}, rung, tempo = {}, feedback = SHEET_MUSIC_DEFAULTS.learn.feedback, onRecord, onClose, onRungPassed, onMastered, onUnavailable }) {
+  const logger = useMemo(() => getLogger().child({ component: 'piano-learn-lab' }), []);
   const [take, setTake] = useState(0);
   const [success, setSuccess] = useState(null);
   const [repCard, setRepCard] = useState(null);
@@ -68,6 +70,21 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
   }), [tempo.minimumPercent, tempo.maximumPercent]);
   const stage = masteryTempo ? TEMPO_STAGES[TEMPO_STAGES.length - 1] : nearestTempoStage(selectedPercent, stages);
   const tempoPercent = rung.mode === 'cued' ? stage.percent : selectedPercent;
+  const preferencesRef = useRef({ tempoStage: stage.id, tempoPercent, clickLevel: clickLevel.id });
+  useEffect(() => {
+    const previous = preferencesRef.current;
+    const context = { scoreId: score.id, passageId: segment.id, rungId: rung.id };
+    if (previous.tempoStage !== stage.id || previous.tempoPercent !== tempoPercent) {
+      logger.info('piano.learn-tempo-stage-changed', { ...context,
+        previousTempoStage: previous.tempoStage, previousTempoPercent: previous.tempoPercent,
+        tempoStage: stage.id, tempoPercent });
+    }
+    if (previous.clickLevel !== clickLevel.id) {
+      logger.info('piano.learn-click-level-changed', { ...context,
+        previousClickLevel: previous.clickLevel, clickLevel: clickLevel.id, clickGain: clickLevel.gain });
+    }
+    preferencesRef.current = { tempoStage: stage.id, tempoPercent, clickLevel: clickLevel.id };
+  }, [clickLevel, logger, rung.id, score.id, segment.id, stage.id, tempoPercent]);
   const projection = useMemo(() => learnDrillProjection(segment, rung), [segment, rung]);
   const requirement = useMemo(() => learnPracticeRequirement(rung), [rung]);
   const partsKey = (rung.effectiveParts ?? []).join('\u0000');
@@ -152,7 +169,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       stepId={projection.steps[stepIndex]?.id} drillProjection={projection}
       framing={`${segment.label} · ${rung.label}`}
       ask={rung.mode === 'free' ? 'Play the passage accurately.' : 'Play the passage with the beat.'}
-      traceContext={{ tempoPercent, tempoSource: tempo.tempoSource ?? 'inferred' }} surface="learn-lab"
+      traceContext={{ tempoPercent, tempoStage: stage.id, clickLevel: clickLevel.id, tempoSource: tempo.tempoSource ?? 'inferred' }} surface="learn-lab"
       scoreCursorPolicy="always" keyboardHintPolicy="after-wrong"
       failurePresentation="local" onExit={onClose} onPassed={settle}
       onFailed={recordResult}

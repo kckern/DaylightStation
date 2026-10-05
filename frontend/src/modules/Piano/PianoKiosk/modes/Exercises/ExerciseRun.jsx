@@ -419,6 +419,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     hostSessionId: traceContext?.sessionId ?? null,
     tempoPercent: traceContext?.tempoPercent ?? null,
     tempoSource: traceContext?.tempoSource ?? null,
+    tempoStage: traceContext?.tempoStage ?? null,
+    clickLevel: traceContext?.clickLevel ?? null,
     subjectId: instance?.id ?? score?.id ?? null,
     intent,
   };
@@ -868,8 +870,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
 
   const held = useMemo(() => [...activeNotes.keys()].sort((a, b) => a - b), [activeNotes]);
   const clickBpm = Number(runRequirement?.gates?.pace?.target_bpm ?? instance?.tempo?.start_bpm);
-  // Score passages have no instance meter and use common-time pulse grouping.
-  // Grading still follows the score's own compiled tempo map.
+  // This fallback sizes the lead-in only. Visual bar accents use the compiled
+  // measure map and never infer common time when musical metadata is absent.
   const beatsPerMeasure = useMemo(() => {
     const beats = Number(String(instance?.meter ?? '').split('/')[0]);
     return Number.isInteger(beats) && beats > 0 ? beats : 4;
@@ -947,6 +949,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     setClockNow(Date.now());
     traceEvent('piano.exercise-countdown-started', {
       ...timedRunPresentation(runtime.getSnapshot(), Date.now()),
+      pulseCount: countIn?.clicks ?? 0, pulseBpm: countIn?.pulseBpm ?? null,
+      leadInMs: countIn?.leadInMs ?? 0,
       ignored: [...activeNotesRef.current.keys()], reason: 'arming-key',
     });
   }, [clickLead, countIn, runtime, traceEvent]);
@@ -1202,7 +1206,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   const phase = snapshot.status === 'prepared' ? 'ready' : resultReady && JUDGED_STATUSES.has(snapshot.status) ? 'done' : countingDown ? 'countdown' : 'running';
   const beatPulse = timed && phase === 'running' && timeline?.phase === 'running' && !timeline.timelineDone
     ? timeline.beat : null;
-  const beatInMeasure = beatPulse == null ? null : (beatPulse - 1) % beatsPerMeasure + 1;
+  const beatInMeasure = beatPulse == null ? null : timeline.beatInMeasure;
   // PLAY belongs to the first anchored running beat, so delayed ticks cannot
   // leave the countdown on screen or introduce a late start instruction.
   const playHandoff = beatPulse === 1 && countdown?.play;
@@ -1416,7 +1420,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
 
   return (
     <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}`} data-tier={runTier} data-stage={stage} data-surface={surface} data-phase={phase} data-armed={runtime ? 'true' : undefined} data-expected-cursor={timeline?.expectedCursor ?? eventIndex} data-displayed-cursor={visualCursor.index} data-hunting={countingDown ? undefined : huntHelp ?? undefined}
-      data-beat-pulse={beatPulse ?? undefined} data-downbeat={beatPulse == null ? undefined : String(beatInMeasure === 1)}>
+      data-beat-pulse={beatPulse ?? undefined} data-downbeat={beatPulse == null || timeline.downbeat == null ? undefined : String(timeline.downbeat)}>
       <header className="piano-exercise-run__head">
         {/* WHY YOU ARE HERE, AND NOTHING ELSE, WHEN THERE IS CHROME.
             The sentence under the eyebrow is the run's second line of standing
@@ -1547,8 +1551,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
             {...(verdicts ? { verdicts, windowOpen } : {})}
           />
         )}
-        {beatPulse != null && <span key={beatPulse} className="piano-exercise-run__beat" aria-hidden="true">
-          <span className="piano-exercise-run__beat-marker">{beatInMeasure}</span>
+        {beatPulse != null && <span key={beatInMeasure == null ? beatPulse : `${timeline.measureIndex}:${beatInMeasure}`} className="piano-exercise-run__beat" aria-hidden="true">
+          <span className="piano-exercise-run__beat-marker">{beatInMeasure ?? beatPulse}</span>
         </span>}
         <CountInOverlay active={(countingDown && countInBeat != null) || playHandoff}
           remaining={countdown?.remaining} progress={countdown?.progress} play={countdown?.play} />

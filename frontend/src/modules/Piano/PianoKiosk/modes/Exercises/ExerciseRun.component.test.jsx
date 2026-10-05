@@ -1781,8 +1781,8 @@ describe('ExerciseRun piano-only completion', () => {
 describe('timed exercise clock and input boundary', () => {
   beforeEach(() => { resetHarness(); vi.useFakeTimers({ shouldAdvanceTime: true }); });
   afterEach(() => vi.useRealTimers());
-  const mountTimed = async (count = 4) => {
-    h.instanceData = { ...h.instance, tempo: { start_bpm: 60 }, events: [60,62,64,65,67,69,71,72].slice(0, count).map((midi,i) => ({ id:`beat-${i}`, value:'quarter', notes:[{midi,hand:'right'}] })) };
+  const mountTimed = async (count = 4, meter = '4/4') => {
+    h.instanceData = { ...h.instance, meter, tempo: { start_bpm: 60 }, events: [60,62,64,65,67,69,71,72].slice(0, count).map((midi,i) => ({ id:`beat-${i}`, value:'quarter', notes:[{midi,hand:'right'}] })) };
     const props = { instance:subject(), score:null, intent:'challenge', requirement:cuedRequirement({passScore:0.8}), onPassed:vi.fn() };
     const view = render(<ExerciseRun {...props} />);
     await screen.findByText(/Press any key to start/);
@@ -1792,6 +1792,22 @@ describe('timed exercise clock and input boundary', () => {
     act(() => vi.advanceTimersByTime(CLICK_PREROLL_MS));
     return {view,props};
   };
+  it.each(['3/4', '6/8'])('groups the visual downbeat by the authored %s meter', async (meter) => {
+    const { view, props } = await mountTimed(8, meter);
+    const { time, leadInMs } = h.start.mock.calls.at(-1)[0];
+    const run = view.container.querySelector('.piano-exercise-run');
+    for (const [quarter, downbeat, marker] of [[0, 'true', '1'], [2, 'false', '3'], [3, 'true', '1'], [4, 'false', '2'], [6, 'true', '1']]) {
+      act(() => { vi.setSystemTime(time + leadInMs + quarter * 1000); view.rerender(<ExerciseRun {...props} />); });
+      expect(run).toHaveAttribute('data-downbeat', downbeat);
+      expect(run.querySelector('.piano-exercise-run__beat-marker')).toHaveTextContent(marker);
+    }
+  });
+  it('keeps a generic beat without claiming unknown meter downbeats', async () => {
+    const { view, props } = await mountTimed(8, null);
+    const { time, leadInMs } = h.start.mock.calls.at(-1)[0];
+    act(() => { vi.setSystemTime(time + leadInMs); view.rerender(<ExerciseRun {...props} />); });
+    expect(view.container.querySelector('.piano-exercise-run')).not.toHaveAttribute('data-downbeat');
+  });
   it.each([
     { gradedBpm: 15, pulseBpm: 30, periodMs: 2000, leadInMs: 8000 },
     { gradedBpm: 120, pulseBpm: 120, periodMs: 500, leadInMs: 2000 },
@@ -1800,7 +1816,7 @@ describe('timed exercise clock and input boundary', () => {
       ...h.instance, tempo: { start_bpm: gradedBpm },
       events: [60, 62, 64, 65].map((midi, i) => ({ id: `e${i}`, value: '8th', notes: [{ midi, hand: 'right' }] })),
     };
-    const props = { instance: subject(), score: null, intent: 'challenge', requirement: cuedRequirement({ passScore: 0.8 }), onPassed: vi.fn() };
+    const props = { instance: subject(), score: null, intent: 'challenge', requirement: cuedRequirement({ passScore: 0.8 }), onPassed: vi.fn(), traceContext: { tempoStage: 'very-slow', clickLevel: 'loud' } };
     const view = render(<ExerciseRun {...props} />);
     await screen.findByText(/Press any key to start/);
     pressKey(view, props, 55);
@@ -1822,6 +1838,9 @@ describe('timed exercise clock and input boundary', () => {
     pressKey(view, props, 60);
     expect(h.observe).toHaveBeenCalledWith(expect.objectContaining({ midi: 60, time: anchorMs + leadInMs }));
     expect(h.start).toHaveBeenCalledTimes(1);
+    expect(h.log.info.mock.calls.filter(([event]) => event === 'piano.exercise-countdown-started')).toEqual([
+      ['piano.exercise-countdown-started', expect.objectContaining({ pulseCount: 4, pulseBpm, leadInMs, tempoStage: 'very-slow', clickLevel: 'loud' })],
+    ]);
   });
   it('projects PLAY for only the first running beat and keeps one announcement through rerenders', async () => {
     const { view, props } = await mountTimed();

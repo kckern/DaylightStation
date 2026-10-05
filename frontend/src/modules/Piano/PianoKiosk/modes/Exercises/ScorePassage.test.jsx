@@ -74,6 +74,7 @@ vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => 
           scale: 1,
           transpose: 0,
           tempoEntries: [],
+          measureMap: [{ index: 0, onsetQuarter: 4, durationQuarters: 4 }, { index: 1, onsetQuarter: 8, durationQuarters: 4 }],
           measures: [0, 1, 2, 3],
           events: [],
           notes: [],
@@ -109,6 +110,16 @@ const renderPassage = (props = {}) => render(
     {...props}
   />,
 );
+
+it('publishes engraved bar positions with the original passage measure indices', async () => {
+  const onExpectation = vi.fn();
+  renderPassage({ onExpectation });
+  await waitFor(() => expect(onExpectation).toHaveBeenCalled());
+  expect(onExpectation.mock.calls.at(-1)[0].measureMap).toEqual([
+    { index: 1, onsetQuarter: 4, durationQuarters: 4 },
+    { index: 2, onsetQuarter: 8, durationQuarters: 4 },
+  ]);
+});
 
 beforeEach(() => {
   document.body.innerHTML = '';

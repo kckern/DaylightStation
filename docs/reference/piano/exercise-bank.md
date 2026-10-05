@@ -380,7 +380,10 @@ four-pulse plan it descends **4, 3, 2, 1**, while a bar drains over the complete
 lead-in; shorter plans start at their actual pulse count. **PLAY** appears
 above notation ink at the first graded beat and leaves on the next beat. The
 running display adds a 350 ms stage-edge halo per musical beat, with a stronger
-measure downbeat. Reduced motion disables the countdown pop and substitutes
+measure downbeat. Bar positions come from the compiled measure map: authored
+meter (including its denominator) for bank exercises, and engraved measure
+boundaries for score passages. Unknown meter produces no downbeat claim.
+Reduced motion disables the countdown pop and substitutes
 a static numbered corner marker for the halo; downbeats have a stronger
 marker border. These visual states use the existing 50 ms musical clock,
 without a second timer, and reserve the score, rep/set progress, and keyboard

@@ -271,6 +271,8 @@ scrim dismiss it; focus stays inside the open sheet and returns to its opener.
 There is no numeric stepper in Learn. Legacy configured percentages select the
 nearest available stage (ties favor the slower stage), and configured bounds
 filter the choices; a narrow interval with no stage receives one clamped choice.
+Full speed always means exactly 100%; a 90–95% interval offers Nearly there at
+95%, retaining a valid practice choice without claiming the original speed.
 Every entry in a score's tempo map is scaled proportionally; Mastery and Test Out
 show Full speed and remain locked to 100%, regardless of user or piece overrides.
 If MusicXML provides no tempo, the lab labels and uses the configured fallback
@@ -295,6 +297,21 @@ with a static numbered corner marker and disables the numeral pop. Countdown,
 PLAY, cursor, and beat treatment all project the existing run clock, with no
 second animation timer. The score, rep/set rail, and bottom keyboard retain
 their space throughout.
+
+Bar accents use the engraver's actual measure start and duration, carried in the
+compiled assessment's `measureMap`. This preserves 3/4, compound meter, pickups,
+rests at bar starts, and changes of measure length. The marker counts quarter
+positions within each bar (not compound-meter conducting beats); absent measure
+metadata leaves a generic quarter pulse with no claimed downbeat. The existing
+count-in pulse and audio scheduler remain on their anchored grid.
+
+`piano.exercise-countdown-started` includes `pulseCount`, `pulseBpm`, `leadInMs`,
+`tempoStage`, and `clickLevel`. Actual preference transitions emit
+`piano.learn-tempo-stage-changed` (previous/current stage and percentage) and
+`piano.learn-click-level-changed` (previous/current level and gain), with score,
+passage, and rung ids. Unchanged selections and rerenders do not emit changes.
+Legacy ScorePlayer count-ins still announce elapsed `Count in, beat N`; only
+the remaining-count API announces `Starting in N`.
 
 Selection lives in `learnPassage` and `learnRung` query parameters. The run
 receives the original MusicXML, printed passage boundaries, active parts, the
