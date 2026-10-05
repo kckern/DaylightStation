@@ -111,6 +111,32 @@ export function askPulseQuarters(onsetQuarters = []) {
   return steps.every((step) => Math.abs(step - first) < 1e-6) ? first : null;
 }
 
+/** At most four countable pulses on the exercise's graded musical grid. */
+export function exerciseCountInPlan({ beatsPerMeasure, gradedBpm, onsetQuarters }) {
+  if (!Number.isFinite(gradedBpm) || gradedBpm <= 0) return null;
+  const pulse = askPulseQuarters(onsetQuarters) ?? 1;
+  const plan = countInPlan({ beats: beatsPerMeasure, bpm: gradedBpm / pulse });
+  const clicks = Math.min(4, plan.beats);
+  return {
+    clicks,
+    periodMs: plan.periodMs,
+    leadInMs: clicks * plan.periodMs,
+    pulseBpm: 60000 / plan.periodMs,
+  };
+}
+
+/** Remaining pulses and a draining bar, projected from the run's elapsed time. */
+export function countdownPresentation({ clicks, elapsedMs, leadInMs }) {
+  if (!(clicks > 0) || !(leadInMs > 0)) return { remaining: 0, progress: 0, play: true };
+  const elapsed = Math.min(leadInMs, Math.max(0, elapsedMs));
+  const play = elapsed >= leadInMs;
+  return {
+    remaining: play ? 0 : clicks - Math.floor(elapsed / (leadInMs / clicks)),
+    progress: 1 - elapsed / leadInMs,
+    play,
+  };
+}
+
 /**
  * HOW FAST THE ASK ACTUALLY IS, relative to the clicks the child is about to
  * hear — because "play at that speed" is not always true and, when it is not,
@@ -163,4 +189,4 @@ export function countInSentence(clicks, pace) {
   return `${lead}, then play at that speed.`;
 }
 
-export default { countInPlan, askPulseQuarters, askPace, countInSentence };
+export default { countInPlan, exerciseCountInPlan, countdownPresentation, askPulseQuarters, askPace, countInSentence };
