@@ -17,7 +17,7 @@ describe('resolveSheetMusicConfig', () => {
         defaultHands: 'both',
         passages: { targetMeasures: 4, minMeasures: 3, maxMeasures: 5 },
         navigation: { sequential: false },
-        tempo: { fallbackBpm: 90 },
+        tempo: { fallbackBpm: 90, minimumPercent: 25, maximumPercent: 100 },
       },
     });
     expect(resolved.learn.ladder.map(({ id, mode, sets, reps, availability, consecutive, completes }) => (

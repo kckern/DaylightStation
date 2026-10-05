@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ExerciseRun from '../Exercises/ExerciseRun.jsx';
 import RepInterstitial from '../Games/RepInterstitial.jsx';
 import { SHEET_MUSIC_DEFAULTS } from './sheetMusicConfig.js';
+import LearnTempoSheet from './LearnTempoSheet.jsx';
+import { TEMPO_STAGES, availableTempoStages, nearestTempoStage } from './tempoStages.js';
 
 const handCode = (parts) => parts.length > 1 ? 'RL' : parts[0] === 'lh' ? 'L' : parts[0] === 'rh' ? 'R' : null;
 
@@ -48,8 +50,14 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
   const masteryTempo = rung.mastery === true || rung.completion === 'tested-out';
   const setIndex = Math.min(rung.sets - 1, Math.floor((rung.passCount ?? 0) / Math.max(1, rung.reps)));
   const configuredPercent = masteryTempo ? 100 : (rung.tempoPercents?.[setIndex] ?? rung.tempoPercent ?? 100);
-  const [tempoPercent, setTempoPercent] = useState(configuredPercent);
-  useEffect(() => { setTempoPercent(configuredPercent); }, [configuredPercent]);
+  const [selectedPercent, setSelectedPercent] = useState(configuredPercent);
+  const [tempoSheetOpen, setTempoSheetOpen] = useState(false);
+  useEffect(() => { setSelectedPercent(configuredPercent); }, [configuredPercent]);
+  const stages = useMemo(() => availableTempoStages({
+    minimumPercent: tempo.minimumPercent, maximumPercent: tempo.maximumPercent,
+  }), [tempo.minimumPercent, tempo.maximumPercent]);
+  const stage = masteryTempo ? TEMPO_STAGES[TEMPO_STAGES.length - 1] : nearestTempoStage(selectedPercent, stages);
+  const tempoPercent = rung.mode === 'cued' ? stage.percent : selectedPercent;
   const projection = useMemo(() => learnDrillProjection(segment, rung), [segment, rung]);
   const requirement = useMemo(() => learnPracticeRequirement(rung), [rung]);
   const partsKey = (rung.effectiveParts ?? []).join('\u0000');
@@ -68,10 +76,10 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
   }, [feedback.successReturnMs]);
   useEffect(() => () => clearTimeout(returnTimerRef.current), []);
   useEffect(() => {
-    const handleKeyDown = (event) => { if (event.key === 'Escape') onClose(); };
+    const handleKeyDown = (event) => { if (event.key === 'Escape' && !tempoSheetOpen) onClose(); };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [onClose, tempoSheetOpen]);
   const recordResult = useCallback((result) => onRecord({
     revision, passageId: segment.id, rungId: rung.id, result,
     requiredPasses: rung.required, consecutive: rung.consecutive,
@@ -107,8 +115,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
   const scoreBpm = Number(tempo.tempoMap?.[0]?.bpm);
   const effectiveBpm = scoreBpm > 0 ? Math.round(scoreBpm * tempoPercent / 100) : null;
   const adjustable = rung.mode === 'cued' && tempo.adjustable !== false && !masteryTempo;
-  const minimumPercent = tempo.minimumPercent ?? 40;
-  const maximumPercent = tempo.maximumPercent ?? 100;
+  const tempoLabel = `${stage.label}${effectiveBpm ? ` · ${effectiveBpm} BPM` : ''}`;
 
   return <section className="piano-learn-lab" role="dialog" aria-modal="true" aria-label={`${segment.label} · ${rung.label}`}>
     <header className="piano-learn-lab__toolbar">
@@ -118,11 +125,9 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       <div className="piano-learn-lab__identity"><strong>{segment.label}</strong><span>{segment.barLabel}</span></div>
       <div className="piano-learn-lab__task"><strong>{rung.label}</strong><span>Set {setIndex + 1} of {rung.sets} · Rep {currentRep} of {rung.reps}</span></div>
       {rung.mode === 'cued' && <div className="piano-learn-lab__tempo" role="status">
-        {adjustable && <button type="button" aria-label="Decrease tempo" disabled={tempoPercent <= minimumPercent}
-          onClick={() => setTempoPercent((value) => Math.max(minimumPercent, value - 5))}>−</button>}
-        <strong>{tempoPercent}% of {tempo.tempoSource === 'musicxml' ? 'score tempo' : 'fallback tempo'}{effectiveBpm ? ` · ${effectiveBpm} BPM` : ''}</strong>
-        {adjustable && <button type="button" aria-label="Increase tempo" disabled={tempoPercent >= maximumPercent}
-          onClick={() => setTempoPercent((value) => Math.min(maximumPercent, value + 5))}>+</button>}
+        {adjustable ? <button type="button" aria-label={`Choose tempo: ${tempoLabel}`} aria-haspopup="dialog" aria-expanded={tempoSheetOpen}
+          onClick={() => setTempoSheetOpen(true)}><strong>{tempoLabel}</strong></button> : <strong>{tempoLabel}</strong>}
+        <span>{tempo.tempoSource === 'musicxml' ? 'Score tempo' : 'Fallback tempo'}</span>
       </div>}
     </header>
     <ExerciseRun
@@ -139,5 +144,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
     />
     {repCard && !success && <RepInterstitial {...repCard} onDone={() => setRepCard(null)} />}
     {success && <div className="piano-learn-lab__success" role="status"><strong>{success}</strong><span>Returning to the score…</span></div>}
+    <LearnTempoSheet open={adjustable && tempoSheetOpen} stages={stages} selectedId={stage.id} effectiveBpm={effectiveBpm}
+      onPick={(picked) => setSelectedPercent(picked.percent)} onClose={() => setTempoSheetOpen(false)} />
   </section>;
 }
