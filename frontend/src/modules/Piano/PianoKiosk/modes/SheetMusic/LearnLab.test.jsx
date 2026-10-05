@@ -116,7 +116,7 @@ describe('LearnLab', () => {
     expect(screen.getByText('Set 1 of 1 · Rep 1 of 1')).toBeInTheDocument();
     expect(screen.queryByText(/roadmap/i)).not.toBeInTheDocument();
     expect(exercise.props.score).toMatchObject({ rangeIndices: { start: 0, end: 3 }, activeParts: ['rh'] });
-    expect(exercise.props).toMatchObject({ scoreCursorPolicy: 'always', keyboardHintPolicy: 'after-wrong', surface: 'learn-lab' });
+    expect(exercise.props).toMatchObject({ scoreCursorPolicy: 'always', scoreLayoutPolicy: 'whole-passage', keyboardHintPolicy: 'after-wrong', surface: 'learn-lab', hideHeading: true });
     expect(exercise.props.bare).toBeUndefined();
     expect(exercise.props.failurePresentation).toBe('local');
     expect(exercise.props.practiceRequirement.rubric.criteria).toEqual({ completeness: 1, cleanliness: 0.8 });

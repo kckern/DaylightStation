@@ -534,6 +534,20 @@
 .piano-exercise-run__result-actions { display: flex; gap: 0.4rem; }
 .piano-exercise-run__keys { width: 100%; height: 100%; min-height: 0; overflow: hidden; }
 
+/* Learn Lab already owns the passage/rung identity, rep count, tempo, and exit
+   control in its toolbar. Its nested runner therefore gives that duplicate
+   title row back to the score, keeps only a compact progress rail, and makes
+   the reference keyboard shorter. The score row remains minmax(0, 1fr), so a
+   complete two-system grand staff is contained and centred without scrolling. */
+.piano-exercise-run[data-surface='learn-lab'] {
+  grid-template-rows: 0 minmax(0, 1fr) minmax(2.5rem, 7vh) clamp(4rem, 8vh, 4.75rem);
+  gap: 0.35rem;
+  padding-block-start: 0.4rem;
+}
+.piano-exercise-run[data-surface='learn-lab'][data-phase='done'] {
+  grid-template-rows: 0 minmax(0, 1fr) auto clamp(4rem, 8vh, 4.75rem);
+}
+
 /* THE FIRST RUNG OF THE STUCK LADDER: pulse the key that is ALREADY LIT.
  *
  * On the third consecutive wrong note at one target (`stuckLadder.js`), the run
