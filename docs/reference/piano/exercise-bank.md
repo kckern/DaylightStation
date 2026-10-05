@@ -355,18 +355,17 @@ that arrives before the musical duration ends waits for that duration before
 the host advances. The metronome continues with this display and follows tempo
 changes. Free and metronome practice retain their player-driven cursor.
 
-**The click is the note.** The count-in pulses at the ASK'S OWN onset spacing,
-not at the quarter: a scale written in eighths at 60bpm is counted in at 120,
-eight clicks to the measure, so one click is one note and the grid a child is
-counted in on is the grid they are graded on. It used to pulse in quarters
-against eighths — half the speed of the ask — which produced a correct, evenly
-played scale scored as every note `wrong` with a `miss` beside it, on
-2026-09-13 and again on 2026-09-18. The count-in's LENGTH is unchanged, always
-exactly one measure of the music; only how many clicks fill it changed. An ask
-with no single spacing (one note, or a dotted rhythm) has no pulse to borrow
-and keeps the quarter. `askPulseQuarters` is the rule, and the running
-metronome carries the same pulse through the downbeat rather than reverting to
-quarters as the music starts.
+**The click follows the ask's grid.** The count-in starts from the ASK'S OWN
+uniform onset spacing: an eighth-note scale at quarter=60 begins with a
+120-pulse-per-minute grid. `countInPlan` may coarsen very fast pulses to a
+countable subdivision; `exerciseCountInPlan` caps the resulting lead-in at
+four pulses, with `leadInMs = clicks × periodMs`. It does not lower the graded
+tempo or pad the lead-in with extra counted bars. An ask with no single spacing
+(one note, or a dotted rhythm) keeps the quarter. `askPulseQuarters` is the
+spacing rule, and the running metronome carries the selected pulse through
+the first graded beat. The ready sentence describes the notes per click when
+coarsening changes that relationship. Legacy ScorePlayer callers retain their
+existing `countInPlan` behavior.
 
 During the count-in, the staff remains visible in gray, the cursor is hidden,
 and played notes reach neither assessment nor visual feedback. Notes held
@@ -375,6 +374,26 @@ note belongs to the count-in is decided by the note's OWN time: one stamped
 before the first beat's hit window opens is a gesture (logged as
 `piano.exercise-input-ignored`, reason `countdown`); one inside that window is
 the first note even if the count-in is still on screen.
+
+The overlay is bounded to the music stage and pointer-transparent. For a
+four-pulse plan it descends **4, 3, 2, 1**, while a bar drains over the complete
+lead-in; shorter plans start at their actual pulse count. **PLAY** appears
+above notation ink at the first graded beat and leaves on the next beat. The
+running display adds a 350 ms stage-edge halo per musical beat, with a stronger
+measure downbeat. Reduced motion disables the countdown pop and substitutes
+a static numbered corner marker for the halo; downbeats have a stronger
+marker border. These visual states use the existing 50 ms musical clock,
+without a second timer, and reserve the score, rep/set progress, and keyboard
+areas. Beat visuals stop at the end of the musical timeline.
+
+Learn Lab timed rungs select **Very slow**, **Slow**, **Steady**, **Nearly
+there**, or **Full speed** through a modal sheet, at 25%, 40%, 60%, 80%, or
+100% of the score tempo map. Bounds filter those choices; Mastery and Test Out
+remain locked to Full speed. Timed and metronome Learn rungs also offer **Soft**,
+**Medium**, **Loud** (default), and **Max** click levels at gains 0.08, 0.18,
+0.36, and 0.60, persisted per browser under `piano.learn.click-level`. A level
+change updates scheduled audio gain without shifting its beat grid or
+restarting the take. Non-Learn callers retain their existing default gain.
 
 **One judge; the staff paints the record.** Every exercise timed run (cued
 exercise or cued score passage, practice or challenge) is judged on the

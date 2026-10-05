@@ -76,6 +76,7 @@ const MAIN_FRONTEND = path.resolve(fs.realpathSync(path.join(FRONTEND, '../node_
 
 /** The kiosk's declared design canvas — the SM-T590's CSS viewport. */
 const KIOSK = Object.freeze({ width: 1280, height: 800 });
+const GROOVE_KIOSK = Object.freeze({ width: 1920, height: 1200 });
 /**
  * The header bar's height, pinned and deliberately PESSIMISTIC — the same
  * number and the same argument as `GameGate.measure.test.jsx`, so the two files
@@ -274,6 +275,7 @@ import { createElement as h, Fragment } from 'react';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import ExerciseRun from './ExerciseRun.jsx';
+import LearnLab from '../SheetMusic/LearnLab.jsx';
 import ScorePassage from './ScorePassage.jsx';
 import ExerciseNotation from './ExerciseNotation.jsx';
 import { MusicXmlRenderer } from '../../../../MusicNotation/renderers/MusicXmlRenderer.jsx';
@@ -350,6 +352,21 @@ window.__stage = {
       }),
       h('button', { type: 'button', className: 'piano-game-gate__leave' }, 'Leave'),
     )));
+  },
+  /** The real Learn shell and run: tempo picks must reach the engraved ask. */
+  mountLab({ musicXml, mastery = false }) {
+    root = createRoot(host());
+    flushSync(() => root.render(h(LearnLab, {
+      score: { id: 'groove-score', sourceId: 'files:four-bars.musicxml', musicXml },
+      revision: 'groove',
+      segment: { id: 'm0-3', label: 'Segment 1', barLabel: 'Bars 1–4', printedMeasures: [1, 4], inMeasure: 0, outMeasure: 3 },
+      rung: { id: 'timed', label: mastery ? 'Mastery' : 'Together with the beat', effectiveParts: ['rh'],
+        mode: 'cued', sets: 2, reps: 3, passCount: 0, required: 6, criteria: { completeness: 1 },
+        tempoPercent: 60, mastery },
+      tempo: { tempoMap: [{ onsetQuarter: 0, bpm: 80 }], tempoSource: 'musicxml' },
+      onRecord: (r) => push('record', r), onClose: () => push('close'),
+      onUnavailable: (r) => push('unavailable', r),
+    })));
   },
   /** The passage alone: what the engraving yields, and how it says it cannot. */
   mountPassage({ musicXml, measures = null }) {
@@ -450,6 +467,15 @@ async function buildBundle() {
       build.onLoad({ filter: /.*/, namespace: 'daylight-sheet' }, () => ({ contents: '', loader: 'js' }));
       build.onLoad({ filter: /\.(js|jsx|mjs)$/ }, (args) => {
         for (const [pattern, contents] of STUBS) if (pattern.test(args.path)) return { contents, loader: 'jsx' };
+        // TransportSheet's real Icon uses Vite's eager raw-SVG glob. Expand
+        // that build-time macro from the shipped assets; do not stub the icon.
+        if (args.path.endsWith('/Piano/ui/icons/Icon.jsx')) {
+          const directory = path.join(path.dirname(args.path), 'svg');
+          const assets = Object.fromEntries(fs.readdirSync(directory).filter((file) => file.endsWith('.svg'))
+            .map((file) => [`./svg/${file}`, fs.readFileSync(path.join(directory, file), 'utf8')]));
+          return { contents: fs.readFileSync(args.path, 'utf8').replace(
+            /import\.meta\.glob\([^\n]+\)/, JSON.stringify(assets)), loader: 'jsx' };
+        }
         return null;
       });
     },
@@ -522,13 +548,17 @@ async function compileSheet(sheets) {
  * the engrave that takes eight seconds on a fresh page had not finished in
  * sixty. A new page costs milliseconds and makes each scenario's timing its own.
  */
-async function openStage(css, js) {
+async function openStage(css, js, viewport = KIOSK, reducedMotion = 'no-preference') {
   pageErrors = [];
   const previous = page;
   page = await browser.newPage({ deviceScaleFactor: 1 });
   page.on('pageerror', (error) => pageErrors.push(String(error?.stack || error)));
   await previous?.close();
-  await page.setViewportSize(KIOSK);
+  await page.setViewportSize(viewport);
+  await page.emulateMedia({ reducedMotion });
+  // An origin allows the real browser storage used by Learn loudness to work.
+  await page.route('http://piano-measure.test/**', (route) => route.fulfill({ status: 200, body: '<!doctype html>' }));
+  await page.goto('http://piano-measure.test');
   await page.setContent(
     `<!doctype html><html><head><meta charset="utf-8"><style>
        html, body { margin: 0; padding: 0; }
@@ -550,6 +580,7 @@ async function openStage(css, js) {
     { waitUntil: 'load' },
   );
   await page.addScriptTag({ content: js });
+  expectNoPageErrors();
   await page.waitForFunction(() => typeof window.__stage?.mountRun === 'function');
 }
 
@@ -1075,12 +1106,10 @@ describe('the exercise run, per tier, in a real layout engine at 1280x800', () =
     const stage = await probe.one('.piano-exercise-run__stage');
     const overlay = await probe.one('.piano-score-countin');
     const beat = await probe.one('.piano-score-countin__beat');
-    // The layer is `position: fixed; inset: 0` (PianoApp.scss) — the count-in
-    // belongs to the whole screen, not to the notation box. What has to land on
-    // the music is the NUMERAL, and it does so by being centred in the viewport.
-    expect(overlay.width, 'the count-in layer does not cover the screen').toBe(KIOSK.width);
-    expect(overlay.height).toBe(KIOSK.height);
-    expect(beat.text, 'the count-in did not start at beat one').toBe('1');
+    expect(inside(overlay, stage), 'the countdown must remain inside the music stage').toBe(true);
+    expect(overlay.width).toBeCloseTo(stage.width, 0);
+    expect(overlay.height).toBeCloseTo(stage.height, 0);
+    expect(beat.text, 'the descending countdown must start at four').toBe('4');
     expect(beat.painted, `the beat number is not painted: ${say(beat)}`).toBe(true);
     expect(inside(beat, stage), `the count-in numeral ${say(beat)} is not over the music ${say(stage)}`).toBe(true);
     expect(beat.height, 'the count-in number is too small to read across a room').toBeGreaterThan(24);
@@ -1402,6 +1431,231 @@ describe('the score stage, engraved by the real OSMD in Chromium', () => {
     expect(keyboard?.painted, `the virtual keyboard is not visible: ${say(keyboard)}`).toBe(true);
     expect(Math.abs(root.bottom - keyboard.bottom), `the keyboard is not pinned to the run bottom: run ${say(root)}, keyboard ${say(keyboard)}`).toBeLessThan(1);
   }, 120000);
+});
+
+describe('timed practice groove at 1920x1200 in real Chromium', () => {
+  const overlaps = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+  const stageSelector = '.piano-exercise-run__stage';
+  const beatSelector = '.piano-exercise-run__beat';
+  const numeralSelector = '.piano-score-countin__beat';
+  const canvas = { top: 0, left: 0, right: 1920, bottom: 1200 };
+  const geometry = (label, measurements) => {
+    if (process.env.PIANO_MEASURE_GEOMETRY) process.stdout.write(`${label}: ${JSON.stringify(measurements)}\n`);
+  };
+
+  async function lab({ reducedMotion = 'no-preference', mastery = false } = {}) {
+    await openStage(css, js, GROOVE_KIOSK, reducedMotion);
+    await page.evaluate(PROBE);
+    await page.evaluate((arg) => window.__stage.mountLab(arg), { musicXml: fourBars, mastery });
+    try {
+      await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]', { timeout: 10000 });
+    } catch (error) {
+      throw new Error(`Learn Lab did not become ready: ${await probe.text()}\n${pageErrors.join('\n')}`, { cause: error });
+    }
+    expectNoPageErrors();
+  }
+
+  async function chooseFullSpeed() {
+    await page.getByRole('button', { name: /^Choose tempo:/ }).click();
+    await page.getByRole('button', { name: 'Full speed', exact: true }).click();
+    await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]');
+    expect(await probe.text()).toContain('Full speed · 80 BPM');
+  }
+
+  async function assertRunGeometry() {
+    const runBox = await probe.one('.piano-exercise-run');
+    const stage = await probe.one(stageSelector);
+    const rail = await probe.one('.piano-exercise-run__rail');
+    const keys = await probe.one('.piano-exercise-run__keys');
+    const score = await probe.one('.piano-score-passage');
+    for (const box of [runBox, stage, rail, keys, score]) expect(inside(box, canvas), say(box)).toBe(true);
+    expect(inside(score, stage), `notation ${say(score)} escapes stage ${say(stage)}`).toBe(true);
+    expect(rail.painted).toBe(true);
+    expect(keys.painted).toBe(true);
+    expect(overlaps(stage, rail), 'the music stage overlaps rep progress').toBe(false);
+    expect(overlaps(stage, keys), 'the music stage overlaps the keyboard').toBe(false);
+    expect(Math.abs(runBox.bottom - keys.bottom), 'the keyboard must remain pinned to the run bottom').toBeLessThan(1);
+    return { stage, rail, keys };
+  }
+
+  // Removing the sheet, shrinking its hit targets, or losing focus trapping
+  // must break this scenario; the picked label must also change the REAL ask.
+  it('offers a reachable tempo modal and persistent loudness without disturbing notation or progress', async () => {
+    await lab();
+    const before = await assertRunGeometry();
+    geometry('groove layout', before);
+    const opener = page.getByRole('button', { name: 'Choose tempo: Steady · 48 BPM' });
+    expect(await probe.count('input[type="number"], input[type="range"]')).toBe(0);
+    for (const button of await probe.all('.piano-learn-lab__click-level button')) {
+      expect(button.height).toBeGreaterThanOrEqual(48);
+      expect(button.width).toBeGreaterThanOrEqual(48);
+      expect(button.reachable).toBe(true);
+      expect(button.background, 'loudness controls need an opaque themed surface').not.toBe('rgba(0, 0, 0, 0)');
+    }
+    const loud = page.getByRole('button', { name: 'Loud', exact: true });
+    const soft = page.getByRole('button', { name: 'Soft', exact: true });
+    expect(await loud.getAttribute('aria-pressed')).toBe('true');
+    await soft.click();
+    expect(await soft.getAttribute('aria-pressed')).toBe('true');
+    expect(await page.evaluate(() => localStorage.getItem('piano.learn.click-level'))).toBe('soft');
+    const after = await assertRunGeometry();
+    expect(after).toEqual(before);
+
+    await opener.click();
+    expect(await probe.count('.piano-learn-tempo-sheet'), 'the tempo button must open its sheet').toBe(1);
+    const dialog = page.getByRole('dialog', { name: 'Practice tempo', exact: true });
+    await dialog.waitFor({ state: 'visible' });
+    const panel = await probe.one('.piano-learn-tempo-sheet .piano-tsheet__panel');
+    expect(inside(panel, canvas), `tempo panel overflows canvas: ${say(panel)}`).toBe(true);
+    const buttons = await probe.all('.piano-learn-tempo-sheet__stages button');
+    expect(buttons.map((b) => b.text)).toEqual(['Very slow', 'Slow', 'Steady', 'Nearly there', 'Full speed']);
+    for (const button of buttons) {
+      expect(button.height).toBeGreaterThanOrEqual(48);
+      expect(button.reachable, `unreachable tempo stage ${button.text}`).toBe(true);
+      expect(button.background, 'tempo choices need an opaque themed surface').not.toBe('rgba(0, 0, 0, 0)');
+    }
+    geometry('tempo modal', { panel, buttons });
+    await page.screenshot({ path: '/tmp/piano-groove-modal.png' });
+    expect(await page.evaluate(() => document.activeElement.textContent.trim())).toBe('Steady');
+    await dialog.getByRole('button', { name: 'Back', exact: true }).focus();
+    await page.keyboard.press('Tab');
+    expect(await page.evaluate(() => document.activeElement.getAttribute('aria-label'))).toBe('Close Practice tempo');
+    await page.keyboard.press('Shift+Tab');
+    expect(await page.evaluate(() => document.activeElement.textContent.trim())).toBe('Back');
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached' });
+    expect(await opener.evaluate((button) => button === document.activeElement)).toBe(true);
+    expect(await probe.calls()).toEqual([]);
+    await opener.click();
+    await dialog.getByRole('button', { name: 'Very slow', exact: true }).click();
+    await dialog.waitFor({ state: 'detached' });
+    await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]');
+    expect(await probe.text()).toContain('Very slow · 20 BPM');
+    await assertRunGeometry();
+    // Remount in the same real origin: the loudness choice survives a lab visit.
+    await page.evaluate(() => window.__stage.reset());
+    await page.evaluate((arg) => window.__stage.mountLab(arg), { musicXml: fourBars, mastery: true });
+    expect(await page.getByRole('button', { name: 'Soft', exact: true }).getAttribute('aria-pressed')).toBe('true');
+    expect(await probe.text()).toContain('Full speed · 80 BPM');
+    expect(await page.getByRole('button', { name: /^Choose tempo:/ }).count()).toBe(0);
+    expectNoPageErrors();
+  }, 30000);
+
+  // Removing the overlay/drain or moving PLAY into engraved staff ink must fail.
+  it('counts down 4 3 2 1 with a draining bar and hands off to PLAY above the notation', async () => {
+    await lab();
+    await chooseFullSpeed();
+    await probe.press(84);
+    await page.waitForSelector('.piano-exercise-run.is-countdown');
+    const { stage, rail, keys } = await assertRunGeometry();
+    const overlay = await probe.one('.piano-score-countin');
+    expect(inside(overlay, stage)).toBe(true);
+    expect(overlaps(overlay, rail)).toBe(false);
+    expect(overlaps(overlay, keys)).toBe(false);
+    expect(overlay.reachable, 'countdown must let taps reach the score').toBe(false);
+    expect((await probe.one(numeralSelector)).text).toBe('4');
+    const drain = () => page.$eval('.piano-score-countin__bar', (bar) => {
+      const style = getComputedStyle(bar, '::after');
+      return { width: bar.getBoundingClientRect().width, scale: new DOMMatrix(style.transform).a };
+    });
+    const start = await drain();
+    await page.waitForTimeout(200);
+    const later = await drain();
+    expect(later.scale).toBeLessThan(start.scale);
+    expect(later.scale).toBeGreaterThan(0);
+    expect(start.width).toBeLessThanOrEqual(stage.width * 0.6);
+    geometry('countdown drain', { overlay, start, later });
+    await page.screenshot({ path: '/tmp/piano-groove-countdown.png' });
+    for (const numeral of ['3', '2', '1', 'PLAY']) {
+      await page.waitForFunction((text) => document.querySelector('.piano-score-countin__beat')?.textContent === text, numeral);
+    }
+    expect(await probe.count('.piano-score-countin__bar')).toBe(0);
+    const play = await probe.one(numeralSelector);
+    expect(inside(play, stage)).toBe(true);
+    const ink = await probe.all('.piano-score-passage g.staffline, .piano-score-passage g.vf-notehead');
+    expect(ink.length).toBeGreaterThan(0);
+    for (const box of ink) expect(overlaps(play, box), `PLAY ${say(play)} overlaps notation ink ${say(box)}`).toBe(false);
+    geometry('PLAY cue', { play, stage });
+    await page.screenshot({ path: '/tmp/piano-groove-play.png' });
+    expect(await page.locator('.piano-exercise-run').getAttribute('data-beat-pulse')).toBe('1');
+    await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.dataset.beatPulse === '2');
+    expect(await probe.count('.piano-score-countin')).toBe(0);
+    await assertRunGeometry();
+    expectNoPageErrors();
+  }, 30000);
+
+  // Removing the beat treatment or flattening its downbeat accent must fail.
+  it('pulses a bounded stage edge on running beats and accents each downbeat', async () => {
+    await lab();
+    await chooseFullSpeed();
+    await probe.press(84);
+    await page.waitForSelector('.piano-exercise-run.is-running');
+    const { stage } = await assertRunGeometry();
+    expect(inside(await probe.one(beatSelector), stage)).toBe(true);
+    expect(await probe.prop(beatSelector, 'pointer-events')).toBe('none');
+    expect(await probe.prop(beatSelector, 'animation-duration')).toBe('0.35s');
+    expect(await probe.prop(beatSelector, 'animation-iteration-count')).toBe('1');
+    expect(await probe.prop(beatSelector, 'background-color')).toBe('rgba(0, 0, 0, 0)');
+    const halo = await probe.one(beatSelector);
+    for (const ink of await probe.all('.piano-score-passage g.staffline, .piano-score-passage g.vf-notehead')) {
+      expect(inside(ink, halo), `notation ink ${say(ink)} reaches the beat border ${say(halo)}`).toBe(true);
+    }
+    const downbeat = await probe.prop(beatSelector, 'box-shadow');
+    expect(downbeat).toContain('0px 4px');
+    geometry('downbeat halo', { halo, downbeat });
+    await page.screenshot({ path: '/tmp/piano-groove-downbeat.png' });
+    await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.dataset.beatPulse === '2');
+    expect(await page.locator('.piano-exercise-run').getAttribute('data-downbeat')).toBe('false');
+    expect((await probe.one(beatSelector)).painted, 'the ordinary beat halo must visibly pulse').toBe(true);
+    const ordinary = await probe.prop(beatSelector, 'box-shadow');
+    expect(ordinary).toContain('0px 2px');
+    expect(ordinary).not.toBe(downbeat);
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('.piano-exercise-run__beat')).opacity === '0');
+    await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.dataset.beatPulse === '5');
+    expect((await probe.one(beatSelector)).painted, 'the next downbeat halo must visibly pulse').toBe(true);
+    expect(await page.locator('.piano-exercise-run').getAttribute('data-downbeat')).toBe('true');
+    expect(await probe.prop(beatSelector, 'box-shadow')).toBe(downbeat);
+    await assertRunGeometry();
+    expectNoPageErrors();
+  }, 30000);
+
+  it('uses a static beat marker with reduced motion and keeps it clear of notation and controls', async () => {
+    await lab({ reducedMotion: 'reduce' });
+    await chooseFullSpeed();
+    await probe.press(84);
+    await page.waitForSelector('.piano-exercise-run.is-countdown');
+    expect(await probe.prop(numeralSelector, 'animation-name')).toBe('none');
+    await page.waitForSelector('.piano-exercise-run.is-running');
+    expect(await probe.prop(beatSelector, 'animation-name')).toBe('none');
+    expect(await probe.prop(beatSelector, 'box-shadow')).toBe('none');
+    const selector = '.piano-exercise-run__beat-marker';
+    const marker = await probe.one(selector);
+    expect(marker.background, 'the static numeral needs a surface against white score paper').not.toBe('rgba(0, 0, 0, 0)');
+    const markerColor = await probe.prop(selector, 'color');
+    const luminance = (color) => color.match(/[\d.]+/g).slice(0, 3).map(Number).map((value) => {
+      const channel = value / 255;
+      return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+    }).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+    const foreground = luminance(markerColor);
+    const background = luminance(marker.background);
+    expect((Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05),
+      'the reduced-motion beat numeral must remain readable').toBeGreaterThanOrEqual(4.5);
+    const { stage, rail, keys } = await assertRunGeometry();
+    expect(marker.painted).toBe(true);
+    expect(marker.text).toBe('1');
+    expect(inside(marker, stage)).toBe(true);
+    expect(await probe.prop(selector, 'border-top-width')).toBe('3px');
+    geometry('reduced-motion marker', { marker, stage });
+    await page.screenshot({ path: '/tmp/piano-groove-reduced.png' });
+    for (const box of [...await probe.all('.piano-score-passage g.staffline, .piano-score-passage g.vf-notehead'), rail, keys]) {
+      expect(overlaps(marker, box), `beat marker ${say(marker)} overlaps ${say(box)}`).toBe(false);
+    }
+    await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.dataset.beatPulse === '2');
+    expect((await probe.one(selector)).text).toBe('2');
+    expect(await probe.prop(selector, 'border-top-width')).toBe('1px');
+    expect(await probe.prop(beatSelector, 'box-shadow')).toBe('none');
+    expectNoPageErrors();
+  }, 30000);
 });
 
 // Both engraving engines must show the same inert count-in and clock-led run.
