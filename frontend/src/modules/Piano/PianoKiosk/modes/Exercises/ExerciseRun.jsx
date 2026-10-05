@@ -45,7 +45,7 @@ import { useMetronomeClick } from '../SheetMusic/useMetronomeClick.js';
 import { resolveClickLead, logClickAnchored } from '../SheetMusic/clickLead.js';
 import { audioContext } from '../SheetMusic/click.js';
 import CountInOverlay from '../SheetMusic/CountInOverlay.jsx';
-import { countInPlan, askPulseQuarters, askPace, countInSentence } from '../SheetMusic/countIn.js';
+import { exerciseCountInPlan, countdownPresentation, askPace, countInSentence } from '../SheetMusic/countIn.js';
 import './Exercises.scss';
 
 const NO_FEEDBACK_NOTES = new Map();
@@ -868,23 +868,16 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
 
   const held = useMemo(() => [...activeNotes.keys()].sort((a, b) => a - b), [activeNotes]);
   const clickBpm = Number(runRequirement?.gates?.pace?.target_bpm ?? instance?.tempo?.start_bpm);
-  // KNOWN GAP: a score reaches here with no `instance` and therefore no meter,
-  // so a cued passage is always counted in over FOUR beats — a 3/4 passage gets
-  // one beat too many. Only the count-in is affected: the tempo the attempt is
-  // GRADED at comes from the score's own compiled tempo map (see `countIn`
-  // below), so nothing is mis-judged. Closing it means the passage publishing
-  // its meter alongside its expectation.
+  // Score passages have no instance meter and use common-time pulse grouping.
+  // Grading still follows the score's own compiled tempo map.
   const beatsPerMeasure = useMemo(() => {
     const beats = Number(String(instance?.meter ?? '').split('/')[0]);
     return Number.isInteger(beats) && beats > 0 ? beats : 4;
   }, [instance?.meter]);
   /**
-   * The cued count-in: exactly ONE measure of the run's own tempo, because that
-   * is the promise the ready line makes and the length a child can hold in their
-   * head. `countInPlan` owns the PULSE inside that measure — above ~140bpm it
-   * coarsens the count so the numbers stay countable instead of becoming a buzz.
-   * `clicks` is therefore how many of the plan's clicks fit in the measure, not
-   * a second opinion about the meter.
+   * Count at most four pulses on the grid the attempt is graded against.
+   * The lead-in ends on that selected pulse, so the anchored metronome can
+   * continue across the grading boundary without changing phase or rate.
    */
   const countIn = useMemo(() => {
     // The attempt's own tempo map is the tempo the engine GRADES against, and
@@ -894,28 +887,20 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     const graded = Number(snapshot.expectation?.tempoMap?.[0]?.bpm);
     const bpm = graded > 0 ? graded : clickBpm;
     if (!(bpm > 0)) return null;
-    // THE CLICK IS THE NOTE. This pulsed in QUARTERS while the bank writes its
-    // scales in EIGHTHS, so a child was counted in on one grid and then graded
-    // on another at twice the speed — told "play at that speed" about a speed
-    // that was not the ask. Twice now that has cost a real run: see `askPace`.
-    // The pulse is the ask's OWN onset spacing, so one click is one note. An
-    // ask with no single spacing (one note, or a dotted rhythm) has no pulse to
-    // borrow and keeps the quarter it always had.
-    const pulse = askPulseQuarters((snapshot.expectation?.events ?? []).map((event) => event.onsetQuarter));
-    const pulseBpm = pulse > 0 ? bpm / pulse : bpm;
-    // The count-in's LENGTH is still exactly one measure of the music — only
-    // how many clicks fill it changes.
-    const leadInMs = beatsPerMeasure * 60000 / bpm;
-    const { periodMs } = countInPlan({ beats: beatsPerMeasure, bpm: pulseBpm });
-    return { bpm: pulseBpm, gradedBpm: bpm, leadInMs, periodMs, clicks: Math.max(1, Math.round(leadInMs / periodMs)) };
+    const plan = exerciseCountInPlan({
+      beatsPerMeasure,
+      gradedBpm: bpm,
+      onsetQuarters: (snapshot.expectation?.events ?? []).map((event) => event.onsetQuarter),
+    });
+    return plan ? { ...plan, gradedBpm: bpm } : null;
   }, [beatsPerMeasure, clickBpm, snapshot.expectation]);
 
   /**
    * WHAT THE CLICKS ACTUALLY MEAN for this ask.
    *
-   * The count-in is a QUARTER pulse and the bank writes its scales in EIGHTHS,
-   * so "play at that speed" was false for every cued scale rung — see
-   * `askPace` for the run this cost. Derived from the compiled expectation
+   * The bank writes its scales in eighths, so a quarter-pulse count-in's
+   * "play at that speed" promise was false — see `askPace` for the run this
+   * cost. Derived from the compiled expectation
    * rather than from the instance's note values: the expectation is what the
    * engine grades against, and a sentence about the speed has to be a sentence
    * about the grid the child is actually being measured on.
@@ -923,24 +908,26 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   const cuedPace = useMemo(() => {
     const events = snapshot.expectation?.events;
     if (!Array.isArray(events) || !countIn) return null;
-    // `gradedBpm`, not `bpm`: the latter is now the CLICK rate, and this is
-    // asking how many score quarters sit between two clicks.
+    // How many score quarters sit between two selected count-in clicks.
     const clickQuarters = countIn.periodMs * countIn.gradedBpm / 60000;
     return askPace(events.map((event) => event.onsetQuarter), clickQuarters);
   }, [snapshot.expectation, countIn]);
 
-  // Null during the pre-roll (the count has not reached its first click yet).
-  const countInPosition = countingDown && countIn
-    ? Math.floor(((snapshot.leadInMs ?? 0) - timeline.countdownRemainingMs) / countIn.periodMs) + 1
-    : null;
-  const countInBeat = countInPosition != null && countInPosition >= 1 ? Math.min(countIn.clicks, countInPosition) : null;
+  const countdownElapsedMs = timeline
+    ? (snapshot.leadInMs ?? 0) - timeline.countdownRemainingMs + timeline.elapsedMs
+    : 0;
+  const countdown = countIn ? countdownPresentation({
+    clicks: countIn.clicks, elapsedMs: countdownElapsedMs, leadInMs: countIn.leadInMs,
+  }) : null;
+  // Null during the pre-roll (the first anchored click has not sounded yet).
+  const countInBeat = countingDown && countdownElapsedMs >= 0 ? countdown?.remaining ?? null : null;
 
   // Resolved once per config: see the anchored click below.
   const clickLead = useMemo(() => resolveClickLead(kioskConfig, audioContext()), [kioskConfig]);
 
   /**
    * A cued ask arms on ANY key — the child is saying "I am here", not playing
-   * yet — and then hears one measure of clicks before the first graded beat.
+   * yet — and then hears at most four clicks before the first graded beat.
    * The runtime is `running` for the whole lead-in (only the target times are
    * shifted), which is exactly why the metronome below needs no special case:
    * its clicks and the first played beat are one uninterrupted grid.
@@ -1023,8 +1010,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     // downbeat. `timeline.bpm` is the score's quarter tempo, scaled here by the
     // same pulse the count-in used.
     bpm: timeline?.phase === 'running'
-      ? (countIn?.gradedBpm > 0 ? timeline.bpm * (countIn.bpm / countIn.gradedBpm) : timeline.bpm)
-      : countIn?.bpm ?? clickBpm,
+      ? (countIn?.gradedBpm > 0 ? timeline.bpm * (countIn.pulseBpm / countIn.gradedBpm) : timeline.bpm)
+      : countIn?.pulseBpm ?? clickBpm,
   });
   const heldKey = held.join(',');
   useEffect(() => {
@@ -1552,10 +1539,11 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
             {...(verdicts ? { verdicts, windowOpen } : {})}
           />
         )}
-        <CountInOverlay active={countingDown && countInBeat != null} beat={countInBeat} />
+        <CountInOverlay active={countingDown && countInBeat != null} beat={countInBeat}
+          remaining={countdown?.remaining} progress={countdown?.progress} play={countdown?.play} />
       </div>
       {/* No button: the piano starts the run. A cued ask arms on any key and
-          counts a measure; every other ask arms on the note it is asking for. */}
+          counts at most four pulses; every other ask arms on the note it is asking for. */}
       {/* A run with no attempt yet is a score still engraving. Saying "play the
           first note" there would be a lie a child would act on: nothing is
           listening, and a piano that ignores you is indistinguishable from a

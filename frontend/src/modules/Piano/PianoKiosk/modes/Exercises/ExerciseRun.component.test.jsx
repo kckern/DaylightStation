@@ -655,8 +655,8 @@ describe('ExerciseRun shared assessment wiring', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
-  it('a cued ask arms on ANY key, counts in one measure, and does not grade the arming key', async () => {
-    // 4/4 at 60bpm — one measure is exactly four seconds of count-in.
+  it('a cued ask arms on ANY key, counts in four pulses, and does not grade the arming key', async () => {
+    // Four quarter pulses at 60bpm take four seconds.
     h.instanceData = { ...h.instance, tempo: { start_bpm: 60 } };
     const requirement = cuedRequirement({ passScore: 0.8 });
     expect(requirement.mode).toBe('cued');
@@ -676,7 +676,7 @@ describe('ExerciseRun shared assessment wiring', () => {
     expect(screen.queryByLabelText(/Count in, beat/)).not.toBeInTheDocument();
     // …then the count-in is visible from its first beat, once the pre-roll
     // (CLICK_PREROLL_MS) has passed on the run's own clock…
-    expect(await screen.findByLabelText('Count in, beat 1')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Count in, beat 4')).toBeInTheDocument();
     // …and audible: the metronome covers the lead-in, so the last count-in
     // click and the first played beat are one grid.
     expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 60 });
@@ -733,13 +733,12 @@ describe('ExerciseRun shared assessment wiring', () => {
     // ONE note per click, and the sentence says so. Counted in quarters this
     // read "4 clicks, then play two notes on every click" — a true sentence
     // about a grid no child can act on at sight.
-    await screen.findByText("Press any key to start. You'll hear 8 clicks, then play one note on every click.");
+    await screen.findByText("Press any key to start. You'll hear 4 clicks, then play one note on every click.");
 
     press(view, props, 63);
 
-    // The count-in is still exactly ONE MEASURE of the music. Only the number
-    // of clicks inside it changed, never its length.
-    expect(h.start).toHaveBeenCalledWith({ time: expect.any(Number), leadInMs: 4 * 60000 / 60, clock: 'date-now' });
+    // Four eighth-note pulses at 60 quarter BPM take two seconds.
+    expect(h.start).toHaveBeenCalledWith({ time: expect.any(Number), leadInMs: 2000, clock: 'date-now' });
     // 60bpm in quarters IS 120 in eighths, and 120 is what the child hears.
     expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 120 });
   });
@@ -1793,6 +1792,37 @@ describe('timed exercise clock and input boundary', () => {
     act(() => vi.advanceTimersByTime(CLICK_PREROLL_MS));
     return {view,props};
   };
+  it.each([
+    { gradedBpm: 15, pulseBpm: 30, periodMs: 2000, leadInMs: 8000 },
+    { gradedBpm: 120, pulseBpm: 120, periodMs: 500, leadInMs: 2000 },
+  ])('starts four pulses at $gradedBpm quarter BPM and keeps the selected grid through grading', async ({ gradedBpm, pulseBpm, periodMs, leadInMs }) => {
+    h.instanceData = {
+      ...h.instance, tempo: { start_bpm: gradedBpm },
+      events: [60, 62, 64, 65].map((midi, i) => ({ id: `e${i}`, value: '8th', notes: [{ midi, hand: 'right' }] })),
+    };
+    const props = { instance: subject(), score: null, intent: 'challenge', requirement: cuedRequirement({ passScore: 0.8 }), onPassed: vi.fn() };
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText(/Press any key to start/);
+    pressKey(view, props, 55);
+    expect(h.start).toHaveBeenCalledWith({ time: expect.any(Number), leadInMs, clock: 'date-now' });
+    const anchorMs = h.start.mock.calls.at(-1)[0].time;
+    const showAt = (elapsedMs) => act(() => {
+      vi.setSystemTime(anchorMs + elapsedMs);
+      view.rerender(<ExerciseRun {...props} />);
+    });
+    for (const [elapsedMs, remaining] of [[0, 4], [periodMs, 3], [2 * periodMs, 2], [3 * periodMs, 1]]) {
+      showAt(elapsedMs);
+      expect(screen.getByLabelText(`Count in, beat ${remaining}`)).toHaveTextContent(String(remaining));
+      expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: pulseBpm, anchorMs });
+    }
+    showAt(leadInMs);
+    expect(view.container.querySelector('section.piano-exercise-run')).toHaveAttribute('data-phase', 'running');
+    expect(screen.queryByLabelText(/Count in, beat/)).not.toBeInTheDocument();
+    expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: pulseBpm, anchorMs });
+    pressKey(view, props, 60);
+    expect(h.observe).toHaveBeenCalledWith(expect.objectContaining({ midi: 60, time: anchorMs + leadInMs }));
+    expect(h.start).toHaveBeenCalledTimes(1);
+  });
   it('ignores countdown input, hides feedback, and requires held notes to be repressed', async () => {
     const {view,props} = await mountTimed();
     act(() => { h.activeNotes = new Map([[60,{velocity:1}]]); view.rerender(<ExerciseRun {...props}/>); });
@@ -1815,7 +1845,7 @@ describe('timed exercise clock and input boundary', () => {
     await screen.findByText(/Press any key to start/);
     pressKey(view, props, 55);
     expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 120 });
-    act(() => vi.advanceTimersByTime(4050));
+    act(() => vi.advanceTimersByTime(CLICK_PREROLL_MS + 2000));
     expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 120 });
   });
 
