@@ -262,11 +262,39 @@ selectable; a failed take resets only its own streak. Single-staff and other
 non-grand-staff passages omit impossible hand-specific rungs and run their
 combined work against the parts actually present.
 
-Timed rungs may configure a `tempoPercents` value per set. Learners can adjust
-non-mastery timed work in five-percent steps within configured bounds. Every
-entry in a score's tempo map is scaled proportionally; Mastery and Test Out are
-always exactly 100%, regardless of user or piece overrides. If MusicXML provides
-no tempo, the lab labels and uses the configured fallback explicitly.
+Timed rungs may configure a `tempoPercents` value per set. Adjustable timed work
+uses named stages: **Very slow** (25%), **Slow** (40%), **Steady** (60%),
+**Nearly there** (80%), and **Full speed** (100%). A single tempo button shows
+the current stage and effective BPM; it opens the shared modal-sheet shell.
+Picking a stage commits and closes the sheet. Back, Close, Escape, and the
+scrim dismiss it; focus stays inside the open sheet and returns to its opener.
+There is no numeric stepper in Learn. Legacy configured percentages select the
+nearest available stage (ties favor the slower stage), and configured bounds
+filter the choices; a narrow interval with no stage receives one clamped choice.
+Every entry in a score's tempo map is scaled proportionally; Mastery and Test Out
+show Full speed and remain locked to 100%, regardless of user or piece overrides.
+If MusicXML provides no tempo, the lab labels and uses the configured fallback
+explicitly. The main ScorePlayer transport retains its own tempo ladder.
+
+Timed and metronome Learn rungs show **Soft**, **Medium**, **Loud**, and **Max**
+click controls, with Loud selected initially. Their base gains are 0.08, 0.18,
+0.36, and 0.60; the existing downbeat accent scales from that base. The selected
+level is stored under `piano.learn.click-level`; unavailable browser storage
+still permits a selection for the current lab visit. Changing loudness updates
+future scheduled clicks without recreating the scheduler, restarting the take,
+or moving its anchored beat grid. Callers outside Learn keep the default gain.
+
+The timed run counts at most four pulses on the ask's selected musical grid,
+then displays a brief **PLAY** cue at the first graded beat. The stage-bounded
+countdown descends **4, 3, 2, 1** for a four-pulse plan, with a bar draining over
+the whole lead-in; a shorter plan starts at its actual pulse count. Gray music,
+hidden cursors, and excluded held keys preserve the count-in's listening phase.
+PLAY sits above notation ink. Running beats produce a short, pointer-transparent
+stage-edge halo with a stronger measure downbeat; reduced motion replaces it
+with a static numbered corner marker and disables the numeral pop. Countdown,
+PLAY, cursor, and beat treatment all project the existing run clock, with no
+second animation timer. The score, rep/set rail, and bottom keyboard retain
+their space throughout.
 
 Selection lives in `learnPassage` and `learnRung` query parameters. The run
 receives the original MusicXML, printed passage boundaries, active parts, the

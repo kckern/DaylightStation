@@ -331,7 +331,8 @@
   to { opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .piano-exercise-run .piano-exercise-run__beat {
+  .piano-exercise-run .piano-exercise-run__beat,
+  .piano-exercise-run[data-downbeat="true"] .piano-exercise-run__beat {
     animation: none;
     box-shadow: none;
     opacity: 1;
@@ -346,7 +347,7 @@
     height: 1.75rem;
     border: 1px solid var(--piano-accent);
     border-radius: 50%;
-    background: var(--piano-surface-1);
+    background: var(--piano-surface);
     color: var(--piano-fg);
     font-weight: 700;
   }
