@@ -1200,6 +1200,12 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   // notes" at a piano nothing is listening to.
   const result = resultReady && JUDGED_STATUSES.has(snapshot.result?.status) ? snapshot.result : null;
   const phase = snapshot.status === 'prepared' ? 'ready' : resultReady && JUDGED_STATUSES.has(snapshot.status) ? 'done' : countingDown ? 'countdown' : 'running';
+  const beatPulse = timed && phase === 'running' && timeline?.phase === 'running' && !timeline.timelineDone
+    ? timeline.beat : null;
+  const beatInMeasure = beatPulse == null ? null : (beatPulse - 1) % beatsPerMeasure + 1;
+  // PLAY belongs to the first anchored running beat, so delayed ticks cannot
+  // leave the countdown on screen or introduce a late start instruction.
+  const playHandoff = beatPulse === 1 && countdown?.play;
   const expected = askEvents.flatMap((event) => event.notes.map((note) => note.midi));
   // Two consumers, two different things. ExerciseNotation's `wrong` prop is a
   // FLAG (it only ever colours the cursor note), so it gets a boolean — passing
@@ -1409,7 +1415,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     && Number.isFinite(result?.score);
 
   return (
-    <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}`} data-tier={runTier} data-stage={stage} data-surface={surface} data-phase={phase} data-armed={runtime ? 'true' : undefined} data-expected-cursor={timeline?.expectedCursor ?? eventIndex} data-displayed-cursor={visualCursor.index} data-hunting={countingDown ? undefined : huntHelp ?? undefined}>
+    <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}`} data-tier={runTier} data-stage={stage} data-surface={surface} data-phase={phase} data-armed={runtime ? 'true' : undefined} data-expected-cursor={timeline?.expectedCursor ?? eventIndex} data-displayed-cursor={visualCursor.index} data-hunting={countingDown ? undefined : huntHelp ?? undefined}
+      data-beat-pulse={beatPulse ?? undefined} data-downbeat={beatPulse == null ? undefined : String(beatInMeasure === 1)}>
       <header className="piano-exercise-run__head">
         {/* WHY YOU ARE HERE, AND NOTHING ELSE, WHEN THERE IS CHROME.
             The sentence under the eyebrow is the run's second line of standing
@@ -1540,7 +1547,10 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
             {...(verdicts ? { verdicts, windowOpen } : {})}
           />
         )}
-        <CountInOverlay active={countingDown && countInBeat != null} beat={countInBeat}
+        {beatPulse != null && <span key={beatPulse} className="piano-exercise-run__beat" aria-hidden="true">
+          <span className="piano-exercise-run__beat-marker">{beatInMeasure}</span>
+        </span>}
+        <CountInOverlay active={(countingDown && countInBeat != null) || playHandoff}
           remaining={countdown?.remaining} progress={countdown?.progress} play={countdown?.play} />
       </div>
       {/* No button: the piano starts the run. A cued ask arms on any key and

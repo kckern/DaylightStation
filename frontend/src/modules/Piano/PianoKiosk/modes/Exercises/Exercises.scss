@@ -311,6 +311,51 @@
    below. */
 .piano-exercise-run__stage { position: relative; min-height: 0; overflow: hidden; }
 
+// A keyed, pointer-transparent edge halo restarts on the existing clock beat.
+// No overlay fill or layout changes: the score and keys stay fully readable.
+.piano-exercise-run__beat {
+  position: absolute;
+  inset: 3px;
+  z-index: 2;
+  pointer-events: none;
+  border-radius: var(--r-sm);
+  box-shadow: inset 0 0 0 2px var(--piano-accent), inset 0 0 12px color-mix(in srgb, var(--piano-accent) 25%, transparent);
+  animation: piano-exercise-beat 350ms ease-out both;
+}
+.piano-exercise-run[data-downbeat="true"] .piano-exercise-run__beat {
+  box-shadow: inset 0 0 0 4px var(--piano-accent), inset 0 0 18px color-mix(in srgb, var(--piano-accent) 35%, transparent);
+}
+.piano-exercise-run__beat-marker { display: none; }
+@keyframes piano-exercise-beat {
+  from { opacity: 0.85; }
+  to { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .piano-exercise-run .piano-exercise-run__beat {
+    animation: none;
+    box-shadow: none;
+    opacity: 1;
+  }
+  .piano-exercise-run__beat-marker {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    display: grid;
+    place-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    border: 1px solid var(--piano-accent);
+    border-radius: 50%;
+    background: var(--piano-surface-1);
+    color: var(--piano-fg);
+    font-weight: 700;
+  }
+  .piano-exercise-run[data-downbeat="true"] .piano-exercise-run__beat-marker {
+    border-width: 3px;
+    border-radius: var(--r-sm);
+  }
+}
+
 // The count-in is for listening. Keep its numeral clear while the music and
 // keyboard wait in gray; filtering the stage itself would also dim the overlay.
 .piano-exercise-run.is-countdown {
