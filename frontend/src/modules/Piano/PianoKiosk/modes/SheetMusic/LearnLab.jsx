@@ -4,8 +4,13 @@ import RepInterstitial from '../Games/RepInterstitial.jsx';
 import { SHEET_MUSIC_DEFAULTS } from './sheetMusicConfig.js';
 import LearnTempoSheet from './LearnTempoSheet.jsx';
 import { TEMPO_STAGES, availableTempoStages, nearestTempoStage } from './tempoStages.js';
+import { CLICK_LEVELS, readClickLevel, writeClickLevel } from './clickLevel.js';
 
 const handCode = (parts) => parts.length > 1 ? 'RL' : parts[0] === 'lh' ? 'L' : parts[0] === 'rh' ? 'R' : null;
+const clickStorage = () => {
+  try { return globalThis.localStorage; }
+  catch { return null; }
+};
 
 // eslint-disable-next-line react-refresh/only-export-components -- pure projection is exported for focused contract tests
 export function learnDrillProjection(segment, rung) {
@@ -52,6 +57,11 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
   const configuredPercent = masteryTempo ? 100 : (rung.tempoPercents?.[setIndex] ?? rung.tempoPercent ?? 100);
   const [selectedPercent, setSelectedPercent] = useState(configuredPercent);
   const [tempoSheetOpen, setTempoSheetOpen] = useState(false);
+  const [clickLevel, setClickLevel] = useState(() => readClickLevel(clickStorage()));
+  const selectClickLevel = (level) => {
+    setClickLevel(level);
+    writeClickLevel(clickStorage(), level.id);
+  };
   useEffect(() => { setSelectedPercent(configuredPercent); }, [configuredPercent]);
   const stages = useMemo(() => availableTempoStages({
     minimumPercent: tempo.minimumPercent, maximumPercent: tempo.maximumPercent,
@@ -129,10 +139,16 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
           onClick={() => setTempoSheetOpen(true)}><strong>{tempoLabel}</strong></button> : <strong>{tempoLabel}</strong>}
         <span>{tempo.tempoSource === 'musicxml' ? 'Score tempo' : 'Fallback tempo'}</span>
       </div>}
+      {['cued', 'metronome'].includes(rung.mode) && <div className="piano-learn-lab__click-level" role="group" aria-label="Metronome loudness">
+        <span>Click</span>
+        {CLICK_LEVELS.map((level) => <button key={level.id} type="button" aria-pressed={clickLevel.id === level.id}
+          onClick={() => selectClickLevel(level)}>{level.label}</button>)}
+      </div>}
     </header>
     <ExerciseRun
       key={`${segment.id}:${rung.id}:${take}`} instance={null} score={runScore} intent="practice"
       practiceMode={rung.mode} practiceRequirement={requirement} programId={projection.id}
+      clickGain={clickLevel.gain}
       stepId={projection.steps[stepIndex]?.id} drillProjection={projection}
       framing={`${segment.label} · ${rung.label}`}
       ask={rung.mode === 'free' ? 'Play the passage accurately.' : 'Play the passage with the beat.'}

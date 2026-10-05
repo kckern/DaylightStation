@@ -5,7 +5,8 @@ import { createClickScheduler } from './clickScheduler.js';
  * useMetronomeClick — audio-clock metronome. While `enabled`, beats are
  * scheduled ahead on the AudioContext clock (see clickScheduler.js) so the
  * click stays locked under main-thread jank. bpm changes retune the period
- * live WITHOUT restarting (phase is kept).
+ * live WITHOUT restarting (phase is kept). Gain changes affect future clicks
+ * on the same grid; already-scheduled clicks retain their envelope.
  *
  * Anchored grid: pass `anchorMs` (epoch ms of beat 0, on the same Date.now()
  * clock the grader uses) and optionally `leadMs` (play this much early to cover
@@ -21,10 +22,12 @@ export function useMetronomeClick({
   firstBeatIndex,
   anchorMs,
   leadMs,
+  gain,
   createScheduler = createClickScheduler,
 }) {
   const schedRef = useRef(null);
   const bpmRef = useRef(bpm); bpmRef.current = bpm;
+  const gainRef = useRef(gain); gainRef.current = gain;
   const startOptionsRef = useRef(null);
   const anchored = Number.isFinite(anchorMs);
   const anchor = anchored ? anchorMs : null;
@@ -48,12 +51,15 @@ export function useMetronomeClick({
     if (!enabled || !(bpmRef.current > 0)) return undefined;
     const s = createScheduler();
     schedRef.current = s;
+    // Older injected schedulers may only implement the tempo interface.
+    s.setGain?.(gainRef.current);
     if (startOptionsRef.current) s.start(bpmRef.current, startOptionsRef.current);
     else s.start(bpmRef.current);
     return () => { s.stop(); schedRef.current = null; };
   }, [enabled, createScheduler, anchor, lead]);
 
   useEffect(() => { if (bpm > 0) schedRef.current?.setBpm(bpm); }, [bpm]);
+  useEffect(() => { schedRef.current?.setGain?.(gain); }, [gain]);
 }
 
 export default useMetronomeClick;

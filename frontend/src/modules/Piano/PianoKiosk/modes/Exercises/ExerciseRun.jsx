@@ -334,7 +334,7 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   `onFailed` consumer replaces the result screen or records it while the run
  *   retains its standard feedback and piano-driven retry.
  */
-export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', keyboardHintPolicy = 'always', failurePresentation = 'host', onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', keyboardHintPolicy = 'always', failurePresentation = 'host', clickGain, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
@@ -998,6 +998,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
 
   useMetronomeClick({
     anchorMs: clickAnchorMs,
+    gain: clickGain,
     leadMs: clickLead.leadMs,
     enabled: ((snapshot.status === 'running' || awaitingTimeline) && ['metronome', 'cued'].includes(snapshot.mode))
       || (prePulse && !prePulseStopped),
