@@ -49,7 +49,7 @@ function contentBox(layout) {
   return { x: 0, y: 0, width: right, height: bottom };
 }
 
-export function resolvePassageLayout({ layout, viewport, cursorSystem = 0, minStaffSpacePx = MIN_STAFF_SPACE }) {
+export function resolvePassageLayout({ layout, viewport, cursorSystem = 0, minStaffSpacePx = MIN_STAFF_SPACE, keepWholePassage = false }) {
   if (!layout || !finite(layout.width) || !finite(layout.height) || !(viewport?.width > 0) || !(viewport?.height > 0)) return null;
   const systems = [...new Set((layout.staffBoxes ?? []).map((staff) => staff.system).filter(Number.isInteger))].sort((a, b) => a - b);
   if (!systems.length) return null;
@@ -60,15 +60,20 @@ export function resolvePassageLayout({ layout, viewport, cursorSystem = 0, minSt
   // stave below the white passage card.
   const full = contentBox(layout);
   const fullSpacing = spacing * containScale(viewport, full);
-  if (fullSpacing >= minStaffSpacePx) return {
-    mode: 'full', compact: false, activeSystem: null, systemCount: systems.length,
-    viewBox: full, projectedStaffSpacePx: fullSpacing,
-  };
-  const activeSystem = systems.includes(cursorSystem) ? cursorSystem : systems[0];
-  const focused = systemBox(layout, activeSystem);
-  const focusedSpacing = focused.spacing * containScale(viewport, focused);
+  if (!keepWholePassage && fullSpacing < minStaffSpacePx) {
+    const activeSystem = systems.includes(cursorSystem) ? cursorSystem : systems[0];
+    const focused = systemBox(layout, activeSystem);
+    const focusedSpacing = focused.spacing * containScale(viewport, focused);
+    return {
+      mode: 'system', compact: focusedSpacing < minStaffSpacePx, activeSystem, systemCount: systems.length,
+      viewBox: focused, projectedStaffSpacePx: focusedSpacing,
+    };
+  }
+  // Learn Lab assigns a short passage as one visual task. Never turn its
+  // systems into cursor-following pages: that hides the player's look-ahead.
+  // Other score surfaces retain the readable-system fallback above.
   return {
-    mode: 'system', compact: focusedSpacing < minStaffSpacePx, activeSystem, systemCount: systems.length,
-    viewBox: focused, projectedStaffSpacePx: focusedSpacing,
+    mode: 'full', compact: fullSpacing < minStaffSpacePx, activeSystem: null, systemCount: systems.length,
+    viewBox: full, projectedStaffSpacePx: fullSpacing,
   };
 }

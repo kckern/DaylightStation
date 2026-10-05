@@ -167,6 +167,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       practiceMode={rung.mode} practiceRequirement={requirement} programId={projection.id}
       clickGain={clickLevel.gain}
       stepId={projection.steps[stepIndex]?.id} drillProjection={projection}
+      hideHeading scoreLayoutPolicy="whole-passage"
       framing={`${segment.label} · ${rung.label}`}
       ask={rung.mode === 'free' ? 'Play the passage accurately.' : 'Play the passage with the beat.'}
       traceContext={{ tempoPercent, tempoStage: stage.id, clickLevel: clickLevel.id, tempoSource: tempo.tempoSource ?? 'inferred' }} surface="learn-lab"

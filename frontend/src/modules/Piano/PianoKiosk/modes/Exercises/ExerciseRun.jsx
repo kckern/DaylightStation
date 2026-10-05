@@ -334,7 +334,7 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   `onFailed` consumer replaces the result screen or records it while the run
  *   retains its standard feedback and piano-driven retry.
  */
-export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', keyboardHintPolicy = 'always', failurePresentation = 'host', clickGain, onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', failurePresentation = 'host', clickGain, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
@@ -1441,10 +1441,10 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
             heading, at the top, where a title goes. A run with no drill behind
             it keeps the eyebrow-and-heading it had: nothing else on that screen
             says why it is there. */}
-        {!bare && (placard.key
+        {!bare && !hideHeading && (placard.key
           ? <h1 className="piano-exercise-run__placard"><DrillPlacard label={placard.key} hand={placard.hand} /></h1>
           : <div><span>{framing ?? (challenge ? 'Pass challenge' : 'Practice')}</span>{!chromeDrawn && <h1>{ask ?? subject.title}</h1>}</div>)}
-        <div className="piano-exercise-run__context">
+        {!hideHeading && <div className="piano-exercise-run__context">
           {/* Each chip only where it means something: a meter is what a cued ask
               is counted in, and nothing at all in a free one. A score carries
               none of them: they are printed on the page the child is reading,
@@ -1454,7 +1454,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
               corner was the same fact charging rent on the title row. */}
           {!bare && cued && instance?.meter && <span>{instance.meter}</span>}
           {!bare && challenge && requirement.gates?.pace?.target_bpm && <strong>{requirement.gates.pace.target_bpm} BPM</strong>}
-        </div>
+        </div>}
       </header>
       {/* Notation and the sequence staff are ink, and ink needs paper on a dark
           screen — they keep the run's paper card. Lit keys are not ink, and a
@@ -1544,6 +1544,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
             rangeIndices={score.rangeIndices ?? null}
             activeParts={score.activeParts ?? null}
             tempoPercent={score.tempoPercent ?? 100}
+            keepWholePassage={scoreLayoutPolicy === 'whole-passage'}
             onExpectation={takeScoreExpectation}
             onUnrunnable={handleScoreUnrunnable}
             cursorIndex={visualCursor.index}

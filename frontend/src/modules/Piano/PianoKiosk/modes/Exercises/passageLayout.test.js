@@ -28,16 +28,19 @@ describe('passage layout policy', () => {
     expect(result.viewBox.y + result.viewBox.height).toBeGreaterThanOrEqual(560);
   });
 
-  it('focuses one complete grand-staff system instead of clipping the second line', () => {
-    const result = resolvePassageLayout({ layout: grand, viewport: { width: 1200, height: 420 }, cursorSystem: 1 });
-    expect(result).toMatchObject({ mode: 'system', activeSystem: 1, compact: false, systemCount: 2 });
-    expect(result.viewBox.y).toBeLessThanOrEqual(400);
-    expect(result.viewBox.y + result.viewBox.height).toBeGreaterThanOrEqual(540);
-    expect(result.projectedStaffSpacePx).toBeGreaterThanOrEqual(8);
+  it('keeps both grand-staff systems visible in a constrained practice viewport', () => {
+    const result = resolvePassageLayout({ layout: grand, viewport: { width: 1200, height: 420 }, cursorSystem: 1, keepWholePassage: true });
+    expect(result).toMatchObject({ mode: 'full', activeSystem: null, compact: true, systemCount: 2 });
+    expect(result.viewBox.y).toBe(0);
+    expect(result.viewBox.y + result.viewBox.height).toBeGreaterThanOrEqual(560);
   });
 
-  it('requests compact chrome when even one whole system is too small', () => {
-    expect(resolvePassageLayout({ layout: grand, viewport: { width: 500, height: 160 }, cursorSystem: 0 })).toMatchObject({ mode: 'system', compact: true });
+  it('keeps the complete passage when compact chrome is required', () => {
+    expect(resolvePassageLayout({ layout: grand, viewport: { width: 500, height: 160 }, cursorSystem: 0, keepWholePassage: true })).toMatchObject({ mode: 'full', compact: true, activeSystem: null });
+  });
+
+  it('preserves readable system focus for constrained score passages outside Learn Lab', () => {
+    expect(resolvePassageLayout({ layout: grand, viewport: { width: 1200, height: 420 }, cursorSystem: 1 })).toMatchObject({ mode: 'system', compact: false, activeSystem: 1 });
   });
 
   it('maps a cursor step to the nearest complete system', () => {

@@ -138,6 +138,7 @@ export function passageCursorBounds({ noteBounds = [], staffBoxes = [], activeSt
 export default function ScorePassage({
   musicXml, sourceId, measures = null, onExpectation, onUnrunnable, cursorIndex = 0, wrongMidi = null, showCursor = false,
   verdicts = null, windowOpen = undefined, activeParts: requestedParts = null, rangeIndices = null, tempoPercent = 100,
+  keepWholePassage = false,
 }) {
   const containerRef = useRef(null);
   const judged = verdicts instanceof Map;
@@ -356,8 +357,8 @@ export default function ScorePassage({
   }, [expectation, cursorIndex, elsByOnset]);
   const cursorSystem = useMemo(() => systemForStep(currentStep, layout?.staffBoxes), [currentStep, layout?.staffBoxes]);
   const presentation = useMemo(
-    () => resolvePassageLayout({ layout, viewport, cursorSystem }),
-    [cursorSystem, layout, viewport],
+    () => resolvePassageLayout({ layout, viewport, cursorSystem, keepWholePassage }),
+    [cursorSystem, keepWholePassage, layout, viewport],
   );
   const presentationLogRef = useRef(null);
   useLayoutEffect(() => {
