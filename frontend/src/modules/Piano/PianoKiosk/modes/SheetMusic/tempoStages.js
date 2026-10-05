@@ -23,5 +23,9 @@ export function availableTempoStages({
   // stage's identity while clamping its percentage to the allowed interval.
   const midpoint = (minimumPercent + maximumPercent) / 2;
   const nearest = nearestTempoStage(midpoint);
-  return [{ ...nearest, percent: Math.max(minimumPercent, Math.min(nearest.percent, maximumPercent)) }];
+  const percent = Math.max(minimumPercent, Math.min(nearest.percent, maximumPercent));
+  // Full speed is a promise of 100%, even when a narrow practice interval
+  // needs a clamped choice close to the original tempo.
+  const identity = nearest.id === 'full-speed' && percent < 100 ? TEMPO_STAGES[3] : nearest;
+  return [{ ...identity, percent }];
 }

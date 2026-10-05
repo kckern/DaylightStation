@@ -33,6 +33,6 @@ describe('Learn tempo stages', () => {
     const stages = availableTempoStages({ minimumPercent: 61, maximumPercent: 65 });
     expect(stages).toEqual([{ id: 'steady', label: 'Steady', percent: 61 }]);
     expect(nearestTempoStage(63, stages)).toEqual({ id: 'steady', label: 'Steady', percent: 61 });
-    expect(availableTempoStages({ minimumPercent: 90, maximumPercent: 95 })).toEqual([{ id: 'full-speed', label: 'Full speed', percent: 95 }]);
+    expect(availableTempoStages({ minimumPercent: 90, maximumPercent: 95 })).toEqual([{ id: 'nearly-there', label: 'Nearly there', percent: 95 }]);
   });
 });

@@ -287,6 +287,8 @@ export default function ScorePassage({
     try {
       const expectation = compileScoreExpectation({
         notes,
+        measureMap: (layout.measureMap ?? []).map((measure) => ({ ...measure,
+          index: excerpt.originalMeasureIndices[measure.index] ?? measure.index })),
         source: { id: sourceId },
         tempoMap: scaleScoreTempoMap(layout.tempoEntries?.length ? layout.tempoEntries : excerpt.inheritedTempoMap, tempoPercent),
         fallbackBpm: scaledScoreBpm(fallbackBpm, tempoPercent),
@@ -304,7 +306,7 @@ export default function ScorePassage({
     } catch (error) {
       return { state: 'dead', reason: 'expectation-uncompilable', error: error?.message ?? String(error) };
     }
-  }, [layout, notes, sourceId, fallbackBpm, requestedParts, excerpt.inheritedTempoMap, tempoPercent]);
+  }, [layout, notes, sourceId, fallbackBpm, requestedParts, excerpt.inheritedTempoMap, excerpt.originalMeasureIndices, tempoPercent]);
 
   const expectation = compiled.state === 'ready' ? compiled.expectation : null;
   const systemCount = useMemo(

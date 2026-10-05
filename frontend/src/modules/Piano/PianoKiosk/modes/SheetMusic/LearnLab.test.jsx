@@ -5,6 +5,8 @@ import { createClickScheduler } from './clickScheduler.js';
 import { useMetronomeClick } from './useMetronomeClick.js';
 
 const exercise = vi.hoisted(() => ({ props: null }));
+const log = vi.hoisted(() => ({ info: vi.fn() }));
+vi.mock('../../../../../lib/logging/Logger.js', () => ({ default: () => ({ child: () => log }) }));
 vi.mock('../Exercises/ExerciseRun.jsx', () => ({
   default: (props) => {
     exercise.props = props;
@@ -17,8 +19,27 @@ const rung = { id: 'right', label: 'Right hand', effectiveParts: ['rh'], mode: '
 const base = { score: { id: 'score', musicXml: '<score />' }, revision: 'rev', segment, rung, onRecord: vi.fn(), onClose: vi.fn() };
 
 describe('LearnLab', () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => { localStorage.clear(); log.info.mockClear(); });
   afterEach(() => vi.useRealTimers());
+
+  it('logs actual preference transitions once and carries semantic selections into the run', () => {
+    const timed = { ...rung, mode: 'cued', tempoPercent: 60 };
+    const props = { ...base, rung: timed };
+    const { rerender } = render(<LearnLab {...props} />);
+    expect(exercise.props.traceContext).toMatchObject({ tempoStage: 'steady', clickLevel: 'loud' });
+    fireEvent.click(screen.getByRole('button', { name: 'Soft' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Soft' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Choose tempo: Steady' }));
+    fireEvent.click(screen.getByRole('button', { name: /Very slow/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Choose tempo: Very slow' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Very slow', exact: true }));
+    rerender(<LearnLab {...props} />);
+    expect(exercise.props.traceContext).toMatchObject({ tempoStage: 'very-slow', tempoPercent: 25, clickLevel: 'soft' });
+    expect(log.info.mock.calls).toEqual([
+      ['piano.learn-click-level-changed', expect.objectContaining({ scoreId: 'score', passageId: 'm0-3', rungId: 'right', previousClickLevel: 'loud', clickLevel: 'soft', clickGain: 0.08 })],
+      ['piano.learn-tempo-stage-changed', expect.objectContaining({ previousTempoStage: 'steady', tempoStage: 'very-slow', previousTempoPercent: 60, tempoPercent: 25 })],
+    ]);
+  });
 
   it('defaults to Loud and persists a selected click level for the next lab visit', () => {
     const timed = { ...rung, mode: 'cued' };

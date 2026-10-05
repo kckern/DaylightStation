@@ -1443,14 +1443,15 @@ describe('timed practice groove at 1920x1200 in real Chromium', () => {
     if (process.env.PIANO_MEASURE_GEOMETRY) process.stdout.write(`${label}: ${JSON.stringify(measurements)}\n`);
   };
 
-  async function lab({ reducedMotion = 'no-preference', mastery = false } = {}) {
+  async function lab({ reducedMotion = 'no-preference', mastery = false, musicXml = fourBars } = {}) {
     await openStage(css, js, GROOVE_KIOSK, reducedMotion);
     await page.evaluate(PROBE);
-    await page.evaluate((arg) => window.__stage.mountLab(arg), { musicXml: fourBars, mastery });
+    await page.evaluate((arg) => window.__stage.mountLab(arg), { musicXml, mastery });
     try {
       await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]', { timeout: 10000 });
     } catch (error) {
-      throw new Error(`Learn Lab did not become ready: ${await probe.text()}\n${pageErrors.join('\n')}`, { cause: error });
+      const failures = await page.evaluate(() => (globalThis.__logEvents ?? []).filter(({ level }) => ['warn', 'error'].includes(level)));
+      throw new Error(`Learn Lab did not become ready: ${await probe.text()}\n${pageErrors.join('\n')}\n${JSON.stringify(failures)}`, { cause: error });
     }
     expectNoPageErrors();
   }
@@ -1619,6 +1620,35 @@ describe('timed practice groove at 1920x1200 in real Chromium', () => {
     expectNoPageErrors();
   }, 30000);
 
+  it('reads real 3/4 score measure boundaries in Learn without an exercise instance', async () => {
+    const musicXml = `<?xml version="1.0" encoding="UTF-8"?>
+    <score-partwise version="3.0"><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1">
+      <measure number="1"><attributes><divisions>1</divisions><time><beats>3</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes><direction><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>80</per-minute></metronome></direction-type><sound tempo="80" /></direction><note><pitch><step>C</step><octave>4</octave></pitch><duration>3</duration><type>half</type><dot /></note></measure>
+      <measure number="2"><note><rest /><duration>1</duration><type>quarter</type></note><note><pitch><step>D</step><octave>4</octave></pitch><duration>2</duration><type>half</type></note></measure>
+      <measure number="3"><note><pitch><step>E</step><octave>4</octave></pitch><duration>3</duration><type>half</type><dot /></note></measure>
+      <measure number="4"><note><pitch><step>F</step><octave>4</octave></pitch><duration>3</duration><type>half</type><dot /></note></measure>
+    </part></score-partwise>`;
+    await lab({ musicXml, reducedMotion: 'reduce' });
+    await chooseFullSpeed();
+    await probe.press(84);
+    for (const [beat, downbeat, marker] of [['1', 'true', '1'], ['3', 'false', '3'], ['4', 'true', '1'], ['5', 'false', '2'], ['7', 'true', '1']]) {
+      try {
+        await page.waitForFunction((expected) => document.querySelector('.piano-exercise-run')?.dataset.beatPulse === expected, beat, { timeout: 10000 });
+      } catch (error) {
+        const state = await page.evaluate(() => ({ run: { ...document.querySelector('.piano-exercise-run')?.dataset }, logs: globalThis.__logEvents?.filter(({ event }) => ['piano.exercise-countdown-started', 'piano.score-passage-unrunnable'].includes(event)) }));
+        throw new Error(`Did not reach quarter beat ${beat}: ${JSON.stringify(state)}`, { cause: error });
+      }
+      expect(await page.locator('.piano-exercise-run').getAttribute('data-downbeat')).toBe(downbeat);
+      expect((await probe.one('.piano-exercise-run__beat-marker')).text).toBe(marker);
+    }
+    const countdownEvents = await page.evaluate(() => globalThis.__logEvents.filter(({ event }) => event === 'piano.exercise-countdown-started'));
+    expect(countdownEvents).toEqual([expect.objectContaining({ data: expect.objectContaining({
+      pulseCount: 4, pulseBpm: 80, leadInMs: 3000, tempoStage: 'full-speed', clickLevel: 'loud',
+    }) })]);
+    await assertRunGeometry();
+    expectNoPageErrors();
+  }, 30000);
+
   it('uses a static beat marker with reduced motion and keeps it clear of notation and controls', async () => {
     await lab({ reducedMotion: 'reduce' });
     await chooseFullSpeed();
@@ -1650,8 +1680,10 @@ describe('timed practice groove at 1920x1200 in real Chromium', () => {
     for (const box of [...await probe.all('.piano-score-passage g.staffline, .piano-score-passage g.vf-notehead'), rail, keys]) {
       expect(overlaps(marker, box), `beat marker ${say(marker)} overlaps ${say(box)}`).toBe(false);
     }
-    await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.dataset.beatPulse === '2');
-    expect((await probe.one(selector)).text).toBe('2');
+    // Geometry reads and the screenshot can outlive beat 2 on a busy runner.
+    // Any ordinary running beat must update the marker and remove the accent.
+    await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.dataset.downbeat === 'false');
+    expect(['2', '3', '4']).toContain((await probe.one(selector)).text);
     expect(await probe.prop(selector, 'border-top-width')).toBe('1px');
     expect(await probe.prop(beatSelector, 'box-shadow')).toBe('none');
     expectNoPageErrors();

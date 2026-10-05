@@ -38,5 +38,6 @@ describe('CountInOverlay', () => {
   it('keeps unchanged score-player callers visible', () => {
     const { container } = render(<CountInOverlay active beat={3} />);
     expect(container.querySelector('.piano-score-countin__beat')).toHaveTextContent('3');
+    expect(container.querySelector('[aria-live]')).toHaveAttribute('aria-label', 'Count in, beat 3');
   });
 });
