@@ -2748,8 +2748,9 @@
   &__identity { padding-right: 0.7rem; border-right: 1px solid var(--piano-border); }
   &__identity span, &__task span { overflow: hidden; color: var(--piano-muted); font-size: 0.72rem; text-overflow: ellipsis; white-space: nowrap; }
   &__task { flex: 1 1 auto; }
-  &__tempo { flex: 0 0 auto; display: flex; align-items: center; gap: 0.4rem; }
-  &__tempo button { width: 2rem; height: 2rem; border-radius: 50%; border: 1px solid var(--piano-border); background: transparent; color: inherit; font: inherit; }
+  &__tempo { flex: 0 0 auto; display: grid; justify-items: center; gap: 0.15rem; }
+  &__tempo button { min-height: 3rem; padding: 0.35rem 0.65rem; border-radius: var(--r-sm); border: 1px solid var(--piano-border); background: transparent; color: inherit; font: inherit; }
+  &__tempo span { color: var(--piano-muted); font-size: 0.65rem; }
   &__tempo strong { white-space: nowrap; font-size: 0.85rem; }
   &__success { position: absolute; z-index: 35; inset: 3.25rem 0 0; display: grid; place-content: center; justify-items: center; gap: 0.3rem; background: color-mix(in srgb, var(--piano-bg) 82%, transparent); color: var(--piano-fg); }
   &__success strong { color: var(--piano-accent-text); font-size: clamp(1.8rem, 5vw, 3.5rem); }
@@ -2758,6 +2759,14 @@
     &__back span:last-child, &__identity span { display: none; }
     &__toolbar { gap: 0.45rem; }
   }
+}
+.piano-learn-tempo-sheet {
+  &__bpm { margin: 0; color: var(--piano-muted); text-align: center; }
+  &__stages { display: grid; gap: 0.6rem; padding: 0.75rem 0; }
+  &__stages button, &__back { min-height: 3rem; padding: 0.5rem 1rem; color: var(--piano-fg); background: var(--piano-surface-1); border: 1px solid var(--piano-border); border-radius: var(--r-sm); font: inherit; }
+  &__stages button[aria-pressed="true"] { color: var(--piano-accent-text); border-color: var(--piano-accent); background: color-mix(in srgb, var(--piano-accent) 18%, var(--piano-surface-1)); }
+  &__stages button:focus-visible, &__back:focus-visible { outline: 2px solid var(--piano-accent); outline-offset: 3px; }
+  &__back { width: 100%; }
 }
 .piano-learn-passage-map.is-achievement {
   border-color: var(--piano-accent);
