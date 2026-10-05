@@ -1,6 +1,8 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, renderHook, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import LearnLab from './LearnLab.jsx';
+import { createClickScheduler } from './clickScheduler.js';
+import { useMetronomeClick } from './useMetronomeClick.js';
 
 const exercise = vi.hoisted(() => ({ props: null }));
 vi.mock('../Exercises/ExerciseRun.jsx', () => ({
@@ -15,7 +17,74 @@ const rung = { id: 'right', label: 'Right hand', effectiveParts: ['rh'], mode: '
 const base = { score: { id: 'score', musicXml: '<score />' }, revision: 'rev', segment, rung, onRecord: vi.fn(), onClose: vi.fn() };
 
 describe('LearnLab', () => {
+  beforeEach(() => localStorage.clear());
   afterEach(() => vi.useRealTimers());
+
+  it('defaults to Loud and persists a selected click level for the next lab visit', () => {
+    const timed = { ...rung, mode: 'cued' };
+    const { unmount } = render(<LearnLab {...base} rung={timed} />);
+    expect(screen.getByRole('group', { name: 'Metronome loudness' })).toBeInTheDocument();
+    for (const label of ['Soft', 'Medium', 'Loud', 'Max']) {
+      expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
+    }
+    expect(screen.getByRole('button', { name: 'Loud' })).toHaveAttribute('aria-pressed', 'true');
+    expect(exercise.props.clickGain).toBe(0.36);
+    const originalRunScore = exercise.props.score;
+    fireEvent.click(screen.getByRole('button', { name: 'Soft' }));
+    expect(exercise.props.clickGain).toBe(0.08);
+    expect(exercise.props.score).toBe(originalRunScore);
+    expect(screen.getByRole('button', { name: 'Soft' })).toHaveAttribute('aria-pressed', 'true');
+    expect(localStorage.getItem('piano.learn.click-level')).toBe('soft');
+    unmount();
+    render(<LearnLab {...base} rung={timed} />);
+    expect(screen.getByRole('button', { name: 'Soft' })).toHaveAttribute('aria-pressed', 'true');
+    expect(exercise.props.clickGain).toBe(0.08);
+  });
+
+  it('keeps loudness usable when browser storage access throws', () => {
+    const getter = vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => { throw new Error('blocked'); });
+    try {
+      render(<LearnLab {...base} rung={{ ...rung, mode: 'cued' }} />);
+      expect(screen.getByRole('button', { name: 'Loud' })).toHaveAttribute('aria-pressed', 'true');
+      fireEvent.click(screen.getByRole('button', { name: 'Max' }));
+      expect(screen.getByRole('button', { name: 'Max' })).toHaveAttribute('aria-pressed', 'true');
+      expect(exercise.props.clickGain).toBe(0.6);
+    } finally { getter.mockRestore(); }
+  });
+
+  it('updates the anchored hook gain without replacing its scheduler or shifting beat phase', () => {
+    vi.useFakeTimers();
+    const ac = { currentTime: 0, state: 'running' };
+    const beats = [];
+    let starts = 0;
+    let stops = 0;
+    let created = 0;
+    const createScheduler = () => {
+      created += 1;
+      const scheduler = createClickScheduler({ getCtx: () => ac, now: () => 1_000_000,
+        scheduleBlip: (_a, t, options) => beats.push({ t: +t.toFixed(2), ...options }) });
+      const start = scheduler.start;
+      const stop = scheduler.stop;
+      scheduler.start = (...args) => { starts += 1; return start(...args); };
+      scheduler.stop = () => { stops += 1; stop(); };
+      return scheduler;
+    };
+    const { rerender, unmount } = renderHook(({ gain }) => useMetronomeClick({
+      enabled: true, bpm: 120, anchorMs: 1_000_100, beatsPerBar: 3, firstBeatIndex: 2, gain, createScheduler,
+    }), { initialProps: { gain: 0.08 } });
+    rerender({ gain: 0.6 });
+    ac.currentTime = 0.4; act(() => vi.advanceTimersByTime(100));
+    rerender({ gain: undefined });
+    ac.currentTime = 0.9; act(() => vi.advanceTimersByTime(100));
+    expect(beats).toEqual([
+      { t: 0.1, accent: false, gain: 0.08 },
+      { t: 0.6, accent: true, gain: 0.6 },
+      { t: 1.1, accent: false, gain: 0.18 },
+    ]);
+    expect({ created, starts, stops }).toEqual({ created: 1, starts: 1, stops: 0 });
+    unmount();
+    expect(stops).toBe(1);
+  });
 
   it('is a focused lab with a conventional close control and no roadmap copy', () => {
     render(<LearnLab {...base} />);
