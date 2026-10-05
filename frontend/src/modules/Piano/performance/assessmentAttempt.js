@@ -356,6 +356,22 @@ export function observeAssessment(attempt, midiOrHeldEvent) {
       };
     }
   }
+  const onsetParts = new Set(current.notes.map((note) => note.part).filter(Boolean));
+  if (attempt.matcher === 'cursor' && attempt.policy.requireConcurrentOnset === true && heldPitches && onsetParts.size > 1) {
+    const expected = new Set(current.notes.map((note) => note.midi));
+    const exact = heldPitches.size === expected.size && [...expected].every((midi) => heldPitches.has(midi));
+    if (!exact) {
+      const onlyExpected = [...heldPitches].every((midi) => expected.has(midi));
+      if (onlyExpected && heldPitches.size < expected.size) {
+        return { attempt: { ...attempt, musicalInput: true }, event: { type: 'partial', eventId: current.id, held: [...heldPitches] } };
+      }
+      const wrongMidi = [...heldPitches].find((midi) => !expected.has(midi)) ?? Math.min(...heldPitches);
+      return {
+        attempt: { ...attempt, musicalInput: true, wrong: [...attempt.wrong, { midi: wrongMidi, time: input.time, spanId: current.spanId, eventId: current.id }] },
+        event: { type: 'wrong', eventId: current.id, midi: wrongMidi },
+      };
+    }
+  }
   const matches = current.notes.filter((note) => !attempt.hits[note.id] && (heldPitches
     ? (attempt.policy.pitchClass === true ? [...heldPitches].some((midi) => pitchClassOf(midi) === pitchClassOf(note.midi)) : heldPitches.has(note.midi))
     : note.midi === input.midi));

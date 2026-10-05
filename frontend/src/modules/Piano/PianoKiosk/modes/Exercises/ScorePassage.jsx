@@ -6,6 +6,7 @@ import NoteHighlightLayer from '../SheetMusic/NoteHighlightLayer.jsx';
 import { compileScoreExpectation } from '../../../performance/assessmentAttempt.js';
 import { excerptMusicXml, selectMusicXmlParts } from './scorePassageXml.js';
 import { scaleScoreTempoMap, scaledScoreBpm } from './scoreTempo.js';
+import { resolvePassageLayout, systemForStep } from './passageLayout.js';
 
 let _logger;
 function logger() {
@@ -138,8 +139,10 @@ export default function ScorePassage({
   musicXml, sourceId, measures = null, onExpectation, onUnrunnable, cursorIndex = 0, wrongMidi = null, showCursor = false,
   verdicts = null, windowOpen = undefined, activeParts: requestedParts = null, rangeIndices = null, tempoPercent = 100,
 }) {
+  const containerRef = useRef(null);
   const judged = verdicts instanceof Map;
   const [layout, setLayout] = useState(null);
+  const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const publishedRef = useRef(null);
   /**
    * The terminal answer already given. Keyed by REASON, not a bare boolean, so a
@@ -153,6 +156,20 @@ export default function ScorePassage({
   const [renderScale, setRenderScale] = useState(1);
   const [systemBreakBefore, setSystemBreakBefore] = useState(null);
   const [fitError, setFitError] = useState(null);
+
+  useLayoutEffect(() => {
+    const element = containerRef.current;
+    if (!element) return undefined;
+    const measure = () => setViewport((previous) => {
+      const next = { width: element.clientWidth, height: element.clientHeight };
+      return Math.abs(next.width - previous.width) < 2 && Math.abs(next.height - previous.height) < 2 ? previous : next;
+    });
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   const handleLayout = useCallback((result) => {
     const fit = fitPassageLayout({ layout: result, scale: renderScale, minScale: MIN_PASSAGE_SCALE, maxSystems: MAX_PASSAGE_SYSTEMS });
@@ -335,6 +352,25 @@ export default function ScorePassage({
     if (!event) return null;
     return { notes: elsByOnset.get(onsetKey(event.onsetQuarter)) ?? [] };
   }, [expectation, cursorIndex, elsByOnset]);
+  const cursorSystem = useMemo(() => systemForStep(currentStep, layout?.staffBoxes), [currentStep, layout?.staffBoxes]);
+  const presentation = useMemo(
+    () => resolvePassageLayout({ layout, viewport, cursorSystem }),
+    [cursorSystem, layout, viewport],
+  );
+  const presentationLogRef = useRef(null);
+  useLayoutEffect(() => {
+    if (!presentation) return;
+    const key = `${presentation.mode}:${presentation.activeSystem}:${viewport.width}x${viewport.height}`;
+    if (presentationLogRef.current === key) return;
+    presentationLogRef.current = key;
+    logger().info('piano.score-passage-layout', {
+      id: sourceId ?? null, measures, mode: presentation.mode,
+      activeSystem: presentation.activeSystem, systemCount: presentation.systemCount,
+      compact: presentation.compact, projectedStaffSpacePx: Math.round(presentation.projectedStaffSpacePx * 10) / 10,
+      viewportWidth: viewport.width, viewportHeight: viewport.height,
+      engravingWidth: layout?.width ?? null, engravingHeight: layout?.height ?? null,
+    });
+  }, [layout?.height, layout?.width, measures, presentation, sourceId, viewport.height, viewport.width]);
 
   // Timed passages need a visible clock cursor even before a note is played.
   // Insert behind the engraved ink, in the SVG's own coordinate system, so
@@ -436,9 +472,9 @@ export default function ScorePassage({
   }, [elsByOnset, expectation, judged, verdicts]);
 
   return (
-    <div className="piano-score-passage" data-system-count={systemCount || undefined} data-cursor-enabled={String(showCursor)}>
+    <div ref={containerRef} className="piano-score-passage" data-system-count={systemCount || undefined} data-layout-mode={presentation?.mode} data-layout-compact={presentation?.compact || undefined} data-cursor-enabled={String(showCursor)}>
       {focused.musicXml ? (
-        <MusicXmlRenderer key={`${systemBreakBefore ?? 'auto'}:${renderScale}`} musicXml={focused.musicXml} scale={renderScale} newSystemFromXML onLayout={handleLayout} onFailed={handleEngraveFailed}>
+        <MusicXmlRenderer key={`${systemBreakBefore ?? 'auto'}:${renderScale}`} musicXml={focused.musicXml} scale={renderScale} newSystemFromXML fillContainer presentationViewBox={presentation?.viewBox} onLayout={handleLayout} onFailed={handleEngraveFailed}>
           <NoteHighlightLayer step={currentStep} activeParts={activeParts} />
         </MusicXmlRenderer>
       ) : (
@@ -446,6 +482,7 @@ export default function ScorePassage({
           <p>Could not read this score.</p>
         </div>
       )}
+      {presentation?.mode === 'system' && presentation.systemCount > 1 && <div className="piano-score-passage__map" aria-live="polite">Line {presentation.activeSystem + 1} of {presentation.systemCount}</div>}
     </div>
   );
 }

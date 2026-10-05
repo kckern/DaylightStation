@@ -187,6 +187,10 @@ const SCORE_MATERIAL = Object.freeze({
   kind: 'score', source: 'files:docs/sheet-music/four-bars.musicxml', measures: [2, 3],
 });
 
+// Five dense measures on a real grand staff: the same layout shape as the live
+// Jesu passage that exposed a second-system bass stave below the clipped page.
+const GRAND_FIVE_BARS = `<?xml version="1.0"?><score-partwise version="3.1"><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1">${Array.from({ length: 5 }, (_, measure) => `<measure number="${measure + 1}">${measure === 0 ? '<attributes><divisions>2</divisions><time><beats>5</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>' : ''}${Array.from({ length: 10 }, (_, beat) => `<note><pitch><step>${['C', 'D', 'E', 'F'][(measure + beat) % 4]}</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note>`).join('')}<backup><duration>10</duration></backup>${Array.from({ length: 10 }, (_, beat) => `<note><pitch><step>${['C', 'B', 'A', 'G'][(measure + beat) % 4]}</step><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>eighth</type><staff>2</staff></note>`).join('')}</measure>`).join('')}</part></score-partwise>`;
+
 /* -------------------------------------------------------------------------- */
 /* The bundle                                                                 */
 /* -------------------------------------------------------------------------- */
@@ -1149,6 +1153,12 @@ describe('SP2 presentation cells in real Chromium', () => {
     const stage = await probe.one('.piano-exercise-run__stage');
     const notation = await probe.one('.abc-renderer svg');
     expect(notation.painted && inside(notation, stage), `the free engraving overflows its stage: ${say(notation)}`).toBe(true);
+    expect(Math.abs(notation.cx - stage.cx), `the staff is not horizontally centred: ${say(notation)} in ${say(stage)}`).toBeLessThanOrEqual(1);
+    expect(Math.abs(notation.cy - stage.cy), `the staff is not vertically centred: ${say(notation)} in ${say(stage)}`).toBeLessThanOrEqual(1);
+    expect(await page.$eval('.abc-renderer svg', (svg) => {
+      const matrix = svg.getScreenCTM();
+      return Math.abs(matrix.a / matrix.d);
+    }), 'the fitted staff was stretched out of its engraved proportions').toBeCloseTo(1, 4);
     expect(await probe.count('.sequence-staff'), 'the engraved request fell back to the sequence renderer').toBe(0);
     expect(await probe.count('.piano-score-passage'), 'bank material incorrectly entered the score resolver').toBe(0);
   });
@@ -1320,7 +1330,17 @@ describe('the score stage, engraved by the real OSMD in Chromium', () => {
 
     const stage = await probe.one('.piano-exercise-run__stage');
     const passage = await probe.one('.piano-score-passage');
+    const engraving = await probe.one('.piano-score-passage .musicxml-renderer__svg svg');
     expect(inside(passage, stage), `the passage ${say(passage)} overflows the stage row ${say(stage)}`).toBe(true);
+    expect(inside(engraving, passage), `the engraving ${say(engraving)} overflows its passage ${say(passage)}`).toBe(true);
+    expect(Math.abs(engraving.cx - passage.cx), `the score is not horizontally centred: ${say(engraving)} in ${say(passage)}`).toBeLessThanOrEqual(1);
+    expect(Math.abs(engraving.cy - passage.cy), `the score is not vertically centred: ${say(engraving)} in ${say(passage)}`).toBeLessThanOrEqual(1);
+    expect(Math.max(engraving.width / passage.width, engraving.height / passage.height),
+      `the score does not fill either available axis: ${say(engraving)} in ${say(passage)}`).toBeGreaterThan(0.8);
+    expect(await page.$eval('.piano-score-passage .musicxml-renderer__svg svg', (svg) => {
+      const matrix = svg.getScreenCTM();
+      return Math.abs(matrix.a / matrix.d);
+    }), 'the fitted score was stretched out of its engraved proportions').toBeCloseTo(1, 4);
     expect(await probe.count('.musicxml-renderer--placeholder')).toBe(0);
 
     // The cursor lights the FIRST NOTE OF THE PASSAGE in the real engraving —
@@ -1333,6 +1353,19 @@ describe('the score stage, engraved by the real OSMD in Chromium', () => {
     // The lab contains only the excerpt: no out-of-range grey context remains.
     expect(await probe.count('.piano-score-passage__dim'),
       'the lab retained grey out-of-range bars').toBe(0);
+    expectNoPageErrors();
+  }, 120000);
+
+  it('never clips the left-hand stave on the second system of a dense grand-staff passage', async () => {
+    await run({
+      scoreXml: GRAND_FIVE_BARS,
+      props: { material: { ...SCORE_MATERIAL, measures: [1, 5] }, tier: 2, intent: 'practice', practiceMode: 'free' },
+    }, FREE_READY);
+    const passage = await probe.one('.piano-score-passage');
+    expect(Number(await page.$eval('.piano-score-passage', (element) => element.dataset.systemCount))).toBe(2);
+    const staves = await probe.all('.piano-score-passage g.staffline');
+    expect(staves.length, 'two grand-staff systems must expose four complete staves').toBeGreaterThanOrEqual(4);
+    for (const staff of staves) expect(inside(staff, passage), `a stave is clipped: ${say(staff)} in ${say(passage)}`).toBe(true);
     expectNoPageErrors();
   }, 120000);
 
@@ -1530,6 +1563,14 @@ describe('the engraved cursor, on the material the bank ships', () => {
     await page.waitForSelector('.exercise-notation__cursor');
     expect(await probe.count('.abcjs-staff'), 'a two-hand exercise did not engrave two staves').toBe(2);
     const stage = await probe.one('.piano-exercise-run__stage');
+    const notation = await probe.one('.abc-renderer svg');
+    expect(inside(notation, stage), `the grand staff overflows its stage: ${say(notation)} in ${say(stage)}`).toBe(true);
+    expect(Math.abs(notation.cx - stage.cx), `the grand staff is not horizontally centred: ${say(notation)} in ${say(stage)}`).toBeLessThanOrEqual(1);
+    expect(Math.abs(notation.cy - stage.cy), `the grand staff is not vertically centred: ${say(notation)} in ${say(stage)}`).toBeLessThanOrEqual(1);
+    expect(await page.$eval('.abc-renderer svg', (svg) => {
+      const matrix = svg.getScreenCTM();
+      return Math.abs(matrix.a / matrix.d);
+    }), 'the fitted grand staff was stretched out of its engraved proportions').toBeCloseTo(1, 4);
     const cursors = await probe.all('.exercise-notation__cursor');
     expect(cursors.length, 'a grand staff needs a lane on each stave').toBe(2);
     for (const cursor of cursors) {

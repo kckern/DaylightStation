@@ -29,6 +29,12 @@ describe('LearnLab', () => {
     expect(exercise.props).toMatchObject({ scoreCursorPolicy: 'always', keyboardHintPolicy: 'after-wrong', surface: 'learn-lab' });
     expect(exercise.props.bare).toBeUndefined();
     expect(exercise.props.failurePresentation).toBe('local');
+    expect(exercise.props.practiceRequirement.rubric.criteria).toEqual({ completeness: 1, cleanliness: 0.8 });
+  });
+
+  it('requires both hands at the same onset on the together rung', () => {
+    render(<LearnLab {...base} rung={{ ...rung, id: 'together', effectiveParts: ['rh', 'lh'] }} />);
+    expect(exercise.props.practiceRequirement.policy).toEqual({ requireConcurrentOnset: true });
   });
 
   it('reports rung completion so the host can advance according to its resolved plan', () => {

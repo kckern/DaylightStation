@@ -236,6 +236,32 @@ describe('immutable lifecycle', () => {
     expect(Object.keys(second.hits)).toHaveLength(3);
   });
 
+  it('can require a multi-part score onset to be held together', () => {
+    const source = expectation([{ id: 'one', notes: [{ midi: 60, part: 'rh' }, { midi: 48, part: 'lh' }] }]);
+    const started = startAssessmentAttempt(createAssessmentAttempt({
+      expectation: source, matcher: 'cursor', requirement: { policy: { requireConcurrentOnset: true } },
+    }), { time: 0 });
+    const rightOnly = observeAssessment(started, { held: new Map([[60, {}]]), time: 10 });
+    expect(rightOnly.event.type).toBe('partial');
+    expect(rightOnly.attempt.hits).toEqual({});
+    const wrong = observeAssessment(rightOnly.attempt, { held: new Map([[61, {}], [49, {}]]), time: 20 });
+    expect(wrong.event.type).toBe('wrong');
+    expect(wrong.attempt.cursor).toBe(0);
+    const together = observeAssessment(wrong.attempt, { held: new Map([[60, {}], [48, {}]]), time: 30 });
+    expect(together.attempt.status).toBe('completed');
+  });
+
+  it('does not impose the cross-hand policy on a chord within one part', () => {
+    const source = expectation([{ id: 'one', notes: [{ midi: 60, part: 'rh' }, { midi: 64, part: 'rh' }] }]);
+    const started = startAssessmentAttempt(createAssessmentAttempt({
+      expectation: source, matcher: 'cursor', requirement: { policy: { requireConcurrentOnset: true } },
+    }), { time: 0 });
+    const first = observeAssessment(started, { held: new Map([[60, {}]]), time: 10 });
+    expect(first.event.type).toBe('hit');
+    const second = observeAssessment(first.attempt, { held: new Map([[64, {}]]), time: 20 });
+    expect(second.attempt.status).toBe('completed');
+  });
+
   it('skips rests, records wrong and ignored input, and is terminal-idempotent', () => {
     const source = expectation([
       { onsetQuarter: 0, notes: [] },
