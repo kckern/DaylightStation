@@ -53,12 +53,13 @@ export function createAssessmentRuntime({ attempt, createAttempt, subscribeMidi,
   const observe = (event) => {
     if (disposed) return { attempt: state, event: { type: 'ignored', reason: 'disposed' }, events: [] };
     if (state.paused) return { attempt: state, event: { type: 'ignored', reason: 'paused' }, events: [] };
+    if (Number(state.resumingUntil) > now()) return { attempt: state, event: { type: 'ignored', reason: 'resume_countdown' }, events: [] };
     const result = observeAssessment(state, event);
     publish(result.attempt, result.events || [result.event]);
     return { ...result, attempt: state };
   };
   const tick = () => {
-    if (state.status !== 'running' || state.paused) return;
+    if (state.status !== 'running' || state.paused || Number(state.resumingUntil) > now()) return;
     const result = advanceAssessment(state, now());
     publish(result.attempt, result.events);
   };
@@ -79,14 +80,19 @@ export function createAssessmentRuntime({ attempt, createAttempt, subscribeMidi,
     return state;
   };
   const pause = () => {
-    if (disposed || state.status !== 'running' || state.paused) return state;
+    if (disposed || !['prepared', 'running'].includes(state.status) || state.paused) return state;
     disconnect();
     publish({ ...state, paused: true, pausedAt: now() }, [], { immediate: true });
     return state;
   };
   const resume = ({ delayMs = 0 } = {}) => {
-    if (disposed || state.status !== 'running' || !state.paused) return state;
+    if (disposed || !['prepared', 'running'].includes(state.status) || !state.paused) return state;
     const resumedAt = now();
+    if (state.status === 'prepared') {
+      const { paused: _paused, pausedAt: _pausedAt, ...prepared } = state;
+      publish({ ...prepared, paused: false }, [], { immediate: true });
+      return state;
+    }
     const shiftMs = Math.max(0, resumedAt - state.pausedAt) + Math.max(0, Number(delayMs) || 0);
     const { paused: _paused, pausedAt: _pausedAt, ...rest } = state;
     publish({
@@ -109,7 +115,7 @@ export function createAssessmentRuntime({ attempt, createAttempt, subscribeMidi,
     getStoreSnapshot: () => snapshot,
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     start(options = {}) {
-      if (disposed) return state;
+      if (disposed || state.paused) return state;
       publish(startAssessmentAttempt(state, { time: now(), ...options }), [], { immediate: true });
       if (state.status === 'running') connect();
       return state;

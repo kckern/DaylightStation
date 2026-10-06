@@ -462,10 +462,8 @@ export default function ScorePassage({
         note.el.classList.add(name);
         note.el.setAttribute('data-verdict', verdict?.state ?? 'owed');
         classed.push([note.el, name]);
-        if (kind === 'early' || kind === 'late') {
-          const tick = driftTick(note.el, kind);
-          if (tick) ticks.push(tick);
-        }
+        const mark = verdictMark(note.el, kind ?? (wrong ? 'wrong' : null));
+        if (mark) ticks.push(mark);
       }
     });
     return () => {
@@ -496,14 +494,15 @@ const MAX_PASSAGE_SYSTEMS = 2;
 const MIN_PASSAGE_SCALE = 0.65;
 /** A recorded verdict state → the class suffix painted on its engraved note. */
 const VERDICT_KIND = Object.freeze({ hit: 'hit', early: 'early', late: 'late', lapsed: 'unplayed', miss: 'unplayed' });
-const DRIFT_TICK = Object.freeze({ early: '\u25C2', late: '\u25B8' });
+const VERDICT_MARK = Object.freeze({ hit: '\u2713', early: '\u25C2', late: '\u25B8', unplayed: '\u25CB', wrong: '\u00D7' });
 
 /**
  * A ◂/▸ tick under an engraved note, in its SVG's own coordinates (the same
  * screen-to-user mapping the cursor uses). Returns the inserted element, or
  * null where there is no geometry (happy-dom, a detached note).
  */
-function driftTick(el, side) {
+function verdictMark(el, side) {
+  if (!VERDICT_MARK[side]) return null;
   const svg = el?.ownerSVGElement;
   const matrix = svg?.getScreenCTM?.();
   if (!matrix) return null;
@@ -519,7 +518,7 @@ function driftTick(el, side) {
   text.setAttribute('text-anchor', 'middle');
   text.setAttribute('font-size', 12);
   text.setAttribute('aria-hidden', 'true');
-  text.textContent = DRIFT_TICK[side];
+  text.textContent = VERDICT_MARK[side];
   svg.appendChild(text);
   return text;
 }

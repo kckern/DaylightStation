@@ -123,7 +123,20 @@ describe('assessment runtime', () => {
     expect(runtime.getSnapshot()).toMatchObject({ paused: true, misses: [] });
     runtime.resume({ delayMs: 1_000 });
     expect(runtime.getSnapshot()).toMatchObject({ paused: false, startedAt: 10_900 });
-    runtime.observe({ midi: 62, time: 11_900 });
+    now = 10_500;
+    expect(runtime.observe({ midi: 62, time: now }).event).toMatchObject({ type: 'ignored', reason: 'resume_countdown' });
+    now = 11_900; runtime.observe({ midi: 62, time: now });
     expect(runtime.getSnapshot().status).toBe('completed');
+  });
+
+  it('can pause and resume before the first note without starting the attempt', () => {
+    let now = 20;
+    const runtime = createAssessmentRuntime({ attempt: makeAttempt(), now: () => now, tickMs: 0 });
+    runtime.pause();
+    expect(runtime.getSnapshot()).toMatchObject({ status: 'prepared', paused: true });
+    expect(runtime.start()).toMatchObject({ status: 'prepared', paused: true });
+    now = 200;
+    runtime.resume({ delayMs: 1_000 });
+    expect(runtime.getSnapshot()).toMatchObject({ status: 'prepared', paused: false });
   });
 });
