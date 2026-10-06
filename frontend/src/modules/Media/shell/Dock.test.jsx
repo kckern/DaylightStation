@@ -13,6 +13,8 @@ import { useCastTarget } from '../cast/useCastTarget.js';
 
 const { lifecycleReset } = vi.hoisted(() => ({ lifecycleReset: vi.fn() }));
 
+// Settings leads to screen admin / routine history through the nav stack.
+vi.mock('./NavProvider.jsx', () => ({ useNav: () => ({ push: () => {} }) }));
 vi.mock('../search/MediaContentSearch.jsx', () => ({
   MediaContentSearch: () => <div data-testid="media-content-search-stub" />,
 }));

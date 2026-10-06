@@ -27,6 +27,7 @@ import {
   resolveScreenId,
   aliasesOf,
   ScreenRegistryError,
+  isPlaceholderBrowserName,
 } from '#domains/media/screenRegistry.mjs';
 import { foldSpot, unfoldSpot } from '#domains/content/services/mediaSpots.mjs';
 
@@ -118,7 +119,7 @@ export class ScreenRegistryService {
 
   // ── Reads ────────────────────────────────────────────────────────────────
 
-  /** @returns {Promise<{screens:Object[], notSeenLately:Object[], retired:Object[]}>} */
+  /** @returns {Promise<{screens:Object[], notSeenLately:Object[], retired:Object[], unnamed:Object[]}>} */
   async list({ householdId } = {}) {
     const [state, signals] = await Promise.all([this.#state(householdId), this.#signalMap(householdId)]);
     return buildScreenView({ configured: this.#configuredList(householdId), state, now: this.#clock.now(), signals });
@@ -129,7 +130,7 @@ export class ScreenRegistryService {
     const state = await this.#state(householdId);
     const target = resolveScreenId(state, this.#qualify(id));
     const view = await this.list({ householdId });
-    return [...view.screens, ...view.notSeenLately, ...view.retired].find((s) => s.id === target) || null;
+    return [...view.screens, ...view.notSeenLately, ...view.retired, ...(view.unnamed || [])].find((s) => s.id === target) || null;
   }
 
   /** The screen id a (possibly merged) id now belongs to. */
@@ -153,7 +154,7 @@ export class ScreenRegistryService {
   async names(householdId) {
     const view = await this.list({ householdId });
     const out = {};
-    for (const screen of [...view.screens, ...view.notSeenLately, ...view.retired]) {
+    for (const screen of [...view.screens, ...view.notSeenLately, ...view.retired, ...(view.unnamed || [])]) {
       out[screen.id] = screen.name;
       for (const alias of screen.aliases) out[alias] = screen.name;
     }
@@ -179,29 +180,70 @@ export class ScreenRegistryService {
    * A screen reporting in (POST /screens/announce, playback-state relays).
    * @returns {Promise<Object>} the screen view
    */
-  async announce({ householdId, id, name = null, room = null } = {}) {
+  async announce({ householdId, id, name = null, room = null, playing = false, previousId = null } = {}) {
     const at = this.#iso();
     const qualified = this.#qualify(id);
     const key = (screenId) => `${householdId ?? ''}|${screenId}`;
     const state = await this.#state(householdId);
     const target = resolveScreenId(state, qualified);
     const entry = state.screens[target];
+    const label = isPlaceholderBrowserName(name) ? null : name;
+    // A browser nobody named that never played is not a screen yet: every
+    // private window or test browser would otherwise become a lasting row.
+    if (!entry && target.startsWith('browser:') && !label && !playing) return null;
     const fresh = entry && Number.isFinite(Date.parse(entry.lastSeen))
       && this.#clock.now() - Date.parse(entry.lastSeen) < PERSIST_SEEN_EVERY_MS;
+    let resolved = target;
     // Browsers need a name before the fast path; fleet/added screens have one.
-    if (fresh && (entry.name || !target.startsWith('browser:'))) {
+    if (fresh && (entry.name || !target.startsWith('browser:')) && !(playing && !entry.playedAt)) {
       this.#seen.set(key(target), at);
-      return this.get({ householdId, id: target });
+    } else {
+      resolved = await this.#write(householdId, async () => {
+        const current = await this.#state(householdId);
+        const { state: next, id: touched, created } = touchScreen(current, qualified, { name: label, room, at, playing },
+          { configured: this.#configuredList(householdId) });
+        await this.#store.save(next, householdId);
+        this.#seen.delete(key(touched));
+        if (created) this.#logger.info?.('media.screens.registered', { householdId: householdId ?? null, id: touched, name: next.screens[touched]?.name ?? null });
+        return touched;
+      });
     }
-    return this.#write(householdId, async () => {
-      const current = await this.#state(householdId);
-      const { state: next, id: resolved, created } = touchScreen(current, qualified, { name, room, at },
-        { configured: this.#configuredList(householdId) });
-      await this.#store.save(next, householdId);
-      this.#seen.delete(key(resolved));
-      if (created) this.#logger.info?.('media.screens.registered', { householdId: householdId ?? null, id: resolved, name: next.screens[resolved]?.name ?? null });
-      return this.get({ householdId, id: resolved });
-    });
+    if (previousId) await this.#foldPrevious(householdId, previousId, resolved);
+    return this.get({ householdId, id: resolved });
+  }
+
+  /**
+   * The id this browser was known by before (the old `X-Daylight-Device`
+   * token): fold it — its spots and last-device marks — into the one it uses
+   * now, the same way a confirmed merge does. Only an id no other named
+   * screen holds is folded; a repeat is a no-op.
+   */
+  async #foldPrevious(householdId, previousId, intoId) {
+    let from;
+    try { from = this.#qualify(previousId); } catch { return; }
+    if (!from.startsWith('browser:') || from === intoId) return;
+    const state = await this.#state(householdId);
+    if (state.aliases?.[from]) return;
+    const existing = state.screens[from];
+    if (existing?.name && !isPlaceholderBrowserName(existing.name)) return;
+    try {
+      const outcome = await this.#write(householdId, async () => {
+        const current = await this.#state(householdId);
+        if (!current.screens[from]) current.screens[from] = { name: null, room: null, firstSeen: null, lastSeen: null };
+        const result = mergeScreens(current, from, intoId, { at: this.#iso(), configured: this.#configuredList(householdId) });
+        await this.#store.save(result.state, householdId);
+        return result;
+      });
+      const folds = await this.#foldSpots(from, outcome.into);
+      if (folds.length) {
+        await this.#write(householdId, async () => {
+          await this.#store.save(recordSpotFolds(await this.#state(householdId), from, folds), householdId);
+        });
+      }
+      this.#logger.info?.('media.screens.previous_folded', { householdId: householdId ?? null, from, into: outcome.into, movedSpots: folds.length });
+    } catch (error) {
+      this.#logger.warn?.('media.screens.previous_fold_failed', { from, into: intoId, error: error.message });
+    }
   }
 
   async #confirmRoutines(householdId, id, confirm, action) {

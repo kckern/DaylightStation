@@ -1,25 +1,28 @@
 // frontend/src/modules/Media/shell/SettingsMenu.jsx
-import React, { useEffect, useState } from 'react';
-import { Menu, ActionIcon, Button, Group, Modal, TextInput } from '@mantine/core';
-import { IconDeviceFloppy, IconEdit, IconSettings, IconRestore } from '@tabler/icons-react';
+// This device's settings: its name and room (through the household screen
+// registry, RQ-HOUSE-06), the way into screen admin (RQ-HOUSE-08) and
+// routine history (RQ-AUTO-05), and Start fresh.
+import React, { useCallback, useState } from 'react';
+import { Menu, ActionIcon } from '@mantine/core';
+import { IconDevices, IconEdit, IconHistory, IconSettings, IconRestore } from '@tabler/icons-react';
 import { useClientIdentity } from '../identity/useClientIdentity.js';
 import { useFleetContext } from '../fleet/useFleetContext.js';
+import { useNav } from './NavProvider.jsx';
+import { RenameScreenDialog } from '../house/RenameScreenDialog.jsx';
 
 export function SettingsMenu({ onResetSession }) {
   const identity = useClientIdentity();
-  const { devices } = useFleetContext();
+  const { devices, registry } = useFleetContext();
+  const { push } = useNav();
   const [renameOpen, setRenameOpen] = useState(false);
-  const [name, setName] = useState(identity.name);
-  const [room, setRoom] = useState(identity.room ?? '');
-  useEffect(() => { setName(identity.name); setRoom(identity.room ?? ''); }, [identity.name, identity.room]);
-  const save = () => {
-    identity.rename({
-      name,
-      room,
-      existingNames: devices.filter(device => device.id !== identity.deviceId).map(device => device.name),
-    });
-    setRenameOpen(false);
-  };
+  const closeRename = useCallback(() => setRenameOpen(false), []);
+  const nameOf = (id) => registry?.byId?.get?.(id)?.name
+    ?? devices.find((device) => device.id === id || device.screenId === id)?.name
+    ?? 'another screen';
+  const submit = (input) => identity.rename({
+    ...input,
+    existingNames: devices.filter(device => device.id !== identity.deviceId).map(device => device.name),
+  });
   return (
     <>
       <Menu position="bottom-end" shadow="md" withinPortal>
@@ -32,6 +35,12 @@ export function SettingsMenu({ onResetSession }) {
           <Menu.Item data-testid="settings-rename-device" leftSection={<IconEdit size={16} />} onClick={() => setRenameOpen(true)}>
             Rename this device
           </Menu.Item>
+          <Menu.Item data-testid="settings-manage-screens" leftSection={<IconDevices size={16} />} onClick={() => push('screens', {})}>
+            Screens in the house
+          </Menu.Item>
+          <Menu.Item data-testid="settings-routine-history" leftSection={<IconHistory size={16} />} onClick={() => push('routines', {})}>
+            Routine history
+          </Menu.Item>
           <Menu.Item
             data-testid="settings-reset-session"
             leftSection={<IconRestore size={16} />}
@@ -41,14 +50,16 @@ export function SettingsMenu({ onResetSession }) {
           </Menu.Item>
         </Menu.Dropdown>
       </Menu>
-      <Modal opened={renameOpen} onClose={() => setRenameOpen(false)} title="Rename this device" centered>
-        <TextInput label="Device name" value={name} onChange={event => setName(event.currentTarget.value)} autoFocus />
-        <TextInput label="Room" value={room} onChange={event => setRoom(event.currentTarget.value)} mt="sm" />
-        <Group justify="flex-end" mt="md">
-          <Button variant="default" onClick={() => setRenameOpen(false)}>Cancel</Button>
-          <Button leftSection={<IconDeviceFloppy size={16} />} disabled={!name.trim()} onClick={save}>Save device name</Button>
-        </Group>
-      </Modal>
+      <RenameScreenDialog
+        open={renameOpen}
+        onClose={closeRename}
+        title="Rename this device"
+        initialName={identity.name}
+        initialRoom={identity.room ?? ''}
+        onSubmit={submit}
+        nameOf={nameOf}
+        testid="settings-rename"
+      />
     </>
   );
 }

@@ -3,6 +3,8 @@ import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 
+// The handle's house menu (Mantine) is covered in house/HouseQuietControls.test.jsx.
+vi.mock('../house/HouseQuietControls.jsx', () => ({ HandleHouseMenu: () => null }));
 vi.mock('./NavProvider.jsx', () => ({ useNav: () => ({ push: vi.fn(), view: 'home' }) }));
 vi.mock('../logging/mediaLog.js', () => {
   const stub = new Proxy({}, { get: (t, k) => (t[k] ??= vi.fn()) });
