@@ -1009,14 +1009,16 @@ describe('the exercise run, per tier, in a real layout engine at 1280x800', () =
 
     const before = await probe.all('.action-staff__note');
     await probe.press(60);              // arms the run and grades note one
-    // HELD, not pressed-and-released: the ghost is real-time off the currently
-    // held set (SvgSequenceStaff's own contract — rule 4, "ghosts clear on
-    // key-up"), so it only exists while this key is actually down.
+    // 5f33842e6 ("keep Learn verdicts visible"): a free run is now JUDGED too
+    // (`data-judged="true"`), so the staff paints the RECORDED wrong pitch as a
+    // durable `.sequence-note-wrong-verdict` instead of the live held-key ghost
+    // (`.sequence-note-wrong-ghost`, which only a never-judged staff draws).
+    // Held here so the key is down when it is judged; durability is asserted below.
     await probe.hold([61]);             // a semitone under the expected 62
 
-    await page.waitForFunction(() => document.querySelector('.sequence-note-wrong-ghost') !== null);
+    await page.waitForFunction(() => document.querySelector('.sequence-note-wrong-verdict') !== null);
     const staff = await probe.one('.sequence-staff');
-    const ghost = await probe.one('.sequence-note-wrong-ghost');
+    const ghost = await probe.one('.sequence-note-wrong-verdict');
     expect(ghost.midi).toBe('61');
     expect(ghost.painted, `the wrong-note ghost is not painted: ${say(ghost)}`).toBe(true);
     expect(inside(ghost, staff), `the ghost ${say(ghost)} is drawn off the staff ${say(staff)}`).toBe(true);
@@ -1042,6 +1044,11 @@ describe('the exercise run, per tier, in a real layout engine at 1280x800', () =
     expect(Math.abs(cursor.cx - heads[1].cx),
       `the cursor ${say(cursor)} did not advance to notehead 1 ${say(heads[1])}`)
       .toBeLessThan(cursor.width);
+
+    // The verdict is a record, not a held-key afterglow: it stays on the staff
+    // after the wrong key is released.
+    await probe.hold([]);
+    expect(await probe.all('.sequence-note-wrong-verdict'), 'the recorded wrong note vanished on key-up').toHaveLength(1);
   });
 
   it('tier 2 ends on a percentage, where tier 0 ended on words', async () => {

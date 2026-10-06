@@ -46,6 +46,7 @@ import { resolveClickLead, logClickAnchored } from '../SheetMusic/clickLead.js';
 import { audioContext } from '../SheetMusic/click.js';
 import CountInOverlay from '../SheetMusic/CountInOverlay.jsx';
 import { exerciseCountInPlan, countdownPresentation, askPace, countInSentence } from '../SheetMusic/countIn.js';
+import Icon from '../../../ui/icons/Icon.jsx';
 import './Exercises.scss';
 
 const NO_FEEDBACK_NOTES = new Map();
@@ -1493,8 +1494,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
           <span className="is-right"><b aria-hidden="true">✓</b> Right {liveTally.right}</span>
           <span className="is-wrong"><b aria-hidden="true">×</b> Wrong {liveTally.wrong}</span>
           {timed && <>
-            <span className="is-timing"><b aria-hidden="true">◀</b> Early {liveTally.early}</span>
-            <span className="is-timing"><b aria-hidden="true">▶</b> Late {liveTally.late}</span>
+            <span className="is-timing"><b aria-hidden="true"><Icon name="previous" /></b> Early {liveTally.early}</span>
+            <span className="is-timing"><b aria-hidden="true"><Icon name="next" /></b> Late {liveTally.late}</span>
             <span className="is-missed"><b aria-hidden="true">○</b> Missed {liveTally.missed}</span>
           </>}
         </div>}
