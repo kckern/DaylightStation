@@ -57,3 +57,8 @@
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+
+// The menu renders in a portal, outside .pf-controls: 44 px targets here.
+.pf-track-menu .mantine-Menu-item {
+  min-height: 44px;
+}

@@ -97,6 +97,51 @@ describe('Show briefly (PLAY.8a)', () => {
   });
 });
 
+describe('Stop and sleep under a brief — the programme is never resurrected', () => {
+  it('a Stop supersedes the brief: nothing returns', async () => {
+    const { features, ports } = setup();
+    features.beginBrief({ kind: 'camera', cameraId: 'a', seconds: 30 });
+    features.onPlaybackStopped('stop');
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(features.toPublished().brief).toBeNull();
+    expect(ports.resumePlayback).not.toHaveBeenCalled();
+    expect(ports.restoreSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('a time-out after the programme was stopped returns nothing, but a person closing it still asks for it back', async () => {
+    const { features, ports, setSnapshot } = setup();
+    features.beginBrief({ kind: 'camera', cameraId: 'a', seconds: 30 });
+    setSnapshot({ state: 'ready', currentItem: { contentId: 'plex:1', queueItemId: 'q1' }, queue: { currentIndex: 0, items: [{ contentId: 'plex:1', queueItemId: 'q1' }] } });
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(ports.resumePlayback).not.toHaveBeenCalled();
+    expect(ports.restoreSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('stop also stops music behind unless asked to keep it; display sleep ends a brief', () => {
+    const { features, ports } = setup();
+    ports.stopMusic = vi.fn();
+    features.setMusicState({ contentId: 'plex:5', state: 'playing' });
+    features.onPlaybackStopped('stop', { stopMusic: false });
+    expect(ports.stopMusic).not.toHaveBeenCalled();
+    features.onPlaybackStopped('stop');
+    expect(ports.stopMusic).toHaveBeenCalledTimes(1);
+  });
+
+  it('the sleep timer\'s stop reaches the extension', async () => {
+    const { features, ports } = setup();
+    ports.stopMusic = vi.fn();
+    features.setMusicState({ contentId: 'plex:5', state: 'playing' });
+    features.beginBrief({ kind: 'camera', cameraId: 'a', seconds: 30 });
+    const controls = createScreenSessionControls({ ownerId: 'tv', ports: { getSnapshot: () => playing(), stopPlayback: vi.fn(), setFade: vi.fn() } });
+    controls.attachExtension(features);
+    await controls.handleSession('sleep-timer', { minutes: 0.01 });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(features.toPublished().brief).toBeNull();
+    expect(ports.stopMusic).toHaveBeenCalled();
+    controls.dispose();
+  });
+});
+
 describe('tracks and music behind', () => {
   it('forwards a track choice to the playback owner', async () => {
     const { features, ports } = setup();

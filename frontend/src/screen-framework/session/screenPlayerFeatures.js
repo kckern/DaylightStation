@@ -116,11 +116,19 @@ export function createScreenPlayerFeatures({
     if (ended.timer) clearTimer(ended.timer);
     notify();
     let returned = 'nothing';
-    if (ended.returnTo) {
-      const live = currentOf(snapshot());
+    const liveSnap = snapshot();
+    // The programme was stopped (or cleared) while the brief was up: a time-out
+    // or the clip's end must not bring it back to life. Only a person closing
+    // the brief asks for the programme back.
+    const personClosed = reason === 'closed' || reason === 'remote-close';
+    const programmeLive = !!currentOf(liveSnap) && ACTIVE.has(liveSnap?.state);
+    if (ended.returnTo && (programmeLive || personClosed)) {
+      const live = currentOf(liveSnap);
       const sameItem = live && live.contentId === ended.returnTo.contentId
         && (live.queueItemId ?? null) === (ended.returnTo.queueItemId ?? null);
-      if (sameItem) {
+      if (sameItem && !programmeLive) {
+        returned = 'nothing';
+      } else if (sameItem) {
         if (ended.wasPlaying) {
           try { ports.resumePlayback?.(); } catch (err) { logger().warn('brief.resume-failed', { error: String(err?.message ?? err) }); }
         }
@@ -145,6 +153,18 @@ export function createScreenPlayerFeatures({
     if (ended.timer) clearTimer(ended.timer);
     logger().info('brief.superseded', { ownerId, reason, kind: ended.kind, returnTo: ended.returnTo?.contentId ?? null });
     notify();
+  }
+
+  /**
+   * Playback was stopped here (a Stop, the sleep timer, the screen going to
+   * sleep): a brief that was up ends and nothing returns — the programme
+   * must not be resurrected — and music behind stops with it when asked.
+   */
+  function onPlaybackStopped(reason, { stopMusic = true } = {}) {
+    supersedeBrief(reason);
+    if (stopMusic && musicBehind) {
+      try { ports.stopMusic?.(); } catch (err) { logger().warn('music.stop-failed', { error: String(err?.message ?? err) }); }
+    }
   }
 
   // --- Music behind ---------------------------------------------------------
@@ -201,6 +221,7 @@ export function createScreenPlayerFeatures({
     beginBrief,
     endBrief,
     supersedeBrief,
+    onPlaybackStopped,
     isBriefActive: () => !!brief,
     getBrief: () => (brief ? toPublished().brief : null),
     setMusicState,

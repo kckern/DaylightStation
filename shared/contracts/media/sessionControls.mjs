@@ -22,7 +22,7 @@ export const SESSION_ACTIONS = Object.freeze([
 export const END_OF_QUEUE_MODES = Object.freeze(['stop', 'repeat', 'similar']);
 export const SLEEP_TIMER_AT_END = Object.freeze(['item']);
 export const SLEEP_TIMER_MAX_MINUTES = 720;
-export const SCREEN_NOTE_KINDS = Object.freeze(['paused', 'stopped', 'replaced', 'moved']);
+export const SCREEN_NOTE_KINDS = Object.freeze(['paused', 'stopped', 'replaced', 'moved', 'brief']);
 export const END_OF_QUEUE_STATUS_CODES = Object.freeze(['NOTHING_SIMILAR', 'SIMILAR_ADDED', 'STOPPED_AFTER_CURRENT']);
 // `queued`: the screen took the content as a queue add (Add only) — reached, not started.
 export const START_PHASES = Object.freeze(['starting', 'delivered', 'queued', 'started', 'failed']);
