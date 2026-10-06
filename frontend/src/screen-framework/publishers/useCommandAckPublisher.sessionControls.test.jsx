@@ -47,4 +47,21 @@ describe('useCommandAckPublisher — session controls', () => {
     act(() => bus.emit('media:session-control-applied', { commandId: 's1' }));
     expect(acks()[0]).toMatchObject({ ok: true, commandId: 's1' });
   });
+
+  it('an adopt-snapshot is NOT acked at dispatch; success acks once on the applied outcome', () => {
+    renderHook(() => useCommandAckPublisher({ deviceId: 'tv-1', actionBus: bus }));
+    act(() => bus.emit('media:adopt-snapshot', { commandId: 'm1:adopt', snapshot: {} }));
+    expect(acks()).toHaveLength(0);
+    act(() => bus.emit('media:session-control-applied', { commandId: 'm1:adopt' }));
+    expect(acks()).toHaveLength(1);
+    expect(acks()[0]).toMatchObject({ ok: true, commandId: 'm1:adopt' });
+  });
+
+  it('a failed adopt reaches the mover as ok:false with the code (not swallowed by an optimistic ack)', () => {
+    renderHook(() => useCommandAckPublisher({ deviceId: 'tv-1', actionBus: bus }));
+    act(() => bus.emit('media:adopt-snapshot', { commandId: 'm2:adopt', snapshot: {} }));
+    act(() => bus.emit('command-handler-error', { commandId: 'm2:adopt', code: 'PLAYBACK_OWNER_UNAVAILABLE', error: 'no player' }));
+    expect(acks()).toHaveLength(1);
+    expect(acks()[0]).toMatchObject({ ok: false, commandId: 'm2:adopt', code: 'PLAYBACK_OWNER_UNAVAILABLE' });
+  });
 });
