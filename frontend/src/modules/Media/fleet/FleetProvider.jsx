@@ -37,7 +37,7 @@ function playbackSnapshot(message) {
 export function FleetProvider({ children }) {
   const { devices, loading, error, refresh } = useDevices();
   const [connected, setConnected] = useState(true);
-  const { clientId, displayName } = useClientIdentity();
+  const { clientId, displayName, markPlaying } = useClientIdentity();
   const storeRef = useRef(null);
   if (!storeRef.current) storeRef.current = createFleetStore();
   const store = storeRef.current;
@@ -53,6 +53,11 @@ export function FleetProvider({ children }) {
     lastNameRef.current = displayName;
     refreshRegistry();
   }, [displayName, refreshRegistry]);
+  // A browser that actually plays becomes a registered screen even if nobody named it.
+  const localState = browserEntries.get(browserDeviceId(clientId))?.snapshot?.state;
+  useEffect(() => {
+    if (localState === 'playing' || localState === 'paused') markPlaying?.();
+  }, [localState, markPlaying]);
   // RQ-STEER-13: the screens a Pause all paused, so Resume all brings back
   // exactly those. Shared by the house view and the handle.
   const [resumable, setResumable] = useState(null);

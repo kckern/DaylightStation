@@ -16,10 +16,17 @@ describe('adoptBrowserDeviceId', () => {
     expect(getDeviceId()).toBe('browser:11111111-2222-4333-8444-555555555555');
   });
 
+  it('reports the id it replaced so spots can follow, and nothing when unchanged', () => {
+    const before = getDeviceId();
+    expect(adoptBrowserDeviceId('client-1')).toBe(before);
+    expect(adoptBrowserDeviceId('client-1')).toBe(null);
+  });
+
   it('never overrides a named fleet screen, and ignores an empty token', () => {
     window.__DAYLIGHT_DEVICE_ID = 'office-tv';
-    adoptBrowserDeviceId('abc');
+    expect(adoptBrowserDeviceId('abc')).toBe(null);
     expect(getDeviceId()).toBe('fleet:office-tv');
+    expect(localStorage.getItem('ds_device_id')).toBe(null);
     delete window.__DAYLIGHT_DEVICE_ID;
     _resetDeviceIdForTests();
     const before = getDeviceId();

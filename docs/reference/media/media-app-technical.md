@@ -636,9 +636,9 @@ null when unknown (browsers, or no heartbeat since the backend started).
 
 | Route | Body / query | Response |
 |---|---|---|
-| `GET /screens` | — | `{ screens: [Screen], notSeenLately: [Screen], retired: [Screen] }` — by name; `notSeenLately` = silent > **30 days** *(default)* and not online |
+| `GET /screens` | — | `{ screens: [Screen], notSeenLately: [Screen], retired: [Screen], unnamed: [Screen] }` — by name; `unnamed` = placeholder-named browsers that never played (opened the app only), kept out of `screens`; each Screen has `aliasNames` (`{alias: name it had}`) and `lastPlayed`; `notSeenLately` = silent > **30 days** *(default)* and not online |
 | `POST /screens` | `{ name, room? }` | **201** `{ screen }` (`screen:<slug>`) |
-| `POST /screens/announce` | `{ id?, name?, room? }` — `id` defaults to `X-Daylight-Device` | `{ screen }` |
+| `POST /screens/announce` | `{ id?, name?, room?, playing?, previousId? }` — `id` defaults to `X-Daylight-Device`. A browser nobody named that has not played is **not registered** (`screen: null`); a made-up "Browser 1a2b3c4d" name is ignored. `playing: true` registers it (the playback relay sets it). `previousId` (the browser's old header token) is folded into `id` like a confirmed merge, spots included; a repeat is a no-op, and an id another *named* screen holds is never folded | `{ screen }` |
 | `GET /screens/:id` | — | `{ screen, routines }` (**404** unknown) |
 | `PATCH /screens/:id` | `{ name?, room?, onCollision?: "reject"\|"suffix", confirm? }` (`room: null` clears an override) | `{ screen, routines }` |
 | `POST /screens/:id/merge` | `{ into, confirm }` — without `confirm: true`, **409** `CONFIRM_REQUIRED` with `routines` targeting either screen | `{ screen, movedSpots }` |

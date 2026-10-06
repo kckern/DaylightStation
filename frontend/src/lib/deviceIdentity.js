@@ -9,7 +9,10 @@
  * in a backend line said which client it was about.
  *
  * This mints a stable per-browser id and `lib/api.mjs` sends it as
- * `X-Daylight-Device`. There was no existing device id to reuse: the fleet name
+ * `X-Daylight-Device`. (The Media app later replaces the minted token with its
+ * own clientId through `adoptBrowserDeviceId`, so the registry, house view and
+ * request header all name this browser the same way; a fleet screen is never
+ * replaced.) There was no existing device id to reuse: the fleet name
  * (`wsConfig.guardrails.device`) only exists inside a rendered screen, and
  * `window.__DAYLIGHT_DEVICE_ID` is read in one place and set in none.
  *
@@ -83,15 +86,21 @@ export function getDeviceId() {
  * (`browser:<clientId>`). The backend reads "which screen asked" from this
  * header (a load's origin, `POST /media/screens/announce`, suggestions), so the
  * two must be one id or "Started by" can't name the device a person used.
- * A named fleet screen keeps its `fleet:` id.
+ * A named fleet screen keeps its `fleet:` id (nothing is adopted).
  *
  * @param {string} token - the browser's clientId
+ * @returns {string|null} the previous `browser:<token>` id when it changed, else null
  */
 export function adoptBrowserDeviceId(token) {
-  if (typeof token !== 'string' || !token.trim()) return;
+  if (typeof token !== 'string' || !token.trim()) return null;
+  // A named fleet screen keeps its `fleet:` id; nothing to adopt.
+  if (typeof window !== 'undefined' && typeof window.__DAYLIGHT_DEVICE_ID === 'string' && window.__DAYLIGHT_DEVICE_ID) return null;
   const value = token.trim();
+  const previous = getDeviceId();
   inMemoryId = `browser:${value}`;
   try { window.localStorage.setItem(STORAGE_KEY, value); } catch { /* in-memory id still holds for this page */ }
+  // The id this browser used until now, so its spots can follow it (null when unchanged).
+  return previous !== inMemoryId && previous.startsWith('browser:') ? previous : null;
 }
 
 /** Test seam: drop the memoised value so a fresh environment can be exercised. */

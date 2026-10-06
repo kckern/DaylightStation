@@ -23,6 +23,9 @@ export const ClientIdentityContext = createContext(null);
 // RQ-RELY-12: set once the first-use moment has been answered (named or
 // skipped) on this device.
 export const FIRST_USE_KEY = 'media-app.first-use-done';
+// The header token this browser used before it adopted its clientId: sent on
+// announce until the registry has folded it (its spots follow the new id).
+export const PREVIOUS_ID_KEY = 'media-app.previous-device-id';
 
 function uuidV4() {
   try {
@@ -73,7 +76,8 @@ export function ClientIdentityProvider({ children, api = defaultHouseApi }) {
     // One id per browser: every request now names this browser the way the
     // screen registry and the house view do (set before any child effect
     // issues a request).
-    adoptBrowserDeviceId(created.clientId);
+    const previous = adoptBrowserDeviceId(created.clientId);
+    if (previous) { try { storage()?.setItem(PREVIOUS_ID_KEY, previous); } catch { /* storage refused */ } }
     return created;
   });
   const [firstUse, setFirstUse] = useState(() => readFirstUse(identity));
@@ -82,13 +86,22 @@ export function ClientIdentityProvider({ children, api = defaultHouseApi }) {
   const identityRef = useRef(identity);
   identityRef.current = identity;
 
-  // Announce on start: registers this browser under its name, refreshes its
-  // lastSeen, and brings back the name the household knows it by.
+  // Announce once this browser is a screen worth listing: named by a person,
+  // or playing. An unnamed browser that merely opened the app is not
+  // registered (every private window would become a lasting row), and the
+  // made-up "Browser 1a2b…" name is never sent — the registry synthesizes it.
+  const [playing, setPlaying] = useState(false);
+  const markPlaying = useCallback(() => setPlaying(true), []);
+  const named = !isPlaceholderName(identity.name);
   useEffect(() => {
+    if (!named && !playing) return undefined;
     let cancelled = false;
     const { deviceId, name, room } = identityRef.current;
-    api.announceScreen({ id: deviceId, name, room })
+    let previousId = null;
+    try { previousId = storage()?.getItem(PREVIOUS_ID_KEY) || null; } catch { /* storage refused */ }
+    api.announceScreen({ id: deviceId, name: isPlaceholderName(name) ? undefined : name, room, playing, previousId })
       .then((res) => {
+        if (previousId) { try { storage()?.removeItem(PREVIOUS_ID_KEY); } catch { /* storage refused */ } }
         if (cancelled || !res?.screen) return;
         houseLog.screenAnnounced({ deviceId, name: res.screen.name, adopted: res.screen.name !== name });
         setRegistered(res.screen);
@@ -98,7 +111,7 @@ export function ClientIdentityProvider({ children, api = defaultHouseApi }) {
         if (!cancelled) houseLog.announceFailed({ deviceId, status: error?.status ?? null, code: error?.code ?? null, error: error?.message });
       });
     return () => { cancelled = true; };
-  }, [api, identity.deviceId]);
+  }, [api, identity.deviceId, named, playing]);
 
   /**
    * Rename this browser (and/or set its room). Resolves to
@@ -119,7 +132,7 @@ export function ClientIdentityProvider({ children, api = defaultHouseApi }) {
         const send = () => api.renameScreen(id, { name: nextName, confirm, onCollision });
         const res = await send().catch(async (error) => {
           if (error?.code !== 'SCREEN_NOT_FOUND') throw error;
-          await api.announceScreen({ id, name: current.name, room: current.room });
+          await api.announceScreen({ id, name: isPlaceholderName(current.name) ? undefined : current.name, room: current.room, playing: true });
           return send();
         });
         screen = res?.screen ?? null;
@@ -168,9 +181,10 @@ export function ClientIdentityProvider({ children, api = defaultHouseApi }) {
     controlReady: registration.ready,
     registered,
     rename,
+    markPlaying,
     firstUse,
     completeFirstUse,
-  }), [identity, registration.ready, registered, rename, firstUse, completeFirstUse]);
+  }), [identity, registration.ready, registered, rename, markPlaying, firstUse, completeFirstUse]);
 
   return (
     <ClientIdentityContext.Provider value={value}>

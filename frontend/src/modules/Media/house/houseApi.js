@@ -72,8 +72,10 @@ const screen = (id) => media(`screens/${encodeURIComponent(id)}`);
 
 export const houseApi = {
   listScreens: () => call(media('screens')),
-  announceScreen: ({ id, name, room } = {}) => call(media('screens/announce'), {
-    method: 'POST', body: { id, ...(name ? { name } : {}), ...(room ? { room } : {}) },
+  announceScreen: ({ id, name, room, playing, previousId } = {}) => call(media('screens/announce'), {
+    method: 'POST',
+    body: { id, ...(name ? { name } : {}), ...(room ? { room } : {}), ...(playing ? { playing: true } : {}),
+      ...(previousId ? { previousId } : {}) },
   }),
   getScreen: (id) => call(screen(id)),
   renameScreen: (id, { name, onCollision, confirm } = {}) => call(screen(id), {
