@@ -1965,16 +1965,25 @@ export class PlexAdapter {
       const downmixAudio = needsAudioDownmix(playableItem.metadata);
       if (downmixAudio) this.logger.info?.('plex.loadMediaUrl.audio-downmix', { ratingKey });
       // Video: use decision API to authorize session
-      const decisionResult = await this.requestTranscodeDecision(ratingKey, {
-        maxVideoBitrate,
-        maxResolution: resolvedMaxResolution,
-        session,
-        startOffset,
-        allowDirectPlay,
-        allowDirectStream,
-        downmixAudio,
-        burnSubtitles
-      });
+      let decisionResult;
+      try {
+        decisionResult = await this.requestTranscodeDecision(ratingKey, {
+          maxVideoBitrate,
+          maxResolution: resolvedMaxResolution,
+          session,
+          startOffset,
+          allowDirectPlay,
+          allowDirectStream,
+          downmixAudio,
+          burnSubtitles
+        });
+      } finally {
+        // The part's selection is per Plex ACCOUNT. The decision binds the
+        // chosen streams to this session (verified against the live server),
+        // so the account's previous selection goes straight back — before
+        // any other screen or Plex app can start on it.
+        await selection?.restore?.();
+      }
 
       if (!decisionResult.success) {
         this.logger.warn?.('plex.loadMediaUrl.decisionFailed', {
@@ -2059,9 +2068,32 @@ export class PlexAdapter {
       ...(audioStreamId != null ? { audioStreamId } : {}),
       ...(subtitleStreamId != null ? { subtitleStreamId } : {}),
     };
+    // What the account has selected now, to put back (subtitles: none → '0').
+    const previous = {};
+    if (audioStreamId != null) {
+      const cur = streams.find((s) => s.streamType === 2 && s.selected);
+      if (cur) previous.audioStreamId = String(cur.id);
+    }
+    if (subtitleStreamId != null) {
+      const cur = streams.find((s) => s.streamType === 3 && s.selected);
+      previous.subtitleStreamId = cur ? String(cur.id) : '0';
+    }
     try {
       await this.client.selectPartStreams(part.id, selection);
       this.logger.info?.('plex.loadMediaUrl.tracks-selected', { ratingKey, partId: part.id, ...selection });
+      let restored = false;
+      selection.restore = async () => {
+        if (restored || Object.keys(previous).length === 0) return;
+        restored = true;
+        try {
+          await this.client.selectPartStreams(part.id, previous);
+          this.logger.info?.('plex.loadMediaUrl.tracks-restored', { ratingKey, partId: part.id, ...previous });
+        } catch (error) {
+          this.logger.warn?.('plex.loadMediaUrl.tracks-restore-failed', {
+            ratingKey, partId: part.id, ...previous, status: error?.response?.status ?? error?.status ?? null, error: error?.message,
+          });
+        }
+      };
       return selection;
     } catch (error) {
       this.logger.warn?.('plex.loadMediaUrl.tracks-select-failed', {
