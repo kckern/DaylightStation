@@ -703,7 +703,11 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     handleRestoreSnapshot({
       snapshot: payload.snapshot, autoplay: payload.autoplay !== false, reason: 'adopt', requestId: payload.commandId,
       onResult: (result) => {
-        if (result?.ok !== false || !payload.commandId) return;
+        if (!payload.commandId) return;
+        if (result?.ok !== false) {
+          getActionBus().emit('media:session-control-applied', { commandId: payload.commandId });
+          return;
+        }
         getActionBus().emit('command-handler-error', {
           commandId: payload.commandId,
           code: result.code ?? 'ADOPT_FAILED',

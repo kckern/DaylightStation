@@ -90,7 +90,8 @@ describe('SessionControlsPanel — this device', () => {
     fireEvent.click(screen.getByTestId('sleep-timer-button'));
     fireEvent.click(await screen.findByTestId('sleep-option-30'));
     await waitFor(() => expect(screen.getByTestId('sleep-timer-left').textContent).toMatch(/^Sleep in (30:00|29:5\d)$/));
-    expect(screen.getByTestId('mini-sleep').getAttribute('aria-label')).toMatch(/^Sleep timer: (30:00|29:5\d) left$/);
+    expect(screen.getByTestId('mini-player-open-nowplaying').getAttribute('aria-label')).toMatch(/\. Sleep timer: (30:00|29:5\d) left$/);
+    expect(screen.getByTestId('mini-sleep').getAttribute('aria-hidden')).toBe('true');
     expect(screen.getByTestId('sleep-timer-button').getAttribute('aria-pressed')).toBe('true');
   });
 

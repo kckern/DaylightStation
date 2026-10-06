@@ -14,13 +14,15 @@ function logger() {
  * Events emitted by `useScreenCommands` that carry a `commandId` correlator.
  * We listen for these on the ActionBus and ack them as "received by handler".
  */
+// `media:adopt-snapshot` is deliberately absent: a move is acked by its outcome
+// (media:session-control-applied / command-handler-error from ScreenActionHandler),
+// so a failed adopt reaches the mover at once instead of after the 45 s window.
 const ACKED_COMMAND_EVENTS = Object.freeze([
   'media:playback',
   'media:seek-abs',
   'media:seek-rel',
   'media:queue-op',
   'media:config-set',
-  'media:adopt-snapshot',
   'escape',
   'display:sleep',
   'display:wake',

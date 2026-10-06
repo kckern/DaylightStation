@@ -267,6 +267,7 @@ export function ScreenSessionSurfaces({ controls }) {
   useEffect(() => {
     if (!countdown) return undefined;
     return getActionBus().capture(['escape'], () => {
+      cancelledRef.current = true;
       controls.handleSession('cancel-countdown', {});
       return true;
     });
@@ -274,14 +275,38 @@ export function ScreenSessionSurfaces({ controls }) {
 
   const remaining = countdown ? Math.max(0, Math.ceil((Date.parse(countdown.endsAt) - now) / 1000)) : 0;
 
+  // The countdown is announced ONCE when it starts and once when it is
+  // cancelled; the ticking seconds are decoration for assistive tech.
+  const countdownKey = countdown?.endsAt ?? null;
+  const cancelledRef = useRef(false);
+  const startSecondsRef = useRef(0);
+  const [announcement, setAnnouncement] = React.useState('');
+  const countdownTitle = countdown ? (countdown.next.title ?? countdown.next.contentId) : null;
+  if (countdownKey && startSecondsRef.current === 0) startSecondsRef.current = remaining;
+  useEffect(() => {
+    if (countdownKey) {
+      cancelledRef.current = false;
+      setAnnouncement(`Next episode, ${countdownTitle}, starts in ${startSecondsRef.current} seconds. Back cancels.`);
+      return;
+    }
+    startSecondsRef.current = 0;
+    setAnnouncement(cancelledRef.current ? 'Next episode countdown cancelled' : '');
+    cancelledRef.current = false;
+  }, [countdownKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cancelCountdown = () => { cancelledRef.current = true; controls.handleSession('cancel-countdown', {}); };
+
   return (
     <>
+      <div className="screen-session-countdown-announce" role="status" aria-live="polite" data-testid="screen-next-countdown-announce"
+        style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>
+        {announcement}
+      </div>
       {countdown && (
-        <div className="screen-session-countdown" role="status" aria-live="polite" data-testid="screen-next-countdown">
-          <div className="screen-session-countdown__label">Next episode in <span data-testid="screen-next-countdown-seconds">{remaining}</span></div>
+        <div className="screen-session-countdown" aria-live="off" data-testid="screen-next-countdown">
+          <div className="screen-session-countdown__label">Next episode in <span aria-hidden="true" data-testid="screen-next-countdown-seconds">{remaining}</span></div>
           <div className="screen-session-countdown__title">{countdown.next.title ?? countdown.next.contentId}</div>
           <div className="screen-session-countdown__actions">
-            <button type="button" data-testid="screen-next-countdown-cancel" onClick={() => controls.handleSession('cancel-countdown', {})}>Cancel</button>
+            <button type="button" data-testid="screen-next-countdown-cancel" onClick={cancelCountdown}>Cancel</button>
             <button type="button" data-testid="screen-next-countdown-start" onClick={() => controls.handleSession('start-next-now', {})}>Play now</button>
           </div>
         </div>
