@@ -334,7 +334,7 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   `onFailed` consumer replaces the result screen or records it while the run
  *   retains its standard feedback and piano-driven retry.
  */
-export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', failurePresentation = 'host', clickGain, onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
@@ -623,6 +623,18 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     useCallback(() => runtime?.getStoreSnapshot() || EMPTY_SNAPSHOT, [runtime]),
     () => EMPTY_SNAPSHOT,
   );
+  const pauseStateRef = useRef(false);
+  const pauseRuntimeRef = useRef(null);
+  useEffect(() => {
+    if (pauseRuntimeRef.current !== runtime) {
+      pauseRuntimeRef.current = runtime;
+      pauseStateRef.current = false;
+    }
+    if (!runtime || pauseStateRef.current === paused) return;
+    pauseStateRef.current = paused;
+    if (paused) runtime.pause();
+    else runtime.resume({ delayMs: resumeDelayMs });
+  }, [paused, resumeDelayMs, runtime]);
 
   const timed = snapshot.matcher === 'timed';
   /**
@@ -640,12 +652,14 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   const awaitingTimeline = timed && snapshot.status === 'completed' && !clockPosition.timelineDone;
   const timeline = awaitingTimeline ? { ...clockPosition, phase: 'running' } : clockPosition;
   const resultReady = !awaitingTimeline;
+  const resuming = snapshot.status === 'running'
+    && Number(snapshot.resumingUntil) > Math.max(clockNow, Date.now());
   useEffect(() => {
-    if (!timed || (snapshot.status !== 'running' && !awaitingTimeline)) return undefined;
+    if ((!timed || (snapshot.status !== 'running' && !awaitingTimeline)) && !resuming) return undefined;
     setClockNow(Date.now());
     const timer = globalThis.setInterval(() => setClockNow(Date.now()), 50);
     return () => globalThis.clearInterval(timer);
-  }, [runtime, timed, snapshot.status, awaitingTimeline]);
+  }, [runtime, timed, snapshot.status, awaitingTimeline, resuming]);
   const countingDown = timeline?.phase === 'countdown';
   const feedbackNotes = timed
     ? timeline.phase !== 'running' ? NO_FEEDBACK_NOTES
@@ -790,7 +804,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
    * over: twenty seconds is long enough for the attempt underneath to have
    * finished, been retried, or been replaced.
    */
-  const stallable = challenge && snapshot.mode === 'free'
+  const stallable = !snapshot.paused && challenge && snapshot.mode === 'free'
     && snapshot.status === 'running' && snapshot.musicalInput === true;
   const hintPolicy = askTuple?.hints ?? 'none';
   const hintable = stallable && hintPolicy === 'after-stall';
@@ -1004,8 +1018,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     anchorMs: clickAnchorMs,
     gain: clickGain,
     leadMs: clickLead.leadMs,
-    enabled: ((snapshot.status === 'running' || awaitingTimeline) && ['metronome', 'cued'].includes(snapshot.mode))
-      || (prePulse && !prePulseStopped),
+    enabled: !snapshot.paused && (((snapshot.status === 'running' || awaitingTimeline) && ['metronome', 'cued'].includes(snapshot.mode))
+      || (prePulse && !prePulseStopped)),
     // The tempo the attempt is GRADED at, which is not always `clickBpm`: a
     // cued rung carries no `gates.pace`, so a tempo-less single-event instance
     // (graded at the engine's default) would leave this NaN — the hook then
@@ -1144,7 +1158,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       // A completed assessment can be waiting for the musical timeline. Exit
       // preserves that evidence without treating exit as a passed game gate.
       persist(active.result, active.status, { keepalive: true });
-    } else if (active?.status === 'running' && active.musicalInput && !persistedRef.current) {
+    } else if (persistInterrupted && active?.status === 'running' && active.musicalInput && !persistedRef.current) {
       const interrupted = runtimeRef.current.abort();
       persist(interrupted.result, 'aborted', { keepalive: true });
     }
@@ -1203,7 +1217,14 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   // status line — a run that has ended, still saying "follow the highlighted
   // notes" at a piano nothing is listening to.
   const result = resultReady && JUDGED_STATUSES.has(snapshot.result?.status) ? snapshot.result : null;
-  const phase = snapshot.status === 'prepared' ? 'ready' : resultReady && JUDGED_STATUSES.has(snapshot.status) ? 'done' : countingDown ? 'countdown' : 'running';
+  const phase = snapshot.paused ? 'paused'
+    : resuming ? 'resume-countdown'
+      : snapshot.status === 'prepared' ? 'ready'
+        : resultReady && JUDGED_STATUSES.has(snapshot.status) ? 'done'
+          : countingDown ? 'countdown' : 'running';
+  const resumeRemaining = resuming
+    ? Math.max(1, Math.ceil((snapshot.resumingUntil - Math.max(clockNow, Date.now())) / Math.max(1, resumeDelayMs / 2)))
+    : null;
   const beatPulse = timed && phase === 'running' && timeline?.phase === 'running' && !timeline.timelineDone
     ? timeline.beat : null;
   const beatInMeasure = beatPulse == null ? null : timeline.beatInMeasure;
@@ -1349,6 +1370,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   const standingInstruction = bare ? null : (
     <>
       {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{!runtime ? 'Getting the music ready…' : snapshot.mode === 'cued' ? countInSentence(countIn?.clicks ?? beatsPerMeasure, cuedPace) : 'Play the first note to begin.'}</p>{!connected && <span>Waiting for the piano…</span>}</div>}
+      {phase === 'paused' && <p className="piano-exercise-run__status" role="status">Paused. Your place is saved.</p>}
+      {phase === 'resume-countdown' && <p className="piano-exercise-run__status" role="status">Get ready…</p>}
       {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : huntSentence ?? (isWrong ? 'That note was not expected — keep going.' : stage === 'recall' ? 'Play the named music from memory.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.')}{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
     </>
   );
@@ -1557,6 +1580,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
         </span>}
         <CountInOverlay active={(countingDown && countInBeat != null) || playHandoff}
           remaining={countdown?.remaining} progress={countdown?.progress} play={countdown?.play} />
+        <CountInOverlay active={resuming} remaining={resumeRemaining} progress={null} play={false} />
       </div>
       {/* No button: the piano starts the run. A cued ask arms on any key and
           counts at most four pulses; every other ask arms on the note it is asking for. */}

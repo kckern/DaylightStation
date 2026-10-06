@@ -2259,6 +2259,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         feedback={learnPlan.settings.feedback}
         onRecord={recordLearnRep}
         onClose={closeLearnLab}
+        onChangePractice={(choice) => { setLearnChoice(choice); setLearnLaunchpadView('custom'); setLearnLaunch(null); setLearnResult(null); updateLearnSelection(selectedPassage.id); }}
         onRungPassed={advanceLearnRung}
         onMastered={masterLearnSegment}
         onFinished={(result) => setLearnResult({ ...result, source: activeLearnLaunch.source })}

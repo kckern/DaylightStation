@@ -122,6 +122,30 @@ describe('LearnLab', () => {
     expect(exercise.props.practiceRequirement.rubric.criteria).toEqual({ completeness: 1, cleanliness: 0.8 });
   });
 
+  it('keeps Pause, Start over, and Change practice visible and controls the current take only', () => {
+    const onChangePractice = vi.fn();
+    render(<LearnLab {...base} onChangePractice={onChangePractice} />);
+    const firstKey = exercise.props.controlKey;
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+    expect(screen.getByRole('button', { name: 'Resume' })).toBeInTheDocument();
+    expect(exercise.props.paused).toBe(true);
+    expect(exercise.props.persistInterrupted).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
+    expect(exercise.props.controlKey).not.toBe(firstKey);
+    expect(screen.getByText('Set 1 of 1 · Rep 1 of 1')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Change practice' }));
+    expect(onChangePractice).toHaveBeenCalledWith(expect.objectContaining({ parts: ['rh'], mode: 'free' }));
+  });
+
+  it('allows both metronome modes to change tempo by restarting only the current take', () => {
+    render(<LearnLab {...base} rung={{ ...rung, mode: 'metronome', tempoPercent: 60 }} tempo={{ minimumPercent: 15, maximumPercent: 100, tempoMap: [{ onsetQuarter: 0, bpm: 100 }] }} />);
+    const firstKey = exercise.props.controlKey;
+    fireEvent.click(screen.getByRole('button', { name: /Choose tempo: Steady/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Extra slow/ }));
+    expect(exercise.props.controlKey).not.toBe(firstKey);
+    expect(exercise.props.traceContext).toMatchObject({ tempoPercent: 15, tempoStage: 'extra-slow' });
+  });
+
   it('requires both hands at the same onset on the together rung', () => {
     render(<LearnLab {...base} rung={{ ...rung, id: 'together', effectiveParts: ['rh', 'lh'] }} />);
     expect(exercise.props.practiceRequirement.policy).toEqual({ requireConcurrentOnset: true });
