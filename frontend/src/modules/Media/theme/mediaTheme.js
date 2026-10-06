@@ -109,6 +109,13 @@ export const MEDIA_PACK = {
         defaultProps: { radius: 'sm' },
         styles: { root: { minHeight: rem(44) } },
       },
+      CloseButton: {
+        styles: { root: { minWidth: rem(44), minHeight: rem(44) } },
+      },
+      // The label is the hit area of a checkbox / radio / switch row.
+      Checkbox: { styles: { body: { alignItems: 'center' }, label: { minHeight: rem(44), display: 'flex', alignItems: 'center' } } },
+      Radio: { styles: { body: { alignItems: 'center' }, label: { minHeight: rem(44), display: 'flex', alignItems: 'center' } } },
+      Switch: { styles: { body: { alignItems: 'center' }, label: { minHeight: rem(44), display: 'flex', alignItems: 'center' } } },
       Input: {
         styles: { input: { minHeight: rem(44) } },
       },
