@@ -570,3 +570,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-10-06 | fix/piano-gate-repair | c1b166bab | Seven Piano gate failures repaired (merged) |
 | 2026-10-06 | fix/media-gate-repairs | c6f2049bb | Two acceptance journey repairs (merged) |
 | 2026-10-06 | fix/media-task8 | 4e02acf60 | Media P0 Task 8 close-out (merged) |
+| 2026-10-06 | fix/fitness-chart-audio | e2a08711f | Standalone fitness chart and chart-bearing screens silent until music is explicitly enabled (merged and deployed) |
