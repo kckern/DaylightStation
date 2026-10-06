@@ -20,6 +20,9 @@ export const AREA_FOR_VIEW = Object.freeze({
   nowPlaying: 'home',
   fleet: 'fleet',
   peek: 'fleet',
+  // House admin (RQ-HOUSE-08) and routine history (RQ-AUTO-05).
+  screens: 'fleet',
+  routines: 'fleet',
 });
 
 const AREA_LABEL = Object.freeze({ home: 'Home', browse: 'Browse', fleet: 'Devices' });

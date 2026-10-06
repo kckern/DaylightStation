@@ -26,6 +26,11 @@ vi.mock('../peek/useTakeOver.js', () => ({
   useTakeOver: () => vi.fn(),
 }));
 vi.mock('../peek/usePeek.js', () => ({ usePeek: () => ({ getController }) }));
+// House-wide signals and actions have their own tests (FleetView.house.test.jsx).
+vi.mock('../house/useHouseSignals.js', () => ({
+  useStartStatuses: () => new Map(), useStartedByAll: () => new Map(), useStartedBy: () => null,
+}));
+vi.mock('../house/HouseQuietControls.jsx', () => ({ HouseQuietBar: () => null }));
 // The picker's own behavior is covered in fleet/FleetPlayPicker.test.jsx —
 // here it's a marker with a close hook.
 vi.mock('../fleet/FleetPlayPicker.jsx', () => ({
