@@ -136,12 +136,13 @@ vi.mock('./LearnLab.jsx', () => ({
     h.learnLabProps = props;
     return <section role="dialog" aria-label={`${props.segment.label} · ${props.rung.label}`}>
       <button type="button" onClick={props.onClose}>Close lab</button>
-      <button type="button" onClick={() => props.onRungPassed({ segmentId: props.segment.id, rungId: props.rung.id, outcome: {} })}>Complete rung</button>
-      <button type="button" onClick={() => { props.onMastered(props.segment.id); props.onClose(); }}>Master segment</button>
+      <button type="button" onClick={() => props.onFinished({ passed: true, score: 0.92 })}>Complete rung</button>
+      <button type="button" onClick={() => { props.onMastered(props.segment.id); props.onFinished({ passed: true, score: 1 }); }}>Master segment</button>
       <button type="button" onClick={() => props.onUnavailable('passage-too-dense')}>Fail segment</button>
     </section>;
   },
 }));
+vi.mock('../Exercises/ScorePassage.jsx', () => ({ default: () => <div data-testid="passage-preview">Music preview</div> }));
 vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: h.config }) }));
 vi.mock('../../PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumb: (crumbs) => { h.crumbs = crumbs || []; } }));
 vi.mock('../../useReloadGuard.js', () => ({ default: () => {} }));
@@ -301,7 +302,7 @@ beforeEach(() => {
 });
 
 describe('ScorePlayer — score-native Learn roadmap', () => {
-  it('keeps piece progress visible and opens the first available rung from a progress pill', () => {
+  it('keeps piece progress visible and opens a segment launchpad before the recommended drill', () => {
     h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: {} } };
     h.layoutExtras = {
       measures: [
@@ -319,6 +320,9 @@ describe('ScorePlayer — score-native Learn roadmap', () => {
     expect(screen.queryByRole('region', { name: 'Learn roadmap' })).not.toBeInTheDocument();
     const progress = screen.getByRole('navigation', { name: 'Piece learning progress' });
     fireEvent.click(within(progress).getByRole('button', { name: /Segment 1/ }));
+    expect(screen.getByRole('dialog', { name: 'Segment 1 practice' })).toBeInTheDocument();
+    expect(screen.getByTestId('passage-preview')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Up next/ }));
     expect(screen.getByRole('dialog', { name: 'Segment 1 · Right hand' })).toBeInTheDocument();
     expect(h.locationSearch).toContain('learnPassage=m0-1');
     expect(h.locationSearch).toContain('learnRung=right');
@@ -338,9 +342,12 @@ describe('ScorePlayer — score-native Learn roadmap', () => {
     const scroll = document.querySelector('.piano-score-player__scroll');
     scroll.scrollTop = 137;
     fireEvent.click(screen.getAllByRole('button', { name: /Segment 1/ })[0]);
+    fireEvent.click(screen.getByRole('button', { name: /Up next/ }));
     expect(screen.getByRole('dialog', { name: 'Segment 1 · Right hand' })).toBeInTheDocument();
     expect(screen.queryByTestId('renderer')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Master segment' }));
+    expect(screen.getByRole('dialog', { name: 'Practice result' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to segment' }));
     await waitFor(() => expect(screen.getByTestId('renderer')).toBeInTheDocument());
     await waitFor(() => expect(document.querySelector('.piano-score-player__scroll').scrollTop).toBe(137));
     const achieved = screen.getAllByRole('button', { name: /Segment 1/ }).find((button) => button.classList.contains('piano-learn-passage-map'));
@@ -348,7 +355,7 @@ describe('ScorePlayer — score-native Learn roadmap', () => {
     await waitFor(() => expect(achieved).not.toHaveClass('is-achievement'), { timeout: 1800 });
   });
 
-  it('returns to the selected segment ladder after a rung instead of opening the next run', async () => {
+  it('offers explicit choices after a rung instead of opening the next run', async () => {
     h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: {} } };
     h.layoutExtras = {
       measures: [{ number: 1, firstStep: 0, lastStep: 1 }, { number: 2, firstStep: 2, lastStep: 3 }],
@@ -357,13 +364,14 @@ describe('ScorePlayer — score-native Learn roadmap', () => {
     renderPlayer();
     pickMode('Learn');
     fireEvent.click(screen.getAllByRole('button', { name: /Segment 1/ })[0]);
+    fireEvent.click(screen.getByRole('button', { name: /Up next/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Complete rung' }));
 
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByRole('dialog', { name: 'Practice result' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next drill' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Practice again' })).toBeInTheDocument();
     expect(h.locationSearch).toContain('learnPassage=m0-1');
-    expect(h.locationSearch).not.toContain('learnRung=');
-    expect(screen.getByRole('navigation', { name: 'Selected segment' })).toBeInTheDocument();
-    expect(screen.queryByRole('group', { name: 'Segment 1 practice ladder' })).not.toBeInTheDocument();
+    expect(h.locationSearch).toContain('learnRung=right');
   });
 
   it('returns from an unrunnable lab with an explanation', async () => {
@@ -375,6 +383,7 @@ describe('ScorePlayer — score-native Learn roadmap', () => {
     renderPlayer();
     pickMode('Learn');
     fireEvent.click(screen.getAllByRole('button', { name: /Segment 1/ })[0]);
+    fireEvent.click(screen.getByRole('button', { name: /Up next/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Fail segment' }));
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('too much music to fit'));
     expect(screen.getByTestId('renderer')).toBeInTheDocument();

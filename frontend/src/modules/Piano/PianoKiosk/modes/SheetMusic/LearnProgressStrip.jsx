@@ -32,7 +32,14 @@ export default function LearnProgressStrip({ segments = [], selectedId = null, o
           aria-label={label}
           title={label}
           onClick={() => onOpenSegment?.(segment.id)}
-        ><span aria-hidden="true">{segment.number ?? segment.order}</span></button>;
+        >
+          <span className="piano-learn-progress__number" aria-hidden="true">{segment.number ?? segment.order}</span>
+          <span className="piano-learn-progress__copy" aria-hidden="true">
+            <strong>{segment.name || segment.label}</strong>
+            <small>{segment.barLabel}</small>
+          </span>
+          <span className="piano-learn-progress__state" aria-hidden="true">{PROGRESS_LABEL[state]}</span>
+        </button>;
       })}
     </div>
   </nav>;

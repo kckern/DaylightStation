@@ -17,12 +17,14 @@ describe('LearnProgressStrip', () => {
     expect(segments.map(learnSegmentProgressState)).toEqual(['empty', 'learning', 'learned', 'mastered', 'locked']);
   });
 
-  it('renders one numbered pill per segment with accessible state and score metadata', () => {
+  it('renders large, labeled segment cards with accessible state and score metadata', () => {
     render(<LearnProgressStrip segments={segments} selectedId="learning" onOpenSegment={vi.fn()} />);
     expect(screen.getByRole('navigation', { name: 'Piece learning progress' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Segment 1, Bars 1–4, Not started' })).toHaveAttribute('data-state', 'empty');
     expect(screen.getByRole('button', { name: 'Segment 2, Theme, Bars 5–8, Learning' })).toHaveAttribute('aria-current', 'step');
     expect(screen.getByRole('button', { name: 'Segment 3, Bars 9–12, Learned' })).toHaveTextContent('3');
+    expect(screen.getByRole('button', { name: 'Segment 3, Bars 9–12, Learned' })).toHaveTextContent('Learned');
+    expect(screen.getByRole('button', { name: 'Segment 3, Bars 9–12, Learned' })).toHaveTextContent('Bars 9–12');
     expect(screen.getByRole('button', { name: 'Segment 4, Bars 13–16, Mastered' })).toHaveAttribute('data-state', 'mastered');
     expect(screen.getByRole('button', { name: 'Segment 5, Bars 17–20, Locked' })).toBeDisabled();
   });

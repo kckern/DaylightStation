@@ -31,8 +31,11 @@ import { projectLearnPassage } from './learnRoadmap.js';
 import { CustomLearnSession } from './LearnRoadmap.jsx';
 import LearnLab from './LearnLab.jsx';
 import LearnPassageLayer from './LearnPassageLayer.jsx';
-import LearnSegmentRail, { segmentNavigationState } from './LearnSegmentRail.jsx';
+import { segmentNavigationState } from './LearnSegmentRail.jsx';
 import LearnProgressStrip from './LearnProgressStrip.jsx';
+import LearnLaunchpad from './LearnLaunchpad.jsx';
+import { buildRungLaunch, creditEligibleRung, learnLaunchpadProjection } from './learnLaunch.js';
+import ScorePassage from '../Exercises/ScorePassage.jsx';
 import { resolveLearnPlan } from './resolveLearnPlan.js';
 import { buildEngravedMeasureRects, measureAtPosition } from './focusRangeGeometry.js';
 import { completeBarSelection, moveBarEdge, validBarRange } from './learnBarSelection.js';
@@ -2156,6 +2159,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const selectedRungId = searchParams.get('learnRung');
   const selectedPassage = learnPassages.find((passage) => passage.id === selectedPassageId) ?? null;
   const selectedRung = selectedPassage?.rungs.find((rung) => rung.id === selectedRungId && rung.state !== 'locked') ?? null;
+  const [learnLaunch, setLearnLaunch] = useState(null);
+  const [learnResult, setLearnResult] = useState(null);
+  const [learnLaunchNonce, setLearnLaunchNonce] = useState(0);
+  const [learnLaunchpadView, setLearnLaunchpadView] = useState('home');
   const [restoreLearnAnchor, setRestoreLearnAnchor] = useState(null);
   const [learnAchievement, setLearnAchievement] = useState(null);
   const [learnNotice, setLearnNotice] = useState(null);
@@ -2170,22 +2177,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [setSearchParams]);
   const closeLearnPassage = useCallback(() => updateLearnSelection(null), [updateLearnSelection]);
   const openLearnPassage = useCallback((passageId) => {
-    const passage = learnPassages.find((candidate) => candidate.id === passageId);
-    const rung = passage?.rungs.find((candidate) => candidate.id !== 'test-out'
-      && candidate.state !== 'locked' && candidate.state !== 'complete')
-      ?? passage?.rungs.find((candidate) => candidate.id !== 'test-out' && candidate.state !== 'locked');
     setSelectionPhase(null);
     setArmedSelectionEdge(null);
     setRestoreLearnAnchor(scrollRef.current?.scrollTop ?? 0);
-    updateLearnSelection(passageId, rung?.id ?? null);
-  }, [learnPassages, updateLearnSelection]);
-  const openLearnRung = useCallback((rungId) => {
-    if (selectedPassage) {
-      setRestoreLearnAnchor(scrollRef.current?.scrollTop ?? 0);
-      updateLearnSelection(selectedPassage.id, rungId);
-    }
-  }, [selectedPassage, updateLearnSelection]);
+    setLearnLaunch(null); setLearnResult(null); setLearnLaunchpadView('home');
+    updateLearnSelection(passageId, null);
+  }, [updateLearnSelection]);
   const closeLearnLab = useCallback(() => {
+    setLearnLaunch(null); setLearnResult(null);
     if (selectedPassage) updateLearnSelection(selectedPassage.id);
   }, [selectedPassage, updateLearnSelection]);
   const handleLearnUnavailable = useCallback((reason) => {
@@ -2195,8 +2194,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
         ? 'This segment has no notes for the selected part.'
         : 'This segment could not be opened. Choose another segment or try again.';
     setLearnNotice(message);
-    closeLearnLab();
-  }, [closeLearnLab]);
+    setLearnLaunch(null);
+    setLearnResult(null);
+    closeLearnPassage();
+  }, [closeLearnPassage]);
   useEffect(() => {
     if (!learnNotice) return undefined;
     const timer = setTimeout(() => setLearnNotice(null), 5000);
@@ -2239,21 +2240,33 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const learnSegmentMetadata = useMemo(() => Object.fromEntries(
     learnPlan.segments.map((segment) => [segment.id, { fingerprint: segment.fingerprint }]),
   ), [learnPlan.segments]);
-  const learnSessionOpen = Boolean(mode === 'learn' && selectedPassage && selectedRung);
+  const fallbackLaunch = selectedRung && selectedPassage ? {
+    source: 'recommended', segmentId: selectedPassage.id, rungId: selectedRung.id,
+    parts: selectedRung.effectiveParts, mode: selectedRung.mode, tempoPercent: selectedRung.tempoPercent, rung: selectedRung,
+  } : null;
+  const activeLearnLaunch = learnLaunch ?? fallbackLaunch;
+  const activeLearnRung = activeLearnLaunch?.rung ?? null;
+  const optionalCreditRung = activeLearnLaunch?.source === 'recommended'
+    ? activeLearnRung : selectedPassage && activeLearnLaunch ? creditEligibleRung(selectedPassage, activeLearnLaunch) : null;
+  const learnSessionOpen = Boolean(mode === 'learn' && selectedPassage && activeLearnRung && !learnResult);
   const learnSession = learnSessionOpen ? (
       <LearnLab
-        key={`${selectedPassage.id}:${selectedRung.id}`}
+        key={`${selectedPassage.id}:${activeLearnRung.id}:${learnLaunchNonce}`}
         score={learnScore}
         revision={learnPlan.revision}
         segment={selectedPassage}
         segments={learnSegmentMetadata}
-        rung={selectedRung}
+        rung={activeLearnRung}
+        creditRung={optionalCreditRung ?? activeLearnRung}
+        launchSource={activeLearnLaunch.source}
+        creditEligible={Boolean(optionalCreditRung)}
         tempo={{ ...learnPlan.settings.tempo, tempoMap: learnPlan.tempoMap, tempoSource: learnPlan.tempoSource }}
         feedback={learnPlan.settings.feedback}
         onRecord={recordLearnRep}
         onClose={closeLearnLab}
         onRungPassed={advanceLearnRung}
         onMastered={masterLearnSegment}
+        onFinished={(result) => setLearnResult({ ...result, source: activeLearnLaunch.source })}
         onUnavailable={handleLearnUnavailable}
       />
   ) : null;
@@ -2278,6 +2291,31 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [learnSessionOpen, restoreLearnAnchor]);
 
   if (learnSession) return <div className="piano-score-player piano-score-player--learn-lab">{learnSession}</div>;
+  if (mode === 'learn' && selectedPassage) return <div className="piano-score-player piano-score-player--learn-launchpad">
+    <LearnLaunchpad
+      segment={selectedPassage}
+      preview={<ScorePassage musicXml={learnScore.musicXml} sourceId={learnScore.id} measures={selectedPassage.printedMeasures}
+        rangeIndices={{ start: selectedPassage.inMeasure, end: selectedPassage.outMeasure }} activeParts={selectedPassage.playableParts} keepWholePassage />}
+      result={learnResult}
+      initialView={learnLaunchpadView}
+      onBack={closeLearnPassage}
+      onLaunch={(launch) => { setLearnResult(null); setLearnLaunchpadView('home'); setLearnLaunch(launch); setLearnLaunchNonce((value) => value + 1); updateLearnSelection(selectedPassage.id, launch.rungId); logger.info('score.learn.launch', { source: launch.source, segmentId: launch.segmentId, rungId: launch.rungId, mode: launch.mode, parts: launch.parts, tempoPercent: launch.tempoPercent }); }}
+      onResultAction={(action) => {
+        logger.info('score.learn.result-action', { action, source: learnResult?.source ?? null, segmentId: selectedPassage.id });
+        if (action === 'repeat') { setLearnResult(null); setLearnLaunchNonce((value) => value + 1); return; }
+        if (action === 'next') {
+          const next = learnLaunchpadProjection(selectedPassage).recommended;
+          setLearnResult(null);
+          if (next) { setLearnLaunch(buildRungLaunch(selectedPassage, next, 'recommended')); updateLearnSelection(selectedPassage.id, next.id); setLearnLaunchNonce((value) => value + 1); }
+          else setLearnLaunch(null);
+          return;
+        }
+        if (action === 'change') setLearnLaunchpadView('custom');
+        setLearnResult(null); setLearnLaunch(null);
+        if (action === 'back') closeLearnPassage();
+      }}
+    />
+  </div>;
 
   return (
     <div className="piano-score-player">
@@ -2422,12 +2460,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
       {roadmapLearn && practiceLoaded && (layout.measures?.length ?? 0) > 0 && (
         <>
-          <LearnSegmentRail
-            segments={learnPassages}
-            selectedId={selectedPassage?.id ?? null}
-            onSelectRung={openLearnRung}
-            onClose={closeLearnPassage}
-          />
           <LearnProgressStrip segments={learnPassages} selectedId={selectedPassage?.id ?? null} onOpenSegment={openLearnPassage} />
         </>
       )}

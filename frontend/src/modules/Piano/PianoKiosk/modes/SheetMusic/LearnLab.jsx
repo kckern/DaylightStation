@@ -48,14 +48,15 @@ export function learnPracticeRequirement(rung) {
   };
 }
 
-export default function LearnLab({ score, revision, segment, segments = {}, rung, tempo = {}, feedback = SHEET_MUSIC_DEFAULTS.learn.feedback, onRecord, onClose, onRungPassed, onMastered, onUnavailable }) {
+export default function LearnLab({ score, revision, segment, segments = {}, rung, creditRung = rung, tempo = {}, feedback = SHEET_MUSIC_DEFAULTS.learn.feedback, launchSource = 'recommended', creditEligible = true, onRecord, onClose, onRungPassed, onMastered, onFinished, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-learn-lab' }), []);
   const [take, setTake] = useState(0);
   const [success, setSuccess] = useState(null);
   const [repCard, setRepCard] = useState(null);
+  const [runPassCount, setRunPassCount] = useState(rung.passCount ?? 0);
   const returnTimerRef = useRef(null);
   const masteryTempo = rung.mastery === true || rung.completion === 'tested-out';
-  const setIndex = Math.min(rung.sets - 1, Math.floor((rung.passCount ?? 0) / Math.max(1, rung.reps)));
+  const setIndex = Math.min(rung.sets - 1, Math.floor(runPassCount / Math.max(1, rung.reps)));
   const configuredPercent = masteryTempo ? 100 : (rung.tempoPercents?.[setIndex] ?? rung.tempoPercent ?? 100);
   const [selectedPercent, setSelectedPercent] = useState(configuredPercent);
   const [tempoSheetOpen, setTempoSheetOpen] = useState(false);
@@ -85,7 +86,8 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
     }
     preferencesRef.current = { tempoStage: stage.id, tempoPercent, clickLevel: clickLevel.id };
   }, [clickLevel, logger, rung.id, score.id, segment.id, stage.id, tempoPercent]);
-  const projection = useMemo(() => learnDrillProjection(segment, rung), [segment, rung]);
+  const runRung = useMemo(() => ({ ...rung, passCount: runPassCount }), [rung, runPassCount]);
+  const projection = useMemo(() => learnDrillProjection(segment, runRung), [segment, runRung]);
   const requirement = useMemo(() => learnPracticeRequirement(rung), [rung]);
   const partsKey = (rung.effectiveParts ?? []).join('\u0000');
   const runScore = useMemo(() => ({
@@ -96,7 +98,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
     tempoPercent,
   }), [score, segment.printedMeasures, segment.inMeasure, segment.outMeasure, partsKey, tempoPercent]);
   const stepIndex = setIndex;
-  const currentRep = Math.min(Math.max(1, rung.reps), ((rung.passCount ?? 0) % Math.max(1, rung.reps)) + 1);
+  const currentRep = Math.min(Math.max(1, rung.reps), (runPassCount % Math.max(1, rung.reps)) + 1);
   const returnAfterSuccess = useCallback((callback) => {
     clearTimeout(returnTimerRef.current);
     returnTimerRef.current = setTimeout(callback, feedback.successReturnMs);
@@ -107,23 +109,27 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onClose, tempoSheetOpen]);
-  const recordResult = useCallback((result) => onRecord({
-    revision, passageId: segment.id, rungId: rung.id, result,
-    requiredPasses: rung.required, consecutive: rung.consecutive,
-    completesPassage: rung.completes === 'passage', completion: rung.completion,
+  const recordResult = useCallback((result) => creditEligible ? onRecord?.({
+    revision, passageId: segment.id, rungId: creditRung.id, result,
+    requiredPasses: creditRung.required, consecutive: creditRung.consecutive,
+    completesPassage: creditRung.completes === 'passage', completion: creditRung.completion,
     segments,
-  }), [onRecord, revision, rung, segment.id, segments]);
+  }) : null, [creditEligible, creditRung, onRecord, revision, segment.id, segments]);
   const settle = useCallback((result) => {
     const outcome = recordResult(result);
-    if (outcome?.passage?.complete) {
+    const nextPassCount = Math.min(rung.required, runPassCount + 1);
+    setRunPassCount(nextPassCount);
+    if (launchSource === 'recommended' && outcome?.passage?.complete) {
       onMastered?.(segment.id);
-      setSuccess(`${segment.label} mastered`);
-      returnAfterSuccess(onClose);
-    } else if (outcome?.rungComplete) {
+      if (onFinished) onFinished(result);
+      else { setSuccess(`${segment.label} mastered`); returnAfterSuccess(onClose); }
+    } else if (nextPassCount >= rung.required || outcome?.rungComplete) {
+      if (outcome?.passage?.complete) onMastered?.(segment.id);
+      if (onFinished) { onFinished(result); return; }
       setSuccess(`${rung.label} complete`);
       returnAfterSuccess(() => onRungPassed?.({ segmentId: segment.id, rungId: rung.id, outcome }));
     } else {
-      const completedRep = Math.min(rung.reps, ((rung.passCount ?? 0) % rung.reps) + 1);
+      const completedRep = Math.min(rung.reps, (runPassCount % rung.reps) + 1);
       const setClear = completedRep >= rung.reps;
       setRepCard({
         score: result?.score ?? null,
@@ -138,7 +144,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       });
       setTake((value) => value + 1);
     }
-  }, [onClose, onMastered, onRungPassed, recordResult, returnAfterSuccess, rung, segment.id, segment.label, setIndex]);
+  }, [launchSource, onClose, onFinished, onMastered, onRungPassed, recordResult, returnAfterSuccess, rung, runPassCount, segment.id, segment.label, setIndex]);
   const scoreBpm = Number(tempo.tempoMap?.[0]?.bpm);
   const effectiveBpm = scoreBpm > 0 ? Math.round(scoreBpm * tempoPercent / 100) : null;
   const adjustable = rung.mode === 'cued' && tempo.adjustable !== false && !masteryTempo;
@@ -170,10 +176,10 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       hideHeading scoreLayoutPolicy="whole-passage"
       framing={`${segment.label} · ${rung.label}`}
       ask={rung.mode === 'free' ? 'Play the passage accurately.' : 'Play the passage with the beat.'}
-      traceContext={{ tempoPercent, tempoStage: stage.id, clickLevel: clickLevel.id, tempoSource: tempo.tempoSource ?? 'inferred' }} surface="learn-lab"
+      traceContext={{ tempoPercent, tempoStage: stage.id, clickLevel: clickLevel.id, tempoSource: tempo.tempoSource ?? 'inferred', launchSource }} surface="learn-lab"
       scoreCursorPolicy="always" keyboardHintPolicy="after-wrong"
       failurePresentation="local" onExit={onClose} onPassed={settle}
-      onFailed={recordResult}
+      onFailed={(result) => { recordResult(result); if (launchSource !== 'recommended') onFinished?.(result); }}
       onUnavailable={(reason, detail) => onUnavailable?.(detail || reason)}
     />
     {repCard && !success && <RepInterstitial {...repCard} onDone={() => setRepCard(null)} />}
