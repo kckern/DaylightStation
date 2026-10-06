@@ -1,6 +1,6 @@
 // frontend/src/modules/Media/session/sessionStore.js
 // The snapshot holder. Lives outside React; React binds via
-// useSyncExternalStore. Side effects (persistence, recents, logging) attach
+// useSyncExternalStore. Side effects (persistence, logging) attach
 // as transition listeners instead of being inlined into mutation paths.
 import { reduce } from './sessionReducer.js';
 

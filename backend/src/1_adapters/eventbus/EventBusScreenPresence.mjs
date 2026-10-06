@@ -42,7 +42,8 @@ export class EventBusScreenPresence {
       const room = typeof message.identity.room === 'string' ? message.identity.room : null;
       const fail = (error) => this.#logger.warn?.('eventbus.screen_presence.failed', { id, error: error?.message });
       try {
-        Promise.resolve(this.#onSeen({ id, name, room })).catch(fail);
+        // A browser publishing playback state is playing (or just was): it counts as a screen.
+        Promise.resolve(this.#onSeen({ id, name, room, playing: true })).catch(fail);
       } catch (error) {
         fail(error);
       }

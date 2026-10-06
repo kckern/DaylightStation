@@ -3,9 +3,16 @@
 // source — status can't lie), current item, progress, stale/offline badges.
 // Peek opens the remote control; Take Over appears only when a session is
 // actually active (portability phase wires the action).
-import React, { useCallback, useState } from 'react';
+// House additions (P1/P2): every row shows its start progress or last
+// failure to everyone (RQ-HOUSE-04), how its playback started (RQ-HOUSE-07),
+// Add only with a way to switch it off (RQ-PLAY-10), the notes of a screen
+// that can't show them with Put it back (RQ-STEER-21), the "(was …)" of a
+// recent rename (RQ-HOUSE-06) and Stop "and turn the screen off" where the
+// screen supports it (RQ-STEER-11). The view offers Pause all / Stop all /
+// Resume all (RQ-STEER-13) and leads to screen admin and routine history.
+import React, { useCallback, useMemo, useState } from 'react';
 import { Title, Text, Badge, Button, Progress, Group, Alert, Stack } from '@mantine/core';
-import { IconDeviceRemote, IconAlertCircle, IconPlayerPlay } from '@tabler/icons-react';
+import { IconDeviceRemote, IconAlertCircle, IconPlayerPlay, IconPlayerPauseFilled, IconDevices, IconHistory } from '@tabler/icons-react';
 import { useFleetContext } from '../fleet/useFleetContext.js';
 import { useDevice } from '../fleet/useDevice.js';
 import { FleetPlayPicker } from '../fleet/FleetPlayPicker.jsx';
@@ -15,6 +22,12 @@ import { usePeek } from '../peek/usePeek.js';
 import { stateColor } from '../theme/mediaTheme.js';
 import { deviceStateLabel } from './stateCopy.js';
 import Skeleton from '@/lib/ui/Skeleton.jsx';
+import { deviceKind } from '../cast/castCopy.js';
+import { canShowNotes, wasNameLabel } from '../house/houseCopy.js';
+import { useStartStatuses, useStartedByAll } from '../house/useHouseSignals.js';
+import { StartStatusLine, StartedByLine, AddOnlyNotice, RowNotes, ScreenStopControl } from '../house/RowExtras.jsx';
+import { HouseQuietBar } from '../house/HouseQuietControls.jsx';
+import '../house/House.scss';
 
 const ACTIVE_STATES = new Set(['playing', 'paused', 'buffering', 'stalled']);
 
@@ -24,7 +37,7 @@ function fmt(s) {
   return `${m}:${String(t % 60).padStart(2, '0')}`;
 }
 
-function FleetCard({ deviceId }) {
+function FleetCard({ deviceId, startStatus, startedBy }) {
   const { device, entry } = useDevice(deviceId);
   const { push } = useNav();
   const { getController } = usePeek();
@@ -42,6 +55,9 @@ function FleetCard({ deviceId }) {
   const duration = item?.duration ?? 0;
   const isActive = !offline && ACTIVE_STATES.has(devState);
   const location = deviceLocation(device);
+  const name = deviceName(device, deviceId);
+  const was = wasNameLabel(device);
+  const controls = !offline ? snap?.controls ?? null : null;
   const sendTransport = (action) => {
     const result = getController(deviceId)?.transport?.[action]?.();
     result?.catch?.(() => {});
@@ -57,7 +73,10 @@ function FleetCard({ deviceId }) {
         />
         <span className="fleet-card-icon" aria-hidden>{deviceIcon(device)}</span>
         <span className="fleet-card-titles">
-          <span className="fleet-card-name">{deviceName(device, deviceId)}</span>
+          <span className="fleet-card-name">
+            {name}
+            {was && <span className="house-was-name" data-testid={`fleet-was-name-${deviceId}`}> {was}</span>}
+          </span>
           {device?.isLocal && (
             <span data-testid={`fleet-this-device-${deviceId}`} className="fleet-card-this-device">This device</span>
           )}
@@ -73,6 +92,7 @@ function FleetCard({ deviceId }) {
           Last heard {entry.lastSeenAt ? new Date(entry.lastSeenAt).toLocaleString() : 'at an unknown time'}; control results may not be confirmed.
         </Text>
       )}
+      <StartStatusLine deviceId={deviceId} status={startStatus} kind={deviceKind(device)} />
       <div className="fleet-card-item">
         {item ? (
           <>
@@ -96,6 +116,9 @@ function FleetCard({ deviceId }) {
           </Text>
         )}
       </div>
+      {isActive && <StartedByLine deviceId={deviceId} info={startedBy ?? null} />}
+      <AddOnlyNotice deviceId={deviceId} name={name} controls={controls} />
+      {!canShowNotes(device) && <RowNotes deviceId={deviceId} name={name} controls={controls} />}
       <Group gap="xs" className="fleet-card-actions">
         <Button
           data-testid={`fleet-peek-${deviceId}`}
@@ -122,12 +145,10 @@ function FleetCard({ deviceId }) {
         </Button>
         {isActive && (
           <>
-            <Button data-testid={`fleet-pause-${deviceId}`} size="compact-sm" variant="default" onClick={() => sendTransport('pause')}>
+            <Button data-testid={`fleet-pause-${deviceId}`} size="compact-sm" variant="default" leftSection={<IconPlayerPauseFilled size={14} aria-hidden />} onClick={() => sendTransport('pause')}>
               Pause
             </Button>
-            <Button data-testid={`fleet-stop-${deviceId}`} size="compact-sm" variant="default" onClick={() => sendTransport('stop')}>
-              Stop
-            </Button>
+            <ScreenStopControl device={device ?? { id: deviceId }} name={name} onStop={() => sendTransport('stop')} />
             <Button
               data-testid={`fleet-takeover-${deviceId}`}
               size="compact-sm"
@@ -149,7 +170,16 @@ function FleetCard({ deviceId }) {
 }
 
 export function FleetView() {
-  const { devices, loading, error, connected } = useFleetContext();
+  const { devices, loading, error, connected, store } = useFleetContext();
+  const { push } = useNav();
+  const deviceIds = useMemo(() => devices.map((d) => d.id), [devices]);
+  const startStatuses = useStartStatuses(deviceIds);
+  // What plays where: a change re-reads "Started by" for every row.
+  const playingKey = devices.map((d) => {
+    const item = store?.getEntry?.(d.id)?.snapshot?.currentItem;
+    return `${d.id}:${d.state ?? ''}:${item?.contentId ?? ''}`;
+  }).join('|');
+  const startedBy = useStartedByAll(playingKey);
 
   if (loading) {
     return (
@@ -175,14 +205,27 @@ export function FleetView() {
 
   return (
     <div data-testid="fleet-view" className="fleet-view">
-      <Title order={1} mb="md">Devices</Title>
+      <Group justify="space-between" align="center" mb="sm" wrap="wrap" gap="xs">
+        <Title order={1}>Devices</Title>
+        <Group gap="xs">
+          <Button data-testid="fleet-open-screens" variant="subtle" className="house-action" leftSection={<IconDevices size={16} aria-hidden />} onClick={() => push('screens', {})}>
+            Screens
+          </Button>
+          <Button data-testid="fleet-open-routines" variant="subtle" className="house-action" leftSection={<IconHistory size={16} aria-hidden />} onClick={() => push('routines', {})}>
+            Routines
+          </Button>
+        </Group>
+      </Group>
+      <HouseQuietBar />
       {connected === false && (
         <Alert data-testid="fleet-connection-warning" color="yellow" variant="light" icon={<IconAlertCircle size={18} />}>
           This device has lost touch with the house. Information may be out of date; it will reconnect automatically.
         </Alert>
       )}
       <ul className="fleet-cards">
-        {devices.map((d) => <FleetCard key={d.id} deviceId={d.id} />)}
+        {devices.map((d) => (
+          <FleetCard key={d.id} deviceId={d.id} startStatus={startStatuses.get(d.id) ?? null} startedBy={startedBy.get(d.id) ?? null} />
+        ))}
       </ul>
     </div>
   );

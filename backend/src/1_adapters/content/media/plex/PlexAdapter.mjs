@@ -142,6 +142,10 @@ export class PlexAdapter {
   // when Plex refuses a file, so this is how a refused part finds the item to
   // heal (ratingKeyForPart). Bounded; oldest entries fall off.
   #partIndex = new Map();
+  // partId -> tail of the chain of track-selection mints on that part. The
+  // part's selection is per Plex account, so two mints must not interleave
+  // their read-previous / select / decision / restore (RQ-STEER-14).
+  #partTrackLocks = new Map();
   // rating key -> progress storage path (`plex/{librarySectionID}_{name}`).
   // An item's library section never changes, and every watch-state enrich
   // asked Plex for it again — one serialized metadata call per show per
@@ -2068,14 +2072,45 @@ export class PlexAdapter {
       ...(audioStreamId != null ? { audioStreamId } : {}),
       ...(subtitleStreamId != null ? { subtitleStreamId } : {}),
     };
-    // What the account has selected now, to put back (subtitles: none → '0').
+    // Serialise per part: wait for any mint already holding its selection.
+    const priorTail = this.#partTrackLocks.get(part.id);
+    let release;
+    const mine = new Promise((resolve) => { release = resolve; });
+    const tail = (priorTail ?? Promise.resolve()).then(() => mine);
+    this.#partTrackLocks.set(part.id, tail);
+    // Safety: a mint that throws between select and restore must not wedge the part.
+    const expiry = setTimeout(() => releaseLock(), 60_000);
+    expiry.unref?.();
+    const releaseLock = () => {
+      clearTimeout(expiry);
+      release();
+      if (this.#partTrackLocks.get(part.id) === tail) this.#partTrackLocks.delete(part.id);
+    };
+    let activeStreams = streams;
+    if (priorTail) {
+      await priorTail;
+      // The item we were handed may predate the previous mint's borrow:
+      // read the household's selection fresh.
+      try {
+        const fresh = await this.client.getMetadata(ratingKey);
+        const freshStreams = fresh?.MediaContainer?.Metadata?.[0]?.Media?.[0]?.Part?.[0]?.Stream;
+        if (Array.isArray(freshStreams) && freshStreams.length) activeStreams = freshStreams;
+      } catch (error) {
+        this.logger.warn?.('plex.loadMediaUrl.tracks-refresh-failed', { ratingKey, partId: part.id, error: error?.message });
+      }
+    }
+    // What the account has selected now, to put back (subtitles: none -> '0').
     const previous = {};
     if (audioStreamId != null) {
-      const cur = streams.find((s) => s.streamType === 2 && s.selected);
+      const audio = activeStreams.filter((s) => s.streamType === 2);
+      const cur = audio.find((s) => s.selected) ?? audio.find((s) => s.default) ?? null;
       if (cur) previous.audioStreamId = String(cur.id);
+      else this.logger.warn?.('plex.loadMediaUrl.tracks-restore-skipped', {
+        ratingKey, partId: part.id, reason: 'no-selected-or-default-audio', audioStreamId,
+      });
     }
     if (subtitleStreamId != null) {
-      const cur = streams.find((s) => s.streamType === 3 && s.selected);
+      const cur = activeStreams.find((s) => s.streamType === 3 && s.selected);
       previous.subtitleStreamId = cur ? String(cur.id) : '0';
     }
     try {
@@ -2083,8 +2118,9 @@ export class PlexAdapter {
       this.logger.info?.('plex.loadMediaUrl.tracks-selected', { ratingKey, partId: part.id, ...selection });
       let restored = false;
       selection.restore = async () => {
-        if (restored || Object.keys(previous).length === 0) return;
+        if (restored) return;
         restored = true;
+        if (Object.keys(previous).length === 0) { releaseLock(); return; }
         try {
           await this.client.selectPartStreams(part.id, previous);
           this.logger.info?.('plex.loadMediaUrl.tracks-restored', { ratingKey, partId: part.id, ...previous });
@@ -2092,10 +2128,13 @@ export class PlexAdapter {
           this.logger.warn?.('plex.loadMediaUrl.tracks-restore-failed', {
             ratingKey, partId: part.id, ...previous, status: error?.response?.status ?? error?.status ?? null, error: error?.message,
           });
+        } finally {
+          releaseLock();
         }
       };
       return selection;
     } catch (error) {
+      releaseLock();
       this.logger.warn?.('plex.loadMediaUrl.tracks-select-failed', {
         ratingKey, partId: part.id, ...selection,
         status: error?.response?.status ?? error?.status ?? null, error: error?.message,

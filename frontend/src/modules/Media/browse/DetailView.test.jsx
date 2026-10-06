@@ -8,6 +8,8 @@ const queuePlayNow = vi.fn();
 const pop = vi.fn();
 let backDestination = 'Browse';
 let contentState;
+const apiMock = vi.fn(() => Promise.resolve({ items: [] }));
+vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...args) => apiMock(...args) }));
 vi.mock('./useContentInfo.js', () => ({
   useContentInfo: () => contentState,
 }));
@@ -79,5 +81,21 @@ describe('DetailView Play Now', () => {
       id: 'plex:685088', title: 'Episode 3', thumbnail: 'episode.jpg',
     }));
     expect(queuePlayNow).not.toHaveBeenCalled();
+  });
+});
+
+describe('DetailView household verbs (FIND.12a, FIND.10a/AC6)', () => {
+  it('adds to favourites and marks watched in one step each', async () => {
+    render(<MantineProvider><DetailView contentId="plex:685088" /></MantineProvider>);
+    fireEvent.click(screen.getByTestId('detail-favourite'));
+    expect(apiMock).toHaveBeenCalledWith('api/v1/media/household/favourites', expect.objectContaining({ id: 'plex:685088', kind: 'item' }), 'POST');
+    fireEvent.click(screen.getByTestId('detail-watched'));
+    expect(apiMock).toHaveBeenCalledWith('api/v1/media/household/watched', { contentId: 'plex:685088', watched: true }, 'POST');
+  });
+  it('a collection offers favourites but no watched marks', () => {
+    contentState.info = { title: 'Album', type: 'album' };
+    render(<MantineProvider><DetailView contentId="plex:album" /></MantineProvider>);
+    expect(screen.getByTestId('detail-favourite')).toBeInTheDocument();
+    expect(screen.queryByTestId('detail-watched')).toBeNull();
   });
 });

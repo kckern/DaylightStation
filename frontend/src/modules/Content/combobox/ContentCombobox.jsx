@@ -124,6 +124,7 @@ export function ContentCombobox({
   onPlayAll = null,
   onMore = null,
   onAction = null,
+  resultExtraActions = null,
   destinationInteractionActive = false,
   retainQueryOnEscape = false,
   retainPlayableSelection = false,
@@ -625,6 +626,7 @@ export function ContentCombobox({
               onPlayAll={onPlayAll ? () => onPlayAll(item) : null}
               onMore={onMore ? (action) => onMore(action, item) : null}
               onAction={onAction}
+              extraActions={resultExtraActions}
               onMoreMenuPointerDown={handleMoreMenuPointerDown}
               onMoreMenuChange={handleMoreMenuChange}
               onMoreMenuAction={handleMoreMenuAction}

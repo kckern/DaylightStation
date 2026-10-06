@@ -19,7 +19,7 @@ describe('EventBusScreenPresence', () => {
     eventBus.emit('c1', { topic: 'playback_state', identity: { clientId: 'abc', name: 'Kitchen tablet', room: 'Kitchen' } });
     eventBus.emit('c1', { topic: 'playback_state', identity: { clientId: 'abc', name: 'Kitchen tablet' } });
     expect(onSeen).toHaveBeenCalledTimes(1);
-    expect(onSeen).toHaveBeenCalledWith({ id: 'browser:abc', name: 'Kitchen tablet', room: 'Kitchen' });
+    expect(onSeen).toHaveBeenCalledWith({ id: 'browser:abc', name: 'Kitchen tablet', room: 'Kitchen', playing: true });
     now = 61_000;
     eventBus.emit('c1', { topic: 'playback_state', identity: { clientId: 'abc', name: 'Kitchen tablet' } });
     expect(onSeen).toHaveBeenCalledTimes(2);
