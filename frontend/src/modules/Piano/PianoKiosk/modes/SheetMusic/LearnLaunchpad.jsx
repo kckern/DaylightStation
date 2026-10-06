@@ -15,10 +15,18 @@ function ActionCard({ icon, title, detail, state, onClick, className = '' }) {
 }
 
 function Result({ result, official, onAction }) {
+  const diagnostics = result.diagnostics ?? {};
   return <section className="piano-learn-result" role="dialog" aria-modal="true" aria-label="Practice result">
     <Icon name={result.passed ? 'star' : 'repeat'} />
     <h2>{result.passed ? 'Nice work!' : 'Keep going'}</h2>
     {Number.isFinite(result.score) && <p>{Math.round(result.score <= 1 ? result.score * 100 : result.score)}%</p>}
+    <div className="piano-learn-result__tally" aria-label="Practice score">
+      <span>✓ Right {diagnostics.matched_notes ?? result.right ?? 0}</span>
+      <span>× Wrong {diagnostics.wrong_notes ?? result.wrong ?? 0}</span>
+      {(diagnostics.early_notes != null || result.early != null) && <span>◀ Early {diagnostics.early_notes ?? result.early}</span>}
+      {(diagnostics.late_notes != null || result.late != null) && <span>▶ Late {diagnostics.late_notes ?? result.late}</span>}
+      {(diagnostics.missed_notes != null || result.missed != null) && <span>○ Missed {diagnostics.missed_notes ?? result.missed}</span>}
+    </div>
     <div className="piano-learn-result__actions">
       {official
         ? <><TouchButton onClick={() => onAction?.('next')}>Next drill</TouchButton><TouchButton variant="secondary" onClick={() => onAction?.('repeat')}>Practice again</TouchButton></>

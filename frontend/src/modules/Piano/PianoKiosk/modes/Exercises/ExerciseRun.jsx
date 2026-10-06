@@ -647,7 +647,9 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
    */
   const verdicts = useMemo(() => assessmentVerdicts(snapshot), [snapshot]);
   const liveTally = useMemo(() => verdictSummary(snapshot), [snapshot]);
-  const clockPosition = timed ? timedRunPresentation(snapshot, Math.max(clockNow, Date.now())) : null;
+  const presentationNow = snapshot.paused && Number.isFinite(snapshot.pausedAt)
+    ? snapshot.pausedAt : Math.max(clockNow, Date.now());
+  const clockPosition = timed ? timedRunPresentation(snapshot, presentationNow) : null;
   // The matcher may finish early. Its result must not end the musical display
   // before the authored time has elapsed.
   const awaitingTimeline = timed && snapshot.status === 'completed' && !clockPosition.timelineDone;
@@ -656,11 +658,11 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   const resuming = snapshot.status === 'running'
     && Number(snapshot.resumingUntil) > Math.max(clockNow, Date.now());
   useEffect(() => {
-    if ((!timed || (snapshot.status !== 'running' && !awaitingTimeline)) && !resuming) return undefined;
+    if (snapshot.paused || ((!timed || (snapshot.status !== 'running' && !awaitingTimeline)) && !resuming)) return undefined;
     setClockNow(Date.now());
     const timer = globalThis.setInterval(() => setClockNow(Date.now()), 50);
     return () => globalThis.clearInterval(timer);
-  }, [runtime, timed, snapshot.status, awaitingTimeline, resuming]);
+  }, [runtime, timed, snapshot.status, snapshot.paused, awaitingTimeline, resuming]);
   const countingDown = timeline?.phase === 'countdown';
   const feedbackNotes = timed
     ? timeline.phase !== 'running' ? NO_FEEDBACK_NOTES
@@ -1090,6 +1092,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       });
       return;
     }
+    if (snapshot.paused) return;
     // Every note-on the run sees resets the stall clock — including the one
     // that arms it, which is the note the clock should be measured from.
     if (onsets.length) setNoteOnTick((tick) => tick + 1);

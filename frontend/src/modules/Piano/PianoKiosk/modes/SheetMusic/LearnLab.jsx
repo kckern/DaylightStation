@@ -74,6 +74,8 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
   }), [tempo.minimumPercent, tempo.maximumPercent]);
   const stage = masteryTempo ? TEMPO_STAGES[TEMPO_STAGES.length - 1] : nearestTempoStage(selectedPercent, stages);
   const tempoPercent = ['cued', 'metronome'].includes(rung.mode) ? stage.percent : selectedPercent;
+  const launchTempoRef = useRef(tempoPercent);
+  const takeCreditEligible = creditEligible && tempoPercent === launchTempoRef.current;
   const preferencesRef = useRef({ tempoStage: stage.id, tempoPercent, clickLevel: clickLevel.id });
   useEffect(() => {
     const previous = preferencesRef.current;
@@ -123,18 +125,18 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onClose, tempoSheetOpen]);
-  const recordResult = useCallback((result) => creditEligible ? onRecord?.({
+  const recordResult = useCallback((result) => takeCreditEligible ? onRecord?.({
     revision, passageId: segment.id, rungId: creditRung.id, result,
     requiredPasses: creditRung.required, consecutive: creditRung.consecutive,
     completesPassage: creditRung.completes === 'passage', completion: creditRung.completion,
     segments,
-  }) : null, [creditEligible, creditRung, onRecord, revision, segment.id, segments]);
+  }) : null, [takeCreditEligible, creditRung, onRecord, revision, segment.id, segments]);
   const settle = useCallback((result) => {
     const outcome = recordResult(result);
     logger.info('piano.learn.terminal', {
       runId: runIdRef.current, scoreId: score.id, revision, passageId: segment.id, rungId: rung.id,
       mode: rung.mode, parts: [...(rung.effectiveParts ?? [])], tempoStage: stage.id, tempoPercent,
-      status: 'passed', creditEligible, creditOutcome: creditEligible ? (outcome ? 'recorded' : 'not-recorded') : 'ineligible',
+      status: 'passed', creditEligible: takeCreditEligible, creditOutcome: takeCreditEligible ? (outcome ? 'recorded' : 'not-recorded') : 'ineligible',
       right: result?.diagnostics?.matched_notes ?? null, wrong: result?.diagnostics?.wrong_notes ?? null,
       missed: result?.diagnostics?.missed_notes ?? null, early: result?.diagnostics?.early_notes ?? null,
       late: result?.diagnostics?.late_notes ?? null,
@@ -166,21 +168,23 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       });
       setTake((value) => value + 1);
     }
-  }, [creditEligible, launchSource, logger, onClose, onFinished, onMastered, onRungPassed, recordResult, returnAfterSuccess, revision, rung, runPassCount, score.id, segment.id, segment.label, setIndex, stage.id, tempoPercent]);
+  }, [launchSource, logger, onClose, onFinished, onMastered, onRungPassed, recordResult, returnAfterSuccess, revision, rung, runPassCount, score.id, segment.id, segment.label, setIndex, stage.id, takeCreditEligible, tempoPercent]);
   const scoreBpm = Number(tempo.tempoMap?.[0]?.bpm);
   const effectiveBpm = scoreBpm > 0 ? Math.round(scoreBpm * tempoPercent / 100) : null;
-  const controlContext = { runId: runIdRef.current, scoreId: score.id, revision, passageId: segment.id, rungId: rung.id,
-    mode: rung.mode, parts: [...(rung.effectiveParts ?? [])], tempoStage: stage.id, tempoPercent, effectiveBpm, launchSource, creditEligible };
+  const controlContext = { runId: runIdRef.current, take, scoreId: score.id, revision, passageId: segment.id, rungId: rung.id,
+    mode: rung.mode, parts: [...(rung.effectiveParts ?? [])], tempoStage: stage.id, tempoPercent, effectiveBpm, launchSource, creditEligible: takeCreditEligible };
   const logControl = (action) => logger.info('piano.learn.control', { ...controlContext, action });
   const adjustable = ['cued', 'metronome'].includes(rung.mode) && tempo.adjustable !== false && !masteryTempo;
   const tempoLabel = `${stage.label}${effectiveBpm ? ` · ${effectiveBpm} BPM` : ''}`;
-  const restartTake = (logAction = false) => { if (logAction) logControl('restart'); setPaused(false); setTake((value) => value + 1); };
-  const changePractice = () => { logControl('change-practice'); onChangePractice?.({ parts: [...(rung.effectiveParts ?? [])], mode: rung.mode, tempoStage: stage.id, tempoPercent }); };
+  const abandonTake = (reason) => logger.info('piano.learn.take-abandoned', { ...controlContext, reason, creditOutcome: 'none' });
+  const restartTake = (reason) => { abandonTake(reason); if (reason === 'restart') logControl('restart'); setPaused(false); setTake((value) => value + 1); };
+  const changePractice = () => { abandonTake('change-practice'); logControl('change-practice'); onChangePractice?.({ parts: [...(rung.effectiveParts ?? [])], mode: rung.mode, tempoStage: stage.id, tempoPercent }); };
+  const closeLab = () => { abandonTake('back'); onClose(); };
   const togglePaused = () => setPaused((value) => { logControl(value ? 'resume' : 'pause'); return !value; });
   const failTake = (result) => {
     const outcome = recordResult(result);
     logger.info('piano.learn.terminal', { ...controlContext, status: 'failed',
-      creditOutcome: creditEligible ? (outcome ? 'recorded' : 'not-recorded') : 'ineligible',
+      creditOutcome: takeCreditEligible ? (outcome ? 'recorded' : 'not-recorded') : 'ineligible',
       right: result?.diagnostics?.matched_notes ?? null, wrong: result?.diagnostics?.wrong_notes ?? null,
       missed: result?.diagnostics?.missed_notes ?? null, early: result?.diagnostics?.early_notes ?? null,
       late: result?.diagnostics?.late_notes ?? null });
@@ -189,7 +193,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
 
   return <section className="piano-learn-lab" role="dialog" aria-modal="true" aria-label={`${segment.label} · ${rung.label}`}>
     <header className="piano-learn-lab__toolbar">
-      <button className="piano-learn-lab__back" type="button" onClick={onClose} aria-label={`Back to ${segment.label}`}>
+      <button className="piano-learn-lab__back" type="button" onClick={closeLab} aria-label={`Back to ${segment.label}`}>
         <span aria-hidden="true">‹</span><span>Back</span>
       </button>
       <div className="piano-learn-lab__identity"><strong>{segment.label}</strong><span>{segment.barLabel}</span></div>
@@ -206,7 +210,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       </div>}
       <div className="piano-learn-lab__run-controls" role="group" aria-label="Practice controls">
         <button type="button" onClick={togglePaused}>{paused ? 'Resume' : 'Pause'}</button>
-        <button type="button" onClick={() => restartTake(true)}>Start over</button>
+        <button type="button" onClick={() => restartTake('restart')}>Start over</button>
         <button type="button" onClick={changePractice}>Change practice</button>
       </div>
     </header>
@@ -218,7 +222,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       hideHeading scoreLayoutPolicy="whole-passage"
       framing={`${segment.label} · ${rung.label}`}
       ask={rung.mode === 'free' ? 'Play the passage accurately.' : 'Play the passage with the beat.'}
-      traceContext={{ tempoPercent, tempoStage: stage.id, clickLevel: clickLevel.id, tempoSource: tempo.tempoSource ?? 'inferred', launchSource }} surface="learn-lab"
+      traceContext={{ runId: runIdRef.current, take, tempoPercent, tempoStage: stage.id, clickLevel: clickLevel.id, tempoSource: tempo.tempoSource ?? 'inferred', launchSource }} surface="learn-lab"
       paused={paused} resumeDelayMs={effectiveBpm ? Math.round(120000 / effectiveBpm) : 1000} controlKey={take}
       persistInterrupted={false}
       scoreCursorPolicy="always" keyboardHintPolicy="after-wrong"
@@ -229,6 +233,6 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
     {repCard && !success && <RepInterstitial {...repCard} onDone={() => setRepCard(null)} />}
     {success && <div className="piano-learn-lab__success" role="status"><strong>{success}</strong><span>Returning to the score…</span></div>}
     <LearnTempoSheet open={adjustable && tempoSheetOpen} stages={stages} selectedId={stage.id} effectiveBpm={effectiveBpm}
-      onPick={(picked) => { setSelectedPercent(picked.percent); restartTake(); }} onClose={() => setTempoSheetOpen(false)} />
+      onPick={(picked) => { setSelectedPercent(picked.percent); restartTake('tempo-change'); }} onClose={() => setTempoSheetOpen(false)} />
   </section>;
 }
