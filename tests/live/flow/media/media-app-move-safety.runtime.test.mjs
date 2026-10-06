@@ -54,7 +54,8 @@ async function expectNoMoveAndTapSendsKeep(picker) {
   await expect(picker.getByTestId('picker-move-unavailable')).toHaveCount(0);
   await selectFirstDevice(picker);
   await expect(picker.getByTestId('picker-dispatch-failed')).toBeVisible();
-  await expect(picker.getByTestId('picker-mode-fork')).toHaveAttribute('aria-checked', 'true');
+  // With nothing to choose between, the whole Move/Keep group is absent.
+  await expect(picker.getByTestId('picker-mode-fork')).toHaveCount(0);
 }
 
 test.describe('Media M0 Move safety', () => {
