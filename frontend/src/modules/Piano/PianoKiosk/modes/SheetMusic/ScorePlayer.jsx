@@ -1,4 +1,5 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import sha256 from 'crypto-js/sha256.js';
 import { parseMusicXml } from '../../../../MusicNotation/parseMusicXml.js';
 import { MusicXmlRenderer } from '../../../../MusicNotation/renderers/MusicXmlRenderer.jsx';
@@ -21,10 +22,23 @@ import useCountIn from './useCountIn.js';
 import { countInPlan } from './countIn.js';
 import useScoreTelemetry from './useScoreTelemetry.js';
 import useScoreEvaluator from './useScoreEvaluator.js';
-import usePracticeRecord from './usePracticeRecord.js';
+import usePracticeRecord, { compatibleLearnPassages } from './usePracticeRecord.js';
 import { bucketOf } from './practiceKey.js';
 import { pickLearnRange } from './learnRange.js';
 import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
+import { partIdForStaff } from '../../../performance/partIdentity.js';
+import { projectLearnPassage } from './learnRoadmap.js';
+import { CustomLearnSession } from './LearnRoadmap.jsx';
+import LearnLab from './LearnLab.jsx';
+import LearnPassageLayer from './LearnPassageLayer.jsx';
+import { segmentNavigationState } from './LearnSegmentRail.jsx';
+import LearnProgressStrip from './LearnProgressStrip.jsx';
+import LearnLaunchpad from './LearnLaunchpad.jsx';
+import { buildRungLaunch, creditEligibleRung, learnLaunchpadProjection } from './learnLaunch.js';
+import ScorePassage from '../Exercises/ScorePassage.jsx';
+import { resolveLearnPlan } from './resolveLearnPlan.js';
+import { buildEngravedMeasureRects, measureAtPosition } from './focusRangeGeometry.js';
+import { completeBarSelection, moveBarEdge, validBarRange } from './learnBarSelection.js';
 import {
   compileScoreExpectation,
   createAssessmentAttempt,
@@ -79,6 +93,19 @@ const STUCK_PROMPT_MS = 5000;
 // draws both cases now, for as long as the key stays down, not on a timer.
 const INK_TTL = { wrong: 900 };
 
+function legacyLearnProgress(passage, ladder, measures, history) {
+  const rungs = {};
+  for (const rung of ladder) {
+    if (!rung.legacySeed) continue;
+    const bucket = rung.legacySeed;
+    const learned = measures
+      .slice(passage.inMeasure, passage.outMeasure + 1)
+      .every((measure) => (history?.[String(measure.index)]?.[bucket]?.passes ?? 0) >= 2);
+    if (learned) rungs[rung.id] = { attempts: 0, passCount: rung.sets * rung.reps };
+  }
+  return { rungs };
+}
+
 // How long a landed note wears the match colour when the cursor advances out from
 // under it. Long enough to register as a flash, short enough not to trail behind
 // a fast passage and read as the note still being held.
@@ -112,7 +139,7 @@ export const NOTE_INK = '#23262b';
 // identity on every render, which would re-render FocusRangeLayer (and defeat any
 // future memoisation of it) on every transport tick just to draw no ticks.
 const NO_MARKS = [];
-const staffPartId = (staff) => staff === 0 ? 'rh' : staff === 1 ? 'lh' : `staff-${staff}`;
+const staffPartId = partIdForStaff;
 const attemptId = () => `attempt-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
 
 /**
@@ -182,12 +209,15 @@ export default function ScorePlayer({ score: scoreMeta }) {
     persistent: practicePersistent,
     recordCycle,
     recordTierBest,
+    recordLearnRep,
     recordAssessmentAttempt,
+    saveCustomRange,
   } = usePracticeRecord({ scoreId: scoreMeta.id, fingerprint });
 
   // Resolved sheetmusic config (defaults filled). Hoisted above the mode state so
   // the initial mode can come from `defaultMode` — the ladder starts at Listen.
   const smCfg = useMemo(() => resolveSheetMusicConfig(config?.sheetmusic), [config]);
+  const [searchParams, setSearchParams] = useSearchParams();
   const VALID_MODES = ['listen', 'learn', 'polish', 'perform'];
   // Per-score practice settings restored device-locally (mode/tempo/hands), so a
   // walk-up user finds the piece the way they left it (Task 2.5). The practice
@@ -224,6 +254,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Listen/Learn/Polish practice range (measure INDICES) | null = whole piece.
   // Practice loops are per-session by design — never restored (audit M1).
   const [focus, setFocus] = useState(null);
+  const [selectionPhase, setSelectionPhase] = useState(null);
+  const [selectionAnchor, setSelectionAnchor] = useState(null);
+  const [armedSelectionEdge, setArmedSelectionEdge] = useState(null);
+  const [customRunOpen, setCustomRunOpen] = useState(false);
+  const [, setCustomResult] = useState(null);
   // Is the loop ON (wave-2: loop is a direct toggle, separate from whether a
   // range exists — audit L2 follow-up)? A defined range keeps showing its tint
   // and its handles even when looping is off (both layers read `focus`, not the
@@ -329,6 +364,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   const events = layout.events;
   const steps = layout.steps;
+  const selectionStepBoxes = useMemo(() => layout.steps.map((item, index) => ({
+    x: layout.events[index]?.x ?? item.x,
+    top: layout.events[index]?.top ?? item.top,
+    bottom: layout.events[index]?.bottom ?? item.bottom,
+  })), [layout.events, layout.steps]);
+  const measureRects = useMemo(() => buildEngravedMeasureRects(
+    layout.measures, layout.measureBounds, layout.staffBoxes, layout.steps, selectionStepBoxes,
+  ), [layout.measures, layout.measureBounds, layout.staffBoxes, layout.steps, selectionStepBoxes]);
   const current = events[step] || null;
   const onLayout = useCallback((res) => { setLayout(res); }, []);
 
@@ -362,7 +405,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Learn always means silent wait-for-correct. A focused loop changes the
   // cursor range, never who performs the music; machine demonstration belongs
   // exclusively to Listen.
-  const learnGate = mode === 'learn';
+  const roadmapLearn = mode === 'learn' && config?.sheetmusic?.learn?.roadmap !== false;
+  const learnGate = mode === 'learn' && !roadmapLearn;
   // The audio plane's one predicate: who actually sends notes to the piano. Every
   // flush/panic guard reads THIS, never a literal mode check (wave-3 §0).
   const sendsAudio = mode === 'listen';
@@ -1416,6 +1460,25 @@ export default function ScorePlayer({ score: scoreMeta }) {
     }
     if (!rdr || !events.length) return;
     const r = rdr.getBoundingClientRect();
+    if (roadmapLearn && (selectionPhase || armedSelectionEdge)) {
+      const mi = measureAtPosition(measureRects, e.clientX - r.left, e.clientY - r.top);
+      if (mi < 0) return;
+      if (armedSelectionEdge) {
+        const currentRange = validBarRange(practice?.customRange, layout.measures?.length ?? 0) ? practice.customRange : null;
+        if (currentRange) saveCustomRange(moveBarEdge(currentRange, armedSelectionEdge, mi));
+        setArmedSelectionEdge(null);
+        setCustomResult(null);
+      } else if (selectionPhase === 'in') {
+        setSelectionAnchor(mi);
+        setSelectionPhase('out');
+      } else {
+        saveCustomRange(completeBarSelection(selectionAnchor ?? mi, mi));
+        setSelectionPhase(null);
+        setSelectionAnchor(null);
+        setCustomResult(null);
+      }
+      return;
+    }
     // An ARMED endpoint (wave-3 F): this tap names the measure for that edge of
     // the loop and sets it — it does not seek. Hit-testing is coarse by design
     // (measureAtPoint): any x inside a system's band resolves to the nearest
@@ -1467,7 +1530,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // Transport timeline is tempo-scaled (playTimeline uses factor 1/tempoMult);
     // seek positions come from the unscaled stepTimeline, so scale to match.
     transport.seek((stepTimeline[target]?.t ?? 0) / tempoMult);
-  }, [mode, sendsAudio, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, arming, commitEndpoint, layout.measures, range, logger, countIn, scale, tapIntent, voidCycle]);
+  }, [mode, sendsAudio, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, arming, commitEndpoint, layout.measures, range, logger, countIn, scale, tapIntent, voidCycle, roadmapLearn, selectionPhase, selectionAnchor, armedSelectionEdge, measureRects, practice, saveCustomRange]);
 
   // Single unmount teardown: immediate silence + one delayed panic (see the
   // silenceScheduled note above), so a note-on already dispatched into the
@@ -1556,9 +1619,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // without a range. Runs once per Learn entry — the learnAutoRef arms on entry
   // and disarms after the pick (or when the user sets a range themselves).
   const learnAutoRef = useRef(false);
-  useEffect(() => { if (mode === 'learn' && !focus) learnAutoRef.current = true; else if (mode !== 'learn') learnAutoRef.current = false; }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (mode === 'learn' && !roadmapLearn && !focus) learnAutoRef.current = true; else learnAutoRef.current = false; }, [mode, roadmapLearn]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (!learnAutoRef.current || mode !== 'learn' || focus || !layout.measures?.length || !practiceLoaded) return;
+    if (roadmapLearn || !learnAutoRef.current || mode !== 'learn' || focus || !layout.measures?.length || !practiceLoaded) return;
     // Wait for a hand-preference seed requested THIS pass (above) to actually
     // land in `activeParts` — picking now would read the pre-seed value and
     // frontier off the wrong hands' practice history (audit: wave-3 E).
@@ -1573,7 +1636,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setFocus({ kind: 'custom', inMeasure: picked.inMeasure, outMeasure: picked.outMeasure });
     setLoopOn(true); // the landing IS the gate state — ready to play
     logger.info('score.learn.auto-range', { ...picked });
-  }, [mode, focus, layout.measures, layout.steps, practiceLoaded, practice, activeParts, grandStaff, sections, logger]);
+  }, [mode, roadmapLearn, focus, layout.measures, layout.steps, practiceLoaded, practice, activeParts, grandStaff, sections, logger]);
 
   // An arm must not outlive the user's intent. `arming` gates the seek branch of
   // onScoreClick, so a forgotten arm silently disables tap-to-seek — one user
@@ -2069,8 +2132,195 @@ export default function ScorePlayer({ score: scoreMeta }) {
     [parts, activeParts],
   );
 
+  const learnPlan = useMemo(() => resolveLearnPlan({
+    defaults: config?.sheetmusic?.learn,
+    category: config?.sheetmusic?.learn?.categories?.[scoreMeta.category],
+    piece: scoreMeta.learn ?? config?.sheetmusic?.learn?.pieces?.[scoreMeta.id],
+    user: config?.user?.piano?.learn,
+    userPiece: config?.user?.piano?.learn?.pieces?.[scoreMeta.id],
+    score: {
+      id: scoreMeta.id, measures: layout.measures, steps: layout.steps, sections,
+      tempoMap: layout.tempoEntries, tempo: parsed?.tempo,
+    },
+  }), [config, layout.measures, layout.steps, layout.tempoEntries, parsed?.tempo, scoreMeta.category, scoreMeta.id, scoreMeta.learn, sections]);
+  const learnPassages = useMemo(() => {
+    const compatible = compatibleLearnPassages(practice?.learn, learnPlan);
+    const projected = learnPlan.segments.map((passage) => {
+      const ladder = [...passage.ladder, learnPlan.testOut];
+      const initial = projectLearnPassage({ passage, ladder });
+      const progress = compatible?.[passage.id]
+        ?? legacyLearnProgress(passage, initial.rungs, layout.measures, practice?.measures);
+      const result = projectLearnPassage({ passage, ladder, progress });
+      return { ...result, inProgress: result.rungs.some((rung) => rung.passCount > 0 && rung.state !== 'complete') };
+    });
+    return segmentNavigationState(projected, learnPlan.navigation);
+  }, [layout.measures, learnPlan, practice]);
+  const selectedPassageId = searchParams.get('learnPassage');
+  const selectedPassage = learnPassages.find((passage) => passage.id === selectedPassageId) ?? null;
+  const [learnLaunch, setLearnLaunch] = useState(null);
+  const [learnResult, setLearnResult] = useState(null);
+  const [learnLaunchNonce, setLearnLaunchNonce] = useState(0);
+  const [learnLaunchpadView, setLearnLaunchpadView] = useState('home');
+  const [learnChoice, setLearnChoice] = useState(null);
+  const [restoreLearnAnchor, setRestoreLearnAnchor] = useState(null);
+  const [learnAchievement, setLearnAchievement] = useState(null);
+  const [learnNotice, setLearnNotice] = useState(null);
+  const customRange = practiceLoaded && validBarRange(practice?.customRange, layout.measures?.length ?? 0) ? practice.customRange : null;
+  const updateLearnSelection = useCallback((passageId, rungId = null) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (passageId) next.set('learnPassage', passageId); else next.delete('learnPassage');
+      if (rungId) next.set('learnRung', rungId); else next.delete('learnRung');
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+  const closeLearnPassage = useCallback(() => updateLearnSelection(null), [updateLearnSelection]);
+  const openLearnPassage = useCallback((passageId) => {
+    setSelectionPhase(null);
+    setArmedSelectionEdge(null);
+    setRestoreLearnAnchor(scrollRef.current?.scrollTop ?? 0);
+    setLearnLaunch(null); setLearnResult(null); setLearnLaunchpadView('home');
+    updateLearnSelection(passageId, null);
+  }, [updateLearnSelection]);
+  const closeLearnLab = useCallback(() => {
+    setLearnLaunch(null); setLearnResult(null);
+    if (selectedPassage) updateLearnSelection(selectedPassage.id);
+  }, [selectedPassage, updateLearnSelection]);
+  const handleLearnUnavailable = useCallback((reason) => {
+    const message = reason === 'passage-too-dense'
+      ? 'This segment has too much music to fit. Try a shorter segment.'
+      : reason === 'parts-empty'
+        ? 'This segment has no notes for the selected part.'
+        : 'This segment could not be opened. Choose another segment or try again.';
+    setLearnNotice(message);
+    setLearnLaunch(null);
+    setLearnResult(null);
+    closeLearnPassage();
+  }, [closeLearnPassage]);
+  useEffect(() => {
+    if (!learnNotice) return undefined;
+    const timer = setTimeout(() => setLearnNotice(null), 5000);
+    return () => clearTimeout(timer);
+  }, [learnNotice]);
+  useEffect(() => {
+    if (!learnAchievement) return undefined;
+    // CSS animation events are absent when the OS requests reduced motion.
+    // Keep the animation callback as an early exit, but always clear this
+    // transient state independently so it can never become permanent chrome.
+    const timer = setTimeout(() => setLearnAchievement(null), 1200);
+    return () => clearTimeout(timer);
+  }, [learnAchievement]);
+  // A finished rung returns the learner to this segment's ladder. The next rung
+  // is now available there, but starting another take remains an intentional
+  // choice rather than an automatic jump into a new exercise.
+  const advanceLearnRung = useCallback(() => closeLearnLab(), [closeLearnLab]);
+  const masterLearnSegment = useCallback((segmentId) => {
+    setLearnAchievement(segmentId);
+  }, []);
+  const selectedRange = useMemo(() => selectionPhase === 'in' ? null
+    : selectionPhase === 'out' && selectionAnchor != null
+      ? { inMeasure: selectionAnchor, outMeasure: selectionAnchor }
+      : selectedPassage
+      ? { inMeasure: selectedPassage.inMeasure, outMeasure: selectedPassage.outMeasure }
+      : customRange, [selectionPhase, selectionAnchor, selectedPassage, customRange]);
+  const commitCustomEdge = useCallback((edge, mi) => {
+    if (!selectedRange || mi < 0) return;
+    saveCustomRange(moveBarEdge(selectedRange, edge, mi));
+    updateLearnSelection(null);
+    setArmedSelectionEdge(null);
+    setCustomResult(null);
+  }, [selectedRange, saveCustomRange, updateLearnSelection]);
+
+  useEffect(() => {
+    if (learnPlan.configFallback) logger.warn('score.learn.config-fallback', { scoreId: scoreMeta.id });
+  }, [logger, scoreMeta.id, learnPlan.configFallback]);
+
+  const learnScore = useMemo(() => ({ id: scoreMeta.id, title: meta.title, musicXml: scoreMeta.musicXml }), [meta.title, scoreMeta.id, scoreMeta.musicXml]);
+  const learnSegmentMetadata = useMemo(() => Object.fromEntries(
+    learnPlan.segments.map((segment) => [segment.id, { fingerprint: segment.fingerprint }]),
+  ), [learnPlan.segments]);
+  const activeLearnLaunch = learnLaunch;
+  const activeLearnRung = activeLearnLaunch?.rung ?? null;
+  const optionalCreditRung = activeLearnLaunch?.source === 'recommended'
+    ? activeLearnRung : selectedPassage && activeLearnLaunch ? creditEligibleRung(selectedPassage, activeLearnLaunch) : null;
+  const learnSessionOpen = Boolean(mode === 'learn' && selectedPassage && activeLearnRung && !learnResult);
+  const learnSession = learnSessionOpen ? (
+      <LearnLab
+        key={`${selectedPassage.id}:${activeLearnRung.id}:${learnLaunchNonce}`}
+        score={learnScore}
+        revision={learnPlan.revision}
+        segment={selectedPassage}
+        segments={learnSegmentMetadata}
+        rung={activeLearnRung}
+        creditRung={optionalCreditRung ?? activeLearnRung}
+        launchSource={activeLearnLaunch.source}
+        creditEligible={Boolean(optionalCreditRung)}
+        tempo={{ ...learnPlan.settings.tempo, tempoMap: learnPlan.tempoMap, tempoSource: learnPlan.tempoSource }}
+        feedback={learnPlan.settings.feedback}
+        onRecord={recordLearnRep}
+        onClose={closeLearnLab}
+        onChangePractice={(choice) => { setLearnChoice(choice); setLearnLaunchpadView('custom'); setLearnLaunch(null); setLearnResult(null); updateLearnSelection(selectedPassage.id); }}
+        onRungPassed={advanceLearnRung}
+        onMastered={masterLearnSegment}
+        onFinished={(result) => setLearnResult({ ...result, source: activeLearnLaunch.source })}
+        onUnavailable={handleLearnUnavailable}
+      />
+  ) : null;
+  const customSession = mode === 'learn' && customRunOpen && customRange ? (
+    <CustomLearnSession
+      score={learnScore}
+      range={customRange}
+      measures={layout.measures}
+      activeParts={activePartIds}
+      onResult={(result) => { setCustomResult(result); setCustomRunOpen(false); }}
+      onBack={() => setCustomRunOpen(false)}
+    />
+  ) : null;
+
+  useEffect(() => {
+    if (learnSessionOpen || restoreLearnAnchor == null) return undefined;
+    const frame = requestAnimationFrame(() => {
+      if (scrollRef.current) scrollRef.current.scrollTop = restoreLearnAnchor;
+      setRestoreLearnAnchor(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [learnSessionOpen, restoreLearnAnchor]);
+
+  if (learnSession) return <div className="piano-score-player piano-score-player--learn-lab">{learnSession}</div>;
+  if (mode === 'learn' && selectedPassage) return <div className="piano-score-player piano-score-player--learn-launchpad">
+    <LearnLaunchpad
+      segment={selectedPassage}
+      preview={<ScorePassage musicXml={learnScore.musicXml} sourceId={learnScore.id} measures={selectedPassage.printedMeasures}
+        rangeIndices={{ start: selectedPassage.inMeasure, end: selectedPassage.outMeasure }} activeParts={selectedPassage.playableParts} keepWholePassage />}
+      result={learnResult}
+      initialView={learnLaunchpadView}
+      initialChoice={learnChoice}
+      onChoiceChange={(choice) => { setLearnChoice(choice); logger.info('score.learn.chooser-choice', { scoreId: scoreMeta.id, revision: learnPlan.revision, segmentId: selectedPassage.id, ...choice }); }}
+      onView={(view) => logger.info('score.learn.chooser', { scoreId: scoreMeta.id, revision: learnPlan.revision, segmentId: selectedPassage.id, view })}
+      onBack={closeLearnPassage}
+      onLaunch={(launch) => { setLearnResult(null); setLearnLaunchpadView('home'); setLearnLaunch(launch); setLearnLaunchNonce((value) => value + 1); updateLearnSelection(selectedPassage.id, launch.rungId); logger.info('score.learn.launch', { scoreId: scoreMeta.id, revision: learnPlan.revision, source: launch.source, segmentId: launch.segmentId, rungId: launch.rungId, mode: launch.mode, parts: launch.parts, tempoStage: launch.tempoStage ?? null, tempoPercent: launch.tempoPercent, creditEligible: launch.source === 'recommended' }); }}
+      onResultAction={(action) => {
+        logger.info('score.learn.result-action', { action, source: learnResult?.source ?? null, segmentId: selectedPassage.id });
+        if (action === 'repeat') { setLearnResult(null); setLearnLaunchNonce((value) => value + 1); return; }
+        if (action === 'next') {
+          const next = learnLaunchpadProjection(selectedPassage).recommended;
+          setLearnResult(null);
+          if (next) { setLearnLaunch(buildRungLaunch(selectedPassage, next, 'recommended')); updateLearnSelection(selectedPassage.id, next.id); setLearnLaunchNonce((value) => value + 1); }
+          else setLearnLaunch(null);
+          return;
+        }
+        if (action === 'change') setLearnLaunchpadView('custom');
+        setLearnResult(null); setLearnLaunch(null);
+        if (action === 'back') closeLearnPassage();
+      }}
+    />
+  </div>;
+
   return (
     <div className="piano-score-player">
+      {learnSession}
+      {customSession}
+      {learnNotice && <div className="piano-score-player__notice" role="status">{learnNotice}</div>}
       {scoreMeta.splashImage && !engraveReady && (
         <div className="piano-score-splash piano-score-splash--overlay" aria-hidden="true">
           <img className="piano-score-splash__img" src={scoreMeta.splashImage} alt="" decoding="async" />
@@ -2093,7 +2343,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
               layoutToken={layout}
             />
           )}
-          {mode !== 'perform' && current && layoutFresh && (
+          {mode !== 'perform' && !roadmapLearn && current && layoutFresh && (
             <div
               ref={cursorRef}
               className={`piano-score-cursor${wrong ? ' is-wrong' : ''}${jump ? ' is-jump' : ''}`}
@@ -2108,7 +2358,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
           {/* Learn only (wave-3 D) — Listen/Polish/Perform have no user-input ink.
               Mounted AFTER the cursor div so the ink paints above the cursor band
               at the same z-index rather than under it. */}
-          {mode === 'learn' && layoutFresh && (
+          {mode === 'learn' && !roadmapLearn && layoutFresh && (
             <LearnInkLayer
               inks={inks}
               staffBoxes={layout.staffBoxes}
@@ -2119,7 +2369,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
           {/* The notes being held RIGHT NOW (Task 4) — live in Listen, Learn and
               Polish; absent in Perform, which has no chrome. Mounted AFTER the wet
               ink so live marks paint above it. */}
-          {mode !== 'perform' && layoutFresh && (
+          {mode !== 'perform' && !roadmapLearn && layoutFresh && (
             <LiveInputLayer
               step={steps?.[step] || null}
               cursorX={events?.[step]?.x ?? 0}
@@ -2143,7 +2393,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
               handles below, and the first endpoint commits a real one-measure
               range. Mounted while ARMING even with no range yet — the ticks are
               precisely what a first endpoint lands on. */}
-          {showFocusLayer && layoutFresh && (focus || arming) && (
+          {!roadmapLearn && showFocusLayer && layoutFresh && (focus || arming) && (
             <FocusRangeLayer
               measures={layout.measures}
               stepBoxes={stepBoxes}
@@ -2154,7 +2404,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
           {/* The range's two draggable ends. AFTER FocusRangeLayer so the grips sit
               above the tint; the layer root is inert, so only the 48px handles take
               the gesture (and they swallow it, keeping tap-to-seek off them). */}
-          {mode === 'learn' && layoutFresh && focus && (
+          {mode === 'learn' && !roadmapLearn && layoutFresh && focus && (
             <RangeHandleLayer
               measures={layout.measures}
               stepBoxes={stepBoxes}
@@ -2166,7 +2416,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
               scale={scale}
             />
           )}
-          {mode !== 'perform' && layoutFresh && (
+          {mode !== 'perform' && !roadmapLearn && layoutFresh && (
             <NoteHighlightLayer
               step={steps[step]}
               activeParts={activeParts}
@@ -2175,13 +2425,45 @@ export default function ScorePlayer({ score: scoreMeta }) {
               showPending={mode === 'learn'}
             />
           )}
+          {roadmapLearn && layoutFresh && (
+            <LearnPassageLayer
+              passages={learnPassages}
+              measures={layout.measures}
+              stepBoxes={selectionStepBoxes}
+              measureRects={measureRects}
+              selectedRange={selectedRange}
+              selectedId={selectedPassage?.id ?? null}
+              achievementId={learnAchievement}
+              onAchievementEnd={() => setLearnAchievement(null)}
+              onSelect={openLearnPassage}
+            />
+          )}
+          {roadmapLearn && layoutFresh && customRange && !selectedPassage && !selectionPhase && (
+            <RangeHandleLayer
+              measures={layout.measures}
+              stepBoxes={selectionStepBoxes}
+              measureRects={measureRects}
+              range={selectedRange}
+              labelPrefix="Selection"
+              onArm={(edge) => setArmedSelectionEdge(edge)}
+              onCommit={commitCustomEdge}
+              scrollRef={scrollRef}
+              scale={scale}
+            />
+          )}
         </MusicXmlRenderer>
         <CountInOverlay active={countIn.active} beat={countIn.beat} />
         <SelectBanner edge={arming} rejects={armRejects} onCancel={onCancelArm} />
-        <StuckPrompt open={stuckOpen && mode === 'learn'} onPick={onStuckPick} onDismiss={onStuckDismiss} />
+        <StuckPrompt open={stuckOpen && mode === 'learn' && !roadmapLearn} onPick={onStuckPick} onDismiss={onStuckDismiss} />
       </div>
 
-      {keyboardVisible && (
+      {roadmapLearn && practiceLoaded && (layout.measures?.length ?? 0) > 0 && (
+        <>
+          <LearnProgressStrip segments={learnPassages} selectedId={selectedPassage?.id ?? null} onOpenSegment={openLearnPassage} />
+        </>
+      )}
+
+      {keyboardVisible && !roadmapLearn && (
         <div className="piano-score-player__keys">
           <LiveKeyboard
             targetNotes={targetNotes}
@@ -2199,7 +2481,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onPick={onMode}
       />
 
-      <ScoreTransportBar
+      {!roadmapLearn && <ScoreTransportBar
         mode={mode}
         running={running}
         playLocked={learnGate}
@@ -2243,7 +2525,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         keyFifths={parsed?.key?.fifths}
         keyMode={parsed?.key?.mode}
         scoreLabel={scoreLabel}
-      />
+      />}
 
       {mode === 'polish' && (
         <RunSummary

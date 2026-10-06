@@ -27,11 +27,11 @@ describe('requirementForLevel', () => {
     });
   });
 
-  it('a tier-3 level gets a cued rubric with grading.cleanliness', () => {
+  it('a tier-3 placed level requires both clean notes and placement on the beat', () => {
     const level = { id: 'L7', tier: 3, grading: { cleanliness: 0.8 }, material: [{ kind: 'exercise', instanceId: 'x' }] };
     expect(requirementForLevel(level)).toEqual({
       mode: 'cued',
-      rubric: { criteria: { completeness: 1, cleanliness: 0.8 } },
+      rubric: { criteria: { completeness: 1, cleanliness: 0.8, placement: 0.8 } },
       passScore: null,
     });
   });
@@ -45,13 +45,31 @@ describe('requirementForLevel', () => {
     });
   });
 
-  it('a tier-3 level with no grading block defaults cleanliness to 0.8', () => {
+  it('a tier-3 level with no grading block defaults cleanliness and placement to 0.8', () => {
     const level = { id: 'L8', tier: 3, grading: null, material: [{ kind: 'exercise', instanceId: 'x' }] };
     expect(requirementForLevel(level)).toEqual({
       mode: 'cued',
-      rubric: { criteria: { completeness: 1, cleanliness: 0.8 } },
+      rubric: { criteria: { completeness: 1, cleanliness: 0.8, placement: 0.8 } },
       passScore: null,
     });
+  });
+
+  it('an explicit cued completion ask measures timing without making placement a pass gate', () => {
+    const level = {
+      presentation: { timing: 'cued' },
+      grading: { judging: 'completion', cleanliness: 0.7 },
+      material: [{ kind: 'exercise', instanceId: 'x' }],
+    };
+    expect(requirementForLevel(level).rubric.criteria).toEqual({ completeness: 1, cleanliness: 0.7 });
+  });
+
+  it('allows a placed ask to override the default placement threshold', () => {
+    const level = {
+      presentation: { timing: 'cued' },
+      grading: { judging: 'placed', cleanliness: 0.9, placement: 0.65 },
+      material: [{ kind: 'exercise', instanceId: 'x' }],
+    };
+    expect(requirementForLevel(level).rubric.criteria).toEqual({ completeness: 1, cleanliness: 0.9, placement: 0.65 });
   });
 
   it('an explicit free recall level preserves its pitch-class policy without becoming cued', () => {

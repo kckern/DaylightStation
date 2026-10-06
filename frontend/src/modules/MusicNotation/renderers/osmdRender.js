@@ -191,6 +191,27 @@ export function extractPerStaffGeometry(osmd) {
   }
 }
 
+/** Rendered measure bounds in the SVG's pixel coordinate space, by source index. */
+export function extractMeasureBounds(osmd) {
+  const zoom = osmd?.Zoom ?? osmd?.zoom ?? 1;
+  const px = (units) => units * OSMD_UNIT_PX * zoom;
+  return (osmd?.GraphicSheet?.MeasureList || []).map((staffMeasures) => {
+    let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+    for (const measure of staffMeasures || []) {
+      const box = measure?.PositionAndShape;
+      const pos = box?.AbsolutePosition;
+      if (!Number.isFinite(pos?.x) || !Number.isFinite(pos?.y)) continue;
+      left = Math.min(left, pos.x + (box.BorderLeft ?? 0));
+      right = Math.max(right, pos.x + (box.BorderRight ?? box.Size?.width ?? 0));
+      top = Math.min(top, pos.y + (box.BorderTop ?? 0));
+      bottom = Math.max(bottom, pos.y + (box.BorderBottom ?? box.Size?.height ?? 0));
+    }
+    return Number.isFinite(left) && right > left
+      ? { left: px(left), right: px(right), top: px(top), bottom: px(bottom) }
+      : null;
+  });
+}
+
 /**
  * Stamp each engraved staff group in the rendered SVG with the staff id the
  * rest of the app speaks — OSMD's `ParentStaff.idInMusicSheet` (sheet-global,
@@ -392,6 +413,14 @@ function makeCursorWalk(osmd) {
     logger().debug('notation.geometry', { total: graphicalHits + fallbackHits, graphical: graphicalHits, fallback: fallbackHits });
     const steps = buildSteps(onsetRecords);
     const measures = buildMeasures(steps);
+    // Read bar boundaries from the score, not its first sounding notes: a bar
+    // can begin with rests, be a pickup, or change length with a new meter.
+    const measureMap = (osmd.Sheet?.SourceMeasures ?? []).map((measure, index) => ({
+      index,
+      onsetQuarter: measure.AbsoluteTimestamp?.RealValue * 4,
+      durationQuarters: measure.Duration?.RealValue * 4,
+    })).filter(({ onsetQuarter, durationQuarters }) => Number.isFinite(onsetQuarter) && onsetQuarter >= 0
+      && Number.isFinite(durationQuarters) && durationQuarters > 0);
     // One cursor event per step, index-aligned. `midi` is the cursor's
     // representative pitch: the top-staff (melody) highest, or — when this onset
     // has no top-staff note (a left-hand passage) — the overall highest pitch.
@@ -406,7 +435,7 @@ function makeCursorWalk(osmd) {
         bottom: box.bottom,
       };
     });
-    return { events, notes, tempoEntries, steps, measures, staves: extractStaffGeometry(osmd), staffBoxes: extractPerStaffGeometry(osmd) };
+    return { events, notes, tempoEntries, steps, measures, measureMap, staves: extractStaffGeometry(osmd), staffBoxes: extractPerStaffGeometry(osmd), measureBounds: extractMeasureBounds(osmd) };
   }
 
   return { cursor, processStep, finalize };
@@ -621,7 +650,8 @@ function applyManuscriptRules(osmd, manuscript) {
  * @param {HTMLElement} host
  * @param {string} xml - raw MusicXML
  * @param {{ width?:number, flow?:'wrapped'|'horizontal', scale?:number,
- *           transpose?:number, manuscript?:boolean, shouldAbort?:() => boolean }} [opts]
+ *           transpose?:number, manuscript?:boolean, newSystemFromXML?:boolean,
+ *           shouldAbort?:() => boolean }} [opts]
  *   transpose is an integer semitone offset (default 0) re-engraving the score in
  *   a new key — the notation AND the extracted pitches follow it.
  *   manuscript opts into the writing-surface rules — see applyManuscriptRules.
@@ -654,6 +684,7 @@ export async function osmdEngrave(host, xml, opts = {}) {
     drawMetronomeMarks: false,
     followCursor: false,
     renderSingleHorizontalStaffline: flow === 'horizontal',
+    newSystemFromXML: opts.newSystemFromXML === true,
   });
   // Mid-system measure numbers pile onto tight chords; system-start only.
   osmd.EngravingRules.RenderMeasureNumbersOnlyAtSystemStart = true;

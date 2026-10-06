@@ -50,6 +50,18 @@ const handleIn = (c) => c.querySelector('.piano-score-range-handle--in');
 const handleOut = (c) => c.querySelector('.piano-score-range-handle--out');
 
 describe('RangeHandleLayer', () => {
+  it('anchors selection handles at barlines when engraved bounds are available', () => {
+    const measureRects = [
+      { left: 50, right: 250, top: 70, bottom: 220 },
+      { left: 250, right: 450, top: 70, bottom: 220 },
+    ];
+    const { container } = mount({ measureRects });
+    expect(handleIn(container).style.left).toBe('26px');
+    expect(handleOut(container).style.left).toBe('426px');
+    expect(handleIn(container).style.top).toBe('58px');
+    expect(handleIn(container).style.height).toBe('174px');
+  });
+
   it('renders both handles at the range extents', () => {
     const { container } = mount();
     expect(handleIn(container)).not.toBeNull();

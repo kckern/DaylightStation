@@ -4,6 +4,8 @@
 
 .musicxml-renderer { position: relative; margin: 0 auto; }
 .musicxml-renderer__svg svg { display: block; }
+.musicxml-renderer[data-fill-container] { min-width: 0; min-height: 0; }
+.musicxml-renderer[data-fill-container] .musicxml-renderer__svg { width: 100%; height: 100%; min-width: 0; min-height: 0; }
 .musicxml-renderer--placeholder { color: #6a6256; padding: 2rem; text-align: center; }
 .musicxml-renderer__busy {
   position: absolute; inset: 0; z-index: 6; min-height: 16rem;

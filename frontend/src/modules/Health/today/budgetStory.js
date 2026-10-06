@@ -29,7 +29,8 @@ function priceLine(budget, baseline) {
 }
 
 function judge({ lines: L, spend, over, gain, tiers }, budget) {
-  const ended = L.even == null ? null : `ended ${n(L.even - L.food)} under break even`;
+  const ended = L.even == null ? null : L.food === L.even
+    ? 'ended at break even' : `ended ${n(L.even - L.food)} under break even`;
   if (budget.zone === 'incomplete') {
     return { value: null, text: 'Incomplete log', sub: `${n(L.food)} logged, under the ${n(L.floor)} floor · no verdict` };
   }
@@ -52,11 +53,18 @@ function live({ lines: L, spend, over, gain, tiers }) {
   const toEven = L.even == null ? null : `${n(L.even - L.food)} to break even`;
   const deficitPrice = deficit ? `${n(deficit.left)} deficit` : null;
   if (spend === 'gain') return { value: gain, text: 'past break even', sub: over > gain ? `${n(over)} over plan` : null };
+  if (L.even != null && L.food === L.even) return {
+    value: null, text: L.ceiling === L.even ? 'At plan limit · break even' : 'At break even',
+    sub: over > 0 ? `${n(over)} over plan` : null,
+  };
   if (spend === 'over') {
     return deficit
       ? { value: deficit.left, text: 'to break even', sub: `${n(over)} over plan` }
       : { value: over, text: 'over plan', sub: null };
   }
+  if (L.ceiling > 0 && L.food === L.ceiling) return {
+    value: null, text: 'At plan limit', sub: deficitPrice,
+  };
   if (spend === 'workout') {
     return { value: workout.left, text: 'of workout left', sub: join([`used ${n(workout.used)} of ${n(workout.to - workout.from)}`, deficitPrice, toEven]) };
   }
@@ -80,9 +88,10 @@ export function budgetStory(budget, { date = null, today = null, baseline = null
   let told;
   if (finished) { job = 'judge'; told = judge(ladder, budget); }
   else if (tentative) {
-    const { lines: L, tiers } = ladder;
+    const { lines: L } = ladder;
     job = 'trust';
-    told = { value: tiers.find(t => t.key === 'free')?.left ?? 0, text: 'free',
+    const position = live(ladder);
+    told = { value: position.value, text: position.text,
       sub: `${n(Math.max(0, L.floor - L.food))} under the ${n(L.floor)} floor · prices assume the log is complete` };
   } else {
     job = ladder.spend === 'over' || ladder.spend === 'gain' ? 'contain' : 'afford';
