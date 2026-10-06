@@ -22,6 +22,7 @@ const h = vi.hoisted(() => ({
   activeNotes: new Map(),
   record: vi.fn(),
   createAttempt: vi.fn(),
+  createRuntime: vi.fn(),
   // The two runtime calls the start model is made of. Spied through, never
   // replaced: the real engine still grades every note.
   start: vi.fn(),
@@ -159,6 +160,7 @@ vi.mock('../../../performance/assessmentSession.js', async (importOriginal) => {
     // and the spies only record how it was driven (start's lead-in, and which
     // notes reached observe).
     createAssessmentRuntime: (...args) => {
+      h.createRuntime(...args);
       const runtime = actual.createAssessmentRuntime(...args);
       return {
         ...runtime,
@@ -183,6 +185,7 @@ function resetHarness() {
   // mockClear, not mockReset — the implementation is installed once by the
   // module factory and must survive between tests.
   h.createAttempt.mockClear();
+  h.createRuntime.mockClear();
   for (const logger of Object.values(h.log)) logger.mockClear();
 }
 
@@ -219,6 +222,18 @@ describe('ExerciseRun shared assessment wiring', () => {
     await screen.findByText('Play the first note to begin.');
     press(view, props, midi);
   };
+
+  it('keeps one assessment runtime across note-on and note-off rerenders', async () => {
+    const props = { instance: subject(), score: null, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+    expect(h.createRuntime).toHaveBeenCalledTimes(1);
+
+    act(() => { h.activeNotes = new Map([[61, { velocity: 1 }]]); view.rerender(<ExerciseRun {...props} />); });
+    act(() => { h.activeNotes = new Map(); view.rerender(<ExerciseRun {...props} />); });
+
+    expect(h.createRuntime).toHaveBeenCalledTimes(1);
+  });
 
   it('drives MIDI through the shared cursor runtime and persists completed practice evidence', async () => {
     const props = { instance: subject(), score: null, intent: 'practice', practiceMode: 'free', onExit: vi.fn(), onPassed: vi.fn() };
@@ -493,7 +508,9 @@ describe('ExerciseRun shared assessment wiring', () => {
     render(<ExerciseRun {...props} />);
 
     expect(await screen.findByText(copy)).toBeInTheDocument();
-    await waitFor(() => expect(props.onUnavailable).toHaveBeenCalledWith(reason));
+    await waitFor(() => expect(props.onUnavailable).toHaveBeenCalledWith(
+      reason, ...(reason === 'unrunnable' ? ['attempt-unbuildable'] : []),
+    ));
     expect(props.onUnavailable).toHaveBeenCalledTimes(1);
   });
 
@@ -566,6 +583,24 @@ describe('ExerciseRun shared assessment wiring', () => {
     expect(screen.getByText(/Release the keys, then play any key to try again\./)).toBeInTheDocument();
   });
 
+  it('can report a failure to its host while retaining the shared local retry experience', async () => {
+    const requirement = withPassScore({ passScore: 0.8 });
+    const props = {
+      instance: subject(), score: null, intent: 'challenge', requirement,
+      failurePresentation: 'local', onExit: vi.fn(), onPassed: vi.fn(), onFailed: vi.fn(),
+    };
+    const view = render(<ExerciseRun {...props} />);
+    await armFree(view, props);
+    press(view, props, 61);
+    press(view, props, 61);
+    press(view, props, 61);
+    press(view, props, 62);
+
+    await waitFor(() => expect(props.onFailed).toHaveBeenCalledTimes(1));
+    expect(screen.getByText('Keep working')).toBeInTheDocument();
+    expect(screen.getByText(/Release the keys, then play any key to try again\./)).toBeInTheDocument();
+  });
+
   it('a host that took onFailed still gets the run’s own pass panel', async () => {
     // Only the FAILURE panel is the host's business. `onPassed` is
     // automatic, with no additional input required.
@@ -620,8 +655,8 @@ describe('ExerciseRun shared assessment wiring', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
-  it('a cued ask arms on ANY key, counts in one measure, and does not grade the arming key', async () => {
-    // 4/4 at 60bpm — one measure is exactly four seconds of count-in.
+  it('a cued ask arms on ANY key, counts in four pulses, and does not grade the arming key', async () => {
+    // Four quarter pulses at 60bpm take four seconds.
     h.instanceData = { ...h.instance, tempo: { start_bpm: 60 } };
     const requirement = cuedRequirement({ passScore: 0.8 });
     expect(requirement.mode).toBe('cued');
@@ -638,10 +673,10 @@ describe('ExerciseRun shared assessment wiring', () => {
     // The arming key is a gesture, not a performance: it is never graded.
     expect(h.observe).not.toHaveBeenCalled();
     // No number before the first click has sounded (the pre-roll)…
-    expect(screen.queryByLabelText(/Count in, beat/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Starting in/)).not.toBeInTheDocument();
     // …then the count-in is visible from its first beat, once the pre-roll
     // (CLICK_PREROLL_MS) has passed on the run's own clock…
-    expect(await screen.findByLabelText('Count in, beat 1')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Starting in 4')).toBeInTheDocument();
     // …and audible: the metronome covers the lead-in, so the last count-in
     // click and the first played beat are one grid.
     expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 60 });
@@ -698,13 +733,12 @@ describe('ExerciseRun shared assessment wiring', () => {
     // ONE note per click, and the sentence says so. Counted in quarters this
     // read "4 clicks, then play two notes on every click" — a true sentence
     // about a grid no child can act on at sight.
-    await screen.findByText("Press any key to start. You'll hear 8 clicks, then play one note on every click.");
+    await screen.findByText("Press any key to start. You'll hear 4 clicks, then play one note on every click.");
 
     press(view, props, 63);
 
-    // The count-in is still exactly ONE MEASURE of the music. Only the number
-    // of clicks inside it changed, never its length.
-    expect(h.start).toHaveBeenCalledWith({ time: expect.any(Number), leadInMs: 4 * 60000 / 60, clock: 'date-now' });
+    // Four eighth-note pulses at 60 quarter BPM take two seconds.
+    expect(h.start).toHaveBeenCalledWith({ time: expect.any(Number), leadInMs: 2000, clock: 'date-now' });
     // 60bpm in quarters IS 120 in eighths, and 120 is what the child hears.
     expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 120 });
   });
@@ -1747,8 +1781,8 @@ describe('ExerciseRun piano-only completion', () => {
 describe('timed exercise clock and input boundary', () => {
   beforeEach(() => { resetHarness(); vi.useFakeTimers({ shouldAdvanceTime: true }); });
   afterEach(() => vi.useRealTimers());
-  const mountTimed = async () => {
-    h.instanceData = { ...h.instance, tempo: { start_bpm: 60 }, events: [60,62,64,65].map((midi,i) => ({ id:`beat-${i}`, value:'quarter', notes:[{midi,hand:'right'}] })) };
+  const mountTimed = async (count = 4, meter = '4/4') => {
+    h.instanceData = { ...h.instance, meter, tempo: { start_bpm: 60 }, events: [60,62,64,65,67,69,71,72].slice(0, count).map((midi,i) => ({ id:`beat-${i}`, value:'quarter', notes:[{midi,hand:'right'}] })) };
     const props = { instance:subject(), score:null, intent:'challenge', requirement:cuedRequirement({passScore:0.8}), onPassed:vi.fn() };
     const view = render(<ExerciseRun {...props} />);
     await screen.findByText(/Press any key to start/);
@@ -1758,6 +1792,123 @@ describe('timed exercise clock and input boundary', () => {
     act(() => vi.advanceTimersByTime(CLICK_PREROLL_MS));
     return {view,props};
   };
+  it.each(['3/4', '6/8'])('groups the visual downbeat by the authored %s meter', async (meter) => {
+    const { view, props } = await mountTimed(8, meter);
+    const { time, leadInMs } = h.start.mock.calls.at(-1)[0];
+    const run = view.container.querySelector('.piano-exercise-run');
+    for (const [quarter, downbeat, marker] of [[0, 'true', '1'], [2, 'false', '3'], [3, 'true', '1'], [4, 'false', '2'], [6, 'true', '1']]) {
+      act(() => { vi.setSystemTime(time + leadInMs + quarter * 1000); view.rerender(<ExerciseRun {...props} />); });
+      expect(run).toHaveAttribute('data-downbeat', downbeat);
+      expect(run.querySelector('.piano-exercise-run__beat-marker')).toHaveTextContent(marker);
+    }
+  });
+  it('keeps a generic beat without claiming unknown meter downbeats', async () => {
+    const { view, props } = await mountTimed(8, null);
+    const { time, leadInMs } = h.start.mock.calls.at(-1)[0];
+    act(() => { vi.setSystemTime(time + leadInMs); view.rerender(<ExerciseRun {...props} />); });
+    expect(view.container.querySelector('.piano-exercise-run')).not.toHaveAttribute('data-downbeat');
+  });
+  it.each([
+    { gradedBpm: 15, pulseBpm: 30, periodMs: 2000, leadInMs: 8000 },
+    { gradedBpm: 120, pulseBpm: 120, periodMs: 500, leadInMs: 2000 },
+  ])('starts four pulses at $gradedBpm quarter BPM and keeps the selected grid through grading', async ({ gradedBpm, pulseBpm, periodMs, leadInMs }) => {
+    h.instanceData = {
+      ...h.instance, tempo: { start_bpm: gradedBpm },
+      events: [60, 62, 64, 65].map((midi, i) => ({ id: `e${i}`, value: '8th', notes: [{ midi, hand: 'right' }] })),
+    };
+    const props = { instance: subject(), score: null, intent: 'challenge', requirement: cuedRequirement({ passScore: 0.8 }), onPassed: vi.fn(), traceContext: { tempoStage: 'very-slow', clickLevel: 'loud' } };
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText(/Press any key to start/);
+    pressKey(view, props, 55);
+    expect(h.start).toHaveBeenCalledWith({ time: expect.any(Number), leadInMs, clock: 'date-now' });
+    const anchorMs = h.start.mock.calls.at(-1)[0].time;
+    const showAt = (elapsedMs) => act(() => {
+      vi.setSystemTime(anchorMs + elapsedMs);
+      view.rerender(<ExerciseRun {...props} />);
+    });
+    for (const [elapsedMs, remaining] of [[0, 4], [periodMs, 3], [2 * periodMs, 2], [3 * periodMs, 1]]) {
+      showAt(elapsedMs);
+      expect(screen.getByLabelText(`Starting in ${remaining}`)).toHaveTextContent(String(remaining));
+      expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: pulseBpm, anchorMs });
+    }
+    showAt(leadInMs);
+    expect(view.container.querySelector('section.piano-exercise-run')).toHaveAttribute('data-phase', 'running');
+    expect(screen.queryByLabelText(/Starting in/)).not.toBeInTheDocument();
+    expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: pulseBpm, anchorMs });
+    pressKey(view, props, 60);
+    expect(h.observe).toHaveBeenCalledWith(expect.objectContaining({ midi: 60, time: anchorMs + leadInMs }));
+    expect(h.start).toHaveBeenCalledTimes(1);
+    expect(h.log.info.mock.calls.filter(([event]) => event === 'piano.exercise-countdown-started')).toEqual([
+      ['piano.exercise-countdown-started', expect.objectContaining({ pulseCount: 4, pulseBpm, leadInMs, tempoStage: 'very-slow', clickLevel: 'loud' })],
+    ]);
+  });
+  it('projects PLAY for only the first running beat and keeps one announcement through rerenders', async () => {
+    const { view, props } = await mountTimed();
+    const anchor = h.start.mock.calls.at(-1)[0].time;
+    const showAt = (elapsed) => act(() => {
+      vi.setSystemTime(anchor + elapsed);
+      view.rerender(<ExerciseRun {...props} />);
+    });
+    const run = view.container.querySelector('.piano-exercise-run');
+    showAt(3999);
+    expect(run).toHaveClass('is-countdown');
+    expect(screen.getByLabelText('Starting in 1').style.getPropertyValue('--countdown-progress')).not.toBe('0');
+    showAt(4000);
+    expect(run).toHaveAttribute('data-phase', 'running');
+    expect(run).not.toHaveClass('is-countdown');
+    const announcement = screen.getByLabelText('PLAY');
+    const text = announcement.querySelector('.piano-score-countin__announcement');
+    for (const elapsed of [4050, 4500, 4999]) {
+      showAt(elapsed);
+      expect(screen.getAllByLabelText('PLAY')).toHaveLength(1);
+      expect(screen.getByLabelText('PLAY')).toBe(announcement);
+      expect(announcement.querySelector('.piano-score-countin__announcement')).toBe(text);
+    }
+    showAt(5000);
+    expect(screen.queryByLabelText('PLAY')).not.toBeInTheDocument();
+    expect(view.container.querySelector('.piano-score-countin')).toBeNull();
+  });
+
+  it('clears the countdown immediately when a delayed tick skips the PLAY beat', async () => {
+    const { view, props } = await mountTimed();
+    const anchor = h.start.mock.calls.at(-1)[0].time;
+    act(() => {
+      vi.setSystemTime(anchor + 6100);
+      view.rerender(<ExerciseRun {...props} />);
+    });
+    const run = view.container.querySelector('.piano-exercise-run');
+    expect(run).toHaveAttribute('data-phase', 'running');
+    expect(run).not.toHaveClass('is-countdown');
+    expect(view.container.querySelector('.piano-score-countin')).toBeNull();
+    expect(run).toHaveAttribute('data-beat-pulse', '3');
+  });
+
+  it('shows clock beats and stronger bar starts only during timed running work', async () => {
+    const { view, props } = await mountTimed(8);
+    const run = view.container.querySelector('.piano-exercise-run');
+    expect(run).not.toHaveAttribute('data-beat-pulse');
+    expect(run).not.toHaveAttribute('data-downbeat');
+    const anchor = h.start.mock.calls.at(-1)[0].time;
+    const showAt = (elapsed) => act(() => {
+      vi.setSystemTime(anchor + elapsed);
+      view.rerender(<ExerciseRun {...props} />);
+    });
+    for (const [elapsed, beat, downbeat, marker] of [[4000, '1', 'true', '1'], [5000, '2', 'false', '2'], [7000, '4', 'false', '4'], [8000, '5', 'true', '1']]) {
+      showAt(elapsed);
+      expect(run).toHaveAttribute('data-beat-pulse', beat);
+      expect(run).toHaveAttribute('data-downbeat', downbeat);
+      expect(run.querySelector('.piano-exercise-run__beat-marker')).toHaveTextContent(marker);
+    }
+    pressKey(view, props, 80);
+    expect(run).toHaveAttribute('data-beat-pulse', '5');
+    showAt(12100);
+    act(() => vi.advanceTimersByTime(500));
+    expect(run).toHaveAttribute('data-phase', 'done');
+    expect(run).not.toHaveAttribute('data-beat-pulse');
+    expect(run).not.toHaveAttribute('data-downbeat');
+    expect(run.querySelector('.piano-exercise-run__beat-marker')).toBeNull();
+    expect(run.querySelector('.piano-score-countin')).toBeNull();
+  });
   it('ignores countdown input, hides feedback, and requires held notes to be repressed', async () => {
     const {view,props} = await mountTimed();
     act(() => { h.activeNotes = new Map([[60,{velocity:1}]]); view.rerender(<ExerciseRun {...props}/>); });
@@ -1780,7 +1931,7 @@ describe('timed exercise clock and input boundary', () => {
     await screen.findByText(/Press any key to start/);
     pressKey(view, props, 55);
     expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 120 });
-    act(() => vi.advanceTimersByTime(4050));
+    act(() => vi.advanceTimersByTime(CLICK_PREROLL_MS + 2000));
     expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 120 });
   });
 
@@ -1828,12 +1979,20 @@ describe('timed exercise clock and input boundary', () => {
     pressKey(view, props, 62);
   });
 
-  it('a free run hands the staff no verdicts: it keeps judging held keys live', async () => {
+  it('a free run hands the staff durable pitch verdicts without timing feedback', async () => {
     const props = { instance: subject(), score: null, intent: 'practice', practiceMode: 'free', tier: 3 };
-    render(<ExerciseRun {...props} />);
+    const view = render(<ExerciseRun {...props} />);
     await screen.findByText('Play the first note to begin.');
-    expect(screen.getByTestId('notation')).toHaveAttribute('data-judged', 'false');
+    expect(screen.getByTestId('notation')).toHaveAttribute('data-judged', 'true');
     expect(screen.getByTestId('notation')).toHaveAttribute('data-window-open', 'undefined');
+    pressKey(view, props, 60);
+    await waitFor(() => expect(screen.getByLabelText('Practice score')).toHaveTextContent('Right 1'));
+    expect(screen.getByLabelText('Practice score')).toHaveTextContent('Wrong 0');
+    expect(screen.queryByText(/Early/)).not.toBeInTheDocument();
+    const run = view.container.querySelector('.piano-exercise-run');
+    expect(run).toHaveAttribute('data-phase', 'running');
+    expect(run).not.toHaveAttribute('data-beat-pulse');
+    expect(run).not.toHaveAttribute('data-downbeat');
   });
 
   it('preserves completed assessment evidence when leaving before the musical duration ends', async () => {

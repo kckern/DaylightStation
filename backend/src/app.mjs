@@ -3956,6 +3956,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     releaseEmergencyLockdown,
     getLockdownState,
     identityRelay,
+    garageHumanActivityGateway: emergencyHaGateway,
     eventBus,
     workoutRepository,
     saveWorkout,

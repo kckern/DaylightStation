@@ -239,7 +239,8 @@ arcade/control input does not create attempt evidence.
 
 | Surface | Assessment boundary | Persistence |
 |---|---|---|
-| Sheet Music Learn | silent cursor attempt per whole-piece pass or loop lap; optional metronome remains untimed | practice ledger plus frontier derived from clean, complete spans |
+| Sheet Music Learn roadmap | `ExerciseRun` compiles the selected score passage, filters active parts, and applies the rung's explicit practice requirement; free/metronome are untimed, cued uses the score tempo | revisioned passage/rung reps; guest progress is session-local |
+| Sheet Music Learn direct practice | silent cursor attempt per whole-piece pass or loop lap; optional metronome remains untimed | legacy per-measure practice ledger and frontier |
 | Sheet Music Polish | timed score expectation and span closure | existing per-score Polish record and tier-best projection |
 | Exercises | shared exercise adapter and runtime | practice or challenge attempt as authorized |
 | Battle Stadium | shared exercise adapter/runtime; pass-gated failure consumes the move with no effect | challenge attempt |
@@ -252,6 +253,14 @@ Seek, range, active-hand, transpose, or mode changes abort the current Learn lap
 and prepare a new one. A Learn measure advances the frontier only when its span
 has completeness 1 and cleanliness 1. Metronome-assisted Learn writes no
 placement.
+
+Roadmap passage runs use the same `ExerciseRun` lifecycle as exercise-bank
+material. `practiceRequirement` makes practice explicitly gradable without
+changing legacy practice callers that omit it. `score.activeParts` filters the
+canonical expectation before the attempt is created; inactive engraving stays
+visible but recessed. A successful take banks one configured rep. Consecutive
+rungs reset their own pass count on failure, and a completing rung marks its
+passage complete. Cued/Test Out runs use the MusicXML tempo map and timed judge.
 
 The wireless drawing tablet/canvas is a separate Gaming input and checkpoint
 interface. Its strokes are not MIDI observations and do not pass through this

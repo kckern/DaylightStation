@@ -58,7 +58,9 @@ vi.mock('../../PianoMidiContext.jsx', () => ({
 }));
 vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: 'learner4' }) }));
 vi.mock('../../../components/PianoKeyboard.jsx', () => ({
-  PianoKeyboard: ({ startNote, endNote }) => <div data-testid="keyboard" data-range={`${startNote}-${endNote}`} />,
+  PianoKeyboard: ({ startNote, endNote, targetNotes }) => <div data-testid="keyboard"
+    data-range={`${startNote}-${endNote}`}
+    data-target={[...(targetNotes ?? new Map()).keys()].join(',')} />,
 }));
 // NO `pianoLearningApi` DOUBLE: this surface no longer reaches the bank for
 // anything. `DaylightAPIText` is still doubled, and that one has teeth — the
@@ -75,9 +77,21 @@ vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => 
     MusicXmlRenderer: ({ musicXml, onLayout, onReady, onFailed, children }) => {
       useEffect(() => {
         if (h.engraveFails) { onFailed?.({ error: 'Could not read this score.' }); return; }
+        const shownNumbers = [...new DOMParser().parseFromString(musicXml, 'application/xml')
+          .querySelectorAll('part:first-of-type > measure')]
+          .map((measure) => Number(measure.getAttribute('number')))
+          .filter(Number.isFinite);
+        const shown = h.steps.filter((step) => shownNumbers.includes(step.number));
+        const firstOnset = shown[0]?.onsetQuarter ?? 0;
+        const firstMeasure = shown[0]?.measure ?? 0;
+        const localSteps = shown.map((step) => ({
+          ...step,
+          onsetQuarter: step.onsetQuarter - firstOnset,
+          measure: step.measure - firstMeasure,
+        }));
         onLayout?.({
           width: 800, height: 300, flow: 'wrapped', scale: 1, transpose: 0,
-          tempoEntries: [], measures: [0, 1, 2, 3], events: [], notes: [], steps: h.steps,
+          tempoEntries: [], measures: shownNumbers.map((_, index) => index), events: [], notes: [], steps: localSteps,
         });
         onReady?.();
         // `onFailed` is held in a ref by the real renderer, not a dep — mirrored.
@@ -182,6 +196,30 @@ describe('ExerciseRun — score material, handed down as props', () => {
     expect(config.requirement).toBe(requirement);
   });
 
+  it('applies an explicit practice requirement without changing legacy practice defaults', async () => {
+    const practiceRequirement = { mode: 'free', rubric: { id: 'learn-passage-v1', version: '1', criteria: { completeness: 1, cleanliness: 1 } } };
+    const onPassed = vi.fn();
+    const onFailed = vi.fn();
+    const current = props({
+      intent: 'practice', practiceMode: 'free', requirement: null, practiceRequirement,
+      score: settledScore({ activeParts: ['rh'] }), onPassed, onFailed,
+    });
+    const view = render(<ExerciseRun {...current} />);
+    await screen.findByText('Play the first note to begin.');
+    expect(h.createAttempt.mock.calls.at(-1)[0].requirement).toBe(practiceRequirement);
+
+    press(view, current, 64); // the first expected note arms the free attempt
+    press(view, current, 61); // wrong input counts only after the attempt exists
+    for (const midi of [65, 67, 69]) press(view, current, midi);
+    await waitFor(() => expect(onFailed).toHaveBeenCalledTimes(1));
+    expect(onPassed).not.toHaveBeenCalled();
+
+    h.createAttempt.mockClear();
+    render(<ExerciseRun {...props({ intent: 'practice', practiceMode: 'free', requirement: null, onPassed: undefined })} />);
+    await waitFor(() => expect(h.createAttempt).toHaveBeenCalled());
+    expect(h.createAttempt.mock.calls.at(-1)[0].requirement).toBeNull();
+  });
+
   it('grades a cued passage against the score’s own tempo, not the surface’s', async () => {
     // `createAssessmentAttempt` rejects a timed attempt whose tempo map does not
     // start at onset zero, so a cued score is only buildable at all because the
@@ -235,6 +273,42 @@ describe('ExerciseRun — score material, handed down as props', () => {
 
     press(view, current, 64);
     await waitFor(() => expect(lit()).toEqual([65]));
+  });
+
+  it('keeps the existing score cursor visible during untimed Learn practice', async () => {
+    render(<ExerciseRun {...props({
+      intent: 'practice', practiceMode: 'free', requirement: null,
+      scoreCursorPolicy: 'always',
+    })} />);
+
+    await screen.findByText('Play the first note to begin.');
+    expect(document.querySelector('.piano-score-passage')).toHaveAttribute('data-cursor-enabled', 'true');
+  });
+
+  it('uses the keyboard as after-wrong help instead of an advance answer', async () => {
+    const current = props({
+      intent: 'practice', practiceMode: 'free', requirement: null,
+      keyboardHintPolicy: 'after-wrong',
+    });
+    const view = render(<ExerciseRun {...current} />);
+    await screen.findByText('Play the first note to begin.');
+
+    expect(screen.getByTestId('keyboard')).toHaveAttribute('data-target', '');
+    press(view, current, 64);
+    await waitFor(() => expect(document.querySelector('.piano-exercise-run')).toHaveAttribute('data-displayed-cursor', '1'));
+    expect(screen.getByTestId('keyboard')).toHaveAttribute('data-target', '');
+
+    press(view, current, 61);
+    await waitFor(() => expect(screen.getByTestId('keyboard')).toHaveAttribute('data-target', '65'));
+
+    press(view, current, 65);
+    await waitFor(() => expect(screen.getByTestId('keyboard')).toHaveAttribute('data-target', ''));
+  });
+
+  it('keeps the legacy always-visible keyboard target as the default', async () => {
+    render(<ExerciseRun {...props()} />);
+    await screen.findByText('Play the first note to begin.');
+    expect(screen.getByTestId('keyboard')).toHaveAttribute('data-target', '64');
   });
 
   /**
@@ -295,11 +369,11 @@ describe('ExerciseRun — score material, handed down as props', () => {
    * (which fail later, from the passage's own compile) stay green.
    */
   describe.each([
-    ['the engraver could not read the document', () => { h.engraveFails = true; }, {}],
-    ['the engraving carried no notes', () => { h.steps = []; }, {}],
-    ['the range names bars the document does not have', () => {}, { measures: [9, 12] }],
-    ['the passage is nothing but rests', () => { h.steps = fourBarSteps().filter((s) => s.measure < 2); }, { measures: [3, 4] }],
-  ])('when %s', (_label, arrange, scoreOver) => {
+    ['the engraver could not read the document', () => { h.engraveFails = true; }, {}, 'engrave-failed'],
+    ['the engraving carried no notes', () => { h.steps = []; }, {}, 'no-engraved-notes'],
+    ['the range names bars the document does not have', () => {}, { measures: [9, 12] }, 'passage-empty'],
+    ['the passage is nothing but rests', () => { h.steps = fourBarSteps().filter((s) => s.measure < 2); }, { measures: [3, 4] }, 'no-engraved-notes'],
+  ])('when %s', (_label, arrange, scoreOver, detail) => {
     it('ends the run as unrunnable instead of waiting forever', async () => {
       arrange();
       const onUnavailable = vi.fn();
@@ -309,7 +383,7 @@ describe('ExerciseRun — score material, handed down as props', () => {
       // `unrunnable`, not `instance-not-found`: the document arrived, it simply
       // cannot become an ask. Either way the gate reads it as infrastructure
       // and grants the match.
-      await waitFor(() => expect(onUnavailable).toHaveBeenCalledWith('unrunnable'));
+      await waitFor(() => expect(onUnavailable).toHaveBeenCalledWith('unrunnable', detail));
       expect(screen.queryByText('Getting the music ready…')).toBeNull();
       expect(h.log.warn).toHaveBeenCalledWith(
         'piano.exercise-score-unrunnable',

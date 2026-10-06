@@ -1,8 +1,8 @@
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, act, cleanup, fireEvent, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { render, screen, act, cleanup, fireEvent, within, waitFor } from '@testing-library/react';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { __resetRecorder, __snapshotForTest, KIND } from '../../../../../lib/logging/inputRecorder.js';
 
@@ -75,6 +75,9 @@ const h = vi.hoisted(() => ({
   // sets it and notifies midiNotesListeners so components re-render with it.
   activeNotes: new Map(),
   midiNotesListeners: new Set(),
+  config: { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: { roadmap: false } } },
+  learnLabProps: null,
+  locationSearch: '',
 }));
 
 // Derive per-onset full-staff steps from the melody events: the first pitch of
@@ -128,7 +131,19 @@ vi.mock('../../PianoMidiContext.jsx', async () => {
   };
 });
 vi.mock('../../usePianoPlayback.js', () => ({ usePianoPlayback: () => ({ setPlaying: () => {} }) }));
-vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: { keyboard: { startNote: 21, endNote: 108 } } }) }));
+vi.mock('./LearnLab.jsx', () => ({
+  default: (props) => {
+    h.learnLabProps = props;
+    return <section role="dialog" aria-label={`${props.segment.label} · ${props.rung.label}`}>
+      <button type="button" onClick={props.onClose}>Close lab</button>
+      <button type="button" onClick={() => props.onFinished({ passed: true, score: 0.92 })}>Complete rung</button>
+      <button type="button" onClick={() => { props.onMastered(props.segment.id); props.onFinished({ passed: true, score: 1 }); }}>Master segment</button>
+      <button type="button" onClick={() => props.onUnavailable('passage-too-dense')}>Fail segment</button>
+    </section>;
+  },
+}));
+vi.mock('../Exercises/ScorePassage.jsx', () => ({ default: () => <div data-testid="passage-preview">Music preview</div> }));
+vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: h.config }) }));
 vi.mock('../../PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumb: (crumbs) => { h.crumbs = crumbs || []; } }));
 vi.mock('../../useReloadGuard.js', () => ({ default: () => {} }));
 // Spyable click scheduler: useMetronomeClick creates one per enable, so hand it
@@ -137,6 +152,9 @@ vi.mock('./clickScheduler.js', () => ({ createClickScheduler: () => h.clickSched
 // Observe recordCycle calls without touching usePianoUser/DaylightAPI — see the
 // rationale on h.recordCycle above.
 vi.mock('./usePracticeRecord.js', () => ({
+  compatibleLearnPassages: (learn, plan) => (
+    learn?.revision === plan?.revision ? (learn.passages || {}) : {}
+  ),
   // `record` reads h.practice so a test can seed per-bucket pass history before
   // render (Task 15's frontier-follows-the-seeded-bucket test) — {} by default,
   // matching every OTHER test's prior no-history behavior exactly.
@@ -147,6 +165,7 @@ vi.mock('./usePracticeRecord.js', () => ({
     recordCycle: h.recordCycle,
     recordTierBest: h.recordTierBest,
     recordAssessmentAttempt: h.recordAssessmentAttempt,
+    recordLearnRep: vi.fn(),
   }),
 }));
 // usePianoPreferences (Task 15) reaches usePianoUser exactly like
@@ -235,8 +254,9 @@ import ScorePlayer from './ScorePlayer.jsx';
 // undefined-ish.
 const emitNote = (evt) => act(() => { [...h.noteCbs].forEach((fn) => fn(evt)); });
 const play = (note) => emitNote({ type: 'note_on', note, velocity: 80 });
-const renderPlayer = () =>
-  render(<MemoryRouter><ScorePlayer score={{ title: 'Mary', musicXml: '<score/>' }} /></MemoryRouter>);
+const LocationProbe = () => { h.locationSearch = useLocation().search; return null; };
+const renderPlayer = (entry = '/') =>
+  render(<MemoryRouter initialEntries={[entry]}><LocationProbe /><ScorePlayer score={{ title: 'Mary', musicXml: '<score/>' }} /></MemoryRouter>);
 
 // Sets the mocked live-note store's activeNotes and notifies every subscribed
 // component (see the usePianoMidiNotes mock above) so it re-renders holding
@@ -276,6 +296,109 @@ beforeEach(() => {
   h.prefsListeners = new Set();
   h.activeNotes = new Map();
   h.midiNotesListeners = new Set();
+  h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: { roadmap: false } } };
+  h.learnLabProps = null;
+  h.locationSearch = '';
+});
+
+describe('ScorePlayer — score-native Learn roadmap', () => {
+  it('opens a deep-linked rung at the chooser instead of auto-starting it', () => {
+    h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: {} } };
+    h.layoutExtras = {
+      measures: [{ number: 1, firstStep: 0, lastStep: 1 }, { number: 2, firstStep: 2, lastStep: 3 }],
+      measureBounds: [{ left: 80, right: 190, top: 10, bottom: 210 }, { left: 190, right: 310, top: 10, bottom: 210 }],
+    };
+    renderPlayer('/?learnPassage=m0-1&learnRung=right');
+    pickMode('Learn');
+    expect(screen.getByRole('dialog', { name: 'Segment 1 practice' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Segment 1 · Right hand' })).not.toBeInTheDocument();
+  });
+  it('keeps piece progress visible and opens a segment launchpad before the recommended drill', () => {
+    h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: {} } };
+    h.layoutExtras = {
+      measures: [
+        { number: 1, firstStep: 0, lastStep: 1 },
+        { number: 2, firstStep: 2, lastStep: 3 },
+      ],
+      measureBounds: [
+        { left: 80, right: 190, top: 10, bottom: 210 },
+        { left: 190, right: 310, top: 10, bottom: 210 },
+      ],
+    };
+    renderPlayer();
+    pickMode('Learn');
+    expect(screen.queryByRole('navigation', { name: 'Selected segment' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Learn roadmap' })).not.toBeInTheDocument();
+    const progress = screen.getByRole('navigation', { name: 'Piece learning progress' });
+    fireEvent.click(within(progress).getByRole('button', { name: /Segment 1/ }));
+    expect(screen.getByRole('dialog', { name: 'Segment 1 practice' })).toBeInTheDocument();
+    expect(screen.getByTestId('passage-preview')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Up next/ }));
+    expect(screen.getByRole('dialog', { name: 'Segment 1 · Right hand' })).toBeInTheDocument();
+    expect(h.locationSearch).toContain('learnPassage=m0-1');
+    expect(h.locationSearch).toContain('learnRung=right');
+  });
+
+  it('plucks a segment into the lab, restores the score anchor, and celebrates only that segment once', async () => {
+    h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: {} } };
+    h.layoutExtras = {
+      measures: [
+        { number: 1, firstStep: 0, lastStep: 1 },
+        { number: 2, firstStep: 2, lastStep: 3 },
+      ],
+      measureBounds: [{ left: 80, right: 190, top: 10, bottom: 210 }, { left: 190, right: 310, top: 10, bottom: 210 }],
+    };
+    renderPlayer();
+    pickMode('Learn');
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    scroll.scrollTop = 137;
+    fireEvent.click(screen.getAllByRole('button', { name: /Segment 1/ })[0]);
+    fireEvent.click(screen.getByRole('button', { name: /Up next/ }));
+    expect(screen.getByRole('dialog', { name: 'Segment 1 · Right hand' })).toBeInTheDocument();
+    expect(screen.queryByTestId('renderer')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Master segment' }));
+    expect(screen.getByRole('dialog', { name: 'Practice result' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to segment' }));
+    await waitFor(() => expect(screen.getByTestId('renderer')).toBeInTheDocument());
+    await waitFor(() => expect(document.querySelector('.piano-score-player__scroll').scrollTop).toBe(137));
+    const achieved = screen.getAllByRole('button', { name: /Segment 1/ }).find((button) => button.classList.contains('piano-learn-passage-map'));
+    expect(achieved).toHaveClass('is-achievement');
+    await waitFor(() => expect(achieved).not.toHaveClass('is-achievement'), { timeout: 1800 });
+  });
+
+  it('offers explicit choices after a rung instead of opening the next run', async () => {
+    h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: {} } };
+    h.layoutExtras = {
+      measures: [{ number: 1, firstStep: 0, lastStep: 1 }, { number: 2, firstStep: 2, lastStep: 3 }],
+      measureBounds: [{ left: 80, right: 190, top: 10, bottom: 210 }, { left: 190, right: 310, top: 10, bottom: 210 }],
+    };
+    renderPlayer();
+    pickMode('Learn');
+    fireEvent.click(screen.getAllByRole('button', { name: /Segment 1/ })[0]);
+    fireEvent.click(screen.getByRole('button', { name: /Up next/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Complete rung' }));
+
+    expect(screen.getByRole('dialog', { name: 'Practice result' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next drill' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Practice again' })).toBeInTheDocument();
+    expect(h.locationSearch).toContain('learnPassage=m0-1');
+    expect(h.locationSearch).toContain('learnRung=right');
+  });
+
+  it('returns from an unrunnable lab with an explanation', async () => {
+    h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: {} } };
+    h.layoutExtras = {
+      measures: [{ number: 1, firstStep: 0, lastStep: 1 }, { number: 2, firstStep: 2, lastStep: 3 }],
+      measureBounds: [{ left: 80, right: 190, top: 10, bottom: 210 }, { left: 190, right: 310, top: 10, bottom: 210 }],
+    };
+    renderPlayer();
+    pickMode('Learn');
+    fireEvent.click(screen.getAllByRole('button', { name: /Segment 1/ })[0]);
+    fireEvent.click(screen.getByRole('button', { name: /Up next/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Fail segment' }));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('too much music to fit'));
+    expect(screen.getByTestId('renderer')).toBeInTheDocument();
+  });
 });
 
 // Mode switching now lives in the header crumb → ModeSheet (wave-2 B), not a
@@ -502,7 +625,7 @@ describe('ScorePlayer — note-highlight ink (wave-2 A)', () => {
   it('MusicXmlRenderer.scss gives .piano-note-hit its own fixed dark brown, never the shared --nh-color ink (wave-2 A)', () => {
     // jsdom doesn't compute styles from the stylesheet, so assert the source
     // directly (same pattern as TransportButton.test.jsx's SCSS floor check).
-    const scss = readFileSync(resolve('frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.scss'), 'utf8');
+    const scss = readFileSync(resolve('src/modules/MusicNotation/renderers/MusicXmlRenderer.scss'), 'utf8');
     // .piano-note-hit nests one level (its `path, rect, ...` sub-rule), so match
     // through that inner brace pair too, not just up to the first `}`.
     const hitBlock = scss.match(/\.piano-note-hit\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
@@ -513,7 +636,7 @@ describe('ScorePlayer — note-highlight ink (wave-2 A)', () => {
   });
 
   it('MusicXmlRenderer.scss never draws a pending notehead hollow — that reads as a half note', () => {
-    const scss = readFileSync(resolve('frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.scss'), 'utf8');
+    const scss = readFileSync(resolve('src/modules/MusicNotation/renderers/MusicXmlRenderer.scss'), 'utf8');
     const block = scss.match(/\.piano-note-pending\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
     expect(block).toBeTruthy();
     // A hollow head means a half or whole note. An outlined quarter note is a
@@ -528,7 +651,7 @@ describe('ScorePlayer — note-highlight ink (wave-2 A)', () => {
   });
 
   it('the pending pulse breathes ink→brown and gains mass, never toward transparency', () => {
-    const scss = readFileSync(resolve('frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.scss'), 'utf8');
+    const scss = readFileSync(resolve('src/modules/MusicNotation/renderers/MusicXmlRenderer.scss'), 'utf8');
     const frames = scss.match(/@keyframes piano-note-pending-pulse\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
     // Fading a notehead out says "this one is not it" (the ghost mark's job), the
     // exact opposite of "play this now". Both ends must be solid ink.
@@ -3663,10 +3786,10 @@ describe('ScorePlayer — staff dim (Task 8)', () => {
   it('MusicXmlRenderer.scss fades the staff group and keeps no mask rule', () => {
     // jsdom computes no stylesheet, so assert the source (same pattern as the
     // .piano-note-hit colour check above).
-    const scss = readFileSync(resolve('frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.scss'), 'utf8');
+    const scss = readFileSync(resolve('src/modules/MusicNotation/renderers/MusicXmlRenderer.scss'), 'utf8');
     expect(scss).toMatch(/g\.staffline\.is-dimmed\s*\{[^}]*opacity/);
     expect(scss).not.toContain('.piano-score-staff-dim');
-    expect(readFileSync(resolve('frontend/src/Apps/PianoApp.scss'), 'utf8')).not.toContain('.piano-score-staff-dim');
+    expect(readFileSync(resolve('src/Apps/PianoApp.scss'), 'utf8')).not.toContain('.piano-score-staff-dim');
   });
 });
 

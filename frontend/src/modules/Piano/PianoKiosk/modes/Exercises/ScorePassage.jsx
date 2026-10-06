@@ -4,11 +4,79 @@ import { MusicXmlRenderer } from '../../../../MusicNotation/renderers/MusicXmlRe
 import { parseMusicXml } from '../../../../MusicNotation/parseMusicXml.js';
 import NoteHighlightLayer from '../SheetMusic/NoteHighlightLayer.jsx';
 import { compileScoreExpectation } from '../../../performance/assessmentAttempt.js';
+import { excerptMusicXml, selectMusicXmlParts } from './scorePassageXml.js';
+import { scaleScoreTempoMap, scaledScoreBpm } from './scoreTempo.js';
+import { resolvePassageLayout, systemForStep } from './passageLayout.js';
 
 let _logger;
 function logger() {
   if (!_logger) _logger = getLogger().child({ component: 'piano-score-passage' });
   return _logger;
+}
+
+export function fitPassageLayout({ layout, scale, minScale, maxSystems }) {
+  const systems = new Set((layout?.staves ?? []).map((staff) => staff.system).filter(Number.isInteger));
+  const count = systems.size || 1;
+  if (count <= maxSystems) return { accepted: true, nextScale: null };
+  if (scale <= minScale) return { accepted: false, nextScale: null };
+  const candidate = Math.max(minScale, Math.round(scale * (maxSystems / count) * 100) / 100);
+  return { accepted: false, nextScale: candidate < scale ? candidate : null };
+}
+
+/**
+ * Pick a single forced break that balances bar count. A system wrap is the
+ * horizontal reset between adjacent measure boxes; their vertical bounds are
+ * ink extents and legitimately vary between measures on the same system.
+ */
+export function balancedSystemBreak(measureBounds = []) {
+  const bounds = measureBounds.filter((bound) => bound
+    && Number.isFinite(bound.left) && Number.isFinite(bound.right) && Number.isFinite(bound.top)
+    && bound.right > bound.left);
+  if (bounds.length !== measureBounds.length || bounds.length < 3) return null;
+  const currentBreak = firstHorizontalWrap(bounds);
+  if (currentBreak < 0) return null;
+  const minPerSystem = bounds.length >= 4 ? 2 : 1;
+  const best = Math.min(bounds.length - minPerSystem, Math.max(minPerSystem, Math.ceil(bounds.length / 2)));
+  return best === currentBreak ? null : best;
+}
+
+// Pure geometry is exported for regression coverage alongside the component.
+// eslint-disable-next-line react-refresh/only-export-components
+export function systemBreakMatches(measureBounds = [], breakBefore) {
+  if (!Number.isInteger(breakBefore) || breakBefore <= 0 || breakBefore >= measureBounds.length) return false;
+  if (measureBounds.some((bound) => !Number.isFinite(bound?.left))) return false;
+  const wraps = measureBounds.flatMap((bound, index) => (
+    index > 0 && bound.left < measureBounds[index - 1].left - 1 ? [index] : []
+  ));
+  const mirroredBreak = measureBounds.length - breakBefore;
+  return wraps.length === 1 && (wraps[0] === breakBefore || wraps[0] === mirroredBreak);
+}
+
+function firstHorizontalWrap(bounds) {
+  return bounds.findIndex((bound, index) => index > 0 && bound.left < bounds[index - 1].left - 1);
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function passageCursorBounds({ noteBounds = [], staffBoxes = [], activeStaffs = [], onsetStaffs = [] }) {
+  const notes = noteBounds.filter((box) => [box.left, box.right, box.top, box.bottom].every(Number.isFinite));
+  if (!notes.length) return null;
+  const noteTop = Math.min(...notes.map((box) => box.top));
+  const noteBottom = Math.max(...notes.map((box) => box.bottom));
+  const noteCenter = (noteTop + noteBottom) / 2;
+  const systemCandidates = staffBoxes.filter((box) => !onsetStaffs.length || onsetStaffs.includes(box.staff));
+  const system = systemCandidates.reduce((nearest, box) => {
+    const distance = Math.abs(noteCenter - (box.top + (box.lineSpacing * 2)));
+    return !nearest || distance < nearest.distance ? { system: box.system, distance } : nearest;
+  }, null)?.system;
+  const active = staffBoxes.filter((box) => box.system === system && activeStaffs.includes(box.staff));
+  const spacing = Math.max(6, ...active.map((box) => box.lineSpacing || 0));
+  const staffTop = active.length ? Math.min(...active.map((box) => box.top)) - spacing : noteTop - spacing * 2;
+  const staffBottom = active.length ? Math.max(...active.map((box) => box.top + (box.lineSpacing * 4))) + spacing : noteBottom + spacing * 2;
+  const left = Math.min(...notes.map((box) => box.left)) - 6;
+  const right = Math.max(...notes.map((box) => box.right)) + 6;
+  const top = Math.min(staffTop, noteTop - spacing);
+  const bottom = Math.max(staffBottom, noteBottom + spacing);
+  return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
 /**
@@ -69,10 +137,13 @@ function logger() {
  */
 export default function ScorePassage({
   musicXml, sourceId, measures = null, onExpectation, onUnrunnable, cursorIndex = 0, wrongMidi = null, showCursor = false,
-  verdicts = null, windowOpen = undefined,
+  verdicts = null, windowOpen = undefined, activeParts: requestedParts = null, rangeIndices = null, tempoPercent = 100,
+  keepWholePassage = false,
 }) {
+  const containerRef = useRef(null);
   const judged = verdicts instanceof Map;
   const [layout, setLayout] = useState(null);
+  const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const publishedRef = useRef(null);
   /**
    * The terminal answer already given. Keyed by REASON, not a bare boolean, so a
@@ -83,8 +154,53 @@ export default function ScorePassage({
    */
   const reportedRef = useRef(null);
 
-  // A stable identity, or the renderer's engrave effect re-fires every render.
-  const handleLayout = useCallback((result) => setLayout(result), []);
+  const [renderScale, setRenderScale] = useState(1);
+  const [systemBreakBefore, setSystemBreakBefore] = useState(null);
+  const [fitError, setFitError] = useState(null);
+
+  useLayoutEffect(() => {
+    const element = containerRef.current;
+    if (!element) return undefined;
+    const measure = () => setViewport((previous) => {
+      const next = { width: element.clientWidth, height: element.clientHeight };
+      return Math.abs(next.width - previous.width) < 2 && Math.abs(next.height - previous.height) < 2 ? previous : next;
+    });
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  const handleLayout = useCallback((result) => {
+    const fit = fitPassageLayout({ layout: result, scale: renderScale, minScale: MIN_PASSAGE_SCALE, maxSystems: MAX_PASSAGE_SYSTEMS });
+    if (fit.accepted) {
+      const balancedBreak = systemBreakBefore == null ? balancedSystemBreak(result.measureBounds ?? []) : null;
+      if (balancedBreak != null) {
+        setLayout(null);
+        setSystemBreakBefore(balancedBreak);
+        logger().info('piano.score-passage-balanced', {
+          id: sourceId ?? null, measures, breakBefore: balancedBreak, scale: renderScale,
+        });
+        return;
+      }
+      if (systemBreakBefore != null && !systemBreakMatches(result.measureBounds ?? [], systemBreakBefore)) {
+        logger().warn('piano.score-passage-break-mismatch', {
+          id: sourceId ?? null,
+          measures,
+          breakBefore: systemBreakBefore,
+          measureBounds: (result.measureBounds ?? []).map(({ left, right, top, bottom }) => ({ left, right, top, bottom })),
+        });
+        setLayout(null);
+        setFitError('passage-layout-unbalanced');
+        return;
+      }
+      setFitError(null); setLayout(result); return;
+    }
+    setLayout(null);
+    if (fit.nextScale != null) setRenderScale(fit.nextScale);
+    else setFitError('passage-too-dense');
+  }, [measures, renderScale, sourceId, systemBreakBefore]);
 
   /**
    * The one place a dead end is announced. Every caller of this is a decision to
@@ -125,11 +241,22 @@ export default function ScorePassage({
    * is always playable.
    */
   const range = useMemo(() => {
+    if (rangeIndices && Number.isInteger(rangeIndices.start) && Number.isInteger(rangeIndices.end)
+      && rangeIndices.start >= 0 && rangeIndices.end >= rangeIndices.start) return rangeIndices;
     if (!Array.isArray(measures) || measures.length !== 2) return null;
     const [start, end] = measures;
     if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start) return null;
     return { start: start - 1, end: end - 1 };
-  }, [measures]);
+  }, [measures, rangeIndices]);
+
+  const excerpt = useMemo(
+    () => excerptMusicXml(musicXml, range, { systemBreakBefore }),
+    [musicXml, range, systemBreakBefore],
+  );
+  const focused = useMemo(
+    () => (excerpt.musicXml ? selectMusicXmlParts(excerpt.musicXml, requestedParts) : { musicXml: null, originalStaffIndices: [], error: excerpt.error }),
+    [excerpt.error, excerpt.musicXml, requestedParts],
+  );
 
   /**
    * Every engraved note, in the shape the score compiler reads: the note as the
@@ -139,9 +266,10 @@ export default function ScorePassage({
    */
   const notes = useMemo(() => (layout?.steps ?? []).flatMap((step) => (step.notes ?? []).map((note) => ({
     ...note,
+    staff: focused.originalStaffIndices?.[note.staff ?? 0] ?? note.staff,
     onsetQuarter: step.onsetQuarter ?? 0,
-    measureIndex: step.measure,
-  }))), [layout]);
+    measureIndex: excerpt.originalMeasureIndices[step.measure] ?? step.measure,
+  }))), [excerpt.originalMeasureIndices, focused.originalStaffIndices, layout]);
 
   /**
    * The compile, as a DISCRIMINATED answer rather than an expectation-or-null.
@@ -160,10 +288,13 @@ export default function ScorePassage({
     try {
       const expectation = compileScoreExpectation({
         notes,
+        measureMap: (layout.measureMap ?? []).map((measure) => ({ ...measure,
+          index: excerpt.originalMeasureIndices[measure.index] ?? measure.index })),
         source: { id: sourceId },
-        tempoMap: layout.tempoEntries,
-        fallbackBpm,
-        range,
+        tempoMap: scaleScoreTempoMap(layout.tempoEntries?.length ? layout.tempoEntries : excerpt.inheritedTempoMap, tempoPercent),
+        fallbackBpm: scaledScoreBpm(fallbackBpm, tempoPercent),
+        range: null,
+        activeParts: requestedParts,
       });
       // A range that selected nothing playable: bars the document does not have,
       // or a passage of nothing but rests. An expectation of no notes builds an
@@ -176,11 +307,20 @@ export default function ScorePassage({
     } catch (error) {
       return { state: 'dead', reason: 'expectation-uncompilable', error: error?.message ?? String(error) };
     }
-  }, [layout, notes, sourceId, fallbackBpm, range]);
+  }, [layout, notes, sourceId, fallbackBpm, requestedParts, excerpt.inheritedTempoMap, excerpt.originalMeasureIndices, tempoPercent]);
 
   const expectation = compiled.state === 'ready' ? compiled.expectation : null;
+  const systemCount = useMemo(
+    () => new Set((layout?.staves ?? []).map((staff) => staff.system).filter(Number.isInteger)).size,
+    [layout],
+  );
 
   useLayoutEffect(() => {
+    const terminalError = excerpt.error || focused.error || fitError;
+    if (terminalError) {
+      reportUnrunnable(terminalError);
+      return;
+    }
     if (compiled.state === 'pending') return;
     if (compiled.state === 'dead') {
       reportUnrunnable(compiled.reason, compiled.error ? { error: compiled.error } : {});
@@ -189,7 +329,7 @@ export default function ScorePassage({
     if (publishedRef.current === compiled.expectation) return;
     publishedRef.current = compiled.expectation;
     onExpectation?.(compiled.expectation);
-  }, [compiled, onExpectation, reportUnrunnable]);
+  }, [compiled, excerpt.error, fitError, focused.error, onExpectation, reportUnrunnable]);
 
   /** Engraved noteheads by onset, so a cursor position can find its ink. */
   const elsByOnset = useMemo(() => {
@@ -215,6 +355,25 @@ export default function ScorePassage({
     if (!event) return null;
     return { notes: elsByOnset.get(onsetKey(event.onsetQuarter)) ?? [] };
   }, [expectation, cursorIndex, elsByOnset]);
+  const cursorSystem = useMemo(() => systemForStep(currentStep, layout?.staffBoxes), [currentStep, layout?.staffBoxes]);
+  const presentation = useMemo(
+    () => resolvePassageLayout({ layout, viewport, cursorSystem, keepWholePassage }),
+    [cursorSystem, keepWholePassage, layout, viewport],
+  );
+  const presentationLogRef = useRef(null);
+  useLayoutEffect(() => {
+    if (!presentation) return;
+    const key = `${presentation.mode}:${presentation.activeSystem}:${viewport.width}x${viewport.height}`;
+    if (presentationLogRef.current === key) return;
+    presentationLogRef.current = key;
+    logger().info('piano.score-passage-layout', {
+      id: sourceId ?? null, measures, mode: presentation.mode,
+      activeSystem: presentation.activeSystem, systemCount: presentation.systemCount,
+      compact: presentation.compact, projectedStaffSpacePx: Math.round(presentation.projectedStaffSpacePx * 10) / 10,
+      viewportWidth: viewport.width, viewportHeight: viewport.height,
+      engravingWidth: layout?.width ?? null, engravingHeight: layout?.height ?? null,
+    });
+  }, [layout?.height, layout?.width, measures, presentation, sourceId, viewport.height, viewport.width]);
 
   // Timed passages need a visible clock cursor even before a note is played.
   // Insert behind the engraved ink, in the SVG's own coordinate system, so
@@ -222,55 +381,51 @@ export default function ScorePassage({
   // raw step indices, keep tied notes and selected measure ranges aligned.
   useLayoutEffect(() => {
     if (!showCursor) return undefined;
-    const rectangles = [];
-    for (const note of currentStep?.notes ?? []) {
-      const el = note.el;
-      const svg = el?.ownerSVGElement;
+    const notes = currentStep?.notes ?? [];
+    const svg = notes.find((note) => note.el?.ownerSVGElement)?.el?.ownerSVGElement;
+    let rectangle = null;
+    if (svg) {
       const matrix = svg?.getScreenCTM?.();
-      if (!matrix) continue;
-      const bounds = el.getBoundingClientRect();
-      if (!bounds.width || !bounds.height) continue;
-      const inverse = matrix.inverse();
-      const point = svg.createSVGPoint();
-      point.x = bounds.left; point.y = bounds.top;
-      const start = point.matrixTransform(inverse);
-      point.x = bounds.right; point.y = bounds.bottom;
-      const end = point.matrixTransform(inverse);
-      const rectangle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      rectangle.setAttribute('class', `piano-score-passage__cursor${windowOpen === true ? ' is-window-open' : windowOpen === false ? ' is-window-closed' : ''}`);
-      rectangle.setAttribute('x', start.x - 6);
-      rectangle.setAttribute('y', start.y - 12);
-      rectangle.setAttribute('width', end.x - start.x + 12);
-      rectangle.setAttribute('height', end.y - start.y + 24);
-      rectangle.setAttribute('rx', 4);
-      rectangle.setAttribute('aria-hidden', 'true');
-      svg.insertBefore(rectangle, svg.firstChild);
-      rectangles.push(rectangle);
-    }
-    return () => { for (const rectangle of rectangles) rectangle.remove(); };
-  }, [currentStep, showCursor, windowOpen]);
-
-  // Every staff the engraving has is lit; a gate passage has no hands control.
-  const activeParts = useMemo(() => {
-    const parts = {};
-    for (const step of layout?.steps ?? []) for (const note of step.notes ?? []) parts[note.staff ?? 0] = true;
-    return parts;
-  }, [layout]);
-
-  /** The bars either side of the passage, greyed back so the ask is the page. */
-  useLayoutEffect(() => {
-    if (!range) return undefined;
-    const dimmed = [];
-    for (const step of layout?.steps ?? []) {
-      if (step.measure >= range.start && step.measure <= range.end) continue;
-      for (const note of step.notes ?? []) {
-        if (!note.el) continue;
-        note.el.classList.add(DIM);
-        dimmed.push(note.el);
+      if (matrix) {
+        const inverse = matrix.inverse();
+        const point = svg.createSVGPoint();
+        const noteBounds = notes.flatMap(({ el }) => {
+          const bounds = el?.getBoundingClientRect?.();
+          if (!bounds?.width || !bounds?.height) return [];
+          point.x = bounds.left; point.y = bounds.top;
+          const start = point.matrixTransform(inverse);
+          point.x = bounds.right; point.y = bounds.bottom;
+          const end = point.matrixTransform(inverse);
+          return [{ left: start.x, right: end.x, top: start.y, bottom: end.y }];
+        });
+        const cursor = passageCursorBounds({
+          noteBounds,
+          staffBoxes: layout?.staffBoxes ?? [],
+          activeStaffs: [...new Set((layout?.steps ?? []).flatMap((step) => (step.notes ?? []).map((note) => note.staff ?? 0)))],
+          onsetStaffs: [...new Set(notes.map((note) => note.staff ?? 0))],
+        });
+        if (cursor) {
+          rectangle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          rectangle.setAttribute('class', `piano-score-passage__cursor${windowOpen === true ? ' is-window-open' : windowOpen === false ? ' is-window-closed' : ''}`);
+          Object.entries(cursor).forEach(([name, value]) => rectangle.setAttribute(name, value));
+          rectangle.setAttribute('rx', 4);
+          rectangle.setAttribute('aria-hidden', 'true');
+          svg.insertBefore(rectangle, svg.firstChild);
+        }
       }
     }
-    return () => { for (const el of dimmed) el.classList.remove(DIM); };
-  }, [layout, range]);
+    return () => rectangle?.remove();
+  }, [currentStep, layout?.staffBoxes, layout?.steps, showCursor, windowOpen]);
+
+  // Part selection happened in the MusicXML itself; every remaining staff is active.
+  const activeParts = useMemo(() => {
+    const parts = {};
+    for (const step of layout?.steps ?? []) for (const note of step.notes ?? []) {
+      const staff = note.staff ?? 0;
+      parts[staff] = true;
+    }
+    return parts;
+  }, [layout]);
 
   /** The wrong flash, on the note that was owed. Same pattern as the lit layer. */
   useLayoutEffect(() => {
@@ -307,10 +462,8 @@ export default function ScorePassage({
         note.el.classList.add(name);
         note.el.setAttribute('data-verdict', verdict?.state ?? 'owed');
         classed.push([note.el, name]);
-        if (kind === 'early' || kind === 'late') {
-          const tick = driftTick(note.el, kind);
-          if (tick) ticks.push(tick);
-        }
+        const mark = verdictMark(note.el, kind ?? (wrong ? 'wrong' : null));
+        if (mark) ticks.push(mark);
       }
     });
     return () => {
@@ -320,28 +473,36 @@ export default function ScorePassage({
   }, [elsByOnset, expectation, judged, verdicts]);
 
   return (
-    <div className="piano-score-passage">
-      <MusicXmlRenderer musicXml={musicXml} onLayout={handleLayout} onFailed={handleEngraveFailed}>
-        <NoteHighlightLayer step={currentStep} activeParts={activeParts} />
-      </MusicXmlRenderer>
+    <div ref={containerRef} className="piano-score-passage" data-system-count={systemCount || undefined} data-layout-mode={presentation?.mode} data-layout-compact={presentation?.compact || undefined} data-cursor-enabled={String(showCursor)}>
+      {focused.musicXml ? (
+        <MusicXmlRenderer key={`${systemBreakBefore ?? 'auto'}:${renderScale}`} musicXml={focused.musicXml} scale={renderScale} newSystemFromXML fillContainer presentationViewBox={presentation?.viewBox} onLayout={handleLayout} onFailed={handleEngraveFailed}>
+          <NoteHighlightLayer step={currentStep} activeParts={activeParts} />
+        </MusicXmlRenderer>
+      ) : (
+        <div className="musicxml-renderer musicxml-renderer--placeholder" role="status">
+          <p>Could not read this score.</p>
+        </div>
+      )}
+      {presentation?.mode === 'system' && presentation.systemCount > 1 && <div className="piano-score-passage__map" aria-live="polite">Line {presentation.activeSystem + 1} of {presentation.systemCount}</div>}
     </div>
   );
 }
 
 /** The tempo a score that names none is counted at — the Sheet Music surface's own. */
 const DEFAULT_BPM = 90;
-/** Out of the passage: engraved, readable, and plainly not what is being asked for. */
-const DIM = 'piano-score-passage__dim';
+const MAX_PASSAGE_SYSTEMS = 2;
+const MIN_PASSAGE_SCALE = 0.65;
 /** A recorded verdict state → the class suffix painted on its engraved note. */
 const VERDICT_KIND = Object.freeze({ hit: 'hit', early: 'early', late: 'late', lapsed: 'unplayed', miss: 'unplayed' });
-const DRIFT_TICK = Object.freeze({ early: '\u25C2', late: '\u25B8' });
+const VERDICT_MARK = Object.freeze({ hit: '\u2713', early: '\u25C2', late: '\u25B8', unplayed: '\u25CB', wrong: '\u00D7' });
 
 /**
  * A ◂/▸ tick under an engraved note, in its SVG's own coordinates (the same
  * screen-to-user mapping the cursor uses). Returns the inserted element, or
  * null where there is no geometry (happy-dom, a detached note).
  */
-function driftTick(el, side) {
+function verdictMark(el, side) {
+  if (!VERDICT_MARK[side]) return null;
   const svg = el?.ownerSVGElement;
   const matrix = svg?.getScreenCTM?.();
   if (!matrix) return null;
@@ -357,7 +518,7 @@ function driftTick(el, side) {
   text.setAttribute('text-anchor', 'middle');
   text.setAttribute('font-size', 12);
   text.setAttribute('aria-hidden', 'true');
-  text.textContent = DRIFT_TICK[side];
+  text.textContent = VERDICT_MARK[side];
   svg.appendChild(text);
   return text;
 }

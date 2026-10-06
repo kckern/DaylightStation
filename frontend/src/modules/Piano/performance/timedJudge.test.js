@@ -8,7 +8,7 @@ import {
   startAssessmentAttempt,
 } from './assessmentAttempt.js';
 import { judgeTimedOnset, timedReachMs, timedWindowMs } from './timedJudge.js';
-import { timedRunSummary, timedVerdicts } from './timedVerdicts.js';
+import { assessmentVerdicts, verdictSummary, timedRunSummary, timedVerdicts } from './timedVerdicts.js';
 
 // G major up, eight eighths at 60 bpm (quarter) = 500 ms apart.
 const G_MAJOR = [67, 69, 71, 72, 74, 76, 78, 79];
@@ -40,6 +40,26 @@ function play(attempt, onsets) {
 }
 
 const run = (lagMs, pitches = G_MAJOR) => pitches.map((midi, index) => ({ midi, time: index * 500 + lagMs }));
+
+describe('assessment verdict projection', () => {
+  it('keeps durable pitch feedback and foreign wrong pitches for untimed runs', () => {
+    const snapshot = {
+      matcher: 'cursor',
+      expectation: { events: [
+        { id: 'a', notes: [{ id: 'a-60', midi: 60 }] },
+        { id: 'b', notes: [{ id: 'b-62', midi: 62 }] },
+      ] },
+      hits: { 'a-60': { time: 10 } },
+      wrong: [{ eventId: 'a', midi: 61, time: 5 }],
+      misses: ['b-62'], lapsed: [],
+    };
+    const verdicts = assessmentVerdicts(snapshot);
+    expect(verdicts.get(0).get(60)).toEqual({ state: 'hit' });
+    expect(verdicts.get(0).get(61)).toEqual({ state: 'wrong', midi: 61 });
+    expect(verdicts.get(1).get(62)).toEqual({ state: 'miss' });
+    expect(verdictSummary(snapshot)).toEqual({ right: 1, wrong: 1, missed: 1, early: 0, late: 0, wrongPitches: [61] });
+  });
+});
 
 describe('timedWindowMs / timedReachMs', () => {
   it('derives the window from the gap to the nearest non-empty neighbour', () => {

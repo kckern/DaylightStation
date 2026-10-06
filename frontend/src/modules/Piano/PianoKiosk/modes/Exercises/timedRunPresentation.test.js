@@ -16,6 +16,33 @@ const snapshot = (overrides = {}) => ({
 });
 
 describe('timedRunPresentation', () => {
+  it('uses actual bar positions through 3/4, 6/8, 9/8 and a meter change', () => {
+    const expectation = compileScoreExpectation({ fallbackBpm: 60,
+      notes: [{ onsetQuarter: 0, durationQuarters: 13, midi: 60 }],
+      measureMap: [
+        { index: 0, onsetQuarter: 0, durationQuarters: 3 },
+        { index: 1, onsetQuarter: 3, durationQuarters: 3 },
+        { index: 2, onsetQuarter: 6, durationQuarters: 4.5 },
+        { index: 3, onsetQuarter: 10.5, durationQuarters: 2.5 },
+      ],
+    });
+    const s = snapshot({ expectation });
+    for (const [quarter, measureIndex, beatInMeasure, downbeat] of [
+      [0, 0, 1, true], [2, 0, 3, false], [3, 1, 1, true], [5, 1, 3, false],
+      [6, 2, 1, true], [10, 2, 5, false], [10.5, 3, 1, true], [11.5, 3, 2, false],
+    ]) {
+      expect(timedRunPresentation(s, 3000 + quarter * 1000)).toMatchObject({ measureIndex, beatInMeasure, downbeat });
+    }
+  });
+
+  it('does not label an unknown meter or a mid-bar passage origin as a downbeat', () => {
+    expect(timedRunPresentation(snapshot(), 3000)).toMatchObject({ beatInMeasure: null, downbeat: null });
+    const expectation = compileScoreExpectation({ fallbackBpm: 60,
+      notes: [{ onsetQuarter: 1, durationQuarters: 5, midi: 60 }],
+      measureMap: [{ index: 0, onsetQuarter: 0, durationQuarters: 3 }, { index: 1, onsetQuarter: 3, durationQuarters: 3 }],
+    });
+    expect(timedRunPresentation(snapshot({ originQuarter: 1, expectation }), 3000)).toMatchObject({ beat: 1, beatInMeasure: 2, downbeat: false });
+  });
   it('is prepared before arming and counts down before musical time zero', () => {
     expect(timedRunPresentation(snapshot({ status: 'prepared', startedAt: null }), 99999)).toMatchObject({ phase: 'prepared', elapsedMs: 0, beat: 1, expectedCursor: 0 });
     expect(timedRunPresentation(snapshot(), 2999)).toMatchObject({ phase: 'countdown', elapsedMs: 0, countdownRemainingMs: 1, beat: 1, expectedCursor: 0 });

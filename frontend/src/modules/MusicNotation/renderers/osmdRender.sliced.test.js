@@ -38,6 +38,25 @@ function stubOsmd({ steps = 100, onStep = () => {} } = {}) {
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe('extractLayoutSliced — time-budget slicing', () => {
+  it('publishes authored measure boundaries, including pickups, compound bars and meter changes', async () => {
+    const osmd = stubOsmd({ steps: 13 });
+    osmd.Sheet = { SourceMeasures: [
+      { AbsoluteTimestamp: { RealValue: 0 }, Duration: { RealValue: 0.125 } },
+      { AbsoluteTimestamp: { RealValue: 0.125 }, Duration: { RealValue: 0.75 } },
+      { AbsoluteTimestamp: { RealValue: 0.875 }, Duration: { RealValue: 0.75 } },
+      { AbsoluteTimestamp: { RealValue: 1.625 }, Duration: { RealValue: 1.125 } },
+      { AbsoluteTimestamp: { RealValue: 2.75 }, Duration: { RealValue: 0.5 } },
+    ] };
+    const expected = [
+      { index: 0, onsetQuarter: 0, durationQuarters: 0.5 },
+      { index: 1, onsetQuarter: 0.5, durationQuarters: 3 },
+      { index: 2, onsetQuarter: 3.5, durationQuarters: 3 },
+      { index: 3, onsetQuarter: 6.5, durationQuarters: 4.5 },
+      { index: 4, onsetQuarter: 11, durationQuarters: 2 },
+    ];
+    expect(extractEvents(osmd).measureMap).toEqual(expected);
+    expect((await extractLayoutSliced(osmd)).measureMap).toEqual(expected);
+  });
   it('yields by TIME BUDGET, not step count', async () => {
     let clock = 0;
     vi.spyOn(performance, 'now').mockImplementation(() => clock);
