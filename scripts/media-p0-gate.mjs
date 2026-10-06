@@ -360,6 +360,38 @@ export const P0_EXTENSION_ENTRIES = Object.freeze([
     file: 'media-app-player-features.runtime.test.mjs',
     grep: 'PLAY\\.9a',
   },
+  // Task 8, accessibility and size parity (phone/tablet/laptop, ordinary input, measured from
+  // the live page: computed hit targets, contrast, live regions, layout).
+  {
+    story: 'RELY.11a',
+    criteria: ['RELY.11a/AC1'],
+    file: 'media-app-p0-accessibility.runtime.test.mjs',
+    grep: 'RELY\\.11a/AC1',
+  },
+  {
+    story: 'RELY.11a',
+    criteria: ['RELY.11a/AC2', 'RELY.11a/AC3'],
+    file: 'media-app-p0-accessibility.runtime.test.mjs',
+    grep: 'RELY\\.11a/AC2',
+  },
+  {
+    story: 'RELY.12a',
+    criteria: ['RELY.12a/AC1', 'RELY.12a/AC2'],
+    file: 'media-app-p0-accessibility.runtime.test.mjs',
+    grep: 'RELY\\.12a',
+  },
+  {
+    story: 'RELY.13a',
+    criteria: ['RELY.13a/AC2'],
+    file: 'media-app-p0-accessibility.runtime.test.mjs',
+    grep: 'RELY\\.13a',
+  },
+  {
+    story: 'RELY.14a',
+    criteria: ['RELY.14a/AC3'],
+    file: 'media-app-p0-accessibility.runtime.test.mjs',
+    grep: 'RELY\\.14a/AC3',
+  },
 ]);
 
 const STABLE_ENTRIES = [...ACCEPTED_STORIES, ...SUPPORTING_ACCEPTED_CRITERIA];

@@ -98,9 +98,10 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
   const {
     devices, selected, multi, mode, canSubmit, localPlaying, hasPotentialContent, moveSupported, moveUnavailable, dispatchError,
     select, toggleMulti, setMode, submit,
-  } = useDispatchTargetPicker({ source, onComplete });
+  } = useDispatchTargetPicker({ source, onComplete, intent });
 
   const isDestination = intent === 'destination';
+  const hasMoveSnapshot = !!(source?.getSnapshot || source?.snapshot);
   const selectedDevices = devices.filter((d) => selected.has(d.id));
   const targetLabel = selectedDevices.length === 1
     ? deviceName(selectedDevices[0])
@@ -155,8 +156,9 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
           actually about to happen — a destination-only pick never plays or
           moves anything, so the choice would be pure noise (and a lie about
           what pressing the CTA does). */}
-      {hasPotentialContent && devices.length > 0 && !isDestination && !source?.brief && (
+      {hasMoveSnapshot && devices.length > 0 && !isDestination && !source?.brief && (
         <div className="cast-picker-mode" role="radiogroup" aria-label="What happens to playback here">
+          {/* Only a session can be moved; a plain play source has no choice to make, so no group at all. */}
           <button
             type="button"
             role="radio"
@@ -192,7 +194,7 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
         className="cast-picker-cta"
         autoFocus={autoFocus}
         disabled={!canSubmit || moveUnavailable}
-        onClick={submit}
+        onClick={() => submit()}
       >
         {ctaLabel}
       </button>

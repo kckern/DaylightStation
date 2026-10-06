@@ -223,12 +223,6 @@ export function ScreenBriefSurface({ features }) {
   const ended = useCallback(() => { features.endBrief('ended'); }, [features]);
   // Stable per brief: a fresh `play` object each tick would remount the clip.
   const clipPlay = useMemo(() => (brief?.contentId ? { contentId: brief.contentId } : null), [brief?.id, brief?.contentId]); // eslint-disable-line react-hooks/exhaustive-deps
-  // While something is shown briefly, Back closes it and returns the programme.
-  useEffect(() => {
-    if (!brief) return undefined;
-    return getActionBus().capture(['escape'], () => { close(); return true; });
-  }, [!!brief, close]); // eslint-disable-line react-hooks/exhaustive-deps
-
   if (!brief) return null;
   const remaining = brief.endsAt ? Math.max(0, Math.ceil((Date.parse(brief.endsAt) - Date.now()) / 1000)) : null;
   return (
@@ -246,7 +240,7 @@ export function ScreenBriefSurface({ features }) {
             />
           )}
       </div>
-      <div className="screen-brief__bar" role="status" aria-live="polite">
+      <BriefBar onClose={close}>
         <span className="screen-brief__label" data-testid="screen-brief-label">{brief.label}</span>
         {brief.returnTo && (
           <span className="screen-brief__return" aria-live="off" data-testid="screen-brief-return">
@@ -257,10 +251,21 @@ export function ScreenBriefSurface({ features }) {
         {!brief.returnTo && remaining != null && (
           <span className="screen-brief__return" aria-live="off" data-testid="screen-brief-return">{`Closes in ${remaining}s`}</span>
         )}
-        <button type="button" className="screen-brief__close" data-testid="screen-brief-close" onClick={close}>Close</button>
-      </div>
+        <button type="button" autoFocus className="screen-brief__close" data-testid="screen-brief-close" onClick={close}>Close</button>
+      </BriefBar>
     </div>
   );
+}
+
+/**
+ * Close is the only control. NON-modal: a brief may be unbounded and other
+ * overlays (a call, a doorbell PiP) must keep the D-pad, so only OK and Back
+ * are claimed; arrows and play/pause still reach the Player.
+ */
+function BriefBar({ onClose, children }) {
+  const closeRef = useRef(onClose); closeRef.current = onClose;
+  useEffect(() => getActionBus().capture(['select', 'escape'], () => { closeRef.current?.(); return true; }), []);
+  return <div className="screen-brief__bar" role="status" aria-live="polite">{children}</div>;
 }
 
 function ScreenMusicPlaque({ features }) {

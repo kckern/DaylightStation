@@ -69,3 +69,13 @@
   justify-content: center;
   gap: 0.8em;
 }
+
+/* TV focus: D-pad users see which control OK will press. */
+.screen-session-note__action:focus-visible,
+.screen-session-countdown__actions button:focus,
+.screen-session-countdown__actions button:focus-visible {
+  outline: 4px solid #4da3ff;
+  outline-offset: 2px;
+}
+.screen-session-note__action { min-height: 44px; }
+.screen-session-countdown__actions button { min-height: 44px; }

@@ -46,15 +46,15 @@ async function selectFirstDevice(picker) {
   await device.click();
 }
 
-async function expectMoveBlockedButKeepReachable(picker) {
+// A plain Play from a result has no session to move: Move and the Move/Keep group
+// are not offered at all, and the tile tap itself sends it (NF-TAP-10). The guard
+// aborts the device call, so the proof is the single blocked load attempt.
+async function expectNoMoveAndTapSends(picker, deviceAttempts) {
+  await expect(picker.getByTestId('picker-mode-transfer')).toHaveCount(0);
+  await expect(picker.getByTestId('picker-mode-fork')).toHaveCount(0);
+  await expect(picker.getByTestId('picker-move-unavailable')).toHaveCount(0);
   await selectFirstDevice(picker);
-
-  await expect(picker.getByTestId('picker-mode-transfer')).toBeDisabled();
-  await expect(picker.getByTestId('picker-move-unavailable'))
-    .toHaveText(/Move playback is not available yet/i);
-  const submit = picker.getByTestId('picker-submit');
-  await expect(picker.getByTestId('picker-mode-fork')).toHaveAttribute('aria-checked', 'true');
-  await expect(submit).toBeEnabled();
+  await expect.poll(() => deviceAttempts.length, { timeout: 15000 }).toBeGreaterThan(0);
 }
 
 test.describe('Media M0 Move safety', () => {
@@ -71,28 +71,23 @@ test.describe('Media M0 Move safety', () => {
     if (await stop.isVisible().catch(() => false)) await stop.click();
   });
 
-  test('idle selected Arrival exposes disabled Move and a reachable Keep choice without dispatching', async ({ page }) => {
+  test('idle Arrival offers no Move, and the tile tap sends it (device call guarded)', async ({ page }) => {
     const deviceAttempts = await guardDeviceMutations(page);
     await page.goto('/media');
 
-    // Desktop Media's actual result path is search → ⋯ → Open detail. Detail
-    // owns the CastButton that mounts the destination picker for an idle item.
+    // Desktop Media's result path is search → ⋯ → Play on… (Detail no longer carries a Cast button).
     const { contentId } = await findArrivalOption(page);
     await page.getByTestId(`result-more-${contentId}`).click();
     await expect(page.getByTestId(`result-more-menu-${contentId}`)).toBeVisible();
-    await page.getByTestId(`result-action-detail-${contentId}`).click();
-    await expect(page.getByTestId('detail-view')).toBeVisible();
-    await page.getByTestId(`cast-button-${contentId}`).click();
+    await page.getByRole('menuitem', { name: 'Play on…' }).click();
 
     const picker = page.getByTestId('dispatch-target-picker');
     await expect(picker).toBeVisible();
-    await expectMoveBlockedButKeepReachable(picker);
+    await expectNoMoveAndTapSends(picker, deviceAttempts);
 
-    // Deliberately do not submit Keep: this is a UI/reachability proof, not a
-    // remote/hardware play test. Escape is the real popover cancellation path.
-    await page.keyboard.press('Escape');
-    await expect(picker).toBeHidden();
-    expect(deviceAttempts, 'Move/Keep picker inspection must not issue a device command').toEqual([]);
+    // The guard blocked the load the tap issued; nothing reached a device and
+    // no claim/stop was attempted.
+    expect(deviceAttempts.filter((a) => !/\/load$/.test(a.path)), 'only the Keep load may be attempted').toEqual([]);
   });
 
   test('current Arrival keeps its native node and time through handoff picker cancellation, then stops locally', async ({ page }) => {

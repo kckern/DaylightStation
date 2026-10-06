@@ -13,14 +13,15 @@ let fleetDevices = [
   { id: 'livingroom-tv', name: 'Living Room TV' },
   { id: 'office-tv', name: 'Office TV' },
 ];
+let fleetEntries = {};
 vi.mock('../fleet/useFleetContext.js', () => ({
-  useFleetContext: () => ({ devices: fleetDevices }),
+  useFleetContext: () => ({ devices: fleetDevices, store: { getEntry: (id) => fleetEntries[id] ?? null } }),
 }));
 
 // DeviceTile/BusyWarning read per-device live status through useDevice —
 // stub it directly rather than standing up a real fleet store.
 vi.mock('../fleet/useDevice.js', () => ({
-  useDevice: (id) => ({ device: fleetDevices.find((d) => d.id === id) ?? null, entry: null }),
+  useDevice: (id) => ({ device: fleetDevices.find((d) => d.id === id) ?? null, entry: fleetEntries[id] ?? null }),
 }));
 
 let castTargetState = { targetIds: [], mode: 'transfer' };
@@ -69,6 +70,7 @@ function withLocalPlaybackActive(children) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fleetEntries = {};
   dispatchToTarget.mockResolvedValue(['dispatch-1']);
   fleetDevices = [
     { id: 'livingroom-tv', name: 'Living Room TV' },
@@ -97,18 +99,32 @@ describe('DispatchTargetPicker / useDispatchTargetPicker', () => {
       expect(screen.queryByRole('button', { name: 'This device' })).toBeNull();
     });
 
-  it('requires an explicit non-destructive choice before idle remote Play dispatches', async () => {
+  it('NF-TAP-10: tapping an idle device tile sends a plain Play at once, without a Move option', async () => {
     const onComplete = vi.fn();
     render(<DispatchTargetPicker source={{ play: 'plex:1', title: 'Bluey' }} onComplete={onComplete} />);
+    expect(screen.queryByTestId('picker-mode-transfer')).toBeNull();
     fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-    expect(screen.getByTestId('picker-mode-transfer')).toBeDisabled();
-    expect(screen.getByTestId('picker-submit')).toBeDisabled();
-    fireEvent.click(screen.getByTestId('picker-mode-fork'));
-    fireEvent.click(screen.getByTestId('picker-submit'));
     expect(dispatchToTarget).toHaveBeenCalledWith({
       targetIds: ['livingroom-tv'], mode: 'fork', play: 'plex:1', title: 'Bluey',
     });
     await waitFor(() => expect(onComplete).toHaveBeenCalledWith({ targetIds: ['livingroom-tv'], mode: 'fork' }));
+  });
+
+  it('a busy screen still shows the warning and needs a confirming tap', () => {
+    fleetEntries = { 'livingroom-tv': { snapshot: { state: 'playing', currentItem: { title: 'Arrival' } } } };
+    render(<DispatchTargetPicker source={{ play: 'plex:1', title: 'Bluey' }} />);
+    fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
+    expect(dispatchToTarget).not.toHaveBeenCalled();
+    expect(screen.getByTestId('cast-busy-warning-livingroom-tv')).toHaveTextContent('playing Arrival');
+    fireEvent.click(screen.getByTestId('picker-submit'));
+    expect(dispatchToTarget).toHaveBeenCalledTimes(1);
+  });
+
+  it('a hand-off (move) source and multi-select keep select then confirm', () => {
+    render(<DispatchTargetPicker source={{ getSnapshot: () => ({ sessionId: 's1', currentItem: { contentId: 'plex:1' } }) }} />);
+    fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
+    expect(dispatchToTarget).not.toHaveBeenCalled();
+    expect(screen.getByTestId('picker-submit')).not.toBeDisabled();
   });
 
   it('keeps the picker open and reports failure when a dispatch returns no ids', async () => {
@@ -116,8 +132,6 @@ describe('DispatchTargetPicker / useDispatchTargetPicker', () => {
     const onComplete = vi.fn();
     render(<DispatchTargetPicker source={{ play: 'plex:1', title: 'Bluey' }} onComplete={onComplete} />);
     fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-    fireEvent.click(screen.getByTestId('picker-mode-fork'));
-    fireEvent.click(screen.getByTestId('picker-submit'));
 
     expect(await screen.findByTestId('picker-dispatch-failed')).toHaveTextContent('Could not start playback on that device');
     expect(onComplete).not.toHaveBeenCalled();
@@ -128,8 +142,6 @@ describe('DispatchTargetPicker / useDispatchTargetPicker', () => {
     const onComplete = vi.fn();
     render(<DispatchTargetPicker source={{ play: 'plex:1', title: 'Bluey' }} onComplete={onComplete} />);
     fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-    fireEvent.click(screen.getByTestId('picker-mode-fork'));
-    fireEvent.click(screen.getByTestId('picker-submit'));
 
     expect(await screen.findByTestId('picker-dispatch-failed')).toHaveTextContent('Could not start playback on that device');
     expect(onComplete).not.toHaveBeenCalled();
@@ -138,8 +150,6 @@ describe('DispatchTargetPicker / useDispatchTargetPicker', () => {
     it('a queue source still dispatches after explicitly choosing the non-destructive mode', () => {
       render(<DispatchTargetPicker source={{ queue: 'plex:playlist:1' }} />);
       fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-      fireEvent.click(screen.getByTestId('picker-mode-fork'));
-      fireEvent.click(screen.getByTestId('picker-submit'));
       expect(dispatchToTarget).toHaveBeenCalledWith(
         expect.objectContaining({ queue: 'plex:playlist:1' })
       );
@@ -161,22 +171,18 @@ describe('DispatchTargetPicker / useDispatchTargetPicker', () => {
       expect(screen.getByTestId('picker-submit')).toHaveTextContent('Cast to Living Room TV');
     });
 
-    it('shows the transfer/fork mode toggle when something is playing locally', () => {
-      render(withLocalPlaybackActive(<DispatchTargetPicker source={{ play: 'plex:1' }} />));
+    it('shows the fork choice (and Move only for a session source) when something is playing locally', () => {
+      render(withLocalPlaybackActive(<DispatchTargetPicker source={{ getSnapshot: () => ({ sessionId: 's1', currentItem: { contentId: 'plex:1' } }) }} />));
       fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
       expect(screen.getByTestId('picker-mode-transfer')).toBeInTheDocument();
       expect(screen.getByTestId('picker-mode-fork')).toBeInTheDocument();
     });
   });
 
-  it('disables and explains Move while the owner-qualified transaction is unavailable', () => {
+  it('hides Move entirely for a plain play source (no disabled noise option)', () => {
     render(withLocalPlaybackActive(<DispatchTargetPicker source={{ play: 'plex:1' }} />));
-    fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-
-    expect(screen.getByTestId('picker-mode-transfer')).toBeDisabled();
-    expect(screen.getByTestId('picker-move-unavailable')).toHaveTextContent('Move playback is not available yet');
-    expect(screen.getByTestId('picker-submit')).toBeDisabled();
-    expect(dispatchToTarget).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('picker-mode-transfer')).toBeNull();
+    expect(screen.queryByTestId('picker-move-unavailable')).toBeNull();
   });
 
   describe('intent="destination" (DestinationLine\'s device sheet)', () => {

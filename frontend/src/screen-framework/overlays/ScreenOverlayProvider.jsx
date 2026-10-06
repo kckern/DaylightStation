@@ -242,7 +242,7 @@ export function ScreenOverlayProvider({ children, inputType = null }) {
   );
 
   return (
-    <ScreenOverlayContext.Provider value={{ showOverlay, dismissOverlay, hasOverlay, overlayOwnsNavStack, overlaySuspendsNavStack, registerEscapeInterceptor, unregisterEscapeInterceptor, escapeInterceptorRef }}>
+    <ScreenOverlayContext.Provider value={{ showOverlay, dismissOverlay, hasOverlay, fullscreenComponent: fullscreen?.Component ?? null, overlayOwnsNavStack, overlaySuspendsNavStack, registerEscapeInterceptor, unregisterEscapeInterceptor, escapeInterceptorRef }}>
       {inputType === 'touch' ? (
         // Touch screens get the shell wrapping EVERYTHING, not just a fullscreen
         // overlay: MenuStack pushes the Player straight onto the nav stack (no
