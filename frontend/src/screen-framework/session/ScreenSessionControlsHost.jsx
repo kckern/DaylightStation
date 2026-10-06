@@ -8,7 +8,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { getActionBus } from '../input/ActionBus.js';
 import { useScreenOverlay } from '../overlays/ScreenOverlayProvider.jsx';
-import Player from '../../modules/Player/Player.jsx';
+import { ScreenPlayer } from '../publishers/ScreenPlayer.jsx';
 import { useScopedRemoteControls } from '../input/useScopedRemoteControls.js';
 import { useScreenVolume } from '../../lib/volume/ScreenVolumeContext.js';
 import { getPlayerQueueOpRegistry } from '../../modules/Player/lib/queueOpRegistry.js';
@@ -340,7 +340,7 @@ function OkButton({ children, onClick, capture = true, ...rest }) {
   // The Player itself is a fullscreen overlay on a screen; only another one
   // (menu, call, school quiz, screensaver) owns OK.
   const { fullscreenComponent } = useScreenOverlay();
-  const otherOverlay = fullscreenComponent != null && fullscreenComponent !== Player;
+  const otherOverlay = fullscreenComponent != null && fullscreenComponent !== ScreenPlayer;
   const overlayRef = useRef(otherOverlay); overlayRef.current = otherOverlay;
   useEffect(() => {
     if (!capture) return undefined;
