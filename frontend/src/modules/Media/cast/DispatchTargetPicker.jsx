@@ -156,10 +156,9 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
           actually about to happen — a destination-only pick never plays or
           moves anything, so the choice would be pure noise (and a lie about
           what pressing the CTA does). */}
-      {hasPotentialContent && devices.length > 0 && !isDestination && !source?.brief && (
+      {hasMoveSnapshot && devices.length > 0 && !isDestination && !source?.brief && (
         <div className="cast-picker-mode" role="radiogroup" aria-label="What happens to playback here">
-          {/* Only a session can be moved; a plain play source has no Move to offer. */}
-          {(moveSupported || hasMoveSnapshot) && (
+          {/* Only a session can be moved; a plain play source has no choice to make, so no group at all. */}
           <button
             type="button"
             role="radio"
@@ -171,8 +170,7 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
           >
             Move playback to {targetLabel ?? 'device'}
           </button>
-          )}
-          {!moveSupported && hasMoveSnapshot && <div data-testid="picker-move-unavailable" className="cast-picker-warning" role="status">
+          {!moveSupported && <div data-testid="picker-move-unavailable" className="cast-picker-warning" role="status">
             {selected.size > 1
               ? 'Move playback to one screen at a time.'
               : 'Move playback is not available yet for a single item. Keep playing here instead.'}

@@ -141,7 +141,7 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
         await typeQuery(d);
         await resetTaps(d.page);
         await d.page.getByTestId(`result-more-${FIXTURE.id}`).click();
-        await d.page.getByTestId(`result-action-playOn-${FIXTURE.id}`).click();
+        await d.page.getByRole('menuitem', { name: 'Play on…' }).click();
         // No Move option for a plain play; the tile tap itself sends it.
         await expect(d.page.getByTestId('picker-mode-transfer')).toHaveCount(0);
         await d.page.getByTestId(`picker-device-${DEVICE}`).click();
@@ -151,8 +151,10 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
 
         // The screen is now busy: the warning shows and the send needs a confirming tap.
         await expect(d.page.getByTestId('dispatch-target-picker')).toHaveCount(0, { timeout: 15000 });
+        // The laptop's search list closes after a send; bring the result back (typing is not a tap).
+        if (!(await d.page.getByTestId(`result-more-${FIXTURE.id}`).isVisible().catch(() => false))) await typeQuery(d);
         await d.page.getByTestId(`result-more-${FIXTURE.id}`).click();
-        await d.page.getByTestId(`result-action-playOn-${FIXTURE.id}`).click();
+        await d.page.getByRole('menuitem', { name: 'Play on…' }).click();
         await expect(d.page.getByTestId(`picker-device-status-${DEVICE}`)).toContainText(/Playing/i, { timeout: 30000 });
         await resetTaps(d.page);
         await d.page.getByTestId(`picker-device-${DEVICE}`).click();
