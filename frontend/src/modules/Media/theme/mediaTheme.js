@@ -101,9 +101,16 @@ export const MEDIA_PACK = {
       ActionIcon: {
         // 44px default — phone-first touch target floor
         defaultProps: { variant: 'subtle', size: 'xl', color: 'gray' },
+        styles: { root: { minWidth: rem(44), minHeight: rem(44) } },
       },
+      // NF-A11Y: a 44 px hit-target floor for every Mantine control in the app,
+      // portalled Menu items and dialog buttons included (they read this theme).
       Button: {
         defaultProps: { radius: 'sm' },
+        styles: { root: { minHeight: rem(44) } },
+      },
+      Input: {
+        styles: { input: { minHeight: rem(44) } },
       },
       Badge: {
         defaultProps: { radius: 'sm', variant: 'light' },
@@ -124,6 +131,7 @@ export const MEDIA_PACK = {
       },
       Menu: {
         defaultProps: { shadow: 'md' },
+        styles: { item: { minHeight: rem(44) } },
       },
       Skeleton: {
         defaultProps: { animate: true },
