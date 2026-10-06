@@ -23,7 +23,7 @@ import DrillProgress, { DrillPlacard } from './DrillProgress.jsx';
 import { deckSets, deckProjection, deckWindow } from './deckProgress.js';
 import ExerciseNotation from './ExerciseNotation.jsx';
 import { timedRunPresentation } from './timedRunPresentation.js';
-import { timedVerdicts, timedRunSummary } from '../../../performance/timedVerdicts.js';
+import { assessmentVerdicts, verdictSummary, timedRunSummary } from '../../../performance/timedVerdicts.js';
 import { timedTarget, timedWindowMs } from '../../../performance/timedJudge.js';
 import KeysAsk from './KeysAsk.jsx';
 import ScorePassage from './ScorePassage.jsx';
@@ -45,7 +45,7 @@ import { useMetronomeClick } from '../SheetMusic/useMetronomeClick.js';
 import { resolveClickLead, logClickAnchored } from '../SheetMusic/clickLead.js';
 import { audioContext } from '../SheetMusic/click.js';
 import CountInOverlay from '../SheetMusic/CountInOverlay.jsx';
-import { countInPlan, askPulseQuarters, askPace, countInSentence } from '../SheetMusic/countIn.js';
+import { exerciseCountInPlan, countdownPresentation, askPace, countInSentence } from '../SheetMusic/countIn.js';
 import './Exercises.scss';
 
 const NO_FEEDBACK_NOTES = new Map();
@@ -325,8 +325,16 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   power. All three render a `PianoEmpty`, so a host without a recovery callback could strand a
  *   player on a dead end. Both callbacks are optional and additive: omit them
  *   and the surface behaves exactly as it did before.
+ * @param {'default'|'learn-lab'} [props.surface='default'] Host presentation.
+ * @param {'timed'|'always'} [props.scoreCursorPolicy='timed'] Whether a score
+ *   passage draws its position cursor only for clocked work or for every run.
+ * @param {'always'|'after-wrong'} [props.keyboardHintPolicy='always'] Whether
+ *   the footer keyboard proactively names the target or reveals it as help.
+ * @param {'host'|'local'} [props.failurePresentation='host'] Whether an
+ *   `onFailed` consumer replaces the result screen or records it while the run
+ *   retains its standard feedback and piano-driven retry.
  */
-export default function ExerciseRun({ instance, score, requirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, ask = null, askTuple = null, tier = null, traceContext = null, onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
@@ -363,7 +371,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   const [lastWrong, setLastWrong] = useState(null);
   const [clockNow, setClockNow] = useState(() => Date.now());
   const countdownHeldRef = useRef(new Set());
-  const [unrunnable, setUnrunnable] = useState(false);
+  const [unrunnable, setUnrunnable] = useState(null);
   /**
    * WHAT THE DRILL IS CALLED — the run's title, when there is a drill to name.
    *
@@ -409,6 +417,12 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     learnerId: typeof currentUser === 'string' ? currentUser : currentUser?.id ?? null,
     hostAttemptId: traceContext?.attemptId ?? null,
     hostSessionId: traceContext?.sessionId ?? null,
+    runId: traceContext?.runId ?? null,
+    take: traceContext?.take ?? null,
+    tempoPercent: traceContext?.tempoPercent ?? null,
+    tempoSource: traceContext?.tempoSource ?? null,
+    tempoStage: traceContext?.tempoStage ?? null,
+    clickLevel: traceContext?.clickLevel ?? null,
     subjectId: instance?.id ?? score?.id ?? null,
     intent,
   };
@@ -417,7 +431,8 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   }, [logger]);
   const access = resolveExerciseRunAccess(intent, currentUser);
   const { challenge } = access;
-  const selectedMode = challenge ? requirement?.mode : practiceMode;
+  const runRequirement = challenge ? requirement : practiceRequirement;
+  const selectedMode = runRequirement?.mode ?? practiceMode;
 
   /**
    * A NEW subject clears the last one's engraving and its degraded state — a
@@ -438,7 +453,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   if (subjectSources.instance !== instance || subjectSources.score !== score) {
     setSubjectSources({ instance, score });
     setScoreExpectation(null);
-    setUnrunnable(false);
+    setUnrunnable(null);
   }
 
   /**
@@ -471,7 +486,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     // read off the score rather than off the material descriptor, because a
     // host that resolved above no longer passes one.
     logger.warn('piano.exercise-score-unrunnable', { id: score?.id ?? null, reason });
-    setUnrunnable(true);
+    setUnrunnable(reason || 'unrunnable');
   }, [logger, score]);
 
   /**
@@ -492,7 +507,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     // work, and the run picks this up again the moment it lands.
     if (!instance && !(score && scoreExpectation)) return null;
     const mode = selectedMode;
-    const activeRequirement = challenge ? requirement : null;
+    const activeRequirement = runRequirement;
     // The requirement wins over the surface's defaults — a gate rung can widen
     // `wrongWindow`, allow extras, or loosen the timing windows without this
     // component knowing which knob it turned. Practice is deliberately left on
@@ -524,15 +539,15 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
       // this catch the throw escapes installRuntime's effect and blanks the
       // whole kiosk. Same posture as unresolvable material: log, degrade.
       logger.warn('piano.exercise-attempt-unbuildable', { id: subject?.id ?? null, mode, reason: error?.message ?? String(error) });
-      setUnrunnable(true);
+      setUnrunnable('attempt-unbuildable');
       return null;
     }
-  }, [access.allowed, challenge, instance, logger, requirement, score, scoreExpectation, selectedMode, subject]);
+  }, [access.allowed, challenge, instance, logger, runRequirement, score, scoreExpectation, selectedMode, subject]);
 
   const installRuntime = useCallback(() => {
     const attempt = buildAttempt();
     if (!attempt) return;
-    setUnrunnable(false);
+    setUnrunnable(null);
     runtimeRef.current?.dispose();
     assessmentIdRef.current = makeId('attempt');
     const next = createAssessmentRuntime({
@@ -610,6 +625,18 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     useCallback(() => runtime?.getStoreSnapshot() || EMPTY_SNAPSHOT, [runtime]),
     () => EMPTY_SNAPSHOT,
   );
+  const pauseStateRef = useRef(false);
+  const pauseRuntimeRef = useRef(null);
+  useEffect(() => {
+    if (pauseRuntimeRef.current !== runtime) {
+      pauseRuntimeRef.current = runtime;
+      pauseStateRef.current = false;
+    }
+    if (!runtime || pauseStateRef.current === paused) return;
+    pauseStateRef.current = paused;
+    if (paused) runtime.pause();
+    else runtime.resume({ delayMs: resumeDelayMs });
+  }, [paused, resumeDelayMs, runtime]);
 
   const timed = snapshot.matcher === 'timed';
   /**
@@ -620,19 +647,24 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
    * what the judge recorded. Memoized on the snapshot, which changes identity
    * only when the runtime publishes, so the 50 ms clock tick does not rebuild it.
    */
-  const verdicts = useMemo(() => (timed ? timedVerdicts(snapshot) : null), [timed, snapshot]);
-  const clockPosition = timed ? timedRunPresentation(snapshot, Math.max(clockNow, Date.now())) : null;
+  const verdicts = useMemo(() => assessmentVerdicts(snapshot), [snapshot]);
+  const liveTally = useMemo(() => verdictSummary(snapshot), [snapshot]);
+  const presentationNow = snapshot.paused && Number.isFinite(snapshot.pausedAt)
+    ? snapshot.pausedAt : Math.max(clockNow, Date.now());
+  const clockPosition = timed ? timedRunPresentation(snapshot, presentationNow) : null;
   // The matcher may finish early. Its result must not end the musical display
   // before the authored time has elapsed.
   const awaitingTimeline = timed && snapshot.status === 'completed' && !clockPosition.timelineDone;
   const timeline = awaitingTimeline ? { ...clockPosition, phase: 'running' } : clockPosition;
   const resultReady = !awaitingTimeline;
+  const resuming = snapshot.status === 'running'
+    && Number(snapshot.resumingUntil) > Math.max(clockNow, Date.now());
   useEffect(() => {
-    if (!timed || (snapshot.status !== 'running' && !awaitingTimeline)) return undefined;
+    if (snapshot.paused || ((!timed || (snapshot.status !== 'running' && !awaitingTimeline)) && !resuming)) return undefined;
     setClockNow(Date.now());
     const timer = globalThis.setInterval(() => setClockNow(Date.now()), 50);
     return () => globalThis.clearInterval(timer);
-  }, [runtime, timed, snapshot.status, awaitingTimeline]);
+  }, [runtime, timed, snapshot.status, snapshot.paused, awaitingTimeline, resuming]);
   const countingDown = timeline?.phase === 'countdown';
   const feedbackNotes = timed
     ? timeline.phase !== 'running' ? NO_FEEDBACK_NOTES
@@ -695,7 +727,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     // one is persisted above and reported nowhere — there is nothing in it to
     // judge, and a host counting failures must not count a walk-away.
     if (!JUDGED_STATUSES.has(snapshot.result.status)) return;
-    const passed = runPassed(snapshot.result, { challenge, passScore: requirement?.passScore });
+    const passed = runPassed(snapshot.result, { challenge, passScore: runRequirement?.passScore });
     // `traceEvent`, not a bare `logger.info`: this is the event that says how a
     // run ENDED, and without the trace fields it said so about nobody. See the
     // note in `persist`.
@@ -734,14 +766,16 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     // it can offer its own ways forward — and so a host counting failures
     // counts only attempts that actually happened.
     if (!passed) onFailed?.(snapshot.result);
-  }, [challenge, traceEvent, onFailed, persist, requirement, resultReady, snapshot, subject]);
+  }, [challenge, traceEvent, onFailed, persist, resultReady, runRequirement, snapshot, subject]);
 
   // Completion belongs to the host whenever it supplied a callback. Every
   // host advances automatically; this piano surface has no pointer controls.
   const passTakenRef = useRef(false);
   const judgedResult = resultReady && JUDGED_STATUSES.has(snapshot.result?.status) ? snapshot.result : null;
-  const resultPassed = runPassed(judgedResult, { challenge, passScore: requirement?.passScore });
-  const hostOwnsResult = resultPassed ? Boolean(onPassed) : Boolean(onFailed);
+  const resultPassed = runPassed(judgedResult, { challenge, passScore: runRequirement?.passScore });
+  const hostOwnsResult = resultPassed
+    ? Boolean(onPassed)
+    : Boolean(onFailed) && failurePresentation !== 'local';
   const localRetry = Boolean(judgedResult && !hostOwnsResult);
   useEffect(() => {
     passTakenRef.current = false;
@@ -775,7 +809,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
    * over: twenty seconds is long enough for the attempt underneath to have
    * finished, been retried, or been replaced.
    */
-  const stallable = challenge && snapshot.mode === 'free'
+  const stallable = !snapshot.paused && challenge && snapshot.mode === 'free'
     && snapshot.status === 'running' && snapshot.musicalInput === true;
   const hintPolicy = askTuple?.hints ?? 'none';
   const hintable = stallable && hintPolicy === 'after-stall';
@@ -836,8 +870,9 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   useEffect(() => {
     if (!unavailableReason || reportedUnavailableRef.current === unavailableReason) return;
     reportedUnavailableRef.current = unavailableReason;
-    onUnavailable?.(unavailableReason);
-  }, [onUnavailable, unavailableReason]);
+    if (unavailableReason === 'unrunnable') onUnavailable?.(unavailableReason, unrunnable);
+    else onUnavailable?.(unavailableReason);
+  }, [onUnavailable, unavailableReason, unrunnable]);
 
   /**
    * A `tier` this surface cannot use — `'2'`, `2.5`, `4`, `-1` — falls back to
@@ -853,24 +888,17 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   }, [logger, tier, tierUsable]);
 
   const held = useMemo(() => [...activeNotes.keys()].sort((a, b) => a - b), [activeNotes]);
-  const clickBpm = Number(requirement?.gates?.pace?.target_bpm ?? instance?.tempo?.start_bpm);
-  // KNOWN GAP: a score reaches here with no `instance` and therefore no meter,
-  // so a cued passage is always counted in over FOUR beats — a 3/4 passage gets
-  // one beat too many. Only the count-in is affected: the tempo the attempt is
-  // GRADED at comes from the score's own compiled tempo map (see `countIn`
-  // below), so nothing is mis-judged. Closing it means the passage publishing
-  // its meter alongside its expectation.
+  const clickBpm = Number(runRequirement?.gates?.pace?.target_bpm ?? instance?.tempo?.start_bpm);
+  // This fallback sizes the lead-in only. Visual bar accents use the compiled
+  // measure map and never infer common time when musical metadata is absent.
   const beatsPerMeasure = useMemo(() => {
     const beats = Number(String(instance?.meter ?? '').split('/')[0]);
     return Number.isInteger(beats) && beats > 0 ? beats : 4;
   }, [instance?.meter]);
   /**
-   * The cued count-in: exactly ONE measure of the run's own tempo, because that
-   * is the promise the ready line makes and the length a child can hold in their
-   * head. `countInPlan` owns the PULSE inside that measure — above ~140bpm it
-   * coarsens the count so the numbers stay countable instead of becoming a buzz.
-   * `clicks` is therefore how many of the plan's clicks fit in the measure, not
-   * a second opinion about the meter.
+   * Count at most four pulses on the grid the attempt is graded against.
+   * The lead-in ends on that selected pulse, so the anchored metronome can
+   * continue across the grading boundary without changing phase or rate.
    */
   const countIn = useMemo(() => {
     // The attempt's own tempo map is the tempo the engine GRADES against, and
@@ -880,28 +908,20 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     const graded = Number(snapshot.expectation?.tempoMap?.[0]?.bpm);
     const bpm = graded > 0 ? graded : clickBpm;
     if (!(bpm > 0)) return null;
-    // THE CLICK IS THE NOTE. This pulsed in QUARTERS while the bank writes its
-    // scales in EIGHTHS, so a child was counted in on one grid and then graded
-    // on another at twice the speed — told "play at that speed" about a speed
-    // that was not the ask. Twice now that has cost a real run: see `askPace`.
-    // The pulse is the ask's OWN onset spacing, so one click is one note. An
-    // ask with no single spacing (one note, or a dotted rhythm) has no pulse to
-    // borrow and keeps the quarter it always had.
-    const pulse = askPulseQuarters((snapshot.expectation?.events ?? []).map((event) => event.onsetQuarter));
-    const pulseBpm = pulse > 0 ? bpm / pulse : bpm;
-    // The count-in's LENGTH is still exactly one measure of the music — only
-    // how many clicks fill it changes.
-    const leadInMs = beatsPerMeasure * 60000 / bpm;
-    const { periodMs } = countInPlan({ beats: beatsPerMeasure, bpm: pulseBpm });
-    return { bpm: pulseBpm, gradedBpm: bpm, leadInMs, periodMs, clicks: Math.max(1, Math.round(leadInMs / periodMs)) };
+    const plan = exerciseCountInPlan({
+      beatsPerMeasure,
+      gradedBpm: bpm,
+      onsetQuarters: (snapshot.expectation?.events ?? []).map((event) => event.onsetQuarter),
+    });
+    return plan ? { ...plan, gradedBpm: bpm } : null;
   }, [beatsPerMeasure, clickBpm, snapshot.expectation]);
 
   /**
    * WHAT THE CLICKS ACTUALLY MEAN for this ask.
    *
-   * The count-in is a QUARTER pulse and the bank writes its scales in EIGHTHS,
-   * so "play at that speed" was false for every cued scale rung — see
-   * `askPace` for the run this cost. Derived from the compiled expectation
+   * The bank writes its scales in eighths, so a quarter-pulse count-in's
+   * "play at that speed" promise was false — see `askPace` for the run this
+   * cost. Derived from the compiled expectation
    * rather than from the instance's note values: the expectation is what the
    * engine grades against, and a sentence about the speed has to be a sentence
    * about the grid the child is actually being measured on.
@@ -909,24 +929,26 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   const cuedPace = useMemo(() => {
     const events = snapshot.expectation?.events;
     if (!Array.isArray(events) || !countIn) return null;
-    // `gradedBpm`, not `bpm`: the latter is now the CLICK rate, and this is
-    // asking how many score quarters sit between two clicks.
+    // How many score quarters sit between two selected count-in clicks.
     const clickQuarters = countIn.periodMs * countIn.gradedBpm / 60000;
     return askPace(events.map((event) => event.onsetQuarter), clickQuarters);
   }, [snapshot.expectation, countIn]);
 
-  // Null during the pre-roll (the count has not reached its first click yet).
-  const countInPosition = countingDown && countIn
-    ? Math.floor(((snapshot.leadInMs ?? 0) - timeline.countdownRemainingMs) / countIn.periodMs) + 1
-    : null;
-  const countInBeat = countInPosition != null && countInPosition >= 1 ? Math.min(countIn.clicks, countInPosition) : null;
+  const countdownElapsedMs = timeline
+    ? (snapshot.leadInMs ?? 0) - timeline.countdownRemainingMs + timeline.elapsedMs
+    : 0;
+  const countdown = countIn ? countdownPresentation({
+    clicks: countIn.clicks, elapsedMs: countdownElapsedMs, leadInMs: countIn.leadInMs,
+  }) : null;
+  // Null during the pre-roll (the first anchored click has not sounded yet).
+  const countInBeat = countingDown && countdownElapsedMs >= 0 ? countdown?.remaining ?? null : null;
 
   // Resolved once per config: see the anchored click below.
   const clickLead = useMemo(() => resolveClickLead(kioskConfig, audioContext()), [kioskConfig]);
 
   /**
    * A cued ask arms on ANY key — the child is saying "I am here", not playing
-   * yet — and then hears one measure of clicks before the first graded beat.
+   * yet — and then hears at most four clicks before the first graded beat.
    * The runtime is `running` for the whole lead-in (only the target times are
    * shifted), which is exactly why the metronome below needs no special case:
    * its clicks and the first played beat are one uninterrupted grid.
@@ -946,6 +968,8 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     setClockNow(Date.now());
     traceEvent('piano.exercise-countdown-started', {
       ...timedRunPresentation(runtime.getSnapshot(), Date.now()),
+      pulseCount: countIn?.clicks ?? 0, pulseBpm: countIn?.pulseBpm ?? null,
+      leadInMs: countIn?.leadInMs ?? 0,
       ignored: [...activeNotesRef.current.keys()], reason: 'arming-key',
     });
   }, [clickLead, countIn, runtime, traceEvent]);
@@ -997,9 +1021,10 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
 
   useMetronomeClick({
     anchorMs: clickAnchorMs,
+    gain: clickGain,
     leadMs: clickLead.leadMs,
-    enabled: ((snapshot.status === 'running' || awaitingTimeline) && ['metronome', 'cued'].includes(snapshot.mode))
-      || (prePulse && !prePulseStopped),
+    enabled: !snapshot.paused && (((snapshot.status === 'running' || awaitingTimeline) && ['metronome', 'cued'].includes(snapshot.mode))
+      || (prePulse && !prePulseStopped)),
     // The tempo the attempt is GRADED at, which is not always `clickBpm`: a
     // cued rung carries no `gates.pace`, so a tempo-less single-event instance
     // (graded at the engine's default) would leave this NaN — the hook then
@@ -1009,8 +1034,8 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     // downbeat. `timeline.bpm` is the score's quarter tempo, scaled here by the
     // same pulse the count-in used.
     bpm: timeline?.phase === 'running'
-      ? (countIn?.gradedBpm > 0 ? timeline.bpm * (countIn.bpm / countIn.gradedBpm) : timeline.bpm)
-      : countIn?.bpm ?? clickBpm,
+      ? (countIn?.gradedBpm > 0 ? timeline.bpm * (countIn.pulseBpm / countIn.gradedBpm) : timeline.bpm)
+      : countIn?.pulseBpm ?? clickBpm,
   });
   const heldKey = held.join(',');
   useEffect(() => {
@@ -1069,6 +1094,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
       });
       return;
     }
+    if (snapshot.paused) return;
     // Every note-on the run sees resets the stall clock — including the one
     // that arms it, which is the note the clock should be measured from.
     if (onsets.length) setNoteOnTick((tick) => tick + 1);
@@ -1086,7 +1112,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
       // the runtime's own clock reading: a `Date.now()` sampled a millisecond
       // earlier is `before_start` to the engine, which silently drops the note.
       const armedAt = runtime.getSnapshot().startedAt ?? time;
-      if (snapshot.matcher === 'held') {
+      if (snapshot.matcher === 'held' || snapshot.policy?.requireConcurrentOnset === true) {
         // Only the chord's own members are handed over at the boundary. A key
         // already down from before — inert while the run was ready — would
         // otherwise be graded as an extra the moment the child reaches the
@@ -1115,7 +1141,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
       return;
     }
     if (snapshot.status !== 'running') return;
-    if (snapshot.matcher === 'held') {
+    if (snapshot.matcher === 'held' || snapshot.policy?.requireConcurrentOnset === true) {
       if (lastHeldObservedRef.current === heldKey) return;
       lastHeldObservedRef.current = heldKey;
       runtime.observe({ held: activeNotes, time, clock: 'date-now' });
@@ -1138,7 +1164,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
       // A completed assessment can be waiting for the musical timeline. Exit
       // preserves that evidence without treating exit as a passed game gate.
       persist(active.result, active.status, { keepalive: true });
-    } else if (active?.status === 'running' && active.musicalInput && !persistedRef.current) {
+    } else if (persistInterrupted && active?.status === 'running' && active.musicalInput && !persistedRef.current) {
       const interrupted = runtimeRef.current.abort();
       persist(interrupted.result, 'aborted', { keepalive: true });
     }
@@ -1197,7 +1223,20 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   // status line — a run that has ended, still saying "follow the highlighted
   // notes" at a piano nothing is listening to.
   const result = resultReady && JUDGED_STATUSES.has(snapshot.result?.status) ? snapshot.result : null;
-  const phase = snapshot.status === 'prepared' ? 'ready' : resultReady && JUDGED_STATUSES.has(snapshot.status) ? 'done' : countingDown ? 'countdown' : 'running';
+  const phase = snapshot.paused ? 'paused'
+    : resuming ? 'resume-countdown'
+      : snapshot.status === 'prepared' ? 'ready'
+        : resultReady && JUDGED_STATUSES.has(snapshot.status) ? 'done'
+          : countingDown ? 'countdown' : 'running';
+  const resumeRemaining = resuming
+    ? Math.max(1, Math.ceil((snapshot.resumingUntil - Math.max(clockNow, Date.now())) / Math.max(1, resumeDelayMs / 2)))
+    : null;
+  const beatPulse = timed && phase === 'running' && timeline?.phase === 'running' && !timeline.timelineDone
+    ? timeline.beat : null;
+  const beatInMeasure = beatPulse == null ? null : timeline.beatInMeasure;
+  // PLAY belongs to the first anchored running beat, so delayed ticks cannot
+  // leave the countdown on screen or introduce a late start instruction.
+  const playHandoff = beatPulse === 1 && countdown?.play;
   const expected = askEvents.flatMap((event) => event.notes.map((note) => note.midi));
   // Two consumers, two different things. ExerciseNotation's `wrong` prop is a
   // FLAG (it only ever colours the cursor note), so it gets a boolean — passing
@@ -1205,17 +1244,18 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   // changes. The keyboard footer wants the pitch itself.
   const isWrong = !countingDown && lastWrong !== null;
   const wrongNotes = countingDown || lastWrong === null ? null : new Set([lastWrong.midi]);
-  const passed = runPassed(result, { challenge, passScore: requirement?.passScore });
+  const passed = runPassed(result, { challenge, passScore: runRequirement?.passScore });
   // A timed run that failed on TIMING says so, in the child's terms. Anything
   // else (a missing or wrong note) keeps the copy below.
   const timingCopy = timed && result && !passed
     ? timingSentence(timedRunSummary(result, snapshot), expected.length)
     : null;
-  // A host handling failures owns the next screen. Suppress the local result
-  // panel so it cannot flash a retry instruction before that transition.
-  const hostOwnsFailure = Boolean(onFailed) && !passed;
+  // A host handling failures normally owns the next screen. A recording-only
+  // host explicitly keeps this panel and the run's piano-driven retry.
+  const hostOwnsFailure = Boolean(onFailed) && failurePresentation !== 'local' && !passed;
   const currentEvent = askEvents[Math.min(visualCursor.index, askEvents.length - 1)] || askEvents[0];
-  const targetNotes = new Map((currentEvent?.notes || []).map((note) => [note.midi, { velocity: 1 }]));
+  const revealKeyboardTarget = keyboardHintPolicy !== 'after-wrong' || lastWrong !== null;
+  const targetNotes = new Map(((revealKeyboardTarget ? currentEvent?.notes : []) ?? []).map((note) => [note.midi, { velocity: 1 }]));
 
   /**
    * The rung decides what the screen is. A `tier` prop is the host's own
@@ -1336,6 +1376,8 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   const standingInstruction = bare ? null : (
     <>
       {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{!runtime ? 'Getting the music ready…' : snapshot.mode === 'cued' ? countInSentence(countIn?.clicks ?? beatsPerMeasure, cuedPace) : 'Play the first note to begin.'}</p>{!connected && <span>Waiting for the piano…</span>}</div>}
+      {phase === 'paused' && <p className="piano-exercise-run__status" role="status">Paused. Your place is saved.</p>}
+      {phase === 'resume-countdown' && <p className="piano-exercise-run__status" role="status">Get ready…</p>}
       {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : huntSentence ?? (isWrong ? 'That note was not expected — keep going.' : stage === 'recall' ? 'Play the named music from memory.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.')}{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
     </>
   );
@@ -1381,7 +1423,9 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
    * deck answered here, or a drill whose host handed one down. A drill left to
    * fetch its own is unknowable at this point and keeps its heading.
    */
-  const chromeDrawn = Boolean(deckProgram) || (drillProjection?.steps?.length ?? 0) >= 2;
+  const chromeDrawn = Boolean(deckProgram)
+    || (drillProjection?.steps?.length ?? 0) >= 2
+    || drillProjection?.displaySingleStep === true;
   /**
    * A percentage belongs to a STAGE, not to a tier.
    *
@@ -1404,7 +1448,8 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     && Number.isFinite(result?.score);
 
   return (
-    <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}`} data-tier={runTier} data-stage={stage} data-phase={phase} data-armed={runtime ? 'true' : undefined} data-expected-cursor={timeline?.expectedCursor ?? eventIndex} data-displayed-cursor={visualCursor.index} data-hunting={countingDown ? undefined : huntHelp ?? undefined}>
+    <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}`} data-tier={runTier} data-stage={stage} data-surface={surface} data-phase={phase} data-armed={runtime ? 'true' : undefined} data-expected-cursor={timeline?.expectedCursor ?? eventIndex} data-displayed-cursor={visualCursor.index} data-hunting={countingDown ? undefined : huntHelp ?? undefined}
+      data-beat-pulse={beatPulse ?? undefined} data-downbeat={beatPulse == null || timeline.downbeat == null ? undefined : String(timeline.downbeat)}>
       <header className="piano-exercise-run__head">
         {/* WHY YOU ARE HERE, AND NOTHING ELSE, WHEN THERE IS CHROME.
             The sentence under the eyebrow is the run's second line of standing
@@ -1425,10 +1470,10 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
             heading, at the top, where a title goes. A run with no drill behind
             it keeps the eyebrow-and-heading it had: nothing else on that screen
             says why it is there. */}
-        {!bare && (placard.key
+        {!bare && !hideHeading && (placard.key
           ? <h1 className="piano-exercise-run__placard"><DrillPlacard label={placard.key} hand={placard.hand} /></h1>
           : <div><span>{framing ?? (challenge ? 'Pass challenge' : 'Practice')}</span>{!chromeDrawn && <h1>{ask ?? subject.title}</h1>}</div>)}
-        <div className="piano-exercise-run__context">
+        {!hideHeading && <div className="piano-exercise-run__context">
           {/* Each chip only where it means something: a meter is what a cued ask
               is counted in, and nothing at all in a free one. A score carries
               none of them: they are printed on the page the child is reading,
@@ -1438,12 +1483,21 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
               corner was the same fact charging rent on the title row. */}
           {!bare && cued && instance?.meter && <span>{instance.meter}</span>}
           {!bare && challenge && requirement.gates?.pace?.target_bpm && <strong>{requirement.gates.pace.target_bpm} BPM</strong>}
-        </div>
+        </div>}
       </header>
       {/* Notation and the sequence staff are ink, and ink needs paper on a dark
           screen — they keep the run's paper card. Lit keys are not ink, and a
           keyboard on a cream card would read as a picture of a piano. */}
       <div className={`piano-exercise-run__stage ${stage === 'keys' ? 'piano-exercise-run__ask' : 'piano-exercise-run__score'}`}>
+        {snapshot.musicalInput && <div className="piano-exercise-run__tally" aria-live="polite" aria-label="Practice score">
+          <span className="is-right"><b aria-hidden="true">✓</b> Right {liveTally.right}</span>
+          <span className="is-wrong"><b aria-hidden="true">×</b> Wrong {liveTally.wrong}</span>
+          {timed && <>
+            <span className="is-timing"><b aria-hidden="true">◀</b> Early {liveTally.early}</span>
+            <span className="is-timing"><b aria-hidden="true">▶</b> Late {liveTally.late}</span>
+            <span className="is-missed"><b aria-hidden="true">○</b> Missed {liveTally.missed}</span>
+          </>}
+        </div>}
         {stage === 'keys' && (
           <KeysAsk
             events={keysWindow.events}
@@ -1521,10 +1575,14 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
              built from. It is mounted before there is a runtime, deliberately —
              see the guard above. */
           <ScorePassage
-            showCursor={timed}
+            showCursor={scoreCursorPolicy === 'always' || timed}
             musicXml={score.musicXml}
             sourceId={score.id}
             measures={score.measures}
+            rangeIndices={score.rangeIndices ?? null}
+            activeParts={score.activeParts ?? null}
+            tempoPercent={score.tempoPercent ?? 100}
+            keepWholePassage={scoreLayoutPolicy === 'whole-passage'}
             onExpectation={takeScoreExpectation}
             onUnrunnable={handleScoreUnrunnable}
             cursorIndex={visualCursor.index}
@@ -1532,10 +1590,15 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
             {...(verdicts ? { verdicts, windowOpen } : {})}
           />
         )}
-        <CountInOverlay active={countingDown && countInBeat != null} beat={countInBeat} />
+        {beatPulse != null && <span key={beatInMeasure == null ? beatPulse : `${timeline.measureIndex}:${beatInMeasure}`} className="piano-exercise-run__beat" aria-hidden="true">
+          <span className="piano-exercise-run__beat-marker">{beatInMeasure ?? beatPulse}</span>
+        </span>}
+        <CountInOverlay active={(countingDown && countInBeat != null) || playHandoff}
+          remaining={countdown?.remaining} progress={countdown?.progress} play={countdown?.play} />
+        <CountInOverlay active={resuming} remaining={resumeRemaining} progress={null} play={false} />
       </div>
       {/* No button: the piano starts the run. A cued ask arms on any key and
-          counts a measure; every other ask arms on the note it is asking for. */}
+          counts at most four pulses; every other ask arms on the note it is asking for. */}
       {/* A run with no attempt yet is a score still engraving. Saying "play the
           first note" there would be a lie a child would act on: nothing is
           listening, and a piano that ignores you is indistinguishable from a

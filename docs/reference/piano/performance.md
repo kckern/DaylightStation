@@ -388,6 +388,25 @@ point: rhythm healthy, visuals frame-bound). Extraction defer/release emits
 > frame-drift stays ugly, ear-test the pause tail, confirm no stuck notes) before believing
 > the rhythm fix on this hardware.
 
+## Sheet Music Learn recovery contract
+
+Learn progress unlocks choices; it never removes them. Opening a segment, including through a
+`learnRung` deep link, stops at the chooser. Completed drills remain available, and Make your own
+offers Right hand, Left hand, or Together with No beat, Keep a beat, or Play on time. Beat modes
+include an Extra slow 15% stage.
+
+The lab always exposes 64px-or-larger Pause/Resume, Start over, and Change practice controls.
+Pause freezes the assessment clock, MIDI observations, timeouts, misses, and click. Resume keeps
+the exact score position and gives a visible two-beat count-in. Restart and configuration changes
+discard only the active take; they do not bank a rep or record a failure.
+
+All modes paint durable pitch verdicts and show a textual/symbol tally for Right and Wrong. Play
+on time additionally reports Early, Late, and Missed; Keep a beat is intentionally pitch-only.
+The notation, tally, result evidence, and telemetry are projections of the assessment runtime's
+record. Unwritten wrong pitches remain in summary evidence even when the score cannot draw a
+notehead for them. Learn telemetry records chooser, launch, controls, tempo changes, and terminal
+outcomes with score/revision/configuration/run identity; it must never include raw MIDI events.
+
 ---
 
 *Subsystem overview: [README.md](./README.md). Hardware and tablet setup: [kiosk-setup.md](./kiosk-setup.md).*

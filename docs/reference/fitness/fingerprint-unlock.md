@@ -236,6 +236,15 @@ open/closes the device — thousands of USB claim/release per day). Guardrails:
 - **Reset on progress.** Any real reader progress (match / sensed touch / clean preempt)
   resets the streak and backoff.
 
+The reader loop delivers scans through the garage bridge's backend WebSocket. That
+connection has two separate liveness barriers: a 10-second handshake deadline while
+`CONNECTING`, and a 20-second reply deadline after it reaches `OPEN`. Failed attempts
+retry with exponential backoff capped at 30 seconds. An independent 30-second watchdog
+repairs a lost retry timer, and 120 seconds of continuous disconnection exits the
+process so Docker's `restart: unless-stopped` policy supplies the final recovery layer.
+`GET /health` returns 503 whenever this event channel is unavailable; a running HTTP
+server without an event channel is not a healthy fitness bridge.
+
 Recovery from a true wedge is a `daylight-fitness` container restart. Judge reader health
 from the loop's logs, not from a manual probe — a raw helper `identify` returns "Resource
 busy" on a *healthy* reader because the always-on loop already holds it.

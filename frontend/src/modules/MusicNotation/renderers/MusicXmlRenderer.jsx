@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useLayoutEffect, useState } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 import { osmdEngrave, osmdRepaint, extractLayoutSliced, scheduleYield } from './osmdRender.js';
 import StaffSkeleton from './StaffSkeleton.jsx';
@@ -31,6 +31,8 @@ function logger() {
  *   reading one: every bar drawn separately (no multi-measure-rest collapse) and
  *   systems stretched to the full width, so empty bars read as ruled paper. Off
  *   by default — only the Composer opts in. See osmdRender's applyManuscriptRules.
+ * @param {boolean} [newSystemFromXML] - honor MusicXML `new-system` print hints.
+ *   Off by default; focused score passages opt in after inserting a balanced break.
  * @param {(res:{width,height,events,notes,steps,tempoEntries,flow,scale,transpose}) => void} [onLayout]
  *   — `flow`/`scale`/`transpose` report WHICH engrave the geometry belongs to, so
  *   a consumer can tell a stale layout from a current one.
@@ -52,7 +54,7 @@ function logger() {
  *   extraction runs once `holdExtraction` flips back to false.
  * @param {React.ReactNode} [children] - overlay content positioned over the SVG
  */
-export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1, transpose = 0, manuscript = false, onLayout, onProgress, onReady, onFailed, holdExtraction = false, children }) {
+export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1, transpose = 0, manuscript = false, newSystemFromXML = false, presentationViewBox = null, fillContainer = false, onLayout, onProgress, onReady, onFailed, holdExtraction = false, children }) {
   const hostRef = useRef(null);
   const onFailedRef = useRef(onFailed); onFailedRef.current = onFailed;
   const holdRef = useRef(holdExtraction); holdRef.current = holdExtraction;
@@ -67,6 +69,20 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
   const osmdRef = useRef(null);    // loaded OSMD instance (reused for zoom/resize)
   const osmdKeyRef = useRef(null); // `${flow}::${musicXml}` the instance was loaded for
   useEffect(() => () => { osmdRef.current = null; }, []);
+
+  // Presentation fitting is deliberately separate from engraving. Changing the
+  // visible system must not reload MusicXML, move note geometry, or restart an
+  // assessment; it only changes the SVG camera over the already engraved page.
+  useLayoutEffect(() => {
+    const svg = hostRef.current?.querySelector('svg');
+    if (!svg || !presentationViewBox) return;
+    const { x, y, width: boxWidth, height: boxHeight } = presentationViewBox;
+    if (![x, y, boxWidth, boxHeight].every(Number.isFinite) || boxWidth <= 0 || boxHeight <= 0) return;
+    svg.setAttribute('viewBox', `${x} ${y} ${boxWidth} ${boxHeight}`);
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    svg.style.width = '100%';
+    svg.style.height = '100%';
+  }, [presentationViewBox, dims]);
 
   // Resize watchdog: re-fit when the container width changes (wrapped mode reflows
   // its systems to the new width). Debounced; ignores sub-pixel jitter.
@@ -98,7 +114,7 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
     // Transpose is part of the cache key: a key change misses the reuse check and
     // takes the full engrave path (clean re-parse in the new key), never a stale
     // same-key cache hit. Zoom/flow/resize at a fixed key still hit the repaint path.
-    const cacheKey = `${flow}::${transpose}::${musicXml}`;
+    const cacheKey = `${flow}::${transpose}::${newSystemFromXML}::${musicXml}`;
 
     // Progress + result plumbing shared by both paths. Every setState is
     // stale-guarded so a superseded render can never clobber the live one.
@@ -148,7 +164,7 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
         // Full path: PAINT the engraved sheet first (Manual mode usable at once),
         // THEN extract geometry in yielded slices with progress.
         setRendering(true);
-        const eng = await osmdEngrave(host, musicXml, { width: w, flow, scale, transpose, manuscript, shouldAbort: stale });
+        const eng = await osmdEngrave(host, musicXml, { width: w, flow, scale, transpose, manuscript, newSystemFromXML, shouldAbort: stale });
         if (!eng || stale()) return;
         osmdRef.current = eng.osmd;
         osmdKeyRef.current = cacheKey;
@@ -183,7 +199,7 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
     // would defeat the check.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     return () => { if (renderSeq.current === seq) renderSeq.current++; };
-  }, [musicXml, width, flow, scale, transpose, manuscript, onLayout, onProgress, onReady, resizeKey]);
+  }, [musicXml, width, flow, scale, transpose, manuscript, newSystemFromXML, onLayout, onProgress, onReady, resizeKey]);
 
   // Release: once holding ends and an extraction is owed, re-run the render effect
   // (cheap repaint + the deferred geometry walk) so overlays catch up. NOTE:
@@ -201,7 +217,8 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
   return (
     <div
       className={`musicxml-renderer${showPlaceholder ? ' musicxml-renderer--placeholder' : ''}`}
-      style={{ position: 'relative', width: showPlaceholder || !dims.width ? '100%' : dims.width }}
+      data-fill-container={fillContainer || undefined}
+      style={{ position: 'relative', width: fillContainer || showPlaceholder || !dims.width ? '100%' : dims.width, ...(fillContainer ? { height: '100%' } : {}) }}
     >
       {showPlaceholder && <p>{musicXml ? 'Could not read this score.' : 'No score provided.'}</p>}
       {/* Host stays mounted even on failure so a new document can render into it. */}

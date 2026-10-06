@@ -1,4 +1,5 @@
 import { isFractionPolicy, judgeTimedOnset, timedReachMs, timedTarget, timedWindowMs } from './timedJudge.js';
+import { partIdForStaff } from './partIdentity.js';
 
 const MODES = new Set(['free', 'metronome', 'cued']);
 const MATCHERS = new Set(['cursor', 'timed', 'held']);
@@ -15,7 +16,6 @@ const median = (values) => {
   const middle = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 };
-const partForStaff = (staff) => staff === 0 ? 'rh' : staff === 1 ? 'lh' : `staff-${staff}`;
 const authoredPart = (note) => note.part || (note.hand === 'right' ? 'rh' : note.hand === 'left' ? 'lh' : 'unassigned');
 const noteKey = (eventId, part, midi, index) => `${eventId}-${part}-${midi}-${index}`;
 
@@ -94,15 +94,22 @@ export function compileAssessmentExpectation(input = {}) {
   }).sort((a, b) => a.onsetQuarter - b.onsetQuarter);
   const source = Object.freeze({ kind: sourceKind, id: sourceId, revision: input.source?.revision == null ? null : String(input.source.revision) });
   const tempoMap = Object.freeze(normalizeTempoMap(input.tempoMap, input.bpm).map((entry) => Object.freeze(entry)));
+  const measureMap = Object.freeze((input.measureMap ?? [])
+    .filter((entry) => Number.isInteger(entry.index) && entry.index >= 0
+      && Number.isFinite(entry.onsetQuarter) && entry.onsetQuarter >= 0
+      && Number.isFinite(entry.durationQuarters) && entry.durationQuarters > 0)
+    .map(({ index, onsetQuarter, durationQuarters }) => Object.freeze({ index, onsetQuarter, durationQuarters }))
+    .sort((a, b) => a.onsetQuarter - b.onsetQuarter));
   return Object.freeze({
     version: 1,
     source,
     events: Object.freeze(events),
     tempoMap,
+    measureMap,
   });
 }
 
-export function compileScoreExpectation({ notes = [], source, tempoMap, fallbackBpm, activeParts, range } = {}) {
+export function compileScoreExpectation({ notes = [], source, tempoMap, fallbackBpm, activeParts, range, measureMap } = {}) {
   const groups = new Map();
   const tiedAttacks = new Map();
   const ordered = [...notes].filter(Boolean).sort((a, b) => (Number(a.onsetQuarter) || 0) - (Number(b.onsetQuarter) || 0));
@@ -126,13 +133,13 @@ export function compileScoreExpectation({ notes = [], source, tempoMap, fallback
     const event = groups.get(key) || { onsetQuarter: onset, durationQuarters: 0, spanId: Number.isFinite(measure) ? `measure:${measure}` : null, notes: [] };
     event.durationQuarters = Math.max(event.durationQuarters, duration);
     if (!scoreNote.rest && Number.isFinite(Number(scoreNote.midi))) {
-      const note = { ...scoreNote, midi: Number(scoreNote.midi), durationQuarters: duration, part: partForStaff(staff) };
+      const note = { ...scoreNote, midi: Number(scoreNote.midi), durationQuarters: duration, part: partIdForStaff(staff) };
       event.notes.push(note);
       if (scoreNote.tie === 'start') tiedAttacks.set(tieKey, { event, note, onset });
     }
     groups.set(key, event);
   }
-  return compileAssessmentExpectation({ source: { kind: 'score', id: source?.id || 'score', revision: source?.revision ?? null }, events: [...groups.values()], tempoMap: normalizeTempoMap(tempoMap, fallbackBpm), activeParts });
+  return compileAssessmentExpectation({ source: { kind: 'score', id: source?.id || 'score', revision: source?.revision ?? null }, events: [...groups.values()], tempoMap: normalizeTempoMap(tempoMap, fallbackBpm), activeParts, measureMap });
 }
 
 export function prepareExerciseAssessment({ instance, mode = 'free', purpose = 'practice', requirement = null, activeParts } = {}) {
@@ -160,7 +167,15 @@ export function prepareExerciseAssessment({ instance, mode = 'free', purpose = '
   if (mode === 'cued' && !(bpm > 0)) throw new Error('Cued assessment requires a usable tempo');
   if (mode !== 'cued' && requirement?.rubric?.criteria?.placement != null) throw new Error('Placement cannot be required for an untimed attempt');
   if (mode !== 'cued' && requirement?.gates?.pace) throw new Error('A pace gate requires cued mode');
-  const expectation = compileAssessmentExpectation({ source: { kind: 'exercise', id: instance.id, revision: instance.revision ?? null }, events, bpm, activeParts });
+  const meter = /^(\d+)\/(\d+)$/.exec(instance.meter ?? '');
+  const barQuarters = meter && Number(meter[1]) * 4 / Number(meter[2]);
+  const measureMap = [];
+  if (Number.isFinite(barQuarters) && barQuarters > 0) {
+    for (let index = 0; index * barQuarters < onsetQuarter; index += 1) {
+      measureMap.push({ index, onsetQuarter: index * barQuarters, durationQuarters: barQuarters });
+    }
+  }
+  const expectation = compileAssessmentExpectation({ source: { kind: 'exercise', id: instance.id, revision: instance.revision ?? null }, events, bpm, activeParts, measureMap });
   const generatedRequirement = requirement || {
     exercise_id: instance.id, mode, required_passes: 1,
     rubric: { id: 'exercise-pass-v2', version: '2', criteria: { completeness: 1, cleanliness: 1, ...(mode === 'cued' ? { placement: 0.8 } : {}) } },
@@ -352,6 +367,22 @@ export function observeAssessment(attempt, midiOrHeldEvent) {
         ?? Math.min(...heldPitches);
       return {
         attempt: { ...attempt, musicalInput: true, heldWrongLatched: true, wrong: [...attempt.wrong, { midi: wrongMidi, time: input.time, spanId: current.spanId, eventId: current.id }] },
+        event: { type: 'wrong', eventId: current.id, midi: wrongMidi },
+      };
+    }
+  }
+  const onsetParts = new Set(current.notes.map((note) => note.part).filter(Boolean));
+  if (attempt.matcher === 'cursor' && attempt.policy.requireConcurrentOnset === true && heldPitches && onsetParts.size > 1) {
+    const expected = new Set(current.notes.map((note) => note.midi));
+    const exact = heldPitches.size === expected.size && [...expected].every((midi) => heldPitches.has(midi));
+    if (!exact) {
+      const onlyExpected = [...heldPitches].every((midi) => expected.has(midi));
+      if (onlyExpected && heldPitches.size < expected.size) {
+        return { attempt: { ...attempt, musicalInput: true }, event: { type: 'partial', eventId: current.id, held: [...heldPitches] } };
+      }
+      const wrongMidi = [...heldPitches].find((midi) => !expected.has(midi)) ?? Math.min(...heldPitches);
+      return {
+        attempt: { ...attempt, musicalInput: true, wrong: [...attempt.wrong, { midi: wrongMidi, time: input.time, spanId: current.spanId, eventId: current.id }] },
         event: { type: 'wrong', eventId: current.id, midi: wrongMidi },
       };
     }

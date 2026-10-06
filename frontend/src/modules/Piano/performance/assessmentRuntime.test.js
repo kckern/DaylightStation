@@ -101,4 +101,42 @@ describe('assessment runtime', () => {
     expect(runtime.getSnapshot()).toMatchObject({ status: 'running', hits: {} });
     expect(onEvent).not.toHaveBeenCalled();
   });
+
+  it('freezes input and timed deadlines while paused, then resumes on a shifted clock', () => {
+    let now = 0;
+    const attempt = createAssessmentAttempt({
+      expectation: compileAssessmentExpectation({
+        events: [
+          { id: 'one', onsetQuarter: 0, notes: [{ midi: 60, part: 'rh' }] },
+          { id: 'two', onsetQuarter: 1, notes: [{ midi: 62, part: 'rh' }] },
+        ],
+        bpm: 60,
+      }),
+      matcher: 'timed', mode: 'cued',
+    });
+    const runtime = createAssessmentRuntime({ attempt, now: () => now, tickMs: 0 });
+    runtime.start();
+    runtime.observe({ midi: 60, time: 0 });
+    now = 100; runtime.pause();
+    now = 10_000; runtime.tick();
+    expect(runtime.observe({ midi: 62, time: 10_000 }).event).toMatchObject({ type: 'ignored', reason: 'paused' });
+    expect(runtime.getSnapshot()).toMatchObject({ paused: true, misses: [] });
+    runtime.resume({ delayMs: 1_000 });
+    expect(runtime.getSnapshot()).toMatchObject({ paused: false, startedAt: 10_900 });
+    now = 10_500;
+    expect(runtime.observe({ midi: 62, time: now }).event).toMatchObject({ type: 'ignored', reason: 'resume_countdown' });
+    now = 11_900; runtime.observe({ midi: 62, time: now });
+    expect(runtime.getSnapshot().status).toBe('completed');
+  });
+
+  it('can pause and resume before the first note without starting the attempt', () => {
+    let now = 20;
+    const runtime = createAssessmentRuntime({ attempt: makeAttempt(), now: () => now, tickMs: 0 });
+    runtime.pause();
+    expect(runtime.getSnapshot()).toMatchObject({ status: 'prepared', paused: true });
+    expect(runtime.start()).toMatchObject({ status: 'prepared', paused: true });
+    now = 200;
+    runtime.resume({ delayMs: 1_000 });
+    expect(runtime.getSnapshot()).toMatchObject({ status: 'prepared', paused: false });
+  });
 });

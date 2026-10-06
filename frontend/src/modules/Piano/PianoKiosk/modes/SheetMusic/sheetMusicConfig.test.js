@@ -2,12 +2,45 @@ import { describe, it, expect } from 'vitest';
 import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
 
 describe('resolveSheetMusicConfig', () => {
+  it('enables the roadmap by default while retaining an explicit legacy escape hatch', () => {
+    expect(resolveSheetMusicConfig({}).learn.roadmap).toBe(true);
+    expect(resolveSheetMusicConfig({ learn: { roadmap: false } }).learn.roadmap).toBe(false);
+  });
+
   it('applies defaults when unset', () => {
-    expect(resolveSheetMusicConfig(undefined)).toEqual({
+    const resolved = resolveSheetMusicConfig(undefined);
+    expect(resolved).toMatchObject({
       defaultMode: 'listen',
       perform: { advancePedalCC: 67, backPedalCC: 66 },
       scoring: { silentMeasuresToStop: 4, timingToleranceMs: 80, thresholds: { green: 0.9, yellow: 0.6 } },
-      learn: { defaultHands: 'both' },
+      learn: {
+        defaultHands: 'both',
+        passages: { targetMeasures: 4, minMeasures: 3, maxMeasures: 5 },
+        navigation: { sequential: false },
+        tempo: { fallbackBpm: 90, minimumPercent: 15, maximumPercent: 100 },
+      },
+    });
+    expect(resolved.learn.ladder.map(({ id, mode, sets, reps, availability, consecutive, completes }) => (
+      { id, mode, sets, reps, availability, consecutive, completes }
+    ))).toEqual([
+      { id: 'right', mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, completes: 'rung' },
+      { id: 'left', mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, completes: 'rung' },
+      { id: 'together', mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, completes: 'rung' },
+      { id: 'timed', mode: 'cued', sets: 1, reps: 3, availability: 'sequential', consecutive: false, completes: 'rung' },
+      { id: 'mastery', mode: 'cued', sets: 1, reps: 3, availability: 'sequential', consecutive: false, completes: 'passage' },
+      { id: 'test-out', mode: 'cued', sets: 1, reps: 3, availability: 'always', consecutive: true, completes: 'passage' },
+    ]);
+    expect(resolved.learn.revision).toMatch(/^[a-f0-9]{64}$/);
+  });
+  it('grades Learn with the same tolerances as standard Exercise Runs', () => {
+    const ladder = resolveSheetMusicConfig({}).learn.ladder;
+    expect(Object.fromEntries(ladder.map(({ id, criteria }) => [id, criteria]))).toEqual({
+      right: { completeness: 1 },
+      left: { completeness: 1 },
+      together: { completeness: 1 },
+      timed: { completeness: 1, cleanliness: 0.8, placement: 0.8 },
+      mastery: { completeness: 1, cleanliness: 0.8, placement: 0.8 },
+      'test-out': { completeness: 1, cleanliness: 0.8, placement: 0.8 },
     });
   });
   it('merges partial overrides', () => {
@@ -16,6 +49,12 @@ describe('resolveSheetMusicConfig', () => {
     expect(c.scoring.thresholds).toEqual({ green: 0.95, yellow: 0.6 });
     expect(c.scoring.silentMeasuresToStop).toBe(4);
   });
+  it('does not invalidate mastery when only feedback timing changes', () => {
+    const base = resolveSheetMusicConfig({});
+    const adjusted = resolveSheetMusicConfig({ learn: { feedback: { successReturnMs: 1400 } } });
+    expect(adjusted.learn.feedback.successReturnMs).toBe(1400);
+    expect(adjusted.learn.revision).toBe(base.learn.revision);
+  });
   it('ignores null/garbage and returns full defaults', () => {
     expect(resolveSheetMusicConfig(null).defaultMode).toBe('listen');
     expect(resolveSheetMusicConfig('nope').perform.backPedalCC).toBe(66);
@@ -23,5 +62,46 @@ describe('resolveSheetMusicConfig', () => {
   it('resolves the Learn hand preference default and override (wave-3 E)', () => {
     expect(resolveSheetMusicConfig({}).learn.defaultHands).toBe('both');
     expect(resolveSheetMusicConfig({ learn: { defaultHands: 'rh' } }).learn.defaultHands).toBe('rh');
+  });
+
+  it('atomically accepts a valid ladder and merges passage sizing', () => {
+    const ladder = [{
+      id: 'play', label: 'Play it', parts: ['rh'], mode: 'free', sets: 1, reps: 2,
+      availability: 'always', criteria: { completeness: 1 }, completes: 'passage',
+    }];
+    const c = resolveSheetMusicConfig({ learn: { passages: { maxMeasures: 6 }, ladder } });
+    expect(c.learn.passages).toEqual({ targetMeasures: 4, minMeasures: 3, maxMeasures: 6 });
+    expect(c.learn.ladder).toHaveLength(1);
+    expect(c.learn.ladder[0]).toMatchObject({ id: 'play', reps: 2, consecutive: false });
+  });
+
+  it('normalizes config-driven tempo progressions while keeping mastery at score tempo', () => {
+    const rung = (over) => ({ id: 'timed', label: 'Timed', parts: ['rh', 'lh'], mode: 'cued', sets: 3, reps: 1, ...over });
+    const c = resolveSheetMusicConfig({ learn: { ladder: [
+      rung({ tempoPercent: 60, tempoPercents: [60, 75, 90] }),
+      rung({ id: 'mastery', label: 'Mastery', mastery: true, tempoPercent: 60, tempoPercents: [60, 80, 90] }),
+    ] } });
+    expect(c.learn.ladder[0].tempoPercents).toEqual([60, 75, 90]);
+    expect(c.learn.ladder[1]).toMatchObject({ tempoPercent: 100, tempoPercents: [100, 100, 100] });
+  });
+
+  it('falls back to the complete default ladder when any override rung is malformed', () => {
+    const c = resolveSheetMusicConfig({ learn: { ladder: [
+      { id: 'valid', label: 'Valid', parts: ['rh'], mode: 'free', sets: 1, reps: 1 },
+      { id: 'broken', label: 'Broken', parts: ['rh'], mode: 'warp', sets: 1, reps: 1 },
+    ] } });
+    expect(c.learn.ladder.map((rung) => rung.id)).toEqual(['right', 'left', 'together', 'timed', 'mastery', 'test-out']);
+  });
+
+  it.each([
+    [],
+    [
+      { id: 'same', label: 'One', parts: ['rh'], mode: 'free', sets: 1, reps: 1 },
+      { id: ' same ', label: 'Two', parts: ['lh'], mode: 'free', sets: 1, reps: 1 },
+    ],
+  ])('rejects an empty or duplicate-id ladder override atomically', (ladder) => {
+    const c = resolveSheetMusicConfig({ learn: { ladder } });
+    expect(c.learn.configFallback).toBe(true);
+    expect(c.learn.ladder.map((rung) => rung.id)).toEqual(['right', 'left', 'together', 'timed', 'mastery', 'test-out']);
   });
 });

@@ -38,13 +38,14 @@ export function createClickScheduler({
   let periodS = 0.5;
   let beatsPerBar = 0;
   let beatIndex = 0;
+  let gain = 0.18;
 
   const tick = () => {
     const ac = getCtx();
     if (!ac) return;
     const horizon = ac.currentTime + lookaheadS;
     while (nextBeat < horizon) {
-      scheduleBlip(ac, nextBeat, { accent: beatsPerBar > 0 && beatIndex === 0 });
+      scheduleBlip(ac, nextBeat, { accent: beatsPerBar > 0 && beatIndex === 0, gain });
       nextBeat += periodS;
       if (beatsPerBar > 0) beatIndex = (beatIndex + 1) % beatsPerBar;
     }
@@ -81,6 +82,8 @@ export function createClickScheduler({
       timer = setInterval(tick, tickMs);
       return info;
     },
+    // Only unscheduled clicks change; the anchored beat grid stays intact.
+    setGain(value = 0.18) { gain = value; },
     setBpm(bpm) {
       if (!(bpm > 0)) return;
       const newPeriod = 60 / bpm;
