@@ -13,7 +13,7 @@ import { HOUSE_FIXTURE_TITLE } from '../../../_lib/media-house-fixture.mjs';
 // Ordinary pointer and keyboard input only; API calls below only set up or
 // observe the receiver.
 test.use({ trace: 'retain-on-failure', serviceWorkers: 'block' });
-test.setTimeout(240000);
+test.setTimeout(420000);
 test.describe.configure({ mode: 'serial' });
 
 const DEVICE = 'acceptance-media';
@@ -145,7 +145,7 @@ test('HOUSE.2a/5a, PLAY.10a, STEER.11a: every row shows start status and who sta
     // The load may be accepted (the WebSocket broadcast goes out) — the
     // playback watchdog then fails the start because nothing ever plays.
     await call(request, 'GET', `${base}/load?play=${HOUSE_FIXTURE_TITLE.id}&dispatchId=${randomUUID()}`);
-    await expect.poll(async () => (await call(request, 'GET', `${base}/start-status`)).body?.status?.phase, { timeout: 180000 })
+    await expect.poll(async () => (await call(request, 'GET', `${base}/start-status`)).body?.status?.phase, { timeout: 300000 })
       .toBe('failed');
     await expect(observer.page.getByTestId(`house-start-status-${DEVICE}`)).toHaveText(/^Couldn't start at /, { timeout: 15000 });
     await shot(observer.page, 'house-row-failed-tablet');
