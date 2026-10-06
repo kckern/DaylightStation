@@ -772,7 +772,11 @@ $amber-ink: #1a1300;
     color: var(--mantine-color-amber-5);
     cursor: pointer;
     font-size: 14px;
-    padding: 8px 4px;
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0 8px;
     border-radius: var(--mantine-radius-sm);
     transition: color 120ms ease;
 

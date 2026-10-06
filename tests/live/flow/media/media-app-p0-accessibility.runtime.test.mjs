@@ -5,7 +5,7 @@ import { freshPage, isPhone, playArrivalHere, searchFor, skipFirstUse } from './
 // Task 8 — accessibility and size parity (RELY.11a, RELY.12a, RELY.13a, NF-A11Y,
 // NF-DEV). Everything is measured from the live page with ordinary pointer and
 // keyboard input at phone, tablet and laptop sizes (and the 360 px floor).
-test.use({ trace: 'retain-on-failure', serviceWorkers: 'block' });
+test.use({ trace: 'retain-on-failure', serviceWorkers: 'block', actionTimeout: 20000 });
 test.setTimeout(180000);
 
 const fmt = (list) => list.map((x) => `${x.id ?? x.name} ${x.w}x${x.h}`).join('; ');
@@ -366,6 +366,54 @@ for (const [size, viewport] of SIZES) {
       await browse.click();
       await expect(page.getByTestId('browse-view')).toBeVisible({ timeout: 20000 });
       await expect(page.locator('[data-testid^="browse-row-"]').first()).toBeVisible({ timeout: 30000 });
+    });
+  });
+}
+
+for (const [size, viewport] of SIZES) {
+  test.describe(`${size} every view`, () => {
+    test.use({ viewport });
+    test(`[NF-A11Y-02][NF-DEV-02] ${size}: Browse, Devices, Remote, Screens, Routines and the sleep timer hold the 44px floor and fit the width`, async ({ page }) => {
+      await freshPage(page);
+      await skipFirstUse(page);
+      const check = async (label) => {
+        const small = await smallTargets(page);
+        expect(small, `${label}: ${fmt(small)}`).toEqual([]);
+        expect(await noHorizontalScroll(page), `${label}: sideways scroll`).toBe(true);
+      };
+      const phone = isPhone(page);
+      await playArrivalHere(page);
+
+      await page.getByTestId(phone ? 'app-tab-browse' : 'app-nav-browse').click();
+      await expect(page.getByTestId('browse-view')).toBeVisible({ timeout: 20000 });
+      await expect(page.locator('[data-testid^="browse-row-"]').first()).toBeVisible({ timeout: 30000 });
+      await check('browse');
+
+      await page.getByTestId(phone ? 'app-tab-fleet' : 'app-nav-fleet').click();
+      await expect(page.getByTestId('fleet-view')).toBeVisible({ timeout: 20000 });
+      await expect.poll(() => page.locator('[data-testid^="fleet-card-"]').count(), { timeout: 30000 }).toBeGreaterThan(0);
+      await check('devices');
+
+      // A screen's Remote, with the sleep timer menu open (a portalled menu of options).
+      await page.locator('[data-testid^="fleet-peek-"]').first().click();
+      await expect(page.getByTestId('session-controls-panel')).toBeVisible({ timeout: 20000 });
+      await check('remote');
+      await page.getByTestId('mini-player-open-nowplaying').click();
+      await expect(page.getByTestId('queue-panel')).toBeVisible({ timeout: 15000 });
+      await page.locator('[data-testid="sleep-timer-button"]:visible').first().click();
+      await expect(page.getByTestId('sleep-timer-menu')).toBeVisible();
+      const sleep = await smallTargets(page, { scope: '[data-testid="sleep-timer-menu"]' });
+      expect(sleep, `sleep timer menu: ${fmt(sleep)}`).toEqual([]);
+      await page.keyboard.press('Escape');
+
+      await page.getByTestId('settings-menu-trigger').click();
+      await page.getByTestId('settings-manage-screens').click();
+      await expect(page.getByTestId('screen-admin-view')).toBeVisible({ timeout: 20000 });
+      await check('screens');
+      await page.getByTestId('settings-menu-trigger').click();
+      await page.getByTestId('settings-routine-history').click();
+      await expect(page.getByTestId('routine-history-view').or(page.getByTestId('routines-view'))).toBeVisible({ timeout: 20000 });
+      await check('routines');
     });
   });
 }
