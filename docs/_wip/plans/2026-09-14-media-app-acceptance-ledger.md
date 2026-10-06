@@ -1,5 +1,7 @@
 # Media redesign — acceptance ledger
 
+Task 8 (2026-10-06, branch `fix/media-task8`): accessibility, size parity, TV input, tap budgets, persona walkthroughs, deletions. The P0 manifest grows to 59 stories / 146 criteria (+RELY.11a/AC1–AC3, RELY.12a/AC1–AC2, RELY.13a/AC2, RELY.14a/AC3; RELY.13a/AC1 stays Partial: text contrast was measured, control-boundary contrast was not), each with exact-SHA runtime evidence (`TASK-8-CLOSEOUT`).
+
 Task 7 (2026-10-02/03, branch `media/p0-task7`): the P0 manifest grows to 31 stories / 69 criteria
 (+RELY.2a/AC2, RELY.3a/AC1–AC4, RELY.5a/AC1–AC3, RELY.6a/AC1, RELY.7a/AC1+AC2+AC5, RELY.8a/AC1–AC3),
 each with exact-SHA runtime evidence (`TASK-7-OUTCOMES`). The other RELY.1a/2a/5a/6a/7a criteria keep
@@ -23,7 +25,7 @@ P0 extension manifest requires its `RELY.4a/AC1` and `RELY.4a/AC2` checks. This 
 pending exact-commit owned-server execution, not new Accepted evidence. Existing
 Task 2 and stable-core receipt evidence below remains unchanged.
 
-**Status:** In progress. Batch B (2026-10-03) adds 24 Accepted and 3 Partial AC across PLAY.10a, STEER.13a/b, RELY.4b, STEER.1b, PLACE.9a, PLACE.4a, STEER.10a, STEER.1a (`BATCH-B-CONTROLS`; review-fix round 2026-10-05: a held natural end now reads ended and releases the Player completion key so replay advances again (`PlayerBridge.test.jsx` held-end test); Add only shown unavailable with its reason on this device; countdown seconds hidden from assistive tech; failed screen adopts fail fast; a paused move to an idle screen stays paused (`WakeAndLoadService.adoptAutoplay.test.mjs`) — unit evidence, counts unchanged); the totals that follow predate it. **11 accepted stories / 41 accepted AC; 14 partial stories / 20 partial AC; 57 unverified stories / 227 unverified AC**. No component, test count or API response earns acceptance by itself.
+**Status:** In progress. Batch B (2026-10-03) adds 24 Accepted and 3 Partial AC across PLAY.10a, STEER.13a/b, RELY.4b, STEER.1b, PLACE.9a, PLACE.4a, STEER.10a, STEER.1a (`BATCH-B-CONTROLS`; review-fix round 2026-10-05: a held natural end now reads ended and releases the Player completion key so replay advances again (`PlayerBridge.test.jsx` held-end test); Add only shown unavailable with its reason on this device; countdown seconds hidden from assistive tech; failed screen adopts fail fast; a paused move to an idle screen stays paused (`WakeAndLoadService.adoptAutoplay.test.mjs`) — unit evidence, counts unchanged); **Totals recomputed 2026-10-06 from the criteria tables below, after Task 8: 28 accepted stories / 144 accepted AC; 38 partial stories / 37 partial AC; 16 unverified stories / 107 unverified AC (82 stories, 288 AC).** The P0 manifest (`validateP0Manifest`) is 59 stories / 146 criteria; 144 of them are Accepted here — `RELY.4a/AC1–AC2` are in the manifest but stay Unverified in this ledger because their journey (`media-app-queue-journey`, Undo restores the paused native position) fails on a test defect that is being repaired separately and has not passed since. No component, test count or API response earns acceptance by itself.
 
 **Contract:** taxonomy §3 and accepted requirements. P0 first, then P1/P2. Each criterion must have evidence of the complete applicable path: user input → target → command → actual player/result → state → displayed feedback. Office is the only physical test screen authorized.
 
@@ -35,6 +37,7 @@ Task 2 and stable-core receipt evidence below remains unchanged.
 
 | Run | Scope | Red / baseline | Green / acceptance |
 |---|---|---|---|
+| TASK-8-CLOSEOUT | Task 8: accessibility and size parity, TV input, tap budgets, persona walkthroughs, deletions | Measured on the running app (not guessed): 36 px house indicator/inputs/Undo, 30 px Retry, 40 px handle Next/Stop, 26–28 px queue controls, 22 px result row icons, 35 px menu items, 28/20 px dialog close/checkbox, a 40 px-wide handle title and a 30 px seek track on a phone, a clipped aim label and scope chips on a laptop, `/` bound to a testid that did not exist, no reduced-motion support anywhere, TV prompts that needed Esc | Compiled exact source `ddfe8f7db` (clean detached checkout, `--build`): 43/43 journeys (`media-app-p0-accessibility`, `media-app-p0-personas`, `screen-tv-input`) pass. Full manifest, each journey group run on its own against the same artifact: 41/49 on the first pass; six of the eight others (`PLAY.1b`, a screen's Remote controls, `PLAY.10a/AC2`, `PLACE.4a`, `FIND.10a/AC3`, and `STEER.1b/AC7` whose search for a second title found nothing under load) passed when re-run alone; the last two (`RELY.4b/STEER.1b` Put it back copy, and this device's sleep label in `STEER.10a/STEER.13a`) fail on test-assertion defects being repaired separately. P0 manifest 59 stories / 146 criteria; stable core 11/11 stories retained (every stable-core journey passed). Unit: Media and screen-framework suites pass; `npm run test:unit:vitest` exits 1 on 16 files outside this work (7 Piano, 3 that cannot resolve Node's `stream` inside a worktree, 6 that pass alone). |
 | BATCH-B-CONTROLS | Batch B (handle and controls, P1): session controls on this device and screens, Add only result, Put it back, Add to this queue, Move to…, several screens + line up, lock screen | Focused Vitest REDs per behaviour (local controls 15, whitelist 3, appliedAs 3, Player completion guard 1, screen adopt-snapshot 1, play-after-ended 1); runtime REDs found three real defects fixed here: screens acked `adopt-snapshot` without adopting, the Player's duplicate-completion guard swallowed the end of a resumed item, and a move to an idle screen had no path. | Exact preview of product SHA `67c40028e` (journey file edits after it are test-only). Every test of `media-app-handle-controls.runtime.test.mjs` passed on it, run singly where the host (load ≈ 30) stalled Plex streams: 9/10 in one full run (local journey stalled on "Having trouble streaming"), the local journey passed in a separate run at the same SHA. `screen-session-controls.runtime.test.mjs` (touched fixture) 7/7 on re-run (first run: one 4 s receiver-ack timeout under load). Logs and screenshots: `/tmp/daylight-media-p0-evidence/67c40028e59f93d3b6ce6e4fd0c82800769ca9b7/batch-b/`. |
 | TASK-D-PLAYER-FEATURES | Batch D player features (P2): STEER.12a, PLAY.8a, PLAY.8b, PLAY.9a | Focused Vitest for contract, Plex mint, routes, WakeAndLoad, screen features, Player seam, Media controls; dev-server runs exposed an off-screen 44-item menu, a slideshow remote Next that never skipped, and slideshows published as buffering (all fixed). | Exact preview of `8cd380a3b` (`media-redesign-server.mjs --build`, header `accepted-8cd380a3b6d8…`), `media-app-player-features.runtime.test.mjs`: full-file run 5/7 (audio journey and the tablet music journey failed on Plex/search load and passed alone: audio 1/1, PLAY.9a 2/2); the earlier full run on `2b8c1f173` passed 6/6. Regression on `2b8c1f173`: screen-session-controls, remote-controls, playback-journey 29/32 — two passed alone; the Office test needs a real Office device absent from the fixture (unrelated). Screenshots under the run's evidence dir. |
 | TASK-D-FABLE-FIXES | Fable review fixes for batch D | n/a | Plex selection is now restored after the decision (live-verified); a Stop/sleep/display-sleep supersedes a brief; a cold screen gets brief/camera by envelope; Add only, notes and origin for device briefs; auxiliary Players write no ledger. **Fleet-wide behaviour change:** a running photo slideshow now publishes `playing` (it used to publish `buffering` forever), so every Remote/house view shows slideshows as playing. |
@@ -894,7 +897,7 @@ As a **Setup person**, I want a first-use moment on a new device, so that it get
 |---|---|---|---|
 | RELY.14a/AC1 | The first time the app opens on a device, it asks for a name, with a sensible default and a way to skip. | Accepted | `BATCH-C-HOUSE` (phone): a fresh device's Home opened with **Name this device**, a default name and **Skip**; saving hid it for good (reload), Skip on a third device likewise. `media-app-house-view.runtime.test.mjs`. |
 | RELY.14a/AC2 | It explains the "Playing to:" aim label once. | Accepted | `BATCH-C-HOUSE`: the same card explains the aim label with the live label beside it, once (gone after answering). `media-app-house-view.runtime.test.mjs`. The app's label reads "Aim:", not "Playing to:". |
-| RELY.14a/AC3 | A household with nothing played yet sees a way into browsing by kind instead of an empty page. | Unverified | — |
+| RELY.14a/AC3 | A household with nothing played yet sees a way into browsing by kind instead of an empty page. | Accepted | `TASK-8-CLOSEOUT`: a fresh device with nothing played shows **Browse everything** in view at phone, tablet and laptop; it opens Browse with a row per kind (RELY.14a/AC3 journey). |
 
 ### RELY.11a
 
@@ -902,9 +905,9 @@ As a **Seeker** with low vision, I want large text, spoken announcements, and st
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| RELY.11a/AC1 | Text follows the device's large-text setting without anything being cut off. | Unverified | — |
-| RELY.11a/AC2 | Every confirmation, warning, and change of status is announced by screen readers. | Unverified | — |
-| RELY.11a/AC3 | Playing, paused, and out-of-date are shown with words or shapes as well as colour. | Unverified | — |
+| RELY.11a/AC1 | Text follows the device's large-text setting without anything being cut off. | Accepted | `TASK-8-CLOSEOUT` (exact source `ddfe8f7db`, compiled): with the root text size at 200 % the phone, tablet and laptop pages do not scroll sideways, the dock wraps instead of clipping the house indicator or search label, the handle's controls stay on screen and never overlap, the seek bar keeps its track and puts a reason on its own line, primary navigation is intact. Measured by `media-app-p0-accessibility.runtime.test.mjs` (RELY.11a/AC1). Caveat: the emulation scales rem text; px-sized text follows the OS setting on a real device. |
+| RELY.11a/AC2 | Every confirmation, warning, and change of status is announced by screen readers. | Accepted | `TASK-8-CLOSEOUT`: after playing, the outcome announcer is one polite atomic live region naming the result and no other live region carries it; the sleep time-left and the countdown seconds are `aria-hidden` (RELY.11a/AC2 journey, all three sizes). Unit: `ScreenSessionControlsHost.test.jsx` announces the countdown once. |
+| RELY.11a/AC3 | Playing, paused, and out-of-date are shown with words or shapes as well as colour. | Accepted | `TASK-8-CLOSEOUT`: with two virtual screens and this device in Devices, every card's state text reads Playing / Paused / Idle / Off / Uncertain / … (never a dot alone); same journey. |
 
 ### RELY.12a
 
@@ -912,8 +915,8 @@ As a **Hand-Held Viewer** holding a baby, I want the main controls within thumb 
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| RELY.12a/AC1 | The aim, play/pause, and search can be reached with one thumb on a phone. | Unverified | — |
-| RELY.12a/AC2 | No essential action needs two hands. | Unverified | — |
+| RELY.12a/AC1 | The aim, play/pause, and search can be reached with one thumb on a phone. | Accepted | `TASK-8-CLOSEOUT` (390 × 844): Search (new **Search** tab on the phone tab bar, also `/`), play/pause (handle) and the aim (tappable aim line on Now Playing and the picker it opens) all sit in the lower 60 % of the screen; each is one tap. `media-app-p0-accessibility.runtime.test.mjs` (one-thumb). |
+| RELY.12a/AC2 | No essential action needs two hands. | Accepted | `TASK-8-CLOSEOUT`: every measured path (NF-TAP journeys) completes with single taps and the Media module has no multi-touch, long-press or hover-only handler (`rg`). Hand-Held Viewer persona walkthrough (pause/resume from the handle) at phone and laptop. |
 
 ### RELY.13a
 
@@ -921,8 +924,8 @@ As a **Big-Screen Sender** on a sunny patio, I want the app readable in glare, s
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| RELY.13a/AC1 | Text and controls keep enough contrast to read outdoors. | Unverified | — |
-| RELY.13a/AC2 | The aim label and confirmations stay legible at arm's length. | Unverified | — |
+| RELY.13a/AC1 | Text and controls keep enough contrast to read outdoors. | Partial | `TASK-8-CLOSEOUT`: text contrast measured ≥ 4.5:1 on the confirmation row, Undo, handle title, house indicator, tab label, Browse button, seek times and queue controls (all three sizes). Control *boundaries* (3:1 non-text contrast, e.g. the default dark buttons) are not measured, so the criterion is not accepted as a whole. |
+| RELY.13a/AC2 | The aim label and confirmations stay legible at arm's length. | Accepted | `TASK-8-CLOSEOUT`: the aim line is 14 px or more and keeps ≥ 4.5:1 contrast; confirmations and their Undo keep ≥ 4.5:1 (RELY.13a journey, all sizes). |
 
 ### AUTO.1a
 

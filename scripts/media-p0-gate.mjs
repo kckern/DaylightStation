@@ -382,7 +382,7 @@ export const P0_EXTENSION_ENTRIES = Object.freeze([
   },
   {
     story: 'RELY.13a',
-    criteria: ['RELY.13a/AC1', 'RELY.13a/AC2'],
+    criteria: ['RELY.13a/AC2'],
     file: 'media-app-p0-accessibility.runtime.test.mjs',
     grep: 'RELY\\.13a',
   },

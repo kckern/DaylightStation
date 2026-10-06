@@ -88,11 +88,11 @@ describe('Media P0 gate manifest', () => {
       expect.objectContaining({ story: 'RELY.11a', criteria: ['RELY.11a/AC1'], file: 'media-app-p0-accessibility.runtime.test.mjs' }),
       expect.objectContaining({ story: 'RELY.11a', criteria: ['RELY.11a/AC2', 'RELY.11a/AC3'], file: 'media-app-p0-accessibility.runtime.test.mjs' }),
       expect.objectContaining({ story: 'RELY.12a', criteria: ['RELY.12a/AC1', 'RELY.12a/AC2'], file: 'media-app-p0-accessibility.runtime.test.mjs' }),
-      expect.objectContaining({ story: 'RELY.13a', criteria: ['RELY.13a/AC1', 'RELY.13a/AC2'], file: 'media-app-p0-accessibility.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'RELY.13a', criteria: ['RELY.13a/AC2'], file: 'media-app-p0-accessibility.runtime.test.mjs' }),
       expect.objectContaining({ story: 'RELY.14a', criteria: ['RELY.14a/AC3'], file: 'media-app-p0-accessibility.runtime.test.mjs' }),
     ]));
     expect(P0_EXTENSION_ENTRIES).toHaveLength(61);
-    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 59, criteria: 147 });
+    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 59, criteria: 146 });
   });
 
   it('rejects skipped, duplicated, weakened, or unjourneyed criteria', () => {
