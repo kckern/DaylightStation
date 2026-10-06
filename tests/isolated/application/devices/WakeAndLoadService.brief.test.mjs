@@ -74,9 +74,11 @@ describe('WakeAndLoadService — Show briefly', () => {
   it('a cold screen gets a brief camera as the same envelope, never as a page URL', async () => {
     const device = svc.deviceService?.get?.('tv');
     // Re-wire: nobody subscribed yet, as on a cold page.
+    const t0 = Date.now();
     const eventBus = {
       subscribe: vi.fn((topic, cb) => { handlers.set(topic, cb); return () => handlers.delete(topic); }),
-      getTopicSubscriberCount: vi.fn().mockReturnValue(0),
+      // The page mounts and subscribes about 4 s after the base URL loads.
+      getTopicSubscriberCount: vi.fn(() => (Date.now() - t0 >= 4000 ? 1 : 0)),
       // The ack is awaited from before the page loads; it arrives once the
       // envelope has been sent.
       waitForMessage: vi.fn(async (predicate) => {
@@ -109,5 +111,34 @@ describe('WakeAndLoadService — Show briefly', () => {
     expect(loadContent.mock.calls.every(([, query]) => !query || Object.keys(query).length === 0)).toBe(true);
     const sent = broadcast.mock.calls.map(([m]) => m).find((m) => m.type === 'command');
     expect(sent.params).toMatchObject({ op: 'play-now', contentId: 'camera:doorbell', brief: '1' });
+    // It went out only once the screen had subscribed — not on a fixed guess.
+    expect(eventBus.getTopicSubscriberCount.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it('a cold screen that never subscribes within the bound is a failed load, not ok', async () => {
+    const eventBus = {
+      subscribe: vi.fn((topic, cb) => { handlers.set(topic, cb); return () => handlers.delete(topic); }),
+      getTopicSubscriberCount: vi.fn().mockReturnValue(0),
+      waitForMessage: vi.fn(() => new Promise(() => {})),
+    };
+    const cold = new WakeAndLoadService({
+      ...testApplicationRuntime(),
+      deviceService: { get: () => ({
+        id: 'tv', screenPath: '/screen/tv', defaultVolume: null, hasCapability: () => false,
+        powerOn: vi.fn().mockResolvedValue({ ok: true, verified: true }),
+        prepareForContent: vi.fn().mockResolvedValue({ ok: true, coldRestart: false, cameraAvailable: true }),
+        loadContent: vi.fn().mockResolvedValue({ ok: true }),
+      }) },
+      readinessPolicy: { isReady: vi.fn().mockResolvedValue({ ready: true }) },
+      broadcast, eventBus, prewarmService: prewarm,
+      commandHandlerLivenessService: { isFresh: () => true },
+      deviceLivenessService: { getLastSnapshot: () => null },
+      logger: logger(),
+    });
+    const pending = cold.execute('tv', { play: 'camera:doorbell', brief: '1' });
+    await vi.advanceTimersByTimeAsync(40_000);
+    const result = await pending;
+    expect(result).toMatchObject({ ok: false, failedStep: 'load', error: 'Screen not connected' });
+    expect(broadcast.mock.calls.some(([m]) => m.type === 'command')).toBe(false);
   });
 });
