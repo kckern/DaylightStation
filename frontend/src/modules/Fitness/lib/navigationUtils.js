@@ -1,3 +1,20 @@
+export function shouldPlayMenuMusic({
+  currentView,
+  screenHasFitnessChart = false,
+  queueSize = 0,
+  hasActiveModule = false,
+  loading = false,
+  hasTracks = false,
+}) {
+  const browseView = currentView === 'menu' || currentView === 'show' || currentView === 'screen';
+  return browseView
+    && !(currentView === 'screen' && screenHasFitnessChart)
+    && queueSize === 0
+    && !hasActiveModule
+    && !loading
+    && hasTracks;
+}
+
 /**
  * Sort navigation items by order field, falling back to array position
  */

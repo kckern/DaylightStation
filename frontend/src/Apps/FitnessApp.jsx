@@ -18,7 +18,7 @@ import { FitnessProvider } from '../context/FitnessContext.jsx';
 import getLogger, { configure as configureLogger } from '../lib/logging/Logger.js';
 import { guardedReload } from '../lib/reloadGuard.js';
 import { readHeap, heapFields, heapSnapshotFields, reportMemoryMonitoringAvailability } from '../lib/perf/memoryProbe.js';
-import { sortNavItems, filterNavItemsByDay, isNavItemActive } from '../modules/Fitness/lib/navigationUtils.js';
+import { sortNavItems, filterNavItemsByDay, isNavItemActive, shouldPlayMenuMusic } from '../modules/Fitness/lib/navigationUtils.js';
 import useDayOfWeek from '../hooks/useDayOfWeek.js';
 import VoiceMemoOverlay from '../modules/Fitness/player/overlays/VoiceMemoOverlay.jsx';
 import FitnessToast from '../modules/Fitness/player/overlays/FitnessToast.jsx';
@@ -59,6 +59,7 @@ registerBuiltinWidgets();
 const SCREEN_PERSISTED_SOURCES = ['sessions'];
 // Widgets that read the injected `dashboard` screen-data source.
 const DASHBOARD_WIDGETS = new Set(['fitness:coach', 'fitness:upnext']);
+const FITNESS_CHART_WIDGETS = new Set(['fitness:chart']);
 
 function layoutUsesWidget(node, widgets) {
   if (!node || typeof node !== 'object') return false;
@@ -1537,13 +1538,16 @@ const FitnessApp = () => {
   }, [currentView, queueSize, logger]);
 
   // Menu music: active while browsing (not playing a video, not in a module)
-  const menuMusicActive = (
-    (currentView === 'menu' || currentView === 'show' || currentView === 'screen') &&
-    fitnessPlayQueue.length === 0 &&
-    activeModule == null &&
-    !loading &&
-    menuMusicTracks.length > 0
-  );
+  const screenHasFitnessChart = currentView === 'screen'
+    && layoutUsesWidget(screensConfig[activeScreen]?.layout, FITNESS_CHART_WIDGETS);
+  const menuMusicActive = shouldPlayMenuMusic({
+    currentView,
+    screenHasFitnessChart,
+    queueSize: fitnessPlayQueue.length,
+    hasActiveModule: activeModule != null,
+    loading,
+    hasTracks: menuMusicTracks.length > 0,
+  });
 
   // Track changes on collection nav; stays stable when entering FitnessShow so music plays through.
   // Normalize to a primitive so an array activeCollection (collection_group) can't mint a

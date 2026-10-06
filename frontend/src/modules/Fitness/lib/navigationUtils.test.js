@@ -1,5 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { filterNavItemsByDay } from './navigationUtils.js';
+import { filterNavItemsByDay, shouldPlayMenuMusic } from './navigationUtils.js';
+
+describe('shouldPlayMenuMusic', () => {
+  const ready = { queueSize: 0, hasActiveModule: false, loading: false, hasTracks: true };
+
+  it('keeps chart-bearing screens silent', () => {
+    expect(shouldPlayMenuMusic({ ...ready, currentView: 'screen', screenHasFitnessChart: true })).toBe(false);
+  });
+
+  it('preserves ambient music on ordinary browse screens', () => {
+    expect(shouldPlayMenuMusic({ ...ready, currentView: 'screen', screenHasFitnessChart: false })).toBe(true);
+    expect(shouldPlayMenuMusic({ ...ready, currentView: 'menu', screenHasFitnessChart: false })).toBe(true);
+  });
+});
 
 // Day-of-week convention matches JS Date.getDay(): 0=Sunday .. 6=Saturday.
 describe('filterNavItemsByDay', () => {

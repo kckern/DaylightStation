@@ -27,13 +27,12 @@ describe('Fitness music policy across navigation', () => {
     }));
   });
 
-  it('scopes standalone automatic playback to the chart, while preserving explicit manual choices', async () => {
+  it('does not expose standalone chart auto-music, while preserving explicit manual choices', async () => {
     let context;
     function Probe() { context = useFitnessContext(); return null; }
     render(<FitnessProvider fitnessConfiguration={config}><Probe /></FitnessProvider>);
-    await act(async () => context.setStandaloneMusicEnabled(true));
-    await waitFor(() => expect(context.musicEnabled).toBe(true));
-    await act(async () => context.setStandaloneMusicEnabled(false));
+    expect(context.setStandaloneMusicEnabled).toBeUndefined();
+    expect(context.musicEnabled).toBe(false);
     await act(async () => context.setFitnessPlayQueue([{ id: 'video-2', labels: [] }]));
     await waitFor(() => expect(context.musicEnabled).toBe(false));
     await act(async () => context.setMusicOverride(true));
