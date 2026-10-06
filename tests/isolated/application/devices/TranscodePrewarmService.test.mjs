@@ -212,3 +212,39 @@ describe('TranscodePrewarmService — permanent vs transient failure', () => {
     expect(result.permanent).toBe(false);
   });
 });
+
+describe('TranscodePrewarmService — resolved queue ids for the playback watchdog', () => {
+  it('returns every resolved queue contentId even when the first item cannot be prewarmed', async () => {
+    const poem = makePoemPlayable();
+    const plex = makePlexPlayable('649183');
+    const svc = new TranscodePrewarmService({
+      contentIdResolver: {
+        resolve: () => ({ source: 'list', localId: 'office-program', adapter: { resolvePlayables: vi.fn().mockResolvedValue([poem, plex]) } }),
+      },
+      queueService: { resolveQueue: vi.fn().mockResolvedValue([poem, plex]) },
+      httpClient: { get: vi.fn() },
+      logger: makeLogger(),
+    });
+    const result = await svc.prewarm('office-program');
+    expect(result.status).toBe('skipped');
+    expect(result.queueContentIds).toEqual(['poem:remedy/01', 'plex:649183']);
+  });
+
+  it('includes the resolved queue ids on success', async () => {
+    const playable = makePlexPlayable();
+    const svc = new TranscodePrewarmService({
+      contentIdResolver: {
+        resolve: () => ({
+          source: 'plex', localId: '1',
+          adapter: { resolvePlayables: vi.fn().mockResolvedValue([playable]), loadMediaUrl: vi.fn().mockResolvedValue({ url: 'https://example/mpd' }) },
+        }),
+      },
+      queueService: { resolveQueue: vi.fn().mockResolvedValue([playable]) },
+      httpClient: { get: vi.fn().mockResolvedValue({}) },
+      logger: makeLogger(),
+    });
+    const result = await svc.prewarm('plex:1');
+    expect(result.status).toBe('ok');
+    expect(result.queueContentIds).toEqual(['plex:1']);
+  });
+});

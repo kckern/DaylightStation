@@ -13,6 +13,11 @@ function defaultName(clientId) {
   return `Browser ${String(clientId).slice(0, 8)}`;
 }
 
+/** A name the app made up ("Browser 1a2b3c4d"), not one a person chose. */
+export function isPlaceholderName(name) {
+  return typeof name === 'string' && /^Browser [0-9a-zA-Z-]{1,8}$/.test(name.trim());
+}
+
 function persist(storage, identity) {
   storage?.setItem?.(STORAGE_KEYS.CLIENT_ID, identity.clientId);
   storage?.setItem?.(STORAGE_KEYS.DISPLAY_NAME, identity.name);

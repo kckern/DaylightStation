@@ -27,6 +27,9 @@ test.afterAll(async () => {
 });
 
 test('[HOUSE.4a] stable browser identities route a queue command through the actual receiver and return its ack', async ({ browser }) => {
+  // Names are unique household-wide (screen registry, RQ-HOUSE-06): a name
+  // per run, so a rerun against the same server isn't refused as taken.
+  const tabletName = `Kitchen tablet ${Date.now().toString(36)}`;
   const callerContext = await browser.newContext();
   const targetContext = await browser.newContext();
   const installSocket = async context => context.addInitScript(({ socketUrl }) => {
@@ -73,20 +76,20 @@ test('[HOUSE.4a] stable browser identities route a queue command through the act
   const targetStableId = await profileId(target);
   await target.getByTestId('settings-menu-trigger').click();
   await target.getByTestId('settings-rename-device').click();
-  await target.getByRole('textbox', { name: 'Device name' }).fill('Kitchen tablet');
+  await target.getByRole('textbox', { name: 'Device name' }).fill(tabletName);
   await target.getByRole('textbox', { name: 'Room' }).fill('Kitchen');
   await target.getByRole('button', { name: 'Save device name' }).click();
   await target.reload();
   await expect(target.getByRole('textbox', { name: 'Search media…' })).toBeVisible({ timeout: 30000 });
   expect(await profileId(target)).toBe(targetStableId);
   expect(await target.evaluate(() => JSON.parse(localStorage.getItem('media-app.browser-identity')))).toMatchObject({
-    clientId: targetStableId, deviceId: `browser:${targetStableId}`, name: 'Kitchen tablet', room: 'Kitchen',
+    clientId: targetStableId, deviceId: `browser:${targetStableId}`, name: tabletName, room: 'Kitchen',
   });
   await expect.poll(() => received.get(target).filter(message => message.type === 'identify_ack' && message.ok === true).length).toBeGreaterThan(1);
 
   await caller.getByTestId('app-nav-fleet').click();
   const targetCard = caller.getByTestId(`fleet-card-browser:${targetStableId}`);
-  await expect(targetCard).toContainText('Kitchen tablet', { timeout: 30000 });
+  await expect(targetCard).toContainText(tabletName, { timeout: 30000 });
   await expect(targetCard).toContainText('Kitchen');
 
   const commandId = `acceptance-routine-${Date.now()}`;
