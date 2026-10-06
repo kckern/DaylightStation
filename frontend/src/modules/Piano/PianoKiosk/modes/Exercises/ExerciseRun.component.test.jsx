@@ -1979,13 +1979,16 @@ describe('timed exercise clock and input boundary', () => {
     pressKey(view, props, 62);
   });
 
-  it('a free run hands the staff no verdicts: it keeps judging held keys live', async () => {
+  it('a free run hands the staff durable pitch verdicts without timing feedback', async () => {
     const props = { instance: subject(), score: null, intent: 'practice', practiceMode: 'free', tier: 3 };
     const view = render(<ExerciseRun {...props} />);
     await screen.findByText('Play the first note to begin.');
-    expect(screen.getByTestId('notation')).toHaveAttribute('data-judged', 'false');
+    expect(screen.getByTestId('notation')).toHaveAttribute('data-judged', 'true');
     expect(screen.getByTestId('notation')).toHaveAttribute('data-window-open', 'undefined');
     pressKey(view, props, 60);
+    await waitFor(() => expect(screen.getByLabelText('Practice score')).toHaveTextContent('Right 1'));
+    expect(screen.getByLabelText('Practice score')).toHaveTextContent('Wrong 0');
+    expect(screen.queryByText(/Early/)).not.toBeInTheDocument();
     const run = view.container.querySelector('.piano-exercise-run');
     expect(run).toHaveAttribute('data-phase', 'running');
     expect(run).not.toHaveAttribute('data-beat-pulse');
