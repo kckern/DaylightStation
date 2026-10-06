@@ -191,7 +191,10 @@ test.describe('Subtitles and audio language (STEER.12a)', () => {
       await receiverMedia(receiver);
       return (await state(request))?.controls?.tracks?.selected?.subtitle ?? 'none';
     }, { timeout: 60000 }).toBe('none');
-    expect(mints.at(-1)).toMatchObject({ ratingKey: '665639', params: expect.objectContaining({ subtitleStreamID: '0' }) });
+    // Off re-streams plainly: the account has no subtitle selected on this file
+    // (the mint restored it), so nothing is selected or burned.
+    expect(mints.at(-1)).toMatchObject({ ratingKey: '665639' });
+    expect(mints.at(-1).params).not.toHaveProperty('subtitleStreamID');
     await receiver.close();
   });
 
@@ -250,7 +253,8 @@ test.describe('Subtitles on this device (STEER.12a, phone)', () => {
     await shot(page, 'steer12a-this-device-phone');
     await subtitles.click();
     await page.getByTestId('pf-subtitle-off').click();
-    await expect.poll(() => mints.at(-1)?.params?.subtitleStreamID, { timeout: 30000 }).toBe('0');
+    await expect.poll(() => mints.length, { timeout: 30000 }).toBeGreaterThan(1);
+    await expect.poll(() => mints.at(-1)?.params?.subtitleStreamID ?? 'none', { timeout: 30000 }).toBe('none');
   });
 });
 
