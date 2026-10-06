@@ -74,7 +74,8 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
   }), [tempo.minimumPercent, tempo.maximumPercent]);
   const stage = masteryTempo ? TEMPO_STAGES[TEMPO_STAGES.length - 1] : nearestTempoStage(selectedPercent, stages);
   const tempoPercent = ['cued', 'metronome'].includes(rung.mode) ? stage.percent : selectedPercent;
-  const takeCreditEligible = creditEligible && tempoPercent === configuredPercent;
+  const configuredStagePercent = masteryTempo ? 100 : nearestTempoStage(configuredPercent, stages).percent;
+  const takeCreditEligible = creditEligible && tempoPercent === configuredStagePercent;
   const preferencesRef = useRef({ tempoStage: stage.id, tempoPercent, clickLevel: clickLevel.id });
   useEffect(() => {
     const previous = preferencesRef.current;
