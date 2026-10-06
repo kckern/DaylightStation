@@ -71,4 +71,17 @@ describe('screen music behind follows the slideshow', () => {
     act(() => bus.get('media:playback')({ command: 'stop', origin: { kind: 'routine', name: 'Bedtime' } }));
     expect(view.queryByTestId('music-layer')).toBeNull();
   });
+
+  it('an explicit keepMusic:true keeps it whatever the origin says', async () => {
+    const { view } = await setup();
+    act(() => bus.get('media:playback')({ command: 'stop', keepMusic: true, origin: { kind: 'routine', name: 'Bedtime' } }));
+    await change({ state: 'ready', currentItem: null });
+    expect(view.queryByTestId('music-layer')).not.toBeNull();
+  });
+
+  it('an explicit keepMusic:false stops it even from a device (a Stop nobody was asked about)', async () => {
+    const { view } = await setup();
+    act(() => bus.get('media:playback')({ command: 'stop', keepMusic: false, origin: { kind: 'device', id: 'phone' } }));
+    expect(view.queryByTestId('music-layer')).toBeNull();
+  });
 });

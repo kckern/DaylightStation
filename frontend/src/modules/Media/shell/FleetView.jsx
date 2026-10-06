@@ -25,6 +25,7 @@ import Skeleton from '@/lib/ui/Skeleton.jsx';
 import { deviceKind } from '../cast/castCopy.js';
 import { canShowNotes, wasNameLabel } from '../house/houseCopy.js';
 import { useStartStatuses, useStartedByAll } from '../house/useHouseSignals.js';
+import { useSlideshowStopGuard } from './PlayerFeatureControls.jsx';
 import { StartStatusLine, StartedByLine, AddOnlyNotice, RowNotes, ScreenStopControl } from '../house/RowExtras.jsx';
 import { HouseQuietBar } from '../house/HouseQuietControls.jsx';
 import '../house/House.scss';
@@ -58,8 +59,11 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
   const name = deviceName(device, deviceId);
   const was = wasNameLabel(device);
   const controls = !offline ? snap?.controls ?? null : null;
-  const sendTransport = (action) => {
-    const result = getController(deviceId)?.transport?.[action]?.();
+  // Stopping a slideshow with music behind asks "Keep the music?" here too,
+  // and the answer rides the stop command (never inferred from who sent it).
+  const [guardStop, stopGuardDialog] = useSlideshowStopGuard({ deviceId }, snap ?? null);
+  const sendTransport = (action, opts) => {
+    const result = getController(deviceId)?.transport?.[action]?.(opts);
     result?.catch?.(() => {});
   };
 
@@ -148,7 +152,8 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
             <Button data-testid={`fleet-pause-${deviceId}`} size="compact-sm" variant="default" leftSection={<IconPlayerPauseFilled size={14} aria-hidden />} onClick={() => sendTransport('pause')}>
               Pause
             </Button>
-            <ScreenStopControl device={device ?? { id: deviceId }} name={name} onStop={() => sendTransport('stop')} />
+            <ScreenStopControl device={device ?? { id: deviceId }} name={name} onStop={() => guardStop((opts) => sendTransport('stop', opts))} />
+            {stopGuardDialog}
             <Button
               data-testid={`fleet-takeover-${deviceId}`}
               size="compact-sm"

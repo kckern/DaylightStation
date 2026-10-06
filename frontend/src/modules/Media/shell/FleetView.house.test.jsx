@@ -38,7 +38,7 @@ const recordLocal = vi.fn();
 function renderFleet() {
   return render(
     <MantineProvider>
-      <PeekContext.Provider value={{ getController: (id) => controllers[id] }}>
+      <PeekContext.Provider value={{ getController: (id) => (controllers[id] ? { subscribe: () => () => {}, getSnapshot: () => null, ...controllers[id] } : controllers[id]) }}>
         <DispatchContext.Provider value={{ recordLocal }}>
           <FleetView />
         </DispatchContext.Provider>
@@ -112,6 +112,35 @@ describe('FleetView house rows', () => {
       kind: 'screenOff', phase: 'confirmed',
       command: { copy: { primary: 'Stopped Den TV and turned the screen off', secondary: 'Queue kept' } },
     })));
+  });
+
+  it('a row Stop sends an explicit keepMusic:false when nothing needs asking', async () => {
+    controllers['livingroom-tv'] = { transport: { stop: vi.fn(async () => ({ ok: true })) } };
+    renderFleet();
+    fireEvent.click(screen.getByTestId('fleet-stop-livingroom-tv'));
+    await waitFor(() => expect(controllers['livingroom-tv'].transport.stop).toHaveBeenCalledWith({ keepMusic: false }));
+  });
+
+  it('a row Stop on a slideshow with music asks, and the answer rides the stop command', async () => {
+    fleet.entries['livingroom-tv'].snapshot = { state: 'playing', currentItem: { title: 'Photos', contentId: 'plex:9', format: 'image' },
+      controls: { musicBehind: { contentId: 'plex:5', title: 'Faith', state: 'playing' } } };
+    controllers['livingroom-tv'] = { transport: { stop: vi.fn(async () => ({ ok: true })) }, sessionControls: { musicBehind: vi.fn(async () => ({ ok: true })) } };
+    renderFleet();
+    fireEvent.click(screen.getByTestId('fleet-stop-livingroom-tv'));
+    expect(controllers['livingroom-tv'].transport.stop).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('pf-stop-keep-music'));
+    await waitFor(() => expect(controllers['livingroom-tv'].transport.stop).toHaveBeenCalledWith({ keepMusic: true }));
+    fireEvent.click(screen.getByTestId('fleet-stop-livingroom-tv'));
+    fireEvent.click(await screen.findByTestId('pf-stop-both'));
+    await waitFor(() => expect(controllers['livingroom-tv'].transport.stop).toHaveBeenLastCalledWith({ keepMusic: false }));
+  });
+
+  it('Stop and turn the screen off sends keepMusic:false', async () => {
+    controllers['livingroom-tv'] = { transport: { stop: vi.fn(async () => ({ ok: true })) } };
+    renderFleet();
+    fireEvent.click(screen.getByTestId('fleet-stop-more-livingroom-tv'));
+    fireEvent.click(await screen.findByTestId('fleet-stop-off-livingroom-tv'));
+    await waitFor(() => expect(controllers['livingroom-tv'].transport.stop).toHaveBeenCalledWith({ keepMusic: false }));
   });
 
   it('leads to screen admin and routine history', () => {

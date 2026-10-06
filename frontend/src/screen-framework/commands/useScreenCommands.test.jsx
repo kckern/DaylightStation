@@ -69,6 +69,14 @@ describe('useScreenCommands (structured envelope)', () => {
       );
     });
 
+    it('carries an explicit keepMusic on a stop; a non-boolean envelope is refused', () => {
+      mountOk();
+      act(() => capturedCallback(env('transport', { action: 'stop', keepMusic: true })));
+      expect(actionBus.emit).toHaveBeenLastCalledWith('media:playback', { command: 'stop', commandId: 'c1', keepMusic: true });
+      act(() => capturedCallback(env('transport', { action: 'stop', keepMusic: 'yes' }, { commandId: 'c2' })));
+      expect(actionBus.emit).toHaveBeenCalledTimes(1);
+    });
+
     it('dispatches transport seekAbs with value', () => {
       mountOk();
       act(() => capturedCallback(env('transport', { action: 'seekAbs', value: 42 })));

@@ -1,6 +1,7 @@
 import {
   isCommandKind,
   isTransportAction,
+  isKeepMusicParam,
   isQueueOp,
   isConfigSetting,
   isSystemAction,
@@ -98,6 +99,9 @@ function validateCommandParams(command, params, errors) {
     }
     if (p.intent !== undefined && !TRANSPORT_INTENTS.includes(p.intent)) {
       errors.push(`params.intent: must be one of ${TRANSPORT_INTENTS.join('|')} when present`);
+    }
+    if (p.keepMusic !== undefined && !isKeepMusicParam(p.keepMusic)) {
+      errors.push('params.keepMusic: must be a boolean when present');
     }
     return;
   }

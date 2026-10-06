@@ -102,3 +102,13 @@ describe('EventBusDeviceTransportGateway — appliedAs on acks', () => {
     await expect(gateway.sendCommand('tv', command)).resolves.toMatchObject({ ok: true, appliedAs: 'add', requestedOp: 'play-now' });
   });
 });
+
+describe('SessionControlService — stop keepMusic', () => {
+  it('puts an explicit keepMusic on the stop envelope, and nothing when absent', async () => {
+    const { service, transportGateway } = makeService();
+    await service.transport('tv', { action: 'stop', commandId: 'c1', keepMusic: false, origin });
+    expect(sent(transportGateway).params).toEqual({ action: 'stop', keepMusic: false });
+    await service.transport('tv', { action: 'stop', commandId: 'c2', origin });
+    expect(sent(transportGateway).params).toEqual({ action: 'stop' });
+  });
+});

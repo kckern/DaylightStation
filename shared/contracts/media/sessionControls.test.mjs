@@ -95,6 +95,14 @@ describe('session command envelopes', () => {
     expect(validateCommandEnvelope(env('move')).valid).toBe(true);
     expect(validateCommandEnvelope(env('steal')).valid).toBe(false);
   });
+  it('accepts an explicit boolean keepMusic on a transport stop and rejects anything else', () => {
+    const env = (keepMusic) => buildCommandEnvelope({
+      targetDevice: 'tv', command: 'transport', commandId: 'c', params: { action: 'stop', keepMusic },
+    });
+    expect(validateCommandEnvelope(env(true)).valid).toBe(true);
+    expect(validateCommandEnvelope(env(false)).valid).toBe(true);
+    expect(validateCommandEnvelope(env('yes')).valid).toBe(false);
+  });
   it('caps the origin name length', () => {
     const env = (name) => buildCommandEnvelope({
       targetDevice: 'tv', command: 'transport', commandId: 'c', params: { action: 'pause' },

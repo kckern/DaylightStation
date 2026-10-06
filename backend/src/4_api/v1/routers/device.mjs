@@ -5,7 +5,7 @@ import { buildErrorBody, ERROR_CODES } from '#shared-contracts/media/errors.mjs'
 import { validateHandoffCommandAck, validateHandoffParams } from '#shared-contracts/media/handoff.mjs';
 import { validateSessionSnapshot } from '#shared-contracts/media/shapes.mjs';
 import { buildCommandEnvelope, validateCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
-import { TRANSPORT_ACTIONS, QUEUE_OPS, REPEAT_MODES, isTransportAction, isQueueOp, isRepeatMode } from '#shared-contracts/media/commands.mjs';
+import { TRANSPORT_ACTIONS, QUEUE_OPS, REPEAT_MODES, isTransportAction, isKeepMusicParam, isQueueOp, isRepeatMode } from '#shared-contracts/media/commands.mjs';
 import { END_OF_QUEUE_MODES, isEndOfQueueMode, validateSessionActionParams } from '#shared-contracts/media/sessionControls.mjs';
 
 const nonEmpty = value => typeof value === 'string' && value.length > 0;
@@ -220,15 +220,16 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
 
   router.post('/:deviceId/session/transport', asyncHandler(async (req, res) => {
     if (!requireSessions(sessionService, res)) return;
-    const { action, value, commandId } = req.body || {};
+    const { action, value, commandId, keepMusic } = req.body || {};
     if (!nonEmpty(commandId)) return res.status(400).json(buildErrorBody({ error: 'commandId required (non-empty string)' }));
+    if (keepMusic !== undefined && !isKeepMusicParam(keepMusic)) return res.status(400).json(buildErrorBody({ error: 'keepMusic must be a boolean when present' }));
     if (!isTransportAction(action)) return res.status(400).json(buildErrorBody({ error: `action must be one of: ${TRANSPORT_ACTIONS.join(', ')}` }));
     if ((action === 'seekAbs' || action === 'seekRel') && !(typeof value === 'number' && Number.isFinite(value))) {
       return res.status(400).json(buildErrorBody({ error: `value must be a finite number for action "${action}"` }));
     }
     const { origin, error: originError } = commandOrigin(req);
     if (originError) return badRequest(res, originError);
-    return mapCommand(await sessionService.transport(req.params.deviceId, { action, value, commandId, origin }), res);
+    return mapCommand(await sessionService.transport(req.params.deviceId, { action, value, commandId, origin, ...(keepMusic !== undefined && action === 'stop' ? { keepMusic } : {}) }), res);
   }));
 
   // Cancellation is coordinated before a cold screen owns a session. A claim
