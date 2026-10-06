@@ -34,8 +34,24 @@ function makeDevice(overrides) {
   };
 }
 
+// Inert runtime capabilities: the constructor requires an injected clock,
+// dispatch-id factory and scheduler (application layer owns no global timers).
+// Timers are never armed here because no dispatch reaches the watchdog with
+// an event bus; a scheduled callback is simply dropped.
+let dispatchSeq = 0;
+const runtime = {
+  clock: { now: () => 0 },
+  createDispatchId: () => `power-degradation-${++dispatchSeq}`,
+  scheduler: {
+    wait: async () => {},
+    after: () => () => {},
+    withDeadline: (work) => Promise.resolve(work),
+  },
+};
+
 function makeService({ device, readyResult = { ready: true }, logger }) {
   return new WakeAndLoadService({
+    ...runtime,
     deviceService: { get: () => device },
     readinessPolicy: { isReady: async () => readyResult },
     screenGateway: { screenSubscriberCount: () => 0, publishProgress() {} },

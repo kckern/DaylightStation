@@ -36,6 +36,10 @@ const STEPS = ['power', 'verify', 'volume', 'prepare', 'prewarm', 'load', 'playb
 const AUTOMATION_ORIGIN = Object.freeze({ kind: 'routine', name: 'Automation' });
 const VOLUME_TIMEOUT_MS = 3000;
 const URL_RECEIVER_ACK_TIMEOUT_MS = 15_000;
+// Prewarm is best-effort and resolves the queue through Plex, which serializes
+// requests: under load it can take minutes (2026-10-03: 12 min). It must never
+// hold the load hostage — past this deadline the dispatch proceeds unprewarmed.
+const DEFAULT_PREWARM_DEADLINE_MS = 10_000;
 
 export class WakeAndLoadService {
   #deviceService;
@@ -51,6 +55,7 @@ export class WakeAndLoadService {
   #clock;
   #createDispatchId;
   #scheduler;
+  #prewarmDeadlineMs;
 
   /**
    * @param {Object} deps
@@ -61,6 +66,7 @@ export class WakeAndLoadService {
    * @param {Object} [deps.prewarmService] - TranscodePrewarmService (optional)
    * @param {Object} [deps.sessionControlService] - ISessionControl for adopt-snapshot (optional)
    * @param {Object} [deps.commandHandlerLivenessService] - CommandHandlerLivenessService for WS-first liveness gate (optional)
+   * @param {number} [deps.prewarmDeadlineMs=10000] - Bound on the best-effort prewarm step; past it the load proceeds unprewarmed
    * @param {Object} [deps.logger]
    */
   /** @type {Map<string, Promise<Object>>} In-flight wake-and-load per device */
@@ -85,6 +91,8 @@ export class WakeAndLoadService {
     this.#clock = deps.clock;
     this.#createDispatchId = deps.createDispatchId;
     this.#scheduler = deps.scheduler;
+    this.#prewarmDeadlineMs = Number.isFinite(deps.prewarmDeadlineMs) && deps.prewarmDeadlineMs > 0
+      ? deps.prewarmDeadlineMs : DEFAULT_PREWARM_DEADLINE_MS;
     if (!this.#commandHandlerLivenessService) {
       this.#logger.warn?.('wake-and-load.no-liveness-service', {
         note: 'WS-first warm-switch will fall back to subscriber-count gate only',
@@ -398,17 +406,58 @@ export class WakeAndLoadService {
     // watchdog with the container id, which can never match the flat episode
     // key the device reports, causing false `playback: timeout` (2026-07-14
     // Bluey dispatch).
+    //
+    // Bounded by an injected deadline: the result is only read if it arrives
+    // in time, and it is applied here — never by a late continuation — so a
+    // prewarm that lands after the load cannot touch the in-flight query.
     let prewarmResult = null;
-    const prewarmRef = contentQuery.queue || contentQuery.play;
+    // Concrete ids of the resolved queue (for the playback watchdog). Kept out
+    // of contentQuery: they are evidence, not something to send the screen.
+    let resolvedQueueContentIds = [];
+    let prewarmTimedOut = false;
+    const prewarmRef = contentQuery.queue || contentQuery.play || contentQuery['play-next'];
     if (!isAdopt && this.#prewarmService && prewarmRef) {
       this.#emitProgress(topic, dispatchId, 'prewarm', 'running');
       this.#logger.info?.('wake-and-load.prewarm.start', { deviceId, dispatchId, contentRef: prewarmRef });
 
+      const deadlineMs = this.#prewarmDeadlineMs;
+      const deadlineError = new Error('timeout');
+      const prewarmWork = Promise.resolve().then(() => this.#prewarmService.prewarm(prewarmRef, {
+        shuffle: contentQuery.shuffle === '1' || contentQuery.shuffle === 'true'
+      }));
       try {
-        prewarmResult = await this.#prewarmService.prewarm(prewarmRef, {
-          shuffle: contentQuery.shuffle === '1' || contentQuery.shuffle === 'true'
-        });
-        if (prewarmResult?.status === 'ok') {
+        try {
+          prewarmResult = await this.#scheduler.withDeadline(prewarmWork, {
+            milliseconds: deadlineMs,
+            errorFactory: () => deadlineError,
+          });
+        } catch (err) {
+          if (err !== deadlineError) throw err;
+          prewarmTimedOut = true;
+          prewarmResult = null;
+          result.steps.prewarm = { ok: false, reason: 'timeout', deadlineMs };
+          this.#logger.warn?.('wake-and-load.prewarm.timeout', {
+            deviceId, dispatchId, contentRef: prewarmRef, deadlineMs,
+          });
+          // Observe the abandoned work so a late result is visible and a late
+          // rejection is never unhandled. It is logged only — never applied.
+          prewarmWork.then(
+            (late) => this.#logger.warn?.('wake-and-load.prewarm.late', {
+              deviceId, dispatchId, contentRef: prewarmRef, status: late?.status ?? null,
+              contentId: late?.contentId ?? null, elapsedMs: this.#clock.now() - startTime,
+            }),
+            (lateErr) => this.#logger.warn?.('wake-and-load.prewarm.late', {
+              deviceId, dispatchId, contentRef: prewarmRef, error: lateErr?.message ?? String(lateErr),
+              elapsedMs: this.#clock.now() - startTime,
+            }),
+          );
+        }
+        if (Array.isArray(prewarmResult?.queueContentIds)) {
+          resolvedQueueContentIds = prewarmResult.queueContentIds.filter((id) => typeof id === 'string' && id);
+        }
+        if (prewarmTimedOut) {
+          // result.steps.prewarm already records the timeout.
+        } else if (prewarmResult?.status === 'ok') {
           contentQuery.prewarmToken = prewarmResult.token;
           contentQuery.prewarmContentId = prewarmResult.contentId;
           result.steps.prewarm = { ok: true, contentId: prewarmResult.contentId };
@@ -442,8 +491,9 @@ export class WakeAndLoadService {
           }
         } else if (prewarmResult?.status === 'skipped') {
           result.steps.prewarm = { skipped: true, reason: prewarmResult.reason || 'unknown' };
-          this.#logger.debug?.('wake-and-load.prewarm.skipped', {
-            deviceId, dispatchId, reason: prewarmResult.reason || 'unknown'
+          this.#logger.info?.('wake-and-load.prewarm.skipped', {
+            deviceId, dispatchId, reason: prewarmResult.reason || 'unknown',
+            resolvedQueueItems: resolvedQueueContentIds.length,
           });
         } else {
           // Unknown/malformed return — treat as failure rather than hiding it
@@ -801,6 +851,8 @@ export class WakeAndLoadService {
         deviceId, dispatchId, topic, contentQuery, outcomeBaseline,
         commandAcknowledged: outcomeCommandAcknowledged,
         appliedAs: receiverAppliedAs,
+        resolvedQueueContentIds,
+        prewarmTimedOut,
       });
     }
 
@@ -884,6 +936,7 @@ export class WakeAndLoadService {
   #armReceiverOutcomeWatchdog({
     deviceId, dispatchId, topic, contentQuery, outcomeBaseline,
     commandAcknowledged, appliedAs = null, timeoutMs = 90_000,
+    resolvedQueueContentIds = [], prewarmTimedOut = false,
   }) {
     if (!this.#eventBus || typeof this.#eventBus.subscribe !== 'function') return;
 
@@ -897,16 +950,53 @@ export class WakeAndLoadService {
     // dispatches are watched too (2026-07-07 bug).
     // Menu/list opens resolve to null and correctly do not arm — a browse
     // action never emits playback.log, so arming would false-timeout.
-    const expectedContentIds = [...new Set([
+    //
+    // A queue=<program/list> ref (e.g. `office-program`) is never reported by
+    // a screen: the screen resolves it through GET /api/v1/queue and reports
+    // the concrete item it plays. Arming with the program id alone made every
+    // program dispatch a false timeout (2026-09-27..10-03 office morning
+    // program). So the play-now confirmation picks a BASIS:
+    //   item-action         — the correlated operation is current (unchanged)
+    //   resolved-queue      — the current item is one of the queue ids
+    //                         resolved through the same queue resolution
+    //                         (candidate), or the screen's queue shares items
+    //                         with that resolution (queue-overlap — program
+    //                         slots like `strategy: rotation` are random per
+    //                         resolution, so membership alone can miss)
+    //   fresh-owned-playing — nothing concrete could be resolved within the
+    //                         prewarm deadline for a queue dispatch (or any
+    //                         ref whose prewarm timed out): the first owned
+    //                         playing transition AFTER the correlated ack
+    //                         with an advanced playback revision vs the
+    //                         pre-load snapshot AND a different current item
+    //                         (or new session) is this dispatch's playback
+    //   requested-id        — a concrete requested id (unchanged)
+    const resolvedCandidates = [...new Set([
       contentQuery.prewarmContentId,
+      ...resolvedQueueContentIds,
+    ].filter(Boolean))];
+    const requested = resolveContentId(contentQuery);
+    const expectedContentIds = [...new Set([
+      ...resolvedCandidates,
       contentQuery.contentId,
-      resolveContentId(contentQuery)?.contentId,
+      requested?.contentId,
     ].filter(Boolean))];
     if (!expectedContentIds.length) return;
     const expectedContentId = expectedContentIds[0];
     const itemAction = decodeItemAction(contentQuery.itemAction);
     const operation = contentQuery.op === 'add' || appliedAs === 'add' ? 'add' : 'play-now';
     const resultStep = operation === 'add' ? 'queue' : 'playback';
+    const resolvedSet = new Set(resolvedCandidates);
+    const basis = itemAction ? 'item-action'
+      : resolvedSet.size > 0 ? 'resolved-queue'
+        : (requested?.resolvedKey === 'queue' || requested?.resolvedKey === 'play-next' || prewarmTimedOut) ? 'fresh-owned-playing'
+          : 'requested-id';
+
+    this.#logger.info?.(`wake-and-load.${resultStep}.armed`, {
+      deviceId, dispatchId, operation, basis: operation === 'add' ? 'queue-revision' : basis,
+      expectedContentId, requestedContentId: requested?.contentId ?? null,
+      resolvedCandidates: resolvedSet.size, commandAcknowledged, timeoutMs,
+    });
 
     let resolved = false;
     let timer = null;
@@ -935,6 +1025,7 @@ export class WakeAndLoadService {
         || !Number.isInteger(owner.playbackRevision) || !Number.isInteger(owner.queueRevision)) return;
 
       let matches = false;
+      let matchedBy = null;
       const actionEntries = itemAction ? snapshot.queue?.items?.filter(item => item.itemActionId === itemAction.operationId) ?? [] : [];
       const actionCurrent = itemAction && snapshot.queue?.items?.[snapshot.queue.currentIndex]?.itemActionId === itemAction.operationId;
       if (operation === 'add') {
@@ -962,13 +1053,38 @@ export class WakeAndLoadService {
           || snapshot.sessionId !== outcomeBaseline?.sessionId
           || owner.ownerInstanceId !== beforeOwner.ownerInstanceId
           || owner.playbackRevision > beforeOwner.playbackRevision;
-        matches = snapshot.state === 'playing' && (itemAction ? actionCurrent : contentMatches(incoming)) && ownerAdvanced;
+        if (snapshot.state === 'playing' && ownerAdvanced) {
+          if (basis === 'item-action') {
+            if (actionCurrent) matchedBy = 'item-action';
+          } else if (contentMatches(incoming)) {
+            matchedBy = 'candidate';
+          } else if (basis === 'resolved-queue') {
+            const queueIds = (snapshot.queue?.items ?? []).map((item) => item?.contentId).filter(Boolean);
+            if (incoming && queueIds.includes(incoming) && queueIds.some((id) => resolvedSet.has(id))) {
+              matchedBy = 'queue-overlap';
+            }
+          } else if (basis === 'fresh-owned-playing') {
+            // Player bumps playbackRevision on play/toggle/pause too, so a
+            // person resuming the baseline item looks "advanced". Require a
+            // different current item or a new session as well.
+            const before = currentIdentity(outcomeBaseline);
+            const after = currentIdentity(snapshot);
+            const differentItem = after.contentId !== before.contentId || after.queueItemId !== before.queueItemId;
+            if (differentItem || snapshot.sessionId !== outcomeBaseline?.sessionId) {
+              matchedBy = 'fresh-owned-playing';
+            }
+          }
+        }
+        matches = !!matchedBy;
       }
 
       if (matches) {
         cleanup();
         this.#logger.info?.(`wake-and-load.${resultStep}.confirmed`, {
-          deviceId, dispatchId, contentId: expectedContentId,
+          deviceId, dispatchId,
+          contentId: operation === 'add' ? expectedContentId : snapshot.currentItem?.contentId ?? expectedContentId,
+          expectedContentId,
+          ...(operation === 'add' ? {} : { basis, matchedBy }),
         });
         this.#emitProgress(topic, dispatchId, resultStep, 'confirmed', {
           operation,
@@ -988,7 +1104,9 @@ export class WakeAndLoadService {
       if (resolved) return;
       cleanup();
       this.#logger.warn?.(`wake-and-load.${resultStep}.timeout`, {
-        deviceId, dispatchId, expectedContentId, timeoutMs,
+        deviceId, dispatchId, expectedContentId, requestedContentId: requested?.contentId ?? null, timeoutMs,
+        basis: operation === 'add' ? 'queue-revision' : basis,
+        resolvedCandidates: resolvedSet.size, commandAcknowledged,
       });
       this.#emitProgress(topic, dispatchId, resultStep, 'timeout', {
         operation, expectedContentId, timeoutMs,

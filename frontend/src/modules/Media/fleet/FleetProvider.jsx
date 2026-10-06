@@ -10,6 +10,7 @@ import mediaLog from '../logging/mediaLog.js';
 import { useClientIdentity } from '../identity/useClientIdentity.js';
 import { TIMING } from '../constants.js';
 import { browserDisplayState, mergeCanonicalFleetState, silenceMs, sortFleetDevices } from './browserLiveness.js';
+import { useScreenRegistry, mergeRegistryNames, registryLagsLiveNames } from '../house/useScreenRegistry.js';
 
 export const FleetContext = createContext(null);
 
@@ -36,11 +37,31 @@ function playbackSnapshot(message) {
 export function FleetProvider({ children }) {
   const { devices, loading, error, refresh } = useDevices();
   const [connected, setConnected] = useState(true);
-  const { clientId, displayName } = useClientIdentity();
+  const { clientId, displayName, markPlaying } = useClientIdentity();
   const storeRef = useRef(null);
   if (!storeRef.current) storeRef.current = createFleetStore();
   const store = storeRef.current;
   const browserEntries = useSyncExternalStore(store.subscribeAll, store.getAll, store.getAll);
+  // RQ-HOUSE-06: every row is named by the household screen registry.
+  const registry = useScreenRegistry();
+  const refreshRegistry = registry.refresh;
+  const lastNameRef = useRef(displayName);
+  useEffect(() => {
+    // This browser was renamed here: re-read so every row (and the rename's
+    // "(was …)") shows the registry's answer, not only this device's guess.
+    if (lastNameRef.current === displayName) return;
+    lastNameRef.current = displayName;
+    refreshRegistry();
+  }, [displayName, refreshRegistry]);
+  // A browser that actually plays becomes a registered screen even if nobody named it.
+  const localState = browserEntries.get(browserDeviceId(clientId))?.snapshot?.state;
+  useEffect(() => {
+    if (localState === 'playing' || localState === 'paused') markPlaying?.();
+  }, [localState, markPlaying]);
+  // RQ-STEER-13: the screens a Pause all paused, so Resume all brings back
+  // exactly those. Shared by the house view and the handle.
+  const [resumable, setResumable] = useState(null);
+  const quiet = useMemo(() => ({ resumable, setResumable }), [resumable]);
 
   useEffect(() => subscribeTopic(topics.playbackState, (message) => {
     if (!message?.identity?.clientId || !message?.deviceId || !message?.state) return;
@@ -146,6 +167,7 @@ export function FleetProvider({ children }) {
       .map(([id, entry]) => ({
         id,
         name: entry.identity?.name ?? entry.snapshot?.displayName ?? (id === browserDeviceId(clientId) ? displayName : id.slice('browser:'.length)),
+        liveName: entry.identity?.name ?? null,
         room: entry.identity?.room,
         type: 'browser',
         isLocal: id === browserDeviceId(clientId),
@@ -158,12 +180,25 @@ export function FleetProvider({ children }) {
         connected: entry.connected,
         lastHeardAt: entry.lastSeenAt,
       }));
-    return sortFleetDevices([...configured, ...browsers.filter(browser => !configured.some(device => device.id === browser.id))]);
-  }, [devices, browserEntries, clientId, displayName, uncertaintyTick]);
+    return sortFleetDevices(mergeRegistryNames(
+      [...configured, ...browsers.filter(browser => !configured.some(device => device.id === browser.id))],
+      registry.byId,
+    ));
+  }, [devices, browserEntries, clientId, displayName, uncertaintyTick, registry.byId]);
+
+  // Another device was renamed since the list was read: re-read it (at most
+  // every 10 s) so its room and "(was …)" catch up too.
+  const lastLagRefresh = useRef(0);
+  useEffect(() => {
+    if (!registryLagsLiveNames(fleetDevices, registry.byId)) return;
+    if (Date.now() - lastLagRefresh.current < 10_000) return;
+    lastLagRefresh.current = Date.now();
+    refreshRegistry();
+  }, [fleetDevices, registry.byId, refreshRegistry]);
 
   const value = useMemo(
-    () => ({ devices: fleetDevices, store, loading, error, refresh, connected, identity: { clientId, deviceId: browserDeviceId(clientId) } }),
-    [fleetDevices, store, loading, error, refresh, connected, clientId]
+    () => ({ devices: fleetDevices, store, loading, error, refresh, connected, identity: { clientId, deviceId: browserDeviceId(clientId) }, registry, quiet }),
+    [fleetDevices, store, loading, error, refresh, connected, clientId, registry, quiet]
   );
 
   return <FleetContext.Provider value={value}>{children}</FleetContext.Provider>;

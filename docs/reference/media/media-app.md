@@ -174,6 +174,81 @@ Device API write. Routine commands carry their origin, and the same routine
 trigger/target is deduplicated for ten seconds while a later human-origin command
 always runs.
 
+**Names come from the household screen registry** (RQ-HOUSE-06; contract in
+the technical doc §2.5). On start a browser announces itself
+(`POST /api/v1/media/screens/announce` with `browser:<clientId>`) and takes the
+name and room the registry holds for it, so a name chosen on one device is the
+name every device shows. The same `browser:<clientId>` is the
+`X-Daylight-Device` id on every request the app makes, so when this browser
+starts something on a screen, that screen's "Started by" names this browser.
+Rename (Settings → **Rename this device**, or **Screens** for any screen) goes
+through the registry: a taken name comes back with a free suggestion
+("Kitchen tablet (2)") to accept in one tap; renaming a screen a routine uses
+lists those routines first and needs **Rename anyway** — routines follow the
+screen, not its name. A renamed screen shows "(was <old name>)" for a week,
+except when the old name was the made-up "Browser 1a2b3c4d" nobody knew it by.
+With the registry out of reach a rename stays local and unique among the names
+this device can see. A browser's live name (its heartbeat) wins over an older
+copy of the screen list, and a difference re-reads the list.
+
+**First use** (RQ-RELY-12): on a device that has never been named, Home starts
+with a card asking for a name — a default for the kind of device ("iPhone",
+"Android tablet", "Mac"), **Save name** or **Skip** — and explaining the aim
+label once, with the live label shown. Either answer is remembered
+(`media-app.first-use-done`) and the card never returns on that device. It is
+page content at the top of Home, not an overlay, so nothing beneath it is
+blocked.
+
+## The house view
+
+The Devices view is the house at a glance; each row adds, beyond state, item
+and progress:
+
+- **Start progress or last failure, to everyone** (RQ-HOUSE-04): "Starting:
+  Turning on TV…", "Started", "Added to its queue", or
+  "Couldn't start at 7:02: <reason>" — whichever device sent it. The row reads
+  `GET /device/:id/start-status` when the view opens (a failure from before
+  still shows) and follows `device-start:*` live. A failure stays until a later
+  start on that screen succeeds.
+- **Started by** (RQ-HOUSE-07): "Started by Kitchen Button 1, 7:02" or
+  "Started by Dad's phone, 7:02" while it plays; nothing when the start's
+  origin is unknown. `StartedByLine` (`house/RowExtras.jsx`) is the same line
+  for a screen's controls header.
+- **Add only** (RQ-PLAY-10): "Add only is on: Play from other devices adds to
+  the queue." with **Turn off** — anyone can switch it off from the row.
+- **Notes** (RQ-STEER-21): a screen that can't show notes itself (a speaker)
+  lists its notes on its row — "Paused by Dad's phone ×2 · 7:02" — with **Put
+  it back** while that is still possible.
+- **Stop** (RQ-STEER-11): where the screen has device control (and is not a
+  speaker or a browser), a menu beside Stop offers **Stop and turn the screen
+  off** (queue kept, then `/device/:id/off`).
+- **(was <old name>)** after a rename.
+
+Above the rows, **Pause all** / **Stop all** (RQ-STEER-13) act on every screen
+playing (or active) — this device included — through each screen's own
+session transport. After Pause all, **Resume all (N)** plays exactly the
+screens it paused. The same three sit in the handle's house menu (the house
+icon on the mini player). The outcome names how many screens were reached and
+lists every screen that wasn't ("Not paused: Office (not reachable)"); an
+offline screen is not sent anything, and one that doesn't answer within 8 s
+counts as not reached. **Screens** and **Routines** lead to the two views
+below.
+
+**Screens** (RQ-HOUSE-08): every screen under its name, room, kind and when it
+was last seen. **Add a screen** (name, room); **Name and room** for any screen;
+**Merge into…** folds a duplicate browser or added screen into its earlier self
+after a confirmation that names the routines on both (Undo on the outcome for
+10 s, **Unmerge** on the screen afterwards); **Retire** first lists the
+routines that point at the screen; retired screens can be **Restored**.
+Screens silent for 30 days fold into **Not seen lately**. A configured TV or
+kiosk cannot be merged away.
+
+**Routines** (RQ-AUTO-05): recent routine starts, newest first — when, which
+routine, which screen, what, and the outcome ("Played", "Started, not seen
+playing", "Failed: Living Room TV did not turn on", "Repeat ignored") — and,
+above them, **Before they run**: routines pointed at a screen that is off,
+unreachable, retired or unknown, or whose last start failed.
+
 ## What This App Is
 
 The Media App is the household's **universal content front door and universal
@@ -485,7 +560,9 @@ is decoration, never a tap target.
 | **Browse** | Hierarchical catalog listing with artwork or a recognisable placeholder, kind labels, natural part ordering, and a breadcrumb containing every parent. Long collections page automatically as the end approaches; there is no separate load-more hunt. Pages are 50 titles: `GET /api/v1/list/...?take=50&skip=N` returns `{ items, total }`, and for Plex path containers (e.g. `library/sections/6/all`) the page is fetched from Plex itself (`X-Plex-Container-Start/Size`), so a 2,800-title library opens in ~0.3 s instead of sending every title. Each history entry owns `{ path, scrollTop, focusedId, loadedCount }`, captured before drilling into a container or opening Detail through either Details or More → Open detail. Back re-fetches `loadedCount` rows in one request (capped at 1,000) so a row the person had scrolled to exists again, then restores the exact prior collection viewport and triggering row focus. `loadedCount` is a viewport snapshot like `scrollTop`: re-selecting the Browse area ignores it when matching the original root entry. A specific container adds Play / Shuffle / Add at the top and names the current destination. | Nav; container rows; container taps in search. |
 | **Detail** | One item: artwork, description, full action row (Play Now / Play Next / Play First / Add / Cast). | Browse rows; search results. |
 | **Now Playing** | Full local transport: seek bar, prev/play-pause/next/stop, volume, the queue panel, and the hand-off picker. Hosts the visual output of the player. | Mini player; Escape/Back returns. |
-| **Fleet** | Configured devices and named browser screens, live and sorted with playing first. Each card offers **Remote**, **Play…**, inline **Pause**/**Stop** while active, and a truthful unavailable **Move here** until safe native adoption exists. Silent browser rows become uncertain after two minutes. | Nav; fleet indicator. |
+| **Fleet** | Configured devices and named browser screens, live and sorted with playing first. Each card offers **Remote**, **Play…**, inline **Pause**/**Stop** while active, and a truthful unavailable **Move here** until safe native adoption exists. Silent browser rows become uncertain after two minutes. Rows also carry start status, Started by, Add only, notes and "(was …)"; the view offers Pause all / Stop all / Resume all (see "The house view"). | Nav; fleet indicator. |
+| **Screens** | Screen admin: add, name and room, merge/unmerge, retire after the routines are shown, restore; "Not seen lately". | Devices → Screens; Settings. |
+| **Routines** | Routine history and the routines flagged before they run. | Devices → Routines; Settings. |
 | **Peek** | Remote control for one device: transport, seek, volume, and the same queue panel bound to the remote session. Optimistic — controls reflect the predicted state instantly and lock until the device confirms. | Fleet cards. |
 
 The queue panel is **one component used twice**: bound to the local session in
@@ -681,7 +758,9 @@ handle until clear/reset removes it.
   `frontend/src/main.jsx`)
 - Modules: `frontend/src/modules/Media/` — `shell/` (dock, nav, canvas,
   views), `session/` (local session), `fleet/`, `peek/`, `cast/`, `search/`,
-  `browse/`, `externalControl/`, `logging/`
+  `browse/`, `externalControl/`, `logging/`, `house/` (house view rows,
+  house-wide actions, screen admin, routine history; events `house.*`),
+  `identity/` (browser identity, registry naming, first use)
 - Requirements: [`media-app-requirements.md`](./media-app-requirements.md)
 - Contracts: [`media-app-technical.md`](./media-app-technical.md)
 - Search scopes: [`search-scopes.md`](./search-scopes.md)

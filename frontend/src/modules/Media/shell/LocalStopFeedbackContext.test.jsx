@@ -7,6 +7,7 @@ import { MiniPlayer } from './MiniPlayer.jsx';
 import { LocalStopFeedbackProvider, useLocalStopFeedbackCount } from './LocalStopFeedbackContext.jsx';
 
 const nav = { push: vi.fn(), view: 'home' };
+vi.mock('../house/HouseQuietControls.jsx', () => ({ HandleHouseMenu: () => null }));
 vi.mock('./NavProvider.jsx', () => ({ useNav: () => nav }));
 vi.mock('../session/usePlayerHost.js', () => ({ usePlayerHost: () => {} }));
 
