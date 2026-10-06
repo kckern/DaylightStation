@@ -52,12 +52,13 @@ export function createAssessmentRuntime({ attempt, createAttempt, subscribeMidi,
   };
   const observe = (event) => {
     if (disposed) return { attempt: state, event: { type: 'ignored', reason: 'disposed' }, events: [] };
+    if (state.paused) return { attempt: state, event: { type: 'ignored', reason: 'paused' }, events: [] };
     const result = observeAssessment(state, event);
     publish(result.attempt, result.events || [result.event]);
     return { ...result, attempt: state };
   };
   const tick = () => {
-    if (state.status !== 'running') return;
+    if (state.status !== 'running' || state.paused) return;
     const result = advanceAssessment(state, now());
     publish(result.attempt, result.events);
   };
@@ -75,6 +76,28 @@ export function createAssessmentRuntime({ attempt, createAttempt, subscribeMidi,
   const terminate = (status = 'aborted') => {
     if (state.status === 'prepared' || state.status === 'running') publish(finalizeAssessmentAttempt(state, { status }));
     disconnect();
+    return state;
+  };
+  const pause = () => {
+    if (disposed || state.status !== 'running' || state.paused) return state;
+    disconnect();
+    publish({ ...state, paused: true, pausedAt: now() }, [], { immediate: true });
+    return state;
+  };
+  const resume = ({ delayMs = 0 } = {}) => {
+    if (disposed || state.status !== 'running' || !state.paused) return state;
+    const resumedAt = now();
+    const shiftMs = Math.max(0, resumedAt - state.pausedAt) + Math.max(0, Number(delayMs) || 0);
+    const { paused: _paused, pausedAt: _pausedAt, ...rest } = state;
+    publish({
+      ...rest,
+      paused: false,
+      startedAt: Number.isFinite(rest.startedAt) ? rest.startedAt + shiftMs : rest.startedAt,
+      lastOnsetAt: Number.isFinite(rest.lastOnsetAt) ? rest.lastOnsetAt + shiftMs : rest.lastOnsetAt,
+      pausedDurationMs: (rest.pausedDurationMs ?? 0) + shiftMs,
+      resumingUntil: resumedAt + Math.max(0, Number(delayMs) || 0),
+    }, [], { immediate: true });
+    connect();
     return state;
   };
 
@@ -99,6 +122,8 @@ export function createAssessmentRuntime({ attempt, createAttempt, subscribeMidi,
       emitSnapshot();
       return state;
     },
+    pause,
+    resume,
     terminate,
     timeout: () => terminate('timeout'),
     abort: () => terminate('aborted'),

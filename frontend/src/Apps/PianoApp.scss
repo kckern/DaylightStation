@@ -2755,22 +2755,26 @@
   position: absolute; inset: 0; z-index: 30; min-height: 0;
   display: flex; flex-direction: column; background: var(--piano-bg);
   > .piano-exercise-run { flex: 1 1 auto; min-height: 0; }
-  &__toolbar { z-index: 20; flex: 0 0 auto; min-height: 3.25rem; display: flex; align-items: center; gap: 0.7rem; padding: 0.35rem 0.65rem; color: var(--piano-fg); background: var(--piano-surface-1); border-bottom: 1px solid var(--piano-border); }
-  &__back { display: flex; align-items: center; gap: 0.25rem; min-height: 2.35rem; padding: 0.25rem 0.6rem; color: inherit; background: transparent; border: 1px solid var(--piano-border); border-radius: var(--r-sm); font: inherit; }
+  &__toolbar { z-index: 20; flex: 0 0 auto; min-height: 3.25rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.7rem; padding: 0.5rem 0.65rem; color: var(--piano-fg); background: var(--piano-surface-1); border-bottom: 1px solid var(--piano-border); }
+  &__back { display: flex; align-items: center; gap: 0.25rem; min-width: 4rem; min-height: 4rem; padding: 0.4rem 0.7rem; color: inherit; background: transparent; border: 1px solid var(--piano-border); border-radius: var(--r-sm); font: inherit; }
   &__back span:first-child { font-size: 1.5rem; line-height: 0.7; }
   &__identity, &__task { display: grid; min-width: 0; line-height: 1.1; }
   &__identity { padding-right: 0.7rem; border-right: 1px solid var(--piano-border); }
   &__identity span, &__task span { overflow: hidden; color: var(--piano-muted); font-size: 0.72rem; text-overflow: ellipsis; white-space: nowrap; }
   &__task { flex: 1 1 auto; }
   &__tempo { flex: 0 0 auto; display: grid; justify-items: center; gap: 0.15rem; }
-  &__tempo button { min-height: 3rem; padding: 0.35rem 0.65rem; border-radius: var(--r-sm); border: 1px solid var(--piano-border); background: transparent; color: inherit; font: inherit; }
+  &__tempo button { min-height: 4rem; padding: 0.4rem 0.75rem; border-radius: var(--r-sm); border: 1px solid var(--piano-border); background: transparent; color: inherit; font: inherit; }
   &__tempo span { color: var(--piano-muted); font-size: 0.65rem; }
   &__tempo strong { white-space: nowrap; font-size: 0.85rem; }
   &__click-level { flex: 0 0 auto; display: flex; align-items: center; gap: 0.25rem; }
   &__click-level > span { margin-right: 0.25rem; color: var(--piano-muted); font-size: 0.8rem; }
-  &__click-level button { min-width: 3rem; min-height: 3rem; padding: 0.35rem 0.55rem; color: var(--piano-fg); background: var(--piano-surface); border: 1px solid var(--piano-border); border-radius: var(--r-sm); font: inherit; font-size: 0.85rem; font-weight: 600; }
+  &__click-level button { min-width: 4rem; min-height: 4rem; padding: 0.4rem 0.65rem; color: var(--piano-fg); background: var(--piano-surface); border: 1px solid var(--piano-border); border-radius: var(--r-sm); font: inherit; font-size: 0.85rem; font-weight: 600; }
   &__click-level button[aria-pressed="true"] { color: var(--piano-accent-text); background: color-mix(in srgb, var(--piano-accent) 18%, var(--piano-surface)); border-color: var(--piano-accent); box-shadow: inset 0 0 0 1px var(--piano-accent); }
   &__click-level button:focus-visible { outline: 2px solid var(--piano-accent); outline-offset: 2px; }
+  &__run-controls { order: 10; flex: 1 0 100%; display: grid; grid-template-columns: repeat(3, minmax(8rem, 1fr)); gap: 0.5rem; }
+  &__run-controls button { min-height: 4rem; padding: 0.5rem 0.8rem; color: var(--piano-fg); background: var(--piano-surface); border: 1px solid var(--piano-border); border-radius: var(--r-md); font: inherit; font-size: 1rem; font-weight: 750; }
+  &__run-controls button:first-child { border-color: var(--piano-accent); }
+  &__run-controls button:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; }
   &__success { position: absolute; z-index: 35; inset: 3.25rem 0 0; display: grid; place-content: center; justify-items: center; gap: 0.3rem; background: color-mix(in srgb, var(--piano-bg) 82%, transparent); color: var(--piano-fg); }
   &__success strong { color: var(--piano-accent-text); font-size: clamp(1.8rem, 5vw, 3.5rem); }
   &__success span { color: var(--piano-muted); }

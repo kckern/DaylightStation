@@ -48,12 +48,13 @@ export function learnPracticeRequirement(rung) {
   };
 }
 
-export default function LearnLab({ score, revision, segment, segments = {}, rung, creditRung = rung, tempo = {}, feedback = SHEET_MUSIC_DEFAULTS.learn.feedback, launchSource = 'recommended', creditEligible = true, onRecord, onClose, onRungPassed, onMastered, onFinished, onUnavailable }) {
+export default function LearnLab({ score, revision, segment, segments = {}, rung, creditRung = rung, tempo = {}, feedback = SHEET_MUSIC_DEFAULTS.learn.feedback, launchSource = 'recommended', creditEligible = true, onRecord, onClose, onChangePractice, onRungPassed, onMastered, onFinished, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-learn-lab' }), []);
   const [take, setTake] = useState(0);
   const [success, setSuccess] = useState(null);
   const [repCard, setRepCard] = useState(null);
   const [runPassCount, setRunPassCount] = useState(rung.passCount ?? 0);
+  const [paused, setPaused] = useState(false);
   const returnTimerRef = useRef(null);
   const masteryTempo = rung.mastery === true || rung.completion === 'tested-out';
   const setIndex = Math.min(rung.sets - 1, Math.floor(runPassCount / Math.max(1, rung.reps)));
@@ -70,7 +71,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
     minimumPercent: tempo.minimumPercent, maximumPercent: tempo.maximumPercent,
   }), [tempo.minimumPercent, tempo.maximumPercent]);
   const stage = masteryTempo ? TEMPO_STAGES[TEMPO_STAGES.length - 1] : nearestTempoStage(selectedPercent, stages);
-  const tempoPercent = rung.mode === 'cued' ? stage.percent : selectedPercent;
+  const tempoPercent = ['cued', 'metronome'].includes(rung.mode) ? stage.percent : selectedPercent;
   const preferencesRef = useRef({ tempoStage: stage.id, tempoPercent, clickLevel: clickLevel.id });
   useEffect(() => {
     const previous = preferencesRef.current;
@@ -147,8 +148,10 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
   }, [launchSource, onClose, onFinished, onMastered, onRungPassed, recordResult, returnAfterSuccess, rung, runPassCount, segment.id, segment.label, setIndex]);
   const scoreBpm = Number(tempo.tempoMap?.[0]?.bpm);
   const effectiveBpm = scoreBpm > 0 ? Math.round(scoreBpm * tempoPercent / 100) : null;
-  const adjustable = rung.mode === 'cued' && tempo.adjustable !== false && !masteryTempo;
+  const adjustable = ['cued', 'metronome'].includes(rung.mode) && tempo.adjustable !== false && !masteryTempo;
   const tempoLabel = `${stage.label}${effectiveBpm ? ` · ${effectiveBpm} BPM` : ''}`;
+  const restartTake = () => { setPaused(false); setTake((value) => value + 1); };
+  const changePractice = () => onChangePractice?.({ parts: [...(rung.effectiveParts ?? [])], mode: rung.mode, tempoStage: stage.id, tempoPercent });
 
   return <section className="piano-learn-lab" role="dialog" aria-modal="true" aria-label={`${segment.label} · ${rung.label}`}>
     <header className="piano-learn-lab__toolbar">
@@ -157,7 +160,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       </button>
       <div className="piano-learn-lab__identity"><strong>{segment.label}</strong><span>{segment.barLabel}</span></div>
       <div className="piano-learn-lab__task"><strong>{rung.label}</strong><span>Set {setIndex + 1} of {rung.sets} · Rep {currentRep} of {rung.reps}</span></div>
-      {rung.mode === 'cued' && <div className="piano-learn-lab__tempo" role="status">
+      {['cued', 'metronome'].includes(rung.mode) && <div className="piano-learn-lab__tempo" role="status">
         {adjustable ? <button type="button" aria-label={`Choose tempo: ${tempoLabel}`} aria-haspopup="dialog" aria-expanded={tempoSheetOpen}
           onClick={() => setTempoSheetOpen(true)}><strong>{tempoLabel}</strong></button> : <strong>{tempoLabel}</strong>}
         <span>{tempo.tempoSource === 'musicxml' ? 'Score tempo' : 'Fallback tempo'}</span>
@@ -167,6 +170,11 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
         {CLICK_LEVELS.map((level) => <button key={level.id} type="button" aria-pressed={clickLevel.id === level.id}
           onClick={() => selectClickLevel(level)}>{level.label}</button>)}
       </div>}
+      <div className="piano-learn-lab__run-controls" role="group" aria-label="Practice controls">
+        <button type="button" onClick={() => setPaused((value) => !value)}>{paused ? 'Resume' : 'Pause'}</button>
+        <button type="button" onClick={restartTake}>Start over</button>
+        <button type="button" onClick={changePractice}>Change practice</button>
+      </div>
     </header>
     <ExerciseRun
       key={`${segment.id}:${rung.id}:${take}`} instance={null} score={runScore} intent="practice"
@@ -177,6 +185,8 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       framing={`${segment.label} · ${rung.label}`}
       ask={rung.mode === 'free' ? 'Play the passage accurately.' : 'Play the passage with the beat.'}
       traceContext={{ tempoPercent, tempoStage: stage.id, clickLevel: clickLevel.id, tempoSource: tempo.tempoSource ?? 'inferred', launchSource }} surface="learn-lab"
+      paused={paused} resumeDelayMs={effectiveBpm ? Math.round(120000 / effectiveBpm) : 1000} controlKey={take}
+      persistInterrupted={false}
       scoreCursorPolicy="always" keyboardHintPolicy="after-wrong"
       failurePresentation="local" onExit={onClose} onPassed={settle}
       onFailed={(result) => { recordResult(result); if (launchSource !== 'recommended') onFinished?.(result); }}
@@ -185,6 +195,6 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
     {repCard && !success && <RepInterstitial {...repCard} onDone={() => setRepCard(null)} />}
     {success && <div className="piano-learn-lab__success" role="status"><strong>{success}</strong><span>Returning to the score…</span></div>}
     <LearnTempoSheet open={adjustable && tempoSheetOpen} stages={stages} selectedId={stage.id} effectiveBpm={effectiveBpm}
-      onPick={(picked) => setSelectedPercent(picked.percent)} onClose={() => setTempoSheetOpen(false)} />
+      onPick={(picked) => { setSelectedPercent(picked.percent); restartTake(); }} onClose={() => setTempoSheetOpen(false)} />
   </section>;
 }
