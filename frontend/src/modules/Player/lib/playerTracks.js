@@ -57,6 +57,10 @@ export function trackStateFor(info, { applied = null, engine = null } = {}) {
     // A Plex subtitle shows only when this mint burned it in: Plex's own
     // "selected" flag on the file says nothing about what is on screen.
     selected.subtitle = applied?.subtitle && applied.subtitle !== SUBTITLES_OFF ? applied.subtitle : null;
+    // Audio: what THIS stream was minted with (the applied choice), else the
+    // account's selection a transcode honours. The mint restores the account's
+    // selection right after the decision (PlexAdapter), so Plex's own flag is
+    // never evidence of what a choice made here is playing.
     if (applied?.audio) selected.audio = applied.audio;
   }
   return {

@@ -31,6 +31,13 @@ import { pushData, titleCaseId } from '#domains/notification/push/pushText.mjs';
 // watchdog (after load). Not in the sequential flow; frontend consumers may
 // treat it as an out-of-band event.
 
+/** brief=1|<seconds>|true asks to show OVER the programme; brief=0 does not. */
+function isBriefQuery(query) {
+  const v = query?.brief;
+  if (v === undefined || v === null || v === '' || v === false) return false;
+  return !['0', 'false', 'no', 'off'].includes(String(v).toLowerCase());
+}
+
 const STEPS = ['power', 'verify', 'volume', 'prepare', 'prewarm', 'load', 'playback'];
 // Origin of a dispatch no caller named (HA buttons, schedules, triggers).
 const AUTOMATION_ORIGIN = Object.freeze({ kind: 'routine', name: 'Automation' });
@@ -659,7 +666,15 @@ export class WakeAndLoadService {
       const receiverContentQuery = hasAcknowledgedContent
         ? { ...contentQuery, dispatchId }
         : contentQuery;
-      const loadResult = await device.loadContent(screenPath, receiverContentQuery, { verifyAsync: true });
+      // Show briefly / a camera (RQ-PLAY-11) is a command the page's own
+      // handler runs OVER its programme. A page URL cannot carry it (its
+      // autoplay parser would turn `camera:<id>` into a plain play the Player
+      // cannot render, and drop `brief`), so a cold or unsubscribed screen
+      // gets the base page and then the same envelope as a warm one.
+      const briefOnly = isCameraRef || (hasContentQuery && isBriefQuery(contentQuery));
+      const loadResult = briefOnly
+        ? { ok: false, error: 'brief-needs-websocket' }
+        : await device.loadContent(screenPath, receiverContentQuery, { verifyAsync: true });
 
       if (loadResult.ok) {
         if (urlAckPromise) {
@@ -758,6 +773,10 @@ export class WakeAndLoadService {
           if (urlAckPromise) {
             const ack = await urlAckPromise;
             outcomeCommandAcknowledged = ack?.ok === true;
+            if (outcomeCommandAcknowledged && typeof ack.appliedAs === 'string' && ack.appliedAs !== fbOp) {
+              receiverAppliedAs = ack.appliedAs;
+              result.appliedAs = receiverAppliedAs;
+            }
             if (!outcomeCommandAcknowledged) {
               this.#logger.warn?.('wake-and-load.load.wsFallback-ack-missing', {
                 deviceId, dispatchId, error: ack?.error,

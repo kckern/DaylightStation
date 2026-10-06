@@ -70,4 +70,44 @@ describe('WakeAndLoadService — Show briefly', () => {
     handlers.get('device-state:tv')({ deviceId: 'tv', snapshot: film({ brief: { kind: 'clip', contentId: 'plex:clip', label: 'Clip' } }) });
     expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({ step: 'playback', status: 'confirmed', operation: 'brief' }));
   });
+
+  it('a cold screen gets a brief camera as the same envelope, never as a page URL', async () => {
+    const device = svc.deviceService?.get?.('tv');
+    // Re-wire: nobody subscribed yet, as on a cold page.
+    const eventBus = {
+      subscribe: vi.fn((topic, cb) => { handlers.set(topic, cb); return () => handlers.delete(topic); }),
+      getTopicSubscriberCount: vi.fn().mockReturnValue(0),
+      // The ack is awaited from before the page loads; it arrives once the
+      // envelope has been sent.
+      waitForMessage: vi.fn(async (predicate) => {
+        await new Promise((resolve) => setTimeout(resolve, 6000));
+        const [[envelope]] = broadcast.mock.calls.filter(([m]) => m.type === 'command');
+        const ack = { topic: 'device-ack', deviceId: 'tv', ok: true, appliedAs: 'brief', commandId: envelope.commandId };
+        return predicate(ack) ? ack : null;
+      }),
+    };
+    const loadContent = vi.fn().mockResolvedValue({ ok: true });
+    const cold = new WakeAndLoadService({
+      ...testApplicationRuntime(),
+      deviceService: { get: () => ({
+        id: 'tv', screenPath: '/screen/tv', defaultVolume: null, hasCapability: () => false,
+        powerOn: vi.fn().mockResolvedValue({ ok: true, verified: true }),
+        prepareForContent: vi.fn().mockResolvedValue({ ok: true, coldRestart: false, cameraAvailable: true }),
+        loadContent,
+      }) },
+      readinessPolicy: { isReady: vi.fn().mockResolvedValue({ ready: true }) },
+      broadcast, eventBus, prewarmService: prewarm,
+      commandHandlerLivenessService: { isFresh: () => true },
+      deviceLivenessService: { getLastSnapshot: () => null },
+      logger: logger(),
+    });
+    const pending = cold.execute('tv', { play: 'camera:doorbell', brief: '1' });
+    await vi.advanceTimersByTimeAsync(10000);
+    const result = await pending;
+    expect(result).toMatchObject({ ok: true, appliedAs: 'brief' });
+    // The page URL never carried the camera or the brief flag.
+    expect(loadContent.mock.calls.every(([, query]) => !query || Object.keys(query).length === 0)).toBe(true);
+    const sent = broadcast.mock.calls.map(([m]) => m).find((m) => m.type === 'command');
+    expect(sent.params).toMatchObject({ op: 'play-now', contentId: 'camera:doorbell', brief: '1' });
+  });
 });

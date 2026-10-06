@@ -62,6 +62,7 @@ export function ScreenPlayerFeaturesHost({ features, source }) {
         if (!player?.setTracks) return { ok: false, code: 'NO_PLAYBACK', error: 'Nothing is playing here' };
         return player.setTracks(selection);
       },
+      stopMusic: () => { setMusic(null); features.setMusicState(null); },
       musicCommand: (op, params) => {
         const current = musicRefState.current;
         if (op === 'start') {
@@ -134,7 +135,18 @@ export function ScreenPlayerFeaturesHost({ features, source }) {
         && !['playNow', 'shuffle'].includes(payload?.kind)) return;
       features.supersedeBrief(reason);
     };
+    // A Stop brings every brief down (nothing returns). A Stop from a person
+    // on another device already answered "Keep the music?" in the controls, so
+    // it leaves the music; the TV remote, a routine and the sleep timer have
+    // no such question and stop it too.
+    const onPlayback = (payload = {}) => {
+      if (String(payload?.command ?? '').toLowerCase() !== 'stop') return;
+      features.onPlaybackStopped('stop', { stopMusic: !payload.origin });
+    };
+    const onDisplaySleep = () => features.onPlaybackStopped('display-sleep');
     const unsubs = [
+      bus.subscribe('media:playback', onPlayback),
+      bus.subscribe('display:sleep', onDisplaySleep),
       bus.subscribe('media:brief', onBrief),
       bus.subscribe('media:play', supersede('media:play')),
       bus.subscribe('media:queue', supersede('media:queue')),
@@ -219,13 +231,13 @@ export function ScreenBriefSurface({ features }) {
       <div className="screen-brief__bar" role="status" aria-live="polite">
         <span className="screen-brief__label" data-testid="screen-brief-label">{brief.label}</span>
         {brief.returnTo && (
-          <span className="screen-brief__return" data-testid="screen-brief-return">
+          <span className="screen-brief__return" aria-live="off" data-testid="screen-brief-return">
             {`Back to ${brief.returnTo.title ?? 'your programme'}${remaining != null ? ` in ${remaining}s`
               : brief.kind === 'clip' ? ' after this' : ' when closed'}`}
           </span>
         )}
         {!brief.returnTo && remaining != null && (
-          <span className="screen-brief__return" data-testid="screen-brief-return">{`Closes in ${remaining}s`}</span>
+          <span className="screen-brief__return" aria-live="off" data-testid="screen-brief-return">{`Closes in ${remaining}s`}</span>
         )}
         <button type="button" className="screen-brief__close" data-testid="screen-brief-close" onClick={close}>Close</button>
       </div>

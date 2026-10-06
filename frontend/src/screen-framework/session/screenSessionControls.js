@@ -154,6 +154,7 @@ export function createScreenSessionControls({
 
   function fireMinutesSleep() {
     if (!sleep) return;
+    try { extension?.onPlaybackStopped?.('sleep-timer'); } catch { /* the stop below still runs */ }
     try { ports.stopPlayback?.(); } catch (err) { logger().warn('sleep-timer.stop-failed', { error: String(err?.message ?? err) }); }
     completeSleep('minutes-elapsed');
     // The renderer pauses asynchronously; restore the screen's volume once the
@@ -425,6 +426,20 @@ export function createScreenSessionControls({
     return note;
   }
 
+  /** A person showed something briefly: a note (no Put it back: the programme returns itself). */
+  function noteBrief(origin) {
+    const at = now();
+    const note = {
+      id: `note-${at.toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      kind: 'brief', origin: origin ?? null, originKey: originKey(origin), count: 1, at: iso(at),
+      label: `Shown briefly by ${originLabel(origin)}`,
+    };
+    state.notes = [note, ...state.notes].slice(0, MAX_NOTES);
+    logger().info('note.recorded', { ownerId, kind: 'brief', count: 1, origin });
+    notify();
+    return note;
+  }
+
   async function putBack(params = {}) {
     const target = params.noteId ?? restore?.noteId;
     if (!target || !restoreAvailable(target)) {
@@ -556,6 +571,7 @@ export function createScreenSessionControls({
     applyConfig,
     handleSession,
     noteRemoteCommand,
+    noteBrief,
     markLocalPlayback,
     markHumanInput,
     interrupt,

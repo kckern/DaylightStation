@@ -65,4 +65,22 @@ describe('useScreenCommands — Show briefly', () => {
     expect(actionBus.emit).toHaveBeenCalledWith('media:queue-op', expect.objectContaining({ op: 'play-now', contentId: 'plex:77' }));
     expect(actionBus.emit).not.toHaveBeenCalledWith('media:brief', expect.anything());
   });
+
+  it('another device\'s brief respects Add only; a routine\'s does not', () => {
+    controls.applyConfig('addOnly', true);
+    mount();
+    act(() => capturedCallback(env({ op: 'play-now', contentId: 'plex:77', brief: '1' }, phone)));
+    expect(actionBus.emit).toHaveBeenCalledWith('command-handler-error', expect.objectContaining({ code: 'ADD_ONLY', commandId: 'c1' }));
+    expect(actionBus.emit).not.toHaveBeenCalledWith('media:brief', expect.anything());
+    actionBus.emit.mockClear();
+    act(() => capturedCallback({ ...env({ op: 'play-now', contentId: 'camera:doorbell' }, doorbell), commandId: 'c2' }));
+    expect(actionBus.emit).toHaveBeenCalledWith('media:brief', expect.objectContaining({ kind: 'camera' }));
+  });
+
+  it('a brief from another device leaves a screen note and stamps who started it', () => {
+    mount();
+    act(() => capturedCallback(env({ op: 'play-now', contentId: 'plex:77', brief: '1' }, phone)));
+    expect(controls.toPublished().notes[0]).toMatchObject({ kind: 'brief', label: "Shown briefly by Dad's phone", putBack: null });
+    expect(controls.getOrigin()).toEqual(phone);
+  });
 });

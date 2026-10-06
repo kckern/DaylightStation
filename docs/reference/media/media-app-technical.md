@@ -1147,18 +1147,45 @@ sends a `camera:` ref to the transcode prewarm. The Media app sends
 `brief=1&title=…` from an item's **Show briefly on…**
 (`buildDispatchUrl({ brief, title })`).
 
-**Stream selection on the mint (Plex).** Plex ignores stream ids on the
-transcode URLs and plays the part's SELECTED streams. A stream mint
+A brief (or `camera:` play) is always delivered to the screen as the
+command envelope, never as a page URL: on a cold or unsubscribed screen
+`WakeAndLoadService` loads the base page and then sends the same envelope as a
+warm one (the page's autoplay parser cannot run a brief, and ignores `brief`,
+`briefSeconds` and `title`). Another device's brief on a screen in Add only is
+refused (`ADD_ONLY`, 502); a person's brief leaves a screen note
+(`kind: "brief"`, "Shown briefly by …") and stamps "started by"; a routine's
+does neither. A Stop, the sleep timer or the screen going to sleep ends a
+brief with nothing returning (the programme is not resurrected); a time-out or
+clip end after the programme was stopped returns nothing, while a person
+closing it still asks for it back.
+
+**Stream selection on the mint (Plex).** A stream mint
 `GET /api/v1/proxy/plex/stream/:ratingKey` may carry `audioStreamID` and/or
 `subtitleStreamID` (`0` = subtitles off; parsed by `parseStreamParams`).
+Verified read-only against the live Plex (2026-10): the transcode
+`decision`/`start` URLs ignore per-request stream ids; Plex plays the part's
+SELECTED streams, and that selection is **per Plex account** — shared by every
+screen, the garage and every Plex app — so it is borrowed, never kept.
 `PlexAdapter.loadMediaUrl(item, { tracks })` accepts only the item's own
-stream ids, selects them on the part first (`PlexClient.selectPartStreams` →
-`PUT /library/parts/:id?…&allParts=1`, the call every Plex client makes, so
-the choice is Plex's per-file selection for the server account), then mints
-with `subtitles=burn` for a chosen subtitle (no direct play; no direct stream
-when burning). A mint without these params is unchanged. Log events:
-`plex.loadMediaUrl.tracks-selected` (info), `.tracks-rejected`,
-`.tracks-select-failed` (warn).
+stream ids and, in order: reads what is selected now; selects the requested
+streams on the part (`PlexClient.selectPartStreams` →
+`PUT /library/parts/:id?…&allParts=1`); asks for the transcode decision (which
+binds the chosen streams to that transcode session — a start after the restore
+still plays them, confirmed with ffprobe on the segments); **restores the
+previous selection straight away** (also when the decision fails, and for
+`subtitles off`, where the restore re-selects the previous subtitle); then
+returns a URL with `subtitles=burn` for a chosen subtitle (no direct play; no
+direct stream when burning). A mint without these params is unchanged and
+writes nothing. Remaining window: the account's selection differs from its
+resting value for the length of one decision request (hundreds of ms); a
+transcode on the same file started in that window would inherit the borrowed
+choice, and a failed restore is logged and leaves the borrowed choice until the
+next track mint on that file. If the decision fails, the fallback start URL plays
+the restored (account) selection, not the choice. Log events (all
+`plex.loadMediaUrl.*`): `tracks-selected`, `tracks-restored` (info),
+`tracks-rejected`, `tracks-select-failed`, `tracks-restore-failed` (warn).
+A track's `selected` state in `controls.tracks` reports what this stream was
+minted with, never Plex's own flag.
 
 **Verified by:**
 - `shared/contracts/media/playerFeatures.test.mjs` — params, Plex track list, show-keyed carry-over, brief mode, published shapes
@@ -1520,7 +1547,12 @@ owner as `skip-next`; video and audio keep the synthetic Tab), and a running
 slideshow publishes `playing` (`playerSessionBridge`). The music outlives the
 slideshow: stopping the photos leaves it playing until `stop`. A plaque on
 the screen shows the song. The decision to keep it is the controller's
-(§ "Media app" below).
+(§ "Media app" below). A Stop that names an origin (another device, after
+its "Keep the music?" question) leaves the music; a Stop with none (the TV
+remote, a routine), the sleep timer and the screen going to sleep stop it.
+The music follows the screen's volume and the sleep fade (it is an ordinary
+Player under the screen volume), and auxiliary Players never write the play
+ledger or resume progress (`AuxiliaryPlayerContext`).
 
 **Composite content API, assessed.** `POST /api/v1/content/compose` (§2.1)
 resolves a *new* visual+audio presentation; it has no frontend consumer and
@@ -1837,7 +1869,7 @@ Every field is present on a published block.
     "message": "Nothing similar left", "count": <n>, "contentIds": [...], "title": "...", "at": "<ISO>"
   },
   "notes": [ {
-    "id": "...", "kind": "paused" | "stopped" | "replaced" | "moved",
+    "id": "...", "kind": "paused" | "stopped" | "replaced" | "moved" | "brief",
     "label": "Paused by Dad's phone", "count": <int>, "at": "<ISO>",
     "origin": { /* §6.2.7 */ } | null,
     "putBack": null | { "availableUntil": "<ISO>" }

@@ -33,7 +33,7 @@ describe('session control enums', () => {
     expect(END_OF_QUEUE_MODES).toEqual(['stop', 'repeat', 'similar']);
     expect(isEndOfQueueMode('similar')).toBe(true);
     expect(isEndOfQueueMode('shuffle')).toBe(false);
-    expect(SCREEN_NOTE_KINDS).toEqual(['paused', 'stopped', 'replaced', 'moved']);
+    expect(SCREEN_NOTE_KINDS).toEqual(['paused', 'stopped', 'replaced', 'moved', 'brief']);
     expect(START_PHASES).toEqual(['starting', 'delivered', 'queued', 'started', 'failed']);
   });
   it('adds the session command kind and the three session settings additively', () => {

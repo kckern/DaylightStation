@@ -104,6 +104,22 @@ export function useScreenCommands(wsConfig, actionBus, screenId, controls = null
       const isCamera = params.contentId.startsWith('camera:');
       const mode = resolveBriefMode({ brief: params.brief, briefSeconds: params.briefSeconds, origin, kind: isCamera ? 'camera' : 'clip' });
       if (isCamera || mode.brief) {
+        const fromDevice = origin?.kind === 'device';
+        const selfOrigin = fromDevice && !!g.device
+          && String(origin.id ?? '').replace(/^fleet:/, '') === g.device;
+        // Add only protects a programme from another DEVICE's start; a brief
+        // is a start. Routines and the screen's own input are exempt.
+        if (fromDevice && !selfOrigin && ctl.isAddOnly?.() && ctl.hasPlayback?.()) {
+          logger().info('commands.brief-refused-add-only', { commandId, contentId: params.contentId, origin });
+          bus.emit('command-handler-error', { commandId, code: 'ADD_ONLY', error: 'This screen is in Add only' });
+          return;
+        }
+        if (fromDevice && !selfOrigin) {
+          // A person steered this screen: say so on the screen and in "started by".
+          ctl.stampOrigin?.(origin);
+          ctl.markHumanInput?.();
+          ctl.noteBrief?.(origin);
+        }
         logger().info('commands.brief', { commandId, contentId: params.contentId, brief: mode.brief, seconds: mode.seconds, origin: origin ?? null });
         bus.emit('media:brief', withOrigin({
           kind: isCamera ? 'camera' : 'clip',
