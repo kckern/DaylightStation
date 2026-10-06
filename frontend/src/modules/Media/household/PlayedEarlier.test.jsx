@@ -1,7 +1,7 @@
 // FIND.11a — Played earlier: newest first, picture, title, time played, full verbs.
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor, act } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 const apiMock = vi.fn();
@@ -75,6 +75,29 @@ describe('PlayedEarlier refresh (review)', () => {
       rerender(<MantineProvider><PlayedEarlier screenId="livingroom-tv" currentContentId="plex:e" /></MantineProvider>);
       await waitFor(() => expect(calls()).toBe(2));
     } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('a change inside the throttle window is refreshed once the window ends, not dropped', async () => {
+    const calls = () => apiMock.mock.calls.filter(c => String(c[0]).includes('/played-earlier')).length;
+    const base = Date.now();
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(base);
+    try {
+      const { rerender } = render(<MantineProvider><PlayedEarlier screenId="livingroom-tv" currentContentId="plex:a" /></MantineProvider>);
+      await screen.findByTestId('played-earlier-0');
+      expect(calls()).toBe(1);
+      nowSpy.mockReturnValue(base + 30_000);
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      rerender(<MantineProvider><PlayedEarlier screenId="livingroom-tv" currentContentId="plex:b" /></MantineProvider>);
+      expect(calls()).toBe(1);
+      await act(async () => { vi.advanceTimersByTime(29_000); });
+      expect(calls()).toBe(1);
+      nowSpy.mockReturnValue(base + 60_000);
+      await act(async () => { vi.advanceTimersByTime(1_500); });
+      await waitFor(() => expect(calls()).toBe(2));
+    } finally {
+      vi.useRealTimers();
       nowSpy.mockRestore();
     }
   });

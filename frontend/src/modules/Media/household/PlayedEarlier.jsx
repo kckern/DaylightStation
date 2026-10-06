@@ -35,14 +35,26 @@ export function PlayedEarlier({ screenId, currentContentId = null }) {
   // but not on every track of a music queue.
   const lastRefreshRef = useRef(Date.now());
   const firstItemRef = useRef(currentContentId);
+  const trailingRef = useRef(null);
   useEffect(() => {
     if (currentContentId === firstItemRef.current) return;
     firstItemRef.current = currentContentId;
     const now = Date.now();
-    if (now - lastRefreshRef.current < REFRESH_MIN_MS) return;
+    const wait = lastRefreshRef.current + REFRESH_MIN_MS - now;
+    if (trailingRef.current) { clearTimeout(trailingRef.current); trailingRef.current = null; }
+    if (wait > 0) {
+      // Inside the window: refresh when it ends, so the last change is not lost.
+      trailingRef.current = setTimeout(() => {
+        trailingRef.current = null;
+        lastRefreshRef.current = Date.now();
+        reload();
+      }, wait);
+      return;
+    }
     lastRefreshRef.current = now;
     reload();
   }, [currentContentId, reload]);
+  useEffect(() => () => { if (trailingRef.current) clearTimeout(trailingRef.current); }, []);
   const favourites = useFavourites();
   const { run, overlays } = useItemVerbs();
   const items = Array.isArray(data?.items) ? data.items : [];
