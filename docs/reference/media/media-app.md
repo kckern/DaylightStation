@@ -131,7 +131,12 @@ Faith" with play/pause, next and stop), so skipping a photo never skips a
 song and pausing the song never stops the photos. On a screen a small plaque
 shows the song. Pressing **Stop** on the slideshow asks **Keep the music
 playing?** — **Keep music** stops only the photos; **Stop music too** stops
-both; **Cancel** stops nothing.
+both; **Cancel** stops nothing. The music never plays under something with its
+own sound: when a video or any non-photo item replaces the photos it stops
+(even after **Keep music**), and when the slideshow stops without Keep it stops
+too. This holds on this device and on a screen. The mini player's Stop asks the
+same question; moving the slideshow to another screen, **Stop all** and **Stop
+and turn off** do not ask, and stop the music.
 
 ## Browser identity and house presence
 
