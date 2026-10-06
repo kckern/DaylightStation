@@ -9,7 +9,7 @@
 // Returns `{ controls, actions, available, reason, supports, kind }`.
 // `available: false` (with a short reason) means the controls are shown as
 // unavailable, never hidden (STEER.1b/AC2).
-import { useCallback, useContext, useSyncExternalStore } from 'react';
+import { useCallback, useContext, useEffect, useState, useSyncExternalStore } from 'react';
 import { LocalSessionContext } from '../session/LocalSessionContext.js';
 import { useSessionController } from './useSessionController.js';
 
@@ -85,6 +85,18 @@ function cachedGetter(controls, read) {
     caches.set(controls, entry);
   }
   return entry.getter;
+}
+
+/** Re-render once a second while `active`, for countdowns and time left. */
+export function useSecondTick(active) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return undefined;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [active]);
+  return now;
 }
 
 /** Seconds until an ISO deadline, ticking once a second while mounted. */

@@ -151,11 +151,23 @@ describe('SessionControlsPanel — this device', () => {
     expect(local.getSnapshot().currentItem.contentId).toBe('plex:e1');
   });
 
-  it('shows no Add only toggle for this device (a screen setting)', () => {
+  it('shows Add only unavailable on this device, with the reason, rather than hiding it (RQ-STEER-03)', () => {
     const local = localSetup();
     local.queue.playNow({ contentId: 'plex:a', title: 'A', format: 'audio', duration: 60 });
     render(<Providers local={local} outcomes={outcomes}><SessionControlsPanel target="local" /></Providers>);
-    expect(screen.queryByTestId('add-only-toggle')).toBeNull();
+    expect(screen.getByTestId('add-only-toggle').disabled).toBe(true);
+    expect(screen.getByTestId('add-only-unsupported').textContent).toMatch(/screen other devices play to/);
+  });
+
+  it('announces the countdown once: the ticking seconds are hidden from assistive tech', async () => {
+    const local = localSetup();
+    local.queue.playNow({ contentId: 'plex:e1', title: 'E1', format: 'video', type: 'episode', duration: 60 });
+    local.queue.add({ contentId: 'plex:e2', title: 'E2', format: 'video', type: 'episode', duration: 60 });
+    act(() => local.store.dispatch({ type: 'PLAYER_STATE', playerState: 'playing' }));
+    render(<Providers local={local} outcomes={outcomes}><SessionControlsPanel target="local" /></Providers>);
+    act(() => local.onPlayerEnded('plex:e1'));
+    const seconds = await screen.findByTestId('countdown-seconds');
+    expect(seconds.closest('[aria-hidden="true"]')).not.toBeNull();
   });
 });
 
@@ -246,5 +258,16 @@ describe('EndOfQueueChoice (STEER.13a)', () => {
     expect(within(there).getByTestId('queue-end-status').textContent).toBe('Nothing similar left');
     await act(async () => { fireEvent.click(within(there).getByTestId('queue-end-similar')); });
     expect(http).toHaveBeenCalledWith('api/v1/device/tv/session/end-of-queue', expect.objectContaining({ mode: 'similar' }), 'PUT');
+  });
+
+  it('offers "Play it again", not a continue-at-0:00, after an at-end sleep left the item ended', async () => {
+    const local = localSetup();
+    local.queue.playNow({ contentId: 'plex:a', title: 'A', format: 'video', duration: 60 });
+    act(() => local.store.dispatch({ type: 'PLAYER_STATE', playerState: 'playing' }));
+    await act(async () => { await local.sessionControls.setSleepTimer({ atEnd: 'item' }); });
+    render(<Providers local={local} outcomes={outcomes}><SessionControlsPanel target="local" /></Providers>);
+    act(() => local.onPlayerEnded('plex:a'));
+    const btn = await screen.findByTestId('sleep-continue-stopped');
+    expect(btn.textContent).toBe('Play it again');
   });
 });

@@ -23,7 +23,7 @@ P0 extension manifest requires its `RELY.4a/AC1` and `RELY.4a/AC2` checks. This 
 pending exact-commit owned-server execution, not new Accepted evidence. Existing
 Task 2 and stable-core receipt evidence below remains unchanged.
 
-**Status:** In progress. Batch B (2026-10-03) adds 24 Accepted and 3 Partial AC across PLAY.10a, STEER.13a/b, RELY.4b, STEER.1b, PLACE.9a, PLACE.4a, STEER.10a, STEER.1a (`BATCH-B-CONTROLS`); the totals that follow predate it. **11 accepted stories / 41 accepted AC; 14 partial stories / 20 partial AC; 57 unverified stories / 227 unverified AC**. No component, test count or API response earns acceptance by itself.
+**Status:** In progress. Batch B (2026-10-03) adds 24 Accepted and 3 Partial AC across PLAY.10a, STEER.13a/b, RELY.4b, STEER.1b, PLACE.9a, PLACE.4a, STEER.10a, STEER.1a (`BATCH-B-CONTROLS`; review-fix round 2026-10-05: a held natural end now reads ended and releases the Player completion key so replay advances again (`PlayerBridge.test.jsx` held-end test); Add only shown unavailable with its reason on this device; countdown seconds hidden from assistive tech; failed screen adopts fail fast; a paused move to an idle screen stays paused (`WakeAndLoadService.adoptAutoplay.test.mjs`) — unit evidence, counts unchanged); the totals that follow predate it. **11 accepted stories / 41 accepted AC; 14 partial stories / 20 partial AC; 57 unverified stories / 227 unverified AC**. No component, test count or API response earns acceptance by itself.
 
 **Contract:** taxonomy §3 and accepted requirements. P0 first, then P1/P2. Each criterion must have evidence of the complete applicable path: user input → target → command → actual player/result → state → displayed feedback. Office is the only physical test screen authorized.
 

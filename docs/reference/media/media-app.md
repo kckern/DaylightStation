@@ -104,9 +104,14 @@ wraps at phone width, so nothing is lost to a narrow screen.
   item. The time left shows on the controls and on the handle (the mini
   player). A minutes timer fades out over its last 10 s. Afterwards the
   controls offer **Continue where it stopped** (this device pauses, so it is
-  plain Play) and **Continue from m:ss, where the timer was set**. On a
-  screen the timer stops it with its queue kept; its Remote offers the
-  "where the timer was set" choice.
+  plain Play; after an at-end sleep the item is finished, so it reads **Play
+  it again**) and **Continue from m:ss, where the timer was set**. The offer
+  goes as soon as anything new starts here. An armed minutes timer survives
+  closing the page: it keeps its deadline, or, if it came due meanwhile,
+  leaves the Continue offer. On a screen the timer stops it with its queue
+  kept; its Remote offers the "where the timer was set" choice. The fade
+  uses the element volume, so on iOS Safari (read-only media volume) the
+  timer just pauses.
 - **Next episode.** At the natural end of an episode whose next queue item is
   also an episode, a 10-second countdown names the next one, with **Play
   now** and **Cancel** (Cancel stays on the finished episode, queue kept).
@@ -118,7 +123,9 @@ wraps at phone width, so nothing is lost to a narrow screen.
   library. Items it adds are marked "added automatically"; it stops by itself
   after about two unattended hours, and says "Nothing similar left" when it
   runs out. These modes belong to the session: a new start resets them.
-- **Add only** (a screen's Remote): one step on or off. While on, Play from
+- **Add only** (a screen's Remote): one step on or off. On this device it is
+  shown unavailable, with the reason (it belongs to a screen other devices
+  play to). While on, Play from
   any other device is added to that screen's queue instead of replacing it,
   and the sender reads "Added <item> to <screen> (Add only is on) · Nth in
   line". Automations still play. Anyone can turn it off.

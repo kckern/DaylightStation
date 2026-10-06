@@ -817,12 +817,12 @@ export function createLocalSessionController({
         if (!snap().currentItem) {
           const first = snap().queue.items[0];
           if (!first) return;
-          moveCurrentTo(first);
+          moveCurrentTo(first, {}, opOrigin);
         } else if (snap().state === 'ended' && snap().queue.items[snap().queue.currentIndex]) {
           // Play after an item ended here (the queue end, Stop after this
           // one, a cancelled countdown) replays it from the start as a new
           // visit, so its next natural end is a new end.
-          moveCurrentTo(snap().queue.items[snap().queue.currentIndex]);
+          moveCurrentTo(snap().queue.items[snap().queue.currentIndex], {}, opOrigin);
         } else {
           stampOrigin(opOrigin);
         }
