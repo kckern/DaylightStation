@@ -2,7 +2,10 @@ import { test, expect } from '@playwright/test';
 
 const title = process.env.MEDIA_ACCEPTANCE_TITLE || 'Disclosure Day';
 test.use({ viewport: { width: 1440, height: 900 }, trace: 'retain-on-failure', actionTimeout: 10000 });
-test.setTimeout(90000);
+// A cold Plex transcode of a feature film can take over a minute to produce its
+// first segment under household load; the playing poll gets 90 s, so the test
+// must outlive it.
+test.setTimeout(180000);
 
 function observePlaybackRequests(page) {
   const requests = [];
