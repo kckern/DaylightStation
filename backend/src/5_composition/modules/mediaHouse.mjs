@@ -61,7 +61,7 @@ export function createMediaHouseModule({
   if (eventBus?.onClientMessage) {
     new EventBusScreenPresence({
       eventBus,
-      onSeen: ({ id, name, room }) => screenRegistry.announce({ id, name, room }),
+      onSeen: ({ id, name, room, playing }) => screenRegistry.announce({ id, name, room, playing }),
       logger: log('media-screens'),
     }).attach();
   }

@@ -48,6 +48,16 @@ export class ScreenRegistryError extends DomainInvariantError {
   }
 }
 
+/** The name a browser gets when nobody named it ("Browser 1a2b3c4d"). */
+export function isPlaceholderBrowserName(name) {
+  return typeof name === 'string' && /^Browser [0-9a-zA-Z-]{1,8}$/.test(name.trim());
+}
+
+function latest(...times) {
+  const valid = times.filter((t) => Number.isFinite(Date.parse(t)));
+  return valid.length ? valid.sort((a, b) => Date.parse(b) - Date.parse(a))[0] : null;
+}
+
 export function emptyRegistry() {
   return { screens: {}, aliases: {} };
 }
@@ -197,7 +207,9 @@ function viewOne(id, entry, device, now, signal) {
     lastSeen,
     online: typeof signal?.online === 'boolean' ? signal.online : null,
     retiredAt: entry?.retiredAt ?? null,
+    lastPlayed: latest(entry?.playedAt, signal?.lastPlayed),
     aliases: [],
+    aliasNames: {},
   };
 }
 
@@ -205,7 +217,9 @@ function viewOne(id, entry, device, now, signal) {
  * The household's screen list.
  * @param {{configured: Array<{id,screenId,name,room,type}>, state: Object, now: number,
  *          signals?: Object<string,{lastSeen?:string, online?:boolean}>}} input
- * @returns {{screens: Object[], notSeenLately: Object[], retired: Object[]}}
+ * @returns {{screens: Object[], notSeenLately: Object[], retired: Object[], unnamed: Object[]}}
+ *   `unnamed`: browsers nobody named that never played — every private window
+ *   or test browser that merely opened the app; kept out of the main list.
  */
 export function buildScreenView({ configured = [], state, now, signals = {} }) {
   const registry = state || emptyRegistry();
@@ -216,24 +230,32 @@ export function buildScreenView({ configured = [], state, now, signals = {} }) {
     if (registry.aliases?.[id]) continue;
     views.set(id, viewOne(id, registry.screens?.[id], devices.get(id), now, signals[id]));
   }
-  for (const [alias, { into }] of Object.entries(registry.aliases || {})) {
+  for (const [alias, { into, was }] of Object.entries(registry.aliases || {})) {
     const view = views.get(into);
     if (!view) continue;
     view.aliases.push(alias);
+    if (was?.name) view.aliasNames[alias] = was.name;
+    const aliasPlayed = latest(view.lastPlayed, was?.playedAt, signals[alias]?.lastPlayed);
+    if (aliasPlayed) view.lastPlayed = aliasPlayed;
     const signal = signals[alias];
     if (signal?.lastSeen && (!view.lastSeen || Date.parse(signal.lastSeen) > Date.parse(view.lastSeen))) view.lastSeen = signal.lastSeen;
     if (signal?.online === true) view.online = true;
   }
   const byName = (a, b) => a.name.localeCompare(b.name);
-  const out = { screens: [], notSeenLately: [], retired: [] };
+  const out = { screens: [], notSeenLately: [], retired: [], unnamed: [] };
   for (const view of views.values()) {
     if (view.retiredAt) { out.retired.push(view); continue; }
+    if (view.kind === 'browser' && isPlaceholderBrowserName(view.name) && !view.lastPlayed && !view.aliases.length) {
+      out.unnamed.push(view);
+      continue;
+    }
     const quiet = view.lastSeen && now - Date.parse(view.lastSeen) > SCREEN_DEFAULTS.notSeenAfterMs;
     (quiet && view.online !== true ? out.notSeenLately : out.screens).push(view);
   }
   out.screens.sort(byName);
   out.notSeenLately.sort(byName);
   out.retired.sort(byName);
+  out.unnamed.sort(byName);
   return out;
 }
 
@@ -242,7 +264,7 @@ const nowOf = (at) => (Number.isFinite(Date.parse(at)) ? Date.parse(at) : 0);
 
 function findView(state, id, configured, now) {
   const view = buildScreenView({ configured, state, now });
-  return [...view.screens, ...view.notSeenLately, ...view.retired].find((s) => s.id === id) || null;
+  return [...view.screens, ...view.notSeenLately, ...view.retired, ...view.unnamed].find((s) => s.id === id) || null;
 }
 
 /**
@@ -252,7 +274,7 @@ function findView(state, id, configured, now) {
  * refreshes the screen it was merged into.
  * @returns {{state, id, screen, created:boolean}}
  */
-export function touchScreen(state, rawId, { name = null, room = null, at } = {}, { configured = [] } = {}) {
+export function touchScreen(state, rawId, { name = null, room = null, at, playing = false } = {}, { configured = [] } = {}) {
   requireId(rawId);
   const next = clone(state);
   const id = resolveScreenId(next, rawId);
@@ -267,6 +289,7 @@ export function touchScreen(state, rawId, { name = null, room = null, at } = {},
   const entry = writableEntry(next, id, { configured, at });
   entry.lastSeen = at ?? entry.lastSeen;
   if (!entry.firstSeen) entry.firstSeen = at ?? null;
+  if (playing && at) entry.playedAt = at;
   if (id.startsWith('browser:') && !entry.name) {
     const wanted = normalizeScreenName(name) || `Browser ${id.slice(8, 16)}`;
     const taken = takenNames(next, configured, id);
