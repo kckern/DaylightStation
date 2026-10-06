@@ -1210,8 +1210,9 @@ $amber-ink: #1a1300;
     scroll-behavior: auto !important;
   }
 
-  .media-shell *:not(.mantine-Loader-root):not(.mantine-Loader-root *):not([role='progressbar']),
-  .media-search-dropdown *:not(.mantine-Loader-root):not(.mantine-Loader-root *) {
+  // The hand-rolled spinners (send tray, "still searching") are loaders too.
+  .media-shell *:not(.mantine-Loader-root):not(.mantine-Loader-root *):not([role='progressbar']):not(.cast-tray-spinner):not(.search-still-searching-spinner),
+  .media-search-dropdown *:not(.mantine-Loader-root):not(.mantine-Loader-root *):not(.search-still-searching-spinner) {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }

@@ -15,6 +15,7 @@ import { ReconnectingNote } from './ReconnectingNote.jsx';
 import { LocalPlaybackOutcomes } from './LocalPlaybackOutcomes.jsx';
 import { LocalStopFeedbackProvider, useLocalStopFeedbackCount } from './LocalStopFeedbackContext.jsx';
 import { SearchLauncherContext } from './SearchLauncherContext.js';
+import { slashIsNotForSearch } from './searchShortcut.js';
 import mediaLog from '../logging/mediaLog.js';
 import './MediaShell.scss';
 
@@ -41,9 +42,7 @@ function ShellInner() {
   // `/` focuses search from anywhere (unless already typing somewhere).
   React.useEffect(() => {
     const onKey = (e) => {
-      if (e.key !== '/' || e.defaultPrevented) return;
-      const tag = document.activeElement?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (slashIsNotForSearch(e)) return;
       // Tablet/laptop: the dock's search field. Phone: its field is hidden, so
       // the same key opens the full-screen search instead (NF-DEV-03).
       const input = document.querySelector('.media-dock .media-search-bar input');
