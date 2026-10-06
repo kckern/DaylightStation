@@ -155,7 +155,7 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
           actually about to happen — a destination-only pick never plays or
           moves anything, so the choice would be pure noise (and a lie about
           what pressing the CTA does). */}
-      {hasPotentialContent && devices.length > 0 && !isDestination && (
+      {hasPotentialContent && devices.length > 0 && !isDestination && !source?.brief && (
         <div className="cast-picker-mode" role="radiogroup" aria-label="What happens to playback here">
           <button
             type="button"

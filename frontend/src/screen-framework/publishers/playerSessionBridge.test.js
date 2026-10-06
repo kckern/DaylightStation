@@ -108,6 +108,17 @@ describe('createPlayerSessionBridge', () => {
     bridge.stop();
   });
 
+  it('reports a running image slideshow as playing (its stand-in element has no frames to observe)', () => {
+    const el = makeMediaEl();
+    const handle = makeHandle({ el, meta: { contentId: 'fixture:art-1', format: 'image', title: 'Painting' } });
+    const bridge = startBridge(() => handle);
+    vi.advanceTimersByTime(1000);
+    expect(bridge.player.getState()).toBe('playing');
+    el.paused = true;
+    expect(bridge.player.getState()).toBe('paused');
+    bridge.stop();
+  });
+
   it('maps the media element to buffering/paused/ended and no element to loading until playing is observed', () => {
     const el = makeMediaEl();
     let handle = makeHandle({ el });

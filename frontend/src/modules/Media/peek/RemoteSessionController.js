@@ -397,6 +397,15 @@ export function createRemoteSessionController({
       setAddOnly: (enabled) => send('PUT', `${base}/add-only`, { enabled: !!enabled }, 'setAddOnly'),
       setEndOfQueue: (mode) => send('PUT', `${base}/end-of-queue`, { mode }, 'setEndOfQueue'),
       setStopAfterCurrent: (enabled) => send('PUT', `${base}/stop-after-current`, { enabled: !!enabled }, 'setStopAfterCurrent'),
+      // Player features (P2, tech doc §4.11). State arrives in
+      // snapshot.controls.tracks / .brief / .musicBehind.
+      setTracks: ({ audio, subtitle } = {}) => send('POST', `${base}/tracks`, {
+        ...(audio !== undefined ? { audio } : {}), ...(subtitle !== undefined ? { subtitle } : {}),
+      }, 'setTracks'),
+      closeBrief: () => send('POST', `${base}/brief/close`, {}, 'closeBrief'),
+      musicBehind: (op, { contentId, title } = {}) => send('POST', `${base}/music-behind`, {
+        op, ...(contentId ? { contentId } : {}), ...(title ? { title } : {}),
+      }, 'musicBehind'),
     },
 
     lifecycle: {

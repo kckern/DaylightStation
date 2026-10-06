@@ -32,8 +32,14 @@ export function SinglePlayer(props = {}) {
     wrapWithContainer = true,
     suppressLocalOverlay = false,
     plexClientSession = null,
+    // Opt-in track choice (RQ-STEER-14): the Player passes a resolver that
+    // returns the item unchanged unless its owner remembered a choice.
+    resolveTracks = null,
     ...play
   } = props;
+  const resolveTracksRef = useRef(resolveTracks);
+  resolveTracksRef.current = resolveTracks;
+  const withTracks = (info) => (typeof resolveTracksRef.current === 'function' ? resolveTracksRef.current(info) ?? info : info);
   const {
     contentId: contentIdProp,
     plex,
@@ -252,6 +258,7 @@ export function SinglePlayer(props = {}) {
       };
       if (play?.seconds !== undefined) directInfo.seconds = play.seconds;
       if (play?.resume !== undefined) directInfo.resume = play.resume;
+      if (play?.origin) directInfo.origin = play.origin;
       if (play?.resumePosition !== undefined && directInfo.seconds === undefined) {
         directInfo.seconds = play.resumePosition;
       }
@@ -303,7 +310,8 @@ export function SinglePlayer(props = {}) {
                 };
                 if (play?.seconds !== undefined) withCap.seconds = play.seconds;
                 if (play?.resume !== undefined) withCap.resume = play.resume;
-                setMediaInfo(withCap);
+                if (play?.origin) withCap.origin = play.origin;
+                setMediaInfo(withTracks(withCap));
                 setIsReady(true);
                 return;
               }
@@ -331,7 +339,11 @@ export function SinglePlayer(props = {}) {
         withCap.resume = play.resume;
       }
 
-      setMediaInfo(withCap);
+      // Who started this playback (a routine, another device), for the
+      // play ledger — reported on play/log (media tech doc §2.4).
+      if (play?.origin) withCap.origin = play.origin;
+
+      setMediaInfo(withTracks(withCap));
       setIsReady(true);
     } else if (open) {
       setGoToApp(open);

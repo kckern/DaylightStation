@@ -4,7 +4,6 @@
 // about them. All return a detach function.
 import { TIMING } from '../constants.js';
 import mediaLog from '../logging/mediaLog.js';
-import { recordRecent } from './recents.js';
 
 /**
  * Persist every transition, throttled to ≤1 write per PERSIST_THROTTLE_MS
@@ -47,22 +46,6 @@ export function attachPersistence(store, { write, timing = TIMING, setTimeoutFn 
     detachTransition();
     if (trailing) { clearTimeoutFn(trailing); trailing = null; }
   };
-}
-
-/** Record a recent on transition into 'playing' or when a new item loads. */
-export function attachRecents(store, { record = recordRecent } = {}) {
-  return store.onTransition((prev, next) => {
-    const itemChanged = next.currentItem?.contentId !== prev.currentItem?.contentId;
-    const nowPlaying = next.state === 'playing' && prev.state !== 'playing';
-    if ((nowPlaying || (itemChanged && next.currentItem)) && next.currentItem) {
-      record({
-        contentId: next.currentItem.contentId,
-        title: next.currentItem.title,
-        thumbnail: next.currentItem.thumbnail,
-        format: next.currentItem.format,
-      });
-    }
-  });
 }
 
 /**

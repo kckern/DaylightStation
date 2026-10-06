@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createIdleSessionSnapshot } from '@shared-contracts/media/shapes.mjs';
 import { createSessionStore } from './sessionStore.js';
-import { attachPersistence, attachRecents, attachLogging, attachSlowStartWatchdog } from './attachments.js';
+import { attachPersistence, attachLogging, attachSlowStartWatchdog } from './attachments.js';
 import mediaLog from '../logging/mediaLog.js';
 
 vi.mock('../logging/mediaLog.js', () => {
@@ -60,33 +60,6 @@ describe('attachPersistence', () => {
     detach();
     vi.advanceTimersByTime(1000);
     expect(write).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('attachRecents', () => {
-  it('records when a new item loads', () => {
-    const store = makeStore();
-    const record = vi.fn();
-    attachRecents(store, { record });
-    store.dispatch({ type: 'LOAD_ITEM', item: { contentId: 'p:1', format: 'video', title: 'T' } });
-    expect(record).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'p:1', title: 'T' }));
-  });
-
-  it('records on transition into playing', () => {
-    const store = makeStore();
-    store.dispatch({ type: 'LOAD_ITEM', item: { contentId: 'p:1', format: 'video' } });
-    const record = vi.fn();
-    attachRecents(store, { record });
-    store.dispatch({ type: 'PLAYER_STATE', playerState: 'playing' });
-    expect(record).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'p:1' }));
-  });
-
-  it('does not record config-only changes', () => {
-    const store = makeStore();
-    const record = vi.fn();
-    attachRecents(store, { record });
-    store.dispatch({ type: 'SET_CONFIG', patch: { volume: 10 } });
-    expect(record).not.toHaveBeenCalled();
   });
 });
 

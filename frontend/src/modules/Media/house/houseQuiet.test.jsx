@@ -102,4 +102,17 @@ describe('useHouseQuiet', () => {
     expect(h.setResumable).toHaveBeenCalledWith(null);
     expect(h.recordLocal.mock.calls[0][0]).toMatchObject({ kind: 'resumeAll', phase: 'confirmed' });
   });
+  it('Stop all also stops music left behind a screen\'s slideshow — a house-wide stop means quiet', async () => {
+    const musicBehind = vi.fn(async () => ({ ok: true }));
+    const tv = { transport: { stop: vi.fn(async () => ({ ok: true })) }, sessionControls: { musicBehind } };
+    const office = { transport: { stop: vi.fn(async () => ({ ok: true })) }, sessionControls: { musicBehind: vi.fn() } };
+    entries['livingroom-tv'] = { snapshot: { state: 'playing', controls: { musicBehind: { contentId: 'plex:5', state: 'playing' } } } };
+    const local = { pause: vi.fn(), play: vi.fn(), stop: vi.fn() };
+    const h = harness({ controllers: { 'livingroom-tv': tv, 'office-tv': office }, localTransport: local });
+    await act(async () => { await h.get().stopAll(); });
+    expect(tv.transport.stop).toHaveBeenCalled();
+    expect(musicBehind).toHaveBeenCalledWith('stop');
+    expect(office.sessionControls.musicBehind).not.toHaveBeenCalled();
+    entries['livingroom-tv'] = { snapshot: { state: 'playing' } };
+  });
 });

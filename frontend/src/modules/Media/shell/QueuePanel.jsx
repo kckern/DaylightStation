@@ -11,6 +11,8 @@ import { DispatchContext } from '../cast/DispatchProvider.jsx';
 import { FleetContext } from '../fleet/FleetProvider.jsx';
 import { deviceName } from '../fleet/deviceDisplay.js';
 import { EndOfQueueChoice } from './EndOfQueueChoice.jsx';
+import { getDeviceId } from '../../../lib/deviceIdentity.js';
+import { PlayedEarlier } from '../household/PlayedEarlier.jsx';
 
 const REPEAT_NEXT = { off: 'all', all: 'one', one: 'off' };
 const REPEAT_LABEL = { off: 'Repeat off', all: 'Repeat all', one: 'Repeat one' };
@@ -58,6 +60,12 @@ export function QueuePanel({ target = 'local', availability = null }) {
     );
   };
 
+  // FIND.11a: every screen's queue — this device's or a remote one's — ends
+  // with what played there earlier, whether or not anything is queued.
+  const earlier = (
+    <PlayedEarlier screenId={remoteId ?? getDeviceId()} currentContentId={snapshot?.currentItem?.contentId ?? null} />
+  );
+
   if (!q || !Array.isArray(q.items) || q.items.length === 0) {
     // A single dispatched item plays with an empty queue array (the device
     // has no up-next list) — "Queue is empty, add something" then reads as a
@@ -65,15 +73,18 @@ export function QueuePanel({ target = 'local', availability = null }) {
     const playingSolo = !!snapshot?.currentItem
       && ['playing', 'paused', 'buffering', 'stalled'].includes(snapshot?.state);
     return (
-      <div data-testid="queue-empty" className="queue-empty">
-        <Text c="dimmed" size="sm">
-          {playingSolo
-            ? 'Nothing queued up next.'
-            : 'Queue is empty — add something from search or browse.'}
-        </Text>
-        {/* A single playing item still ends: its end-of-queue choice applies. */}
-        {playingSolo && <EndOfQueueChoice target={target} targetName={remoteId ? deviceName(remoteDevice, remoteId) : null} />}
-      </div>
+      <>
+        <div data-testid="queue-empty" className="queue-empty">
+          <Text c="dimmed" size="sm">
+            {playingSolo
+              ? 'Nothing queued up next.'
+              : 'Queue is empty — add something from search or browse.'}
+          </Text>
+          {/* A single playing item still ends: its end-of-queue choice applies. */}
+          {playingSolo && <EndOfQueueChoice target={target} targetName={remoteId ? deviceName(remoteDevice, remoteId) : null} />}
+        </div>
+        {earlier}
+      </>
     );
   }
 
@@ -182,6 +193,7 @@ export function QueuePanel({ target = 'local', availability = null }) {
         })}
       </ul>
       <EndOfQueueChoice target={target} targetName={remoteId ? deviceName(remoteDevice, remoteId) : null} />
+      {earlier}
     </div>
   );
 }

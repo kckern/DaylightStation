@@ -25,6 +25,7 @@ import { ScreenPresencePublisher } from './publishers/ScreenPresencePublisher.js
 import { SessionSourceProvider } from './publishers/SessionSourceContext.jsx';
 import { createRegistrySessionSource } from './publishers/registrySessionSource.js';
 import { createScreenSessionControls } from './session/screenSessionControls.js';
+import { createScreenPlayerFeatures } from './session/screenPlayerFeatures.js';
 import { ScreenSessionControlsHost } from './session/ScreenSessionControlsHost.jsx';
 import { getPlayerSessionRegistry } from './publishers/playerSessionRegistry.js';
 import { ScreenSceneProvider } from './providers/ScreenSceneContext.jsx';
@@ -367,9 +368,13 @@ export function ScreenRenderer({ screenId: propScreenId }) {
   // Screen session controls (sleep timer, Add only, end of queue, notes, …):
   // one per device identity, published inside every snapshot. Ports needing
   // the React tree are bound by <ScreenSessionControlsHost>.
-  const sessionControls = useMemo(() => (
-    sessionDeviceId ? createScreenSessionControls({ ownerId: sessionDeviceId }) : null
-  ), [sessionDeviceId]);
+  const sessionControls = useMemo(() => {
+    if (!sessionDeviceId) return null;
+    const controls = createScreenSessionControls({ ownerId: sessionDeviceId });
+    // Player features (P2): subtitles/audio language, Show briefly, music behind.
+    controls.attachExtension(createScreenPlayerFeatures({ ownerId: sessionDeviceId }));
+    return controls;
+  }, [sessionDeviceId]);
   useEffect(() => () => sessionControls?.dispose(), [sessionControls]);
   const sessionSource = useMemo(() => {
     if (!sessionDeviceId) return null;

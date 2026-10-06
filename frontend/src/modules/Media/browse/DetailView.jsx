@@ -12,12 +12,18 @@ import Skeleton from '@/lib/ui/Skeleton.jsx';
 import { isContainer } from '../../Content/combobox/comboboxMachine.js';
 import { ItemDestinationPicker } from '../actions/ItemDestinationPicker.jsx';
 import { DestinationLine } from '../cast/DestinationLine.jsx';
+import { useItemVerbs, householdEntryFor } from '../household/useItemVerbs.jsx';
+import { useFavourites } from '../household/useHousehold.js';
+import { spotsSummary, formatLeft, whereLine } from '../household/householdModel.js';
+import { IconHeart, IconHeartFilled, IconEye, IconEyeOff } from '@tabler/icons-react';
 
 export function DetailView({ contentId }) {
   const [oneShot, setOneShot] = useState(null);
   const { info, loading, error } = useContentInfo(contentId);
   const { dispatchLeafVerb } = useContentDispatch();
   const { pop, backDestination } = useNav();
+  const { run, overlays, nameFor } = useItemVerbs();
+  const favourites = useFavourites();
   const back = (
     <Button variant="subtle" color="gray" data-testid="detail-back" className="detail-back" onClick={() => pop()}>
       ← {backDestination ?? 'Home'}
@@ -49,6 +55,15 @@ export function DetailView({ contentId }) {
   if (!info) return <Stack data-testid="detail-empty" gap="md">{back}</Stack>;
 
   const detailItem = { id: contentId, ...info };
+  const collection = isContainer(detailItem);
+  // How far anyone has got, per screen (FIND.8a / PLAY.4a), when the
+  // household lists already know this item.
+  const entry = householdEntryFor(contentId);
+  const progress = entry && !entry.finished
+    ? (spotsSummary(entry, nameFor)
+      ?? [formatLeft(entry.playhead, entry.duration), whereLine(entry, nameFor)].filter(Boolean).join(' · '))
+    : null;
+  const favourite = favourites.has(contentId);
 
   return (
     <Stack data-testid="detail-view" className="detail-view" gap="md">
@@ -58,12 +73,13 @@ export function DetailView({ contentId }) {
       )}
       <Title order={1}>{info.title ?? contentId}</Title>
       {info.description && <Text c="dimmed">{info.description}</Text>}
+      {progress && <Text size="sm" data-testid="detail-progress">{progress}</Text>}
       <DestinationLine surface="detail" />
       <Group className="detail-actions" gap="sm">
         <Button
           data-testid="detail-play-now"
           leftSection={<IconPlayerPlayFilled size={18} />}
-          onClick={() => dispatchLeafVerb('playNow', contentId, detailItem)}
+          onClick={() => (collection ? dispatchLeafVerb('playNow', contentId, detailItem) : run('playNow', detailItem, { entry }))}
         >
           Play Now
         </Button>
@@ -82,8 +98,34 @@ export function DetailView({ contentId }) {
         </Button>
         <CastButton contentId={contentId} title={info.title ?? null} item={detailItem} />
         <Button variant="default" onClick={() => setOneShot({ kind: 'addOn', item: detailItem })}>Add on…</Button>
+        <Button variant="default" data-testid="detail-show-briefly" onClick={() => setOneShot({ kind: 'showBrieflyOn', item: detailItem })}>Show briefly on…</Button>
+      </Group>
+      <Group className="detail-actions" gap="sm">
+        <Button
+          data-testid="detail-favourite"
+          variant="default"
+          mih={44}
+          aria-pressed={favourite}
+          leftSection={favourite ? <IconHeartFilled size={16} /> : <IconHeart size={16} />}
+          onClick={() => run(favourite ? 'unfavourite' : 'favourite', detailItem)}
+        >
+          {favourite ? 'Remove from favourites' : 'Add to favourites'}
+        </Button>
+        {!collection && (
+          <>
+            <Button data-testid="detail-watched" variant="default" mih={44} leftSection={<IconEye size={16} />}
+                    onClick={() => run('watched', detailItem)}>
+              Mark watched
+            </Button>
+            <Button data-testid="detail-unwatched" variant="default" mih={44} leftSection={<IconEyeOff size={16} />}
+                    onClick={() => run('unwatched', detailItem)}>
+              Mark unwatched
+            </Button>
+          </>
+        )}
       </Group>
       <ItemDestinationPicker action={oneShot} onClose={() => setOneShot(null)} />
+      {overlays}
     </Stack>
   );
 }

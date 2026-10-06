@@ -31,6 +31,12 @@ describe('RemoteSessionController — screen session controls (P1, additive)', (
     ['setAddOnly', [true], 'PUT', 'add-only', { enabled: true }],
     ['setEndOfQueue', ['similar'], 'PUT', 'end-of-queue', { mode: 'similar' }],
     ['setStopAfterCurrent', [true], 'PUT', 'stop-after-current', { enabled: true }],
+    // Player features (P2): tracks, Show briefly, music behind.
+    ['setTracks', [{ subtitle: '1278358' }], 'POST', 'tracks', { subtitle: '1278358' }],
+    ['setTracks', [{ audio: '7', subtitle: 'off' }], 'POST', 'tracks', { audio: '7', subtitle: 'off' }],
+    ['closeBrief', [], 'POST', 'brief/close', {}],
+    ['musicBehind', ['start', { contentId: 'plex:500', title: 'Album' }], 'POST', 'music-behind', { op: 'start', contentId: 'plex:500', title: 'Album' }],
+    ['musicBehind', ['next'], 'POST', 'music-behind', { op: 'next' }],
   ])('%s(%j) → %s /session/%s and resolves on the device ack', async (method, args, verb, path, body) => {
     const { ackRouter, http, ctl } = setup();
     const pending = ctl.sessionControls[method](...args);

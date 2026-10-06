@@ -35,6 +35,7 @@ import Skeleton from '@/lib/ui/Skeleton.jsx';
 import { ResultRow } from '../../Content/combobox/ResultRow.jsx';
 import { ItemDestinationPicker } from '../actions/ItemDestinationPicker.jsx';
 import { displayTitle, resultSubtitle } from '../search/resultPresentation.js';
+import { useHouseholdResultActions } from '../household/useHouseholdResultActions.js';
 
 function splitPath(path) {
   if (!path) return [];
@@ -80,6 +81,7 @@ export function BrowseView({
   const [oneShot, setOneShot] = useState(null);
   const { push, replace, pop, depth, backDestination } = useNav();
   const { dispatchLeafVerb, playContainerAsQueue, addContainerToQueue } = useContentDispatch();
+  const { extraActions, runHousehold } = useHouseholdResultActions();
   const log = useMemo(() => getLogger().child({ component: 'browse-view' }), []);
   const rootRef = useRef(null);
   const sentinelRef = useRef(null);
@@ -254,7 +256,9 @@ export function BrowseView({
                   onPlayAll={rowIsContainer ? () => playContainerAsQueue(id, row) : null}
                   onDetails={rowIsContainer ? null : () => openDetail(id)}
                   detailsTestId={rowIsContainer ? null : `browse-detail-${id}`}
+                  extraActions={extraActions}
                   onAction={action => {
+                  if (runHousehold(action.kind, { ...row, id })) return;
                   if (['playOn', 'addOn'].includes(action.kind)) setOneShot(action);
                   else if (action.kind === 'details') openDetail(id);
                   else dispatchLeafVerb(action.kind, id, row);

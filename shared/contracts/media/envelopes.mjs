@@ -319,7 +319,8 @@ export function validateCommandAck(ack) {
   if (ack.appliedAt !== undefined && !isStr(ack.appliedAt)) {
     errors.push('appliedAt: must be ISO string when present');
   }
-  if (ack.appliedAs !== undefined && !isQueueOp(ack.appliedAs)) errors.push('appliedAs: must be a queue op when present');
+  // `brief`: a play shown briefly over the programme (RQ-PLAY-11, playerFeatures.mjs).
+  if (ack.appliedAs !== undefined && !isQueueOp(ack.appliedAs) && ack.appliedAs !== 'brief') errors.push('appliedAs: must be a queue op or "brief" when present');
   if (ack.requestedOp !== undefined && !isQueueOp(ack.requestedOp)) errors.push('requestedOp: must be a queue op when present');
   if (ack.handoff !== undefined) {
     const checked = validateHandoffResult(ack.handoff);

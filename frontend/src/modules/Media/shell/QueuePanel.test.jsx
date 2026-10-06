@@ -11,6 +11,7 @@ import { FleetContext } from '../fleet/FleetProvider.jsx';
 import { createFleetStore } from '../fleet/fleetStore.js';
 
 vi.mock('./NavProvider.jsx', () => ({ useNav: () => ({ push: vi.fn() }) }));
+vi.mock('../household/PlayedEarlier.jsx', () => ({ PlayedEarlier: () => null }));
 vi.mock('../net/ws.js', () => ({ subscribeTopicKind: () => () => {}, parseDeviceTopic: () => null }));
 
 it('removes a queue entry, reports it through the outcome tray, and restores it through ordinary Undo', async () => {

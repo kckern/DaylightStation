@@ -128,7 +128,7 @@ export function DispatchProvider({ children }) {
     });
   }, [peek]);
 
-  const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot, title, itemAction }, { bypassDedupe = false } = {}) => {
+  const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot, title, itemAction, startOver = false, resumedFrom = null, brief = false }, { bypassDedupe = false } = {}) => {
     if (!Array.isArray(targetIds) || targetIds.length === 0) return [];
     if (itemAction && !itemAction.operationId) {
       itemAction = { ...itemAction, operationId: uuid(), tappedAt: Date.now() };
@@ -144,7 +144,7 @@ export function DispatchProvider({ children }) {
 
     const key = buildDedupKey({
       targetIds, play, queue, mode, shader, volume, shuffle, snapshot, itemAction,
-    });
+    }) + (brief ? '|brief' : '');
     const inFlight = inFlightRef.current.get(key);
     const cached = dedupCacheRef.current.get(key);
     const withinWindow = cached && Date.now() - cached.ts < TIMING.DISPATCH_DEDUPE_WINDOW_MS;
@@ -195,6 +195,7 @@ export function DispatchProvider({ children }) {
       inFlightRef.current.get(key)?.add(dispatchId);
       attemptsRef.current.set(dispatchId, {
         targetIds: [deviceId], play, queue, mode, shader, volume, shuffle, snapshot: retrySnapshot, title, itemAction,
+        ...(brief ? { brief: true } : {}),
       });
       dispatch({
         type: 'INITIATED', dispatchId, deviceId, contentId, title: contentTitle,
@@ -202,13 +203,14 @@ export function DispatchProvider({ children }) {
         command: { targetIds: [deviceId], play, queue, mode, shader, volume, shuffle, snapshot: retrySnapshot, title, itemAction },
         snapshot: retrySnapshot,
         undo,
+        ...(startOver ? { startOver: true, resumedFrom } : {}),
       });
       mediaLog.dispatchInitiated({ dispatchId, deviceId, contentId, mode });
       mediaLog.outcomeRecorded({ attemptId: dispatchId, targetId: deviceId, kind: queue ? 'add' : (isAdopt ? 'move' : 'play'), phase: 'running', contentId });
 
       const httpPromise = isAdopt
         ? DaylightAPI(`api/v1/device/${deviceId}/load`, { dispatchId, snapshot, mode: 'adopt' }, 'POST')
-        : DaylightAPI(buildDispatchUrl({ deviceId, play, queue, dispatchId, shader, volume, shuffle, itemAction, manualRetryOnly: true }));
+        : DaylightAPI(buildDispatchUrl({ deviceId, play, queue, dispatchId, shader, volume, shuffle, itemAction, brief, title: brief ? contentTitle : null, manualRetryOnly: true }));
       httpPromise
         .then((res) => {
           settle(dispatchId);
@@ -316,8 +318,8 @@ export function DispatchProvider({ children }) {
 
   // Local outcomes: this device's own plays, adds, queue edits and playback
   // problems, through the same records as far screens.
-  const recordLocal = useCallback(({ attemptId = uuid(), kind, phase = 'confirmed', item, command = null, reason = null, replacement = null, undo = null, ordinal = null, targetId = 'local', targetName = null } = {}) => {
-    dispatch({ type: 'LOCAL', attemptId, kind, phase, item, command, reason, replacement, undo, ordinal, targetId, targetName });
+  const recordLocal = useCallback(({ attemptId = uuid(), kind, phase = 'confirmed', item, command = null, reason = null, replacement = null, undo = null, ordinal = null, targetId = 'local', targetName = null, startOver = false, resumedFrom = null } = {}) => {
+    dispatch({ type: 'LOCAL', attemptId, kind, phase, item, command, reason, replacement, undo, ordinal, targetId, targetName, startOver, resumedFrom });
     mediaLog.outcomeRecorded({ attemptId, targetId, kind, phase, contentId: item?.contentId ?? null, reason });
     return attemptId;
   }, []);
@@ -327,6 +329,42 @@ export function DispatchProvider({ children }) {
     dispatch({ type: 'LOCAL_RESOLVED', attemptId, phase, reason, ordinal });
     mediaLog.outcomeResolved({ attemptId, targetId: recordsRef.current.get(attemptId)?.targetId ?? 'local', phase, reason });
   }, []);
+
+  // PLAY.4a: Start over on the confirmation of a play that continued from a
+  // saved spot restarts the current item on exactly that screen.
+  const startOver = useCallback(async (attemptId) => {
+    const record = recordsRef.current.get(attemptId);
+    if (!record?.startOver) return { ok: false, code: 'NOT_RESUMED' };
+    const targetId = record.targetId ?? record.deviceId;
+    const controller = targetId === 'local' ? localController : peek?.getController?.(targetId);
+    mediaLog.outcomeStartOver({ attemptId, targetId, contentId: record.item?.contentId ?? null });
+    try {
+      if (targetId === 'local') {
+        // Replay the item here from 0 with no server resume. A seek would be
+        // lost while the item is still loading: the Player applies its
+        // pending start offset when the media arrives.
+        const item = record.command?.item ?? record.item;
+        if (!controller?.execute || !item?.contentId) return { ok: false, code: 'UNSUPPORTED' };
+        const result = await executeItemAction({
+          kind: 'playNow', item: { ...item, seconds: 0, resume: false }, destination: controller, operationId: createOperationId(),
+        });
+        if (result?.ok === false) throw new Error(result.reason ?? result.code ?? 'Could not start over');
+        dispatch({ type: 'REMOVED', dispatchId: attemptId });
+        const startedId = uuid();
+        dispatch({ type: 'LOCAL', attemptId: startedId, kind: 'startOver', phase: 'confirmed', item: { contentId: item.contentId, title: item.title ?? record.item?.title ?? null } });
+        return { ok: true };
+      }
+      if (!controller?.transport?.restartCurrent) return { ok: false, code: 'UNSUPPORTED' };
+      await controller.transport.restartCurrent();
+      dispatch({ type: 'REMOVED', dispatchId: attemptId });
+      dispatch({ type: 'LOCAL', attemptId: uuid(), kind: 'startOver', phase: 'confirmed', targetId,
+        item: { contentId: record.item?.contentId ?? null, title: record.item?.title ?? record.title ?? null } });
+      return { ok: true };
+    } catch (error) {
+      mediaLog.outcomeStartOverFailed({ attemptId, targetId, error: error?.message ?? String(error) });
+      return { ok: false, error: error?.message };
+    }
+  }, [localController, peek]);
 
   // RELY.3a/AC4: an unconfirmed start clears once that screen reports the
   // same item playing. Reads the fleet store directly so a state that was
@@ -363,9 +401,9 @@ export function DispatchProvider({ children }) {
     () => ({
       dispatches: state.byId,
       outcomes: state.byId,
-      dispatchToTarget, retry, sendElsewhere, removeDispatch, recordLocal, resolveLocal, stopAttempt, skipLocal,
+      dispatchToTarget, retry, sendElsewhere, removeDispatch, recordLocal, resolveLocal, stopAttempt, skipLocal, startOver,
     }),
-    [state.byId, dispatchToTarget, retry, sendElsewhere, removeDispatch, recordLocal, resolveLocal, stopAttempt, skipLocal]
+    [state.byId, dispatchToTarget, retry, sendElsewhere, removeDispatch, recordLocal, resolveLocal, stopAttempt, skipLocal, startOver]
   );
 
   return <DispatchContext.Provider value={value}>{children}</DispatchContext.Provider>;

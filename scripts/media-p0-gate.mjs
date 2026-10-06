@@ -275,6 +275,91 @@ export const P0_EXTENSION_ENTRIES = Object.freeze([
     file: 'media-app-handle-controls.runtime.test.mjs',
     grep: 'this device: sleep at the end',
   },
+  // Batch A (start page + item surfaces, P1). The household routes are
+  // answered by the journey's in-test household (the acceptance server blocks
+  // household reads/writes); catalog, play and streams are real. Criteria whose
+  // substance is a server rule (FIND.7a/AC3, FIND.10a/AC5+AC7, FIND.11a/AC2,
+  // FIND.12a/AC3, FIND.13a/AC2) are deliberately not listed.
+  {
+    story: 'FIND.7a',
+    criteria: ['FIND.7a/AC1', 'FIND.7a/AC2'],
+    file: 'media-app-household-home.runtime.test.mjs',
+    grep: 'household start page',
+  },
+  {
+    story: 'FIND.9a',
+    criteria: ['FIND.9a/AC1', 'FIND.9a/AC2', 'FIND.9a/AC3'],
+    file: 'media-app-household-home.runtime.test.mjs',
+    grep: 'household start page',
+  },
+  {
+    story: 'FIND.10a',
+    criteria: ['FIND.10a/AC1', 'FIND.10a/AC2', 'FIND.10a/AC4', 'FIND.10a/AC6'],
+    file: 'media-app-household-home.runtime.test.mjs',
+    grep: 'household start page',
+  },
+  {
+    story: 'FIND.10a',
+    criteria: ['FIND.10a/AC3'],
+    file: 'media-app-household-home.runtime.test.mjs',
+    grep: 'Now on another screen',
+  },
+  {
+    story: 'FIND.12a',
+    criteria: ['FIND.12a/AC1', 'FIND.12a/AC2'],
+    file: 'media-app-household-home.runtime.test.mjs',
+    grep: 'household start page',
+  },
+  {
+    story: 'FIND.12b',
+    criteria: ['FIND.12b/AC1', 'FIND.12b/AC2'],
+    file: 'media-app-household-home.runtime.test.mjs',
+    grep: 'household start page',
+  },
+  {
+    story: 'FIND.13a',
+    criteria: ['FIND.13a/AC1', 'FIND.13a/AC3'],
+    file: 'media-app-household-home.runtime.test.mjs',
+    grep: 'household start page',
+  },
+  {
+    story: 'FIND.11a',
+    criteria: ['FIND.11a/AC1', 'FIND.11a/AC3'],
+    file: 'media-app-household-home.runtime.test.mjs',
+    grep: 'Played earlier',
+  },
+  {
+    story: 'PLAY.4a',
+    criteria: ['PLAY.4a/AC1', 'PLAY.4a/AC2', 'PLAY.4a/AC3'],
+    file: 'media-app-household-home.runtime.test.mjs',
+    grep: 'saved spots and Start over',
+  },
+  // Batch D, player features (P2) — exact-SHA runtime evidence on the virtual
+  // receiver (subtitles + audio language on a screen; subtitles on this device).
+  {
+    story: 'STEER.12a',
+    criteria: ['STEER.12a/AC1', 'STEER.12a/AC2', 'STEER.12a/AC3'],
+    file: 'media-app-player-features.runtime.test.mjs',
+    grep: 'STEER\\.12a',
+  },
+  {
+    story: 'PLAY.8a',
+    criteria: ['PLAY.8a/AC1', 'PLAY.8a/AC2', 'PLAY.8a/AC3'],
+    file: 'media-app-player-features.runtime.test.mjs',
+    grep: 'Show briefly \\(PLAY',
+  },
+  {
+    story: 'PLAY.8b',
+    criteria: ['PLAY.8b/AC1', 'PLAY.8b/AC2'],
+    file: 'media-app-player-features.runtime.test.mjs',
+    grep: 'Show briefly \\(PLAY',
+  },
+  {
+    story: 'PLAY.9a',
+    criteria: ['PLAY.9a/AC1', 'PLAY.9a/AC2', 'PLAY.9a/AC3'],
+    file: 'media-app-player-features.runtime.test.mjs',
+    grep: 'PLAY\\.9a',
+  },
 ]);
 
 const STABLE_ENTRIES = [...ACCEPTED_STORIES, ...SUPPORTING_ACCEPTED_CRITERIA];
