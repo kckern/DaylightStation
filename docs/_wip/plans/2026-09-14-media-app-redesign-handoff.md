@@ -27,7 +27,7 @@ If a requirement looks wrong once you're in the code, **stop and raise it with t
 
 1. **[Requirements](./2026-09-14-media-app-redesign-requirements.md).** This is the contract. Read §3 Principles twice.
 2. **[Taxonomy §3 user stories](./2026-09-14-media-app-ideal-jtbd-taxonomy.md).** Their acceptance criteria are your acceptance tests; every requirement traces to them.
-3. **[Baseline audit](../audits/2026-09-14-media-app-jobs-to-be-done-baseline.md).**
+3. **[Baseline audit](../../_archive/media-app-redesign/2026-09-14-media-app-jobs-to-be-done-baseline.md).**
    - §6 maps every current component to what it does.
    - §7 explains why the app is tangled.
 4. **Current contracts:** `docs/reference/media/media-app-technical.md`, covering device session APIs, WebSocket topics, shapes and log taxonomy. Most of what P0 needs server-side already exists there.

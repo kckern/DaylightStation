@@ -524,39 +524,45 @@ and a **canvas** that shows exactly one view at a time:
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│ DOCK   [ scope chips ][ search…     ]  fleet●  cast▸   ⚙   │
+│ DOCK  Aim: This device  [All][Video][Music][Books] [search…]│
+│                          ▢ 2 playing · 1 paused   ⌁   ⚙     │
 ├──────┬─────────────────────────────────────────────────────┤
 │ NAV  │  CANVAS                                             │
 │ Home │    one of: Home · Browse · Detail · Now Playing ·   │
-│Browse│            Fleet · Peek                             │
+│Browse│            Devices · Remote (+ Screens, Routines)    │
 │ Devs │                                                     │
 ├──────┴─────────────────────────────────────────────────────┤
-│ dispatch progress tray (while casting)                     │
-│ ♪ mini player (while playing, paused, or queue is retained)│
+│ outcome rows (overlay: one per attempt, never in the page)  │
+│ handle: ♪ title · pause · next · stop · whole-house menu    │
+│ phone only: tab bar  Home · Browse · Devices · Search       │
 └────────────────────────────────────────────────────────────┘
 ```
 
 **The dock is the app's constant.** It carries:
 
-- the **search bar** with scope selector — search is always one keystroke
-  away, never a destination page; results drop down inline. A row tap plays
-  a playable item at the current destination and opens a container in
-  Browse; containers carry a trailing ▶ (play the whole thing) and playable
-  items a trailing ⋯ (Play Now / Play Next / Play First / Add to Queue / Open
-  detail). Per-item Cast lives on the Detail view, not on result rows,
-- the **fleet indicator** — an at-a-glance summary of what's playing in the
-  house, linking to the fleet view,
-- the **cast target chip** — the currently-preferred dispatch target. It
-  governs the search bar too: with a target configured, picking a search
-  result casts there in the chip's mode rather than playing locally. The
-  destination sheet always includes **This device**, which clears remote
-  targets immediately. Opening or leaving Peek never overrides or changes
-  that destination; a one-off picker still affects only its explicit action,
-  and a remote aim has a two-hour inactivity lease. Verified matching playback
+- the **search bar** with scope chips and the **aim line** — search is always
+  one keystroke away (`/` focuses it on a laptop and opens it on a phone),
+  never a destination page; results drop down inline. A row tap plays a
+  playable item at the aim and opens a container in Browse; containers carry a
+  trailing ▶ (play the whole thing) and playable items a trailing ⋯ (**Play**,
+  **Play next**, **Add to queue**, **Play on…**, Open detail, favourite and
+  watched marks),
+- the **house indicator** — "N playing · M paused", an at-a-glance summary of
+  the house that opens **Devices**; its words, not a coloured dot, carry the
+  state,
+- the **aim** — where a plain Play goes ("Aim: This device" or the named
+  screen). Tapping the aim line opens the one destination picker: it appears in
+  the dock, in Search Mode, on Browse and Detail, and on **Now Playing**. An
+  aim on a screen has a two-hour inactivity lease; verified matching playback
   that this browser sent or is steering suspends that lease; stale or unknown
   receiver state does not. Restoration resolves expiry before first layout so
-  an expired screen never flashes as the active destination,
-- the **settings menu** — device name/room editing and session reset (confirmed).
+  an expired screen never flashes as the active destination. Opening or leaving
+  a screen's **Remote** never changes the aim,
+- the **settings menu** — rename this device, Screens, Routine history, Start
+  fresh (itemised and confirmed).
+
+The same words are used everywhere: **Play**, **Play next**, **Add to queue**,
+**Play on…**, **Move to…** and **Remote**.
 
 Below the canvas, at every width, the shell stacks:
 
@@ -611,7 +617,7 @@ shared row:
 ```
 ┌────────────────────────────────────────┐
 │ ✕  [ search…                        ]   │
-│ ▶ Playing to: This device               │
+│ ▶ Aim: This device                      │
 │ [All] [Video] [Music] [Books]           │
 │ results…                                │
 └────────────────────────────────────────┘
@@ -630,12 +636,12 @@ query and narrowing; leaf Play deliberately avoids the combobox's selecting
 close transition. Container/detail navigation closes search and replaces its
 history marker. Browser Back or explicit close consumes the one marker pushed
 on open, so repeated playback actions do not add extra Back presses. The
-redesign's explicit **Play on…** action still needs its separate integration;
-this retention repair does not establish that missing path. The fleet
-indicator and cast target chip are desktop/
-tablet-only now — on mobile the fleet-active signal moved to a small badge on
-the Devices tab (`PrimaryNav.jsx`, sourced from `useFleetSummary`) instead of
-occupying dock space that search now owns outright.
+**Play on…** (send one item to a screen other than the aim) is in every
+result's ⋯ menu. The house indicator stays in the phone dock beside the
+launcher; the Devices tab carries the playing-count badge as well. The phone's
+bottom tab bar also carries **Search** (it opens this same Search Mode), so
+the one-handed reach to search, play/pause and the aim does not depend on the
+top of the screen.
 
 Every search surface consumes one lifecycle value:
 `SearchState = { query, scope, sources, results, phase, failedSources }`, where
@@ -646,10 +652,55 @@ same wording and ordering on the dock, Search Mode and destination picker: a
 named source failure and its Retry action appear before any wider result claim,
 and a settled empty result cannot still present as loading.
 
-At tablet-up widths the dock is unchanged: the persistent search bar (with
-inline scope chips), fleet indicator, and cast target chip all still render
-exactly as before. The left search icon remains `pointer-events: none` — it
-is decoration, never a tap target.
+At tablet-up widths the dock shows the persistent search bar (with inline
+scope chips), the aim line and the house indicator. On a laptop the aim label,
+chips and field get room to read in full (no clipped chip or truncated name).
+The left search icon remains `pointer-events: none` — it is decoration, never
+a tap target.
+
+### Comfortable use, size parity and screen input
+
+Measured on the running app at 360, 390, 820 and 1440 px by
+`media-app-p0-accessibility.runtime.test.mjs` (RELY.11a, RELY.12a, RELY.13a,
+NF-A11Y, NF-DEV):
+
+- **Every function at every size.** Search, the aim, play/pause, the house
+  menu, favourites, Remote, Move to…, the sleep timer and the rest are present
+  at phone width; layout differs, capability does not. No page scrolls
+  sideways.
+- **44 px hit targets**, portalled menu items, dialog buttons and tray rows
+  included (the Mantine theme sets the floor for Buttons, icon buttons, inputs,
+  menu items, checkbox rows and the dialog close). A disabled control is not a
+  target.
+- **Keyboard.** Tab reaches every enabled control in reading order with a
+  visible focus ring; `/` focuses search (or opens it on a phone); Esc closes a
+  menu, dialog or search and returns focus to what opened it. /media has no
+  gamepad layer — that requirement belongs to the arcade menu only.
+- **Announcements.** Each outcome is announced once through one polite live
+  region (the outcome tray's announcer); ticking values (a sleep time left, a
+  countdown's seconds) are `aria-hidden`; every state is also written in words
+  (Playing, Paused, Off, Uncertain, …), never by colour alone.
+- **Large text.** At 200 % text nothing is clipped or overlapped: the dock
+  grows and wraps, the seek bar keeps its track and puts a reason on its own
+  line, the handle's controls stay on screen.
+- **Reduced motion.** Under `prefers-reduced-motion` the shell, menus, dialogs
+  and the search dropdown stop animating (spinners keep turning).
+- **Contrast** of text and confirmations is at least 4.5:1; the aim line is
+  14 px or more.
+- **One thumb on a phone.** Search (tab bar), play/pause (handle) and the aim
+  (tappable on Now Playing, and its picker) are all in the lower 60 % of the
+  screen; none needs two hands.
+- **Notices never take page space.** Measured layout shift while an outcome
+  row leaves is under 0.02.
+
+**Screens on the TV (Shield/FKB) accept only the D-pad, OK (Enter) and an
+unreliable Back** (FKB swallows Esc). Every prompt a screen shows is therefore
+operable with arrows and OK alone: the next-episode countdown takes focus on
+**Cancel** (arrows move to **Play now**, OK presses, Back cancels as well);
+**Put it back** is pressed by OK while it is on screen; the sleep fade offers
+**Keep playing** (OK); **Show briefly** holds focus on **Close** (OK closes
+and the programme returns). The end-of-queue notices and the music plaque are
+informational and need no input. Journeys: `screen-tv-input.runtime.test.mjs`.
 
 ### Views
 
@@ -658,7 +709,7 @@ is decoration, never a tap target.
 | **Home** | The start page: Resume, Playing now on other screens, this screen's suggestions (Favourites, Carry on, Usually (here) at this time, New) and the household's Recent — see [The start page](#the-start-page-and-the-households-memory). | Default; nav; breadcrumb. |
 | **Browse** | Hierarchical catalog listing with artwork or a recognisable placeholder, kind labels, natural part ordering, and a breadcrumb containing every parent. Long collections page automatically as the end approaches; there is no separate load-more hunt. Pages are 50 titles: `GET /api/v1/list/...?take=50&skip=N` returns `{ items, total }`, and for Plex path containers (e.g. `library/sections/6/all`) the page is fetched from Plex itself (`X-Plex-Container-Start/Size`), so a 2,800-title library opens in ~0.3 s instead of sending every title. Each history entry owns `{ path, scrollTop, focusedId, loadedCount }`, captured before drilling into a container or opening Detail through either Details or More → Open detail. Back re-fetches `loadedCount` rows in one request (capped at 1,000) so a row the person had scrolled to exists again, then restores the exact prior collection viewport and triggering row focus. `loadedCount` is a viewport snapshot like `scrollTop`: re-selecting the Browse area ignores it when matching the original root entry. A specific container adds Play / Shuffle / Add at the top and names the current destination. | Nav; container rows; container taps in search. |
 | **Detail** | One item: artwork, description, how far each screen has got, full action row (Play Now / Play Next / Play First / Add / Cast), favourite and watched marks. | Browse rows; search results; any item's Details. |
-| **Now Playing** | Full local transport: seek bar, prev/play-pause/next/stop, volume, the queue panel, and the hand-off picker. Hosts the visual output of the player. | Mini player; Escape/Back returns. |
+| **Now Playing** | Full local transport: seek bar, prev/play-pause/next/stop, volume, the queue panel, the tappable aim line, and the same session controls as a screen's Remote. Hosts the visual output of the player. | The handle; Escape/Back returns (the Back button names where it goes, e.g. "← Home"). |
 | **Fleet** | Configured devices and named browser screens, live and sorted with playing first. Each card offers **Remote**, **Play…**, inline **Pause**/**Stop** while active, and a truthful unavailable **Move here** until safe native adoption exists. Silent browser rows become uncertain after two minutes. Rows also carry start status, Started by, Add only, notes and "(was …)"; the view offers Pause all / Stop all / Resume all (see "The house view"). | Nav; fleet indicator. |
 | **Screens** | Screen admin: add, name and room, merge/unmerge, retire after the routines are shown, restore; "Not seen lately". | Devices → Screens; Settings. |
 | **Routines** | Routine history and the routines flagged before they run. | Devices → Routines; Settings. |
