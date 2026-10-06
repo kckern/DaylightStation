@@ -20,4 +20,18 @@ describe('Show-briefly bar on a TV: D-pad and OK only', () => {
     act(() => { getActionBus().emit('select', {}); });
     expect(view.queryByTestId('screen-brief')).toBeNull();
   });
+
+  it('is not modal: arrows and play/pause reach the Player, Back closes', () => {
+    const features = createScreenPlayerFeatures({ ownerId: 'tv' });
+    const view = render(<ScreenBriefSurface features={features} />);
+    act(() => { features.beginBrief({ kind: 'clip', contentId: 'plex:9', title: 'Doorbell', origin: null, seconds: null }); });
+    const seen = [];
+    getActionBus().subscribe('navigate', () => seen.push('navigate'));
+    getActionBus().subscribe('play', () => seen.push('play'));
+    act(() => { getActionBus().emit('navigate', { direction: 'left' }); getActionBus().emit('play', {}); });
+    expect(seen).toEqual(['navigate', 'play']);
+    expect(view.queryByTestId('screen-brief')).not.toBeNull();
+    act(() => { getActionBus().emit('escape', {}); });
+    expect(view.queryByTestId('screen-brief')).toBeNull();
+  });
 });

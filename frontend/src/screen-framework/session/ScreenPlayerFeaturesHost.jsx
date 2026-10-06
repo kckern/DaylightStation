@@ -8,7 +8,6 @@
 // music plaque.
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { getActionBus } from '../input/ActionBus.js';
-import { useScopedRemoteControls } from '../input/useScopedRemoteControls.js';
 import { getPlayerQueueOpRegistry } from '../../modules/Player/lib/queueOpRegistry.js';
 import { registerTrackOwner, createTrackPreferenceStore } from '../../modules/Player/lib/trackPolicy.js';
 import { getPlayerSessionRegistry } from '../publishers/playerSessionRegistry.js';
@@ -252,17 +251,21 @@ export function ScreenBriefSurface({ features }) {
         {!brief.returnTo && remaining != null && (
           <span className="screen-brief__return" aria-live="off" data-testid="screen-brief-return">{`Closes in ${remaining}s`}</span>
         )}
-        <button type="button" className="screen-brief__close" data-testid="screen-brief-close" onClick={close}>Close</button>
+        <button type="button" autoFocus className="screen-brief__close" data-testid="screen-brief-close" onClick={close}>Close</button>
       </BriefBar>
     </div>
   );
 }
 
-/** Close is the only control, so D-pad/OK alone operate it; Back closes too when the remote sends it. */
+/**
+ * Close is the only control. NON-modal: a brief may be unbounded and other
+ * overlays (a call, a doorbell PiP) must keep the D-pad, so only OK and Back
+ * are claimed; arrows and play/pause still reach the Player.
+ */
 function BriefBar({ onClose, children }) {
-  const rootRef = useRef(null);
-  useScopedRemoteControls(rootRef, { onEscape: onClose });
-  return <div ref={rootRef} className="screen-brief__bar" role="status" aria-live="polite">{children}</div>;
+  const closeRef = useRef(onClose); closeRef.current = onClose;
+  useEffect(() => getActionBus().capture(['select', 'escape'], () => { closeRef.current?.(); return true; }), []);
+  return <div className="screen-brief__bar" role="status" aria-live="polite">{children}</div>;
 }
 
 function ScreenMusicPlaque({ features }) {
