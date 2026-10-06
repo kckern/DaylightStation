@@ -1940,6 +1940,8 @@ const Player = forwardRef(function Player(props, ref) {
 
   const seekOwner = useCallback((seconds) => {
     if (!Number.isFinite(seconds)) return false;
+    // Seeking away from a completed end makes the next end a new completion.
+    completedMediaKeyRef.current = null;
     withTransport(
       (api) => api.seek?.(seconds),
       () => { const el = _getMediaElFallback(); if (el) el.currentTime = seconds; },
@@ -1967,6 +1969,9 @@ const Player = forwardRef(function Player(props, ref) {
     play: playOwner,
     pause: pauseOwner,
     stop: stopOwner,
+    // An owner holding a natural end (countdown, Stop after this one) lets go
+    // of the duplicate-completion key so the item's next end is a new end.
+    releaseCompletion: () => { completedMediaKeyRef.current = null; },
     toggle: toggleOwner,
     // Fix 1 (bugbash 3A): Expose advance() for external track skip control
     advance: (count = 1) => {

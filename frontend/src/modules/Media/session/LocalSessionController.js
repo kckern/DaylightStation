@@ -749,10 +749,18 @@ export function createLocalSessionController({
         moveCurrentTo(first, { playerDriven: true });
         return true;
       },
-      release: () => {},
+      // The policy let go of a held end without stopping: the shared Player's
+      // duplicate-completion key must not outlive the hold.
+      release: () => { player.releaseCompletion?.(); },
     };
     try {
       const handled = controls.naturalEnd({ current, next }, actions) === true;
+      // A held end (countdown running) is still an END: say so without pausing
+      // or touching the node, so Play goes through the ended -> new-visit path
+      // and the handle / lock screen stop reporting "playing".
+      if (handled && stillFinished() && snap().state !== 'ended') {
+        store.dispatch({ type: 'PLAYER_STATE', playerState: 'ended', __playerDriven: true });
+      }
       mediaLog.naturalEndConsulted({
         sessionId: s.sessionId, contentId: current.contentId, nextContentId: next?.contentId ?? null,
         decision: handled ? 'session-controls' : 'advance',
