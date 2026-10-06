@@ -1,7 +1,7 @@
 import { render, cleanup } from '@testing-library/react';
 import { vi } from 'vitest';
 import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
+import { resolve } from 'path';
 
 // The layer subscribes to the live-note store itself, so the test drives that
 // store rather than firing synthetic MIDI events.
@@ -212,7 +212,7 @@ describe('LiveInputLayer styling', () => {
   // rules are about which PROPERTIES carry the styling, not how the source
   // happens to be nested. Re-nesting them must not break this test.
   const liveBlock = () => {
-    const s = readFileSync(fileURLToPath(new URL('../../../../../Apps/PianoApp.scss', import.meta.url)), 'utf8');
+    const s = readFileSync(resolve(process.cwd(), 'src/Apps/PianoApp.scss'), 'utf8');
     const start = s.indexOf('.piano-live-input {');
     const end = s.indexOf('// ── Task 14: Polish per-measure grade wash');
     expect(start).toBeGreaterThan(-1);

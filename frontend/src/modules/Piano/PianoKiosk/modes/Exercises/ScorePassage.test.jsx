@@ -28,6 +28,9 @@ const h = vi.hoisted(() => ({
   publishes: 0,
   /** Reproduce the placeholder state: OSMD threw, no layout is ever published. */
   engraveFails: false,
+  engravedXml: null,
+  systems: 1,
+  scales: [],
 }));
 
 /** A notehead the engraver would have produced, attached so classes are findable. */
@@ -50,13 +53,20 @@ const fourBarSteps = () => [60, 62, 64, 65, 67, 69, 71, 72].map((midi, index) =>
 vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => {
   const { useEffect } = await import('react');
   return {
-    MusicXmlRenderer: ({ musicXml, onLayout, onReady, onFailed, children }) => {
+    MusicXmlRenderer: ({ musicXml, scale = 1, onLayout, onReady, onFailed, children }) => {
       useEffect(() => {
+        h.engravedXml = musicXml;
+        h.scales.push(scale);
+        if (!musicXml) return;
         // The real renderer's terminal failure: it raises its placeholder and
         // NEVER calls onLayout. That is the exact state real OSMD reaches under
         // happy-dom, and the state a gate used to hang in.
         if (h.engraveFails) { onFailed?.({ error: 'Could not read this score.' }); return; }
         h.publishes += 1;
+        const shown = [...new DOMParser().parseFromString(musicXml, 'application/xml').querySelectorAll('part:first-of-type > measure')]
+          .map((measure) => Number(measure.getAttribute('number')) - 1);
+        const first = shown[0] ?? 0;
+        const systemCount = h.systems === 3 && scale < 1 ? 2 : h.systems;
         onLayout?.({
           width: 800,
           height: 300,
@@ -64,23 +74,25 @@ vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => 
           scale: 1,
           transpose: 0,
           tempoEntries: [],
+          measureMap: [{ index: 0, onsetQuarter: 4, durationQuarters: 4 }, { index: 1, onsetQuarter: 8, durationQuarters: 4 }],
           measures: [0, 1, 2, 3],
           events: [],
           notes: [],
-          steps: h.steps,
+          steps: h.steps.filter((step) => shown.includes(step.measure)).map((step) => ({ ...step, measure: step.measure - first })),
+          staves: Array.from({ length: systemCount }, (_, system) => ({ system, staff: 0 })),
         });
         onReady?.();
         // `onFailed` is deliberately NOT a dep — the real renderer holds it in a
         // ref precisely so an unstable error callback can never re-trigger an
         // engrave. The double mirrors that contract.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, [musicXml, onLayout, onReady]);
+      }, [musicXml, onLayout, onReady, scale]);
       return <div data-testid="engraver" className="musicxml-renderer"><div className="musicxml-renderer__svg" />{children}</div>;
     },
   };
 });
 
-const { default: ScorePassage } = await import('./ScorePassage.jsx');
+const { default: ScorePassage, fitPassageLayout, balancedSystemBreak, passageCursorBounds, systemBreakMatches } = await import('./ScorePassage.jsx');
 
 const midisOf = (expectation) => expectation.events.flatMap((event) => event.notes.map((note) => note.midi));
 const measuresOf = (expectation) => expectation.events.flatMap((event) => event.notes.map((note) => note.measureIndex));
@@ -99,14 +111,117 @@ const renderPassage = (props = {}) => render(
   />,
 );
 
+it('publishes engraved bar positions with the original passage measure indices', async () => {
+  const onExpectation = vi.fn();
+  renderPassage({ onExpectation });
+  await waitFor(() => expect(onExpectation).toHaveBeenCalled());
+  expect(onExpectation.mock.calls.at(-1)[0].measureMap).toEqual([
+    { index: 1, onsetQuarter: 4, durationQuarters: 4 },
+    { index: 2, onsetQuarter: 8, durationQuarters: 4 },
+  ]);
+});
+
 beforeEach(() => {
   document.body.innerHTML = '';
   h.publishes = 0;
   h.engraveFails = false;
+  h.engravedXml = null;
+  h.systems = 1;
+  h.scales = [];
   h.steps = fourBarSteps();
 });
 
+describe('ScorePassage layout fitting', () => {
+  it('only accepts a forced breakpoint when the second engraving actually used it', () => {
+    const split = (at) => Array.from({ length: 5 }, (_, index) => ({
+      left: index < at ? index * 100 : (index - at) * 100,
+      right: index < at ? (index + 1) * 100 : (index - at + 1) * 100,
+      top: index < at ? index * 3 : 200 + index * 4,
+    }));
+    expect(systemBreakMatches(split(3), 3)).toBe(true);
+    expect(systemBreakMatches(split(4), 3)).toBe(false);
+  });
+
+  it('accepts the mirrored balanced split when notation density moves the extra bar', () => {
+    const split = (at) => Array.from({ length: 5 }, (_, index) => ({
+      left: index < at ? index * 100 : (index - at) * 100,
+      right: index < at ? (index + 1) * 100 : (index - at + 1) * 100,
+      top: index < at ? 0 : 200,
+    }));
+    expect(systemBreakMatches(split(2), 3)).toBe(true);
+  });
+  it('rebalances a five-bar 4+1 orphan to the width-balanced 3+2 breakpoint', () => {
+    const bounds = [
+      { left: 0, right: 100, top: 0 }, { left: 100, right: 200, top: 0 },
+      { left: 200, right: 300, top: 0 }, { left: 300, right: 400, top: 0 },
+      { left: 0, right: 100, top: 200 },
+    ];
+    expect(balancedSystemBreak(bounds)).toBe(3);
+  });
+
+  it('balances by bar count even when notation widths and vertical ink bounds vary', () => {
+    const bounds = [
+      { left: 0, right: 220, top: 4 }, { left: 220, right: 280, top: -7 },
+      { left: 280, right: 340, top: 8 }, { left: 340, right: 400, top: 2 },
+      { left: 0, right: 80, top: 205 },
+    ];
+    expect(balancedSystemBreak(bounds)).toBe(3);
+  });
+
+  it('does not re-engrave an already balanced two-system passage or a one-system passage', () => {
+    const balanced = [
+      { left: 0, right: 100, top: 0 }, { left: 100, right: 200, top: 0 }, { left: 200, right: 300, top: 0 },
+      { left: 0, right: 100, top: 200 }, { left: 100, right: 200, top: 200 },
+    ];
+    expect(balancedSystemBreak(balanced)).toBeNull();
+    expect(balancedSystemBreak(balanced.map((bound) => ({ ...bound, top: 0 })))).toBeNull();
+  });
+
+  it('accepts one or two systems without changing scale', () => {
+    expect(fitPassageLayout({ layout: { staves: [{ system: 0 }, { system: 1 }] }, scale: 1, minScale: 0.65, maxSystems: 2 }))
+      .toEqual({ accepted: true, nextScale: null });
+  });
+
+  it('reduces a three-system passage before accepting its layout', () => {
+    expect(fitPassageLayout({ layout: { staves: [{ system: 0 }, { system: 1 }, { system: 2 }] }, scale: 1, minScale: 0.65, maxSystems: 2 }))
+      .toEqual({ accepted: false, nextScale: 0.67 });
+  });
+
+  it('rejects a passage that still exceeds two systems at minimum readable scale', () => {
+    expect(fitPassageLayout({ layout: { staves: [{ system: 0 }, { system: 1 }, { system: 2 }] }, scale: 0.65, minScale: 0.65, maxSystems: 2 }))
+      .toEqual({ accepted: false, nextScale: null });
+  });
+
+  it('re-engraves a three-system passage smaller before publishing its expectation', async () => {
+    h.systems = 3;
+    const onExpectation = vi.fn();
+    renderPassage({ onExpectation });
+
+    await waitFor(() => expect(onExpectation).toHaveBeenCalled());
+    expect(h.scales).toEqual(expect.arrayContaining([1, 0.67]));
+  });
+
+  it('reports a passage that cannot fit two systems at the minimum readable scale', async () => {
+    h.systems = 4;
+    const onUnrunnable = vi.fn();
+    renderPassage({ onExpectation: vi.fn(), onUnrunnable });
+
+    await waitFor(() => expect(onUnrunnable).toHaveBeenCalledWith('passage-too-dense'));
+    expect(h.scales).toEqual(expect.arrayContaining([1, 0.65]));
+  });
+});
+
 describe('ScorePassage expectation', () => {
+  it('engraves only the requested passage instead of greying the rest of the score', async () => {
+    renderPassage({ onExpectation: vi.fn() });
+    await waitFor(() => expect(h.engravedXml).toBeTruthy());
+
+    const document = new DOMParser().parseFromString(h.engravedXml, 'application/xml');
+    expect([...document.querySelectorAll('part')].map((part) => (
+      [...part.querySelectorAll(':scope > measure')].map((measure) => measure.getAttribute('number'))
+    ))).toEqual([['2', '3']]);
+  });
+
   it('compiles the measure range the level asked for, and nothing outside it', async () => {
     const onExpectation = vi.fn();
     renderPassage({ onExpectation });
@@ -118,6 +233,13 @@ describe('ScorePassage expectation', () => {
     expect(midisOf(expectation)).toEqual([64, 65, 67, 69]);
     expect(measuresOf(expectation).every((index) => index >= 1 && index <= 2)).toBe(true);
     expect(expectation.source).toMatchObject({ kind: 'score', id: 'files:docs/sheet-music/four-bars.musicxml' });
+  });
+
+  it('accepts canonical measure indices without interpreting printed numbering', async () => {
+    const onExpectation = vi.fn();
+    renderPassage({ measures: [0, 0], rangeIndices: { start: 1, end: 2 }, onExpectation });
+    await waitFor(() => expect(onExpectation).toHaveBeenCalled());
+    expect(midisOf(onExpectation.mock.calls.at(-1)[0])).toEqual([64, 65, 67, 69]);
   });
 
   it('takes its tempo from the score itself when the engraver reports none', async () => {
@@ -138,6 +260,22 @@ describe('ScorePassage expectation', () => {
 
     await waitFor(() => expect(onExpectation).toHaveBeenCalled());
     expect(midisOf(onExpectation.mock.calls.at(-1)[0])).toEqual([60, 62, 64, 65, 67, 69, 71, 72]);
+  });
+
+  it('filters the expectation and engraving to the selected score part', async () => {
+    const grandStaff = `<?xml version="1.0"?><score-partwise><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1"><measure number="1"><attributes><divisions>1</divisions><staves>2</staves><clef number="1"><sign>G</sign></clef><clef number="2"><sign>F</sign></clef></attributes><note><rest/><duration>1</duration><staff>1</staff></note><backup><duration>1</duration></backup><note><rest/><duration>1</duration><staff>2</staff></note></measure><measure number="2"><note><pitch><step>E</step><octave>5</octave></pitch><duration>1</duration><staff>1</staff></note><note><pitch><step>F</step><octave>5</octave></pitch><duration>1</duration><staff>1</staff></note><backup><duration>2</duration></backup><note><pitch><step>C</step><octave>3</octave></pitch><duration>1</duration><staff>2</staff></note><note><pitch><step>D</step><octave>3</octave></pitch><duration>1</duration><staff>2</staff></note></measure></part></score-partwise>`;
+    h.steps = [
+      { onsetQuarter: 0, measure: 1, notes: [{ midi: 48, staff: 0, durationQuarters: 1, el: notehead(48) }] },
+      { onsetQuarter: 1, measure: 1, notes: [{ midi: 50, staff: 0, durationQuarters: 1, el: notehead(50) }] },
+    ];
+    const onExpectation = vi.fn();
+    renderPassage({ musicXml: grandStaff, measures: [2, 2], activeParts: ['lh'], onExpectation });
+
+    await waitFor(() => expect(onExpectation).toHaveBeenCalled());
+    expect(midisOf(onExpectation.mock.calls.at(-1)[0])).toEqual([48, 50]);
+    const engraved = new DOMParser().parseFromString(h.engravedXml, 'application/xml');
+    expect([...engraved.querySelectorAll('note pitch octave')].map((node) => node.textContent)).toEqual(['3', '3']);
+    expect([...engraved.querySelectorAll('note staff')].every((node) => node.textContent === '1')).toBe(true);
   });
 
   it('does not publish while the engraver is still working — that is not an answer', async () => {
@@ -191,15 +329,15 @@ describe('ScorePassage terminal failures', () => {
     expect(onExpectation).not.toHaveBeenCalled();
   });
 
-  it('reports a passage of nothing but rests', async () => {
-    // The geometry walk does not emit rests, so a rest-only bar contributes no
-    // notes and the range selects nothing playable. Bars 3-4 here are silent.
+  it('reports an excerpt whose engraver returned no playable notes', async () => {
+    // Once the selected document is a standalone excerpt, an empty geometry
+    // answer has the same terminal meaning as any other engraving with no notes.
     h.steps = fourBarSteps().filter((step) => step.measure < 2);
     const onExpectation = vi.fn();
     const onUnrunnable = vi.fn();
     renderPassage({ measures: [3, 4], onExpectation, onUnrunnable });
 
-    await waitFor(() => expect(onUnrunnable).toHaveBeenCalledWith('passage-empty'));
+    await waitFor(() => expect(onUnrunnable).toHaveBeenCalledWith('no-engraved-notes'));
     expect(onExpectation).not.toHaveBeenCalled();
   });
 
@@ -225,6 +363,50 @@ describe('ScorePassage terminal failures', () => {
 });
 
 describe('ScorePassage cursor feedback', () => {
+  it('builds one onset cursor spanning the active staff, including chord width and ledger notes', () => {
+    expect(passageCursorBounds({
+      noteBounds: [{ left: 120, right: 132, top: 42, bottom: 54 }, { left: 129, right: 143, top: 18, bottom: 31 }],
+      staffBoxes: [
+        { system: 0, staff: 0, left: 20, right: 760, top: 50, lineSpacing: 10 },
+        { system: 0, staff: 1, left: 20, right: 760, top: 150, lineSpacing: 10 },
+      ],
+      activeStaffs: [0],
+    })).toEqual({ x: 114, y: 8, width: 35, height: 92 });
+  });
+
+  it('spans both staves for a hands-together onset but not another system', () => {
+    expect(passageCursorBounds({
+      noteBounds: [{ left: 200, right: 212, top: 70, bottom: 82 }],
+      staffBoxes: [
+        { system: 0, staff: 0, top: 50, lineSpacing: 10 },
+        { system: 0, staff: 1, top: 150, lineSpacing: 10 },
+        { system: 1, staff: 0, top: 350, lineSpacing: 10 },
+      ],
+      activeStaffs: [0, 1],
+      onsetStaffs: [0],
+    })).toEqual({ x: 194, y: 40, width: 24, height: 160 });
+  });
+
+  it('uses the onset staff to identify the system when ledger notes sit between staves', () => {
+    expect(passageCursorBounds({
+      noteBounds: [{ left: 200, right: 212, top: 118, bottom: 130 }],
+      staffBoxes: [
+        { system: 0, staff: 0, top: 50, lineSpacing: 10 },
+        { system: 1, staff: 1, top: 150, lineSpacing: 10 },
+      ],
+      activeStaffs: [0, 1],
+      onsetStaffs: [1],
+    })?.y).toBe(108);
+  });
+  it('exposes whether the score-position cursor is enabled', async () => {
+    const view = renderPassage({ onExpectation: vi.fn(), showCursor: false });
+    await waitFor(() => expect(lit()).toEqual([64]));
+    expect(view.container.querySelector('.piano-score-passage')).toHaveAttribute('data-cursor-enabled', 'false');
+    view.rerender(<ScorePassage musicXml={fourBars} sourceId="score" measures={[2, 3]}
+      cursorIndex={0} showCursor onExpectation={vi.fn()} />);
+    expect(view.container.querySelector('.piano-score-passage')).toHaveAttribute('data-cursor-enabled', 'true');
+  });
+
   it('lights the note the cursor is sitting on, and moves with it', async () => {
     const view = renderPassage({ onExpectation: vi.fn(), cursorIndex: 0 });
     await waitFor(() => expect(lit()).toEqual([64]));
@@ -260,10 +442,10 @@ describe('ScorePassage cursor feedback', () => {
     await waitFor(() => expect(wrong()).toEqual([65]));
   });
 
-  it('dims the bars either side of the passage so the ask is the focused thing', async () => {
+  it('does not keep out-of-passage bars around as grey context', async () => {
     renderPassage({ onExpectation: vi.fn() });
     await waitFor(() => expect(lit()).toEqual([64]));
-    expect(dimmed()).toEqual([60, 62, 71, 72]);
+    expect(dimmed()).toEqual([]);
   });
 });
 

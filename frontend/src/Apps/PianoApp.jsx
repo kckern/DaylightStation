@@ -13,6 +13,8 @@ import { resolvePianoConfig } from '../modules/Piano/PianoKiosk/pianoConfigModel
 import { PianoMidiProvider, usePianoMidi, usePianoMidiNotes } from '../modules/Piano/PianoKiosk/PianoMidiContext.jsx';
 import { PianoUserProvider } from '../modules/Piano/PianoKiosk/PianoUserContext.jsx';
 import { useInactivityReturn } from '../modules/Piano/PianoKiosk/useInactivityReturn.js';
+import usePianoCurfew from '../modules/Piano/PianoKiosk/usePianoCurfew.js';
+import { shouldPreserveCurfewRoute } from '../modules/Piano/PianoKiosk/pianoCurfew.js';
 import { useAutoStudioEntry } from '../modules/Piano/PianoKiosk/useAutoStudioEntry.js';
 import {
   PianoWakeLockProvider,
@@ -166,6 +168,7 @@ function PianoShell() {
   const { users, currentUser, setCurrentUser } = usePianoUser();
   const [whoOpen, setWhoOpen] = useState(false);
   const { fullscreen } = usePianoFullscreen();
+  const curfewActive = usePianoCurfew(config.curfew);
 
   // Who's-Playing "Turn off screen": for someone who just wants to play in peace.
   // The shared screen-off action (usePianoScreenOff) turns the backlight off,
@@ -217,6 +220,10 @@ function PianoShell() {
   useInactivityReturn(activeNotes, noteHistory.length, config.inactivityMinutes, () => {
     const home = basePath;
     if (location.pathname !== home) {
+      if (shouldPreserveCurfewRoute(location.pathname, basePath, curfewActive)) {
+        logger.info('piano.inactivity-preserved', { route: 'sheetmusic', pianoId, reason: 'curfew' });
+        return;
+      }
       logger.info('piano.inactivity-reset', { from: location.pathname, pianoId });
       // Mark idle-driven ONLY when the idle return is actually leaving Studio —
       // useAutoStudioEntry only consumes this flag on a Studio→menu transition.
