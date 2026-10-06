@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { TouchButton } from '../../../../../lib/ui/index.js';
 import Icon from '../../../ui/icons/Icon.jsx';
 import { TEMPO_STAGES } from './tempoStages.js';
@@ -28,13 +28,16 @@ function Result({ result, official, onAction }) {
   </section>;
 }
 
-export default function LearnLaunchpad({ segment, preview = null, result = null, initialView = 'home', initialChoice = null, onChoiceChange, onLaunch, onBack, onResultAction }) {
+export default function LearnLaunchpad({ segment, preview = null, result = null, initialView = 'home', initialChoice = null, onChoiceChange, onView, onLaunch, onBack, onResultAction }) {
   const [view, setView] = useState(initialView);
   const [parts, setParts] = useState(() => initialChoice?.parts ?? (segment.playableParts?.length > 1 ? ['rh', 'lh'] : [...(segment.playableParts ?? [])]));
   const [mode, setMode] = useState(initialChoice?.mode ?? 'free');
   const [stage, setStage] = useState(() => TEMPO_STAGES.find((item) => item.id === initialChoice?.tempoStage)
     ?? TEMPO_STAGES.find((item) => item.id === 'steady') ?? TEMPO_STAGES[0]);
   const projection = useMemo(() => learnLaunchpadProjection(segment), [segment]);
+  const onViewRef = useRef(onView);
+  onViewRef.current = onView;
+  useEffect(() => { onViewRef.current?.(view); }, [view]);
 
   if (result) return <Result result={result} official={result.source === 'recommended'} onAction={onResultAction} />;
 

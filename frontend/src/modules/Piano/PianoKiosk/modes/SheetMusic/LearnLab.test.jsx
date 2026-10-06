@@ -35,7 +35,7 @@ describe('LearnLab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Very slow', exact: true }));
     rerender(<LearnLab {...props} />);
     expect(exercise.props.traceContext).toMatchObject({ tempoStage: 'very-slow', tempoPercent: 25, clickLevel: 'soft' });
-    expect(log.info.mock.calls).toEqual([
+    expect(log.info.mock.calls.filter(([event]) => event.includes('changed'))).toEqual([
       ['piano.learn-click-level-changed', expect.objectContaining({ scoreId: 'score', passageId: 'm0-3', rungId: 'right', previousClickLevel: 'loud', clickLevel: 'soft', clickGain: 0.08 })],
       ['piano.learn-tempo-stage-changed', expect.objectContaining({ previousTempoStage: 'steady', tempoStage: 'very-slow', previousTempoPercent: 60, tempoPercent: 25 })],
     ]);
@@ -135,6 +135,10 @@ describe('LearnLab', () => {
     expect(screen.getByText('Set 1 of 1 · Rep 1 of 1')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Change practice' }));
     expect(onChangePractice).toHaveBeenCalledWith(expect.objectContaining({ parts: ['rh'], mode: 'free' }));
+    expect(log.info).toHaveBeenCalledWith('piano.learn.control', expect.objectContaining({ action: 'pause', scoreId: 'score', revision: 'rev', passageId: 'm0-3', mode: 'free', parts: ['rh'], creditEligible: true, runId: expect.any(String) }));
+    expect(log.info).toHaveBeenCalledWith('piano.learn.control', expect.objectContaining({ action: 'restart' }));
+    expect(log.info).toHaveBeenCalledWith('piano.learn.control', expect.objectContaining({ action: 'change-practice' }));
+    expect(JSON.stringify(log.info.mock.calls)).not.toMatch(/\"midi\"|rawMidi/i);
   });
 
   it('allows both metronome modes to change tempo by restarting only the current take', () => {

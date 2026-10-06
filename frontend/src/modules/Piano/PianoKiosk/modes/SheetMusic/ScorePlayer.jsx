@@ -2295,9 +2295,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
       result={learnResult}
       initialView={learnLaunchpadView}
       initialChoice={learnChoice}
-      onChoiceChange={setLearnChoice}
+      onChoiceChange={(choice) => { setLearnChoice(choice); logger.info('score.learn.chooser-choice', { scoreId: scoreMeta.id, revision: learnPlan.revision, segmentId: selectedPassage.id, ...choice }); }}
+      onView={(view) => logger.info('score.learn.chooser', { scoreId: scoreMeta.id, revision: learnPlan.revision, segmentId: selectedPassage.id, view })}
       onBack={closeLearnPassage}
-      onLaunch={(launch) => { setLearnResult(null); setLearnLaunchpadView('home'); setLearnLaunch(launch); setLearnLaunchNonce((value) => value + 1); updateLearnSelection(selectedPassage.id, launch.rungId); logger.info('score.learn.launch', { source: launch.source, segmentId: launch.segmentId, rungId: launch.rungId, mode: launch.mode, parts: launch.parts, tempoPercent: launch.tempoPercent }); }}
+      onLaunch={(launch) => { setLearnResult(null); setLearnLaunchpadView('home'); setLearnLaunch(launch); setLearnLaunchNonce((value) => value + 1); updateLearnSelection(selectedPassage.id, launch.rungId); logger.info('score.learn.launch', { scoreId: scoreMeta.id, revision: learnPlan.revision, source: launch.source, segmentId: launch.segmentId, rungId: launch.rungId, mode: launch.mode, parts: launch.parts, tempoStage: launch.tempoStage ?? null, tempoPercent: launch.tempoPercent, creditEligible: launch.source === 'recommended' }); }}
       onResultAction={(action) => {
         logger.info('score.learn.result-action', { action, source: learnResult?.source ?? null, segmentId: selectedPassage.id });
         if (action === 'repeat') { setLearnResult(null); setLearnLaunchNonce((value) => value + 1); return; }
