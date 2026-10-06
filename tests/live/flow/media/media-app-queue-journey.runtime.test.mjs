@@ -2,7 +2,10 @@ import { test, expect } from '@playwright/test';
 
 const title = process.env.MEDIA_ACCEPTANCE_TITLE || 'Disclosure Day';
 test.use({ viewport: { width: 1440, height: 900 }, trace: 'retain-on-failure', actionTimeout: 10000 });
-test.setTimeout(90000);
+// A cold Plex transcode of a feature film can take over a minute to produce its
+// first segment under household load; the playing poll gets 90 s, so the test
+// must outlive it.
+test.setTimeout(180000);
 
 function observePlaybackRequests(page) {
   const requests = [];
@@ -81,14 +84,18 @@ test('[RELY.4a/AC1][RELY.4a/AC2] Undo restores the previous paused native positi
   await result.click();
   await page.getByTestId('mini-player-open-nowplaying').click();
   const video = page.getByTestId('now-playing-host').locator('video');
-  await expect.poll(() => video.evaluate(el => !el.paused && el.readyState >= 2), { timeout: 30000 }).toBe(true);
+  await expect.poll(() => video.evaluate(el => !el.paused && el.readyState >= 2), { timeout: 90000 }).toBe(true);
   await page.getByTestId('np-toggle').click();
   await page.getByRole('button', { name: 'Forward 10 seconds' }).click();
   await expect.poll(() => video.evaluate(el => el.paused && !el.seeking && el.currentTime > 5), { timeout: 15000 }).toBe(true);
   const priorPosition = await video.evaluate(el => el.currentTime);
   const priorVisit = await page.getByTestId('queue-panel').locator('.queue-item').first().getAttribute('data-testid');
   const other = title === 'Arrival' ? 'Disclosure Day' : 'Arrival';
-  await search.fill(other);
+  // The textbox may already hold `other` from an earlier step; Playwright's
+  // fill() of an unchanged value fires no input event, so results Escape
+  // closed would never reopen. Clear first so each search is a real edit.
+  const research = async (text) => { await search.fill(''); await search.fill(text); };
+  await research(other);
   const next = page.getByRole('option').filter({ hasText: other }).filter({ hasText: 'Movie' });
   await expect(next).toHaveCount(1, { timeout: 15000 });
   await next.getByRole('button', { name: 'More actions' }).click();
@@ -112,7 +119,7 @@ test('[RELY.4a/AC1][RELY.4a/AC2] Undo restores the previous paused native positi
   await expect(page.getByTestId(priorVisit)).toBeVisible();
   await expect(page.getByTestId(tailVisit)).toBeVisible();
 
-  await search.fill(other);
+  await research(other);
   await expect(next).toHaveCount(1, { timeout: 15000 });
   await next.click();
   await expect(page.getByTestId(priorVisit)).toHaveCount(0);
