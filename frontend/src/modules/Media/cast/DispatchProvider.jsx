@@ -292,7 +292,7 @@ export function DispatchProvider({ children }) {
     const controller = peek?.getController?.(targetId);
     if (!controller?.transport?.stop) return { ok: false, code: 'UNSUPPORTED' };
     try {
-      const result = await controller.transport.stop();
+      const result = await controller.transport.stop({ keepMusic: false });
       dispatch({ type: 'REMOVED', dispatchId: attemptId });
       return result ?? { ok: true };
     } catch (error) {

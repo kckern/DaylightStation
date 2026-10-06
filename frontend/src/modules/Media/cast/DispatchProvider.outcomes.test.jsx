@@ -156,6 +156,7 @@ describe('DispatchProvider outcomes', () => {
     await act(async () => { [id] = await result.current.dispatchToTarget({ targetIds: ['office-tv', 'den-tv'], play: arrival.contentId, mode: 'fork' }); });
     await act(async () => { await result.current.stopAttempt(id); });
     expect(controllers.get('office-tv').transport.stop).toHaveBeenCalledTimes(1);
+    expect(controllers.get('office-tv').transport.stop).toHaveBeenCalledWith({ keepMusic: false });
     expect(controllers.get('den-tv')?.transport.stop.mock.calls.length ?? 0).toBe(0);
     expect(mediaLog.outcomeStopped).toHaveBeenCalledWith(expect.objectContaining({ attemptId: id, targetId: 'office-tv' }));
   });

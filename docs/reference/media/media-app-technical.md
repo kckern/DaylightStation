@@ -1323,9 +1323,12 @@ the extension (`onPlaybackStopped(reason, { naturalEnd: true })`): the brief
 stays up, but closing it returns nothing (`brief.programme-ended`).
 
 **Brief to a cold screen.** After the base page loads, `WakeAndLoadService`
-polls `getTopicSubscriberCount(topic) > 0` (every 500 ms, bounded at 30 s, on
-the injected clock/scheduler) before broadcasting; a screen that never
-subscribes is a failed load (`Screen not connected`, `wake-and-load.load.brief-no-subscriber`), never `ok`.
+polls (every 500 ms, bounded at 30 s, on the injected clock/scheduler) for
+`getTopicSubscriberCount(topic) > 0` AND `commandHandlerLivenessService.isFresh(deviceId)`
+before broadcasting — the raw count includes wildcard subscribers (a phone's
+Media app), which made a cold TV look subscribed at once. A screen that never
+gets there is a failed load (`Screen not connected`, `wake-and-load.load.brief-no-subscriber`),
+and so is a brief whose handler ack does not come back `ok`; never `ok`.
 
 **Stream selection on the mint (Plex).** A stream mint
 `GET /api/v1/proxy/plex/stream/:ratingKey` may carry `audioStreamID` and/or
@@ -1350,7 +1353,7 @@ transcode on the same file started in that window would inherit the borrowed
 choice, and a failed restore is logged and leaves the borrowed choice until the
 next track mint on that file. Track mints on one part are serialised
 (a per-part promise chain around read-previous, select, decision, restore;
-safety expiry 60 s), and a mint that waited re-reads the part's selection fresh,
+safety expiry 60 s, started once the mint holds the lock — not at queue time; the decision and the fresh-selection read carry deadlines of 45 s and 10 s, so a Plex stall always settles and restores before the expiry), and a mint that waited re-reads the part's selection fresh,
 so a second mint can never take the first's borrowed track as "previous". When
 no audio stream is flagged `selected` the restore uses the `default`-flagged
 audio stream; with neither it logs `tracks-restore-skipped` (warn) and the
@@ -1422,8 +1425,17 @@ shape consumed by `useScreenCommands`):
 ```json
 { "action": "play" | "pause" | "stop" | "seekAbs" | "seekRel" | "skipNext" | "skipPrev",
   "value": <number>,
-  "intent": "move" /* optional: this stop takes playback to another screen */ }
+  "intent": "move",     /* optional: this stop takes playback to another screen */
+  "keepMusic": true     /* optional boolean, `stop` only: the sender's explicit answer to
+                           "Keep the music playing?" for a slideshow with music behind it */ }
 ```
+`keepMusic` is additive: the Media app's stop guard sends it on every Stop it
+issues (true after Keep; false after "Stop music too", with nothing to ask,
+from a house row's Stop, "Stop and turn the screen off", Stop all and a
+dispatch attempt's Stop). A non-boolean is a 400 on the device route and an
+invalid envelope. Contract: `isKeepMusicParam` in `shared/contracts/media/commands.mjs`.
+A screen uses it when present; only when absent (a legacy sender) does it fall
+back to inferring from the origin (§ music behind below).
 Device routes to the active renderer via the ActionBus. Seek values in seconds.
 
 #### 6.2.2 `command: "queue"`
@@ -1725,6 +1737,8 @@ the screen shows the song. The decision to keep it is the controller's
 (§ "Media app" below). A Stop that names an origin (another device, after
 its "Keep the music?" question) leaves the music; a Stop with none (the TV
 remote, a routine), the sleep timer and the screen going to sleep stop it.
+That origin rule is only the fallback: a Stop carrying an explicit boolean
+`keepMusic` (§6.2.1) is obeyed whatever its origin.
 The music never outlives the photos into another sound
 (`modules/Player/lib/musicBehindPolicy.js`, one rule for both surfaces): a
 non-image current item stops it, even after Keep; no current item stops it
@@ -1750,7 +1764,10 @@ for this device and every screen's Remote) reads `snapshot.controls.tracks /
 this device (`PlayerBridge` claims its Player; `MusicBehindHost` runs the
 local music layer). `useSlideshowStopGuard` asks "Keep the music playing?"
 when Stop is pressed on a slideshow with music behind (the TransportBar and
-the mini player alike; Keep marks `keepMusicAfterStop()`). Log events:
+the mini player alike, and a house row's Stop; Keep marks `keepMusicAfterStop()`)
+and hands the answer to the stop as `{ keepMusic }`. Stop all also stops music
+kept behind a slideshow on a screen that is now idle (and on this device),
+without sending that screen a transport stop (`planQuiet` `musicOnly` targets). Log events:
 `media.player-feature.command`, `.failed`, `.state`.
 
 **Verified by:**

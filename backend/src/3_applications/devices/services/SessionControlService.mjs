@@ -195,9 +195,9 @@ export class SessionControlService extends ISessionControl {
     return this.#livenessService.getLastSnapshot(deviceId);
   }
 
-  transport(deviceId, { action, value, commandId, origin }) {
+  transport(deviceId, { action, value, commandId, origin, keepMusic }) {
     return this.sendCommand(this.#transport.buildCommand({ targetDevice: deviceId, command: 'transport', commandId,
-      params: { action, ...(value !== undefined ? { value } : {}) }, ...originField(origin) }));
+      params: { action, ...(value !== undefined ? { value } : {}), ...(typeof keepMusic === 'boolean' ? { keepMusic } : {}) }, ...originField(origin) }));
   }
 
   queue(deviceId, commandId, params, origin) {

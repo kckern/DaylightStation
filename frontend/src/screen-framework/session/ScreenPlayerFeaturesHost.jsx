@@ -150,13 +150,14 @@ export function ScreenPlayerFeaturesHost({ features, source }) {
         && !['playNow', 'shuffle'].includes(payload?.kind)) return;
       features.supersedeBrief(reason);
     };
-    // A Stop brings every brief down (nothing returns). A Stop from a person
-    // on another device already answered "Keep the music?" in the controls, so
-    // it leaves the music; the TV remote, a routine and the sleep timer have
-    // no such question and stop it too.
+    // A Stop brings every brief down (nothing returns). The sender says
+    // explicitly whether to keep the music (`keepMusic`, answered at the Media
+    // app's stop guard); only a legacy sender that does not say falls back to
+    // inferring it from the origin (a person on another device was asked; the
+    // TV remote, a routine and the sleep timer were not, so they stop it).
     const onPlayback = (payload = {}) => {
       if (String(payload?.command ?? '').toLowerCase() !== 'stop') return;
-      const keep = payload.origin?.kind === 'device';
+      const keep = typeof payload.keepMusic === 'boolean' ? payload.keepMusic : payload.origin?.kind === 'device';
       if (keep && musicRefState.current) keepMusicRef.current = true;
       features.onPlaybackStopped('stop', { stopMusic: !keep });
     };

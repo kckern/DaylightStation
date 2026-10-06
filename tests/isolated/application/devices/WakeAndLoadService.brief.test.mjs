@@ -141,4 +141,57 @@ describe('WakeAndLoadService — Show briefly', () => {
     expect(result).toMatchObject({ ok: false, failedStep: 'load', error: 'Screen not connected' });
     expect(broadcast.mock.calls.some(([m]) => m.type === 'command')).toBe(false);
   });
+
+  const coldService = ({ liveness, eventBus }) => new WakeAndLoadService({
+    ...testApplicationRuntime(),
+    deviceService: { get: () => ({
+      id: 'tv', screenPath: '/screen/tv', defaultVolume: null, hasCapability: () => false,
+      powerOn: vi.fn().mockResolvedValue({ ok: true, verified: true }),
+      prepareForContent: vi.fn().mockResolvedValue({ ok: true, coldRestart: false, cameraAvailable: true }),
+      loadContent: vi.fn().mockResolvedValue({ ok: true }),
+    }) },
+    readinessPolicy: { isReady: vi.fn().mockResolvedValue({ ready: true }) },
+    broadcast, eventBus, prewarmService: prewarm,
+    commandHandlerLivenessService: liveness,
+    deviceLivenessService: { getLastSnapshot: () => null },
+    logger: logger(),
+  });
+
+  it('a wildcard subscriber (the phone) does not make a cold TV look connected: waits for the TV\'s own handler', async () => {
+    const t0 = Date.now();
+    const eventBus = {
+      subscribe: vi.fn(),
+      getTopicSubscriberCount: vi.fn().mockReturnValue(1), // the phone's wildcard, from the start
+      waitForMessage: vi.fn(async (predicate) => {
+        await new Promise((resolve) => setTimeout(resolve, 6000));
+        const [[envelope]] = broadcast.mock.calls.filter(([m]) => m.type === 'command');
+        const ack = { topic: 'device-ack', deviceId: 'tv', ok: true, appliedAs: 'brief', commandId: envelope.commandId };
+        return predicate(ack) ? ack : null;
+      }),
+    };
+    const cold = coldService({ eventBus, liveness: { isFresh: () => Date.now() - t0 >= 4000 } });
+    const pending = cold.execute('tv', { play: 'camera:doorbell', brief: '1' });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(broadcast.mock.calls.some(([m]) => m.type === 'command')).toBe(false);
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(await pending).toMatchObject({ ok: true, appliedAs: 'brief' });
+    expect(broadcast.mock.calls.some(([m]) => m.type === 'command')).toBe(true);
+  });
+
+  it('a TV whose handler never appears is a failed load even with a wildcard subscriber', async () => {
+    const eventBus = { subscribe: vi.fn(), getTopicSubscriberCount: vi.fn().mockReturnValue(1), waitForMessage: vi.fn(() => new Promise(() => {})) };
+    const cold = coldService({ eventBus, liveness: { isFresh: () => false } });
+    const pending = cold.execute('tv', { play: 'camera:doorbell', brief: '1' });
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect(await pending).toMatchObject({ ok: false, failedStep: 'load', error: 'Screen not connected' });
+    expect(broadcast.mock.calls.some(([m]) => m.type === 'command')).toBe(false);
+  });
+
+  it('a brief the screen never acknowledges is a failed load, not ok', async () => {
+    const eventBus = { subscribe: vi.fn(), getTopicSubscriberCount: vi.fn().mockReturnValue(1), waitForMessage: vi.fn(async () => null) };
+    const cold = coldService({ eventBus, liveness: { isFresh: () => true } });
+    const pending = cold.execute('tv', { play: 'camera:doorbell', brief: '1' });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(await pending).toMatchObject({ ok: false, failedStep: 'load', error: 'Screen not connected' });
+  });
 });
