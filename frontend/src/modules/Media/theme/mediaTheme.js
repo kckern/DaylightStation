@@ -20,12 +20,9 @@
 // contract's generic Button/Modal/Drawer defaults.
 //
 // Ramp decision (documented here, used everywhere):
-//   dark[7] = #101113  → body / canvas background (Mantine uses dark.7 as body)
-//   dark[6] = #17181b  → panels, inputs, default Paper
-//   dark[5] = #1c1d20  → cards, elevated surfaces
-//   dark[4] = #24252a  → hover states, default borders
-//   dark[3] = #2d2e33  → active/pressed
-//   dark[2..0]         → dimmed → full foreground text
+//   dark[7] body/canvas, dark[6] panels + inputs, dark[5] raised surfaces
+//   (menus, popovers, handle), dark[4] lines/hover, dark[3] pressed,
+//   dark[2..0] dimmed -> full foreground text. Exact values: MEDIA_TOKENS below.
 import { rem } from '@mantine/core';
 import { createAppTheme } from '../../../lib/theme/createAppTheme.js';
 import { PACKS } from '../../../lib/theme/packs.mjs';
@@ -36,17 +33,37 @@ const AMBER = [
   '#cf9009', '#a67407', '#7d5805', '#553c03',
 ];
 
+// The visual-redesign tokens (2026-10-06). The ONLY place these hexes live;
+// everything else reads them through the Mantine `dark` ramp / --media-*
+// custom properties (MediaApp.scss). Amber appears only on the primary
+// Play/Resume control, the destination control's device name, the selected
+// scope segment and focus rings.
+export const MEDIA_TOKENS = Object.freeze({
+  ink: '#14161B',     // body
+  surface: '#1D2027', // raised: menus, popovers, the handle bar
+  line: '#2B2F38',    // hairlines / borders
+  text: '#ECEEF2',
+  muted: '#9AA1AE',
+  accent: '#E5A00D',
+});
+
+export const MEDIA_FONT_FAMILY = "'Atkinson Hyperlegible Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+
+// Intermediate steps of the ramp: [2] dimmed, [3] pressed, [6] panels/inputs,
+// [8]/[9] recesses deeper than the body.
+const [DIM, PRESSED, PANEL, RECESS, DEEP] = ['#6f7684', '#454b57', '#191c22', '#0f1115', '#090a0d'];
+
 const DARK = [
-  '#e9ebef', // [0] fg
-  '#a9acb3', // [1] fg-2
-  '#70747c', // [2] dimmed
-  '#4a4d54', // [3] fg-dim / pressed
-  '#24252a', // [4] hover / borders
-  '#1c1d20', // [5] cards
-  '#17181b', // [6] panels / inputs
-  '#101113', // [7] body
-  '#0b0c0e', // [8]
-  '#060708', // [9]
+  MEDIA_TOKENS.text,    // [0] text
+  MEDIA_TOKENS.muted,   // [1] muted
+  DIM,                  // [2] dimmed
+  PRESSED,              // [3] pressed
+  MEDIA_TOKENS.line,    // [4] hover / lines
+  MEDIA_TOKENS.surface, // [5] raised surfaces
+  PANEL,                // [6] panels / inputs
+  MEDIA_TOKENS.ink,     // [7] body
+  RECESS,               // [8]
+  DEEP,                 // [9]
 ];
 
 const ramp = (hex) => Array(10).fill(hex);
@@ -86,11 +103,11 @@ export const MEDIA_PACK = {
       amber: AMBER,
       dark: DARK,
     },
-    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    fontFamily: MEDIA_FONT_FAMILY,
     defaultRadius: 'sm',
     breakpoints: { xs: '24em', sm: '48em', md: '62em', lg: '75em', xl: '88em' },
     headings: {
-      fontFamily: "'Inter', -apple-system, sans-serif",
+      fontFamily: MEDIA_FONT_FAMILY,
       fontWeight: '600',
       sizes: {
         h1: { fontSize: rem(22), lineHeight: '1.3' },

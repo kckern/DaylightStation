@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { markFirstUseDone } from './lib/firstUse.mjs';
+
+test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
 // Requires `media-redesign-server.mjs`: its local EventBus/device composition
 // is the only permitted receiver ("Acceptance receiver", a virtual browser

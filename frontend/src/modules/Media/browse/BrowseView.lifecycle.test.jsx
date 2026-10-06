@@ -92,7 +92,9 @@ describe('BrowseView lifecycle', () => {
     ]));
     expect(screen.getAllByText('Episode').length).toBeGreaterThanOrEqual(3);
     expect(screen.getByRole('img', { name: 'Episode 2 artwork' })).toHaveAttribute('src', '/two.jpg');
-    expect(screen.getAllByTestId('result-artwork-placeholder').length).toBeGreaterThanOrEqual(2);
+    // Artless rows lead with an icon, never a letter tile.
+    expect(screen.queryAllByTestId('result-artwork-placeholder')).toHaveLength(0);
+    expect(document.querySelectorAll('.media-result-thumb--icon svg').length).toBeGreaterThanOrEqual(2);
     const titles = screen.getAllByText(/Episode (1|2|10)$/).map((node) => node.textContent);
     expect(titles).toEqual(['Episode 1', 'Episode 2', 'Episode 10']);
   });

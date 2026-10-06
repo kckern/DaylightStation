@@ -1,7 +1,10 @@
 // frontend/src/modules/Media/browse/Home.scss
-// Start page rows (FIND.7a/9a/10a/12b). Layout only; colours and radii come
-// from the Mantine/--ds token ramp. Rows scroll sideways so nothing is hidden
-// by width; every control is at least 44px.
+// Start page rows and the picture tile (FIND.7a/9a/10a/12b). Layout only;
+// colours and radii come from the --media-* / Mantine token ramp. One left
+// edge: headings, rows and tiles all start at the content gutter. Rows run the
+// full content width and scroll sideways with snap and NO visible scrollbar;
+// with a pointer, ‹ › step buttons sit at the heading's right end. Every
+// control is at least 44px.
 @use '../../../styles/breakpoints' as *;
 
 .home-row {
@@ -10,58 +13,105 @@
   gap: var(--mantine-spacing-xs);
   min-width: 0;
 
+  .home-row-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--mantine-spacing-sm);
+    min-height: 44px;
+  }
+
   .home-row-title {
-    font-size: var(--mantine-font-size-lg);
+    font-size: 1.25rem;
     font-weight: 600;
+    line-height: 1.3;
+    color: var(--media-text);
+  }
+
+  // ‹ › : pointers only — touch scrolls by swipe. Keyboard users reach the row
+  // by focusing a tile (the browser scrolls it into view) and these buttons.
+  .home-row-steps {
+    display: none;
+    align-items: center;
+    gap: 2px;
+
+    @media (hover: hover) and (pointer: fine) { display: flex; }
+    &[hidden] { display: none; }
+
+    .mantine-ActionIcon-root[data-disabled] {
+      background: transparent;
+      opacity: 0.3;
+    }
   }
 
   .home-row-scroll {
     display: flex;
-    gap: var(--mantine-spacing-sm);
+    align-items: flex-start;
+    gap: var(--mantine-spacing-md);
     overflow-x: auto;
     padding-bottom: 4px;
     scroll-snap-type: x proximity;
+    scroll-padding-inline: 0;
+    overscroll-behavior-x: contain;
     -webkit-overflow-scrolling: touch;
+    // Hidden scrollbar, scrolling intact.
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    &::-webkit-scrollbar { display: none; }
   }
 }
 
 .home-tile {
-  --home-tile-width: 136px;
+  // Art width by kind; the aspect-ratio makes the height.
+  --home-tile-width: 208px;
+  --home-tile-ratio: 16 / 9;
+  position: relative;
   flex: 0 0 var(--home-tile-width);
   width: var(--home-tile-width);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   scroll-snap-align: start;
   min-width: 0;
 
-  &--large { --home-tile-width: 168px; }
-  &--now { --home-tile-width: 220px; }
+  &--wide { --home-tile-ratio: 16 / 9; --home-tile-width: 208px; }
+  &--poster { --home-tile-ratio: 2 / 3; --home-tile-width: 136px; }
+  &--square { --home-tile-ratio: 1 / 1; --home-tile-width: 152px; }
+  &--now { --home-tile-width: 240px; }
+  &--large.home-tile--wide { --home-tile-width: 256px; }
+  &--large.home-tile--poster { --home-tile-width: 168px; }
+  &--large.home-tile--square { --home-tile-width: 192px; }
 
   @include tablet-up {
-    --home-tile-width: 152px;
-    &--large { --home-tile-width: 208px; }
-    &--now { --home-tile-width: 240px; }
+    &--wide { --home-tile-width: 240px; }
+    &--poster { --home-tile-width: 152px; }
+    &--square { --home-tile-width: 176px; }
+    &--now { --home-tile-width: 280px; }
+    &--large.home-tile--wide { --home-tile-width: 296px; }
+    &--large.home-tile--poster { --home-tile-width: 184px; }
+    &--large.home-tile--square { --home-tile-width: 216px; }
+  }
+
+  .home-tile-art {
+    position: relative;
   }
 
   .home-tile-picture {
     position: relative;
     display: block;
     width: 100%;
-    aspect-ratio: 1 / 1;
+    aspect-ratio: var(--home-tile-ratio);
     overflow: hidden;
     border-radius: var(--mantine-radius-md);
-    background: var(--mantine-color-dark-5);
-    border: 1px solid transparent;
+    background: var(--media-surface);
+    border: 1px solid var(--media-line);
     transition: border-color var(--ds-motion-fast) var(--ds-motion-easing);
 
     img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-    &:hover, &:focus-visible { border-color: var(--mantine-color-amber-5); }
+    &:hover, &:focus-visible { border-color: var(--media-muted); }
     &--static { aspect-ratio: 16 / 9; }
   }
-
-  &--large .home-tile-picture { aspect-ratio: 2 / 3; }
 
   .home-tile-placeholder {
     display: flex;
@@ -69,26 +119,50 @@
     justify-content: center;
     width: 100%;
     height: 100%;
-    font-size: 32px;
+    font-size: 2rem;
     font-weight: 600;
     color: var(--mantine-color-dark-2);
   }
 
+  // Progress for an unfinished item: 3 px along the art's bottom edge in the
+  // text colour at 70 % — never amber.
   .home-tile-progress {
     position: absolute;
-    left: 6px;
-    right: 6px;
-    bottom: 6px;
-    height: 4px;
-    border-radius: 2px;
-    background: var(--mantine-color-dark-4);
-    overflow: hidden;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 3px;
+    background: color-mix(in srgb, var(--media-ink) 60%, transparent);
   }
 
   .home-tile-progress-fill {
     display: block;
     height: 100%;
-    background: var(--mantine-color-amber-5);
+    background: color-mix(in srgb, var(--media-text) 70%, transparent);
+  }
+
+  // Title row: the title block, then ⋯ (a 44 px target) at its right. With a
+  // pointer ⋯ shows on hover / focus-within; on touch it is always there, muted.
+  .home-tile-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 2px;
+    min-width: 0;
+    .home-tile-body { flex: 1 1 auto; }
+  }
+
+  .home-tile-more {
+    flex: 0 0 auto;
+    margin: -8px -8px 0 0;
+    // Always there (no function hidden behind hover), quiet until the tile is used.
+    opacity: 0.8;
+    .mantine-ActionIcon-root { color: var(--media-muted); }
+  }
+
+  &:hover .home-tile-more,
+  &:focus-within .home-tile-more,
+  .home-tile-more:has([aria-expanded='true']) {
+    opacity: 1;
   }
 
   .home-tile-body {
@@ -98,32 +172,34 @@
     min-width: 0;
   }
 
+  // Titles wrap to two lines; they are never a single-line ellipsis.
   .home-tile-title {
-    font-size: var(--mantine-font-size-sm);
+    font-size: 0.9375rem;
     font-weight: 600;
-    color: var(--mantine-color-dark-0);
+    line-height: 1.3;
+    color: var(--media-text);
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  &--large .home-tile-title { font-size: var(--mantine-font-size-md); }
-
-  // Where it played / how far in: wraps rather than hiding a screen's spot.
-  .home-tile-line {
-    font-size: var(--mantine-font-size-xs);
-    line-height: 1.35;
-    color: var(--mantine-color-dark-1);
     overflow-wrap: anywhere;
+    cursor: pointer;
   }
 
-  .home-tile-head {
-    display: flex;
-    align-items: flex-start;
-    gap: 2px;
-    min-width: 0;
-
-    .home-tile-body { flex: 1 1 auto; }
+  // ONE meta line: the most useful fact.
+  .home-tile-line {
+    font-size: 0.8125rem;
+    font-weight: 400;
+    line-height: 1.35;
+    color: var(--media-muted);
+    // Never cut a fact off: a long spot wraps to a second line (clamped).
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    overflow-wrap: anywhere;
   }
 
   .home-tile-actions {
@@ -135,23 +211,11 @@
     margin-top: auto;
   }
 
-  .home-tile-primary {
-    width: 100%;
-    min-height: 44px;
-    margin-top: auto;
-  }
-
-  .home-tile-primary-label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   &--now .home-tile-actions :is(button) { min-height: 44px; }
 }
 
 .home-recents-empty {
   margin: 0;
-  font-size: var(--mantine-font-size-sm);
-  color: var(--mantine-color-dark-1);
+  font-size: 0.8125rem;
+  color: var(--media-muted);
 }

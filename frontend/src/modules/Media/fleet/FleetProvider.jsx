@@ -9,6 +9,7 @@ import { createFleetStore } from './fleetStore.js';
 import mediaLog from '../logging/mediaLog.js';
 import { useClientIdentity } from '../identity/useClientIdentity.js';
 import { TIMING } from '../constants.js';
+import { UNNAMED_BROWSER } from './deviceDisplay.js';
 import { browserDisplayState, mergeCanonicalFleetState, silenceMs, sortFleetDevices } from './browserLiveness.js';
 import { useScreenRegistry, mergeRegistryNames, registryLagsLiveNames } from '../house/useScreenRegistry.js';
 
@@ -166,7 +167,7 @@ export function FleetProvider({ children }) {
       .filter(([id]) => id.startsWith('browser:'))
       .map(([id, entry]) => ({
         id,
-        name: entry.identity?.name ?? entry.snapshot?.displayName ?? (id === browserDeviceId(clientId) ? displayName : id.slice('browser:'.length)),
+        name: entry.identity?.name ?? entry.snapshot?.displayName ?? (id === browserDeviceId(clientId) ? displayName : UNNAMED_BROWSER),
         liveName: entry.identity?.name ?? null,
         room: entry.identity?.room,
         type: 'browser',

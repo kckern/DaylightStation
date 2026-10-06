@@ -2,8 +2,9 @@
 // One item, all its actions: artwork, description, Play Now / Play Next /
 // Up Next / Add / Cast.
 import React, { useState } from 'react';
-import { Alert, Stack, Title, Text, Button, Group, Image } from '@mantine/core';
-import { IconPlayerPlayFilled, IconPlayerTrackNext, IconRowInsertTop, IconPlaylistAdd, IconAlertCircle } from '@tabler/icons-react';
+import { Stack, Title, Text, Button, Group, Image } from '@mantine/core';
+import { IconChevronLeft, IconPlayerPlayFilled, IconPlayerTrackNext, IconRowInsertTop, IconPlaylistAdd } from '@tabler/icons-react';
+import { LoadErrorLine } from '../shared/LoadErrorLine.jsx';
 import { useContentInfo } from './useContentInfo.js';
 import { useContentDispatch } from '../search/useContentDispatch.js';
 import { CastButton } from '../cast/CastButton.jsx';
@@ -19,14 +20,14 @@ import { IconHeart, IconHeartFilled, IconEye, IconEyeOff } from '@tabler/icons-r
 
 export function DetailView({ contentId }) {
   const [oneShot, setOneShot] = useState(null);
-  const { info, loading, error } = useContentInfo(contentId);
+  const { info, loading, error, reload } = useContentInfo(contentId);
   const { dispatchLeafVerb } = useContentDispatch();
   const { pop, backDestination } = useNav();
   const { run, overlays, nameFor } = useItemVerbs();
   const favourites = useFavourites();
   const back = (
     <Button variant="subtle" color="gray" data-testid="detail-back" className="detail-back" onClick={() => pop()}>
-      ← {backDestination ?? 'Home'}
+      <IconChevronLeft size={16} aria-hidden /> {backDestination ?? 'Home'}
     </Button>
   );
 
@@ -43,13 +44,7 @@ export function DetailView({ contentId }) {
   if (error) {
     return <Stack data-testid="detail-error-state" gap="md">
       {back}
-      <Alert data-testid="detail-error" color="red" variant="light" icon={<IconAlertCircle size={18} />}>
-        Couldn&rsquo;t load this item. Check the connection and try again.
-        <details className="error-detail">
-          <summary>Technical details</summary>
-          {error.message}
-        </details>
-      </Alert>
+      <LoadErrorLine kind="item" testId="detail-error" onRetry={reload} />
     </Stack>;
   }
   if (!info) return <Stack data-testid="detail-empty" gap="md">{back}</Stack>;

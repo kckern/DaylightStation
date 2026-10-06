@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { markFirstUseDone } from './lib/firstUse.mjs';
+
+test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 import { revealBrowseRow } from '../../../_lib/mediaBrowseScroll.mjs';
 
 // FIND.1b's result-row More → Play Now journey already proves Search locally
@@ -100,7 +103,7 @@ async function setReceiverAim(page, phone) {
     await expect(page.getByTestId('destination-sheet')).toBeVisible();
     await page.getByTestId('picker-device-acceptance-media').click();
     await page.getByTestId('picker-submit').click();
-    await expect(searchSurface.getByTestId('destination-line-name')).toHaveText(/^Aim: Acceptance receiver/);
+    await expect(searchSurface.getByTestId('destination-line-name')).toHaveText(/^Playing on Acceptance receiver/);
     return;
   }
   await page.getByTestId('cast-target-chip').click();
@@ -116,7 +119,7 @@ async function setLocalAim(page, phone) {
     await searchSurface.getByTestId('destination-line').click();
     await expect(page.getByTestId('destination-sheet')).toBeVisible();
     await page.getByTestId('picker-this-device').click();
-    await expect(searchSurface.getByTestId('destination-line-name')).toHaveText(/^Aim: This device/);
+    await expect(searchSurface.getByTestId('destination-line-name')).toHaveText(/^Playing on This device/);
     return closeSearch(page, true);
   }
   await page.getByTestId('cast-target-chip').click();

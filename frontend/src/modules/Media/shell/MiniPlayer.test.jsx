@@ -106,12 +106,15 @@ describe('MiniPlayer', () => {
     renderMiniPlayer(controller);
 
     expect(screen.getByTestId('media-mini-player')).toBeInTheDocument();
-    expect(screen.getByText('2 items ready')).toBeInTheDocument();
-    const openQueue = screen.getByRole('button', { name: 'Open queue, 2 items ready' });
+    // The handle names the item waiting, never a count.
+    expect(screen.getByText('First retained item')).toBeInTheDocument();
+    expect(screen.getByTestId('mini-state')).toHaveTextContent('Ready to play');
+    expect(screen.queryByText(/items? ready/)).not.toBeInTheDocument();
+    const openQueue = screen.getByRole('button', { name: /^Open queue, First retained item/ });
     fireEvent.click(openQueue);
     expect(push).toHaveBeenCalledWith('nowPlaying', {});
 
-    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
     expect(playerHandle.play).toHaveBeenCalledTimes(1);
     expect(controller.getSnapshot()).toEqual(expect.objectContaining({
       state: 'loading',
@@ -119,7 +122,6 @@ describe('MiniPlayer', () => {
       queue: expect.objectContaining({ currentIndex: 0 }),
     }));
     expect(screen.getByText('First retained item')).toBeInTheDocument();
-    expect(screen.queryByText('2 items ready')).not.toBeInTheDocument();
   });
 
   it('shows a top-edge progress bar reflecting position/duration', () => {
@@ -143,6 +145,12 @@ describe('MiniPlayer', () => {
     renderMiniPlayer();
     fireEvent.click(screen.getAllByTestId('mini-toggle')[1]);
     expect(transport.play).toHaveBeenCalledTimes(1);
+  });
+
+  it('a ready queue (nothing started) still shows how many are queued', () => {
+    state.snapshot = makeSnapshot({ index: -1, count: 2 });
+    renderMiniPlayer();
+    expect(screen.getByTestId('mini-queue-count')).toHaveTextContent('2 queued');
   });
 
   it('skips to the next item, and disables next with no neighbor', () => {

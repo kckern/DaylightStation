@@ -1,5 +1,5 @@
 import React, { useCallback, useContext, useSyncExternalStore } from 'react';
-import { deviceLocation, deviceName } from '../fleet/deviceDisplay.js';
+import { deviceLocation, deviceName, displayDeviceName } from '../fleet/deviceDisplay.js';
 import { useCastTarget } from './useCastTarget.js';
 import { useFleetContext } from '../fleet/useFleetContext.js';
 import { ClientIdentityContext } from '../identity/ClientIdentityProvider.jsx';
@@ -46,7 +46,9 @@ export function busyOriginName(targetIds = [], devices = [], entries = EMPTY_FLE
 }
 
 export function aimName(targetIds = [], devices = [], localName = null) {
-  if (targetIds.length === 0) return localName ? `This device · ${localName}` : 'This device';
+  // A made-up "Browser 4778f429" is no name: an unnamed browser is just "This device".
+  const named = localName ? displayDeviceName(localName, { fallback: '' }) : '';
+  if (targetIds.length === 0) return named ? `This device · ${named}` : 'This device';
   if (targetIds.length > 1) {
     // PLACE.4a/AC2: "Kitchen + Living Room". A screen this device does not
     // know (yet) or a long list reads as a count — never a raw id.
@@ -60,6 +62,22 @@ export function aimName(targetIds = [], devices = [], localName = null) {
   return `${deviceName(device, targetId)}${location ? ` · ${location}` : ''}`;
 }
 
+/**
+ * The destination control's name: where the next Play goes, in one phrase.
+ * This browser reads its own name ("Mac") or "this device" when unnamed;
+ * several screens read "Kitchen + Living Room". Never a hash.
+ */
+export function destinationName(targetIds = [], devices = [], localName = null) {
+  if (targetIds.length === 0) return displayDeviceName(localName, { fallback: 'This device' });
+  const label = aimName(targetIds, devices, localName);
+  // A single screen's name reads alone here; its room is the picker's detail.
+  if (targetIds.length === 1) {
+    const device = devices.find((candidate) => candidate.id === targetIds[0]);
+    return deviceName(device, targetIds[0]) || label;
+  }
+  return label;
+}
+
 export function AimLabel({
   targetIds = [], devices = [], localName = null, busyOrigin = null,
   localPlaying = false, mode = 'transfer', compact = false,
@@ -70,7 +88,7 @@ export function AimLabel({
     : null;
   return (
     <span className={`cast-aim-label${compact ? ' cast-aim-label--compact' : ''}`} data-testid="aim-label">
-      <span className="cast-aim-label-prefix">Aim:</span>{' '}
+      <span className="cast-aim-label-prefix">Playing on</span>{' '}
       <strong>{label}</strong>
       {busyOrigin && (
         <span className="cast-aim-busy" data-testid="aim-busy-origin"> · Busy — started from {busyOrigin}</span>

@@ -1,13 +1,16 @@
 // frontend/src/modules/Media/identity/FirstUseCard.jsx
-// The first-use moment (RQ-RELY-12, RELY.14a): the first time the app opens
-// on a device that has never been named, ask for a name — a sensible default
-// for this kind of device, and Skip — and explain the aim label once. It sits
-// at the top of Home until answered; it never blocks the page, and once
-// named or skipped it never returns on this device.
-import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Group, Text, TextInput, Title } from '@mantine/core';
+// The first-use moment (RQ-RELY-12, RELY.14a): the first time the app opens on
+// a device that has never been named, a small popover anchored to the header's
+// destination control asks "What should we call this device?" — a sensible
+// default for this kind of device, Save, or Not now — and says in one sentence
+// where taps go. It takes no page space, opens once, and once named or
+// skipped it never returns on this device (the first-use store).
+//
+// `children` is the anchor: the destination control it points at.
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Button, Group, Popover, Text, TextInput } from '@mantine/core';
 import { useClientIdentity } from './useClientIdentity.js';
-import { GlobalAimLabel } from '../cast/AimLabel.jsx';
+import { useDismissLayer } from '../shell/useDismissLayer.js';
 import houseLog from '../house/houseLog.js';
 import '../house/House.scss';
 
@@ -24,7 +27,7 @@ export function suggestDeviceName(userAgent = (typeof navigator !== 'undefined' 
   return 'This browser';
 }
 
-export function FirstUseCard() {
+export function FirstUseCard({ children = null }) {
   const identity = useClientIdentity();
   const suggestion = useMemo(() => suggestDeviceName(), []);
   const [name, setName] = useState(suggestion);
@@ -34,7 +37,10 @@ export function FirstUseCard() {
   useEffect(() => {
     if (show) houseLog.firstUseShown({ deviceId: identity.deviceId, suggestion });
   }, [show, identity.deviceId, suggestion]);
-  if (!show) return null;
+
+  const skip = useCallback(() => identity.completeFirstUse('skipped'), [identity]);
+  // Escape answers it like "Not now" (the shell owns Escape, one layer at a time).
+  useDismissLayer(show, skip);
 
   const save = async (override) => {
     const chosen = (override ?? name).trim();
@@ -47,47 +53,62 @@ export function FirstUseCard() {
   };
 
   return (
-    <section className="house-first-use" data-testid="first-use-card" aria-labelledby="first-use-title">
-      <Title order={2} size="h4" id="first-use-title">Name this device</Title>
-      <Text size="sm">Everyone in the house, and any routine, will see it by this name.</Text>
-      <Group align="flex-end" gap="xs" wrap="wrap">
+    <Popover
+      opened={show}
+      position="bottom-start"
+      withinPortal
+      trapFocus={false}
+      closeOnClickOutside={false}
+      closeOnEscape={false}
+      width={320}
+      shadow="md"
+      // Under the full-screen Search Mode (a 200-tier surface): the prompt never covers it.
+      zIndex={150}
+    >
+      <Popover.Target>
+        <span className="media-destination-anchor">{children}</span>
+      </Popover.Target>
+      <Popover.Dropdown
+        className="media-first-use"
+        data-testid="first-use-card"
+        role="dialog"
+        aria-labelledby="first-use-title"
+      >
+        <Text fw={600} id="first-use-title">What should we call this device?</Text>
         <TextInput
-          label="Name for this device"
+          aria-label="Name for this device"
           value={name}
           onChange={(e) => { setName(e.currentTarget.value); setAnswer(null); }}
           data-testid="first-use-name"
-          style={{ flex: '1 1 200px' }}
+          mt="xs"
         />
-        <Button className="house-action" disabled={!name.trim()} loading={busy} onClick={() => save()} data-testid="first-use-save">
-          Save name
-        </Button>
-        <Button variant="default" className="house-action" onClick={() => identity.completeFirstUse('skipped')} data-testid="first-use-skip">
-          Skip
-        </Button>
-      </Group>
-      {answer?.code === 'NAME_TAKEN' && (
-        <Group gap="xs" role="alert" data-testid="first-use-taken">
-          <Text size="sm">“{answer.name}” is already taken.</Text>
-          {answer.suggestion && (
-            <Button size="xs" variant="light" className="house-action" onClick={() => { setName(answer.suggestion); save(answer.suggestion); }}
-              data-testid="first-use-suggestion">
-              Use “{answer.suggestion}”
-            </Button>
-          )}
-        </Group>
-      )}
-      {answer && answer.code !== 'NAME_TAKEN' && (
-        <Text size="sm" className="house-tone--failed" role="alert">Couldn't save the name. You can skip and name it later in Settings.</Text>
-      )}
-      <div data-testid="first-use-aim">
-        <Text size="sm" fw={600}>Where your taps play</Text>
-        <Text size="sm">
-          The aim label shows where Play sends things — this device, or a screen you picked. It appears above what you
-          browse and play, like this: <GlobalAimLabel compact />
+        <Text size="sm" c="dimmed" mt="xs" data-testid="first-use-aim">
+          Things you play go to the device shown here. Tap it to change.
         </Text>
-        <Text size="sm" c="dimmed">You can change it whenever you play something.</Text>
-      </div>
-    </section>
+        {answer?.code === 'NAME_TAKEN' && (
+          <Group gap="xs" role="alert" data-testid="first-use-taken" mt="xs">
+            <Text size="sm">“{answer.name}” is already taken.</Text>
+            {answer.suggestion && (
+              <Button size="xs" variant="light" className="house-action" onClick={() => { setName(answer.suggestion); save(answer.suggestion); }}
+                data-testid="first-use-suggestion">
+                Use “{answer.suggestion}”
+              </Button>
+            )}
+          </Group>
+        )}
+        {answer && answer.code !== 'NAME_TAKEN' && (
+          <Text size="sm" className="house-tone--failed" role="alert" mt="xs">Couldn't save the name. You can skip and name it later in Settings.</Text>
+        )}
+        <Group gap="xs" mt="sm" justify="flex-end">
+          <Button variant="default" className="house-action" onClick={skip} data-testid="first-use-skip">
+            Not now
+          </Button>
+          <Button className="house-action" disabled={!name.trim()} loading={busy} onClick={() => save()} data-testid="first-use-save">
+            Save
+          </Button>
+        </Group>
+      </Popover.Dropdown>
+    </Popover>
   );
 }
 

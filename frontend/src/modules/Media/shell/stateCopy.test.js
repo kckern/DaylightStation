@@ -6,6 +6,7 @@ import {
   remoteStatusLine,
   queuePositionLabel,
   playbackRateLabel,
+  handleStateLabel,
 } from './stateCopy.js';
 
 describe('playbackStateLabel', () => {
@@ -90,5 +91,22 @@ describe('playbackRateLabel', () => {
     expect(playbackRateLabel(NaN)).toBe('1×');
     expect(playbackRateLabel(0)).toBe('1×');
     expect(playbackRateLabel(undefined)).toBe('1×');
+  });
+});
+
+describe('handleStateLabel', () => {
+  it('names what the handle holds, in words', () => {
+    expect(handleStateLabel('idle', { hasItem: false })).toBe('Ready to play');
+    expect(handleStateLabel('stopped', { hasItem: true })).toBe('Ready to play');
+    expect(handleStateLabel('paused', { hasItem: true })).toBe('Paused');
+    expect(handleStateLabel('playing', { hasItem: true, where: 'Mac' })).toBe('Playing on Mac');
+    expect(handleStateLabel('buffering', { hasItem: true })).toBe('Playing on this device');
+    expect(handleStateLabel('loading', { hasItem: true })).toBe('Starting…');
+    expect(handleStateLabel('error', { hasItem: true })).toBe('Something went wrong');
+  });
+  it('never says "1 item ready"', () => {
+    for (const state of ['idle', 'paused', 'playing', 'stopped']) {
+      expect(handleStateLabel(state, { hasItem: false })).not.toMatch(/item/);
+    }
   });
 });

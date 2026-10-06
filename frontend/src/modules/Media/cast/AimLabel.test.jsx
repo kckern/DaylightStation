@@ -30,7 +30,7 @@ describe('AimLabel', () => {
     const kitchen = { id: 'kitchen', name: 'Kitchen' };
     const living = { id: 'living', name: 'Living Room' };
     render(<AimLabel targetIds={['kitchen', 'living']} devices={[kitchen, living]} />);
-    expect(screen.getByTestId('aim-label')).toHaveTextContent('Aim: Kitchen + Living Room');
+    expect(screen.getByTestId('aim-label')).toHaveTextContent('Playing on Kitchen + Living Room');
   });
 
   it('falls back to a count beyond three screens, never a raw id', () => {

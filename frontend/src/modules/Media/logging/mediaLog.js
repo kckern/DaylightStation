@@ -141,7 +141,12 @@ export const mediaLog = {
   // Household media memory on the start page and item menus (batch A:
   // FIND.7a/9a/10a/11a/12a/13a, PLAY.4a).
   homeShown:              info('home.shown'),
+  // Visual redesign (2026-10): a row stepped with its ‹ › buttons, a tile's editions opened.
+  rowStepped:             debug('home.row-stepped'),
+  tileEditionOpened:      info('home.tile-edition-opened'),
   householdLoadFailed:    warn('household.load-failed'),
+  // A list/item/search load failed; the detail stays in the log, the screen shows one quiet line.
+  loadFailed:             warn('load.failed'),
   favouriteToggled:       info('household.favourite-toggled'),
   householdRemoved:       info('household.removed'),
   householdRestored:      info('household.restored'),

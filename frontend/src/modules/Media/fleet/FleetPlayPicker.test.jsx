@@ -5,6 +5,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { MantineProvider } from '@mantine/core';
 
 // Mutable holders — the mock factories close over these but only read them
 // at render/call time (same pattern as useDevices.test.jsx).
@@ -49,7 +50,7 @@ beforeEach(() => {
 function renderPicker(props = {}) {
   const onClose = vi.fn();
   const utils = render(
-    <FleetPlayPicker deviceId="livingroom-tv" onClose={onClose} {...props} />,
+    <MantineProvider><FleetPlayPicker deviceId="livingroom-tv" onClose={onClose} {...props} /></MantineProvider>,
   );
   return { onClose, ...utils };
 }

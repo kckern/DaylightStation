@@ -43,7 +43,7 @@ for (const [device, viewport] of [
         await input.fill('Disclosure Day');
         await expect.poll(() => intercepted).toBe(1);
         const waitingAt = Date.now();
-        await expect(page.getByText(/Search service did not complete in time/)).toBeVisible({ timeout: 35000 });
+        await expect(page.getByText("Couldn't load search results.")).toBeVisible({ timeout: 35000 });
         expect(Date.now() - waitingAt).toBeLessThan(35000);
         await expect(page.getByText(/No results/)).not.toBeVisible();
         await expect(page.getByText(/didn't answer/)).not.toBeVisible();
@@ -52,12 +52,13 @@ for (const [device, viewport] of [
         expect(intercepted, 'A failed request must not silently auto-retry').toBe(1);
 
         releaseHeld();
-        await page.getByRole('button', { name: /^Retry(?: search)?$/ }).click();
+        // The search's own retry (Home's blocked rows behind it carry their own Try again buttons).
+        await page.getByTestId(/^(?:stream-global-retry|search-mode-stream-retry)$/).click();
         const result = device === 'phone'
           ? page.getByTestId('search-mode-results').getByText('Disclosure Day', { exact: true })
           : page.getByRole('option').filter({ hasText: 'Disclosure Day' }).filter({ hasText: 'Movie' });
         await expect(result).toBeVisible({ timeout: 15000 });
-        await expect(page.getByText(/Search service did not complete in time/)).not.toBeVisible();
+        await expect(page.getByText("Couldn't load search results.")).not.toBeVisible();
         await expect(input).toHaveValue('Disclosure Day');
         await expect(videoScope).toHaveAttribute('aria-pressed', 'true');
         expect(requests.length).toBe(2);

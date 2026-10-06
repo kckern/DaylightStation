@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
+import { mediaLog } from '../logging/mediaLog.js';
 
 function buildPath(path, { modifiers = {} }) {
   const clean = String(path).replace(/^\/|\/$/g, '');
@@ -26,6 +27,7 @@ export function useListBrowse(path, { modifiers = {}, take = 50, initialTake = 0
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
+  const [attempt, setAttempt] = useState(0);
   const skipRef = useRef(0);
   const baseRef = useRef('');
   const totalRef = useRef(0);
@@ -62,12 +64,13 @@ export function useListBrowse(path, { modifiers = {}, take = 50, initialTake = 0
       })
       .catch((err) => {
         if (cancelled || generationRef.current !== generation) return;
+        mediaLog.loadFailed({ surface: 'browse', path, error: err?.message });
         setError(err);
         setLoading(false);
       });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, take, firstTake, modifiers.playable, modifiers.shuffle, modifiers.recent_on_top]);
+  }, [path, take, firstTake, attempt, modifiers.playable, modifiers.shuffle, modifiers.recent_on_top]);
 
   const loadMore = useCallback(async () => {
     const generation = generationRef.current;
@@ -94,7 +97,8 @@ export function useListBrowse(path, { modifiers = {}, take = 50, initialTake = 0
     }
   }, [take]);
 
-  return { items, total, loading, loadingMore, error, loadMore };
+  const reload = useCallback(() => setAttempt((n) => n + 1), []);
+  return { items, total, loading, loadingMore, error, loadMore, reload };
 }
 
 export default useListBrowse;

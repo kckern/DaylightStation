@@ -10,8 +10,11 @@ import './House.scss';
 
 export function HouseQuietBar() {
   const { pauseAll, stopAll, resumeAll, busy, canResume, resumable, playingCount, activeCount } = useHouseQuiet();
+  // Nothing to pause, stop or resume: no bar (a row of disabled buttons says nothing).
+  if (playingCount === 0 && activeCount === 0 && !canResume) return null;
   return (
     <div className="house-toolbar" data-testid="house-quiet-bar" role="group" aria-label="Whole house">
+      {playingCount > 0 && (
       <Button
         data-testid="house-pause-all"
         variant="default"
@@ -23,6 +26,8 @@ export function HouseQuietBar() {
       >
         Pause all
       </Button>
+      )}
+      {activeCount > 0 && (
       <Button
         data-testid="house-stop-all"
         variant="default"
@@ -34,6 +39,7 @@ export function HouseQuietBar() {
       >
         Stop all
       </Button>
+      )}
       {canResume && (
         <Button
           data-testid="house-resume-all"

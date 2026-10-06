@@ -1,8 +1,11 @@
 import { test, expect } from '@playwright/test';
+import { markFirstUseDone } from './lib/firstUse.mjs';
+
+test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
 test.describe('MediaApp — search states', () => {
   test.beforeEach(async ({ page }) => {
-    await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
+    await page.addInitScript(() => { try { (() => { const k = 'media-app.first-use-done'; const v = localStorage.getItem(k); localStorage.clear(); if (v) localStorage.setItem(k, v); })(); } catch {} });
   });
 
   test('idle prompt appears on focus', async ({ page }) => {
@@ -39,8 +42,9 @@ test.describe('MediaApp — search states', () => {
     await page.goto('/media');
     await page.getByRole('textbox', { name: 'Search media…' }).fill('hello');
     const error = page.getByTestId('stream-global-error');
-    await expect(error).toContainText('Search fixture failure');
-    await expect(error.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
+    await expect(error).toContainText("Couldn't load search results.");
+    await expect(error).not.toContainText('Search fixture failure');
+    await expect(error.getByRole('button', { name: 'Try again', exact: true })).toBeVisible();
   });
 
   test('[FIND.3a/AC3][FIND.4a/AC2] a failed source is named before a truthful widened result', async ({ page }) => {

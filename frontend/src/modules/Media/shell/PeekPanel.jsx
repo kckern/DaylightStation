@@ -4,11 +4,12 @@
 // pending fields) rather than a second set of transport controls.
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Button, Title, Text, Group, Stack, Badge } from '@mantine/core';
-import { IconPlaylistAdd } from '@tabler/icons-react';
+import { IconPlaylistAdd, IconChevronLeft } from '@tabler/icons-react';
 import { useSessionController } from '../controller/useSessionController.js';
 import { usePeek } from '../peek/usePeek.js';
 import { useDevice } from '../fleet/useDevice.js';
-import { deviceName, deviceIcon, deviceLocation } from '../fleet/deviceDisplay.js';
+import { deviceName, deviceLocation } from '../fleet/deviceDisplay.js';
+import { DeviceIcon } from '../fleet/DeviceIcon.jsx';
 import { useStatusOverlay } from '../../../hooks/useStatusOverlay';
 import { useNav } from './NavProvider.jsx';
 import { QueuePanel } from './QueuePanel.jsx';
@@ -92,14 +93,14 @@ export function PeekPanel({ deviceId }) {
     <Stack data-testid="peek-panel" className="peek-panel" gap="md">
       <Group justify="space-between">
         <Button data-testid="peek-back" variant="subtle" color="gray" onClick={() => pop()}>
-          ← {backDestination ?? 'Home'}
+          <IconChevronLeft size={16} aria-hidden /> {backDestination ?? 'Home'}
         </Button>
         {entry?.isStale && <Badge color="yellow" variant="light">Out of date</Badge>}
         {entry?.offline && <Badge color="gray" variant="light">Offline</Badge>}
       </Group>
 
       <Title order={1} className="peek-title">
-        <span aria-hidden>{deviceIcon(device)}</span> {deviceName(device, deviceId)}
+        <DeviceIcon device={device} size={24} style={{ verticalAlign: 'text-bottom', marginRight: 8 }} />{deviceName(device, deviceId)}
       </Title>
       {location && <Text size="sm" c="dimmed" className="peek-location">{location}</Text>}
 
@@ -124,7 +125,7 @@ export function PeekPanel({ deviceId }) {
       <TransportBar
         target={{ deviceId }}
         snapshot={snap}
-        targetLabel={`${deviceIcon(device)} ${deviceName(device, deviceId)}`}
+        targetLabel={deviceName(device, deviceId)}
         onCommand={handleCommand}
         pendingActions={pendingActions}
         availability={availability}

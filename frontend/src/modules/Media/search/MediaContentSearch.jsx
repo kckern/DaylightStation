@@ -28,11 +28,12 @@ import { IconAlertTriangle } from '@tabler/icons-react';
 import { ContentCombobox } from '../../Content/combobox/ContentCombobox.jsx';
 import { useSearchContext } from './useSearchContext.js';
 import { ScopeChips } from './ScopeChips.jsx';
-import { DestinationLine } from '../cast/DestinationLine.jsx';
 import { useContentDispatch } from './useContentDispatch.js';
+import { useDestinationInteraction } from '../cast/destinationInteraction.js';
 import { useSessionController } from '../controller/useSessionController.js';
 import { useNav } from '../shell/NavProvider.jsx';
 import { useDismissLayer } from '../shell/useDismissLayer.js';
+import { collapseResultEditions } from './collapseResultEditions.js';
 import { applyResultRowVerb } from './resultRowVerbs.js';
 import getLogger from '../../../lib/logging/Logger.js';
 import { ItemDestinationPicker } from '../actions/ItemDestinationPicker.jsx';
@@ -48,9 +49,8 @@ export function MediaContentSearch() {
   const { push } = useNav();
   const log = useMemo(() => getLogger().child({ component: 'media-content-search' }), []);
   const searchBarRef = useRef(null);
-  const [destinationInteractionActive, setDestinationInteractionActive] = useState(false);
-  const beginDestinationInteraction = useCallback(() => setDestinationInteractionActive(true), []);
-  const endDestinationInteraction = useCallback(() => setDestinationInteractionActive(false), []);
+  // The header's destination control is in use: keep this search open (FIND.1b).
+  const { active: destinationInteractionActive } = useDestinationInteraction();
 
   // ContentCombobox owns its editing state. Its input handles Escape when it
   // has focus, but a pointer action in the portaled More menu can leave focus
@@ -121,11 +121,6 @@ export function MediaContentSearch() {
     <div ref={searchBarRef} data-testid="media-search-bar" className="media-search-bar">
       <ItemDestinationPicker action={oneShotAction} onClose={() => setOneShotAction(null)} />
       <div className="media-search-controls">
-        <DestinationLine
-          surface="media-content-search"
-          onInteractionStart={beginDestinationInteraction}
-          onInteractionEnd={endDestinationInteraction}
-        />
         <ScopeChips />
         {scopeError && (
           <span data-testid="scope-error" className="scope-error" title={scopeError.message}>
@@ -139,9 +134,11 @@ export function MediaContentSearch() {
             onPlayAll={handlePlayAll}
             onMore={handleMore}
             onAction={({ kind, item }) => handleMore(kind, item)}
+            transformResults={collapseResultEditions}
             resultExtraActions={extraActions}
             placeholder="Search media…"
             selectContainers
+            quietErrors
             searchParams={currentScope?.params ?? ''}
             // D5: scopes[0] is the catalog-wide ("All") scope by convention
             // (SearchProvider seeds currentScopeKey from it and resetScope()

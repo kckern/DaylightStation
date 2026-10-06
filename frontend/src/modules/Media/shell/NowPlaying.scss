@@ -29,6 +29,12 @@ $np-amber-ink: #1a1300;
     overflow-wrap: anywhere;
   }
 
+  .now-playing-host--poster {
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
   .np-state {
     font-size: 13px;
     color: var(--mantine-color-dark-1);
@@ -123,10 +129,7 @@ $np-amber-ink: #1a1300;
   display: flex;
   align-items: center;
   gap: var(--mantine-spacing-md);
-  padding: var(--mantine-spacing-sm) var(--mantine-spacing-md);
-  background: var(--mantine-color-dark-6);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: var(--mantine-radius-md);
+  padding: 0;
 
   .np-art,
   .np-art-placeholder {
@@ -147,6 +150,7 @@ $np-amber-ink: #1a1300;
   }
 
   .np-meta-lines {
+    flex: 1;
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -154,26 +158,25 @@ $np-amber-ink: #1a1300;
   }
 
   .np-meta-title {
-    font-weight: 700;
-    font-size: 16px;
-    color: var(--mantine-color-dark-0);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-weight: 600;
+    font-size: 1.25rem;
+    line-height: 1.25;
+    color: var(--media-text);
+    overflow-wrap: anywhere;
   }
 
   // The show/album this item came from (container expansion context line).
   .np-meta-context {
-    font-size: 14px;
-    color: var(--mantine-color-amber-4);
+    font-size: 0.9375rem;
+    color: var(--media-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .np-meta-sub {
-    font-size: 12px;
-    color: var(--mantine-color-dark-1);
+    font-size: 0.8125rem;
+    color: var(--media-muted);
     display: flex;
     align-items: center;
     gap: 6px;
@@ -231,7 +234,8 @@ $np-amber-ink: #1a1300;
       left: 0;
       height: 6px;
       border-radius: 999px;
-      background: var(--mantine-color-amber-5);
+      background: var(--media-text, var(--mantine-color-dark-0));
+      opacity: 0.7;
       pointer-events: none;
     }
 
@@ -240,13 +244,13 @@ $np-amber-ink: #1a1300;
       width: 14px;
       height: 14px;
       border-radius: 50%;
-      background: var(--mantine-color-amber-5);
+      background: var(--media-text, var(--mantine-color-dark-0));
       transform: translateX(-50%);
       pointer-events: none;
       box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
     }
 
-    &:hover .np-seek-thumb { background: var(--mantine-color-amber-4); }
+    &:hover .np-seek-thumb { background: #fff; }
   }
 }
 
@@ -259,7 +263,6 @@ $np-amber-ink: #1a1300;
   color: var(--mantine-color-red-4);
   font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.08em;
 }
 
 // ---- Transport -------------------------------------------------------------------
@@ -271,20 +274,20 @@ $np-amber-ink: #1a1300;
   .np-transport-main {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     gap: var(--mantine-spacing-sm);
   }
 
   .np-transport-secondary {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     gap: var(--mantine-spacing-sm);
     flex-wrap: wrap;
   }
 
   .np-target-label {
-    align-self: center;
+    align-self: flex-start;
     color: var(--mantine-color-dark-2);
     font-size: 13px;
     font-weight: 600;
@@ -296,11 +299,11 @@ $np-amber-ink: #1a1300;
 .np-queue-kept {
   color: var(--mantine-color-dark-1);
   font-size: 13px;
-  text-align: center;
+  text-align: left;
 }
 
-.np-command-feedback { color: var(--mantine-color-amber-3); }
-.np-queue-kept { color: var(--mantine-color-amber-4); }
+.np-command-feedback { color: var(--media-muted, var(--mantine-color-dark-2)); }
+.np-queue-kept { color: var(--media-muted, var(--mantine-color-dark-2)); }
 
 // Round icon button — the shared control chrome for transport + mini player.
 .np-icon-btn {
@@ -341,8 +344,8 @@ $np-amber-ink: #1a1300;
 
   // Toggles (shuffle / repeat) light up amber when engaged.
   &--on {
-    color: var(--mantine-color-amber-5);
-    border-color: var(--mantine-color-amber-5);
+    color: var(--media-text, var(--mantine-color-dark-0));
+    border-color: var(--media-text, var(--mantine-color-dark-0));
   }
 }
 
@@ -368,8 +371,8 @@ $np-amber-ink: #1a1300;
   @include np-focus-ring;
 
   &--engaged {
-    color: var(--mantine-color-amber-5);
-    border-color: var(--mantine-color-amber-5);
+    color: var(--media-text, var(--mantine-color-dark-0));
+    border-color: var(--media-text, var(--mantine-color-dark-0));
   }
 }
 
@@ -438,13 +441,32 @@ $np-amber-ink: #1a1300;
     left: 0;
     right: 0;
     height: 3px;
-    background: var(--mantine-color-dark-4);
+    background: var(--media-line);
     pointer-events: none;
 
+    // Progress is text colour at 70 %, never amber.
     .mini-player-progress-fill {
       height: 100%;
-      background: var(--mantine-color-amber-5);
+      background: color-mix(in srgb, var(--media-text) 70%, transparent);
       transition: width 400ms linear;
+    }
+  }
+
+  // Resume (ready / paused): the one amber control on the handle — a pill with
+  // its word on wide handles, the play glyph alone (still named Resume) on a
+  // phone, where the title needs the room.
+  .mini-player-controls .np-icon-btn.mini-resume {
+    width: auto;
+    min-width: 44px;
+    padding: 0 14px;
+    gap: 6px;
+    border-radius: 22px;
+    font-size: 0.9375rem;
+    font-weight: 600;
+
+    .mini-resume-label { display: none; }
+    @media (min-width: 30em) {
+      .mini-resume-label { display: inline; }
     }
   }
 

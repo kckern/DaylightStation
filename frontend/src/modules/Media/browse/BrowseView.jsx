@@ -17,10 +17,10 @@
 // never pass a containerItem, so the header stays absent there — nothing
 // single to play.
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Text, Stack } from '@mantine/core';
+import { Text, Stack } from '@mantine/core';
 import {
+  IconChevronLeft,
   IconChevronRight,
-  IconAlertCircle,
   IconPlayerPlay,
   IconArrowsShuffle,
   IconPlus,
@@ -29,12 +29,14 @@ import { useListBrowse } from './useListBrowse.js';
 import { useNav } from '../shell/NavProvider.jsx';
 import { useContentDispatch } from '../search/useContentDispatch.js';
 import { isContainer } from '../../Content/combobox/comboboxMachine.js';
+import { LoadErrorLine } from '../shared/LoadErrorLine.jsx';
 import { DestinationLine } from '../cast/DestinationLine.jsx';
 import getLogger from '../../../lib/logging/Logger.js';
 import Skeleton from '@/lib/ui/Skeleton.jsx';
 import { ResultRow } from '../../Content/combobox/ResultRow.jsx';
 import { ItemDestinationPicker } from '../actions/ItemDestinationPicker.jsx';
-import { displayTitle, resultSubtitle } from '../search/resultPresentation.js';
+import { sourceIconFor, dedupeSourceRows } from './sourceIcons.jsx';
+import { sourceRootPresentation } from '../search/resultPresentation.js';
 import { useHouseholdResultActions } from '../household/useHouseholdResultActions.js';
 
 function splitPath(path) {
@@ -74,10 +76,10 @@ export function BrowseView({
   path, label, modifiers, containerItem = null, take = 50,
   breadcrumbs = [], scrollTop = 0, focusedId = null, loadedCount = 0,
 }) {
-  const { items: rawItems, total, loading, loadingMore = false, error, loadMore } = useListBrowse(
+  const { items: rawItems, total, loading, loadingMore = false, error, loadMore, reload } = useListBrowse(
     path, { modifiers, take, initialTake: loadedCount },
   );
-  const items = useMemo(() => naturalBrowseOrder(rawItems), [rawItems]);
+  const items = useMemo(() => dedupeSourceRows(naturalBrowseOrder(rawItems)), [rawItems]);
   const [oneShot, setOneShot] = useState(null);
   const { push, replace, pop, depth, backDestination } = useNav();
   const { dispatchLeafVerb, playContainerAsQueue, addContainerToQueue } = useContentDispatch();
@@ -161,9 +163,10 @@ export function BrowseView({
         >
           Home
         </button>
-        {depth > 1 && breadcrumbs.length === 0 && (
+        {/* When Back would land on Home the Home crumb already says so; two Homes is clutter. */}
+        {depth > 1 && breadcrumbs.length === 0 && backDestination && backDestination !== 'Home' && (
           <button data-testid="browse-crumb-back" className="browse-crumb" onClick={() => pop()}>
-            ← {backDestination ?? 'Home'}
+            <IconChevronLeft size={16} aria-hidden /> {backDestination}
           </button>
         )}
         {breadcrumbs.map((crumb, index) => (
@@ -217,22 +220,13 @@ export function BrowseView({
           <DestinationLine surface="browse-header" />
         </div>
       )}
-      {!isContainerView && <DestinationLine surface="browse-list" />}
 
       {loading && (
         <Stack gap="xs" data-testid="browse-view-loading">
           {[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} height={56} radius="sm" />)}
         </Stack>
       )}
-      {error && (
-        <Alert data-testid="browse-view-error" color="red" variant="light" icon={<IconAlertCircle size={18} />}>
-          Couldn&apos;t load this section. Check the connection and try again.
-          <details className="error-detail">
-            <summary>Technical details</summary>
-            {error.message}
-          </details>
-        </Alert>
-      )}
+      {error && <LoadErrorLine kind="section" testId="browse-view-error" onRetry={reload} />}
       {!loading && !error && items.length === 0 && (
         <Text c="dimmed" data-testid="browse-empty" className="browse-empty">Nothing here yet.</Text>
       )}
@@ -243,17 +237,20 @@ export function BrowseView({
             const id = row.id ?? row.itemId;
             if (!id) return null;
             const rowIsContainer = row.itemType === 'container';
+            // A source ("Movies & TV") is entered, not played: › opens it, Play lives in ⋮.
+            const isSourceRow = rowIsContainer && /^[\w-]+:$/.test(String(id));
             return (
               <li key={id} data-testid={`browse-row-${id}`} className="browse-row result-row">
                 <ResultRow
                   item={{ ...row, id }}
-                  title={displayTitle(row)}
-                  subtitle={resultSubtitle(row)}
+                  title={sourceRootPresentation(row).title}
+                  subtitle={sourceRootPresentation(row).subtitle}
                   thumbnail={row.thumbnail}
+                  leading={row.thumbnail ? null : sourceIconFor(row)}
                   testId={rowIsContainer ? `browse-open-${id}` : `result-play-now-${id}`}
                   focusId={id}
                   onTap={() => rowIsContainer ? openContainer(row, id) : dispatchLeafVerb('playNow', id, row)}
-                  onPlayAll={rowIsContainer ? () => playContainerAsQueue(id, row) : null}
+                  onPlayAll={rowIsContainer && !isSourceRow ? () => playContainerAsQueue(id, row) : null}
                   onDetails={rowIsContainer ? null : () => openDetail(id)}
                   detailsTestId={rowIsContainer ? null : `browse-detail-${id}`}
                   extraActions={extraActions}

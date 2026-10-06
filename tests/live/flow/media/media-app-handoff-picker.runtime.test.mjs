@@ -1,7 +1,10 @@
 import { test, expect } from '@playwright/test';
+import { markFirstUseDone } from './lib/firstUse.mjs';
+
+test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
 test('NowPlaying hand-off shows truthful aim plus explicit move/keep choices', async ({ page }) => {
-  await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
+  await page.addInitScript(() => { try { (() => { const k = 'media-app.first-use-done'; const v = localStorage.getItem(k); localStorage.clear(); if (v) localStorage.setItem(k, v); })(); } catch {} });
   await page.goto('/media');
 
   const search = page.getByRole('textbox', { name: 'Search media…' });
@@ -20,7 +23,8 @@ test('NowPlaying hand-off shows truthful aim plus explicit move/keep choices', a
   // NowPlaying view contains a DispatchTargetPicker for hand-off
   const handoffPicker = page.locator('[data-testid="handoff-section"] [data-testid="dispatch-target-picker"]');
   await expect(handoffPicker).toBeVisible({ timeout: 5000 });
-  await expect(page.getByTestId('now-playing-view').getByTestId('aim-label')).toHaveText(/Aim:\s*This device/i);
+  // The header's destination control carries the aim on this (wide) viewport.
+  await expect(page.getByTestId('destination-control-name')).toHaveText(/this device/i);
   const firstDevice = page.locator('[data-testid="handoff-section"] [data-testid^="picker-device-"]').first();
   await expect(firstDevice).toBeVisible();
   await firstDevice.click();

@@ -236,13 +236,15 @@ With the registry out of reach a rename stays local and unique among the names
 this device can see. A browser's live name (its heartbeat) wins over an older
 copy of the screen list, and a difference re-reads the list.
 
-**First use** (RQ-RELY-12): on a device that has never been named, Home starts
-with a card asking for a name — a default for the kind of device ("iPhone",
-"Android tablet", "Mac"), **Save name** or **Skip** — and explaining the aim
-label once, with the live label shown. Either answer is remembered
-(`media-app.first-use-done`) and the card never returns on that device. It is
-page content at the top of Home, not an overlay, so nothing beneath it is
-blocked.
+**First use** (RQ-RELY-12): on a device that has never been named, a small
+popover opens once, anchored to the header's destination control: "What should
+we call this device?", the name field prefilled with a default for the kind of
+device ("iPhone", "Android tablet", "Mac"), **Save** or **Not now**, and one
+sentence explaining where taps go ("Things you play go to the device shown
+here. Tap it to change."). Either answer is remembered
+(`media-app.first-use-done`) and the popover never returns on that device;
+Escape counts as Not now. It is an overlay, never page content — Home no longer
+carries a card.
 
 ## The house view
 
@@ -346,6 +348,105 @@ the full verb set.
 Local playback reports its progress with this device's identity (every request
 carries `X-Daylight-Device`); when a routine or another device started the item,
 that origin rides the progress report too, so "started by" and the ledger know.
+
+## Visual system
+
+The app's look is one small system, defined in the Media pack
+(`frontend/src/modules/Media/theme/mediaTheme.js`, `MEDIA_TOKENS`) and surfaced
+as `--media-*` custom properties on `<html>` (`frontend/src/Apps/MediaApp.scss`)
+so portaled popovers and menus read the same values. It is a daily-use control
+surface: the art is the interface, the chrome stays out of its way.
+
+**Colour tokens.** `ink` `#14161B` (body), `surface` `#1D2027` (raised: menus,
+popovers, the handle bar), `line` `#2B2F38` (hairlines and borders), `text`
+`#ECEEF2`, `muted` `#9AA1AE`, `accent` amber `#E5A00D`. Amber appears **only** on
+the primary Play/Resume control, the destination control's device name, the
+selected scope segment's underline, the rail's 3 px selected marker, and focus
+rings. Never on per-tile bars, filled pills or progress.
+
+**Type.** One family, Atkinson Hyperlegible Next (SIL OFL), self-hosted from
+`frontend/public/fonts/atkinson-hyperlegible-next/` (latin + latin-ext variable
+files, licence beside them; declared in `theme/_fonts.scss`). Scale: row heading
+1.25 rem / 600, tile title 0.9375 rem / 600 / line-height 1.3, meta 0.8125 rem /
+400 muted, header controls 0.9375 rem / 500, body 1 rem. Sentence case
+everywhere: no all-caps labels, no letter-spaced eyebrows, no arrow glyphs
+(back links use a chevron icon).
+
+**One left edge.** The content area is the full width minus the rail (72 px)
+with a fixed gutter — 24 px on a laptop/tablet, 16 px on a phone. The header's
+destination control, every heading, every row and every block start at that
+edge. Rows run the full content width, scroll sideways with scroll-snap and **no
+visible scrollbar**; with a pointer, ‹ › step buttons (44 px, keyboard
+operable, hidden when the row fits) sit at the heading's right end.
+
+**Tiles** (`browse/HomeTile.jsx`, rules in `browse/tilePresentation.js`):
+
+- *Art first, aspect by kind*: video / episode / clip stills 16:9; film, show,
+  book and audiobook posters 2:3; album / playlist / track 1:1; unknown types
+  fall back to 16:9. An "album" whose art loads clearly portrait (an audiobook
+  cover) switches to the poster shape so its title is not cropped.
+- *Title* wraps to two lines (never a single-line ellipsis); *one* muted meta
+  line carries the most useful fact — "2 h 39 min left · Garage", "Next
+  episode", "Recently added", "4 editions". When screens stopped in different places, a Carry on tile shows one short
+  line per spot (at most two) instead.
+- Tapping the art or the title is the item's primary action under the one tap
+  rule; there is no per-tile Play bar (a next part is "Continue …" in the ⋯
+  menu).
+- ⋯ is a 44 px target on the art's corner: visible on hover/focus with a
+  pointer, always visible but muted on touch (`@media (hover: none)`).
+- *Progress*: a 3 px bar along the art's bottom edge in the text colour at 70 %
+  for unfinished items.
+
+Browse keeps its list rows (focus restoration and per-row verbs depend on them);
+they take the same tokens and type.
+
+**Data presentation** (display layer only): a date-named item ("20261005",
+"2026-10-05") reads "<show or source> · Oct 5", never the bare date;
+editions of one thing in a row (same normalized title and type) collapse to one
+tile whose meta says "4 editions" and whose ⋯ menu opens each; every device
+label goes through `displayDeviceName()` (`fleet/deviceDisplay.js`) — a made-up
+"Browser 4778f429" or raw browser id reads "a browser" (or "this device" for
+the viewer's own browser).
+
+**When something fails to load** (Home rows, Browse, an item's detail, search):
+one quiet muted line in the place the content would have been ("Couldn't load
+suggestions.", "Couldn't load search results.") and a normal-size secondary
+**Try again** button (44 px, not full width, never amber). The user never sees an
+HTTP code, a server message or "failed to load"; the detail goes to the log
+(`load.failed`, `household.load-failed`). One component and one copy table:
+`shared/LoadErrorLine.jsx` and `shared/loadErrorCopy.js`. A source that merely
+did not answer inside a search keeps its own status line ("Plex did not answer",
+Retry).
+
+**Alignment details.** Tile titles reserve two lines so every meta line in a row
+sits on one baseline; the gear rides the header's right edge whether or not the
+house indicator shows; the Devices grid uses equal-width columns; Browse names a
+source by its human name ("Movies & TV", not `plex`) and shows a single Home
+crumb (an extra Back crumb appears only when Back would land somewhere other
+than Home); artwork-less rows show a quiet centred initial.
+
+**One destination, one title.** The header's destination control is the only
+place the aim is shown; Browse lists and Now Playing do not repeat "Playing on
+<name>" (a phone keeps one line inside Now Playing, where the header is out of
+thumb reach). Now Playing carries one title block (title, then the show/album and
+position), shows a video's own poster in the video area until it plays, shows no
+art box when there is no artwork, and lists Shuffle and Repeat once, in the queue
+header. A disabled Add only is a quiet text button; its reason is its tooltip and
+accessible description. Browse rows without artwork lead with a real icon per
+source (`browse/sourceIcons.jsx`), never a letter tile, and two source roots that
+read the same are one row.
+
+**Header, scope and house indicator.** The destination control ("Playing on
+<name> ⌄", `cast/CastTargetChip.jsx`) leads the header at every width. Scope
+is one segmented control, the same 44 px height as the search field. The house
+indicator hides at 0, otherwise "N playing" with a small dot at the same height.
+
+**Handle and rail.** The bottom handle names what is there — art, title, and
+the state in words ("Ready to play", "Paused", "Playing on <this browser>") —
+with **Resume** as its one amber control when ready or paused (the word shows
+from 480 px up; on a narrower phone the amber play glyph, still named Resume,
+leaves the title the room). The rail keeps Home / Browse / Devices; the selected
+item is text colour with a 3 px amber left marker, the others muted.
 
 ## What This App Is
 
@@ -525,8 +626,8 @@ and a **canvas** that shows exactly one view at a time:
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│ DOCK  Aim: This device  [All][Video][Music][Books] [search…]│
-│                          ▢ 2 playing · 1 paused   ⌁   ⚙     │
+│ DOCK  Playing on Mac ⌄  All Video Music Books  [search…]    │
+│                                   • 2 playing, 1 paused   ⚙ │
 ├──────┬─────────────────────────────────────────────────────┤
 │ NAV  │  CANVAS                                             │
 │ Home │    one of: Home · Browse · Detail · Now Playing ·   │
@@ -534,26 +635,32 @@ and a **canvas** that shows exactly one view at a time:
 │ Devs │                                                     │
 ├──────┴─────────────────────────────────────────────────────┤
 │ outcome rows (overlay: one per attempt, never in the page)  │
-│ handle: ♪ title · pause · next · stop · whole-house menu    │
+│ handle: art · title + state · Resume/Pause · next · stop · ⋯ │
 │ phone only: tab bar  Home · Browse · Devices · Search       │
 └────────────────────────────────────────────────────────────┘
 ```
 
 **The dock is the app's constant.** It carries:
 
-- the **search bar** with scope chips and the **aim line** — search is always
+- the **search bar** with the scope control (All / Video / Music / Books, a
+  text-weight and underline segmented control) — search is always
   one keystroke away (`/` focuses it on a laptop and opens it on a phone),
   never a destination page; results drop down inline. A row tap plays a
   playable item at the aim and opens a container in Browse; containers carry a
   trailing ▶ (play the whole thing) and playable items a trailing ⋯ (**Play**,
   **Play next**, **Add to queue**, **Play on…**, Open detail, favourite and
   watched marks),
-- the **house indicator** — "N playing · M paused", an at-a-glance summary of
-  the house that opens **Devices**; its words, not a coloured dot, carry the
-  state,
-- the **aim** — where a plain Play goes ("Aim: This device" or the named
-  screen). Tapping the aim line opens the one destination picker: it appears in
-  the dock, in Search Mode, on Browse and Detail, and on **Now Playing**. An
+- the **house indicator** — "N playing" (and "M paused"), an at-a-glance
+  summary of the house that opens **Devices**; it is hidden when nothing is
+  playing or paused, and its words, not the small dot, carry the state,
+- the **destination control** — "Playing on <name> ⌄": where a plain Play goes
+  (this browser's own name, "this device" when it has none, the named screen,
+  or "Kitchen + Living Room"). It absorbs the old cast icon: tapping it opens
+  the cast preferences (preferred devices, move or keep playing here too), and
+  the same destination line ("Playing on …") opens the one destination picker
+  in Search Mode, on Browse and Detail, and on **Now Playing**. A machine name
+  ("Browser 4778f429") is never shown: an unnamed browser reads "this device"
+  for its owner and "a browser" to everyone else. An
   aim on a screen has a two-hour inactivity lease; verified matching playback
   that this browser sent or is steering suspends that lease; stale or unknown
   receiver state does not. Restoration resolves expiry before first layout so
@@ -717,7 +824,7 @@ informational and need no input. Journeys: `screen-tv-input.runtime.test.mjs`.
 | **Home** | The start page: Resume, Playing now on other screens, this screen's suggestions (Favourites, Carry on, Usually (here) at this time, New) and the household's Recent — see [The start page](#the-start-page-and-the-households-memory). | Default; nav; breadcrumb. |
 | **Browse** | Hierarchical catalog listing with artwork or a recognisable placeholder, kind labels, natural part ordering, and a breadcrumb containing every parent. Long collections page automatically as the end approaches; there is no separate load-more hunt. Pages are 50 titles: `GET /api/v1/list/...?take=50&skip=N` returns `{ items, total }`, and for Plex path containers (e.g. `library/sections/6/all`) the page is fetched from Plex itself (`X-Plex-Container-Start/Size`), so a 2,800-title library opens in ~0.3 s instead of sending every title. Each history entry owns `{ path, scrollTop, focusedId, loadedCount }`, captured before drilling into a container or opening Detail through either Details or More → Open detail. Back re-fetches `loadedCount` rows in one request (capped at 1,000) so a row the person had scrolled to exists again, then restores the exact prior collection viewport and triggering row focus. `loadedCount` is a viewport snapshot like `scrollTop`: re-selecting the Browse area ignores it when matching the original root entry. A specific container adds Play / Shuffle / Add at the top and names the current destination. | Nav; container rows; container taps in search. |
 | **Detail** | One item: artwork, description, how far each screen has got, full action row (Play Now / Play Next / Play First / Add / Cast), favourite and watched marks. | Browse rows; search results; any item's Details. |
-| **Now Playing** | Full local transport: seek bar, prev/play-pause/next/stop, volume, the queue panel, the tappable aim line, and the same session controls as a screen's Remote. Hosts the visual output of the player. | The handle; Escape/Back returns (the Back button names where it goes, e.g. "← Home"). |
+| **Now Playing** | Full local transport: seek bar, prev/play-pause/next/stop, volume, the queue panel, the tappable aim line, and the same session controls as a screen's Remote. Hosts the visual output of the player. | The handle; Escape/Back returns (the Back button names where it goes, e.g. "Home" with a back chevron). |
 | **Fleet** | Configured devices and named browser screens, live and sorted with playing first. Each card offers **Remote**, **Play…**, inline **Pause**/**Stop** while active, and a truthful unavailable **Move here** until safe native adoption exists. Silent browser rows become uncertain after two minutes. Rows also carry start status, Started by, Add only, notes and "(was …)"; the view offers Pause all / Stop all / Resume all (see "The house view"). | Nav; fleet indicator. |
 | **Screens** | Screen admin: add, name and room, merge/unmerge, retire after the routines are shown, restore; "Not seen lately". | Devices → Screens; Settings. |
 | **Routines** | Routine history and the routines flagged before they run. | Devices → Routines; Settings. |
