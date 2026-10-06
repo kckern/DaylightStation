@@ -119,6 +119,21 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
       } finally { await d.context.close(); }
     });
 
+    test(`[NF-TAP-02] ${size}: a typed name plays a whole collection in 1 tap, via its inline Play`, async ({ browser }) => {
+      const d = await newDevice(browser, viewport, `Tap budget C ${size} ${RUN}`);
+      try {
+        await typeQuery(d);
+        const playAll = d.page.locator('[data-testid^="result-play-all-"]').first();
+        await expect(playAll).toBeVisible({ timeout: 30000 });
+        await resetTaps(d.page);
+        await playAll.click();
+        expect(await taps(d.page), 'NF-TAP-02 collection via inline Play').toBe(1);
+        // The one tap was answered: an outcome row names what happened.
+        await expect(d.page.locator('[data-testid^="dispatch-row-"]').first()).toBeVisible({ timeout: 15000 });
+        await shot(d.page, `tap-collection-${size}`);
+      } finally { await d.context.close(); }
+    });
+
     test(`[NF-TAP-05][NF-TAP-06][NF-TAP-08] ${size}: add to queue is 2 taps, aim back at this device is 2, Pause all is 2`, async ({ browser, context, request }) => {
       const receiver = await openReceiver(context, request);
       const d = await newDevice(browser, viewport, `Tap budget B ${size} ${RUN}`);
