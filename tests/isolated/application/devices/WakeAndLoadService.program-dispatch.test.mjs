@@ -136,12 +136,12 @@ describe('WakeAndLoadService — program dispatch (prewarm deadline + watchdog b
       await vi.advanceTimersByTimeAsync(10_500);
       await run;
 
-      const deliveredQuery = device.loadContent.mock.calls[0][1];
       settle({ status: 'ok', token: 'late-token', contentId: 'plex:late', queueContentIds: ['plex:late'] });
       await vi.advanceTimersByTimeAsync(0);
 
-      expect(deliveredQuery).not.toHaveProperty('prewarmToken');
-      expect(deliveredQuery).not.toHaveProperty('prewarmContentId');
+      // deliveredQuery is a spread copy, so assert on what the watchdog armed with.
+      expect(logger.info).toHaveBeenCalledWith('wake-and-load.playback.armed',
+        expect.objectContaining({ resolvedCandidates: 0, expectedContentId: 'office-program' }));
       expect(logger.info).not.toHaveBeenCalledWith('wake-and-load.prewarm.done', expect.anything());
     });
 
@@ -228,6 +228,70 @@ describe('WakeAndLoadService — program dispatch (prewarm deadline + watchdog b
       expect(logger.warn).toHaveBeenCalledWith('wake-and-load.playback.timeout',
         expect.objectContaining({ dispatchId: DISPATCH, basis: 'fresh-owned-playing' }));
       expect(confirmed(broadcast)).toBe(false);
+    });
+
+    it('SF-1: a person pressing Play on the baseline item (revision+1) is NOT a confirmation', async () => {
+      const playingBaseline = playing('files:news/a.mp4', { revision: 4 }).snapshot;
+      const svc = build({ deviceLivenessService: { getLastSnapshot: () => ({ snapshot: playingBaseline }) } });
+      const run = svc.execute(DEVICE, { queue: 'office-program' }, { dispatchId: DISPATCH });
+      await vi.advanceTimersByTimeAsync(10_500);
+      await run;
+
+      // Resume/toggle of the same item bumps playbackRevision only.
+      eventBus.publish(`device-state:${DEVICE}`, playing('files:news/a.mp4', { revision: 5 }));
+      expect(confirmed(broadcast)).toBe(false);
+
+      // A different current item is this dispatch's playback.
+      eventBus.publish(`device-state:${DEVICE}`, playing('files:news/b.mp4', { revision: 6 }));
+      expect(confirmed(broadcast)).toBe(true);
+    });
+
+    it('SF-2: armed and timeout logs keep the requested handle beside the resolved expected id', async () => {
+      prewarmService.prewarm = vi.fn().mockResolvedValue({
+        status: 'skipped', reason: 'not plex', queueContentIds: ['files:news/aljazeera/20261002.mp4'],
+      });
+      const svc = build();
+      await svc.execute(DEVICE, { queue: 'office-program' }, { dispatchId: DISPATCH });
+      expect(logger.info).toHaveBeenCalledWith('wake-and-load.playback.armed', expect.objectContaining({
+        expectedContentId: 'files:news/aljazeera/20261002.mp4', requestedContentId: 'office-program',
+      }));
+      await vi.advanceTimersByTimeAsync(90_000);
+      expect(logger.warn).toHaveBeenCalledWith('wake-and-load.playback.timeout', expect.objectContaining({
+        requestedContentId: 'office-program',
+      }));
+    });
+
+    it('SF-3: play-next=<container> is prewarmed and falls back to fresh-owned-playing', async () => {
+      const svc = build(); // prewarm hangs
+      const run = svc.execute(DEVICE, { 'play-next': 'plex:container' }, { dispatchId: DISPATCH });
+      await vi.advanceTimersByTimeAsync(10_500);
+      await run;
+      expect(prewarmService.prewarm).toHaveBeenCalledWith('plex:container', expect.anything());
+      expect(logger.info).toHaveBeenCalledWith('wake-and-load.playback.armed',
+        expect.objectContaining({ basis: 'fresh-owned-playing' }));
+      eventBus.publish(`device-state:${DEVICE}`, playing('plex:leaf-episode'));
+      expect(confirmed(broadcast)).toBe(true);
+    });
+
+    it('SF-3: play-next with a resolved queue confirms by resolved-queue', async () => {
+      prewarmService.prewarm = vi.fn().mockResolvedValue({
+        status: 'skipped', reason: 'x', queueContentIds: ['plex:leaf-1', 'plex:leaf-2'],
+      });
+      const svc = build();
+      await svc.execute(DEVICE, { 'play-next': 'plex:container' }, { dispatchId: DISPATCH });
+      eventBus.publish(`device-state:${DEVICE}`, playing('plex:leaf-2', { queue: ['plex:leaf-1', 'plex:leaf-2'] }));
+      expect(logger.info).toHaveBeenCalledWith('wake-and-load.playback.confirmed',
+        expect.objectContaining({ basis: 'resolved-queue' }));
+    });
+
+    it('a prewarm timeout with a concrete play=<leaf> still confirms by the requested id', async () => {
+      const svc = build();
+      const run = svc.execute(DEVICE, { play: 'plex:leaf-9' }, { dispatchId: DISPATCH });
+      await vi.advanceTimersByTimeAsync(10_500);
+      await run;
+      eventBus.publish(`device-state:${DEVICE}`, playing('plex:leaf-9'));
+      expect(logger.info).toHaveBeenCalledWith('wake-and-load.playback.confirmed',
+        expect.objectContaining({ matchedBy: 'candidate', contentId: 'plex:leaf-9' }));
     });
 
     it('fallback still requires the dispatch ack', async () => {
