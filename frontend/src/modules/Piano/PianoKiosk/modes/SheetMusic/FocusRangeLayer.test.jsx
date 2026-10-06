@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
 import FocusRangeLayer from './FocusRangeLayer.jsx';
 import { buildEngravedMeasureRects, measureAtPosition, rangeBands } from './focusRangeGeometry.js';
 
@@ -171,7 +172,7 @@ describe('PianoApp.scss — the loop wears its own colour', () => {
   // The first attempt at this recoloured `.piano-empty__action` instead, because
   // it happened to carry the same background value earlier in the stylesheet.
   const rule = (selector) => {
-    const scss = readFileSync('src/Apps/PianoApp.scss', 'utf8');
+    const scss = readFileSync(fileURLToPath(new URL('../../../../../Apps/PianoApp.scss', import.meta.url)), 'utf8');
     const m = scss.match(new RegExp(`\\${selector}\\s*\\{[^}]*\\}`, 's'));
     return m?.[0] ?? null;
   };

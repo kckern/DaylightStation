@@ -92,16 +92,18 @@ describe('LearnPassageSession', () => {
     expect(exercise.props.drillProjection.steps[0].pass_count).toBe(1);
   });
 
-  it('runs timed practice at a visible adjustable percentage of score tempo', () => {
+  it('runs timed practice at a named, adjustable stage of score tempo', () => {
     const timed = { ...passage.rungs[2], id: 'timed', label: 'With the beat', completion: 'standard', mastery: false, tempoPercent: 60 };
     render(<LearnPassageSession score={{ id: 'score-1', musicXml: '<score />' }} revision="rev" passage={passage} rung={timed}
       tempo={{ tempoMap: [{ onsetQuarter: 0, bpm: 100 }], tempoSource: 'musicxml', minimumPercent: 40, maximumPercent: 100, adjustable: true }}
       onRecord={() => ({ rungComplete: false })} onBack={() => {}} />);
-    expect(screen.getByText(/60% of score tempo · 60 BPM/)).toBeInTheDocument();
+    // 09e57927a: named stages replace the raw percentage; 60% reads "Steady".
+    expect(screen.getByRole('button', { name: 'Choose tempo: Steady · 60 BPM' })).toBeInTheDocument();
     expect(exercise.props.score.tempoPercent).toBe(60);
-    fireEvent.click(screen.getByRole('button', { name: 'Increase tempo' }));
-    expect(screen.getByText(/65% of score tempo · 65 BPM/)).toBeInTheDocument();
-    expect(exercise.props.score.tempoPercent).toBe(65);
+    fireEvent.click(screen.getByRole('button', { name: 'Choose tempo: Steady · 60 BPM' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Nearly there' }));
+    expect(screen.getByRole('button', { name: 'Choose tempo: Nearly there · 80 BPM' })).toBeInTheDocument();
+    expect(exercise.props.score.tempoPercent).toBe(80);
   });
 
   it('locks mastery and Test Out to the MusicXML tempo', () => {
@@ -109,8 +111,8 @@ describe('LearnPassageSession', () => {
     render(<LearnPassageSession score={{ id: 'score-1', musicXml: '<score />' }} revision="rev" passage={passage} rung={mastery}
       tempo={{ tempoMap: [{ onsetQuarter: 0, bpm: 92 }], tempoSource: 'musicxml', minimumPercent: 40, maximumPercent: 100, adjustable: true }}
       onRecord={() => ({ rungComplete: false })} onBack={() => {}} />);
-    expect(screen.getByText(/100% of score tempo · 92 BPM/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Decrease tempo' })).not.toBeInTheDocument();
+    expect(screen.getByText('Full speed · 92 BPM')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Choose tempo/ })).not.toBeInTheDocument();
     expect(exercise.props.score.tempoPercent).toBe(100);
   });
 
