@@ -11,6 +11,7 @@ import { createReaderArbiter } from './readerArbiter.mjs';
 import { createContinuousScanLoop, IDENTIFY_WINDOW_S } from './continuousScanLoop.mjs';
 import { startBtInventoryBroadcast } from './btInventory.mjs';
 import { handleBtPairRequest, handleBtRemoveRequest } from './btPairing.mjs';
+import { buildBridgeHealth, createWebSocketSupervisor } from './webSocketSupervisor.mjs';
 import { exec as nodeExec } from 'child_process';
 import { promisify } from 'util';
 
@@ -184,79 +185,7 @@ function broadcastFitnessData(message) {
 const antManager = new ANTPlusManager(broadcastFitnessData);
 const bleManager = new BLEManager(broadcastFitnessData);
 
-// WebSocket connection management
-let reconnectAttempts = 0;
-let reconnectTimer = null;
-let heartbeatInterval = null;
-
-// Client-side liveness. The garage→server link can black-hole a socket without
-// a FIN or RST (garage, 2026-10-02: packet loss on the garage run). `ws` then
-// stays OPEN, send() buffers silently, and HR never reaches the server — that
-// day for 106s, until the SERVER's pong-miss sweep killed it, plus a fixed 30s
-// before the first reconnect: 2m15s of lost HR, long enough to end the workout.
-// Ping often and terminate when nothing at all has come back for a while.
-// TCP retransmits a lost ping or pong, so on a lossy-but-alive link a reply
-// arrives late rather than never; only a dead path goes quiet this long.
-const HEARTBEAT_PING_MS = 5000;
-const HEARTBEAT_DEAD_MS = 20000;
-const RECONNECT_MAX_MS = 30000;
-
-async function connectWebSocket() {
-  const protocol = DAYLIGHT_PORT == 443 ? 'wss' : 'ws';
-  const wsUrl = `${protocol}://${DAYLIGHT_HOST}:${DAYLIGHT_PORT}/ws`;
-  
-  // Only log initial connection attempt, not reconnections
-  if (reconnectAttempts === 0) {
-    console.log(`🔗 Connecting to DaylightStation WebSocket: ${wsUrl}`);
-  }
-  
-  try {
-    const ws = new WebSocket(wsUrl);
-    websocketClient = ws;
-    let lastHeardAt = Date.now();
-    ws.on('pong', () => { lastHeardAt = Date.now(); });
-    ws.on('message', () => { lastHeardAt = Date.now(); });
-    
-    websocketClient.on('open', () => {
-      lastHeardAt = Date.now();
-      clearInterval(heartbeatInterval);
-      heartbeatInterval = setInterval(() => {
-        if (ws.readyState !== WebSocket.OPEN) return;
-        const silentMs = Date.now() - lastHeardAt;
-        if (silentMs > HEARTBEAT_DEAD_MS) {
-          console.log(`💔 WebSocket silent for ${Math.round(silentMs / 1000)}s - terminating dead socket`);
-          clearInterval(heartbeatInterval);
-          heartbeatInterval = null;
-          ws.terminate(); // fires 'close' → scheduleReconnect
-          return;
-        }
-        try { ws.ping(); } catch (_) { /* close handler reconnects */ }
-      }, HEARTBEAT_PING_MS);
-      // Only log successful connection after failures or initial connection
-      if (reconnectAttempts > 0) {
-        console.log('✅ WebSocket reconnected successfully');
-      } else {
-        console.log('✅ Connected to DaylightStation WebSocket server');
-      }
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-      reconnectAttempts = 0;
-
-      // Subscribe to the fingerprint request topics. The backend bus topic-filters
-      // by subscription, so without these we'd never receive the requests.
-      try {
-        for (const topic of ['fitness.unlock.request', 'fitness.enroll.request', 'fitness.fingerprint.delete.request', 'bt.pair.request', 'bt.remove']) {
-          websocketClient.send(JSON.stringify({ type: 'bus_command', action: 'subscribe', topic }));
-        }
-        console.log('🔐 Subscribed to unlock / enroll / delete / bt.pair / bt.remove request topics');
-        // Inventory is sent on change only; a fresh connection needs the current one.
-        btInventoryBroadcast?.resend();
-      } catch (error) {
-        console.error('❌ Failed to subscribe to fingerprint requests:', error.message);
-      }
-    });
-
-    websocketClient.on('message', async (data) => {
+async function handleWebSocketMessage(data) {
       let message;
       try {
         message = JSON.parse(data);
@@ -441,49 +370,28 @@ async function connectWebSocket() {
           });
         return;
       }
-    });
-    
-    websocketClient.on('close', () => {
-      if (websocketClient === ws) {
-        clearInterval(heartbeatInterval);
-        heartbeatInterval = null;
-      }
-      // Only log close if we haven't already started reconnecting
-      if (reconnectAttempts === 0) {
-        console.log('⚠️  WebSocket connection lost, will retry...');
-      }
-      scheduleReconnect();
-    });
-    
-    websocketClient.on('error', (error) => {
-      // Only log errors that aren't routine connection issues
-      if (!error.message.includes('ECONNREFUSED') && !error.message.includes('ETIMEDOUT')) {
-        console.error('❌ WebSocket error:', error.message);
-      }
-      scheduleReconnect();
-    });
-    
-  } catch (error) {
-    console.error('❌ Failed to create WebSocket connection:', error.message);
-    scheduleReconnect();
-  }
 }
 
-function scheduleReconnect() {
-  if (reconnectTimer) return;
-  // Only log the first reconnection attempt, then stay quiet
-  if (reconnectAttempts === 0) {
-    console.log('🔄 Scheduling WebSocket reconnection...');
-  }
-  // 1s, 2s, 4s … capped at 30s. A link blip should cost seconds of HR, not a
-  // flat 30s; a server that is down for a deploy still isn't hammered.
-  const delay = Math.min(RECONNECT_MAX_MS, 1000 * 2 ** reconnectAttempts);
-  reconnectAttempts++;
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    connectWebSocket();
-  }, delay);
-}
+const websocketUrl = `${DAYLIGHT_PORT == 443 ? 'wss' : 'ws'}://${DAYLIGHT_HOST}:${DAYLIGHT_PORT}/ws`;
+const websocketSupervisor = createWebSocketSupervisor({
+  url: websocketUrl,
+  createSocket: (url) => new WebSocket(url),
+  socketStates: WebSocket,
+  onMessage: handleWebSocketMessage,
+  onOpen: (ws) => {
+    websocketClient = ws;
+    for (const topic of ['fitness.unlock.request', 'fitness.enroll.request', 'fitness.fingerprint.delete.request', 'bt.pair.request', 'bt.remove']) {
+      ws.send(JSON.stringify({ type: 'bus_command', action: 'subscribe', topic }));
+    }
+    console.log('🔐 Subscribed to unlock / enroll / delete / bt.pair / bt.remove request topics');
+    btInventoryBroadcast?.resend();
+  },
+  logger: {
+    info: (message) => console.log(`✅ ${message}`),
+    warn: (message) => console.warn(`⚠️  ${message}`),
+    error: (message) => console.error(`❌ ${message}`),
+  },
+});
 
 // TV Control Functions
 async function sendTVCommand(command) {
@@ -514,7 +422,7 @@ app.get('/status', (req, res) => {
     ant_plus: antManager.getStatus(),
     ble: bleManager.getStatus(),
     websocket: {
-      connected: websocketClient?.readyState === WebSocket.OPEN,
+      ...websocketSupervisor.getStatus(),
       url: `${DAYLIGHT_PORT == 443 ? 'wss' : 'ws'}://${DAYLIGHT_HOST}:${DAYLIGHT_PORT}/ws`
     },
     tv_control: {
@@ -614,10 +522,11 @@ app.get('/fingerprint/pending', (req, res) => {
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy',
+  const health = buildBridgeHealth(websocketSupervisor.getStatus());
+  res.status(health.httpStatus).json({
+    ...health.body,
     uptime: process.uptime(),
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   });
 });
 
@@ -640,9 +549,7 @@ process.on('SIGINT', async () => {
   }
 
   // Close WebSocket
-  if (websocketClient) {
-    websocketClient.close();
-  }
+  websocketSupervisor.stop();
   
   // Close ANT+ device
   await antManager.cleanup();
@@ -665,9 +572,7 @@ process.on('SIGTERM', async () => {
   }
 
   // Close WebSocket
-  if (websocketClient) {
-    websocketClient.close();
-  }
+  websocketSupervisor.stop();
   
   // Close ANT+ device
   await antManager.cleanup();
@@ -729,7 +634,7 @@ async function startServer() {
   }
 
   // Connect to DaylightStation WebSocket
-  await connectWebSocket();
+  websocketSupervisor.start();
 
   // Start the BlueZ BT inventory broadcast: periodically reports OS-level
   // connected BT devices (address/name/connected/battery) over the WS as

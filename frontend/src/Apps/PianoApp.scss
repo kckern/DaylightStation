@@ -2535,6 +2535,16 @@
   background: #0e0e16;
 }
 
+.piano-score-player__notice {
+  position: absolute; z-index: 12; top: 0.75rem; left: 50%;
+  transform: translateX(-50%);
+  max-width: min(90%, 34rem); padding: 0.7rem 1rem;
+  border: 1px solid var(--piano-border); border-radius: var(--r-sm);
+  color: var(--piano-text); background: var(--piano-surface-2);
+  box-shadow: var(--shadow-md);
+  text-align: center; font-weight: 700;
+}
+
 // Score loading splash — the sidecar scan, right-sized to fit with NO scrolling.
 // As a standalone stage (XML fetch) it fills the flex area; as an overlay it covers
 // the engraving until it's ready. object-fit: contain guarantees no overflow either way.
@@ -2570,26 +2580,320 @@
   .musicxml-renderer { margin: 0; margin-top: auto; margin-bottom: auto; }
 }
 
+.piano-learn-roadmap {
+  flex: 0 0 auto;
+  max-height: min(42vh, 24rem);
+  overflow-y: auto;
+  padding: 0.8rem 1rem 1rem;
+  color: var(--piano-fg);
+  background: var(--piano-surface-1);
+  border-top: 1px solid var(--piano-border);
 
-// Count-in overlay (audit J1): a big centered beat number flashed over the score
-// while the metronome counts the player in before a run. Fixed + pointer-events:
-// none so a tap falls through to the scroll container, which aborts the count-in.
+  button { font: inherit; }
+
+  &__header {
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    margin-bottom: 0.7rem;
+    div { display: flex; flex-direction: column; gap: 0.15rem; }
+    strong { font-size: 1.05rem; }
+    span { color: var(--piano-muted); }
+    button { color: var(--piano-fg); background: transparent; border: 1px solid var(--piano-border); border-radius: 999px; padding: 0.45rem 0.8rem; }
+    .piano-learn-roadmap__actions { flex-direction: row; flex-wrap: wrap; }
+  }
+  &__selection-hint { margin: 0 0 0.7rem; color: var(--piano-warn); }
+  &__custom {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 0.65rem;
+    margin-bottom: 0.7rem; padding: 0.65rem 0.8rem;
+    border: 1px solid var(--piano-warn); border-radius: 0.65rem;
+    span { color: var(--piano-muted); }
+    button { color: var(--piano-fg); background: var(--piano-surface-2); border: 1px solid var(--piano-border); border-radius: 999px; padding: 0.45rem 0.8rem; }
+  }
+
+  &__passages, &__ladder {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: 0.55rem;
+  }
+
+  &__passage, &__ladder button {
+    min-height: 3.5rem; padding: 0.65rem 0.8rem;
+    display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 0.2rem;
+    color: var(--piano-fg); background: var(--piano-surface-2); border: 1px solid var(--piano-border); border-radius: 0.65rem;
+    text-align: left;
+    small { color: var(--piano-muted); }
+    &[data-state='complete'] { border-color: var(--piano-accent); background: color-mix(in srgb, var(--piano-accent) 12%, transparent); }
+    &[data-state='recommended'], &[data-state='current'], &[data-state='available'] { border-color: var(--piano-warn); }
+    &:disabled { opacity: 0.42; }
+  }
+
+  &__ladder h3 { grid-column: 1 / -1; margin: 0 0 0.15rem; }
+}
+
+.piano-learn-passage-map {
+  position: absolute; z-index: 6;
+  display: grid; place-items: center;
+  width: 2.5rem; height: 2.5rem; aspect-ratio: 1; padding: 0; margin: 0;
+  background: color-mix(in srgb, var(--piano-stage-panel) 92%, transparent);
+  border: 2px solid var(--piano-border); border-radius: 50%;
+  color: var(--piano-stage-fg);
+  font-weight: 800; cursor: pointer;
+  &[data-state='mastered'], &[data-state='tested-out'] {
+    border-color: var(--piano-accent);
+    background: color-mix(in srgb, var(--piano-accent) 22%, var(--piano-stage-panel));
+  }
+  &[data-state='next'] { border-color: var(--piano-warn); }
+  &[data-state='in-progress'] { border-color: var(--piano-info, var(--piano-accent)); }
+  &[data-state='locked'] { opacity: 0.48; cursor: not-allowed; }
+  &.is-selected { box-shadow: 0 0 0 2px var(--piano-stage-panel), 0 0 0 5px var(--piano-warn); }
+}
+.piano-learn-passage-hitbox {
+  position: absolute; z-index: 5;
+  display: block; margin: 0; padding: 0;
+  border: 0; border-radius: 0.45rem;
+  background: transparent; cursor: pointer;
+  &[data-disabled] { cursor: not-allowed; }
+}
+.piano-learn-progress {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 0.42rem 0.7rem;
+  color: var(--piano-fg);
+  background: var(--piano-surface-1);
+  border-top: 1px solid var(--piano-border);
+
+  &__track {
+    display: flex;
+    align-items: center;
+    justify-content: safe center;
+    gap: 0.42rem;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    &::-webkit-scrollbar { display: none; }
+  }
+
+  &__pill {
+    flex: 0 0 auto;
+    min-width: 9.5rem;
+    min-height: 4rem;
+    padding: 0.55rem 0.7rem;
+    border: 2px solid var(--piano-border);
+    border-radius: 0.85rem;
+    background: var(--piano-surface-2);
+    color: var(--piano-fg);
+    font: inherit;
+    display: grid;
+    grid-template-columns: 2.35rem minmax(0, 1fr);
+    grid-template-rows: 1fr auto;
+    column-gap: 0.6rem;
+    align-items: center;
+    text-align: left;
+    font-variant-numeric: tabular-nums;
+
+    &[data-state='learning'] { border-color: var(--piano-info, var(--piano-accent)); background: color-mix(in srgb, var(--piano-info, var(--piano-accent)) 14%, var(--piano-surface-2)); }
+    &[data-state='learned'] { border-color: var(--piano-accent); background: color-mix(in srgb, var(--piano-accent) 18%, var(--piano-surface-2)); }
+    &[data-state='mastered'] { border-color: var(--piano-accent); background: var(--piano-accent); color: var(--piano-bg); }
+    &[data-state='locked'] { border-style: dashed; opacity: 0.42; }
+    &[aria-current='step'] { box-shadow: 0 0 0 2px var(--piano-surface-1), 0 0 0 4px var(--piano-warn); }
+  }
+  &__number {
+    grid-row: 1 / 3; display: grid; place-items: center; width: 2.35rem; height: 2.35rem;
+    border-radius: 50%; background: color-mix(in srgb, currentColor 12%, transparent); font-weight: 900;
+  }
+  &__copy { min-width: 0; display: grid; line-height: 1.1; }
+  &__copy strong, &__copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__copy strong { font-size: 0.9rem; }
+  &__copy small, &__state { color: var(--piano-muted); font-size: 0.7rem; }
+  &__state { font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
+}
+.piano-learn-segment-rail {
+  flex: 0 0 auto; display: grid; gap: 0.4rem; max-width: 100%; padding: 0.5rem 0.75rem;
+  color: var(--piano-fg); background: color-mix(in srgb, var(--piano-surface-1) 96%, transparent); border-top: 1px solid var(--piano-border);
+  button { font: inherit; color: inherit; }
+  &__summary { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+  &__identity { flex: 1 1 auto; display: grid; min-width: 7rem; }
+  &__identity span { color: var(--piano-muted); font-size: 0.72rem; white-space: nowrap; }
+  &__summary > button { flex: 0 0 auto; min-height: 2.35rem; padding: 0.35rem 0.7rem; border: 1px solid var(--piano-border); border-radius: var(--r-sm); background: transparent; display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; }
+  &__start { border-color: var(--piano-accent) !important; background: color-mix(in srgb, var(--piano-accent) 16%, transparent) !important; font-weight: 750 !important; }
+  &__toggle { width: 2.35rem; padding: 0 !important; border-radius: 50% !important; }
+  &__done { color: var(--piano-muted) !important; border-color: transparent !important; }
+  &__ladder { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: 0.4rem; padding-top: 0.45rem; border-top: 1px solid var(--piano-border); }
+  &__ladder > button {
+    min-height: 2.35rem; padding: 0.3rem 0.65rem; display: flex; align-items: center; justify-content: space-between; text-align: left;
+    background: var(--piano-surface-2); border: 1px solid var(--piano-border); border-radius: 999px;
+    small { color: var(--piano-muted); font-size: 0.68rem; }
+    &:disabled { opacity: 0.45; }
+    &[data-state='complete'] { border-color: var(--piano-accent); }
+    &[data-state='current'], &[data-state='available'] { border-color: var(--piano-warn); }
+  }
+}
+.piano-learn-selection-outline {
+  position: absolute; z-index: 6; pointer-events: none;
+  border: 0; border-top: 2px solid color-mix(in srgb, var(--piano-warn) 70%, transparent);
+  background: color-mix(in srgb, var(--piano-warn) 7%, transparent);
+}
+
+.piano-learn-session {
+  position: absolute; inset: 0; z-index: 30; min-height: 0;
+  display: flex; flex-direction: column; background: var(--piano-bg);
+  &__back {
+    position: absolute; z-index: 20; top: 0.7rem; left: 0.7rem;
+    padding: 0.5rem 0.8rem; color: var(--piano-fg); background: var(--piano-surface);
+    border: 1px solid var(--piano-border); border-radius: 999px; font: inherit;
+  }
+  &__tempo {
+    position: absolute; z-index: 20; top: 0.7rem; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 0.55rem; padding: 0.35rem 0.55rem;
+    color: var(--piano-fg); background: color-mix(in srgb, var(--piano-surface) 94%, transparent);
+    border: 1px solid var(--piano-border); border-radius: 999px;
+    button { width: 2rem; height: 2rem; border-radius: 50%; border: 1px solid var(--piano-border); background: transparent; color: inherit; font: inherit; }
+    strong { white-space: nowrap; font-size: 0.9rem; }
+  }
+}
+
+.piano-learn-lab {
+  position: absolute; inset: 0; z-index: 30; min-height: 0;
+  display: flex; flex-direction: column; background: var(--piano-bg);
+  > .piano-exercise-run { flex: 1 1 auto; min-height: 0; }
+  &__toolbar { z-index: 20; flex: 0 0 auto; min-height: 3.25rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.7rem; padding: 0.5rem 0.65rem; color: var(--piano-fg); background: var(--piano-surface-1); border-bottom: 1px solid var(--piano-border); }
+  &__back { display: flex; align-items: center; gap: 0.25rem; min-width: 4rem; min-height: 4rem; padding: 0.4rem 0.7rem; color: inherit; background: transparent; border: 1px solid var(--piano-border); border-radius: var(--r-sm); font: inherit; }
+  &__back span:first-child { font-size: 1.5rem; line-height: 0.7; }
+  &__identity, &__task { display: grid; min-width: 0; line-height: 1.1; }
+  &__identity { padding-right: 0.7rem; border-right: 1px solid var(--piano-border); }
+  &__identity span, &__task span { overflow: hidden; color: var(--piano-muted); font-size: 0.72rem; text-overflow: ellipsis; white-space: nowrap; }
+  &__task { flex: 1 1 auto; }
+  &__tempo { flex: 0 0 auto; display: grid; justify-items: center; gap: 0.15rem; }
+  &__tempo button { min-height: 4rem; padding: 0.4rem 0.75rem; border-radius: var(--r-sm); border: 1px solid var(--piano-border); background: transparent; color: inherit; font: inherit; }
+  &__tempo span { color: var(--piano-muted); font-size: 0.65rem; }
+  &__tempo strong { white-space: nowrap; font-size: 0.85rem; }
+  &__click-level { flex: 0 0 auto; display: flex; align-items: center; gap: 0.25rem; }
+  &__click-level > span { margin-right: 0.25rem; color: var(--piano-muted); font-size: 0.8rem; }
+  &__click-level button { min-width: 4rem; min-height: 4rem; padding: 0.4rem 0.65rem; color: var(--piano-fg); background: var(--piano-surface); border: 1px solid var(--piano-border); border-radius: var(--r-sm); font: inherit; font-size: 0.85rem; font-weight: 600; }
+  &__click-level button[aria-pressed="true"] { color: var(--piano-accent-text); background: color-mix(in srgb, var(--piano-accent) 18%, var(--piano-surface)); border-color: var(--piano-accent); box-shadow: inset 0 0 0 1px var(--piano-accent); }
+  &__click-level button:focus-visible { outline: 2px solid var(--piano-accent); outline-offset: 2px; }
+  &__run-controls { order: 10; flex: 1 0 100%; display: grid; grid-template-columns: repeat(3, minmax(8rem, 1fr)); gap: 0.5rem; }
+  &__run-controls button { min-height: 4rem; padding: 0.5rem 0.8rem; color: var(--piano-fg); background: var(--piano-surface); border: 1px solid var(--piano-border); border-radius: var(--r-md); font: inherit; font-size: 1rem; font-weight: 750; }
+  &__run-controls button:first-child { border-color: var(--piano-accent); }
+  &__run-controls button:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; }
+  &__success { position: absolute; z-index: 35; inset: 3.25rem 0 0; display: grid; place-content: center; justify-items: center; gap: 0.3rem; background: color-mix(in srgb, var(--piano-bg) 82%, transparent); color: var(--piano-fg); }
+  &__success strong { color: var(--piano-accent-text); font-size: clamp(1.8rem, 5vw, 3.5rem); }
+  &__success span { color: var(--piano-muted); }
+  @media (max-width: 760px) {
+    &__back span:last-child, &__identity span { display: none; }
+    &__toolbar { gap: 0.45rem; }
+  }
+}
+.piano-learn-tempo-sheet {
+  &__bpm { margin: 0; color: var(--piano-muted); text-align: center; }
+  &__stages { display: grid; gap: 0.6rem; padding: 0.75rem 0; }
+  &__stages button, &__back { min-height: 4rem; padding: 0.5rem 1rem; color: var(--piano-fg); background: var(--piano-surface); border: 1px solid var(--piano-border); border-radius: var(--r-sm); font: inherit; }
+  &__stages button[aria-pressed="true"] { color: var(--piano-accent-text); border-color: var(--piano-accent); background: color-mix(in srgb, var(--piano-accent) 18%, var(--piano-surface)); }
+  &__stages button:focus-visible, &__back:focus-visible { outline: 2px solid var(--piano-accent); outline-offset: 3px; }
+  &__back { width: 100%; }
+}
+
+// Learn launchpad: a child at the piano gets one obvious next action without
+// losing access to anything already earned. This deliberately uses the shared
+// 64/88px TouchButton contract rather than the compact transport-bar grammar.
+.piano-learn-launchpad {
+  position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column;
+  overflow: hidden; color: var(--piano-fg); background: var(--piano-bg);
+  > header { min-height: 64px; padding: 0.5rem 1rem; display: flex; align-items: center; gap: 1rem; background: var(--piano-surface-1); border-bottom: 1px solid var(--piano-border); }
+  > header > div { display: grid; line-height: 1.15; }
+  > header > div strong { font-size: 1.25rem; }
+  > header > div span { color: var(--piano-muted); }
+  &__back { min-width: 64px; min-height: 64px; padding: 0.5rem 0.8rem; display: inline-flex; align-items: center; gap: 0.4rem; color: inherit; background: transparent; border: 1px solid var(--piano-border); border-radius: var(--r-md); font: inherit; }
+  &__earned { margin-left: auto; display: inline-flex; align-items: center; gap: 0.4rem; color: var(--piano-accent-text); font-weight: 750; }
+  &__body { flex: 1 1 auto; min-height: 0; padding: 1rem; display: grid; grid-template-columns: minmax(0, 3fr) minmax(25rem, 2fr); gap: 1rem; }
+  &__preview { min-height: 0; overflow: hidden; display: grid; place-items: center; border: 1px solid var(--piano-border); border-radius: var(--r-lg); background: var(--piano-surface-2); color: var(--piano-fg); }
+  &__preview > .piano-icon { font-size: 8rem; opacity: 0.16; }
+  &__actions { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0.75rem; }
+  &__secondary { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+  &__card { justify-content: flex-start; min-width: 0; text-align: left; }
+  &__card > .ds-touch__label { width: 100%; display: flex; align-items: center; gap: 1rem; }
+  &__card .piano-icon { flex: 0 0 auto; font-size: 2.4rem; }
+  &__card span span { min-width: 0; display: grid; gap: 0.25rem; }
+  &__card strong { font-size: 1.2rem; }
+  &__card small { color: var(--piano-muted); font-size: 0.85rem; }
+  &__card.is-primary { min-height: 112px; border-color: var(--piano-warn); background: color-mix(in srgb, var(--piano-warn) 14%, var(--piano-surface)); }
+  &__card.is-primary .piano-icon { font-size: 3.25rem; }
+  &__card.is-challenge { min-height: 72px; }
+  &__card[data-state='complete'] { border-color: var(--piano-accent); }
+  &__review { display: grid; grid-template-columns: 1fr 1fr; align-content: start; gap: 0.75rem; }
+  &__review h2 { grid-column: 1 / -1; margin: 0.25rem 0; }
+}
+.piano-learn-builder {
+  display: grid; gap: 0.85rem;
+  h2, h3 { margin: 0; }
+  > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
+  > div h3 { grid-column: 1 / -1; color: var(--piano-muted); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.08em; }
+  .ds-touch { min-width: 0; padding: 0.55rem; font-size: 1rem; }
+  .ds-touch[aria-pressed='true'] { border-color: var(--piano-accent); background: color-mix(in srgb, var(--piano-accent) 18%, var(--piano-surface)); box-shadow: inset 0 0 0 1px var(--piano-accent); }
+  .ds-touch__label { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; }
+  .piano-icon { font-size: 2rem; }
+  small { color: var(--piano-muted); }
+  &__start { width: 100%; min-height: 88px; margin-top: 0.25rem; }
+}
+.piano-learn-result {
+  position: absolute; inset: 0; z-index: 40; display: grid; place-content: center; justify-items: center; gap: 0.75rem; padding: 2rem; color: var(--piano-fg); background: var(--piano-bg);
+  > .piano-icon { font-size: 5rem; color: var(--piano-accent); }
+  h2, p { margin: 0; }
+  h2 { font-size: clamp(2rem, 5vw, 4rem); }
+  p { font-size: 1.6rem; color: var(--piano-muted); }
+  &__actions { min-width: min(42rem, 90vw); display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
+  &__tally { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; }
+  &__tally span { padding: 0.4rem 0.7rem; border: 1px solid var(--piano-border); border-radius: var(--r-pill); background: var(--piano-surface); font-weight: 750; }
+}
+@media (max-width: 900px) {
+  .piano-learn-launchpad__body { grid-template-columns: 1fr 24rem; padding: 0.65rem; }
+  .piano-learn-launchpad__secondary, .piano-learn-launchpad__review { grid-template-columns: 1fr; }
+}
+.piano-learn-passage-map.is-achievement {
+  border-color: var(--piano-accent);
+  box-shadow: 0 0 0 0.5rem color-mix(in srgb, var(--piano-accent) 28%, transparent);
+  animation: piano-score-countin-pop calc(var(--ds-motion-base) * 3.5) var(--ds-motion-easing) both;
+}
+
+
+// Count-in overlay: countdown and draining bar, followed by a small PLAY cue.
+// ScorePlayer retains its viewport layer; ExerciseRun bounds it to the stage.
+// Pointer-transparent so the owning surface still receives score taps.
 .piano-score-countin {
   position: fixed; inset: 0; z-index: 40; pointer-events: none;
-  display: flex; align-items: center; justify-content: center;
+  display: flex; flex-direction: column; gap: 1.5rem; align-items: center; justify-content: center;
+  &__announcement {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
   &__beat {
     font-size: clamp(6rem, 22vmin, 16rem); font-weight: 800; line-height: 1;
     color: var(--piano-accent, #2ec46f);
     text-shadow: 0 0 2.5rem rgba(0, 0, 0, 0.55), 0 0 1rem rgba(46, 196, 111, 0.6);
     animation: piano-score-countin-pop 0.5s ease-out;
   }
+  &__bar {
+    width: min(24rem, 60%); height: 0.5rem; border-radius: 1rem;
+    background: color-mix(in srgb, var(--piano-accent) 15%, transparent);
+    overflow: hidden;
+    &::after {
+      content: ''; display: block; height: 100%; background: var(--piano-accent);
+      transform: scaleX(var(--countdown-progress, 1)); transform-origin: left;
+    }
+  }
+  &.is-play {
+    justify-content: flex-start;
+    padding-top: 0.75rem;
+    .piano-score-countin__beat { font-size: clamp(1.5rem, 4vmin, 3rem); }
+  }
 }
+.piano-exercise-run__stage > .piano-score-countin { position: absolute; }
 @keyframes piano-score-countin-pop {
   from { transform: scale(1.35); opacity: 0.25; }
   to   { transform: scale(1); opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
   .piano-score-countin__beat { animation: none; }
+  .piano-learn-passage-map.is-achievement { animation: none; }
 }
 
 .piano-score-cursor {
