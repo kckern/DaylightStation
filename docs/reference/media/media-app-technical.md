@@ -1041,7 +1041,47 @@ until the page the fallback loads subscribes; but if that base-page load also
 fails and the count is still zero, the load fails the same way instead of
 broadcasting to no one.
 
+**Prewarm is bounded.** For `queue=` and `play=` dispatches,
+`WakeAndLoadService` asks `TranscodePrewarmService` to resolve the ref through
+the same queue resolution the screen uses (`GET /api/v1/queue/<ref>`) and to
+warm the first item's transcode. This is best-effort and runs through Plex,
+which serializes requests, so it is bounded by an injected deadline
+(`prewarmDeadlineMs`, default 10 s, applied via the application scheduler's
+`withDeadline`). Past the deadline the dispatch loads **unprewarmed**:
+`wake-and-load.prewarm.timeout` (warn, with `deadlineMs`), `steps.prewarm =
+{ ok: false, reason: 'timeout' }`, and a `prewarm` `done` progress event with
+`warning: 'timeout'`. The prewarm result is applied only when it arrives in
+time; a late result or rejection is logged as `wake-and-load.prewarm.late` and
+never touches the query already sent to the screen. A permanent prewarm failure
+(unresolvable content) still fails the dispatch at `prewarm`.
+
+**Receiver-outcome watchdog.** After a successful non-adopt load, the service
+watches `device-state:<deviceId>` for 90 s. Nothing counts until the receiver
+acknowledged this `dispatchId` (`device-ack`), and the snapshot must carry an
+owner (`sessionId`, `ownerId`, `playbackOwner` with integer revisions). Add
+(requested, or `appliedAs: 'add'` under Add only) confirms the `queue` step from
+a same-owner queue revision with the current item unchanged. Play confirms the
+`playback` step from a `playing` state whose owner advanced past the pre-load
+snapshot (new session, new owner instance, or higher `playbackRevision`), on
+one **basis**, logged on `wake-and-load.playback.armed`, `.confirmed`
+(with `matchedBy`) and `.timeout` (`.armed`/`.timeout` also carry `requestedContentId`, the original ref such as `office-program`, beside the resolved `expectedContentId`):
+
+| Basis | When | Confirms on |
+|---|---|---|
+| `item-action` | The command carries an item action | The queue's current entry carries that `operationId` |
+| `resolved-queue` | Prewarm resolved concrete queue ids (`queueContentIds`, plus the prewarmed first id) in time | Current item is a resolved id (`candidate`), or the screen's queue shares items with the resolution and holds the current item (`queue-overlap` — program slots such as `strategy: rotation` are random per resolution) |
+| `fresh-owned-playing` | Nothing concrete resolved in time for a `queue=` or `play-next=` ref, or the prewarm deadline expired | The first fresh owned `playing` state after the ack whose current item (or session) differs from the pre-load snapshot — a bare Play/pause revision bump on the baseline item does not count. Applies to `queue=`, `play-next=` and timed-out prewarms; a concrete requested/resolved id still matches first |
+| `requested-id` | Otherwise | Current item matches the requested id |
+
+The program id itself (e.g. `queue=office-program`) is never reported by a
+screen, which reports the concrete item it plays. Arming on the program id
+alone made every program dispatch time out. A screen that never reaches
+`playing` (for example, its own queue fetch timed out) still ends in
+`playback: timeout`.
+
 **Verified by:**
+- `tests/isolated/application/devices/WakeAndLoadService.program-dispatch.test.mjs` — prewarm deadline (default and injected), late result/rejection isolation, program confirmation by resolved candidate / queue overlap / fresh-owned-playing fallback, ack still required, unresolved program that never plays still times out
+- `tests/isolated/application/devices/WakeAndLoadService.watchdog.test.mjs`, `…playback-watchdog.test.mjs`, `…addOnly.test.mjs` — owner/ack correlation, Add, item actions
 - `backend/tests/unit/suite/4_api/v1/routers/device.load-adopt.test.mjs` — adopt body validation + idempotency-conflict mapping
 - `backend/tests/unit/suite/3_applications/devices/DispatchIdempotencyService.test.mjs` — 60s TTL cache semantics
 - `backend/tests/unit/suite/3_applications/devices/WakeAndLoadService.test.mjs` — adoptSnapshot wake path
