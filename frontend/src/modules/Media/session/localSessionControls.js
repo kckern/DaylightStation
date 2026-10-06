@@ -117,9 +117,6 @@ export function createLocalSessionControls({
     },
   });
 
-  const saved = store.read(storageKey);
-  if (saved && typeof saved === 'object') machine.hydrate(saved);
-
   // Lifecycle logging: diff what the machine publishes, so every set,
   // fade, stop, countdown and auto-continue result is one structured event.
   let last = machine.toPublished();
@@ -135,6 +132,9 @@ export function createLocalSessionControls({
         mode: nextSleep?.mode ?? prevSleep?.mode ?? null,
         minutes: nextSleep?.minutes ?? null,
       });
+    } else if (!last.sleepResume && next.sleepResume && !nextSleep) {
+      // A timer that came due while nothing was running (hydrate): it stopped.
+      mediaLog.sleepTimerChanged({ target: 'local', state: 'stopped', mode: 'minutes', minutes: null });
     } else if (nextSleep?.fading && !prevSleep?.fading) {
       mediaLog.sleepTimerChanged({ target: 'local', state: 'fading', mode: nextSleep.mode, minutes: nextSleep.minutes ?? null });
     }
@@ -158,6 +158,11 @@ export function createLocalSessionControls({
       try { fn(); } catch { /* listener isolation */ }
     }
   });
+
+  // Hydrate AFTER the persist/log subscriber is attached, so a hydrate-time
+  // sleepResume or re-armed timer is persisted and logged at once.
+  const saved = store.read(storageKey);
+  if (saved && typeof saved === 'object') machine.hydrate(saved);
 
   const run = async (action, value, thunk) => {
     mediaLog.sessionControlCommand({ target: 'local', action, ...(value !== undefined ? { value } : {}) });
