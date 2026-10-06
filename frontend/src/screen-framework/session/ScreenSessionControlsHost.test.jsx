@@ -177,4 +177,53 @@ describe('ScreenSessionControlsHost', () => {
     act(() => { view.getByTestId('screen-next-countdown-cancel').click(); });
     expect(view.getByTestId('screen-next-countdown-announce').textContent).toMatch(/cancel/i);
   });
+
+  describe('TV input: D-pad and OK only (FKB swallows Esc)', () => {
+    const ep = (n) => ({ contentId: `plex:${n}`, title: `Ep ${n}`, type: 'episode' });
+    const actionsFor = () => ({ advance: vi.fn(), stop: vi.fn(), finish: vi.fn(), restartQueue: vi.fn() });
+
+    it('the countdown focuses Cancel and OK cancels it', () => {
+      const { controls, view } = mount(makeSource(playing));
+      const actions = actionsFor();
+      act(() => { controls.naturalEndPolicy({ isQueue: true, current: ep(1), next: ep(2) }, actions); });
+      expect(document.activeElement).toBe(view.getByTestId('screen-next-countdown-cancel'));
+      act(() => { getActionBus().emit('select', {}); });
+      expect(actions.stop).toHaveBeenCalled();
+      expect(view.queryByTestId('screen-next-countdown')).toBeNull();
+    });
+
+    it('the countdown reaches Play now with the D-pad and OK starts it', () => {
+      const { controls, view } = mount(makeSource(playing));
+      const actions = actionsFor();
+      act(() => { controls.naturalEndPolicy({ isQueue: true, current: ep(1), next: ep(2) }, actions); });
+      act(() => { getActionBus().emit('navigate', { direction: 'right' }); });
+      expect(document.activeElement).toBe(view.getByTestId('screen-next-countdown-start'));
+      act(() => { getActionBus().emit('select', {}); });
+      expect(actions.advance).toHaveBeenCalled();
+    });
+
+    it('OK presses Put it back without any pointer or Esc', async () => {
+      const restore = vi.fn((p) => getActionBus().emit('media:restore-snapshot-result', { requestId: p.requestId, ok: true }));
+      getActionBus().subscribe('media:restore-snapshot', restore);
+      const { controls } = mount(makeSource(playing));
+      act(() => { controls.noteRemoteCommand({ command: 'transport', params: { action: 'stop' }, origin: { kind: 'routine', name: 'Bedtime' } }); });
+      await act(async () => { getActionBus().emit('select', {}); });
+      expect(restore).toHaveBeenCalledWith(expect.objectContaining({ reason: 'put-back' }));
+    });
+
+    it('OK is left alone once there is nothing to put back', () => {
+      mount(makeSource(playing));
+      expect(getActionBus().emit('select', {})).toBe(false);
+    });
+
+    it('OK keeps the screen playing while the sleep fade is on screen', async () => {
+      const { controls, view } = mount(makeSource(playing));
+      await act(async () => { await controls.handleSession('sleep-timer', { minutes: 1 }); });
+      await act(async () => { vi.advanceTimersByTime(55_000); });
+      expect(view.getByTestId('screen-sleep-fading')).toBeTruthy();
+      await act(async () => { getActionBus().emit('select', {}); });
+      expect(view.queryByTestId('screen-sleep-fading')).toBeNull();
+      expect(controls.toPublished().sleepTimer).toBeNull();
+    });
+  });
 });

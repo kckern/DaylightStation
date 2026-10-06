@@ -8,6 +8,7 @@
 // music plaque.
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { getActionBus } from '../input/ActionBus.js';
+import { useScopedRemoteControls } from '../input/useScopedRemoteControls.js';
 import { getPlayerQueueOpRegistry } from '../../modules/Player/lib/queueOpRegistry.js';
 import { registerTrackOwner, createTrackPreferenceStore } from '../../modules/Player/lib/trackPolicy.js';
 import { getPlayerSessionRegistry } from '../publishers/playerSessionRegistry.js';
@@ -223,12 +224,6 @@ export function ScreenBriefSurface({ features }) {
   const ended = useCallback(() => { features.endBrief('ended'); }, [features]);
   // Stable per brief: a fresh `play` object each tick would remount the clip.
   const clipPlay = useMemo(() => (brief?.contentId ? { contentId: brief.contentId } : null), [brief?.id, brief?.contentId]); // eslint-disable-line react-hooks/exhaustive-deps
-  // While something is shown briefly, Back closes it and returns the programme.
-  useEffect(() => {
-    if (!brief) return undefined;
-    return getActionBus().capture(['escape'], () => { close(); return true; });
-  }, [!!brief, close]); // eslint-disable-line react-hooks/exhaustive-deps
-
   if (!brief) return null;
   const remaining = brief.endsAt ? Math.max(0, Math.ceil((Date.parse(brief.endsAt) - Date.now()) / 1000)) : null;
   return (
@@ -246,7 +241,7 @@ export function ScreenBriefSurface({ features }) {
             />
           )}
       </div>
-      <div className="screen-brief__bar" role="status" aria-live="polite">
+      <BriefBar onClose={close}>
         <span className="screen-brief__label" data-testid="screen-brief-label">{brief.label}</span>
         {brief.returnTo && (
           <span className="screen-brief__return" aria-live="off" data-testid="screen-brief-return">
@@ -258,9 +253,16 @@ export function ScreenBriefSurface({ features }) {
           <span className="screen-brief__return" aria-live="off" data-testid="screen-brief-return">{`Closes in ${remaining}s`}</span>
         )}
         <button type="button" className="screen-brief__close" data-testid="screen-brief-close" onClick={close}>Close</button>
-      </div>
+      </BriefBar>
     </div>
   );
+}
+
+/** Close is the only control, so D-pad/OK alone operate it; Back closes too when the remote sends it. */
+function BriefBar({ onClose, children }) {
+  const rootRef = useRef(null);
+  useScopedRemoteControls(rootRef, { onEscape: onClose });
+  return <div ref={rootRef} className="screen-brief__bar" role="status" aria-live="polite">{children}</div>;
 }
 
 function ScreenMusicPlaque({ features }) {
