@@ -23,7 +23,7 @@ import DrillProgress, { DrillPlacard } from './DrillProgress.jsx';
 import { deckSets, deckProjection, deckWindow } from './deckProgress.js';
 import ExerciseNotation from './ExerciseNotation.jsx';
 import { timedRunPresentation } from './timedRunPresentation.js';
-import { timedVerdicts, timedRunSummary } from '../../../performance/timedVerdicts.js';
+import { assessmentVerdicts, verdictSummary, timedRunSummary } from '../../../performance/timedVerdicts.js';
 import { timedTarget, timedWindowMs } from '../../../performance/timedJudge.js';
 import KeysAsk from './KeysAsk.jsx';
 import ScorePassage from './ScorePassage.jsx';
@@ -645,7 +645,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
    * what the judge recorded. Memoized on the snapshot, which changes identity
    * only when the runtime publishes, so the 50 ms clock tick does not rebuild it.
    */
-  const verdicts = useMemo(() => (timed ? timedVerdicts(snapshot) : null), [timed, snapshot]);
+  const verdicts = useMemo(() => assessmentVerdicts(snapshot), [snapshot]);
+  const liveTally = useMemo(() => verdictSummary(snapshot), [snapshot]);
   const clockPosition = timed ? timedRunPresentation(snapshot, Math.max(clockNow, Date.now())) : null;
   // The matcher may finish early. Its result must not end the musical display
   // before the authored time has elapsed.
@@ -1483,6 +1484,15 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
           screen — they keep the run's paper card. Lit keys are not ink, and a
           keyboard on a cream card would read as a picture of a piano. */}
       <div className={`piano-exercise-run__stage ${stage === 'keys' ? 'piano-exercise-run__ask' : 'piano-exercise-run__score'}`}>
+        {snapshot.musicalInput && <div className="piano-exercise-run__tally" aria-live="polite" aria-label="Practice score">
+          <span className="is-right"><b aria-hidden="true">✓</b> Right {liveTally.right}</span>
+          <span className="is-wrong"><b aria-hidden="true">×</b> Wrong {liveTally.wrong}</span>
+          {timed && <>
+            <span className="is-timing"><b aria-hidden="true">◀</b> Early {liveTally.early}</span>
+            <span className="is-timing"><b aria-hidden="true">▶</b> Late {liveTally.late}</span>
+            <span className="is-missed"><b aria-hidden="true">○</b> Missed {liveTally.missed}</span>
+          </>}
+        </div>}
         {stage === 'keys' && (
           <KeysAsk
             events={keysWindow.events}

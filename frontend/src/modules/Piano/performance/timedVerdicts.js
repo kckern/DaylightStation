@@ -21,7 +21,7 @@ const withDrift = (verdict, driftMs) => (Number.isFinite(driftMs) ? { ...verdict
  * entry. A wrong pitch never overwrites an expected note's verdict at the
  * same midi.
  */
-export function timedVerdicts(snapshot) {
+export function assessmentVerdicts(snapshot) {
   const verdicts = new Map();
   const events = snapshot?.expectation?.events || [];
   const hits = snapshot?.hits || {};
@@ -49,6 +49,25 @@ export function timedVerdicts(snapshot) {
     verdicts.set(index, byMidi);
   }
   return verdicts;
+}
+
+// Compatibility name for callers that specifically describe a timed run.
+export const timedVerdicts = assessmentVerdicts;
+
+/** One truthful count projection for live UI, results, and telemetry. */
+export function verdictSummary(snapshot) {
+  const hits = Object.values(snapshot?.hits || {});
+  const wrongPitches = (snapshot?.wrong || [])
+    .map(({ midi }) => midi)
+    .filter(Number.isFinite);
+  return {
+    right: hits.length,
+    wrong: wrongPitches.length,
+    missed: (snapshot?.misses || []).length,
+    early: hits.filter(({ offbeat }) => offbeat === 'early').length,
+    late: hits.filter(({ offbeat }) => offbeat === 'late').length,
+    wrongPitches,
+  };
 }
 
 /**

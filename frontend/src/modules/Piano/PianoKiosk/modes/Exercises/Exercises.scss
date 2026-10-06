@@ -507,6 +507,12 @@
 .piano-exercise-run__ready span { color: var(--ex-danger); }
 .piano-exercise-run__status { min-height: 2.75rem; margin: 0; padding: 0.6rem 0.8rem; border-radius: var(--r-sm, 8px); background: var(--ex-surface); color: var(--ex-muted); }
 .piano-exercise-run__status.is-wrong { box-shadow: inset 3px 0 var(--ex-danger); color: #f0aaa4; }
+.piano-exercise-run__tally { position: absolute; z-index: 8; inset: 0.6rem 0.6rem auto auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.35rem; max-width: calc(100% - 1.2rem); pointer-events: none; }
+.piano-exercise-run__tally span { display: inline-flex; align-items: center; gap: 0.3rem; min-height: 2rem; padding: 0.25rem 0.55rem; border: 1px solid var(--ex-border); border-radius: var(--r-pill, 999px); background: color-mix(in srgb, var(--ex-surface) 92%, transparent); color: var(--ex-fg); font-size: 0.8rem; font-weight: 750; box-shadow: 0 2px 8px color-mix(in srgb, #000 22%, transparent); }
+.piano-exercise-run__tally .is-right b { color: var(--ex-accent-text); }
+.piano-exercise-run__tally .is-wrong b { color: var(--ex-danger); }
+.piano-exercise-run__tally .is-timing b { color: var(--ex-warn, #de8c00); }
+.piano-exercise-run__tally .is-missed b { color: var(--ex-muted); }
 .piano-exercise-run__result { box-sizing: border-box; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 1.25rem; width: 100%; height: 100%; padding: 0.65rem 0.85rem; border: 1px solid var(--ex-border); border-radius: var(--r-md, 12px); background: var(--ex-surface); }
 .piano-exercise-run__result.is-passed { border-color: var(--ex-accent); }
 .piano-exercise-run__result > div:first-child { display: grid; }
