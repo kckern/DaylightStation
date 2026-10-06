@@ -1433,6 +1433,33 @@ describe('the score stage, engraved by the real OSMD in Chromium', () => {
   }, 120000);
 });
 
+describe('Learn recovery controls at the 1280x800 kiosk canvas', () => {
+  it('keeps recovery actions reachable and accepts Extra slow without losing the run', async () => {
+    await openStage(css, js, KIOSK);
+    await page.evaluate(PROBE);
+    await page.evaluate((musicXml) => window.__stage.mountLab({ musicXml }), fourBars);
+    await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]');
+    const canvas = { top: 0, left: 0, right: KIOSK.width, bottom: KIOSK.height };
+    const controlButtons = await probe.all('.piano-learn-lab__run-controls button');
+    expect(controlButtons.map(({ text }) => text)).toEqual(['Pause', 'Start over', 'Change practice']);
+    for (const button of controlButtons) {
+      const label = button.text;
+      expect(button.height, `${label} is too short`).toBeGreaterThanOrEqual(64);
+      expect(button.width, `${label} is too narrow`).toBeGreaterThanOrEqual(64);
+      expect(inside(button, canvas), `${label} leaves the kiosk canvas: ${say(button)}`).toBe(true);
+      expect(button.reachable, `${label} is not reachable`).toBe(true);
+    }
+    await page.getByRole('button', { name: 'Pause', exact: true }).click();
+    await page.getByRole('button', { name: 'Resume', exact: true }).click();
+    await page.getByRole('button', { name: /^Choose tempo:/ }).click();
+    await page.getByRole('button', { name: 'Extra slow', exact: true }).click();
+    await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]');
+    expect(await probe.text()).toContain('Extra slow · 12 BPM');
+    expect((await probe.one('.piano-exercise-run__stage')).painted).toBe(true);
+    expectNoPageErrors();
+  }, 120000);
+});
+
 describe('timed practice groove at 1920x1200 in real Chromium', () => {
   const overlaps = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
   const stageSelector = '.piano-exercise-run__stage';
@@ -1488,8 +1515,8 @@ describe('timed practice groove at 1920x1200 in real Chromium', () => {
     const opener = page.getByRole('button', { name: 'Choose tempo: Steady · 48 BPM' });
     expect(await probe.count('input[type="number"], input[type="range"]')).toBe(0);
     for (const button of await probe.all('.piano-learn-lab__click-level button')) {
-      expect(button.height).toBeGreaterThanOrEqual(48);
-      expect(button.width).toBeGreaterThanOrEqual(48);
+      expect(button.height).toBeGreaterThanOrEqual(64);
+      expect(button.width).toBeGreaterThanOrEqual(64);
       expect(button.reachable).toBe(true);
       expect(button.background, 'loudness controls need an opaque themed surface').not.toBe('rgba(0, 0, 0, 0)');
     }
@@ -1509,9 +1536,9 @@ describe('timed practice groove at 1920x1200 in real Chromium', () => {
     const panel = await probe.one('.piano-learn-tempo-sheet .piano-tsheet__panel');
     expect(inside(panel, canvas), `tempo panel overflows canvas: ${say(panel)}`).toBe(true);
     const buttons = await probe.all('.piano-learn-tempo-sheet__stages button');
-    expect(buttons.map((b) => b.text)).toEqual(['Very slow', 'Slow', 'Steady', 'Nearly there', 'Full speed']);
+    expect(buttons.map((b) => b.text)).toEqual(['Extra slow', 'Very slow', 'Slow', 'Steady', 'Nearly there', 'Full speed']);
     for (const button of buttons) {
-      expect(button.height).toBeGreaterThanOrEqual(48);
+      expect(button.height).toBeGreaterThanOrEqual(64);
       expect(button.reachable, `unreachable tempo stage ${button.text}`).toBe(true);
       expect(button.background, 'tempo choices need an opaque themed surface').not.toBe('rgba(0, 0, 0, 0)');
     }
