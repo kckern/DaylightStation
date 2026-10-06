@@ -235,10 +235,13 @@ describe('LearnLab', () => {
 
   it('advances through configured set percentages and carries the full score tempo source', () => {
     const timed = { ...rung, mode: 'cued', sets: 3, reps: 1, passCount: 1, required: 3, tempoPercent: 60, tempoPercents: [60, 75, 90] };
-    render(<LearnLab {...base} rung={timed} tempo={{ tempoMap: [{ onsetQuarter: 0, bpm: 100 }, { onsetQuarter: 8, bpm: 80 }], tempoSource: 'musicxml', minimumPercent: 40, maximumPercent: 100 }} />);
+    const onRecord = vi.fn(() => ({}));
+    render(<LearnLab {...base} onRecord={onRecord} rung={timed} tempo={{ tempoMap: [{ onsetQuarter: 0, bpm: 100 }, { onsetQuarter: 8, bpm: 80 }], tempoSource: 'musicxml', minimumPercent: 40, maximumPercent: 100 }} />);
     expect(screen.getByRole('button', { name: 'Choose tempo: Nearly there · 80 BPM' })).toBeInTheDocument();
     expect(exercise.props.score.tempoPercent).toBe(80);
     expect(exercise.props.traceContext.tempoSource).toBe('musicxml');
+    fireEvent.click(screen.getByRole('button', { name: 'Finish take' }));
+    expect(onRecord).toHaveBeenCalledTimes(1);
   });
 
   it('keeps learner controls within configured bounds', () => {
