@@ -58,3 +58,47 @@ export async function offscreenControls(page, selectors) {
 }
 
 export const noHorizontalScroll = (page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
+
+/** WCAG contrast ratio of the rendered text colour against its effective (alpha-flattened) background. */
+export async function contrastOf(page, selector) {
+  return page.evaluate((selector) => {
+    const parse = (c) => {
+      const m = c.match(/rgba?\(([^)]+)\)/);
+      if (!m) return null;
+      const [r, g, b, a = 1] = m[1].split(/[ ,/]+/).filter(Boolean).map(Number);
+      return { r, g, b, a };
+    };
+    const over = (top, bottom) => ({
+      r: top.r * top.a + bottom.r * (1 - top.a), g: top.g * top.a + bottom.g * (1 - top.a), b: top.b * top.a + bottom.b * (1 - top.a), a: 1,
+    });
+    const lum = ({ r, g, b }) => {
+      const f = (v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; };
+      return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+    };
+    const el = document.querySelector(selector);
+    if (!el) return { selector, missing: true };
+    // Background: stack every translucent layer up to the first opaque one.
+    const layers = [];
+    for (let n = el; n; n = n.parentElement) {
+      const bg = parse(getComputedStyle(n).backgroundColor);
+      if (bg && bg.a > 0) { layers.push(bg); if (bg.a >= 1) break; }
+    }
+    let base = { r: 16, g: 17, b: 19, a: 1 }; // the app's body colour, if nothing opaque was found
+    if (layers.length && layers[layers.length - 1].a >= 1) base = layers.pop();
+    for (const l of layers.reverse()) base = over(l, base);
+    const fg = parse(getComputedStyle(el).color);
+    const eff = fg.a < 1 ? over(fg, base) : fg;
+    const [hi, lo] = [lum(eff), lum(base)].sort((a, b) => b - a);
+    return { selector, ratio: Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100, fg: getComputedStyle(el).color, bg: `rgb(${Math.round(base.r)}, ${Math.round(base.g)}, ${Math.round(base.b)})`, size: getComputedStyle(el).fontSize };
+  }, selector);
+}
+
+/** Total layout-shift score observed while `action` runs (excluding shifts right after a person's input). */
+export async function layoutShiftDuring(page, action) {
+  await page.evaluate(() => {
+    window.__cls = 0;
+    new PerformanceObserver((list) => { for (const e of list.getEntries()) if (!e.hadRecentInput) window.__cls += e.value; }).observe({ type: 'layout-shift', buffered: false });
+  });
+  await action();
+  return page.evaluate(() => window.__cls);
+}
