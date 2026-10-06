@@ -162,3 +162,142 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
     });
   });
 }
+
+// ---- Persona walkthroughs (taxonomy 4.2) ------------------------------------
+// One person at a time, with two virtual screens and this device, ordinary
+// input only. Each step checks the page is usable at that moment (no sideways
+// scroll, every hit target 44 px) and keeps a screenshot to look at.
+const B = 'acceptance-media-b';
+const SCREEN_B = 'acceptance-second';
+const stateOf = async (request, id) => (await call(request, 'GET', `/api/v1/device/${id}/receiver-state`)).body?.snapshot ?? null;
+
+async function openScreen(context, request, id, route) {
+  const page = await context.newPage();
+  const ready = async () => (await call(request, 'GET', `/api/v1/device/${id}/receiver-ready`)).body?.ready === true;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    await page.goto(route, { waitUntil: 'domcontentloaded' });
+    const deadline = Date.now() + 40000;
+    while (Date.now() < deadline) {
+      if (await ready()) { await page.waitForTimeout(1500); return page; }
+      await page.waitForTimeout(1000);
+    }
+  }
+  expect(await ready(), `virtual receiver ${id} never became ready`).toBe(true);
+  return page;
+}
+
+async function usable(page, label) {
+  expect(await noHorizontalScroll(page), `${label}: page scrolls sideways`).toBe(true);
+  const small = await smallTargets(page);
+  expect(small, `${label}: small targets ${small.map((x) => `${x.id ?? x.name} ${x.w}x${x.h}`).join('; ')}`).toEqual([]);
+}
+
+for (const [size, viewport] of Object.entries(VIEWPORTS)) {
+  test(`[personas] ${size}: Seeker, Hand-Held Viewer, Big-Screen Sender, House Watch, Room Hopper, Fixer`, async ({ browser, context, request }) => {
+    const screenA = await openReceiver(context, request);
+    const screenB = await openScreen(context, request, B, `/screen/${SCREEN_B}`);
+    const d = await newDevice(browser, viewport, `Persona ${size} ${RUN}`);
+    const page = d.page;
+    const homeTab = page.getByTestId(d.phone ? 'app-tab-home' : 'app-nav-home');
+    const fleetTab = page.getByTestId(d.phone ? 'app-tab-fleet' : 'app-nav-fleet');
+    try {
+      await test.step('Seeker: a half-remembered name becomes playback in one tap', async () => {
+        await typeQuery(d);
+        await shot(page, `seeker-results-${size}`);
+        await usable(page, 'seeker results');
+        await resultRow(d).click();
+        await closeSearch(d);
+        await expect.poll(() => nativePlaying(page), { timeout: 90000 }).toBe(true);
+        await shot(page, `seeker-playing-${size}`);
+        await usable(page, 'seeker playing');
+        await page.getByTestId('mini-player-open-nowplaying').click();
+        await expect(page.getByTestId('queue-panel')).toBeVisible({ timeout: 15000 });
+        await shot(page, `seeker-nowplaying-${size}`);
+        await usable(page, 'seeker now playing');
+        await page.locator('.np-back-btn').click();
+      });
+
+      await test.step('Hand-Held Viewer: pause and resume from the handle, one thumb', async () => {
+        await expect(page.getByTestId('mini-toggle')).toBeVisible();
+        await page.getByTestId('mini-toggle').click();
+        await expect.poll(() => page.locator('.video-player video').evaluate((v) => v.paused).catch(() => false), { timeout: 20000 }).toBe(true);
+        await shot(page, `handheld-paused-${size}`);
+        await page.getByTestId('mini-toggle').click();
+        await expect.poll(() => nativePlaying(page), { timeout: 30000 }).toBe(true);
+        await usable(page, 'hand-held');
+      });
+
+      await test.step('Big-Screen Sender: aim at a screen, tap a result, it plays there', async () => {
+        await typeQuery(d);
+        await aimScope(d).getByTestId('destination-line').click();
+        await page.getByRole('button', { name: /^Acceptance receiver Virtual browser/ }).click();
+        await page.getByTestId('picker-submit').click();
+        await expect(aimScope(d).getByTestId('destination-line-name')).toContainText('Acceptance receiver');
+        await shot(page, `sender-aimed-${size}`);
+        await resultRow(d).click();
+        await expect.poll(async () => (await stateOf(request, DEVICE))?.state, { timeout: 120000 }).toMatch(/playing|loading|buffering/);
+        await shot(page, `sender-sent-${size}`);
+        await closeSearch(d);
+        await usable(page, 'sender');
+        // Aim back at this device for the rest of the walk.
+        await typeQuery(d);
+        await aimScope(d).getByTestId('destination-line').click();
+        await page.getByTestId('picker-this-device').click();
+        await expect(aimScope(d).getByTestId('destination-line-name')).toContainText('This device');
+        await closeSearch(d);
+      });
+
+      await test.step('House Watch: every device, in words, and one tap to pause a screen', async () => {
+        expect((await call(request, 'GET', `/api/v1/device/${B}/load?play=${FIXTURE.id}&dispatchId=${randomUUID()}`)).status).toBe(200);
+        await expect.poll(async () => (await stateOf(request, B))?.state, { timeout: 120000 }).toBe('playing');
+        await fleetTab.click();
+        await expect(page.getByTestId('fleet-view')).toBeVisible({ timeout: 20000 });
+        const cards = page.locator('[data-testid^="fleet-card-"]');
+        await expect.poll(() => cards.count(), { timeout: 30000 }).toBeGreaterThanOrEqual(3);
+        await expect(page.getByTestId(`fleet-state-${B}`)).toHaveText(/Playing/, { timeout: 30000 });
+        await shot(page, `housewatch-${size}`);
+        await usable(page, 'house watch');
+        await page.getByTestId(`fleet-pause-${B}`).click();
+        await expect.poll(async () => (await stateOf(request, B))?.state, { timeout: 30000 }).toBe('paused');
+        await expect(page.getByTestId(`fleet-state-${B}`)).toHaveText(/Paused/, { timeout: 30000 });
+      });
+
+      await test.step('Room Hopper: the screen playing elsewhere moves to this device from its Remote', async () => {
+        await page.getByTestId(`fleet-peek-${B}`).click();
+        await page.getByTestId('peek-move-to').click();
+        await page.waitForTimeout(500); // the menu fades in; look at it settled
+        await shot(page, `hopper-menu-${size}`);
+        await usable(page, 'room hopper menu');
+        await page.getByTestId('move-to-local').click();
+        await expect(page.getByTestId('now-playing-view')).toBeVisible({ timeout: 60000 });
+        await expect.poll(async () => (await stateOf(request, B))?.currentItem?.contentId ?? null, { timeout: 60000 }).toBeNull();
+        await shot(page, `hopper-moved-${size}`);
+      });
+
+      await test.step('Fixer: a wrong tap is put back in one tap, and Start fresh clears this device', async () => {
+        await homeTab.click();
+        await page.getByTestId('settings-menu-trigger').click();
+        await page.getByTestId('settings-reset-session').click();
+        await expect(page.getByRole('dialog')).toBeVisible();
+        await shot(page, `fixer-start-fresh-${size}`);
+        await usable(page, 'fixer dialog');
+        await page.getByTestId('confirm-ok').click();
+        await expect(page.getByTestId('mini-player-open-nowplaying')).toHaveCount(0, { timeout: 30000 });
+        await typeQuery(d);
+        await resultRow(d).click();
+        await closeSearch(d);
+        const undo = page.getByTestId('item-action-undo');
+        await expect(undo).toBeVisible({ timeout: 15000 });
+        await undo.click();
+        await expect(page.getByTestId('media-mini-player')).toHaveCount(0, { timeout: 30000 });
+        await shot(page, `fixer-undone-${size}`);
+      });
+    } finally {
+      await call(request, 'POST', `/api/v1/device/${DEVICE}/session/transport`, { action: 'stop' }).catch(() => {});
+      await call(request, 'POST', `/api/v1/device/${B}/session/transport`, { action: 'stop' }).catch(() => {});
+      await d.context.close();
+      await screenA.close();
+      await screenB.close();
+    }
+  });
+}
