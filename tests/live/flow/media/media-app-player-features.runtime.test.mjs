@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { getAppPort } from '../../../_lib/configHelper.mjs';
 
@@ -247,14 +248,20 @@ test.describe('Subtitles and audio language (STEER.12a)', () => {
       }, { timeout: 90000 }).toBe(true);
       const englishMint = mints.find((m) => m.ratingKey === '703558' && m.params.audioStreamID === FILM_ENGLISH);
       expect(englishMint).toBeTruthy();
-      // The audio that was actually SERVED: the manifest of that mint names
-      // the audio language it carries (the film's original is French).
+      // The audio that was actually SERVED, not just asked for: take the
+      // first segment of the stream the page fetched and read its audio
+      // language with ffprobe (the film's original is French).
       expect(mints.manifests.length, 'the page fetched a start manifest').toBeGreaterThan(0);
-      const manifest = await (await request.get(mints.manifests.at(-1))).text();
-      const audioSets = [...manifest.matchAll(/<AdaptationSet[^>]*contentType="audio"[^>]*>/g)].map((m) => m[0]);
-      expect(audioSets.length, 'the mint\'s manifest carries an audio adaptation set').toBeGreaterThan(0);
-      expect(audioSets.join(' ')).toMatch(/lang="en/);
-      expect(audioSets.join(' ')).not.toMatch(/lang="fr/);
+      const startUrl = mints.manifests.at(-1);
+      const master = await (await request.get(startUrl)).text();
+      const variant = new URL(master.split('\n').find((l) => l.endsWith('.m3u8')).trim(), startUrl).toString();
+      const playlist = await (await request.get(variant)).text();
+      const segmentUrl = new URL(playlist.split('\n').find((l) => /\.(ts|m4s|mp4)$/.test(l.trim())).trim(), variant).toString();
+      const segmentFile = path.join(EVIDENCE, 'served-segment.ts');
+      fs.writeFileSync(segmentFile, await (await request.get(segmentUrl)).body());
+      const probed = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream_tags=language', '-of', 'csv=p=0', segmentFile], { encoding: 'utf8' });
+      expect(probed, 'ffprobe of the served segment').toMatch(/eng/);
+      expect(probed).not.toMatch(/fra|fre/);
       expect(Math.abs((await state(request)).position - before)).toBeLessThan(30);
       await expect(audio).toHaveText(/Audio: English/);
       await shot(sender, 'steer12a-remote-audio-english');
