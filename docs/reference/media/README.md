@@ -7,7 +7,7 @@ source-of-truth: sufficient to rebuild the app from scratch.
 | Doc | Layer | Contents |
 |-----|-------|----------|
 | [`media-app.md`](./media-app.md) | **Intent & design** | Why the app exists, objectives, user stories, the nine user journeys (J1–J9), shell anatomy, views, navigation & URL paths, design principles, conceptual subsystems. **Start here.** |
-| [`media-app-requirements.md`](./media-app-requirements.md) | **Requirements** | Numbered normative capabilities (C1–C10), session model & lifecycles, external interfaces, non-functional requirements (N1–N6). |
+| [`media-app-requirements.md`](./media-app-requirements.md) | **Requirements** | The accepted redesign requirements: principles, the numbered `RQ-*` requirements with P0/P1/P2 priority and traces to the stories, non-functional budgets (`NF-TAP`, `NF-A11Y`, `NF-DEV`, …), the reconciliation of the old C1–C10/N1–N6, and the closed open items. |
 | [`media-app-technical.md`](./media-app-technical.md) | **Contracts** | Every wire-level contract: HTTP endpoints, WebSocket topics & envelopes, URL contract, canonical data shapes, log event taxonomy, localStorage schema, error envelopes. |
 | [`search-scopes.md`](./search-scopes.md) | **Feature reference** | Config-driven search scope system: YAML structure, params, app behavior. |
 | [`dash-video-resilience.md`](./dash-video-resilience.md) | **Troubleshooting** | DASH/Plex transcode stall & seek failure modes and debugging checklist (player-layer, shared with other apps). |

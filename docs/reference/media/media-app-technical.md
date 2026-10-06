@@ -1864,6 +1864,49 @@ without sending that screen a transport stop (`planQuiet` `musicOnly` targets). 
 
 ---
 
+### 6.x Screen prompts and TV input (D-pad, OK, unreliable Back)
+
+A screen on the Shield/FKB receives only arrow keys (`navigate`), Enter
+(`select`) and an `escape` that FKB may swallow. Every prompt a screen host
+renders over playback is operable with `navigate`/`select` alone:
+
+| Prompt (host) | Input contract |
+|---|---|
+| Next-episode countdown (`ScreenSessionControlsHost` → `CountdownPrompt`) | Modal via `useScopedRemoteControls`: it captures `navigate`/`select`/`escape` on the ActionBus while shown, focuses **Cancel** (the first control), arrows move to **Play now**, `select` presses the focused control, `escape` cancels as well |
+| Put it back (a screen note) | `OkButton`: while the note is up with a restore available, a bus **capture of `select` only** presses the button; arrows and every other key still reach the player; the capture ends with the note (10 s) |
+| Sleep fade ("Sleep timer — stopping") | `OkButton` **Keep playing** (`cancel-sleep-timer`) owns `select` while the fade runs |
+| Show briefly bar (`ScreenPlayerFeaturesHost` → `BriefBar`) | `useScopedRemoteControls` on the bar: **Close** takes focus, `select` closes, `escape` closes as well |
+| End-of-queue notices, music plaque | Informational; no input |
+
+Controls carry a visible `:focus` ring and a 44 px minimum. Log event
+`ScreenSessionControlsHost` `tv-prompt.ok` (info) records an OK that pressed a
+non-modal prompt. Verified by the key-event cases in
+`ScreenSessionControlsHost.test.jsx`, `ScreenBriefSurface.tvInput.test.jsx`
+and the journey `tests/live/flow/media/screen-tv-input.runtime.test.mjs`.
+
+### 6.y Media client accessibility contracts
+
+- **Hit-target floor.** `theme/mediaTheme.js` sets `minHeight: 44` on Button,
+  Input, Menu items, checkbox/radio/switch labels, and 44 × 44 on ActionIcon and
+  CloseButton; portalled surfaces read the same theme. `respectReducedMotion`
+  is on, and `MediaShell.scss` ends with a `prefers-reduced-motion` block for
+  the shell, the Player host, the search dropdown, menus and dialogs
+  (Loaders exempt).
+- **Search from anywhere.** `MediaAppShell` handles `/`: it focuses the dock's
+  `.media-search-bar input` when laid out, otherwise opens Search Mode through
+  `SearchLauncherContext.openSearch()` (new; `openAddToQueue` is unchanged).
+- **Phone tab bar.** `PrimaryNav` `TabBar` renders `app-tab-search` after the
+  three destinations when the launcher context offers `openSearch`; it is an
+  action, not an area (`aria-current` never applies).
+- **Aim on Now Playing.** `NowPlayingView` renders `DestinationLine`
+  (`surface: "now-playing"`) in place of the read-only aim label.
+
+Verified by `tests/live/flow/media/media-app-p0-accessibility.runtime.test.mjs`
+(`RELY.11a`, `RELY.12a`, `RELY.13a`, `RELY.14a/AC3`) and, for interaction
+budgets, `media-app-p0-personas.runtime.test.mjs`.
+
+---
+
 ## 7. WebSocket — Topics & Envelope
 
 ### 7.1 Common envelope
