@@ -481,14 +481,16 @@ screen that last reported progress, else the screen that last started it.
 Items the ledger saw but progress never stored are included. Removed items
 are hidden.
 
-**Response:** `{ "items": [HouseholdEntry] }`
+**Response:** `{ "items": [HouseholdEntry], "degraded": false }` — `degraded: true` when a
+catalog lookup ran out of time or failed, so some display fields are missing (not "not found");
+a client may ask again shortly.
 
 #### `GET /household/carry-on?limit=20`
 
 ```json
 { "items": [HouseholdEntry & { "reason": "unfinished" | "next-episode" }],
   "nowOn": [HouseholdEntry & { "deviceId", "screenId", "state", "position" }],
-  "nowPlayingKnown": true }
+  "nowPlayingKnown": true, "degraded": false }
 ```
 
 - `unfinished`: at least one open spot.
@@ -542,7 +544,9 @@ filled from the catalog at add time. **400**: missing `id`, unknown `kind`.
 A removal hides what was played **up to** `removedAt` from recent and carry
 on; playing the item again brings it back. Server-side suggestions (§2.9)
 leave removed ids out. The 10 s undo window is a client concern: undo is
-`DELETE`.
+`DELETE`. A removal, a restore and a watched mark notify `onListChanged` listeners; the
+suggestions service drops its cache for that household (all households for a mark), so the
+change shows on every screen at once.
 
 #### `POST /household/watched`
 
@@ -636,9 +640,9 @@ null when unknown (browsers, or no heartbeat since the backend started).
 
 | Route | Body / query | Response |
 |---|---|---|
-| `GET /screens` | — | `{ screens: [Screen], notSeenLately: [Screen], retired: [Screen] }` — by name; `notSeenLately` = silent > **30 days** *(default)* and not online |
+| `GET /screens` | — | `{ screens: [Screen], notSeenLately: [Screen], retired: [Screen], unnamed: [Screen] }` — by name; `unnamed` = placeholder-named browsers that never played (opened the app only), kept out of `screens`; each Screen has `aliasNames` (`{alias: name it had}`) and `lastPlayed`; `notSeenLately` = silent > **30 days** *(default)* and not online |
 | `POST /screens` | `{ name, room? }` | **201** `{ screen }` (`screen:<slug>`) |
-| `POST /screens/announce` | `{ id?, name?, room? }` — `id` defaults to `X-Daylight-Device` | `{ screen }` |
+| `POST /screens/announce` | `{ id?, name?, room?, playing?, previousId? }` — `id` defaults to `X-Daylight-Device`. A browser nobody named that has not played is **not registered** (`screen: null`); a made-up "Browser 1a2b3c4d" name is ignored. `playing: true` registers it (the playback relay sets it). `previousId` (the browser's old header token) is folded into `id` like a confirmed merge, spots included; a repeat is a no-op, and an id another *named* screen holds is never folded | `{ screen }` |
 | `GET /screens/:id` | — | `{ screen, routines }` (**404** unknown) |
 | `PATCH /screens/:id` | `{ name?, room?, onCollision?: "reject"\|"suffix", confirm? }` (`room: null` clears an override) | `{ screen, routines }` |
 | `POST /screens/:id/merge` | `{ into, confirm }` — without `confirm: true`, **409** `CONFIRM_REQUIRED` with `routines` targeting either screen | `{ screen, movedSpots }` |
@@ -668,6 +672,25 @@ name. Errors: **400** `INVALID_NAME` / `INVALID_SCREEN_ID` / `INVALID_MERGE`,
 Log events: `media.screens.registered|renamed|room_set|added|merged|unmerged|retired|restored`
 (info); `media.screens.spot_move_failed`, `.spot_restore_failed`, `.signals_failed`,
 `.configured_read_failed` (warn); `eventbus.screen_presence.failed` (warn).
+
+**Client.** `frontend/src/modules/Media/house/houseApi.js` calls every route
+above (the whole 409 body — `heldBy`, `suggestion`, `routines` — stays on the
+error; `DaylightAPI` truncates bodies). `house/useScreenRegistry.js` holds the
+list (read on mount, on tab focus, every 2 min, after every change made here,
+and when a browser's live heartbeat name differs from it) inside
+`FleetProvider`, whose rows take the registry `name`, `room` and `wasName`.
+`ClientIdentityProvider` announces `browser:<clientId>` on start and adopts the
+answer; `adoptBrowserDeviceId` (`lib/deviceIdentity.js`) makes that same id the
+`X-Daylight-Device` header of every request, so the server's announce default,
+load origin and suggestions all name the screen the registry knows. Renames
+send `PATCH` and hand `NAME_TAKEN` / `ROUTINES_TARGET` back to the dialog
+(resend with the suggestion, or `confirm: true`). Screen admin
+(`house/useScreenAdmin.js`) sends merges with `confirm: true` only after the
+dialog showed the routines of both screens (`GET /screens/:id/routines`),
+and retires likewise. Client events: `house.registry-loaded|failed`,
+`house.screen-announced`, `house.announce-failed`, `house.screen-renamed`,
+`house.rename-conflict`, `house.room-set`, `house.screen-added|merged|unmerged|retired|restored`,
+`house.admin-action-failed`, `house.first-use-shown|named|skipped`.
 
 ### 2.6 Routines
 
@@ -767,6 +790,13 @@ failed), `media.routines.snapshot_imported` (info);
 `.ha_file_unreadable` (file, error name, line — never the parser message,
 which quotes config), `.match_failed` (warn).
 
+**Client.** `house/RoutineHistoryView.jsx` (view `routines`) reads
+`/routines/history?limit=50` and `/routines/flags` together; `houseCopy.routineRunLine`
+words each run (`started` + `played` → "Played"; `started` with no `played`
+after 5 min → "Started, not seen playing"; `failed` → "Failed: <reason>";
+`deduplicated` → "Repeat ignored"). Flags with `severity: warn` lead as
+"Needs attention". Events `house.routines-loaded|failed`, `house.view-opened`.
+
 ### 2.7 Started by
 
 **Exists.** How a screen's playback started — by which device or routine, and
@@ -794,6 +824,13 @@ start before origins were recorded). `kind` may be `unknown` for legacy text.
 |---|---|
 | `GET /screens/:id/started-by` | the object above |
 | `GET /started-by` | `{ items: [ … ] }` for every screen playing now |
+
+**Client.** The house view reads `GET /started-by` when it opens, whenever what
+plays on any row changes, and every 60 s, and shows
+`houseCopy.startedByText` — "Started by <name>, <h:mm>" (weekday added when not
+today) — on rows that are active. `StartedByLine` with only a `deviceId`
+reads `GET /screens/:id/started-by` itself (re-read when the item changes), for
+a screen's controls header. Events `house.started-by-loaded|failed`.
 
 ### 2.8 Played earlier
 
@@ -857,7 +894,9 @@ dropped carry-on episode of a favourite show becomes that favourite's
 anything **removed from the household list** is left out. Nothing at all →
 `{ rows: [], empty: true }`: lead into Browse. The build (carry on, ledger
 scan, catalog lookups, recently added) is cached per household + screen for
-**5 min**; favourites, now-playing and removals are applied on every request.
+**5 min** — but only **10 s** when the build's carry on was `degraded`, and the response then says
+`degraded: true` — and is dropped on any household-list change (§2.4); favourites, now-playing and
+removals are applied on every request.
 A failing section is logged and left empty. The household-wide parts (carry
 on, New, the ledger scan) are cached once per household; only "Usually here
 at this time" is cached per screen, in a map capped at 200 screens.
@@ -874,6 +913,61 @@ Log events: `media.suggestions.built` (info: household build, counts, ms);
 `backend/src/0_system/http/middleware/requestContext.test.mjs`,
 `tests/isolated/adapter/persistence/{YamlScreenRegistryDatastore,YamlRoutineStores}.test.mjs`,
 composition contract `media.routine-loads-reach-history-and-ledger-origin`.
+
+### 2.10 Client use — start page, item verbs, Played earlier
+
+How the Media frontend consumes §2.4–2.9 (`frontend/src/modules/Media/household/`):
+
+- **Reads** go through `useApiResource` with `swr: true`: `suggestions?deviceId=<getDeviceId()>`
+  (read on every render, since the app may adopt its browser id after first paint),
+  `household/carry-on?limit=12` (12, not 20: each entry costs a catalog lookup on a cold start),
+  `household/recent?limit=24`, `household/favourites`, `screens`,
+  `screens/<id>/played-earlier?limit=20` (Show more raises `limit` by 20, ≤ 200; refreshed when
+  that screen moves on to another item, at most once a minute). A local queue panel asks for this
+  device's id; a remote one for its bare devices.yml key. The client applies no removed-filtering
+  of its own. When any of suggestions / carry on / recent answers `degraded: true`, the start page
+  reloads those once, ~10 s later.
+- **Writes** (`POST`/`DELETE household/favourites`, `POST household/removed`, `POST
+  household/watched`) each record one local outcome (`kind`: `favourite` | `unfavourite` | `hide`
+  | `watched` | `unwatched`), then invalidate every `media/household/*`, `media/suggestions*` and
+  `*/played-earlier` resource. A removal's outcome carries Undo for 10 s; Undo is `DELETE
+  household/removed?id=`.
+- **Screen names** come from `GET /screens` (id, bare `screenId`, and every alias); this device
+  reads "this device", an unregistered browser "another browser".
+- **Spots** (`householdModel.resumePlan`): open spots with playheads ≥ 30 s apart are different;
+  two or more → the person chooses; one (or an unfinished entry with only a shared playhead) →
+  continue from that spot. Either way the play carries `seconds: <spot>` + `resume: false` (§9.4) —
+  never the server's resume, which is the record's single last-written playhead and may be another
+  screen's — and marks the outcome `startOver: true, resumedFrom`; none → plain play. The outcome
+  claims "Continuing from …" and offers Start over only when every target applies a start position
+  (this device, a `browser:` screen, or a `websocket` content-control screen); other screens load by
+  URL and ignore `seconds`. A spot with no screen (`deviceId: null` or `legacy`, written before
+  per-screen spots) reads "12 m, saved earlier". Outcome records with `startOver`
+  offer **Start over** for 15 s after confirmation: on this device it replays the item as Play now
+  with `seconds: 0, resume: false` (a seek would be lost while the item is still loading — the
+  Player applies its pending start offset when the media arrives) and records a `startOver`
+  outcome; on another screen it calls that screen's `transport.restartCurrent()` and records a
+  `startOver` confirmation naming that screen. Household writes and Move here keep their running
+  row until they resolve (a failure is never dropped unseen).
+- **Now on** cards offer Remote and Move here only when the fleet store holds that screen's live
+  session with `meta.playbackOwner` (keyed by its fleet/peek id); otherwise "Now on <screen>" with
+  the ⋯ verbs only. Browsers are keyed in fleet by `browser:<clientId>` while their requests (and
+  so `nowOn`) carried the separate `ds_device_id` token until the app adopts its clientId as the
+  request id; such a card shows no steering verbs rather than ones that cannot work.
+- **Move here** (one at a time per screen) adopts the fleet `device-state` snapshot of that screen through
+  `lifecycle.adoptSnapshot`, waits up to 20 s for native playing evidence of the same content
+  (`portability.getNativeObservation`), then stops the screen through its remote controller only
+  if `meta.playbackOwner` (owner + revision) is unchanged (`movePlayback.executeMove`).
+- **Progress**: every `play/log` carries `X-Daylight-Device`. When the session's `meta.origin` for
+  the current item is a routine or another device, PlayerBridge puts it on the Player's play prop
+  and `play/log` sends it as `origin` (`session/playOrigin.js`); this device's own default origin is
+  never sent.
+
+Log events (frontend, `mediaLog`): `home.shown`, `household.load-failed`,
+`household.favourite-toggled`, `household.removed`, `household.restored`,
+`household.watched-marked`, `household.action-failed`, `play.spot-choice-shown`,
+`play.spot-chosen`, `outcome.start-over`, `outcome.start-over-failed`, `move-here.initiated`,
+`move-here.succeeded`, `move-here.failed`, `played-earlier.shown`.
 
 ---
 
@@ -1041,7 +1135,47 @@ until the page the fallback loads subscribes; but if that base-page load also
 fails and the count is still zero, the load fails the same way instead of
 broadcasting to no one.
 
+**Prewarm is bounded.** For `queue=` and `play=` dispatches,
+`WakeAndLoadService` asks `TranscodePrewarmService` to resolve the ref through
+the same queue resolution the screen uses (`GET /api/v1/queue/<ref>`) and to
+warm the first item's transcode. This is best-effort and runs through Plex,
+which serializes requests, so it is bounded by an injected deadline
+(`prewarmDeadlineMs`, default 10 s, applied via the application scheduler's
+`withDeadline`). Past the deadline the dispatch loads **unprewarmed**:
+`wake-and-load.prewarm.timeout` (warn, with `deadlineMs`), `steps.prewarm =
+{ ok: false, reason: 'timeout' }`, and a `prewarm` `done` progress event with
+`warning: 'timeout'`. The prewarm result is applied only when it arrives in
+time; a late result or rejection is logged as `wake-and-load.prewarm.late` and
+never touches the query already sent to the screen. A permanent prewarm failure
+(unresolvable content) still fails the dispatch at `prewarm`.
+
+**Receiver-outcome watchdog.** After a successful non-adopt load, the service
+watches `device-state:<deviceId>` for 90 s. Nothing counts until the receiver
+acknowledged this `dispatchId` (`device-ack`), and the snapshot must carry an
+owner (`sessionId`, `ownerId`, `playbackOwner` with integer revisions). Add
+(requested, or `appliedAs: 'add'` under Add only) confirms the `queue` step from
+a same-owner queue revision with the current item unchanged. Play confirms the
+`playback` step from a `playing` state whose owner advanced past the pre-load
+snapshot (new session, new owner instance, or higher `playbackRevision`), on
+one **basis**, logged on `wake-and-load.playback.armed`, `.confirmed`
+(with `matchedBy`) and `.timeout` (`.armed`/`.timeout` also carry `requestedContentId`, the original ref such as `office-program`, beside the resolved `expectedContentId`):
+
+| Basis | When | Confirms on |
+|---|---|---|
+| `item-action` | The command carries an item action | The queue's current entry carries that `operationId` |
+| `resolved-queue` | Prewarm resolved concrete queue ids (`queueContentIds`, plus the prewarmed first id) in time | Current item is a resolved id (`candidate`), or the screen's queue shares items with the resolution and holds the current item (`queue-overlap` — program slots such as `strategy: rotation` are random per resolution) |
+| `fresh-owned-playing` | Nothing concrete resolved in time for a `queue=` or `play-next=` ref, or the prewarm deadline expired | The first fresh owned `playing` state after the ack whose current item (or session) differs from the pre-load snapshot — a bare Play/pause revision bump on the baseline item does not count. Applies to `queue=`, `play-next=` and timed-out prewarms; a concrete requested/resolved id still matches first |
+| `requested-id` | Otherwise | Current item matches the requested id |
+
+The program id itself (e.g. `queue=office-program`) is never reported by a
+screen, which reports the concrete item it plays. Arming on the program id
+alone made every program dispatch time out. A screen that never reaches
+`playing` (for example, its own queue fetch timed out) still ends in
+`playback: timeout`.
+
 **Verified by:**
+- `tests/isolated/application/devices/WakeAndLoadService.program-dispatch.test.mjs` — prewarm deadline (default and injected), late result/rejection isolation, program confirmation by resolved candidate / queue overlap / fresh-owned-playing fallback, ack still required, unresolved program that never plays still times out
+- `tests/isolated/application/devices/WakeAndLoadService.watchdog.test.mjs`, `…playback-watchdog.test.mjs`, `…addOnly.test.mjs` — owner/ack correlation, Add, item actions
 - `backend/tests/unit/suite/4_api/v1/routers/device.load-adopt.test.mjs` — adopt body validation + idempotency-conflict mapping
 - `backend/tests/unit/suite/3_applications/devices/DispatchIdempotencyService.test.mjs` — 60s TTL cache semantics
 - `backend/tests/unit/suite/3_applications/devices/WakeAndLoadService.test.mjs` — adoptSnapshot wake path
@@ -1106,6 +1240,32 @@ Start progress or last failure for one screen, readable by every device
 (§9.15); 503 when not wired. Live updates ride `device-start:<deviceId>`
 (§7.2), replayed to new exact and wildcard subscribers — so a house view
 opened after a failed start still shows it.
+
+**Client.** `house/useHouseSignals.useStartStatuses` reads this route once per
+fleet row when the house view opens (the app's `*` subscription predates the
+view, so the wildcard replay alone would not reach it) and then follows
+`device-start:*`, keeping the newest `updatedAt` per screen.
+`houseCopy.startStatusLine`: `starting`/`delivered` → "Starting: <step label>";
+`stale` → "A start stopped reporting at …"; `failed` (or a `lastFailure`) →
+"Couldn't start at <time>: <error sentence, or step + code>"; `queued` /
+`started` → "Added to its queue" / "Started" for one minute.
+
+**House-wide actions (client, RQ-STEER-13).** `house/houseQuiet.js`: Pause all
+sends `transport.pause` to every row playing/buffering, Stop all
+`transport.stop` to every active row, each through that screen's session
+controller (§4.3, or the browser route), plus this device's local session.
+Offline rows are not sent anything and are reported "not reachable"; a refusal
+or no answer within 8 s is "didn't answer". The ids actually paused are kept
+in `FleetProvider` (`quiet.resumable`) and Resume all sends `transport.play`
+to exactly those. One outcome record (`kind: pauseAll|stopAll|resumeAll`,
+`command.copy`) carries the sentence; a record with `command.copy` is shown
+as-is by the tray. Events `house.quiet-all`, `house.quiet-all-unreached`.
+Stop "and turn the screen off" (RQ-STEER-11) is offered for configured screens
+with `device_control` that are not speakers: `transport.stop` then
+`GET /device/:id/off` (events `house.screen-off|screen-off-failed`). Put it
+back from a row calls `sessionControls.putBack(noteId)` (§4.9); Add only off,
+`sessionControls.setAddOnly(false)` (events `house.put-back*`,
+`house.add-only-off*`).
 
 **Verified by:**
 - `backend/src/3_applications/devices/services/DeviceStartStatusService.test.mjs` — phase folding, lastFailure lifetime, superseded dispatches, staleness
@@ -1727,6 +1887,12 @@ Queue items added by "keep similar things playing" carry
   "priority": "upNext" | "queue"
 }
 ```
+
+Optional start fields (PLAY.4a): `seconds` (start offset, seconds) and
+`resume: false` are present only when the person chose where to start — a
+screen's saved spot, or `seconds: 0` for "From the beginning". The Player
+honours `seconds` over the server's `resume_position` and passes `resume=false`
+to `/play`. They ride `itemAction.item` to a remote Media receiver unchanged.
 
 ### 9.5 `DeviceConfig`
 ```json

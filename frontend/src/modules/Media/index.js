@@ -24,7 +24,6 @@ export { useClientIdentity } from './identity/useClientIdentity.js';
 export { LocalSessionProvider } from './session/LocalSessionProvider.jsx';
 export { createLocalSessionController } from './session/LocalSessionController.js';
 export { usePlayerHost } from './session/usePlayerHost.js';
-export { readRecents } from './session/recents.js';
 
 // Fleet observation
 export { FleetProvider } from './fleet/FleetProvider.jsx';

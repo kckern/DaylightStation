@@ -39,6 +39,7 @@ vi.mock('../controller/useSessionController.js', () => ({
     capabilities: { seekable: true, acked: true },
   }),
 }));
+vi.mock('../household/PlayedEarlier.jsx', () => ({ PlayedEarlier: () => null }));
 vi.mock('../peek/usePeek.js', () => ({ usePeek: () => ({ enterPeek, exitPeek }) }));
 vi.mock('../fleet/useDevice.js', () => ({ useDevice: () => ({ device: { id: 'tv-1', name: 'Living Room TV' }, entry: state.entry }) }));
 vi.mock('../fleet/deviceDisplay.js', () => ({

@@ -52,9 +52,28 @@ describe('Media P0 gate manifest', () => {
       expect.objectContaining({ story: 'PLAY.8a', criteria: ['PLAY.8a/AC1', 'PLAY.8a/AC2', 'PLAY.8a/AC3'], file: 'media-app-player-features.runtime.test.mjs' }),
       expect.objectContaining({ story: 'PLAY.8b', criteria: ['PLAY.8b/AC1', 'PLAY.8b/AC2'], file: 'media-app-player-features.runtime.test.mjs' }),
       expect.objectContaining({ story: 'PLAY.9a', criteria: ['PLAY.9a/AC1', 'PLAY.9a/AC2', 'PLAY.9a/AC3'], file: 'media-app-player-features.runtime.test.mjs' }),
+      // Batch A (start page + item surfaces).
+      expect.objectContaining({ story: 'FIND.7a', criteria: ['FIND.7a/AC1', 'FIND.7a/AC2'], file: 'media-app-household-home.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'FIND.9a', criteria: ['FIND.9a/AC1', 'FIND.9a/AC2', 'FIND.9a/AC3'], file: 'media-app-household-home.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'FIND.10a', criteria: ['FIND.10a/AC1', 'FIND.10a/AC2', 'FIND.10a/AC4', 'FIND.10a/AC6'], file: 'media-app-household-home.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'FIND.10a', criteria: ['FIND.10a/AC3'], grep: 'Now on another screen' }),
+      expect.objectContaining({ story: 'FIND.11a', criteria: ['FIND.11a/AC1', 'FIND.11a/AC3'], grep: 'Played earlier' }),
+      expect.objectContaining({ story: 'FIND.12a', criteria: ['FIND.12a/AC1', 'FIND.12a/AC2'] }),
+      expect.objectContaining({ story: 'FIND.12b', criteria: ['FIND.12b/AC1', 'FIND.12b/AC2'] }),
+      expect.objectContaining({ story: 'FIND.13a', criteria: ['FIND.13a/AC1', 'FIND.13a/AC3'] }),
+      expect.objectContaining({ story: 'PLAY.4a', criteria: ['PLAY.4a/AC1', 'PLAY.4a/AC2', 'PLAY.4a/AC3'], grep: 'saved spots and Start over' }),
+      // Media P1/P2 batch C (house view, naming, admin, routines).
+      expect.objectContaining({ story: 'HOUSE.2a', criteria: ['HOUSE.2a/AC5', 'HOUSE.2a/AC6'], file: 'media-app-house-view.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'HOUSE.5a', criteria: ['HOUSE.5a/AC1'], file: 'media-app-house-view.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'PLAY.10a', criteria: ['PLAY.10a/AC3', 'PLAY.10a/AC4'], file: 'media-app-house-view.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'STEER.11a', criteria: ['STEER.11a/AC1', 'STEER.11a/AC2'], file: 'media-app-house-view.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'RELY.14a', criteria: ['RELY.14a/AC1', 'RELY.14a/AC2'], file: 'media-app-house-view.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'HOUSE.4a', criteria: ['HOUSE.4a/AC3'], file: 'media-app-house-view.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'HOUSE.6a', criteria: ['HOUSE.6a/AC1', 'HOUSE.6a/AC2', 'HOUSE.6a/AC3'], file: 'media-app-house-view.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'AUTO.4a', criteria: ['AUTO.4a/AC1', 'AUTO.4a/AC2'], file: 'media-app-house-view.runtime.test.mjs' }),
     ]));
-    expect(P0_EXTENSION_ENTRIES).toHaveLength(27);
-    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 35, criteria: 80 });
+    expect(P0_EXTENSION_ENTRIES).toHaveLength(44);
+    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 49, criteria: 116 });
   });
 
   it('rejects skipped, duplicated, weakened, or unjourneyed criteria', () => {

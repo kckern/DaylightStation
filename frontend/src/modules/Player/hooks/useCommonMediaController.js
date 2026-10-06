@@ -985,7 +985,7 @@ export function useCommonMediaController({
         const secs = mediaEl.currentTime || 0;
         if (secs > 10) {
           const title = meta.title + (meta.grandparentTitle ? ` (${meta.grandparentTitle} - ${meta.parentTitle})` : '');
-          await DaylightAPI(`api/v1/play/log`, { title, type, assetId, seconds: secs, percent: pct, listId: meta?.listId || null });
+          await DaylightAPI(`api/v1/play/log`, { title, type, assetId, seconds: secs, percent: pct, listId: meta?.listId || null, ...(meta?.origin ? { origin: meta.origin } : {}) });
         }
       }
     };
@@ -1557,7 +1557,7 @@ export function useCommonMediaController({
       const title = capturedMeta.title + (capturedMeta.grandparentTitle ? ` (${capturedMeta.grandparentTitle} - ${capturedMeta.parentTitle})` : '');
       if (isAuxiliaryRef.current) return;
       mcLog().info('playback.unmount-progress-save', { assetId: capturedAssetId, pos, pct });
-      DaylightAPI(`api/v1/play/log`, { title, type: capturedType, assetId: capturedAssetId, seconds: pos, percent: pct, listId: capturedMeta?.listId || null });
+      DaylightAPI(`api/v1/play/log`, { title, type: capturedType, assetId: capturedAssetId, seconds: pos, percent: pct, listId: capturedMeta?.listId || null, ...(capturedMeta?.origin ? { origin: capturedMeta.origin } : {}) });
     };
   }, [assetId]); // eslint-disable-line react-hooks/exhaustive-deps
 

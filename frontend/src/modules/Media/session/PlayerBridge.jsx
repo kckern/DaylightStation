@@ -29,6 +29,7 @@ import { PlayerHostContext, PlayerHostPresentationContext } from './playerHostCo
 import { TIMING } from '../constants.js';
 import { registerTrackOwner, createTrackPreferenceStore } from '../../Player/lib/trackPolicy.js';
 import { getLocalPlayerFeatures } from './localPlayerFeatures.js';
+import { playLogOrigin } from './playOrigin.js';
 
 const RENDERER_BOUNDARY_FORMATS = new Set(['video', 'hls_video', 'dash_video', 'audio']);
 // Media waits out a refused (unreadable) file for 60 s, then lets the queue
@@ -45,6 +46,10 @@ export function PlayerBridge() {
   // the moment the item becomes current (C9.1 resume, C7.3 take-over).
   // Normal advancement loads items with position 0, so this is 0 for them.
   const startSecondsRef = useRef(controller.getSnapshot().position ?? 0);
+  // Who started the current item (a routine, another device), captured when
+  // the item becomes current and reported on play/log (RQ-PLAY-08/09 ledger).
+  const originRef = useRef(playLogOrigin(controller.getSnapshot().meta?.origin, controller.id));
+  const currentContentIdRef = useRef(controller.getSnapshot().currentItem?.contentId ?? null);
   const playbackGenerationRef = useRef(0);
   const [playbackGeneration, setPlaybackGeneration] = useState(0);
   const lastPersistedPosition = useRef(0);
@@ -185,6 +190,10 @@ export function PlayerBridge() {
       const next = snap.currentItem;
       const startsPlayback = action != null
         && ['LOAD_ITEM', 'SET_CURRENT_ITEM', 'ADOPT_SNAPSHOT'].includes(action.type);
+      if (startsPlayback || (next && next.contentId !== currentContentIdRef.current)) {
+        originRef.current = playLogOrigin(snap.meta?.origin, controller.id);
+      }
+      currentContentIdRef.current = next?.contentId ?? null;
       if (startsPlayback) {
         const requestedStart = Number.isFinite(snap.position) ? snap.position : 0;
         startSecondsRef.current = requestedStart;
@@ -492,7 +501,8 @@ export function PlayerBridge() {
   const playProp = useMemo(() => {
     if (!currentItem || restoreHeld) return null;
     const seconds = startSecondsRef.current;
-    return seconds > 0 ? { ...currentItem, seconds } : { ...currentItem };
+    const origin = originRef.current ? { origin: originRef.current } : {};
+    return seconds > 0 ? { ...currentItem, ...origin, seconds } : { ...currentItem, ...origin };
   }, [currentItem, restoreHeld]);
 
   // Only failures the Player has given up on are reported as failures;

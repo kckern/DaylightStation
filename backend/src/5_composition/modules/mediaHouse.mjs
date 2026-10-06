@@ -61,7 +61,7 @@ export function createMediaHouseModule({
   if (eventBus?.onClientMessage) {
     new EventBusScreenPresence({
       eventBus,
-      onSeen: ({ id, name, room }) => screenRegistry.announce({ id, name, room }),
+      onSeen: ({ id, name, room, playing }) => screenRegistry.announce({ id, name, room, playing }),
       logger: log('media-screens'),
     }).attach();
   }
@@ -117,6 +117,18 @@ export function createMediaHouseModule({
       logger: log('media-suggestions'),
     })
     : null;
+
+  // Suggestions cache candidates for 5 min; a removal, restore or watched
+  // mark must show at once on every screen (FIND.13a/AC2, FIND.10a/AC6).
+  if (suggestions && typeof householdMediaMemory?.onListChanged === 'function') {
+    // Process-lifetime subscription: this module has no teardown path, and the
+    // memory service lives exactly as long as the process, so the returned
+    // unsubscribe is intentionally not kept.
+    householdMediaMemory.onListChanged(({ householdId }) => {
+      if (householdId == null) suggestions.invalidateAll();
+      else suggestions.invalidate(householdId);
+    });
+  }
 
   const router = createMediaHouseRouter({
     screenRegistry, routineCatalog, routineHistory, screenPlayback, suggestions,

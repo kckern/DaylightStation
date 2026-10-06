@@ -36,12 +36,14 @@ import { useDismissLayer } from '../shell/useDismissLayer.js';
 import { applyResultRowVerb } from './resultRowVerbs.js';
 import getLogger from '../../../lib/logging/Logger.js';
 import { ItemDestinationPicker } from '../actions/ItemDestinationPicker.jsx';
+import { useHouseholdResultActions } from '../household/useHouseholdResultActions.js';
 import './Search.scss';
 
 export function MediaContentSearch() {
   const [oneShotAction, setOneShotAction] = useState(null);
   const { scopes, currentScopeKey, currentScope, scopeError, resetScope } = useSearchContext();
   const { dispatch, dispatchLeafVerb, playContainerAsQueue } = useContentDispatch();
+  const { extraActions, runHousehold } = useHouseholdResultActions();
   const { queue } = useSessionController('local');
   const { push } = useNav();
   const log = useMemo(() => getLogger().child({ component: 'media-content-search' }), []);
@@ -106,13 +108,14 @@ export function MediaContentSearch() {
     const id = item?.id;
     if (!id) return;
     log.info('row_action', { contentId: id, action });
+    if (runHousehold(action, item)) return;
     if (action === 'playOn' || action === 'addOn') { setOneShotAction({ kind: action, item }); return; }
     if (action !== 'detail' && action !== 'details') {
       dispatchLeafVerb(action === 'upNext' ? 'playFirst' : action, id, item);
       return;
     }
     applyResultRowVerb('detail', item, { queue, push });
-  }, [queue, push, log, dispatchLeafVerb]);
+  }, [queue, push, log, dispatchLeafVerb, runHousehold]);
 
   return (
     <div ref={searchBarRef} data-testid="media-search-bar" className="media-search-bar">
@@ -136,6 +139,7 @@ export function MediaContentSearch() {
             onPlayAll={handlePlayAll}
             onMore={handleMore}
             onAction={({ kind, item }) => handleMore(kind, item)}
+            resultExtraActions={extraActions}
             placeholder="Search media…"
             selectContainers
             searchParams={currentScope?.params ?? ''}

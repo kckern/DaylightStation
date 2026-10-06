@@ -127,4 +127,57 @@ describe('PlexAdapter.loadMediaUrl — stream selection', () => {
     expect(result.url).not.toMatch(/subtitles=/);
     expect(logger.warn).toHaveBeenCalledWith('plex.loadMediaUrl.tracks-select-failed', expect.objectContaining({ ratingKey: '665638' }));
   });
+  it('serialises two mints on one part: the second restores the household choice, never the first mint\'s borrowed track', async () => {
+    const { plex, httpClient } = setup();
+    const streams = (selectedAudio) => [
+      { id: 1278355, streamType: 1 },
+      { id: 1278356, streamType: 2, languageCode: 'eng', ...(selectedAudio === 1278356 ? { selected: true } : {}) },
+      { id: 9, streamType: 2, languageCode: 'fra', ...(selectedAudio === 9 ? { selected: true } : {}) },
+      { id: 8, streamType: 2, languageCode: 'deu', ...(selectedAudio === 8 ? { selected: true } : {}) },
+    ];
+    let account = 1278356; // the Plex account's selected audio stream
+    const writes = [];
+    httpClient.put.mockImplementation(async (url) => {
+      const id = new URL(url).searchParams.get('audioStreamID');
+      if (id) { account = Number(id); writes.push(account); }
+      return { status: 200, data: '' };
+    });
+    httpClient.get.mockImplementation(async (url) => {
+      if (String(url).includes('/library/metadata/')) {
+        return { status: 200, data: { MediaContainer: { Metadata: [{ Media: [{ Part: [{ id: 729273, Stream: streams(account) }] }] }] } } };
+      }
+      await new Promise((r) => setTimeout(r, 15));
+      return { status: 200, data: { MediaContainer: { generalDecisionCode: 1001, transcodeDecisionCode: 1001 } } };
+    });
+    const mk = () => { const f = item(); f.metadata.Media[0].Part[0].Stream = streams(1278356); return f; };
+    const a = plex.loadMediaUrl(mk(), { session: 'a', tracks: { audioStreamId: '9' } });
+    const b = plex.loadMediaUrl(mk(), { session: 'b', tracks: { audioStreamId: '8' } });
+    await Promise.all([a, b]);
+    // select 9, restore 1278356, select 8, restore 1278356 — never interleaved.
+    expect(writes).toEqual([9, 1278356, 8, 1278356]);
+    expect(account).toBe(1278356);
+  });
+
+  it('restores to the default audio stream when none is flagged selected, and says so', async () => {
+    const { plex, httpClient, logger } = setup();
+    const film = item();
+    film.metadata.Media[0].Part[0].Stream = [
+      { id: 1278355, streamType: 1 },
+      { id: 5, streamType: 2, languageCode: 'eng' },
+      { id: 6, streamType: 2, languageCode: 'fra', default: true },
+      { id: 9, streamType: 2, languageCode: 'deu' },
+    ];
+    await plex.loadMediaUrl(film, { tracks: { audioStreamId: '9' } });
+    expect(new URL(httpClient.put.mock.calls[1][0]).searchParams.get('audioStreamID')).toBe('6');
+    expect(logger.info).toHaveBeenCalledWith('plex.loadMediaUrl.tracks-restored', expect.objectContaining({ audioStreamId: '6' }));
+  });
+
+  it('warns tracks-restore-skipped when there is nothing to restore an audio choice to', async () => {
+    const { plex, httpClient, logger } = setup();
+    const film = item();
+    film.metadata.Media[0].Part[0].Stream = [{ id: 1278355, streamType: 1 }, { id: 9, streamType: 2, languageCode: 'deu' }];
+    await plex.loadMediaUrl(film, { tracks: { audioStreamId: '9' } });
+    expect(httpClient.put).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith('plex.loadMediaUrl.tracks-restore-skipped', expect.objectContaining({ ratingKey: '665638', partId: 729273 }));
+  });
 });
