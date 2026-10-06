@@ -21,6 +21,11 @@ const PLEX_SESSION_UNSAFE = /[^A-Za-z0-9._~:-]+/g;
 
 /** Keep identifiers short enough that no upstream truncates them for us. */
 const PLEX_SESSION_MAX_LENGTH = 96;
+// Per-part track-selection lock: the decision (and the fresh-selection read)
+// must settle well inside the lock's safety expiry so restore always runs first.
+const TRACK_LOCK_EXPIRY_MS = 60_000;
+const TRACK_DECISION_DEADLINE_MS = 45_000;
+const TRACK_REFRESH_DEADLINE_MS = 10_000;
 
 /** FNV-1a, 32-bit, hex. Used only to keep sanitising injective — not a hash of anything secret. */
 function fnv1aHex(str) {
@@ -1673,7 +1678,8 @@ export class PlexAdapter {
       allowDirectPlay = false,
       allowDirectStream = allowDirectPlay,
       downmixAudio = false,
-      burnSubtitles = false
+      burnSubtitles = false,
+      deadline = undefined
     } = opts;
 
     const { clientIdentifier, sessionIdentifier } = this._generateSessionIds(session);
@@ -1731,7 +1737,7 @@ export class PlexAdapter {
     const decisionUrl = `/video/:/transcode/universal/decision?${params.toString()}`;
 
     try {
-      const response = await this.client.request(decisionUrl);
+      const response = await this.client.request(decisionUrl, deadline != null ? { deadline } : {});
 
       // Parse decision response
       const container = response?.MediaContainer;
@@ -1979,7 +1985,10 @@ export class PlexAdapter {
           allowDirectPlay,
           allowDirectStream,
           downmixAudio,
-          burnSubtitles
+          burnSubtitles,
+          // A mint holding the household's track selection must settle (and
+          // restore) before the lock's safety expiry can release it.
+          ...(selection ? { deadline: TRACK_DECISION_DEADLINE_MS } : {})
         });
       } finally {
         // The part's selection is per Plex ACCOUNT. The decision binds the
@@ -2078,21 +2087,24 @@ export class PlexAdapter {
     const mine = new Promise((resolve) => { release = resolve; });
     const tail = (priorTail ?? Promise.resolve()).then(() => mine);
     this.#partTrackLocks.set(part.id, tail);
-    // Safety: a mint that throws between select and restore must not wedge the part.
-    const expiry = setTimeout(() => releaseLock(), 60_000);
-    expiry.unref?.();
+    // Safety: a mint that throws between select and restore must not wedge the
+    // part. The timer starts once THIS mint holds the lock (below), not at
+    // queue time, so a deep queue cannot expire a holder early.
+    let expiry = null;
     const releaseLock = () => {
-      clearTimeout(expiry);
+      if (expiry) clearTimeout(expiry);
       release();
       if (this.#partTrackLocks.get(part.id) === tail) this.#partTrackLocks.delete(part.id);
     };
     let activeStreams = streams;
+    if (priorTail) await priorTail;
+    expiry = setTimeout(() => releaseLock(), TRACK_LOCK_EXPIRY_MS);
+    expiry.unref?.();
     if (priorTail) {
-      await priorTail;
       // The item we were handed may predate the previous mint's borrow:
       // read the household's selection fresh.
       try {
-        const fresh = await this.client.getMetadata(ratingKey);
+        const fresh = await this.client.getMetadata(ratingKey, { deadline: TRACK_REFRESH_DEADLINE_MS });
         const freshStreams = fresh?.MediaContainer?.Metadata?.[0]?.Media?.[0]?.Part?.[0]?.Stream;
         if (Array.isArray(freshStreams) && freshStreams.length) activeStreams = freshStreams;
       } catch (error) {
