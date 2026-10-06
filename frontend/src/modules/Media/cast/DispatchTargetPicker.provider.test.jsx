@@ -20,7 +20,7 @@ describe('DispatchTargetPicker → DispatchProvider M0', () => {
     DaylightAPI.mockReset();
   });
 
-  it('does not silently submit persisted transfer for idle remote Play, but permits explicit Keep', async () => {
+  it('a tile tap sends idle remote Play as Keep, never as the persisted transfer', async () => {
     DaylightAPI.mockResolvedValue({ ok: true });
     const complete = vi.fn();
     render(
@@ -30,12 +30,6 @@ describe('DispatchTargetPicker → DispatchProvider M0', () => {
     );
 
     fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-    expect(screen.getByTestId('picker-mode-transfer')).toBeDisabled();
-    expect(screen.getByTestId('picker-submit')).toBeDisabled();
-    expect(DaylightAPI).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByTestId('picker-mode-fork'));
-    fireEvent.click(screen.getByTestId('picker-submit'));
 
     expect(DaylightAPI).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(complete).toHaveBeenCalledWith({ targetIds: ['livingroom-tv'], mode: 'fork' }));

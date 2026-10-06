@@ -442,8 +442,6 @@ test.describe('Now on another screen (FIND.10a/AC3)', () => {
     const menu = await openTileMenu(sender, `home-tile-recent-${ARRIVAL}`);
     await menu.getByTestId(`home-tile-recent-${ARRIVAL}-verb-playOn`).click();
     await sender.getByTestId('picker-device-acceptance-media').click();
-    if (await sender.getByTestId('picker-mode-fork').isVisible().catch(() => false)) await sender.getByTestId('picker-mode-fork').click();
-    await sender.getByTestId('picker-submit').click();
     await expect.poll(async () => (await sender.evaluate(async () => {
       const r = await fetch('/api/v1/device/acceptance-media/receiver-state');
       return r.ok ? r.json() : null;

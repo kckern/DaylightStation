@@ -40,13 +40,12 @@ test.describe('MediaApp — P4 cast', () => {
     await page.getByTestId(`cast-button-${contentId}`).evaluate((el) => el.click());
     await expect(page.getByTestId('dispatch-target-picker')).toBeVisible({ timeout: 5000 });
 
-    // Select first device and submit.
+    // Tap the first device: an idle target is sent to by the tap itself (NF-TAP-10).
     const firstDevice = page.locator('[data-testid^="picker-device-"]').first();
     await expect(firstDevice).toBeVisible();
     await firstDevice.evaluate((el) => el.click());
-    await page.getByTestId('picker-submit').evaluate((el) => el.click());
 
-    // Picker closes after submit.
+    // Picker closes once sent.
     await expect(page.getByTestId('dispatch-target-picker')).not.toBeVisible({ timeout: 5000 });
   });
 

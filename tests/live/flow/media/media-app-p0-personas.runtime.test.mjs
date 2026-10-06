@@ -134,6 +134,36 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
       } finally { await d.context.close(); }
     });
 
+    test(`[NF-TAP-10] ${size}: sending one item to another screen is 3 taps (more, Play on, screen); a busy screen needs a 4th`, async ({ browser, context, request }) => {
+      const receiver = await openReceiver(context, request);
+      const d = await newDevice(browser, viewport, `Tap budget C ${size} ${RUN}`);
+      try {
+        await typeQuery(d);
+        await resetTaps(d.page);
+        await d.page.getByTestId(`result-more-${FIXTURE.id}`).click();
+        await d.page.getByTestId(`result-action-playOn-${FIXTURE.id}`).click();
+        // No Move option for a plain play; the tile tap itself sends it.
+        await expect(d.page.getByTestId('picker-mode-transfer')).toHaveCount(0);
+        await d.page.getByTestId(`picker-device-${DEVICE}`).click();
+        expect(await taps(d.page), 'NF-TAP-10 more -> Play on... -> screen').toBe(3);
+        await expect.poll(async () => (await receiverState(request))?.state, { timeout: 120000 }).toBe('playing');
+        await shot(d.page, `tap-send-${size}`);
+
+        // The screen is now busy: the warning shows and the send needs a confirming tap.
+        await expect(d.page.getByTestId('dispatch-target-picker')).toHaveCount(0, { timeout: 15000 });
+        await d.page.getByTestId(`result-more-${FIXTURE.id}`).click();
+        await d.page.getByTestId(`result-action-playOn-${FIXTURE.id}`).click();
+        await expect(d.page.getByTestId(`picker-device-status-${DEVICE}`)).toContainText(/Playing/i, { timeout: 30000 });
+        await resetTaps(d.page);
+        await d.page.getByTestId(`picker-device-${DEVICE}`).click();
+        await expect(d.page.getByTestId(`cast-busy-warning-${DEVICE}`)).toBeVisible();
+        await shot(d.page, `tap-send-busy-${size}`);
+        await d.page.getByTestId('picker-submit').click();
+        expect(await taps(d.page), 'a busy screen: tile + confirm').toBe(2);
+        expect((await call(request, 'POST', `${base}/session/transport`, { action: 'stop' })).status).toBe(200);
+      } finally { await d.context.close(); await receiver.close(); }
+    });
+
     test(`[NF-TAP-05][NF-TAP-06][NF-TAP-08] ${size}: add to queue is 2 taps, aim back at this device is 2, Pause all is 2`, async ({ browser, context, request }) => {
       const receiver = await openReceiver(context, request);
       const d = await newDevice(browser, viewport, `Tap budget B ${size} ${RUN}`);

@@ -25,13 +25,12 @@ test.describe('MediaApp — inline cast from a result row', () => {
     await page.getByTestId(`cast-button-${id}`).evaluate((el) => el.click());
     await expect(page.getByTestId('dispatch-target-picker')).toBeVisible();
 
-    // Select first device + submit (JS clicks bypass overlay pointer-event interception).
+    // Tap the first device (JS clicks bypass overlay pointer-event interception); an idle target is sent to by the tap itself (NF-TAP-10).
     const firstDevice = page.locator('[data-testid^="picker-device-"]').first();
     await expect(firstDevice).toBeVisible();
     await firstDevice.evaluate((el) => el.click());
-    await page.getByTestId('picker-submit').evaluate((el) => el.click());
 
-    // Picker closes after submit
+    // Picker closes once sent
     await expect(page.getByTestId('dispatch-target-picker')).not.toBeVisible();
   });
 });
