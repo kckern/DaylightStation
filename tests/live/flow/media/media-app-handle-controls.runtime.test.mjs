@@ -488,7 +488,11 @@ test('PLACE.4a — several screens: labelled, aim names both, same-room drift wa
     await expect(np.getByTestId('sleep-timer-left')).toHaveText('Sleep at end of this item');
     await shot(page, `local-session-controls-${label}`);
     await np.getByTestId('now-playing-back').click();
-    await expect(page.getByTestId('mini-sleep')).toHaveAttribute('aria-label', 'Sleep timer: stops at the end of this item');
+    // The handle's span is aria-hidden decoration; assistive tech reads the
+    // words from the open-now-playing button's accessible name.
+    await expect(page.getByRole('button', { name: /Sleep timer: stops at the end of this item/ })).toBeVisible();
+    await expect(page.getByTestId('mini-sleep')).toHaveAttribute('data-sleep-label', 'Sleep timer: stops at the end of this item');
+    await expect(page.getByTestId('mini-sleep')).toHaveText('end');
     await shot(page, `handle-sleep-${label}`);
     await page.getByTestId('mini-player-open-nowplaying').click();
     const setAt = await media.evaluate((n) => n.currentTime);
