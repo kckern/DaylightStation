@@ -10,14 +10,19 @@
 //
 // See docs/reference/media/media-app-technical.md §6.2.6, §6.6 and §9.14–9.15.
 // This module must not import shapes.mjs (shapes imports it).
+import {
+  PLAYER_FEATURE_ACTIONS, validatePlayerFeatureParams, validatePlayerFeatureControls,
+} from './playerFeatures.mjs';
 
 export const SESSION_ACTIONS = Object.freeze([
   'sleep-timer', 'cancel-sleep-timer', 'resume-sleep', 'put-back', 'cancel-countdown', 'start-next-now',
+  // Player features (P2): tracks, Show briefly, music behind — playerFeatures.mjs.
+  ...PLAYER_FEATURE_ACTIONS,
 ]);
 export const END_OF_QUEUE_MODES = Object.freeze(['stop', 'repeat', 'similar']);
 export const SLEEP_TIMER_AT_END = Object.freeze(['item']);
 export const SLEEP_TIMER_MAX_MINUTES = 720;
-export const SCREEN_NOTE_KINDS = Object.freeze(['paused', 'stopped', 'replaced', 'moved']);
+export const SCREEN_NOTE_KINDS = Object.freeze(['paused', 'stopped', 'replaced', 'moved', 'brief']);
 export const END_OF_QUEUE_STATUS_CODES = Object.freeze(['NOTHING_SIMILAR', 'SIMILAR_ADDED', 'STOPPED_AFTER_CURRENT']);
 // `queued`: the screen took the content as a queue add (Add only) — reached, not started.
 export const START_PHASES = Object.freeze(['starting', 'delivered', 'queued', 'started', 'failed']);
@@ -50,6 +55,8 @@ export function validateSessionActionParams(params) {
   const errors = [];
   const p = params ?? {};
   if (!isSessionAction(p.action)) return result(['action: required session action']);
+  const feature = validatePlayerFeatureParams(p);
+  if (feature) return feature;
   if (p.action === 'sleep-timer') {
     const hasMinutes = p.minutes !== undefined;
     const hasAtEnd = p.atEnd !== undefined;
@@ -136,6 +143,8 @@ export function validateSessionControls(controls) {
         && !(isObj(note.putBack) && isStr(note.putBack.availableUntil))) errors.push(`${prefix}.putBack: { availableUntil } or null`);
     });
   }
+  // Optional player-feature blocks (tracks, brief, musicBehind) — absent or null when idle.
+  errors.push(...validatePlayerFeatureControls(controls).errors);
   return result(errors);
 }
 

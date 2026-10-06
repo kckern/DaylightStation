@@ -7,6 +7,12 @@ import { isContainerInput } from '../session/containerExpansion.js';
 export function ItemDestinationPicker({ action, onClose }) {
   if (!action) return null;
   const item = resultToQueueInput(action.item);
+  if (action.kind === 'showBrieflyOn') {
+    // Show briefly (RQ-PLAY-11): over the screen's programme, which then returns.
+    return <Modal opened onClose={onClose} title="Show briefly on…">
+      <DispatchTargetPicker source={{ play: item.contentId, title: item.title, brief: true }} verb="Show briefly" onComplete={onClose} />
+    </Modal>;
+  }
   const adding = action.kind === 'addOn';
   const source = {
     [adding ? 'queue' : 'play']: item.contentId, title: item.title,

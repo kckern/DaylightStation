@@ -153,6 +153,26 @@ export class PlexClient {
   }
 
   /**
+   * Select a part's audio and/or subtitle stream (Plex's own per-file choice,
+   * the same call Plex clients make: `PUT /library/parts/:id`). A subtitle id
+   * of `0` turns subtitles off. Returns the HTTP status.
+   * @param {string|number} partId
+   * @param {{ audioStreamId?: string, subtitleStreamId?: string }} streams
+   */
+  async selectPartStreams(partId, { audioStreamId, subtitleStreamId } = {}) {
+    const params = new URLSearchParams();
+    if (audioStreamId != null) params.set('audioStreamID', String(audioStreamId));
+    if (subtitleStreamId != null) params.set('subtitleStreamID', String(subtitleStreamId));
+    params.set('allParts', '1');
+    if (this.#token) params.set('X-Plex-Token', this.#token);
+    const url = `${this.#host}/library/parts/${encodeURIComponent(String(partId))}?${params.toString()}`;
+    const response = await this.#httpClient.put(url, null, {
+      headers: { Accept: 'application/json', ...(this.#token ? { 'X-Plex-Token': this.#token } : {}) },
+    });
+    return response?.status ?? null;
+  }
+
+  /**
    * HTTP status Plex answers for the first byte of a media part — whether it
    * will actually SERVE the file, which checkFiles (a stat) cannot tell.
    * @param {string} partKey - e.g. /library/parts/494586/1599193403/file.mp4

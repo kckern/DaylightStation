@@ -260,6 +260,32 @@ export const P0_EXTENSION_ENTRIES = Object.freeze([
     file: 'media-app-household-home.runtime.test.mjs',
     grep: 'saved spots and Start over',
   },
+  // Batch D, player features (P2) — exact-SHA runtime evidence on the virtual
+  // receiver (subtitles + audio language on a screen; subtitles on this device).
+  {
+    story: 'STEER.12a',
+    criteria: ['STEER.12a/AC1', 'STEER.12a/AC2', 'STEER.12a/AC3'],
+    file: 'media-app-player-features.runtime.test.mjs',
+    grep: 'STEER\\.12a',
+  },
+  {
+    story: 'PLAY.8a',
+    criteria: ['PLAY.8a/AC1', 'PLAY.8a/AC2', 'PLAY.8a/AC3'],
+    file: 'media-app-player-features.runtime.test.mjs',
+    grep: 'Show briefly \\(PLAY',
+  },
+  {
+    story: 'PLAY.8b',
+    criteria: ['PLAY.8b/AC1', 'PLAY.8b/AC2'],
+    file: 'media-app-player-features.runtime.test.mjs',
+    grep: 'Show briefly \\(PLAY',
+  },
+  {
+    story: 'PLAY.9a',
+    criteria: ['PLAY.9a/AC1', 'PLAY.9a/AC2', 'PLAY.9a/AC3'],
+    file: 'media-app-player-features.runtime.test.mjs',
+    grep: 'PLAY\\.9a',
+  },
 ]);
 
 const STABLE_ENTRIES = [...ACCEPTED_STORIES, ...SUPPORTING_ACCEPTED_CRITERIA];

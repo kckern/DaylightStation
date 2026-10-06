@@ -35,6 +35,9 @@ Task 2 and stable-core receipt evidence below remains unchanged.
 
 | Run | Scope | Red / baseline | Green / acceptance |
 |---|---|---|---|
+| TASK-D-PLAYER-FEATURES | Batch D player features (P2): STEER.12a, PLAY.8a, PLAY.8b, PLAY.9a | Focused Vitest for contract, Plex mint, routes, WakeAndLoad, screen features, Player seam, Media controls; dev-server runs exposed an off-screen 44-item menu, a slideshow remote Next that never skipped, and slideshows published as buffering (all fixed). | Exact preview of `8cd380a3b` (`media-redesign-server.mjs --build`, header `accepted-8cd380a3b6d8…`), `media-app-player-features.runtime.test.mjs`: full-file run 5/7 (audio journey and the tablet music journey failed on Plex/search load and passed alone: audio 1/1, PLAY.9a 2/2); the earlier full run on `2b8c1f173` passed 6/6. Regression on `2b8c1f173`: screen-session-controls, remote-controls, playback-journey 29/32 — two passed alone; the Office test needs a real Office device absent from the fixture (unrelated). Screenshots under the run's evidence dir. |
+| TASK-D-FABLE-FIXES | Fable review fixes for batch D | n/a | Plex selection is now restored after the decision (live-verified); a Stop/sleep/display-sleep supersedes a brief; a cold screen gets brief/camera by envelope; Add only, notes and origin for device briefs; auxiliary Players write no ledger. **Fleet-wide behaviour change:** a running photo slideshow now publishes `playing` (it used to publish `buffering` forever), so every Remote/house view shows slideshows as playing. |
+| TASK-D-REVERIFY-FIXES | Fable re-verify fixes for batch D, on main merged at ef9e32348 | n/a | Merged main (wake-and-load prewarm deadline kept verbatim; `git diff main..HEAD` on WakeAndLoadService shows only the brief additions); manifest recomputed by `validateP0Manifest` = 44 extension entries, 49 stories, 116 criteria. Fixes: per-part serialisation of Plex track mints plus `tracks-restore-skipped` and default-audio restore (S1/S2); journey reads each file's Plex selection first and restores exactly that in teardown; the served audio is proven by ffprobe of the first HLS segment of the stream the page fetched (`language=eng`, not French), the mint URL carrying `audioStreamID` is no longer the proof (S3); a programme that ended by itself under a brief is not replayed on close, and end-of-queue/stop-after-current/sleep-at-end reach the extension (S4); routines stop music (origin kind is not `device`) (S5); a brief to a cold screen polls for a real subscriber, bounded 30 s on the injected clock, else a failed load (S6); music behind ends when the photos give way to a video or to nothing (unless Keep), on this device and on a screen, mini-player Stop asks Keep, house Stop all stops music, a Move does not ask (S7); runbook PIP mechanism reworded. | Exact-SHA journey run: see report. Limit: the manifest contains no audio language (HLS); the proof is the language tag on the served segment's audio stream. |
 | HOUSEHOLD-HOME | Batch A: start page (suggestions, carry on with spots, Now on + Move here, household Recent), item verbs (favourites, watched, remove from household list), Played earlier, saved spots + Start over, play/log origin | Focused Vitest REDs for the outcome tray (8), Start over provider and spot threading; journey runs found real defects, each fixed before the evidence run: a chosen spot was lost between queue item and Player; spot lines were clipped; under host load Start over was lost while the item was still loading (now a replay from 0) and a running Move here notice cleared after 2.5 s. | Exact preview of product source `1dd7ea8f5`: `media-app-household-home.runtime.test.mjs` 18/18 serially in 1.9 min at host load ≈18 (start page, removal/Undo, favourites/watched and tap rule at 390×844, 820×1180, 1440×900; Played earlier at all three; PLAY.4a and Now on/Move here at laptop). Household routes (§2.4–2.9) are answered by an in-test household that applies the backend's list rules because the acceptance server blocks them; catalog, `/play`, streams, the virtual receiver and Move here are real. The stable `PLAY.1b` Home Recents entry now taps the household Recent tile, with only that list answered in-test (`media-app-play-now-local-entrypoints`, also `-play-now-entrypoints` and the resume card check). Screenshots `/tmp/daylight-media-p0-evidence/1dd7ea8f5dedb83273b67deceb04ea01299cee87/fe-home/shots/`. |
 | BATCH-C-HOUSE | P1/P2 batch C: house view rows (start status, Started by, Add only, notes, Stop+off, "(was …)"), Pause/Stop/Resume all (house view + handle), registry naming + first use, screen admin, routine history | Focused Vitest REDs per hook/view (`house/*.test.*`, `identity/*.test.*`, `shell/FleetView.house.test.jsx`, `shell/SettingsMenu.test.jsx`, `cast/DispatchProgressTray.house.test.jsx`, `lib/deviceIdentity.adopt.test.js`, `tests/_lib/media-house-fixture.test.mjs`). | Exact preview of `997890cbe` (`/tmp/daylight-media-preview-a0WYT1`): `media-app-house-view.runtime.test.mjs` 4/4 first try (`STEER\.11a` group: tablet house view + phone handle; `HOUSE\.4a` group: phone first use/naming + tablet admin/routines), real house router/services on the fixture's in-memory stores. All 29 manifest journeys were run piecewise on the same artifact; 25 passed; STEER.1c (remote-controls), STEER.2a, RELY.4a Undo and RELY.5a failed under host load ~20–36 and fail identically on a `main` (`69a780e83`) preview run back to back, so they are load flakes, not regressions of this batch. Limit of the evidence: the house fixture serves the real registry/history services on in-memory stores but its play ledger is empty, so the ledger-origin path of "Started by" (starts older than the live snapshot) and the `lastPlayed` ledger signal are unit-tested only, not run in a journey. |
 | TASK-7-OUTCOMES | Task 7: one outcome store, exact Retry, Stop after Undo, local skip notice, paused restore, Start fresh | Focused Vitest REDs (42 failing before implementation, plus 3 for O1 Stop and 1 for a load with no receiver); the existing stale resume journey used a removed testid. | Exact preview of product source `41afea7fe` with journeys at `d751db570`: outcomes 2/2, resume 4/4, Start fresh 2/2, local failure 1/1, run serially. Final product bytes (`562efd94f`/`e740a76f4`; later commits change only tests, manifest and docs): every P0 manifest journey passed serially, with load retries recorded in the Task 7 report; the first local-failure journey passed 2 of 4 runs; its hang was diagnosed (Player, not source healing) and fixed in `800ab005c`, after which the split RELY.5a journeys passed 9/9. |
@@ -335,9 +338,9 @@ As a **Bystander**, I want a doorbell camera or clip shown on the TV to go back 
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLAY.8a/AC1 | **Show briefly** puts the camera or clip over what's playing on that screen. | Unverified | — |
-| PLAY.8a/AC2 | Closing it, or its time running out, returns the previous programme at its spot, with its queue. | Unverified | — |
-| PLAY.8a/AC3 | The note on the screen says what interrupted and where it came from. | Unverified | — |
+| PLAY.8a/AC1 | **Show briefly** puts the camera or clip over what's playing on that screen. | Accepted | TASK-D-PLAYER-FEATURES: **Show briefly on…** from an item's detail sent `brief=1`; the clip played over the paused programme (receiver `controls.brief`, current item unchanged); routine camera likewise |
+| PLAY.8a/AC2 | Closing it, or its time running out, returns the previous programme at its spot, with its queue. | Accepted | TASK-D-PLAYER-FEATURES: camera time-out and clip Close from the Remote both returned Hospital at its spot (±10 s), same queue, playing |
+| PLAY.8a/AC3 | The note on the screen says what interrupted and where it came from. | Accepted | TASK-D-PLAYER-FEATURES: screen bar "Doorbell · from Automation" / "Keepy Uppy · from <device>" + "Back to Hospital …". Caveat: a sending browser with no name shows its id |
 
 ### PLAY.8b
 
@@ -345,8 +348,8 @@ As a **Routine Setter**, I want a doorbell routine to show the camera briefly an
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLAY.8b/AC1 | A routine can choose "show briefly, then return" for any screen. | Unverified | — |
-| PLAY.8b/AC2 | Cameras started by routines use it unless the routine says otherwise. | Unverified | — |
+| PLAY.8b/AC1 | A routine can choose "show briefly, then return" for any screen. | Accepted | TASK-D-PLAYER-FEATURES: routine loads choose it with `brief=1|<seconds>`; acked `appliedAs: "brief"`, confirmed by WakeAndLoad on the published brief |
+| PLAY.8b/AC2 | Cameras started by routines use it unless the routine says otherwise. | Accepted | TASK-D-PLAYER-FEATURES: routine `play=camera:doorbell` brief by default (30 s, returns); `brief=0` takes the screen and nothing returns |
 
 ### PLAY.9a
 
@@ -354,9 +357,9 @@ As a **Host**, I want music playing behind a photo slideshow, so that a birthday
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLAY.9a/AC1 | While a slideshow plays, **Add music behind** lets me choose a song, album, or playlist. | Unverified | — |
-| PLAY.9a/AC2 | Photos and music are steered separately: skipping a photo doesn't skip a song. | Unverified | — |
-| PLAY.9a/AC3 | Stopping the slideshow asks whether to keep the music playing. | Unverified | — |
+| PLAY.9a/AC1 | While a slideshow plays, **Add music behind** lets me choose a song, album, or playlist. | Accepted | TASK-D-PLAYER-FEATURES: on a screen slideshow, Remote **Add music behind** → music search → Faith; plays under the photos (screen plaque, `controls.musicBehind`). This-device path built + unit-tested only (no local slideshow source in the acceptance set) |
+| PLAY.9a/AC2 | Photos and music are steered separately: skipping a photo doesn't skip a song. | Accepted | TASK-D-PLAYER-FEATURES: Remote Next skipped a photo while the song kept its source and time; pausing the song left the slideshow playing |
+| PLAY.9a/AC3 | Stopping the slideshow asks whether to keep the music playing. | Accepted | TASK-D-PLAYER-FEATURES: Stop asked "Keep the music playing?"; Keep music stopped only the photos (tablet); Stop music too stopped both (phone) |
 
 ### PLAY.5a
 
@@ -634,9 +637,9 @@ As a **House Watch**, I want to turn subtitles on and choose the audio language 
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| STEER.12a/AC1 | Subtitles and audio language are available for this device and for any screen through its Remote. | Unverified | — |
-| STEER.12a/AC2 | Only the languages the item actually has are offered. | Unverified | — |
-| STEER.12a/AC3 | The choice carries on to the next episode of the same show. | Unverified | — |
+| STEER.12a/AC1 | Subtitles and audio language are available for this device and for any screen through its Remote. | Accepted | TASK-D-PLAYER-FEATURES: a screen through its Remote (subtitles on 3 Body Problem S1E1; audio language on a French/Turkish/English film, re-minted with `audioStreamID`) and this device (phone Now Playing, same control) — `media-app-player-features.runtime.test.mjs` |
+| STEER.12a/AC2 | Only the languages the item actually has are offered. | Accepted | TASK-D-PLAYER-FEATURES: the menu holds exactly the file's subtitle streams + Off (43+1); a one-audio file shows no Audio control; the film shows its 3 languages |
+| STEER.12a/AC3 | The choice carries on to the next episode of the same show. | Accepted | TASK-D-PLAYER-FEATURES: after choosing English [SDH] on S1E1, a routine load of S1E2 minted with that episode's own English stream (`subtitleStreamID=1278403`) with no person input; screenshot shows burned subtitles |
 
 ### STEER.7a
 

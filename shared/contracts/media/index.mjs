@@ -4,3 +4,4 @@ export * from './shapes.mjs';
 export * from './envelopes.mjs';
 export * from './errors.mjs';
 export * from './sessionControls.mjs';
+export * from './playerFeatures.mjs';

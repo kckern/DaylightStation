@@ -1,0 +1,64 @@
+// Player features in the controls (P2): tracks, music behind, Shown briefly.
+// Design-system tokens only; feedback is an overlay so it never moves the page.
+.pf-controls {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  margin-top: var(--mantine-spacing-xs);
+}
+
+.pf-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--mantine-spacing-sm);
+  flex-wrap: wrap;
+}
+
+// Touch targets: every control here is at least 44 px tall.
+.pf-controls .mantine-Button-root {
+  min-height: 44px;
+}
+
+.pf-music-title,
+.pf-brief-label {
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pf-feedback {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + var(--mantine-spacing-xs));
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  border-radius: var(--mantine-radius-sm);
+  background: var(--ds-surface-alt);
+  color: var(--ds-text-high);
+  font-size: 13px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.pf-mark-space {
+  display: inline-block;
+  width: 14px;
+}
+
+// A file can carry dozens of subtitle streams: the list scrolls inside the
+// viewport instead of running off it (keyboard/gamepad arrows still reach all).
+.pf-track-menu {
+  max-height: min(60vh, 480px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+// The menu renders in a portal, outside .pf-controls: 44 px targets here.
+.pf-track-menu .mantine-Menu-item {
+  min-height: 44px;
+}

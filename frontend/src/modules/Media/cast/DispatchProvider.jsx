@@ -127,7 +127,7 @@ export function DispatchProvider({ children }) {
     });
   }, [peek]);
 
-  const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot, title, itemAction, startOver = false, resumedFrom = null }, { bypassDedupe = false } = {}) => {
+  const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot, title, itemAction, startOver = false, resumedFrom = null, brief = false }, { bypassDedupe = false } = {}) => {
     if (!Array.isArray(targetIds) || targetIds.length === 0) return [];
     if (itemAction && !itemAction.operationId) {
       itemAction = { ...itemAction, operationId: uuid(), tappedAt: Date.now() };
@@ -143,7 +143,7 @@ export function DispatchProvider({ children }) {
 
     const key = buildDedupKey({
       targetIds, play, queue, mode, shader, volume, shuffle, snapshot, itemAction,
-    });
+    }) + (brief ? '|brief' : '');
     const inFlight = inFlightRef.current.get(key);
     const cached = dedupCacheRef.current.get(key);
     const withinWindow = cached && Date.now() - cached.ts < TIMING.DISPATCH_DEDUPE_WINDOW_MS;
@@ -194,6 +194,7 @@ export function DispatchProvider({ children }) {
       inFlightRef.current.get(key)?.add(dispatchId);
       attemptsRef.current.set(dispatchId, {
         targetIds: [deviceId], play, queue, mode, shader, volume, shuffle, snapshot: retrySnapshot, title, itemAction,
+        ...(brief ? { brief: true } : {}),
       });
       dispatch({
         type: 'INITIATED', dispatchId, deviceId, contentId, title: contentTitle,
@@ -208,7 +209,7 @@ export function DispatchProvider({ children }) {
 
       const httpPromise = isAdopt
         ? DaylightAPI(`api/v1/device/${deviceId}/load`, { dispatchId, snapshot, mode: 'adopt' }, 'POST')
-        : DaylightAPI(buildDispatchUrl({ deviceId, play, queue, dispatchId, shader, volume, shuffle, itemAction, manualRetryOnly: true }));
+        : DaylightAPI(buildDispatchUrl({ deviceId, play, queue, dispatchId, shader, volume, shuffle, itemAction, brief, title: brief ? contentTitle : null, manualRetryOnly: true }));
       httpPromise
         .then((res) => {
           settle(dispatchId);
