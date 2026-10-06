@@ -7,9 +7,10 @@ import { _resetForTests as resetVolume } from '../../lib/volume/ScreenVolumeCont
 import { getNaturalEndPolicy } from '../../modules/Player/lib/naturalEndPolicy.js';
 import { createScreenSessionControls } from './screenSessionControls.js';
 import { ScreenSessionControlsHost } from './ScreenSessionControlsHost.jsx';
+import Player from '../../modules/Player/Player.jsx';
 
-const overlayState = vi.hoisted(() => ({ hasOverlay: false }));
-vi.mock('../overlays/ScreenOverlayProvider.jsx', () => ({ useScreenOverlay: () => ({ hasOverlay: overlayState.hasOverlay }) }));
+const overlayState = vi.hoisted(() => ({ hasOverlay: false, component: null }));
+vi.mock('../overlays/ScreenOverlayProvider.jsx', () => ({ useScreenOverlay: () => ({ hasOverlay: overlayState.hasOverlay, fullscreenComponent: overlayState.component }) }));
 import { savePersistedSession, loadPersistedSession, restorableSnapshot, POWER_RESTORE_DELAY_MS } from './sessionPersistence.js';
 
 const playing = {
@@ -43,7 +44,7 @@ function mount(source, controls = createScreenSessionControls({ ownerId: 'tv' })
   return { controls, view };
 }
 
-beforeEach(() => { overlayState.hasOverlay = false; resetActionBus(); resetVolume(); window.localStorage.clear(); vi.useFakeTimers(); });
+beforeEach(() => { overlayState.hasOverlay = false; overlayState.component = null; resetActionBus(); resetVolume(); window.localStorage.clear(); vi.useFakeTimers(); });
 afterEach(() => { vi.useRealTimers(); });
 
 describe('session persistence (power cut, RQ-RELY-08)', () => {
@@ -223,8 +224,18 @@ describe('ScreenSessionControlsHost', () => {
       other.remove();
     });
 
+    it('OK is still consumed while the Player itself is the fullscreen overlay', async () => {
+      overlayState.hasOverlay = true; overlayState.component = Player;
+      const restore = vi.fn((p) => getActionBus().emit('media:restore-snapshot-result', { requestId: p.requestId, ok: true }));
+      getActionBus().subscribe('media:restore-snapshot', restore);
+      const { controls } = mount(makeSource(playing));
+      act(() => { controls.noteRemoteCommand({ command: 'transport', params: { action: 'stop' }, origin: { kind: 'routine', name: 'Bedtime' } }); });
+      await act(async () => { getActionBus().emit('select', {}); });
+      expect(restore).toHaveBeenCalled();
+    });
+
     it('OK is NOT consumed while another overlay is up', async () => {
-      overlayState.hasOverlay = true;
+      overlayState.hasOverlay = true; overlayState.component = () => null;
       const { controls } = mount(makeSource(playing));
       act(() => { controls.noteRemoteCommand({ command: 'transport', params: { action: 'stop' }, origin: { kind: 'routine', name: 'Bedtime' } }); });
       expect(getActionBus().emit('select', {})).toBe(false);

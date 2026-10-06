@@ -46,16 +46,15 @@ async function selectFirstDevice(picker) {
   await device.click();
 }
 
-// A plain Play from Detail has no session to move: Move is not offered at all
-// (no disabled noise option) and the tile tap itself sends it as Keep (NF-TAP-10).
-// The guard aborts the device call, so the picker reports the failure and stays.
-async function expectNoMoveAndTapSendsKeep(picker) {
+// A plain Play from a result has no session to move: Move and the Move/Keep group
+// are not offered at all, and the tile tap itself sends it (NF-TAP-10). The guard
+// aborts the device call, so the proof is the single blocked load attempt.
+async function expectNoMoveAndTapSends(picker, deviceAttempts) {
   await expect(picker.getByTestId('picker-mode-transfer')).toHaveCount(0);
+  await expect(picker.getByTestId('picker-mode-fork')).toHaveCount(0);
   await expect(picker.getByTestId('picker-move-unavailable')).toHaveCount(0);
   await selectFirstDevice(picker);
-  await expect(picker.getByTestId('picker-dispatch-failed')).toBeVisible();
-  // With nothing to choose between, the whole Move/Keep group is absent.
-  await expect(picker.getByTestId('picker-mode-fork')).toHaveCount(0);
+  await expect.poll(() => deviceAttempts.length, { timeout: 15000 }).toBeGreaterThan(0);
 }
 
 test.describe('Media M0 Move safety', () => {
@@ -72,27 +71,22 @@ test.describe('Media M0 Move safety', () => {
     if (await stop.isVisible().catch(() => false)) await stop.click();
   });
 
-  test('idle selected Arrival exposes disabled Move and a reachable Keep choice without dispatching', async ({ page }) => {
+  test('idle Arrival offers no Move, and the tile tap sends it (device call guarded)', async ({ page }) => {
     const deviceAttempts = await guardDeviceMutations(page);
     await page.goto('/media');
 
-    // Desktop Media's actual result path is search → ⋯ → Open detail. Detail
-    // owns the CastButton that mounts the destination picker for an idle item.
+    // Desktop Media's result path is search → ⋯ → Play on… (Detail no longer carries a Cast button).
     const { contentId } = await findArrivalOption(page);
     await page.getByTestId(`result-more-${contentId}`).click();
     await expect(page.getByTestId(`result-more-menu-${contentId}`)).toBeVisible();
-    await page.getByTestId(`result-action-detail-${contentId}`).click();
-    await expect(page.getByTestId('detail-view')).toBeVisible();
-    await page.getByTestId(`cast-button-${contentId}`).click();
+    await page.getByRole('menuitem', { name: 'Play on…' }).click();
 
     const picker = page.getByTestId('dispatch-target-picker');
     await expect(picker).toBeVisible();
-    await expectNoMoveAndTapSendsKeep(picker);
+    await expectNoMoveAndTapSends(picker, deviceAttempts);
 
-    // The guard blocked the one load the tap issued; nothing reached a device and
-    // no claim/stop was attempted. Escape is the real popover cancellation path.
-    await page.keyboard.press('Escape');
-    await expect(picker).toBeHidden();
+    // The guard blocked the load the tap issued; nothing reached a device and
+    // no claim/stop was attempted.
     expect(deviceAttempts.filter((a) => !/\/load$/.test(a.path)), 'only the Keep load may be attempted').toEqual([]);
   });
 
