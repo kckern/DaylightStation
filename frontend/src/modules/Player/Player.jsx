@@ -28,6 +28,7 @@ import { getLogger } from '../../lib/logging/Logger.js';
 import { OnDeckCard } from './components/OnDeckCard.jsx';
 import { getPlayerQueueOpRegistry } from './lib/queueOpRegistry.js';
 import { getNaturalEndPolicy } from './lib/naturalEndPolicy.js';
+import { AuxiliaryPlayerContext } from './lib/auxiliaryPlayerContext.js';
 import { getTrackOwner, hasTrackOwners, subscribeTrackOwners } from './lib/trackPolicy.js';
 import { trackEngineFor } from './lib/engineTracks.js';
 import { applyRememberedTracks, trackStateFor, checkSelection, rememberSelection } from './lib/playerTracks.js';
@@ -739,6 +740,8 @@ const Player = forwardRef(function Player(props, ref) {
   // Opt-in: everything below is inert unless an owner claims this Player
   // (lib/trackPolicy.js). With no owner the resolver returns the item as is.
   const appliedTracksRef = useRef(null); // { contentId, applied }
+  const resolvedMetaRef = useRef(null);
+  resolvedMetaRef.current = resolvedMeta;
   const resolveTracks = useCallback((info) => {
     const owner = getTrackOwner(playerInstanceId);
     if (!owner || !info) return info;
@@ -2087,7 +2090,7 @@ const Player = forwardRef(function Player(props, ref) {
         playbackLog('tracks.select-refused', { code: problem, ...selection }, { level: 'warn' });
         return { ok: false, code: problem };
       }
-      rememberSelection(resolvedMeta, state, selection,
+      rememberSelection(resolvedMetaRef.current, state, selection,
         (key) => owner.getPreference?.(key) ?? null, (key, pref) => owner.setPreference?.(key, pref));
       if (state.source === 'plex') {
         // Plex plays the part's selected streams: re-mint at the same spot
@@ -2189,7 +2192,7 @@ const Player = forwardRef(function Player(props, ref) {
         fromContentId: effectiveMeta?.contentId ?? effectiveMeta?.assetId ?? null,
       }, { level: 'info' });
     },
-  }), [isQueue, isShuffle, repeatMode, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setOwnerVolume, setOwnerPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport, queueSnapshot, playerInstanceId, queueShader, issueOwnerRevision, adoptQueueSnapshot, applyQueueSnapshot, setTargetTimeSeconds, setShader, setShaderUserCycled, inspectRendererBoundaryRequest, beginRendererBoundary, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, currentTrackState, resolvedMeta, forceSinglePlayerRemount]);
+  }), [isQueue, isShuffle, repeatMode, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setOwnerVolume, setOwnerPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport, queueSnapshot, playerInstanceId, queueShader, issueOwnerRevision, adoptQueueSnapshot, applyQueueSnapshot, setTargetTimeSeconds, setShader, setShaderUserCycled, inspectRendererBoundaryRequest, beginRendererBoundary, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, currentTrackState, forceSinglePlayerRemount]);
 
   useEffect(() => () => {
     clearRemountTimer();
@@ -2480,7 +2483,7 @@ const Player = forwardRef(function Player(props, ref) {
     />
   ) : fallbackContent;
 
-  return (
+  const shell = (
     <div className={playerShellClass}>
       <AmbientLayer ambientUrl={ambientUrl} ambientVolume={ambientVolumeFromMeta} />
       {audioConfig && (
@@ -2499,6 +2502,9 @@ const Player = forwardRef(function Player(props, ref) {
       <OnDeckCard key={onDeckFlashKey} item={onDeck} flashKey={onDeckFlashKey} />
     </div>
   );
+  return auxiliary
+    ? <AuxiliaryPlayerContext.Provider value>{shell}</AuxiliaryPlayerContext.Provider>
+    : shell;
 });
 
 Player.propTypes = {
