@@ -1340,7 +1340,10 @@ and playing to the end again is a new completion, not a duplicate. A minutes
 timer persists `sleepTimer.endsAt` and re-arms (or resolves to the resume
 offer) on hydrate. A failed `media:adopt-snapshot` (no owner, superseded,
 refused) answers the command with `command-handler-error { commandId }` so the
-mover fails at once; the epoch bump happens inside the adopt handler. The
+mover fails at once, and a successful adopt acks once via
+`media:session-control-applied { commandId }` — `media:adopt-snapshot` is NOT in
+the ack publisher's dispatch-time list (an optimistic ack would win the 60 s
+dedupe and swallow the failure); the epoch bump happens inside the adopt handler. The
 backend adopt load carries `autoplay: false` for a paused snapshot.
 
 **Lock screen** (`session/useMediaSession.js`). Local playback publishes
@@ -1550,7 +1553,8 @@ On any failure mid-adoption, device MUST reset to idle and ack with error.
 
 Screens adopt it through the restore path (`ScreenActionHandler`
 `media:adopt-snapshot` → the same owner bootstrap + adopt as
-`media:restore-snapshot`, playing unless `autoplay: false`). Before 2026-10-03
+`media:restore-snapshot`, playing unless `autoplay: false`). The command is acked by its outcome (success: `media:session-control-applied`;
+failure: `command-handler-error`), never at dispatch. Before 2026-10-03
 the command was acknowledged and then dropped, so a move to an idle screen
 could never start there.
 

@@ -43,23 +43,24 @@ function problemLabel(problem) {
     : `Playback problem: ${title} could not play`;
 }
 
-// STEER.10a/AC2: the sleep timer's time left, on the handle.
-function SleepTimeLeft() {
+// STEER.10a/AC2: the sleep timer's time left, on the handle. The words go into
+// the handle button's own accessible name (an aria-label on a span inside a
+// labelled button is not exposed); the visible span is decoration for AT.
+function useSleepLeft() {
   const { controls } = useSessionControls('local');
   const sleepTimer = controls?.sleepTimer ?? null;
   const now = useSecondTick(sleepTimer?.mode === 'minutes');
   if (!sleepTimer) return null;
-  if (sleepTimer.mode === 'atEnd') {
-    return (
-      <span className="mini-player-sleep" data-testid="mini-sleep" aria-label="Sleep timer: stops at the end of this item">
-        <IconMoon size={14} aria-hidden /> end
-      </span>
-    );
-  }
-  const left = secondsUntil(sleepTimer.endsAt, now) ?? sleepTimer.remainingSeconds;
+  if (sleepTimer.mode === 'atEnd') return { text: 'end', label: 'Sleep timer: stops at the end of this item' };
+  const left = formatClock(secondsUntil(sleepTimer.endsAt, now) ?? sleepTimer.remainingSeconds);
+  return { text: left, label: `Sleep timer: ${left} left` };
+}
+
+function SleepTimeLeft({ sleep }) {
+  if (!sleep) return null;
   return (
-    <span className="mini-player-sleep" data-testid="mini-sleep" aria-label={`Sleep timer: ${formatClock(left)} left`}>
-      <IconMoon size={14} aria-hidden /> {formatClock(left)}
+    <span className="mini-player-sleep" data-testid="mini-sleep" data-sleep-label={sleep.label} aria-hidden="true">
+      <IconMoon size={14} aria-hidden /> {sleep.text}
     </span>
   );
 }
@@ -68,6 +69,7 @@ export function MiniPlayer() {
   const { controller, snapshot, transport } = useSessionController('local');
   const live = usePlaybackPosition(controller);
   const problem = useLocalProblem(controller);
+  const sleepLeft = useSleepLeft();
   const { push, view } = useNav();
   // Stopping a slideshow with music behind asks whether to keep the music.
   const [guardStop, stopGuardDialog] = useSlideshowStopGuard('local');
@@ -151,7 +153,7 @@ export function MiniPlayer() {
         type="button"
         data-testid="mini-player-open-nowplaying"
         className="mini-player-title"
-        aria-label={item ? `Open now playing, ${item.title ?? item.contentId}` : `Open queue, ${queueCount} item${queueCount === 1 ? '' : 's'} ready`}
+        aria-label={`${item ? `Open now playing, ${item.title ?? item.contentId}` : `Open queue, ${queueCount} item${queueCount === 1 ? '' : 's'} ready`}${sleepLeft ? `. ${sleepLeft.label}` : ''}`}
         onClick={() => { if (view !== 'nowPlaying') push('nowPlaying', {}); }}
       >
         <span className="mini-player-title-text">
@@ -162,7 +164,7 @@ export function MiniPlayer() {
             {queuePos + 1}/{queueCount}
           </span>
         )}
-        <SleepTimeLeft />
+        <SleepTimeLeft sleep={sleepLeft} />
       </button>
       <div className="mini-player-controls">
         <button

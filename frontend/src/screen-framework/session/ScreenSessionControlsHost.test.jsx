@@ -160,4 +160,21 @@ describe('ScreenSessionControlsHost', () => {
     expect(actions.stop).toHaveBeenCalled();
     expect(view.queryByTestId('screen-next-countdown')).toBeNull();
   });
+
+  it('announces the countdown once (start, cancel) and keeps the ticking seconds out of the live region', async () => {
+    const { controls, view } = mount(makeSource(playing));
+    const actions = { advance: vi.fn(), stop: vi.fn(), finish: vi.fn(), restartQueue: vi.fn() };
+    const ep = (n) => ({ contentId: `plex:${n}`, title: `Ep ${n}`, type: 'episode' });
+    act(() => { controls.naturalEndPolicy({ isQueue: true, current: ep(1), next: ep(2) }, actions); });
+    const live = view.getByTestId('screen-next-countdown-announce');
+    expect(live.getAttribute('aria-live')).toBe('polite');
+    expect(live.textContent).toMatch(/Ep 2/);
+    const startText = live.textContent;
+    await act(async () => { vi.advanceTimersByTime(3_000); });
+    expect(live.textContent).toBe(startText);
+    expect(view.getByTestId('screen-next-countdown').getAttribute('aria-live')).not.toBe('polite');
+    expect(view.getByTestId('screen-next-countdown-seconds').closest('[aria-hidden="true"]')).not.toBeNull();
+    act(() => { view.getByTestId('screen-next-countdown-cancel').click(); });
+    expect(view.getByTestId('screen-next-countdown-announce').textContent).toMatch(/cancel/i);
+  });
 });

@@ -211,6 +211,19 @@ describe('end of queue: stop, repeat, keep similar playing (RQ-STEER-19)', () =>
     expect(c.getSnapshot().currentItem?.contentId).toBe('a');
   });
 
+  it('a ONE-item queue on repeat restarts without ever reading "ended" (no flash, no double restart)', async () => {
+    const { c } = makeController();
+    c.queue.playNow(song('a'));
+    playing(c);
+    await c.sessionControls.setEndOfQueue('repeat');
+    const states = [];
+    c.subscribe((snap) => states.push(snap.state));
+    c.onPlayerEnded('a');
+    expect(c.getSnapshot().currentItem?.contentId).toBe('a');
+    expect(c.getSnapshot().state).toBe('loading');
+    expect(states).not.toContain('ended');
+  });
+
   it('similar appends one marked batch from the resolver and plays on', async () => {
     const resolveContinuation = vi.fn(async () => [
       { id: 'plex:9', title: 'Nine', type: 'track', duration: 180 },
@@ -290,5 +303,20 @@ describe('Play after an item ended here', () => {
     c.setOrigin(origin);
     c.transport.play();
     expect(c.getSnapshot().meta.origin).toEqual(origin);
+  });
+
+  it('a sleep timer that came due while away is persisted and logged at hydrate, not at the next change', () => {
+    const past = new Date(Date.now() - 60_000).toISOString();
+    const storage = memoryStorage({
+      'media-app.session-controls.v1:browser:c1': JSON.stringify({
+        sleepTimer: { mode: 'minutes', minutes: 30, setAt: new Date(Date.now() - 31 * 60_000).toISOString(), endsAt: past, setPosition: { contentId: 'a', seconds: 12 } },
+      }),
+    });
+    mediaLog.sleepTimerChanged.mockClear();
+    makeController({ storage });
+    const written = JSON.parse(storage.data.get('media-app.session-controls.v1:browser:c1'));
+    expect(written.sleepTimer ?? null).toBeNull();
+    expect(written.sleepResume).toBeTruthy();
+    expect(mediaLog.sleepTimerChanged).toHaveBeenCalled();
   });
 });

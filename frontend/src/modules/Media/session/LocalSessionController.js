@@ -733,6 +733,9 @@ export function createLocalSessionController({
     const next = repeatOne ? current : pickNextQueueItem(s, { reason: 'item-ended' });
     const finishedId = current.queueItemId;
     const stillFinished = () => snap().queue.items[snap().queue.currentIndex]?.queueItemId === finishedId;
+    // Set when advance/restartQueue re-selected an item: the same queueItemId
+    // can come back (one-item repeat), which must not be read as "still ended".
+    let moved = false;
     const holdEnded = () => {
       player.pause();
       store.dispatch({ type: 'PLAYER_STATE', playerState: 'ended', __playerDriven: true });
@@ -740,6 +743,7 @@ export function createLocalSessionController({
     const actions = {
       advance: () => {
         if (!stillFinished()) return;
+        moved = true;
         const planned = next && snap().queue.items.some((it) => it.queueItemId === next.queueItemId) ? next : null;
         if (!planned) { advance('item-ended', { playerDriven: true }); return; }
         moveCurrentTo(planned, { consumeExecutionOrder: true, playerDriven: true });
@@ -749,6 +753,7 @@ export function createLocalSessionController({
       restartQueue: () => {
         const first = snap().queue.items[0];
         if (!first) return false;
+        moved = true;
         moveCurrentTo(first, { playerDriven: true });
         return true;
       },
@@ -761,7 +766,7 @@ export function createLocalSessionController({
       // A held end (countdown running) is still an END: say so without pausing
       // or touching the node, so Play goes through the ended -> new-visit path
       // and the handle / lock screen stop reporting "playing".
-      if (handled && stillFinished() && snap().state !== 'ended') {
+      if (handled && !moved && stillFinished() && snap().state !== 'ended') {
         store.dispatch({ type: 'PLAYER_STATE', playerState: 'ended', __playerDriven: true });
       }
       mediaLog.naturalEndConsulted({

@@ -504,6 +504,8 @@ full session state and resumes within seconds of where local was.
 ### J8. Resume after disruption
 Refresh, crash, or network blip → the session restores from persisted state.
 An explicit reset action (with confirmation) returns to a clean slate.
+A session that was persisted as **ended** (the queue played out, or an end was
+held) replays from the start of that item when you press Play after a restore.
 
 ### J9. External trigger
 An external system opens `/media?play=<contentId>` (plus optional shuffle/
