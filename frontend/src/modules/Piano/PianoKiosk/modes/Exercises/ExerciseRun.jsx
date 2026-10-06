@@ -417,6 +417,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     learnerId: typeof currentUser === 'string' ? currentUser : currentUser?.id ?? null,
     hostAttemptId: traceContext?.attemptId ?? null,
     hostSessionId: traceContext?.sessionId ?? null,
+    runId: traceContext?.runId ?? null,
+    take: traceContext?.take ?? null,
     tempoPercent: traceContext?.tempoPercent ?? null,
     tempoSource: traceContext?.tempoSource ?? null,
     tempoStage: traceContext?.tempoStage ?? null,

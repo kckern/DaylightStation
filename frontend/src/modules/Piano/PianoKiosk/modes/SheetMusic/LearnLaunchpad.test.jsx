@@ -63,8 +63,9 @@ describe('LearnLaunchpad', () => {
 
   it('renders explicit post-run choices instead of auto-dismissing', () => {
     const onResultAction = vi.fn();
-    render(<LearnLaunchpad segment={segment} result={{ source: 'review', passed: true, score: 96 }} onResultAction={onResultAction} onBack={vi.fn()} />);
+    render(<LearnLaunchpad segment={segment} result={{ source: 'review', verdict: { passed: true }, score: 96 }} onResultAction={onResultAction} onBack={vi.fn()} />);
     const result = screen.getByRole('dialog', { name: /practice result/i });
+    expect(within(result).getByRole('heading', { name: 'Nice work!' })).toBeTruthy();
     for (const name of [/play again/i, /change setup/i, /back to segment/i]) {
       expect(within(result).getByRole('button', { name })).toBeTruthy();
     }

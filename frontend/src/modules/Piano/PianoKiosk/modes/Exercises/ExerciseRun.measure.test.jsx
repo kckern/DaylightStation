@@ -365,6 +365,7 @@ window.__stage = {
         tempoPercent: 60, mastery },
       tempo: { tempoMap: [{ onsetQuarter: 0, bpm: 80 }], tempoSource: 'musicxml' },
       onRecord: (r) => push('record', r), onClose: () => push('close'),
+      onChangePractice: (choice) => push('change-practice', choice),
       onUnavailable: (r) => push('unavailable', r),
     })));
   },
@@ -1449,8 +1450,18 @@ describe('Learn recovery controls at the 1280x800 kiosk canvas', () => {
       expect(inside(button, canvas), `${label} leaves the kiosk canvas: ${say(button)}`).toBe(true);
       expect(button.reachable, `${label} is not reachable`).toBe(true);
     }
+    await page.getByRole('button', { name: /^Choose tempo:/ }).click();
+    await page.getByRole('button', { name: 'Full speed', exact: true }).click();
+    await probe.press(84);
+    await page.waitForSelector('.piano-exercise-run.is-running', { timeout: 8000 });
     await page.getByRole('button', { name: 'Pause', exact: true }).click();
+    expect(await page.locator('.piano-exercise-run').getAttribute('data-phase')).toBe('paused');
     await page.getByRole('button', { name: 'Resume', exact: true }).click();
+    expect(await page.locator('.piano-exercise-run').getAttribute('data-phase')).toBe('resume-countdown');
+    await page.getByRole('button', { name: 'Start over', exact: true }).click();
+    await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]');
+    await page.getByRole('button', { name: 'Change practice', exact: true }).click();
+    expect(await probe.calls()).toContainEqual({ name: 'change-practice', value: expect.objectContaining({ parts: ['rh'], mode: 'cued' }) });
     await page.getByRole('button', { name: /^Choose tempo:/ }).click();
     await page.getByRole('button', { name: 'Extra slow', exact: true }).click();
     await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]');
