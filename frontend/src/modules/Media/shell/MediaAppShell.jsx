@@ -15,6 +15,7 @@ import { ReconnectingNote } from './ReconnectingNote.jsx';
 import { LocalPlaybackOutcomes } from './LocalPlaybackOutcomes.jsx';
 import { LocalStopFeedbackProvider, useLocalStopFeedbackCount } from './LocalStopFeedbackContext.jsx';
 import { SearchLauncherContext } from './SearchLauncherContext.js';
+import { slashIsNotForSearch } from './searchShortcut.js';
 import mediaLog from '../logging/mediaLog.js';
 import './MediaShell.scss';
 
@@ -24,6 +25,8 @@ function ShellInner() {
   // Add to this queue: the one search, for one addition to one screen.
   const [searchAddTo, setSearchAddTo] = useState(null);
   const searchLauncher = React.useMemo(() => ({
+    // The phone tab bar's Search: the one search, at the thumb (RELY.12a).
+    openSearch: () => { setSearchAddTo(null); setSearchOpen(true); },
     openAddToQueue: ({ deviceId, name = null }) => {
       if (typeof deviceId !== 'string' || !deviceId) return;
       mediaLog.addToQueueOpened({ deviceId });
@@ -39,11 +42,15 @@ function ShellInner() {
   // `/` focuses search from anywhere (unless already typing somewhere).
   React.useEffect(() => {
     const onKey = (e) => {
-      if (e.key !== '/' || e.defaultPrevented) return;
-      const tag = document.activeElement?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      const input = document.querySelector('[data-testid="media-search-input"]');
-      if (input) { e.preventDefault(); input.focus(); }
+      if (slashIsNotForSearch(e)) return;
+      // Tablet/laptop: the dock's search field. Phone: its field is hidden, so
+      // the same key opens the full-screen search instead (NF-DEV-03).
+      const input = document.querySelector('.media-dock .media-search-bar input');
+      if (input && input.getClientRects().length > 0) { e.preventDefault(); input.focus(); return; }
+      if (document.querySelector('[data-testid="media-search-launcher"]')?.getClientRects().length > 0) {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);

@@ -10,6 +10,7 @@ import { useDispatch } from './useDispatch.js';
 import { useCastTarget } from './useCastTarget.js';
 import { useHandOff } from './useHandOff.js';
 import { LocalSessionContext } from '../session/LocalSessionContext.js';
+import { describeBusy } from './castCopy.js';
 import mediaLog from '../logging/mediaLog.js';
 
 const NOOP_UNSUB = () => {};
@@ -37,14 +38,16 @@ export function useLocalPlaybackActive(source) {
   return !!(snap?.currentItem && LOCAL_ACTIVE_STATES.has(snap.state));
 }
 
-export function useDispatchTargetPicker({ source, onComplete } = {}) {
+export function useDispatchTargetPicker({ source, onComplete, intent = 'dispatch' } = {}) {
   const fleet = useFleetContext();
   const { dispatchToTarget } = useDispatch();
   const handOff = useHandOff();
   const { targetIds: defaultTargets, mode: defaultMode } = useCastTarget();
   const [selected, setSelected] = useState(() => new Set(defaultTargets));
   const [multi, setMulti] = useState(() => defaultTargets.length > 1);
-  const [mode, setMode] = useState(source?.itemAction || source?.brief ? 'fork' : (defaultMode ?? 'transfer'));
+  // A play/queue source has no session to move, so it can only ever fork.
+  const noSnapshotSource = !!(source?.play || source?.queue) && !(source?.getSnapshot || source?.snapshot);
+  const [mode, setMode] = useState(source?.itemAction || source?.brief || noSnapshotSource ? 'fork' : (defaultMode ?? 'transfer'));
   const [dispatchError, setDispatchError] = useState(null);
   const localPlaying = useLocalPlaybackActive(source);
   // This only controls whether the picker can offer playback choices. A
@@ -68,9 +71,26 @@ export function useDispatchTargetPicker({ source, onComplete } = {}) {
      
   }, []);
 
+  // NF-TAP-10: a plain "play this on X" (no move, no brief, single-select, an
+  // idle target) is sent by the tile tap itself; the CTA stays for keyboard and
+  // screen-reader users. A busy target, a move source or multi-select keeps
+  // select -> confirm.
+  const submitRef = useRef(null);
+  const autoSendOnSelect = useCallback((id) => {
+    if (multi || intent === 'destination' || source?.brief || hasMoveSnapshot) return false;
+    if (!(source?.play || source?.queue)) return false;
+    if (describeBusy(fleet.store?.getEntry?.(id))) return false;
+    return true;
+  }, [multi, intent, source, hasMoveSnapshot, fleet.store]);
+
   // Tap a tile: radio-like in single mode (tap again to deselect),
   // accumulating in multi mode.
   const select = useCallback((id) => {
+    if (autoSendOnSelect(id)) {
+      setSelected(new Set([id]));
+      submitRef.current?.([id]);
+      return;
+    }
     setSelected((prev) => {
       if (multi) {
         const next = new Set(prev);
@@ -80,7 +100,7 @@ export function useDispatchTargetPicker({ source, onComplete } = {}) {
       }
       return prev.has(id) && prev.size === 1 ? new Set() : new Set([id]);
     });
-  }, [multi]);
+  }, [multi, autoSendOnSelect]);
 
   // Leaving multi mode collapses the selection back to one device so the
   // single-select invariant holds.
@@ -93,15 +113,16 @@ export function useDispatchTargetPicker({ source, onComplete } = {}) {
 
   const canSubmit = selected.size > 0;
 
-  const submit = useCallback(async () => {
-    if (!canSubmit) return;
+  const submit = useCallback(async (idsOverride) => {
+    const chosen = Array.isArray(idsOverride) ? idsOverride : Array.from(selected);
+    if (chosen.length === 0) return;
     if (moveUnavailable) {
       setDispatchError(hasMoveSnapshot
         ? 'Move playback to one screen at a time.'
         : 'Move needs an active session. Keep playing here instead.');
       return { ok: false, error: 'move-unsupported' };
     }
-    const targetIds = Array.from(selected);
+    const targetIds = chosen;
     const params = { targetIds, mode };
     // Hand-off snapshots are captured AT SUBMIT so the position is current.
     const snapshot = source?.getSnapshot?.() ?? source?.snapshot;
@@ -152,7 +173,9 @@ export function useDispatchTargetPicker({ source, onComplete } = {}) {
     setDispatchError(null);
     onComplete?.({ targetIds, mode });
     return { ok: true, dispatchIds };
-  }, [canSubmit, moveUnavailable, hasMoveSnapshot, selected, mode, source, dispatchToTarget, handOff, onComplete, hasPotentialContent]);
+  }, [moveUnavailable, hasMoveSnapshot, selected, mode, source, dispatchToTarget, handOff, onComplete, hasPotentialContent]);
+
+  submitRef.current = submit;
 
   return { devices, selected, multi, mode, canSubmit, localPlaying, hasPotentialContent, moveSupported, moveUnavailable, dispatchError, select, toggleMulti, setMode, submit };
 }

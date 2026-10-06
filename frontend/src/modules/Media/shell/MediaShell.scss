@@ -59,7 +59,11 @@ $amber-ink: #1a1300;
   display: flex;
   align-items: center;
   gap: var(--mantine-spacing-sm);
-  height: var(--media-dock-h);
+  // Large text (RELY.11a): the bar grows and wraps instead of clipping the
+  // house indicator or the search label to a few letters.
+  min-height: var(--media-dock-h);
+  flex-wrap: wrap;
+  row-gap: var(--mantine-spacing-xs);
   padding: 0 var(--mantine-spacing-sm);
   background: var(--mantine-color-dark-6);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
@@ -211,7 +215,7 @@ $amber-ink: #1a1300;
     display: flex;
     align-items: center;
     gap: var(--mantine-spacing-xs);
-    flex: 1;
+    flex: 1 1 96px;
     min-width: 0;
     min-height: 44px;
     padding: 0 var(--mantine-spacing-sm);
@@ -348,6 +352,20 @@ $amber-ink: #1a1300;
   }
 }
 
+// Phone: four 44 px controls leave a 390 px handle no room for its own title
+// (it measured 40 px wide). A narrower video dock and tighter gaps give the
+// title back about 100 px without hiding or shrinking any control.
+@media (max-width: 480px) {
+  .mini-player {
+    --media-dock-video-w: 64px;
+    gap: var(--mantine-spacing-xs);
+    padding-left: var(--mantine-spacing-xs);
+    padding-right: var(--mantine-spacing-xs);
+
+    .mini-player-controls { gap: 2px; }
+  }
+}
+
 // ---- Now Playing ------------------------------------------------------------
 .now-playing-view {
   max-width: 760px;
@@ -427,7 +445,8 @@ $amber-ink: #1a1300;
       min-width: 0;
       display: flex;
       gap: 8px;
-      align-items: baseline;
+      align-items: center;
+      min-height: 44px;
       background: none;
       border: none;
       color: var(--mantine-color-dark-0);
@@ -507,6 +526,18 @@ $amber-ink: #1a1300;
   .scope-error { color: var(--mantine-color-red-5); display: inline-flex; }
 
   .media-search-input-wrap { flex: 1 1 160px; min-width: 120px; }
+
+  // Laptop: the dock row has room the three controls were not given — the aim
+  // label read "Browser ac5…" and the scope chips were clipped mid-chip.
+  @media (min-width: 1100px) {
+    max-width: 920px;
+
+    .media-search-controls {
+      .cast-destination-line { flex-basis: 280px; }
+      .media-scope-chips { flex-basis: 300px; }
+    }
+    .media-search-input-wrap { flex-basis: 260px; }
+  }
 }
 
 // The results dropdown is portaled to <body> and Mantine sizes it to the input,
@@ -741,7 +772,11 @@ $amber-ink: #1a1300;
     color: var(--mantine-color-amber-5);
     cursor: pointer;
     font-size: 14px;
-    padding: 8px 4px;
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0 8px;
     border-radius: var(--mantine-radius-sm);
     transition: color 120ms ease;
 
@@ -1151,5 +1186,34 @@ $amber-ink: #1a1300;
   .cast-tray-actions,
   .cast-tray-elsewhere {
     pointer-events: auto;
+  }
+}
+
+// NF-A11Y-04: honour reduced motion for the shell and its portalled surfaces
+// (menus, dialogs, the search dropdown). Loaders keep spinning — a frozen
+// spinner reads as a hang.
+@media (prefers-reduced-motion: reduce) {
+  .media-shell,
+  .media-shell *,
+  .media-shell *::before,
+  .media-shell *::after,
+  .media-search-dropdown,
+  .media-search-dropdown *,
+  .media-player-host,
+  .media-player-host *,
+  .mantine-Menu-dropdown,
+  .mantine-Menu-dropdown *,
+  .mantine-Modal-root,
+  .mantine-Modal-root * {
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
+
+  // The hand-rolled spinners (send tray, "still searching") are loaders too.
+  .media-shell *:not(.mantine-Loader-root):not(.mantine-Loader-root *):not([role='progressbar']):not(.cast-tray-spinner):not(.search-still-searching-spinner),
+  .media-search-dropdown *:not(.mantine-Loader-root):not(.mantine-Loader-root *):not(.search-still-searching-spinner) {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }

@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('MediaApp — inline cast from a result row', () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
   });
@@ -16,22 +17,21 @@ test.describe('MediaApp — inline cast from a result row', () => {
     });
 
     await page.goto('/media');
-    await page.getByTestId('media-search-input').fill('lonesome');
-    const firstRow = page.locator('[data-testid^="result-row-"]').first();
-    await expect(firstRow).toBeVisible({ timeout: 15000 });
-    const id = (await firstRow.getAttribute('data-testid')).replace(/^result-row-/, '');
+    await page.getByRole('textbox', { name: 'Search media…' }).fill('Arrival');
+    const more = page.locator('[data-testid^="result-more-"]').first();
+    await expect(more).toBeVisible({ timeout: 15000 });
 
-    // Open inline picker via the per-row Cast button (JS click bypasses overlay pointer-event interception).
-    await page.getByTestId(`cast-button-${id}`).evaluate((el) => el.click());
+    // Open the destination picker from the result's ⋯ menu (Play on…).
+    await more.click();
+    await page.getByRole('menuitem', { name: 'Play on…' }).click();
     await expect(page.getByTestId('dispatch-target-picker')).toBeVisible();
 
-    // Select first device + submit (JS clicks bypass overlay pointer-event interception).
+    // Tap the first device (JS clicks bypass overlay pointer-event interception); an idle target is sent to by the tap itself (NF-TAP-10).
     const firstDevice = page.locator('[data-testid^="picker-device-"]').first();
     await expect(firstDevice).toBeVisible();
-    await firstDevice.evaluate((el) => el.click());
-    await page.getByTestId('picker-submit').evaluate((el) => el.click());
+    await firstDevice.click();
 
-    // Picker closes after submit
+    // Picker closes once sent
     await expect(page.getByTestId('dispatch-target-picker')).not.toBeVisible();
   });
 });

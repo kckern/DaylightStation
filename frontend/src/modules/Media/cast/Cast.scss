@@ -135,7 +135,7 @@
   color: var(--mantine-color-dark-2);
   font-size: 12px;
   padding: 6px 4px;
-  min-height: 32px;
+  min-height: 44px;
   cursor: pointer;
   border-radius: var(--mantine-radius-sm);
 
@@ -350,7 +350,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  min-height: 36px;
+  min-height: 44px;
   background: var(--mantine-color-dark-4);
   border: none;
   border-radius: var(--mantine-radius-sm);
@@ -395,14 +395,14 @@
   align-items: center;
   gap: 6px;
   width: 100%;
-  min-height: 36px;
+  min-height: 44px;
   background: none;
   border: none;
   border-radius: var(--mantine-radius-sm);
   padding: 4px 8px;
   color: var(--mantine-color-dark-1);
   font: inherit;
-  font-size: 13px;
+  font-size: 14px;
   text-align: left;
   cursor: pointer;
 

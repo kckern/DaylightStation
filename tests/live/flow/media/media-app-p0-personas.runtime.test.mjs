@@ -1,0 +1,350 @@
+import { test, expect } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { HOUSE_FIXTURE_TITLE } from '../../../_lib/media-house-fixture.mjs';
+import { smallTargets, noHorizontalScroll } from './lib/a11yProbe.mjs';
+
+// Task 8 — interaction budgets (NF-TAP) counted from real pointer input, and
+// the persona walkthroughs (taxonomy 4.2) on a phone and a laptop against the
+// acceptance server's virtual receiver. Taps are counted by the page itself
+// (trusted primary pointerdown), not by the test, so a hidden extra step cannot
+// hide. Setup that a person would not repeat (naming the device, starting
+// something on the receiver through its API) is not counted.
+test.use({ trace: 'retain-on-failure', serviceWorkers: 'block', actionTimeout: 20000 });
+test.setTimeout(420000);
+test.describe.configure({ mode: 'serial' });
+
+const DEVICE = 'acceptance-media';
+const base = `/api/v1/device/${DEVICE}`;
+const RUN = Date.now().toString(36).slice(-5);
+const SHOTS = process.env.MEDIA_P0_SHOTS_DIR || path.join(process.env.MEDIA_P0_EVIDENCE_DIR || '/tmp', 'media-p0-personas-shots');
+fs.mkdirSync(SHOTS, { recursive: true });
+const shot = (page, name) => page.screenshot({ path: path.join(SHOTS, `${name}.png`), fullPage: false });
+const VIEWPORTS = { phone: { width: 390, height: 844 }, laptop: { width: 1440, height: 900 } };
+const FIXTURE = HOUSE_FIXTURE_TITLE;
+
+async function call(request, method, url, body) {
+  const response = await request.fetch(url, { method, data: body ? { commandId: randomUUID(), ...body } : undefined });
+  return { status: response.status(), body: await response.json().catch(() => null) };
+}
+const receiverState = async (request) => (await call(request, 'GET', `${base}/receiver-state`)).body?.snapshot ?? null;
+
+async function openReceiver(context, request) {
+  const receiver = await context.newPage();
+  const ready = async () => (await call(request, 'GET', `${base}/receiver-ready`)).body?.ready === true;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    await receiver.goto('/screen/living-room', { waitUntil: 'domcontentloaded' });
+    const deadline = Date.now() + 40000;
+    while (Date.now() < deadline) {
+      if (await ready()) return receiver;
+      await receiver.waitForTimeout(1000);
+    }
+  }
+  expect(await ready(), 'virtual receiver never became ready').toBe(true);
+  return receiver;
+}
+
+async function newDevice(browser, viewport, name) {
+  const context = await browser.newContext({ viewport, serviceWorkers: 'block' });
+  await context.addInitScript(([n]) => {
+    if (!localStorage.getItem('media-app.display-name')) localStorage.setItem('media-app.display-name', n);
+    localStorage.setItem('media-app.first-use-done', 'journey');
+    window.__taps = 0;
+    addEventListener('pointerdown', (e) => { if (e.isTrusted && e.button === 0) window.__taps += 1; }, true);
+  }, [name]);
+  const page = await context.newPage();
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    await page.goto('/media', { waitUntil: 'domcontentloaded' });
+    if (await page.getByTestId('media-shell').waitFor({ state: 'visible', timeout: 40000 }).then(() => true, () => false)) break;
+  }
+  return { context, page, phone: viewport.width < 600 };
+}
+
+const resetTaps = (page) => page.evaluate(() => { window.__taps = 0; });
+const taps = (page) => page.evaluate(() => window.__taps);
+
+/** Open search and type the fixture title; leaves the results up. Not counted (typing is not a tap). */
+async function typeQuery(d) {
+  if (d.phone) {
+    await d.page.getByTestId('media-search-launcher').click();
+    await d.page.getByTestId('search-mode-input').fill(FIXTURE.query);
+    await expect(d.page.getByTestId(`search-mode-result-${FIXTURE.id}`)).toBeVisible({ timeout: 30000 });
+  } else {
+    const input = d.page.getByRole('textbox', { name: 'Search media…' });
+    await input.fill('');
+    await input.fill(FIXTURE.query);
+    await expect(d.page.getByTestId(`combobox-option-${FIXTURE.id}`)).toBeVisible({ timeout: 30000 });
+  }
+}
+const resultRow = (d) => d.page.getByTestId(d.phone ? `search-mode-result-${FIXTURE.id}` : `combobox-option-${FIXTURE.id}`);
+const closeSearch = async (d) => { if (d.phone) await d.page.getByTestId('search-mode-close').click(); else await d.page.keyboard.press('Escape'); };
+const aimScope = (d) => (d.phone ? d.page.getByTestId('search-mode') : d.page.locator('.media-search-bar'));
+const nativePlaying = (page) => page.locator('.video-player video').evaluate((v) => !v.paused && v.currentTime > 0).catch(() => false);
+
+for (const [size, viewport] of Object.entries(VIEWPORTS)) {
+  test.describe(`NF-TAP ${size}`, () => {
+    test(`[NF-TAP-01][NF-TAP-04][NF-TAP-09] ${size}: a typed name plays in 1 tap, the queue is 1 tap away, Undo is 1 tap`, async ({ browser }) => {
+      const d = await newDevice(browser, viewport, `Tap budget ${size} ${RUN}`);
+      try {
+        await typeQuery(d);
+        await resetTaps(d.page);
+        await resultRow(d).click();
+        expect(await taps(d.page), 'NF-TAP-01 typed name -> playing at the aim').toBe(1);
+        if (d.phone) await closeSearch(d); else await d.page.keyboard.press('Escape');
+        await expect.poll(() => nativePlaying(d.page), { timeout: 90000 }).toBe(true);
+        await shot(d.page, `tap-playing-${size}`);
+
+        // NF-TAP-09: put the play back with one tap (inside the 10 s window).
+        const undo = d.page.getByTestId('item-action-undo');
+        if (await undo.isVisible().catch(() => false)) {
+          await resetTaps(d.page);
+          await undo.click();
+          expect(await taps(d.page), 'NF-TAP-09 put a change back').toBe(1);
+          await expect(d.page.getByTestId('media-mini-player')).toHaveCount(0, { timeout: 20000 }).catch(() => {});
+          // Play again so the queue exists for the next budget.
+          await typeQuery(d);
+          await resultRow(d).click();
+          if (d.phone) await closeSearch(d); else await d.page.keyboard.press('Escape');
+          await expect.poll(() => nativePlaying(d.page), { timeout: 90000 }).toBe(true);
+        }
+
+        // NF-TAP-04: from anywhere, the queue of what is playing.
+        await d.page.getByTestId(d.phone ? 'app-tab-home' : 'app-nav-home').click();
+        await resetTaps(d.page);
+        await d.page.getByTestId('mini-player-open-nowplaying').click();
+        await expect(d.page.getByTestId('queue-panel')).toBeVisible({ timeout: 15000 });
+        expect(await taps(d.page), 'NF-TAP-04 open the queue of the held playback').toBe(1);
+        await shot(d.page, `tap-queue-${size}`);
+      } finally { await d.context.close(); }
+    });
+
+    test(`[NF-TAP-02] ${size}: a typed name plays a whole collection in 1 tap, via its inline Play`, async ({ browser }) => {
+      const d = await newDevice(browser, viewport, `Tap budget C ${size} ${RUN}`);
+      try {
+        await typeQuery(d);
+        const playAll = d.page.locator('[data-testid^="result-play-all-"]').first();
+        await expect(playAll).toBeVisible({ timeout: 30000 });
+        await resetTaps(d.page);
+        await playAll.click();
+        expect(await taps(d.page), 'NF-TAP-02 collection via inline Play').toBe(1);
+        // The one tap was answered: an outcome row names what happened.
+        await expect(d.page.locator('[data-testid^="dispatch-row-"]').first()).toBeVisible({ timeout: 15000 });
+        await shot(d.page, `tap-collection-${size}`);
+      } finally { await d.context.close(); }
+    });
+
+    test(`[NF-TAP-10] ${size}: sending one item to another screen is 3 taps (more, Play on, screen); a busy screen needs a 4th`, async ({ browser, context, request }) => {
+      const receiver = await openReceiver(context, request);
+      const d = await newDevice(browser, viewport, `Tap budget C ${size} ${RUN}`);
+      try {
+        await typeQuery(d);
+        await resetTaps(d.page);
+        await d.page.getByTestId(`result-more-${FIXTURE.id}`).click();
+        await d.page.getByRole('menuitem', { name: 'Play on…' }).click();
+        // No Move option for a plain play; the tile tap itself sends it.
+        await expect(d.page.getByTestId('picker-mode-transfer')).toHaveCount(0);
+        await d.page.getByTestId(`picker-device-${DEVICE}`).click();
+        expect(await taps(d.page), 'NF-TAP-10 more -> Play on... -> screen').toBe(3);
+        await expect.poll(async () => (await receiverState(request))?.state, { timeout: 120000 }).toBe('playing');
+        await shot(d.page, `tap-send-${size}`);
+
+        // The screen is now busy: the warning shows and the send needs a confirming tap.
+        await expect(d.page.getByTestId('dispatch-target-picker')).toHaveCount(0, { timeout: 15000 });
+        // The laptop's search list closes after a send; bring the result back (typing is not a tap).
+        if (!(await d.page.getByTestId(`result-more-${FIXTURE.id}`).isVisible().catch(() => false))) await typeQuery(d);
+        await d.page.getByTestId(`result-more-${FIXTURE.id}`).click();
+        await d.page.getByRole('menuitem', { name: 'Play on…' }).click();
+        await expect(d.page.getByTestId(`picker-device-status-${DEVICE}`)).toContainText(/Playing/i, { timeout: 30000 });
+        await resetTaps(d.page);
+        await d.page.getByTestId(`picker-device-${DEVICE}`).click();
+        await expect(d.page.getByTestId(`cast-busy-warning-${DEVICE}`)).toBeVisible();
+        await shot(d.page, `tap-send-busy-${size}`);
+        await d.page.getByTestId('picker-submit').click();
+        expect(await taps(d.page), 'a busy screen: tile + confirm').toBe(2);
+        expect((await call(request, 'POST', `${base}/session/transport`, { action: 'stop' })).status).toBe(200);
+      } finally { await d.context.close(); await receiver.close(); }
+    });
+
+    test(`[NF-TAP-05][NF-TAP-06][NF-TAP-08] ${size}: add to queue is 2 taps, aim back at this device is 2, Pause all is 2`, async ({ browser, context, request }) => {
+      const receiver = await openReceiver(context, request);
+      const d = await newDevice(browser, viewport, `Tap budget B ${size} ${RUN}`);
+      try {
+        // NF-TAP-05: a search result into the aim's queue — More, then Add to queue.
+        await typeQuery(d);
+        await resetTaps(d.page);
+        await d.page.getByTestId(`result-more-${FIXTURE.id}`).click();
+        await d.page.getByTestId(`result-action-add-${FIXTURE.id}`).click();
+        expect(await taps(d.page), 'NF-TAP-05 add a result to the aim queue').toBe(2);
+        if (d.phone) await closeSearch(d); else await d.page.keyboard.press('Escape');
+        await expect(d.page.getByTestId('media-mini-player')).toBeVisible({ timeout: 30000 });
+
+        // NF-TAP-06: aim is on a screen (setup), then back at this device.
+        await typeQuery(d);
+        await aimScope(d).getByTestId('destination-line').click();
+        await d.page.getByRole('button', { name: /^Acceptance receiver Virtual browser/ }).click();
+        await d.page.getByTestId('picker-submit').click();
+        await expect(aimScope(d).getByTestId('destination-line-name')).toContainText('Acceptance receiver');
+        await resetTaps(d.page);
+        await aimScope(d).getByTestId('destination-line').click();
+        await d.page.getByTestId('picker-this-device').click();
+        const aimBackTaps = await taps(d.page);
+        await expect(aimScope(d).getByTestId('destination-line-name')).toContainText('This device', { timeout: 10000 });
+        expect(aimBackTaps, 'NF-TAP-06 aim back at this device').toBe(2);
+        if (d.phone) await closeSearch(d); else await d.page.keyboard.press('Escape');
+
+        // NF-TAP-08: something plays on the screen and here; Pause all from the handle.
+        expect((await call(request, 'GET', `${base}/load?play=${FIXTURE.id}&dispatchId=${randomUUID()}`)).status).toBe(200);
+        await expect.poll(async () => (await receiverState(request))?.state, { timeout: 120000 }).toBe('playing');
+        const menu = d.page.getByTestId('mini-house-menu');
+        await expect(menu).toBeVisible({ timeout: 30000 });
+        await resetTaps(d.page);
+        await menu.click();
+        await d.page.getByTestId('mini-pause-all').click();
+        expect(await taps(d.page), 'NF-TAP-08 pause all screens').toBe(2);
+        await expect.poll(async () => (await receiverState(request))?.state, { timeout: 30000 }).toBe('paused');
+        await shot(d.page, `tap-pause-all-${size}`);
+        expect((await call(request, 'POST', `${base}/session/transport`, { action: 'stop' })).status).toBe(200);
+      } finally { await d.context.close(); await receiver.close(); }
+    });
+  });
+}
+
+// ---- Persona walkthroughs (taxonomy 4.2) ------------------------------------
+// One person at a time, with two virtual screens and this device, ordinary
+// input only. Each step checks the page is usable at that moment (no sideways
+// scroll, every hit target 44 px) and keeps a screenshot to look at.
+const B = 'acceptance-media-b';
+const SCREEN_B = 'acceptance-second';
+const stateOf = async (request, id) => (await call(request, 'GET', `/api/v1/device/${id}/receiver-state`)).body?.snapshot ?? null;
+
+async function openScreen(context, request, id, route) {
+  const page = await context.newPage();
+  const ready = async () => (await call(request, 'GET', `/api/v1/device/${id}/receiver-ready`)).body?.ready === true;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    await page.goto(route, { waitUntil: 'domcontentloaded' });
+    const deadline = Date.now() + 40000;
+    while (Date.now() < deadline) {
+      if (await ready()) { await page.waitForTimeout(1500); return page; }
+      await page.waitForTimeout(1000);
+    }
+  }
+  expect(await ready(), `virtual receiver ${id} never became ready`).toBe(true);
+  return page;
+}
+
+async function usable(page, label) {
+  expect(await noHorizontalScroll(page), `${label}: page scrolls sideways`).toBe(true);
+  const small = await smallTargets(page);
+  expect(small, `${label}: small targets ${small.map((x) => `${x.id ?? x.name} ${x.w}x${x.h}`).join('; ')}`).toEqual([]);
+}
+
+for (const [size, viewport] of Object.entries(VIEWPORTS)) {
+  test(`[personas] ${size}: Seeker, Hand-Held Viewer, Big-Screen Sender, House Watch, Room Hopper, Fixer`, async ({ browser, context, request }) => {
+    const screenA = await openReceiver(context, request);
+    const screenB = await openScreen(context, request, B, `/screen/${SCREEN_B}`);
+    const d = await newDevice(browser, viewport, `Persona ${size} ${RUN}`);
+    const page = d.page;
+    const homeTab = page.getByTestId(d.phone ? 'app-tab-home' : 'app-nav-home');
+    const fleetTab = page.getByTestId(d.phone ? 'app-tab-fleet' : 'app-nav-fleet');
+    try {
+      await test.step('Seeker: a half-remembered name becomes playback in one tap', async () => {
+        await typeQuery(d);
+        await shot(page, `seeker-results-${size}`);
+        await usable(page, 'seeker results');
+        await resultRow(d).click();
+        await closeSearch(d);
+        await expect.poll(() => nativePlaying(page), { timeout: 90000 }).toBe(true);
+        await shot(page, `seeker-playing-${size}`);
+        await usable(page, 'seeker playing');
+        await page.getByTestId('mini-player-open-nowplaying').click();
+        await expect(page.getByTestId('queue-panel')).toBeVisible({ timeout: 15000 });
+        await shot(page, `seeker-nowplaying-${size}`);
+        await usable(page, 'seeker now playing');
+        await page.locator('.np-back-btn').click();
+      });
+
+      await test.step('Hand-Held Viewer: pause and resume from the handle, one thumb', async () => {
+        await expect(page.getByTestId('mini-toggle')).toBeVisible();
+        await page.getByTestId('mini-toggle').click();
+        await expect.poll(() => page.locator('.video-player video').evaluate((v) => v.paused).catch(() => false), { timeout: 20000 }).toBe(true);
+        await shot(page, `handheld-paused-${size}`);
+        await page.getByTestId('mini-toggle').click();
+        await expect.poll(() => nativePlaying(page), { timeout: 30000 }).toBe(true);
+        await usable(page, 'hand-held');
+      });
+
+      await test.step('Big-Screen Sender: aim at a screen, tap a result, it plays there', async () => {
+        await typeQuery(d);
+        await aimScope(d).getByTestId('destination-line').click();
+        await page.getByRole('button', { name: /^Acceptance receiver Virtual browser/ }).click();
+        await page.getByTestId('picker-submit').click();
+        await expect(aimScope(d).getByTestId('destination-line-name')).toContainText('Acceptance receiver');
+        await shot(page, `sender-aimed-${size}`);
+        await resultRow(d).click();
+        await expect.poll(async () => (await stateOf(request, DEVICE))?.state, { timeout: 120000 }).toMatch(/playing|loading|buffering/);
+        await shot(page, `sender-sent-${size}`);
+        await closeSearch(d);
+        await usable(page, 'sender');
+        // Aim back at this device for the rest of the walk.
+        await typeQuery(d);
+        await aimScope(d).getByTestId('destination-line').click();
+        await page.getByTestId('picker-this-device').click();
+        await expect(aimScope(d).getByTestId('destination-line-name')).toContainText('This device');
+        await closeSearch(d);
+      });
+
+      await test.step('House Watch: every device, in words, and one tap to pause a screen', async () => {
+        expect((await call(request, 'GET', `/api/v1/device/${B}/load?play=${FIXTURE.id}&dispatchId=${randomUUID()}`)).status).toBe(200);
+        await expect.poll(async () => (await stateOf(request, B))?.state, { timeout: 120000 }).toBe('playing');
+        await fleetTab.click();
+        await expect(page.getByTestId('fleet-view')).toBeVisible({ timeout: 20000 });
+        const cards = page.locator('[data-testid^="fleet-card-"]');
+        await expect.poll(() => cards.count(), { timeout: 30000 }).toBeGreaterThanOrEqual(3);
+        await expect(page.getByTestId(`fleet-state-${B}`)).toHaveText(/Playing/, { timeout: 30000 });
+        await shot(page, `housewatch-${size}`);
+        await usable(page, 'house watch');
+        await page.getByTestId(`fleet-pause-${B}`).click();
+        await expect.poll(async () => (await stateOf(request, B))?.state, { timeout: 30000 }).toBe('paused');
+        await expect(page.getByTestId(`fleet-state-${B}`)).toHaveText(/Paused/, { timeout: 30000 });
+      });
+
+      await test.step('Room Hopper: the screen playing elsewhere moves to this device from its Remote', async () => {
+        await page.getByTestId(`fleet-peek-${B}`).click();
+        await page.getByTestId('peek-move-to').click();
+        await page.waitForTimeout(500); // the menu fades in; look at it settled
+        await shot(page, `hopper-menu-${size}`);
+        await usable(page, 'room hopper menu');
+        await page.getByTestId('move-to-local').click();
+        await expect(page.getByTestId('now-playing-view')).toBeVisible({ timeout: 60000 });
+        await expect.poll(async () => (await stateOf(request, B))?.currentItem?.contentId ?? null, { timeout: 60000 }).toBeNull();
+        await shot(page, `hopper-moved-${size}`);
+      });
+
+      await test.step('Fixer: a wrong tap is put back in one tap, and Start fresh clears this device', async () => {
+        await homeTab.click();
+        await page.getByTestId('settings-menu-trigger').click();
+        await page.getByTestId('settings-reset-session').click();
+        await expect(page.getByRole('dialog')).toBeVisible();
+        await shot(page, `fixer-start-fresh-${size}`);
+        await usable(page, 'fixer dialog');
+        await page.getByTestId('confirm-ok').click();
+        await expect(page.getByTestId('mini-player-open-nowplaying')).toHaveCount(0, { timeout: 30000 });
+        await typeQuery(d);
+        await resultRow(d).click();
+        await closeSearch(d);
+        const undo = page.getByTestId('item-action-undo');
+        await expect(undo).toBeVisible({ timeout: 15000 });
+        await undo.click();
+        await expect(page.getByTestId('media-mini-player')).toHaveCount(0, { timeout: 30000 });
+        await shot(page, `fixer-undone-${size}`);
+      });
+    } finally {
+      await call(request, 'POST', `/api/v1/device/${DEVICE}/session/transport`, { action: 'stop' }).catch(() => {});
+      await call(request, 'POST', `/api/v1/device/${B}/session/transport`, { action: 'stop' }).catch(() => {});
+      await d.context.close();
+      await screenA.close();
+      await screenB.close();
+    }
+  });
+}

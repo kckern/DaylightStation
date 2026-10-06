@@ -4,8 +4,9 @@
 // comes from NavProvider so nested controls never lose their primary area.
 import React from 'react';
 import { UnstyledButton } from '@mantine/core';
-import { IconHome, IconLayoutGrid, IconDevices } from '@tabler/icons-react';
+import { IconHome, IconLayoutGrid, IconDevices, IconSearch } from '@tabler/icons-react';
 import { useNav } from './NavProvider.jsx';
+import { useSearchLauncher } from './SearchLauncherContext.js';
 
 const ITEMS = [
   { area: 'home', label: 'Home', Icon: IconHome },
@@ -39,9 +40,18 @@ export function NavRail() {
 
 export function TabBar() {
   const { area, goToArea } = useNav();
+  const launcher = useSearchLauncher();
   return (
     <nav className="media-tabbar" data-testid="app-tabbar" aria-label="Primary">
       {navItems(area, goToArea, 'app-tab')}
+      {/* One-thumb reach: the dock's search sits at the top of a phone, so the
+          tab bar carries a Search action as well (RELY.12a). Not a destination. */}
+      {launcher?.openSearch && (
+        <UnstyledButton data-testid="app-tab-search" className="media-nav-item" onClick={() => launcher.openSearch()}>
+          <span className="media-nav-icon-wrap"><IconSearch size={22} stroke={1.6} aria-hidden /></span>
+          <span className="media-nav-label">Search</span>
+        </UnstyledButton>
+      )}
     </nav>
   );
 }

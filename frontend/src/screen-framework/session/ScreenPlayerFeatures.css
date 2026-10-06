@@ -80,3 +80,9 @@
 .screen-music-plaque__state {
   opacity: 0.7;
 }
+
+.screen-brief__close:focus,
+.screen-brief__close:focus-visible {
+  outline: 4px solid #4da3ff;
+  outline-offset: 2px;
+}

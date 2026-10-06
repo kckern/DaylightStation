@@ -72,6 +72,7 @@ export const MEDIA_PACK = {
   ...PACKS.media,
   colors: MEDIA_NEUTRALS,
   themeExtras: {
+    respectReducedMotion: true,
     primaryColor: 'amber',
     primaryShade: 5,
     colors: {
@@ -101,9 +102,23 @@ export const MEDIA_PACK = {
       ActionIcon: {
         // 44px default — phone-first touch target floor
         defaultProps: { variant: 'subtle', size: 'xl', color: 'gray' },
+        styles: { root: { minWidth: rem(44), minHeight: rem(44) } },
       },
+      // NF-A11Y: a 44 px hit-target floor for every Mantine control in the app,
+      // portalled Menu items and dialog buttons included (they read this theme).
       Button: {
         defaultProps: { radius: 'sm' },
+        styles: { root: { minHeight: rem(44) } },
+      },
+      CloseButton: {
+        styles: { root: { minWidth: rem(44), minHeight: rem(44) } },
+      },
+      // The label is the hit area of a checkbox / radio / switch row.
+      Checkbox: { styles: { body: { alignItems: 'center' }, label: { minHeight: rem(44), display: 'flex', alignItems: 'center' } } },
+      Radio: { styles: { body: { alignItems: 'center' }, label: { minHeight: rem(44), display: 'flex', alignItems: 'center' } } },
+      Switch: { styles: { body: { alignItems: 'center' }, label: { minHeight: rem(44), display: 'flex', alignItems: 'center' } } },
+      Input: {
+        styles: { input: { minHeight: rem(44) } },
       },
       Badge: {
         defaultProps: { radius: 'sm', variant: 'light' },
@@ -124,6 +139,7 @@ export const MEDIA_PACK = {
       },
       Menu: {
         defaultProps: { shadow: 'md' },
+        styles: { item: { minHeight: rem(44) } },
       },
       Skeleton: {
         defaultProps: { animate: true },
