@@ -186,7 +186,14 @@ $np-amber-ink: #1a1300;
 .np-seekbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--mantine-spacing-sm);
+
+  // A reason or a command message gets its own line instead of squeezing the
+  // track to 30 px (measured at 390 px when the duration was unavailable).
+  .np-control-unavailable,
+  .np-command-feedback { flex: 1 0 100%; }
+  .np-seek-track { min-width: 120px; }
 
   .np-seek-time {
     min-width: 48px;
