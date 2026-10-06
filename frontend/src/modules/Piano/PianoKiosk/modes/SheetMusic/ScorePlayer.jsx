@@ -2156,13 +2156,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
     return segmentNavigationState(projected, learnPlan.navigation);
   }, [layout.measures, learnPlan, practice]);
   const selectedPassageId = searchParams.get('learnPassage');
-  const selectedRungId = searchParams.get('learnRung');
   const selectedPassage = learnPassages.find((passage) => passage.id === selectedPassageId) ?? null;
-  const selectedRung = selectedPassage?.rungs.find((rung) => rung.id === selectedRungId && rung.state !== 'locked') ?? null;
   const [learnLaunch, setLearnLaunch] = useState(null);
   const [learnResult, setLearnResult] = useState(null);
   const [learnLaunchNonce, setLearnLaunchNonce] = useState(0);
   const [learnLaunchpadView, setLearnLaunchpadView] = useState('home');
+  const [learnChoice, setLearnChoice] = useState(null);
   const [restoreLearnAnchor, setRestoreLearnAnchor] = useState(null);
   const [learnAchievement, setLearnAchievement] = useState(null);
   const [learnNotice, setLearnNotice] = useState(null);
@@ -2240,11 +2239,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const learnSegmentMetadata = useMemo(() => Object.fromEntries(
     learnPlan.segments.map((segment) => [segment.id, { fingerprint: segment.fingerprint }]),
   ), [learnPlan.segments]);
-  const fallbackLaunch = selectedRung && selectedPassage ? {
-    source: 'recommended', segmentId: selectedPassage.id, rungId: selectedRung.id,
-    parts: selectedRung.effectiveParts, mode: selectedRung.mode, tempoPercent: selectedRung.tempoPercent, rung: selectedRung,
-  } : null;
-  const activeLearnLaunch = learnLaunch ?? fallbackLaunch;
+  const activeLearnLaunch = learnLaunch;
   const activeLearnRung = activeLearnLaunch?.rung ?? null;
   const optionalCreditRung = activeLearnLaunch?.source === 'recommended'
     ? activeLearnRung : selectedPassage && activeLearnLaunch ? creditEligibleRung(selectedPassage, activeLearnLaunch) : null;
@@ -2298,6 +2293,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
         rangeIndices={{ start: selectedPassage.inMeasure, end: selectedPassage.outMeasure }} activeParts={selectedPassage.playableParts} keepWholePassage />}
       result={learnResult}
       initialView={learnLaunchpadView}
+      initialChoice={learnChoice}
+      onChoiceChange={setLearnChoice}
       onBack={closeLearnPassage}
       onLaunch={(launch) => { setLearnResult(null); setLearnLaunchpadView('home'); setLearnLaunch(launch); setLearnLaunchNonce((value) => value + 1); updateLearnSelection(selectedPassage.id, launch.rungId); logger.info('score.learn.launch', { source: launch.source, segmentId: launch.segmentId, rungId: launch.rungId, mode: launch.mode, parts: launch.parts, tempoPercent: launch.tempoPercent }); }}
       onResultAction={(action) => {

@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { TEMPO_STAGES, availableTempoStages, nearestTempoStage } from './tempoStages.js';
 
 describe('Learn tempo stages', () => {
-  it('offers five directly selectable named percentages', () => {
+  it('offers Extra slow at 15% as the first directly selectable stage', () => {
     expect(TEMPO_STAGES).toEqual([
+      { id: 'extra-slow', label: 'Extra slow', percent: 15 },
       { id: 'very-slow', label: 'Very slow', percent: 25 },
       { id: 'slow', label: 'Slow', percent: 40 },
       { id: 'steady', label: 'Steady', percent: 60 },
@@ -12,8 +13,8 @@ describe('Learn tempo stages', () => {
     ]);
   });
 
-  it('includes Very slow at the default floor', () => {
-    expect(availableTempoStages().map(({ percent }) => percent)).toEqual([25, 40, 60, 80, 100]);
+  it('includes Extra slow at the default floor', () => {
+    expect(availableTempoStages().map(({ percent }) => percent)).toEqual([15, 25, 40, 60, 80, 100]);
   });
 
   it('filters stages inclusively to the configured bounds', () => {

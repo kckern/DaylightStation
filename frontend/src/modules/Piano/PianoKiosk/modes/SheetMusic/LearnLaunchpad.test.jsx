@@ -42,6 +42,18 @@ describe('LearnLaunchpad', () => {
     expect(onLaunch).toHaveBeenCalledWith(expect.objectContaining({ source: 'custom', parts: ['rh', 'lh'], mode: 'metronome', tempoPercent: 40 }));
   });
 
+  it('launches right-hand metronome at 15% and reports the retained setup', () => {
+    const onLaunch = vi.fn();
+    const onChoiceChange = vi.fn();
+    render(<LearnLaunchpad segment={segment} initialView="custom" initialChoice={{ parts: ['rh'], mode: 'metronome', tempoStage: 'extra-slow', tempoPercent: 15 }} onChoiceChange={onChoiceChange} onLaunch={onLaunch} />);
+    expect(screen.getByRole('button', { name: 'Right hand' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /keep a beat/i })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /extra slow.*15%/i })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: /start practice/i }));
+    expect(onLaunch).toHaveBeenCalledWith(expect.objectContaining({ parts: ['rh'], mode: 'metronome', tempoPercent: 15 }));
+    expect(onChoiceChange).toHaveBeenLastCalledWith({ parts: ['rh'], mode: 'metronome', tempoStage: 'extra-slow', tempoPercent: 15 });
+  });
+
   it('hides tempo for No beat and omits unavailable left-hand choices', () => {
     render(<LearnLaunchpad segment={{ ...segment, playableParts: ['rh'], rungs: [segment.rungs[0]] }} onLaunch={vi.fn()} onBack={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /make your own/i }));
