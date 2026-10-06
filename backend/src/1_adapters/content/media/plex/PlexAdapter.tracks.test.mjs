@@ -3,10 +3,13 @@ import { PlexAdapter } from './PlexAdapter.mjs';
 
 /**
  * Subtitles and audio language (RQ-STEER-14). Plex ignores stream ids on the
- * transcode decision/start URLs; it plays the part's SELECTED streams. So a
- * mint that asks for tracks selects them on the part first (the call every
- * Plex client makes), then burns a chosen subtitle into the picture so every
- * engine and every screen shows it. A mint that asks for nothing is unchanged.
+ * transcode decision/start URLs; it plays the part's SELECTED streams, and
+ * that selection is per Plex ACCOUNT — shared by every screen and every Plex
+ * app. Verified against the live server (2026-10-03): the decision binds the
+ * selection to its session, so a mint selects the streams, asks for the
+ * decision, and puts the account's previous selection straight back before
+ * anything else can start. A chosen subtitle is burned into the picture. A
+ * mint that asks for nothing is unchanged.
  */
 
 const STREAMS = [
@@ -49,7 +52,7 @@ describe('PlexAdapter.loadMediaUrl — stream selection', () => {
   it('selects the chosen subtitle on the part, then burns it into the transcode', async () => {
     const { plex, httpClient } = setup();
     const result = await plex.loadMediaUrl(item(), { session: 's1', tracks: { subtitleStreamId: '1278358' } });
-    expect(httpClient.put).toHaveBeenCalledTimes(1);
+    expect(httpClient.put).toHaveBeenCalledTimes(2);
     const putUrl = new URL(httpClient.put.mock.calls[0][0]);
     expect(putUrl.pathname).toBe('/library/parts/729273');
     expect(putUrl.searchParams.get('subtitleStreamID')).toBe('1278358');
@@ -61,10 +64,40 @@ describe('PlexAdapter.loadMediaUrl — stream selection', () => {
     expect(result.url).toMatch(/directStream=0/);
   });
 
+  it('puts the account\'s previous selection back right after the decision — never leaves it changed', async () => {
+    const { plex, httpClient, logger } = setup();
+    await plex.loadMediaUrl(item(), { session: 's1', tracks: { subtitleStreamId: '1278358' } });
+    const [select, restore] = httpClient.put.mock.calls.map(([url]) => new URL(url));
+    expect(select.searchParams.get('subtitleStreamID')).toBe('1278358');
+    // Nothing was selected before: the restore turns subtitles back off.
+    expect(restore.pathname).toBe('/library/parts/729273');
+    expect(restore.searchParams.get('subtitleStreamID')).toBe('0');
+    expect(restore.searchParams.has('audioStreamID')).toBe(false);
+    const decisionOrder = httpClient.get.mock.invocationCallOrder[0];
+    expect(httpClient.put.mock.invocationCallOrder[0]).toBeLessThan(decisionOrder);
+    expect(httpClient.put.mock.invocationCallOrder[1]).toBeGreaterThan(decisionOrder);
+    expect(logger.info).toHaveBeenCalledWith('plex.loadMediaUrl.tracks-restored', expect.objectContaining({ ratingKey: '665638' }));
+  });
+
+  it('restores the previous audio stream after an audio choice, even when the decision fails', async () => {
+    const { plex, httpClient } = setup();
+    httpClient.get.mockRejectedValueOnce(new Error('decision down'));
+    const film = item();
+    film.metadata.Media[0].Part[0].Stream = [...STREAMS, { id: 9, streamType: 2, languageCode: 'fra' }];
+    await plex.loadMediaUrl(film, { tracks: { audioStreamId: '9' } });
+    const [, restore] = httpClient.put.mock.calls.map(([url]) => new URL(url));
+    expect(restore.searchParams.get('audioStreamID')).toBe('1278356');
+    expect(restore.searchParams.has('subtitleStreamID')).toBe(false);
+  });
+
   it('turns subtitles off without burning anything', async () => {
     const { plex, httpClient } = setup();
-    const result = await plex.loadMediaUrl(item(), { tracks: { subtitleStreamId: '0' } });
+    const selected = item();
+    selected.metadata.Media[0].Part[0].Stream = STREAMS.map((s) => (s.id === 1278358 ? { ...s, selected: true } : s));
+    const result = await plex.loadMediaUrl(selected, { tracks: { subtitleStreamId: '0' } });
     expect(new URL(httpClient.put.mock.calls[0][0]).searchParams.get('subtitleStreamID')).toBe('0');
+    // …and the household's English subtitle selection is put back.
+    expect(new URL(httpClient.put.mock.calls[1][0]).searchParams.get('subtitleStreamID')).toBe('1278358');
     expect(result.url).not.toMatch(/subtitles=/);
   });
 
