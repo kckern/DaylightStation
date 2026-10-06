@@ -255,8 +255,8 @@ import ScorePlayer from './ScorePlayer.jsx';
 const emitNote = (evt) => act(() => { [...h.noteCbs].forEach((fn) => fn(evt)); });
 const play = (note) => emitNote({ type: 'note_on', note, velocity: 80 });
 const LocationProbe = () => { h.locationSearch = useLocation().search; return null; };
-const renderPlayer = () =>
-  render(<MemoryRouter><LocationProbe /><ScorePlayer score={{ title: 'Mary', musicXml: '<score/>' }} /></MemoryRouter>);
+const renderPlayer = (entry = '/') =>
+  render(<MemoryRouter initialEntries={[entry]}><LocationProbe /><ScorePlayer score={{ title: 'Mary', musicXml: '<score/>' }} /></MemoryRouter>);
 
 // Sets the mocked live-note store's activeNotes and notifies every subscribed
 // component (see the usePianoMidiNotes mock above) so it re-renders holding
@@ -302,6 +302,17 @@ beforeEach(() => {
 });
 
 describe('ScorePlayer — score-native Learn roadmap', () => {
+  it('opens a deep-linked rung at the chooser instead of auto-starting it', () => {
+    h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: {} } };
+    h.layoutExtras = {
+      measures: [{ number: 1, firstStep: 0, lastStep: 1 }, { number: 2, firstStep: 2, lastStep: 3 }],
+      measureBounds: [{ left: 80, right: 190, top: 10, bottom: 210 }, { left: 190, right: 310, top: 10, bottom: 210 }],
+    };
+    renderPlayer('/?learnPassage=m0-1&learnRung=right');
+    pickMode('Learn');
+    expect(screen.getByRole('dialog', { name: 'Segment 1 practice' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Segment 1 · Right hand' })).not.toBeInTheDocument();
+  });
   it('keeps piece progress visible and opens a segment launchpad before the recommended drill', () => {
     h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: {} } };
     h.layoutExtras = {

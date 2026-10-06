@@ -1,6 +1,7 @@
 import { SHEET_MUSIC_DEFAULTS } from './sheetMusicConfig.js';
 
 export const TEMPO_STAGES = [
+  { id: 'extra-slow', label: 'Extra slow', percent: 15 },
   { id: 'very-slow', label: 'Very slow', percent: 25 },
   { id: 'slow', label: 'Slow', percent: 40 },
   { id: 'steady', label: 'Steady', percent: 60 },
@@ -26,6 +27,7 @@ export function availableTempoStages({
   const percent = Math.max(minimumPercent, Math.min(nearest.percent, maximumPercent));
   // Full speed is a promise of 100%, even when a narrow practice interval
   // needs a clamped choice close to the original tempo.
-  const identity = nearest.id === 'full-speed' && percent < 100 ? TEMPO_STAGES[3] : nearest;
+  const identity = nearest.id === 'full-speed' && percent < 100
+    ? TEMPO_STAGES.find(({ id }) => id === 'nearly-there') : nearest;
   return [{ ...identity, percent }];
 }

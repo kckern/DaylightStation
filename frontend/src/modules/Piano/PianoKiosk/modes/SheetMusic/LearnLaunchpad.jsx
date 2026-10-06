@@ -28,18 +28,22 @@ function Result({ result, official, onAction }) {
   </section>;
 }
 
-export default function LearnLaunchpad({ segment, preview = null, result = null, initialView = 'home', onLaunch, onBack, onResultAction }) {
+export default function LearnLaunchpad({ segment, preview = null, result = null, initialView = 'home', initialChoice = null, onChoiceChange, onLaunch, onBack, onResultAction }) {
   const [view, setView] = useState(initialView);
-  const [parts, setParts] = useState(() => segment.playableParts?.length > 1 ? ['rh', 'lh'] : [...(segment.playableParts ?? [])]);
-  const [mode, setMode] = useState('free');
-  const [stage, setStage] = useState(TEMPO_STAGES.find((item) => item.id === 'steady') ?? TEMPO_STAGES[0]);
+  const [parts, setParts] = useState(() => initialChoice?.parts ?? (segment.playableParts?.length > 1 ? ['rh', 'lh'] : [...(segment.playableParts ?? [])]));
+  const [mode, setMode] = useState(initialChoice?.mode ?? 'free');
+  const [stage, setStage] = useState(() => TEMPO_STAGES.find((item) => item.id === initialChoice?.tempoStage)
+    ?? TEMPO_STAGES.find((item) => item.id === 'steady') ?? TEMPO_STAGES[0]);
   const projection = useMemo(() => learnLaunchpadProjection(segment), [segment]);
 
   if (result) return <Result result={result} official={result.source === 'recommended'} onAction={onResultAction} />;
 
-  const launchCustom = () => onLaunch?.(buildCustomLaunch(segment, {
-    parts, mode, tempoPercent: stage.percent, tempoStage: stage.id,
-  }));
+  const choice = { parts, mode, tempoPercent: stage.percent, tempoStage: stage.id };
+  const updateChoice = (next) => onChoiceChange?.({ ...choice, ...next });
+  const chooseParts = (next) => { setParts(next); updateChoice({ parts: next }); };
+  const chooseMode = (next) => { setMode(next); updateChoice({ mode: next }); };
+  const chooseStage = (next) => { setStage(next); updateChoice({ tempoPercent: next.percent, tempoStage: next.id }); };
+  const launchCustom = () => { onChoiceChange?.(choice); onLaunch?.(buildCustomLaunch(segment, choice)); };
   return <section className="piano-learn-launchpad" role="dialog" aria-modal="true" aria-label={`${segment.label} practice`}>
     <header>
       <button type="button" className="piano-learn-launchpad__back" onClick={view === 'home' ? onBack : () => setView('home')}><Icon name="back" /> Back</button>
@@ -70,17 +74,17 @@ export default function LearnLaunchpad({ segment, preview = null, result = null,
         {view === 'custom' && <div className="piano-learn-builder">
           <h2>Make your own practice</h2>
           <div role="group" aria-label="Hands"><h3>Hands</h3>
-            {segment.playableParts?.includes('rh') && <TouchButton variant="choice" aria-pressed={parts.length === 1 && parts[0] === 'rh'} onClick={() => setParts(['rh'])}><Icon name="hand-right" />Right hand</TouchButton>}
-            {segment.playableParts?.includes('lh') && <TouchButton variant="choice" aria-pressed={parts.length === 1 && parts[0] === 'lh'} onClick={() => setParts(['lh'])}><Icon name="hand-left" />Left hand</TouchButton>}
-            {(segment.playableParts?.length ?? 0) > 1 && <TouchButton variant="choice" aria-pressed={parts.length > 1} onClick={() => setParts(['rh', 'lh'])}><Icon name="play-along" />Together</TouchButton>}
+            {segment.playableParts?.includes('rh') && <TouchButton variant="choice" aria-pressed={parts.length === 1 && parts[0] === 'rh'} onClick={() => chooseParts(['rh'])}><Icon name="hand-right" />Right hand</TouchButton>}
+            {segment.playableParts?.includes('lh') && <TouchButton variant="choice" aria-pressed={parts.length === 1 && parts[0] === 'lh'} onClick={() => chooseParts(['lh'])}><Icon name="hand-left" />Left hand</TouchButton>}
+            {(segment.playableParts?.length ?? 0) > 1 && <TouchButton variant="choice" aria-pressed={parts.length > 1} onClick={() => chooseParts(['rh', 'lh'])}><Icon name="play-along" />Together</TouchButton>}
           </div>
           <div role="group" aria-label="Beat"><h3>Beat</h3>
-            <TouchButton variant="choice" aria-pressed={mode === 'free'} onClick={() => setMode('free')}><Icon name="quarter-note" />No beat</TouchButton>
-            <TouchButton variant="choice" aria-pressed={mode === 'metronome'} onClick={() => setMode('metronome')}><Icon name="metronome" />Keep a beat</TouchButton>
-            <TouchButton variant="choice" aria-pressed={mode === 'cued'} onClick={() => setMode('cued')}><Icon name="speed" />Play on time</TouchButton>
+            <TouchButton variant="choice" aria-pressed={mode === 'free'} onClick={() => chooseMode('free')}><Icon name="quarter-note" />No beat</TouchButton>
+            <TouchButton variant="choice" aria-pressed={mode === 'metronome'} onClick={() => chooseMode('metronome')}><Icon name="metronome" />Keep a beat</TouchButton>
+            <TouchButton variant="choice" aria-pressed={mode === 'cued'} onClick={() => chooseMode('cued')}><Icon name="speed" />Play on time</TouchButton>
           </div>
           {mode !== 'free' && <div role="group" aria-label="Tempo"><h3>Tempo</h3>{TEMPO_STAGES.map((item) => <TouchButton key={item.id} variant="choice"
-            aria-pressed={stage.id === item.id} aria-label={`${item.label} ${item.percent}%`} onClick={() => setStage(item)}>{item.label}<small>{item.percent}%</small></TouchButton>)}</div>}
+            aria-pressed={stage.id === item.id} aria-label={`${item.label} ${item.percent}%`} onClick={() => chooseStage(item)}>{item.label}<small>{item.percent}%</small></TouchButton>)}</div>}
           <TouchButton className="piano-learn-builder__start" onClick={launchCustom}><Icon name="play" />Start practice</TouchButton>
         </div>}
       </div>
