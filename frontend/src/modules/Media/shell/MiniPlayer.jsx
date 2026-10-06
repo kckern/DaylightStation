@@ -17,8 +17,7 @@ import { useSessionController } from '../controller/useSessionController.js';
 import { usePlaybackPosition } from '../controller/usePlaybackPosition.js';
 import { useNav } from './NavProvider.jsx';
 import { usePlayerHost } from '../session/usePlayerHost.js';
-import { useSessionControls, secondsUntil, formatClock } from '../controller/useSessionControls.js';
-import { useSecondTick } from './SessionControlsPanel.jsx';
+import { useSessionControls, useSecondTick, secondsUntil, formatClock } from '../controller/useSessionControls.js';
 import './NowPlaying.scss';
 import './SessionControls.scss';
 

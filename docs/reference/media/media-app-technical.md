@@ -1123,7 +1123,8 @@ shows every control unavailable with a reason; a browser target has none.
 
 **This device's controls** (`session/localSessionControls.js`) run the same
 `createScreenSessionControls` state machine and `createContinuationResolver`
-as screens, bound by ports: the natural end (`onPlayerEnded`) consults it
+as screens, bound by ports (the rule set is shared, the ports are not: a
+screen's timer stops, this one pauses): the natural end (`onPlayerEnded`) consults it
 first; a minutes timer fades `controller.output` (a multiplier PlayerBridge
 applies on top of the volume, never the volume setting) and then **pauses**
 (item and spot kept); `resumeSleep` adopts the set position; a similar batch
@@ -1170,7 +1171,17 @@ the source shows "Moved by …"). Any other result leaves the source playing.
 **Player completion guard.** `Player.beginRendererBoundary` (a new owner
 operation on the mounted content: sleep resume, Put it back, a same-item
 adopt) resets the duplicate-completion key, so the resumed item's next
-natural end is a new completion.
+natural end is a new completion. A natural end HELD by the session controls
+(countdown, Stop after this one, sleep at end) dispatches `PLAYER_STATE
+ended` without pausing — the handle and lock screen read ended, and Play goes
+through the ended → replay-as-new-visit path — and the controller's `release`
+calls `Player.releaseCompletion()` (also cleared by `seek`), so scrubbing back
+and playing to the end again is a new completion, not a duplicate. A minutes
+timer persists `sleepTimer.endsAt` and re-arms (or resolves to the resume
+offer) on hydrate. A failed `media:adopt-snapshot` (no owner, superseded,
+refused) answers the command with `command-handler-error { commandId }` so the
+mover fails at once; the epoch bump happens inside the adopt handler. The
+backend adopt load carries `autoplay: false` for a paused snapshot.
 
 **Lock screen** (`session/useMediaSession.js`). Local playback publishes
 `navigator.mediaSession` metadata (title, show/album or artist, artwork),

@@ -96,4 +96,27 @@ describe('ScreenActionHandler — media:adopt-snapshot (§6.2.4)', () => {
     expect(adopted.meta).not.toHaveProperty('playbackOwner');
     expect(options).toMatchObject({ autoplay: true });
   });
+
+  it('an adopt that cannot get an owner fails fast to the mover as command-handler-error (no 45 s wait)', async () => {
+    const { source } = setup();
+    // The virtual receiver has no owner and none ever mounts.
+    source.getActionOwner = () => null;
+    source.capture = () => ({ snapshot: null, identity: null });
+    const errors = vi.fn();
+    getActionBus().subscribe('command-handler-error', errors);
+    vi.useFakeTimers();
+    try {
+      act(() => getActionBus().emit('media:adopt-snapshot', { snapshot: { ...snapshot, state: 'playing' }, autoplay: true, commandId: 'move-2:adopt' }));
+      await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    } finally { vi.useRealTimers(); }
+    expect(errors).toHaveBeenCalledWith(expect.objectContaining({ commandId: 'move-2:adopt', code: 'PLAYBACK_OWNER_UNAVAILABLE' }));
+    expect(source.adopt).not.toHaveBeenCalled();
+  });
+
+  it('adopt is never superseded by its own start (the epoch bump is inside the handler)', async () => {
+    const { source, results } = setup();
+    act(() => getActionBus().emit('media:adopt-snapshot', { snapshot: { ...snapshot, state: 'playing' }, autoplay: true, commandId: 'move-3:adopt' }));
+    await waitFor(() => expect(source.adopt).toHaveBeenCalled());
+    expect(results).not.toHaveBeenCalledWith(expect.objectContaining({ code: 'RESTORE_SUPERSEDED' }));
+  });
 });

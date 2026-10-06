@@ -1,7 +1,8 @@
 // Screen session controls on THIS device's Media session (P1): sleep timer
 // (RQ-STEER-12), end of queue + keep similar playing (RQ-STEER-19), the
 // next-episode countdown and Stop after this one (RQ-STEER-20). The local
-// session runs the same state machine as a screen, bound through ports.
+// session runs the screen's rule set, bound through ports (its sleep timer
+// pauses rather than stops).
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createLocalSessionController } from './LocalSessionController.js';
 import mediaLog from '../logging/mediaLog.js';
@@ -276,5 +277,18 @@ describe('Play after an item ended here', () => {
     c.onPlayerEnded('a');
     await flush(); await flush(); await flush();
     expect(c.getSnapshot().currentItem?.contentId).toBe('plex:9');
+  });
+
+  it('keeps the commanding origin on the replay it starts', async () => {
+    const { c } = makeController();
+    c.queue.playNow(song('a'));
+    playing(c);
+    await c.sessionControls.setStopAfterCurrent(true);
+    c.onPlayerEnded('a');
+    expect(c.getSnapshot().state).toBe('ended');
+    const origin = { kind: 'routine', name: 'Bedtime', triggerId: 't1' };
+    c.setOrigin(origin);
+    c.transport.play();
+    expect(c.getSnapshot().meta.origin).toEqual(origin);
   });
 });

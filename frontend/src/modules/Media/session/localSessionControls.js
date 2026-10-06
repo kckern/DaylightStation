@@ -4,19 +4,26 @@
 // "keep similar things playing" (RQ-STEER-19), the next-episode countdown and
 // "Stop after this one" (RQ-STEER-20).
 //
-// It is the SAME state machine every screen runs
+// It is the SAME rule set a screen runs
 // (screen-framework/session/screenSessionControls.js) and the same similar
 // resolver (continuationResolver.js), bound to the local session through
-// ports, so a local session behaves exactly like a screen: the O2 similar
-// rule (parent siblings, no `library:` fallback, season → show, 7-day
-// preference, ≤5 per batch, a container cycled once, 4 unattended batches),
-// the 10-second countdown, and the published `controls` block.
+// ports: the O2 similar rule (parent siblings, no `library:` fallback, season
+// -> show, 7-day preference, <=5 per batch, a container cycled once, 4
+// unattended batches), the 10-second countdown, and the published `controls`
+// block. The ports differ, so behaviour is not identical to a screen's.
 //
 // Local differences, stated:
 //   - A sleep timer PAUSES here (item and spot kept), so "continue from where
 //     it stopped" is ordinary Play; "where the timer was set" is resumeSleep.
+//     A screen's timer STOPS playback instead.
+//   - The fade rides on the element volume. iOS Safari makes media volume
+//     read-only, so there the fade is a no-op and the timer simply pauses.
+//   - An armed minutes timer is saved with its absolute deadline and re-armed
+//     (or, if it came due while the page was closed, turned into the continue
+//     offer) on the next load.
 //   - Add only and screen notes / Put it back belong to a screen other
-//     devices play to; this session reports them as unsupported.
+//     devices play to; this session reports them as unsupported (Add only is
+//     shown unavailable with the reason, never hidden).
 //
 // The facade mirrors `controller.sessionControls` on a remote screen
 // (peek/RemoteSessionController.js): every method returns a Promise of

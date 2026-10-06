@@ -11,30 +11,18 @@
 // A control the target cannot offer is shown unavailable with a short
 // reason, never hidden (STEER.1b/AC2). Failures go through the one outcome
 // system (DispatchProvider), never a page notice.
-import React, { useContext, useEffect, useMemo, useState } from 'react';
+import React, { useContext, useMemo, useState } from 'react';
 import { Button, Group, Menu, Text } from '@mantine/core';
 import {
   IconMoon, IconPlayerStop, IconPlaylistAdd, IconArrowBackUp, IconPlayerTrackNext, IconX,
 } from '@tabler/icons-react';
-import { useSessionControls, secondsUntil, formatClock } from '../controller/useSessionControls.js';
+import { useSessionControls, useSecondTick, secondsUntil, formatClock } from '../controller/useSessionControls.js';
 import { useSessionController } from '../controller/useSessionController.js';
 import { DispatchContext } from '../cast/DispatchProvider.jsx';
 import mediaLog from '../logging/mediaLog.js';
 import './SessionControls.scss';
 
 export const SLEEP_MINUTE_CHOICES = [15, 30, 45, 60, 90];
-
-/** Re-render once a second while `active`, for countdowns and time left. */
-export function useSecondTick(active) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) return undefined;
-    setNow(Date.now());
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [active]);
-  return now;
-}
 
 export function sleepLabel(sleepTimer, now = Date.now()) {
   if (!sleepTimer) return null;
@@ -112,7 +100,11 @@ export function SessionControlsPanel({ target, targetName = null }) {
         <div className="session-controls-countdown" data-testid="countdown-banner" role="status">
           <Text size="sm" className="session-controls-countdown-text">
             Next: <strong>{countdown.next?.title ?? 'the next episode'}</strong>
-            {' '}in <span data-testid="countdown-seconds">{secondsUntil(countdown.endsAt, now) ?? countdown.remainingSeconds}</span>s
+            {/* Announced once when it starts (and when it is cancelled); the
+                ticking seconds are for the eye only, not re-read every second. */}
+            <span aria-hidden="true">
+              {' '}in <span data-testid="countdown-seconds">{secondsUntil(countdown.endsAt, now) ?? countdown.remainingSeconds}</span>s
+            </span>
           </Text>
           <Group gap="xs">
             <Button
@@ -142,7 +134,10 @@ export function SessionControlsPanel({ target, targetName = null }) {
                 data-testid="sleep-continue-stopped" className="session-controls-btn" size="sm" variant="light"
                 onClick={() => { mediaLog.sessionControlCommand({ target: targetId, action: 'continueWhereStopped' }); transport.play?.(); }}
               >
-                Continue where it stopped ({formatClock(snapshot?.position ?? 0)})
+                {/* An at-end sleep leaves the item ended; Play restarts it. */}
+                {snapshot?.state === 'ended'
+                  ? 'Play it again'
+                  : `Continue where it stopped (${formatClock(snapshot?.position ?? 0)})`}
               </Button>
             )}
             <Button
@@ -216,21 +211,24 @@ export function SessionControlsPanel({ target, targetName = null }) {
           Stop after this one{controls?.stopAfterCurrent ? ': on' : ''}
         </Button>
 
-        {supports.addOnly && (
-          <Button
-            data-testid="add-only-toggle"
-            className="session-controls-btn"
-            size="sm"
-            variant={controls?.addOnly ? 'light' : 'default'}
-            leftSection={<IconPlaylistAdd size={16} />}
-            aria-pressed={controls?.addOnly === true}
-            disabled={controlsDisabled || busy === 'setAddOnly'}
-            onClick={() => run('setAddOnly', 'Add only', () => actions.setAddOnly(!controls?.addOnly), !controls?.addOnly)}
-          >
-            Add only: {controls?.addOnly ? 'on' : 'off'}
-          </Button>
-        )}
+        <Button
+          data-testid="add-only-toggle"
+          className="session-controls-btn"
+          size="sm"
+          variant={controls?.addOnly ? 'light' : 'default'}
+          leftSection={<IconPlaylistAdd size={16} />}
+          aria-pressed={controls?.addOnly === true}
+          disabled={controlsDisabled || !supports.addOnly || busy === 'setAddOnly'}
+          onClick={() => run('setAddOnly', 'Add only', () => actions.setAddOnly(!controls?.addOnly), !controls?.addOnly)}
+        >
+          Add only: {controls?.addOnly ? 'on' : 'off'}
+        </Button>
       </Group>
+      {available && !supports.addOnly && (
+        <Text size="xs" className="session-controls-hint" data-testid="add-only-unsupported">
+          {actions?.unsupportedReasons?.addOnly ?? 'Add only is not available here'}
+        </Text>
+      )}
       {controls?.addOnly && (
         <Text size="xs" className="session-controls-hint" data-testid="add-only-hint">
           Plays from other devices are added to this queue instead of replacing it.

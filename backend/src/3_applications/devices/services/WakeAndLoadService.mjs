@@ -488,7 +488,8 @@ export class WakeAndLoadService {
         targetDevice: deviceId,
         command: 'adopt-snapshot',
         commandId: dispatchId,
-        params: { snapshot: adoptSnapshot, autoplay: true },
+        // A paused screen moved to an idle one stays paused (RQ-PLACE-13).
+        params: { snapshot: adoptSnapshot, autoplay: adoptSnapshot?.state !== 'paused' },
       });
 
       const adoptResult = await this.#sessionControlService.sendCommand(envelope);
