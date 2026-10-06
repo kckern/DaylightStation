@@ -39,12 +39,14 @@ import { displayTitle, resultSubtitle } from './resultPresentation.js';
 import getLogger from '../../../lib/logging/Logger.js';
 import mediaLog from '../logging/mediaLog.js';
 import { ItemDestinationPicker } from '../actions/ItemDestinationPicker.jsx';
+import { useHouseholdResultActions } from '../household/useHouseholdResultActions.js';
 import './Search.scss';
 
 export function SearchMode({ onClose }) {
   const [oneShotAction, setOneShotAction] = useState(null);
   const { scopes, currentScopeKey, currentScope, scopeError, resetScope } = useSearchContext();
   const { dispatch, dispatchLeafVerb, playContainerAsQueue } = useContentDispatch();
+  const { extraActions, runHousehold } = useHouseholdResultActions();
   const { queue } = useSessionController('local');
   const { push } = useNav();
   const log = useMemo(() => getLogger().child({ component: 'search-mode' }), []);
@@ -141,6 +143,7 @@ export function SearchMode({ onClose }) {
     const id = item?.id;
     if (!id) return;
     log.info('row_action', { contentId: id, action });
+    if (runHousehold(action, item)) return;
     if (action === 'playOn' || action === 'addOn') { setOneShotAction({ kind: action, item }); return; }
     if (action !== 'detail' && action !== 'details') {
       dispatchLeafVerb(action === 'upNext' ? 'playFirst' : action, id, item);
@@ -150,7 +153,7 @@ export function SearchMode({ onClose }) {
     // 'detail' is the only verb that navigates; queue mutations leave search
     // and its marker untouched.
     if (action === 'detail' || action === 'details') closeSurface('dispatch', { navigated: true });
-  }, [queue, pushOverSurface, log, closeSurface, dispatchLeafVerb]);
+  }, [queue, pushOverSurface, log, closeSurface, dispatchLeafVerb, runHousehold]);
 
   const combo = useContentCombobox({
     value: '',
@@ -309,6 +312,7 @@ export function SearchMode({ onClose }) {
               onPlayAll={() => handlePlayAll(item)}
               onMore={(action) => handleMore(action, item)}
               onAction={({ kind }) => handleMore(kind, item)}
+              extraActions={extraActions}
               testId={`search-mode-result-${item.id}`}
             />
           </li>

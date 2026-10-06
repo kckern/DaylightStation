@@ -16,6 +16,9 @@ import { timeOfDayGroups, assembleSuggestions } from '#domains/media/mediaSugges
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
+// A build whose catalog lookups ran out of time is kept only this long, so
+// the next request retries rather than serving missing titles for 5 min.
+const DEGRADED_TTL_MS = 10_000;
 const DEFAULT_MAX_SCREENS = 200;
 const SCREEN_ID = /^(fleet|browser|screen):[A-Za-z0-9._-]{1,96}$/;
 const NEW_WITHIN_DAYS = 14;
@@ -98,7 +101,13 @@ export class MediaSuggestionsService {
       favourites, carryOn: house.carryOn, fresh: house.fresh, timeOfDay: tod.items ?? [],
       timeOfDayLabel: tod.label ?? TIME_OF_DAY_LABELS.household, exclude,
     });
-    return { deviceId, generatedAt: house.generatedAt, rows, empty };
+    return { deviceId, generatedAt: house.generatedAt, rows, empty, degraded: house.degraded === true };
+  }
+
+  /** Drop every cached candidate (a change that is not per household, e.g. a watched mark). */
+  invalidateAll() {
+    this.#households.clear();
+    this.#screenCache.clear();
   }
 
   /** Drop cached candidates for a household. */
@@ -109,13 +118,13 @@ export class MediaSuggestionsService {
 
   async #cached(map, key, build, capped = false) {
     const hit = map.get(key);
-    if (hit && this.#clock.now() - hit.at < this.#ttl) return hit.value;
+    if (hit && this.#clock.now() - hit.at < (hit.ttl ?? this.#ttl)) return hit.value;
     const flight = `${capped ? 's' : 'h'}|${key}`;
     if (!this.#building.has(flight)) {
       const run = Promise.resolve().then(build)
         .then((value) => {
           map.delete(key);
-          map.set(key, { at: this.#clock.now(), value });
+          map.set(key, { at: this.#clock.now(), value, ttl: value?.degraded ? Math.min(DEGRADED_TTL_MS, this.#ttl) : this.#ttl });
           if (capped) while (map.size > this.#maxScreens) map.delete(map.keys().next().value);
           return value;
         })
@@ -137,10 +146,12 @@ export class MediaSuggestionsService {
   async #buildHousehold(householdId) {
     const started = this.#clock.now();
     const ledgerRows = await this.#ledgerRows();
-    const [carryOn, fresh] = await Promise.all([
+    const [carry, fresh] = await Promise.all([
       this.#section('carry-on', () => this.#carryOn(householdId)),
       this.#section('new', () => this.#fresh()),
     ]);
+    const carryOn = Array.isArray(carry) ? carry : carry.items;
+    const degraded = !Array.isArray(carry) && carry.degraded === true;
     const parentsOf = {};
     for (const row of ledgerRows) {
       if (!parentsOf[row.contentId]) parentsOf[row.contentId] = [row.parentId, row.grandparentId].filter(Boolean);
@@ -148,7 +159,7 @@ export class MediaSuggestionsService {
     this.#logger.info?.('media.suggestions.built', {
       householdId: householdId ?? null, ms: this.#clock.now() - started, carryOn: carryOn.length, fresh: fresh.length, ledgerRows: ledgerRows.length,
     });
-    return { generatedAt: new Date(this.#clock.now()).toISOString(), ledgerRows, carryOn, fresh, parentsOf };
+    return { generatedAt: new Date(this.#clock.now()).toISOString(), ledgerRows, carryOn, fresh, parentsOf, degraded };
   }
 
   async #ledgerRows() {
@@ -171,15 +182,15 @@ export class MediaSuggestionsService {
   }
 
   async #carryOn(householdId) {
-    const { items } = await this.#memory.carryOn({ householdId, limit: CANDIDATES_PER_ROW });
-    return (items || []).map((e) => ({
+    const { items, degraded } = await this.#memory.carryOn({ householdId, limit: CANDIDATES_PER_ROW });
+    return { degraded: degraded === true, items: (items || []).map((e) => ({
       id: e.contentId, kind: 'item', type: e.type ?? null, title: e.title ?? null, thumbnail: e.thumbnail ?? null,
       reason: e.reason ?? null, percent: e.percent ?? null, playhead: e.playhead ?? null, duration: e.duration ?? null,
       playedOn: e.playedOn?.deviceId ?? null,
       parentId: qualify(e.parentId, e.contentId),
       grandparentId: qualify(e.grandparentId, e.contentId),
       parentTitle: e.parentTitle ?? null, grandparentTitle: e.grandparentTitle ?? null,
-    }));
+    })) };
   }
 
   async #timeOfDay(householdId, deviceId, rows) {

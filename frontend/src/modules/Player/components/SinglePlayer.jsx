@@ -252,6 +252,7 @@ export function SinglePlayer(props = {}) {
       };
       if (play?.seconds !== undefined) directInfo.seconds = play.seconds;
       if (play?.resume !== undefined) directInfo.resume = play.resume;
+      if (play?.origin) directInfo.origin = play.origin;
       if (play?.resumePosition !== undefined && directInfo.seconds === undefined) {
         directInfo.seconds = play.resumePosition;
       }
@@ -303,6 +304,7 @@ export function SinglePlayer(props = {}) {
                 };
                 if (play?.seconds !== undefined) withCap.seconds = play.seconds;
                 if (play?.resume !== undefined) withCap.resume = play.resume;
+                if (play?.origin) withCap.origin = play.origin;
                 setMediaInfo(withCap);
                 setIsReady(true);
                 return;
@@ -330,6 +332,10 @@ export function SinglePlayer(props = {}) {
       if (play?.resume !== undefined) {
         withCap.resume = play.resume;
       }
+
+      // Who started this playback (a routine, another device), for the
+      // play ledger — reported on play/log (media tech doc §2.4).
+      if (play?.origin) withCap.origin = play.origin;
 
       setMediaInfo(withCap);
       setIsReady(true);

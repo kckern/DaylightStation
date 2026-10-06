@@ -40,6 +40,8 @@ vi.mock('../net/ws.js', () => ({
 vi.mock('../logging/mediaLog.js', () => ({ default: new Proxy({}, { get: () => vi.fn() }) }));
 
 import { FleetContext, FleetProvider } from './FleetProvider.jsx';
+import { adoptBrowserDeviceId, getDeviceId, _resetDeviceIdForTests } from '../../../lib/deviceIdentity.js';
+import { bareScreenId } from '../household/householdModel.js';
 
 afterEach(() => {
   // Always restore real timers, even if a test threw before reaching its
@@ -83,6 +85,25 @@ describe('FleetProvider browser session feed', () => {
     unmount();
     expect(playbackUnsubscribes).toContainEqual(expect.any(Function));
     expect(playbackUnsubscribes.at(-1)).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('browser identity matches the fleet store key', () => {
+  it('the id a browser sends as X-Daylight-Device (so Now on lists it) is the key its snapshot is stored under', () => {
+    localStorage.clear();
+    delete window.__DAYLIGHT_DEVICE_ID;
+    _resetDeviceIdForTests();
+    adoptBrowserDeviceId('sender-browser');
+    const nowOnId = getDeviceId();
+    const { unmount } = render(<FleetProvider><Probe /></FleetProvider>);
+    const feed = playbackSubscribers.at(-1);
+    act(() => {
+      feed.callback({ topic: 'playback_state', clientId: 'sender-browser', displayName: 'Sender browser', identity: { clientId: 'sender-browser', deviceId: nowOnId, name: 'Sender browser' }, deviceId: nowOnId, ownerId: 'sender-browser', revision: 1, sessionId: 's9', state: 'playing', currentItem: { contentId: 'plex:9' }, queue: [], position: 1, config: {}, connected: true, lastHeardAt: '2026-09-22T12:00:00.000Z' });
+    });
+    const keys = JSON.parse(screen.getByRole('status').textContent).entries.map(([key]) => key);
+    expect(keys).toContain(bareScreenId(nowOnId));
+    unmount();
+    _resetDeviceIdForTests();
   });
 });
 
