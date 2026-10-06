@@ -3,6 +3,7 @@ import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/in
 import { streamMediaResourceWithRanges } from '#system/http/streamFile.mjs';
 import { sendPlaceholderSvg } from '#system/proxy/placeholders.mjs';
 import { splatPath } from '#api/utils/wildcard.mjs';
+import { parseStreamParams } from '#shared-contracts/media/playerFeatures.mjs';
 
 const LONG_CACHE = 'public, max-age=31536000';
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
@@ -204,7 +205,9 @@ export function createProxyRouter(config = {}) {
     const session = typeof req.query.session === 'string' && req.query.session
       ? req.query.session
       : null;
-    const result = await mintPlaybackStream.execute({ ratingKey, startOffset, session });
+    // RQ-STEER-14: the person's audio/subtitle choice, when the stream URL carries one.
+    const tracks = parseStreamParams(req.query);
+    const result = await mintPlaybackStream.execute({ ratingKey, startOffset, session, ...(tracks ? { tracks } : {}) });
     if (result.kind === 'unconfigured') {
       return res.status(404).json({ error: 'Plex adapter not configured' });
     }

@@ -16,6 +16,7 @@ import { useSessionController } from '../controller/useSessionController.js';
 import { usePlaybackPosition } from '../controller/usePlaybackPosition.js';
 import { useNav } from './NavProvider.jsx';
 import { usePlayerHost } from '../session/usePlayerHost.js';
+import { useSlideshowStopGuard } from './PlayerFeatureControls.jsx';
 import { HandleHouseMenu } from '../house/HouseQuietControls.jsx';
 import './NowPlaying.scss';
 
@@ -44,6 +45,8 @@ export function MiniPlayer() {
   const live = usePlaybackPosition(controller);
   const problem = useLocalProblem(controller);
   const { push, view } = useNav();
+  // Stopping a slideshow with music behind asks whether to keep the music.
+  const [guardStop, stopGuardDialog] = useSlideshowStopGuard('local');
   const item = snapshot?.currentItem;
   const queueItems = Array.isArray(snapshot?.queue?.items) ? snapshot.queue.items : [];
   const queueCount = queueItems.length;
@@ -162,13 +165,14 @@ export function MiniPlayer() {
           className="np-icon-btn"
           aria-label="Stop"
           title="Stop playback and keep the queue"
-          onClick={() => transport.stop()}
+          onClick={() => guardStop(() => transport.stop())}
         >
           <IconPlayerStopFilled size={18} />
         </button>
         {/* RQ-STEER-13: Pause all / Stop all / Resume all on the handle. */}
         <HandleHouseMenu />
       </div>
+      {stopGuardDialog}
     </div>
   );
 }

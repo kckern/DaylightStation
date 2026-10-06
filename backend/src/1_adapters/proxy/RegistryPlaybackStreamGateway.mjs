@@ -14,7 +14,7 @@ export class RegistryPlaybackStreamGateway extends IPlaybackStreamGateway {
     this.#logger = logger;
   }
 
-  async mint({ ratingKey, startOffset, session }) {
+  async mint({ ratingKey, startOffset, session, tracks = null }) {
     const adapter = this.#registry.get('plex');
     if (!adapter) {
       this.#logger.warn?.('plex.stream.mint-skipped', {
@@ -22,7 +22,7 @@ export class RegistryPlaybackStreamGateway extends IPlaybackStreamGateway {
       });
       return { kind: 'unconfigured' };
     }
-    const result = await adapter.getMediaUrl(ratingKey, { startOffset, session });
+    const result = await adapter.getMediaUrl(ratingKey, { startOffset, session, ...(tracks ? { tracks } : {}) });
     if (!result?.url) {
       this.#logger.warn?.('plex.stream.mint-failed', {
         ratingKey, startOffset, session, reason: result?.reason ?? null,
@@ -33,6 +33,7 @@ export class RegistryPlaybackStreamGateway extends IPlaybackStreamGateway {
       ratingKey,
       startOffset,
       session,
+      ...(tracks ? { tracks } : {}),
       plexClientIdentifier: typeof adapter.resolveClientIdentifier === 'function'
         ? adapter.resolveClientIdentifier(session)
         : null,

@@ -16,6 +16,7 @@ import {
 import { STORAGE_KEYS } from '../constants.js';
 import { useClientIdentity } from '../identity/useClientIdentity.js';
 import { PlayerBridge } from './PlayerBridge.jsx';
+import { MusicBehindHost } from './MusicBehindHost.jsx';
 import { useSessionController } from '../controller/useSessionController.js';
 import { useUrlCommand } from '../externalControl/useUrlCommand.js';
 import { useExternalControl } from '../externalControl/useExternalControl.js';
@@ -90,6 +91,7 @@ export function LocalSessionProvider({ children }) {
         <SessionSideEffects />
         {children}
         <PlayerBridge />
+        <MusicBehindHost />
       </PlayerHostProvider>
     </LocalSessionContext.Provider>
   );

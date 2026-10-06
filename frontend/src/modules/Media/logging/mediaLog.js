@@ -113,6 +113,10 @@ export const mediaLog = {
   urlCommandIgnored:      debug('url-command.ignored'),
   navPushed:              debug('nav.pushed'),
   transportCommand:       sampled('transport.command', { maxPerMinute: 60, aggregate: true }),
+  // Player features (P2): tracks, Show briefly, music behind.
+  playerFeature:          info('player-feature.command'),
+  playerFeatureFailed:    warn('player-feature.failed'),
+  playerFeatureState:     debug('player-feature.state'),
   // Household media memory on the start page and item menus (batch A:
   // FIND.7a/9a/10a/11a/12a/13a, PLAY.4a).
   homeShown:              info('home.shown'),

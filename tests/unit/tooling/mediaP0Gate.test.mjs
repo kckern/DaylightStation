@@ -47,6 +47,11 @@ describe('Media P0 gate manifest', () => {
       expect.objectContaining({ story: 'RELY.7a', criteria: ['RELY.7a/AC1', 'RELY.7a/AC5'], file: 'media-app-resume.runtime.test.mjs' }),
       expect.objectContaining({ story: 'RELY.7a', criteria: ['RELY.7a/AC2'], file: 'media-app-aim-journey.runtime.test.mjs', grep: 'a closed app restores' }),
       expect.objectContaining({ story: 'RELY.8a', criteria: ['RELY.8a/AC1', 'RELY.8a/AC2', 'RELY.8a/AC3'], file: 'media-app-reset-confirm.runtime.test.mjs' }),
+      // Batch D, player features (P2).
+      expect.objectContaining({ story: 'STEER.12a', criteria: ['STEER.12a/AC1', 'STEER.12a/AC2', 'STEER.12a/AC3'], file: 'media-app-player-features.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'PLAY.8a', criteria: ['PLAY.8a/AC1', 'PLAY.8a/AC2', 'PLAY.8a/AC3'], file: 'media-app-player-features.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'PLAY.8b', criteria: ['PLAY.8b/AC1', 'PLAY.8b/AC2'], file: 'media-app-player-features.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'PLAY.9a', criteria: ['PLAY.9a/AC1', 'PLAY.9a/AC2', 'PLAY.9a/AC3'], file: 'media-app-player-features.runtime.test.mjs' }),
       // Batch A (start page + item surfaces).
       expect.objectContaining({ story: 'FIND.7a', criteria: ['FIND.7a/AC1', 'FIND.7a/AC2'], file: 'media-app-household-home.runtime.test.mjs' }),
       expect.objectContaining({ story: 'FIND.9a', criteria: ['FIND.9a/AC1', 'FIND.9a/AC2', 'FIND.9a/AC3'], file: 'media-app-household-home.runtime.test.mjs' }),
@@ -67,8 +72,8 @@ describe('Media P0 gate manifest', () => {
       expect.objectContaining({ story: 'HOUSE.6a', criteria: ['HOUSE.6a/AC1', 'HOUSE.6a/AC2', 'HOUSE.6a/AC3'], file: 'media-app-house-view.runtime.test.mjs' }),
       expect.objectContaining({ story: 'AUTO.4a', criteria: ['AUTO.4a/AC1', 'AUTO.4a/AC2'], file: 'media-app-house-view.runtime.test.mjs' }),
     ]));
-    expect(P0_EXTENSION_ENTRIES).toHaveLength(40);
-    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 45, criteria: 105 });
+    expect(P0_EXTENSION_ENTRIES).toHaveLength(44);
+    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 49, criteria: 116 });
   });
 
   it('rejects skipped, duplicated, weakened, or unjourneyed criteria', () => {

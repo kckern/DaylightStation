@@ -395,6 +395,16 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     // lifecycle. A synthetic Enter only toggles the renderer, which can resume
     // native media after Stop while leaving the owner's published state `ready`.
     const transportOp = payload?.command?.toLowerCase();
+    // A photo slideshow has no media keyboard handler: a synthetic Tab never
+    // reached it, so a remote Next did nothing (RQ-PLAY-12 needs "skip a
+    // photo"). Only a current IMAGE item takes this route; video/audio keep Tab.
+    if (transportOp === 'skipnext') {
+      const current = (sessionSource?.getBareSnapshot?.() ?? sessionSource?.getSnapshot?.())?.currentItem;
+      if (current?.format === 'image'
+        && getPlayerQueueOpRegistry().dispatch({ op: 'skip-next', commandId: payload?.commandId })) {
+        return;
+      }
+    }
     if (transportOp === 'skipprev') {
       if (!getPlayerQueueOpRegistry().dispatch({ op: 'skip-prev', commandId: payload?.commandId })) {
         getActionBus().emit('command-handler-error', {
@@ -432,7 +442,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
       return;
     }
     window.dispatchEvent(new KeyboardEvent('keydown', { key, code: key, bubbles: true }));
-  }, [actions, showOverlay, dismissOverlay]);
+  }, [actions, showOverlay, dismissOverlay, sessionSource]);
 
   // --- Playback rate ---
   // ArtMode's background music is excluded: rate is meaningless for it, and the

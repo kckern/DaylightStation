@@ -31,6 +31,17 @@ import { pushData, titleCaseId } from '#domains/notification/push/pushText.mjs';
 // watchdog (after load). Not in the sequential flow; frontend consumers may
 // treat it as an out-of-band event.
 
+/** brief=1|<seconds>|true asks to show OVER the programme; brief=0 does not. */
+function isBriefQuery(query) {
+  const v = query?.brief;
+  if (v === undefined || v === null || v === '' || v === false) return false;
+  return !['0', 'false', 'no', 'off'].includes(String(v).toLowerCase());
+}
+
+// Show briefly to a cold screen: how long to wait for it to subscribe.
+const BRIEF_SUBSCRIBE_TIMEOUT_MS = 30_000;
+const BRIEF_SUBSCRIBE_POLL_MS = 500;
+
 const STEPS = ['power', 'verify', 'volume', 'prepare', 'prewarm', 'load', 'playback'];
 // Origin of a dispatch no caller named (HA buttons, schedules, triggers).
 const AUTOMATION_ORIGIN = Object.freeze({ kind: 'routine', name: 'Automation' });
@@ -416,7 +427,10 @@ export class WakeAndLoadService {
     let resolvedQueueContentIds = [];
     let prewarmTimedOut = false;
     const prewarmRef = contentQuery.queue || contentQuery.play || contentQuery['play-next'];
-    if (!isAdopt && this.#prewarmService && prewarmRef) {
+    // A camera (Show briefly, RQ-PLAY-11) is a live feed, not catalog content:
+    // there is nothing to resolve or transcode.
+    const isCameraRef = typeof prewarmRef === 'string' && prewarmRef.startsWith('camera:');
+    if (!isAdopt && this.#prewarmService && prewarmRef && !isCameraRef) {
       this.#emitProgress(topic, dispatchId, 'prewarm', 'running');
       this.#logger.info?.('wake-and-load.prewarm.start', { deviceId, dispatchId, contentRef: prewarmRef });
 
@@ -706,7 +720,15 @@ export class WakeAndLoadService {
       const receiverContentQuery = hasAcknowledgedContent
         ? { ...contentQuery, dispatchId }
         : contentQuery;
-      const loadResult = await device.loadContent(screenPath, receiverContentQuery, { verifyAsync: true });
+      // Show briefly / a camera (RQ-PLAY-11) is a command the page's own
+      // handler runs OVER its programme. A page URL cannot carry it (its
+      // autoplay parser would turn `camera:<id>` into a plain play the Player
+      // cannot render, and drop `brief`), so a cold or unsubscribed screen
+      // gets the base page and then the same envelope as a warm one.
+      const briefOnly = isCameraRef || (hasContentQuery && isBriefQuery(contentQuery));
+      const loadResult = briefOnly
+        ? { ok: false, error: 'brief-needs-websocket' }
+        : await device.loadContent(screenPath, receiverContentQuery, { verifyAsync: true });
 
       if (loadResult.ok) {
         if (urlAckPromise) {
@@ -751,8 +773,10 @@ export class WakeAndLoadService {
         });
         this.#emitProgress(topic, dispatchId, 'load', 'retrying', { method: 'websocket' });
 
-        // Ensure the screen has time to load the base URL before sending WS
-        await this.#scheduler.wait(3000);
+        // Ensure the screen has time to load the base URL before sending WS.
+        // A brief is the one command that must not be fired into the void, so
+        // it waits for a subscriber instead (below).
+        if (!briefOnly) await this.#scheduler.wait(3000);
 
         // Load the base URL first if it hasn't loaded yet
         const baseLoadResult = await device.loadContent(screenPath, {});
@@ -773,7 +797,24 @@ export class WakeAndLoadService {
         }
 
         // Give the screen framework time to mount and subscribe to WS
-        await this.#scheduler.wait(2000);
+        if (briefOnly) {
+          // Show briefly (RQ-PLAY-11) goes out once, over the programme: poll
+          // for a real subscriber (bounded, injected clock/scheduler) rather
+          // than guess with a fixed wait, and report a miss as a failed load.
+          const subscribed = await this.#awaitSubscriber(topic);
+          if (!subscribed) {
+            this.#emitProgress(topic, dispatchId, 'load', 'failed', { error: 'Screen not connected' });
+            this.#logger.warn?.('wake-and-load.load.brief-no-subscriber', {
+              deviceId, dispatchId, waitedMs: BRIEF_SUBSCRIBE_TIMEOUT_MS,
+            });
+            result.error = 'Screen not connected';
+            result.failedStep = 'load';
+            result.totalElapsedMs = this.#clock.now() - startTime;
+            return result;
+          }
+        } else {
+          await this.#scheduler.wait(2000);
+        }
 
         // Broadcast content command via CommandEnvelope (targeted to this device).
         const fbResolved = resolveContentId(contentQuery);
@@ -805,6 +846,10 @@ export class WakeAndLoadService {
           if (urlAckPromise) {
             const ack = await urlAckPromise;
             outcomeCommandAcknowledged = ack?.ok === true;
+            if (outcomeCommandAcknowledged && typeof ack.appliedAs === 'string' && ack.appliedAs !== fbOp) {
+              receiverAppliedAs = ack.appliedAs;
+              result.appliedAs = receiverAppliedAs;
+            }
             if (!outcomeCommandAcknowledged) {
               this.#logger.warn?.('wake-and-load.load.wsFallback-ack-missing', {
                 deviceId, dispatchId, error: ack?.error,
@@ -909,6 +954,25 @@ export class WakeAndLoadService {
    * Emit a progress event over WebSocket.
    * @private
    */
+  /**
+   * Wait (bounded) until something is subscribed to the screen's topic.
+   * Uses the injected clock and scheduler. A bus that cannot count
+   * subscribers falls back to the fixed settle the other fallbacks use.
+   */
+  async #awaitSubscriber(topic) {
+    const count = this.#eventBus?.getTopicSubscriberCount;
+    if (typeof count !== 'function') {
+      await this.#scheduler.wait(5000);
+      return true;
+    }
+    const deadline = this.#clock.now() + BRIEF_SUBSCRIBE_TIMEOUT_MS;
+    for (;;) {
+      if (this.#eventBus.getTopicSubscriberCount(topic) > 0) return true;
+      if (this.#clock.now() >= deadline) return false;
+      await this.#scheduler.wait(BRIEF_SUBSCRIBE_POLL_MS);
+    }
+  }
+
   #emitProgress(topic, dispatchId, step, status, extra = {}) {
     this.#broadcast({
       topic,
@@ -1019,6 +1083,19 @@ export class WakeAndLoadService {
       if (resolved) return;
       if (!commandAcknowledged || payload?.deviceId !== deviceId) return;
       const snapshot = payload?.snapshot;
+      // Show briefly (RQ-PLAY-11): the screen shows it OVER its programme, so
+      // the evidence is the published brief, not a new current item.
+      if (appliedAs === 'brief') {
+        const brief = snapshot?.controls?.brief;
+        if (brief && contentMatches(brief.contentId)) {
+          cleanup();
+          this.#logger.info?.('wake-and-load.playback.confirmed', { deviceId, dispatchId, contentId: expectedContentId, appliedAs: 'brief' });
+          this.#emitProgress(topic, dispatchId, 'playback', 'confirmed', {
+            operation: 'brief', contentId: brief.contentId, sessionId: snapshot.sessionId ?? null, ownerId: snapshot.meta?.ownerId ?? null,
+          });
+        }
+        return;
+      }
       const owner = ownerIdentity(snapshot) ?? (itemAction ? snapshot?.meta?.queueOwner : null);
       if (!snapshot?.sessionId || !snapshot?.meta?.ownerId || !owner?.ownerInstanceId
         || !Number.isInteger(owner.playbackRevision) || !Number.isInteger(owner.queueRevision)) return;

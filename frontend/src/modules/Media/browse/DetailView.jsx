@@ -98,6 +98,7 @@ export function DetailView({ contentId }) {
         </Button>
         <CastButton contentId={contentId} title={info.title ?? null} item={detailItem} />
         <Button variant="default" onClick={() => setOneShot({ kind: 'addOn', item: detailItem })}>Add on…</Button>
+        <Button variant="default" data-testid="detail-show-briefly" onClick={() => setOneShot({ kind: 'showBrieflyOn', item: detailItem })}>Show briefly on…</Button>
       </Group>
       <Group className="detail-actions" gap="sm">
         <Button
