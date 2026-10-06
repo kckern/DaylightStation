@@ -12,6 +12,9 @@ export const isPhone = (page) => page.viewportSize().width < 600;
 
 /** Skip the first-use card if it is up (it is, on a fresh browser). */
 export async function skipFirstUse(page) {
+  // Wait for the shell (and the first-use card, which a fresh browser always gets).
+  await expect(page.getByTestId('media-dock')).toBeVisible({ timeout: 30000 });
+  await expect(page.getByTestId('first-use-card')).toBeVisible({ timeout: 30000 });
   const skip = page.getByTestId('first-use-skip');
   if (await skip.isVisible().catch(() => false)) await skip.click();
 }
@@ -26,9 +29,15 @@ export async function searchFor(page, text) {
   } else {
     const search = page.getByRole('textbox', { name: 'Search media…' });
     await expect(search).toBeVisible({ timeout: 30000 });
-    await search.fill('');
-    await search.fill(text);
-    await expect(page.getByRole('option').filter({ hasText: text }).first()).toBeVisible({ timeout: 20000 });
+    const option = page.getByRole('option').filter({ hasText: text }).first();
+    // The first keystrokes can land before the search surface has settled; type again once.
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      await search.fill('');
+      await search.fill(text);
+      if (await option.waitFor({ state: 'visible', timeout: 10000 }).then(() => true, () => false)) break;
+      if (attempt === 1) await page.waitForTimeout(500);
+    }
+    await expect(option).toBeVisible({ timeout: 15000 });
   }
 }
 

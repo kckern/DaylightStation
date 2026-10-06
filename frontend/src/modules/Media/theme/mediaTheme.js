@@ -72,6 +72,7 @@ export const MEDIA_PACK = {
   ...PACKS.media,
   colors: MEDIA_NEUTRALS,
   themeExtras: {
+    respectReducedMotion: true,
     primaryColor: 'amber',
     primaryShade: 5,
     colors: {

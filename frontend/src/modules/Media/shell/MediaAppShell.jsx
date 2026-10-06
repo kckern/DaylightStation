@@ -42,8 +42,14 @@ function ShellInner() {
       if (e.key !== '/' || e.defaultPrevented) return;
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      const input = document.querySelector('[data-testid="media-search-input"]');
-      if (input) { e.preventDefault(); input.focus(); }
+      // Tablet/laptop: the dock's search field. Phone: its field is hidden, so
+      // the same key opens the full-screen search instead (NF-DEV-03).
+      const input = document.querySelector('.media-dock .media-search-bar input');
+      if (input && input.getClientRects().length > 0) { e.preventDefault(); input.focus(); return; }
+      if (document.querySelector('[data-testid="media-search-launcher"]')?.getClientRects().length > 0) {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
