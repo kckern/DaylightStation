@@ -26,6 +26,12 @@ export const CONFIG_SETTINGS = Object.freeze([
 // can say "Moved" instead of "Stopped".
 export const TRANSPORT_INTENTS = Object.freeze(['move']);
 
+// Optional `params.keepMusic` (boolean) on a `stop` transport command: the
+// sender's EXPLICIT answer to "Keep the music playing?" for a slideshow with
+// music behind it. true = leave the music, false = stop it too. Absent = the
+// screen falls back to inferring from the command's origin (legacy senders).
+export const isKeepMusicParam = (v) => typeof v === 'boolean';
+
 export const SYSTEM_ACTIONS = Object.freeze(['reset', 'reload', 'sleep', 'wake']);
 
 export const REPEAT_MODES = Object.freeze(['off', 'one', 'all']);

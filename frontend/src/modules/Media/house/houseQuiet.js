@@ -10,6 +10,7 @@ import { FleetContext } from '../fleet/FleetProvider.jsx';
 import { PeekContext } from '../peek/PeekContext.js';
 import { LocalSessionContext } from '../session/LocalSessionContext.js';
 import { DispatchContext } from '../cast/DispatchProvider.jsx';
+import { getLocalPlayerFeatures } from '../session/localPlayerFeatures.js';
 import { quietSummary } from './houseCopy.js';
 import houseLog from './houseLog.js';
 
@@ -31,9 +32,12 @@ function unreachable(device, entry) {
 /**
  * Which screens a house-wide action touches. Pure.
  * @param {'pause'|'stop'|'resume'} verb
- * @returns {{targets: {id,name}[], missed: {id,name,reason}[]}}
+ * A Stop all also reaches a screen that is idle but still has music behind a
+ * slideshow (kept after a Stop): those targets are `musicOnly` — only the
+ * music is stopped, there is no transport to stop.
+ * @returns {{targets: {id,name,musicOnly?}[], missed: {id,name,reason}[]}}
  */
-export function planQuiet(verb, { devices = [], getEntry = () => null, localState = null, resumable = null } = {}) {
+export function planQuiet(verb, { devices = [], getEntry = () => null, localState = null, resumable = null, localMusic = false } = {}) {
   const wanted = (state, id) => {
     if (verb === 'resume') return Array.isArray(resumable) && resumable.includes(id);
     return (verb === 'pause' ? PLAYING : ACTIVE).has(state);
@@ -44,11 +48,16 @@ export function planQuiet(verb, { devices = [], getEntry = () => null, localStat
     if (device.isLocal) continue; // this device is steered locally below
     const entry = getEntry(device.id);
     // A resume targets a remembered screen whatever it reports now.
-    if (!wanted(stateOf(device, entry), device.id)) continue;
+    if (!wanted(stateOf(device, entry), device.id)) {
+      const keptMusic = verb === 'stop' && !!(entry?.snapshot?.controls?.musicBehind ?? device.snapshot?.controls?.musicBehind);
+      if (keptMusic && !unreachable(device, entry)) targets.push({ id: device.id, name: device.name ?? device.id, musicOnly: true });
+      continue;
+    }
     if (unreachable(device, entry)) missed.push({ id: device.id, name: device.name ?? device.id, reason: 'not reachable' });
     else targets.push({ id: device.id, name: device.name ?? device.id });
   }
   if (wanted(localState, LOCAL_TARGET)) targets.push({ id: LOCAL_TARGET, name: 'This device' });
+  else if (verb === 'stop' && localMusic) targets.push({ id: LOCAL_TARGET, name: 'This device', musicOnly: true });
   return { targets, missed };
 }
 
@@ -81,7 +90,7 @@ export function useHouseQuiet() {
 
   const run = useCallback(async (verb) => {
     const getEntry = (id) => store?.getEntry?.(id) ?? null;
-    const { targets, missed } = planQuiet(verb, { devices, getEntry, localState, resumable });
+    const { targets, missed } = planQuiet(verb, { devices, getEntry, localState, resumable, localMusic: !!getLocalPlayerFeatures().getState()?.musicBehind });
     setBusy(verb);
     const done = [];
     const doneIds = [];
@@ -89,17 +98,35 @@ export function useHouseQuiet() {
     await Promise.all(targets.map(async (target) => {
       const transport = target.id === LOCAL_TARGET ? local?.transport : peek?.getController?.(target.id)?.transport;
       const send = transport?.[ACTION[verb]];
+      if (target.musicOnly) {
+        // Idle, but music kept behind a finished slideshow: Stop all ends it.
+        try {
+          const music = target.id === LOCAL_TARGET
+            ? getLocalPlayerFeatures().musicBehind('stop')
+            : peek?.getController?.(target.id)?.sessionControls?.musicBehind?.('stop');
+          const result = await withTimeout(music);
+          if (result && result.ok === false) throw new Error(result.error ?? result.code ?? 'refused');
+          done.push(target.name);
+          doneIds.push(target.id);
+        } catch {
+          failed.push({ ...target, reason: "didn't answer" });
+        }
+        return;
+      }
       if (typeof send !== 'function') {
         failed.push({ ...target, reason: "can't be controlled" });
         return;
       }
       try {
-        const result = await withTimeout(send());
+        const result = await withTimeout(verb === 'stop' ? send({ keepMusic: false }) : send());
         if (result && result.ok === false) throw new Error(result.error ?? result.code ?? 'refused');
         // A house-wide stop means quiet: music left behind a slideshow goes too
         // (a person's own Stop is asked "Keep the music?"; this one is not).
         if (verb === 'stop' && target.id !== LOCAL_TARGET && getEntry(target.id)?.snapshot?.controls?.musicBehind) {
           try { await withTimeout(peek?.getController?.(target.id)?.sessionControls?.musicBehind?.('stop')); } catch { /* best effort */ }
+        }
+        if (verb === 'stop' && target.id === LOCAL_TARGET && getLocalPlayerFeatures().getState()?.musicBehind) {
+          try { await withTimeout(getLocalPlayerFeatures().musicBehind('stop')); } catch { /* best effort */ }
         }
         done.push(target.name);
         doneIds.push(target.id);
@@ -132,7 +159,7 @@ export function useHouseQuiet() {
   const counts = useMemo(() => {
     const getEntry = (id) => store?.getEntry?.(id) ?? null;
     const playing = planQuiet('pause', { devices, getEntry, localState });
-    const active = planQuiet('stop', { devices, getEntry, localState });
+    const active = planQuiet('stop', { devices, getEntry, localState, localMusic: !!getLocalPlayerFeatures().getState()?.musicBehind });
     return {
       playing: playing.targets.length + playing.missed.length,
       active: active.targets.length + active.missed.length,

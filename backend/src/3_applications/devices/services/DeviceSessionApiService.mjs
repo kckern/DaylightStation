@@ -8,13 +8,13 @@ export class DeviceSessionApiService {
   constructor({ sessionControl = null, logger = console } = {}) { this.#sessions = sessionControl; this.#logger = logger; }
   configured() { return !!this.#sessions; }
   snapshot(deviceId) { return this.#sessions.getSnapshot(deviceId); }
-  transport(deviceId, { action, value, commandId, origin }) {
+  transport(deviceId, { action, value, commandId, origin, keepMusic }) {
     this.#logger.info?.('device.router.session.transport', { deviceId, action, commandId, originKind: origin?.kind ?? null });
     if (typeof this.#sessions.transport === 'function') {
-      return this.#sessions.transport(deviceId, { action, value, commandId, origin });
+      return this.#sessions.transport(deviceId, { action, value, commandId, origin, ...(keepMusic !== undefined ? { keepMusic } : {}) });
     }
     return this.#sessions.sendCommand({ targetDevice: deviceId, command: 'transport', commandId,
-      params: { action, ...(value !== undefined ? { value } : {}) }, ...(origin ? { origin } : {}) });
+      params: { action, ...(value !== undefined ? { value } : {}), ...(keepMusic !== undefined ? { keepMusic } : {}) }, ...(origin ? { origin } : {}) });
   }
   queue(deviceId, commandId, params, origin) {
     this.#logger.info?.('device.router.session.queue', { deviceId, op: params.op, commandId, originKind: origin?.kind ?? null });

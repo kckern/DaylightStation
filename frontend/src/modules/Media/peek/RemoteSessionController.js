@@ -220,9 +220,9 @@ export function createRemoteSessionController({
     });
   };
 
-  const transportPost = (action, value) => {
+  const transportPost = (action, value, extra = null) => {
     logCommand(action, value);
-    return send('POST', `${base}/transport`, value !== undefined ? { action, value } : { action }, action);
+    return send('POST', `${base}/transport`, { action, ...(value !== undefined ? { value } : {}), ...(extra ?? {}) }, action);
   };
 
   const observeQueueAdd = (input) => {
@@ -331,7 +331,9 @@ export function createRemoteSessionController({
     transport: {
       play: () => transportPost('play'),
       pause: () => transportPost('pause'),
-      stop: () => transportPost('stop'),
+      // `keepMusic` is the sender's explicit answer to "Keep the music?" for a
+      // slideshow with music behind it; omitted, the screen infers from origin.
+      stop: (opts) => transportPost('stop', undefined, typeof opts?.keepMusic === 'boolean' ? { keepMusic: opts.keepMusic } : null),
       seekAbs: (seconds) => transportPost('seekAbs', seconds),
       seekRel: (delta) => transportPost('seekRel', delta),
       skipNext: () => transportPost('skipNext'),

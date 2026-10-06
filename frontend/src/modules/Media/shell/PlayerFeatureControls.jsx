@@ -230,8 +230,10 @@ export function useSlideshowStopGuard(target, snapshotOverride = null) {
   const f = usePlayerFeatures(target, snapshotOverride);
   const [pending, setPending] = useState(null);
   const ask = isSlideshowItem(f.snapshot?.currentItem) && !!f.musicBehind && !!f.musicBehindCommand;
+  // `stop` receives { keepMusic } — the explicit answer, sent on the stop
+  // command so the screen never has to guess it from who sent the Stop.
   const guardStop = useCallback((stop) => {
-    if (!ask) { stop(); return; }
+    if (!ask) { stop({ keepMusic: false }); return; }
     setPending(() => stop);
   }, [ask]);
   const close = useCallback(() => setPending(null), []);
@@ -245,14 +247,14 @@ export function useSlideshowStopGuard(target, snapshotOverride = null) {
           <Button variant="default" data-testid="pf-stop-both" onClick={() => {
             const stop = pending; setPending(null);
             mediaLog.playerFeature({ feature: 'music-behind', action: 'stop-with-slideshow', target: f.isLocal ? 'local' : target?.deviceId });
-            stop?.();
+            stop?.({ keepMusic: false });
             Promise.resolve(f.musicBehindCommand('stop')).catch(() => {});
           }}>Stop music too</Button>
           <Button data-testid="pf-stop-keep-music" onClick={() => {
             const stop = pending; setPending(null);
             mediaLog.playerFeature({ feature: 'music-behind', action: 'keep-after-slideshow', target: f.isLocal ? 'local' : target?.deviceId });
             if (f.isLocal) getLocalPlayerFeatures().keepMusicAfterStop();
-            stop?.();
+            stop?.({ keepMusic: true });
           }}>Keep music</Button>
         </Group>
       </div>

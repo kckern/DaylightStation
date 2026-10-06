@@ -116,6 +116,18 @@ describe('command origin passthrough', () => {
     expect(sessionService.queue).toHaveBeenCalledWith('tv-a', 'c2', { op: 'play-now', contentId: 'plex:1' }, origin);
   });
 
+  it('forwards an explicit keepMusic on a stop and rejects a non-boolean', async () => {
+    const sessionService = service();
+    const app = appWith({ sessionService });
+    const ok = await request(app).post('/api/v1/device/tv-a/session/transport').send({ action: 'stop', commandId: 'c1', keepMusic: true });
+    expect(ok.status).toBeLessThan(400);
+    expect(sessionService.transport).toHaveBeenCalledWith('tv-a', expect.objectContaining({ action: 'stop', keepMusic: true }));
+    sessionService.transport.mockClear();
+    const bad = await request(app).post('/api/v1/device/tv-a/session/transport').send({ action: 'stop', commandId: 'c2', keepMusic: 'yes' });
+    expect(bad.status).toBe(400);
+    expect(sessionService.transport).not.toHaveBeenCalled();
+  });
+
   it('falls back to the asking fleet device when no body origin is given', async () => {
     const sessionService = service();
     await request(appWith({ sessionService, deviceHeader: 'fleet:office-tv' }))

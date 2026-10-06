@@ -165,7 +165,7 @@ export function MiniPlayer() {
           className="np-icon-btn"
           aria-label="Stop"
           title="Stop playback and keep the queue"
-          onClick={() => guardStop(() => transport.stop())}
+          onClick={() => guardStop((opts) => transport.stop(opts))}
         >
           <IconPlayerStopFilled size={18} />
         </button>
