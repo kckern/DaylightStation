@@ -10,6 +10,7 @@ import FitnessShow from '../modules/Fitness/player/FitnessShow.jsx';
 import FitnessPlayer from '../modules/Fitness/player/FitnessPlayer.jsx';
 import HRSimTrigger from '../modules/Fitness/nav/HRSimTrigger.jsx';
 import FitnessModuleContainer from '../modules/Fitness/player/FitnessModuleContainer.jsx';
+import { GarageHumanActivityPublisher } from '../modules/Fitness/GarageHumanActivityPublisher.jsx';
 import { getModuleManifest } from '../modules/Fitness/index.js';
 import { parseDirectLaunch } from '../modules/Fitness/widgets/EmulatorGame/directLaunch.js';
 import { VolumeProvider } from '../modules/Fitness/nav/VolumeProvider.jsx';
@@ -1567,6 +1568,10 @@ const FitnessApp = () => {
           <GlobalOverlays />
           <PressureMatEventBridge logger={logger} />
           <FitnessFleetPublisher />
+          {urlInitialized && <GarageHumanActivityPublisher
+            deviceId={FLEET_DEVICE_ID}
+            emulationOpen={currentView === 'module' && activeModule?.id === 'emulator'}
+          />}
           {feedbackOpen && (
             <FitnessFeedback
               onClose={() => setFeedbackOpen(false)}

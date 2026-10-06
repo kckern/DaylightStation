@@ -17,6 +17,7 @@
 import { expandAsk } from './askSchema.js';
 
 const CUED_CLEANLINESS_DEFAULT = 0.8;
+const CUED_PLACEMENT_DEFAULT = 0.8;
 
 export function requirementForLevel(level) {
   const { presentation, grading } = expandAsk(level);
@@ -48,7 +49,13 @@ export function requirementForLevel(level) {
   }
   return {
     mode: 'cued',
-    rubric: { criteria: { completeness: 1, cleanliness: grading.cleanliness ?? CUED_CLEANLINESS_DEFAULT } },
+    rubric: {
+      criteria: {
+        completeness: 1,
+        cleanliness: grading.cleanliness ?? CUED_CLEANLINESS_DEFAULT,
+        ...(grading.judging === 'placed' ? { placement: grading.placement ?? CUED_PLACEMENT_DEFAULT } : {}),
+      },
+    },
     passScore: null,
     ...(policy ? { policy } : {}),
   };

@@ -1,6 +1,9 @@
 // backend/src/3_applications/devices/services/TranscodePrewarmService.mjs
 
 const TOKEN_TTL_MS = 60_000;
+// 500-id cap is fine: the device snapshot queue is uncapped, so queue-overlap
+// confirmation still lands on any id within the first 500.
+const MAX_QUEUE_CONTENT_IDS = 500;
 export class TranscodePrewarmService {
   #contentIdResolver;
   #contentCatalog;
@@ -53,18 +56,24 @@ export class TranscodePrewarmService {
         return { status: 'skipped', reason: 'empty queue' };
       }
 
+      // Every concrete id of the resolved queue: the wake-and-load playback
+      // watchdog confirms a queue/program dispatch against these, because the
+      // screen reports the item it plays — never the program id.
+      const queueContentIds = [...new Set(items.slice(0, MAX_QUEUE_CONTENT_IDS)
+        .map((item) => item?.id).filter((id) => typeof id === 'string' && id))];
+
       const first = items[0];
       const startOffset = first.resumePosition || first.playhead || 0;
       const prepared = await this.#contentCatalog.preparePlayback(resolved, first, { startOffset });
       if (prepared.kind === 'unsupported') {
         this.#logger.debug?.('prewarm.skip', { contentRef, reason: prepared.reason, source: first.source });
-        return { status: 'skipped', reason: prepared.reason };
+        return { status: 'skipped', reason: prepared.reason, queueContentIds };
       }
 
       if (prepared.kind === 'failed') {
         const { reason, permanent } = prepared;
         this.#logger.warn?.('prewarm.failed', { contentRef, reason, permanent });
-        return { status: 'failed', reason, permanent };
+        return { status: 'failed', reason, permanent, queueContentIds };
       }
       const dashUrl = prepared.url;
 
@@ -78,7 +87,7 @@ export class TranscodePrewarmService {
       this.#scheduleCleanup(token);
 
       this.#logger.info?.('prewarm.success', { contentRef, contentId, token });
-      return { status: 'ok', token, contentId };
+      return { status: 'ok', token, contentId, queueContentIds };
     } catch (err) {
       this.#logger.warn?.('prewarm.error', { contentRef, error: err.message });
       return { status: 'failed', reason: 'exception', error: err.message };

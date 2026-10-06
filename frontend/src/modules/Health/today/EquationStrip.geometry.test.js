@@ -18,7 +18,7 @@ for (const { width, mainWidth } of [{ width: 390, mainWidth: 358 }, { width: 800
         <span class="health-macro-meter__value">${value}<span class="health-macro-meter__target"> / ${target}</span> g</span>
         <span class="health-macro-meter__track"><span class="health-macro-meter__fill" style="width:60%"></span></span></div>`;
       await page.setContent(`<style>
-        :root { --ds-border: GrayText; --ds-surface: Canvas; --ds-surface-alt: Canvas; --ds-text-high: CanvasText; --ds-text-mid: GrayText; --ds-text-low: GrayText; --ds-success: green; --ds-warning: orange; --ds-danger: red; }
+        :root { --ds-border: GrayText; --ds-surface: Canvas; --ds-surface-alt: Canvas; --ds-text-high: CanvasText; --ds-text-mid: GrayText; --ds-text-low: GrayText; --ds-success: green; --ds-info: blue; --ds-warning: orange; --ds-danger: red; }
         * { box-sizing: border-box; } body { margin: 0; padding: 16px; font: 16px Arial; }
         ${css}
       </style><div class="health-today" style="width:${mainWidth}px"><div class="health-equation">
@@ -30,20 +30,16 @@ for (const { width, mainWidth } of [{ width: 390, mainWidth: 358 }, { width: 800
             <span>2,345 burned</span></span>
             <span class="health-dayclose"><button class="health-dayclose-pill"><span>Close day</span></button></span></div>
           <div class="health-budget__ruler">
-            <div class="health-budget__rail health-budget__rail--above">
-              <span class="health-budget__goal-label health-budget__label--end" style="left:62.00%">Goal 12,000–22,345</span></div>
             <div class="health-budget__track health-budget__track--ruler">
-              <span class="health-budget__food health-budget__food--in-range" style="left:0.00%;width:44.00%"></span>
-              <span class="health-budget__tier health-budget__tier--free" style="left:44.00%;width:11.00%"><span class="health-budget__seg-label">10,000 free</span></span>
-              <span class="health-budget__goal-line" style="left:62.00%"></span>
-              <span class="health-budget__base-line" style="left:55.00%"></span>
-              <span class="health-budget__food-label health-budget__food-label--in-range" style="right:56.00%">12,345 eaten</span>
-              <span class="health-budget__even" style="left:89.00%"></span></div>
-            <div class="health-budget__rail health-budget__ticks">
-              <span class="health-budget__tick" style="left:20.00%"><span class="health-budget__tick-label">5,000</span></span>
-              <span class="health-budget__tick" style="left:40.00%"><span class="health-budget__tick-label">10,000</span></span></div>
-            <div class="health-budget__rail health-budget__rail--below">
-              <span class="health-budget__even-label health-budget__label--end" style="left:89.00%">Break even <b>22,345</b></span></div>
+              <span class="health-budget__consumed health-budget__consumed--base" style="left:0%;width:44%"></span>
+              <span class="health-budget__available health-budget__available--base" style="left:44%;width:11%"></span>
+              <span class="health-budget__post health-budget__post--plan" style="left:62%"></span>
+              <span class="health-budget__post health-budget__post--even" style="left:89%"></span>
+              <span class="health-budget__cursor" style="left:44%"></span></div>
+            <div class="health-budget__key"><span class="health-budget__key-item">Log floor 12,000</span>
+              <span class="health-budget__key-item">Base target 20,000</span>
+              <span class="health-budget__key-item">Plan end 22,345</span>
+              <span class="health-budget__key-item">Break even 32,345</span></div>
           </div>
         </div><div class="health-equation__macros">${macro('Protein', '999+', '1,400')}${macro('Carbs', '1,200', '1,800')}${macro('Fat', '999', '700')}</div></div>
       </div></div>`);
@@ -60,7 +56,7 @@ for (const { width, mainWidth } of [{ width: 390, mainWidth: 358 }, { width: 800
           height: document.querySelector('.health-equation').getBoundingClientRect().height,
           // The lead is display: contents on wide screens (no box of its own), so
           // measure its children, the headline and sub-line, instead.
-          contained: [...document.querySelectorAll('.health-budget__head > :not(.health-budget__lead), .health-budget__lead > *, .health-budget__goal-label, .health-budget__even-label, .health-budget__tick-label, .health-macro-meter__value')].every(inside),
+          contained: [...document.querySelectorAll('.health-budget__head > :not(.health-budget__lead), .health-budget__lead > *, .health-budget__key-item, .health-macro-meter__value')].every(inside),
           barWidth: bar.width, mathWidth: math.width, barBottom: bar.bottom,
           macroTops: macros.map(r => r.top), macroLefts: macros.map(r => r.left),
         };
@@ -69,7 +65,7 @@ for (const { width, mainWidth } of [{ width: 390, mainWidth: 358 }, { width: 800
       expect(geometry.contained).toBe(true);
       // The bar is the summary's widest element — at least half the row.
       expect(geometry.barWidth).toBeGreaterThan(geometry.mathWidth * 0.5);
-      // Regression guards for the ranged ruler card (three rails + 18px track), measured 2026-09-25 at 220 / 160 / 119px.
+      // The key may wrap, but the summary must remain compact.
       expect(geometry.height).toBeLessThan(width === 390 ? 230 : width === 800 ? 180 : 140);
       if (mainWidth > 1050) {
         // Wide: macros stack in a column beside the bar.
@@ -82,3 +78,27 @@ for (const { width, mainWidth } of [{ width: 390, mainWidth: 358 }, { width: 800
     } finally { await page.close(); }
   });
 }
+
+it('wraps four clustered marker labels inside a 320px viewport', async () => {
+  const page = await browser.newPage({ viewport: { width: 320, height: 480 } });
+  try {
+    await page.setContent(`<style>
+      * { box-sizing: border-box; } body { margin: 0; padding: 16px; font: 16px Arial; }
+      ${css}
+    </style><div class="health-budget__ruler" style="width:288px">
+      <div class="health-budget__track health-budget__track--ruler"></div>
+      <div class="health-budget__key">
+        <span class="health-budget__key-item"><i class="health-budget__key-mark health-budget__key-mark--floor"></i>Log floor 1,200</span>
+        <span class="health-budget__key-item"><i class="health-budget__key-mark health-budget__key-mark--base"></i>Base target 1,200</span>
+        <span class="health-budget__key-item"><i class="health-budget__key-mark health-budget__key-mark--plan"></i>Plan end 1,210</span>
+        <span class="health-budget__key-item"><i class="health-budget__key-mark health-budget__key-mark--even"></i>Break even 1,220</span>
+      </div></div>`);
+    const result = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      itemsInside: [...document.querySelectorAll('.health-budget__key-item')]
+        .every(el => el.getBoundingClientRect().right <= 304),
+    }));
+    expect(result.scrollWidth).toBe(320);
+    expect(result.itemsInside).toBe(true);
+  } finally { await page.close(); }
+});

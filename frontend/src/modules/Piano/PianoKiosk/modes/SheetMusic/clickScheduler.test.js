@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createClickScheduler, epochToContextMap } from './clickScheduler.js';
+import { scheduleBlipAt } from './click.js';
 
 function fakeCtx() { return { currentTime: 0, state: 'running', resume: vi.fn() }; }
 
@@ -7,6 +8,56 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe('createClickScheduler', () => {
+  it('forwards gain to scheduled beats and keeps omitted gain at the legacy default', () => {
+    const ac = fakeCtx();
+    const beats = [];
+    const s = createClickScheduler({ getCtx: () => ac, scheduleBlip: (_a, t, options) => beats.push({ t, ...options }) });
+    s.setGain(0.36);
+    s.start(120);
+    expect(beats).toEqual([{ t: 0.08, accent: false, gain: 0.36 }]);
+    s.setGain(undefined);
+    ac.currentTime = 0.4; vi.advanceTimersByTime(100);
+    expect(beats[1]).toEqual({ t: 0.58, accent: false, gain: 0.18 });
+    s.stop();
+  });
+
+  it('changes later anchored clicks without restarting or resetting beat and accent phase', () => {
+    const ac = fakeCtx();
+    const beats = [];
+    const s = createClickScheduler({ getCtx: () => ac, now: () => 1_000_000,
+      scheduleBlip: (_a, t, options) => beats.push({ t: +t.toFixed(2), ...options }) });
+    const start = vi.spyOn(s, 'start');
+    s.setGain(0.08);
+    s.start(120, { anchorEpochMs: 1_000_100, beatsPerBar: 3, firstBeatIndex: 2 });
+    s.setGain(0.6);
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(1);
+    ac.currentTime = 0.4; vi.advanceTimersByTime(100);
+    ac.currentTime = 0.9; vi.advanceTimersByTime(100);
+    expect(beats).toEqual([
+      { t: 0.1, accent: false, gain: 0.08 },
+      { t: 0.6, accent: true, gain: 0.6 },
+      { t: 1.1, accent: false, gain: 0.6 },
+    ]);
+    s.stop();
+  });
+
+  it('applies gain to the audio envelope with a proportional accent and unchanged legacy defaults', () => {
+    const values = [];
+    const oscillator = { frequency: {}, connect: (node) => node, start() {}, stop() {} };
+    const ac = { createOscillator: () => oscillator, createGain: () => ({
+      gain: { setValueAtTime: (value, time) => values.push({ value, time }), exponentialRampToValueAtTime() {} }, connect() {},
+    }) };
+    scheduleBlipAt(ac, 1, { gain: 0.36 });
+    scheduleBlipAt(ac, 2, { gain: 0.36, accent: true });
+    scheduleBlipAt(ac, 3);
+    scheduleBlipAt(ac, 4, { accent: true });
+    expect(values).toEqual([
+      { value: 0.36, time: 1 }, { value: 0.5, time: 2 },
+      { value: 0.18, time: 3 }, { value: 0.25, time: 4 },
+    ]);
+  });
+
   it('schedules every beat inside the lookahead window on the AUDIO clock', () => {
     const ac = fakeCtx();
     const blips = [];

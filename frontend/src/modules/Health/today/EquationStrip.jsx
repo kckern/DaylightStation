@@ -77,7 +77,7 @@ function BudgetBar({ budget, baseline = null, date = null, today = null, dayClos
         </span>
         {dayClose}
       </div>
-      {story ? <RulerScale budget={budget} spoken={spoken} finished={story.finished} tentative={story.tentative} /> : (
+      {story ? <RulerScale budget={budget} baseline={baseline} spoken={spoken} finished={story.finished} tentative={story.tentative} /> : (
       <div className="health-budget__scale">
         <div className="health-budget__track" role="img"
           aria-label={`${n(net)} net kcal of ${n(goal)} goal${breakEven ? `, break even ${n(breakEven)}` : ''}, ${spoken}`}>
@@ -112,58 +112,48 @@ function useWidth(ref, fallback = 360) {
 }
 
 const at = (p) => `${p.toFixed(2)}%`;
-const endAnchored = (p) => (p > 50 ? ' health-budget__label--end' : '');
-
-/**
- * The budget as a labelled ruler of FOOD eaten (budgetGeometry.js): the food
- * block from 0, whose right edge is the frontier, coloured by zone; ahead of it
- * the price tiers of what is left (free, workout, deficit); the goal range
- * floor → top + exercise, a dashed base mark at the plan's top before the
- * workout, and break even below. Tentative
- * (an unverified log) dims the tiers; finished recolours the deficit as won.
- */
-function RulerScale({ budget, spoken, finished, tentative }) {
+/** A single food-scale bar: past intake is solid, future room is quiet. */
+function RulerScale({ budget, baseline, spoken, finished, tentative }) {
   const ref = useRef(null);
-  const g = budgetGeometry(budget, { widthPx: useWidth(ref), finished });
-  const { goal, range, base, even, food, tiers, zone } = g;
-  const priced = tiers.map(t => t.label).join(', ') || 'nothing left on plan';
+  const widthPx = useWidth(ref);
+  const previewing = baseline && Number(baseline.food) !== Number(budget.food);
+  const baselineRight = previewing ? budgetGeometry(baseline, { widthPx }).right : null;
+  const g = budgetGeometry(budget, { widthPx, finished,
+    baselineFood: previewing ? baseline.food : null, rightOverride: baselineRight });
+  const priced = g.tiers.filter(t => t.left > 0).map(t => `${n(t.left)} ${finished
+    ? { free: 'unused', workout: 'banked', deficit: 'deficit' }[t.key] : t.key}`).join(', ') || 'nothing left on plan';
   const rulerClass = ['health-budget__ruler', tentative && 'health-budget__ruler--tentative', finished && 'health-budget__ruler--finished']
     .filter(Boolean).join(' ');
+  const segment = (part) => ({ left: at(part.fromPct), width: at(part.widthPct) });
+  const postTone = (group) => ['even', 'plan', 'base', 'floor'].find(key => group.posts.some(p => p.key === key));
   return (
     <div className={rulerClass} ref={ref}>
-      <div className="health-budget__rail health-budget__rail--above">
-        {range ? <span className="health-budget__range" data-testid="budget-range" style={{ left: at(range.fromPct), width: at(range.widthPct) }} /> : null}
-        <span className={`health-budget__goal-label${endAnchored(goal.pct)}`} style={{ left: at(goal.pct) }}>{goal.label}</span>
-      </div>
       <div className="health-budget__track health-budget__track--ruler" role="img" data-testid="budget-ruler"
-        aria-label={`${n(food.value)} kcal eaten; ${goal.label.toLowerCase()}; ${priced}${even ? `; break even ${n(even.value)}` : ''}; ${spoken}`}>
-        {/* One block, or split by where it ends against the goal (budgetGeometry.js). */}
-        <span className={`health-budget__food health-budget__food--${food.parts.length > 1 ? 'split' : food.tone}`} data-testid="budget-food" style={{ left: at(food.fromPct), width: at(food.widthPct) }} />
-        {food.parts.length > 1 ? food.parts.map(p => <span key={p.tone} className={`health-budget__food health-budget__food--${p.tone}`} data-testid={`budget-food-${p.tone}`}
-          style={{ left: at(p.fromPct), width: at(p.widthPct) }} />) : null}
-        {tiers.map(t => <span key={t.key} className={`health-budget__tier health-budget__tier--${t.key}`} data-testid={`budget-tier-${t.key}`}
-          style={{ left: at(t.fromPct), width: at(t.widthPct) }}>
-          {t.shown ? <span className="health-budget__seg-label">{t.shown}</span> : null}</span>)}
-        {range && range.solid.widthPct > 0 ? <span className="health-budget__range-band" data-testid="budget-range-band" style={{ left: at(range.solid.fromPct), width: at(range.solid.widthPct) }} /> : null}
-        {range?.bonus ? range.bonus.parts.map(p => <span key={p.tone} className={`health-budget__range-band health-budget__range-band--bonus health-budget__range-band--bonus-${p.tone}`}
-          data-testid={`budget-range-bonus-${p.tone}`} style={{ left: at(p.fromPct), width: at(p.widthPct) }} />) : null}
-        {range?.bonus ? <span className="health-budget__bonus-label" data-testid="budget-range-bonus" style={{ left: at(range.bonus.fromPct), width: at(range.bonus.widthPct) }}>
-          {range.bonus.shown ? <span className="health-budget__seg-label">{range.bonus.shown}</span> : null}</span> : null}
-        {range ? <span className="health-budget__floor-line" style={{ left: at(range.floorPct) }} /> : null}
-        <span className="health-budget__goal-line" style={{ left: at(goal.pct) }} />
-        {base ? <span className="health-budget__base-line" style={{ left: at(base.pct) }} /> : null}
-        {/* Its own top layer, not a child of the food block: the plan marks and
-            break even stack above the food and would cut through it. */}
-        {food.labelled ? <span className={`health-budget__food-label health-budget__food-label--${food.outside ? 'outside' : food.labelTone}`} data-testid="budget-food-label"
-          style={food.outside ? { left: at(food.fromPct + food.widthPct) } : { right: at(100 - food.labelEndPct) }}>{n(food.value)} eaten</span> : null}
-        {even ? <span className="health-budget__even" style={{ left: at(even.pct) }} /> : null}
+        aria-label={`${n(g.cursor.value)} kcal eaten${g.baselineCursor ? `, before preview ${n(g.baselineCursor.value)} kcal eaten` : ''}; ${g.posts.map(p => `${p.label.toLowerCase()} ${n(p.value)}`).join(', ')}; ${priced}; ${spoken}`}>
+        {g.available.map(p => <span key={p.key} className={`health-budget__available health-budget__available--${p.key}`}
+          data-budget-available={p.key} style={segment(p)} />)}
+        {g.consumed.map(p => <span key={p.key} className={`health-budget__consumed health-budget__consumed--${p.key}`}
+          data-budget-consumed={p.key} style={segment(p)} />)}
+        {g.postGroups.map((group, index) => <span key={index}
+          className={`health-budget__post health-budget__post--${postTone(group)}`}
+          style={{ left: at(group.pct) }} aria-hidden="true" />)}
+        {g.baselineCursor ? <span className="health-budget__cursor health-budget__cursor--baseline"
+          data-testid="budget-baseline-cursor" aria-label={`Before preview: ${n(g.baselineCursor.value)} kcal eaten`}
+          style={{ left: at(g.baselineCursor.pct) }} /> : null}
+        <span className={`health-budget__cursor${g.cursor.overflow ? ' health-budget__cursor--overflow' : ''}`}
+          data-testid="budget-cursor" aria-label={`${n(g.cursor.value)} kcal eaten`}
+          style={{ left: at(g.cursor.pct) }} />
       </div>
-      <div className="health-budget__rail health-budget__ticks" aria-hidden="true">
-        {g.ticks.map(t => <span key={t.value} className="health-budget__tick" style={{ left: at(t.pct) }}>
-          {t.label ? <span className="health-budget__tick-label">{t.label}</span> : null}</span>)}
+      <div className="health-budget__key" data-testid="budget-key">
+        {g.posts.map(post => <span key={post.key} className="health-budget__key-item">
+          <i className={`health-budget__key-mark health-budget__key-mark--${post.key}`} aria-hidden="true" />
+          {post.label} {n(post.value)}
+        </span>)}
+        {g.boundaries.even == null ? <span className="health-budget__key-note">Break even unavailable</span> : null}
       </div>
-      {even ? <div className="health-budget__rail health-budget__rail--below">
-        <span className={`health-budget__even-label${endAnchored(even.pct)}`} style={{ left: at(even.pct) }}>Break even <b>{n(even.value)}</b></span>
+      {g.capNote || g.floorIssue || g.cursor.overflow ? <div className="health-budget__detail">
+        {g.capNote}{g.capNote && g.floorIssue ? ' · ' : null}{g.floorIssue ? 'Log floor exceeds plan' : null}
+        {g.cursor.overflow ? `${g.capNote || g.floorIssue ? ' · ' : ''}${n(g.cursor.value)} eaten beyond scale` : null}
       </div> : null}
     </div>
   );
