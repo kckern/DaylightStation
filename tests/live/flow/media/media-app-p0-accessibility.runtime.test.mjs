@@ -351,3 +351,21 @@ test.describe('one-thumb reach (phone)', () => {
     expect(pickerBox.y + pickerBox.height / 2, 'picker centre y').toBeGreaterThan(lowerZone);
   });
 });
+
+for (const [size, viewport] of SIZES) {
+  test.describe(`${size} first visit`, () => {
+    test.use({ viewport });
+    test(`[RELY.14a/AC3] ${size}: a household with nothing played yet is offered a way into browsing by kind`, async ({ page }) => {
+      await freshPage(page);
+      await skipFirstUse(page);
+      // Nothing has been played on this device: no handle, no resume card.
+      await expect(page.getByTestId('media-mini-player')).toHaveCount(0);
+      const browse = page.getByTestId('home-browse');
+      await expect(browse).toBeVisible({ timeout: 30000 });
+      expect(await offscreenControls(page, ['[data-testid="home-browse"]'])).toEqual([]);
+      await browse.click();
+      await expect(page.getByTestId('browse-view')).toBeVisible({ timeout: 20000 });
+      await expect(page.locator('[data-testid^="browse-row-"]').first()).toBeVisible({ timeout: 30000 });
+    });
+  });
+}
