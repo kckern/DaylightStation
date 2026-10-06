@@ -7,10 +7,10 @@ import { TEMPO_STAGES } from './tempoStages.js';
 const base = { open: true, stages: TEMPO_STAGES, selectedId: 'steady', effectiveBpm: 54, onPick: vi.fn(), onClose: vi.fn() };
 
 describe('LearnTempoSheet', () => {
-  it('offers five direct buttons with the current choice selected', () => {
+  it('offers six direct buttons with the current choice selected', () => {
     render(<LearnTempoSheet {...base} />);
     const options = within(screen.getByRole('group', { name: 'Tempo stages' }));
-    expect(options.getAllByRole('button').map((button) => button.textContent)).toEqual(['Very slow', 'Slow', 'Steady', 'Nearly there', 'Full speed']);
+    expect(options.getAllByRole('button').map((button) => button.textContent)).toEqual(['Extra slow', 'Very slow', 'Slow', 'Steady', 'Nearly there', 'Full speed']);
     expect(options.getByRole('button', { name: 'Steady' })).toHaveAttribute('aria-pressed', 'true');
     expect(options.getByRole('button', { name: 'Slow' })).toHaveAttribute('aria-pressed', 'false');
     expect(options.getByRole('button', { name: 'Steady' })).toHaveFocus();
