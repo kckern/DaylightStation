@@ -560,3 +560,13 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-10-03 | media/p0-task7 | af3836435 | Media P0 Task 7 outcomes/recovery (merged 69a780e83, deployed) |
 | 2026-10-04 | feature/learn-lab-ux | 83eb66f54 | Sheet-music Learn Lab UX, balanced excerpts, cursor/hint policies, and compact segment navigation (merged) |
 | 2026-10-04 | fix/learn-roadmap-polish | d8898fc3f | Tight Learn passage outlines and compact accessible marker-state verification (merged) |
+| 2026-10-05 | fix/wake-program-watchdog | 44e6af580 | wake-and-load prewarm cap + resolved-queue confirmation (merged 2c0ef85a0, deployed) |
+| 2026-10-05 | media/fe-house | 5380b249f | Media batch C house view, naming, admin, routines (merged) |
+| 2026-10-05 | media/fe-home | 07a15c53e | Media batch A start page household memory (merged) |
+| 2026-10-05 | media/fe-player | e3ae4a3f9 | Media batch D Player features / follow-ups (merged) |
+| 2026-10-05 | fix/media-d-followups | 276b576a5 | Media batch D Player features / follow-ups (merged) |
+| 2026-10-06 | media/fe-controls | 722264ddc | Media batch B handle and controls (merged) |
+| 2026-10-06 | fix/media-b-followups | 98492b97a | Media batch B follow-ups (merged) |
+| 2026-10-06 | fix/piano-gate-repair | c1b166bab | Seven Piano gate failures repaired (merged) |
+| 2026-10-06 | fix/media-gate-repairs | c6f2049bb | Two acceptance journey repairs (merged) |
+| 2026-10-06 | fix/media-task8 | 4e02acf60 | Media P0 Task 8 close-out (merged) |
