@@ -7,6 +7,9 @@ import { _resetForTests as resetVolume } from '../../lib/volume/ScreenVolumeCont
 import { getNaturalEndPolicy } from '../../modules/Player/lib/naturalEndPolicy.js';
 import { createScreenSessionControls } from './screenSessionControls.js';
 import { ScreenSessionControlsHost } from './ScreenSessionControlsHost.jsx';
+
+const overlayState = vi.hoisted(() => ({ hasOverlay: false }));
+vi.mock('../overlays/ScreenOverlayProvider.jsx', () => ({ useScreenOverlay: () => ({ hasOverlay: overlayState.hasOverlay }) }));
 import { savePersistedSession, loadPersistedSession, restorableSnapshot, POWER_RESTORE_DELAY_MS } from './sessionPersistence.js';
 
 const playing = {
@@ -40,7 +43,7 @@ function mount(source, controls = createScreenSessionControls({ ownerId: 'tv' })
   return { controls, view };
 }
 
-beforeEach(() => { resetActionBus(); resetVolume(); window.localStorage.clear(); vi.useFakeTimers(); });
+beforeEach(() => { overlayState.hasOverlay = false; resetActionBus(); resetVolume(); window.localStorage.clear(); vi.useFakeTimers(); });
 afterEach(() => { vi.useRealTimers(); });
 
 describe('session persistence (power cut, RQ-RELY-08)', () => {
@@ -209,6 +212,22 @@ describe('ScreenSessionControlsHost', () => {
       act(() => { controls.noteRemoteCommand({ command: 'transport', params: { action: 'stop' }, origin: { kind: 'routine', name: 'Bedtime' } }); });
       await act(async () => { getActionBus().emit('select', {}); });
       expect(restore).toHaveBeenCalledWith(expect.objectContaining({ reason: 'put-back' }));
+    });
+
+    it('OK is NOT consumed while another control holds focus', async () => {
+      const { controls } = mount(makeSource(playing));
+      act(() => { controls.noteRemoteCommand({ command: 'transport', params: { action: 'stop' }, origin: { kind: 'routine', name: 'Bedtime' } }); });
+      const other = document.createElement('button');
+      document.body.appendChild(other); other.focus();
+      expect(getActionBus().emit('select', {})).toBe(false);
+      other.remove();
+    });
+
+    it('OK is NOT consumed while another overlay is up', async () => {
+      overlayState.hasOverlay = true;
+      const { controls } = mount(makeSource(playing));
+      act(() => { controls.noteRemoteCommand({ command: 'transport', params: { action: 'stop' }, origin: { kind: 'routine', name: 'Bedtime' } }); });
+      expect(getActionBus().emit('select', {})).toBe(false);
     });
 
     it('OK is left alone once there is nothing to put back', () => {

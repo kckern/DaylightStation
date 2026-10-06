@@ -7,6 +7,7 @@
 // Put it back, the next-episode countdown, the sleep fade).
 import React, { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { getActionBus } from '../input/ActionBus.js';
+import { useScreenOverlay } from '../overlays/ScreenOverlayProvider.jsx';
 import { useScopedRemoteControls } from '../input/useScopedRemoteControls.js';
 import { useScreenVolume } from '../../lib/volume/ScreenVolumeContext.js';
 import { getPlayerQueueOpRegistry } from '../../modules/Player/lib/queueOpRegistry.js';
@@ -303,7 +304,7 @@ export function ScreenSessionSurfaces({ controls }) {
               {latest.label}{latest.count > 1 ? ` (${latest.count}×)` : ''}
             </span>
             {latest.putBack && (
-              <OkButton className="screen-session-note__action" data-testid="screen-note-put-back"
+              <OkButton className="screen-session-note__action" data-testid="screen-note-put-back" capture={latest.kind !== 'paused'}
                 onClick={() => controls.handleSession('put-back', { noteId: latest.id })}>Put it back</OkButton>
             )}
           </div>
@@ -333,15 +334,25 @@ export function ScreenSessionSurfaces({ controls }) {
  * arrows and everything else still reach the player. It carries focus styling
  * so a keyboard user can see it too.
  */
-function OkButton({ children, onClick, ...rest }) {
+function OkButton({ children, onClick, capture = true, ...rest }) {
   const ref = useRef(null);
-  useEffect(() => getActionBus().capture(['select'], () => {
-    const node = ref.current;
-    if (!node) return false;
-    logger().info('tv-prompt.ok', { prompt: rest['data-testid'] ?? null });
-    node.click();
-    return true;
-  }), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const { hasOverlay } = useScreenOverlay();
+  const overlayRef = useRef(hasOverlay); overlayRef.current = hasOverlay;
+  useEffect(() => {
+    if (!capture) return undefined;
+    return getActionBus().capture(['select'], () => {
+      const node = ref.current;
+      if (!node) return false;
+      // Another overlay owns the screen, or another control already holds
+      // focus: OK is theirs, not this prompt's.
+      if (overlayRef.current) return false;
+      const active = document.activeElement;
+      if (active && active !== document.body && !node.contains(active)) return false;
+      logger().info('tv-prompt.ok', { prompt: rest['data-testid'] ?? null });
+      node.click();
+      return true;
+    });
+  }, [capture]); // eslint-disable-line react-hooks/exhaustive-deps
   return <button type="button" ref={ref} onClick={onClick} {...rest}>{children}</button>;
 }
 
