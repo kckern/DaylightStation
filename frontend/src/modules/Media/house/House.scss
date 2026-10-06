@@ -6,7 +6,7 @@
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
-.house-line--progress { color: var(--mantine-color-amber-3); }
+.house-line--progress { color: var(--media-muted, var(--mantine-color-dark-2)); }
 .house-line--ok { color: var(--ds-success); }
 .house-line--failed { color: var(--ds-danger); font-weight: 600; }
 

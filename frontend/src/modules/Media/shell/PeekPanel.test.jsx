@@ -97,14 +97,14 @@ describe('PeekPanel shared target controls', () => {
       mode: 'transfer', targetIds: [], activityAt: Date.now(), exemptionStartedAt: null,
     }));
     renderPeekPanel();
-    expect(screen.getByTestId('aim-label')).toHaveTextContent('Aim: This device');
+    expect(screen.getByTestId('aim-label')).toHaveTextContent('Playing on This device');
     expect(screen.getByTestId('aim-label')).not.toHaveTextContent('Office TV');
   });
 
   it('names the actual prior area on its visible Back control', () => {
     backDestination = 'Browse';
     renderPeekPanel();
-    expect(screen.getByTestId('peek-back')).toHaveTextContent('← Browse');
+    expect(screen.getByTestId('peek-back')).toHaveTextContent('Browse');
     fireEvent.click(screen.getByTestId('peek-back'));
     expect(peekPop).toHaveBeenCalledTimes(1);
   });
@@ -202,7 +202,7 @@ describe('PeekPanel shared target controls', () => {
     };
     renderPeekPanel();
 
-    expect(screen.getByText('Living Room TV')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Living Room TV/ })).toBeInTheDocument();
     expect(screen.getByTestId('np-toggle')).toBeEnabled();
     expect(screen.getByTestId('np-volume')).toBeEnabled();
   });

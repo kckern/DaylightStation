@@ -22,11 +22,22 @@ for (const [size, viewport] of SIZES) {
       const phone = isPhone(page);
       expect(await offscreenControls(page, [
         phone ? '[data-testid="media-search-launcher"]' : '[data-testid="media-search-bar"] input, input[placeholder="Search media…"]',
-        '[data-testid="house-indicator"]', '[data-testid="settings-menu-trigger"]',
+        // The destination control is the header's always-present control; the house
+        // indicator appears only while something plays, so it is not a fixed fixture.
+        '[data-testid="cast-target-chip"]', '[data-testid="settings-menu-trigger"]',
         phone ? '[data-testid="app-tab-home"]' : '[data-testid="app-nav-home"]',
         phone ? '[data-testid="app-tab-fleet"]' : '[data-testid="app-nav-fleet"]',
       ])).toEqual([]);
       expect(await noHorizontalScroll(page)).toBe(true);
+      // The naming popover is an overlay that never hides search: the launcher is
+      // clickable (not intercepted) while it is still open.
+      if (phone) {
+        const launcher = page.getByTestId('media-search-launcher');
+        const lb = await launcher.boundingBox();
+        const cb = await page.getByTestId('first-use-card').boundingBox();
+        expect(cb.y >= lb.y + lb.height || cb.y + cb.height <= lb.y, 'first-use card overlaps the search launcher').toBe(true);
+        await launcher.click({ trial: true });
+      }
       await skipFirstUse(page);
 
       // Search open, with results (incl. the row action icons and the aim line).
@@ -271,6 +282,8 @@ test.describe('floor and navigation names', () => {
     expect(await noHorizontalScroll(page)).toBe(true);
     expect(await smallTargets(page)).toEqual([]);
     await playArrivalHere(page);
+    // The house indicator appears once the house is playing (it hides at 0).
+    await expect(page.getByTestId('house-indicator')).toBeVisible({ timeout: 45000 });
     expect(await noHorizontalScroll(page)).toBe(true);
     expect(await offscreenControls(page, ['[data-testid="mini-toggle"]', '[data-testid="mini-next"]', '[data-testid="mini-stop"]', '[data-testid="media-search-launcher"]', '[data-testid="house-indicator"]'])).toEqual([]);
     await page.getByTestId('mini-player-open-nowplaying').click();
@@ -292,6 +305,8 @@ for (const [size, viewport] of SIZES) {
       await skipFirstUse(page);
       await playArrivalHere(page);
       const phone = isPhone(page);
+      // The house indicator appears once the house is playing (it hides at 0).
+      await expect(page.getByTestId('house-indicator')).toBeVisible({ timeout: 45000 });
       // Every probe is present at every size once something is playing; an absent one fails.
       const probes = [
         '[data-testid="mini-player-open-nowplaying"] .mini-player-title-text',
@@ -308,12 +323,16 @@ for (const [size, viewport] of SIZES) {
       // Open Now Playing: its aim line is the arm's-length label.
       await page.getByTestId('mini-player-open-nowplaying').click();
       await expect(page.getByTestId('queue-panel')).toBeVisible({ timeout: 15000 });
-      for (const sel of ['[data-testid="destination-line"]', '[data-testid="queue-shuffle"]']) {
+      // The phone repeats the aim inside Now Playing (thumb reach); wider screens read it from the header control.
+      const aimSel = isPhone(page) ? '[data-testid="destination-line"]' : '[data-testid="destination-control-name"]';
+      for (const sel of [aimSel, '[data-testid="queue-shuffle"]']) {
         const r = await contrastOf(page, sel);
         if (r.missing) { failures.push(`${sel} not found`); continue; }
         if (r.ratio < 4.5) failures.push(`${sel} ${r.ratio} (${r.fg} on ${r.bg})`);
       }
-      const aim = page.locator('.now-playing-view').getByTestId('destination-line');
+      const aim = isPhone(page)
+        ? page.locator('.now-playing-view').getByTestId('destination-line')
+        : page.getByTestId('destination-control-name');
       await expect(aim).toHaveCount(1);
       const fontSize = await aim.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
       if (fontSize < 14) failures.push(`aim label font-size ${fontSize}px`);

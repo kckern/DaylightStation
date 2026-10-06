@@ -116,10 +116,11 @@ beforeEach(() => {
 });
 
 describe('MediaContentSearch', () => {
-  it('keeps the same shared destination control beside desktop/tablet search', () => {
+  it('leaves the destination to the header control (one control, not a copy beside the field)', () => {
     render(<MediaContentSearch />);
 
-    expect(screen.getByTestId('destination-line')).toHaveAttribute('data-surface', 'media-content-search');
+    expect(screen.queryByTestId('destination-line')).toBeNull();
+    expect(screen.getByTestId('scope-chips')).toBeInTheDocument();
   });
 
   it('logs the destination a selection was routed to', () => {

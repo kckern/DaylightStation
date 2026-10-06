@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { markFirstUseDone } from './lib/firstUse.mjs';
 
 test.use({ viewport: { width: 390, height: 844 }, trace: 'retain-on-failure', actionTimeout: 10000 });
 test.setTimeout(90000);
@@ -17,6 +18,7 @@ test.afterEach(async ({ page }) => {
 
 test('[FIND.1a/AC5] phone Play keeps search words and narrowing while actual media starts', async ({ page }) => {
   const title = process.env.MEDIA_ACCEPTANCE_TITLE || 'Disclosure Day';
+  await markFirstUseDone(page);
   await page.goto('/media');
   await expect(page.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
   await page.getByTestId('media-search-launcher').click();

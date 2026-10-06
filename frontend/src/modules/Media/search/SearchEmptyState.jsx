@@ -35,7 +35,7 @@ export function SearchEmptyState({ query, sourceErrors = [], onRetry, fellBackTo
             className="search-empty-retry"
             onClick={onRetry}
           >
-            Search again
+            Try again
           </button>
         )}
       </div>

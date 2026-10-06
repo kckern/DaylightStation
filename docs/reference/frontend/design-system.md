@@ -113,7 +113,10 @@ color ramps, fonts, breakpoints. `modules/Media/theme/mediaTheme.js` is the
 one pack using it today: `MEDIA_PACK.themeExtras` layers Media's full
 amber/dark Mantine theme (component defaultProps included) on top of the base,
 so Media's own `Button`/`Modal`/`Drawer` defaults are the sole authority,
-never silently blended with the base contract's generic ones.
+never silently blended with the base contract's generic ones. The Media pack
+also exports `MEDIA_TOKENS` (ink / surface / line / text / muted / accent) and
+self-hosts its one type family (Atkinson Hyperlegible Next, OFL); how they are
+used is in [`../media/media-app.md`](../media/media-app.md#visual-system).
 
 Setting `themeExtras` moves ownership, not just styling: a pack that replaces
 `components` (or `other`) is no longer covered by the base guarantee above for

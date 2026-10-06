@@ -11,20 +11,31 @@
 // tablet-up-gated in MediaShell.scss); the fleet signal mobile still needs
 // moved to a badge on the Devices tab (PrimaryNav.jsx) instead. The settings
 // gear is the one control both layouts keep, so it renders once, unscoped.
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { IconSearch } from '@tabler/icons-react';
 import { MediaContentSearch } from '../search/MediaContentSearch.jsx';
 import { FleetIndicator } from './FleetIndicator.jsx';
 import { SettingsMenu } from './SettingsMenu.jsx';
 import { StartFreshDialog } from './StartFreshDialog.jsx';
 import { CastTargetChip } from '../cast/CastTargetChip.jsx';
+import { FirstUseCard } from '../identity/FirstUseCard.jsx';
+import { DestinationInteractionContext } from '../cast/destinationInteraction.js';
 
 export function Dock({ onOpenSearch }) {
   const [startFreshOpen, setStartFreshOpen] = useState(false);
   const openStartFresh = useCallback(() => setStartFreshOpen(true), []);
+  // Set while the destination control is being used, so an open search stays open.
+  const [destinationActive, setDestinationActive] = useState(false);
+  const destinationInteraction = useMemo(() => ({ active: destinationActive, setActive: setDestinationActive }), [destinationActive]);
 
   return (
+    <DestinationInteractionContext.Provider value={destinationInteraction}>
     <header className="media-dock" data-testid="media-dock">
+      {/* The destination control: where the next Play goes. On every width. The
+          first-use naming popover anchors to it. */}
+      <div className="media-dock-destination">
+        <FirstUseCard><CastTargetChip /></FirstUseCard>
+      </div>
       <button
         type="button"
         className="media-search-launcher"
@@ -44,10 +55,10 @@ export function Dock({ onOpenSearch }) {
           wrapper. */}
       <MediaContentSearch />
       <FleetIndicator />
-      <div className="media-dock-cluster"><CastTargetChip /></div>
       <SettingsMenu onResetSession={openStartFresh} />
       <StartFreshDialog open={startFreshOpen} onClose={() => setStartFreshOpen(false)} />
     </header>
+    </DestinationInteractionContext.Provider>
   );
 }
 

@@ -21,9 +21,7 @@
 }
 
 .cast-picker-label {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-size: 0.8125rem;
   color: var(--mantine-color-dark-2);
   margin-bottom: 6px;
   font-weight: 600;
@@ -114,7 +112,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 
-  &--active { color: var(--mantine-color-amber-4); }
+  &--active { color: var(--mantine-color-dark-0); }
   &--idle { color: var(--mantine-color-dark-2); }
   &--off { color: var(--mantine-color-dark-3); }
 }
@@ -144,7 +142,7 @@
     outline: 2px solid var(--mantine-color-amber-5);
     outline-offset: 1px;
   }
-  &[aria-pressed='true'] { color: var(--mantine-color-amber-4); }
+  &[aria-pressed='true'] { color: var(--mantine-color-dark-0); text-decoration: underline; }
 }
 
 // Inline busy warning — informative, not modal.
@@ -400,9 +398,9 @@
   border: none;
   border-radius: var(--mantine-radius-sm);
   padding: 4px 8px;
-  color: var(--mantine-color-dark-1);
+  color: var(--media-muted);
   font: inherit;
-  font-size: 14px;
+  font-size: 0.9375rem;
   text-align: left;
   cursor: pointer;
 

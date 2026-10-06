@@ -17,8 +17,15 @@ import { isCollection } from './useItemVerbs.jsx';
  * @param {boolean|null} [props.watched] true/false when known, null when not
  * @param {boolean} [props.removable] shown in a household list
  * @param {string} props.testId       prefix for the menu's test ids
+ * @param {{id: string, title?: string}[]|null} [props.editions] other editions of this
+ *   item that a collapsed tile stands for (the tile's own first, then the rest)
+ * @param {(edition: object) => void} [props.onEdition] open one edition
+ * @param {string|null} [props.continueLabel] "Continue <part>" entry, when there is a next part
  */
-export function ItemMenu({ item, onVerb, favourite = false, watched = null, removable = false, testId }) {
+export function ItemMenu({
+  item, onVerb, favourite = false, watched = null, removable = false, testId,
+  editions = null, onEdition = null, continueLabel = null,
+}) {
   const collection = isCollection(item);
   const fire = (kind) => (event) => { event?.stopPropagation?.(); onVerb(kind); };
   return (
@@ -36,6 +43,9 @@ export function ItemMenu({ item, onVerb, favourite = false, watched = null, remo
         </ActionIcon>
       </Menu.Target>
       <Menu.Dropdown data-testid={`${testId}-menu`}>
+        {continueLabel && (
+          <Menu.Item data-testid={`${testId}-verb-continue`} onClick={fire('continue')}>{continueLabel}</Menu.Item>
+        )}
         <Menu.Item data-testid={`${testId}-verb-playNow`} onClick={fire('playNow')}>Play now</Menu.Item>
         {collection && <Menu.Item data-testid={`${testId}-verb-shuffle`} onClick={fire('shuffle')}>Shuffle</Menu.Item>}
         <Menu.Item data-testid={`${testId}-verb-playNext`} onClick={fire('playNext')}>Play next</Menu.Item>
@@ -44,6 +54,21 @@ export function ItemMenu({ item, onVerb, favourite = false, watched = null, remo
         <Menu.Item data-testid={`${testId}-verb-playOn`} onClick={fire('playOn')}>Play on…</Menu.Item>
         <Menu.Item data-testid={`${testId}-verb-addOn`} onClick={fire('addOn')}>Add on…</Menu.Item>
         <Menu.Item data-testid={`${testId}-verb-details`} onClick={fire('details')}>Details</Menu.Item>
+        {Array.isArray(editions) && editions.length > 1 && onEdition && (
+          <>
+            <Menu.Divider />
+            <Menu.Label>{editions.length} editions</Menu.Label>
+            {editions.map((edition, index) => (
+              <Menu.Item
+                key={edition.id}
+                data-testid={`${testId}-edition-${index}`}
+                onClick={(event) => { event?.stopPropagation?.(); onEdition(edition); }}
+              >
+                {`Open edition ${index + 1}`}
+              </Menu.Item>
+            ))}
+          </>
+        )}
         <Menu.Divider />
         <Menu.Item data-testid={`${testId}-verb-favourite`} onClick={fire(favourite ? 'unfavourite' : 'favourite')}>
           {favourite ? 'Remove from favourites' : 'Add to favourites'}

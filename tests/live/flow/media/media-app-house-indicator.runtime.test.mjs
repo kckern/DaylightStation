@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { markFirstUseDone } from './lib/firstUse.mjs';
+
+test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
 test.use({ trace: 'retain-on-failure' });
 
@@ -38,7 +41,7 @@ async function startArrival(context, sender, phone) {
     await searchMode.getByTestId('destination-line').click();
     await sender.getByTestId('picker-device-acceptance-media').click();
     await sender.getByTestId('picker-submit').click();
-    await expect(searchMode.getByTestId('destination-line-name')).toHaveText(/^Aim: Acceptance receiver/);
+    await expect(searchMode.getByTestId('destination-line-name')).toHaveText(/^Playing on Acceptance receiver/);
     input = searchMode.getByTestId('search-mode-input');
     result = searchMode.getByTestId('search-mode-result-plex:55854');
   } else {
@@ -85,7 +88,7 @@ for (const [label, viewport, phone] of sizes) {
       const { receiver, native } = await startArrival(context, page, phone);
       await expect(page.getByTestId('house-indicator')).toHaveAccessibleName('1 playing');
       await pauseThroughPeek(page, native, phone);
-      await expect(page.getByTestId('house-indicator')).toHaveAccessibleName('0 playing · 1 paused');
+      await expect(page.getByTestId('house-indicator')).toHaveAccessibleName('1 paused');
 
       for (const view of views) {
         await page.goto(`/media${view.query}`, { waitUntil: 'domcontentloaded' });
@@ -95,7 +98,7 @@ for (const [label, viewport, phone] of sizes) {
         const indicator = page.getByTestId('house-indicator');
         await expect(indicator).toHaveCount(1);
         await expect(indicator).toBeVisible();
-        await expect(indicator).toHaveAccessibleName('0 playing · 1 paused');
+        await expect(indicator).toHaveAccessibleName('1 paused');
         await indicator.click();
         await expect(page.getByTestId('fleet-view')).toBeVisible();
       }

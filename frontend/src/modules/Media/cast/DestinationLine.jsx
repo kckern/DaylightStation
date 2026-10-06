@@ -14,7 +14,7 @@
 // full-screen surface (Task 13) and the container browse header (Task 15).
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal } from '@mantine/core';
-import { IconPlayerPlayFilled } from '@tabler/icons-react';
+import { IconChevronDown } from '@tabler/icons-react';
 import { useCastTarget } from './useCastTarget.js';
 import { DispatchTargetPicker } from './DispatchTargetPicker.jsx';
 import { GlobalAimLabel } from './AimLabel.jsx';
@@ -151,10 +151,10 @@ export function DestinationLine({ surface, onInteractionStart, onInteractionEnd 
         onFocus={handleTriggerFocus}
         onClick={openPicker}
       >
-        <IconPlayerPlayFilled size={14} aria-hidden="true" />
         <span data-testid="destination-line-name">
           <GlobalAimLabel compact />
         </span>
+        <IconChevronDown size={16} aria-hidden="true" />
       </button>
       <Modal
         opened={open}

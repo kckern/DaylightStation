@@ -4,7 +4,7 @@
 // Playing), queue position, play/pause, next, and stop. A stopped session with
 // retained queue items keeps a ready handle; an actually empty session renders
 // nothing instead of wasting phone space on dead "Idle" chrome.
-import React, { useCallback, useRef, useSyncExternalStore } from 'react';
+import React, { useCallback, useContext, useRef, useSyncExternalStore } from 'react';
 import {
   IconPlayerPlayFilled,
   IconPlayerPauseFilled,
@@ -20,6 +20,10 @@ import { usePlayerHost } from '../session/usePlayerHost.js';
 import { useSessionControls, useSecondTick, secondsUntil, formatClock } from '../controller/useSessionControls.js';
 import { useSlideshowStopGuard } from './PlayerFeatureControls.jsx';
 import { HandleHouseMenu } from '../house/HouseQuietControls.jsx';
+import { ClientIdentityContext } from '../identity/ClientIdentityProvider.jsx';
+import { displayDeviceName } from '../fleet/deviceDisplay.js';
+import { presentTitle } from '../browse/tilePresentation.js';
+import { handleStateLabel } from './stateCopy.js';
 import './NowPlaying.scss';
 import './SessionControls.scss';
 
@@ -70,6 +74,7 @@ export function MiniPlayer() {
   const live = usePlaybackPosition(controller);
   const problem = useLocalProblem(controller);
   const sleepLeft = useSleepLeft();
+  const identity = useContext(ClientIdentityContext);
   const { push, view } = useNav();
   // Stopping a slideshow with music behind asks whether to keep the music.
   const [guardStop, stopGuardDialog] = useSlideshowStopGuard('local');
@@ -95,6 +100,13 @@ export function MiniPlayer() {
   }
 
   const isPlaying = PLAYING_STATES.has(snapshot.state);
+  // The handle names what is there: the item, and in words what it is doing —
+  // "Ready to play", "Paused", "Playing on <this browser>". Never a bare count.
+  const shownTitle = presentTitle(displayItem) ?? displayItem.contentId;
+  const stateLine = handleStateLabel(snapshot.state, {
+    hasItem: !!item,
+    where: displayDeviceName(identity?.displayName ?? identity?.name ?? null, { fallback: 'this device' }),
+  });
   const queuePos = snapshot.queue?.currentIndex ?? -1;
   const repeat = snapshot.config?.repeat ?? 'off';
   const hasNext = queuePos >= 0
@@ -142,7 +154,11 @@ export function MiniPlayer() {
           aria-label="Expand video"
           onClick={() => { if (view !== 'nowPlaying') push('nowPlaying', {}); }}
         >
-          <div ref={dockRef} className="mini-player-video-dock-host" />
+          <div
+            ref={dockRef}
+            className={`mini-player-video-dock-host${displayItem.thumbnail ? ' mini-player-video-dock-host--poster' : ''}`}
+            style={displayItem.thumbnail ? { backgroundImage: `url("${displayItem.thumbnail}")` } : undefined}
+          />
         </button>
       ) : (
         displayItem.thumbnail && (
@@ -153,15 +169,17 @@ export function MiniPlayer() {
         type="button"
         data-testid="mini-player-open-nowplaying"
         className="mini-player-title"
-        aria-label={`${item ? `Open now playing, ${item.title ?? item.contentId}` : `Open queue, ${queueCount} item${queueCount === 1 ? '' : 's'} ready`}${sleepLeft ? `. ${sleepLeft.label}` : ''}`}
+        aria-label={`${item ? `Open now playing, ${shownTitle}` : `Open queue, ${shownTitle}`}. ${stateLine}${sleepLeft ? `. ${sleepLeft.label}` : ''}`}
         onClick={() => { if (view !== 'nowPlaying') push('nowPlaying', {}); }}
       >
-        <span className="mini-player-title-text">
-          {item ? (item.title ?? item.contentId) : `${queueCount} item${queueCount === 1 ? '' : 's'} ready`}
+        <span className="mini-player-title-stack">
+          <span className="mini-player-title-text">{shownTitle}</span>
+          <span className="mini-player-state" data-testid="mini-state">{stateLine}</span>
         </span>
-        {queueCount > 1 && queuePos >= 0 && (
+        {queueCount > 1 && (
+          // Playing: "2/5". Ready (nothing started yet): "5 queued" — the count is never lost.
           <span className="mini-queue-count" data-testid="mini-queue-count">
-            {queuePos + 1}/{queueCount}
+            {queuePos >= 0 ? `${queuePos + 1}/${queueCount}` : `${queueCount} queued`}
           </span>
         )}
         <SleepTimeLeft sleep={sleepLeft} />
@@ -170,11 +188,13 @@ export function MiniPlayer() {
         <button
           type="button"
           data-testid="mini-toggle"
-          className="np-icon-btn np-icon-btn--primary"
-          aria-label={isPlaying ? 'Pause' : 'Play'}
+          className={`np-icon-btn np-icon-btn--primary${isPlaying ? '' : ' mini-resume'}`}
+          aria-label={isPlaying ? 'Pause' : 'Resume'}
           onClick={() => (isPlaying ? transport.pause() : transport.play())}
         >
-          {isPlaying ? <IconPlayerPauseFilled size={20} /> : <IconPlayerPlayFilled size={20} />}
+          {isPlaying
+            ? <IconPlayerPauseFilled size={20} />
+            : <><IconPlayerPlayFilled size={18} /><span className="mini-resume-label">Resume</span></>}
         </button>
         <button
           type="button"

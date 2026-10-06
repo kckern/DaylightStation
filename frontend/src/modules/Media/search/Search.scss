@@ -19,7 +19,7 @@
 
 .media-scope-chip-row {
   display: flex;
-  gap: 6px;
+  gap: 0;
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scrollbar-width: none;
@@ -28,31 +28,43 @@
   &::-webkit-scrollbar { display: none; }
 }
 
+// Segmented control: plain text segments, the selected one in text colour at
+// a heavier weight with an amber underline. No filled shapes; 44 px tall (the
+// same as the search field).
 .media-scope-chip {
+  position: relative;
   flex-shrink: 0;
   min-height: 44px; // touch target floor
-  padding: 0 14px;
+  min-width: 44px;
+  padding: 0 12px;
   display: inline-flex;
   align-items: center;
-  background: var(--mantine-color-dark-7);
-  color: var(--mantine-color-dark-1);
-  border: 1px solid var(--mantine-color-dark-4);
-  border-radius: 999px;
-  font-size: 13px;
+  justify-content: center;
+  background: transparent;
+  color: var(--media-muted);
+  border: 0;
+  border-radius: 0;
+  font-size: 0.9375rem;
+  font-weight: 400;
   white-space: nowrap;
   cursor: pointer;
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+  transition: color var(--ds-motion-fast) var(--ds-motion-easing);
 
-  &:hover {
-    border-color: var(--mantine-color-dark-2);
-    color: var(--mantine-color-dark-0);
-  }
+  &:hover { color: var(--media-text); }
 
   &[aria-pressed='true'] {
-    background: var(--mantine-color-amber-9);
-    border-color: var(--mantine-color-amber-5);
-    color: var(--mantine-color-dark-9);
+    color: var(--media-text);
     font-weight: 600;
+
+    &::after {
+      content: '';
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      bottom: 4px;
+      height: 2px;
+      background: var(--media-accent);
+    }
   }
 }
 

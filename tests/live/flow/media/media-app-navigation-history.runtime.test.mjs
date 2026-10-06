@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { markFirstUseDone } from './lib/firstUse.mjs';
+
+test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 import { revealBrowseRow } from '../../../_lib/mediaBrowseScroll.mjs';
 
 test.setTimeout(120000);
@@ -42,13 +45,13 @@ async function startLocalPlaybackFromBrowse(page, surface) {
 
 for (const [surface, viewport] of surfaces) {
   test(`[RELY.9a/10a] ${surface}: primary ownership, truthful Back, and reselect history`, async ({ page }) => {
-    await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
+    await page.addInitScript(() => { try { (() => { const k = 'media-app.first-use-done'; const v = localStorage.getItem(k); localStorage.clear(); if (v) localStorage.setItem(k, v); })(); } catch {} });
     await page.setViewportSize(viewport);
     await page.goto('/media');
 
     await openDetail(page, surface);
     await expect(primary(page, surface, 'browse')).toHaveAttribute('aria-current', 'page');
-    await expect(page.getByTestId('detail-back')).toHaveText('← Browse');
+    await expect(page.getByTestId('detail-back')).toHaveText(/^\s*Browse$/);
     await page.getByTestId('detail-back').click();
     await expect(page.getByTestId('browse-view')).toBeVisible();
     await expect(page).toHaveURL(/view=browse.*path=plex%2Flibrary%2Fsections%2F6%2Fall/);
@@ -65,7 +68,7 @@ for (const [surface, viewport] of surfaces) {
     await primary(page, surface, 'browse').click();
     await startLocalPlaybackFromBrowse(page, surface);
     await expect(primary(page, surface, 'home')).toHaveAttribute('aria-current', 'page');
-    await expect(page.getByTestId('now-playing-back')).toHaveText('← Browse');
+    await expect(page.getByTestId('now-playing-back')).toHaveText(/^\s*Browse$/);
     await page.getByTestId('now-playing-back').click();
     await expect(page.getByTestId('browse-view')).toBeVisible();
 
@@ -75,7 +78,7 @@ for (const [surface, viewport] of surfaces) {
     await peek.click();
     await expect(page.getByTestId('peek-panel')).toBeVisible();
     await expect(primary(page, surface, 'fleet')).toHaveAttribute('aria-current', 'page');
-    await expect(page.getByTestId('peek-back')).toHaveText('← Devices');
+    await expect(page.getByTestId('peek-back')).toHaveText(/^\s*Devices$/);
     await page.getByTestId('peek-back').click();
     await expect(page.getByTestId('fleet-view')).toBeVisible();
     await expect(page).toHaveURL(/view=fleet/);
@@ -83,7 +86,7 @@ for (const [surface, viewport] of surfaces) {
 }
 
 test('[RELY.10a] phone: SearchMode consumes one browser Back and sheet Escape keeps it open', async ({ page }) => {
-  await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
+  await page.addInitScript(() => { try { (() => { const k = 'media-app.first-use-done'; const v = localStorage.getItem(k); localStorage.clear(); if (v) localStorage.setItem(k, v); })(); } catch {} });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/media');
   await primary(page, 'phone', 'browse').click();
@@ -106,7 +109,7 @@ test('[RELY.10a] phone: SearchMode consumes one browser Back and sheet Escape ke
 
 for (const [surface, viewport] of surfaces.filter(([surface]) => surface !== 'phone')) {
   test(`[RELY.10a] ${surface}: search popup consumes one Escape before route Back`, async ({ page }) => {
-    await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
+    await page.addInitScript(() => { try { (() => { const k = 'media-app.first-use-done'; const v = localStorage.getItem(k); localStorage.clear(); if (v) localStorage.setItem(k, v); })(); } catch {} });
     await page.setViewportSize(viewport);
     await page.goto('/media');
     await primary(page, surface, 'browse').click();
@@ -127,7 +130,7 @@ for (const [surface, viewport] of surfaces.filter(([surface]) => surface !== 'ph
 
 for (const [surface, viewport] of surfaces) {
   test(`[RELY.10a] ${surface}: depth-one and unknown URLs normalize to Home`, async ({ page }) => {
-    await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
+    await page.addInitScript(() => { try { (() => { const k = 'media-app.first-use-done'; const v = localStorage.getItem(k); localStorage.clear(); if (v) localStorage.setItem(k, v); })(); } catch {} });
     await page.setViewportSize(viewport);
     await page.goto('/media?view=detail&contentId=plex:55854');
     await expect(page.getByTestId('detail-back')).toBeVisible({ timeout: 30000 });
