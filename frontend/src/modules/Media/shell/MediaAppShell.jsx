@@ -24,6 +24,8 @@ function ShellInner() {
   // Add to this queue: the one search, for one addition to one screen.
   const [searchAddTo, setSearchAddTo] = useState(null);
   const searchLauncher = React.useMemo(() => ({
+    // The phone tab bar's Search: the one search, at the thumb (RELY.12a).
+    openSearch: () => { setSearchAddTo(null); setSearchOpen(true); },
     openAddToQueue: ({ deviceId, name = null }) => {
       if (typeof deviceId !== 'string' || !deviceId) return;
       mediaLog.addToQueueOpened({ deviceId });

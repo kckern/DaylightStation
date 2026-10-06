@@ -5,7 +5,14 @@ export async function freshPage(page, path = '/media') {
   await page.addInitScript(() => {
     if (!sessionStorage.getItem('cleared')) { localStorage.clear(); sessionStorage.setItem('cleared', '1'); }
   });
-  await page.goto(path);
+  // Under the dev acceptance server a module fetch can be lost and the page
+  // parks on its chunk-reload cooldown; that is not what is under test, so
+  // navigation is retried a bounded number of times (the journey still fails
+  // if the app never comes up).
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    await page.goto(path, { waitUntil: 'domcontentloaded' });
+    if (await page.getByTestId('media-shell').waitFor({ state: 'visible', timeout: 40000 }).then(() => true, () => false)) return;
+  }
 }
 
 export const isPhone = (page) => page.viewportSize().width < 600;

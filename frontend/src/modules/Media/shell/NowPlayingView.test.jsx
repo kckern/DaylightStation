@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
+import { MantineProvider } from '@mantine/core';
 import { FleetContext } from '../fleet/FleetProvider.jsx';
 import { CastTargetProvider } from '../cast/CastTargetProvider.jsx';
 
@@ -46,9 +47,11 @@ const fleetStore = {
 
 function renderNowPlaying({ devices = [] } = {}) {
   return render(
-    <FleetContext.Provider value={{ devices, store: fleetStore }}>
-      <CastTargetProvider><NowPlayingView /></CastTargetProvider>
-    </FleetContext.Provider>,
+    <MantineProvider>
+      <FleetContext.Provider value={{ devices, store: fleetStore }}>
+        <CastTargetProvider><NowPlayingView /></CastTargetProvider>
+      </FleetContext.Provider>
+    </MantineProvider>,
   );
 }
 

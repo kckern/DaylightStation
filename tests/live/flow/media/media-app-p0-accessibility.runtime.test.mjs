@@ -290,7 +290,7 @@ for (const [size, viewport] of SIZES) {
         const r = await contrastOf(page, sel);
         if (!r.missing && r.ratio < 4.5) failures.push(`${sel} ${r.ratio} (${r.fg} on ${r.bg})`);
       }
-      const aim = page.getByTestId('destination-line').first();
+      const aim = page.locator('.now-playing-view').getByTestId('destination-line');
       if (await aim.count()) {
         const fontSize = await aim.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
         if (fontSize < 14) failures.push(`aim label font-size ${fontSize}px`);
@@ -313,3 +313,41 @@ for (const [size, viewport] of SIZES) {
     });
   });
 }
+
+test.describe('one-thumb reach (phone)', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+  // The top 40% of a tall phone is out of a one-handed thumb's comfortable arc.
+  // Search, Play/Pause and the aim (where it can be changed on a phone) must
+  // each be reachable in the lower 60%, and none may need a second hand
+  // (no multi-finger gesture, no press-and-hold: every one is a single tap).
+  test('[RELY.12a] search, play/pause and the aim are all within the lower 60% of the screen', async ({ page }) => {
+    await freshPage(page);
+    await skipFirstUse(page);
+    const lowerZone = page.viewportSize().height * 0.4;
+    const centreY = async (locator) => { const b = await locator.boundingBox(); expect(b).toBeTruthy(); return b.y + b.height / 2; };
+
+    // Search: the tab bar carries it.
+    const searchTab = page.getByTestId('app-tab-search');
+    await expect(searchTab).toBeVisible();
+    expect(await centreY(searchTab), 'Search tab centre y').toBeGreaterThan(lowerZone);
+    await searchTab.click();
+    await expect(page.getByRole('searchbox', { name: 'Search media', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Close search' }).click();
+
+    // Play/pause on the handle.
+    await playArrivalHere(page);
+    expect(await centreY(page.getByTestId('mini-toggle')), 'play/pause centre y').toBeGreaterThan(lowerZone);
+
+    // The aim on Now Playing, and the picker it opens, are in reach too.
+    await page.getByTestId('mini-player-open-nowplaying').click();
+    await expect(page.getByTestId('queue-panel')).toBeVisible({ timeout: 15000 });
+    const aim = page.locator('.now-playing-view').getByTestId('destination-line');
+    await expect(aim).toBeVisible();
+    expect(await centreY(aim), 'aim label centre y').toBeGreaterThan(lowerZone);
+    await aim.click();
+    const picker = page.getByRole('dialog').getByTestId('dispatch-target-picker');
+    await expect(picker).toBeVisible();
+    const pickerBox = await picker.boundingBox();
+    expect(pickerBox.y + pickerBox.height / 2, 'picker centre y').toBeGreaterThan(lowerZone);
+  });
+});
