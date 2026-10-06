@@ -119,4 +119,14 @@ describe('ScreenActionHandler — media:adopt-snapshot (§6.2.4)', () => {
     await waitFor(() => expect(source.adopt).toHaveBeenCalled());
     expect(results).not.toHaveBeenCalledWith(expect.objectContaining({ code: 'RESTORE_SUPERSEDED' }));
   });
+
+  it('a successful adopt reports media:session-control-applied with the commandId (the ack-on-outcome signal)', async () => {
+    const { source } = setup();
+    const applied = vi.fn();
+    getActionBus().subscribe('media:session-control-applied', applied);
+    act(() => getActionBus().emit('media:adopt-snapshot', { snapshot: { ...snapshot, state: 'playing' }, autoplay: true, commandId: 'move-4:adopt' }));
+    await waitFor(() => expect(source.adopt).toHaveBeenCalled());
+    await waitFor(() => expect(applied).toHaveBeenCalledWith(expect.objectContaining({ commandId: 'move-4:adopt' })));
+    expect(applied).toHaveBeenCalledTimes(1);
+  });
 });
