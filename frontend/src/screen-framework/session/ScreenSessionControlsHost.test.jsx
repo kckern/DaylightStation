@@ -7,7 +7,7 @@ import { _resetForTests as resetVolume } from '../../lib/volume/ScreenVolumeCont
 import { getNaturalEndPolicy } from '../../modules/Player/lib/naturalEndPolicy.js';
 import { createScreenSessionControls } from './screenSessionControls.js';
 import { ScreenSessionControlsHost } from './ScreenSessionControlsHost.jsx';
-import Player from '../../modules/Player/Player.jsx';
+import { ScreenPlayer } from '../publishers/ScreenPlayer.jsx';
 
 const overlayState = vi.hoisted(() => ({ hasOverlay: false, component: null }));
 vi.mock('../overlays/ScreenOverlayProvider.jsx', () => ({ useScreenOverlay: () => ({ hasOverlay: overlayState.hasOverlay, fullscreenComponent: overlayState.component }) }));
@@ -225,7 +225,7 @@ describe('ScreenSessionControlsHost', () => {
     });
 
     it('OK is still consumed while the Player itself is the fullscreen overlay', async () => {
-      overlayState.hasOverlay = true; overlayState.component = Player;
+      overlayState.hasOverlay = true; overlayState.component = ScreenPlayer;
       const restore = vi.fn((p) => getActionBus().emit('media:restore-snapshot-result', { requestId: p.requestId, ok: true }));
       getActionBus().subscribe('media:restore-snapshot', restore);
       const { controls } = mount(makeSource(playing));
