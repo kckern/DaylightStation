@@ -24,6 +24,10 @@ let appliedShader = null;
 let mountedMediaRegistration = null;
 let mountedOperationObserver = null;
 let beginRendererBoundary = null;
+// Models the real Player's duplicate-completion guard (Player.naturalAdvance):
+// one completion per visit; only a renderer boundary (a new visit) or a stop
+// releases it. A seek does NOT.
+let completionKeyHeld = false;
 vi.mock('../../Player/Player.jsx', () => ({
   default: React.forwardRef(function MockPlayer(props, ref) {
     latestPlayerProps = props;
@@ -772,5 +776,80 @@ describe('PlayerBridge real Player contract', () => {
     expect(controller.getSnapshot().state).toBe('buffering');
     act(() => mediaElement.dispatchEvent(new Event('playing')));
     expect(controller.getSnapshot().state).toBe('playing');
+  });
+});
+
+describe('PlayerBridge — sleep-timer fade (RQ-STEER-12)', () => {
+  it('applies the fade on top of the session volume and never changes the volume setting', async () => {
+    vi.useFakeTimers();
+    const controller = makeRealController();
+    controller.queue.playNow({ contentId: 'plex:fade', title: 'Fade', duration: 600, format: 'audio' });
+    controller.config.setVolume(80);
+    mediaElement = document.createElement('audio');
+    mediaElement.play = () => Promise.resolve();
+    mediaElement.pause = () => {};
+    render(<Harness controller={controller} />);
+    await act(async () => { vi.advanceTimersByTime(50); });
+    expect(mediaElement.volume).toBeCloseTo(0.8);
+    await act(async () => {
+      await controller.sessionControls.setSleepTimer({ minutes: 1 });
+      vi.advanceTimersByTime(55_000);
+    });
+    expect(mediaElement.volume).toBeLessThan(0.8);
+    expect(controller.getSnapshot().config.volume).toBe(80);
+    await act(async () => { await controller.sessionControls.cancelSleepTimer(); });
+    expect(mediaElement.volume).toBeCloseTo(0.8);
+    mediaElement = null;
+  });
+});
+
+
+describe('PlayerBridge — held natural end replays (duplicate-completion guard)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mediaElement = document.createElement('video');
+    mediaElement.play = vi.fn(() => Promise.resolve());
+    mediaElement.pause = vi.fn();
+    mountedContentId = 'e1';
+    completionKeyHeld = false;
+    beginRendererBoundary = vi.fn((request) => { completionKeyHeld = false; return { ok: true, operationId: request.operationId }; });
+  });
+
+  // What Player.naturalAdvance does for one native end signal.
+  const endNaturally = () => {
+    if (completionKeyHeld) return 'duplicate';
+    completionKeyHeld = true;
+    latestPlayerProps.clear();
+    return 'dispatched';
+  };
+
+  it('ended -> countdown held -> scrub back -> Play -> ended again reaches onPlayerEnded twice', () => {
+    const controller = createLocalSessionController({
+      clientId: 'bridge-client', randomUuid: () => 'bridge-session',
+      sessionControls: { resolveContinuation: async () => [], storage: { getItem: () => null, setItem: () => {} } },
+    });
+    const ended = vi.spyOn(controller, 'onPlayerEnded');
+    const item = (id) => ({ contentId: id, title: id, format: 'video', type: 'episode', duration: 600 });
+    controller.queue.playNow(item('e1'));
+    controller.queue.add(item('e2'));
+    render(<Harness controller={controller} />);
+    act(() => controller.store.dispatch({ type: 'PLAYER_STATE', playerState: 'playing' }));
+
+    act(() => { endNaturally(); });
+    expect(ended).toHaveBeenCalledTimes(1);
+    // The handle / lock screen must not keep saying "playing" at a held end.
+    expect(controller.getSnapshot().state).toBe('ended');
+    expect(controller.sessionControls.getState().countdown).toBeTruthy();
+
+    act(() => { controller.transport.seekAbs(5); });
+    act(() => { controller.transport.play(); });
+    expect(controller.sessionControls.getState().countdown).toBeNull();
+    act(() => controller.store.dispatch({ type: 'PLAYER_STATE', playerState: 'playing' }));
+
+    let outcome;
+    act(() => { outcome = endNaturally(); });
+    expect(outcome).toBe('dispatched');
+    expect(ended).toHaveBeenCalledTimes(2);
+    expect(controller.sessionControls.getState().countdown).toBeTruthy();
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import request from 'supertest';
-import { ORDINARY_DEVICE_ID, createMediaOrdinaryDeviceFixture } from './media-ordinary-device-fixture.mjs';
+import { ORDINARY_DEVICE_ID, SECOND_DEVICE_ID, createMediaOrdinaryDeviceFixture } from './media-ordinary-device-fixture.mjs';
 
 describe('media ordinary device fixture', () => {
   it('rejects a physical device load while retaining the one virtual identity', async () => {
@@ -132,6 +132,26 @@ describe('media ordinary device fixture', () => {
     fixture.eventBus.broadcast('homeline:acceptance-media', { type: 'wake-progress', dispatchId: 'd1', step: 'load', status: 'done' });
     const response = await request(fixture.app).get('/acceptance-media/start-status').expect(200);
     expect(response.body).toMatchObject({ ok: true, status: { phase: 'delivered', dispatchId: 'd1' } });
+    await fixture.stop();
+  });
+
+  it('serves a second virtual receiver (several screens, line up, moves) with the same route boundary', async () => {
+    const fixture = createMediaOrdinaryDeviceFixture({ upstream: 'http://127.0.0.1:3111' });
+    fixture.eventBus.subscribe(`screen:${SECOND_DEVICE_ID}`, command => {
+      fixture.eventBus.broadcast(`device-ack:${SECOND_DEVICE_ID}`, { deviceId: SECOND_DEVICE_ID, commandId: command.commandId, ok: true });
+    });
+    await request(fixture.app).get(`/${SECOND_DEVICE_ID}/load?play=plex:55854&dispatchId=virtual-b`).expect(200);
+    const config = await request(fixture.app).get('/config').expect(200);
+    expect(Object.keys(config.body.devices ?? config.body)).toEqual(expect.arrayContaining([ORDINARY_DEVICE_ID, SECOND_DEVICE_ID]));
+    await fixture.stop();
+  });
+
+  it('routes a virtual claim (the stop half of a move) and blocks it for physical devices', async () => {
+    const fixture = createMediaOrdinaryDeviceFixture({ upstream: 'http://127.0.0.1:3111' });
+    await request(fixture.app).post('/livingroom-tv/session/claim').send({ commandId: 'physical' })
+      .expect(403, { ok: false, error: 'ordinary acceptance blocks physical device routes' });
+    const virtual = await request(fixture.app).post(`/${ORDINARY_DEVICE_ID}/session/claim`).send({ commandId: 'virtual-claim' });
+    expect(virtual.status).not.toBe(403);
     await fixture.stop();
   });
 });

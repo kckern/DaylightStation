@@ -76,6 +76,8 @@ function childToQueueInput(item, { containerTitle, inheritedFormat }) {
     format: formatForChild(item, inheritedFormat),
     // Preserved for display: which show/album this child came from.
     containerTitle: containerTitle ?? null,
+    // The next-episode countdown recognises episodes (RQ-STEER-20).
+    ...(typeOf(item) === 'episode' ? { type: 'episode' } : {}),
   };
 }
 

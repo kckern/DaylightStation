@@ -34,3 +34,24 @@ it('removes a queue entry, reports it through the outcome tray, and restores it 
   fireEvent.click(await screen.findByTestId('item-action-undo'));
   await waitFor(() => expect(controller.getSnapshot().queue.items[1].queueItemId).toBe(secondId));
 });
+
+it('marks items "keep similar playing" added, and shows the end-of-queue choice at the bottom (STEER.13a)', async () => {
+  const controller = createLocalSessionController({ clientId: 'queue-auto', sessionControls: { storage: null } });
+  controller.queue.playNow({ contentId: 'one', title: 'One', format: 'audio' });
+  controller.queue.add({ contentId: 'auto', title: 'Auto', format: 'audio', addedBy: 'auto-continue' });
+  const [first, auto] = controller.getSnapshot().queue.items;
+  render(
+    <MantineProvider>
+      <LocalSessionContext.Provider value={{ controller }}>
+        <FleetContext.Provider value={{ store: createFleetStore(), devices: [] }}>
+          <DispatchProvider><QueuePanel /></DispatchProvider>
+        </FleetContext.Provider>
+      </LocalSessionContext.Provider>
+    </MantineProvider>,
+  );
+  expect(screen.getByTestId(`queue-auto-${auto.queueItemId}`)).toHaveTextContent('added automatically');
+  expect(screen.queryByTestId(`queue-auto-${first.queueItemId}`)).toBeNull();
+  const choice = screen.getByTestId('queue-end-choice');
+  expect(screen.getByTestId('queue-panel').lastElementChild).toBe(choice);
+  expect(screen.getByTestId('queue-end-stop')).toHaveAttribute('aria-checked', 'true');
+});

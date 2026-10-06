@@ -166,3 +166,13 @@ describe('expandContainerInput', () => {
     expect(out.map((i) => i.contentId)).toEqual(['plex:7']);
   });
 });
+
+describe('expandContainerInput — episode marker', () => {
+  it('carries type:episode onto expanded episode children (countdown needs it)', async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => ({ items: [
+      { id: 'plex:e1', title: 'Ep 1', itemType: 'leaf', type: 'episode', duration: 600 },
+    ] }) }));
+    const out = await expandContainerInput({ contentId: 'plex:season', title: 'S1', itemType: 'container' }, { fetchImpl });
+    expect(out[0].type).toBe('episode');
+  });
+});

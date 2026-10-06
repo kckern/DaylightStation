@@ -22,6 +22,7 @@ import { useUrlCommand } from '../externalControl/useUrlCommand.js';
 import { useExternalControl } from '../externalControl/useExternalControl.js';
 import { usePlaybackStateBroadcast } from '../shared/usePlaybackStateBroadcast.js';
 import { publish } from '../net/ws.js';
+import { useMediaSession } from './useMediaSession.js';
 import mediaLog from '../logging/mediaLog.js';
 
 function SessionSideEffects() {
@@ -29,6 +30,8 @@ function SessionSideEffects() {
   const { controller, snapshot } = useSessionController('local');
   useUrlCommand(controller);
   useExternalControl(controller);
+  // Lock screen / system media controls for playback here (RQ-STEER-04).
+  useMediaSession(controller);
   // Frames wait for this connection's identify (controlReady); the hook
   // projects the identity to its wire contract fields.
   usePlaybackStateBroadcast({ send: publish, identity, snapshot, ready: identity.controlReady === true });

@@ -41,11 +41,15 @@ import mediaLog from '../logging/mediaLog.js';
 import { ItemDestinationPicker } from '../actions/ItemDestinationPicker.jsx';
 import { useHouseholdResultActions } from '../household/useHouseholdResultActions.js';
 import './Search.scss';
+import '../shell/SessionControls.scss';
 
-export function SearchMode({ onClose }) {
+// `addTo` ({ deviceId, name }) opens this search for ONE addition to that
+// screen's queue (STEER.1b/AC7, RQ-STEER-22): every pick is added there, the
+// aim is untouched, and the surface closes once the addition is sent.
+export function SearchMode({ onClose, addTo = null }) {
   const [oneShotAction, setOneShotAction] = useState(null);
   const { scopes, currentScopeKey, currentScope, scopeError, resetScope } = useSearchContext();
-  const { dispatch, dispatchLeafVerb, playContainerAsQueue } = useContentDispatch();
+  const { dispatch, dispatchLeafVerb, playContainerAsQueue, addToScreen } = useContentDispatch();
   const { extraActions, runHousehold } = useHouseholdResultActions();
   const { queue } = useSessionController('local');
   const { push } = useNav();
@@ -111,8 +115,16 @@ export function SearchMode({ onClose }) {
     [push]
   );
 
+  const addOnce = useCallback((id, item, verb) => {
+    log.info('select', { contentId: id, title: item?.title ?? null, type: item?.type ?? null, verb, addTo: addTo.deviceId });
+    addToScreen(addTo.deviceId, id, item);
+    mediaLog.addToQueueClosed({ deviceId: addTo.deviceId, reason: 'added', contentId: id });
+    closeSurface('added');
+  }, [addTo, addToScreen, closeSurface, log]);
+
   const handleChange = useCallback((id, item) => {
     if (!id) return; // clear/empty commits are no-ops for a transient picker
+    if (addTo) { addOnce(id, item, 'tap'); return; }
     log.info('select', { contentId: id, title: item?.title ?? null, type: item?.type ?? null });
     const route = dispatch(id, item, { replaceHistoryEntry: true });
     log.info('dispatch', { contentId: id, route });
@@ -123,7 +135,7 @@ export function SearchMode({ onClose }) {
     // query/scope plus its marker entry) alive. A container row is the one
     // route that navigates, so it hands the marker entry to Browse and exits.
     if (route === 'browse') closeSurface('dispatch', { navigated: true });
-  }, [dispatch, log, closeSurface]);
+  }, [dispatch, log, closeSurface, addTo, addOnce]);
 
   // Trailing ▶ on a container row (Task 14, spec D6): explicitly send the
   // whole container to the current destination, replacing the queue. This is
@@ -131,10 +143,11 @@ export function SearchMode({ onClose }) {
   const handlePlayAll = useCallback((item) => {
     const id = item?.id;
     if (!id) return;
+    if (addTo) { addOnce(id, item, 'playAll'); return; }
     log.info('select', { contentId: id, title: item?.title ?? null, type: item?.type ?? null, verb: 'playAll' });
     const route = playContainerAsQueue(id, item);
     log.info('dispatch', { contentId: id, route, verb: 'playAll' });
-  }, [playContainerAsQueue, log]);
+  }, [playContainerAsQueue, log, addTo, addOnce]);
 
   // Trailing ⋯ on a leaf row: Play Now / Play Next / Up Next / Add to Queue
   // / Open detail. Reuses the exact appliers BrowseView rows use (queueOps
@@ -143,6 +156,7 @@ export function SearchMode({ onClose }) {
     const id = item?.id;
     if (!id) return;
     log.info('row_action', { contentId: id, action });
+    if (addTo && action !== 'detail' && action !== 'details') { addOnce(id, item, action); return; }
     if (runHousehold(action, item)) return;
     if (action === 'playOn' || action === 'addOn') { setOneShotAction({ kind: action, item }); return; }
     if (action !== 'detail' && action !== 'details') {
@@ -153,7 +167,7 @@ export function SearchMode({ onClose }) {
     // 'detail' is the only verb that navigates; queue mutations leave search
     // and its marker untouched.
     if (action === 'detail' || action === 'details') closeSurface('dispatch', { navigated: true });
-  }, [queue, pushOverSurface, log, closeSurface, dispatchLeafVerb, runHousehold]);
+  }, [queue, pushOverSurface, log, closeSurface, dispatchLeafVerb, addTo, addOnce, runHousehold]);
 
   const combo = useContentCombobox({
     value: '',
@@ -198,8 +212,9 @@ export function SearchMode({ onClose }) {
   }, []);
 
   const closeViaButton = useCallback(() => {
+    if (addTo) mediaLog.addToQueueClosed({ deviceId: addTo.deviceId, reason: 'dismissed' });
     closeSurface('dismiss');
-  }, [closeSurface]);
+  }, [closeSurface, addTo]);
 
   const handleStreamRetry = useCallback((source) => {
     log.info('stream_status.retry', { source, text: searchText });
@@ -247,7 +262,11 @@ export function SearchMode({ onClose }) {
         />
       </div>
 
-      <DestinationLine surface="search-mode" />
+      {addTo ? (
+        <div className="search-mode-add-to" data-testid="search-add-to-banner" role="status">
+          Adding to the queue on <strong>{addTo.name ?? 'this screen'}</strong> — just this once; your aim doesn&apos;t change.
+        </div>
+      ) : <DestinationLine surface="search-mode" />}
 
       <div className="search-mode-scope">
         <ScopeChips />

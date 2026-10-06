@@ -216,19 +216,24 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
   // Every start that can reach this screen bumps the epoch. A restore that
   // sees the epoch move while it waited (owner bootstrap is async) was
   // overtaken by a newer start — a WakeAndLoad play-now, a URL autoplay,
-  // local input — and must not adopt over it.
+  // local input — and must not adopt over it. (`media:adopt-snapshot` bumps it
+  // itself, inside handleAdoptSnapshot, so no subscription ordering can make
+  // an adopt supersede itself.)
   const startEpochRef = useRef(0);
   useEffect(() => {
     const bus = getActionBus();
     const bump = () => { startEpochRef.current += 1; };
-    const unsubs = ['media:play', 'media:queue', 'media:queue-op', 'media:adopt-snapshot', 'media:handoff']
+    const unsubs = ['media:play', 'media:queue', 'media:queue-op', 'media:handoff']
       .map((event) => bus.subscribe(event, bump));
     return () => unsubs.forEach((u) => u());
   }, []);
 
   const handleRestoreSnapshot = useCallback((payload = {}) => {
-    const { snapshot, autoplay = false, reason = 'restore', requestId } = payload;
-    const reply = (result) => getActionBus().emit('media:restore-snapshot-result', { requestId, ...result });
+    const { snapshot, autoplay = false, reason = 'restore', requestId, onResult } = payload;
+    const reply = (result) => {
+      getActionBus().emit('media:restore-snapshot-result', { requestId, ...result });
+      try { onResult?.(result); } catch { /* a result observer must not break the restore */ }
+    };
     if (!snapshot?.queue?.items?.length) { reply({ ok: false, code: 'NOTHING_TO_RESTORE' }); return; }
     const epochAtStart = startEpochRef.current;
     (async () => {
@@ -687,6 +692,29 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
   useScreenAction('media:queue', handleMediaQueue);
   useScreenAction('media:queue-op', handleMediaQueueOp);
   useScreenAction('media:restore-snapshot', handleRestoreSnapshot);
+  // §6.2.4 adopt-snapshot (a move here from another screen, PLACE.9a): the
+  // command was acknowledged but never adopted. It is the restore path —
+  // bootstrap an owner when idle, then adopt — playing unless told otherwise.
+  // A failed adopt tells the mover at once (command-handler-error carries the
+  // commandId back as the command's failure) instead of leaving the move to
+  // wait out its observation window.
+  const handleAdoptSnapshot = useCallback((payload = {}) => {
+    startEpochRef.current += 1;
+    handleRestoreSnapshot({
+      snapshot: payload.snapshot, autoplay: payload.autoplay !== false, reason: 'adopt', requestId: payload.commandId,
+      onResult: (result) => {
+        if (result?.ok !== false || !payload.commandId) return;
+        getActionBus().emit('command-handler-error', {
+          commandId: payload.commandId,
+          code: result.code ?? 'ADOPT_FAILED',
+          error: result.code === 'PLAYBACK_OWNER_UNAVAILABLE'
+            ? 'This screen could not start a player to take the move'
+            : (result.code === 'RESTORE_SUPERSEDED' ? 'Something else started on this screen first' : (result.code ?? 'The move was not adopted')),
+        });
+      },
+    });
+  }, [handleRestoreSnapshot]);
+  useScreenAction('media:adopt-snapshot', handleAdoptSnapshot);
   useScreenAction('media:seek-abs', handleMediaSeekAbs);
   useScreenAction('media:seek-rel', handleMediaSeekRel);
   useScreenAction('media:playback', handleMediaPlayback);

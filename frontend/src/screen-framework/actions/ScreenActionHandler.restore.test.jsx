@@ -82,3 +82,41 @@ describe('ScreenActionHandler — media:restore-snapshot', () => {
     expect(source.adopt).not.toHaveBeenCalled();
   });
 });
+
+describe('ScreenActionHandler — media:adopt-snapshot (§6.2.4)', () => {
+  beforeEach(() => { resetActionBus(); __resetPlayerQueueOpRegistryForTests(); });
+
+  it('an idle screen adopts a moved snapshot (PLACE.9a): mounts a player and adopts it, playing', async () => {
+    const { source, view } = setup();
+    act(() => getActionBus().emit('media:adopt-snapshot', { snapshot: { ...snapshot, state: 'playing' }, autoplay: true, commandId: 'move-1:adopt' }));
+    await view.findByTestId('player');
+    await waitFor(() => expect(source.adopt).toHaveBeenCalled());
+    const [adopted, options] = source.adopt.mock.calls[0];
+    expect(adopted).toMatchObject({ position: 321, currentItem: { contentId: 'plex:1' } });
+    expect(adopted.meta).not.toHaveProperty('playbackOwner');
+    expect(options).toMatchObject({ autoplay: true });
+  });
+
+  it('an adopt that cannot get an owner fails fast to the mover as command-handler-error (no 45 s wait)', async () => {
+    const { source } = setup();
+    // The virtual receiver has no owner and none ever mounts.
+    source.getActionOwner = () => null;
+    source.capture = () => ({ snapshot: null, identity: null });
+    const errors = vi.fn();
+    getActionBus().subscribe('command-handler-error', errors);
+    vi.useFakeTimers();
+    try {
+      act(() => getActionBus().emit('media:adopt-snapshot', { snapshot: { ...snapshot, state: 'playing' }, autoplay: true, commandId: 'move-2:adopt' }));
+      await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    } finally { vi.useRealTimers(); }
+    expect(errors).toHaveBeenCalledWith(expect.objectContaining({ commandId: 'move-2:adopt', code: 'PLAYBACK_OWNER_UNAVAILABLE' }));
+    expect(source.adopt).not.toHaveBeenCalled();
+  });
+
+  it('adopt is never superseded by its own start (the epoch bump is inside the handler)', async () => {
+    const { source, results } = setup();
+    act(() => getActionBus().emit('media:adopt-snapshot', { snapshot: { ...snapshot, state: 'playing' }, autoplay: true, commandId: 'move-3:adopt' }));
+    await waitFor(() => expect(source.adopt).toHaveBeenCalled());
+    expect(results).not.toHaveBeenCalledWith(expect.objectContaining({ code: 'RESTORE_SUPERSEDED' }));
+  });
+});
