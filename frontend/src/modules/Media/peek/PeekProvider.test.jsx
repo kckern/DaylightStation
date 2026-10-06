@@ -165,3 +165,18 @@ describe('PeekProvider steering activity bridge', () => {
     });
   });
 });
+
+describe('PeekProvider command origin (RQ-STEER-21)', () => {
+  it('names this device on every remote command, so the screen can say who changed it', async () => {
+    const { ClientIdentityContext } = await import('../identity/ClientIdentityProvider.jsx');
+    const store = { getEntry: vi.fn(), subscribeDevice: vi.fn(() => vi.fn()) };
+    const fleet = { store, identity: { clientId: 'caller', deviceId: 'browser:caller' } };
+    render(
+      <ClientIdentityContext.Provider value={{ clientId: 'caller', displayName: "Dad's phone" }}>
+        <FleetContext.Provider value={fleet}><PeekProvider><Probe /></PeekProvider></FleetContext.Provider>
+      </ClientIdentityContext.Provider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'open remote' }));
+    expect(JSON.parse(JSON.stringify(remoteOptions.origin))).toEqual({ kind: 'device', id: 'browser:caller', name: "Dad's phone" });
+  });
+});

@@ -161,4 +161,14 @@ describe('DispatchProgressTray outcomes', () => {
     expect(screen.getByTestId('dispatch-row-l1')).toHaveTextContent('Library unavailable');
     expect(screen.getByTestId('dispatch-skip-l1')).toBeInTheDocument();
   });
+
+  it('PLAY.10a: a Play the screen took as an add says so, with its place in line', () => {
+    outcomes.set('ao', record({ dispatchId: 'ao', attemptId: 'ao', deviceId: 'livingroom-tv', targetId: 'livingroom-tv', title: 'Faith',
+      kind: 'add', operation: 'add', appliedAs: 'add', status: 'success', phase: 'confirmed', outcome: 'confirmed',
+      outcomeIdentity: { queueLength: 5, ordinal: 5 } }));
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    const tray = screen.getByTestId('dispatch-tray');
+    expect(tray).toHaveTextContent('Added Faith to Living Room TV (Add only is on)');
+    expect(tray).toHaveTextContent('5th in line');
+  });
 });

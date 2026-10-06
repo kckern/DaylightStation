@@ -410,4 +410,41 @@ describe('persistence', () => {
     other.hydrate(saved);
     expect(other.toPublished()).toMatchObject({ addOnly: true, endOfQueue: 'repeat', sleepResume: { contentId: 'plex:1' } });
   });
+
+  it('an armed minutes timer survives a reload and still stops playback at its deadline', async () => {
+    const { controls } = setup();
+    await controls.handleSession('sleep-timer', { minutes: 2 });
+    vi.advanceTimersByTime(30_000);
+    const saved = JSON.parse(JSON.stringify(controls.persistable()));
+    expect(saved.sleepTimer).toMatchObject({ mode: 'minutes', minutes: 2 });
+    controls.dispose();
+    const { controls: other, ports } = setup();
+    other.hydrate(saved);
+    expect(other.toPublished().sleepTimer).toMatchObject({ mode: 'minutes', remainingSeconds: 90 });
+    vi.advanceTimersByTime(90_000);
+    expect(ports.stopPlayback).toHaveBeenCalledTimes(1);
+    expect(other.toPublished().sleepTimer).toBeNull();
+    expect(other.toPublished().sleepResume).toMatchObject({ contentId: 'plex:1' });
+  });
+
+  it('a minutes timer that came due while away resolves to the continue offer on hydrate', async () => {
+    const { controls } = setup();
+    await controls.handleSession('sleep-timer', { minutes: 1 });
+    const saved = JSON.parse(JSON.stringify(controls.persistable()));
+    controls.dispose();
+    vi.setSystemTime(new Date('2026-10-02T20:05:00Z'));
+    const { controls: other } = setup();
+    other.hydrate(saved);
+    expect(other.toPublished().sleepTimer).toBeNull();
+    expect(other.toPublished().sleepResume).toMatchObject({ contentId: 'plex:1' });
+  });
+
+  it('starting new playback clears a stale "the sleep timer stopped playback" offer', async () => {
+    const { controls } = setup();
+    await controls.handleSession('sleep-timer', { minutes: 1 });
+    vi.advanceTimersByTime(60_000);
+    expect(controls.toPublished().sleepResume).not.toBeNull();
+    controls.markLocalPlayback();
+    expect(controls.toPublished().sleepResume).toBeNull();
+  });
 });

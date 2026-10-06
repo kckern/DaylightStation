@@ -535,6 +535,9 @@ export function createScreenSessionControls({
     resetModes('local-start');
     generation += 1;
     restore = null;
+    // New playback began: "the sleep timer stopped playback" is no longer
+    // the state of this session, so its continue offer goes (S4).
+    state.sleepResume = null;
     clearCountdown('local-playback')?.actions?.release?.();
     notify();
   }
@@ -594,12 +597,37 @@ export function createScreenSessionControls({
     persistable: () => ({
       addOnly: state.addOnly, endOfQueue: state.endOfQueue, stopAfterCurrent: state.stopAfterCurrent,
       sleepResume: state.sleepResume,
+      // An armed minutes timer outlives a reload: its absolute deadline is saved.
+      sleepTimer: sleep && sleep.mode === 'minutes'
+        ? {
+          mode: 'minutes', minutes: sleep.minutes, setAt: sleep.setAt,
+          setPosition: sleep.setPosition ?? null, endsAt: iso(sleep.endsAt),
+        }
+        : null,
     }),
     hydrate(saved = {}) {
       if (typeof saved.addOnly === 'boolean') state.addOnly = saved.addOnly;
       if (isEndOfQueueMode(saved.endOfQueue)) state.endOfQueue = saved.endOfQueue;
       if (typeof saved.stopAfterCurrent === 'boolean') state.stopAfterCurrent = saved.stopAfterCurrent;
       if (saved.sleepResume && typeof saved.sleepResume === 'object') state.sleepResume = saved.sleepResume;
+      const armed = saved.sleepTimer;
+      const armedEndsAt = Date.parse(armed?.endsAt ?? '');
+      if (armed?.mode === 'minutes' && Number.isFinite(armedEndsAt) && Number.isFinite(armed.minutes) && !sleep) {
+        const remaining = armedEndsAt - now();
+        sleep = {
+          mode: 'minutes', minutes: armed.minutes, setAt: armed.setAt, setPosition: armed.setPosition ?? null,
+          endsAt: armedEndsAt, fading: false, timers: [],
+        };
+        if (remaining > 0) {
+          sleep.timers.push(setTimeout(startFade, Math.max(0, remaining - SLEEP_FADE_MS)));
+          sleep.timers.push(setTimeout(fireMinutesSleep, remaining));
+          logger().info('sleep-timer.rearmed', { ownerId, remainingMs: remaining });
+        } else {
+          // It came due while nothing was running: it stopped playback by
+          // being past due; offer the same "continue" a fired timer leaves.
+          completeSleep('minutes-elapsed-while-away');
+        }
+      }
       logger().info('hydrated', { ownerId, addOnly: state.addOnly, endOfQueue: state.endOfQueue });
       notify();
     },

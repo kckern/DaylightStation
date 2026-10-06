@@ -21,8 +21,9 @@ import { MantineProvider } from '@mantine/core';
 const dispatchMock = vi.fn();
 const dispatchLeafVerbMock = vi.fn();
 const playContainerAsQueueMock = vi.fn();
+const addToScreenMock = vi.fn();
 vi.mock('./useContentDispatch.js', () => ({
-  useContentDispatch: () => ({ dispatch: dispatchMock, dispatchLeafVerb: dispatchLeafVerbMock, playContainerAsQueue: playContainerAsQueueMock }),
+  useContentDispatch: () => ({ dispatch: dispatchMock, dispatchLeafVerb: dispatchLeafVerbMock, playContainerAsQueue: playContainerAsQueueMock, addToScreen: addToScreenMock }),
 }));
 
 // ── useSessionController: the ⋯ verb menu's four queue actions ──
@@ -507,5 +508,36 @@ describe('SearchMode', () => {
       expect(queuePlayNow).not.toHaveBeenCalled();
       expect(screen.queryByTestId('search-mode')).not.toBeInTheDocument();
     });
+  });
+});
+
+
+describe('SearchMode — Add to this queue (STEER.1b/AC7)', () => {
+  function AddToHarness() {
+    const [open, setOpen] = useState(true);
+    return (
+      <MantineProvider>
+        <CastTargetProvider>
+          <SearchProvider>
+            {open && <SearchMode addTo={{ deviceId: 'livingroom-tv', name: 'Living Room TV' }} onClose={() => setOpen(false)} />}
+          </SearchProvider>
+        </CastTargetProvider>
+      </MantineProvider>
+    );
+  }
+
+  it('says where the addition goes, adds the pick to that screen only, and closes', async () => {
+    localStorage.setItem('media-app.cast-target', JSON.stringify({ version: 2, targetIds: ['kitchen'], mode: 'fork', activityAt: Date.now(), exemptionStartedAt: null }));
+    comboState = { search: 'hos', results: [{ id: 'plex:266151', title: 'Hospital', type: 'episode' }] };
+    render(<AddToHarness />);
+    expect(await screen.findByTestId('search-add-to-banner')).toHaveTextContent('Adding to the queue on Living Room TV');
+    expect(screen.queryByTestId('destination-line')).toBeNull();
+    fireEvent.click(screen.getByTestId('search-mode-result-plex:266151').querySelector('button') ?? screen.getByTestId('search-mode-result-plex:266151'));
+    await waitFor(() => expect(addToScreenMock).toHaveBeenCalledWith('livingroom-tv', 'plex:266151', expect.objectContaining({ title: 'Hospital' })));
+    expect(dispatchMock).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByTestId('search-mode')).toBeNull());
+    expect(mediaLog.addToQueueClosed).toHaveBeenCalledWith(expect.objectContaining({ deviceId: 'livingroom-tv', reason: 'added' }));
+    // The aim is untouched.
+    expect(JSON.parse(localStorage.getItem('media-app.cast-target')).targetIds).toEqual(['kitchen']);
   });
 });

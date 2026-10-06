@@ -93,6 +93,65 @@ keepable, and changes nothing until confirmed. The spot can be kept only with
 what's playing. Clearing everything starts a new session. Other screens are
 never touched.
 
+## Steering: the handle and the one controls surface
+
+This device's Now Playing and every screen's Remote show the **same controls
+in the same layout**; a control a screen can't offer is shown unavailable
+with a short reason, never hidden. Every control is a 44 px button that
+wraps at phone width, so nothing is lost to a narrow screen.
+
+- **Sleep timer.** Stop in 15/30/45/60/90 minutes, or at the end of this
+  item. The time left shows on the controls and on the handle (the mini
+  player). A minutes timer fades out over its last 10 s. Afterwards the
+  controls offer **Continue where it stopped** (this device pauses, so it is
+  plain Play; after an at-end sleep the item is finished, so it reads **Play
+  it again**) and **Continue from m:ss, where the timer was set**. The offer
+  goes as soon as anything new starts here. An armed minutes timer survives
+  closing the page: it keeps its deadline, or, if it came due meanwhile,
+  leaves the Continue offer. On a screen the timer stops it with its queue
+  kept; its Remote offers the "where the timer was set" choice. The fade
+  uses the element volume, so on iOS Safari (read-only media volume) the
+  timer just pauses.
+- **Next episode.** At the natural end of an episode whose next queue item is
+  also an episode, a 10-second countdown names the next one, with **Play
+  now** and **Cancel** (Cancel stays on the finished episode, queue kept).
+  **Stop after this one** stops at the end of the current item, once.
+- **When the queue ends** (bottom of the queue, with the current choice):
+  **Stop**, **Repeat the queue**, or **Keep similar playing** — the next few
+  items from the finished item's show/season (episodes) or artist/album
+  (music), never-played first, then not played this week; never the whole
+  library. Items it adds are marked "added automatically"; it stops by itself
+  after about two unattended hours, and says "Nothing similar left" when it
+  runs out. These modes belong to the session: a new start resets them.
+- **Add only** (a screen's Remote): one step on or off. On this device it is
+  shown unavailable, with the reason (it belongs to a screen other devices
+  play to). While on, Play from
+  any other device is added to that screen's queue instead of replacing it,
+  and the sender reads "Added <item> to <screen> (Add only is on) · Nth in
+  line". Automations still play. Anyone can turn it off.
+- **Notes and Put it back.** When a device pauses, stops, replaces or moves a
+  screen's playback, that screen shows "Paused by <device>" (repeats grouped,
+  volume never noted), and every device's Remote for that screen lists the
+  same notes — so a speaker that can't show a note is still covered. For
+  10 s, **Put it back** restores the item, its spot and its queue, from the
+  screen or from any Remote.
+- **Add to this queue** (a screen's Remote) opens the one search pointed at
+  that screen for a single addition; the aim does not change.
+- **Move to…** (a screen's Remote) lists every other screen and **This
+  device**. The destination picks up at the same moment; only once it has
+  started is the original stopped (it shows "Moved by …"). If the
+  destination can't confirm, the original keeps playing and the outcome says
+  so. Moving to this device opens Now Playing.
+- **Several screens.** The screen picker's **Choose several screens** aims at
+  more than one; the aim then reads "Kitchen + Living Room". Screens chosen
+  in the same room warn that they can drift apart audibly. Each screen gets
+  its own progress and outcome, Add to queue adds to each, and they are
+  steered separately; when two play the same item, either Remote (and Now
+  Playing) offers **Line up with <other>**, which seeks it to the other's
+  spot.
+- **Lock screen.** Playback on this device shows its title, show and artwork
+  in the system media controls (lock screen, notification), with play/pause,
+  next/previous and seek — the same commands as the app's own buttons.
 ## Subtitles, Show briefly, and music behind a slideshow
 
 These live in the one set of playback controls, so they work the same for

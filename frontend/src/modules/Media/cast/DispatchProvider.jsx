@@ -92,7 +92,7 @@ export function DispatchProvider({ children }) {
   useEffect(() => {
     return subscribeTopicKind('homeline', (msg) => {
       const { dispatchId, step, status, elapsedMs, error, operation, queueLength, ordinal, count,
-        sessionId, ownerId, ownerInstanceId, playbackRevision, queueRevision } = msg;
+        sessionId, ownerId, ownerInstanceId, playbackRevision, queueRevision, appliedAs } = msg;
       const parsedTopic = parseDeviceTopic(msg.topic);
       const topicDeviceId = parsedTopic?.kind === 'homeline' ? parsedTopic.deviceId : null;
       if (typeof dispatchId !== 'string' || !dispatchId) return;
@@ -121,6 +121,7 @@ export function DispatchProvider({ children }) {
       dispatch({
         type: 'STEP', dispatchId, step, status, elapsedMs, error, operation, queueLength, ordinal, count,
         sessionId, ownerId, ownerInstanceId, playbackRevision, queueRevision,
+        ...(appliedAs ? { appliedAs } : {}),
         // A late step must locate its exact {attemptId, targetId}.
         targetId: topicDeviceId ?? (typeof msg.deviceId === 'string' ? msg.deviceId : undefined),
       });
@@ -214,7 +215,7 @@ export function DispatchProvider({ children }) {
         .then((res) => {
           settle(dispatchId);
           if (res?.ok) {
-            dispatch({ type: 'SUCCEEDED', dispatchId, totalElapsedMs: res.totalElapsedMs ?? null });
+            dispatch({ type: 'SUCCEEDED', dispatchId, totalElapsedMs: res.totalElapsedMs ?? null, ...(res.appliedAs ? { appliedAs: res.appliedAs } : {}) });
             mediaLog.dispatchSucceeded({ dispatchId, totalElapsedMs: res.totalElapsedMs });
           } else {
             // Failure must not poison the idempotency cache — the user's

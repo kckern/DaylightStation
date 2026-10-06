@@ -70,10 +70,15 @@ const LOCAL_VERB = {
   remove: (t, at) => `Removed ${t} from the queue ${at}`,
   clear: (_t, at) => `Cleared the queue ${at}`,
   undo: (t, at) => `Put back ${t} ${at}`,
+  // Batch B: session controls, line up and screen-to-screen moves.
+  control: (t, at) => `Changed ${t} ${at}`,
+  lineUp: (t, at) => `Lined up ${t} ${at}`,
+  move: (t, at) => `Moved ${t} ${at === 'here' ? 'here' : at.replace(/^on /, 'to ')}`,
 };
 const LOCAL_FAILED_VERB = {
   play: 'play', shuffle: 'shuffle', add: 'add', playNext: 'add', playFirst: 'add',
   remove: 'remove', clear: 'clear the queue for', undo: 'put back',
+  control: 'change', lineUp: 'line up', move: 'move',
 };
 
 // Household list edits (FIND.12a/13a, FIND.10a/AC6): named plainly, wherever
@@ -143,7 +148,7 @@ function localCopy(d, phase, name) {
   }
   if (phase === 'failed') {
     return {
-      primary: `Couldn't ${LOCAL_FAILED_VERB[d.kind] ?? 'do that for'} ${title} ${at}`,
+      primary: `Couldn't ${LOCAL_FAILED_VERB[d.kind] ?? 'do that for'} ${title} ${d.kind === 'move' && at !== 'here' ? at.replace(/^on /, 'to ') : at}`,
       secondary: d.reason ?? null,
     };
   }
@@ -171,7 +176,7 @@ function farCopy(d, phase, name, kind) {
       const last = d.steps?.[d.steps.length - 1];
       return {
         primary: isAdd
-          ? (title ? `Adding ${title} to ${name}` : `Adding to ${name}`)
+          ? `${title ? `Adding ${title} to ${name}` : `Adding to ${name}`}${d.appliedAs === 'add' ? ' (Add only is on)' : ''}`
           : (title ? `Sending ${title} to ${name}` : `Sending to ${name}`),
         secondary: last ? friendlyStepLabel(last.step, kind) : 'Starting…',
       };
@@ -179,6 +184,14 @@ function farCopy(d, phase, name, kind) {
     case 'sent':
       return { primary: `Sent to ${name}`, secondary: title };
     case 'confirmed':
+      if (isAdd && d.appliedAs === 'add') {
+        // PLAY.10a/AC2: the screen's Add only turned this Play into an add.
+        const place = d.outcomeIdentity?.ordinal ?? d.outcomeIdentity?.queueLength;
+        return {
+          primary: `${title ? `Added ${title} to ${name}` : `Added to ${name}`} (Add only is on)`,
+          secondary: Number.isInteger(place) ? `${ordinal(place)} in line` : null,
+        };
+      }
       if (isAdd) {
         return {
           primary: title ? `Added ${title} to ${name}` : `Added to ${name}`,

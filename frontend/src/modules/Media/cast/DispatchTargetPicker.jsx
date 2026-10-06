@@ -23,6 +23,9 @@ import { useDispatchTargetPicker } from './useDispatchTargetPicker.js';
 import { useDevice } from '../fleet/useDevice.js';
 import { deviceName, deviceIcon, deviceLocation } from '../fleet/deviceDisplay.js';
 import { deviceStatusLine, describeBusy } from './castCopy.js';
+import { aimName } from './AimLabel.jsx';
+import { useScreenRooms, sharedRoomGroups, driftWarningText } from './screenRooms.js';
+import mediaLog from '../logging/mediaLog.js';
 import './Cast.scss';
 
 function DeviceTile({ device, pressed, onSelect }) {
@@ -76,6 +79,21 @@ function BusyWarning({ device, intent }) {
   );
 }
 
+// PLACE.4a/AC6 (RQ-PLACE-10): several screens in the same room drift apart
+// audibly; say so while they are being chosen.
+function DriftWarning({ targetIds, devices }) {
+  const rooms = useScreenRooms(targetIds.length > 1);
+  const groups = targetIds.length > 1 ? sharedRoomGroups(targetIds, devices, rooms) : [];
+  const text = driftWarningText(groups);
+  const key = groups.map((group) => `${group.room}:${group.names.join('|')}`).join(';');
+  React.useEffect(() => {
+    if (key) mediaLog.aimDriftWarned({ state: 'shown', targetIds, rooms: groups.map((group) => group.room) });
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- once per distinct warning
+  }, [key]);
+  if (!text) return null;
+  return <div role="status" data-testid="picker-drift-warning" className="cast-picker-warning">{text}</div>;
+}
+
 export function DispatchTargetPicker({ source, onComplete, autoFocus = true, verb = 'Cast', intent = 'dispatch' }) {
   const {
     devices, selected, multi, mode, canSubmit, localPlaying, hasPotentialContent, moveSupported, moveUnavailable, dispatchError,
@@ -87,7 +105,7 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
   const targetLabel = selectedDevices.length === 1
     ? deviceName(selectedDevices[0])
     : selectedDevices.length > 1
-      ? `${selectedDevices.length} devices`
+      ? aimName(selectedDevices.map((d) => d.id), devices)
       : null;
 
   const ctaLabel = canSubmit
@@ -128,10 +146,11 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
           aria-pressed={multi}
           onClick={toggleMulti}
         >
-          {isDestination ? '+ add another device' : '+ cast to more than one'}
+          {multi ? 'Several screens: on' : 'Choose several screens'}
         </button>
       )}
       {selectedDevices.map((d) => <BusyWarning key={d.id} device={d} intent={intent} />)}
+      {multi && <DriftWarning targetIds={selectedDevices.map((d) => d.id)} devices={devices} />}
       {/* The transfer/fork choice only makes sense when a dispatch is
           actually about to happen — a destination-only pick never plays or
           moves anything, so the choice would be pure noise (and a lie about

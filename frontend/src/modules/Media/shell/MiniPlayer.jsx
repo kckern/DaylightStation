@@ -11,14 +11,17 @@ import {
   IconPlayerStopFilled,
   IconPlayerSkipForwardFilled,
   IconAlertTriangle,
+  IconMoon,
 } from '@tabler/icons-react';
 import { useSessionController } from '../controller/useSessionController.js';
 import { usePlaybackPosition } from '../controller/usePlaybackPosition.js';
 import { useNav } from './NavProvider.jsx';
 import { usePlayerHost } from '../session/usePlayerHost.js';
+import { useSessionControls, useSecondTick, secondsUntil, formatClock } from '../controller/useSessionControls.js';
 import { useSlideshowStopGuard } from './PlayerFeatureControls.jsx';
 import { HandleHouseMenu } from '../house/HouseQuietControls.jsx';
 import './NowPlaying.scss';
+import './SessionControls.scss';
 
 const PLAYING_STATES = new Set(['playing', 'buffering']);
 const NO_PROBLEM = () => null;
@@ -38,6 +41,27 @@ function problemLabel(problem) {
   return problem.kind === 'skipped'
     ? `Playback problem: ${title} was skipped${problem.replacement?.title ? `, now ${problem.replacement.title}` : ''}`
     : `Playback problem: ${title} could not play`;
+}
+
+// STEER.10a/AC2: the sleep timer's time left, on the handle.
+function SleepTimeLeft() {
+  const { controls } = useSessionControls('local');
+  const sleepTimer = controls?.sleepTimer ?? null;
+  const now = useSecondTick(sleepTimer?.mode === 'minutes');
+  if (!sleepTimer) return null;
+  if (sleepTimer.mode === 'atEnd') {
+    return (
+      <span className="mini-player-sleep" data-testid="mini-sleep" aria-label="Sleep timer: stops at the end of this item">
+        <IconMoon size={14} aria-hidden /> end
+      </span>
+    );
+  }
+  const left = secondsUntil(sleepTimer.endsAt, now) ?? sleepTimer.remainingSeconds;
+  return (
+    <span className="mini-player-sleep" data-testid="mini-sleep" aria-label={`Sleep timer: ${formatClock(left)} left`}>
+      <IconMoon size={14} aria-hidden /> {formatClock(left)}
+    </span>
+  );
 }
 
 export function MiniPlayer() {
@@ -138,6 +162,7 @@ export function MiniPlayer() {
             {queuePos + 1}/{queueCount}
           </span>
         )}
+        <SleepTimeLeft />
       </button>
       <div className="mini-player-controls">
         <button

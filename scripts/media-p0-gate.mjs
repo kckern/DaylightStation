@@ -201,6 +201,80 @@ export const P0_EXTENSION_ENTRIES = Object.freeze([
     file: 'media-app-house-view.runtime.test.mjs',
     grep: 'HOUSE\\.4a',
   },
+  // Batch B — handle and controls (P1), exact-SHA runtime evidence on two
+  // virtual receivers (media-app-handle-controls.runtime.test.mjs).
+  {
+    story: 'PLAY.10a',
+    criteria: ['PLAY.10a/AC1'],
+    file: 'media-app-handle-controls.runtime.test.mjs',
+    grep: "a screen's Remote has the same session controls",
+  },
+  {
+    story: 'STEER.13a',
+    criteria: ['STEER.13a/AC1', 'STEER.13a/AC2'],
+    file: 'media-app-handle-controls.runtime.test.mjs',
+    grep: "a screen's Remote has the same session controls",
+  },
+  {
+    story: 'STEER.13b',
+    criteria: ['STEER.13b/AC2'],
+    file: 'media-app-handle-controls.runtime.test.mjs',
+    grep: "a screen's Remote has the same session controls",
+  },
+  {
+    story: 'RELY.4b',
+    criteria: ['RELY.4b/AC1', 'RELY.4b/AC2', 'RELY.4b/AC3'],
+    file: 'media-app-handle-controls.runtime.test.mjs',
+    grep: 'RELY\\.4b/STEER\\.1b',
+  },
+  {
+    story: 'STEER.1b',
+    criteria: ['STEER.1b/AC5'],
+    file: 'media-app-handle-controls.runtime.test.mjs',
+    grep: 'RELY\\.4b/STEER\\.1b',
+  },
+  {
+    story: 'PLAY.10a',
+    criteria: ['PLAY.10a/AC2'],
+    file: 'media-app-handle-controls.runtime.test.mjs',
+    grep: 'PLAY\\.10a/AC2',
+  },
+  {
+    story: 'STEER.13b',
+    criteria: ['STEER.13b/AC1'],
+    file: 'media-app-handle-controls.runtime.test.mjs',
+    grep: 'STEER\\.13b/AC1',
+  },
+  {
+    story: 'STEER.1b',
+    criteria: ['STEER.1b/AC7'],
+    file: 'media-app-handle-controls.runtime.test.mjs',
+    grep: 'STEER\\.1b/AC7',
+  },
+  {
+    story: 'PLACE.9a',
+    criteria: ['PLACE.9a/AC1', 'PLACE.9a/AC2', 'PLACE.9a/AC3'],
+    file: 'media-app-handle-controls.runtime.test.mjs',
+    grep: 'PLACE\\.9a',
+  },
+  {
+    story: 'PLACE.4a',
+    criteria: ['PLACE.4a/AC1', 'PLACE.4a/AC2', 'PLACE.4a/AC3', 'PLACE.4a/AC4', 'PLACE.4a/AC5', 'PLACE.4a/AC7'],
+    file: 'media-app-handle-controls.runtime.test.mjs',
+    grep: 'PLACE\\.4a',
+  },
+  {
+    story: 'STEER.10a',
+    criteria: ['STEER.10a/AC1', 'STEER.10a/AC3'],
+    file: 'media-app-handle-controls.runtime.test.mjs',
+    grep: 'this device: sleep at the end',
+  },
+  {
+    story: 'STEER.13a',
+    criteria: ['STEER.13a/AC3'],
+    file: 'media-app-handle-controls.runtime.test.mjs',
+    grep: 'this device: sleep at the end',
+  },
   // Batch A (start page + item surfaces, P1). The household routes are
   // answered by the journey's in-test household (the acceptance server blocks
   // household reads/writes); catalog, play and streams are real. Criteria whose

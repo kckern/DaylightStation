@@ -15,6 +15,7 @@ import { pickNextQueueItem } from './advancement.js';
 import { isContainerInput, expandContainerInput } from './containerExpansion.js';
 import mediaLog from '../logging/mediaLog.js';
 import { createItemActionOwner } from '../actions/itemActionOwner.js';
+import { createLocalSessionControls } from './localSessionControls.js';
 
 function defaultUuid() {
   try {
@@ -78,6 +79,10 @@ export function createLocalSessionController({
   nowFn = () => new Date(),
   clearPersisted = () => {},
   fetchImpl = undefined, // container expansion; defaults to globalThis.fetch
+  // Screen session controls on this session (sleep timer, end of queue,
+  // countdown, stop after this one): `{ resolveContinuation, storage,
+  // countdownSeconds }` overrides for tests; see localSessionControls.js.
+  sessionControls: sessionControlsOptions = {},
 } = {}) {
   // RELY.7a: a restored session comes back PAUSED, never playing aloud. The
   // Player is held unmounted (PlayerBridge) until an explicit start.
@@ -215,6 +220,21 @@ export function createLocalSessionController({
   };
   const position = createPositionChannel();
   position.set(initial.position ?? 0);
+  // Sleep-timer fade (RQ-STEER-12): a transient multiplier on this device's
+  // output, applied by PlayerBridge on top of the session volume — never a
+  // change to the person's volume setting.
+  let outputFade = 1;
+  const fadeListeners = new Set();
+  const setOutputFade = (value) => {
+    const next = Math.max(0, Math.min(1, Number.isFinite(value) ? value : 1));
+    if (next === outputFade) return;
+    outputFade = next;
+    for (const fn of [...fadeListeners]) {
+      try { fn(outputFade); } catch { /* listener isolation */ }
+    }
+  };
+  // Assigned once the controller exists (below); every hook is optional.
+  let controls = null;
   let playbackRevision = 0;
   let queueRevision = 0;
   let itemActionGuardRevision = 0;
@@ -698,6 +718,63 @@ export function createLocalSessionController({
       .catch(() => apply([input], opts, context, opOrigin));
   };
 
+  // RQ-STEER-12/19/20: at every NATURAL end of an item (never a skip,
+  // failure or clear) the session controls decide first — a sleep timer set
+  // for the end of this item, Stop after this one, the next-episode
+  // countdown, or the end-of-queue choice. True = they own what happens next.
+  const consultNaturalEnd = () => {
+    if (!controls) return false;
+    const s = snap();
+    const current = s.queue.items[s.queue.currentIndex] ?? null;
+    if (!current) return false;
+    const repeatOne = s.config?.repeat === 'one';
+    // Repeat one replays the item; only an explicit stop request overrides it.
+    if (repeatOne && !controls.hasAtEndSleep() && !controls.stopsAfterCurrent()) return false;
+    const next = repeatOne ? current : pickNextQueueItem(s, { reason: 'item-ended' });
+    const finishedId = current.queueItemId;
+    const stillFinished = () => snap().queue.items[snap().queue.currentIndex]?.queueItemId === finishedId;
+    const holdEnded = () => {
+      player.pause();
+      store.dispatch({ type: 'PLAYER_STATE', playerState: 'ended', __playerDriven: true });
+    };
+    const actions = {
+      advance: () => {
+        if (!stillFinished()) return;
+        const planned = next && snap().queue.items.some((it) => it.queueItemId === next.queueItemId) ? next : null;
+        if (!planned) { advance('item-ended', { playerDriven: true }); return; }
+        moveCurrentTo(planned, { consumeExecutionOrder: true, playerDriven: true });
+      },
+      stop: holdEnded,
+      finish: () => { if (stillFinished()) holdEnded(); },
+      restartQueue: () => {
+        const first = snap().queue.items[0];
+        if (!first) return false;
+        moveCurrentTo(first, { playerDriven: true });
+        return true;
+      },
+      // The policy let go of a held end without stopping: the shared Player's
+      // duplicate-completion key must not outlive the hold.
+      release: () => { player.releaseCompletion?.(); },
+    };
+    try {
+      const handled = controls.naturalEnd({ current, next }, actions) === true;
+      // A held end (countdown running) is still an END: say so without pausing
+      // or touching the node, so Play goes through the ended -> new-visit path
+      // and the handle / lock screen stop reporting "playing".
+      if (handled && stillFinished() && snap().state !== 'ended') {
+        store.dispatch({ type: 'PLAYER_STATE', playerState: 'ended', __playerDriven: true });
+      }
+      mediaLog.naturalEndConsulted({
+        sessionId: s.sessionId, contentId: current.contentId, nextContentId: next?.contentId ?? null,
+        decision: handled ? 'session-controls' : 'advance',
+      });
+      return handled;
+    } catch (error) {
+      mediaLog.sessionControlFailed({ target: 'local', action: 'natural-end', error: error?.message ?? String(error) });
+      return false;
+    }
+  };
+
   const controller = {
     kind: 'local',
     id: clientId,
@@ -728,6 +805,8 @@ export function createLocalSessionController({
         beginAction();
         const opOrigin = pendingOrigin;
         mediaLog.transportCommand({ action: 'play', target: 'local' });
+        controls?.noteCommand('play');
+        controls?.notePlayedOn();
         // Only an explicit Play ends a restored session's paused hold.
         releaseRestore('play');
         // Playing from a stopped/ready session starts the queue head — this
@@ -741,7 +820,12 @@ export function createLocalSessionController({
         if (!snap().currentItem) {
           const first = snap().queue.items[0];
           if (!first) return;
-          moveCurrentTo(first);
+          moveCurrentTo(first, {}, opOrigin);
+        } else if (snap().state === 'ended' && snap().queue.items[snap().queue.currentIndex]) {
+          // Play after an item ended here (the queue end, Stop after this
+          // one, a cancelled countdown) replays it from the start as a new
+          // visit, so its next natural end is a new end.
+          moveCurrentTo(snap().queue.items[snap().queue.currentIndex], {}, opOrigin);
         } else {
           stampOrigin(opOrigin);
         }
@@ -751,6 +835,7 @@ export function createLocalSessionController({
         beginAction();
         const opOrigin = pendingOrigin;
         mediaLog.transportCommand({ action: 'pause', target: 'local' });
+        controls?.noteCommand('pause');
         // Flush the hot-tier position durably — pausing is the moment the
         // user expects "their place" to be saved.
         const here = position.get().seconds;
@@ -761,6 +846,7 @@ export function createLocalSessionController({
       stop: () => {
         beginAction();
         mediaLog.transportCommand({ action: 'stop', target: 'local' });
+        controls?.noteCommand('stop');
         player.pause();
         // Stop ends playback but does NOT destroy the queue — only the
         // explicit, confirmed reset does that (C2.3 / session state table:
@@ -772,6 +858,7 @@ export function createLocalSessionController({
         beginAction();
         const opOrigin = pendingOrigin;
         mediaLog.transportCommand({ action: 'seekAbs', value: seconds, target: 'local' });
+        controls?.noteCommand('seek');
         if (restoreHeld) {
           // No Player is mounted yet: move the restored spot it will start at.
           const target = Math.max(0, Number(seconds) || 0);
@@ -796,6 +883,7 @@ export function createLocalSessionController({
         beginAction();
         const opOrigin = pendingOrigin;
         mediaLog.transportCommand({ action: 'skipNext', target: 'local' });
+        controls?.noteCommand('skip');
         // A person moving on (e.g. Skip now on a waiting file) ends any hold.
         clearSourceWaitTimer();
         holdContentId = null;
@@ -805,6 +893,7 @@ export function createLocalSessionController({
       skipPrev: () => {
         beginAction();
         mediaLog.transportCommand({ action: 'skipPrev', target: 'local' });
+        controls?.noteCommand('skip');
         advanceBack();
       },
       restartCurrent: () => {
@@ -815,12 +904,13 @@ export function createLocalSessionController({
     },
 
     queue: {
-      playNow: (input, opts) => enqueue('playNow', input, opts),
-      playNext: (input) => enqueue('playNext', input),
-      addUpNext: (input) => enqueue('addUpNext', input),
-      add: (input) => enqueue('add', input),
+      playNow: (input, opts) => { controls?.noteNewPlayback(); return enqueue('playNow', input, opts); },
+      playNext: (input) => { controls?.noteCommand('queue'); return enqueue('playNext', input); },
+      addUpNext: (input) => { controls?.noteCommand('queue'); return enqueue('addUpNext', input); },
+      add: (input) => { controls?.noteCommand('queue'); return enqueue('add', input); },
       remove: (queueItemId) => {
         beginAction();
+        controls?.noteCommand('queue');
         const wasCurrent = snap().queue.items[snap().queue.currentIndex]?.queueItemId === queueItemId;
         const next = qOps.remove(snap(), queueItemId);
         logQueueMutation('remove', next, { queueItemId });
@@ -835,12 +925,14 @@ export function createLocalSessionController({
       },
       reorder: (input) => {
         beginAction();
+        controls?.noteCommand('queue');
         const next = qOps.reorder(snap(), input);
         logQueueMutation('reorder', next);
         store.replace(next);
       },
       jump: (queueItemId) => {
         beginAction();
+        controls?.noteCommand('queue');
         const next = qOps.jump(snap(), queueItemId);
         logQueueMutation('jump', next, { queueItemId });
         store.replace(next);
@@ -848,6 +940,7 @@ export function createLocalSessionController({
       },
       clear: () => {
         beginAction();
+        controls?.noteCommand('queue');
         const next = qOps.clear(snap());
         logQueueMutation('clear', next);
         store.replace(next);
@@ -921,6 +1014,7 @@ export function createLocalSessionController({
       },
       adoptSnapshot: (snapshot, { autoplay = true } = {}) => {
         beginAction();
+        controls?.noteNewPlayback();
         return adopt(snapshot, { autoplay });
       },
     },
@@ -1015,6 +1109,7 @@ export function createLocalSessionController({
       if (contentId != null && snap().currentItem?.contentId !== contentId) return;
       // Holding on a refused file during a library outage: its clear is not an end.
       if (holdContentId && snap().currentItem?.contentId === holdContentId) return;
+      if (consultNaturalEnd()) return;
       advance('item-ended', { playerDriven: true });
     },
     onPlayerError: ({ message, code } = {}) => {
@@ -1153,6 +1248,57 @@ export function createLocalSessionController({
     if (operationId != null) operationOrigins.set(operationId, pendingOrigin ?? defaultOrigin());
     return rawUndo(operationId);
   };
+  // A person's item action is a command; a replacing one starts a new
+  // session for the controls (their modes return to defaults, like a screen).
+  const executeOwned = controller.execute;
+  controller.execute = (command) => {
+    if (command?.kind === 'playNow' || command?.kind === 'shuffle') controls?.noteNewPlayback();
+    else controls?.noteCommand('queue');
+    return executeOwned(command);
+  };
+
+  controller.output = {
+    getFade: () => outputFade,
+    subscribe: (fn) => { fadeListeners.add(fn); return () => fadeListeners.delete(fn); },
+  };
+  controls = createLocalSessionControls({
+    ownerId: `browser:${clientId}`,
+    ...sessionControlsOptions,
+    ports: {
+      // The spot comes from the native media element when it is bound to
+      // the current item (capture()), else the hot position tier.
+      getSnapshot: () => {
+        const current = snap();
+        if (!current.currentItem) return current;
+        const spot = capture().snapshot.position;
+        return Number.isFinite(spot) ? { ...current, position: spot } : current;
+      },
+      // A sleep stop here PAUSES: the item and its spot stay, so "continue
+      // from where it stopped" is ordinary Play.
+      pause: () => {
+        const here = position.get().seconds;
+        if (Number.isFinite(here) && here > 0) setDurablePosition(here, { playerDriven: true });
+        player.pause();
+        if (snap().currentItem) store.dispatch({ type: 'PLAYER_STATE', playerState: 'paused', __playerDriven: true });
+      },
+      setFade: setOutputFade,
+      restoreSnapshot: (snapshot, { autoplay = true } = {}) => {
+        releaseRestore('sleep-resume');
+        return adopt(snapshot, { autoplay });
+      },
+      // One item action (one Undo) for the whole batch; not a person's
+      // command, so it does not reset the unattended-batch limit.
+      addBatch: (inputs) => {
+        if (!inputs.length) return { ok: false, code: 'EMPTY_COLLECTION' };
+        return executeOwned({
+          kind: 'add', item: inputs[0], collectionItems: inputs,
+          operationId: randomUuid(), tappedAt: Date.now(),
+        });
+      },
+    },
+  });
+  store.subscribe((snapshot) => controls.observeSnapshot(snapshot));
+  controller.sessionControls = controls;
   return controller;
 }
 
