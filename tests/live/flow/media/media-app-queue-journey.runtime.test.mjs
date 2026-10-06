@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { markFirstUseDone } from './lib/firstUse.mjs';
+
+test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
 const title = process.env.MEDIA_ACCEPTANCE_TITLE || 'Disclosure Day';
 test.use({ viewport: { width: 1440, height: 900 }, trace: 'retain-on-failure', actionTimeout: 10000 });
@@ -66,7 +69,7 @@ test('[FIND.1a/AC5] keyboard opens row actions and adds without clearing search 
   }
   await page.keyboard.press('Enter');
   await expect(search).toHaveValue(title);
-  await expect(page.getByTestId('mini-player-open-nowplaying')).toHaveText('1 item ready');
+  await expect(page.getByTestId('mini-state')).toHaveText('Ready to play');
   await expect(page.locator('video')).toHaveCount(0);
   await page.getByTestId('mini-player-open-nowplaying').click();
   // QueuePanel's title button includes its visible one-based index.
@@ -143,7 +146,7 @@ test('[FIND.1a/AC5] pointer Add retains search, then the first nonfocus outside 
   await result.getByRole('button', { name: 'More actions' }).click();
   await page.getByRole('menuitem', { name: 'Add to Queue', exact: true }).click();
   await expect(search).toHaveValue(title);
-  await expect(page.getByTestId('mini-player-open-nowplaying')).toHaveText('1 item ready');
+  await expect(page.getByTestId('mini-state')).toHaveText('Ready to play');
   await expect(page.locator('video')).toHaveCount(0);
   // Observe the ordinary browser click target; never dispatch a synthetic
   // event or move focus to make a second blur conceal a stale close marker.

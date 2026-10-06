@@ -16,7 +16,8 @@ import { IconDeviceRemote, IconAlertCircle, IconPlayerPlay, IconPlayerPauseFille
 import { useFleetContext } from '../fleet/useFleetContext.js';
 import { useDevice } from '../fleet/useDevice.js';
 import { FleetPlayPicker } from '../fleet/FleetPlayPicker.jsx';
-import { deviceName, deviceIcon, deviceLocation } from '../fleet/deviceDisplay.js';
+import { deviceName, deviceLocation } from '../fleet/deviceDisplay.js';
+import { DeviceIcon } from '../fleet/DeviceIcon.jsx';
 import { useNav } from './NavProvider.jsx';
 import { usePeek } from '../peek/usePeek.js';
 import { stateColor } from '../theme/mediaTheme.js';
@@ -75,7 +76,7 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
           style={{ backgroundColor: stateColor(devState, { offline }), borderColor: offline ? 'currentColor' : 'transparent' }}
           aria-hidden
         />
-        <span className="fleet-card-icon" aria-hidden>{deviceIcon(device)}</span>
+        <span className="fleet-card-icon" aria-hidden><DeviceIcon device={device} /></span>
         <span className="fleet-card-titles">
           <span className="fleet-card-name">
             {name}
@@ -97,29 +98,25 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
         </Text>
       )}
       <StartStatusLine deviceId={deviceId} status={startStatus} kind={deviceKind(device)} />
-      <div className="fleet-card-item">
-        {item ? (
-          <>
-            {item.thumbnail && <img className="fleet-card-thumb" src={item.thumbnail} alt="" loading="lazy" />}
-            <div className="fleet-card-item-meta">
-              <Text size="sm" fw={600} lineClamp={1}>{item.title ?? item.contentId}</Text>
-              {duration > 0 && (
-                <Group gap="xs" wrap="nowrap">
-                  <Text size="xs" c="dimmed">{fmt(snap.position)}</Text>
-                  <Progress value={(100 * (snap.position ?? 0)) / duration} size="xs" style={{ flex: 1 }} />
-                  <Text size="xs" c="dimmed">{fmt(duration)}</Text>
-                </Group>
-              )}
-            </div>
-          </>
-        ) : (
-          <Text size="sm" c="dimmed" className="fleet-card-hint">
-            {devState === 'unknown' && !offline
-              ? "This device hasn't reported yet"
-              : 'Nothing playing right now'}
-          </Text>
-        )}
-      </div>
+      {item ? (
+        <div className="fleet-card-item">
+          {item.thumbnail && <img className="fleet-card-thumb" src={item.thumbnail} alt="" loading="lazy" />}
+          <div className="fleet-card-item-meta">
+            <Text size="sm" fw={600} lineClamp={1}>{item.title ?? item.contentId}</Text>
+            {duration > 0 && (
+              <Group gap="xs" wrap="nowrap">
+                <Text size="xs" c="dimmed">{fmt(snap.position)}</Text>
+                <Progress value={(100 * (snap.position ?? 0)) / duration} size="xs" style={{ flex: 1 }} />
+                <Text size="xs" c="dimmed">{fmt(duration)}</Text>
+              </Group>
+            )}
+          </div>
+        </div>
+      ) : (devState === 'unknown' && !offline) ? (
+        // An idle card is one line (the state label above says so); only a device
+        // that has not reported yet explains itself.
+        <Text size="xs" c="dimmed" className="fleet-card-hint">This device hasn't reported yet</Text>
+      ) : null}
       {isActive && <StartedByLine deviceId={deviceId} info={startedBy ?? null} />}
       <AddOnlyNotice deviceId={deviceId} name={name} controls={controls} />
       {!canShowNotes(device) && <RowNotes deviceId={deviceId} name={name} controls={controls} />}

@@ -3,14 +3,49 @@
 // (modules/Media/theme/mediaTheme.js). Only the font and app-level layout
 // variables live here.
 
+@use '../modules/Media/theme/fonts';
+
 .media-app {
   --media-dock-h: 56px;
   --media-tabbar-h: 56px;
   --media-mini-h: 60px;
   --media-dock-video-w: 96px;
 
+  // Visual-redesign tokens, aliased from the theme ramp (mediaTheme.js owns the
+  // hexes). Amber: primary Play/Resume, destination name, selected scope, focus.
+  // One left edge: the fixed content gutter (24 px laptop, 16 px phone).
+  --media-gutter: 16px;
+  --media-rail-w: 72px;
+  font-family: 'Atkinson Hyperlegible Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 1rem;
+
   height: 100dvh;
   overflow: hidden;
+}
+
+// Declared on <html> (not .media-app) so portaled popovers/menus read them too.
+html:has(.media-app) {
+  --media-ink: var(--mantine-color-dark-7);
+  --media-surface: var(--mantine-color-dark-5);
+  --media-line: var(--mantine-color-dark-4);
+  --media-text: var(--mantine-color-dark-0);
+  --media-muted: var(--mantine-color-dark-1);
+  --media-accent: var(--mantine-color-amber-5);
+}
+
+// The same tokens on the app root, as a separate rule: a WebView without :has()
+// drops the rule above whole, and the app itself must still resolve them.
+.media-app {
+  --media-ink: var(--mantine-color-dark-7);
+  --media-surface: var(--mantine-color-dark-5);
+  --media-line: var(--mantine-color-dark-4);
+  --media-text: var(--mantine-color-dark-0);
+  --media-muted: var(--mantine-color-dark-1);
+  --media-accent: var(--mantine-color-amber-5);
+}
+
+@media (min-width: 48em) {
+  .media-app { --media-gutter: 24px; }
 }
 
 // Chrome Android turns downward overscroll of the ROOT scroller into

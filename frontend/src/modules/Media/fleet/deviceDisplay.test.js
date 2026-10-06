@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { deviceName, deviceIcon, deviceLocation } from './deviceDisplay.js';
+import { deviceName, deviceIcon, deviceLocation, displayDeviceName, isMachineDeviceLabel } from './deviceDisplay.js';
 
 describe('deviceName', () => {
   it('prefers the configured name', () => {
@@ -37,5 +37,33 @@ describe('deviceLocation', () => {
     expect(deviceLocation({ location: 'Living Room' })).toBe('Living Room');
     expect(deviceLocation({})).toBe('');
     expect(deviceLocation(null)).toBe('');
+  });
+});
+
+describe('displayDeviceName — no hash ever reaches the UI', () => {
+  it('passes a real name through', () => {
+    expect(displayDeviceName('Kitchen iPad')).toBe('Kitchen iPad');
+    expect(displayDeviceName('  Mac ')).toBe('Mac');
+  });
+  it('reads "a browser" for a made-up or missing name', () => {
+    expect(displayDeviceName('Browser 4778f429')).toBe('a browser');
+    expect(displayDeviceName('browser:4778f429aa11')).toBe('a browser');
+    expect(displayDeviceName('')).toBe('a browser');
+    expect(displayDeviceName(null)).toBe('a browser');
+  });
+  it('takes a caller fallback (the viewer\'s own browser is "this device")', () => {
+    expect(displayDeviceName('Browser 4778f429', { fallback: 'this device' })).toBe('this device');
+  });
+  it('recognises machine labels', () => {
+    expect(isMachineDeviceLabel('Browser 1a2b3c4d')).toBe(true);
+    expect(isMachineDeviceLabel('ephemeral:abcd1234')).toBe(true);
+    expect(isMachineDeviceLabel('4778f429-aa11-4b2c')).toBe(true);
+    expect(isMachineDeviceLabel('Browser Room')).toBe(false);
+    expect(isMachineDeviceLabel('Office TV')).toBe(false);
+  });
+  it('deviceName never humanizes a browser id into a hash', () => {
+    expect(deviceName({ id: 'browser:4778f429aa11' })).toBe('a browser');
+    expect(deviceName({ id: 'browser:4778f429aa11', name: 'Browser 4778f429' })).toBe('a browser');
+    expect(deviceName({ id: 'browser:4778f429aa11', name: 'Dad phone' })).toBe('Dad phone');
   });
 });

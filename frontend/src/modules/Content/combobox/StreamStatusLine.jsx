@@ -68,7 +68,6 @@ export function StreamStatusLine({ state = null, pending = [], sourceErrors = []
         ))}
         {pendingSources.length > 0 && (
           <span className="stream-status-line--pending">
-            <span className="stream-status-spinner" aria-hidden="true" />
             <span>Still searching — {pendingSources.length} source{pendingSources.length === 1 ? '' : 's'} still answering</span>
           </span>
         )}
@@ -88,7 +87,6 @@ export function StreamStatusLine({ state = null, pending = [], sourceErrors = []
   if (pending.length > 0) {
     return (
       <div data-testid="stream-status-line" className="stream-status-line stream-status-line--pending" aria-live="polite">
-        <span className="stream-status-spinner" aria-hidden="true" />
         <span>Searching {pending.length} source{pending.length === 1 ? '' : 's'}…</span>
       </div>
     );

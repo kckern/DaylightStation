@@ -9,7 +9,6 @@ import { FleetView } from './FleetView.jsx';
 import { PeekPanel } from './PeekPanel.jsx';
 import { ScreenAdminView } from '../house/ScreenAdminView.jsx';
 import { RoutineHistoryView } from '../house/RoutineHistoryView.jsx';
-import { FirstUseCard } from '../identity/FirstUseCard.jsx';
 
 function renderView(view, params) {
   switch (view) {
@@ -31,8 +30,6 @@ export function Canvas() {
   const { view, params } = useNav();
   return (
     <main data-testid="media-canvas" className="media-canvas">
-      {/* RQ-RELY-12: the first-use moment, until this device is named or it is skipped. */}
-      {view === 'home' && <FirstUseCard />}
       {renderView(view, params)}
     </main>
   );

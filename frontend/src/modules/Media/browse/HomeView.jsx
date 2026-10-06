@@ -1,5 +1,5 @@
 // frontend/src/modules/Media/browse/HomeView.jsx
-// The start page (FIND.7a): this device's own session (Resume), what is
+// The start page (FIND.7a): what is
 // playing on other screens right now ("Now on <screen> · Remote · Move here",
 // FIND.10a/AC3), the server-built suggestions for THIS screen in their order —
 // Favourites as large pictures first (FIND.12b), Carry on with where each
@@ -9,19 +9,21 @@
 // out). With nothing to suggest the page leads into Browse.
 //
 // Every item has the whole verb set (⋯) and follows the one tap rule: a
-// collection's picture opens it and its inline Play/Continue plays it; a
-// playable item's picture plays it at the aim.
-import React, { useContext, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
-import { Button, Group, Stack, Title } from '@mantine/core';
-import { IconDeviceRemote, IconArrowBarToDown, IconLayoutGrid } from '@tabler/icons-react';
+// collection's picture (or title) opens it; a playable item's picture plays it
+// at the aim. Rows share one left edge, scroll sideways with a hidden
+// scrollbar and, with a pointer, step with ‹ › at the heading's right end.
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { ActionIcon, Button, Group, Stack, Title } from '@mantine/core';
+import { IconDeviceRemote, IconArrowBarToDown, IconLayoutGrid, IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { getDeviceId } from '../../../lib/deviceIdentity.js';
-import { EmptyState, ErrorState } from '../../../lib/ui/states.jsx';
+import { EmptyState } from '../../../lib/ui/states.jsx';
+import { LoadErrorLine } from '../shared/LoadErrorLine.jsx';
 import Skeleton from '@/lib/ui/Skeleton.jsx';
 import { useNav } from '../shell/NavProvider.jsx';
 import mediaLog from '../logging/mediaLog.js';
-import { ResumeCard } from './ResumeCard.jsx';
 import { HomeTile } from './HomeTile.jsx';
+import { tileKind, collapseEditions, editionsLabel, presentTitle, progressPercent } from './tilePresentation.js';
 import { HOUSEHOLD_PATHS, suggestionsPath } from '../household/householdApi.js';
 import {
   toItem, formatLeft, spotLine, differingSpots, whereLine, playedAtLabel, nowOnScreenIds, bareScreenId,
@@ -43,21 +45,63 @@ function tileTestId(rowId, id) {
   return `home-tile-${rowId}-${id}`;
 }
 
+// How far a ‹ › step moves: most of the visible row, keeping one tile in view.
+const STEP_FRACTION = 0.85;
+
 function TileRow({ rowId, title, children }) {
+  const scrollRef = useRef(null);
+  const [edges, setEdges] = useState({ start: true, end: true });
+  const measure = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const start = el.scrollLeft <= 1;
+    const end = el.scrollLeft + el.clientWidth >= el.scrollWidth - 1;
+    setEdges((prev) => (prev.start === start && prev.end === end ? prev : { start, end }));
+  }, []);
+  useEffect(() => {
+    measure();
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [measure, children]);
+  const step = (direction) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollBy({ left: direction * Math.max(120, el.clientWidth * STEP_FRACTION), behavior: 'smooth' });
+    mediaLog.rowStepped({ row: rowId, direction: direction < 0 ? 'back' : 'forward' });
+  };
   return (
     <section className={`home-row home-row--${rowId}`} data-testid={rowTestId(rowId)} aria-labelledby={`${rowTestId(rowId)}-title`}>
-      <Title order={2} className="home-row-title" id={`${rowTestId(rowId)}-title`}>{title}</Title>
-      <div className="home-row-scroll">{children}</div>
+      <div className="home-row-head">
+        <Title order={2} className="home-row-title" id={`${rowTestId(rowId)}-title`}>{title}</Title>
+        <div className="home-row-steps" hidden={edges.start && edges.end}>
+          <ActionIcon variant="subtle" color="gray" size={44} aria-label={`Scroll ${title} back`} data-testid={`home-step-${rowId}-back`}
+            disabled={edges.start} onClick={() => step(-1)}>
+            <IconChevronLeft size={20} aria-hidden />
+          </ActionIcon>
+          <ActionIcon variant="subtle" color="gray" size={44} aria-label={`Scroll ${title} forward`} data-testid={`home-step-${rowId}-forward`}
+            disabled={edges.end} onClick={() => step(1)}>
+            <IconChevronRight size={20} aria-hidden />
+          </ActionIcon>
+        </div>
+      </div>
+      <div className="home-row-scroll" ref={scrollRef} onScroll={measure}>{children}</div>
     </section>
   );
 }
 
-function RowSkeleton() {
+// A placeholder row in the same tile shape as the row it stands for (Home opens on
+// Carry on: 16:9 stills), so nothing jumps when the real row arrives.
+const SKELETON_SIZE = { wide: [208, 117], poster: [136, 204], square: [152, 152] };
+function RowSkeleton({ kind = 'wide' }) {
+  const [w, h] = SKELETON_SIZE[kind] ?? SKELETON_SIZE.wide;
   return (
     <div className="home-row" data-testid="home-loading">
       <Skeleton height={22} width="30%" radius="sm" />
       <div className="home-row-scroll">
-        {[0, 1, 2].map(i => <Skeleton key={i} height={180} width={136} radius="md" />)}
+        {[0, 1, 2].map(i => <Skeleton key={i} height={h} width={w} radius="md" />)}
       </div>
     </div>
   );
@@ -92,18 +136,22 @@ function NowOnRow({ entries, nameFor, run, favourites }) {
         const testId = tileTestId('now-on', `${deviceId}-${entry.contentId}`);
         const item = toItem(entry);
         return (
-          <div key={`${entry.deviceId}-${entry.contentId}`} className="home-tile home-tile--now" data-testid={testId}>
-            <div className="home-tile-picture home-tile-picture--static" aria-hidden>
-              {entry.thumbnail ? <img src={entry.thumbnail} alt="" loading="lazy" /> : null}
+          <div key={`${entry.deviceId}-${entry.contentId}`} className={`home-tile home-tile--now home-tile--${tileKind(entry)}`} data-testid={testId}>
+            <div className="home-tile-art">
+              <div className="home-tile-picture home-tile-picture--static" aria-hidden>
+                {entry.thumbnail ? <img src={entry.thumbnail} alt="" loading="lazy" /> : null}
+              </div>
             </div>
             <div className="home-tile-head">
               <div className="home-tile-body">
-                <span className="home-tile-title">{entry.title ?? 'Something'}</span>
+                <span className="home-tile-title" title={entry.title ?? 'Something'}>{presentTitle(entry) ?? 'Something'}</span>
                 <span className="home-tile-line" data-testid={`${testId}-where`}>Now on {screen}</span>
               </div>
               {item && (
-                <ItemMenu item={{ ...item, title: entry.title ?? item.title }} onVerb={kind => run(kind, item, { entry })}
-                  favourite={favourites.has(item.id)} testId={testId} />
+                <div className="home-tile-more">
+                  <ItemMenu item={{ ...item, title: entry.title ?? item.title }} onVerb={kind => run(kind, item, { entry })}
+                    favourite={favourites.has(item.id)} testId={testId} />
+                </div>
               )}
             </div>
             {(canRemote || canMove) && (
@@ -130,24 +178,31 @@ function NowOnRow({ entries, nameFor, run, favourites }) {
 const noSubscribe = () => () => {};
 const noSnapshot = () => null;
 
-function suggestionLines(rowId, item, entry, nameFor) {
+/**
+ * The ONE muted meta line under a tile: the most useful fact. Carry on is
+ * "time left · where" (real data) or "Next episode"; an edition group says how
+ * many editions it stands for.
+ */
+export function tileMeta(rowId, item, entry, nameFor, { editionCount = 1 } = {}) {
+  const editions = editionsLabel(editionCount);
+  if (editions) {
+    const base = tileMeta(rowId, item, entry, nameFor, { editionCount: 1 });
+    return typeof base === 'string' && base ? `${base} · ${editions}` : editions;
+  }
   if (rowId === 'carry-on') {
-    if (item.reason === 'next-episode' || entry?.reason === 'next-episode') {
-      return [item.grandparentTitle ?? entry?.grandparentTitle ?? null, 'Next episode'];
-    }
+    if (item.reason === 'next-episode' || entry?.reason === 'next-episode') return 'Next episode';
     const source = entry ?? item;
     const spots = differingSpots(entry);
-    // FIND.10a/AC4: when screens hold different spots, each is its own line.
-    if (spots.length > 1) {
-      return [item.grandparentTitle ?? entry?.grandparentTitle ?? null,
-        ...spots.map(spot => spotLine(spot, nameFor))];
-    }
-    return [item.grandparentTitle ?? entry?.grandparentTitle ?? null,
-      formatLeft(source.playhead, source.duration), whereLine(source, nameFor)];
+    // FIND.10a/AC4: screens holding different spots show each one (a short line per spot).
+    if (spots.length > 1) return spots.slice(0, 2).map(spot => spotLine(spot, nameFor));
+    const line = [formatLeft(source.playhead, source.duration), whereLine(source, nameFor)].filter(Boolean).join(' · ');
+    return line || 'In progress';
   }
-  if (rowId === 'time-of-day') return [item.days ? `${item.days} days at about this time` : null];
-  if (rowId === 'new') return [item.latest?.title ? `New: ${item.latest.title}` : 'Recently added'];
-  return [];
+  // A favourite show names its next part (its Continue is in the ⋯ menu).
+  if (rowId === 'favourites' && item.continue?.title) return `Next: ${item.continue.title}`;
+  if (rowId === 'time-of-day') return item.days ? `${item.days} days at about this time` : null;
+  if (rowId === 'new') return item.latest?.title ? `New: ${item.latest.title}` : 'Recently added';
+  return null;
 }
 
 export function HomeView() {
@@ -198,7 +253,7 @@ export function HomeView() {
     }
   }, [suggestions.error, carryOn.error, recent.error]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const tileFor = (rowId, raw) => {
+  const tileFor = (rowId, raw, group = null) => {
     const item = toItem(raw);
     if (!item) return null;
     const entry = carryById.get(item.id) ?? null;
@@ -207,27 +262,28 @@ export function HomeView() {
     const testId = tileTestId(rowId, item.id);
     const big = rowId === 'favourites';
     const cont = raw.continue?.contentId ? { id: raw.continue.contentId, title: raw.continue.title ?? null, itemType: 'leaf' } : null;
-    let primary = null;
-    // R8: "Continue S2E7" — the part is named on its own line so the button never truncates it.
-    if (cont) primary = { label: 'Continue', ariaLabel: `Continue ${cont.title ?? ''}`.trim(), onClick: () => run('playNow', cont) };
-    else if (collection || big) primary = { label: 'Play', onClick: () => run('playNow', item, { entry }) };
-    const percent = raw.percent ?? entry?.percent ?? null;
+    const editionItems = group && group.editions.length > 1 ? group.editions.map(toItem).filter(Boolean) : null;
+    const percent = progressPercent(raw.percent ?? entry?.percent ?? null, (entry ?? raw).finished === true);
     return (
       <HomeTile
         key={item.id}
         item={item}
+        title={presentTitle(raw)}
+        kind={null}
         size={big ? 'large' : 'normal'}
         testId={testId}
-        lines={[...suggestionLines(rowId, raw, entry, nameFor), cont?.title ? `Next: ${cont.title}` : null]}
-        progress={rowId === 'carry-on' ? percent : null}
-        primary={primary}
+        meta={tileMeta(rowId, raw, entry, nameFor, { editionCount: group?.editions.length ?? 1 })}
+        progress={percent}
         // FIND.12b: a favourite's picture opens it; elsewhere the tap rule.
         onPicture={() => run(big ? 'open' : 'tap', item, { entry })}
         pictureLabel={big || collection ? `Open ${item.title ?? ''}`.trim() : `Play ${item.title ?? ''}`.trim()}
-        onVerb={kind => run(kind, item, { entry })}
+        onVerb={kind => (kind === 'continue' && cont ? run('playNow', cont) : run(kind, item, { entry }))}
         favourite={favourite}
         watched={entry ? entry.finished === true : null}
         removable
+        editions={editionItems}
+        onEdition={(edition) => { mediaLog.tileEditionOpened({ contentId: edition.id, editions: group?.editions.length ?? 1 }); run('open', edition); }}
+        continueLabel={cont ? `Continue ${cont.title ?? ''}`.trim() : null}
       />
     );
   };
@@ -235,7 +291,7 @@ export function HomeView() {
   let suggestionBody;
   if (suggestions.loading && !suggestions.data) suggestionBody = <RowSkeleton />;
   else if (suggestions.error && !suggestions.data) {
-    suggestionBody = <ErrorState label="Suggestions" error={suggestions.error} onRetry={suggestions.reload} />;
+    suggestionBody = <LoadErrorLine kind="suggestions" testId="home-suggestions-error" onRetry={suggestions.reload} />;
   } else if (suggestions.data?.empty === true || rows.length === 0) {
     suggestionBody = (
       <div data-testid="home-suggestions-empty">
@@ -249,48 +305,56 @@ export function HomeView() {
   } else {
     suggestionBody = rows.map(row => (
       <TileRow key={row.id} rowId={row.id} title={row.title}>
-        {row.items.map(raw => tileFor(row.id, raw))}
+        {collapseEditions(row.items, { idOf: raw => raw?.contentId ?? raw?.id, collapse: row.id !== 'carry-on' })
+          .map(group => tileFor(row.id, group.entry, group))}
       </TileRow>
     ));
   }
 
   return (
     <Stack data-testid="home-view" className="home-view" gap="lg">
-      <ResumeCard />
       <NowOnRow entries={nowOn} nameFor={nameFor} run={run} favourites={favourites} />
       {suggestionBody}
       {recentItems.length > 0 && (
         <TileRow rowId="recent" title="Recent">
-          {recentItems.map(entry => {
+          {collapseEditions(recentItems, { idOf: entry => entry?.contentId ?? entry?.id }).map(({ entry, editions }) => {
             const item = toItem(entry);
             if (!item) return null;
             const screens = nowOnIds.get(item.id);
             const where = screens?.length ? `Now on ${nameFor(screens[0])}` : whereLine(entry, nameFor);
             const collection = isCollection(item);
+            const editionItems = editions.length > 1 ? editions.map(toItem).filter(Boolean) : null;
+            const base = [playedAtLabel(entry.plays?.[0]?.startedAt ?? entry.lastPlayed), where].filter(Boolean).join(' · ');
+            const label = editionsLabel(editions.length);
+            const meta = label ? [base, label].filter(Boolean).join(' · ') : base;
             return (
               <HomeTile
                 key={item.id}
                 item={item}
+                title={presentTitle(entry)}
                 testId={tileTestId('recent', item.id)}
-                lines={[where, playedAtLabel(entry.plays?.[0]?.startedAt ?? entry.lastPlayed)]}
+                meta={meta || null}
+                progress={progressPercent(entry.percent ?? null, entry.finished === true)}
                 onPicture={() => run('tap', item, { entry })}
                 pictureLabel={collection ? `Open ${item.title ?? ''}`.trim() : `Play ${item.title ?? ''}`.trim()}
                 onVerb={kind => run(kind, item, { entry })}
                 favourite={favourites.has(item.id)}
                 watched={entry.finished === true}
                 removable
+                editions={editionItems}
+                onEdition={(edition) => { mediaLog.tileEditionOpened({ contentId: edition.id, editions: editions.length }); run('open', edition); }}
               />
             );
           })}
         </TileRow>
       )}
       {recent.error && !recent.data && (
-        <ErrorState label="Recent" error={recent.error} onRetry={recent.reload} />
+        <LoadErrorLine kind="recent" testId="home-recent-error" onRetry={recent.reload} />
       )}
       {!recent.loading && !recent.error && recentItems.length === 0 && suggestions.data && (
         <p className="home-recents-empty" data-testid="home-recents-empty">Things played on any screen will show up here.</p>
       )}
-      <Group justify="center">
+      <Group justify="flex-start">
         <Button variant="subtle" color="gray" leftSection={<IconLayoutGrid size={16} aria-hidden />}
           data-testid="home-browse" onClick={() => goToArea('browse')}>
           Browse everything

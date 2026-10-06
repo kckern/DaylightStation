@@ -79,7 +79,28 @@ async function typeQuery(d) {
 }
 const resultRow = (d) => d.page.getByTestId(d.phone ? `search-mode-result-${FIXTURE.id}` : `combobox-option-${FIXTURE.id}`);
 const closeSearch = async (d) => { if (d.phone) await d.page.getByTestId('search-mode-close').click(); else await d.page.keyboard.press('Escape'); };
-const aimScope = (d) => (d.phone ? d.page.getByTestId('search-mode') : d.page.locator('.media-search-bar'));
+const aimScope = (d) => d.page.getByTestId('search-mode');
+// Where the aim is changed: the search surface's destination line on a phone;
+// everywhere else the header's "Playing on <name>" destination control.
+const aimName = (d) => (d.phone ? aimScope(d).getByTestId('destination-line-name') : d.page.getByTestId('destination-control-name'));
+const aimAtReceiver = async (d) => {
+  if (d.phone) {
+    await aimScope(d).getByTestId('destination-line').click();
+    await d.page.getByRole('button', { name: /^Acceptance receiver Virtual browser/ }).click();
+    await d.page.getByTestId('picker-submit').click();
+    return;
+  }
+  await d.page.getByTestId('cast-target-chip').click();
+  await d.page.getByTestId('cast-target-checkbox-acceptance-media').check();
+  await d.page.getByTestId('cast-target-chip').click();
+  await expect(d.page.getByTestId('cast-popover')).toBeHidden();
+};
+const aimBackHere = async (d) => {
+  if (d.phone) { await aimScope(d).getByTestId('destination-line').click(); await d.page.getByTestId('picker-this-device').click(); return; }
+  await d.page.getByTestId('cast-target-chip').click();
+  await d.page.getByTestId('cast-target-checkbox-acceptance-media').uncheck();
+};
+const closeAimPopover = async (d) => { if (!d.phone && await d.page.getByTestId('cast-popover').isVisible()) await d.page.getByTestId('cast-target-chip').click(); };
 const nativePlaying = (page) => page.locator('.video-player video').evaluate((v) => !v.paused && v.currentTime > 0).catch(() => false);
 
 for (const [size, viewport] of Object.entries(VIEWPORTS)) {
@@ -180,18 +201,16 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
         await expect(d.page.getByTestId('media-mini-player')).toBeVisible({ timeout: 30000 });
 
         // NF-TAP-06: aim is on a screen (setup), then back at this device.
-        await typeQuery(d);
-        await aimScope(d).getByTestId('destination-line').click();
-        await d.page.getByRole('button', { name: /^Acceptance receiver Virtual browser/ }).click();
-        await d.page.getByTestId('picker-submit').click();
-        await expect(aimScope(d).getByTestId('destination-line-name')).toContainText('Acceptance receiver');
+        if (d.phone) await typeQuery(d);
+        await aimAtReceiver(d);
+        await expect(aimName(d)).toContainText('Acceptance receiver');
         await resetTaps(d.page);
-        await aimScope(d).getByTestId('destination-line').click();
-        await d.page.getByTestId('picker-this-device').click();
+        await aimBackHere(d);
         const aimBackTaps = await taps(d.page);
-        await expect(aimScope(d).getByTestId('destination-line-name')).toContainText('This device', { timeout: 10000 });
+        await expect(aimName(d)).toContainText(d.phone ? 'This device' : /this device|Tap budget/i, { timeout: 10000 });
         expect(aimBackTaps, 'NF-TAP-06 aim back at this device').toBe(2);
-        if (d.phone) await closeSearch(d); else await d.page.keyboard.press('Escape');
+        await closeAimPopover(d);
+        if (d.phone) await closeSearch(d);
 
         // NF-TAP-08: something plays on the screen and here; Pause all from the handle.
         expect((await call(request, 'GET', `${base}/load?play=${FIXTURE.id}&dispatchId=${randomUUID()}`)).status).toBe(200);
@@ -275,11 +294,10 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
       });
 
       await test.step('Big-Screen Sender: aim at a screen, tap a result, it plays there', async () => {
-        await typeQuery(d);
-        await aimScope(d).getByTestId('destination-line').click();
-        await page.getByRole('button', { name: /^Acceptance receiver Virtual browser/ }).click();
-        await page.getByTestId('picker-submit').click();
-        await expect(aimScope(d).getByTestId('destination-line-name')).toContainText('Acceptance receiver');
+        if (d.phone) await typeQuery(d);
+        await aimAtReceiver(d);
+        await expect(aimName(d)).toContainText('Acceptance receiver');
+        if (!d.phone) await typeQuery(d);
         await shot(page, `sender-aimed-${size}`);
         await resultRow(d).click();
         await expect.poll(async () => (await stateOf(request, DEVICE))?.state, { timeout: 120000 }).toMatch(/playing|loading|buffering/);
@@ -287,11 +305,11 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
         await closeSearch(d);
         await usable(page, 'sender');
         // Aim back at this device for the rest of the walk.
-        await typeQuery(d);
-        await aimScope(d).getByTestId('destination-line').click();
-        await page.getByTestId('picker-this-device').click();
-        await expect(aimScope(d).getByTestId('destination-line-name')).toContainText('This device');
-        await closeSearch(d);
+        if (d.phone) await typeQuery(d);
+        await aimBackHere(d);
+        await expect(aimName(d)).toContainText(d.phone ? 'This device' : /this device|Persona/i);
+        await closeAimPopover(d);
+        if (d.phone) await closeSearch(d);
       });
 
       await test.step('House Watch: every device, in words, and one tap to pause a screen', async () => {

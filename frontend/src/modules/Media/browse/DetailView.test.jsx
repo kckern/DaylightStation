@@ -55,7 +55,7 @@ describe('DetailView Play Now', () => {
     backDestination = 'Home';
     render(<MantineProvider><DetailView contentId="plex:685088" /></MantineProvider>);
 
-    expect(screen.getByTestId('detail-back')).toHaveTextContent('← Home');
+    expect(screen.getByTestId('detail-back')).toHaveTextContent('Home');
     fireEvent.click(screen.getByTestId('detail-back'));
     expect(pop).toHaveBeenCalledTimes(1);
   });
@@ -68,7 +68,7 @@ describe('DetailView Play Now', () => {
     contentState = nextContentState;
     render(<MantineProvider><DetailView contentId="plex:685088" /></MantineProvider>);
 
-    expect(screen.getByTestId('detail-back')).toHaveTextContent('← Browse');
+    expect(screen.getByTestId('detail-back')).toHaveTextContent('Browse');
     fireEvent.click(screen.getByTestId('detail-back'));
     expect(pop).toHaveBeenCalledTimes(1);
   });

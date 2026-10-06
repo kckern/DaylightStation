@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { markFirstUseDone } from './lib/firstUse.mjs';
+
+test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
 const entry = (id, title) => ({ queueItemId: `q-${id}`, contentId: `plex:${id}`, title, format: 'video', priority: 'queue', addedAt: '' });
 const SESSION = {
@@ -21,7 +24,7 @@ test.describe('MediaApp — Start fresh', () => {
       try {
         if (sessionStorage.getItem('seeded')) return;
         sessionStorage.setItem('seeded', '1');
-        localStorage.clear();
+        (() => { const k = 'media-app.first-use-done'; const v = localStorage.getItem(k); localStorage.clear(); if (v) localStorage.setItem(k, v); })();
         localStorage.setItem('media-app.session', JSON.stringify(session));
         localStorage.setItem('media-app.cast-target', JSON.stringify({ mode: 'fork', targetIds: ['acceptance-media'], activityAt: Date.now() }));
       } catch {}
@@ -51,7 +54,7 @@ test.describe('MediaApp — Start fresh', () => {
   test('[RELY.8a] Start fresh lists exactly what it clears, keeps what is unticked, and confirms first', async ({ page }) => {
     await page.goto('/media');
     await expect(page.getByTestId('mini-player-open-nowplaying')).toContainText('Arrival', { timeout: 15000 });
-    await expect(page.getByRole('button', { name: /^Aim: Acceptance receiver/ }).first()).toBeVisible({ timeout: 30000 });
+    await expect(page.getByRole('button', { name: /^Playing on Acceptance receiver/ }).first()).toBeVisible({ timeout: 30000 });
 
     // One step from anywhere: the settings gear lives in the persistent dock.
     await page.getByTestId('app-nav-fleet').click();
@@ -72,8 +75,9 @@ test.describe('MediaApp — Start fresh', () => {
     await expect(page.getByTestId('mini-player-open-nowplaying')).toContainText('Arrival');
     await page.getByTestId('confirm-ok').click();
     await expect(dialog).toBeHidden();
-    await expect(page.getByTestId('mini-player-open-nowplaying')).toHaveText('2 items ready');
-    await expect(page.getByRole('button', { name: /^Aim: Acceptance receiver/ }).first()).toBeVisible();
+    await expect(page.getByTestId('mini-state')).toHaveText('Ready to play');
+    await expect(page.getByTestId('mini-queue-count')).toHaveText('2 queued');
+    await expect(page.getByRole('button', { name: /^Playing on Acceptance receiver/ }).first()).toBeVisible();
     await expect(page.locator('video')).toHaveCount(0);
 
     // Clearing everything reads as new, and stays new after a reload.
@@ -82,7 +86,7 @@ test.describe('MediaApp — Start fresh', () => {
     await expect(dialog.getByRole('checkbox', { name: 'Queue: 2 items' })).toBeChecked();
     await page.getByTestId('confirm-ok').click();
     await expect(page.getByTestId('media-mini-player')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: /^Aim: Acceptance receiver/ })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^Playing on Acceptance receiver/ })).toHaveCount(0);
     await page.reload();
     await expect(page.getByTestId('media-dock')).toBeVisible({ timeout: 30000 });
     await expect(page.getByTestId('media-mini-player')).toHaveCount(0);

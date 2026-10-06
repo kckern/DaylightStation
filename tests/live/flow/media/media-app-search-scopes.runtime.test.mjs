@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { markFirstUseDone } from './lib/firstUse.mjs';
+
+test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
 test.setTimeout(90000);
 
@@ -85,7 +88,21 @@ function searchSurface(page, isPhone) {
   return isPhone ? page.getByTestId('search-mode') : page.getByTestId('media-search-bar');
 }
 
+// The destination is read and changed where it lives: the destination line inside the phone's
+// search surface, the header's "Playing on <name>" control everywhere else.
+const destinationName = (page, isPhone) => (isPhone
+  ? searchSurface(page, true).getByTestId('destination-line-name')
+  : page.getByTestId('destination-control-name'));
+
 async function setDestination(page, isPhone, targetId) {
+  if (!isPhone) {
+    await page.getByTestId('cast-target-chip').click();
+    const target = page.getByTestId(`cast-target-checkbox-${targetId ?? 'acceptance-media'}`);
+    if (targetId) await target.check(); else await target.uncheck();
+    await page.getByTestId('cast-target-chip').click();
+    await expect(page.getByTestId('cast-popover')).toBeHidden();
+    return;
+  }
   await searchSurface(page, isPhone).getByTestId('destination-line').click();
   await expect(page.getByTestId('destination-sheet')).toBeVisible();
   if (!targetId) {
@@ -159,10 +176,10 @@ for (const [surface, viewport, isPhone] of surfaces) {
       actions: await actionSnapshot(page, id),
     };
     expect(baseline.scope).toBe('true');
-    await expect(searchSurface(page, isPhone).getByTestId('destination-line-name')).toHaveText(/^Aim: This device/);
+    await expect(destinationName(page, isPhone)).toHaveText(/^(Playing on )?(This device|this device)/);
 
     await setDestination(page, isPhone, 'acceptance-media');
-    await expect(searchSurface(page, isPhone).getByTestId('destination-line-name')).toHaveText(/^Aim: Acceptance receiver/);
+    await expect(destinationName(page, isPhone)).toHaveText(/^(Playing on )?Acceptance receiver/);
     expect({
       query: await input.inputValue(),
       scope: await scopeChip(page, isPhone, selectable.key).getAttribute('aria-pressed'),
@@ -171,7 +188,7 @@ for (const [surface, viewport, isPhone] of surfaces) {
     }).toEqual(baseline);
 
     await setDestination(page, isPhone, null);
-    await expect(searchSurface(page, isPhone).getByTestId('destination-line-name')).toHaveText(/^Aim: This device/);
+    await expect(destinationName(page, isPhone)).toHaveText(/^(Playing on )?(This device|this device)/);
     expect({
       query: await input.inputValue(),
       scope: await scopeChip(page, isPhone, selectable.key).getAttribute('aria-pressed'),

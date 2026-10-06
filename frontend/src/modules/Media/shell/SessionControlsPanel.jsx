@@ -94,6 +94,7 @@ export function SessionControlsPanel({ target, targetName = null }) {
   const disabledReason = !available ? reason : null;
   const controlsDisabled = !available || !actions;
 
+  const addOnlyReason = actions?.unsupportedReasons?.addOnly ?? 'Add only is not available here';
   return (
     <div className="session-controls" data-testid="session-controls-panel">
       {countdown && (
@@ -215,19 +216,22 @@ export function SessionControlsPanel({ target, targetName = null }) {
           data-testid="add-only-toggle"
           className="session-controls-btn"
           size="sm"
-          variant={controls?.addOnly ? 'light' : 'default'}
+          variant={controls?.addOnly ? 'light' : (supports.addOnly ? 'default' : 'subtle')}
+          color={supports.addOnly ? undefined : 'gray'}
           leftSection={<IconPlaylistAdd size={16} />}
           aria-pressed={controls?.addOnly === true}
           disabled={controlsDisabled || !supports.addOnly || busy === 'setAddOnly'}
+          title={available && !supports.addOnly ? addOnlyReason : undefined}
+          aria-describedby={available && !supports.addOnly ? 'add-only-unsupported' : undefined}
           onClick={() => run('setAddOnly', 'Add only', () => actions.setAddOnly(!controls?.addOnly), !controls?.addOnly)}
         >
           Add only: {controls?.addOnly ? 'on' : 'off'}
         </Button>
       </Group>
       {available && !supports.addOnly && (
-        <Text size="xs" className="session-controls-hint" data-testid="add-only-unsupported">
-          {actions?.unsupportedReasons?.addOnly ?? 'Add only is not available here'}
-        </Text>
+        <span id="add-only-unsupported" className="media-sr-only" data-testid="add-only-unsupported">
+          {addOnlyReason}
+        </span>
       )}
       {controls?.addOnly && (
         <Text size="xs" className="session-controls-hint" data-testid="add-only-hint">

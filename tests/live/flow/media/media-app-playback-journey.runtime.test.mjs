@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { markFirstUseDone } from './lib/firstUse.mjs';
+
+test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
 // A real catalog → app → Player → media element → UI round trip.
 // No fabricated responses, synthetic clicks, forced clicks, or fabricated session state.

@@ -22,6 +22,7 @@
 // explicit verbs (play-as-queue for containers; Play Now/Play Next/Up Next/
 // Add to Queue/Open detail for leaves). Tapping a row dispatches via the
 // same useContentDispatch path MediaContentSearch already uses.
+import { LoadErrorLine } from '../shared/LoadErrorLine.jsx';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IconX, IconAlertTriangle } from '@tabler/icons-react';
 import { Button } from '@mantine/core';
@@ -35,6 +36,7 @@ import { useContentDispatch } from './useContentDispatch.js';
 import { useSessionController } from '../controller/useSessionController.js';
 import { useNav } from '../shell/NavProvider.jsx';
 import { applyResultRowVerb } from './resultRowVerbs.js';
+import { collapseResultEditions } from './collapseResultEditions.js';
 import { displayTitle, resultSubtitle } from './resultPresentation.js';
 import getLogger from '../../../lib/logging/Logger.js';
 import mediaLog from '../logging/mediaLog.js';
@@ -186,7 +188,7 @@ export function SearchMode({ onClose, addTo = null }) {
     state, searchState, handleInput, isSearching, pendingSources, sourceErrors,
     streamError, retrySource = () => {}, fellBackToAll,
   } = combo;
-  const results = state.results;
+  const results = useMemo(() => collapseResultEditions(state.results), [state.results]);
   const searchText = state.search ?? '';
 
   // Every open resets scope to catalog-wide (spec D1: scope never carries
@@ -236,6 +238,9 @@ export function SearchMode({ onClose, addTo = null }) {
   // scope that came up empty. Held back while the widened search is still in
   // flight so it can't flash "nothing anywhere" before the results land.
   const scopeThatCameUpEmpty = currentScope?.label || 'this scope';
+  useEffect(() => {
+    if (streamError) mediaLog.loadFailed({ surface: 'search-mode', kind: streamError.kind, error: streamError.message });
+  }, [streamError]);
   const showWideningNotice = fellBackToAll && !isSearching && !streamError;
 
   return (
@@ -296,12 +301,7 @@ export function SearchMode({ onClose, addTo = null }) {
       />
 
       {streamError && (
-        <div className="stream-status-line stream-status-line--error" data-testid="search-mode-stream-error" role="status">
-          <span>{streamError.message}</span>
-          <Button variant="subtle" size="compact-xs" data-testid="search-mode-stream-retry" onClick={() => retrySource()}>
-            Retry
-          </Button>
-        </div>
+        <LoadErrorLine kind="search" error={streamError} testId="search-mode-stream-error" retryTestId="search-mode-stream-retry" onRetry={() => retrySource()} />
       )}
 
       <ul className="search-mode-results media-search-results" data-testid="search-mode-results">

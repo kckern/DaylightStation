@@ -4,7 +4,7 @@
 // play plan they imply (RQ-PLAY-08/09), and the mapping from a household
 // entry / suggestion to the item shape every verb already understands.
 // No React, no fetch.
-import { deviceName } from '../fleet/deviceDisplay.js';
+import { deviceName, displayDeviceName } from '../fleet/deviceDisplay.js';
 
 /** `fleet:livingroom-tv` → `livingroom-tv` (the fleet/peek device key). */
 export function bareScreenId(id) {
@@ -15,8 +15,8 @@ export function bareScreenId(id) {
 /**
  * A name lookup over `GET /api/v1/media/screens`. Accepts screen ids, bare
  * devices.yml keys and merged duplicates (aliases). A raw id never reaches
- * the UI: this device is "this device", an unregistered browser "another
- * browser", an unknown fleet key is humanized.
+ * the UI: this device is "this device", an unregistered or unnamed browser
+ * "a browser" (displayDeviceName), an unknown fleet key is humanized.
  */
 export function createScreenNamer(screensResponse, { selfId = null } = {}) {
   const byId = new Map();
@@ -24,9 +24,10 @@ export function createScreenNamer(screensResponse, { selfId = null } = {}) {
   for (const list of lists) {
     for (const screen of Array.isArray(list) ? list : []) {
       if (!screen?.id || !screen.name) continue;
-      byId.set(screen.id, screen.name);
-      if (screen.screenId) byId.set(screen.screenId, screen.name);
-      for (const alias of Array.isArray(screen.aliases) ? screen.aliases : []) byId.set(alias, screen.name);
+      const name = displayDeviceName(screen.name);
+      byId.set(screen.id, name);
+      if (screen.screenId) byId.set(screen.screenId, name);
+      for (const alias of Array.isArray(screen.aliases) ? screen.aliases : []) byId.set(alias, name);
     }
   }
   return function nameFor(id) {
@@ -35,7 +36,7 @@ export function createScreenNamer(screensResponse, { selfId = null } = {}) {
     if (id === 'legacy') return EARLIER;
     if (selfId && id === selfId) return 'this device';
     if (byId.has(id)) return byId.get(id);
-    if (id.startsWith('browser:') || id.startsWith('ephemeral:')) return 'another browser';
+    if (id.startsWith('browser:') || id.startsWith('ephemeral:')) return displayDeviceName(null);
     const bare = id.replace(/^(fleet|screen):/, '');
     if (byId.has(bare)) return byId.get(bare);
     return deviceName(null, bare);

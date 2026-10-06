@@ -18,6 +18,26 @@ export function playbackStateLabel(state) {
   }
 }
 
+/**
+ * The bottom handle's state line: what is waiting or playing, in words.
+ * "Ready to play" (a queue nobody started), "Paused", "Playing on <where>".
+ * `where` is this browser's own name ("this device" when it has none).
+ */
+export function handleStateLabel(state, { hasItem = false, where = 'this device' } = {}) {
+  if (!hasItem) return 'Ready to play';
+  switch (state) {
+    case 'playing':
+    case 'buffering': return `Playing on ${where}`;
+    case 'paused': return 'Paused';
+    case 'loading': return 'Starting…';
+    case 'stalled': return 'Having trouble streaming';
+    case 'error': return 'Something went wrong';
+    case 'idle':
+    case 'stopped': return 'Ready to play';
+    default: return 'Ready to play';
+  }
+}
+
 /** Fleet-card state line: what is this device doing right now?
  *  Offline devices report what they were last seen doing. */
 export function deviceStateLabel(state, { offline = false } = {}) {
