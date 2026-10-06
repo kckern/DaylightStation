@@ -1064,13 +1064,13 @@ a same-owner queue revision with the current item unchanged. Play confirms the
 `playback` step from a `playing` state whose owner advanced past the pre-load
 snapshot (new session, new owner instance, or higher `playbackRevision`), on
 one **basis**, logged on `wake-and-load.playback.armed`, `.confirmed`
-(with `matchedBy`) and `.timeout`:
+(with `matchedBy`) and `.timeout` (`.armed`/`.timeout` also carry `requestedContentId`, the original ref such as `office-program`, beside the resolved `expectedContentId`):
 
 | Basis | When | Confirms on |
 |---|---|---|
 | `item-action` | The command carries an item action | The queue's current entry carries that `operationId` |
 | `resolved-queue` | Prewarm resolved concrete queue ids (`queueContentIds`, plus the prewarmed first id) in time | Current item is a resolved id (`candidate`), or the screen's queue shares items with the resolution and holds the current item (`queue-overlap` — program slots such as `strategy: rotation` are random per resolution) |
-| `fresh-owned-playing` | Nothing concrete resolved in time for a `queue=` ref, or the prewarm deadline expired | The first fresh owned `playing` state after the ack |
+| `fresh-owned-playing` | Nothing concrete resolved in time for a `queue=` or `play-next=` ref, or the prewarm deadline expired | The first fresh owned `playing` state after the ack whose current item (or session) differs from the pre-load snapshot — a bare Play/pause revision bump on the baseline item does not count. Applies to `queue=`, `play-next=` and timed-out prewarms; a concrete requested/resolved id still matches first |
 | `requested-id` | Otherwise | Current item matches the requested id |
 
 The program id itself (e.g. `queue=office-program`) is never reported by a

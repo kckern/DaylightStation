@@ -415,7 +415,7 @@ export class WakeAndLoadService {
     // of contentQuery: they are evidence, not something to send the screen.
     let resolvedQueueContentIds = [];
     let prewarmTimedOut = false;
-    const prewarmRef = contentQuery.queue || contentQuery.play;
+    const prewarmRef = contentQuery.queue || contentQuery.play || contentQuery['play-next'];
     if (!isAdopt && this.#prewarmService && prewarmRef) {
       this.#emitProgress(topic, dispatchId, 'prewarm', 'running');
       this.#logger.info?.('wake-and-load.prewarm.start', { deviceId, dispatchId, contentRef: prewarmRef });
@@ -967,7 +967,8 @@ export class WakeAndLoadService {
     //                         ref whose prewarm timed out): the first owned
     //                         playing transition AFTER the correlated ack
     //                         with an advanced playback revision vs the
-    //                         pre-load snapshot is this dispatch's playback
+    //                         pre-load snapshot AND a different current item
+    //                         (or new session) is this dispatch's playback
     //   requested-id        — a concrete requested id (unchanged)
     const resolvedCandidates = [...new Set([
       contentQuery.prewarmContentId,
@@ -987,12 +988,13 @@ export class WakeAndLoadService {
     const resolvedSet = new Set(resolvedCandidates);
     const basis = itemAction ? 'item-action'
       : resolvedSet.size > 0 ? 'resolved-queue'
-        : (requested?.resolvedKey === 'queue' || prewarmTimedOut) ? 'fresh-owned-playing'
+        : (requested?.resolvedKey === 'queue' || requested?.resolvedKey === 'play-next' || prewarmTimedOut) ? 'fresh-owned-playing'
           : 'requested-id';
 
     this.#logger.info?.(`wake-and-load.${resultStep}.armed`, {
       deviceId, dispatchId, operation, basis: operation === 'add' ? 'queue-revision' : basis,
-      expectedContentId, resolvedCandidates: resolvedSet.size, commandAcknowledged, timeoutMs,
+      expectedContentId, requestedContentId: requested?.contentId ?? null,
+      resolvedCandidates: resolvedSet.size, commandAcknowledged, timeoutMs,
     });
 
     let resolved = false;
@@ -1061,7 +1063,15 @@ export class WakeAndLoadService {
               matchedBy = 'queue-overlap';
             }
           } else if (basis === 'fresh-owned-playing') {
-            matchedBy = 'fresh-owned-playing';
+            // Player bumps playbackRevision on play/toggle/pause too, so a
+            // person resuming the baseline item looks "advanced". Require a
+            // different current item or a new session as well.
+            const before = currentIdentity(outcomeBaseline);
+            const after = currentIdentity(snapshot);
+            const differentItem = after.contentId !== before.contentId || after.queueItemId !== before.queueItemId;
+            if (differentItem || snapshot.sessionId !== outcomeBaseline?.sessionId) {
+              matchedBy = 'fresh-owned-playing';
+            }
           }
         }
         matches = !!matchedBy;
@@ -1093,7 +1103,7 @@ export class WakeAndLoadService {
       if (resolved) return;
       cleanup();
       this.#logger.warn?.(`wake-and-load.${resultStep}.timeout`, {
-        deviceId, dispatchId, expectedContentId, timeoutMs,
+        deviceId, dispatchId, expectedContentId, requestedContentId: requested?.contentId ?? null, timeoutMs,
         basis: operation === 'add' ? 'queue-revision' : basis,
         resolvedCandidates: resolvedSet.size, commandAcknowledged,
       });

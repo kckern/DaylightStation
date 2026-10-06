@@ -1,6 +1,8 @@
 // backend/src/3_applications/devices/services/TranscodePrewarmService.mjs
 
 const TOKEN_TTL_MS = 60_000;
+// 500-id cap is fine: the device snapshot queue is uncapped, so queue-overlap
+// confirmation still lands on any id within the first 500.
 const MAX_QUEUE_CONTENT_IDS = 500;
 export class TranscodePrewarmService {
   #contentIdResolver;
