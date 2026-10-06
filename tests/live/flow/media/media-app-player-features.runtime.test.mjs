@@ -44,23 +44,45 @@ async function call(request, method, url, body, headers) {
 const state = async (request) => (await call(request, 'GET', `${base}/receiver-state`)).body?.snapshot ?? null;
 const routineLoad = (request, query) => call(request, 'GET', `${base}/load?${query}&dispatchId=${randomUUID()}`);
 
-// The household Plex keeps a per-file subtitle choice (as every Plex client
-// does). The journey changes it on two episodes; put them back to "off".
+// The household Plex keeps a per-file stream choice (as every Plex client
+// does), per ACCOUNT. The journey changes it on three files. Before touching
+// anything it reads each part's CURRENT selection and puts back exactly that
+// in teardown — it never writes a guessed "reset" value as the final state.
 const upstream = `http://127.0.0.1:${getAppPort()}`;
-async function resetPlexSubtitles(request) {
-  for (const id of [EP1, EP2]) {
-    const meta = await request.get(`${upstream}/api/v1/proxy/plex/library/metadata/${id.split(':')[1]}`, { headers: { Accept: 'application/json' } });
-    const partId = (await meta.json()).MediaContainer.Metadata[0].Media[0].Part[0].id;
-    const put = await request.fetch(`${upstream}/api/v1/proxy/plex/library/parts/${partId}?subtitleStreamID=0&allParts=1`, { method: 'PUT' });
-    expect(put.status()).toBe(200);
-  }
+const PLEX_FILES = [EP1, EP2, FILM];
+const baseline = new Map(); // ratingKey -> { partId, audioStreamId, subtitleStreamId }
+async function readPlexSelection(request, id) {
+  const meta = await request.get(`${upstream}/api/v1/proxy/plex/library/metadata/${id.split(':')[1]}`, { headers: { Accept: 'application/json' } });
+  const part = (await meta.json()).MediaContainer.Metadata[0].Media[0].Part[0];
+  const streams = part.Stream ?? [];
+  const audio = streams.find((x) => x.streamType === 2 && x.selected);
+  const subtitle = streams.find((x) => x.streamType === 3 && x.selected);
+  return { partId: part.id, audioStreamId: audio ? String(audio.id) : null, subtitleStreamId: subtitle ? String(subtitle.id) : '0' };
 }
-// …and the film's audio back to its original French.
-async function resetPlexFilmAudio(request) {
-  const meta = await request.get(`${upstream}/api/v1/proxy/plex/library/metadata/${FILM.split(':')[1]}`, { headers: { Accept: 'application/json' } });
-  const partId = (await meta.json()).MediaContainer.Metadata[0].Media[0].Part[0].id;
-  const put = await request.fetch(`${upstream}/api/v1/proxy/plex/library/parts/${partId}?audioStreamID=${FILM_FRENCH}&allParts=1`, { method: 'PUT' });
+async function putPlexSelection(request, partId, { audioStreamId = null, subtitleStreamId = null }) {
+  const params = new URLSearchParams({ allParts: '1' });
+  if (audioStreamId != null) params.set('audioStreamID', audioStreamId);
+  if (subtitleStreamId != null) params.set('subtitleStreamID', subtitleStreamId);
+  const put = await request.fetch(`${upstream}/api/v1/proxy/plex/library/parts/${partId}?${params}`, { method: 'PUT' });
   expect(put.status()).toBe(200);
+}
+async function capturePlexBaseline(request) {
+  if (baseline.size) return;
+  for (const id of PLEX_FILES) baseline.set(id, await readPlexSelection(request, id));
+}
+// Put every file back exactly as it was found.
+async function restorePlexBaseline(request) {
+  for (const [, sel] of baseline) await putPlexSelection(request, sel.partId, sel);
+}
+// Start state for a test: subtitles off on the episodes.
+async function resetPlexSubtitles(request) {
+  await capturePlexBaseline(request);
+  for (const id of [EP1, EP2]) await putPlexSelection(request, baseline.get(id).partId, { subtitleStreamId: '0' });
+}
+// …and the film's audio on its original French.
+async function resetPlexFilmAudio(request) {
+  await capturePlexBaseline(request);
+  await putPlexSelection(request, baseline.get(FILM).partId, { audioStreamId: FILM_FRENCH });
 }
 
 // Opening the dev/preview page can lose module fetches to a host network
@@ -121,16 +143,19 @@ async function openRemote(sender, navTestId) {
 
 const streamMints = (page) => {
   const mints = [];
+  mints.manifests = []; // the transcode start manifests the page actually fetched
   page.on('request', (r) => {
     const url = new URL(r.url());
-    if (url.pathname.startsWith('/api/v1/proxy/plex/stream/')) mints.push({ ratingKey: url.pathname.split('/').at(-1), params: Object.fromEntries(url.searchParams) });
+    if (/\/transcode\/universal\/start\.(mpd|m3u8)$/.test(url.pathname)) mints.manifests.push(r.url());
+    if (url.pathname.startsWith('/api/v1/proxy/plex/stream/')) mints.push({ ratingKey: url.pathname.split('/').at(-1), params: Object.fromEntries(url.searchParams), url: r.url() });
   });
   return mints;
 };
 
 test.describe('Subtitles and audio language (STEER.12a)', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
-  test.afterAll(async ({ request }) => { await resetPlexSubtitles(request); });
+  test.beforeAll(async ({ request }) => { await capturePlexBaseline(request); });
+  test.afterAll(async ({ request }) => { await restorePlexBaseline(request); });
 
   test('a screen through its Remote: only the item\'s subtitles, burned in at the same spot, carried to the next episode', async ({ context, page: sender, request }) => {
     await resetPlexSubtitles(request);
@@ -220,20 +245,30 @@ test.describe('Subtitles and audio language (STEER.12a)', () => {
         const snap = await state(request);
         return snap?.controls?.tracks?.selected?.audio === FILM_ENGLISH && snap.state === 'playing';
       }, { timeout: 90000 }).toBe(true);
-      expect(mints.some((m) => m.ratingKey === '703558' && m.params.audioStreamID === FILM_ENGLISH)).toBe(true);
+      const englishMint = mints.find((m) => m.ratingKey === '703558' && m.params.audioStreamID === FILM_ENGLISH);
+      expect(englishMint).toBeTruthy();
+      // The audio that was actually SERVED: the manifest of that mint names
+      // the audio language it carries (the film's original is French).
+      expect(mints.manifests.length, 'the page fetched a start manifest').toBeGreaterThan(0);
+      const manifest = await (await request.get(mints.manifests.at(-1))).text();
+      const audioSets = [...manifest.matchAll(/<AdaptationSet[^>]*contentType="audio"[^>]*>/g)].map((m) => m[0]);
+      expect(audioSets.length, 'the mint\'s manifest carries an audio adaptation set').toBeGreaterThan(0);
+      expect(audioSets.join(' ')).toMatch(/lang="en/);
+      expect(audioSets.join(' ')).not.toMatch(/lang="fr/);
       expect(Math.abs((await state(request)).position - before)).toBeLessThan(30);
       await expect(audio).toHaveText(/Audio: English/);
       await shot(sender, 'steer12a-remote-audio-english');
       await receiver.close();
     } finally {
-      await resetPlexFilmAudio(request);
+      await restorePlexBaseline(request);
     }
   });
 });
 
 test.describe('Subtitles on this device (STEER.12a, phone)', () => {
   test.use({ viewport: { width: 390, height: 844 } });
-  test.afterAll(async ({ request }) => { await resetPlexSubtitles(request); });
+  test.beforeAll(async ({ request }) => { await capturePlexBaseline(request); });
+  test.afterAll(async ({ request }) => { await restorePlexBaseline(request); });
 
   test('the same control steers playback here', async ({ page }) => {
     const mints = streamMints(page);

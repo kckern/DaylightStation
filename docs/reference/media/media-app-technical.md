@@ -1317,7 +1317,15 @@ refused (`ADD_ONLY`, 502); a person's brief leaves a screen note
 does neither. A Stop, the sleep timer or the screen going to sleep ends a
 brief with nothing returning (the programme is not resurrected); a time-out or
 clip end after the programme was stopped returns nothing, while a person
-closing it still asks for it back.
+closing it still asks for it back. A programme that ENDED by itself under a
+brief (end of queue, stop after current, sleep at end of item) is reported to
+the extension (`onPlaybackStopped(reason, { naturalEnd: true })`): the brief
+stays up, but closing it returns nothing (`brief.programme-ended`).
+
+**Brief to a cold screen.** After the base page loads, `WakeAndLoadService`
+polls `getTopicSubscriberCount(topic) > 0` (every 500 ms, bounded at 30 s, on
+the injected clock/scheduler) before broadcasting; a screen that never
+subscribes is a failed load (`Screen not connected`, `wake-and-load.load.brief-no-subscriber`), never `ok`.
 
 **Stream selection on the mint (Plex).** A stream mint
 `GET /api/v1/proxy/plex/stream/:ratingKey` may carry `audioStreamID` and/or
@@ -1340,10 +1348,17 @@ writes nothing. Remaining window: the account's selection differs from its
 resting value for the length of one decision request (hundreds of ms); a
 transcode on the same file started in that window would inherit the borrowed
 choice, and a failed restore is logged and leaves the borrowed choice until the
-next track mint on that file. If the decision fails, the fallback start URL plays
+next track mint on that file. Track mints on one part are serialised
+(a per-part promise chain around read-previous, select, decision, restore;
+safety expiry 60 s), and a mint that waited re-reads the part's selection fresh,
+so a second mint can never take the first's borrowed track as "previous". When
+no audio stream is flagged `selected` the restore uses the `default`-flagged
+audio stream; with neither it logs `tracks-restore-skipped` (warn) and the
+account stays on the borrowed audio. If the decision fails, the fallback start URL plays
 the restored (account) selection, not the choice. Log events (all
 `plex.loadMediaUrl.*`): `tracks-selected`, `tracks-restored` (info),
-`tracks-rejected`, `tracks-select-failed`, `tracks-restore-failed` (warn).
+`tracks-rejected`, `tracks-select-failed`, `tracks-restore-failed`,
+`tracks-restore-skipped`, `tracks-refresh-failed` (warn).
 A track's `selected` state in `controls.tracks` reports what this stream was
 minted with, never Plex's own flag.
 
@@ -1710,7 +1725,15 @@ the screen shows the song. The decision to keep it is the controller's
 (§ "Media app" below). A Stop that names an origin (another device, after
 its "Keep the music?" question) leaves the music; a Stop with none (the TV
 remote, a routine), the sleep timer and the screen going to sleep stop it.
-The music follows the screen's volume and the sleep fade (it is an ordinary
+The music never outlives the photos into another sound
+(`modules/Player/lib/musicBehindPolicy.js`, one rule for both surfaces): a
+non-image current item stops it, even after Keep; no current item stops it
+unless the person chose Keep (a load between photos does not). A device-origin
+Stop is the screen's Keep (the controller asked); every other stop (routine,
+TV remote, sleep timer, display sleep) stops it too. House **Stop all** stops
+each screen's music after its stop (a house-wide stop means quiet); a Move of
+the slideshow stops the local music with the slideshow (no question in the
+middle of a Move). The music follows the screen's volume and the sleep fade (it is an ordinary
 Player under the screen volume), and auxiliary Players never write the play
 ledger or resume progress (`AuxiliaryPlayerContext`).
 
@@ -1726,7 +1749,8 @@ for this device and every screen's Remote) reads `snapshot.controls.tracks /
 .musicBehind / .brief` for a screen and `session/localPlayerFeatures.js` for
 this device (`PlayerBridge` claims its Player; `MusicBehindHost` runs the
 local music layer). `useSlideshowStopGuard` asks "Keep the music playing?"
-when Stop is pressed on a slideshow with music behind. Log events:
+when Stop is pressed on a slideshow with music behind (the TransportBar and
+the mini player alike; Keep marks `keepMusicAfterStop()`). Log events:
 `media.player-feature.command`, `.failed`, `.state`.
 
 **Verified by:**
