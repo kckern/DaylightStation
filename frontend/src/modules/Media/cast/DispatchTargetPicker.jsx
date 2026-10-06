@@ -98,9 +98,10 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
   const {
     devices, selected, multi, mode, canSubmit, localPlaying, hasPotentialContent, moveSupported, moveUnavailable, dispatchError,
     select, toggleMulti, setMode, submit,
-  } = useDispatchTargetPicker({ source, onComplete });
+  } = useDispatchTargetPicker({ source, onComplete, intent });
 
   const isDestination = intent === 'destination';
+  const hasMoveSnapshot = !!(source?.getSnapshot || source?.snapshot);
   const selectedDevices = devices.filter((d) => selected.has(d.id));
   const targetLabel = selectedDevices.length === 1
     ? deviceName(selectedDevices[0])
@@ -157,6 +158,8 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
           what pressing the CTA does). */}
       {hasPotentialContent && devices.length > 0 && !isDestination && !source?.brief && (
         <div className="cast-picker-mode" role="radiogroup" aria-label="What happens to playback here">
+          {/* Only a session can be moved; a plain play source has no Move to offer. */}
+          {(moveSupported || hasMoveSnapshot) && (
           <button
             type="button"
             role="radio"
@@ -168,7 +171,8 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
           >
             Move playback to {targetLabel ?? 'device'}
           </button>
-          {!moveSupported && <div data-testid="picker-move-unavailable" className="cast-picker-warning" role="status">
+          )}
+          {!moveSupported && hasMoveSnapshot && <div data-testid="picker-move-unavailable" className="cast-picker-warning" role="status">
             {selected.size > 1
               ? 'Move playback to one screen at a time.'
               : 'Move playback is not available yet for a single item. Keep playing here instead.'}
@@ -192,7 +196,7 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
         className="cast-picker-cta"
         autoFocus={autoFocus}
         disabled={!canSubmit || moveUnavailable}
-        onClick={submit}
+        onClick={() => submit()}
       >
         {ctaLabel}
       </button>

@@ -46,15 +46,15 @@ async function selectFirstDevice(picker) {
   await device.click();
 }
 
-async function expectMoveBlockedButKeepReachable(picker) {
+// A plain Play from Detail has no session to move: Move is not offered at all
+// (no disabled noise option) and the tile tap itself sends it as Keep (NF-TAP-10).
+// The guard aborts the device call, so the picker reports the failure and stays.
+async function expectNoMoveAndTapSendsKeep(picker) {
+  await expect(picker.getByTestId('picker-mode-transfer')).toHaveCount(0);
+  await expect(picker.getByTestId('picker-move-unavailable')).toHaveCount(0);
   await selectFirstDevice(picker);
-
-  await expect(picker.getByTestId('picker-mode-transfer')).toBeDisabled();
-  await expect(picker.getByTestId('picker-move-unavailable'))
-    .toHaveText(/Move playback is not available yet/i);
-  const submit = picker.getByTestId('picker-submit');
+  await expect(picker.getByTestId('picker-dispatch-failed')).toBeVisible();
   await expect(picker.getByTestId('picker-mode-fork')).toHaveAttribute('aria-checked', 'true');
-  await expect(submit).toBeEnabled();
 }
 
 test.describe('Media M0 Move safety', () => {
@@ -86,13 +86,13 @@ test.describe('Media M0 Move safety', () => {
 
     const picker = page.getByTestId('dispatch-target-picker');
     await expect(picker).toBeVisible();
-    await expectMoveBlockedButKeepReachable(picker);
+    await expectNoMoveAndTapSendsKeep(picker);
 
-    // Deliberately do not submit Keep: this is a UI/reachability proof, not a
-    // remote/hardware play test. Escape is the real popover cancellation path.
+    // The guard blocked the one load the tap issued; nothing reached a device and
+    // no claim/stop was attempted. Escape is the real popover cancellation path.
     await page.keyboard.press('Escape');
     await expect(picker).toBeHidden();
-    expect(deviceAttempts, 'Move/Keep picker inspection must not issue a device command').toEqual([]);
+    expect(deviceAttempts.filter((a) => !/\/load$/.test(a.path)), 'only the Keep load may be attempted').toEqual([]);
   });
 
   test('current Arrival keeps its native node and time through handoff picker cancellation, then stops locally', async ({ page }) => {

@@ -111,7 +111,8 @@ wraps at phone width, so nothing is lost to a narrow screen.
   leaves the Continue offer. On a screen the timer stops it with its queue
   kept; its Remote offers the "where the timer was set" choice. The fade
   uses the element volume, so on iOS Safari (read-only media volume) the
-  timer just pauses.
+  timer just pauses. During the fade the screen itself offers **Keep
+  playing**: OK there cancels the timer and restores the volume.
 - **Next episode.** At the natural end of an episode whose next queue item is
   also an episode, a 10-second countdown names the next one, with **Play
   now** and **Cancel** (Cancel stays on the finished episode, queue kept).
@@ -637,7 +638,11 @@ close transition. Container/detail navigation closes search and replaces its
 history marker. Browser Back or explicit close consumes the one marker pushed
 on open, so repeated playback actions do not add extra Back presses. The
 **Play on…** (send one item to a screen other than the aim) is in every
-result's ⋯ menu. The house indicator stays in the phone dock beside the
+result's ⋯ menu; with an idle screen the tile tap itself sends it (three taps:
+⋯, Play on…, the screen), and the outcome row names where it went with Undo.
+A plain play has no session to move, so no Move option is shown; a screen that
+is busy shows its warning and waits for the confirm button, as do Move
+(hand-off) and several screens. The house indicator stays in the phone dock beside the
 launcher; the Devices tab carries the playing-count badge as well. The phone's
 bottom tab bar also carries **Search** (it opens this same Search Mode), so
 the one-handed reach to search, play/pause and the aim does not depend on the
@@ -698,8 +703,11 @@ unreliable Back** (FKB swallows Esc). Every prompt a screen shows is therefore
 operable with arrows and OK alone: the next-episode countdown takes focus on
 **Cancel** (arrows move to **Play now**, OK presses, Back cancels as well);
 **Put it back** is pressed by OK while it is on screen; the sleep fade offers
-**Keep playing** (OK); **Show briefly** holds focus on **Close** (OK closes
-and the programme returns). The end-of-queue notices and the music plaque are
+**Keep playing** (OK); **Show briefly** holds focus on **Close** (OK or Back closes
+and the programme returns; arrows and play/pause still reach the Player, so a
+call or doorbell overlay appearing meanwhile keeps the D-pad). OK on a prompt
+yields to any other control that holds focus or any overlay that is up, and
+**Put it back** on a "paused by" note is not claimed (OK already resumes). The end-of-queue notices and the music plaque are
 informational and need no input. Journeys: `screen-tv-input.runtime.test.mjs`.
 
 ### Views
