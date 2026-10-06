@@ -2,7 +2,8 @@
 // RangeHandleLayer.jsx, which shares the measure-extent math for its drag
 // handles), split out so Fast Refresh can hot-reload the layer on its own.
 
-export function measureExtent(m, stepBoxes) {
+export function measureExtent(m, stepBoxes, measureRect = null) {
+  if (measureRect && Number.isFinite(measureRect.left) && Number.isFinite(measureRect.right)) return measureRect;
   let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
   for (let i = m.firstStep; i <= m.lastStep; i++) {
     const b = stepBoxes[i];
@@ -14,6 +15,51 @@ export function measureExtent(m, stepBoxes) {
   }
   if (!Number.isFinite(left) || !Number.isFinite(top)) return null;
   return { left, right, top, bottom };
+}
+
+/** Join OSMD barline bounds to a full-system notation envelope. */
+export function buildEngravedMeasureRects(measures = [], bounds = [], staffBoxes = [], steps = [], stepBoxes = []) {
+  const rects = measures.map((measure, index) => {
+    const box = bounds[measure.index ?? index] || bounds[index];
+    if (!box || !Number.isFinite(box.left) || !Number.isFinite(box.right) || box.right <= box.left) return null;
+    const staff = staffBoxes.find((item) => box.top <= item.top + item.lineSpacing * 4 && box.bottom >= item.top);
+    return { ...box, system: staff?.system ?? 0 };
+  });
+  const envelopes = new Map();
+  for (const staff of staffBoxes) {
+    const span = envelopes.get(staff.system) || { top: Infinity, bottom: -Infinity, pad: staff.lineSpacing || 10 };
+    span.top = Math.min(span.top, staff.top);
+    span.bottom = Math.max(span.bottom, staff.top + 4 * (staff.lineSpacing || 10));
+    envelopes.set(staff.system, span);
+  }
+  rects.forEach((rect, index) => {
+    if (!rect) return;
+    const span = envelopes.get(rect.system) || { top: Infinity, bottom: -Infinity, pad: 10 };
+    span.top = Math.min(span.top, rect.top);
+    span.bottom = Math.max(span.bottom, rect.bottom);
+    const measure = measures[index];
+    for (let i = measure.firstStep; i <= measure.lastStep; i++) {
+      for (const note of steps[i]?.notes || []) {
+        if (Number.isFinite(note.top)) span.top = Math.min(span.top, note.top);
+        if (Number.isFinite(note.bottom)) span.bottom = Math.max(span.bottom, note.bottom);
+      }
+      const cursor = stepBoxes[i];
+      if (cursor) {
+        span.top = Math.min(span.top, cursor.top);
+        span.bottom = Math.max(span.bottom, cursor.bottom);
+      }
+    }
+    envelopes.set(rect.system, span);
+  });
+  return rects.map((rect) => {
+    if (!rect) return null;
+    const span = envelopes.get(rect.system);
+    return { ...rect, top: span.top - span.pad, bottom: span.bottom + span.pad };
+  });
+}
+
+export function measureAtPosition(rects = [], x, y) {
+  return rects.findIndex((rect) => rect && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom);
 }
 
 /**
@@ -43,10 +89,27 @@ function halfGapTo(stepBoxes, from, to) {
   return gap > 0 ? gap / 2 : null;
 }
 
-export function rangeBands(measures, stepBoxes, { inMeasure, outMeasure }) {
+export function rangeBands(measures, stepBoxes, { inMeasure, outMeasure }, measureRects = []) {
   const inM = measures[inMeasure];
   const outM = measures[outMeasure];
   if (!inM || !outM) return [];
+  if (measureRects.length && measures.slice(inMeasure, outMeasure + 1).every((_, offset) => measureRects[inMeasure + offset])) {
+    const bands = [];
+    for (let i = inMeasure; i <= outMeasure; i++) {
+      const rect = measureRects[i];
+      let band = bands[bands.length - 1];
+      if (!band || rect.system !== band.system || rect.left < band.left) {
+        band = { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, system: rect.system };
+        bands.push(band);
+      } else {
+        band.left = Math.min(band.left, rect.left);
+        band.right = Math.max(band.right, rect.right);
+        band.top = Math.min(band.top, rect.top);
+        band.bottom = Math.max(band.bottom, rect.bottom);
+      }
+    }
+    return bands.map(({ left, right, top, bottom }) => ({ left, right, top, bottom }));
+  }
   const bands = [];
   let cur = null;
   let prevX = -Infinity;
@@ -83,3 +146,54 @@ export function rangeBands(measures, stepBoxes, { inMeasure, outMeasure }) {
   return bands;
 }
 
+const NOTATION_PAD_PX = 12;
+
+/**
+ * Learn selection geometry keeps OSMD's exact barline edges, but avoids using
+ * its full system-height hit rectangles as visible chrome. The latter include
+ * inter-system whitespace and made short passages look vertically displaced.
+ */
+export function notationRangeBands(measures, stepBoxes, range, measureRects = []) {
+  const bands = [];
+  for (let measureIndex = range.inMeasure; measureIndex <= range.outMeasure; measureIndex++) {
+    const measure = measures[measureIndex];
+    if (!measure) continue;
+    const boxes = [];
+    for (let step = measure.firstStep; step <= measure.lastStep; step++) {
+      if (stepBoxes[step]) boxes.push(stepBoxes[step]);
+    }
+    // A rest-only system has no selected notation to outline. Suppressing it is
+    // preferable to resurrecting the oversized full-system envelope.
+    if (!boxes.length) continue;
+
+    const rect = measureRects[measureIndex];
+    const hasBarlines = rect && Number.isFinite(rect.left) && Number.isFinite(rect.right) && rect.right > rect.left;
+    const extent = {
+      left: hasBarlines ? rect.left : Math.min(...boxes.map((box) => box.x)) - EDGE_FALLBACK_PX,
+      right: hasBarlines ? rect.right : Math.max(...boxes.map((box) => box.x)) + EDGE_FALLBACK_PX,
+      top: Math.min(...boxes.map((box) => box.top)),
+      bottom: Math.max(...boxes.map((box) => box.bottom)),
+      system: hasBarlines && rect.system != null ? rect.system : null,
+    };
+    const prior = bands[bands.length - 1];
+    const verticalOverlap = prior && extent.top <= prior.bottom && extent.bottom >= prior.top;
+    const sameSystem = prior && prior.system != null && extent.system != null
+      ? prior.system === extent.system
+      : verticalOverlap;
+    if (!sameSystem) {
+      bands.push(extent);
+      continue;
+    }
+    prior.left = Math.min(prior.left, extent.left);
+    prior.right = Math.max(prior.right, extent.right);
+    prior.top = Math.min(prior.top, extent.top);
+    prior.bottom = Math.max(prior.bottom, extent.bottom);
+    if (prior.system == null) prior.system = extent.system;
+  }
+  return bands.map(({ left, right, top, bottom }) => ({
+    left,
+    right,
+    top: top - NOTATION_PAD_PX,
+    bottom: bottom + NOTATION_PAD_PX,
+  }));
+}

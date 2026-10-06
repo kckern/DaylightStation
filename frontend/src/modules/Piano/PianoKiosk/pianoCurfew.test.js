@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isCurfewActive, CURFEW_DEFAULTS } from './pianoCurfew.js';
+import { isCurfewActive, shouldPreserveCurfewRoute, CURFEW_DEFAULTS } from './pianoCurfew.js';
 
 const at = (h, m = 0) => new Date(2026, 7, 21, h, m, 0);
 const evening = { enabled: true, start: '19:00', end: '06:00' };
@@ -40,5 +40,19 @@ describe('isCurfewActive', () => {
   it('ships disabled by default', () => {
     expect(CURFEW_DEFAULTS.enabled).toBe(false);
     expect(isCurfewActive(at(22), CURFEW_DEFAULTS)).toBe(false);
+  });
+});
+
+describe('shouldPreserveCurfewRoute', () => {
+  it('preserves this piano’s Sheet Music route only while curfew is active', () => {
+    expect(shouldPreserveCurfewRoute('/piano/yellow/sheetmusic/view/files:piece.mxl', '/piano/yellow', true)).toBe(true);
+    expect(shouldPreserveCurfewRoute('/piano/yellow/sheetmusic', '/piano/yellow', true)).toBe(true);
+    expect(shouldPreserveCurfewRoute('/piano/yellow/sheetmusic/view/files:piece.mxl', '/piano/yellow', false)).toBe(false);
+  });
+
+  it('does not exempt other modes, other pianos, or look-alike paths', () => {
+    expect(shouldPreserveCurfewRoute('/piano/yellow/games/chess', '/piano/yellow', true)).toBe(false);
+    expect(shouldPreserveCurfewRoute('/piano/blue/sheetmusic/view/files:piece.mxl', '/piano/yellow', true)).toBe(false);
+    expect(shouldPreserveCurfewRoute('/piano/yellow/sheetmusic-old', '/piano/yellow', true)).toBe(false);
   });
 });

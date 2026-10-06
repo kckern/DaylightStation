@@ -45,19 +45,10 @@ export const AXES = Object.freeze({
   // `placed` implies `clean`'s. The ordering itself isn't enforced here — it
   // describes the rubric a downstream grader builds, not a schema rule.
   //
-  // `placed` NAMES THE VOCABULARY TARGET, not today's enforcement. Today's
-  // cued gate (`gateAsk.js:requirementForLevel`) builds a rubric of
-  // `{ completeness, cleanliness }` only — placement is computed and folded
-  // into the score, but `assessmentAttempt.js`'s `failedCriteria` never
-  // checks a placement criterion, so nothing hard-gates on it. Tier-3's
-  // preset below says `judging: 'placed'` because that is the axis value
-  // that *describes* tier 3 in this vocabulary, not because today's engine
-  // enforces a placement threshold. Wiring `placed` to an actual hard gate
-  // is a deliberate future decision (tightening current behaviour), never
-  // an incidental consequence of reading this preset — a caller that wires
-  // it as "require placement" without that decision being made explicitly
-  // would make tier 3 stricter than it is today, breaking SP1's
-  // reproduces-today contract.
+  // `placed` is the vocabulary target and the pass contract. Cued timing alone
+  // may still be completion-only, but `gateAsk.js:requirementForLevel` gives a
+  // placed ask an explicit placement criterion so "play on the beat" cannot
+  // pass solely because the right pitches eventually arrived.
   judging: Object.freeze(['completion', 'clean', 'placed']),
   hints: Object.freeze(['none', 'after-stall', 'always']),
 });
@@ -94,11 +85,8 @@ export const PRESETS = Object.freeze({
     timing: 'free',
     judging: 'completion',
   }),
-  // `judging: 'placed'` here names tier 3's vocabulary position, not a hard
-  // placement gate — see the long comment on `AXES.judging` above. Today's
-  // actual tier-3 enforcement is completeness + cleanliness; placement is
-  // score-weighted only. This preset must keep reproducing exactly that
-  // until a later task explicitly decides to tighten it.
+  // Tier 3 is both cued and placement-judged; the requirement resolver turns
+  // that pair into the default 0.8 placement threshold.
   'tier-3': Object.freeze({
     prompt: 'read',
     secondary: 'keyboard-strip',

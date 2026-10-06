@@ -30,7 +30,8 @@ function positionAt(map, milliseconds) {
  *
  * `nowMs` must use the same clock as `startedAt`. `elapsedMs` excludes lead-in;
  * `quarter` is absolute score position, while `beat` is a one-based quarter
- * beat relative to `originQuarter` (the caller owns meter grouping).
+ * beat relative to `originQuarter`. Bar grouping comes only from authored
+ * measure boundaries; absent metadata never implies common time.
  * `expectedCursor` indexes all expectation events, including rests, choosing
  * the latest onset reached by the clock; before the first onset it points to
  * the first event. At musical end it is events.length. Hits, misses, held keys
@@ -67,9 +68,14 @@ export function timedRunPresentation(snapshot, nowMs) {
   const phase = TERMINAL.has(snapshot?.status) ? 'done'
     : !started ? 'prepared'
       : countdownRemainingMs > 0 ? 'countdown' : 'running';
+  const measure = (snapshot?.expectation?.measureMap ?? []).find((entry) => quarter >= entry.onsetQuarter
+    && quarter < entry.onsetQuarter + entry.durationQuarters);
+  const beatInMeasure = measure ? Math.floor(quarter - measure.onsetQuarter) + 1 : null;
   return {
     phase, elapsedMs, countdownRemainingMs,
     beat: Math.floor(Math.max(0, quarter - originQuarter)) + 1,
+    measureIndex: measure?.index ?? null, beatInMeasure,
+    downbeat: measure ? beatInMeasure === 1 : null,
     bpm, expectedCursor, quarter, durationMs, timelineDone,
   };
 }

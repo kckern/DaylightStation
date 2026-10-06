@@ -78,6 +78,55 @@ node cli/plex.cli.mjs refresh --path "/data/media/video/movies/Forrest Gump (199
 node cli/plex.cli.mjs refresh --section 6
 ```
 
+`--force` adds `force=1` so the scanner re-reads files it would otherwise skip as "nothing has
+changed" (a folder whose directory mtime didn't move, or one where a first pass hit read errors).
+
+> **Music libraries and tags.** A scan only refreshes *file* info for tracks Plex already has.
+> Embedded tags (artist, disc) are read once, when a track is first added, and are not re-read by
+> `refresh`, `--force`, or `refresh-metadata` on libraries using the legacy "Personal Media" agent
+> (`com.plexapp.agents.none`). To change them on existing tracks either write the field with `set`
+> / `set-from-yaml` (artist is `originalTitle`; track number is `index`), or give the files new paths
+> so Plex adds them fresh. Plex ignores `parentIndex` (disc) edits.
+
+### `refresh-metadata <id> [id2…]` (alias: `refresh-meta`)
+
+Ask Plex to refresh metadata for items and everything under them. `--dry-run` / `--json` supported.
+
+```bash
+node cli/plex.cli.mjs refresh-metadata 98390 --dry-run
+```
+
+### `leaves <id>`
+
+List every track under an artist, album, show or season: rating key, title, album, album id,
+artist field, and file path. Works at the **artist** level (not on a single album). Use `--json`
+for the full list, e.g. to diff Plex against files on disk.
+
+```bash
+node cli/plex.cli.mjs leaves 98390 --json > nt-tracks.json
+```
+
+### `merge <primaryId> <dupId> [dupId…]`
+
+Merge duplicate items into a primary (Plex "Merge"). Refuses unless every item has the same type,
+title and parent. A scan that hits read errors can split an artist or album in two; merge the artist
+first, then its duplicate albums.
+
+```bash
+node cli/plex.cli.mjs merge 98390 707769 --dry-run      # artist
+node cli/plex.cli.mjs merge 532225 707770 707772        # albums
+```
+
+### `empty-trash --section <id>`
+
+Remove "unavailable" items (files that no longer exist) from one library section. It clears
+**every** unavailable item in that section, so check first that nothing is only temporarily
+missing (NFS flicker). `--dry-run` / `--json` supported.
+
+```bash
+node cli/plex.cli.mjs empty-trash --section 19 --dry-run
+```
+
 ## Flags
 
 | Flag | Applies to | Effect |
