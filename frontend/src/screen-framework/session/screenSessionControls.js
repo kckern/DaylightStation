@@ -316,11 +316,13 @@ export function createScreenSessionControls({
     const { current = null, next = null } = ctx;
     if (current?.isLive === true) return false;
     if (sleep?.mode === 'atEnd') {
+      programmeEnded('sleep-at-end');
       actions.stop();
       completeSleep('end-of-item');
       return true;
     }
     if (state.stopAfterCurrent) {
+      programmeEnded('stop-after-current');
       actions.stop();
       state.stopAfterCurrent = false;
       logger().info('stop-after-current.stopped', { ownerId, contentId: current?.contentId ?? null });
@@ -343,7 +345,14 @@ export function createScreenSessionControls({
       addContinuation(current, { advanceAfter: true, actions });
       return true;
     }
+    // Stop at the end of the queue: the Player winds down by itself.
+    programmeEnded('end-of-queue');
     return false;
+  }
+
+  /** The programme ended by itself: a brief up over it has nothing to return to. */
+  function programmeEnded(reason) {
+    try { extension?.onPlaybackStopped?.(reason, { naturalEnd: true }); } catch { /* the stop still runs */ }
   }
 
   /** Refill when the last auto-added item starts (batches of ≤5 / ~30 min). */

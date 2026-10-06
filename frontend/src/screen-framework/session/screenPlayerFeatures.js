@@ -122,7 +122,9 @@ export function createScreenPlayerFeatures({
     // the brief asks for the programme back.
     const personClosed = reason === 'closed' || reason === 'remote-close';
     const programmeLive = !!currentOf(liveSnap) && ACTIVE.has(liveSnap?.state);
-    if (ended.returnTo && (programmeLive || personClosed)) {
+    if (ended.programmeEnded) {
+      returned = 'nothing';
+    } else if (ended.returnTo && (programmeLive || personClosed)) {
       const live = currentOf(liveSnap);
       const sameItem = live && live.contentId === ended.returnTo.contentId
         && (live.queueItemId ?? null) === (ended.returnTo.queueItemId ?? null);
@@ -160,8 +162,14 @@ export function createScreenPlayerFeatures({
    * sleep): a brief that was up ends and nothing returns — the programme
    * must not be resurrected — and music behind stops with it when asked.
    */
-  function onPlaybackStopped(reason, { stopMusic = true } = {}) {
-    supersedeBrief(reason);
+  function onPlaybackStopped(reason, { stopMusic = true, naturalEnd = false } = {}) {
+    if (naturalEnd) {
+      // The programme ran out by itself. A brief up over it stays (a doorbell
+      // does not vanish) but closing it must not replay what already ended.
+      if (brief) { brief.programmeEnded = true; logger().info('brief.programme-ended', { ownerId, reason }); }
+    } else {
+      supersedeBrief(reason);
+    }
     if (stopMusic && musicBehind) {
       try { ports.stopMusic?.(); } catch (err) { logger().warn('music.stop-failed', { error: String(err?.message ?? err) }); }
     }

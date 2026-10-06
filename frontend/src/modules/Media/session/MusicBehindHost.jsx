@@ -5,6 +5,8 @@
 // slideshow: stopping the photos asks whether to keep the music.
 import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { LocalSessionContext } from './LocalSessionContext.js';
+import { useSessionController } from '../controller/useSessionController.js';
+import { musicBehindVerdict } from '../../Player/lib/musicBehindPolicy.js';
 import { getLocalPlayerFeatures } from './localPlayerFeatures.js';
 import { MusicBehindLayer } from '../../Player/components/MusicBehindLayer.jsx';
 import { isSlideshowItem } from '@shared-contracts/media/playerFeatures.mjs';
@@ -14,6 +16,7 @@ export function MusicBehindHost() {
   const ctx = useContext(LocalSessionContext);
   const controller = ctx?.controller ?? null;
   const features = getLocalPlayerFeatures();
+  const { snapshot } = useSessionController('local');
   const [music, setMusic] = useState(null); // { contentId, title, startedAt }
   const musicRef = useRef(null);
   const layerRef = useRef(null);
@@ -36,6 +39,22 @@ export function MusicBehindHost() {
       return { ok: true };
     },
   }), [features, controller]);
+
+  // No double audio: music behind ends when the photos give way to something
+  // with its own sound, or to nothing the person chose to keep it over.
+  useEffect(() => {
+    if (!music) return;
+    const verdict = musicBehindVerdict({
+      item: snapshot?.currentItem ?? null, state: snapshot?.state ?? null, keep: features.isMusicKept(),
+    });
+    if (verdict !== 'stop') return;
+    mediaLog.playerFeature({
+      feature: 'music-behind', action: 'stop-with-slideshow', target: 'local',
+      reason: snapshot?.currentItem ? 'not-an-image' : 'slideshow-gone',
+    });
+    setMusic(null);
+    features.setMusicState(null);
+  }, [snapshot, music, features]);
 
   useEffect(() => {
     if (!music) return undefined;

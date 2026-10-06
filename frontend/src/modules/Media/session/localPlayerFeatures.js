@@ -13,6 +13,7 @@ export function createLocalPlayerFeatures() {
   let state = { tracks: null, musicBehind: null };
   let player = null;
   let music = null;
+  let keepMusic = false; // the person chose Keep when stopping the slideshow
   const listeners = new Set();
   const notify = () => { for (const fn of [...listeners]) { try { fn(); } catch { /* listener's problem */ } } };
   const set = (patch) => { state = { ...state, ...patch }; notify(); };
@@ -36,13 +37,20 @@ export function createLocalPlayerFeatures() {
       return result ?? { ok: false, code: 'NO_PLAYBACK' };
     },
 
-    setMusicState(musicBehind) { set({ musicBehind: musicBehind ?? null }); },
+    setMusicState(musicBehind) {
+      if (!musicBehind) keepMusic = false;
+      set({ musicBehind: musicBehind ?? null });
+    },
+    /** "Keep music" at the stop guard: the music outlives the photos (until a video or Stop). */
+    keepMusicAfterStop() { keepMusic = true; },
+    isMusicKept: () => keepMusic,
     bindMusic(handle) {
       music = handle;
       return () => { if (music === handle) music = null; };
     },
     async musicBehind(op, params = {}) {
       mediaLog.playerFeature?.({ feature: 'music-behind', action: op, target: 'local', contentId: params.contentId ?? null });
+      if (op === 'start') keepMusic = false;
       const result = music ? await music.command(op, params) : { ok: false, code: 'MUSIC_UNAVAILABLE' };
       if (result?.ok === false) mediaLog.playerFeatureFailed?.({ feature: 'music-behind', target: 'local', action: op, code: result.code ?? null });
       return result;
