@@ -24,6 +24,7 @@ function seenLine(screen) {
 }
 
 function ScreenItem({ screen, admin, others, aliasNames, onRename, onMerge, onRetire }) {
+  const names = { ...aliasNames, ...(screen.aliasNames || {}) };
   const [error, setError] = useState(null);
   const was = wasNameLabel(screen);
   const aliases = Array.isArray(screen.aliases) ? screen.aliases : [];
@@ -44,7 +45,7 @@ function ScreenItem({ screen, admin, others, aliasNames, onRename, onMerge, onRe
         <Stack gap={4} data-testid={`screen-admin-aliases-${screen.id}`}>
           {aliases.map((aliasId, i) => (
             <Group key={aliasId} gap="xs" wrap="nowrap">
-              <Text size="xs" style={{ flex: 1 }}>Includes {aliasNames[aliasId] ?? `merged duplicate ${i + 1}`}</Text>
+              <Text size="xs" style={{ flex: 1 }}>Includes {names[aliasId] ?? `merged duplicate ${i + 1}`}</Text>
               <Button size="xs" variant="default" className="house-action" leftSection={<IconArrowBackUp size={14} aria-hidden />}
                 data-testid={`screen-admin-unmerge-${aliasId}`} onClick={() => unmerge(aliasId)}>
                 Unmerge
@@ -127,6 +128,7 @@ export function ScreenAdminView() {
   const screens = registry?.screens ?? [];
   const notSeen = registry?.notSeenLately ?? [];
   const retired = registry?.retired ?? [];
+  const unnamed = registry?.unnamed ?? [];
   const live = [...screens, ...notSeen];
   const nameOf = (id) => registry?.byId?.get?.(id)?.name ?? 'another screen';
 
@@ -195,6 +197,12 @@ export function ScreenAdminView() {
           <ul className="house-list">{notSeen.map(item)}</ul>
         </details>
       )}
+      {unnamed.length > 0 && (
+        <details className="house-section" data-testid="screen-admin-unnamed">
+          <summary><Text span fw={600}>Unnamed browsers ({unnamed.length})</Text> <Text span size="sm" c="dimmed">— opened the app, never named, never played</Text></summary>
+          <ul className="house-list">{unnamed.map(item)}</ul>
+        </details>
+      )}
       {retired.length > 0 && (
         <details className="house-section" data-testid="screen-admin-retired">
           <summary><Text span fw={600}>Retired ({retired.length})</Text></summary>
@@ -253,6 +261,7 @@ export function ScreenAdminView() {
         title={merging ? `Merge ${merging.screen.name}` : ''}
         message="Merge a duplicate into its earlier self: its plays, spots and routines follow, and you can unmerge it afterwards."
         confirmLabel="Merge"
+        confirmDisabled={!merging?.into}
         onConfirm={() => { if (merging?.into) confirmMerge(); }}
         onCancel={() => setMerging(null)}
       >

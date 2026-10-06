@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { houseApi as defaultApi, screenIdFor } from './houseApi.js';
 import houseLog from './houseLog.js';
 
-const EMPTY = { screens: [], notSeenLately: [], retired: [] };
+const EMPTY = { screens: [], notSeenLately: [], retired: [], unnamed: [] };
 export const REGISTRY_POLL_MS = 120_000;
 
 export function useScreenRegistry({ api = defaultApi, pollMs = REGISTRY_POLL_MS } = {}) {
@@ -25,6 +25,7 @@ export function useScreenRegistry({ api = defaultApi, pollMs = REGISTRY_POLL_MS 
         screens: Array.isArray(res?.screens) ? res.screens : [],
         notSeenLately: Array.isArray(res?.notSeenLately) ? res.notSeenLately : [],
         retired: Array.isArray(res?.retired) ? res.retired : [],
+        unnamed: Array.isArray(res?.unnamed) ? res.unnamed : [],
       };
       houseLog.registryLoaded({ screens: next.screens.length, notSeenLately: next.notSeenLately.length, retired: next.retired.length });
       setState({ ...next, loaded: true, available: true, error: null });
@@ -50,14 +51,14 @@ export function useScreenRegistry({ api = defaultApi, pollMs = REGISTRY_POLL_MS 
 
   const byId = useMemo(() => {
     const map = new Map();
-    for (const list of [state.retired, state.notSeenLately, state.screens]) {
+    for (const list of [state.retired, state.unnamed, state.notSeenLately, state.screens]) {
       for (const s of list) {
         map.set(s.id, s);
         for (const alias of Array.isArray(s.aliases) ? s.aliases : []) map.set(alias, s);
       }
     }
     return map;
-  }, [state.screens, state.notSeenLately, state.retired]);
+  }, [state.screens, state.notSeenLately, state.retired, state.unnamed]);
 
   return useMemo(() => ({ ...state, byId, refresh }), [state, byId, refresh]);
 }

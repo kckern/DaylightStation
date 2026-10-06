@@ -15,6 +15,9 @@ import { RoutineHistoryService } from '../../backend/src/3_applications/media/Ro
 import { ScreenPlaybackService } from '../../backend/src/3_applications/media/ScreenPlaybackService.mjs';
 import { buildRoutineRun } from '../../backend/src/2_domains/media/routineHistory.mjs';
 
+/** The one title the acceptance server authorizes for these journeys (Arrival; see BRANCH_ALLOWED_TITLES). */
+export const HOUSE_FIXTURE_TITLE = Object.freeze({ id: 'plex:55854', query: 'arrival' });
+
 export const HOUSE_FIXTURE_ROUTINE = Object.freeze({
   id: 'automation:acceptance_button', name: 'Acceptance button: Morning', kind: 'automation', source: 'fixture',
 });

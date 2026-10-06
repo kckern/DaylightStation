@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { HOUSE_FIXTURE_TITLE } from '../../../_lib/media-house-fixture.mjs';
 
 // House view, naming, screen admin and routine history (Media P1/P2 batch C)
 // against a REAL mounted virtual receiver and the REAL house router/services.
@@ -99,8 +100,8 @@ test('HOUSE.2a/5a, PLAY.10a, STEER.11a: every row shows start status and who sta
     const row = sender.page.getByTestId(`fleet-card-${DEVICE}`);
     await expect(row).toBeVisible({ timeout: 30000 });
     await sender.page.getByTestId(`fleet-play-${DEVICE}`).click();
-    await sender.page.getByTestId(`fleet-play-input-${DEVICE}`).fill('arrival');
-    await sender.page.getByTestId('fleet-play-result-plex:55854').click();
+    await sender.page.getByTestId(`fleet-play-input-${DEVICE}`).fill(HOUSE_FIXTURE_TITLE.query);
+    await sender.page.getByTestId(`fleet-play-result-${HOUSE_FIXTURE_TITLE.id}`).click();
     await expect.poll(async () => (await state(request))?.state, { timeout: 120000 }).toBe('playing');
 
     // RQ-HOUSE-04: the start reaches every house view, not only the sender's.
@@ -143,7 +144,7 @@ test('HOUSE.2a/5a, PLAY.10a, STEER.11a: every row shows start status and who sta
     await receiver.close();
     // The load may be accepted (the WebSocket broadcast goes out) — the
     // playback watchdog then fails the start because nothing ever plays.
-    await call(request, 'GET', `${base}/load?play=plex:55854&dispatchId=${randomUUID()}`);
+    await call(request, 'GET', `${base}/load?play=${HOUSE_FIXTURE_TITLE.id}&dispatchId=${randomUUID()}`);
     await expect.poll(async () => (await call(request, 'GET', `${base}/start-status`)).body?.status?.phase, { timeout: 180000 })
       .toBe('failed');
     await expect(observer.page.getByTestId(`house-start-status-${DEVICE}`)).toHaveText(/^Couldn't start at /, { timeout: 15000 });
@@ -158,12 +159,12 @@ test('STEER.11a on the handle: Pause all / Resume all reaches this device and th
   const phone = await newDevice(browser, VIEWPORTS.phone, { name: `Handle phone ${RUN}` });
   try {
     // A screen playing elsewhere (an automation start: no device named).
-    expect((await call(request, 'GET', `${base}/load?play=plex:55854&dispatchId=${randomUUID()}`)).status).toBe(200);
+    expect((await call(request, 'GET', `${base}/load?play=${HOUSE_FIXTURE_TITLE.id}&dispatchId=${randomUUID()}`)).status).toBe(200);
     await expect.poll(async () => (await state(request))?.state, { timeout: 120000 }).toBe('playing');
     // And something playing here, so the handle is up.
     await phone.page.getByTestId('media-search-launcher').click();
-    await phone.page.getByTestId('search-mode-input').fill('arrival');
-    await phone.page.getByTestId('search-mode-result-plex:55854').click();
+    await phone.page.getByTestId('search-mode-input').fill(HOUSE_FIXTURE_TITLE.query);
+    await phone.page.getByTestId(`search-mode-result-${HOUSE_FIXTURE_TITLE.id}`).click();
     await phone.page.getByTestId('search-mode-close').click();
     const native = phone.page.locator('.video-player video');
     await expect.poll(() => native.evaluate(v => !v.paused && v.currentTime > 0).catch(() => false), { timeout: 90000 }).toBe(true);

@@ -91,6 +91,7 @@ describe('ScreenAdminView', () => {
     wrap();
     fireEvent.click(screen.getByTestId('screen-admin-merge-browser:new'));
     const dialog = await screen.findByTestId('screen-admin-merge-dialog');
+    expect(screen.getByTestId('confirm-ok')).toBeDisabled();
     fireEvent.click(within(dialog).getByRole('radio', { name: 'Kitchen tablet · Kitchen' }));
     fireEvent.click(screen.getByTestId('confirm-ok'));
     await waitFor(() => expect(api.mergeScreen).toHaveBeenCalledWith('browser:new', { into: 'browser:old', confirm: true }));
@@ -98,6 +99,15 @@ describe('ScreenAdminView', () => {
     expect(outcome.command.copy.primary).toBe('Merged Kitchen tablet (aaaa1111) into Kitchen tablet');
     await outcome.undo.run();
     expect(api.unmergeScreen).toHaveBeenCalledWith('browser:new');
+  });
+
+  it('shows merged duplicates by name after a reload, and folds unnamed browsers away', () => {
+    ctx.registry.screens[1] = { ...ctx.registry.screens[1], aliases: ['browser:gone2'], aliasNames: { 'browser:gone2': 'Pantry tablet' } };
+    ctx.registry.unnamed = [{ id: 'browser:ghost', kind: 'browser', name: 'Browser ghost123', aliases: [] }];
+    wrap();
+    expect(screen.getByTestId('screen-admin-aliases-browser:new')).toHaveTextContent('Includes Pantry tablet');
+    expect(screen.getByTestId('screen-admin-unnamed')).toHaveTextContent('Unnamed browsers (1)');
+    expect(screen.getByTestId('screen-admin-list')).not.toHaveTextContent('ghost123');
   });
 
   it('restores a retired screen', async () => {

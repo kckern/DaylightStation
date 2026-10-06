@@ -33,13 +33,33 @@ beforeEach(() => {
 });
 
 describe('ClientIdentityProvider and the screen registry', () => {
-  it('announces itself on start and adopts the name the household knows it by', async () => {
+  it('announces a named browser on start and adopts the name the household knows it by', async () => {
+    localStorage.setItem(STORAGE_KEYS.DISPLAY_NAME, 'Kitchen tab');
     const houseApi = api({ announceScreen: vi.fn(async ({ id }) => ({ screen: { id, name: 'Kitchen tablet', room: 'Kitchen' } })) });
     render(<ClientIdentityProvider api={houseApi}><Probe /></ClientIdentityProvider>);
-    expect(houseApi.announceScreen).toHaveBeenCalledWith({ id: 'browser:aaaa1111-2222', name: 'Browser aaaa1111', room: undefined });
+    expect(houseApi.announceScreen).toHaveBeenCalledWith(expect.objectContaining({ id: 'browser:aaaa1111-2222', name: 'Kitchen tab', playing: false }));
     await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('Kitchen tablet|Kitchen|'));
     // Persisted: the name survives a reload.
     expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.BROWSER_IDENTITY)).name).toBe('Kitchen tablet');
+  });
+
+  it('does not announce an unnamed browser that has not played (no ghost rows), nor send the placeholder name', async () => {
+    const houseApi = api();
+    render(<ClientIdentityProvider api={houseApi}><Probe /></ClientIdentityProvider>);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(houseApi.announceScreen).not.toHaveBeenCalled();
+    act(() => captured.markPlaying());
+    await waitFor(() => expect(houseApi.announceScreen).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'browser:aaaa1111-2222', name: undefined, playing: true })));
+  });
+
+  it('sends the previous header token on announce until the registry has folded it', async () => {
+    localStorage.setItem(STORAGE_KEYS.DISPLAY_NAME, 'Kitchen tab');
+    localStorage.setItem('media-app.previous-device-id', 'browser:0123456789abcdef');
+    const houseApi = api();
+    render(<ClientIdentityProvider api={houseApi}><Probe /></ClientIdentityProvider>);
+    await waitFor(() => expect(houseApi.announceScreen).toHaveBeenCalledWith(expect.objectContaining({ previousId: 'browser:0123456789abcdef' })));
+    await waitFor(() => expect(localStorage.getItem('media-app.previous-device-id')).toBe(null));
   });
 
   it('makes every request name this browser by its registry id (X-Daylight-Device)', () => {
