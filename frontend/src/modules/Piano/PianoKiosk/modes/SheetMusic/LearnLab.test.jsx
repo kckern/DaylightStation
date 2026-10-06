@@ -139,6 +139,27 @@ describe('LearnLab', () => {
     expect(onRungPassed).toHaveBeenCalledWith(expect.objectContaining({ segmentId: 'm0-3', rungId: 'right' }));
   });
 
+  it('runs completed review drills from fresh temporary progress without banking them again', () => {
+    const onFinished = vi.fn();
+    const onRecord = vi.fn();
+    const review = { ...rung, sets: 1, reps: 2, required: 2, passCount: 0, achievementPassCount: 2, achievementComplete: true };
+    render(<LearnLab {...base} rung={review} launchSource="review" creditEligible={false} onRecord={onRecord} onFinished={onFinished} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Finish take' }));
+    expect(onRecord).not.toHaveBeenCalled();
+    expect(onFinished).not.toHaveBeenCalled();
+    expect(screen.getByText('Set 1 of 1 · Rep 2 of 2')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Finish take' }));
+    expect(onFinished).toHaveBeenCalledWith(expect.objectContaining({ verdict: { passed: true } }));
+  });
+
+  it('banks an exact custom match against the unfinished ladder rung', () => {
+    const onRecord = vi.fn(() => ({ rungComplete: false, passage: { complete: false } }));
+    const creditRung = { ...rung, id: 'timed', mode: 'cued', tempoPercent: 60, required: 3 };
+    render(<LearnLab {...base} rung={{ ...rung, id: 'custom', mode: 'cued', tempoPercent: 60 }} launchSource="custom" creditEligible creditRung={creditRung} onRecord={onRecord} onFinished={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Finish take' }));
+    expect(onRecord).toHaveBeenCalledWith(expect.objectContaining({ rungId: 'timed', requiredPasses: 3 }));
+  });
+
   it('covers the next take with the shared rep interstitial instead of looking like a reload', () => {
     vi.useFakeTimers();
     const drill = { ...rung, sets: 2, reps: 2, required: 4, passCount: 0 };

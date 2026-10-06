@@ -208,7 +208,7 @@ Green means one thing only: you are playing the right note, right now.
 
 ## Learn: landing and the state matrix
 
-### Passage roadmap and learning ladder
+### Passage roadmap and practice launchpad
 
 The score remains visible as the roadmap. Rehearsal regions are never crossed;
 within each region, the planner creates balanced passages targeting four bars
@@ -217,19 +217,28 @@ open from the start unless sequential navigation is explicitly configured. The
 first incomplete segment is marked Next, but a player can open any unlocked
 segment.
 
-The score shows compact numbered circles at segment starts, supplemented by a
-collapsible circle rail. Color and small glyphs distinguish next, in-progress,
-mastered, tested-out, and locked states; the corresponding words remain in
-accessible labels instead of covering the notation. Segment number is primary;
-an authored name is optional and the printed bar range is secondary. A thin
+The score shows numbered segment markers plus a horizontally scrollable row of
+large, labeled segment cards. Each card includes its number, authored name or
+segment label, printed bar range, and plain-language state. Learned and mastered
+cards remain enabled so practice is never a one-way door. A thin
 outline appears only for the selected segment. It follows engraved barlines
 horizontally and hugs the active notation vertically with a small clearance.
 Wrapped passages receive one outline per system and never bridge page whitespace.
 
-Choosing a rung plucks the segment into a full-screen lab. The rest of the score
-is unmounted: the lab engraves only the selected bars, in one or at most two
-systems, and physically removes inactive staves for single-hand work. Close
-returns to the prior score position. A completed segment pulses once on return.
+Choosing a segment opens its full-screen launchpad: the engraved excerpt stays
+visible on the left while large icon-and-label actions fill the right. **Up next**
+is the dominant action. **Practice again** exposes every unlocked drill,
+including completed drills; **Make your own** chooses hands, beat mode, and a
+named tempo; **Test out** remains a separate challenge. Beat choices use the
+learner-facing labels **No beat**, **Keep a beat**, and **Play on time**.
+
+Starting an action plucks the segment into the existing full-screen lab. The lab
+engraves only the selected bars, in one or at most two systems, and physically
+removes inactive staves for single-hand work. Replaying a completed drill starts
+fresh temporary sets and reps without erasing the earned completion. Custom
+practice is one passage run, not another sets/reps editor. If its hands, beat,
+and tempo exactly match an unlocked unfinished rung, the successful run also
+earns that rung's normal credit; it never removes or rewrites existing credit.
 
 The lab leads with notation. Its existing assessment cursor is visible on free
 and timed rungs; timed work adds beat-window state to that same cursor. The
@@ -243,8 +252,11 @@ full-score viewer continues to use responsive automatic wrapping.
 
 Lab context lives in one compact toolbar rather than floating controls: Back,
 segment and bar identity, rung, set/rep position, and (for timed work) tempo.
-Completing a rung holds a brief success state and returns to the selected
-segment's ladder; it never auto-starts the next training run.
+Every run ends on an explicit result screen rather than dismissing itself.
+Recommended work offers **Next drill**, **Practice again**, and **Back to
+segment**. Review and custom work offer **Play again**, **Change setup**, and
+**Back to segment**. Back returns to the prior score position, and a newly
+completed segment pulses once there.
 
 The default ladder is:
 
