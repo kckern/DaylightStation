@@ -1,13 +1,13 @@
 // frontend/src/modules/Media/session/LocalSessionProvider.jsx
 // Owns the local session: builds the controller from persisted state,
-// attaches side effects (persistence, recents, logging), and mounts the
+// attaches side effects (persistence, logging), and mounts the
 // player bridge plus the URL-command / external-control / state-broadcast
 // hooks. Everything below the provider sees only the controller interface.
 import React, { useMemo, useEffect } from 'react';
 import { LocalSessionContext } from './LocalSessionContext.js';
 import { PlayerHostProvider } from './PlayerHostProvider.jsx';
 import { createLocalSessionController } from './LocalSessionController.js';
-import { attachPersistence, attachRecents, attachLogging, attachSlowStartWatchdog } from './attachments.js';
+import { attachPersistence, attachLogging, attachSlowStartWatchdog } from './attachments.js';
 import {
   readPersistedSession,
   writePersistedSession,
@@ -61,9 +61,11 @@ export function LocalSessionProvider({ children }) {
     // Attach side effects synchronously: child effects (URL command,
     // external control) fire before any parent effect could attach, and
     // their first mutations must be persisted/logged too.
+    // The browser-only recents list is gone (Home's Recent is the
+    // household's); drop its leftover key.
+    try { localStorage.removeItem('media-app.recents'); } catch { /* storage unavailable */ }
     ctl.detachers = [
       attachPersistence(ctl.store, { write: writePersistedSession }),
-      attachRecents(ctl.store),
       attachLogging(ctl.store),
       attachSlowStartWatchdog(ctl.store),
     ];

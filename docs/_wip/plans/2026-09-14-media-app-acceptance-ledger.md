@@ -35,6 +35,7 @@ Task 2 and stable-core receipt evidence below remains unchanged.
 
 | Run | Scope | Red / baseline | Green / acceptance |
 |---|---|---|---|
+| HOUSEHOLD-HOME | Batch A: start page (suggestions, carry on with spots, Now on + Move here, household Recent), item verbs (favourites, watched, remove from household list), Played earlier, saved spots + Start over, play/log origin | Focused Vitest REDs for the outcome tray (8), Start over provider and spot threading; journey runs found real defects, each fixed before the evidence run: a chosen spot was lost between queue item and Player; spot lines were clipped; under host load Start over was lost while the item was still loading (now a replay from 0) and a running Move here notice cleared after 2.5 s. | Exact preview of product source `1dd7ea8f5`: `media-app-household-home.runtime.test.mjs` 18/18 serially in 1.9 min at host load ≈18 (start page, removal/Undo, favourites/watched and tap rule at 390×844, 820×1180, 1440×900; Played earlier at all three; PLAY.4a and Now on/Move here at laptop). Household routes (§2.4–2.9) are answered by an in-test household that applies the backend's list rules because the acceptance server blocks them; catalog, `/play`, streams, the virtual receiver and Move here are real. The stable `PLAY.1b` Home Recents entry now taps the household Recent tile, with only that list answered in-test (`media-app-play-now-local-entrypoints`, also `-play-now-entrypoints` and the resume card check). Screenshots `/tmp/daylight-media-p0-evidence/1dd7ea8f5dedb83273b67deceb04ea01299cee87/fe-home/shots/`. |
 | BATCH-C-HOUSE | P1/P2 batch C: house view rows (start status, Started by, Add only, notes, Stop+off, "(was …)"), Pause/Stop/Resume all (house view + handle), registry naming + first use, screen admin, routine history | Focused Vitest REDs per hook/view (`house/*.test.*`, `identity/*.test.*`, `shell/FleetView.house.test.jsx`, `shell/SettingsMenu.test.jsx`, `cast/DispatchProgressTray.house.test.jsx`, `lib/deviceIdentity.adopt.test.js`, `tests/_lib/media-house-fixture.test.mjs`). | Exact preview of `997890cbe` (`/tmp/daylight-media-preview-a0WYT1`): `media-app-house-view.runtime.test.mjs` 4/4 first try (`STEER\.11a` group: tablet house view + phone handle; `HOUSE\.4a` group: phone first use/naming + tablet admin/routines), real house router/services on the fixture's in-memory stores. All 29 manifest journeys were run piecewise on the same artifact; 25 passed; STEER.1c (remote-controls), STEER.2a, RELY.4a Undo and RELY.5a failed under host load ~20–36 and fail identically on a `main` (`69a780e83`) preview run back to back, so they are load flakes, not regressions of this batch. Limit of the evidence: the house fixture serves the real registry/history services on in-memory stores but its play ledger is empty, so the ledger-origin path of "Started by" (starts older than the live snapshot) and the `lastPlayed` ledger signal are unit-tested only, not run in a journey. |
 | TASK-7-OUTCOMES | Task 7: one outcome store, exact Retry, Stop after Undo, local skip notice, paused restore, Start fresh | Focused Vitest REDs (42 failing before implementation, plus 3 for O1 Stop and 1 for a load with no receiver); the existing stale resume journey used a removed testid. | Exact preview of product source `41afea7fe` with journeys at `d751db570`: outcomes 2/2, resume 4/4, Start fresh 2/2, local failure 1/1, run serially. Final product bytes (`562efd94f`/`e740a76f4`; later commits change only tests, manifest and docs): every P0 manifest journey passed serially, with load retries recorded in the Task 7 report; the first local-failure journey passed 2 of 4 runs; its hang was diagnosed (Player, not source healing) and fixed in `800ab005c`, after which the split RELY.5a journeys passed 9/9. |
 | TASK-2-EXACT-RUNTIME-603DD2E | Exact compiled Task 2 aim and remote-control journeys, including authoritative Add confirmation and queue traversal | Earlier Task 2 evidence stopped at focused tests because no owned runtime was available; the prior queue-skip run also exposed remote Previous restarting the current item instead of selecting the prior queue visit. | Controller-owned run on exact source `603dd2ebbd9f85e1faff1bd4336929c8f1d73e00`, compiled artifact `/tmp/daylight-media-preview-WbHQ4b`, passed 16/16 with no skips in 8.1m: `BASE_URL=http://127.0.0.1:41221 npx playwright test tests/live/flow/media/media-app-aim-persistence.runtime.test.mjs tests/live/flow/media/media-app-remote-controls.runtime.test.mjs --workers=1 --reporter=line`. The combined Add/Next/Previous journey observed authoritative queue growth/revision while preserving the current owner/playback, then displayed `Added Disclosure Day to Acceptance receiver` and `2nd in queue`; that exact item + screen + ordinal result accepts only `PLAY.6a/AC3`. Its Next/Previous, aim, seek, offline, and Stop evidence narrows known gaps but does not close broader any/every/surface/steering/live clauses: `PLACE.2a/AC4` and `/AC6`, `STEER.3a/AC1-4`, `STEER.4a/AC1-2`, `PLAY.6a/AC1-2`, `STEER.6a`, and `STEER.7a` remain Partial; `STEER.4a/AC3` remains Unverified. Evidence log `/tmp/daylight-media-p0-evidence/603dd2ebbd9f85e1faff1bd4336929c8f1d73e00/task2/runtime.log`. |
@@ -187,9 +188,9 @@ As a **Wanderer**, I want to be offered things that suit the moment, so that I h
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| FIND.7a/AC1 | Opening the app shows a small set of suggestions: favourites, what's unfinished, what has played on this screen at this time of day, and new additions (R15, R46). | Unverified | — |
-| FIND.7a/AC2 | Suggestions follow the same tap rule as every other item: a collection opens, a playable item plays at the aim, and details are one step away (Q2). | Unverified | — |
-| FIND.7a/AC3 | Suggestions never include what's already playing on any screen (R16). | Unverified | — |
+| FIND.7a/AC1 | Opening the app shows a small set of suggestions: favourites, what's unfinished, what has played on this screen at this time of day, and new additions (R15, R46). | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): phone/tablet/laptop start page renders this screen's `/media/suggestions?deviceId=<own X-Daylight-Device id>` rows in server order (Favourites, Carry on, Usually here at this time, New), `media-app-household-home.runtime.test.mjs` `household start page`; unit `browse/HomeView.test.jsx` |
+| FIND.7a/AC2 | Suggestions follow the same tap rule as every other item: a collection opens, a playable item plays at the aim, and details are one step away (Q2). | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): a favourite collection's picture opens Browse with its Play header; a playable tile plays here with Undo; Details in every tile menu (3 viewports, `media-app-household-home.runtime.test.mjs`) |
+| FIND.7a/AC3 | Suggestions never include what's already playing on any screen (R16). | Partial | Server rule (suggestions leave out anything playing): backend `mediaSuggestions.test.mjs`; client renders server rows unfiltered and moves `nowOn` items to "Now on". Journey answers household routes in-test, so not runtime-accepted here. |
 
 ### FIND.8a
 
@@ -220,9 +221,9 @@ As a **Resumer**, I want recently played items from every screen, so that someth
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| FIND.9a/AC1 | Recent items include things played on any screen in the house, each marked with where it last played. | Unverified | — |
-| FIND.9a/AC2 | A recent item offers the same actions as any other item (details, play, line up, send elsewhere). | Unverified | — |
-| FIND.9a/AC3 | Tapping a recent item never replaces a queue without the same confirmation and undo as any other play. | Unverified | — |
+| FIND.9a/AC1 | Recent items include things played on any screen in the house, each marked with where it last played. | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): Recent lists items from every screen, each labelled with the screen name from `/media/screens` and when (3 viewports, `media-app-household-home.runtime.test.mjs`) |
+| FIND.9a/AC2 | A recent item offers the same actions as any other item (details, play, line up, send elsewhere). | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): recent tile ⋯ offers Play now/next/first, Add, Play on…, Add on…, Details, favourite, remove (3 viewports, `media-app-household-home.runtime.test.mjs`) |
+| FIND.9a/AC3 | Tapping a recent item never replaces a queue without the same confirmation and undo as any other play. | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): tapping a recent item confirms "Playing Faith here" with Undo through the outcome tray and native playback starts (3 viewports, `media-app-household-home.runtime.test.mjs`) |
 
 ### FIND.10a
 
@@ -230,13 +231,13 @@ As a **Resumer**, I want to see unfinished things and next episodes, so that I c
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| FIND.10a/AC1 | Unfinished items show where they stopped (for example, "34 min left", "Chapter 7"). | Unverified | — |
-| FIND.10a/AC2 | For a series, the next unwatched episode is offered. | Unverified | — |
-| FIND.10a/AC3 | Anything playing on any screen right now is not offered as "carry on"; it shows instead as "Now on Living Room TV · Remote · Move here" (R16). | Unverified | — |
-| FIND.10a/AC4 | Each screen keeps its own spot; when they differ, both are shown (R14). | Unverified | — |
-| FIND.10a/AC5 | Something counts as unfinished only after 5 minutes or 5% has been watched (default), and as finished once the credits start (R41). | Unverified | — |
-| FIND.10a/AC6 | Any item can be marked watched or unwatched (R41). | Unverified | — |
-| FIND.10a/AC7 | Finished items drop off the list on their own. | Unverified | — |
+| FIND.10a/AC1 | Unfinished items show where they stopped (for example, "34 min left", "Chapter 7"). | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): carry-on tile shows "1 h 26 min left" and the screen it stopped on, with a progress bar (3 viewports, `media-app-household-home.runtime.test.mjs`) |
+| FIND.10a/AC2 | For a series, the next unwatched episode is offered. | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): a favourite show's next episode is its Continue ("Next: Keepy Uppy"); unit `HomeView.test.jsx` covers a next-episode carry-on tile |
+| FIND.10a/AC3 | Anything playing on any screen right now is not offered as "carry on"; it shows instead as "Now on Living Room TV · Remote · Move here" (R16). | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): an item reported playing on Acceptance receiver shows as "Now on Acceptance receiver" with Remote (opens Peek) and Move here, not in Carry on; Move here adopted it with native playback here and the receiver stopped (`media-app-household-home.runtime.test.mjs` `Now on another screen`, laptop); unit `household/useMoveHere.test.jsx` |
+| FIND.10a/AC4 | Each screen keeps its own spot; when they differ, both are shown (R14). | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): differing spots shown as separate unclipped lines "12 m on Kid's tablet" / "1 h 20 m on Acceptance receiver" (3 viewports, `media-app-household-home.runtime.test.mjs`) |
+| FIND.10a/AC5 | Something counts as unfinished only after 5 minutes or 5% has been watched (default), and as finished once the credits start (R41). | Partial | Server rule (5 min/5 %, 90 %): backend `mediaSpots`/`MediaProgress` tests; the client shows what carry-on returns. |
+| FIND.10a/AC6 | Any item can be marked watched or unwatched (R41). | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): Mark watched from a carry-on tile POSTs `household/watched` and confirms "Marked Arrival watched" (3 viewports); detail/search/browse rows offer both marks (unit `DetailView.test.jsx`, `ResultRow.extraActions.test.jsx`) |
+| FIND.10a/AC7 | Finished items drop off the list on their own. | Partial | Server rule (finished items leave carry on): backend `householdMediaList.test.mjs`; client adds no filtering. |
 
 ### FIND.11a
 
@@ -244,9 +245,9 @@ As an **Ambient listener**, I want to see what played earlier on a screen, item 
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| FIND.11a/AC1 | Each screen's queue has a **Played earlier** list, newest first, with picture, title, and the time it played. | Unverified | — |
-| FIND.11a/AC2 | Items from shuffled or "keep similar things playing" runs are included. | Unverified | — |
-| FIND.11a/AC3 | Any item there offers the same actions as everywhere else, including adding it to favourites. | Unverified | — |
+| FIND.11a/AC1 | Each screen's queue has a **Played earlier** list, newest first, with picture, title, and the time it played. | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): this device's queue panel lists Played earlier from `/media/screens/<own id>/played-earlier`, newest first, with picture, title and "Calvin Harris · Today …" (3 viewports, `media-app-household-home.runtime.test.mjs` `Played earlier`); remote panels use the screen's id (QueuePanel) |
+| FIND.11a/AC2 | Items from shuffled or "keep similar things playing" runs are included. | Partial | Every ledger start is a row (backend `ScreenPlaybackService` tests); the client lists rows as returned. |
+| FIND.11a/AC3 | Any item there offers the same actions as everywhere else, including adding it to favourites. | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): a Played earlier row's ⋯ adds it to favourites (POST `household/favourites`, "Added Hospital to favourites"); rows carry the full verb set (3 viewports, `media-app-household-home.runtime.test.mjs`) |
 
 ### FIND.12a
 
@@ -254,9 +255,9 @@ As an **Ambient listener**, I want to keep favourites, so that the things we put
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| FIND.12a/AC1 | Any item or collection can be added to or removed from favourites in one step, wherever it appears. | Unverified | — |
-| FIND.12a/AC2 | Favourites appear first on the start page and among suggestions. | Unverified | — |
-| FIND.12a/AC3 | Favourites are shared by the household (Q3); anyone can remove one. | Unverified | — |
+| FIND.12a/AC1 | Any item or collection can be added to or removed from favourites in one step, wherever it appears. | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): favourite added from a recent tile and removed from Details in one step each (3 viewports, `media-app-household-home.runtime.test.mjs`); search/browse rows offer it via ResultRow `extraActions` (unit) |
+| FIND.12a/AC2 | Favourites appear first on the start page and among suggestions. | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): Favourites is the first suggestions row and a newly added favourite leads it (3 viewports, `media-app-household-home.runtime.test.mjs`) |
+| FIND.12a/AC3 | Favourites are shared by the household (Q3); anyone can remove one. | Partial | Favourites are household-wide on the server (`/household/favourites`); any device's Remove sends DELETE (journey, unit). |
 
 ### FIND.12b
 
@@ -264,8 +265,8 @@ As a **Child**, I want favourites shown as big pictures, so that I can find them
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| FIND.12b/AC1 | Favourites show large pictures with the title underneath. | Unverified | — |
-| FIND.12b/AC2 | Tapping one follows the same rule as everywhere: its **Play** button plays, the picture opens it (Q2, R8). | Unverified | — |
+| FIND.12b/AC1 | Favourites show large pictures with the title underneath. | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): favourites render as larger portrait pictures than other tiles, title underneath (measured, 3 viewports, `media-app-household-home.runtime.test.mjs`) |
+| FIND.12b/AC2 | Tapping one follows the same rule as everywhere: its **Play** button plays, the picture opens it (Q2, R8). | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): the favourite's picture opens the collection; its Continue/Play button plays (3 viewports, `media-app-household-home.runtime.test.mjs`; unit `HomeView.test.jsx`) |
 
 ### FIND.13a
 
@@ -273,9 +274,9 @@ As a **Hand-Held Viewer**, I want to remove something from the household list, s
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| FIND.13a/AC1 | Any item in recent, carry on, or suggestions can be removed from the household list in one step. | Unverified | — |
-| FIND.13a/AC2 | A removed item stops appearing in suggestions on every screen. | Unverified | — |
-| FIND.13a/AC3 | Removal can be undone for 10 seconds (default). | Unverified | — |
+| FIND.13a/AC1 | Any item in recent, carry on, or suggestions can be removed from the household list in one step. | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): Remove from household list in one step from a recent tile; it leaves Recent and Carry on (3 viewports, `media-app-household-home.runtime.test.mjs`) |
+| FIND.13a/AC2 | A removed item stops appearing in suggestions on every screen. | Partial | Server applies removals to suggestions on every screen (backend tests); client refetches every household view after a removal (`media-app-household-home.runtime.test.mjs` shows it gone from this screen's lists). |
+| FIND.13a/AC3 | Removal can be undone for 10 seconds (default). | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): the removal notice's Undo sends `DELETE household/removed?id=` and the item returns (3 viewports, `media-app-household-home.runtime.test.mjs`); unit `useHousehold.test.jsx` |
 
 ### PLAY.1a
 
@@ -324,9 +325,9 @@ As a **Resumer**, I want to choose between continuing and starting over, so that
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLAY.4a/AC1 | When an item has a saved spot, playing it continues from there; the confirmation offers **Start over** (R9). | Unverified | — |
-| PLAY.4a/AC2 | Each screen keeps its own spot. When they differ, I choose: "1 h 20 m on Living Room TV · 12 m on Kid's tablet" (R14). | Unverified | — |
-| PLAY.4a/AC3 | When there's no saved spot, it simply starts. | Unverified | — |
+| PLAY.4a/AC1 | When an item has a saved spot, playing it continues from there; the confirmation offers **Start over** (R9). | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): a continued play's confirmation reads "Continuing from 1 h 20 m" with Start over; Start over replayed it here from the beginning ("Started Disclosure Day over", native video playing under 60 s) (`media-app-household-home.runtime.test.mjs` `saved spots and Start over`, laptop); single-spot continue unit `HomeView.test.jsx` |
+| PLAY.4a/AC2 | Each screen keeps its own spot. When they differ, I choose: "1 h 20 m on Living Room TV · 12 m on Kid's tablet" (R14). | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): differing spots open a chooser ("12 m on Kid's tablet", "1 h 20 m on Acceptance receiver", From the beginning); choosing played from > 4790 s with `resume=false` on `/play` (`media-app-household-home.runtime.test.mjs`, laptop) |
+| PLAY.4a/AC3 | When there's no saved spot, it simply starts. | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): an item with no spot simply starts and its confirmation offers no Start over (`media-app-household-home.runtime.test.mjs`, laptop) |
 
 ### PLAY.8a
 

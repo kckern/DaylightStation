@@ -20,6 +20,9 @@ vi.mock('../search/useContentDispatch.js', () => ({
     dispatchLeafVerb: vi.fn(), playContainerAsQueue: vi.fn(), addContainerToQueue: vi.fn(),
   }),
 }));
+vi.mock('../household/useHouseholdResultActions.js', () => ({
+  useHouseholdResultActions: () => ({ extraActions: () => [], runHousehold: () => false }),
+}));
 vi.mock('../../../lib/logging/Logger.js', () => ({
   default: () => ({ child: () => ({ info: vi.fn() }) }),
 }));

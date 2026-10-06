@@ -189,6 +189,59 @@ playing", "Failed: Living Room TV did not turn on", "Repeat ignored") — and,
 above them, **Before they run**: routines pointed at a screen that is off,
 unreachable, retired or unknown, or whose last start failed.
 
+## The start page and the household's memory
+
+The start page (Home) is built from the household's shared media memory
+(technical §2.4–2.9), one list for the whole house with each item labelled with
+where it played. From the top:
+
+- **Resume** — this device's own session, when it has one.
+- **Playing now** — anything playing on another screen right now, as "Now on
+  <screen>" with **Remote** (opens that screen's remote) and **Move here** when
+  this device can steer that screen (otherwise just "Now on <screen>" and the ⋯
+  verbs). Such an item is never offered as Carry on. Move here adopts that screen's session
+  on this device and stops the screen only after this device is actually
+  playing the item, and only if the screen is still on the same playback; if
+  either is not true the other screen keeps playing and the notice says so.
+- **Suggestions for this screen**, in the server's order (`GET
+  /media/suggestions?deviceId=<this device>`): **Favourites** first as large
+  pictures (the picture opens it; its **Play** / **Continue <part>** plays it),
+  **Carry on** (how much is left and on which screen; a series' next episode;
+  when screens hold different spots, both — "12 m on Kid's tablet · 1 h 20 m on
+  Living Room TV"), **Usually (here) at this time**, and **New**. Nothing playing
+  on any screen is ever suggested. With nothing to suggest the page says so and
+  leads into Browse.
+- **Recent** — everything played on any screen, newest first, marked with where
+  it played and when.
+
+Every item, wherever it appears (start page, Played earlier, search, browse,
+details), has the same verbs: Play now, Play next, Play first, Add to queue,
+Play on…, Add on…, Details, Add to / Remove from favourites, Mark watched /
+unwatched (playable items), and — in Recent, Carry on and suggestions — **Remove
+from household list**. A removal disappears from every list on every screen and
+is undone from its notice for 10 seconds. Favourites are shared by the household;
+anyone can remove one. Each of these changes reports through the one outcome
+system, never a separate toast.
+
+**Saved spots.** Each screen keeps its own place. Playing an item with one saved
+spot continues from exactly that spot and the confirmation offers **Start over** (for 15
+seconds; it restarts the item from the beginning on that screen); when screens
+hold different spots the person chooses ("1 h 20 m on Living Room TV", "12 m on
+Kid's tablet", or From the beginning); with no spot it simply starts. A chosen
+spot plays from exactly there on this device and on Media screens; a spot saved
+before screens kept their own reads "saved earlier". Screens that load by URL
+ignore a start position, so a play there makes no "Continuing from" claim. Details show how
+far each screen has got when the household lists know the item.
+
+**Played earlier.** Every screen's queue panel — this device's and any remote
+one's — ends with what played there earlier, newest first, with picture, title
+and time, shuffled and "keep similar things playing" runs included, each with
+the full verb set.
+
+Local playback reports its progress with this device's identity (every request
+carries `X-Daylight-Device`); when a routine or another device started the item,
+that origin rides the progress report too, so "started by" and the ledger know.
+
 ## What This App Is
 
 The Media App is the household's **universal content front door and universal
@@ -496,9 +549,9 @@ is decoration, never a tap target.
 
 | View | Purpose | Reached from |
 |---|---|---|
-| **Home** | Landing surface: resume card (current session) and recents row. (Config-driven category cards were removed; the Browse tab covers them.) | Default; nav; breadcrumb. |
+| **Home** | The start page: Resume, Playing now on other screens, this screen's suggestions (Favourites, Carry on, Usually (here) at this time, New) and the household's Recent — see [The start page](#the-start-page-and-the-households-memory). | Default; nav; breadcrumb. |
 | **Browse** | Hierarchical catalog listing with artwork or a recognisable placeholder, kind labels, natural part ordering, and a breadcrumb containing every parent. Long collections page automatically as the end approaches; there is no separate load-more hunt. Pages are 50 titles: `GET /api/v1/list/...?take=50&skip=N` returns `{ items, total }`, and for Plex path containers (e.g. `library/sections/6/all`) the page is fetched from Plex itself (`X-Plex-Container-Start/Size`), so a 2,800-title library opens in ~0.3 s instead of sending every title. Each history entry owns `{ path, scrollTop, focusedId, loadedCount }`, captured before drilling into a container or opening Detail through either Details or More → Open detail. Back re-fetches `loadedCount` rows in one request (capped at 1,000) so a row the person had scrolled to exists again, then restores the exact prior collection viewport and triggering row focus. `loadedCount` is a viewport snapshot like `scrollTop`: re-selecting the Browse area ignores it when matching the original root entry. A specific container adds Play / Shuffle / Add at the top and names the current destination. | Nav; container rows; container taps in search. |
-| **Detail** | One item: artwork, description, full action row (Play Now / Play Next / Play First / Add / Cast). | Browse rows; search results. |
+| **Detail** | One item: artwork, description, how far each screen has got, full action row (Play Now / Play Next / Play First / Add / Cast), favourite and watched marks. | Browse rows; search results; any item's Details. |
 | **Now Playing** | Full local transport: seek bar, prev/play-pause/next/stop, volume, the queue panel, and the hand-off picker. Hosts the visual output of the player. | Mini player; Escape/Back returns. |
 | **Fleet** | Configured devices and named browser screens, live and sorted with playing first. Each card offers **Remote**, **Play…**, inline **Pause**/**Stop** while active, and a truthful unavailable **Move here** until safe native adoption exists. Silent browser rows become uncertain after two minutes. Rows also carry start status, Started by, Add only, notes and "(was …)"; the view offers Pause all / Stop all / Resume all (see "The house view"). | Nav; fleet indicator. |
 | **Screens** | Screen admin: add, name and room, merge/unmerge, retire after the routines are shown, restore; "Not seen lately". | Devices → Screens; Settings. |

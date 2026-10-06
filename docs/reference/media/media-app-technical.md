@@ -481,14 +481,16 @@ screen that last reported progress, else the screen that last started it.
 Items the ledger saw but progress never stored are included. Removed items
 are hidden.
 
-**Response:** `{ "items": [HouseholdEntry] }`
+**Response:** `{ "items": [HouseholdEntry], "degraded": false }` — `degraded: true` when a
+catalog lookup ran out of time or failed, so some display fields are missing (not "not found");
+a client may ask again shortly.
 
 #### `GET /household/carry-on?limit=20`
 
 ```json
 { "items": [HouseholdEntry & { "reason": "unfinished" | "next-episode" }],
   "nowOn": [HouseholdEntry & { "deviceId", "screenId", "state", "position" }],
-  "nowPlayingKnown": true }
+  "nowPlayingKnown": true, "degraded": false }
 ```
 
 - `unfinished`: at least one open spot.
@@ -542,7 +544,9 @@ filled from the catalog at add time. **400**: missing `id`, unknown `kind`.
 A removal hides what was played **up to** `removedAt` from recent and carry
 on; playing the item again brings it back. Server-side suggestions (§2.9)
 leave removed ids out. The 10 s undo window is a client concern: undo is
-`DELETE`.
+`DELETE`. A removal, a restore and a watched mark notify `onListChanged` listeners; the
+suggestions service drops its cache for that household (all households for a mark), so the
+change shows on every screen at once.
 
 #### `POST /household/watched`
 
@@ -890,7 +894,9 @@ dropped carry-on episode of a favourite show becomes that favourite's
 anything **removed from the household list** is left out. Nothing at all →
 `{ rows: [], empty: true }`: lead into Browse. The build (carry on, ledger
 scan, catalog lookups, recently added) is cached per household + screen for
-**5 min**; favourites, now-playing and removals are applied on every request.
+**5 min** — but only **10 s** when the build's carry on was `degraded`, and the response then says
+`degraded: true` — and is dropped on any household-list change (§2.4); favourites, now-playing and
+removals are applied on every request.
 A failing section is logged and left empty. The household-wide parts (carry
 on, New, the ledger scan) are cached once per household; only "Usually here
 at this time" is cached per screen, in a map capped at 200 screens.
@@ -907,6 +913,61 @@ Log events: `media.suggestions.built` (info: household build, counts, ms);
 `backend/src/0_system/http/middleware/requestContext.test.mjs`,
 `tests/isolated/adapter/persistence/{YamlScreenRegistryDatastore,YamlRoutineStores}.test.mjs`,
 composition contract `media.routine-loads-reach-history-and-ledger-origin`.
+
+### 2.10 Client use — start page, item verbs, Played earlier
+
+How the Media frontend consumes §2.4–2.9 (`frontend/src/modules/Media/household/`):
+
+- **Reads** go through `useApiResource` with `swr: true`: `suggestions?deviceId=<getDeviceId()>`
+  (read on every render, since the app may adopt its browser id after first paint),
+  `household/carry-on?limit=12` (12, not 20: each entry costs a catalog lookup on a cold start),
+  `household/recent?limit=24`, `household/favourites`, `screens`,
+  `screens/<id>/played-earlier?limit=20` (Show more raises `limit` by 20, ≤ 200; refreshed when
+  that screen moves on to another item, at most once a minute). A local queue panel asks for this
+  device's id; a remote one for its bare devices.yml key. The client applies no removed-filtering
+  of its own. When any of suggestions / carry on / recent answers `degraded: true`, the start page
+  reloads those once, ~10 s later.
+- **Writes** (`POST`/`DELETE household/favourites`, `POST household/removed`, `POST
+  household/watched`) each record one local outcome (`kind`: `favourite` | `unfavourite` | `hide`
+  | `watched` | `unwatched`), then invalidate every `media/household/*`, `media/suggestions*` and
+  `*/played-earlier` resource. A removal's outcome carries Undo for 10 s; Undo is `DELETE
+  household/removed?id=`.
+- **Screen names** come from `GET /screens` (id, bare `screenId`, and every alias); this device
+  reads "this device", an unregistered browser "another browser".
+- **Spots** (`householdModel.resumePlan`): open spots with playheads ≥ 30 s apart are different;
+  two or more → the person chooses; one (or an unfinished entry with only a shared playhead) →
+  continue from that spot. Either way the play carries `seconds: <spot>` + `resume: false` (§9.4) —
+  never the server's resume, which is the record's single last-written playhead and may be another
+  screen's — and marks the outcome `startOver: true, resumedFrom`; none → plain play. The outcome
+  claims "Continuing from …" and offers Start over only when every target applies a start position
+  (this device, a `browser:` screen, or a `websocket` content-control screen); other screens load by
+  URL and ignore `seconds`. A spot with no screen (`deviceId: null` or `legacy`, written before
+  per-screen spots) reads "12 m, saved earlier". Outcome records with `startOver`
+  offer **Start over** for 15 s after confirmation: on this device it replays the item as Play now
+  with `seconds: 0, resume: false` (a seek would be lost while the item is still loading — the
+  Player applies its pending start offset when the media arrives) and records a `startOver`
+  outcome; on another screen it calls that screen's `transport.restartCurrent()` and records a
+  `startOver` confirmation naming that screen. Household writes and Move here keep their running
+  row until they resolve (a failure is never dropped unseen).
+- **Now on** cards offer Remote and Move here only when the fleet store holds that screen's live
+  session with `meta.playbackOwner` (keyed by its fleet/peek id); otherwise "Now on <screen>" with
+  the ⋯ verbs only. Browsers are keyed in fleet by `browser:<clientId>` while their requests (and
+  so `nowOn`) carried the separate `ds_device_id` token until the app adopts its clientId as the
+  request id; such a card shows no steering verbs rather than ones that cannot work.
+- **Move here** (one at a time per screen) adopts the fleet `device-state` snapshot of that screen through
+  `lifecycle.adoptSnapshot`, waits up to 20 s for native playing evidence of the same content
+  (`portability.getNativeObservation`), then stops the screen through its remote controller only
+  if `meta.playbackOwner` (owner + revision) is unchanged (`movePlayback.executeMove`).
+- **Progress**: every `play/log` carries `X-Daylight-Device`. When the session's `meta.origin` for
+  the current item is a routine or another device, PlayerBridge puts it on the Player's play prop
+  and `play/log` sends it as `origin` (`session/playOrigin.js`); this device's own default origin is
+  never sent.
+
+Log events (frontend, `mediaLog`): `home.shown`, `household.load-failed`,
+`household.favourite-toggled`, `household.removed`, `household.restored`,
+`household.watched-marked`, `household.action-failed`, `play.spot-choice-shown`,
+`play.spot-chosen`, `outcome.start-over`, `outcome.start-over-failed`, `move-here.initiated`,
+`move-here.succeeded`, `move-here.failed`, `played-earlier.shown`.
 
 ---
 
@@ -1657,6 +1718,12 @@ Queue items added by "keep similar things playing" carry
   "priority": "upNext" | "queue"
 }
 ```
+
+Optional start fields (PLAY.4a): `seconds` (start offset, seconds) and
+`resume: false` are present only when the person chose where to start — a
+screen's saved spot, or `seconds: 0` for "From the beginning". The Player
+honours `seconds` over the server's `resume_position` and passes `resume=false`
+to `/play`. They ride `itemAction.item` to a remote Media receiver unchanged.
 
 ### 9.5 `DeviceConfig`
 ```json
