@@ -801,7 +801,7 @@ export class WakeAndLoadService {
           // Show briefly (RQ-PLAY-11) goes out once, over the programme: poll
           // for a real subscriber (bounded, injected clock/scheduler) rather
           // than guess with a fixed wait, and report a miss as a failed load.
-          const subscribed = await this.#awaitSubscriber(topic);
+          const subscribed = await this.#awaitSubscriber(topic, deviceId);
           if (!subscribed) {
             this.#emitProgress(topic, dispatchId, 'load', 'failed', { error: 'Screen not connected' });
             this.#logger.warn?.('wake-and-load.load.brief-no-subscriber', {
@@ -854,6 +854,14 @@ export class WakeAndLoadService {
               this.#logger.warn?.('wake-and-load.load.wsFallback-ack-missing', {
                 deviceId, dispatchId, error: ack?.error,
               });
+              if (briefOnly) {
+                // A brief goes out once; with no handler ack it reached no one.
+                this.#emitProgress(topic, dispatchId, 'load', 'failed', { error: 'Screen not connected' });
+                result.error = 'Screen not connected';
+                result.failedStep = 'load';
+                result.totalElapsedMs = this.#clock.now() - startTime;
+                return result;
+              }
             }
           }
         }
@@ -959,15 +967,21 @@ export class WakeAndLoadService {
    * Uses the injected clock and scheduler. A bus that cannot count
    * subscribers falls back to the fixed settle the other fallbacks use.
    */
-  async #awaitSubscriber(topic) {
+  async #awaitSubscriber(topic, deviceId) {
     const count = this.#eventBus?.getTopicSubscriberCount;
-    if (typeof count !== 'function') {
+    const liveness = this.#commandHandlerLivenessService;
+    if (typeof count !== 'function' && !liveness) {
       await this.#scheduler.wait(5000);
       return true;
     }
+    // The raw count includes '*' (wildcard) subscribers — a phone's Media app
+    // makes a cold TV look subscribed at once — so a real command handler
+    // (fresh liveness for this device) is required as well.
+    const ready = () => (typeof count !== 'function' || this.#eventBus.getTopicSubscriberCount(topic) > 0)
+      && (!liveness || liveness.isFresh(deviceId));
     const deadline = this.#clock.now() + BRIEF_SUBSCRIBE_TIMEOUT_MS;
     for (;;) {
-      if (this.#eventBus.getTopicSubscriberCount(topic) > 0) return true;
+      if (ready()) return true;
       if (this.#clock.now() >= deadline) return false;
       await this.#scheduler.wait(BRIEF_SUBSCRIBE_POLL_MS);
     }
