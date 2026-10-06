@@ -24,8 +24,8 @@ function Result({ result, official, onAction }) {
     <div className="piano-learn-result__tally" aria-label="Practice score">
       <span>✓ Right {diagnostics.matched_notes ?? result.right ?? 0}</span>
       <span>× Wrong {diagnostics.wrong_notes ?? result.wrong ?? 0}</span>
-      {(diagnostics.early_notes != null || result.early != null) && <span>◀ Early {diagnostics.early_notes ?? result.early}</span>}
-      {(diagnostics.late_notes != null || result.late != null) && <span>▶ Late {diagnostics.late_notes ?? result.late}</span>}
+      {(diagnostics.early_notes != null || result.early != null) && <span><Icon name="previous" /> Early {diagnostics.early_notes ?? result.early}</span>}
+      {(diagnostics.late_notes != null || result.late != null) && <span><Icon name="next" /> Late {diagnostics.late_notes ?? result.late}</span>}
       {(diagnostics.missed_notes != null || result.missed != null) && <span>○ Missed {diagnostics.missed_notes ?? result.missed}</span>}
     </div>
     <div className="piano-learn-result__actions">
