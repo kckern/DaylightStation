@@ -36,6 +36,7 @@ Task 2 and stable-core receipt evidence below remains unchanged.
 | Run | Scope | Red / baseline | Green / acceptance |
 |---|---|---|---|
 | BATCH-B-CONTROLS | Batch B (handle and controls, P1): session controls on this device and screens, Add only result, Put it back, Add to this queue, Move to…, several screens + line up, lock screen | Focused Vitest REDs per behaviour (local controls 15, whitelist 3, appliedAs 3, Player completion guard 1, screen adopt-snapshot 1, play-after-ended 1); runtime REDs found three real defects fixed here: screens acked `adopt-snapshot` without adopting, the Player's duplicate-completion guard swallowed the end of a resumed item, and a move to an idle screen had no path. | Exact preview of product SHA `67c40028e` (journey file edits after it are test-only). Every test of `media-app-handle-controls.runtime.test.mjs` passed on it, run singly where the host (load ≈ 30) stalled Plex streams: 9/10 in one full run (local journey stalled on "Having trouble streaming"), the local journey passed in a separate run at the same SHA. `screen-session-controls.runtime.test.mjs` (touched fixture) 7/7 on re-run (first run: one 4 s receiver-ack timeout under load). Logs and screenshots: `/tmp/daylight-media-p0-evidence/67c40028e59f93d3b6ce6e4fd0c82800769ca9b7/batch-b/`. |
+| BATCH-C-HOUSE | P1/P2 batch C: house view rows (start status, Started by, Add only, notes, Stop+off, "(was …)"), Pause/Stop/Resume all (house view + handle), registry naming + first use, screen admin, routine history | Focused Vitest REDs per hook/view (`house/*.test.*`, `identity/*.test.*`, `shell/FleetView.house.test.jsx`, `shell/SettingsMenu.test.jsx`, `cast/DispatchProgressTray.house.test.jsx`, `lib/deviceIdentity.adopt.test.js`, `tests/_lib/media-house-fixture.test.mjs`). | Exact preview of `997890cbe` (`/tmp/daylight-media-preview-a0WYT1`): `media-app-house-view.runtime.test.mjs` 4/4 first try (`STEER\.11a` group: tablet house view + phone handle; `HOUSE\.4a` group: phone first use/naming + tablet admin/routines), real house router/services on the fixture's in-memory stores. All 29 manifest journeys were run piecewise on the same artifact; 25 passed; STEER.1c (remote-controls), STEER.2a, RELY.4a Undo and RELY.5a failed under host load ~20–36 and fail identically on a `main` (`69a780e83`) preview run back to back, so they are load flakes, not regressions of this batch. Limit of the evidence: the house fixture serves the real registry/history services on in-memory stores but its play ledger is empty, so the ledger-origin path of "Started by" (starts older than the live snapshot) and the `lastPlayed` ledger signal are unit-tested only, not run in a journey. |
 | TASK-7-OUTCOMES | Task 7: one outcome store, exact Retry, Stop after Undo, local skip notice, paused restore, Start fresh | Focused Vitest REDs (42 failing before implementation, plus 3 for O1 Stop and 1 for a load with no receiver); the existing stale resume journey used a removed testid. | Exact preview of product source `41afea7fe` with journeys at `d751db570`: outcomes 2/2, resume 4/4, Start fresh 2/2, local failure 1/1, run serially. Final product bytes (`562efd94f`/`e740a76f4`; later commits change only tests, manifest and docs): every P0 manifest journey passed serially, with load retries recorded in the Task 7 report; the first local-failure journey passed 2 of 4 runs; its hang was diagnosed (Player, not source healing) and fixed in `800ab005c`, after which the split RELY.5a journeys passed 9/9. |
 | TASK-2-EXACT-RUNTIME-603DD2E | Exact compiled Task 2 aim and remote-control journeys, including authoritative Add confirmation and queue traversal | Earlier Task 2 evidence stopped at focused tests because no owned runtime was available; the prior queue-skip run also exposed remote Previous restarting the current item instead of selecting the prior queue visit. | Controller-owned run on exact source `603dd2ebbd9f85e1faff1bd4336929c8f1d73e00`, compiled artifact `/tmp/daylight-media-preview-WbHQ4b`, passed 16/16 with no skips in 8.1m: `BASE_URL=http://127.0.0.1:41221 npx playwright test tests/live/flow/media/media-app-aim-persistence.runtime.test.mjs tests/live/flow/media/media-app-remote-controls.runtime.test.mjs --workers=1 --reporter=line`. The combined Add/Next/Previous journey observed authoritative queue growth/revision while preserving the current owner/playback, then displayed `Added Disclosure Day to Acceptance receiver` and `2nd in queue`; that exact item + screen + ordinal result accepts only `PLAY.6a/AC3`. Its Next/Previous, aim, seek, offline, and Stop evidence narrows known gaps but does not close broader any/every/surface/steering/live clauses: `PLACE.2a/AC4` and `/AC6`, `STEER.3a/AC1-4`, `STEER.4a/AC1-2`, `PLAY.6a/AC1-2`, `STEER.6a`, and `STEER.7a` remain Partial; `STEER.4a/AC3` remains Unverified. Evidence log `/tmp/daylight-media-p0-evidence/603dd2ebbd9f85e1faff1bd4336929c8f1d73e00/task2/runtime.log`. |
 | TASK-2-AIM-TRANSPORT-P0 | First-layout active aim, distinct Previous/restart-current, authoritative Add result/ordinal receipt, seek capability reasons, and stopped-queue handle | Behavioral REDs reproduced in focused Vitest: the brief suite failed 8/131, CastTargetProvider failed 1/10, LocalSessionController failed 4/73, and the Add receipt lacked an ordinal. | At the implementation checkpoint, focused tests passed 232/232 but no owned runtime was yet available, so statuses and the extension manifest remained unchanged. The later exact compiled acceptance run and its single justified promotion are recorded in `TASK-2-EXACT-RUNTIME-603DD2E` above. |
@@ -395,8 +396,8 @@ As a **Host**, I want a screen's queue set to "add only" during a party, so that
 |---|---|---|---|
 | PLAY.10a/AC1 | Turning **Add only** on or off for a screen's queue takes one step. | Accepted | `BATCH-B-CONTROLS`: Remote "Add only: off/on" toggled in one press at phone, tablet and laptop; the screen published `controls.addOnly`. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
 | PLAY.10a/AC2 | While it's on, **Play** from any other device adds to the queue and says "Added · 5th in line" instead of replacing. | Accepted | `BATCH-B-CONTROLS`: Add only on, an ordinary search Play aimed at the screen read "Added Keepy Uppy to Acceptance receiver (Add only is on)" · "2nd in line"; the screen kept playing Disclosure Day with Keepy Uppy queued. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
-| PLAY.10a/AC3 | The screen's row in the house view shows that add-only is on. | Unverified | — |
-| PLAY.10a/AC4 | This protects a host's queue; it is not a limit on children (Q11), and anyone can turn it off. | Accepted | `BATCH-B-CONTROLS`: Turned off again from a Remote in one press (any device may; Add only never gates by person). `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
+| PLAY.10a/AC3 | The screen's row in the house view shows that add-only is on. | Accepted | `BATCH-C-HOUSE`: with Add only on at the receiver, the observer's row read "Add only is on: Play from other devices adds to the queue." `media-app-house-view.runtime.test.mjs`. |
+| PLAY.10a/AC4 | This protects a host's queue; it is not a limit on children (Q11), and anyone can turn it off. | Accepted | `BATCH-B-CONTROLS`: Turned off again from a Remote in one press (any device may; Add only never gates by person). `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). Also `BATCH-C-HOUSE`: a different browser than the one that started playback pressed **Turn off** on the row; the receiver's `controls.addOnly` became false and the label left. `media-app-house-view.runtime.test.mjs`. |
 
 ### PLACE.1a
 
@@ -543,7 +544,7 @@ As a **House Watch**, I want to steer another screen with the same controls I us
 | STEER.1b/AC3 | It is always obvious which screen I am steering, and I can switch to another in one step. | Unverified | — |
 | STEER.1b/AC4 | Leaving the controls of another screen never changes my aim. | Unverified | — |
 | STEER.1b/AC5 | When I pause, stop, replace, or move another screen's playback, that screen shows a brief note saying where it came from, for example "Paused from Dad's phone", with **Put it back** (Q7, R30). | Accepted | `BATCH-B-CONTROLS`: Note names the change and the device it came from ("Paused by Browser …") with Put it back. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
-| STEER.1b/AC6 | Volume changes don't produce notes, and repeated notes are grouped. A screen that can't show a note, such as a speaker, records it on its row in the house view (R30). | Unverified | — |
+| STEER.1b/AC6 | Volume changes don't produce notes, and repeated notes are grouped. A screen that can't show a note, such as a speaker, records it on its row in the house view (R30). | Partial | House-view half: a speaker's `controls.notes` are listed on its row, grouped (×N), with Put it back while available (unit `shell/FleetView.house.test.jsx`). The screen-side grouping and volume rule are covered by `screen-session-controls.runtime.test.mjs`. No speaker runtime evidence. |
 | STEER.1b/AC7 | While controlling another screen, **Add to this queue** opens the one search pointed at that screen for that add only; my aim doesn't change (R23). | Accepted | `BATCH-B-CONTROLS`: Remote → Add to this queue opened the search ("Adding to the queue on Acceptance receiver — just this once"); a pick added it there (tray "Added Keepy Uppy to …"), search closed, aim label unchanged; phone and laptop. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
 
 ### STEER.1c
@@ -605,7 +606,7 @@ As a **Fixer**, I want to stop playback and know what stopping leaves, so that I
 | STEER.6a/AC1 | There is one "stop" control, meaning the same thing everywhere. | Partial | `JOURNEY-STOP-RESTART` verifies local Stop; `JOURNEY-REMOTE-STOP-PLAY` verifies remote Stop via correlated ack, ready/null-current receiver state, native pause/reset and successful same-item Play resume. Consistent semantics across all surfaces remain unverified. |
 | STEER.6a/AC2 | After stopping, I'm told what remains ("Queue kept: 8 items") and can reopen it. | Partial | `JOURNEY-STOP-RESTART` verifies local queue reopen. `JOURNEY-REMOTE-STOP-PLAY` on c21 verifies remote queue-retained feedback, exact queue identity, Open queue and Play resume. Broader device/surface parity remains unverified. |
 | STEER.6a/AC3 | Emptying the queue is a separate, clearly named action (`STEER.8`). | Accepted | `TASK-5-EXACT-RUNTIME`: ordinary Stop left a visible `1 item ready` handle; reopening it showed an enabled, separately named **Clear queue** action. `JOURNEY-TASK5-STOP-FLOW`. |
-| STEER.6a/AC4 | Where the screen supports it, stop also offers **and turn the screen off** (R42). | Unverified | — |
+| STEER.6a/AC4 | Where the screen supports it, stop also offers **and turn the screen off** (R42). | Partial | Stop offers **Stop and turn the screen off** only for screens with `device_control` that are not speakers or browsers (stop, then `/device/:id/off`); unit `shell/FleetView.house.test.jsx`. The virtual receiver has no device control and physical screens other than Office are off limits, so no runtime evidence. |
 
 ### STEER.10a
 
@@ -623,9 +624,9 @@ As a **House Watch**, I want to pause or stop every screen at once, so that I ca
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| STEER.11a/AC1 | **Pause all** and **Stop all** are on the house view and the handle. | Unverified | — |
-| STEER.11a/AC2 | After pausing all, **Resume all** brings back exactly the screens that were playing. | Unverified | — |
-| STEER.11a/AC3 | Screens that couldn't be reached are listed as not paused. | Unverified | — |
+| STEER.11a/AC1 | **Pause all** and **Stop all** are on the house view and the handle. | Accepted | `BATCH-C-HOUSE`: Pause all / Stop all on the house view (tablet) and in the handle's house menu (phone). `media-app-house-view.runtime.test.mjs`. |
+| STEER.11a/AC2 | After pausing all, **Resume all** brings back exactly the screens that were playing. | Accepted | `BATCH-C-HOUSE`: from the handle, Pause all paused the receiver and this phone's own video ("Paused 2 screens"); **Resume all (2)** played both again; on the house view Resume all (1) resumed exactly the one paused receiver. `media-app-house-view.runtime.test.mjs`. |
+| STEER.11a/AC3 | Screens that couldn't be reached are listed as not paused. | Partial | Offline screens are listed "not reachable" and non-answering ones "didn't answer" in the outcome (unit `house/houseQuiet.test.jsx`, `cast/DispatchProgressTray.house.test.jsx`); the acceptance fixture has one screen and no unreachable one, so no journey evidence. |
 
 ### STEER.12a
 
@@ -711,8 +712,8 @@ As a **House Watch**, I want to see what every screen is doing, all together, so
 | HOUSE.2a/AC2 | From any screen in the overview I can open its controls (`STEER.1b`), move its playback here (`PLACE.7`), or play something on it (`PLACE.3`). | Unverified | — |
 | HOUSE.2a/AC3 | Screens that are playing appear before idle and off ones. | Accepted | `TASK-6-EXACT-RUNTIME`: two isolated browser identities shared canonical Fleet state; the browser playing real Arrival appeared first, ahead of the caller's idle row. Exact source `2259c69a7`, artifact `/tmp/daylight-media-preview-xPwXp5`; full P0 evidence `/tmp/daylight-task6-p0-evidence-7hWG4m/21-media-app-browser-control.runtime.test.mjs-stable_browser_identities_route_a_queue_command_through_the_actual_receiver_and_return_its_ack.json`. |
 | HOUSE.2a/AC4 | Each row has **Pause**, **Stop**, and **Move here** directly on it (R22). | Unverified | — |
-| HOUSE.2a/AC5 | A row shows that screen's current start progress or last failure to everyone, not only to the device that sent it (R36). | Unverified | — |
-| HOUSE.2a/AC6 | The overview offers **Pause all** and **Stop all** (`STEER.11`). | Unverified | — |
+| HOUSE.2a/AC5 | A row shows that screen's current start progress or last failure to everyone, not only to the device that sent it (R36). | Accepted | `BATCH-C-HOUSE`: a start sent from one browser's row showed **Started** on that row in a second browser (tablet) and in the sender (laptop); with the receiver closed, a later automation start's watchdog failure showed "Couldn't start at …: The screen did not confirm playback" on the observer's row. Reads `GET /device/:id/start-status` on open + `device-start:*`. `media-app-house-view.runtime.test.mjs`. |
+| HOUSE.2a/AC6 | The overview offers **Pause all** and **Stop all** (`STEER.11`). | Accepted | `BATCH-C-HOUSE`: **Pause all** / **Stop all** on the overview paused and then stopped the actual receiver (receiver state polled), outcome "Paused 1 screen" / "Stopped 1 screen". `media-app-house-view.runtime.test.mjs`. |
 
 ### HOUSE.2b
 
@@ -741,7 +742,7 @@ As a **Routine Setter**, I want every screen, including browsers, to have a huma
 |---|---|---|---|
 | HOUSE.4a/AC1 | Every screen is listed under a name like "Kitchen tablet" or "Dad's laptop", never a code. | Unverified | — |
 | HOUSE.4a/AC2 | Anyone can name or rename a device from within the app; TVs and kiosks come already named (Q10). | Accepted | `TASK-6-EXACT-RUNTIME`: ordinary Settings UI renamed the target browser **Kitchen tablet**, assigned room **Kitchen**, and the other browser's Fleet row showed both values. Existing configured-device rows remained named. Exact source `2259c69a7`, artifact `/tmp/daylight-media-preview-xPwXp5`. |
-| HOUSE.4a/AC3 | Names are unique. After a rename, the house view shows "Poo (was Kitchen tablet)" for a week (default), and renaming a screen a routine uses says so first (R31). | Unverified | — |
+| HOUSE.4a/AC3 | Names are unique. After a rename, the house view shows "Poo (was Kitchen tablet)" for a week (default), and renaming a screen a routine uses says so first (R31). | Accepted | `BATCH-C-HOUSE`: a second device choosing a taken name was offered and took the registry's free suggestion; renaming the routine-targeted receiver in Screens first listed "Acceptance button: Morning" and needed **Rename anyway**, after which the row read "Den receiver … (was Acceptance receiver)". Real registry rules (`ScreenRegistryService`) on the fixture's in-memory store. `media-app-house-view.runtime.test.mjs`. A placeholder "Browser 1a2b…" old name is deliberately not shown as "(was …)". |
 | HOUSE.4a/AC4 | The name stays the same across reloads and appears everywhere the screen is mentioned. | Accepted | The exact compiled-artifact journey reloaded the renamed browser, asserted the same persisted `clientId`, derived `deviceId`, name and room, then routed control to that stable identity and observed **Kitchen tablet** in the caller's Fleet. Evidence `/tmp/daylight-task6-p0-evidence-7hWG4m/21-media-app-browser-control.runtime.test.mjs-stable_browser_identities_route_a_queue_command_through_the_actual_receiver_and_return_its_ack.json`. |
 
 ### HOUSE.5a
@@ -750,8 +751,8 @@ As a **House Watch**, I want to see whether a person or a routine started someth
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| HOUSE.5a/AC1 | A screen's playback shows how it started, for example "Started by kitchen button, 7:02". | Unverified | — |
-| HOUSE.5a/AC2 | The same note appears in the screen's controls. | Unverified | — |
+| HOUSE.5a/AC1 | A screen's playback shows how it started, for example "Started by kitchen button, 7:02". | Accepted | `BATCH-C-HOUSE`: after the sender (named "House sender …") started Arrival from the receiver's row, both browsers' rows read "Started by House sender …, <time>" (live snapshot `meta.origin`, named through the registry — the request header is now `browser:<clientId>`). `media-app-house-view.runtime.test.mjs`. |
+| HOUSE.5a/AC2 | The same note appears in the screen's controls. | Partial | `house/RowExtras.jsx` `StartedByLine` (reads `GET /screens/:id/started-by` given only a `deviceId`) is ready for a screen's controls header; mounting it in the controls is batch B's surface. Unit: `house/useHouseSignals.test.jsx`. |
 
 ### HOUSE.6a
 
@@ -759,10 +760,10 @@ As a **Setup person**, I want to add, place, merge, and retire screens, so that 
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| HOUSE.6a/AC1 | I can add a screen and give it a name and a room. | Unverified | — |
-| HOUSE.6a/AC2 | When a device reappears as a duplicate, I can merge it with its earlier self. | Unverified | — |
-| HOUSE.6a/AC3 | Before retiring an old screen, I'm shown which routines point at it. | Unverified | — |
-| HOUSE.6a/AC4 | Screens silent for more than 30 days (default) fold into a "not seen lately" section. | Unverified | — |
+| HOUSE.6a/AC1 | I can add a screen and give it a name and a room. | Accepted | `BATCH-C-HOUSE`: Screens → Add a screen with name "Garage speaker …" and room "Garage" listed it with its room. `media-app-house-view.runtime.test.mjs`. |
+| HOUSE.6a/AC2 | When a device reappears as a duplicate, I can merge it with its earlier self. | Accepted | `BATCH-C-HOUSE`: a duplicate browser was merged into the earlier one after a confirmation dialog (the merged screen showed "Includes Old tablet …", the duplicate left the list, Undo offered on the outcome), then **Unmerge** restored it. `media-app-house-view.runtime.test.mjs`. |
+| HOUSE.6a/AC3 | Before retiring an old screen, I'm shown which routines point at it. | Accepted | `BATCH-C-HOUSE`: Retire on the receiver first listed "Acceptance button: Morning" (cancelled); Retire on a screen with none said "No routines point at it.", retired it into Retired, and Restore brought it back. `media-app-house-view.runtime.test.mjs`. |
+| HOUSE.6a/AC4 | Screens silent for more than 30 days (default) fold into a "not seen lately" section. | Partial | `ScreenAdminView` folds `notSeenLately` (server rule: silent > 30 days, not online) into **Not seen lately**; unit `house/ScreenAdminView.test.jsx`. No runtime screen is 30 days silent, so no journey evidence. |
 
 ### RELY.1a
 
@@ -886,8 +887,8 @@ As a **Setup person**, I want a first-use moment on a new device, so that it get
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| RELY.14a/AC1 | The first time the app opens on a device, it asks for a name, with a sensible default and a way to skip. | Unverified | — |
-| RELY.14a/AC2 | It explains the "Playing to:" aim label once. | Unverified | — |
+| RELY.14a/AC1 | The first time the app opens on a device, it asks for a name, with a sensible default and a way to skip. | Accepted | `BATCH-C-HOUSE` (phone): a fresh device's Home opened with **Name this device**, a default name and **Skip**; saving hid it for good (reload), Skip on a third device likewise. `media-app-house-view.runtime.test.mjs`. |
+| RELY.14a/AC2 | It explains the "Playing to:" aim label once. | Accepted | `BATCH-C-HOUSE`: the same card explains the aim label with the live label beside it, once (gone after answering). `media-app-house-view.runtime.test.mjs`. The app's label reads "Aim:", not "Playing to:". |
 | RELY.14a/AC3 | A household with nothing played yet sees a way into browsing by kind instead of an empty page. | Unverified | — |
 
 ### RELY.11a
@@ -964,6 +965,6 @@ As a **Routine Setter**, I want a record of recent routine starts and how they w
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| AUTO.4a/AC1 | A list shows each routine start: when, which screen, what, and whether it played. | Unverified | — |
-| AUTO.4a/AC2 | A failure is marked plainly, with the reason ("Kitchen tablet was asleep"). | Unverified | — |
-| AUTO.4a/AC3 | A routine pointed at a screen that isn't on or reachable is flagged ahead of time. | Unverified | — |
+| AUTO.4a/AC1 | A list shows each routine start: when, which screen, what, and whether it played. | Accepted | `BATCH-C-HOUSE`: Routines listed each run with time, routine, screen and what ("Acceptance receiver — morning-program") and its outcome (real `RoutineHistoryService` over two seeded runs). `media-app-house-view.runtime.test.mjs`. "Whether it played" reads `played` ("Played" / "Started, not seen playing"). |
+| AUTO.4a/AC2 | A failure is marked plainly, with the reason ("Kitchen tablet was asleep"). | Accepted | `BATCH-C-HOUSE`: the failed run read "Failed: Acceptance receiver didn't respond — it may be asleep or closed". `media-app-house-view.runtime.test.mjs`. |
+| AUTO.4a/AC3 | A routine pointed at a screen that isn't on or reachable is flagged ahead of time. | Partial | Flags render under **Before they run** (`warn` → "Needs attention"); the journey shows the `last-start-failed` flag. The off/unreachable flags (`off`, `unreachable`) are covered by unit `house/RoutineHistoryView.test.jsx` only — the fixture receiver has no offline state to flag. |

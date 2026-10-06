@@ -14,6 +14,7 @@ import { DeviceSessionApiService } from '../../backend/src/3_applications/device
 import { DeviceStartStatusService } from '../../backend/src/3_applications/devices/services/DeviceStartStatusService.mjs';
 import { createDeviceRouter } from '../../backend/src/4_api/v1/routers/device.mjs';
 import { deviceResolver } from '../../backend/src/4_api/middleware/deviceResolver.mjs';
+import { createMediaHouseFixture } from './media-house-fixture.mjs';
 
 export const ORDINARY_DEVICE_ID = 'acceptance-media';
 // A second virtual receiver (batch B: several-screen aim, line up, move
@@ -122,6 +123,10 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet } = 
     fleetService, dispatchService, presenceService: unavailable, sessionService,
     screenService: unavailable, recoveryService: unavailable, startStatusService: startStatus,
   });
+  // House contracts (screens, routines, started by) for the house view.
+  const house = createMediaHouseFixture({
+    deviceId: ORDINARY_DEVICE_ID, name: 'Acceptance receiver', room: 'Virtual browser', deviceLiveness, logger,
+  });
   const app = express();
   app.use(express.json());
   // As in production: the X-Daylight-Device header names the asking device,
@@ -166,6 +171,10 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet } = 
     async stop() { startStatus.stop(); commandLiveness.stop(); deviceLiveness.stop(); await eventBus.stop(); },
     async middleware(req, res) {
       const path = new URL(req.url, upstream).pathname;
+      if (house.handles(path)) {
+        await house.serve(req, res);
+        return true;
+      }
       if (path.startsWith('/api/v1/device/')) {
         req.url = req.url.replace(/^\/api\/v1\/device/, '') || '/';
         await new Promise(resolve => {

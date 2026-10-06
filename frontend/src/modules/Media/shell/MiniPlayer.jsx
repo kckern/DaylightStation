@@ -18,6 +18,7 @@ import { usePlaybackPosition } from '../controller/usePlaybackPosition.js';
 import { useNav } from './NavProvider.jsx';
 import { usePlayerHost } from '../session/usePlayerHost.js';
 import { useSessionControls, useSecondTick, secondsUntil, formatClock } from '../controller/useSessionControls.js';
+import { HandleHouseMenu } from '../house/HouseQuietControls.jsx';
 import './NowPlaying.scss';
 import './SessionControls.scss';
 
@@ -190,6 +191,8 @@ export function MiniPlayer() {
         >
           <IconPlayerStopFilled size={18} />
         </button>
+        {/* RQ-STEER-13: Pause all / Stop all / Resume all on the handle. */}
+        <HandleHouseMenu />
       </div>
     </div>
   );

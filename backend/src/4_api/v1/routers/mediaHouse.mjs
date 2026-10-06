@@ -117,7 +117,12 @@ export function createMediaHouseRouter({ screenRegistry = null, routineCatalog =
   router.post('/screens/announce', screens, guarded(async (req, res) => {
     const id = str(req.body?.id) || str(req.get('X-Daylight-Device'));
     if (!id) return res.status(400).json({ error: 'id is required', code: 'INVALID_SCREEN_ID' });
-    res.json({ screen: await screenRegistry.announce({ householdId: hid(req), id, name: str(req.body?.name), room: str(req.body?.room) }) });
+    // `playing` / `previousId` (the browser's old header token) come from the app;
+    // an unnamed browser that never played is not registered (`screen: null`).
+    res.json({ screen: await screenRegistry.announce({
+      householdId: hid(req), id, name: str(req.body?.name), room: str(req.body?.room),
+      playing: req.body?.playing === true, previousId: str(req.body?.previousId),
+    }) });
   }));
 
   router.get('/screens/:id', screens, guarded(async (req, res) => {
