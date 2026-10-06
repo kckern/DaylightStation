@@ -38,7 +38,6 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
     assignGuestToDevice,
     sidebarSizeMode,
     musicEnabled,
-    setMusicOverride,
     replacedPrimaryPool,
     preferredMicrophoneId,
     setPreferredMicrophoneId,
@@ -156,11 +155,6 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
   }, []);
   const isGoverned = governanceDisabled ? false : Boolean(governanceState?.isGoverned);
   const showGovernancePanel = !governanceDisabled && (isGoverned || visibility.governance);
-
-  const handleToggleMusic = React.useCallback(() => {
-    if (!setMusicOverride) return;
-    setMusicOverride(!musicEnabled);
-  }, [musicEnabled, setMusicOverride]);
 
   const handleTreasureBoxActivate = React.useCallback(() => {
     if (typeof onToggleChart === 'function') {
@@ -312,8 +306,6 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
             appMode={mode}
             visibility={visibility}
             onToggleVisibility={handleToggleVisibility}
-            musicEnabled={musicEnabled}
-            onToggleMusic={handleToggleMusic}
             isGoverned={isGoverned}
             mode={menuState.mode}
             targetDeviceId={menuState.target?.deviceId || null}

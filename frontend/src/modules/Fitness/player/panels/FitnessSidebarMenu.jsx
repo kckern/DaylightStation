@@ -21,8 +21,6 @@ const FitnessSidebarMenu = ({
   onClose,
   visibility,
   onToggleVisibility,
-  musicEnabled,
-  onToggleMusic,
   mode = 'settings',
   appMode = 'player',
   targetDeviceId,
@@ -70,9 +68,7 @@ const FitnessSidebarMenu = ({
   );
   const [selectedTab, setSelectedTab] = React.useState('friends');
   const [confirmEndSession, setConfirmEndSession] = React.useState(false);
-  const playlists = fitnessContext?.plexConfig?.music_playlists || [];
   const suppressDeviceUntilNextReading = fitnessContext?.suppressDeviceUntilNextReading;
-  const hasMusicPlaylists = playlists.length > 0;
   const deviceIdStr = targetDeviceId ? String(targetDeviceId) : null;
   const activeAssignment = deviceIdStr
     ? (typeof getDeviceAssignment === 'function'
@@ -215,11 +211,6 @@ const FitnessSidebarMenu = ({
   };
 
   
-  const handleMusicToggle = () => {
-    onToggleMusic?.();
-    ackSelection('music');
-  };
-
   const handleBoostSelect = (level) => {
     setBoost(level);
     ackSelection(`boost-${level}`);
@@ -301,24 +292,6 @@ const FitnessSidebarMenu = ({
           </label>
         </div>
 
-        <div
-          className={`menu-item toggle-item${flashingId === 'music' ? ' is-ack-flash' : ''}`}
-          onPointerDown={handleMusicToggle}
-        >
-          <span>🎵 Music</span>
-          <label className="toggle-switch">
-            <input
-              type="checkbox"
-              checked={musicEnabled}
-              disabled={!hasMusicPlaylists && !musicEnabled}
-              readOnly
-            />
-            <span className="toggle-slider"></span>
-          </label>
-        </div>
-        {!hasMusicPlaylists && (
-          <div className="menu-item-subtext">Add a fitness playlist to enable music.</div>
-        )}
       </div>
 
       <div className="menu-section">

@@ -27,7 +27,7 @@ describe('Fitness music policy across navigation', () => {
     }));
   });
 
-  it('does not expose standalone chart auto-music, while preserving explicit manual choices', async () => {
+  it('never enables standalone chart music and ignores attempts to turn music on manually', async () => {
     let context;
     function Probe() { context = useFitnessContext(); return null; }
     render(<FitnessProvider fitnessConfiguration={config}><Probe /></FitnessProvider>);
@@ -37,8 +37,20 @@ describe('Fitness music policy across navigation', () => {
     await waitFor(() => expect(context.musicEnabled).toBe(false));
     await act(async () => context.setMusicOverride(true));
     await act(async () => context.setFitnessPlayQueue([{ id: 'video-3', labels: [] }]));
-    expect(context.musicEnabled).toBe(true);
-    await act(async () => context.setMusicOverride(false));
     expect(context.musicEnabled).toBe(false);
+  });
+
+  it('only enables music as an automatic overlay for a video carrying the configured label', async () => {
+    let context;
+    function Probe() { context = useFitnessContext(); return null; }
+    render(<FitnessProvider fitnessConfiguration={config}><Probe /></FitnessProvider>);
+
+    await act(async () => context.setMusicAutoEnabled(true));
+    expect(context.musicEnabled).toBe(false);
+
+    await act(async () => context.setFitnessPlayQueue([{ id: 'video-1', labels: ['NoMusic'] }]));
+    await waitFor(() => expect(context.musicEnabled).toBe(true));
+    await act(async () => context.setFitnessPlayQueue([]));
+    await waitFor(() => expect(context.musicEnabled).toBe(false));
   });
 });
