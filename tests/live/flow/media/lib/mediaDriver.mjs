@@ -13,6 +13,7 @@ export async function freshPage(page, path = '/media') {
     await page.goto(path, { waitUntil: 'domcontentloaded' });
     if (await page.getByTestId('media-shell').waitFor({ state: 'visible', timeout: 40000 }).then(() => true, () => false)) return;
   }
+  throw new Error(`freshPage: the media shell never became visible at ${path} after 3 navigation attempts`);
 }
 
 export const isPhone = (page) => page.viewportSize().width < 600;

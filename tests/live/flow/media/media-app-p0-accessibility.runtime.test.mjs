@@ -128,12 +128,32 @@ for (const [size, viewport] of SIZES) {
       await playArrivalHere(page);
       await page.getByTestId('settings-menu-trigger').click();
       await expect(page.getByTestId('settings-menu-panel')).toBeVisible();
+      // The hand-rolled spinners (send tray, "still searching") only exist while work is
+      // in flight, which is too brief to catch; mount the real class names in the shell so
+      // the stylesheet rule is what is measured.
+      await page.evaluate(() => {
+        const host = document.querySelector('.media-shell') ?? document.body;
+        for (const cls of ['cast-tray-spinner', 'search-still-searching-spinner']) {
+          const el = document.createElement('span');
+          el.className = cls; el.setAttribute('data-probe-spinner', cls);
+          host.appendChild(el);
+        }
+      });
+      const spinners = await page.evaluate(() => [...document.querySelectorAll('[data-probe-spinner]')].map((el) => {
+        const cs = getComputedStyle(el);
+        return { cls: el.getAttribute('data-probe-spinner'), name: cs.animationName, dur: cs.animationDuration, iter: cs.animationIterationCount };
+      }));
+      for (const sp of spinners) {
+        expect(sp.name, `${sp.cls} animation`).not.toBe('none');
+        expect(parseFloat(sp.dur), `${sp.cls} still turns under reduced motion`).toBeGreaterThan(0.1);
+        expect(sp.iter, `${sp.cls} keeps looping`).toBe('infinite');
+      }
       const moving = await page.evaluate(() => {
         const secs = (v) => Math.max(0, ...String(v).split(',').map((x) => parseFloat(x) || 0)) * (/ms\b/.test(v) ? 0.001 : 1);
         const out = [];
         for (const el of document.querySelectorAll('body *')) {
           // Loading indicators keep turning on purpose: a frozen spinner reads as a hang.
-          if (el.closest('.mantine-Loader-root, [role="progressbar"], .loading-overlay')) continue;
+          if (el.closest('.mantine-Loader-root, [role="progressbar"], .loading-overlay, [data-probe-spinner]')) continue;
           const cs = getComputedStyle(el);
           const t = Math.max(...cs.transitionDuration.split(',').map((x) => (x.includes('ms') ? parseFloat(x) / 1000 : parseFloat(x)) || 0));
           const a = cs.animationName !== 'none'
@@ -268,33 +288,31 @@ for (const [size, viewport] of SIZES) {
       await skipFirstUse(page);
       await playArrivalHere(page);
       const phone = isPhone(page);
+      // Every probe is present at every size once something is playing; an absent one fails.
       const probes = [
-        '[data-testid^="dispatch-row-"] .cast-tray-row-text, [data-testid^="dispatch-row-"]',
-        '[data-testid="item-action-undo"]',
         '[data-testid="mini-player-open-nowplaying"] .mini-player-title-text',
         '[data-testid="house-indicator"]',
         phone ? '[data-testid="app-tab-home"] .media-nav-label' : '[data-testid="app-nav-home"] .media-nav-label',
         '[data-testid="home-browse"]',
-        '.cast-aim-label-prefix', '.cast-aim-label-name, .cast-aim-label',
       ];
       const failures = [];
       for (const sel of probes) {
         const r = await contrastOf(page, sel);
-        if (r.missing) continue; // surfaces not on this size (aim label is on search/browse)
+        if (r.missing) { failures.push(`${sel} not found`); continue; }
         if (r.ratio < 4.5) failures.push(`${sel} ${r.ratio} (${r.fg} on ${r.bg})`);
       }
       // Open Now Playing: its aim line is the arm's-length label.
       await page.getByTestId('mini-player-open-nowplaying').click();
       await expect(page.getByTestId('queue-panel')).toBeVisible({ timeout: 15000 });
-      for (const sel of ['.np-seek-time', '.np-control-unavailable', '[data-testid="destination-line"]', '[data-testid="queue-shuffle"]']) {
+      for (const sel of ['[data-testid="destination-line"]', '[data-testid="queue-shuffle"]']) {
         const r = await contrastOf(page, sel);
-        if (!r.missing && r.ratio < 4.5) failures.push(`${sel} ${r.ratio} (${r.fg} on ${r.bg})`);
+        if (r.missing) { failures.push(`${sel} not found`); continue; }
+        if (r.ratio < 4.5) failures.push(`${sel} ${r.ratio} (${r.fg} on ${r.bg})`);
       }
       const aim = page.locator('.now-playing-view').getByTestId('destination-line');
-      if (await aim.count()) {
-        const fontSize = await aim.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
-        if (fontSize < 14) failures.push(`aim label font-size ${fontSize}px`);
-      }
+      await expect(aim).toHaveCount(1);
+      const fontSize = await aim.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+      if (fontSize < 14) failures.push(`aim label font-size ${fontSize}px`);
       expect(failures, `low contrast / small: ${failures.join(' | ')}`).toEqual([]);
     });
 
