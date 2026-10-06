@@ -181,3 +181,63 @@ describe('PlexAdapter.loadMediaUrl — stream selection', () => {
     expect(logger.warn).toHaveBeenCalledWith('plex.loadMediaUrl.tracks-restore-skipped', expect.objectContaining({ ratingKey: '665638', partId: 729273 }));
   });
 });
+
+describe('PlexAdapter.loadMediaUrl — track lock expiry', () => {
+  const streams = (sel) => [
+    { id: 1278355, streamType: 1 },
+    { id: 1278356, streamType: 2, languageCode: 'eng', ...(sel === 1278356 ? { selected: true } : {}) },
+    ...[9, 8, 7, 6].map((id) => ({ id, streamType: 2, languageCode: `l${id}`, ...(sel === id ? { selected: true } : {}) })),
+  ];
+  const mk = () => { const f = item(); f.metadata.Media[0].Part[0].Stream = streams(1278356); return f; };
+
+  it('a stalled decision is cut off by its deadline, so the restore runs before the lock can expire', async () => {
+    vi.useFakeTimers();
+    try {
+      const { plex, httpClient } = setup();
+      const writes = [];
+      httpClient.put.mockImplementation(async (url) => {
+        const id = new URL(url).searchParams.get('audioStreamID');
+        if (id) writes.push(Number(id));
+        return { status: 200, data: '' };
+      });
+      httpClient.get.mockImplementation((url, cfg) => new Promise((_, reject) => {
+        // Plex never answers the decision; only the abort signal ends it.
+        cfg?.signal?.addEventListener('abort', () => reject(cfg.signal.reason ?? new Error('aborted')), { once: true });
+      }));
+      const a = plex.loadMediaUrl(mk(), { session: 'a', tracks: { audioStreamId: '9' } }).catch(() => null);
+      await vi.advanceTimersByTimeAsync(44_000);
+      expect(writes).toEqual([9]);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await a;
+      // Restored at the deadline (45s), well before the 60s safety expiry.
+      expect(writes).toEqual([9, 1278356]);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('queued mints do not expire early: four 25s mints never interleave their writes', async () => {
+    vi.useFakeTimers();
+    try {
+      const { plex, httpClient } = setup();
+      let account = 1278356;
+      const writes = [];
+      httpClient.put.mockImplementation(async (url) => {
+        const id = new URL(url).searchParams.get('audioStreamID');
+        if (id) { account = Number(id); writes.push(account); }
+        return { status: 200, data: '' };
+      });
+      httpClient.get.mockImplementation(async (url) => {
+        if (String(url).includes('/library/metadata/')) {
+          return { status: 200, data: { MediaContainer: { Metadata: [{ Media: [{ Part: [{ id: 729273, Stream: streams(account) }] }] }] } } };
+        }
+        await new Promise((r) => setTimeout(r, 25_000));
+        return { status: 200, data: { MediaContainer: { generalDecisionCode: 1001, transcodeDecisionCode: 1001 } } };
+      });
+      const all = Promise.all(['9', '8', '7', '6'].map((id, i) =>
+        plex.loadMediaUrl(mk(), { session: `s${i}`, tracks: { audioStreamId: id } })));
+      await vi.advanceTimersByTimeAsync(200_000);
+      await all;
+      expect(writes).toEqual([9, 1278356, 8, 1278356, 7, 1278356, 6, 1278356]);
+      expect(account).toBe(1278356);
+    } finally { vi.useRealTimers(); }
+  });
+});
