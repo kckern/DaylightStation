@@ -6,11 +6,10 @@ light-up. Lives in `frontend/src/modules/Piano/PianoKiosk/modes/SheetMusic/`,
 engraving through the shared OSMD renderer in
 `frontend/src/modules/MusicNotation/renderers/`.
 
-Listen is the only mode that sends demonstration MIDI. Learn is always silent
-wait-for-correct: with no selected loop it advances through the whole score;
-with a loop it wraps inside the selected range. Its optional metronome is a
-reference and never creates placement evidence. Polish remains transport-driven
-and timing-aware; Perform remains presentation-only.
+Listen is the only mode that sends demonstration MIDI. Learn uses the engraved
+score as an open passage roadmap and launches focused `ExerciseRun` training
+modules from it. Polish remains transport-driven and timing-aware; Perform
+remains presentation-only.
 
 ## Chrome layout
 
@@ -76,7 +75,7 @@ the truth about what that job is:
 | Mode | Identity | Transport chrome |
 |------|----------|-------------------|
 | **Listen** | Pure playback — a jukebox that performs the score | Restart/Play · metronome (session-local, off by default) · hand toggles · Key/Tempo/View/Volume. No looping. |
-| **Learn** | Untimed practice at the frontier of what's been learned | Listen's chrome **plus** the loop group and range handles on the score |
+| **Learn** | Open passage roadmap with a config-defined hand/timing ladder | Score roadmap plus passage ladder; a selected rung opens a dedicated `ExerciseRun` |
 | **Polish** | Real-time scored runs, always whole-piece | Play + count-in · metronome (on by default, persisted) · hand toggles · settings. No looping. |
 | **Perform** | The music stand | Zero chrome; the left pedal turns pages |
 
@@ -209,6 +208,171 @@ Green means one thing only: you are playing the right note, right now.
 
 ## Learn: landing and the state matrix
 
+### Passage roadmap and practice launchpad
+
+The score remains visible as the roadmap. Rehearsal regions are never crossed;
+within each region, the planner creates balanced passages targeting four bars
+(normally three to five) and avoids accidental one-bar tails. Every segment is
+open from the start unless sequential navigation is explicitly configured. The
+first incomplete segment is marked Next, but a player can open any unlocked
+segment.
+
+The score shows numbered segment markers plus a horizontally scrollable row of
+large, labeled segment cards. Each card includes its number, authored name or
+segment label, printed bar range, and plain-language state. Learned and mastered
+cards remain enabled so practice is never a one-way door. A thin
+outline appears only for the selected segment. It follows engraved barlines
+horizontally and hugs the active notation vertically with a small clearance.
+Wrapped passages receive one outline per system and never bridge page whitespace.
+
+Choosing a segment opens its full-screen launchpad: the engraved excerpt stays
+visible on the left while large icon-and-label actions fill the right. **Up next**
+is the dominant action. **Practice again** exposes every unlocked drill,
+including completed drills; **Make your own** chooses hands, beat mode, and a
+named tempo; **Test out** remains a separate challenge. Beat choices use the
+learner-facing labels **No beat**, **Keep a beat**, and **Play on time**.
+
+Starting an action plucks the segment into the existing full-screen lab. The lab
+engraves only the selected bars, in one or at most two systems, and physically
+removes inactive staves for single-hand work. Replaying a completed drill starts
+fresh temporary sets and reps without erasing the earned completion. Custom
+practice is one passage run, not another sets/reps editor. If its hands, beat,
+and tempo exactly match an unlocked unfinished rung, the successful run also
+earns that rung's normal credit; it never removes or rewrites existing credit.
+
+The lab leads with notation. Its existing assessment cursor is visible on free
+and timed rungs; timed work adds beat-window state to that same cursor. The
+keyboard footer remains neutral until the learner plays a wrong pitch at the
+current event, then reveals the still-owed key or chord only until the cursor
+advances. Two-system excerpts choose a width-balanced break and avoid a
+one-measure second-system orphan when a legal two-or-more-measure split exists.
+The passage extractor writes that break as MusicXML `new-system` metadata and
+the lab renderer explicitly enables OSMD's `newSystemFromXML` option; the normal
+full-score viewer continues to use responsive automatic wrapping.
+
+Lab context lives in one compact toolbar rather than floating controls: Back,
+segment and bar identity, rung, set/rep position, and (for timed work) tempo.
+Every run ends on an explicit result screen rather than dismissing itself.
+Recommended work offers **Next drill**, **Practice again**, and **Back to
+segment**. Review and custom work offer **Play again**, **Change setup**, and
+**Back to segment**. Back returns to the prior score position, and a newly
+completed segment pulses once there.
+
+The default ladder is:
+
+| Rung | Work | Requirement |
+|---|---|---|
+| Right hand | free, RH | 2 sets × 3 reps |
+| Left hand | free, LH | 2 sets × 3 reps |
+| Hands together | free, RH+LH | 2 sets × 3 reps |
+| Together with the beat | cued at 60% of the MusicXML tempo map, RH+LH | 1 set × 3 reps |
+| Mastery | cued at 100% of the MusicXML tempo map, RH+LH | 1 set × 3 reps; completes the segment |
+| Test out | cued at 100% of the MusicXML tempo map, RH+LH | 1 set × 3 consecutive reps; always available and completes the segment |
+
+Normal rungs unlock sequentially inside a passage. Test Out is always
+selectable; a failed take resets only its own streak. Single-staff and other
+non-grand-staff passages omit impossible hand-specific rungs and run their
+combined work against the parts actually present.
+
+Timed rungs may configure a `tempoPercents` value per set. Adjustable timed work
+uses named stages: **Very slow** (25%), **Slow** (40%), **Steady** (60%),
+**Nearly there** (80%), and **Full speed** (100%). A single tempo button shows
+the current stage and effective BPM; it opens the shared modal-sheet shell.
+Picking a stage commits and closes the sheet. Back, Close, Escape, and the
+scrim dismiss it; focus stays inside the open sheet and returns to its opener.
+There is no numeric stepper in Learn. Legacy configured percentages select the
+nearest available stage (ties favor the slower stage), and configured bounds
+filter the choices; a narrow interval with no stage receives one clamped choice.
+Full speed always means exactly 100%; a 90–95% interval offers Nearly there at
+95%, retaining a valid practice choice without claiming the original speed.
+Every entry in a score's tempo map is scaled proportionally; Mastery and Test Out
+show Full speed and remain locked to 100%, regardless of user or piece overrides.
+If MusicXML provides no tempo, the lab labels and uses the configured fallback
+explicitly. The main ScorePlayer transport retains its own tempo ladder.
+
+Timed and metronome Learn rungs show **Soft**, **Medium**, **Loud**, and **Max**
+click controls, with Loud selected initially. Their base gains are 0.08, 0.18,
+0.36, and 0.60; the existing downbeat accent scales from that base. The selected
+level is stored under `piano.learn.click-level`; unavailable browser storage
+still permits a selection for the current lab visit. Changing loudness updates
+future scheduled clicks without recreating the scheduler, restarting the take,
+or moving its anchored beat grid. Callers outside Learn keep the default gain.
+
+The timed run counts at most four pulses on the ask's selected musical grid,
+then displays a brief **PLAY** cue at the first graded beat. The stage-bounded
+countdown descends **4, 3, 2, 1** for a four-pulse plan, with a bar draining over
+the whole lead-in; a shorter plan starts at its actual pulse count. Gray music,
+hidden cursors, and excluded held keys preserve the count-in's listening phase.
+PLAY sits above notation ink. Running beats produce a short, pointer-transparent
+stage-edge halo with a stronger measure downbeat; reduced motion replaces it
+with a static numbered corner marker and disables the numeral pop. Countdown,
+PLAY, cursor, and beat treatment all project the existing run clock, with no
+second animation timer. The score, rep/set rail, and bottom keyboard retain
+their space throughout.
+
+Bar accents use the engraver's actual measure start and duration, carried in the
+compiled assessment's `measureMap`. This preserves 3/4, compound meter, pickups,
+rests at bar starts, and changes of measure length. The marker counts quarter
+positions within each bar (not compound-meter conducting beats); absent measure
+metadata leaves a generic quarter pulse with no claimed downbeat. The existing
+count-in pulse and audio scheduler remain on their anchored grid.
+
+`piano.exercise-countdown-started` includes `pulseCount`, `pulseBpm`, `leadInMs`,
+`tempoStage`, and `clickLevel`. Actual preference transitions emit
+`piano.learn-tempo-stage-changed` (previous/current stage and percentage) and
+`piano.learn-click-level-changed` (previous/current level and gain), with score,
+passage, and rung ids. Unchanged selections and rerenders do not emit changes.
+Legacy ScorePlayer count-ins still announce elapsed `Count in, beat N`; only
+the remaining-count API announces `Starting in N`.
+
+Selection lives in `learnPassage` and `learnRung` query parameters. The run
+receives the original MusicXML, printed passage boundaries, active parts, the
+configured rubric, and a set/rep projection. `ExerciseRun` is therefore the one
+assessment and feedback surface rather than a second Learn-only judge.
+
+Learn configuration is deep-merged in order: built-in defaults, category,
+piece, user, then user-plus-piece. All ladder behavior is configurable under
+`sheetmusic.learn`; the following is
+the shape, not a second source of defaults:
+
+```yaml
+sheetmusic:
+  learn:
+    roadmap: true
+    passages: { targetMeasures: 4, minMeasures: 3, maxMeasures: 5 }
+    feedback: { successReturnMs: 900 }
+    ladder:
+      - id: right
+        label: Right hand
+        parts: [rh]
+        mode: free              # free | metronome | cued
+        sets: 2
+        reps: 3
+        availability: sequential # sequential | always
+        consecutive: false
+        criteria: { completeness: 1, cleanliness: 1 }
+        completes: rung          # rung | passage
+        completion: standard     # standard | tested-out
+        legacySeed: rh           # optional: rh | lh | both
+```
+
+`scope: all-parts` is available for together/timed rungs and expands their
+effective parts to every playable staff, including staves beyond a grand staff.
+`legacySeed` is opt-in migration metadata; custom free rungs are not inferred to
+be compatible with old per-measure history. The normalized passage sizing and
+complete ladder are hashed into a plan revision. Each segment also stores a
+fingerprint of its boundaries and effective ladder. A harmless label change
+retains progress; changing one segment's boundaries or ladder invalidates only
+that segment while compatible siblings survive the new plan revision. Invalid
+ladder entries fall back to the complete default ladder and emit
+`score.learn.config-fallback`.
+
+### Legacy direct score practice (`roadmap: false`)
+
+Setting `sheetmusic.learn.roadmap: false` keeps the older in-score range
+workflow as a compatibility escape hatch. It does not use the score-native
+segment labs described above.
+
 Opening Learn on a score already lands you somewhere useful: an **auto-range**
 heuristic picks a loop range the moment Learn is entered with no range set,
 in priority order —
@@ -309,11 +473,23 @@ once a range exists.
 ## Practice history
 
 Progress is tracked per user, per score, and read back to drive the Learn
-auto-range and the Polish tier bests:
+roadmap/direct-practice frontier and the Polish tier bests:
 
-- A **guest / no selected user is exempt** — the practice heuristics run
-  history-less, and nothing is read or written on their behalf. Only a
-  persistent (roster) user's practice is ever recorded.
+- A **guest / no selected user** gets full session-local roadmap progress but
+  no server reads or writes. Persistent roster users keep the same progress
+  across sessions.
+- Roadmap progress is keyed by plan revision, stable segment id, a per-segment
+  boundary/ladder fingerprint, and rung id. A harmless segment rename retains
+  progress. When a plan changes, unchanged segment fingerprints retain their
+  progress while changed boundaries or ladder meaning invalidate only the
+  incompatible segments. Revision-only records migrate when first written
+  against a compatible plan. Each
+  rung stores attempts and banked passes; passage completion records the rung
+  that completed it. PUTs merge at passage/rung depth so one take cannot erase
+  sibling progress.
+- Existing per-measure history can seed compatible free rungs when every bar
+  in the passage was already learned for that hands bucket. It never seeds a
+  timed rung or Test Out.
 - **Attempts and passes** are tallied per measure, per hands bucket
   (`both`/`rh`/`lh`; non-grand-staff scores always use `both`). One trip
   through a loop (in → out, with the gate active) is an **attempt** for every
@@ -324,7 +500,7 @@ auto-range and the Polish tier bests:
   the cycle — a single slip on measure 9 of a 12-measure loop costs only
   measure 9 its pass, so broad practice keeps advancing the frontier
   elsewhere. A measure counts as "learned" (and drops out of the auto-range
-  frontier) once it has accumulated **three passes** for the relevant hands
+  frontier) once it has accumulated **two passes** for the relevant hands
   bucket.
 - **Polish best scores** are also kept per hands bucket, one best per tempo
   tier (see "Polish" below) — an RH-only run is never compared against a

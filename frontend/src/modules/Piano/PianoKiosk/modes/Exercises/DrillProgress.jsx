@@ -158,7 +158,7 @@ export default function DrillProgress({
       ?? null;
   }, [program, stepId]);
 
-  const drawsPills = (program?.steps?.length ?? 0) >= 2;
+  const drawsPills = (program?.steps?.length ?? 0) >= 2 || program?.displaySingleStep === true;
 
   /**
    * THE PLACARD IS THE RUN'S TITLE, AND A TITLE BELONGS AT THE TOP.

@@ -10,6 +10,23 @@ const fpMatches = (a, b) => !!a && !!b
   && typeof a.contentSha256 === 'string'
   && typeof b.contentSha256 === 'string'
   && a.contentSha256 === b.contentSha256;
+const UNSAFE_KEY = new Set(['__proto__', 'constructor', 'prototype']);
+
+export function compatibleLearnPassages(learn = {}, plan = {}) {
+  const passages = learn?.passages || {};
+  if (learn?.revision === plan?.revision) return passages;
+  const planned = Array.isArray(plan?.segments)
+    ? Object.fromEntries(plan.segments.filter((segment) => !UNSAFE_KEY.has(segment.id)).map((segment) => [segment.id, segment]))
+    : (plan?.segments || {});
+  const result = {};
+  for (const id of Object.keys(passages)) {
+    if (UNSAFE_KEY.has(id)) continue;
+    const before = learn?.segments?.[id]?.fingerprint;
+    const after = planned?.[id]?.fingerprint;
+    if (before && after && before === after) result[id] = passages[id];
+  }
+  return result;
+}
 
 /**
  * usePracticeRecord — per-user, per-score practice history (wave-3 C).
@@ -55,7 +72,7 @@ export default function usePracticeRecord({ scoreId, fingerprint }) {
   /** One completed, non-voided gate cycle: attempts for every measure in the
    *  range; a pass wherever the cycle logged no wrong for that measure. */
   const recordCycle = useCallback(({ measureIndices, wrongMeasures, bucket }) => {
-    if (!isPersistentUser(currentUser) || !measureIndices?.length) return;
+    if (!measureIndices?.length) return;
     const touched = {};
     const next = { ...recordRef.current, fingerprint: fpRef.current, measures: { ...(recordRef.current.measures || {}) } };
     for (const m of measureIndices) {
@@ -65,20 +82,67 @@ export default function usePracticeRecord({ scoreId, fingerprint }) {
       next.measures[k] = { ...(next.measures[k] || {}), [bucket]: entry };
       touched[k] = next.measures[k];
     }
+    recordRef.current = next;
     setRecord(next);
     put({ fingerprint: fpRef.current, measures: touched });
-  }, [currentUser, put]);
+  }, [put]);
 
   /** Tier best for the current hands bucket; only improvements write. */
   const recordTierBest = useCallback(({ bucket, tier, score }) => {
-    if (!isPersistentUser(currentUser)) return;
     const cur = recordRef.current?.polish?.[bucket]?.[tier];
     if (Number.isFinite(cur) && cur >= score) return;
     const polish = { ...(recordRef.current.polish || {}) };
     polish[bucket] = { ...(polish[bucket] || {}), [tier]: score };
-    setRecord({ ...recordRef.current, polish });
+    const next = { ...recordRef.current, polish };
+    recordRef.current = next;
+    setRecord(next);
     put({ fingerprint: fpRef.current, polish: { [bucket]: { [tier]: score } } });
-  }, [currentUser, put]);
+  }, [put]);
+
+  /** Bank one complete passage take into the config-defined Learn ladder. */
+  const recordLearnRep = useCallback(({
+    revision, passageId, rungId, result, requiredPasses = 1, consecutive = false, completesPassage = false, completion = 'standard',
+    segments = {},
+  }) => {
+    if (!revision || !passageId || !rungId) return null;
+    const previousLearn = recordRef.current.learn || {};
+    const compatible = compatibleLearnPassages(previousLearn, { revision, segments });
+    const safeSegments = Object.fromEntries(Object.entries(segments).filter(([id]) => !UNSAFE_KEY.has(id)));
+    const currentLearn = { revision, segments: safeSegments, passages: compatible };
+    const currentPassage = currentLearn.passages?.[passageId] || { rungs: {}, complete: false };
+    const currentRung = currentPassage.rungs?.[rungId] || { attempts: 0, passCount: 0 };
+    const passed = Boolean(result?.verdict?.passed);
+    const passCount = passed
+      ? Math.min(currentRung.passCount + 1, Math.max(1, requiredPasses))
+      : consecutive ? 0 : currentRung.passCount;
+    const rung = { attempts: currentRung.attempts + 1, passCount };
+    const rungComplete = passCount >= Math.max(1, requiredPasses);
+    const passage = {
+      ...currentPassage,
+      rungs: { ...(currentPassage.rungs || {}), [rungId]: rung },
+      complete: currentPassage.complete === true || (completesPassage && rungComplete),
+      ...((completesPassage && rungComplete) ? { completedBy: rungId } : {}),
+      ...((completesPassage && rungComplete && completion === 'tested-out') ? { testedOut: true } : {}),
+    };
+    const learn = { ...currentLearn, revision, segments: safeSegments, passages: { ...(currentLearn.passages || {}), [passageId]: passage } };
+    const next = { ...recordRef.current, fingerprint: fpRef.current, learn };
+    recordRef.current = next;
+    setRecord(next);
+    const revisionChanged = previousLearn.revision && previousLearn.revision !== revision;
+    put({ fingerprint: fpRef.current, learn: {
+      revision, segments: safeSegments,
+      passages: revisionChanged ? learn.passages : { [passageId]: passage },
+    } });
+    return { rung, rungComplete, passage };
+  }, [put]);
+
+  /** Last self-directed bar range; separate from preset passage progress. */
+  const saveCustomRange = useCallback((customRange) => {
+    const next = { ...recordRef.current, fingerprint: fpRef.current, customRange };
+    recordRef.current = next;
+    setRecord(next);
+    put({ fingerprint: fpRef.current, customRange });
+  }, [put]);
 
   /** Persist portable assessment evidence alongside the compact frontier. */
   const recordAssessmentAttempt = useCallback(async (attempt, { keepalive = false } = {}) => {
@@ -91,5 +155,5 @@ export default function usePracticeRecord({ scoreId, fingerprint }) {
   // wasn't an improvement are indistinguishable — both leave the record empty and
   // both no-op silently. It is NOT a gate callers should re-implement; recordCycle
   // and recordTierBest already refuse to write on their own.
-  return { record, loaded, persistent: isPersistentUser(currentUser), recordCycle, recordTierBest, recordAssessmentAttempt };
+  return { record, loaded, persistent: isPersistentUser(currentUser), recordCycle, recordTierBest, recordLearnRep, saveCustomRange, recordAssessmentAttempt };
 }

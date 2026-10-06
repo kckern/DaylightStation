@@ -930,6 +930,35 @@ export function createPianoRouter({ pianoContainer, schoolLearnerDirectory = nul
     return out;
   };
 
+  const mergeLearn = (cur = {}, patch = {}) => {
+    if (!patch || typeof patch !== 'object') return cur;
+    if (patch.revision && cur.revision && patch.revision !== cur.revision) {
+      return mergeLearn({}, patch);
+    }
+    const passages = {};
+    for (const id of Object.keys(cur.passages || {})) {
+      if (!UNSAFE_KEY.has(id)) passages[id] = cur.passages[id];
+    }
+    for (const id of Object.keys(patch.passages || {})) {
+      if (UNSAFE_KEY.has(id)) continue;
+      const currentPassage = passages[id] || {};
+      const patchPassage = patch.passages[id] && typeof patch.passages[id] === 'object' ? patch.passages[id] : {};
+      passages[id] = {
+        ...currentPassage,
+        ...patchPassage,
+        rungs: mergeBuckets(currentPassage.rungs, patchPassage.rungs),
+      };
+    }
+    const segments = {};
+    for (const id of Object.keys(cur.segments || {})) {
+      if (!UNSAFE_KEY.has(id)) segments[id] = cur.segments[id];
+    }
+    for (const id of Object.keys(patch.segments || {})) {
+      if (!UNSAFE_KEY.has(id)) segments[id] = patch.segments[id];
+    }
+    return { ...cur, ...patch, passages, segments };
+  };
+
   router.get('/users/:userId/practice/:scoreKey', (req, res) => {
     const { userId, scoreKey } = req.params;
     if (!PRACTICE_KEY_RE.test(scoreKey)) return res.status(400).json({ error: 'Invalid score key' });
@@ -958,6 +987,7 @@ export function createPianoRouter({ pianoContainer, schoolLearnerDirectory = nul
         ...body,
         measures: { ...(current.measures || {}), ...(body.measures || {}) },
         polish: mergeBuckets(current.polish, body.polish),
+        learn: mergeLearn(current.learn, body.learn),
         updatedAt: new Date().toISOString(),
       };
     ds.savePractice(userId, scoreKey, merged);

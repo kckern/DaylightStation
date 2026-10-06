@@ -182,14 +182,17 @@ in four situations, and its headline answers whichever one applies
 
 | Job | When it leads | Headline / sub-line |
 |---|---|---|
-| **Trust** | live day, `zone: incomplete` (under the floor, not closed) | "991 kcal free" / "400 under the 1,200 floor · prices assume the log is complete"; the ruler's tiers are dimmed |
+| **Trust** | live day, `zone: incomplete` (under the floor, not closed) | "991 kcal free" / "400 under the 1,200 floor · prices assume the log is complete"; available-room fills are dimmed |
 | **Afford** | live day, within the plan | "321 kcal free" / "then 311 workout · 500 deficit · 1,132 to break even"; eating into the workout: "202 kcal of workout left" / "used 109 of 311 · …" |
 | **Contain** | live day, past the ceiling | "302 kcal to break even" / "198 over plan"; past it: "198 kcal past break even" |
 | **Judge** | a past date, or today closed as Done/Fasted | "On plan" / "workout banked (311) · ended 1,132 under break even"; "ate back N of M workout"; "Missed plan by N"; "Surplus of N"; "Fasted"; an unclosed past day under the floor reads "Incomplete log … no verdict" |
 
 A skipped meal makes a day trustworthy (`zone: declared`) but does **not** finish it.
-Trust still leads with the free number, because at breakfast the Afford job
-is the one being asked; the dimming and the sub-line carry the doubt.
+Trust still leads with the free number while there is base-plan room; at an exact
+capped limit it names that limit instead of saying "0 free". Dimming and the
+sub-line carry the doubt. At exact plan end or break even, the live headline
+names the boundary rather than reporting "0 left". A finished day at break even
+says it ended there.
 While a portion is dragged, the sub-line prices the change instead:
 "this costs 321 free + 109 workout" (`priceOf`), or "gives back 200".
 The card logs `budget-card.job` (debug) once per change of leading job.
@@ -219,44 +222,28 @@ The ranged path of `EquationStrip.jsx` reads `range`, `zone`, `food`, `exercise`
 `maintenance` and `declared`. Its terms line is only "1,470 eaten · 311 burned":
 net and the deficit are tiers on the ruler now.
 
-**The ruler** (`RulerScale` in `EquationStrip.jsx`, geometry in the pure
+**The single budget bar** (`RulerScale` in `EquationStrip.jsx`, geometry in
 `today/budgetGeometry.js`, pinned by `budgetGeometry.test.js`):
 
-- **Food eaten, from 0.** `right = max(break even, food, ceiling) × 1.12`. Every
-  block and mark sits at the value it names.
-- **Food block** 0 → food, coloured by where it ends against the goal:
-  within the plan, one block in the zone colour (info incomplete, success in
-  range / declared); into the exercise bonus, zone colour to the plan's top and
-  yellow (caution) from there to the food; past the goal but under break even,
-  yellow to the goal's upper end and **orange** (overshoot, a warning/danger mix)
-  past it — that orange stretch is the "missed plan by" number; past break even,
-  one red block. The eaten part of the bonus hatch turns orange (maroon in a
-  surplus); its uneaten part stays green. "N eaten" is its own
-  top-layer pill, inside the block from 70 px, else just past the frontier. It
-  never sits on the exercise bonus hatch: past the goal it goes just past the
-  frontier; ending inside the bonus, its right edge moves to where the hatch
-  starts, in the colour of the block under it.
-- **Tiers** ahead of the frontier: free (success wash), workout (the credit
-  hatch), deficit (warning wash while live; success wash once the day is
-  finished — the unspent deficit is the win, like the legacy green "N deficit").
-  A spent tier is not drawn; a part-spent one starts at the frontier. Labels read
-  "321 free" from 64 px, "321" from 30 px, nothing below or where the eaten pill
-  covers them. A finished day names them *unused* / *banked* / *deficit*.
-- **Marks:** the goal is a RANGE whose upper end grows with the day's exercise:
-  floor → ceiling (top + workout room, the line "over plan" counts from),
-  labelled above "Goal 1,200–2,102" (just "Goal 2,102" without a usable floor;
-  "Goal · break even N" when the plan itself is capped). When `0 < floor <
-  ceiling` a bracket above the track spans the range, the track paints it as a
-  green **range band** (stronger than the free wash, kept on a dimmed tentative
-  ruler) — solid floor → top under the food block, and green diagonals across
-  the exercise bonus top → ceiling drawn OVER the food, so an eaten-into bonus
-  still shows; once the food covers all of it the bonus carries the workout room
-  as a number ("384") where it fits clear of the eaten label — and a quiet **floor** line sits at the floor.
-  The solid goal line sits at the upper end; on exercise days a dashed **base**
-  line marks the plan's top before the workout, where *free* turns into
-  *workout*. **Break even** is below, labelled with its food-scale value.
-- **Ticks** every 250 kcal, numbered at 1,000s under 600 px of track and 500s
-  above; none within 12 px of a named line.
+- The bar uses FOOD calories from zero. Its axis includes food, the logging
+  floor, every drawn plan boundary and break even, with 12% headroom rounded up
+  to a 500 kcal step. A portion preview holds the baseline axis steady. A
+  preview beyond its right edge shows an overflow pointer and exact text value.
+- Solid consumed spans have fixed meanings: neutral through the usable base
+  limit, blue through workout room, amber after the adjusted plan end, red only
+  past known break even. Adding food does not recolour earlier spans while the
+  boundaries are unchanged. Live available base and workout room are pale green
+  and blue. A finished day removes those available-looking fills.
+- The eaten cursor stays at the true food value. The floor is a small logging
+  marker, the distinct base limit is dashed, plan end is solid, and break even
+  has an end mark. No hatch, goal-range band, internal number pill or arbitrary
+  numeric ticks remain. A wrapping key names every available marker and value;
+  markers within six rendered pixels form a visual cluster but keep their exact
+  values in the key.
+- The configured pre-workout target can exceed the usable capped limit. In that
+  case the key shows the usable plan limit and a detail line names the configured
+  target. The detail line also explains a partially capped exercise boost, a log
+  floor beyond the plan, or an unavailable break-even estimate.
 
 While the summary (`.health-equation`, a size container) is under 761 px wide, the
 head stacks: headline, sub-line, then the terms. From 761 px it is a

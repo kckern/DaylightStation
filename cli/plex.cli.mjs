@@ -102,7 +102,8 @@ const args = process.argv.slice(2);
  */
 const SCALAR_FIELDS = [
     'title', 'titleSort', 'summary', 'tagline', 'studio',
-    'contentRating', 'originalTitle', 'originallyAvailableAt'
+    'contentRating', 'originalTitle', 'originallyAvailableAt',
+    'index', 'parentIndex'   // track number / disc number (tracks)
 ];
 
 /**
@@ -125,6 +126,7 @@ const flags = {
     deep: args.includes('--deep'),
     lock: args.includes('--lock'),
     dryRun: args.includes('--dry-run'),
+    force: args.includes('--force'),
     all: args.includes('--all'),
     section: null,
     fromYaml: null,
@@ -232,11 +234,42 @@ class PlexCLI {
      * Uses axios directly so a 404 (unknown section) surfaces as an error instead of
      * being swallowed by fetch().
      */
-    async refreshSection(sectionKey, folderPath = null) {
-        const query = folderPath ? `?path=${encodeURIComponent(folderPath)}` : '';
+    async refreshSection(sectionKey, folderPath = null, force = false) {
+        // force=1 makes the scanner re-read every file's tags instead of skipping files
+        // it considers unchanged (needed after bulk ID3 edits).
+        const parts = [];
+        if (folderPath) parts.push(`path=${encodeURIComponent(folderPath)}`);
+        if (force) parts.push('force=1');
+        const query = parts.length ? `?${parts.join('&')}` : '';
         const sep = query ? '&' : '?';
         const url = `${this.baseUrl}/library/sections/${sectionKey}/refresh${query}${sep}X-Plex-Token=${this.token}`;
         const res = await axios.get(url, { headers: { Accept: 'application/json' } });
+        return res.status;
+    }
+
+    /**
+     * Force Plex to re-read an item's metadata (tags included) from its files.
+     * A library scan only refreshes file info; changed ID3 tags (e.g. the artist
+     * field) reach existing tracks only through this. Refreshing an artist or album
+     * cascades to everything beneath it.
+     */
+    async refreshMetadata(ratingKey) {
+        const url = `${this.baseUrl}/library/metadata/${ratingKey}/refresh?force=1&X-Plex-Token=${this.token}`;
+        const res = await axios.put(url, null, { headers: { Accept: 'application/json' } });
+        return res.status;
+    }
+
+    /** Merge duplicate item(s) into a primary item (Plex "Merge"). Children move to the primary. */
+    async mergeItems(primaryKey, duplicateKeys) {
+        const url = `${this.baseUrl}/library/metadata/${primaryKey}/merge?ids=${duplicateKeys.join(',')}&X-Plex-Token=${this.token}`;
+        const res = await axios.put(url, null, { headers: { Accept: 'application/json' } });
+        return res.status;
+    }
+
+    /** Remove items whose files are gone ("unavailable") from one library section. */
+    async emptyTrash(sectionKey) {
+        const url = `${this.baseUrl}/library/sections/${sectionKey}/emptyTrash?X-Plex-Token=${this.token}`;
+        const res = await axios.put(url, null, { headers: { Accept: 'application/json' } });
         return res.status;
     }
 
@@ -839,7 +872,7 @@ async function cmdRefresh(plex) {
     }
 
     if (!flags.dryRun) {
-        for (const t of targets) await plex.refreshSection(t.section, t.path);
+        for (const t of targets) await plex.refreshSection(t.section, t.path, flags.force);
     }
 
     if (flags.json) {
@@ -853,6 +886,86 @@ async function cmdRefresh(plex) {
         const verb = flags.dryRun ? '[dry-run] would refresh' : 'refresh requested';
         console.log(`${verb}: section ${t.section}${t.title ? ` (${t.title})` : ''}${t.path ? ` path ${t.path}` : ''}`);
     }
+}
+
+async function cmdRefreshMetadata(plex, ids) {
+    if (!ids.length) throw new Error('refresh-metadata needs one or more rating keys');
+    const items = [];
+    for (const id of ids) {
+        const meta = await plex.getMetadata(id);
+        if (!meta) throw new Error(`no Plex item with rating key ${id}`);
+        items.push({ id, type: meta.type, title: meta.title, parent: meta.parentTitle || null });
+    }
+    if (!flags.dryRun) {
+        for (const it of items) await plex.refreshMetadata(it.id);
+    }
+    if (flags.json) {
+        console.log(JSON.stringify({ refreshed: items, dryRun: flags.dryRun }, null, 2));
+        return;
+    }
+    for (const it of items) {
+        const verb = flags.dryRun ? '[dry-run] would refresh metadata' : 'metadata refresh requested';
+        console.log(`${verb}: ${it.id} ${it.type} "${it.title}"${it.parent ? ` (in ${it.parent})` : ''}`);
+    }
+}
+
+async function cmdEmptyTrash(plex) {
+    if (!flags.section) throw new Error('empty-trash needs --section <id>');
+    const sec = String(flags.section);
+    const lib = (await plex.getLibraries()).find((l) => String(l.key) === sec);
+    if (!lib) throw new Error(`no library section ${sec}`);
+    if (!flags.dryRun) await plex.emptyTrash(sec);
+    if (flags.json) {
+        console.log(JSON.stringify({ section: sec, title: lib.title, emptied: !flags.dryRun, dryRun: flags.dryRun }, null, 2));
+        return;
+    }
+    console.log(`${flags.dryRun ? '[dry-run] would empty trash' : 'empty trash requested'}: section ${sec} (${lib.title})`);
+}
+
+async function cmdMerge(plex, ids) {
+    if (ids.length < 2) throw new Error('merge needs <primaryId> <duplicateId> [...]');
+    const [primaryId, ...dupIds] = ids;
+    const primary = await plex.getMetadata(primaryId);
+    if (!primary) throw new Error(`no Plex item with rating key ${primaryId}`);
+    const dups = [];
+    for (const id of dupIds) {
+        const d = await plex.getMetadata(id);
+        if (!d) throw new Error(`no Plex item with rating key ${id}`);
+        // Guard against merging unrelated items: same kind, same title, same parent.
+        if (d.type !== primary.type || d.title !== primary.title || (d.parentRatingKey ?? null) !== (primary.parentRatingKey ?? null)) {
+            throw new Error(`refusing to merge ${id} (${d.type} "${d.title}" in ${d.parentTitle ?? '-'}) into ${primaryId} (${primary.type} "${primary.title}" in ${primary.parentTitle ?? '-'}): type/title/parent differ`);
+        }
+        dups.push(d);
+    }
+    if (!flags.dryRun) await plex.mergeItems(primaryId, dupIds);
+    const verb = flags.dryRun ? '[dry-run] would merge' : 'merge requested';
+    if (flags.json) {
+        console.log(JSON.stringify({ primary: primaryId, merged: dupIds, dryRun: flags.dryRun }, null, 2));
+        return;
+    }
+    console.log(`${verb}: ${dupIds.join(', ')} → ${primaryId} (${primary.type} "${primary.title}" in ${primary.parentTitle ?? '-'})`);
+}
+
+/** List every track (leaf) under an artist/album/show: rating key, title, album, file path. */
+async function cmdLeaves(plex, id) {
+    if (!id) throw new Error('leaves needs a rating key (an artist, album, show or season)');
+    const data = await plex.fetch(`library/metadata/${id}/allLeaves?X-Plex-Container-Start=0&X-Plex-Container-Size=100000`);
+    const rows = (data?.MediaContainer?.Metadata || []).map((m) => ({
+        id: m.ratingKey,
+        title: m.title,
+        index: m.index ?? null,
+        album: m.parentTitle ?? null,
+        albumId: m.parentRatingKey ?? null,
+        artist: m.originalTitle ?? null,
+        file: m.Media?.[0]?.Part?.[0]?.file ?? null
+    }));
+    if (flags.json) {
+        console.log(JSON.stringify(rows, null, 2));
+        return;
+    }
+    console.log(`${rows.length} leaf item(s) under ${id}`);
+    for (const r of rows.slice(0, 20)) console.log(`  ${r.id}  ${r.album} / ${r.title}${r.file ? `  ${r.file}` : ''}`);
+    if (rows.length > 20) console.log(`  … ${rows.length - 20} more (use --json for all)`);
 }
 
 /** Build a manifest-shaped entry from the CLI flags (scalars as-is, tag lists comma-split). */
@@ -1353,8 +1466,12 @@ Commands:
   search <query>           Search library by title (shows/movies)
   info <id>                Show metadata for a Plex ID
   verify <id> [...]        Check if ID(s) exist in Plex
-  refresh                  Scan a section or folder (--section <id> | --path <folder> | --all)
-  set <id>                 Update metadata for a single item
+  refresh                  Scan a section or folder (--section <id> | --path <folder> | --all) [--force: re-read all tags]
+  refresh-metadata <id>... Re-read tags/metadata for item(s) and everything under them (--dry-run)
+  empty-trash              Remove unavailable items from a section (--section <id>, --dry-run)
+  merge <primary> <dup>... Merge duplicate item(s) into a primary (same type/title/parent only; --dry-run)
+  leaves <id>              List every track under an artist/album/show with rating key + file path (--json)
+  set <id>                Update metadata for a single item
   set-from-yaml <file>     Bulk-update metadata from a YAML manifest
   collection <subcommand>  Manage collections (see below)
   playlist <subcommand>    Manage playlists (see below)
@@ -1466,6 +1583,23 @@ async function main() {
 
             case 'refresh':
                 await cmdRefresh(plex);
+                break;
+
+            case 'refresh-metadata':
+            case 'refresh-meta':
+                await cmdRefreshMetadata(plex, commandArgs);
+                break;
+
+            case 'empty-trash':
+                await cmdEmptyTrash(plex);
+                break;
+
+            case 'merge':
+                await cmdMerge(plex, commandArgs);
+                break;
+
+            case 'leaves':
+                await cmdLeaves(plex, commandArgs[0]);
                 break;
 
             case 'set':

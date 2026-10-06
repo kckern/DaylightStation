@@ -1,5 +1,60 @@
 import { describe, it, expect } from 'vitest';
-import { countInPlan, askPulseQuarters, askPace, countInSentence } from './countIn.js';
+import { countInPlan, exerciseCountInPlan, countdownPresentation, askPulseQuarters, askPace, countInSentence } from './countIn.js';
+
+describe('exercise count-in projection', () => {
+  it.each([
+    { step: 1 / 3, periodMs: 4000 / 3, leadInMs: 16000 / 3, pulseBpm: 45 },
+    { step: 0.5, periodMs: 2000, leadInMs: 8000, pulseBpm: 30 },
+  ])('limits a slow passage with onset spacing $step to four audible pulses', ({ step, periodMs, leadInMs, pulseBpm }) => {
+    // A full 4/4 bar at 15 quarter BPM would take sixteen seconds.
+    const plan = exerciseCountInPlan({ beatsPerMeasure: 4, gradedBpm: 15, onsetQuarters: [0, step, 2 * step, 3 * step] });
+    expect(plan.clicks).toBe(4);
+    expect(plan.periodMs).toBeCloseTo(periodMs);
+    expect(plan.leadInMs).toBeCloseTo(leadInMs);
+    expect(plan.leadInMs).toBe(plan.clicks * plan.periodMs);
+    expect(plan.pulseBpm).toBeCloseTo(pulseBpm);
+  });
+
+  it('keeps the selected countable pulse for fast music', () => {
+    const plan = exerciseCountInPlan({ beatsPerMeasure: 4, gradedBpm: 120, onsetQuarters: [0, 0.5, 1, 1.5] });
+    expect(plan).toEqual({ clicks: 4, periodMs: 500, leadInMs: 2000, pulseBpm: 120 });
+  });
+
+  it('uses quarter pulses when the ask has no steady spacing', () => {
+    expect(exerciseCountInPlan({ beatsPerMeasure: 4, gradedBpm: 60, onsetQuarters: [0, 1, 1.5] }))
+      .toEqual({ clicks: 4, periodMs: 1000, leadInMs: 4000, pulseBpm: 60 });
+  });
+
+  it.each([0, -10, NaN, Infinity, undefined])('does not invent a pulse for unusable graded tempo %s', (gradedBpm) => {
+    expect(exerciseCountInPlan({ beatsPerMeasure: 4, gradedBpm, onsetQuarters: [0, 1] })).toBeNull();
+  });
+});
+
+describe('countdown presentation', () => {
+  it.each([
+    { elapsedMs: -150, remaining: 4, progress: 1, play: false },
+    { elapsedMs: 0, remaining: 4, progress: 1, play: false },
+    { elapsedMs: 999, remaining: 4, progress: 0.75025, play: false },
+    { elapsedMs: 1000, remaining: 3, progress: 0.75, play: false },
+    { elapsedMs: 2000, remaining: 2, progress: 0.5, play: false },
+    { elapsedMs: 3000, remaining: 1, progress: 0.25, play: false },
+    { elapsedMs: 3999, remaining: 1, progress: 0.00025, play: false },
+    { elapsedMs: 4000, remaining: 0, progress: 0, play: true },
+    { elapsedMs: 18000, remaining: 0, progress: 0, play: true },
+  ])('projects elapsed $elapsedMs without an independent clock', ({ elapsedMs, remaining, progress, play }) => {
+    const result = countdownPresentation({ clicks: 4, elapsedMs, leadInMs: 4000 });
+    expect(result.remaining).toBe(remaining);
+    expect(result.progress).toBeCloseTo(progress);
+    expect(result.play).toBe(play);
+  });
+
+  it('has one terminal PLAY state even when renders arrive late', () => {
+    expect(countdownPresentation({ clicks: 4, elapsedMs: 4000, leadInMs: 4000 }))
+      .toEqual(countdownPresentation({ clicks: 4, elapsedMs: 100000, leadInMs: 4000 }));
+    expect(countdownPresentation({ clicks: 0, elapsedMs: 0, leadInMs: 0 }))
+      .toEqual({ remaining: 0, progress: 0, play: true });
+  });
+});
 
 describe('countInPlan', () => {
   it('one measure of beats at the scaled tempo', () => {
