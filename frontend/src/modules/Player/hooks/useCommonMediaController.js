@@ -18,6 +18,7 @@ import { pauseForensics } from '../lib/pauseForensics.js';
 import { shouldReassertRate } from '../lib/rateDrift.js';
 import { useMediaKeyboardHandler } from '../../../lib/Player/useMediaKeyboardHandler.js';
 import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
+import { useIsAuxiliaryPlayer } from '../lib/auxiliaryPlayerContext.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
 import { evaluatePlayheadProgress } from '../lib/playheadProgress.js';
 import { getRecoveryLedger } from '../lib/recoveryLedger.js';
@@ -81,6 +82,10 @@ export function useCommonMediaController({
   // is rendered outside a ScreenVolumeProvider (e.g., Fitness, Feed, or any
   // other host), effectiveMaster = 1 and behavior is unchanged.
   const { effectiveMaster: masterVolume } = useScreenVolume();
+  // Auxiliary Players (music behind, brief clips) never write the play ledger.
+  const isAuxiliary = useIsAuxiliaryPlayer();
+  const isAuxiliaryRef = useRef(isAuxiliary);
+  isAuxiliaryRef.current = isAuxiliary;
   // onLoadedMetadata (element-setup effect) applies the master volume, but
   // masterVolume is not that effect's dep; read the current value from a ref.
   // The dedicated volume effect below re-applies it on change.
@@ -975,12 +980,12 @@ export function useCommonMediaController({
       lastUpdatedTimeRef.current = now;
       const diff = now - lastLoggedTimeRef.current;
       const pct = getProgressPercent(mediaEl.currentTime || 0, mediaEl.duration || 0);
-      if (diff > 10000 && parseFloat(pct) > 0) {
+      if (diff > 10000 && parseFloat(pct) > 0 && !isAuxiliaryRef.current) {
         lastLoggedTimeRef.current = now;
         const secs = mediaEl.currentTime || 0;
         if (secs > 10) {
           const title = meta.title + (meta.grandparentTitle ? ` (${meta.grandparentTitle} - ${meta.parentTitle})` : '');
-          await DaylightAPI(`api/v1/play/log`, { title, type, assetId, seconds: secs, percent: pct, listId: meta?.listId || null });
+          await DaylightAPI(`api/v1/play/log`, { title, type, assetId, seconds: secs, percent: pct, listId: meta?.listId || null, ...(meta?.origin ? { origin: meta.origin } : {}) });
         }
       }
     };
@@ -1550,8 +1555,9 @@ export function useCommonMediaController({
       // A near-complete watch counts at any length.
       if (pos < 10 && parseFloat(pct) < 90) return;
       const title = capturedMeta.title + (capturedMeta.grandparentTitle ? ` (${capturedMeta.grandparentTitle} - ${capturedMeta.parentTitle})` : '');
+      if (isAuxiliaryRef.current) return;
       mcLog().info('playback.unmount-progress-save', { assetId: capturedAssetId, pos, pct });
-      DaylightAPI(`api/v1/play/log`, { title, type: capturedType, assetId: capturedAssetId, seconds: pos, percent: pct, listId: capturedMeta?.listId || null });
+      DaylightAPI(`api/v1/play/log`, { title, type: capturedType, assetId: capturedAssetId, seconds: pos, percent: pct, listId: capturedMeta?.listId || null, ...(capturedMeta?.origin ? { origin: capturedMeta.origin } : {}) });
     };
   }, [assetId]); // eslint-disable-line react-hooks/exhaustive-deps
 

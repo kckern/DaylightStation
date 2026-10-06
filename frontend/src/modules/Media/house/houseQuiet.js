@@ -96,6 +96,11 @@ export function useHouseQuiet() {
       try {
         const result = await withTimeout(send());
         if (result && result.ok === false) throw new Error(result.error ?? result.code ?? 'refused');
+        // A house-wide stop means quiet: music left behind a slideshow goes too
+        // (a person's own Stop is asked "Keep the music?"; this one is not).
+        if (verb === 'stop' && target.id !== LOCAL_TARGET && getEntry(target.id)?.snapshot?.controls?.musicBehind) {
+          try { await withTimeout(peek?.getController?.(target.id)?.sessionControls?.musicBehind?.('stop')); } catch { /* best effort */ }
+        }
         done.push(target.name);
         doneIds.push(target.id);
       } catch {

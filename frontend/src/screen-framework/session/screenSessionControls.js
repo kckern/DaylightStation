@@ -120,6 +120,8 @@ export function createScreenSessionControls({
   let unattendedBatches = 0;
   const seenCommandIds = [];
   const listeners = new Set();
+  // Player features (P2: tracks, Show briefly, music behind) — screenPlayerFeatures.js.
+  let extension = null;
 
   const notify = () => {
     for (const fn of [...listeners]) {
@@ -152,6 +154,7 @@ export function createScreenSessionControls({
 
   function fireMinutesSleep() {
     if (!sleep) return;
+    try { extension?.onPlaybackStopped?.('sleep-timer'); } catch { /* the stop below still runs */ }
     try { ports.stopPlayback?.(); } catch (err) { logger().warn('sleep-timer.stop-failed', { error: String(err?.message ?? err) }); }
     completeSleep('minutes-elapsed');
     // The renderer pauses asynchronously; restore the screen's volume once the
@@ -313,11 +316,13 @@ export function createScreenSessionControls({
     const { current = null, next = null } = ctx;
     if (current?.isLive === true) return false;
     if (sleep?.mode === 'atEnd') {
+      programmeEnded('sleep-at-end');
       actions.stop();
       completeSleep('end-of-item');
       return true;
     }
     if (state.stopAfterCurrent) {
+      programmeEnded('stop-after-current');
       actions.stop();
       state.stopAfterCurrent = false;
       logger().info('stop-after-current.stopped', { ownerId, contentId: current?.contentId ?? null });
@@ -340,7 +345,14 @@ export function createScreenSessionControls({
       addContinuation(current, { advanceAfter: true, actions });
       return true;
     }
+    // Stop at the end of the queue: the Player winds down by itself.
+    programmeEnded('end-of-queue');
     return false;
+  }
+
+  /** The programme ended by itself: a brief up over it has nothing to return to. */
+  function programmeEnded(reason) {
+    try { extension?.onPlaybackStopped?.(reason, { naturalEnd: true }); } catch { /* the stop still runs */ }
   }
 
   /** Refill when the last auto-added item starts (batches of ≤5 / ~30 min). */
@@ -423,6 +435,20 @@ export function createScreenSessionControls({
     return note;
   }
 
+  /** A person showed something briefly: a note (no Put it back: the programme returns itself). */
+  function noteBrief(origin) {
+    const at = now();
+    const note = {
+      id: `note-${at.toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      kind: 'brief', origin: origin ?? null, originKey: originKey(origin), count: 1, at: iso(at),
+      label: `Shown briefly by ${originLabel(origin)}`,
+    };
+    state.notes = [note, ...state.notes].slice(0, MAX_NOTES);
+    logger().info('note.recorded', { ownerId, kind: 'brief', count: 1, origin });
+    notify();
+    return note;
+  }
+
   async function putBack(params = {}) {
     const target = params.noteId ?? restore?.noteId;
     if (!target || !restoreAvailable(target)) {
@@ -483,7 +509,9 @@ export function createScreenSessionControls({
         ended.actions.advance();
         return { ok: true };
       }
-      default: return { ok: false, code: 'INVALID_SESSION_COMMAND' };
+      default:
+        if (extension?.handles?.(action)) return extension.handleSession(action, params);
+        return { ok: false, code: 'INVALID_SESSION_COMMAND' };
     }
   }
 
@@ -544,6 +572,7 @@ export function createScreenSessionControls({
         ...note,
         putBack: restoreAvailable(note.id) ? { availableUntil: iso(restore.expiresAt) } : null,
       })),
+      ...(extension ? extension.toPublished() : {}),
     };
   }
 
@@ -554,6 +583,7 @@ export function createScreenSessionControls({
     applyConfig,
     handleSession,
     noteRemoteCommand,
+    noteBrief,
     markLocalPlayback,
     markHumanInput,
     interrupt,
@@ -601,8 +631,16 @@ export function createScreenSessionControls({
       logger().info('hydrated', { ownerId, addOnly: state.addOnly, endOfQueue: state.endOfQueue });
       notify();
     },
+    /** Attach the player-features extension: its actions, its published blocks, its changes. */
+    attachExtension(ext) {
+      if (!ext || extension) return;
+      extension = ext;
+      ext.subscribe?.(() => notify());
+    },
+    get extension() { return extension; },
     dispose() {
       disposed = true;
+      extension?.dispose?.();
       clearSleepTimers();
       setFade(1);
       clearCountdown('dispose');

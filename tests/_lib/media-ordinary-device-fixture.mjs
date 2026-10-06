@@ -36,6 +36,8 @@ const VIRTUAL_SESSION_ROUTES = [
   ['PUT', /^\/session\/(add-only|end-of-queue|stop-after-current|volume)$/],
   ['POST', /^\/session\/(sleep-timer|sleep-timer\/cancel|sleep-timer\/resume|put-back|countdown\/cancel|countdown\/start-now|claim)$/],
   ['GET', /^\/start-status$/],
+  // Player features (P2): tracks, Show briefly, music behind.
+  ['POST', /^\/session\/(tracks|brief\/close|music-behind)$/],
 ];
 const quiet = { info() {}, warn() {}, error() {}, debug() {} };
 const scheduler = {

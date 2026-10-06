@@ -17,6 +17,7 @@ import {
 } from './sessionPersistence.js';
 import { parseAutoplayParams, AUTOPLAY_ACTIONS } from '../../lib/parseAutoplayParams.js';
 import getLogger from '../../lib/logging/Logger.js';
+import { ScreenPlayerFeaturesHost } from './ScreenPlayerFeaturesHost.jsx';
 import './ScreenSessionControls.css';
 
 let _logger;
@@ -30,7 +31,7 @@ const PERSIST_THROTTLE_MS = 2_000;
 const SPOT_PERSIST_INTERVAL_MS = 5_000;
 const NOTE_VISIBLE_MS = 10_000;
 
-function requestRestore(snapshot, { autoplay, reason }) {
+export function requestRestore(snapshot, { autoplay, reason }) {
   const bus = getActionBus();
   const requestId = `restore-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
   return new Promise((resolve) => {
@@ -221,7 +222,12 @@ export function ScreenSessionControlsHost({ controls, source }) {
   }, [controls, source, ownerId]);
 
   if (!controls) return null;
-  return <ScreenSessionSurfaces controls={controls} />;
+  return (
+    <>
+      <ScreenSessionSurfaces controls={controls} />
+      {controls.extension && <ScreenPlayerFeaturesHost features={controls.extension} source={source} />}
+    </>
+  );
 }
 
 // --- On-screen surfaces -----------------------------------------------------

@@ -63,6 +63,17 @@ import { contentIdToBrowsePath } from '../browse/browsePath.js';
 import { resultToQueueInput } from './resultToQueueInput.js';
 import { PeekContext } from '../peek/PeekContext.js';
 import { executeItemAction, createOperationId } from '../actions/itemAction.js';
+import { FleetContext } from '../fleet/FleetProvider.jsx';
+
+// Screens that apply an item action's start position: Media sessions (named
+// browsers, and screens commanded over the websocket). Others load by URL and
+// ignore `seconds`, so a play there must not claim where it continues.
+function honoursStartPosition(targetId, devices) {
+  if (typeof targetId !== 'string') return false;
+  if (targetId.startsWith('browser:')) return true;
+  const device = (devices ?? []).find(d => d?.id === targetId);
+  return device?.content_control?.type === 'websocket';
+}
 
 const LOCAL_KIND = { playNow: 'play', shuffle: 'shuffle', add: 'add', playNext: 'playNext', playFirst: 'playFirst' };
 
@@ -72,6 +83,7 @@ export function useContentDispatch() {
   const { targetIds, mode } = useCastTarget();
   const { controller, queue, config } = useSessionController('local');
   const peek = useContext(PeekContext);
+  const fleetDevices = useContext(FleetContext)?.devices ?? null;
 
   // A local action's outcome: one quiet record naming the item "here".
   const confirmLocal = useCallback((kind, input) => recordLocal?.({
@@ -87,7 +99,7 @@ export function useContentDispatch() {
   // attempt's own outcome record (DispatchProvider) names the screen and its
   // progress, so nothing else is shown here.
   const castTo = useCallback((castTargetIds, castMode, id, title, opts = {}) => {
-    const { shuffle = false, verb = 'play', itemAction } = opts;
+    const { shuffle = false, verb = 'play', itemAction, startOver = false, resumedFrom = null } = opts;
     // An aimed content pick starts new playback; it is not an ownership
     // transfer. Keep the transfer guard reserved for snapshot handoff while
     // allowing a fresh/default destination aim to dispatch normally.
@@ -100,11 +112,21 @@ export function useContentDispatch() {
       title,
       ...(shuffle ? { shuffle: true } : {}),
       ...(itemAction ? { itemAction } : {}),
+      ...(startOver ? { startOver: true, resumedFrom } : {}),
     });
   }, [dispatchToTarget]);
 
   const runAction = useCallback((kind, id, item, opts = {}) => {
-    const input = resultToQueueInput({ ...item, id }) ?? { contentId: id, title: item?.title };
+    let input = resultToQueueInput({ ...item, id }) ?? { contentId: id, title: item?.title };
+    // PLAY.4a: `startAt` is an explicit start the person chose (a screen's
+    // spot, or 0 for the beginning) and rides the item; `resumedFrom` says the
+    // play continues from a saved spot, so its confirmation offers Start over.
+    if (kind === 'playNow' && Number.isFinite(opts.startAt)) input = { ...input, seconds: opts.startAt, resume: false };
+    const resumedFrom = kind !== 'playNow' ? null
+      : Number.isFinite(opts.startAt) ? (opts.startAt > 0 ? opts.startAt : null)
+        : (Number.isFinite(opts.resumedFrom) && opts.resumedFrom > 0 ? opts.resumedFrom : null);
+    const honoured = targetIds.length === 0 || targetIds.every(id => honoursStartPosition(id, fleetDevices));
+    const resume = resumedFrom != null && honoured ? { startOver: true, resumedFrom } : {};
     const operationId = createOperationId();
     // `opts.targetIds`: a one-off destination for this action only (Add to
     // this queue, STEER.1b/AC7) — the aim itself is never read or changed.
@@ -115,7 +137,7 @@ export function useContentDispatch() {
       execute: command => {
         castTo(actionTargets, opts.targetIds ? 'fork' : mode, id, item?.title, {
           verb: ['add', 'playNext', 'playFirst'].includes(kind) ? 'queue' : 'play',
-          shuffle: kind === 'shuffle', itemAction: command,
+          shuffle: kind === 'shuffle', itemAction: command, ...resume,
         });
         return { ok: true, pending: true, operationId: command.operationId };
       },
@@ -148,6 +170,7 @@ export function useContentDispatch() {
           item: { contentId: input.contentId, title: input.title ?? item?.title ?? null },
           command: { kind, item: input },
           undo: { operationId, expiresAt: Date.now() + 10000, run: destination.undo },
+          ...resume,
         }) ?? null;
       },
     } }).then(result => {
@@ -161,7 +184,7 @@ export function useContentDispatch() {
       if (!remote) resolveLocal?.(attemptId, { phase: 'failed', reason: error?.message ?? 'Could not apply action' });
     });
     return remote ? 'cast' : 'local';
-  }, [targetIds, mode, castTo, controller, queue, config, peek, recordLocal, resolveLocal, confirmLocal]);
+  }, [targetIds, mode, castTo, controller, queue, config, peek, recordLocal, resolveLocal, confirmLocal, fleetDevices]);
 
   // `opts.replaceHistoryEntry` is for a caller that is itself occupying the
   // current history entry and is about to close: the mobile Search Mode. Its
@@ -203,10 +226,10 @@ export function useContentDispatch() {
   // route without inheriting selection's clearRest policy: More → Play Now
   // starts this item while retaining the local queue tail. Only these two
   // verbs are centralized here; Play Next/Up Next remain local queue edits.
-  const dispatchLeafVerb = useCallback((verb, id, item) => {
+  const dispatchLeafVerb = useCallback((verb, id, item, opts = {}) => {
     const kind = ({ upNext: 'playFirst', playOn: 'playNow', addOn: 'add' })[verb] ?? verb;
     if (!['playNow', 'add', 'playNext', 'playFirst', 'shuffle'].includes(kind)) return undefined;
-    if (controller || !['playNow', 'add'].includes(kind)) return runAction(kind, id, item);
+    if (controller || !['playNow', 'add'].includes(kind)) return runAction(kind, id, item, opts);
     const title = item?.title ?? null;
     if (targetIds.length > 0) {
       castTo(targetIds, mode, id, title, { verb: verb === 'add' ? 'queue' : 'play' });

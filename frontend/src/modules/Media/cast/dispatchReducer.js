@@ -136,6 +136,9 @@ export function reduceDispatch(state, action) {
         updatedAt: createdAt,
         distance: 'far',
         undo: undo ?? null,
+        // PLAY.4a: this play continued from a saved spot; its confirmation
+        // offers Start over.
+        ...(action.startOver === true ? { startOver: true, resumedFrom: action.resumedFrom ?? null } : {}),
         // Legacy dispatch fields.
         dispatchId,
         deviceId,
@@ -235,6 +238,7 @@ export function reduceDispatch(state, action) {
         replacement: replacement ? { contentId: replacement.contentId ?? null, title: replacement.title ?? null } : null,
         ordinal: ordinal ?? null,
         undo: undo ?? null,
+        ...(action.startOver === true ? { startOver: true, resumedFrom: action.resumedFrom ?? null } : {}),
         createdAt,
         updatedAt: createdAt,
         distance: targetId === 'local' ? 'here' : 'direct',

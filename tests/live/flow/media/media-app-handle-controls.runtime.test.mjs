@@ -390,7 +390,7 @@ test('PLACE.4a — several screens: labelled, aim names both, same-room drift wa
   await page.getByTestId('picker-multi-toggle').click();
   await page.getByTestId(`picker-device-${A}`).click();
   await page.getByTestId(`picker-device-${B}`).click();
-  await expect(page.getByTestId('picker-drift-warning')).toContainText(`${A_NAME} and ${B_NAME} are both in Acceptance room`, { timeout: 15000 });
+  await expect(page.getByTestId('picker-drift-warning')).toContainText(`${A_NAME} and ${B_NAME} are both in Virtual browser`, { timeout: 15000 });
   await shot(page, 'several-screens-drift-phone');
   await page.getByTestId('picker-submit').click();
   await expect(searchMode.getByTestId('destination-line-name')).toHaveText(new RegExp(`Aim: ${A_NAME} \\+ ${B_NAME}`));

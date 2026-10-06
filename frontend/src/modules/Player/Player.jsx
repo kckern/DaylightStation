@@ -28,6 +28,10 @@ import { getLogger } from '../../lib/logging/Logger.js';
 import { OnDeckCard } from './components/OnDeckCard.jsx';
 import { getPlayerQueueOpRegistry } from './lib/queueOpRegistry.js';
 import { getNaturalEndPolicy } from './lib/naturalEndPolicy.js';
+import { AuxiliaryPlayerContext } from './lib/auxiliaryPlayerContext.js';
+import { getTrackOwner, hasTrackOwners, subscribeTrackOwners } from './lib/trackPolicy.js';
+import { trackEngineFor } from './lib/engineTracks.js';
+import { applyRememberedTracks, trackStateFor, checkSelection, rememberSelection } from './lib/playerTracks.js';
 import { usePlayerConfig } from './hooks/usePlayerConfig.js';
 import { REVIEW_ACTIVE } from '../../lib/Player/reviewParams.js';
 import { DaylightAPI } from '../../lib/api.mjs';
@@ -169,6 +173,9 @@ const Player = forwardRef(function Player(props, ref) {
     mediaLoadTimeoutMs,
     forceShader,
     initialRendererOperation = null,
+    // An auxiliary Player (music behind a slideshow, RQ-PLAY-12) never takes
+    // screen-level queue commands: those belong to the main playback owner.
+    auxiliary = false,
   } = props || {};
 
   const ownerInputsRef = useRef({ play, queue });
@@ -729,6 +736,54 @@ const Player = forwardRef(function Player(props, ref) {
     setResolvedMeta(meta);
   }, []);
 
+  // --- Subtitles and audio language (RQ-STEER-14) ---------------------------
+  // Opt-in: everything below is inert unless an owner claims this Player
+  // (lib/trackPolicy.js). With no owner the resolver returns the item as is.
+  const appliedTracksRef = useRef(null); // { contentId, applied }
+  const resolvedMetaRef = useRef(null);
+  resolvedMetaRef.current = resolvedMeta;
+  const resolveTracks = useCallback((info) => {
+    const owner = getTrackOwner(playerInstanceId);
+    if (!owner || !info) return info;
+    const out = applyRememberedTracks(info, (key) => owner.getPreference?.(key) ?? null);
+    appliedTracksRef.current = { contentId: info.id ?? info.contentId ?? null, applied: out.applied };
+    if (out.applied) playbackLog('tracks.remembered-applied', { contentId: info.id ?? null, ...out.applied }, { level: 'info' });
+    return out.info;
+  }, [playerInstanceId]);
+  const currentTrackState = useCallback(() => {
+    if (!resolvedMeta) return { state: null, engine: null };
+    const contentId = resolvedMeta.id ?? resolvedMeta.contentId ?? null;
+    const applied = appliedTracksRef.current?.contentId === contentId ? appliedTracksRef.current.applied : null;
+    let engine = null;
+    try { engine = trackEngineFor(mediaAccessRef.current?.getTrackEngine?.() ?? null); } catch { engine = null; }
+    return { state: trackStateFor(resolvedMeta, { applied, engine }), engine };
+  }, [resolvedMeta]);
+  const lastPublishedTracksRef = useRef(null);
+  useEffect(() => {
+    // The owner may bind this Player after it mounts (the screen registers its
+    // playback owner later), so ownership is asked on every publish.
+    const publish = () => {
+      const owner = getTrackOwner(playerInstanceId);
+      if (!owner || typeof owner.onTracks !== 'function') return;
+      const { state } = currentTrackState();
+      const serialized = JSON.stringify(state);
+      if (serialized === lastPublishedTracksRef.current) return;
+      lastPublishedTracksRef.current = serialized;
+      try { owner.onTracks(state, { instanceId: playerInstanceId }); } catch { /* owner's problem */ }
+    };
+    // Engine tracks appear once a manifest is parsed; Plex tracks are known
+    // up front. A slow poll covers both — and runs only while some owner is
+    // registered on the page, so an unclaimed Player does no track work.
+    let timer = null;
+    const sync = () => {
+      if (hasTrackOwners() && !timer) { publish(); timer = setInterval(publish, 2000); }
+      else if (!hasTrackOwners() && timer) { clearInterval(timer); timer = null; }
+    };
+    sync();
+    const unsubscribe = subscribeTrackOwners(sync);
+    return () => { unsubscribe(); if (timer) clearInterval(timer); };
+  }, [playerInstanceId, currentTrackState]);
+
   const handlePlaybackMetrics = useCallback((metrics = {}) => {
     const metricSeconds = Number(metrics.seconds);
     const repeatGate = repeatRestartGateRef.current;
@@ -798,6 +853,8 @@ const Player = forwardRef(function Player(props, ref) {
       cancelMountedPlaybackOperation: typeof access.cancelMountedPlaybackOperation === 'function'
         ? access.cancelMountedPlaybackOperation
         : null,
+      // Engine track lists (RQ-STEER-14); read only for an opted-in owner.
+      getTrackEngine: typeof access.getTrackEngine === 'function' ? access.getTrackEngine : null,
     };
     try {
       if (!recordNativeNodeOwnership(newMediaAccess.getMediaEl?.(), registrationToken)) return;
@@ -2032,6 +2089,32 @@ const Player = forwardRef(function Player(props, ref) {
       setShader(value ?? 'default');
     },
     getPlayerInstanceId: () => playerInstanceId,
+    // Subtitles and audio language (RQ-STEER-14), for an opted-in owner only.
+    getTracks: () => currentTrackState().state,
+    setTracks: (selection = {}) => {
+      const owner = getTrackOwner(playerInstanceId);
+      if (!owner) return { ok: false, code: 'TRACKS_NOT_OWNED' };
+      const { state, engine } = currentTrackState();
+      const problem = checkSelection(state, selection);
+      if (problem) {
+        playbackLog('tracks.select-refused', { code: problem, ...selection }, { level: 'warn' });
+        return { ok: false, code: problem };
+      }
+      rememberSelection(resolvedMetaRef.current, state, selection,
+        (key) => owner.getPreference?.(key) ?? null, (key, pref) => owner.setPreference?.(key, pref));
+      if (state.source === 'plex') {
+        // Plex plays the part's selected streams: re-mint at the same spot
+        // (pause state is carried by the remount).
+        const seconds = Number(withTransport((api) => api.getCurrentTime?.()) ?? _getMediaElFallback()?.currentTime ?? 0);
+        playbackLog('tracks.selected', { contentId: state.contentId, source: 'plex', seconds, ...selection }, { level: 'info' });
+        forceSinglePlayerRemount({ seekSeconds: Number.isFinite(seconds) ? seconds : 0, reason: 'track-change', source: 'tracks' });
+        return { ok: true, appliedBy: 'restream' };
+      }
+      const applied = engine?.select?.(selection) === true;
+      playbackLog('tracks.selected', { contentId: state.contentId, source: state.source, applied, ...selection }, { level: applied ? 'info' : 'warn' });
+      lastPublishedTracksRef.current = null;
+      return applied ? { ok: true, appliedBy: 'engine' } : { ok: false, code: 'TRACK_SELECT_FAILED' };
+    },
     getItemActionStopRevision: () => itemActionStopRevisionRef.current,
     getPlaybackIdentity: () => ({
       ownerInstanceId: playerInstanceId,
@@ -2119,7 +2202,7 @@ const Player = forwardRef(function Player(props, ref) {
         fromContentId: effectiveMeta?.contentId ?? effectiveMeta?.assetId ?? null,
       }, { level: 'info' });
     },
-  }), [isQueue, isShuffle, repeatMode, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setOwnerVolume, setOwnerPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport, queueSnapshot, playerInstanceId, queueShader, issueOwnerRevision, adoptQueueSnapshot, applyQueueSnapshot, setTargetTimeSeconds, setShader, setShaderUserCycled, inspectRendererBoundaryRequest, beginRendererBoundary, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner]);
+  }), [isQueue, isShuffle, repeatMode, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setOwnerVolume, setOwnerPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport, queueSnapshot, playerInstanceId, queueShader, issueOwnerRevision, adoptQueueSnapshot, applyQueueSnapshot, setTargetTimeSeconds, setShader, setShaderUserCycled, inspectRendererBoundaryRequest, beginRendererBoundary, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, currentTrackState, forceSinglePlayerRemount]);
 
   useEffect(() => () => {
     clearRemountTimer();
@@ -2155,6 +2238,13 @@ const Player = forwardRef(function Player(props, ref) {
     if (op === 'skip-prev') {
       ownerStoppedRef.current = false;
       advance(-1);
+      return;
+    }
+    if (op === 'skip-next') {
+      // Routed here only for photo slideshows (ScreenActionHandler); a
+      // manual skip, never the natural end.
+      ownerStoppedRef.current = false;
+      (isQueue ? advance : singleAdvance)?.();
       return;
     }
     if (!contentId) return;
@@ -2241,16 +2331,18 @@ const Player = forwardRef(function Player(props, ref) {
     }
 
     pushOnDeck(item, { displaceToQueue: !!onDeckCfg?.displace_to_queue });
-  }, [playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, append, playerInstanceId, queueShader, classes, setShader, setShaderUserCycled, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, seekOwnerRelative, advance]);
+  }, [playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, append, playerInstanceId, queueShader, classes, setShader, setShaderUserCycled, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, seekOwnerRelative, advance, isQueue, singleAdvance]);
 
   // Register once in mount order while the ref supplies the latest stateful
   // callback. Re-registering on every queue change would let a background
   // Player steal ownership merely because it advanced a track.
   const queueOpHandlerRef = useRef(handleQueueOp);
   queueOpHandlerRef.current = handleQueueOp;
-  useEffect(() => getPlayerQueueOpRegistry().register(
+  useEffect(() => (auxiliary ? undefined : getPlayerQueueOpRegistry().register(
     (payload) => queueOpHandlerRef.current?.(payload)
-  ), []);
+  // `auxiliary` is fixed for a Player's life (it is a role, not state).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  )), []);
 
   const suppressOverlaysForBlackout = effectiveShader === 'blackout';
 
@@ -2303,6 +2395,7 @@ const Player = forwardRef(function Player(props, ref) {
     onMediaRef: rendererRegistration.onMediaRef,
     onController: handleController,
     onResolvedMeta: handleResolvedMeta,
+    resolveTracks,
     onPlaybackMetrics: handlePlaybackMetrics,
     onRegisterMediaAccess: rendererRegistration.onRegisterMediaAccess,
     onRegisterResilienceBridge: handleRegisterResilienceBridge,
@@ -2400,7 +2493,7 @@ const Player = forwardRef(function Player(props, ref) {
     />
   ) : fallbackContent;
 
-  return (
+  const shell = (
     <div className={playerShellClass}>
       <AmbientLayer ambientUrl={ambientUrl} ambientVolume={ambientVolumeFromMeta} />
       {audioConfig && (
@@ -2419,6 +2512,9 @@ const Player = forwardRef(function Player(props, ref) {
       <OnDeckCard key={onDeckFlashKey} item={onDeck} flashKey={onDeckFlashKey} />
     </div>
   );
+  return auxiliary
+    ? <AuxiliaryPlayerContext.Provider value>{shell}</AuxiliaryPlayerContext.Provider>
+    : shell;
 });
 
 Player.propTypes = {

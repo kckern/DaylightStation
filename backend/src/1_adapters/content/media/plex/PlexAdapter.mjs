@@ -142,6 +142,10 @@ export class PlexAdapter {
   // when Plex refuses a file, so this is how a refused part finds the item to
   // heal (ratingKeyForPart). Bounded; oldest entries fall off.
   #partIndex = new Map();
+  // partId -> tail of the chain of track-selection mints on that part. The
+  // part's selection is per Plex account, so two mints must not interleave
+  // their read-previous / select / decision / restore (RQ-STEER-14).
+  #partTrackLocks = new Map();
   // rating key -> progress storage path (`plex/{librarySectionID}_{name}`).
   // An item's library section never changes, and every watch-state enrich
   // asked Plex for it again — one serialized metadata call per show per
@@ -1668,7 +1672,8 @@ export class PlexAdapter {
       startOffset = 0,
       allowDirectPlay = false,
       allowDirectStream = allowDirectPlay,
-      downmixAudio = false
+      downmixAudio = false,
+      burnSubtitles = false
     } = opts;
 
     const { clientIdentifier, sessionIdentifier } = this._generateSessionIds(session);
@@ -1704,6 +1709,8 @@ export class PlexAdapter {
     params.append('directPlay', allowDirectPlay ? '1' : '0');
     params.append('directStream', allowDirectStream ? '1' : '0');
     params.append('subtitleSize', '100');
+    // Only a mint that selected a subtitle burns it (RQ-STEER-14).
+    if (burnSubtitles) params.append('subtitles', 'burn');
     params.append('audioBoost', '100');
     params.append('fastSeek', '1');
     // HLS must parse segment zero to establish the true source timestamp
@@ -1793,7 +1800,7 @@ export class PlexAdapter {
    * @returns {string} Transcode URL
    * @private
    */
-  _buildTranscodeUrl(key, clientIdentifier, sessionIdentifier, maxVideoBitrate = null, maxResolution = null, startOffset = 0, allowDirectStream = false, downmixAudio = false) {
+  _buildTranscodeUrl(key, clientIdentifier, sessionIdentifier, maxVideoBitrate = null, maxResolution = null, startOffset = 0, allowDirectStream = false, downmixAudio = false, { burnSubtitles = false } = {}) {
     const mediaBufferSize = 5242880 * 20; // 100MB buffer for better streaming
     // Cap the transcode so software libx264 stays ahead of realtime (June 8 fix).
     const caps = resolveTranscodeCaps({ maxVideoBitrate, maxResolution });
@@ -1831,6 +1838,7 @@ export class PlexAdapter {
     if (this.protocol !== 'hls' && startOffset > 0) {
       baseParams.push(`offset=${Math.floor(startOffset)}`);
     }
+    if (burnSubtitles) baseParams.push('subtitles=burn');
     if (!allowDirectStream) {
       baseParams.push(`maxVideoBitrate=${encodeURIComponent(caps.maxVideoBitrate)}`);
       baseParams.push(`maxVideoResolution=${encodeURIComponent(caps.maxResolution)}`);
@@ -1909,7 +1917,8 @@ export class PlexAdapter {
         maxResolution = null,
         maxVideoResolution = null,
         session = null,
-        startOffset = 0
+        startOffset = 0,
+        tracks = null
       } = opts;
       const resolvedMaxResolution = maxResolution ?? maxVideoResolution;
 
@@ -1934,13 +1943,19 @@ export class PlexAdapter {
         };
       }
 
-      const allowDirectPlay = canDirectPlayH264(playableItem.metadata)
+      // Subtitles and audio language (RQ-STEER-14): only when the mint asked.
+      const selection = tracks ? await this._applyTrackSelection(playableItem, tracks) : null;
+      const burnSubtitles = !!selection?.subtitleStreamId && selection.subtitleStreamId !== '0';
+      // A chosen track needs Plex's transcoder: a direct-played file carries
+      // every track and the browser cannot pick among them; a burned subtitle
+      // needs the picture re-encoded.
+      const allowDirectPlay = !selection && canDirectPlayH264(playableItem.metadata)
         && (this.protocol !== 'hls' || playableItem.mediaType === 'video');
       // Plex's copied DASH fragments can have source-GOP timestamps that do
       // not match its fixed-duration MPD (Arrival: advertised90s, actual154s).
       // Re-encoding gives DASH a seek-correct segment timeline. Keep original
       // MP4 direct play and non-DASH copy, where that faulty MPD is not used.
-      const allowDirectStream = this.protocol !== 'dash'
+      const allowDirectStream = this.protocol !== 'dash' && !burnSubtitles
         && (allowDirectPlay || canDirectStreamVideo(playableItem.metadata));
       if (this.protocol === 'dash') this.logger.info?.('plex.loadMediaUrl.dash-timeline-policy', {
         ratingKey, allowDirectPlay, allowDirectStream, fallback: 'bounded-transcode'
@@ -1954,15 +1969,25 @@ export class PlexAdapter {
       const downmixAudio = needsAudioDownmix(playableItem.metadata);
       if (downmixAudio) this.logger.info?.('plex.loadMediaUrl.audio-downmix', { ratingKey });
       // Video: use decision API to authorize session
-      const decisionResult = await this.requestTranscodeDecision(ratingKey, {
-        maxVideoBitrate,
-        maxResolution: resolvedMaxResolution,
-        session,
-        startOffset,
-        allowDirectPlay,
-        allowDirectStream,
-        downmixAudio
-      });
+      let decisionResult;
+      try {
+        decisionResult = await this.requestTranscodeDecision(ratingKey, {
+          maxVideoBitrate,
+          maxResolution: resolvedMaxResolution,
+          session,
+          startOffset,
+          allowDirectPlay,
+          allowDirectStream,
+          downmixAudio,
+          burnSubtitles
+        });
+      } finally {
+        // The part's selection is per Plex ACCOUNT. The decision binds the
+        // chosen streams to this session (verified against the live server),
+        // so the account's previous selection goes straight back — before
+        // any other screen or Plex app can start on it.
+        await selection?.restore?.();
+      }
 
       if (!decisionResult.success) {
         this.logger.warn?.('plex.loadMediaUrl.decisionFailed', {
@@ -1979,7 +2004,8 @@ export class PlexAdapter {
             resolvedMaxResolution,
             startOffset,
             allowDirectStream,
-            downmixAudio
+            downmixAudio,
+            { burnSubtitles }
           )
         };
       }
@@ -2004,7 +2030,8 @@ export class PlexAdapter {
           resolvedMaxResolution,
           startOffset,
           allowDirectStream,
-          downmixAudio
+          downmixAudio,
+          { burnSubtitles }
         )
       };
     } catch (error) {
@@ -2014,6 +2041,105 @@ export class PlexAdapter {
         stack: error.stack
       });
       return { url: null, reason: 'transient' };
+    }
+  }
+
+  /**
+   * Select the requested audio/subtitle streams on the item's part before a
+   * mint (RQ-STEER-14). Only the item's own stream ids are accepted; a
+   * subtitle id of '0' turns subtitles off. Returns the applied selection,
+   * or null when nothing was (or could be) applied — the mint then plays
+   * Plex's current choice without burning anything.
+   * @param {Object} playableItem
+   * @param {{ audioStreamId?: string, subtitleStreamId?: string }} tracks
+   */
+  async _applyTrackSelection(playableItem, tracks) {
+    const ratingKey = playableItem?.localId ?? null;
+    const part = playableItem?.metadata?.Media?.[0]?.Part?.[0];
+    const streams = Array.isArray(part?.Stream) ? part.Stream : [];
+    const has = (id, type) => streams.some((s) => String(s.id) === String(id) && s.streamType === type);
+    const audioStreamId = tracks?.audioStreamId != null ? String(tracks.audioStreamId) : null;
+    const subtitleStreamId = tracks?.subtitleStreamId != null ? String(tracks.subtitleStreamId) : null;
+    const audioOk = audioStreamId == null || has(audioStreamId, 2);
+    const subtitleOk = subtitleStreamId == null || subtitleStreamId === '0' || has(subtitleStreamId, 3);
+    if (!part?.id || !audioOk || !subtitleOk || (audioStreamId == null && subtitleStreamId == null)) {
+      this.logger.warn?.('plex.loadMediaUrl.tracks-rejected', {
+        ratingKey, audioStreamId, subtitleStreamId, hasPart: !!part?.id, audioOk, subtitleOk,
+      });
+      return null;
+    }
+    const selection = {
+      ...(audioStreamId != null ? { audioStreamId } : {}),
+      ...(subtitleStreamId != null ? { subtitleStreamId } : {}),
+    };
+    // Serialise per part: wait for any mint already holding its selection.
+    const priorTail = this.#partTrackLocks.get(part.id);
+    let release;
+    const mine = new Promise((resolve) => { release = resolve; });
+    const tail = (priorTail ?? Promise.resolve()).then(() => mine);
+    this.#partTrackLocks.set(part.id, tail);
+    // Safety: a mint that throws between select and restore must not wedge the part.
+    const expiry = setTimeout(() => releaseLock(), 60_000);
+    expiry.unref?.();
+    const releaseLock = () => {
+      clearTimeout(expiry);
+      release();
+      if (this.#partTrackLocks.get(part.id) === tail) this.#partTrackLocks.delete(part.id);
+    };
+    let activeStreams = streams;
+    if (priorTail) {
+      await priorTail;
+      // The item we were handed may predate the previous mint's borrow:
+      // read the household's selection fresh.
+      try {
+        const fresh = await this.client.getMetadata(ratingKey);
+        const freshStreams = fresh?.MediaContainer?.Metadata?.[0]?.Media?.[0]?.Part?.[0]?.Stream;
+        if (Array.isArray(freshStreams) && freshStreams.length) activeStreams = freshStreams;
+      } catch (error) {
+        this.logger.warn?.('plex.loadMediaUrl.tracks-refresh-failed', { ratingKey, partId: part.id, error: error?.message });
+      }
+    }
+    // What the account has selected now, to put back (subtitles: none -> '0').
+    const previous = {};
+    if (audioStreamId != null) {
+      const audio = activeStreams.filter((s) => s.streamType === 2);
+      const cur = audio.find((s) => s.selected) ?? audio.find((s) => s.default) ?? null;
+      if (cur) previous.audioStreamId = String(cur.id);
+      else this.logger.warn?.('plex.loadMediaUrl.tracks-restore-skipped', {
+        ratingKey, partId: part.id, reason: 'no-selected-or-default-audio', audioStreamId,
+      });
+    }
+    if (subtitleStreamId != null) {
+      const cur = activeStreams.find((s) => s.streamType === 3 && s.selected);
+      previous.subtitleStreamId = cur ? String(cur.id) : '0';
+    }
+    try {
+      await this.client.selectPartStreams(part.id, selection);
+      this.logger.info?.('plex.loadMediaUrl.tracks-selected', { ratingKey, partId: part.id, ...selection });
+      let restored = false;
+      selection.restore = async () => {
+        if (restored) return;
+        restored = true;
+        if (Object.keys(previous).length === 0) { releaseLock(); return; }
+        try {
+          await this.client.selectPartStreams(part.id, previous);
+          this.logger.info?.('plex.loadMediaUrl.tracks-restored', { ratingKey, partId: part.id, ...previous });
+        } catch (error) {
+          this.logger.warn?.('plex.loadMediaUrl.tracks-restore-failed', {
+            ratingKey, partId: part.id, ...previous, status: error?.response?.status ?? error?.status ?? null, error: error?.message,
+          });
+        } finally {
+          releaseLock();
+        }
+      };
+      return selection;
+    } catch (error) {
+      releaseLock();
+      this.logger.warn?.('plex.loadMediaUrl.tracks-select-failed', {
+        ratingKey, partId: part.id, ...selection,
+        status: error?.response?.status ?? error?.status ?? null, error: error?.message,
+      });
+      return null;
     }
   }
 
