@@ -7,6 +7,9 @@ import { DetailView } from '../browse/DetailView.jsx';
 import { NowPlayingView } from './NowPlayingView.jsx';
 import { FleetView } from './FleetView.jsx';
 import { PeekPanel } from './PeekPanel.jsx';
+import { ScreenAdminView } from '../house/ScreenAdminView.jsx';
+import { RoutineHistoryView } from '../house/RoutineHistoryView.jsx';
+import { FirstUseCard } from '../identity/FirstUseCard.jsx';
 
 function renderView(view, params) {
   switch (view) {
@@ -18,6 +21,8 @@ function renderView(view, params) {
     case 'nowPlaying': return <NowPlayingView />;
     case 'fleet': return <FleetView />;
     case 'peek': return <PeekPanel deviceId={params.deviceId} />;
+    case 'screens': return <ScreenAdminView />;
+    case 'routines': return <RoutineHistoryView />;
     default: return <HomeView />;
   }
 }
@@ -26,6 +31,8 @@ export function Canvas() {
   const { view, params } = useNav();
   return (
     <main data-testid="media-canvas" className="media-canvas">
+      {/* RQ-RELY-12: the first-use moment, until this device is named or it is skipped. */}
+      {view === 'home' && <FirstUseCard />}
       {renderView(view, params)}
     </main>
   );
