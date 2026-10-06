@@ -16,9 +16,10 @@ function ActionCard({ icon, title, detail, state, onClick, className = '' }) {
 
 function Result({ result, official, onAction }) {
   const diagnostics = result.diagnostics ?? {};
+  const passed = result.passed ?? result.verdict?.passed ?? false;
   return <section className="piano-learn-result" role="dialog" aria-modal="true" aria-label="Practice result">
-    <Icon name={result.passed ? 'star' : 'repeat'} />
-    <h2>{result.passed ? 'Nice work!' : 'Keep going'}</h2>
+    <Icon name={passed ? 'star' : 'repeat'} />
+    <h2>{passed ? 'Nice work!' : 'Keep going'}</h2>
     {Number.isFinite(result.score) && <p>{Math.round(result.score <= 1 ? result.score * 100 : result.score)}%</p>}
     <div className="piano-learn-result__tally" aria-label="Practice score">
       <span>✓ Right {diagnostics.matched_notes ?? result.right ?? 0}</span>
