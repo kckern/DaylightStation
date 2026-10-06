@@ -133,11 +133,15 @@ for (const [size, viewport] of SIZES) {
       // the stylesheet rule is what is measured.
       await page.evaluate(() => {
         const host = document.querySelector('.media-shell') ?? document.body;
-        for (const cls of ['cast-tray-spinner', 'search-still-searching-spinner']) {
-          const el = document.createElement('span');
-          el.className = cls; el.setAttribute('data-probe-spinner', cls);
-          host.appendChild(el);
-        }
+        const tray = document.createElement('span');
+        tray.className = 'cast-tray-spinner'; tray.setAttribute('data-probe-spinner', 'cast-tray-spinner');
+        host.appendChild(tray);
+        // "Still searching" is styled only inside its own row.
+        const row = document.createElement('div');
+        row.className = 'search-still-searching';
+        const spin = document.createElement('span');
+        spin.className = 'search-still-searching-spinner'; spin.setAttribute('data-probe-spinner', 'search-still-searching-spinner');
+        row.appendChild(spin); host.appendChild(row);
       });
       const spinners = await page.evaluate(() => [...document.querySelectorAll('[data-probe-spinner]')].map((el) => {
         const cs = getComputedStyle(el);

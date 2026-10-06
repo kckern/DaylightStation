@@ -8,6 +8,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { getActionBus } from '../input/ActionBus.js';
 import { useScreenOverlay } from '../overlays/ScreenOverlayProvider.jsx';
+import Player from '../../modules/Player/Player.jsx';
 import { useScopedRemoteControls } from '../input/useScopedRemoteControls.js';
 import { useScreenVolume } from '../../lib/volume/ScreenVolumeContext.js';
 import { getPlayerQueueOpRegistry } from '../../modules/Player/lib/queueOpRegistry.js';
@@ -336,8 +337,11 @@ export function ScreenSessionSurfaces({ controls }) {
  */
 function OkButton({ children, onClick, capture = true, ...rest }) {
   const ref = useRef(null);
-  const { hasOverlay } = useScreenOverlay();
-  const overlayRef = useRef(hasOverlay); overlayRef.current = hasOverlay;
+  // The Player itself is a fullscreen overlay on a screen; only another one
+  // (menu, call, school quiz, screensaver) owns OK.
+  const { fullscreenComponent } = useScreenOverlay();
+  const otherOverlay = fullscreenComponent != null && fullscreenComponent !== Player;
+  const overlayRef = useRef(otherOverlay); overlayRef.current = otherOverlay;
   useEffect(() => {
     if (!capture) return undefined;
     return getActionBus().capture(['select'], () => {

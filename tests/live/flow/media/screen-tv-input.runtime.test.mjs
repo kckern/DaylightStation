@@ -69,15 +69,29 @@ test('[TV input] the next-episode countdown has focus on Cancel, the D-pad reach
   }
 });
 
-test('[TV input] OK presses Put it back after another device pauses the screen', async ({ context, request }) => {
+test('[TV input] OK presses Put it back after another device stops the screen', async ({ context, request }) => {
   const receiver = await openReceiver(context, request);
   try {
     await startPlaying(request, EP_HOSPITAL);
-    expect((await call(request, 'POST', `${base}/session/transport`, { action: 'pause', origin: phone })).status).toBe(200);
+    expect((await call(request, 'POST', `${base}/session/transport`, { action: 'stop', origin: phone })).status).toBe(200);
     await expect(receiver.getByTestId('screen-note-put-back')).toBeVisible({ timeout: 10000 });
     await receiver.keyboard.press('Enter'); // OK
     await expect.poll(async () => (await state(request))?.state, { timeout: 30000 }).toBe('playing');
     await expect(receiver.getByTestId('screen-note-put-back')).toHaveCount(0);
+  } finally {
+    await call(request, 'POST', `${base}/session/transport`, { action: 'stop' }).catch(() => {});
+    await receiver.close();
+  }
+});
+
+test('[TV input] OK resumes a screen another device paused, without claiming OK for Put it back', async ({ context, request }) => {
+  const receiver = await openReceiver(context, request);
+  try {
+    await startPlaying(request, EP_HOSPITAL);
+    expect((await call(request, 'POST', `${base}/session/transport`, { action: 'pause', origin: phone })).status).toBe(200);
+    await expect.poll(async () => (await state(request))?.state, { timeout: 30000 }).toBe('paused');
+    await receiver.keyboard.press('Enter'); // OK is play/pause here, not the note's button
+    await expect.poll(async () => (await state(request))?.state, { timeout: 30000 }).toBe('playing');
   } finally {
     await call(request, 'POST', `${base}/session/transport`, { action: 'stop' }).catch(() => {});
     await receiver.close();

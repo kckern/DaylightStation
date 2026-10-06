@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('MediaApp — P4 cast', () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
   test.beforeEach(async ({ page }) => {
     await page.goto('/media');
     await page.evaluate(() => localStorage.clear());
@@ -25,25 +26,19 @@ test.describe('MediaApp — P4 cast', () => {
       });
     });
     await page.goto('/media');
-    await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
+    await page.getByRole('textbox', { name: 'Search media…' }).fill('Arrival');
+    const more = page.locator('[data-testid^="result-more-"]').first();
+    await expect(more).toBeVisible({ timeout: 15000 });
 
-    await page.getByTestId('media-search-input').fill('lonesome');
-    const firstRow = page.locator('[data-testid^="result-row-"]').first();
-    await expect(firstRow).toBeVisible({ timeout: 15000 });
-
-    const rowId = await firstRow.getAttribute('data-testid');
-    const contentId = rowId?.replace(/^result-row-/, '');
-    expect(contentId).toBeTruthy();
-
-    // Open inline DispatchTargetPicker via the per-row Cast button.
-    // JS click bypasses search-overlay pointer-event interception.
-    await page.getByTestId(`cast-button-${contentId}`).evaluate((el) => el.click());
+    // Open the destination picker from the result's ⋯ menu (Play on…).
+    await more.click();
+    await page.getByRole('menuitem', { name: 'Play on…' }).click();
     await expect(page.getByTestId('dispatch-target-picker')).toBeVisible({ timeout: 5000 });
 
     // Tap the first device: an idle target is sent to by the tap itself (NF-TAP-10).
     const firstDevice = page.locator('[data-testid^="picker-device-"]').first();
     await expect(firstDevice).toBeVisible();
-    await firstDevice.evaluate((el) => el.click());
+    await firstDevice.click();
 
     // Picker closes once sent.
     await expect(page.getByTestId('dispatch-target-picker')).not.toBeVisible({ timeout: 5000 });
