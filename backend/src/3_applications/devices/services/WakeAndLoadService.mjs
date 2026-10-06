@@ -38,6 +38,10 @@ function isBriefQuery(query) {
   return !['0', 'false', 'no', 'off'].includes(String(v).toLowerCase());
 }
 
+// Show briefly to a cold screen: how long to wait for it to subscribe.
+const BRIEF_SUBSCRIBE_TIMEOUT_MS = 30_000;
+const BRIEF_SUBSCRIBE_POLL_MS = 500;
+
 const STEPS = ['power', 'verify', 'volume', 'prepare', 'prewarm', 'load', 'playback'];
 // Origin of a dispatch no caller named (HA buttons, schedules, triggers).
 const AUTOMATION_ORIGIN = Object.freeze({ kind: 'routine', name: 'Automation' });
@@ -769,8 +773,10 @@ export class WakeAndLoadService {
         });
         this.#emitProgress(topic, dispatchId, 'load', 'retrying', { method: 'websocket' });
 
-        // Ensure the screen has time to load the base URL before sending WS
-        await this.#scheduler.wait(3000);
+        // Ensure the screen has time to load the base URL before sending WS.
+        // A brief is the one command that must not be fired into the void, so
+        // it waits for a subscriber instead (below).
+        if (!briefOnly) await this.#scheduler.wait(3000);
 
         // Load the base URL first if it hasn't loaded yet
         const baseLoadResult = await device.loadContent(screenPath, {});
@@ -791,7 +797,24 @@ export class WakeAndLoadService {
         }
 
         // Give the screen framework time to mount and subscribe to WS
-        await this.#scheduler.wait(2000);
+        if (briefOnly) {
+          // Show briefly (RQ-PLAY-11) goes out once, over the programme: poll
+          // for a real subscriber (bounded, injected clock/scheduler) rather
+          // than guess with a fixed wait, and report a miss as a failed load.
+          const subscribed = await this.#awaitSubscriber(topic);
+          if (!subscribed) {
+            this.#emitProgress(topic, dispatchId, 'load', 'failed', { error: 'Screen not connected' });
+            this.#logger.warn?.('wake-and-load.load.brief-no-subscriber', {
+              deviceId, dispatchId, waitedMs: BRIEF_SUBSCRIBE_TIMEOUT_MS,
+            });
+            result.error = 'Screen not connected';
+            result.failedStep = 'load';
+            result.totalElapsedMs = this.#clock.now() - startTime;
+            return result;
+          }
+        } else {
+          await this.#scheduler.wait(2000);
+        }
 
         // Broadcast content command via CommandEnvelope (targeted to this device).
         const fbResolved = resolveContentId(contentQuery);
@@ -931,6 +954,25 @@ export class WakeAndLoadService {
    * Emit a progress event over WebSocket.
    * @private
    */
+  /**
+   * Wait (bounded) until something is subscribed to the screen's topic.
+   * Uses the injected clock and scheduler. A bus that cannot count
+   * subscribers falls back to the fixed settle the other fallbacks use.
+   */
+  async #awaitSubscriber(topic) {
+    const count = this.#eventBus?.getTopicSubscriberCount;
+    if (typeof count !== 'function') {
+      await this.#scheduler.wait(5000);
+      return true;
+    }
+    const deadline = this.#clock.now() + BRIEF_SUBSCRIBE_TIMEOUT_MS;
+    for (;;) {
+      if (this.#eventBus.getTopicSubscriberCount(topic) > 0) return true;
+      if (this.#clock.now() >= deadline) return false;
+      await this.#scheduler.wait(BRIEF_SUBSCRIBE_POLL_MS);
+    }
+  }
+
   #emitProgress(topic, dispatchId, step, status, extra = {}) {
     this.#broadcast({
       topic,
