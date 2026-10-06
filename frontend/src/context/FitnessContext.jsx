@@ -173,7 +173,7 @@ export const useFitness = useFitnessContext;
 export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQueue: propPlayQueue, setFitnessPlayQueue: propSetPlayQueue, kioskMode = false }) => {
   // UI State
   const [selectedPlaylistId, setSelectedPlaylistId] = useState(null);
-  const [musicAutoEnabledState, setMusicAutoEnabledState] = useState(false);
+  const [, setMusicAutoEnabledState] = useState(false);
   const [musicOverride, setMusicOverride] = useState(null);
   const [lastPlaylistId, setLastPlaylistId] = useState(null);
   const [videoPlayerPaused, setVideoPlayerPaused] = useState(false);
@@ -1221,11 +1221,14 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const queuedMusicLabels = normalizeLabelList(fitnessPlayQueue?.[0]?.labels);
   // Resolve the current video synchronously: an effect would briefly mount the
   // old soundtrack before clearing it on an untagged replacement video.
-  const mediaMusicAutoEnabled = fitnessPlayQueue?.length
-    ? queuedMusicLabels.some(label => normalizeLabelList(nomusicLabels).includes(label))
-    : musicAutoEnabledState;
+  const hasVideo = Boolean(fitnessPlayQueue?.length);
+  const mediaMusicAutoEnabled = hasVideo
+    && queuedMusicLabels.some(label => normalizeLabelList(nomusicLabels).includes(label));
   const musicAutoEnabled = mediaMusicAutoEnabled;
-  const musicEnabled = musicOverride !== null ? musicOverride : musicAutoEnabled;
+  // Music is an overlay for a video that explicitly asks for an external
+  // soundtrack. It is never a standalone chart feature, and a manual request
+  // cannot manufacture permission to start it without that video.
+  const musicEnabled = hasVideo && musicAutoEnabled && musicOverride !== false;
 
   React.useEffect(() => {
     if (musicEnabled) {
@@ -1249,9 +1252,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       setMusicOverride(null);
       return;
     }
-    const normalized = Boolean(nextEnabled);
-    setMusicOverride((_prev) => (musicAutoEnabled === normalized ? null : normalized));
-  }, [musicAutoEnabled]);
+    // Callers may silence an allowed overlay (player failure/close), but may
+    // not force music on. The settings UI intentionally exposes no toggle.
+    setMusicOverride(nextEnabled === false ? false : null);
+  }, []);
 
   // Music player control helpers for voice memo coordination
   const pauseMusicPlayer = useCallback(() => {
@@ -1272,7 +1276,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     const decision = {
       contentId: item ? getItemIdentifier(item) : null,
       labels: normalizeLabelList(item?.labels),
-      source: musicOverride !== null ? 'manual' : 'media-label',
+      source: musicOverride === false ? 'manual-off' : 'media-label',
       autoEnabled: musicAutoEnabled,
       manualOverride: musicOverride,
       enabled: musicEnabled,
