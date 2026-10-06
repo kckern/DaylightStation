@@ -17,7 +17,7 @@ import { QueuePanel } from './QueuePanel.jsx';
 import { DispatchTargetPicker } from '../cast/DispatchTargetPicker.jsx';
 import { playbackStateLabel, queuePositionLabel } from './stateCopy.js';
 import { SessionControlFrame } from '../controller/SessionControlFrame.jsx';
-import { GlobalAimLabel } from '../cast/AimLabel.jsx';
+import { DestinationLine } from '../cast/DestinationLine.jsx';
 import { SessionControlsPanel } from './SessionControlsPanel.jsx';
 import { LineUpOffer } from './LineUpOffer.jsx';
 import './NowPlaying.scss';
@@ -126,7 +126,8 @@ export function NowPlayingView() {
 
       <div data-testid="now-playing-host" ref={hostRef} className="now-playing-host" />
 
-      <GlobalAimLabel />
+      {/* The aim, tappable where a thumb is (RELY.12a): the same line and picker as search/browse. */}
+      <DestinationLine surface="now-playing" />
       <SessionControlFrame targetKind="local">
         {item && (
         <>
