@@ -7,6 +7,7 @@
 // Put it back, the next-episode countdown, the sleep fade).
 import React, { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { getActionBus } from '../input/ActionBus.js';
+import { useScopedRemoteControls } from '../input/useScopedRemoteControls.js';
 import { useScreenVolume } from '../../lib/volume/ScreenVolumeContext.js';
 import { getPlayerQueueOpRegistry } from '../../modules/Player/lib/queueOpRegistry.js';
 import { setNaturalEndPolicy } from '../../modules/Player/lib/naturalEndPolicy.js';
@@ -263,16 +264,6 @@ export function ScreenSessionSurfaces({ controls }) {
   // Re-render once a second only while something time-based is on screen.
   useTick(noteVisible || !!countdown || statusVisible || !!fading);
 
-  // While the countdown is up, Back cancels it instead of leaving the player.
-  useEffect(() => {
-    if (!countdown) return undefined;
-    return getActionBus().capture(['escape'], () => {
-      cancelledRef.current = true;
-      controls.handleSession('cancel-countdown', {});
-      return true;
-    });
-  }, [controls, !!countdown]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const remaining = countdown ? Math.max(0, Math.ceil((Date.parse(countdown.endsAt) - now) / 1000)) : 0;
 
   // The countdown is announced ONCE when it starts and once when it is
@@ -302,14 +293,8 @@ export function ScreenSessionSurfaces({ controls }) {
         {announcement}
       </div>
       {countdown && (
-        <div className="screen-session-countdown" aria-live="off" data-testid="screen-next-countdown">
-          <div className="screen-session-countdown__label">Next episode in <span aria-hidden="true" data-testid="screen-next-countdown-seconds">{remaining}</span></div>
-          <div className="screen-session-countdown__title">{countdown.next.title ?? countdown.next.contentId}</div>
-          <div className="screen-session-countdown__actions">
-            <button type="button" data-testid="screen-next-countdown-cancel" onClick={cancelCountdown}>Cancel</button>
-            <button type="button" data-testid="screen-next-countdown-start" onClick={() => controls.handleSession('start-next-now', {})}>Play now</button>
-          </div>
-        </div>
+        <CountdownPrompt countdown={countdown} remaining={remaining} onCancel={cancelCountdown}
+          onStartNow={() => controls.handleSession('start-next-now', {})} />
       )}
       <div className="screen-session-notes" aria-live="polite">
         {noteVisible && (
@@ -318,13 +303,17 @@ export function ScreenSessionSurfaces({ controls }) {
               {latest.label}{latest.count > 1 ? ` (${latest.count}×)` : ''}
             </span>
             {latest.putBack && (
-              <button type="button" className="screen-session-note__action" data-testid="screen-note-put-back"
-                onClick={() => controls.handleSession('put-back', { noteId: latest.id })}>Put it back</button>
+              <OkButton className="screen-session-note__action" data-testid="screen-note-put-back"
+                onClick={() => controls.handleSession('put-back', { noteId: latest.id })}>Put it back</OkButton>
             )}
           </div>
         )}
         {fading && (
-          <div className="screen-session-note" role="status" data-testid="screen-sleep-fading">Sleep timer — stopping</div>
+          <div className="screen-session-note" role="status" data-testid="screen-sleep-fading">
+            <span>Sleep timer — stopping</span>
+            <OkButton className="screen-session-note__action" data-testid="screen-sleep-keep-playing"
+              onClick={() => controls.handleSession('cancel-sleep-timer', {})}>Keep playing</OkButton>
+          </div>
         )}
         {statusVisible && (
           <div className="screen-session-note" role="status" data-testid="screen-queue-status" data-status-code={status.code}>
@@ -335,6 +324,40 @@ export function ScreenSessionSurfaces({ controls }) {
         )}
       </div>
     </>
+  );
+}
+
+/**
+ * TV input is D-pad, OK and an unreliable Back (FKB swallows Esc). A
+ * non-modal prompt button owns OK only while it is on screen: OK activates it,
+ * arrows and everything else still reach the player. It carries focus styling
+ * so a keyboard user can see it too.
+ */
+function OkButton({ children, onClick, ...rest }) {
+  const ref = useRef(null);
+  useEffect(() => getActionBus().capture(['select'], () => {
+    const node = ref.current;
+    if (!node) return false;
+    logger().info('tv-prompt.ok', { prompt: rest['data-testid'] ?? null });
+    node.click();
+    return true;
+  }), []); // eslint-disable-line react-hooks/exhaustive-deps
+  return <button type="button" ref={ref} onClick={onClick} {...rest}>{children}</button>;
+}
+
+/** The next-episode countdown: modal for D-pad/OK; Cancel holds focus; Back cancels too. */
+function CountdownPrompt({ countdown, remaining, onCancel, onStartNow }) {
+  const rootRef = useRef(null);
+  useScopedRemoteControls(rootRef, { onEscape: onCancel });
+  return (
+    <div ref={rootRef} className="screen-session-countdown" aria-live="off" data-testid="screen-next-countdown">
+      <div className="screen-session-countdown__label">Next episode in <span aria-hidden="true" data-testid="screen-next-countdown-seconds">{remaining}</span></div>
+      <div className="screen-session-countdown__title">{countdown.next.title ?? countdown.next.contentId}</div>
+      <div className="screen-session-countdown__actions">
+        <button type="button" autoFocus data-testid="screen-next-countdown-cancel" onClick={onCancel}>Cancel</button>
+        <button type="button" data-testid="screen-next-countdown-start" onClick={onStartNow}>Play now</button>
+      </div>
+    </div>
   );
 }
 
