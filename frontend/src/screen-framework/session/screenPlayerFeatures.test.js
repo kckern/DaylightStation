@@ -117,6 +117,41 @@ describe('Stop and sleep under a brief — the programme is never resurrected', 
     expect(ports.restoreSnapshot).not.toHaveBeenCalled();
   });
 
+  it('a programme that ended by itself under a brief is not replayed when the brief is closed', async () => {
+    const { features, ports, setSnapshot } = setup();
+    features.beginBrief({ kind: 'camera', cameraId: 'a' });
+    features.onPlaybackStopped('end-of-queue', { naturalEnd: true });
+    // The brief stays up (a doorbell does not vanish) …
+    expect(features.toPublished().brief).not.toBeNull();
+    setSnapshot({ state: 'idle', queue: { currentIndex: -1, items: [] } });
+    const out = await features.handleSession('close-brief', {});
+    // … but closing it has nothing to return to.
+    expect(out).toEqual({ ok: true, returned: 'nothing' });
+    expect(ports.restoreSnapshot).not.toHaveBeenCalled();
+    expect(ports.resumePlayback).not.toHaveBeenCalled();
+  });
+
+  it('the controls tell the extension about end-of-queue stop, stop-after-current and at-end sleep', () => {
+    const { features } = setup();
+    const spy = vi.spyOn(features, 'onPlaybackStopped');
+    const stop = vi.fn();
+    const mk = () => {
+      const c = createScreenSessionControls({ ownerId: 'tv', ports: { getSnapshot: () => playing(), stopPlayback: stop, setFade: vi.fn() } });
+      c.attachExtension(features);
+      return c;
+    };
+    const c1 = mk();
+    expect(c1.naturalEndPolicy({ current: { contentId: 'plex:1' }, next: null }, { stop })).toBe(false);
+    expect(spy).toHaveBeenCalledWith('end-of-queue', expect.objectContaining({ naturalEnd: true }));
+    c1.dispose();
+    spy.mockClear();
+    const c2 = mk();
+    c2.applyConfig('stopAfterCurrent', true);
+    c2.naturalEndPolicy({ current: { contentId: 'plex:1' }, next: { contentId: 'plex:2' } }, { stop });
+    expect(spy).toHaveBeenCalledWith('stop-after-current', expect.objectContaining({ naturalEnd: true }));
+    c2.dispose();
+  });
+
   it('stop also stops music behind unless asked to keep it; display sleep ends a brief', () => {
     const { features, ports } = setup();
     ports.stopMusic = vi.fn();

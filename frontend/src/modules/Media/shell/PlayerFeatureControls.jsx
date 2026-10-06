@@ -251,6 +251,7 @@ export function useSlideshowStopGuard(target, snapshotOverride = null) {
           <Button data-testid="pf-stop-keep-music" onClick={() => {
             const stop = pending; setPending(null);
             mediaLog.playerFeature({ feature: 'music-behind', action: 'keep-after-slideshow', target: f.isLocal ? 'local' : target?.deviceId });
+            if (f.isLocal) getLocalPlayerFeatures().keepMusicAfterStop();
             stop?.();
           }}>Keep music</Button>
         </Group>

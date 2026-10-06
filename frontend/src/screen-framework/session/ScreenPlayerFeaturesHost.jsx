@@ -12,6 +12,7 @@ import { getPlayerQueueOpRegistry } from '../../modules/Player/lib/queueOpRegist
 import { registerTrackOwner, createTrackPreferenceStore } from '../../modules/Player/lib/trackPolicy.js';
 import { getPlayerSessionRegistry } from '../publishers/playerSessionRegistry.js';
 import { isSlideshowItem } from '@shared-contracts/media/playerFeatures.mjs';
+import { musicBehindVerdict } from '../../modules/Player/lib/musicBehindPolicy.js';
 import Player from '../../modules/Player/Player.jsx';
 import CameraOverlay from '../../modules/CameraFeed/CameraOverlay.jsx';
 import { MusicBehindLayer } from '../../modules/Player/components/MusicBehindLayer.jsx';
@@ -46,6 +47,8 @@ export function ScreenPlayerFeaturesHost({ features, source }) {
   const [music, setMusic] = useState(null); // { contentId, title, shuffle }
   const musicRefState = useRef(null);
   musicRefState.current = music;
+  // A person on another device chose "Keep music" when stopping the slideshow.
+  const keepMusicRef = useRef(false);
   const preferences = useMemo(() => createTrackPreferenceStore({ namespace: `screen:${ownerId ?? 'unknown'}` }), [ownerId]);
 
   // --- Ports ------------------------------------------------------------------
@@ -62,7 +65,7 @@ export function ScreenPlayerFeaturesHost({ features, source }) {
         if (!player?.setTracks) return { ok: false, code: 'NO_PLAYBACK', error: 'Nothing is playing here' };
         return player.setTracks(selection);
       },
-      stopMusic: () => { setMusic(null); features.setMusicState(null); },
+      stopMusic: () => { keepMusicRef.current = false; setMusic(null); features.setMusicState(null); },
       musicCommand: (op, params) => {
         const current = musicRefState.current;
         if (op === 'start') {
@@ -70,6 +73,7 @@ export function ScreenPlayerFeaturesHost({ features, source }) {
           if (!isSlideshowItem(snapshot?.currentItem)) {
             return { ok: false, code: 'NOT_A_SLIDESHOW', error: 'Music behind needs a photo slideshow playing' };
           }
+          keepMusicRef.current = false;
           setMusic({ contentId: params.contentId, title: params.title ?? null, startedAt: Date.now() });
           features.setMusicState({ contentId: params.contentId, title: params.title ?? null, state: 'loading' });
           return { ok: true };
@@ -100,9 +104,20 @@ export function ScreenPlayerFeaturesHost({ features, source }) {
     const check = () => {
       const snapshot = source.getBareSnapshot?.();
       if (!snapshot?.currentItem && features.toPublished().tracks) features.setTrackState(null);
+      // No double audio: music behind ends when the photos give way to
+      // something with its own sound, or to nothing the person did not keep it over.
+      if (musicRefState.current) {
+        const verdict = musicBehindVerdict({ item: snapshot?.currentItem ?? null, state: snapshot?.state ?? null, keep: keepMusicRef.current });
+        if (verdict === 'stop') {
+          logger().info('music-behind.stop-with-slideshow', { ownerId, reason: snapshot?.currentItem ? 'not-an-image' : 'slideshow-gone' });
+          keepMusicRef.current = false;
+          setMusic(null);
+          features.setMusicState(null);
+        }
+      }
     };
     return source.subscribe({ onChange: check, onStateTransition: check });
-  }, [features, source]);
+  }, [features, source, ownerId]);
 
   // --- Show briefly: start / supersede ------------------------------------------
   useEffect(() => {
@@ -141,7 +156,9 @@ export function ScreenPlayerFeaturesHost({ features, source }) {
     // no such question and stop it too.
     const onPlayback = (payload = {}) => {
       if (String(payload?.command ?? '').toLowerCase() !== 'stop') return;
-      features.onPlaybackStopped('stop', { stopMusic: !payload.origin });
+      const keep = payload.origin?.kind === 'device';
+      if (keep && musicRefState.current) keepMusicRef.current = true;
+      features.onPlaybackStopped('stop', { stopMusic: !keep });
     };
     const onDisplaySleep = () => features.onPlaybackStopped('display-sleep');
     const unsubs = [
