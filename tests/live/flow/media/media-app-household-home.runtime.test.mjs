@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { markFirstUseDone } from './lib/firstUse.mjs';
+
+test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -219,7 +222,10 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
       expect(favBox.width).toBeGreaterThan(otherBox.width);
       expect(favBox.height).toBeGreaterThan(otherBox.height);
       await expect(fav).toContainText('Bluey');
-      await expect(fav.getByRole('button', { name: /Continue Keepy Uppy/ })).toBeVisible();
+      // The next part lives in the tile's ⋯ menu (no per-tile action bar).
+      await fav.getByTestId(`home-tile-favourites-${BLUEY}-more`).click();
+      await expect(page.getByTestId(`home-tile-favourites-${BLUEY}-verb-continue`)).toContainText(/Continue Keepy Uppy/);
+      await page.keyboard.press('Escape');
       await expect(page.getByTestId('home-row-time-of-day')).toContainText('Usually here at this time');
       // Carry on: where it stopped, the next episode, and both spots when screens differ.
       const arrival = page.getByTestId(`home-tile-carry-on-${ARRIVAL}`);

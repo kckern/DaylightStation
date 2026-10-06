@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { markFirstUseDone } from './lib/firstUse.mjs';
+
+test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
 test.use({ viewport: { width: 1280, height: 800 }, trace: 'retain-on-failure', actionTimeout: 10000 });
 test.setTimeout(90000);
@@ -17,7 +20,7 @@ async function openBrowse(page) {
 
 test.describe('MediaApp — browse lifecycle', () => {
   test.beforeEach(async ({ page }) => {
-    await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
+    await page.addInitScript(() => { try { (() => { const k = 'media-app.first-use-done'; const v = localStorage.getItem(k); localStorage.clear(); if (v) localStorage.setItem(k, v); })(); } catch {} });
   });
 
   test('[FIND.5a/AC2][FIND.6a] browse shows pictures, natural order, every parent, and collection actions', async ({ page }) => {

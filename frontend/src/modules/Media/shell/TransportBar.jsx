@@ -1,7 +1,7 @@
 // frontend/src/modules/Media/shell/TransportBar.jsx
 // Transport controls bound to any session controller — used by Now Playing
 // (local). Two rows: primary (prev · rew 10s · play/pause · ffw 10s · next)
-// and secondary (shuffle · repeat · speed · volume · stop). Every command is
+// and secondary (speed · volume · stop). Every command is
 // issued through the selected session controller. The optional command adapter
 // lets Peek retain its pending-state policy without creating a second surface.
 import React, { useEffect, useRef, useState } from 'react';
@@ -13,9 +13,6 @@ import {
   IconPlayerSkipForwardFilled,
   IconRewindBackward10,
   IconRewindForward10,
-  IconArrowsShuffle,
-  IconRepeat,
-  IconRepeatOnce,
   IconVolume,
 } from '@tabler/icons-react';
 import { useSessionController } from '../controller/useSessionController.js';
@@ -24,8 +21,6 @@ import { PlayerFeatureControls, useSlideshowStopGuard } from './PlayerFeatureCon
 import './NowPlaying.scss';
 
 const PLAYING_STATES = new Set(['playing', 'buffering']);
-const REPEAT_NEXT = { off: 'all', all: 'one', one: 'off' };
-const REPEAT_LABEL = { off: 'Repeat off', all: 'Repeat all', one: 'Repeat one' };
 const SKIP_STEP_S = 10;
 const VOLUME_STEP = 10;
 // 1× → 1.25× → 1.5× → 2× → 0.75× → 1×
@@ -72,7 +67,6 @@ export function TransportBar({ target, snapshot: snapshotOverride = null, onComm
   const hasReadyQueue = !currentItem && queueItems.length > 0;
   const hasPlayableItem = !!currentItem || hasReadyQueue;
   const isPlaying = PLAYING_STATES.has(snapshot?.state);
-  const shuffle = !!snapshot?.config?.shuffle;
   const repeat = snapshot?.config?.repeat ?? 'off';
   const volume = snapshot?.config?.volume ?? 100;
   const rate = snapshot?.config?.playbackRate ?? 1;
@@ -191,27 +185,7 @@ export function TransportBar({ target, snapshot: snapshotOverride = null, onComm
       )}
 
       <div className="np-transport-secondary">
-        <button
-          type="button"
-          data-testid="np-shuffle"
-          className={`np-icon-btn ${shuffle ? 'np-icon-btn--on' : ''}`}
-          aria-label="Shuffle"
-          aria-pressed={shuffle}
-          disabled={!controlsAvailable || typeof config.setShuffle !== 'function'}
-          onClick={() => runCommand('setShuffle', () => config.setShuffle?.(!shuffle))}
-        >
-          <IconArrowsShuffle size={20} />
-        </button>
-        <button
-          type="button"
-          data-testid="np-repeat"
-          className={`np-icon-btn ${repeat !== 'off' ? 'np-icon-btn--on' : ''}`}
-          aria-label={REPEAT_LABEL[repeat] ?? 'Repeat off'}
-          disabled={!controlsAvailable || typeof config.setRepeat !== 'function'}
-          onClick={() => runCommand('setRepeat', () => config.setRepeat?.(REPEAT_NEXT[repeat]))}
-        >
-          {repeat === 'one' ? <IconRepeatOnce size={20} /> : <IconRepeat size={20} />}
-        </button>
+        {/* Shuffle and Repeat live with the queue header (once); not repeated here. */}
         <button
           type="button"
           data-testid="np-rate"

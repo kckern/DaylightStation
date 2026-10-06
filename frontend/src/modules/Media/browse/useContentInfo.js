@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
+import { mediaLog } from '../logging/mediaLog.js';
 
 export function useContentInfo(contentId) {
   const [info, setInfo] = useState(null);
   const [loading, setLoading] = useState(typeof contentId === 'string' && contentId.includes(':'));
   const [error, setError] = useState(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (typeof contentId !== 'string' || !contentId.includes(':')) {
@@ -28,13 +30,15 @@ export function useContentInfo(contentId) {
       })
       .catch((err) => {
         if (cancelled) return;
+        mediaLog.loadFailed({ surface: 'detail', contentId, error: err?.message });
         setError(err);
         setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [contentId]);
+  }, [contentId, attempt]);
 
-  return { info, loading, error };
+  const reload = useCallback(() => setAttempt((n) => n + 1), []);
+  return { info, loading, error, reload };
 }
 
 export default useContentInfo;

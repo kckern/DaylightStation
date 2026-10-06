@@ -70,3 +70,32 @@ describe('formatDuration', () => {
     expect(formatDuration(null)).toBeNull();
   });
 });
+
+describe('displayTitle — date-named items', () => {
+  it('reads "<source> · <date>" instead of a bare date file name', () => {
+    const out = displayTitle({ id: 'plex:77', title: '20261005', parentTitle: 'Aljazeera' });
+    expect(out).toMatch(/^Aljazeera · /);
+    expect(out).not.toContain('20261005');
+  });
+  it('falls back to the source label when nothing names the item, never a bare date', () => {
+    const out = displayTitle({ id: 'plex:78', source: 'plex', title: '20261005' });
+    expect(out).toMatch(/^Movies & TV · /);
+  });
+});
+
+describe('sourceRootPresentation', () => {
+  const root = { id: 'plex:', title: 'plex', label: 'plex', itemType: 'container' };
+  it('leads with the human name instead of the source id', async () => {
+    const { sourceRootPresentation, resultSubtitle } = await import('./resultPresentation.js');
+    const human = resultSubtitle(root);
+    const out = sourceRootPresentation(root);
+    expect(out.subtitle).toBeNull();
+    if (human) expect(out.title).toBe(human);
+    expect(out.title.toLowerCase()).not.toBe('');
+  });
+  it('leaves ordinary rows alone', async () => {
+    const { sourceRootPresentation, displayTitle } = await import('./resultPresentation.js');
+    const row = { id: 'plex:123', title: 'Persuasion' };
+    expect(sourceRootPresentation(row).title).toBe(displayTitle(row));
+  });
+});

@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { markFirstUseDone } from './lib/firstUse.mjs';
+
+test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';

@@ -6,13 +6,12 @@
 // transport. Playback-speed control gets the portaled media element found
 // inside the claimed host (the only rate pathway; see TransportBar).
 import React, { useEffect, useRef, useState } from 'react';
-import { IconArrowsMinimize, IconMaximize, IconMusic } from '@tabler/icons-react';
+import { IconArrowsMinimize, IconMaximize, IconChevronLeft } from '@tabler/icons-react';
 import { useSessionController } from '../controller/useSessionController.js';
 import { usePlayerHost } from '../session/usePlayerHost.js';
 import { useNav } from './NavProvider.jsx';
 import { TransportBar } from './TransportBar.jsx';
 import { SeekBar } from './SeekBar.jsx';
-import { formatTime } from './formatTime.js';
 import { QueuePanel } from './QueuePanel.jsx';
 import { DispatchTargetPicker } from '../cast/DispatchTargetPicker.jsx';
 import { playbackStateLabel, queuePositionLabel } from './stateCopy.js';
@@ -21,6 +20,20 @@ import { DestinationLine } from '../cast/DestinationLine.jsx';
 import { SessionControlsPanel } from './SessionControlsPanel.jsx';
 import { LineUpOffer } from './LineUpOffer.jsx';
 import './NowPlaying.scss';
+
+function useIsPhone() {
+  const query = '(max-width: 767px)';
+  const [phone, setPhone] = useState(() => typeof window !== 'undefined' && !!window.matchMedia?.(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia?.(query);
+    if (!mq) return undefined;
+    const on = () => setPhone(mq.matches);
+    on();
+    mq.addEventListener?.('change', on);
+    return () => mq.removeEventListener?.('change', on);
+  }, []);
+  return phone;
+}
 
 // Format enrichment may not arrive before a paused/autoplay-blocked video
 // renders. The native node is read only: it restores the visual affordance but
@@ -53,6 +66,7 @@ export function NowPlayingView() {
   usePlayerHost(hostRef, 2, true, { forceShader: expanded ? 'focused' : null });
   const hasActualVideoNode = useActualVideoNode(controller, hostRef, item?.contentId ?? null);
   const { pop, backDestination } = useNav();
+  const isPhone = useIsPhone();
 
   useEffect(() => setExpanded(false), [item?.contentId]);
 
@@ -72,8 +86,8 @@ export function NowPlayingView() {
   const metaTitle = typeof item?.title === 'string' && item.title !== item.contentId
     ? item.title
     : null;
-  const durationLabel = item?.duration ? formatTime(item.duration) : null;
-  const metaSubParts = [positionLabel, durationLabel].filter(Boolean);
+  // The seek bar already shows the length; the meta line carries the queue position only.
+  const metaSubParts = [positionLabel].filter(Boolean);
   const isVideo = item?.format === 'video'
     || item?.format === 'dash_video'
     || item?.format === 'hls_video'
@@ -82,22 +96,12 @@ export function NowPlayingView() {
     || item?.mediaType === 'hls_video'
     || hasActualVideoNode;
   const isAudio = item?.format === 'audio' || item?.mediaType === 'audio';
+  const posterBehindHost = !!item?.thumbnail && isVideo;
   const expandableKind = isVideo ? 'video' : (isAudio ? 'audio' : null);
 
-  return (
-    <div
-      data-testid="now-playing-view"
-      className={`now-playing-view ${expanded ? 'now-playing-view--expanded' : ''}`}
-    >
-      <div className="now-playing-toolbar">
-        <button
-          type="button"
-          data-testid="now-playing-back"
-          className="np-back-btn"
-          onClick={() => pop()}
-        >
-          ← {backDestination ?? 'Home'}
-        </button>
+  // Paused / Expand video sit in the title row when the meta block shows, else in the toolbar.
+  const showMeta = !!item && (!expanded || isAudio);
+  const statusBlock = (
         <div className="np-toolbar-status">
           <span className="np-state" data-testid="np-state" data-state={snapshot?.state ?? ''}>
             {playbackStateLabel(snapshot?.state)}
@@ -114,30 +118,55 @@ export function NowPlayingView() {
             </button>
           )}
         </div>
+  );
+
+  return (
+    <div
+      data-testid="now-playing-view"
+      className={`now-playing-view ${expanded ? 'now-playing-view--expanded' : ''}`}
+    >
+      <div className="now-playing-toolbar">
+        <button
+          type="button"
+          data-testid="now-playing-back"
+          className="np-back-btn"
+          onClick={() => pop()}
+        >
+          <IconChevronLeft size={16} aria-hidden /> {backDestination ?? 'Home'}
+        </button>
+        {!showMeta && statusBlock}
       </div>
 
+      {/* One title block: the info block below names the item; this heading is
+          the visible title only when there is no current item, and stays as the
+          screen-reader / test heading otherwise. */}
       <h1
-        className="now-playing-title"
+        className={`now-playing-title${item ? ' media-sr-only' : ''}`}
         data-testid="now-playing-title"
         data-content-id={item?.contentId ?? ''}
       >
-        {item ? `Now Playing: ${item.title ?? item.contentId}` : 'Nothing playing'}
+        {item
+          ? `Now Playing: ${item.title ?? item.contentId}`
+          : (queueItems.length > 0 ? `Ready to play: ${queueItems[0].title ?? queueItems[0].contentId}` : 'Nothing playing')}
       </h1>
 
-      <div data-testid="now-playing-host" ref={hostRef} className="now-playing-host" />
+      {/* A paused or not-yet-started video shows its own poster, not a black box. */}
+      <div
+        data-testid="now-playing-host"
+        ref={hostRef}
+        className={`now-playing-host${posterBehindHost ? ' now-playing-host--poster' : ''}`}
+        style={posterBehindHost ? { backgroundImage: `url("${item.thumbnail}")` } : undefined}
+      />
 
-      {/* The aim, tappable where a thumb is (RELY.12a): the same line and picker as search/browse. */}
-      <DestinationLine surface="now-playing" />
+      {/* The header's destination control carries the aim on every view; on a phone it
+          is out of thumb reach, so Now Playing repeats it there (RELY.12a). */}
+      {isPhone && <DestinationLine surface="now-playing" />}
       <SessionControlFrame targetKind="local">
         {item && (
         <>
-          {(!expanded || isAudio) && <div className="np-meta" data-testid="np-meta">
-            {item.thumbnail ? (
+          {showMeta && <div className="np-meta" data-testid="np-meta">
+            {item.thumbnail && !isVideo && (
               <img className="np-art" data-testid="np-meta-art" src={item.thumbnail} alt="" loading="lazy" />
-            ) : (
-              <div className="np-art-placeholder" aria-hidden="true">
-                <IconMusic size={40} />
-              </div>
             )}
             <div className="np-meta-lines">
               {metaTitle && <span className="np-meta-title" data-testid="np-meta-title">{metaTitle}</span>}
@@ -155,9 +184,10 @@ export function NowPlayingView() {
                 </span>
               )}
             </div>
+            {statusBlock}
           </div>}
           <SeekBar target="local" />
-          <TransportBar target="local" targetLabel="This device" />
+          <TransportBar target="local" />
         </>
         )}
         {(item || snapshot?.queue?.items?.length > 0) && <SessionControlsPanel target="local" />}

@@ -1,8 +1,11 @@
 import { test, expect } from '@playwright/test';
+import { markFirstUseDone } from './lib/firstUse.mjs';
+
+test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
 test.describe('MediaApp — Stop flow', () => {
   test.beforeEach(async ({ page }) => {
-    await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
+    await page.addInitScript(() => { try { (() => { const k = 'media-app.first-use-done'; const v = localStorage.getItem(k); localStorage.clear(); if (v) localStorage.setItem(k, v); })(); } catch {} });
   });
 
   test('Stop keeps the queue reachable and separates Clear', async ({ page }) => {
@@ -18,7 +21,7 @@ test.describe('MediaApp — Stop flow', () => {
     // Stop
     await page.getByTestId('mini-stop').click();
 
-    await expect(page.getByTestId('media-mini-player')).toHaveText(/1 item ready/i);
+    await expect(page.getByTestId('media-mini-player')).toHaveText(/Lonesome Day.*Ready to play.*Resume/s);
     await expect(page.getByTestId('mini-player-open-nowplaying')).toBeVisible();
     await page.getByTestId('mini-player-open-nowplaying').click();
     await expect(page.getByTestId('queue-clear')).toBeVisible();

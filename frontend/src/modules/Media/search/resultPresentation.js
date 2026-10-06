@@ -4,6 +4,7 @@
 // labels ("Music · Album · 47 min", "TV Show · 155 episodes", "Audiobook").
 import { looksLikeMachineTitle } from '../../../hooks/useStreamingSearch.js';
 import { sourceLabel } from '../../Content/lib/sourceLabels.js';
+import { parseDateTitle, presentTitle } from '../browse/tilePresentation.js';
 
 const TYPE_LABELS = {
   movie: 'Movie',
@@ -69,6 +70,13 @@ export function formatDuration(seconds) {
  */
 export function displayTitle(row) {
   const raw = row?.title ?? String(row?.id ?? row?.itemId ?? '');
+  // A date-named file reads "<source> · Oct 5", never the bare date.
+  if (parseDateTitle(raw)) {
+    // Nothing above it names it: fall back to where it came from, never a bare "Oct 5".
+    const named = row?.parentTitle || row?.parent || row?.metadata?.parentTitle || row?.grandparentTitle || row?.metadata?.grandparentTitle;
+    const origin = named ? null : sourceLabel(row?.source ?? String(row?.id ?? '').split(':')[0]);
+    return presentTitle({ ...row, title: raw, ...(origin ? { parentTitle: origin } : {}) });
+  }
   if (!looksLikeMachineTitle(raw)) return raw;
   const cleaned = String(raw)
     .replace(/\.[a-z0-9]{2,4}$/i, '') // strip extension
@@ -128,4 +136,17 @@ export function resultSubtitle(row) {
     if (label) parts.push(label);
   }
   return parts.join(' · ');
+}
+
+/**
+ * A source's root row ("plex:" titled "plex") has the id for a title and the
+ * human name ("Movies & TV") as its subtitle. Lead with the human name.
+ */
+export function sourceRootPresentation(row) {
+  const id = String(row?.id ?? row?.itemId ?? '');
+  const m = /^([\w-]+):$/.exec(id);
+  const title = displayTitle(row);
+  if (!m || String(row?.title ?? m[1]).toLowerCase() !== m[1].toLowerCase()) return { title, subtitle: resultSubtitle(row) };
+  const human = resultSubtitle(row);
+  return human ? { title: human, subtitle: null } : { title, subtitle: null };
 }

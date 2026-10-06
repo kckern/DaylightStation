@@ -45,14 +45,18 @@ const fleetStore = {
   getEntry: () => null,
 };
 
-function renderNowPlaying({ devices = [] } = {}) {
-  return render(
+function renderNowPlayingTree({ devices = [] } = {}) {
+  return (
     <MantineProvider>
       <FleetContext.Provider value={{ devices, store: fleetStore }}>
         <CastTargetProvider><NowPlayingView /></CastTargetProvider>
       </FleetContext.Provider>
-    </MantineProvider>,
+    </MantineProvider>
   );
+}
+
+function renderNowPlaying(opts = {}) {
+  return render(renderNowPlayingTree(opts));
 }
 
 function makeSnapshot({ item, index = 1, containerTitle = 'Primary Songs' } = {}) {
@@ -91,8 +95,40 @@ describe('NowPlayingView', () => {
     localStorage.setItem('media-app.cast-target', JSON.stringify({
       mode: 'transfer', targetIds: ['office-tv'], activityAt: Date.now(), exemptionStartedAt: null,
     }));
-    renderNowPlaying({ devices: [{ id: 'office-tv', name: 'Office TV', location: 'Office' }] });
-    expect(screen.getByTestId('aim-label')).toHaveTextContent('Aim: Office TV · Office');
+    const original = window.matchMedia;
+    window.matchMedia = (query) => ({ matches: true, media: query, addEventListener() {}, removeEventListener() {} });
+    try {
+      renderNowPlaying({ devices: [{ id: 'office-tv', name: 'Office TV', location: 'Office' }] });
+      expect(screen.getByTestId('aim-label')).toHaveTextContent('Playing on Office TV · Office');
+    } finally { window.matchMedia = original; }
+  });
+
+  it('does not repeat the destination in the page on wider screens (the header carries it)', () => {
+    renderNowPlaying();
+    expect(screen.queryByTestId('aim-label')).toBeNull();
+  });
+
+  it('the poster always belongs to the CURRENT item: follows it, clears with it', () => {
+    const video = (id, thumb) => makeSnapshot({ item: { contentId: id, title: id, format: 'video', thumbnail: thumb } });
+    state.snapshot = video('plex:1', '/thumb/one.jpg');
+    const { rerender } = renderNowPlaying();
+    const host = () => screen.getByTestId('now-playing-host');
+    expect(host().style.backgroundImage).toContain('/thumb/one.jpg');
+    state.snapshot = video('plex:2', '/thumb/two.jpg');
+    rerender(renderNowPlayingTree());
+    expect(host().style.backgroundImage).toContain('/thumb/two.jpg');
+    expect(host().style.backgroundImage).not.toContain('/thumb/one.jpg');
+    state.snapshot = video('plex:3', null);
+    rerender(renderNowPlayingTree());
+    expect(host().style.backgroundImage).toBe('');
+    expect(host()).not.toHaveClass('now-playing-host--poster');
+  });
+
+  it('shows a video\'s poster in the video area and no second art box', () => {
+    renderNowPlaying();
+    expect(screen.queryByTestId('np-meta-art')).toBeNull();
+    expect(screen.getByTestId('now-playing-host')).toHaveClass('now-playing-host--poster');
+    expect(screen.getByTestId('now-playing-host').style.backgroundImage).toContain('/api/v1/thumb/5.jpg');
   });
 
   it.each(['format', 'mediaType'])('keeps HLS video expansion available for %s descriptors', field => {
@@ -143,11 +179,10 @@ describe('NowPlayingView', () => {
   it('renders artwork + metadata from the current item without raw ids', () => {
     renderNowPlaying();
     const meta = screen.getByTestId('np-meta');
-    expect(screen.getByTestId('np-meta-art')).toHaveAttribute('src', '/api/v1/thumb/5.jpg');
     expect(within(meta).getByTestId('np-meta-title')).toHaveTextContent('Primary Song 5');
     expect(within(meta).getByTestId('np-meta-context')).toHaveTextContent('Primary Songs');
     expect(within(meta).getByTestId('np-meta-sub')).toHaveTextContent('2 of 3');
-    expect(within(meta).getByTestId('np-meta-sub')).toHaveTextContent('3:00');
+    expect(within(meta).getByTestId('np-meta-sub')).not.toHaveTextContent('3:00');
     expect(meta.textContent).not.toMatch(/singalong:/);
   });
 
@@ -177,8 +212,14 @@ describe('NowPlayingView', () => {
     expect(screen.getByText('Playback speed is not available for this screen')).toBeInTheDocument();
   });
 
-  it('shows the empty state when nothing is playing', () => {
+  it('names the item waiting in a stopped queue instead of saying nothing is there', () => {
     state.snapshot = makeSnapshot({ item: null, index: -1 });
+    renderNowPlaying();
+    expect(screen.getByTestId('now-playing-title')).toHaveTextContent('Ready to play: Primary Song 4');
+  });
+
+  it('shows the empty state when nothing is playing', () => {
+    state.snapshot = { ...makeSnapshot({ item: null, index: -1 }), queue: { items: [], currentIndex: -1, upNextCount: 0 } };
     renderNowPlaying();
     expect(screen.getByTestId('now-playing-title')).toHaveTextContent('Nothing playing');
     expect(screen.queryByTestId('np-meta')).toBeNull();
@@ -195,7 +236,7 @@ describe('NowPlayingView', () => {
   it('names the actual prior area on its visible Back control', () => {
     backDestination = 'Devices';
     renderNowPlaying();
-    expect(screen.getByTestId('now-playing-back')).toHaveTextContent('← Devices');
+    expect(screen.getByTestId('now-playing-back')).toHaveTextContent('Devices');
   });
 
   it('expands with the exact accessible control, requests focused rendering, and keeps Stop reachable', () => {

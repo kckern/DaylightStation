@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { markFirstUseDone } from './lib/firstUse.mjs';
+
+test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -45,7 +48,8 @@ async function queueTwo(page) {
   await expect(page.getByRole('textbox', { name: 'Search media…' })).toBeVisible({ timeout: 30000 });
   await addToQueue(page, 'Arrival');
   await addToQueue(page, 'Disclosure Day');
-  await expect(page.getByTestId('mini-player-open-nowplaying')).toHaveText('2 items ready');
+  await expect(page.getByTestId('mini-state')).toHaveText('Ready to play');
+  await expect(page.getByTestId('mini-queue-count')).toHaveText('2 queued');
 }
 
 for (const branch of ['comes back', 'stays refused']) {

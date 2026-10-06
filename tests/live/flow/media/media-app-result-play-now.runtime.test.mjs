@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { markFirstUseDone } from './lib/firstUse.mjs';
+
+test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
 // Requires `media-redesign-server.mjs`: its local EventBus/device composition
 // is the only permitted receiver. This test has no route interception and no
@@ -55,7 +58,21 @@ function searchSurface(page, isPhone) {
   return isPhone ? page.getByTestId('search-mode') : page.getByTestId('media-search-bar');
 }
 
+// The destination is read and changed where it lives: the destination line inside the phone's
+// search surface, the header's "Playing on <name>" control everywhere else.
+const destinationName = (page, isPhone) => (isPhone
+  ? searchSurface(page, true).getByTestId('destination-line-name')
+  : page.getByTestId('destination-control-name'));
+
 async function setDestination(page, isPhone, targetId) {
+  if (!isPhone) {
+    await page.getByTestId('cast-target-chip').click();
+    const target = page.getByTestId(`cast-target-checkbox-${targetId ?? 'acceptance-media'}`);
+    if (targetId) await target.check(); else await target.uncheck();
+    await page.getByTestId('cast-target-chip').click();
+    await expect(page.getByTestId('cast-popover')).toBeHidden();
+    return;
+  }
   await searchSurface(page, isPhone).getByTestId('destination-line').click();
   await expect(page.getByTestId('destination-sheet')).toBeVisible();
   if (!targetId) {
@@ -317,7 +334,7 @@ for (const [surface, viewport, isPhone] of surfaces) {
     await assertSearchIdentity(sender, input, isPhone, id);
 
     await setDestination(sender, isPhone, 'acceptance-media');
-    await expect(searchSurface(sender, isPhone).getByTestId('destination-line-name')).toHaveText(/^Aim: Acceptance receiver/);
+    await expect(destinationName(sender, isPhone)).toHaveText(/^(Playing on )?Acceptance receiver/);
     await assertSearchIdentity(sender, input, isPhone, id);
     const remotePlayActions = await resultActionIdentity(sender, id);
     await assertSearchIdentity(sender, input, isPhone, id);
@@ -396,7 +413,7 @@ for (const [surface, viewport, isPhone] of surfaces) {
     await expect(sender.getByTestId(`result-more-${id}`)).toBeVisible({ timeout: 30000 });
     await assertSearchIdentity(sender, input, isPhone, id);
     await setDestination(sender, isPhone, null);
-    await expect(searchSurface(sender, isPhone).getByTestId('destination-line-name')).toHaveText(/^Aim: This device/);
+    await expect(destinationName(sender, isPhone)).toHaveText(/^(Playing on )?(This device|this device)/);
     await assertSearchIdentity(sender, input, isPhone, id);
     const localPlayActions = await resultActionIdentity(sender, id);
     await assertSearchIdentity(sender, input, isPhone, id);

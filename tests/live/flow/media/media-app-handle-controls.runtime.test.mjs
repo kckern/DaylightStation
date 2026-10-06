@@ -1,3 +1,4 @@
+import { markFirstUseDone } from './lib/firstUse.mjs';
 import { test, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
@@ -42,6 +43,7 @@ const receiverState = async (request, id) => (await call(request, 'GET', `/api/v
 
 async function openReceiver(browser, request, id) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, serviceWorkers: 'block' });
+  await markFirstUseDone(context);
   const page = await context.newPage();
   const ready = async () => (await call(request, 'GET', `/api/v1/device/${id}/receiver-ready`)).body?.ready === true;
   // Always open the page: a receiver closed by the previous journey can still
@@ -90,6 +92,7 @@ async function stopReceiver(request, id) {
 // once so no journey measures bootstrap instead of behaviour.
 test.beforeAll(async ({ browser }) => {
   const context = await browser.newContext({ viewport: VIEWPORTS.laptop, serviceWorkers: 'block' });
+  await markFirstUseDone(context);
   const page = await context.newPage();
   await gotoMedia(page);
   await context.close();
@@ -133,6 +136,7 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
     await resetControls(request, A);
     await startOn(request, A, EP_HOSPITAL);
     const context = await browser.newContext({ viewport, serviceWorkers: 'block' });
+    await markFirstUseDone(context);
     const page = await context.newPage();
     await openRemote(page, A, viewport);
     const panel = page.getByTestId('session-controls-panel');
@@ -193,6 +197,7 @@ test('RELY.4b/STEER.1b — a pause from this Remote leaves a note on the screen;
   await startOn(request, A, DISCLOSURE, { queue: [EP_HOSPITAL] });
   const before = await receiverState(request, A);
   const context = await browser.newContext({ viewport: VIEWPORTS.laptop, serviceWorkers: 'block' });
+  await markFirstUseDone(context);
   const page = await context.newPage();
   await openRemote(page, A, VIEWPORTS.laptop);
 
@@ -240,6 +245,7 @@ test('PLAY.10a/AC2 — with Add only on, Play from this device is added and says
   await startOn(request, A, DISCLOSURE);
   expect((await call(request, 'PUT', `/api/v1/device/${A}/session/add-only`, { enabled: true })).status).toBe(200);
   const context = await browser.newContext({ viewport: VIEWPORTS.laptop, serviceWorkers: 'block' });
+  await markFirstUseDone(context);
   const page = await context.newPage();
   await gotoMedia(page);
   // Aim at the receiver with the ordinary chip, then Play a search result.
@@ -269,6 +275,7 @@ test('STEER.13b/AC1 — a screen at the end of an episode shows the countdown on
   await resetControls(request, A);
   await startOn(request, A, EP_HOSPITAL, { queue: [EP_KEEPY] });
   const context = await browser.newContext({ viewport: VIEWPORTS.phone, serviceWorkers: 'block' });
+  await markFirstUseDone(context);
   const page = await context.newPage();
   await openRemote(page, A, VIEWPORTS.phone);
   // Ordinary seek to just before the end: a tap near the end of the Remote's position bar.
@@ -294,6 +301,7 @@ test('STEER.1b/AC7 — Add to this queue opens the one search pointed at that sc
   await startOn(request, A, DISCLOSURE);
   for (const [label, viewport] of [['phone', VIEWPORTS.phone], ['laptop', VIEWPORTS.laptop]]) {
     const context = await browser.newContext({ viewport, serviceWorkers: 'block' });
+    await markFirstUseDone(context);
     const page = await context.newPage();
     await openRemote(page, A, viewport);
     const aimBefore = await page.getByTestId('aim-label').first().textContent();
@@ -325,6 +333,7 @@ test('PLACE.9a — Move to… from a screen\'s Remote: to the other screen (it p
   await stopReceiver(request, B);
   await startOn(request, A, DISCLOSURE);
   const context = await browser.newContext({ viewport: VIEWPORTS.tablet, serviceWorkers: 'block' });
+  await markFirstUseDone(context);
   const page = await context.newPage();
   await openRemote(page, A, VIEWPORTS.tablet);
   await page.getByTestId('peek-move-to').click();
@@ -380,6 +389,7 @@ test('PLACE.4a — several screens: labelled, aim names both, same-room drift wa
   await stopReceiver(request, A);
   await stopReceiver(request, B);
   const context = await browser.newContext({ viewport: VIEWPORTS.phone, serviceWorkers: 'block' });
+  await markFirstUseDone(context);
   const page = await context.newPage();
   await gotoMedia(page);
   await page.getByTestId('media-search-launcher').click();
@@ -393,7 +403,7 @@ test('PLACE.4a — several screens: labelled, aim names both, same-room drift wa
   await expect(page.getByTestId('picker-drift-warning')).toContainText(`${A_NAME} and ${B_NAME} are both in Virtual browser`, { timeout: 15000 });
   await shot(page, 'several-screens-drift-phone');
   await page.getByTestId('picker-submit').click();
-  await expect(searchMode.getByTestId('destination-line-name')).toHaveText(new RegExp(`Aim: ${A_NAME} \\+ ${B_NAME}`));
+  await expect(searchMode.getByTestId('destination-line-name')).toHaveText(new RegExp(`Playing on ${A_NAME} \\+ ${B_NAME}`));
 
   // Play: one record per screen, both start (PLACE.4a/AC3–AC4).
   await searchMode.getByTestId('search-mode-input').fill('Disclosure Day');
@@ -445,6 +455,7 @@ test('PLACE.4a — several screens: labelled, aim names both, same-room drift wa
   test('STEER.10a/STEER.13a/STEER.13b/STEER.1a — this device: sleep at the end of the item, continue offers, countdown, stop after this one, keep similar playing, lock-screen metadata', async ({ browser }) => {
     test.setTimeout(600000);
     const context = await browser.newContext({ viewport, serviceWorkers: 'block' });
+    await markFirstUseDone(context);
     const page = await context.newPage();
     await gotoMedia(page);
     const isPhone = viewport.width < 768;

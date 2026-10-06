@@ -32,11 +32,18 @@ describe('house-wide controls (RQ-STEER-13)', () => {
     expect(quiet.value.resumeAll).toHaveBeenCalled();
   });
 
-  it('disables Pause all when nothing plays', () => {
-    quiet.value = { ...quiet.value, playingCount: 0, activeCount: 0 };
+  it('hides Pause all / Stop all (and the whole bar) when nothing plays', () => {
+    quiet.value = { ...quiet.value, playingCount: 0, activeCount: 0, canResume: false };
     wrap(<HouseQuietBar />);
-    expect(screen.getByTestId('house-pause-all')).toBeDisabled();
-    expect(screen.getByTestId('house-stop-all')).toBeDisabled();
+    expect(screen.queryByTestId('house-pause-all')).toBeNull();
+    expect(screen.queryByTestId('house-stop-all')).toBeNull();
+    expect(screen.queryByTestId('house-quiet-bar')).toBeNull();
+  });
+  it('shows only Stop all when something is paused but nothing plays', () => {
+    quiet.value = { ...quiet.value, playingCount: 0, activeCount: 1, canResume: false };
+    wrap(<HouseQuietBar />);
+    expect(screen.queryByTestId('house-pause-all')).toBeNull();
+    expect(screen.getByTestId('house-stop-all')).toBeEnabled();
   });
 
   it('puts the same three on the handle', async () => {

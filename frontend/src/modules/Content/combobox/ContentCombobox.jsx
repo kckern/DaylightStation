@@ -18,7 +18,7 @@
 //     order === items order; no current search transport emits `group`)
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Combobox, TextInput, ScrollArea, Group, Text, Avatar, Badge, Loader,
+  Combobox, TextInput, ScrollArea, Group, Text, Avatar, Badge, Loader, Button,
   Stack, ActionIcon, Box, useCombobox,
 } from '@mantine/core';
 import {
@@ -106,12 +106,19 @@ function optionTopIn(viewport, option) {
  * @param {boolean} [props.destinationInteractionActive] - keeps this editing
  *   session open for the desktop media destination picker's explicit lifetime
  */
+// Media shows the source in sentence case ("Plex"), never shouting capitals.
+function sentenceCase(value) {
+  const text = String(value ?? '').trim();
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : '?';
+}
+
 export function ContentCombobox({
   value,
   onChange,
   placeholder = 'Search content...',
   selectContainers = false,
   searchParams = '',
+  quietErrors = false, // Media: one quiet line, never the stream's own message
   fallbackSearchParams,
   scopeKey,
   scopeLabel,
@@ -124,6 +131,7 @@ export function ContentCombobox({
   onPlayAll = null,
   onMore = null,
   onAction = null,
+  transformResults = null, // Media: collapse editions of one film/book/album in the list
   resultExtraActions = null,
   destinationInteractionActive = false,
   retainQueryOnEscape = false,
@@ -144,7 +152,7 @@ export function ContentCombobox({
   const mode = state.mode;
   const isBrowse = mode === Modes.BROWSE;
   const isEditing = mode !== Modes.DISPLAY;
-  const items = isBrowse ? state.browse.items : state.results;
+  const items = isBrowse ? state.browse.items : (transformResults ? transformResults(state.results) : state.results);
   const search = state.search;
   const breadcrumbs = state.browse.breadcrumbs;
   const pagination = state.browse.pagination;
@@ -565,7 +573,7 @@ export function ContentCombobox({
             <Stack gap={0} style={{ flex: 1, minWidth: 0 }}>
               <Group gap={4} wrap="nowrap">
                 <Text size="sm" truncate fw={isCurrent ? 600 : 500}>{item.title}</Text>
-                {childCount != null && (
+                {childCount != null && childCount > 0 && (
                   <Badge size="xs" variant="filled" color="gray" style={{ flexShrink: 0 }}>{childCount}</Badge>
                 )}
               </Group>
@@ -588,7 +596,7 @@ export function ContentCombobox({
                 Current
               </Badge>
             )}
-            <Badge size="xs" variant="light" color="gray" data-testid="combobox-source-badge">{(source ?? '?').toUpperCase()}</Badge>
+            <Badge size="xs" variant="light" color="gray" data-testid="combobox-source-badge">{onAction ? sentenceCase(source) : (source ?? '?').toUpperCase()}</Badge>
             {item.matchReason === 'id-lookup' && (
               <Badge
                 size="xs"
@@ -603,7 +611,7 @@ export function ContentCombobox({
             {container && !selectContainers && (
               <IconChevronRight size={16} color="var(--mantine-color-dimmed)" />
             )}
-            {container && selectContainers && (
+            {container && selectContainers && !onAction && (
               <ActionIcon
                 size="sm"
                 variant="subtle"
@@ -823,7 +831,17 @@ export function ContentCombobox({
           />
         )}
 
-        {!isBrowse && streamError && (
+        {!isBrowse && streamError && (quietErrors ? (
+          <div className="media-load-error" role="alert" data-testid="stream-global-error">
+            <span className="media-load-error__text">Couldn&apos;t load search results.</span>
+            <Button variant="default" size="md" className="media-load-error__retry" data-testid="stream-global-retry"
+              // Keep the input's editing session alive until the retry runs.
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => retrySource()}>
+              Try again
+            </Button>
+          </div>
+        ) : (
           <Group gap="xs" p="xs" data-testid="stream-global-error" aria-live="polite">
             <Text size="xs" c="red">{streamError.message}</Text>
             <button type="button" className="stream-status-retry-btn" data-testid="stream-global-retry"
@@ -833,7 +851,7 @@ export function ContentCombobox({
               Retry
             </button>
           </Group>
-        )}
+        ))}
 
         {/* D5 widening notice (Task 11 fix round): a search scoped to a narrow
             library (activeScope's parent — e.g. Music›Ambient) that settled

@@ -1,8 +1,11 @@
 import { test, expect } from '@playwright/test';
+import { markFirstUseDone } from './lib/firstUse.mjs';
+
+test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
 test.describe('MediaApp — Resume and Recents on Home', () => {
-  test('home shows the resume card when a session has been paused', async ({ page }) => {
-    await page.addInitScript(() => { if (!sessionStorage.getItem('cleared')) { localStorage.clear(); sessionStorage.setItem('cleared', '1'); } });
+  test('Home has no duplicate Resume card; the handle is the one place to resume', async ({ page }) => {
+    await page.addInitScript(() => { if (!sessionStorage.getItem('cleared')) { (() => { const k = 'media-app.first-use-done'; const v = localStorage.getItem(k); localStorage.clear(); if (v) localStorage.setItem(k, v); })(); sessionStorage.setItem('cleared', '1'); } });
     await page.goto('/media');
     // Play, then pause, to leave a paused session (ordinary input only).
     const search = page.getByRole('textbox', { name: 'Search media…' });
@@ -14,7 +17,7 @@ test.describe('MediaApp — Resume and Recents on Home', () => {
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('mini-toggle')).toHaveAccessibleName('Pause', { timeout: 30000 });
     await page.getByTestId('mini-toggle').click();
-    await expect(page.getByTestId('mini-toggle')).toHaveAccessibleName('Play');
+    await expect(page.getByTestId('mini-toggle')).toHaveAccessibleName('Resume');
 
     // Recent is the household's list (blocked by the acceptance server; answered here).
     await page.route('**/api/v1/media/household/recent*', route => route.fulfill({
@@ -24,7 +27,8 @@ test.describe('MediaApp — Resume and Recents on Home', () => {
     }));
     await page.getByTestId('app-nav-browse').click();
     await page.getByTestId('app-nav-home').click();
-    await expect(page.getByTestId('resume-card')).toBeVisible();
+    await expect(page.getByTestId('resume-card')).toHaveCount(0);
+    await expect(page.getByTestId('mini-toggle')).toHaveAccessibleName('Resume');
     await expect(page.getByTestId('home-row-recent')).toBeVisible({ timeout: 8000 });
   });
 });
@@ -67,7 +71,7 @@ test.describe('MediaApp — paused restore after reload', () => {
     await page.getByTestId('cast-target-checkbox-acceptance-media').check();
     await page.getByTestId('cast-target-chip').click();
     await expect(page.getByTestId('cast-popover')).toBeHidden();
-    const aim = page.getByRole('button', { name: /^Aim: Acceptance receiver/ });
+    const aim = page.getByRole('button', { name: /^Playing on Acceptance receiver/ });
     await expect(aim.first()).toBeVisible();
 
     // Still playing; let the durable ≥5s position cadence write the spot.
@@ -98,7 +102,7 @@ test.describe('MediaApp — paused restore after reload', () => {
     await expect(page.getByTestId('queue-panel').locator('.queue-item')).toHaveCount(2);
     await expect(page.getByTestId('queue-shuffle')).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByTestId('queue-repeat')).toHaveText('Repeat all');
-    await expect(page.getByRole('button', { name: /^Aim: Acceptance receiver/ }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Playing on Acceptance receiver/ }).first()).toBeVisible();
 
     // Play resumes at the restored spot.
     await page.getByTestId('np-toggle').click();
@@ -116,7 +120,7 @@ test.describe('MediaApp — paused restore after reload', () => {
     test(`[RELY.7a] a ${label} saved session is discarded safely`, async ({ page }) => {
       await page.addInitScript((value) => {
         if (!sessionStorage.getItem('seeded')) {
-          localStorage.clear();
+          (() => { const k = 'media-app.first-use-done'; const v = localStorage.getItem(k); localStorage.clear(); if (v) localStorage.setItem(k, v); })();
           localStorage.setItem('media-app.session', value);
           sessionStorage.setItem('seeded', '1');
         }

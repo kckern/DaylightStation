@@ -200,7 +200,7 @@ test('RELY.14a + HOUSE.4a: first use asks for a name once; names are unique, per
     const card = a.getByTestId('first-use-card');
     await expect(card).toBeVisible({ timeout: 60000 });
     await expect(a.getByTestId('first-use-name')).toHaveValue(/\S/); // a sensible default
-    await expect(a.getByTestId('first-use-aim')).toContainText('The aim label shows where Play sends things');
+    await expect(a.getByTestId('first-use-aim')).toContainText('Things you play go to the device shown here');
     await shot(a, 'first-use-phone');
     await a.getByTestId('first-use-name').fill(`Hall phone ${RUN}`);
     await a.getByTestId('first-use-save').click();

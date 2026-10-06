@@ -181,7 +181,7 @@ export function ResultRowActions({
  * @param {(item: object) => Array<{kind: string, label: string}>} [props.extraActions] - additive
  *   menu verbs, delivered through onAction({ kind, item }) (onAction contract only)
  */
-export function ResultRow({ item, title, subtitle, thumbnail, onTap, onPlayAll, onDetails, detailsTestId, onMore, onAction, testId, focusId, extraActions = null }) {
+export function ResultRow({ item, title, subtitle, thumbnail, leading = null, onTap, onPlayAll, onDetails, detailsTestId, onMore, onAction, testId, focusId, extraActions = null }) {
   const container = item ? isContainer(item) : false;
   const idPart = item?.id ?? 'row';
   const rowTestId = testId ?? `result-row-${idPart}`;
@@ -196,7 +196,9 @@ export function ResultRow({ item, title, subtitle, thumbnail, onTap, onPlayAll, 
         data-browse-focus-id={focusId}
         onClick={onTap}
       >
-        {thumbnail ? (
+        {leading ? (
+          <span className="media-result-thumb media-result-thumb--icon" aria-hidden="true">{leading}</span>
+        ) : thumbnail ? (
           <img className="media-result-thumb" src={thumbnail} alt={`${displayTitle} artwork`} />
         ) : (
           <span className="media-result-thumb media-result-thumb--placeholder" data-testid="result-artwork-placeholder" aria-label={`${displayTitle} artwork unavailable`}>

@@ -55,6 +55,9 @@ $amber-ink: #1a1300;
 }
 
 // ---- Dock (top bar) -------------------------------------------------------
+// One left edge: the destination control starts at the content gutter (past
+// the rail on tablet+), the search field and the right-hand controls follow.
+// Every control is the same 44 px tall.
 .media-dock {
   display: flex;
   align-items: center;
@@ -64,15 +67,33 @@ $amber-ink: #1a1300;
   min-height: var(--media-dock-h);
   flex-wrap: wrap;
   row-gap: var(--mantine-spacing-xs);
-  padding: 0 var(--mantine-spacing-sm);
-  background: var(--mantine-color-dark-6);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 6px var(--media-gutter);
+  background: var(--media-ink);
+  border-bottom: 1px solid var(--media-line);
   flex-shrink: 0;
+
+  @include tablet-up {
+    flex-wrap: nowrap;
+    padding-left: calc(var(--media-rail-w) + var(--media-gutter));
+  }
 
   .media-dock-search {
     flex: 1;
     min-width: 0;
     max-width: 560px;
+  }
+
+  .media-dock-destination {
+    // Phone: the destination takes the first row beside the gear.
+    flex: 1 1 0;
+    min-width: 0;
+    @include tablet-up { flex: 0 1 auto; }
+  }
+
+  // The gear always rides the right edge (beside the house indicator when it shows).
+  @include tablet-up {
+    > .mantine-ActionIcon-root { margin-left: auto; }
+    > .media-house-indicator + .mantine-ActionIcon-root { margin-left: 0; }
   }
 
   .media-dock-cluster {
@@ -81,6 +102,91 @@ $amber-ink: #1a1300;
     gap: var(--mantine-spacing-xs);
     margin-left: auto;
   }
+}
+
+// The destination control: "Playing on" over the device name, then a chevron.
+// The only amber in the header is the name; the control is a plain 44 px
+// target with a hairline border, never a filled shape.
+.media-destination {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--media-line);
+  border-radius: var(--mantine-radius-sm);
+  color: var(--media-muted);
+  @include media-focus-ring;
+
+  &:hover { border-color: var(--media-muted); }
+
+  .media-destination-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.2;
+    text-align: left;
+  }
+
+  .media-destination-prefix {
+    font-size: 0.8125rem;
+    font-weight: 400;
+    color: var(--media-muted);
+  }
+
+  .media-destination-name {
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: var(--media-accent);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.media-destination-anchor {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.media-first-use {
+  background: var(--media-surface);
+  border-color: var(--media-line);
+
+  // Phone: the dock wraps to two rows (destination, then the search launcher), so a
+  // popover hanging under the destination would cover search until answered. It
+  // docks above the handle instead — an overlay that leaves the header, the
+  // launcher and the page reachable.
+  @include mobile-only {
+    position: fixed !important;
+    top: auto !important;
+    left: var(--media-gutter) !important;
+    right: var(--media-gutter) !important;
+    width: auto !important;
+    bottom: calc(var(--media-tabbar-h, 56px) + var(--media-mini-h, 60px) + env(safe-area-inset-bottom, 0px) + 8px) !important;
+  }
+}
+
+// House indicator: hidden at 0 (FleetIndicator), "N playing" with a small dot.
+// Shown at every width; on tablet+ it rides the right edge beside the gear.
+.media-house-indicator.mantine-Button-root {
+  min-height: 44px;
+  @include tablet-up { margin-left: auto; }
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--media-text);
+}
+
+.media-house-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--media-muted);
+
+  &--playing { background: var(--mantine-color-green-5); }
 }
 
 // ---- Body: nav rail + canvas ---------------------------------------------
@@ -94,27 +200,37 @@ $amber-ink: #1a1300;
   flex: 1;
   min-width: 0;
   overflow-y: auto;
-  padding: var(--mantine-spacing-md);
+  // One left edge: the fixed gutter on both sides, everything inside aligns to it.
+  padding: var(--mantine-spacing-md) var(--media-gutter);
   -webkit-overflow-scrolling: touch;
-
-  @include desktop-up {
-    padding: var(--mantine-spacing-lg) var(--mantine-spacing-xl);
-  }
 }
 
 // Bound content width on very wide viewports: lists become unreadable ribbons
 // past ~900px. (Now Playing and Detail carry their own tighter caps.)
-.home-view,
 .browse-view,
 .fleet-view,
 .peek-panel {
   max-width: 900px;
-  margin: 0 auto;
+  margin: 0;
   width: 100%;
+}
+// Device cards are a grid, so the Devices view gets a wider cap than lists.
+.fleet-view { max-width: 1200px; }
+
+// The browse view's destination line sits on the content edge too.
+.browse-view .cast-destination-line { padding-left: 0; }
+
+// Home runs the full content width: rows share the left edge with the header.
+.home-view {
+  width: 100%;
+  min-width: 0;
 }
 
 // ---- Primary nav: rail (tablet+) / tab bar (mobile) ------------------------
+// Selected = text colour (+ a 3 px amber marker on the rail's left edge);
+// the others are muted. No filled shapes.
 .media-nav-item {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -124,15 +240,15 @@ $amber-ink: #1a1300;
   min-width: 48px;
   padding: 6px 8px;
   border-radius: var(--mantine-radius-sm);
-  color: var(--mantine-color-dark-1);
-  font-size: 12px;
-  transition: background 120ms ease, color 120ms ease;
+  color: var(--media-muted);
+  font-size: 0.8125rem;
+  transition: color var(--ds-motion-fast) var(--ds-motion-easing);
 
-  &:hover { background: var(--mantine-color-dark-5); color: var(--mantine-color-dark-0); }
+  &:hover { color: var(--media-text); }
 
   &--active {
-    color: var(--mantine-color-amber-5);
-    background: var(--mantine-color-dark-6);
+    color: var(--media-text);
+    font-weight: 600;
   }
 }
 
@@ -171,16 +287,23 @@ $amber-ink: #1a1300;
     flex-direction: column;
     align-items: stretch;
     gap: var(--mantine-spacing-xs);
-    width: 64px;
-    padding: var(--mantine-spacing-sm) 6px;
-    background: var(--mantine-color-dark-6);
-    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    width: var(--media-rail-w);
+    padding: var(--mantine-spacing-sm) 0;
+    background: var(--media-ink);
+    border-right: 1px solid var(--media-line);
     flex-shrink: 0;
-  }
 
-  @include desktop-up {
-    width: 88px;
-    .media-nav-label { font-size: 12px; }
+    // 3 px amber marker on the selected destination's left edge.
+    .media-nav-item { border-radius: 0; }
+    .media-nav-item--active::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 6px;
+      bottom: 6px;
+      width: 3px;
+      background: var(--media-accent);
+    }
   }
 }
 
@@ -190,11 +313,20 @@ $amber-ink: #1a1300;
   align-items: stretch;
   height: calc(var(--media-tabbar-h) + env(safe-area-inset-bottom, 0px));
   padding-bottom: env(safe-area-inset-bottom, 0px);
-  background: var(--mantine-color-dark-6);
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--media-ink);
+  border-top: 1px solid var(--media-line);
   flex-shrink: 0;
 
   .media-nav-item { flex: 1; border-radius: 0; }
+  .media-nav-item--active::before {
+    content: '';
+    position: absolute;
+    left: 20%;
+    right: 20%;
+    top: 0;
+    height: 3px;
+    background: var(--media-accent);
+  }
 
   @include tablet-up { display: none; }
 }
@@ -215,15 +347,18 @@ $amber-ink: #1a1300;
     display: flex;
     align-items: center;
     gap: var(--mantine-spacing-xs);
-    flex: 1 1 96px;
+    // Phone: the launcher is the dock's second row, full width; the gear
+    // (last child) rides the destination's row.
+    flex: 1 1 100%;
+    order: 3;
     min-width: 0;
     min-height: 44px;
     padding: 0 var(--mantine-spacing-sm);
-    background: var(--mantine-color-dark-5);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: var(--media-surface);
+    border: 1px solid var(--media-line);
     border-radius: var(--mantine-radius-sm);
-    color: var(--mantine-color-dark-1);
-    font-size: 14px;
+    color: var(--media-muted);
+    font-size: 0.9375rem;
     text-align: left;
     @include media-focus-ring;
 
@@ -251,6 +386,7 @@ $amber-ink: #1a1300;
   .media-dock .media-dock-cluster {
     display: none;
   }
+  .media-dock > :last-child { order: 2; }
 }
 
 // ---- Mini player (bottom bar, all viewports) -------------------------------
@@ -259,17 +395,15 @@ $amber-ink: #1a1300;
   align-items: center;
   gap: var(--mantine-spacing-sm);
   min-height: var(--media-mini-h);
-  padding: 6px var(--mantine-spacing-sm);
-  background: var(--mantine-color-dark-6);
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 6px var(--media-gutter);
+  // The handle bar is a raised surface (menus, popovers, the handle).
+  background: var(--media-surface);
+  border-top: 1px solid var(--media-line);
   flex-shrink: 0;
 
   // Now Playing has no nav tab; the mini player is its "you are here" light.
   &--active {
-    border-top-color: var(--mantine-color-amber-5);
-    background: var(--mantine-color-dark-5);
-
-    .mini-player-title { color: var(--mantine-color-amber-5); }
+    border-top-color: var(--media-muted);
   }
 
   .mini-player-thumb {
@@ -292,7 +426,7 @@ $amber-ink: #1a1300;
     cursor: pointer;
     display: block;
 
-    &:hover { border-color: var(--mantine-color-amber-5); }
+    &:hover { border-color: var(--media-text); }
 
     .mini-player-video-dock-host {
       width: 100%;
@@ -300,6 +434,13 @@ $amber-ink: #1a1300;
       // Clicks fall through to the wrapping button so the tile always promotes,
       // even when the pointer is over the portaled <video>.
       pointer-events: none;
+
+      // The poster sits behind the video until frames arrive (no black box).
+      &.mini-player-video-dock-host--poster {
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+      }
 
       // The bridge portals its host node in here. Without an explicit size the
       // host is height:auto, and the Player's absolutely positioned <video>
@@ -321,13 +462,31 @@ $amber-ink: #1a1300;
     display: flex;
     align-items: center;
     gap: var(--mantine-spacing-xs);
-    color: var(--mantine-color-dark-0);
+    color: var(--media-text);
     font-weight: 600;
-    transition: color 120ms ease;
 
-    &:hover .mini-player-title-text { color: var(--mantine-color-amber-5); }
+    &:hover .mini-player-title-text { text-decoration: underline; }
+
+    // What is there (art is beside it): the item, and in words what it is doing.
+    .mini-player-title-stack {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      line-height: 1.3;
+    }
 
     .mini-player-title-text {
+      font-size: 0.9375rem;
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .mini-player-state {
+      font-size: 0.8125rem;
+      font-weight: 400;
+      color: var(--media-muted);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -335,12 +494,9 @@ $amber-ink: #1a1300;
 
     .mini-queue-count {
       flex-shrink: 0;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--mantine-color-amber-5);
-      background: var(--mantine-color-dark-5);
-      border-radius: 999px;
-      padding: 2px 8px;
+      font-size: 0.8125rem;
+      font-weight: 400;
+      color: var(--media-muted);
     }
   }
 
@@ -369,7 +525,8 @@ $amber-ink: #1a1300;
 // ---- Now Playing ------------------------------------------------------------
 .now-playing-view {
   max-width: 760px;
-  margin: 0 auto;
+  // One left edge, like every other view.
+  margin: 0;
   width: 100%;
 
   .now-playing-toolbar {
@@ -437,7 +594,7 @@ $amber-ink: #1a1300;
 
     &--current {
       background: var(--mantine-color-dark-5);
-      .queue-item-title { color: var(--mantine-color-amber-5); }
+      .queue-item-title { color: var(--media-text); font-weight: 600; }
     }
 
     .queue-item-title {
@@ -466,27 +623,6 @@ $amber-ink: #1a1300;
   .queue-empty { padding: var(--mantine-spacing-md) 0; }
 }
 
-// ---- Home: resume ----------------------------------------------------------
-.resume-card {
-  display: flex;
-  align-items: center;
-  gap: var(--mantine-spacing-md);
-  padding: var(--mantine-spacing-md);
-  background: var(--mantine-color-dark-5);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: var(--mantine-radius-md);
-
-  .resume-card-thumb {
-    width: 72px;
-    height: 72px;
-    object-fit: cover;
-    border-radius: var(--mantine-radius-sm);
-  }
-
-  .resume-card-body { flex: 1; min-width: 0; }
-  .resume-card-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-}
-
 // ---- Search bar + dropdown ---------------------------------------------------
 .media-search-bar {
   position: relative;
@@ -500,23 +636,9 @@ $amber-ink: #1a1300;
     gap: var(--mantine-spacing-xs);
     min-width: 0;
 
-    // DestinationLine is full width when it owns a row (SearchMode and
-    // browse). In this three-control dock row it must share space with the
-    // scope scroller and the actual query field instead of consuming the
-    // field's flex share.
-    .cast-destination-line {
-      flex: 0 1 180px;
-      width: auto;
-      min-width: 0;
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-    }
-
     .media-scope-chips {
-      flex: 0 1 150px;
+      flex: 0 0 auto;
       min-width: 0;
-      overflow: hidden;
     }
   }
 
@@ -532,10 +654,6 @@ $amber-ink: #1a1300;
   @media (min-width: 1100px) {
     max-width: 920px;
 
-    .media-search-controls {
-      .cast-destination-line { flex-basis: 280px; }
-      .media-scope-chips { flex-basis: 300px; }
-    }
     .media-search-input-wrap { flex-basis: 260px; }
   }
 }
@@ -549,6 +667,9 @@ $amber-ink: #1a1300;
 // every consumer in ContentCombobox.scss; this only widens the dock's.
 .media-search-dropdown {
   min-width: min(520px, calc(100vw - 32px));
+
+  // Source and state badges read in sentence case ("Plex"), never shouting capitals.
+  .mantine-Badge-root { text-transform: none; }
 }
 
 // Portrait/mobile note (spec D1-D2, Task 13): the old fix-in-place here was
@@ -587,6 +708,22 @@ $amber-ink: #1a1300;
   }
 }
 
+// ---- Load errors: one quiet line + a normal secondary button -----------------
+.media-load-error {
+  // The message in a fixed column, so every "Try again" lands on one x.
+  display: grid;
+  grid-template-columns: minmax(0, 20rem) auto;
+  justify-content: start;
+  align-items: center;
+  gap: var(--mantine-spacing-sm) var(--mantine-spacing-md);
+  @include mobile-only { grid-template-columns: minmax(0, 1fr); justify-items: start; }
+  padding: var(--mantine-spacing-sm) 0;
+  color: var(--media-muted);
+  font-size: 0.9375rem;
+
+  &__retry { min-height: 44px; flex: 0 0 auto; width: auto; }
+}
+
 .search-state {
   padding: var(--mantine-spacing-md);
   color: var(--mantine-color-dark-1);
@@ -597,11 +734,10 @@ $amber-ink: #1a1300;
 
 .search-deeplink-suggestion {
   padding: var(--mantine-spacing-xs) 0;
-  code { color: var(--mantine-color-amber-5); }
+  code { color: var(--media-muted); }
 }
 
-.search-deeplink-btn,
-.search-retry-btn {
+.search-deeplink-btn {
   background: var(--mantine-color-amber-5);
   color: $amber-ink;
   border: none;
@@ -649,6 +785,13 @@ $amber-ink: #1a1300;
     gap: var(--mantine-spacing-sm);
     padding: 6px var(--mantine-spacing-xs);
     min-height: 56px;
+    // The tap target is a real <button>: strip the UA's grey face.
+    background: none;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
   }
 
   .media-result-thumb {
@@ -658,6 +801,22 @@ $amber-ink: #1a1300;
     border-radius: var(--mantine-radius-sm);
     background: var(--mantine-color-dark-7);
     flex-shrink: 0;
+
+    // No artwork: a quiet centred initial, never a letter stuck to the corner.
+    &--icon {
+      display: grid;
+      place-items: center;
+      color: var(--media-muted);
+      background: var(--media-surface);
+    }
+
+    &--placeholder {
+      display: grid;
+      place-items: center;
+      color: var(--media-muted);
+      font-weight: 600;
+      background: var(--media-surface);
+    }
   }
 
   .media-result-text {
@@ -672,14 +831,12 @@ $amber-ink: #1a1300;
       padding: 0;
       color: var(--mantine-color-dark-0);
       font-weight: 600;
-      font-size: 14px;
+      font-size: 0.9375rem;
       text-align: left;
       cursor: pointer;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-
-      &:hover { color: var(--mantine-color-amber-5); }
     }
 
     .media-result-subtitle {
@@ -689,8 +846,8 @@ $amber-ink: #1a1300;
       // centred subtitle (measured at 360px: title glyphs at x=12, subtitle
       // glyphs at x=154.64).
       text-align: left;
-      color: var(--mantine-color-dark-1);
-      font-size: 12px;
+      color: var(--media-muted);
+      font-size: 0.8125rem;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -724,7 +881,7 @@ $amber-ink: #1a1300;
       gap: 2px;
 
       .result-peek-title { font-weight: 600; color: var(--mantine-color-dark-0); }
-      code { color: var(--mantine-color-amber-5); font-size: 12px; }
+      code { color: var(--media-muted); font-size: 12px; }
     }
   }
 }
@@ -769,27 +926,32 @@ $amber-ink: #1a1300;
   .browse-crumb {
     background: none;
     border: none;
-    color: var(--mantine-color-amber-5);
+    color: var(--media-muted);
     cursor: pointer;
-    font-size: 14px;
+    font-size: 0.9375rem;
     display: inline-flex;
     align-items: center;
+    gap: 4px;
     min-height: 44px;
     min-width: 44px;
     padding: 0 8px;
     border-radius: var(--mantine-radius-sm);
-    transition: color 120ms ease;
+    transition: color var(--ds-motion-fast) var(--ds-motion-easing);
+    @include media-focus-ring;
 
-    &:hover { color: var(--mantine-color-amber-4); text-decoration: underline; }
+    &:hover { color: var(--media-text); text-decoration: underline; }
 
     &--current {
-      color: var(--mantine-color-dark-1);
+      color: var(--media-text);
+      font-weight: 600;
       cursor: default;
-      &:hover { color: var(--mantine-color-dark-1); text-decoration: none; }
+      &:hover { color: var(--media-text); text-decoration: none; }
     }
   }
 
   .browse-crumb-sep { color: var(--mantine-color-dark-3); }
+  // The first crumb's text, not its padding, sits on the content edge.
+  .browse-crumb:first-child { margin-left: -8px; }
 }
 
 // Container dispatch header (Task 15, spec D6 addendum): a container tap
@@ -801,8 +963,8 @@ $amber-ink: #1a1300;
   flex-direction: column;
   gap: 6px;
   padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
-  background: var(--mantine-color-dark-6);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--media-surface);
+  border: 1px solid var(--media-line);
   border-radius: var(--mantine-radius-md);
 }
 
@@ -820,18 +982,18 @@ $amber-ink: #1a1300;
   flex: 1 1 0;
   min-width: 0;
   min-height: 44px;
-  background: var(--mantine-color-dark-5);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+  border: 1px solid var(--media-line);
   border-radius: var(--mantine-radius-sm);
-  color: var(--mantine-color-dark-0);
+  color: var(--media-text);
   font: inherit;
-  font-size: 13px;
+  font-size: 0.9375rem;
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
-  transition: background 120ms ease;
+  transition: border-color var(--ds-motion-fast) var(--ds-motion-easing);
 
-  &:hover { background: var(--mantine-color-dark-4); }
+  &:hover { border-color: var(--media-muted); }
   @include media-focus-ring;
 
   &--primary {
@@ -855,7 +1017,7 @@ $amber-ink: #1a1300;
   gap: var(--mantine-spacing-sm);
   min-height: 56px;
   border-radius: var(--mantine-radius-sm);
-  padding: 0 var(--mantine-spacing-xs);
+  padding: 0;
 
   &:hover { background: var(--mantine-color-dark-5); }
 
@@ -881,6 +1043,9 @@ $amber-ink: #1a1300;
     }
   }
 
+  // Browse rows sit on the content edge (no inner padding).
+  .result-row-main { padding-left: 0; }
+
   .browse-row-actions {
     display: flex;
     gap: 4px;
@@ -904,8 +1069,8 @@ $amber-ink: #1a1300;
   grid-template-columns: 1fr;
   gap: var(--mantine-spacing-sm);
 
-  @include tablet-up { grid-template-columns: repeat(2, 1fr); }
-  @include desktop-up { grid-template-columns: repeat(3, 1fr); }
+  @include tablet-up { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  @include desktop-up { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 .fleet-card {
@@ -951,6 +1116,7 @@ $amber-ink: #1a1300;
         white-space: nowrap;
       }
 
+      .fleet-card-this-device,
       .fleet-card-location {
         font-size: 12px;
         color: var(--mantine-color-dark-1);
@@ -1021,8 +1187,6 @@ $amber-ink: #1a1300;
 
   .picker-section-label {
     font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
     color: var(--mantine-color-dark-1);
     margin-bottom: 4px;
     font-weight: 600;
@@ -1078,7 +1242,7 @@ $amber-ink: #1a1300;
     cursor: pointer;
     font-size: 14px;
 
-    &:hover { color: var(--mantine-color-amber-5); }
+    &:hover { color: var(--media-text); }
   }
 }
 
@@ -1216,4 +1380,12 @@ $amber-ink: #1a1300;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+}
+
+// A source that did not answer inside a search: its retry is a real 44 px target.
+.media-search-dropdown .stream-status-retry-btn,
+.media-shell .stream-status-retry-btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 var(--mantine-spacing-xs);
 }

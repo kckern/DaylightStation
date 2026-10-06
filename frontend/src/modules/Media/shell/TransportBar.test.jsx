@@ -139,13 +139,10 @@ describe('TransportBar', () => {
     expect(transport.seekRel).not.toHaveBeenCalled();
   });
 
-  it('toggles shuffle and cycles repeat through the session config', () => {
+  it('does not repeat Shuffle and Repeat: the queue header owns them', () => {
     render(<TransportBar target="local" />);
-    fireEvent.click(screen.getByTestId('np-shuffle'));
-    expect(config.setShuffle).toHaveBeenCalledWith(true);
-    expect(screen.getByTestId('np-shuffle')).toHaveAttribute('aria-pressed', 'false');
-    fireEvent.click(screen.getByTestId('np-repeat'));
-    expect(config.setRepeat).toHaveBeenCalledWith('all');
+    expect(screen.queryByTestId('np-shuffle')).toBeNull();
+    expect(screen.queryByTestId('np-repeat')).toBeNull();
   });
 
   it('sets volume through config.setVolume', () => {
@@ -258,7 +255,7 @@ describe('TransportBar', () => {
 
   it('labels every control for assistive tech', () => {
     render(<TransportBar target="local" />);
-    for (const label of ['Previous', 'Next', 'Pause', 'Back 10 seconds', 'Forward 10 seconds', 'Shuffle', 'Stop', 'Volume']) {
+    for (const label of ['Previous', 'Next', 'Pause', 'Back 10 seconds', 'Forward 10 seconds', 'Stop', 'Volume']) {
       expect(screen.getByLabelText(label)).toBeInTheDocument();
     }
   });

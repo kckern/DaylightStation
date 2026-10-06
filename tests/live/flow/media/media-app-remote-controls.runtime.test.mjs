@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { markFirstUseDone } from './lib/firstUse.mjs';
+
+test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
 test.use({ viewport: { width: 1440, height: 900 }, trace: 'retain-on-failure' });
 
@@ -102,7 +105,7 @@ async function startArrivalJourney(context, sender, {
     await expect(sender.getByTestId('destination-sheet')).toBeVisible();
     await sender.getByTestId('picker-device-acceptance-media').click();
     await sender.getByTestId('picker-submit').click();
-    await expect(searchMode.getByTestId('destination-line-name')).toHaveText(/^Aim: Acceptance receiver/);
+    await expect(searchMode.getByTestId('destination-line-name')).toHaveText(/^Playing on Acceptance receiver/);
     searchInput = sender.getByTestId('search-mode-input');
     result = sender.getByTestId(`search-mode-result-${media.contentId}`);
   } else {
@@ -295,7 +298,7 @@ async function runSteerConfirmationJourney(context, sender, {
       await searchMode.getByTestId('destination-line').click();
       await expect(sender.getByTestId('destination-sheet')).toBeVisible();
       await sender.getByTestId('picker-this-device').click();
-      await expect(searchMode.getByTestId('destination-line-name')).toHaveText(/^Aim: This device/);
+      await expect(searchMode.getByTestId('destination-line-name')).toHaveText(/^Playing on This device/);
       return;
     }
     await sender.getByTestId('cast-target-chip').click();

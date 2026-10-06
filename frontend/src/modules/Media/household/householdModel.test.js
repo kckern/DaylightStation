@@ -23,7 +23,7 @@ describe('createScreenNamer', () => {
   });
   it('calls this device "this device" and never shows a raw id', () => {
     expect(name('browser:me')).toBe('this device');
-    expect(name('browser:unknown')).toBe('another browser');
+    expect(name('browser:unknown')).toBe('a browser');
     expect(name('fleet:den-tv')).toBe('Den TV');
     expect(name(null)).toBeNull();
   });

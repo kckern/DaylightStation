@@ -19,6 +19,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 // ── useListBrowse: control items/loading directly, no network ──
+let navBack = 'Devices';
 let browseState = { items: [], total: 0, loading: false, error: null };
 const loadMore = vi.fn();
 vi.mock('./useListBrowse.js', () => ({
@@ -38,7 +39,7 @@ const navPush = vi.fn();
 const navPop = vi.fn();
 const navReplace = vi.fn();
 vi.mock('../shell/NavProvider.jsx', () => ({
-  useNav: () => ({ push: navPush, pop: navPop, replace: navReplace, depth: 2, backDestination: 'Home' }),
+  useNav: () => ({ push: navPush, pop: navPop, replace: navReplace, depth: 2, backDestination: navBack }),
 }));
 
 // ── useContentDispatch: the header's ▶/🔀/+ verbs — this suite asserts
@@ -98,6 +99,7 @@ beforeEach(() => {
   playContainerAsQueueMock.mockClear();
   addContainerToQueueMock.mockClear();
   dispatchLeafVerbMock.mockClear();
+  navBack = 'Devices';
   fleetDevices = [];
   localStorage.clear();
 });
@@ -105,9 +107,15 @@ beforeEach(() => {
 describe('BrowseView — container dispatch header (Task 15)', () => {
   it('names the actual prior area on its breadcrumb Back control', () => {
     renderBrowse();
-    expect(screen.getByTestId('browse-crumb-back')).toHaveTextContent('← Home');
+    expect(screen.getByTestId('browse-crumb-back')).toHaveTextContent('Devices');
     fireEvent.click(screen.getByTestId('browse-crumb-back'));
     expect(navPop).toHaveBeenCalledTimes(1);
+  });
+  it('does not repeat Home: when Back would land on Home only the Home crumb shows', () => {
+    navBack = 'Home';
+    renderBrowse();
+    expect(screen.queryByTestId('browse-crumb-back')).not.toBeInTheDocument();
+    expect(screen.getByTestId('browse-crumb-home')).toBeInTheDocument();
   });
   const containerItem = { id: 'plex:663508', title: 'Tuttle Twins', type: 'show' };
 
