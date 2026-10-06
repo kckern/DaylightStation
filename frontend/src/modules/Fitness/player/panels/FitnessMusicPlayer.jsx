@@ -498,7 +498,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     if (!firstPlaylistId) return;
     hasAutoSelectedRef.current = true;
     // Selecting a default playlist is automatic, not a manual request to keep
-    // music on after leaving the standalone chart. The provider owns enabling.
+    // music enabled. The provider owns the playback policy.
     if (setGlobalPlaylistId) {
       setGlobalPlaylistId(firstPlaylistId);
     }

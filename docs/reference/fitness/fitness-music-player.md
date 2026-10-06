@@ -178,7 +178,7 @@ The playlist picker is rendered **outside** the collapsible panel. Opening it ca
 
 If the user lands on the fitness session with `selectedPlaylistId === null`, the component picks the first available playlist from `plexConfig.music_playlists`. The `hasAutoSelectedRef` guard ensures this fires exactly once per mount. Selecting this default never creates a manual music override.
 
-The standalone chart enables music only for its mounted lifetime. For a queued video, the provider derives automatic music synchronously from that video's configured `NoMusic` label; changing to an untagged video clears automatic music immediately. Explicit user music overrides still take precedence. The `fitness.music.decision` event records previous/current content IDs, labels, automatic/manual state, effective enablement, and the decision source (`standalone-chart`, `media-label`, or `manual`).
+The standalone chart and any screen layout containing `fitness:chart` are silent by default; music starts there only after an explicit user choice. Chart screens are excluded from the separate ambient menu-music controller as well as from the in-session music policy. For a queued video, the provider derives automatic music synchronously from that video's configured `NoMusic` label; changing to an untagged video clears automatic music immediately. Explicit user music overrides still take precedence. The `fitness.music.decision` event records previous/current content IDs, labels, automatic/manual state, effective enablement, and the decision source (`media-label` or `manual`).
 
 ## Data Sources
 

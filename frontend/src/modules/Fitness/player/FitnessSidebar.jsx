@@ -38,7 +38,6 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
     assignGuestToDevice,
     sidebarSizeMode,
     musicEnabled,
-    setStandaloneMusicEnabled,
     setMusicOverride,
     replacedPrimaryPool,
     preferredMicrophoneId,
@@ -47,12 +46,6 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
     requestEndSession
   } = fitnessContext;
   const menuOpen = menuState.open;
-
-  React.useEffect(() => {
-    if (mode !== 'cam') return undefined;
-    setStandaloneMusicEnabled?.(true);
-    return () => setStandaloneMusicEnabled?.(false);
-  }, [mode, setStandaloneMusicEnabled]);
 
   const [endingSession, setEndingSession] = useState(false);
   const [endSessionError, setEndSessionError] = useState(null);
@@ -253,10 +246,9 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
         </div>
       )}
 
-      {/* Music Player — always visible on the standalone chart view (mode='cam')
-          since there's no video to mix with; gated by user's musicEnabled
-          preference in full-player mode. */}
-      {(musicEnabled || mode === 'cam') && (
+      {/* Music is opt-in on the standalone chart and automatic only for media
+          explicitly configured without its own soundtrack. */}
+      {musicEnabled && (
         <div className="fitness-sidebar-music">
           <FitnessMusicPlayer
             ref={musicPlayerRef}

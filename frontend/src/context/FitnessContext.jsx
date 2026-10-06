@@ -174,7 +174,6 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // UI State
   const [selectedPlaylistId, setSelectedPlaylistId] = useState(null);
   const [musicAutoEnabledState, setMusicAutoEnabledState] = useState(false);
-  const [standaloneMusicEnabled, setStandaloneMusicEnabled] = useState(false);
   const [musicOverride, setMusicOverride] = useState(null);
   const [lastPlaylistId, setLastPlaylistId] = useState(null);
   const [videoPlayerPaused, setVideoPlayerPaused] = useState(false);
@@ -1225,7 +1224,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const mediaMusicAutoEnabled = fitnessPlayQueue?.length
     ? queuedMusicLabels.some(label => normalizeLabelList(nomusicLabels).includes(label))
     : musicAutoEnabledState;
-  const musicAutoEnabled = standaloneMusicEnabled || mediaMusicAutoEnabled;
+  const musicAutoEnabled = mediaMusicAutoEnabled;
   const musicEnabled = musicOverride !== null ? musicOverride : musicAutoEnabled;
 
   React.useEffect(() => {
@@ -1273,7 +1272,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     const decision = {
       contentId: item ? getItemIdentifier(item) : null,
       labels: normalizeLabelList(item?.labels),
-      source: musicOverride !== null ? 'manual' : standaloneMusicEnabled ? 'standalone-chart' : 'media-label',
+      source: musicOverride !== null ? 'manual' : 'media-label',
       autoEnabled: musicAutoEnabled,
       manualOverride: musicOverride,
       enabled: musicEnabled,
@@ -1282,7 +1281,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     if (JSON.stringify(previous) === JSON.stringify(decision)) return;
     previousMusicDecisionRef.current = decision;
     getLogger().info('fitness.music.decision', { previous, current: decision });
-  }, [fitnessPlayQueue, standaloneMusicEnabled, musicAutoEnabled, musicOverride, musicEnabled]);
+  }, [fitnessPlayQueue, musicAutoEnabled, musicOverride, musicEnabled]);
 
   // Governance Media Update
   const setGovernanceMedia = React.useCallback((input) => {
@@ -2994,7 +2993,6 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     nomusicLabels,
     musicEnabled,
     setMusicAutoEnabled,
-    setStandaloneMusicEnabled,
     setMusicOverride: setMusicOverrideState,
     selectedPlaylistId,
     setSelectedPlaylistId,
