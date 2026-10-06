@@ -1,6 +1,6 @@
 # Media App redesign — separation of concerns in the `/media` UX
 
-**Status:** Remaining-P0 Tasks 1–6 are in production (Task 6 at `757102abb`). Task 7 (one voice for outcomes, retry, paused restore, itemised Start fresh) was implemented on branch `media/p0-task7` on 2026-10-02 and extends the P0 manifest to 31 stories / 69 criteria; it is not merged or deployed by this task (the orchestrator merges and deploys). Task 8 (accessibility, size parity, final certification) is not started. P1/P2 are not started.
+**Status:** Live on `main` except Task 8's branch. Remaining-P0 Tasks 1–7, the P1 backend and frontend batches A/B/C, and the P2 batch D are merged to `main` (last merge `f42eef7fc`). Task 8 — accessibility and size parity, TV input, tap budgets, persona walkthroughs, deletions, docs end state — is on branch `fix/media-task8` awaiting the orchestrator's merge and deploy gate; with it the P0 manifest stands at **59 stories / 147 criteria** (`validateP0Manifest`), the stable core still 11/11. Open items O1–O4 are closed (below).
 
 **Started:** 2026-09-14 · **Planning baseline:** `b2ff8a460` (the code the baseline audit describes)
 **Authorised by:** the owner, 2026-09-14. They accepted the requirements and their P0/P1/P2 phasing, chose to evolve the app in place, and gave the implementer authority to commit to `main` and deploy only when the deploy gate is clear.
@@ -29,6 +29,7 @@ The requirements define the target behavior. Each story must be built and verifi
 | Design | Complete: audit → ideal model → adversarial review → owner triage → requirements → handoff |
 | Owner decisions | All recorded (Q1–Q11; 47 of 50 review proposals accepted) |
 | Reference docs | `docs/reference/media/media-app.md` describes the shipped fleet, browser control and Browse paging/Back behaviour, and (Task 7) the outcome system and keeping your place; `media-app-technical.md` §4.7, §9.14, §10.1, §11.3 carry the Task 7 contracts |
+| Task 8 (close-out) | Measured and repaired on the running app: 44 px floor in the theme and handle/queue/tray/picker/breadcrumb, `/` really focuses search (it targeted a testid that did not exist), reduced motion honoured, large text wraps the dock, phone handle gets its title back, Search on the phone tab bar and a tappable aim on Now Playing (one-thumb reach), TV prompts operable with D-pad + OK. New journeys: accessibility, tap budgets, personas, screen TV input. |
 | Implementation | Merged to `main`; the working branches were deleted and archived as `archive/media/*-2026-09-29` tags (see `docs/_archive/deleted-branches.md`). Tasks 7–8 (outcomes/retry/paused restore; accessibility + final certification) are deferred with their briefs |
 
 ## Where everything lives
@@ -121,34 +122,51 @@ Update a row when its step lands: date, commit, tests, deploy, and notes (includ
 | P0 · 4 | One search, browse | RQ-FIND-01–08 | Complete (partial criteria) | `4d23d766a` | Task 4. |
 | P0 · 5 | One handle, one set of controls | RQ-STEER-01–03, 05–10, 15–18 | Complete (partial criteria) | `7c3031367` | Task 5. |
 | P0 · 6 | House view, browsers as screens, origin attribution, minimum naming | RQ-HOUSE-01–03, 05; RQ-AUTO-01, 03, 04; O6 | Complete | `757102abb` | Task 6 (salvaged 2026-09-28/29), in production; P0 manifest 25 stories / 54 criteria. Promoted only HOUSE.2a/AC3, HOUSE.3a/AC1+AC3, HOUSE.4a/AC2+AC4, and AUTO.3a/AC1+AC2. AUTO.1a/1b/2a, unique-name history/warnings, Move here, and whole-house reconnect acceptance remain unclaimed. |
-| P0 · 7 | One voice for outcomes | RQ-RELY-01–03, 05, 06 | Implemented, not merged | branch `media/p0-task7` | Task 7. Promoted RELY.2a/AC2, RELY.3a/AC1–AC4, RELY.5a/AC1–AC3, RELY.6a/AC1 on exact-SHA runtime. RELY.5a follows the 2026-10-03 ruling: refused files are waited out for 60 s in Media (waiting notice, Skip now), then skipped as "file unavailable", with a storm guard; a Player hang on readable-but-unplayable streams was found and fixed. RELY.1a, RELY.2a/AC1+AC3, RELY.6a/AC2+AC3 have unit evidence only (see ledger). |
-| P0 · 8 | Keep your place, orientation | RQ-RELY-07, 09–11 | Implemented, not merged | branch `media/p0-task7` | Task 7: RELY.7a/AC1, AC2, AC5 and RELY.8a/AC1–AC3 promoted. RELY.9a/RELY.10a were already accepted (`ee0e38db9`). RELY.7a/AC3 (power cut) is P1; AC4 (reconnecting note) is unit-only. |
-| P0 · 9 | Comfortable use, device-size parity | RQ-RELY-13–15; NF-A11Y; NF-DEV | Not started | — | |
-| P0 · 10 | Close-out: tap budgets, persona walkthroughs, deletions, reference docs | NF-TAP | Not started | — | |
-| P1 | Household list and per-screen spots; favourites and removal; undo and Put it back; screen notes; Add to this queue; sleep timer; pause all; queue end and next episode; several-screen aim; move between screens; lock-screen controls; naming part 2 and "started by"; power-cut survival; first use; add-only | See handoff §6 | Not started | — | |
+| P0 · 7 | One voice for outcomes | RQ-RELY-01–03, 05, 06 | Complete | `69a780e83` (merge) | Task 7. Promoted RELY.2a/AC2, RELY.3a/AC1–AC4, RELY.5a/AC1–AC3, RELY.6a/AC1 on exact-SHA runtime. |
+| P0 · 8 | Keep your place, orientation | RQ-RELY-07, 09–11 | Complete | `69a780e83` (merge) | Task 7: RELY.7a/AC1, AC2, AC5 and RELY.8a/AC1–AC3 promoted; RELY.9a/RELY.10a were already accepted. |
+| P0 · 9 | Comfortable use, device-size parity | RQ-RELY-13–15; NF-A11Y; NF-DEV | Complete on branch `fix/media-task8` | see ledger run `TASK-8-CLOSEOUT` | Task 8. Promoted RELY.11a/AC1–AC3, RELY.12a/AC1–AC2, RELY.13a/AC1–AC2, RELY.14a/AC3 on exact-SHA runtime at 390/820/1440 (and 360). Gamepad is not added to /media (arcade menu only). |
+| P0 · 10 | Close-out: tap budgets, persona walkthroughs, deletions, reference docs | NF-TAP | Complete on branch `fix/media-task8` | see ledger run `TASK-8-CLOSEOUT` | Tap budgets measured by the page (NF-TAP-01, 02, 04, 05, 06, 08, 09 pass; 07 is the Home card's single Move here, 03 and 10 not separately counted); six persona walkthroughs at phone and laptop with two virtual screens; every candidate component for deletion still has live callers, only the dead `searchStates` went; requirements promoted to the reference doc. |
+| P1 | Household list and per-screen spots; favourites and removal; undo and Put it back; screen notes; Add to this queue; sleep timer; pause all; queue end and next episode; several-screen aim; move between screens; lock-screen controls; naming part 2 and "started by" | See handoff §6 | Complete (partial criteria) | `ef9e32348`, `8fad15e7e`, `45f0580d3`, `f42eef7fc` (merges) | Batches A, B, C and the screen-side capabilities; criteria without exact-SHA runtime evidence stay Partial in the ledger. |
 | P1 · screen | Screen player capabilities: sleep timer, Add only, end of queue (stop/repeat/similar per revised O2), next-episode countdown + stop after this one, screen notes + Put it back, power-cut survival, start status to everyone | RQ-STEER-12, 19, 20, 21; RQ-PLAY-10; RQ-RELY-08; RQ-HOUSE-04 | Built on `media/p1-screen`, not merged | see branch | Screen + backend + contracts done (tech doc §4.9–4.10, §6.2.6–6.2.7, §6.6, §9.14–9.15). Media frontend controls/house-view wiring is the next batch. 7/7 browser journeys pass on the virtual receiver (`tests/live/flow/media/screen-session-controls.runtime.test.mjs`). |
 | P1/P2 · FE-A | Frontend batch A — home and items: start-page suggestions (FIND.7a), household recent (FIND.9a), carry on + Now on/Move here (FIND.10a), Played earlier in every queue (FIND.11a), favourites (FIND.12a/b), remove from household list with Undo (FIND.13a), saved spots + Start over (PLAY.4a), play/log origin | RQ-FIND-11–17; RQ-PLAY-08/09 | Built on `media/fe-home`, not merged | branch `media/fe-home` | Promoted 21 criteria on exact-SHA runtime (`HOUSEHOLD-HOME`, `media-app-household-home.runtime.test.mjs` 18/18); server-rule criteria FIND.7a/AC3, FIND.10a/AC5+AC7, FIND.11a/AC2, FIND.12a/AC3, FIND.13a/AC2 are Partial (backend tests). Client contract: tech doc §2.10. |
-| P2 | Suggestions; played earlier; show briefly; music behind a slideshow; turn screen off; subtitles and audio language; screen admin; routine history; line up screens | See handoff §7 | Not started | — | |
+| P2 | Suggestions; played earlier; show briefly; music behind a slideshow; turn screen off; subtitles and audio language; screen admin; routine history; line up screens | See handoff §7 | Complete (partial criteria) | `14d082b41`, `74baf4c6f` (merges), batches A/B/C | Batch D plus the P2 items of A–C. |
+
+## Tap budgets (NF-TAP), measured
+
+Counted by the page itself (trusted primary `pointerdown` from a settled state), not by the test, on the compiled exact source `ddfe8f7db`, at phone (390) and laptop (1440) — `media-app-p0-personas.runtime.test.mjs`. Typing is not a tap; opening the search surface is setup.
+
+| Budget | Path | Requirement | Measured |
+|---|---|---|---|
+| NF-TAP-01 | A name typed → a playable item playing at the aim | 1 | **1** |
+| NF-TAP-02 | A name typed → a collection started via its inline Play | 1 | **1** |
+| NF-TAP-04 | Open the queue of the playback being held, from anywhere | 1 | **1** |
+| NF-TAP-05 | Add a search result to the aim's queue (⋯ → Add to queue) | 2 | **2** |
+| NF-TAP-06 | Aim back at this device (aim line → This device) | 2 | **2** |
+| NF-TAP-08 | Pause all screens (house menu → Pause all) | 2 | **2** |
+| NF-TAP-09 | Put a change back (Undo on the confirmation) | 1 | **1** |
+| NF-TAP-07 | Move a screen's playback to this device | 2 | 1 by construction: Home's "Now on …" card carries Move here (`media-app-household-home` journey); not separately counted |
+| NF-TAP-10 | Send one item to a screen other than the aim (⋯ → Play on… → screen → send) | 3 | **4 — over budget.** The picker keeps a confirm step because it carries the move/keep-playing-here choice and the busy-screen warning. Making a single-screen tap with nothing playing here send at once would meet the budget but changes the picker's contract and six journeys; left for an owner ruling rather than redesigned in the close-out. |
+| NF-TAP-03 | Pause the screen this device last sent to, from anywhere | 1 | Not counted by this task |
 
 ## Open items
 
-| # | Item | Waiting on |
+All closed; the rulings are recorded in the reference requirements §10.
+
+| # | Item | Ruling |
 |---|---|---|
-| O1 | Undo while a far screen is still starting, and undo on live items (left open by rejecting R12) | **Closed 2026-10-02** (adopted Fable review): satisfied by the existing 10 s Undo rule. Measured wake-and-load durations over 30 days (`wake-and-load.complete`): office-tv p50 9.9 s, max 29.2 s; livingroom-tv p50 4.8 s, max 18.6 s — so a cold wake can outlast the Undo window. The one gap is closed in Task 7: after Undo expires, a far start still waking/loading offers **Stop** (that screen's transport stop, which keeps its queue, RQ-STEER-10) instead of Undo, so a mis-sent cold wake can be aborted from the sending device. |
-| O2 | What "keep similar things playing" can draw on | Discovery, before P1 |
-| O3 | What "this screen usually plays at this time of day" means | Discovery, before P2 |
-| O4 | Turning off speakers (likely not offered) | **Closed 2026-10-02:** not offered; capability-gated per RQ-STEER-11. |
+| O1 | Undo while a far screen is still starting, and undo on live items (left open by rejecting R12) | **Closed 2026-10-02.** The 10 s Undo from the tap stands, with **Stop** offered while a screen is still starting; an Undo on a live item returns to the live edge. |
+| O2 | What "keep similar things playing" can draw on | **Closed.** The finished item's container (siblings, then parent), preferring never-played, then not played in 7 days, then least recently played; batches of 5 / ~30 min; stops after 4 unattended batches; "Nothing similar left". |
+| O3 | What "this screen usually plays at this time of day" means | **Closed.** ±90 min, last 30 days, ranked by distinct days (≥ 3), whole-household fallback; row order favourites, carry on, usually at this time, new. |
+| O4 | Turning off speakers | **Closed 2026-10-02:** speakers are not turned off; capability-gated per RQ-STEER-11. |
 
 ## Next action
 
-Merge and deploy remaining-P0 Task 7 (`media/p0-task7`) through the deploy gate after review, then **Task 8** of the [remaining-P0 plan](../../superpowers/plans/2026-09-21-media-remaining-p0-on-stable-core.md) (accessibility, size parity, final P0 certification, P0 · 9–10).
+Merge `fix/media-task8` and deploy through the deploy gate. After that the refactor can be closed: move this page and the remaining superseded `_wip` plans to `docs/_archive/` with the outcome recorded.
 
 What authorises it: the owner's acceptance on 2026-09-14.
 
 ## When this lands
 
-At the end of P0:
-- The requirements replace `docs/reference/media/media-app-requirements.md`.
-- `media-app.md` and `media-app-technical.md` are rewritten to match.
+Done at the end of Task 8: the requirements replaced `docs/reference/media/media-app-requirements.md`; `media-app.md` and `media-app-technical.md` were updated to match what shipped; the two audits and the 2026-09-19/20 session briefs moved to `docs/_archive/media-app-redesign/`.
 
-When P2 lands, or the owner closes the effort: move this page, and the superseded `_wip` plans and audits, to `docs/_archive/` with the outcome recorded.
+When the owner closes the effort: move this page, and the remaining superseded `_wip` plans, to `docs/_archive/` with the outcome recorded.

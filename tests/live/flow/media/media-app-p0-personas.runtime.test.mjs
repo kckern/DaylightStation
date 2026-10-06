@@ -158,7 +158,7 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
         await d.page.getByTestId('picker-this-device').click();
         const aimBackTaps = await taps(d.page);
         await expect(aimScope(d).getByTestId('destination-line-name')).toContainText('This device', { timeout: 10000 });
-        expect(aimBackTaps, 'NF-TAP-06 aim back at this device').toBeLessThanOrEqual(2);
+        expect(aimBackTaps, 'NF-TAP-06 aim back at this device').toBe(2);
         if (d.phone) await closeSearch(d); else await d.page.keyboard.press('Escape');
 
         // NF-TAP-08: something plays on the screen and here; Pause all from the handle.
