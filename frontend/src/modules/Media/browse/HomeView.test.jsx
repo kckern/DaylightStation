@@ -170,6 +170,16 @@ describe('HomeView start page', () => {
     expect(within(card).getByRole('button', { name: /More actions for Playing Thing/ })).toBeInTheDocument();
   });
 
+  it('a browser screen (no playback owner) offers Remote but not Move here, keyed by its browser id', async () => {
+    routes({ 'api/v1/media/household/carry-on?limit=12': { nowPlayingKnown: true, items: [], nowOn: [{ contentId: 'plex:9', title: 'Playing Thing', deviceId: 'browser:abc', state: 'playing' }] } });
+    fleetEntries = { 'browser:abc': { snapshot: { currentItem: { contentId: 'plex:9' }, meta: { ownerId: 'o', revision: 1 } } } };
+    renderHome();
+    const card = await screen.findByTestId('home-tile-now-on-browser:abc-plex:9');
+    expect(within(card).queryByRole('button', { name: /Move here/ })).toBeNull();
+    fireEvent.click(within(card).getByRole('button', { name: /Remote/ }));
+    expect(push).toHaveBeenCalledWith('peek', { deviceId: 'browser:abc' });
+  });
+
   it('reloads once, about 10 s later, when the server says its answer was degraded', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {

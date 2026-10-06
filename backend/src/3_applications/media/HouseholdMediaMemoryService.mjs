@@ -416,6 +416,8 @@ export class HouseholdMediaMemoryService {
       const episodes = listItemsOf(await this.#withTimeout(this.#catalog.getList(resolution, localIdOf(nextSeason.id)), budget));
       return episodes[0] || null;
     } catch (error) {
+      // A swallowed timeout means a next episode may be missing from this answer.
+      if (budget) budget.degraded = true;
       this.#logger.warn?.('media.household-list.next_episode_failed', { contentId, error: error.message });
       return null;
     }

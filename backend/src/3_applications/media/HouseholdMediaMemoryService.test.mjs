@@ -326,6 +326,19 @@ describe('list-change listeners and degraded reads (batch A review)', () => {
     expect((await service.recent({})).degraded).toBe(true);
   });
 
+  it('carry on says degraded when only the next-episode lookup ran out of time', async () => {
+    const { deps } = build({ records: [
+      P('plex:11', { playhead: 1400, duration: 1400, lastPlayed: '2026-10-01 18:00:00', completedAt: '2026-10-01 18:00:00' }),
+      P('plex:12', { playhead: 1400, duration: 1400, lastPlayed: '2026-10-02 18:00:00', completedAt: '2026-10-02 18:00:00' }),
+    ] });
+    deps.contentCatalog.getList = vi.fn(() => new Promise(() => {}));
+    const runtime = { withDeadline: (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('t')), ms))]) };
+    const service = new HouseholdMediaMemoryService({ ...deps, clock: Date, runtime, describeTimeoutMs: 50, carryOnDeadlineMs: 5000 });
+    const result = await service.carryOn({});
+    expect(result.items).toEqual([]);
+    expect(result.degraded).toBe(true);
+  });
+
   it('is not degraded when every lookup answered (even "not found")', async () => {
     const { service } = build({ records: [P('plex:missing', { playhead: 4800, duration: 7200, lastPlayed: '2026-10-01 21:00:00' })] });
     expect((await service.carryOn({})).degraded).toBe(false);

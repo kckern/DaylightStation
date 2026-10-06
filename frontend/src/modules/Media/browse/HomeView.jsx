@@ -65,9 +65,9 @@ function RowSkeleton() {
 
 /**
  * "Now on Living Room TV · Remote · Move here" — never offered as carry on.
- * Remote and Move here need that screen's live session here (the fleet
- * store, keyed by its fleet/peek id) with a playback-owner identity; a
- * screen we cannot steer (e.g. a browser known only by its request id) shows
+ * Remote needs that screen's live session here (the fleet store, keyed by
+ * its fleet/peek id, browsers included); Move here additionally needs a
+ * playback-owner identity. A screen with no live session here shows
  * "Now on <screen>" with its ⋯ verbs only.
  */
 function NowOnRow({ entries, nameFor, run, favourites }) {
@@ -83,7 +83,12 @@ function NowOnRow({ entries, nameFor, run, favourites }) {
       {entries.map((entry) => {
         const screen = nameFor(entry.deviceId) ?? 'another screen';
         const deviceId = bareScreenId(entry.deviceId);
-        const steerable = Boolean(store?.getEntry?.(deviceId)?.snapshot?.meta?.playbackOwner);
+        // Remote needs only a live session here (browser rows included);
+        // Move here also needs the playback-owner identity createMoveRequest
+        // checks, which browser snapshots do not carry.
+        const fleetEntry = store?.getEntry?.(deviceId) ?? null;
+        const canRemote = Boolean(fleetEntry?.snapshot);
+        const canMove = Boolean(fleetEntry?.snapshot?.meta?.playbackOwner);
         const testId = tileTestId('now-on', `${deviceId}-${entry.contentId}`);
         const item = toItem(entry);
         return (
@@ -101,18 +106,18 @@ function NowOnRow({ entries, nameFor, run, favourites }) {
                   favourite={favourites.has(item.id)} testId={testId} />
               )}
             </div>
-            {steerable && (
+            {(canRemote || canMove) && (
               <Group gap={6} className="home-tile-actions">
-                <Button size="sm" variant="default" data-testid={`${testId}-remote`}
+                {canRemote && <Button size="sm" variant="default" data-testid={`${testId}-remote`}
                   leftSection={<IconDeviceRemote size={14} aria-hidden />}
                   onClick={() => push('peek', { deviceId })}>
                   Remote
-                </Button>
-                <Button size="sm" variant="default" data-testid={`${testId}-move-here`}
+                </Button>}
+                {canMove && <Button size="sm" variant="default" data-testid={`${testId}-move-here`}
                   leftSection={<IconArrowBarToDown size={14} aria-hidden />}
                   onClick={() => moveHere(entry.deviceId, entry)}>
                   Move here
-                </Button>
+                </Button>}
               </Group>
             )}
           </div>
