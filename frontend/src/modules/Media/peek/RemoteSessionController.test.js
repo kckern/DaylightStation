@@ -74,6 +74,19 @@ describe('RemoteSessionController', () => {
     await expect(p).resolves.toMatchObject({ ok: true, commandId: 'cmd-1' });
   });
 
+  it('a stop carries the explicit keepMusic answer, and nothing when none is given', async () => {
+    const { ackRouter, http, ctl } = setup();
+    const a = ctl.transport.stop({ keepMusic: true });
+    expect(http).toHaveBeenLastCalledWith('api/v1/device/tv/session/transport',
+      expect.objectContaining({ action: 'stop', keepMusic: true, commandId: 'cmd-1' }), 'POST');
+    ackRouter.resolve({ commandId: 'cmd-1', ok: true });
+    await a;
+    const b = ctl.transport.stop();
+    expect(http.mock.calls.at(-1)[1]).not.toHaveProperty('keepMusic');
+    ackRouter.resolve({ commandId: 'cmd-2', ok: true });
+    await b;
+  });
+
   it('STEER.3a Previous selects the prior queue item rather than restarting current', async () => {
     const { ackRouter, http, ctl } = setup();
     const pending = ctl.transport.skipPrev();

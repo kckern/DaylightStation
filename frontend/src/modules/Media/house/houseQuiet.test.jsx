@@ -36,6 +36,20 @@ describe('planQuiet', () => {
     expect(plan.targets.map((t) => t.id)).toEqual(['livingroom-tv', 'office-tv', 'local']);
   });
 
+  it('stop reaches an idle screen that still has music behind a slideshow, as music-only', () => {
+    const idleWithMusic = { ...entries, 'garage-tv': { snapshot: { state: 'idle', controls: { musicBehind: { contentId: 'plex:5', state: 'playing' } } } } };
+    const plan = planQuiet('stop', { devices, getEntry: (id) => idleWithMusic[id] ?? null, localState: null });
+    expect(plan.targets).toContainEqual({ id: 'garage-tv', name: 'Garage', musicOnly: true });
+    // Pause all never touches it, and an idle screen without music is left alone.
+    expect(planQuiet('pause', { devices, getEntry: (id) => idleWithMusic[id] ?? null }).targets.map((t) => t.id)).not.toContain('garage-tv');
+    expect(planQuiet('stop', { devices, getEntry }).targets.map((t) => t.id)).not.toContain('garage-tv');
+  });
+
+  it('stop includes this device when it is idle with music kept', () => {
+    const plan = planQuiet('stop', { devices, getEntry, localState: 'idle', localMusic: true });
+    expect(plan.targets).toContainEqual({ id: 'local', name: 'This device', musicOnly: true });
+  });
+
   it('resumes exactly the remembered screens', () => {
     const plan = planQuiet('resume', { devices, getEntry, localState: 'paused', resumable: ['office-tv', 'local'] });
     expect(plan.targets.map((t) => t.id)).toEqual(['office-tv', 'local']);
@@ -101,6 +115,20 @@ describe('useHouseQuiet', () => {
     expect(local.play).not.toHaveBeenCalled();
     expect(h.setResumable).toHaveBeenCalledWith(null);
     expect(h.recordLocal.mock.calls[0][0]).toMatchObject({ kind: 'resumeAll', phase: 'confirmed' });
+  });
+  it('Stop all stops kept music on an idle screen without sending it a transport stop, and sends keepMusic:false to the rest', async () => {
+    const musicBehind = vi.fn(async () => ({ ok: true }));
+    const garage = { transport: { stop: vi.fn() }, sessionControls: { musicBehind } };
+    const tv = { transport: { stop: vi.fn(async () => ({ ok: true })) }, sessionControls: { musicBehind: vi.fn() } };
+    entries['garage-tv'] = { snapshot: { state: 'idle', controls: { musicBehind: { contentId: 'plex:5', state: 'playing' } } } };
+    const local = { pause: vi.fn(), play: vi.fn(), stop: vi.fn() };
+    const h = harness({ controllers: { 'garage-tv': garage, 'livingroom-tv': tv }, localTransport: local });
+    await act(async () => { await h.get().stopAll(); });
+    delete entries['garage-tv'];
+    expect(musicBehind).toHaveBeenCalledWith('stop');
+    expect(garage.transport.stop).not.toHaveBeenCalled();
+    expect(tv.transport.stop).toHaveBeenCalledWith({ keepMusic: false });
+    expect(local.stop).toHaveBeenCalledWith({ keepMusic: false });
   });
   it('Stop all also stops music left behind a screen\'s slideshow — a house-wide stop means quiet', async () => {
     const musicBehind = vi.fn(async () => ({ ok: true }));

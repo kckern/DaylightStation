@@ -131,6 +131,7 @@ describe('stopping the slideshow asks whether to keep the music (PLAY.9a/AC3)', 
     expect(await screen.findByTestId('pf-stop-guard')).toHaveTextContent('Keep the music playing?');
     fireEvent.click(screen.getByTestId('pf-stop-keep-music'));
     expect(onStop).toHaveBeenCalledTimes(1);
+    expect(onStop).toHaveBeenCalledWith({ keepMusic: true });
     expect(session.controller.sessionControls.musicBehind).not.toHaveBeenCalled();
   });
 
@@ -141,6 +142,7 @@ describe('stopping the slideshow asks whether to keep the music (PLAY.9a/AC3)', 
     fireEvent.click(screen.getByTestId('stop'));
     fireEvent.click(await screen.findByTestId('pf-stop-both'));
     expect(onStop).toHaveBeenCalledTimes(1);
+    expect(onStop).toHaveBeenCalledWith({ keepMusic: false });
     expect(session.controller.sessionControls.musicBehind).toHaveBeenCalledWith('stop');
   });
 
@@ -150,6 +152,7 @@ describe('stopping the slideshow asks whether to keep the music (PLAY.9a/AC3)', 
     wrap(<StopHarness target={REMOTE} onStop={onStop} />);
     fireEvent.click(screen.getByTestId('stop'));
     expect(onStop).toHaveBeenCalledTimes(1);
+    expect(onStop).toHaveBeenCalledWith({ keepMusic: false });
     expect(screen.queryByTestId('pf-stop-guard')).toBeNull();
   });
 });

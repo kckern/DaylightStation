@@ -75,7 +75,7 @@ export function useScreenActions({ api = defaultApi } = {}) {
   const stopAndTurnOff = useCallback(async ({ deviceId, name }) => {
     let stopped = false;
     try {
-      const result = await peek?.getController?.(deviceId)?.transport?.stop?.();
+      const result = await peek?.getController?.(deviceId)?.transport?.stop?.({ keepMusic: false });
       stopped = !!result && result.ok !== false;
     } catch { stopped = false; }
     try {
