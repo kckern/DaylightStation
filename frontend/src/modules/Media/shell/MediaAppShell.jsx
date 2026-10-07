@@ -9,6 +9,7 @@ import { Dock } from './Dock.jsx';
 import { NavRail, TabBar } from './PrimaryNav.jsx';
 import { Canvas } from './Canvas.jsx';
 import { MiniPlayer } from './MiniPlayer.jsx';
+import { ScreenHandle } from './ScreenHandle.jsx';
 import { DispatchProgressTray } from '../cast/DispatchProgressTray.jsx';
 import { SearchMode } from '../search/SearchMode.jsx';
 import { ReconnectingNote } from './ReconnectingNote.jsx';
@@ -74,6 +75,7 @@ function ShellInner() {
         <div className="media-outcome-anchor" data-testid="media-outcome-anchor">
           <DispatchProgressTray />
         </div>
+        <ScreenHandle />
         <MiniPlayer />
         {queueKeptCount != null && (
           <div className="np-queue-kept" data-testid="np-queue-kept" role="status">
