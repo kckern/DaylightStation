@@ -12,6 +12,14 @@ function formatTime(seconds) {
   return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, '0')}`;
 }
 
+function selectBike(equipment = []) {
+  const cadenceEquipment = equipment.filter((item) => item?.cadence != null);
+  return cadenceEquipment.find((item) => item.id === 'niceday')
+    || cadenceEquipment.find((item) => item.id === 'cycle_ace')
+    || cadenceEquipment[0]
+    || null;
+}
+
 function Scene({ state, course }) {
   const x = Math.min(100, state.courseTime / course.duration_s * 100);
   const y = state.altitude * 100;
@@ -39,7 +47,7 @@ export default function SkylineGlider() {
   const flightRef = useRef(null);
   const runRef = useRef(null);
   const finalizingRef = useRef(false);
-  const equipment = (ctx?.equipment || []).find((item) => item?.cadence != null) || null;
+  const equipment = selectBike(ctx?.equipment);
   const riderId = equipment ? ctx?.fitnessSessionInstance?.getEquipmentRider?.(equipment.id) : null;
   const course = courses[0] || null;
   const saved = course && riderId ? readFlightCheckpoint(riderId, course.id) : null;
@@ -139,7 +147,7 @@ export default function SkylineGlider() {
   if (phase === 'error') return <main className="skyline-glider"><h1>Skyline Glider</h1><p role="alert">{error}</p></main>;
   if (phase === 'lobby') return <main className="skyline-glider skyline-glider--lobby" data-testid="skyline-glider-lobby">
     <div><p className="skyline-glider__eyebrow">Alpine cadence adventure</p><h1>Skyline Glider</h1><h2>{course.name}</h2><p>{course.description}</p><p>Pedal faster to climb. Ease off to descend.</p></div>
-    <div className="skyline-glider__launch"><span>{equipment ? equipment.name : 'Connect a cadence bike'}</span><span>{riderId ? ctx?.getDisplayName?.(riderId) || riderId : 'Assign a rider'}</span>
+    <div className="skyline-glider__launch"><span>{equipment ? equipment.name : 'Connect a cadence bike'}</span><span>{riderId ? ctx?.getDisplayName?.(riderId)?.displayName || riderId : 'Assign a rider'}</span>
       {saved ? <><button onClick={() => begin(true)}>Resume flight</button><button className="secondary" onClick={() => begin(false)}>Start over</button></> : <button disabled={!equipment || !riderId} onClick={() => begin(false)}>Start flight</button>}
     </div>
   </main>;

@@ -48,7 +48,7 @@ const VIRTUAL_DEVICES = [
 // warning (PLACE.4a/AC6) has something true to say.
 export const VIRTUAL_ROOM = 'Acceptance room';
 const isVirtual = (id) => VIRTUAL_DEVICES.some((device) => device.id === id);
-const VIRTUAL_TRANSPORT_ACTIONS = new Set(['pause', 'play', 'seekAbs', 'seekRel', 'skipNext', 'skipPrev', 'stop']);
+const VIRTUAL_TRANSPORT_ACTIONS = new Set(['pause', 'play', 'seekAbs', 'seekRel', 'skipNext', 'skipPrev', 'stop', 'goLive']);
 // Screen session controls (P1): virtual receiver only, like transport.
 const VIRTUAL_SESSION_ROUTES = [
   ['PUT', /^\/session\/(add-only|end-of-queue|stop-after-current|volume)$/],

@@ -441,6 +441,9 @@ export class HouseholdMediaMemoryService {
       parentId: meta.parentId ?? null,
       grandparentId: meta.grandparentId ?? null,
       itemIndex: meta.itemIndex ?? null,
+      // The season's own number ("Season 2" may be titled anything): lets a
+      // collection row say "Continue S2E7" (FIND.8b/AC2).
+      parentIndex: meta.parentIndex ?? null,
     };
   }
 

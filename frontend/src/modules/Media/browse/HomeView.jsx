@@ -31,6 +31,7 @@ import {
 import { useFavourites, householdResourceLogger } from '../household/useHousehold.js';
 import { useItemVerbs, isCollection } from '../household/useItemVerbs.jsx';
 import { useMoveHere } from '../household/useMoveHere.js';
+import { useStartingOn } from '../cast/useStartingOn.js';
 import { ItemMenu } from '../household/ItemMenu.jsx';
 import { FleetContext } from '../fleet/FleetProvider.jsx';
 import './Home.scss';
@@ -213,6 +214,7 @@ export function HomeView() {
   const recent = useApiResource(HOUSEHOLD_PATHS.recent, { swr: true, label: 'media-recent', logger: householdResourceLogger });
   const favourites = useFavourites();
   const { run, overlays, nameFor } = useItemVerbs();
+  const { startingOnFor } = useStartingOn();
   const { goToArea } = useNav();
 
   const carryById = useMemo(() => new Map((carryOn.data?.items ?? []).map(entry => [entry.contentId, entry])), [carryOn.data]);
@@ -272,7 +274,7 @@ export function HomeView() {
         kind={null}
         size={big ? 'large' : 'normal'}
         testId={testId}
-        meta={tileMeta(rowId, raw, entry, nameFor, { editionCount: group?.editions.length ?? 1 })}
+        meta={startingOnFor(item.id) ?? tileMeta(rowId, raw, entry, nameFor, { editionCount: group?.editions.length ?? 1 })}
         progress={percent}
         // FIND.12b: a favourite's picture opens it; elsewhere the tap rule.
         onPicture={() => run(big ? 'open' : 'tap', item, { entry })}

@@ -44,6 +44,71 @@ afterEach(() => vi.useRealTimers());
 
 const CAST = { targetIds: ['livingroom-tv'], play: 'plex:665668', mode: 'fork', title: 'Wrestling with Socialism' };
 
+describe('DispatchProvider — follow-up after a confirmed start (PLACE.6a/AC2)', () => {
+  it('a Move deduped onto an earlier Keep still stops here once that start confirms', async () => {
+    const onConfirmed = vi.fn();
+    DaylightAPI.mockResolvedValue({ ok: true });
+    const { result } = renderHook(() => useDispatch(), { wrapper });
+    let keepIds; let moveIds;
+    await act(async () => { keepIds = await result.current.dispatchToTarget({ ...CAST }); await Promise.resolve(); });
+    await act(async () => { moveIds = await result.current.dispatchToTarget({ ...CAST, onConfirmed }); await Promise.resolve(); });
+    expect(moveIds).toEqual(keepIds);
+    expect(DaylightAPI).toHaveBeenCalledTimes(1);
+    expect(onConfirmed).not.toHaveBeenCalled();
+    act(() => homelineCallback({ dispatchId: keepIds[0], topic: 'homeline:livingroom-tv', deviceId: 'livingroom-tv', step: 'playback', status: 'confirmed' }));
+    expect(onConfirmed).toHaveBeenCalledTimes(1);
+  });
+
+  it('a Move deduped onto an already-confirmed Keep runs its follow-up at once', async () => {
+    const onConfirmed = vi.fn();
+    DaylightAPI.mockResolvedValue({ ok: true });
+    const { result } = renderHook(() => useDispatch(), { wrapper });
+    let keepIds;
+    await act(async () => { keepIds = await result.current.dispatchToTarget({ ...CAST }); await Promise.resolve(); });
+    act(() => homelineCallback({ dispatchId: keepIds[0], topic: 'homeline:livingroom-tv', deviceId: 'livingroom-tv', step: 'playback', status: 'confirmed' }));
+    await act(async () => { await result.current.dispatchToTarget({ ...CAST, onConfirmed }); await Promise.resolve(); });
+    expect(onConfirmed).toHaveBeenCalledTimes(1);
+  });
+
+  it('a Keep deduped onto an earlier Move leaves the Move follow-up in place, run once', async () => {
+    const onConfirmed = vi.fn();
+    DaylightAPI.mockResolvedValue({ ok: true });
+    const { result } = renderHook(() => useDispatch(), { wrapper });
+    let moveIds;
+    await act(async () => { moveIds = await result.current.dispatchToTarget({ ...CAST, onConfirmed }); await Promise.resolve(); });
+    await act(async () => { await result.current.dispatchToTarget({ ...CAST }); await Promise.resolve(); });
+    act(() => homelineCallback({ dispatchId: moveIds[0], topic: 'homeline:livingroom-tv', deviceId: 'livingroom-tv', step: 'playback', status: 'confirmed' }));
+    expect(onConfirmed).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs the follow-up only once that screen confirms playing, never on mere acceptance', async () => {
+    const onConfirmed = vi.fn();
+    DaylightAPI.mockResolvedValue({ ok: true });
+    const { result } = renderHook(() => useDispatch(), { wrapper });
+    let ids;
+    await act(async () => { ids = await result.current.dispatchToTarget({ ...CAST, onConfirmed }); await Promise.resolve(); });
+    expect(onConfirmed).not.toHaveBeenCalled(); // accepted, not yet playing
+    act(() => homelineCallback({ dispatchId: ids[0], topic: 'homeline:livingroom-tv', deviceId: 'livingroom-tv', step: 'playback', status: 'confirmed' }));
+    expect(onConfirmed).toHaveBeenCalledTimes(1);
+    act(() => homelineCallback({ dispatchId: ids[0], topic: 'homeline:livingroom-tv', deviceId: 'livingroom-tv', step: 'playback', status: 'confirmed' }));
+    expect(onConfirmed).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops the follow-up unrun when the start fails or goes unconfirmed', async () => {
+    const failed = vi.fn(); const unconfirmed = vi.fn();
+    DaylightAPI.mockResolvedValueOnce({ ok: false, error: 'screen offline', failedStep: 'power' });
+    const { result } = renderHook(() => useDispatch(), { wrapper });
+    await act(async () => { await result.current.dispatchToTarget({ ...CAST, play: 'plex:1', onConfirmed: failed }); await Promise.resolve(); });
+    DaylightAPI.mockResolvedValueOnce({ ok: true });
+    let ids;
+    await act(async () => { ids = await result.current.dispatchToTarget({ ...CAST, play: 'plex:2', onConfirmed: unconfirmed }); await Promise.resolve(); });
+    act(() => homelineCallback({ dispatchId: ids[0], topic: 'homeline:livingroom-tv', deviceId: 'livingroom-tv', step: 'playback', status: 'timeout' }));
+    expect(failed).not.toHaveBeenCalled();
+    expect(unconfirmed).not.toHaveBeenCalled();
+    expect(mediaLog.followUpDropped).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('DispatchProvider — duplicate suppression', () => {
   it('records this sender\'s provenance only after its matching playback confirmation', async () => {
     const recordConfirmedDispatch = vi.fn();

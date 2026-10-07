@@ -86,6 +86,12 @@ describe('useScreenCommands (structured envelope)', () => {
       );
     });
 
+    it('dispatches transport goLive to media:go-live', () => {
+      mountOk();
+      act(() => capturedCallback(env('transport', { action: 'goLive' })));
+      expect(actionBus.emit).toHaveBeenCalledWith('media:go-live', { commandId: 'c1' });
+    });
+
     it('dispatches transport seekRel with value', () => {
       mountOk();
       act(() => capturedCallback(env('transport', { action: 'seekRel', value: -10 })));

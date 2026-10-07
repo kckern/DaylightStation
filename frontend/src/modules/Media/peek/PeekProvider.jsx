@@ -46,6 +46,8 @@ export function PeekProvider({ children }) {
 
   const controllersRef = useRef(new Map()); // deviceId -> controller
   const [steeringByDevice, setSteeringByDevice] = useState(() => new Map());
+  // STEER.1a/AC4: the screen most recently sent to or steered, for the handle.
+  const [lastSteeredId, setLastSteeredId] = useState(null);
 
   // RemoteSessionController calls this only after a command is acknowledged
   // against fresh, currently playing playback. Merely opening a Remote never
@@ -60,6 +62,7 @@ export function PeekProvider({ children }) {
       next.set(deviceId, { playback, ownerId });
       return next;
     });
+    setLastSteeredId(deviceId);
   }, []);
 
   // DispatchProvider has already correlated this backend playback confirmation
@@ -121,8 +124,8 @@ export function PeekProvider({ children }) {
   );
 
   const value = useMemo(
-    () => ({ getController, enterPeek, exitPeek, getSteeringActivity, recordConfirmedDispatch }),
-    [getController, enterPeek, exitPeek, getSteeringActivity, recordConfirmedDispatch]
+    () => ({ getController, enterPeek, exitPeek, getSteeringActivity, recordConfirmedDispatch, lastSteeredId }),
+    [getController, enterPeek, exitPeek, getSteeringActivity, recordConfirmedDispatch, lastSteeredId]
   );
 
   return <PeekContext.Provider value={value}>{children}</PeekContext.Provider>;

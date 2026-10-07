@@ -37,6 +37,7 @@ import { useSessionController } from '../controller/useSessionController.js';
 import { useNav } from '../shell/NavProvider.jsx';
 import { applyResultRowVerb } from './resultRowVerbs.js';
 import { collapseResultEditions } from './collapseResultEditions.js';
+import { useRowLabels } from './useRowLabels.js';
 import { displayTitle, resultSubtitle } from './resultPresentation.js';
 import getLogger from '../../../lib/logging/Logger.js';
 import mediaLog from '../logging/mediaLog.js';
@@ -52,6 +53,7 @@ export function SearchMode({ onClose, addTo = null }) {
   const [oneShotAction, setOneShotAction] = useState(null);
   const { scopes, currentScopeKey, currentScope, scopeError, resetScope } = useSearchContext();
   const { dispatch, dispatchLeafVerb, playContainerAsQueue, addToScreen } = useContentDispatch();
+  const { rowLabelsFor, continueFor } = useRowLabels();
   const { extraActions, runHousehold } = useHouseholdResultActions();
   const { queue } = useSessionController('local');
   const { push } = useNav();
@@ -147,9 +149,17 @@ export function SearchMode({ onClose, addTo = null }) {
     if (!id) return;
     if (addTo) { addOnce(id, item, 'playAll'); return; }
     log.info('select', { contentId: id, title: item?.title ?? null, type: item?.type ?? null, verb: 'playAll' });
+    // FIND.8b/AC2: with a part under way the inline play IS "Continue S2E7".
+    const cont = continueFor(item);
+    if (cont) {
+      mediaLog.collectionContinued({ collectionId: id, contentId: cont.contentId, label: cont.label });
+      const route = dispatchLeafVerb('playNow', cont.contentId, { id: cont.contentId, title: cont.title, type: 'episode', itemType: 'leaf' });
+      log.info('dispatch', { contentId: cont.contentId, route, verb: 'continue' });
+      return;
+    }
     const route = playContainerAsQueue(id, item);
     log.info('dispatch', { contentId: id, route, verb: 'playAll' });
-  }, [playContainerAsQueue, log, addTo, addOnce]);
+  }, [playContainerAsQueue, dispatchLeafVerb, continueFor, log, addTo, addOnce]);
 
   // Trailing ⋯ on a leaf row: Play Now / Play Next / Up Next / Add to Queue
   // / Open detail. Reuses the exact appliers BrowseView rows use (queueOps
@@ -321,7 +331,7 @@ export function SearchMode({ onClose, addTo = null }) {
             <ResultRow
               item={item}
               title={displayTitle(item)}
-              subtitle={resultSubtitle(item)}
+              subtitle={rowLabelsFor(item)?.subtitle ?? resultSubtitle(item)}
               thumbnail={item.thumbnail}
               // The shared combobox select() helper commits and closes its
               // editing machine after onChange. SearchMode is a retained work
@@ -329,6 +339,7 @@ export function SearchMode({ onClose, addTo = null }) {
               // leaves the hook's query/results intact.
               onTap={() => handleChange(item.id, item)}
               onPlayAll={() => handlePlayAll(item)}
+              rowLabels={rowLabelsFor(item)}
               onMore={(action) => handleMore(action, item)}
               onAction={({ kind }) => handleMore(kind, item)}
               extraActions={extraActions}

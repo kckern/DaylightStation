@@ -70,6 +70,12 @@ describe('actionMap', () => {
       });
     });
 
+    it('should translate media:go-live with payload', () => {
+      expect(translateAction('media:go-live', { commandId: 'c9' })).toEqual({
+        action: 'media:go-live', payload: { commandId: 'c9' }
+      });
+    });
+
     it('should translate media:queue-op with payload', () => {
       expect(translateAction('media:queue-op', { op: 'clear', commandId: 'c3' })).toEqual({
         action: 'media:queue-op', payload: { op: 'clear', commandId: 'c3' }

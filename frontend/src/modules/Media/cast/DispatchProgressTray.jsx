@@ -118,7 +118,8 @@ function localCopy(d, phase, name) {
     return { primary: copy.done(title, at), secondary: null };
   }
   if (d.kind === 'playback') {
-    // RELY.5a: name the item, this device, and what plays instead.
+    // RELY.5a: name the item, the screen (this device, or a steered one), and what plays instead.
+    const where = d.distance === 'here' ? 'this device' : (d.targetName ?? name ?? 'that screen');
     if (phase === 'waiting') {
       return { primary: `Waiting for ${title} — the file is being repaired`, secondary: 'On this device' };
     }
@@ -134,15 +135,15 @@ function localCopy(d, phase, name) {
     if (phase === 'skipped') {
       return {
         primary: d.reason === 'stalled'
-          ? `${title} stopped making progress on this device`
-          : `Couldn't keep playing ${title} on this device`,
+          ? `${title} stopped making progress on ${where}`
+          : `Couldn't keep playing ${title} on ${where}`,
         secondary: d.replacement?.title
           ? `Skipped it. Now playing ${d.replacement.title}`
           : 'Skipped it.',
       };
     }
     return {
-      primary: `Couldn't play ${title} on this device`,
+      primary: `Couldn't play ${title} on ${where}`,
       secondary: d.replacement?.title ? `Now playing ${d.replacement.title}` : 'Nothing else is queued.',
     };
   }

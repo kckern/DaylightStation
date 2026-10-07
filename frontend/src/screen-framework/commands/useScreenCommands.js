@@ -176,6 +176,10 @@ export function useScreenCommands(wsConfig, actionBus, screenId, controls = null
         bus.emit('media:seek-abs', withOrigin({ value, commandId }));
         return;
       }
+      if (action === 'goLive') {
+        bus.emit('media:go-live', withOrigin({ commandId }));
+        return;
+      }
       if (action === 'seekRel') {
         bus.emit('media:seek-rel', withOrigin({ value, commandId }));
         return;

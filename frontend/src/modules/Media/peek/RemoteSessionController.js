@@ -336,6 +336,7 @@ export function createRemoteSessionController({
       stop: (opts) => transportPost('stop', undefined, typeof opts?.keepMusic === 'boolean' ? { keepMusic: opts.keepMusic } : null),
       seekAbs: (seconds) => transportPost('seekAbs', seconds),
       seekRel: (delta) => transportPost('seekRel', delta),
+      goLive: () => transportPost('goLive'),
       skipNext: () => transportPost('skipNext'),
       skipPrev: () => transportPost('skipPrev'),
       restartCurrent: () => transportPost('seekAbs', 0),

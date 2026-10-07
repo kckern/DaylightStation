@@ -285,6 +285,42 @@ describe('SeekBar', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Live playback has no seekable position');
   });
 
+  it('offers Go to live on live content and sends goLive', () => {
+    const goLive = vi.fn();
+    state.transport = { ...transport, goLive };
+    state.snapshot = makeSnapshot({ isLive: true });
+    state.capabilities = { seekable: false, live: true, reason: 'Live playback has no seekable position', acked: false };
+    render(<SeekBar target="local" />);
+    const button = screen.getByTestId('np-go-live');
+    expect(button).toHaveAccessibleName('Go to live');
+    fireEvent.click(button);
+    expect(goLive).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes Go to live through the command wrapper and surfaces a failure', async () => {
+    const goLive = vi.fn(() => Promise.reject(new Error('nope')));
+    state.transport = { ...transport, goLive };
+    state.snapshot = makeSnapshot({ isLive: true });
+    state.capabilities = { seekable: false, live: true, reason: null, acked: false };
+    const onCommand = vi.fn((_a, op) => op());
+    render(<SeekBar target={{ deviceId: 'screen-a' }} onCommand={onCommand} />);
+    await act(async () => { fireEvent.click(screen.getByTestId('np-go-live')); });
+    expect(onCommand).toHaveBeenCalledWith('goLive', expect.any(Function));
+    expect(screen.getByTestId('np-seek-command-feedback')).toHaveTextContent('Could not confirm change');
+  });
+
+  it('disables Go to live while the screen is unavailable and for non-live content has none', () => {
+    state.transport = { ...transport, goLive: vi.fn() };
+    state.snapshot = makeSnapshot({ isLive: true });
+    state.capabilities = { seekable: false, live: true, reason: null, acked: false };
+    const { rerender } = render(<SeekBar target="local" availability={{ available: false, reason: 'offline' }} />);
+    expect(screen.getByTestId('np-go-live')).toBeDisabled();
+    state.snapshot = makeSnapshot();
+    state.capabilities = { seekable: true, live: false, reason: null, acked: false };
+    rerender(<SeekBar target="local" />);
+    expect(screen.queryByTestId('np-go-live')).toBeNull();
+  });
+
   it('renders nothing without a current item', () => {
     state.snapshot = { ...makeSnapshot(), currentItem: null };
     const { container } = render(<SeekBar target="local" />);
