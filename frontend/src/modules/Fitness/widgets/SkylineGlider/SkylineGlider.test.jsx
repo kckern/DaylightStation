@@ -2,8 +2,11 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 let mockCtx;
+const { mockLog } = vi.hoisted(() => ({
+  mockLog: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn() },
+}));
 vi.mock('@/context/FitnessContext.jsx', () => ({ useFitnessContext: () => mockCtx }));
-vi.mock('@/lib/logging/Logger.js', () => ({ default: () => ({ child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }) }));
+vi.mock('@/lib/logging/Logger.js', () => ({ default: () => ({ child: () => mockLog }) }));
 import SkylineGlider from './SkylineGlider.jsx';
 import { FlightScene, RpmGauge } from './SkylineGlider.jsx';
 
@@ -30,6 +33,10 @@ const flightState = {
 
 beforeEach(() => {
   localStorage.clear();
+  mockLog.info.mockClear();
+  mockLog.warn.mockClear();
+  mockLog.error.mockClear();
+  mockLog.sampled.mockClear();
   mockCtx = { equipment: [{ id: 'bike', name: 'Bike', cadence: 7, rpm: { min: 30, max: 100 } }], fitnessSessionInstance: { getEquipmentRider: () => 'dad', getEquipmentCadence: () => ({ rpm: 60, connected: true }) }, getDisplayName: () => ({ displayName: 'Dad', source: 'userProfile', preferredGroupLabel: false }), setGovernanceSuspended: vi.fn() };
   global.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ courses: [course] }) }));
 });
@@ -70,6 +77,28 @@ describe('SkylineGlider', () => {
     const mute = screen.getByRole('button', { name: 'Mute' });
     fireEvent.click(mute);
     expect(screen.getByRole('button', { name: 'Sound on' })).toHaveAttribute('aria-pressed', 'true');
+    vi.useRealTimers();
+  });
+
+  it('correlates one-second flight samples and explicit exit/save events to the run', async () => {
+    vi.useFakeTimers();
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
+
+    const started = mockLog.info.mock.calls.find(([event]) => event === 'skyline_glider.flight.started');
+    expect(started[1]).toMatchObject({ runId: expect.any(String), equipmentId: 'bike', courseId: 'mountain-pass', courseVersion: 1 });
+
+    act(() => vi.advanceTimersByTime(3000));
+    act(() => vi.advanceTimersByTime(1100));
+    const samples = mockLog.info.mock.calls.filter(([event]) => event === 'skyline_glider.flight.sample');
+    expect(samples).toHaveLength(2);
+    expect(samples[1][1]).toMatchObject({ runId: started[1].runId, courseSecond: 1, rawRpm: 60 });
+
+    fireEvent.click(screen.getByRole('button', { name: /end flight/i }));
+    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.flight.exited', expect.objectContaining({ runId: started[1].runId }));
+    await act(async () => Promise.resolve());
+    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.flight.saved', expect.objectContaining({ runId: started[1].runId, status: 'abandoned' }));
     vi.useRealTimers();
   });
 
