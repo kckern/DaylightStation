@@ -164,6 +164,9 @@ export const mediaLog = {
   moveHereIgnored:        debug('move-here.ignored'),
   // P0 features (Phase 2a)
   goLive:                 info('transport.go-live'),
+  playOnChoiceChanged:    info('play-on.choice-changed'),
+  playOnChoiceApplied:    info('play-on.choice-applied'),
+  playOnStopHere:         info('play-on.stop-here'),
 };
 
 export default mediaLog;
