@@ -348,6 +348,10 @@ export class GovernanceEngine {
     this._activeRequirementIds = new Set();
     // cadence_floor latches: requirementId → { riderId, armedMs, armed, lastTs, zeroSince }
     this._cadenceFloorState = new Map();
+    // Per-media latch for the no-parent startup gate. It deliberately does not
+    // reuse meta.satisfiedOnce: that flag belongs to the ordinary base
+    // requirement and may be set by a much lower zone.
+    this._unattendedPolicyState = { mediaId: null, active: false, startupSatisfied: false };
   }
 
   _registerGovernanceTypes() {
@@ -1421,7 +1425,16 @@ export class GovernanceEngine {
   }
 
   setMedia(media) {
+    const previousMediaId = this.media?.id ?? null;
     this.media = media;
+    const nextMediaId = media?.id ?? null;
+    if (previousMediaId !== nextMediaId) {
+      this._unattendedPolicyState = {
+        mediaId: nextMediaId,
+        active: false,
+        startupSatisfied: false,
+      };
+    }
     this._invalidateStateCache();
     // Re-evaluate when governed media is set so phase transitions from null→pending
     if (media && this._mediaIsGoverned()) {
@@ -1919,6 +1932,7 @@ export class GovernanceEngine {
     this._warningCooldownUntil = null;
     this._activeRequirementIds.clear();
     this._cadenceFloorState.clear();
+    this._unattendedPolicyState = { mediaId: this.media?.id ?? null, active: false, startupSatisfied: false };
 
     // State caching for performance - throttle recomputation to 200ms
     this._stateCache = null;
@@ -2634,7 +2648,7 @@ export class GovernanceEngine {
     }
 
     // 3. Choose Policy
-    const activePolicy = this._chooseActivePolicy(totalCount);
+    let activePolicy = this._chooseActivePolicy(totalCount);
     // Held for the zone evaluator, which is called far below and takes its
     // arguments positionally — threading one more flag through six call sites
     // would be a worse trade than remembering which policy is in force.
@@ -2644,6 +2658,7 @@ export class GovernanceEngine {
       this._setPhase('pending', evalContext);
       return;
     }
+    activePolicy = this._applyUnattendedPolicy(activePolicy, activeParticipants, userZoneMap);
 
     // 4. Update Challenge State Context
     if (this.challengeState.activePolicyId !== activePolicy.id) {
@@ -2819,6 +2834,120 @@ export class GovernanceEngine {
   }
 
   /**
+   * Strengthen a governed video's policy whenever no configured parent/admin
+   * is in the live roster. The first real child to reach Hot opens playback;
+   * after that, one fixed all-Hot challenge is scheduled every three minutes.
+   * Guests and configured exemptions are intentionally not eligible to open
+   * the startup gate or satisfy the recurring challenge.
+   */
+  _applyUnattendedPolicy(policy, activeParticipants, userZoneMap) {
+    const settings = this.config?.unattended_policy || {};
+    const superusers = new Set((this.config?.superusers || []).map(normalizeName));
+    const enabled = settings.enabled !== false && superusers.size > 0;
+    const adminPresent = activeParticipants.some((id) => superusers.has(normalizeName(id)));
+    const shouldApply = enabled && !adminPresent;
+    const state = this._unattendedPolicyState || {
+      mediaId: this.media?.id ?? null,
+      active: false,
+      startupSatisfied: false,
+    };
+
+    if (!shouldApply) {
+      if (state.active) {
+        getLogger().info('governance.unattended.stood_down', {
+          contentId: this.media?.id ?? null,
+          reason: adminPresent ? 'admin_present' : 'disabled',
+        });
+        this.challengeState.activeChallenge = null;
+        this.challengeState.nextChallenge = null;
+        this.challengeState.nextChallengeAt = null;
+        this.challengeState.nextChallengeRemainingMs = null;
+        this.challengeState.videoLocked = false;
+      }
+      this._unattendedPolicyState = {
+        mediaId: this.media?.id ?? null,
+        active: false,
+        startupSatisfied: false,
+      };
+      return policy;
+    }
+
+    if (!state.active) {
+      state.active = true;
+      state.startupSatisfied = false;
+      state.mediaId = this.media?.id ?? null;
+      if (this.timers.governance) clearTimeout(this.timers.governance);
+      this.timers.governance = null;
+      this.meta.satisfiedOnce = false;
+      this.meta.deadline = null;
+      this.meta.gracePeriodTotal = null;
+      this.challengeState.activeChallenge = null;
+      this.challengeState.nextChallenge = null;
+      this.challengeState.nextChallengeAt = null;
+      this.challengeState.nextChallengeRemainingMs = null;
+      this.challengeState.videoLocked = false;
+      getLogger().info('governance.unattended.engaged', { contentId: state.mediaId });
+    }
+
+    const startupZone = String(settings.startup_zone || 'hot').toLowerCase();
+    const startupRank = this._getZoneRank(startupZone);
+    const guestIds = new Set(this._latestInputs?.guestIds || []);
+    const exemptUsers = new Set((this.config?.exemptions || []).map(normalizeName));
+    const eligibleChildren = activeParticipants.filter((id) =>
+      !guestIds.has(id)
+      && !superusers.has(normalizeName(id))
+      && !exemptUsers.has(normalizeName(id))
+    );
+    if (!state.startupSatisfied && Number.isFinite(startupRank)) {
+      const achiever = eligibleChildren.find((id) => {
+        const rank = this._getZoneRank(userZoneMap?.[id]);
+        return Number.isFinite(rank) && rank >= startupRank;
+      });
+      if (achiever) {
+        state.startupSatisfied = true;
+        getLogger().info('governance.unattended.startup_satisfied', {
+          contentId: state.mediaId,
+          participantId: achiever,
+          zone: startupZone,
+        });
+      }
+    }
+    this._unattendedPolicyState = state;
+
+    if (!state.startupSatisfied) {
+      return {
+        ...policy,
+        requirements: [
+          ...(policy.requirements || []),
+          { id: '__unattended_startup_hot', type: 'unattended_startup', zone: startupZone, rule: 1, eligibleChildren },
+        ],
+        challenges: [],
+      };
+    }
+
+    const intervalSeconds = Math.max(1, Math.round(Number(settings.challenge_interval_seconds) || 180));
+    const timeAllowedSeconds = Math.max(1, Math.round(Number(settings.challenge_time_allowed_seconds) || 90));
+    return {
+      ...policy,
+      challenges: [{
+        id: '__unattended_all_hot',
+        intervalRangeSeconds: [intervalSeconds, intervalSeconds],
+        minParticipants: 1,
+        selectionType: 'cyclic',
+        selections: [{
+          id: '__unattended_all_hot_selection',
+          type: 'zone',
+          zone: startupZone,
+          rule: 'all',
+          timeAllowedSeconds,
+          weight: 1,
+          label: `All ${startupZone}`,
+        }],
+      }],
+    };
+  }
+
+  /**
    * Build requirement structure from policy config WITHOUT participant data.
    * Used to pre-populate lock screen with proper zone labels before HR arrives.
    * 
@@ -2973,7 +3102,29 @@ export class GovernanceEngine {
     definitions.forEach((definition) => {
       let summary = null;
       const definitionType = definition?.type || 'zone';
-      if (definitionType !== 'zone') {
+      if (definitionType === 'unattended_startup') {
+        const zoneId = String(definition.zone || 'hot').toLowerCase();
+        const requiredRank = this._getZoneRank(zoneId);
+        const metUsers = (definition.eligibleChildren || []).filter((id) => {
+          const rank = this._getZoneRank(userZoneMap?.[id]);
+          return Number.isFinite(rank) && rank >= requiredRank;
+        });
+        summary = {
+          id: definition.id,
+          type: definitionType,
+          zone: zoneId,
+          zoneLabel: this._getZoneInfo(zoneId)?.name || zoneId,
+          targetZoneId: zoneId,
+          severity: requiredRank,
+          rule: 1,
+          ruleLabel: this._describeRule(1, 1),
+          requiredCount: 1,
+          actualCount: metUsers.length,
+          metUsers,
+          missingUsers: metUsers.length ? [] : [...(definition.eligibleChildren || [])],
+          satisfied: metUsers.length >= 1,
+        };
+      } else if (definitionType !== 'zone') {
         summary = this.requirementTypes.evaluate(definitionType, definition, {
           activityMetricMap: this._latestInputs?.activityMetricMap || {},
           equipmentCadenceMap: this._latestInputs?.equipmentCadenceMap || {},
