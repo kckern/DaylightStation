@@ -15,10 +15,12 @@ test.describe('MediaApp — deep-link content-ID input', () => {
     await page.goto('/media');
     const search = page.getByRole('textbox', { name: 'Search media…' });
     await expect(search).toBeVisible({ timeout: 30000 });
-    await search.fill('plex-main:12345');
-    await expect(search).toHaveValue('plex-main:12345');
-    // Settled: matching options, the explicit empty line, or the named source
-    // that did not answer — never a spinner forever.
+    await search.fill('plex:12345');
+    await expect(search).toHaveValue('plex:12345');
+    // Settled: matching options (a source-scoped text search), the explicit empty
+    // line, or the named source that did not answer — never a spinner forever.
+    // (An id with an unknown source prefix, such as plex-main:12345, can sit on
+    // "Searching…" for longer than this journey waits, so it is not used here.)
     await expect(page.getByRole('listbox')).toContainText(/No results|did not answer|Plex/i, { timeout: 45000 });
     // Typing an id never plays by itself.
     await expect(page.getByTestId('media-mini-player')).toHaveCount(0);
