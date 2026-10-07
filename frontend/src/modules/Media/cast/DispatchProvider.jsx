@@ -129,6 +129,27 @@ export function DispatchProvider({ children }) {
     });
   }, [peek]);
 
+  // Register a follow-up on an existing dispatch. If that attempt is already
+  // confirmed it runs now; if it already failed it is dropped unrun; otherwise
+  // it joins any follow-up already waiting on the same attempt.
+  const attachFollowUp = (dispatchId, run, deviceId) => {
+    const record = recordsRef.current.get(dispatchId);
+    const phase = record ? (record.phase ?? outcomePhase(record)) : null;
+    if (phase === 'confirmed') {
+      try { run({ dispatchId, deviceId }); } catch { /* a follow-up must never break the outcome */ }
+      return;
+    }
+    if (record && ['failed', 'not-sent', 'unconfirmed'].includes(phase)) {
+      mediaLog.followUpDropped({ dispatchId, deviceId, phase });
+      return;
+    }
+    const existing = followUpsRef.current.get(dispatchId);
+    followUpsRef.current.set(dispatchId, {
+      deviceId,
+      run: existing ? (arg) => { existing.run(arg); run(arg); } : run,
+    });
+  };
+
   const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot, title, itemAction, startOver = false, resumedFrom = null, brief = false, onConfirmed = null }, { bypassDedupe = false } = {}) => {
     if (!Array.isArray(targetIds) || targetIds.length === 0) return [];
     if (itemAction && !itemAction.operationId) {
@@ -161,6 +182,11 @@ export function DispatchProvider({ children }) {
         windowMs: TIMING.DISPATCH_DEDUPE_WINDOW_MS,
         firstDispatchIds,
       });
+      // A Move deduped onto an earlier identical start must still stop here
+      // once that start confirms — never silently degrade to Keep.
+      if (typeof onConfirmed === 'function' && firstDispatchIds[0]) {
+        attachFollowUp(firstDispatchIds[0], onConfirmed, targetIds[0]);
+      }
       return firstDispatchIds;
     }
 
