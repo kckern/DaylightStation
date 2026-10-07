@@ -595,10 +595,12 @@ When `unattended_policy` is enabled and none of the configured `superusers` is
 in the active roster, each governed video starts locked until a non-guest,
 non-exempt child reaches the configured startup zone. That achievement is
 latched for the current media item. The engine then replaces the ordinary
-random challenge schedule with an `all` challenge at that zone on the exact
-configured interval. A missed challenge locks playback until every governed
-child reaches the target. A superuser joining immediately stands this policy
-down and restores the normal policy; leaving again starts a fresh startup gate.
+random challenge schedule with cyclic `all` challenges at the configured zones
+on the exact configured interval. By default those targets alternate between
+Warm and the startup zone (normally Hot). A missed challenge locks playback
+until every governed child reaches the target. A superuser joining immediately
+stands this policy down and restores the normal policy; leaving again starts a
+fresh startup gate.
 
 ## Configuration
 
@@ -614,6 +616,7 @@ governance:
   unattended_policy:
     enabled: true
     startup_zone: hot
+    challenge_zones: [warm, hot]
     challenge_interval_seconds: 180
     challenge_time_allowed_seconds: 90
   exemptions:

@@ -8,7 +8,13 @@ const ZONES = {
 const CONFIG = {
   governed_labels: ['cardio'],
   superusers: ['parent'],
-  unattended_policy: { enabled: true, startup_zone: 'hot', challenge_interval_seconds: 180, challenge_time_allowed_seconds: 90 },
+  unattended_policy: {
+    enabled: true,
+    startup_zone: 'hot',
+    challenge_zones: ['warm', 'hot'],
+    challenge_interval_seconds: 180,
+    challenge_time_allowed_seconds: 90,
+  },
   policies: { default: { base_requirement: [{ active: 'all' }], challenges: [] } },
   zoneConfig: Object.values(ZONES.zoneInfoMap),
 };
@@ -63,7 +69,7 @@ describe('GovernanceEngine — unattended child policy', () => {
     expect(h.engine.meta.satisfiedOnce).toBe(false);
   });
 
-  it('starts an all-hot challenge exactly three minutes after startup unlock', () => {
+  it('alternates all-child warm and hot challenges after startup unlock', () => {
     const h = harness();
     h.evaluate({ first: 'hot', second: 'active' });
     h.advance(179_999);
@@ -72,19 +78,28 @@ describe('GovernanceEngine — unattended child policy', () => {
     h.advance(1);
     h.evaluate({ first: 'active', second: 'active' });
     expect(h.engine.challengeState.activeChallenge).toMatchObject({
+      zone: 'warm', rule: 'all', requiredCount: 2, timeLimitSeconds: 90, status: 'pending',
+    });
+    h.evaluate({ first: 'warm', second: 'warm' });
+    expect(h.engine.challengeState.activeChallenge?.status).toBe('success');
+
+    h.advance(180_000);
+    h.evaluate({ first: 'active', second: 'active' });
+    h.evaluate({ first: 'active', second: 'active' });
+    expect(h.engine.challengeState.activeChallenge).toMatchObject({
       zone: 'hot', rule: 'all', requiredCount: 2, timeLimitSeconds: 90, status: 'pending',
     });
   });
 
-  it('locks a failed all-hot challenge and recovers only when every child is hot', () => {
+  it('locks a failed all-warm challenge and recovers only when every child is warm', () => {
     const h = harness();
     h.evaluate({ first: 'hot', second: 'active' });
     h.advance(180_000);
     h.evaluate({ first: 'active', second: 'active' });
     h.advance(90_000);
-    h.evaluate({ first: 'hot', second: 'active' });
+    h.evaluate({ first: 'warm', second: 'active' });
     expect(h.engine.phase).toBe('locked');
-    h.evaluate({ first: 'hot', second: 'hot' });
+    h.evaluate({ first: 'warm', second: 'warm' });
     expect(h.engine.challengeState.activeChallenge?.status).toBe('success');
     expect(h.engine.challengeState.videoLocked).toBe(false);
   });
