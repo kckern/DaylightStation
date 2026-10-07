@@ -26,6 +26,17 @@ const run = (state, seconds, input, dt = 1 / 60) => {
 };
 
 describe('flight motion', () => {
+  it('exposes signed vertical rate for presentation and telemetry', () => {
+    let state = createFlightState(course, { calibration });
+    expect(state.verticalRate).toBe(0);
+
+    state = stepFlight(state, fresh(100), 1, course);
+    expect(state.verticalRate).toBeLessThan(0);
+
+    state = stepFlight(state, fresh(0), 2, course);
+    expect(state.verticalRate).toBeGreaterThan(0);
+  });
+
   it('maps low/high RPM into the altitude band and clamps above maximum', () => {
     let state = createFlightState(course, { calibration });
     state = stepFlight(state, fresh(30), 1 / 60, course);
