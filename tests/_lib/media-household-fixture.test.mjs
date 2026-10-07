@@ -94,6 +94,20 @@ describe('seeded household (real services over a temp data dir)', () => {
     expect((await get(f, '/household/favourites')).body.items.map((i) => i.id)).toEqual([ID.BLUEY, ID.RED_COAST]);
   });
 
+  it('reset swaps a fully built sibling tree into place by rename and leaves no sibling behind', async () => {
+    const f = make();
+    const before = fs.statSync(f.dataDir).ino;
+    fs.writeFileSync(`${f.dataDir}/stray.txt`, 'left by a journey');
+    f.reset();
+    expect(fs.existsSync(`${f.dataDir}/stray.txt`)).toBe(false);
+    expect(fs.statSync(f.dataDir).ino).not.toBe(before);
+    expect(fs.existsSync(`${f.dataDir}.next`)).toBe(false);
+    expect(fs.existsSync(`${f.dataDir}.old`)).toBe(false);
+    expect(fs.existsSync(`${f.dataDir}/household/media/favourites.yml`)).toBe(true);
+    f.cleanup();
+    expect(fs.existsSync(f.dataDir)).toBe(false);
+  });
+
   it('mark watched writes the watched state to the temp progress file only', async () => {
     const f = make();
     await request(f.app).post('/household/watched').send({ contentId: ID.ARRIVAL, watched: true }).expect(200);
