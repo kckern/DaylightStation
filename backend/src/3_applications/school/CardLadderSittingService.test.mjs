@@ -1183,3 +1183,15 @@ describe('CardLadderSittingService — sequencing observability (spec §8)', () 
     expect(abandoned[0].idleMs).toBeGreaterThanOrEqual(6 * 60_000);
   });
 });
+
+it('folds direct course vocabulary misses once without promoting correct answers', async () => {
+  const f = make({ store: readyStore(2) });
+  const before = structuredClone(f.store.s.status.words.gawi);
+  await f.service.coursePaperFeedback({ userId: 'test-learner', deckId: DECK, cardIds: ['gawi'], attemptKey: 's1:graded' });
+  expect(f.store.s.status.words.gawi.state).not.toBe('mastered');
+  expect(f.store.s.status.words.pul.state).toBe('mastered');
+  const once = structuredClone(f.store.s.status.words.gawi);
+  await f.service.coursePaperFeedback({ userId: 'test-learner', deckId: DECK, cardIds: ['gawi'], attemptKey: 's1:graded' });
+  expect(f.store.s.status.words.gawi).toEqual(once);
+  expect(once.recognizedCount).toBe(before.recognizedCount);
+});

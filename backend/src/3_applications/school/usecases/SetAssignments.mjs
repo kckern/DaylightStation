@@ -123,6 +123,18 @@ export class SetAssignments {
         }
       }
     }
+    const linked = normalizedPrograms.filter((p) => p.linkedUnitId);
+    if (linked.length) {
+      if (!this.#curriculum) throw new ValidationError('A curriculum is required to validate linked practice assignments.');
+      const catalog = await this.#curriculum.listUnits();
+      for (const enrollment of linked) {
+        const unit = catalog.find((u) => u.unitId === enrollment.linkedUnitId);
+        if (!unit?.practice || unit.practice.deckId !== (enrollment.deckId ?? enrollment.corpusId)) throw new ValidationError(`Invalid practice linkage: ${enrollment.linkedUnitId}`);
+        const assigned = units.some((u) => (typeof u === 'string' ? u : u?.unitId) === unit.unitId)
+          || courses.some((c) => (typeof c === 'string' ? c : c?.courseId) === unit.courseId);
+        if (!assigned) throw new ValidationError(`Assign the linked course or unit: ${unit.unitId}`);
+      }
+    }
     if (baseUpdatedAt !== undefined) {
       assertNotStale(await this.#assignments.get(learnerId), baseUpdatedAt);
     }

@@ -1,3 +1,4 @@
+import { selectAssessmentQuestions } from '#domains/school/documents/assessmentSelection.mjs';
 /**
  * ResolveCardScan — scan-back resolution + grading (spec §5.4 allocation
  * lifecycle / scan-back resolution, §5.5 `multi_select` grading).
@@ -1051,10 +1052,11 @@ export class ResolveCardScan {
     // already matches `record.seed` by construction — pinned here too anyway,
     // defensively, since a mismatch would silently re-derive the wrong
     // shuffle exactly like a variant mismatch would.
-    const { document: prepared, extraItems } = prepareV2Document(
+    const { document: expanded, extraItems } = prepareV2Document(
       { ...pinnedDocument, variant: record.variant, seed: record.seed },
       { banks: this.#banks },
     );
+    const prepared = selectAssessmentQuestions(expanded, record.assessmentItemIds);
     const bank = mergeBank(baseBank, extraItems, prepared.id);
     const bankItemsById = new Map((bank?.items ?? []).map((item) => [item.id, item]));
 

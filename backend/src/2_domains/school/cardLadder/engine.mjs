@@ -377,6 +377,8 @@ function itemForRound(ctx, round) {
 }
 
 export function currentItem(ctx) {
+  const course = ctx.dayFile.courseReview;
+  if (course && course.index < course.queue.length) return { ...practiceItem(ctx, course), courseUnitId: course.unitId };
   const pending = ctx.dayFile.rechecks.order.find((id) => !ctx.dayFile.rechecks.answered[id]);
   if (pending) return gradedItem(ctx, `rc:${pending}`, pending, recheckTask(wordOf(ctx.status, pending), pending, ctx.media?.[pending]), 'recheck');
   const drill = openDrill(ctx);
@@ -472,7 +474,7 @@ export function learnMore(ctx, { at } = {}) {
 function practiceItem(ctx, run) {
   const task = run.queue[run.index];
   const id = `${run.id}:${run.index}`;
-  const source = 'practice';
+  const source = run.unitId ? 'course-review' : 'practice';
   const cue = () => cueFor(ctx.lexicon.entries.get(task.wordId), ctx.media?.[task.wordId] ?? {}, `${ctx.learnerId}|${ctx.day}|${id}`);
   switch (task.kind) {
     case 'flashcard': return { id, type: 'flashcard', mode: 'practice', source, wordId: task.wordId, front: task.front };
@@ -486,6 +488,35 @@ function practiceItem(ctx, run) {
     case 'graded': return { ...gradedItem(ctx, id, task.wordId, task.task, source), graded: true };
     default: throw new DomainInvariantError(`unknown practice task kind '${task.kind}'`);
   }
+}
+
+/** A course-owned study/check run; never alters the frozen daily plan. */
+export function startCourseReview(ctx, { unitId, chosen = [], after = null }) {
+  if (typeof unitId !== 'string' || !unitId) throw new ValidationError('course unit is required');
+  const ids = [...new Set(chosen)];
+  if (!ids.length || ids.some((id) => !ctx.lexicon.entries.has(id) || !ctx.status.words[id] || ctx.status.words[id].state === 'new' || ctx.status.words[id].excluded === true)) throw new ValidationError('course review requires introduced, included cards');
+  const dayFile = clone(ctx.dayFile);
+  const number = (dayFile.courseReviewRuns ?? 0) + 1;
+  dayFile.courseReviewRuns = number;
+  dayFile.courseReview = { id: `cr${number}`, unitId, after, index: 0, queue: ids.flatMap((wordId) => [
+    { kind: 'flashcard', wordId, front: 'gloss' }, ...VERIFY_TASKS.map((task) => ({ kind: 'graded', wordId, task })),
+  ]) };
+  return { status: clone(ctx.status), dayFile };
+}
+
+function respondCourseReview(ctx, item, response, verdict) {
+  const run = ctx.dayFile.courseReview;
+  let result = { ok: true };
+  if (item.type === 'choice') {
+    const correct = gradedCorrect(ctx, item, response, verdict);
+    result = gradedResult(ctx, item, correct, verdict);
+    if (!correct) {
+      ctx.status.words[item.wordId] = applyGraded(wordOf(ctx.status, item.wordId), { source: 'verify', correct: false, day: ctx.day, task: item.task, settings: gradedSettings(ctx.settings) });
+      run.queue = [...run.queue.slice(0, run.index + 1), ...run.queue.slice(run.index + 1).filter((t) => t.wordId !== item.wordId)];
+    }
+  }
+  run.index += 1;
+  return { result, advance: true };
 }
 
 /**
@@ -723,7 +754,7 @@ function transitionSource(item) {
 // A graded answer (a verify, recheck or practice Quiz me task) as a record;
 // null for everything else, including an ended practice run.
 function gradedRecord(item, response, result, verdict) {
-  const graded = item.source === 'verify' || item.source === 'recheck' || (item.source === 'practice' && item.graded === true);
+  const graded = item.source === 'verify' || item.source === 'recheck' || (['practice', 'course-review'].includes(item.source) && item.graded === true);
   if (!graded || response?.menu === true || typeof result?.correct !== 'boolean') return null;
   return {
     wordId: item.wordId, task: item.task, source: item.source, correct: result.correct,
@@ -762,6 +793,7 @@ export function respond(inputCtx, itemId, response = {}, { at, verdict = null } 
 function itemMeta(item, verdict) {
   const meta = {};
   if (item.wordId) meta.wordId = item.wordId;
+  if (item.courseUnitId) meta.courseUnitId = item.courseUnitId;
   if (item.task) meta.task = item.task;
   if (item.wordId || item.task) {
     meta.source = item.source ?? null;
@@ -773,8 +805,10 @@ function itemMeta(item, verdict) {
 function applyResponse(ctx, item, itemId, response, { at, verdict }) {
   let result = { ok: true };
 
-  if (item.source === 'practice' || item.type === 'drill') {
-    const { result: stepResult, advance } = item.source === 'practice'
+  if (item.source === 'course-review' || item.source === 'practice' || item.type === 'drill') {
+    const { result: stepResult, advance } = item.source === 'course-review'
+      ? respondCourseReview(ctx, item, response, verdict)
+      : item.source === 'practice'
       ? respondPractice(ctx, item, response, verdict)
       : respondDrill(ctx, openDrill(ctx), response);
     // A retry is not stored: the same item id must accept the next attempt.

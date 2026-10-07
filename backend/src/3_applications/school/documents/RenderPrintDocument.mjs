@@ -1,3 +1,4 @@
+import { selectAssessmentQuestions } from '#domains/school/documents/assessmentSelection.mjs';
 /**
  * RenderPrintDocument — the v2 print pipeline assembled (spec §3 governing
  * idea 1, §7 fit orchestration). Validates either envelope generation, then:
@@ -895,7 +896,8 @@ export class RenderPrintDocument {
 
   /** v2: fit loop, then one furniture-aware render at the chosen density. */
   async #renderV2(rawDocument, context, { bank: baseBank = null } = {}) {
-    const { document: prepared, extraItems, warnings: prepareWarnings } = this.#prepareV2Document(rawDocument);
+    const { document: expanded, extraItems, warnings: prepareWarnings } = this.#prepareV2Document(rawDocument);
+    const prepared = selectAssessmentQuestions(expanded, context.assessmentItemIds);
     const bank = mergeBank(baseBank, extraItems, prepared.id);
 
     // Validated FIRST, before any allocation write: a bad `context.gutter`
@@ -1241,6 +1243,7 @@ export class RenderPrintDocument {
       // its immutable item ownership here; allocation converts it to row
       // ranges after planning the exact rendered document.
       sectionAttribution: sectionAttribution ?? null,
+      assessmentItemIds: context.assessmentItemIds ?? null,
     };
   }
 
@@ -1262,7 +1265,7 @@ export class RenderPrintDocument {
    */
   async #allocateCard(document, bank, {
     cardId, freshCard, automaticCard, answerSheetPolicy, startRow, learnerId, sessionId, sectionAttribution,
-    reprintFirstUse,
+    reprintFirstUse, assessmentItemIds,
   }) {
     if (!this.#allocationStore) {
       throw new ValidationError(
@@ -1318,6 +1321,7 @@ export class RenderPrintDocument {
     });
     const request = {
       documentId: document.id,
+      ...(assessmentItemIds ? { assessmentItemIds } : {}),
       rev: document.rev,
       seed: document.seed,
       variant: document.variant ?? 0,

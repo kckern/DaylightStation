@@ -31,6 +31,9 @@ export function validateFlashcardEnrollment(raw) {
   const deckId = raw.deckId ?? raw.corpusId;
   if (raw.programId !== 'flashcards') errors.push('programId must be flashcards');
   if (typeof deckId !== 'string' || !ID.test(deckId)) errors.push('deckId is required and must be a lowercase content reference');
+  if (raw.linkedUnitId !== undefined && (typeof raw.linkedUnitId !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,127}$/.test(raw.linkedUnitId))) errors.push('linkedUnitId must be a unit identifier');
+  if (raw.linkedUnitId !== undefined && !isCardLadderPolicy(raw.policy)) errors.push('linkedUnitId requires card-ladder policy');
+  if (raw.subject !== undefined && (typeof raw.subject !== 'string' || !raw.subject.trim())) errors.push('subject must be a nonempty string');
   if (raw.title !== undefined && (typeof raw.title !== 'string' || !raw.title.trim())) errors.push('title must be a non-empty string when present');
   const policy = raw.policy && typeof raw.policy === 'object' && !Array.isArray(raw.policy)
     ? { ...raw.policy, ...(raw.policy.mode !== undefined ? { mode: canonicalFlashcardMode(raw.policy.mode) } : {}) }
@@ -60,6 +63,8 @@ export function validateFlashcardEnrollment(raw) {
   return {
     errors: [],
     enrollment: {
+      ...(raw.linkedUnitId ? { linkedUnitId: raw.linkedUnitId } : {}),
+      ...(raw.subject ? { subject: raw.subject } : {}),
       programId: 'flashcards', corpusId: deckId, deckId, policy: { ...policy, mode },
       ...(typeof raw.title === 'string' ? { title: raw.title.trim() } : {}),
     },

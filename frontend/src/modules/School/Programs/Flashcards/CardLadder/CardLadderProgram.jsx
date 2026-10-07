@@ -1,3 +1,5 @@
+import { schoolApi } from '../../../schoolApi.js';
+import PracticeAssessmentPanel from './PracticeAssessmentPanel.jsx';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { TouchButton } from '../../../../../lib/ui/index.js';
 import { sidesFromOpen } from './targetScript.js';
@@ -434,6 +436,47 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     await resync();
   }, [api, session, item, userId, deckId, test, show, open, resync, unreachable]);
 
+  const [assessment, setAssessment] = useState(null);
+  const [assessmentBusy, setAssessmentBusy] = useState(false);
+  const [assessmentNotice, setAssessmentNotice] = useState(null);
+  const refreshAssessment = useCallback(async () => {
+    if (test || !userId || !deckId) return;
+    const reply = await schoolApi.practiceAssessment({ learnerId: userId, deckId });
+    if (live.current && reply.ok) setAssessment(reply.data);
+  }, [test, userId, deckId]);
+  useEffect(() => { refreshAssessment(); }, [refreshAssessment, started, item?.type, item?.source]);
+  const printAssessment = useCallback(async () => {
+    if (!assessment || assessmentBusy) return;
+    setAssessmentBusy(true);
+    const reply = await schoolApi.printPracticeAssessment({ learnerId: userId, unitId: assessment.unitId });
+    if (live.current) {
+      setAssessmentBusy(false);
+      setAssessmentNotice(reply.data?.message ?? (reply.ok ? 'Your quiz is ready.' : 'The quiz could not be printed. Try again.'));
+      await refreshAssessment();
+    }
+  }, [assessment, assessmentBusy, userId, refreshAssessment]);
+  const reviewAssessment = useCallback(async () => {
+    if (!assessment || assessmentBusy) return;
+    setAssessmentBusy(true);
+    let id = sittingRef.current;
+    if (!id) {
+      // A focused review can start from the course's start card.
+      const reply = await api.open({ userId, deckId, capabilities: { microphone: false } });
+      if (!reply.ok || !reply.data?.sittingId) { setAssessmentBusy(false); setAssessmentNotice('Card review could not open. Try again.'); return; }
+      id = reply.data.sittingId;
+      sittingRef.current = id; closedRef.current = false;
+      trace.setSitting(id); trace.setPackage(reply.data.package ?? null);
+      setSession({ id, langs: sidesFromOpen(reply.data) });
+      show(reply.data.item, reply.data.progress);
+      setStarted(true);
+    }
+    const reply = await schoolApi.reviewPracticeAssessment({ learnerId: userId, unitId: assessment.unitId, sittingId: id });
+    if (!live.current) return;
+    setAssessmentBusy(false);
+    if (reply.ok && reply.data?.item) { show(reply.data.item, reply.data.progress); setAssessmentNotice(null); }
+    else { setStarted(false); setAssessmentNotice(reply.data?.error?.message ?? 'Review could not start. Try again.'); }
+  }, [assessment, assessmentBusy, api, userId, deckId, trace, show]);
+
   /** Any practice item can end the run early: back to the menu. */
   const inPractice = item?.source === 'practice';
   // Not while a held verdict waits for Next: the server has already moved past that item.
@@ -498,6 +541,7 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
             : <p className="wl-header__piles">{remaining}</p>}
         />
         <main className="wl-main">{body}</main>
+        {(!started || ['summary', 'menu'].includes(item?.type) || ['quiz_ready', 'retry_ready', 'completed', 'quiz_issued'].includes(assessment?.stage)) && <PracticeAssessmentPanel progress={assessment} busy={busy || assessmentBusy} onPrint={printAssessment} onReview={reviewAssessment} notice={assessmentNotice} />}
       </div>
     </CardLadderStage>
   );

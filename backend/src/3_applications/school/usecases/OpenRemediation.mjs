@@ -23,7 +23,7 @@ import { shortId } from '#system/utils/id.mjs';
 import { pausedExceptionFor } from '../curriculumExceptionProjection.mjs';
 
 export class OpenRemediation {
-  #curriculum; #sessions; #clock; #newSessionId; #logger; #curriculumExceptions;
+  #practiceAssessments; #curriculum; #sessions; #clock; #newSessionId; #logger; #curriculumExceptions;
 
   /**
    * @param {object} deps
@@ -33,8 +33,9 @@ export class OpenRemediation {
    * @param {() => string} [deps.newSessionId]
    * @param {object} [deps.logger]
    */
-  constructor({ curriculum, sessions, curriculumExceptions = null, clock = () => new Date(), newSessionId = () => `ses_${shortId(8)}`, logger = console } = {}) {
+  constructor({ curriculum, sessions, practiceAssessments = null, curriculumExceptions = null, clock = () => new Date(), newSessionId = () => `ses_${shortId(8)}`, logger = console } = {}) {
     if (!curriculum || !sessions) throw new Error('OpenRemediation requires curriculum and sessions');
+    this.#practiceAssessments = practiceAssessments;
     this.#curriculum = curriculum;
     this.#sessions = sessions;
     this.#clock = clock;
@@ -75,7 +76,12 @@ export class OpenRemediation {
     if (paused) return this.#unavailable(sessionId, `This lesson is paused: ${paused.reason}.`);
 
     const unit = await this.#curriculum.getUnit(state.unitId);
-    const variants = unit?.retry?.variants ?? 1;
+    if (unit?.practice || state.practiceAssessment) {
+      if (!this.#practiceAssessments) return this.#unavailable(sessionId, 'Course review readiness is not configured.');
+      const progress = await this.#practiceAssessments.get({ learnerId: state.learnerId, unitId: state.unitId });
+      if (progress.stage !== 'retry_ready') return this.#unavailable(sessionId, 'Review the cards for the missed questions before trying again.');
+    }
+    const variants = state.practiceAssessment?.assessmentForms?.length ?? unit?.retry?.variants ?? 1;
     // Cycles within what the unit actually authored: promising a fourth form of
     // a three-form worksheet would print the first one and call it new.
     const variant = (state.variant + 1) % Math.max(1, variants);

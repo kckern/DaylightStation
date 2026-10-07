@@ -1,3 +1,4 @@
+import * as courseEngine from './engine.mjs';
 // backend/src/2_domains/school/cardLadder/engine.test.mjs
 import { describe, expect, it } from 'vitest';
 import { emptyWordV3 } from './mastery.mjs';
@@ -904,5 +905,37 @@ describe('engine — copy steps compare under the target script', () => {
     expect(currentItem(ctx)).toMatchObject({ type: 'copy', wordId: 'cat' });
     const { result } = step(ctx, { typed: 'cat' });
     expect(result).toMatchObject({ correct: true });
+  });
+});
+
+describe('course review', () => {
+  it('studies mastered cards before the daily goal, records fresh checks, and preserves review stages on success', () => {
+    const status = emptyStatusV3();
+    status.words.gawi = { ...emptyWordV3(), state: 'mastered', stage: 3, recognizedCount: 4, matched: true, dueDay: '2026-10-01' };
+    let ctx = start(status);
+    const original = structuredClone(ctx.status.words.gawi);
+    expect(ctx.dayFile.doneAt).toBeNull();
+    const run = courseEngine.startCourseReview(ctx, { unitId: 'course.01', chosen: ['gawi'], after: '2026-09-22T00:00:00Z' });
+    ctx = { ...ctx, ...run };
+    expect(currentItem(ctx)).toMatchObject({ type: 'flashcard', source: 'course-review', wordId: 'gawi' });
+    ({ ctx } = step(ctx, { next: true }));
+    expect(currentItem(ctx)).toMatchObject({ task: '3.1', source: 'course-review' });
+    ({ ctx } = step(ctx, right(currentItem(ctx))));
+    ({ ctx } = step(ctx, right(currentItem(ctx))));
+    expect(ctx.status.words.gawi).toEqual(original);
+    expect(Object.values(ctx.dayFile.items).filter((i) => i.courseUnitId === 'course.01' && i.result.correct === true)).toHaveLength(2);
+    expect(currentItem(ctx).source).not.toBe('course-review');
+    expect(ctx.dayFile.doneAt).toBeNull();
+  });
+  it('a recognition miss ends that card check and applies the normal miss rule', () => {
+    const status = emptyStatusV3();
+    status.words.gawi = { ...emptyWordV3(), state: 'mastered', stage: 3, recognizedCount: 4, matched: true };
+    let ctx = start(status);
+    ctx = { ...ctx, ...courseEngine.startCourseReview(ctx, { unitId: 'course.01', chosen: ['gawi'], after: '2026-09-22T00:00:00Z' }) };
+    ({ ctx } = step(ctx, { next: true }));
+    ({ ctx } = step(ctx, { dontKnow: true }));
+    expect(ctx.status.words.gawi.state).toBe('familiar');
+    expect(currentItem(ctx).source).not.toBe('course-review');
+    expect(() => courseEngine.startCourseReview(ctx, { unitId: 'course.01', chosen: ['ghost'] })).toThrow();
   });
 });

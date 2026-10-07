@@ -1,3 +1,4 @@
+import { PracticeAssessmentService } from '#apps/school/PracticeAssessmentService.mjs';
 // backend/src/5_composition/modules/schoolLifecycle.mjs
 //
 // Composition wiring for the School physical console (spec §2, §6.2, §9).
@@ -829,11 +830,15 @@ export async function createSchoolLifecycle({
   const { errors: calendarErrors, schedule: householdSchedule } = validateSchedule(cfg.calendar);
   if (calendarErrors.length) logger.warn?.('school.calendar.invalid', { errors: calendarErrors });
 
+  const practiceAssessments = cardLadderStudyService ? new PracticeAssessmentService({
+    curriculum, assignments: stores.assignments, sessions: stores.sessions, cardLadder: cardLadderStudyService, clock, newSessionId,
+    attestations, curriculumExceptions: curriculumExceptionStore,
+  }) : null;
   const planProjection = new PlanProjection({
     curriculum, assignments: stores.assignments, sessions: stores.sessions,
     attestations, curriculumExceptions: curriculumExceptionStore,
     launchers, timezone, clock, logger,
-    declaredEntryActions, householdSchedule, dayBypasses: programDayBypassStore,
+    declaredEntryActions, householdSchedule, dayBypasses: programDayBypassStore, practiceAssessments,
   });
 
   // --- use cases -------------------------------------------------------------
@@ -890,6 +895,7 @@ export async function createSchoolLifecycle({
     curriculum, assignments: stores.assignments, sessions: previewSessions,
     attestations, curriculumExceptions: curriculumExceptionStore,
     launchers, timezone, clock, householdSchedule, dayBypasses: programDayBypassStore,
+    practiceAssessments,
     planErrorEvent: 'school.agenda.plan-errors',
     launcherFailedEvent: 'school.agenda.launcher-failed',
     logger: logger.child ? logger.child({ preview: true }) : logger,
@@ -1016,6 +1022,7 @@ export async function createSchoolLifecycle({
   const publishPrintDocument = new PublishPrintDocument({ repository: printDocuments, texLint: lintTex });
 
   const issueDocument = new IssueDocument({
+    practiceAssessments,
     curriculum, sessions: stores.sessions, tokens: stores.tokens,
     renderer: documentRenderer, printer: laserPrinter, formMaps: stores.formMaps,
     printDocuments, renderPrintDocument, allocationStore, publishPrintDocument,
@@ -1077,6 +1084,7 @@ export async function createSchoolLifecycle({
     grownUps, teacherGate, passOverrides, clock, logger,
   });
   const closeSessionOutcome = new CloseSessionOutcome({
+    practiceAssessments,
     curriculum, sessions: stores.sessions, tokens: stores.tokens, assignments: stores.assignments,
     passOverrides,
     worksheetInstances,
@@ -1116,8 +1124,9 @@ export async function createSchoolLifecycle({
       closeSessionOutcome, realtime: schoolRealtime, clock, logger,
     })
     : null;
-  const openRemediation = new OpenRemediation({ curriculum, sessions: stores.sessions,
+  const openRemediation = new OpenRemediation({ curriculum, sessions: stores.sessions, practiceAssessments,
     curriculumExceptions: curriculumExceptionStore, clock, logger });
+  practiceAssessments?.configurePrinting({ issueDocument, openRemediation, printDocuments });
   const replaceRemediation = new ReplaceRemediation({
     curriculum, sessions: stores.sessions, teacherGate, clock, newSessionId, logger,
   });
@@ -1487,6 +1496,7 @@ export async function createSchoolLifecycle({
   });
   const lifecycleSyllabusService = new SchoolLifecycleSyllabusService({ syllabi });
   const router = createSchoolLifecycleRouter({
+    practiceAssessments,
     ...useCases,
     lifecycleAgendaResource,
     lifecycleReadService,

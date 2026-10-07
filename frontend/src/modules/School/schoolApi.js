@@ -40,6 +40,9 @@ async function reqAbsolute(path, { timeoutMs = null } = {}) {
 }
 
 export const schoolApi = {
+  practiceAssessment: ({ learnerId, deckId }) => req(`/lifecycle/practice-assessments?${new URLSearchParams({ learnerId, deckId })}`),
+  printPracticeAssessment: ({ learnerId, unitId }) => req(`/lifecycle/practice-assessments/${encodeURIComponent(unitId)}/print`, { learnerId }),
+  reviewPracticeAssessment: ({ learnerId, unitId, sittingId }) => req(`/lifecycle/practice-assessments/${encodeURIComponent(unitId)}/review`, { learnerId, sittingId }),
   bookScans: {
     pending: screenId => req(`/book-scans/pending?${new URLSearchParams({ screenId })}`),
     claim: (id, body) => req(`/book-scans/${encodeURIComponent(id)}/claim`, body),
