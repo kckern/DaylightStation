@@ -2,7 +2,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { runGroups, uniquePath, groupedJourneys } from '../../../scripts/media-gate-runner.mjs';
+import { runGroups, uniquePath, groupedJourneys, groupStem } from '../../../scripts/media-gate-runner.mjs';
 import { validateReport, runGate } from '../../../scripts/media-stable-core-gate.mjs';
 import { runP0Gate } from '../../../scripts/media-p0-gate.mjs';
 
@@ -98,6 +98,15 @@ describe('media gate runner', () => {
     const { out } = harness((g) => (g === 'a' ? () => { throw new Error('spawn failed'); } : g === 'b' ? () => ({ status: 0, stdout: 'not json', stderr: '' }) : ok));
     expect(out.results.map(({ status }) => status)).toEqual(['FAIL', 'FAIL', 'PASS']);
     expect(out.results[1].reason).toMatch(/invalid Playwright JSON/);
+  });
+
+  it('keeps evidence file names under the OS limit for a long grep, distinct per grep', () => {
+    const long = (n) => Array.from({ length: 30 }, (_, i) => `\\[FIND\\.1a/AC${i}\\] title ${n}`).join('|');
+    const a = groupStem(0, { file: 'media-app-find-proof.runtime.test.mjs', grep: long('a') });
+    const b = groupStem(0, { file: 'media-app-find-proof.runtime.test.mjs', grep: long('b') });
+    expect(a.length).toBeLessThan(120);
+    expect(a).not.toBe(b);
+    expect(groupStem(2, { file: 'f.mjs', grep: 'short grep' })).toBe('03-f.mjs-short_grep');
   });
 
   it('groups manifest entries by file and grep', () => {

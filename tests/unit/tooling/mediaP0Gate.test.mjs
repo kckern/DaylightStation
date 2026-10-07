@@ -91,8 +91,16 @@ describe('Media P0 gate manifest', () => {
       expect.objectContaining({ story: 'RELY.13a', criteria: ['RELY.13a/AC2'], file: 'media-app-p0-accessibility.runtime.test.mjs' }),
       expect.objectContaining({ story: 'RELY.14a', criteria: ['RELY.14a/AC3'], file: 'media-app-p0-accessibility.runtime.test.mjs' }),
     ]));
-    expect(P0_EXTENSION_ENTRIES).toHaveLength(61);
-    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 59, criteria: 146 });
+    expect(P0_EXTENSION_ENTRIES).toHaveLength(106);
+    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 79, criteria: 231 });
+  });
+
+  it('Phase 2b journeys: a known gap (a test.fail that pins a product defect) is never part of a manifest grep', () => {
+    const phase2b = P0_EXTENSION_ENTRIES.filter(({ file }) => /-proof\.runtime\.test\.mjs$|media-app-routines/.test(file));
+    expect(phase2b.length).toBeGreaterThan(30);
+    for (const { grep, file } of phase2b) {
+      expect(new RegExp(grep).test('[X.1a/AC1] anything (known gap)'), `${file} grep must not select a known-gap test`).toBe(false);
+    }
   });
 
   it('rejects skipped, duplicated, weakened, or unjourneyed criteria', () => {
