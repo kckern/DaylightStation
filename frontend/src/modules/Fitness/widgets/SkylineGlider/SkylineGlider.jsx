@@ -3,6 +3,7 @@ import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 import { validateCourse, resolveCalibration } from '@/modules/Fitness/lib/skylineGlider/courseModel.js';
 import { createFlightState, stepFlight } from '@/modules/Fitness/lib/skylineGlider/flightEngine.js';
+import { projectCourseWindow } from '@/modules/Fitness/lib/skylineGlider/courseProjection.js';
 import { clearFlightCheckpoint, readFlightCheckpoint, writeFlightCheckpoint } from '@/modules/Fitness/lib/skylineGlider/checkpointRepository.js';
 import { buildSkylineGliderRun } from '@/modules/Fitness/lib/skylineGlider/runResult.js';
 import './SkylineGlider.scss';
@@ -20,19 +21,107 @@ function selectBike(equipment = []) {
     || null;
 }
 
-function Scene({ state, course }) {
-  const x = Math.min(100, state.courseTime / course.duration_s * 100);
-  const y = state.altitude * 100;
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+function TerrainSegment({ segment }) {
+  const width = Math.max(4, segment.width);
+  if (segment.type === 'lower-terrain') {
+    const y = segment.top * 600;
+    return <g data-testid={`course-segment-${segment.id}`} data-type={segment.type}>
+      <rect x={segment.x} y={y} width={width} height={600 - y} className="skyline-glider__terrain skyline-glider__terrain--lower"/>
+      <path d={`M${segment.x} ${y} l22 -24 28 24 32 -34 34 34 H${segment.x + width}`} className="skyline-glider__snowline"/>
+    </g>;
+  }
+  if (segment.type === 'upper-terrain') {
+    const y = segment.bottom * 600;
+    return <g data-testid={`course-segment-${segment.id}`} data-type={segment.type}>
+      <rect x={segment.x} y="0" width={width} height={y} className="skyline-glider__terrain skyline-glider__terrain--upper"/>
+      <path d={`M${segment.x} ${y} l24 20 28 -20 30 28 34 -28 H${segment.x + width}`} className="skyline-glider__cave-edge"/>
+    </g>;
+  }
+  if (segment.type === 'corridor') {
+    const ceiling = segment.ceiling * 600;
+    const floor = segment.floor * 600;
+    return <g data-testid={`course-segment-${segment.id}`} data-type={segment.type}>
+      <rect x={segment.x} y="0" width={width} height={ceiling} className="skyline-glider__terrain skyline-glider__terrain--upper"/>
+      <rect x={segment.x} y={floor} width={width} height={600 - floor} className="skyline-glider__terrain skyline-glider__terrain--lower"/>
+      <path d={`M${segment.x} ${ceiling} H${segment.x + width} M${segment.x} ${floor} H${segment.x + width}`} className="skyline-glider__corridor-edge"/>
+    </g>;
+  }
+  if (segment.type === 'checkpoint') {
+    return <g data-testid={`course-segment-${segment.id}`} data-type={segment.type} transform={`translate(${segment.x} 0)`} className="skyline-glider__checkpoint">
+      <line x1="0" y1="90" x2="0" y2="530"/><path d="M0 100 h72 l-20 25 20 25 H0Z"/>
+    </g>;
+  }
+  if (segment.type === 'finish') {
+    return <g data-testid={`course-segment-${segment.id}`} data-type={segment.type} transform={`translate(${segment.x} 0)`} className="skyline-glider__finish">
+      <path d="M-45 510 V170 Q0 80 45 170 V510"/>
+    </g>;
+  }
+  return null;
+}
+
+export function FlightScene({ state, course }) {
+  const projected = projectCourseWindow(course, state.courseTime);
+  const cadenceSpan = Math.max(1, state.calibration.highRpm - state.calibration.lowRpm);
+  const drift = clamp((state.rawRpm - state.filteredRpm) / cadenceSpan * 90, -30, 30);
+  const craftX = projected.playerX + drift;
+  const craftY = state.altitude * projected.height;
+  const pitch = clamp((state.verticalRate || 0) * 50, -12, 12);
+  const farOffset = -((state.courseTime * 10) % 1000);
+  const middleOffset = -((state.courseTime * 22) % 1000);
+  const nearOffset = -((state.courseTime * 38) % 1000);
   return <svg className="skyline-glider__scene" viewBox="0 0 1000 600" role="img" aria-label="Alpine flight course">
-    <defs><linearGradient id="glider-sky" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#78bce8"/><stop offset="1" stopColor="#f8d69a"/></linearGradient></defs>
+    <defs>
+      <linearGradient id="glider-sky" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#78bce8"/><stop offset="1" stopColor="#f8d69a"/></linearGradient>
+      <linearGradient id="glider-rock" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#42685e"/><stop offset="1" stopColor="#193d38"/></linearGradient>
+    </defs>
     <rect width="1000" height="600" fill="url(#glider-sky)"/>
-    <path d="M0 430 L120 300 230 410 380 230 520 420 680 250 820 430 1000 290 1000 600 0 600Z" fill="#456b62" opacity=".55"/>
-    <path d="M0 485 Q160 420 330 490 T680 470 T1000 485 V600 H0Z" fill="#25473e"/>
-    <g transform={`translate(${100 + x * 7.5} ${70 + y * 4.3})`} className="skyline-glider__craft">
-      <path d="M-45 5 L0-18 48 5 8 0 0 18 -8 0Z" fill="#fff4cf" stroke="#553b2f" strokeWidth="4"/>
-      <circle cx="0" cy="14" r="5" fill="#553b2f"/>
+    <g className="skyline-glider__parallax skyline-glider__parallax--far" transform={`translate(${farOffset} 0)`}>
+      <path d="M0 420 L130 250 260 420 420 210 590 420 760 260 1000 420 1130 250 1260 420 1420 210 1590 420 1760 260 2000 420 V600 H0Z"/>
+    </g>
+    <g className="skyline-glider__parallax skyline-glider__parallax--middle" transform={`translate(${middleOffset} 0)`}>
+      <path d="M0 490 L170 360 330 480 520 330 690 490 860 350 1000 470 1170 360 1330 480 1520 330 1690 490 1860 350 2000 470 V600 H0Z"/>
+    </g>
+    <g className="skyline-glider__parallax skyline-glider__parallax--near" transform={`translate(${nearOffset} 0)`}>
+      <path d="M0 535 Q180 465 350 530 T700 510 T1000 530 Q1180 465 1350 530 T1700 510 T2000 530 V600 H0Z"/>
+    </g>
+    <g className="skyline-glider__course-geometry">
+      {projected.segments.map((segment) => <TerrainSegment key={segment.id} segment={segment}/>)}
+      {projected.collectibles.map((item) => <g key={item.id} transform={`translate(${item.x} ${item.y})`} className="skyline-glider__bell" data-testid={`course-collectible-${item.id}`}>
+        <path d="M-12 9 Q-9 1 -7 -10 Q0 -18 7 -10 Q9 1 12 9Z"/><circle cy="12" r="3"/>
+      </g>)}
+    </g>
+    <g className="skyline-glider__wind" transform={`translate(${craftX - 72} ${craftY})`}><path d="M0 -14 h42 M-18 0 h55 M5 14 h32"/></g>
+    <g data-testid="skyline-glider-craft" data-facing="right" transform={`translate(${craftX} ${craftY}) rotate(${pitch})`} className="skyline-glider__craft">
+      <path d="M-48 -7 L4 -15 57 0 6 12 -42 8 -58 1Z" className="skyline-glider__wing"/>
+      <path d="M-28 2 Q4 -3 43 0 Q6 8 -30 7Z" className="skyline-glider__body"/>
+      <path d="M-24 4 L-38 24 M-38 24 L-47 30" className="skyline-glider__frame"/>
+      <circle cx="-36" cy="25" r="5" className="skyline-glider__pilot"/>
+      {state.invincibleRemaining > 0 && <g data-testid="skyline-glider-collision-effect" className="skyline-glider__collision-burst"><path d="M-62 -34 l-16 -18 M-67 0 h-28 M-55 31 l-20 16 M43 -28 l18 -16 M57 15 l25 8"/></g>}
     </g>
   </svg>;
+}
+
+export function RpmGauge({ state }) {
+  const rpm = Math.max(0, Math.round(state.rawRpm || 0));
+  const altitude = clamp(Number(state.altitude) || 0, 0.18, 0.78);
+  return <aside
+    className="skyline-glider__rpm-gauge"
+    role="meter"
+    aria-label="Cadence altitude"
+    aria-valuemin={state.calibration.lowRpm}
+    aria-valuemax={state.calibration.highRpm}
+    aria-valuenow={rpm}
+  >
+    <span className="skyline-glider__rpm-high">{state.calibration.highRpm}</span>
+    <div className="skyline-glider__rpm-track">
+      <div className="skyline-glider__rpm-target" style={{ top: `${state.targetAltitude * 100}%` }}/>
+      <div className="skyline-glider__rpm-chevron" data-testid="rpm-chevron" data-altitude={state.altitude} style={{ top: `${altitude * 100}%` }}><span>{rpm}</span></div>
+    </div>
+    <span className="skyline-glider__rpm-low">{state.calibration.lowRpm}</span>
+    <strong>RPM</strong>
+  </aside>;
 }
 
 export default function SkylineGlider() {
@@ -44,6 +133,7 @@ export default function SkylineGlider() {
   const [countdown, setCountdown] = useState(3);
   const [flight, setFlight] = useState(null);
   const [saveState, setSaveState] = useState({ status: 'idle', record: null });
+  const [muted, setMuted] = useState(false);
   const flightRef = useRef(null);
   const runRef = useRef(null);
   const finalizingRef = useRef(false);
@@ -154,10 +244,12 @@ export default function SkylineGlider() {
   if (phase === 'countdown') return <main className="skyline-glider skyline-glider--countdown" data-testid="skyline-glider-countdown"><p>Ready your wings</p><strong>{countdown}</strong></main>;
   if (phase === 'result') return <main className="skyline-glider skyline-glider--result" data-testid="skyline-glider-result"><p>{saveState.record?.run.status === 'completed' ? 'Mountain Pass complete' : 'Flight ended'}</p><h1>{saveState.record?.run.status === 'completed' ? 'Touchdown!' : 'Back at base'}</h1><p>{flight.collectedIds.length} bells found · {flight.collisions} bumps</p>{saveState.status === 'saving' && <p>Saving flight…</p>}{saveState.status === 'error' && <button onClick={() => finalize(saveState.record.run.status, flight, saveState.record)}>Retry save</button>}{saveState.status === 'saved' && <p>{saveState.record.run.reward_rings ? `+${saveState.record.run.reward_rings} rings` : 'Flight saved'}</p>}<button onClick={() => { setPhase('lobby'); setFlight(null); }}>Fly again</button></main>;
   return <main className="skyline-glider skyline-glider--flight" data-testid="skyline-glider-flight">
-    <Scene state={flight} course={course}/>
+    <FlightScene state={flight} course={course}/>
+    <RpmGauge state={flight}/>
     <header className="skyline-glider__hud"><span>♥ {flight.lives}</span><span>{Math.round(flight.rawRpm)} RPM</span><span>{formatTime(course.duration_s - flight.courseTime)}</span><span>🔔 {flight.collectedIds.length}</span></header>
     {flight.phase === 'crashed' && <div className="skyline-glider__overlay"><h2>Wing down!</h2><p>Returning to the last windsock…</p></div>}
     {flight.pausedForSensor && <div className="skyline-glider__overlay" data-testid="skyline-glider-reconnect"><h2>Cadence signal lost</h2><p>Reconnect the bike to continue safely.</p></div>}
     <button className="skyline-glider__end" onClick={() => finalize('abandoned')}>End flight</button>
+    <button className="skyline-glider__mute" aria-pressed={muted} onClick={() => setMuted((value) => !value)}>{muted ? 'Sound on' : 'Mute'}</button>
   </main>;
 }
