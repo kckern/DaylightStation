@@ -16,7 +16,10 @@ export function activeSkylineDecision(payload, riderId, at = Date.now()) {
       && /^school-day:\d{4}-\d{2}-\d{2}$/.test(item.period.id || '')
       && Number.isFinite(item.period.startsAt)
       && Number.isFinite(item.period.endsAt)
-      && at >= item.period.startsAt && at < item.period.endsAt)
+      && at >= item.period.startsAt && at < item.period.endsAt
+      && Number.isFinite(item.validFrom)
+      && Number.isFinite(item.validUntil)
+      && at >= item.validFrom && at < item.validUntil)
     .sort((left, right) => right.period.startsAt - left.period.startsAt)[0] || null;
 }
 
@@ -51,7 +54,6 @@ export default function useSkylineAccess(riderId, { schoolLearner } = {}) {
       setSnapshot(next);
       return;
     }
-    setSnapshot({ riderId, status: 'loading', state: null, unlocked: false });
     try {
       const payload = await DaylightAPI(`api/v1/entitlements?${new URLSearchParams({
         capabilityId: CAPABILITY_ID,
@@ -71,6 +73,7 @@ export default function useSkylineAccess(riderId, { schoolLearner } = {}) {
           ? 'indeterminate'
           : unlocked ? 'complete' : 'incomplete',
         unlocked,
+        validUntil: decision?.validUntil ?? null,
       };
       emitVerdict(next);
       setSnapshot(next);
@@ -109,6 +112,21 @@ export default function useSkylineAccess(riderId, { schoolLearner } = {}) {
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [bypassed, refresh, riderId]);
+
+  useEffect(() => {
+    if (bypassed || !snapshot.unlocked || !Number.isFinite(snapshot.validUntil)) return undefined;
+    const remainingMs = snapshot.validUntil - Date.now();
+    if (remainingMs <= 0) {
+      setSnapshot({ riderId, status: 'locked', state: 'expired', unlocked: false, validUntil: null });
+      void refresh();
+      return undefined;
+    }
+    const timer = setTimeout(() => {
+      setSnapshot({ riderId, status: 'locked', state: 'expired', unlocked: false, validUntil: null });
+      void refresh();
+    }, remainingMs);
+    return () => clearTimeout(timer);
+  }, [bypassed, refresh, riderId, snapshot.unlocked, snapshot.validUntil]);
 
   if (snapshot.riderId !== riderId) {
     return bypassed
