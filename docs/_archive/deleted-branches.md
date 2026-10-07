@@ -572,3 +572,6 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-10-06 | fix/media-task8 | 4e02acf60 | Media P0 Task 8 close-out (merged) |
 | 2026-10-06 | fix/fitness-chart-audio | e2a08711f | Standalone fitness chart and chart-bearing screens silent until music is explicitly enabled (merged and deployed) |
 | 2026-10-06 | feat/media-visual | e5f1b2078 | Media visual redesign (squash-merged as 647f55369; branch history held a committed-then-deleted scratch config) |
+| 2026-10-07 | feat/media-p0-features | 51b0ec82e | Media P0 features (merged caed85eb8, deployed with hotfix) |
+| 2026-10-07 | fix/skyline-course-bundle | 072c55cbc | Hotfix: bundled Skyline Glider course (merged 3371725bc, deployed) |
+| 2026-10-07 | test/media-proof-gaps | 949ba271c | Media proof gaps phases 0-2b tests/docs (merged ed7f825fa) |
