@@ -30,6 +30,7 @@ describe('Skyline Glider checkpoint repository', () => {
     expect(loaded).toMatchObject({ status: 'pending_terminal', terminalRecord: record });
     expect(loaded.terminalRecord).toEqual(record);
     expect(readFlightCheckpoint('test-rider', course, { ...identity, fitnessSessionId: 'fs-2', equipmentId: 'cycle_ace' })).toMatchObject({ status: 'pending_terminal', terminalRecord: record });
+    expect(readFlightCheckpoint('test-rider', { ...course, version: 3 }, identity)).toMatchObject({ status: 'pending_terminal', terminalRecord: record });
     clearFlightCheckpoint('test-rider', course);
     expect(readFlightCheckpoint('test-rider', course, identity).status).toBe('missing');
   });

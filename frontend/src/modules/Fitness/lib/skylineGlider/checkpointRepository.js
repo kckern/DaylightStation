@@ -23,9 +23,9 @@ export function readFlightCheckpoint(userId, course, expectedIdentity = {}) {
     if (!raw) return { status: 'missing' };
     const saved = JSON.parse(raw);
     if (saved?.schema !== SCHEMA) return { status: 'incompatible', reason: 'legacy-schema' };
-    if (saved.course?.id !== id || saved.course?.version !== course?.version) return { status: 'incompatible', reason: 'course-identity' };
     if (!saved.identity || !saved.state) return { status: 'invalid', reason: 'missing-payload' };
     if (saved.lifecycle === 'pending_terminal') return { status: 'pending_terminal', identity: saved.identity, state: saved.state, terminalRecord: saved.terminalRecord };
+    if (saved.course?.id !== id || saved.course?.version !== course?.version) return { status: 'incompatible', reason: 'course-identity' };
     const fields = ['fitnessSessionId', 'riderId', 'equipmentId', 'runId', 'startedAt'];
     const mismatched = fields.find((field) => expectedIdentity[field] != null && saved.identity[field] !== expectedIdentity[field]);
     if (mismatched || (expectedIdentity.calibration && !sameCalibration(saved.identity.calibration, expectedIdentity.calibration))) {

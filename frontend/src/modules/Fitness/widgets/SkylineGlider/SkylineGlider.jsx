@@ -64,7 +64,6 @@ export function FlightScene({ state, course, effects = {} }) {
   const pitch = clamp((state.verticalRate || 0) * 50, -12, 12);
   const craftFront = SKYLINE_CRAFT_GEOMETRY.frontSeconds * projected.unitsPerSecond;
   const craftRear = SKYLINE_CRAFT_GEOMETRY.rearSeconds * projected.unitsPerSecond;
-  const craftRadius = SKYLINE_CRAFT_GEOMETRY.radius * projected.height;
   const farOffset = -((state.courseTime * 10) % 1000);
   const middleOffset = -((state.courseTime * 22) % 1000);
   const nearOffset = -((state.courseTime * 38) % 1000);
@@ -91,10 +90,10 @@ export function FlightScene({ state, course, effects = {} }) {
     </g>
     <g className="skyline-glider__wind" transform={`translate(${craftX - 72} ${craftY})`}><path d="M0 -14 h42 M-18 0 h55 M5 14 h32"/></g>
     <g data-testid="skyline-glider-craft" data-facing="right" data-front-seconds={SKYLINE_CRAFT_GEOMETRY.frontSeconds} data-rear-seconds={SKYLINE_CRAFT_GEOMETRY.rearSeconds} data-radius={SKYLINE_CRAFT_GEOMETRY.radius} transform={`translate(${craftX} ${craftY}) rotate(${pitch})`} className="skyline-glider__craft">
-      <path d={`M-${craftRear} -7 L4 -15 ${craftFront} 0 L6 12 L-${craftRear - 6} 8 L-${craftRear} 1Z`} className="skyline-glider__wing"/>
-      <path d={`M-${craftRear - 18} 2 Q4 -3 ${craftFront - 14} 0 Q6 8 -${craftRear - 16} 7Z`} className="skyline-glider__body"/>
-      <path d={`M-${craftRear - 24} 4 L-${craftRear - 10} ${craftRadius - 6} M-${craftRear - 10} ${craftRadius - 6} L-${craftRear - 2} ${craftRadius - 1}`} className="skyline-glider__frame"/>
-      <circle cx={-(craftRear - 12)} cy={craftRadius - 6} r="4" className="skyline-glider__pilot"/>
+      <path d={`M-${craftRear} -6 L4 -8 ${craftFront} 0 L6 7 L-${craftRear - 6} 6 L-${craftRear} 1Z`} className="skyline-glider__wing"/>
+      <path d={`M-${craftRear - 18} 1 Q4 -3 ${craftFront - 14} 0 Q6 6 -${craftRear - 16} 5Z`} className="skyline-glider__body"/>
+      <path d={`M-${craftRear - 24} 3 L-${craftRear - 10} 7 M-${craftRear - 10} 7 L-${craftRear - 2} 9`} className="skyline-glider__frame"/>
+      <circle cx={-(craftRear - 12)} cy="5" r="3" className="skyline-glider__pilot"/>
       {(effects.collisionKey || state.invincibleRemaining > 0) && <g key={effects.collisionKey || 'protected'} data-testid="skyline-glider-collision-effect" className="skyline-glider__collision-burst"><path d="M-62 -34 l-16 -18 M-67 0 h-28 M-55 31 l-20 16 M43 -28 l18 -16 M57 15 l25 8"/></g>}
       {(effects.pops || []).map((pop) => <g key={pop.key} className="skyline-glider__bell-pop"><circle r="28"/><path d="M-30 0 H30 M0 -30 V30"/></g>)}
     </g>
@@ -219,18 +218,34 @@ export default function SkylineGlider() {
     });
     setSaveState({ status: 'saving', record });
     setPhase('result');
+    const terminalIdentity = retryRecord ? {
+      fitnessSessionId: record.run.fitness_session_id || null,
+      riderId: record.rider.user_id,
+      equipmentId: record.run.equipment_id || null,
+      calibration: record.run.calibration ? { lowRpm: record.run.calibration.low_rpm, highRpm: record.run.calibration.high_rpm } : terminalState.calibration,
+      runId: record.run.id,
+      startedAt: record.run.started_at,
+    } : { ...runRef.current, ...checkpointIdentity };
     writeFlightCheckpoint(riderId, course, {
-      identity: { ...runRef.current, ...checkpointIdentity }, state: terminalState,
+      identity: terminalIdentity, state: terminalState,
       lifecycle: 'pending_terminal', terminalRecord: record,
     });
     try {
       const response = await fetch('/api/v1/fitness/skyline-glider/runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ record }) });
       if (!response.ok) throw new Error(`save failed (${response.status})`);
-      if (status === 'completed') {
+      const rewardIdentityMatches = record.run.fitness_session_id === (fitnessSessionInstance?.sessionId || null)
+        && record.rider.user_id === riderId;
+      if (status === 'completed' && rewardIdentityMatches) {
         fitnessSessionInstance?.treasureBox?.awardBonus?.({
           idempotencyKey: `rpm-flight:${record.run.id}:completion:${riderId}`,
           userId: riderId, rings: record.run.reward_rings, zoneId: 'skyline-glider', color: '#e0a85b',
           source: 'skyline-glider', metadata: { courseId: course.id, collectibles: record.collectibles.length },
+        });
+      } else if (status === 'completed') {
+        log.warn('skyline_glider.reward.skipped', {
+          runId: record.run.id, riderId: record.rider.user_id,
+          fitnessSessionId: record.run.fitness_session_id || null,
+          reason: 'terminal-identity-changed',
         });
       }
       clearFlightCheckpoint(riderId, course);

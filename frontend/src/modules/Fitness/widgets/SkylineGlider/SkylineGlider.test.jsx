@@ -37,7 +37,7 @@ beforeEach(() => {
   mockLog.warn.mockClear();
   mockLog.error.mockClear();
   mockLog.sampled.mockClear();
-  mockCtx = { equipment: [{ id: 'bike', name: 'Bike', cadence: 7, rpm: { min: 30, max: 100 } }], fitnessSessionInstance: { sessionId: 'fs-test', getEquipmentRider: () => 'dad', getEquipmentCadence: () => ({ rpm: 60, connected: true, ts: Date.now() + 1 }) }, getDisplayName: () => ({ displayName: 'Dad', source: 'userProfile', preferredGroupLabel: false }), setGovernanceSuspended: vi.fn() };
+  mockCtx = { equipment: [{ id: 'bike', name: 'Bike', cadence: 7, rpm: { min: 30, max: 100 } }], fitnessSessionInstance: { sessionId: 'fs-test', treasureBox: { awardBonus: vi.fn() }, getEquipmentRider: () => 'dad', getEquipmentCadence: () => ({ rpm: 60, connected: true, ts: Date.now() + 1 }) }, getDisplayName: () => ({ displayName: 'Dad', source: 'userProfile', preferredGroupLabel: false }), setGovernanceSuspended: vi.fn() };
   global.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ courses: [course] }) }));
 });
 
@@ -291,6 +291,18 @@ describe('SkylineGlider', () => {
     expect(pending).toMatchObject({ schema: 'skyline-glider-checkpoint/v3', lifecycle: 'pending_terminal', terminalRecord: { run: { status: 'abandoned' } } });
     expect(JSON.parse(global.fetch.mock.calls[1][1].body).record).toEqual(pending.terminalRecord);
     vi.useRealTimers();
+  });
+
+  it('saves an old-session terminal record without awarding it into the current session', async () => {
+    const terminalRecord = { schema: 'skyline-glider-run/v1', run: { id: 'old-complete', course_id: 'mountain-pass', course_version: 1, started_at: '2026-10-07T18:00:00Z', ended_at: '2026-10-07T18:05:00Z', status: 'completed', duration_s: 300, collisions: 0, restarts: 0, reward_rings: 10, fitness_session_id: 'fs-old', equipment_id: 'bike', calibration: { low_rpm: 30, high_rpm: 100 } }, rider: { user_id: 'dad' }, collectibles: [], result: { schema: 'gaming-result/v1' } };
+    localStorage.setItem('fitness:skyline-glider:dad:mountain-pass', JSON.stringify({ schema: 'skyline-glider-checkpoint/v3', course: { id: 'mountain-pass', version: 1 }, lifecycle: 'pending_terminal', identity: { fitnessSessionId: 'fs-old', riderId: 'dad', equipmentId: 'bike', calibration: { lowRpm: 30, highRpm: 100 }, runId: 'old-complete', startedAt: '2026-10-07T18:00:00Z' }, state: { courseTime: 300, altitude: .5, collisions: 0, restarts: 0, collectedIds: [], calibration: { lowRpm: 30, highRpm: 100 } }, terminalRecord }));
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    fireEvent.click(screen.getByRole('button', { name: /retry saving previous flight/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^retry save$/i }));
+    await act(async () => Promise.resolve());
+    expect(mockCtx.fitnessSessionInstance.treasureBox.awardBonus).not.toHaveBeenCalled();
+    expect(mockLog.warn).toHaveBeenCalledWith('skyline_glider.reward.skipped', expect.objectContaining({ runId: 'old-complete', fitnessSessionId: 'fs-old', reason: 'terminal-identity-changed' }));
   });
 
   it('does not offer resume for a legacy unversioned checkpoint', async () => {
