@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { markFirstUseDone } from './lib/firstUse.mjs';
+import { installFakeClock } from './lib/fakeClock.mjs';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
@@ -133,6 +134,53 @@ test('[RELY.4a/AC1][RELY.4a/AC2] Undo restores the previous paused native positi
   await expect(page.getByTestId(tailVisit)).toBeVisible();
   await expect.poll(() => video.evaluate((el, seconds) => el.paused && !el.seeking && el.readyState >= 2
     && Math.abs(el.currentTime - seconds) < 1, priorPosition), { timeout: 30000 }).toBe(true);
+});
+
+// RELY.4a/AC1: "after replacing, removing or clearing, an undo is offered for 10
+// seconds". The longer test above proves the offer exists after remove, clear
+// and replace; this one proves the window itself: still there at 9 s, gone
+// after 10 s, for remove and for clear. A held queue (Add with nothing playing)
+// needs no decoder, and the page's clock is faked so nothing waits 10 real seconds.
+test('[RELY.4a/AC1] the undo offered after Remove and after Clear lasts 10 seconds, then is gone', async ({ page }) => {
+  const clock = await installFakeClock(page);
+  await page.goto('/media');
+  const search = page.getByRole('textbox', { name: 'Search media…' });
+  await expect(search).toBeVisible({ timeout: 30000 });
+  const addToQueue = async (text, kind) => {
+    await search.fill('');
+    await search.fill(text);
+    const row = page.getByRole('option').filter({ hasText: text }).filter({ hasText: kind });
+    await expect(row).toHaveCount(1, { timeout: 15000 });
+    await row.getByRole('button', { name: 'More actions' }).click();
+    await page.getByRole('menuitem', { name: 'Add to Queue', exact: true }).click();
+    await page.keyboard.press('Escape');
+  };
+  await addToQueue(title, 'Movie');
+  await addToQueue(title === 'Arrival' ? 'Disclosure Day' : 'Arrival', 'Movie');
+  await page.getByTestId('mini-player-open-nowplaying').click();
+  const rows = page.getByTestId('queue-panel').locator('.queue-item');
+  await expect(rows).toHaveCount(2);
+  const undo = page.getByTestId('item-action-undo');
+
+  // Remove one: Undo is offered now, still there at 9 s, gone after 10 s.
+  await rows.nth(1).getByRole('button', { name: 'Remove from queue' }).click();
+  await expect(rows).toHaveCount(1);
+  await expect(undo.last()).toBeVisible();
+  await clock.advance(9_000);
+  await expect(undo.last()).toBeVisible();
+  await clock.advance(2_000);
+  await expect(undo).toHaveCount(0);
+  await expect(rows).toHaveCount(1); // the removal stands; it was not undone
+
+  // Clear: the same 10 second window.
+  await page.getByTestId('queue-clear').click();
+  await expect(page.getByTestId('queue-empty')).toBeVisible();
+  await expect(undo.last()).toBeVisible();
+  await clock.advance(9_000);
+  await expect(undo.last()).toBeVisible();
+  await clock.advance(2_000);
+  await expect(undo).toHaveCount(0);
+  await expect(page.getByTestId('queue-empty')).toBeVisible();
 });
 
 test('[FIND.1a/AC5] pointer Add retains search, then the first nonfocus outside click dismisses results', async ({ page }) => {

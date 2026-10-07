@@ -131,4 +131,17 @@ describe('fixture reset', () => {
     await request(bare.app).get('/acceptance-media/receiver-ready').expect(200);
     await bare.stop();
   });
+
+  it('a load that names a volume runs the real volume step and records the level for that screen only (never hardware)', async () => {
+    fixture.reset();
+    const ha = createHomeAssistantCaller({ baseUrl });
+    // No subscriber is mounted, so the load itself may fail; the volume step runs before it.
+    await ha.load('acceptance-media', { play: 'plex:1', volume: '12' }).catch(() => null);
+    const { calls } = await (await fetch(`${baseUrl}/api/v1/device/acceptance-media/device-control-calls`)).json();
+    expect(calls).toEqual([expect.objectContaining({ deviceId: 'acceptance-media', action: 'volume', level: 12 })]);
+    const other = await (await fetch(`${baseUrl}/api/v1/device/acceptance-media-b/device-control-calls`)).json();
+    expect(other.calls).toEqual([]);
+    fixture.reset();
+    expect((await (await fetch(`${baseUrl}/api/v1/device/acceptance-media/device-control-calls`)).json()).calls).toEqual([]);
+  });
 });
