@@ -257,6 +257,19 @@ describe('SkylineGlider', () => {
     expect(screen.getByTestId('skyline-glider-lobby')).toHaveTextContent('CycleAce');
   });
 
+  it('enables Start when a bike becomes live after the lobby mounts', async () => {
+    vi.useFakeTimers();
+    let connected = false;
+    mockCtx.fitnessSessionInstance.getEquipmentCadence = () => ({ rpm: connected ? 60 : 0, connected, ts: Date.now() + 1 });
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    expect(screen.getByRole('button', { name: /start flight/i })).toBeDisabled();
+    connected = true;
+    act(() => vi.advanceTimersByTime(500));
+    expect(screen.getByRole('button', { name: /start flight/i })).toBeEnabled();
+    vi.useRealTimers();
+  });
+
   it('lets the rider choose another usable bike and locks it for the attempt', async () => {
     vi.useFakeTimers();
     mockCtx.equipment = [

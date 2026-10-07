@@ -133,6 +133,7 @@ export default function SkylineGlider() {
   const [saveState, setSaveState] = useState({ status: 'idle', record: null });
   const [muted, setMuted] = useState(false);
   const [preferredEquipmentId, setPreferredEquipmentId] = useState(null);
+  const [, setSelectionTick] = useState(0);
   const [effects, setEffects] = useState({ collisionKey: 0, pops: [], banner: null });
   const flightRef = useRef(null);
   const runRef = useRef(null);
@@ -204,6 +205,12 @@ export default function SkylineGlider() {
       if (value <= 1) { clearInterval(timer); setPhase('flight'); return 0; }
       return value - 1;
     }), 1000);
+    return () => clearInterval(timer);
+  }, [phase]);
+
+  useEffect(() => {
+    if (phase !== 'lobby') return undefined;
+    const timer = setInterval(() => setSelectionTick((value) => value + 1), 500);
     return () => clearInterval(timer);
   }, [phase]);
 
