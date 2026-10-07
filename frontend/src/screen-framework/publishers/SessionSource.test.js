@@ -230,3 +230,17 @@ describe('createSessionSource', () => {
     });
   });
 });
+
+describe('createSessionSource — RELY.5a/AC4 problem', () => {
+  it('publishes the owner capture\'s problem in snapshot.meta so the sender can see it', () => {
+    const problem = { kind: 'skipped', reason: 'stalled', item: { title: 'Arrival' }, replacement: { title: 'Next' }, at: 99 };
+    const queueController = { capture: () => ({ state: 'playing', currentItem: null, position: 0, queue: { items: [], currentIndex: -1, upNextCount: 0 }, config: null, identity: null, problem }) };
+    const snapshot = createSessionSource({ queueController, ownerId: 'tv' }).getSnapshot();
+    expect(snapshot.meta.problem).toEqual(problem);
+    expect(validateSessionSnapshot(snapshot).valid).toBe(true);
+  });
+  it('adds no problem field when there is none', () => {
+    const queueController = { capture: () => ({ state: 'idle', currentItem: null, position: 0, queue: { items: [], currentIndex: -1, upNextCount: 0 }, config: null, identity: null, problem: null }) };
+    expect(createSessionSource({ queueController, ownerId: 'tv' }).getSnapshot().meta).not.toHaveProperty('problem');
+  });
+});

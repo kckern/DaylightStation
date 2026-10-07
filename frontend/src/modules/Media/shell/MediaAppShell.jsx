@@ -14,6 +14,7 @@ import { DispatchProgressTray } from '../cast/DispatchProgressTray.jsx';
 import { SearchMode } from '../search/SearchMode.jsx';
 import { ReconnectingNote } from './ReconnectingNote.jsx';
 import { LocalPlaybackOutcomes } from './LocalPlaybackOutcomes.jsx';
+import { RemoteScreenProblems } from './RemoteScreenProblems.jsx';
 import { LocalStopFeedbackProvider, useLocalStopFeedbackCount } from './LocalStopFeedbackContext.jsx';
 import { SearchLauncherContext } from './SearchLauncherContext.js';
 import { slashIsNotForSearch } from './searchShortcut.js';
@@ -68,6 +69,7 @@ function ShellInner() {
         </div>
         <ReconnectingNote />
         <LocalPlaybackOutcomes />
+        <RemoteScreenProblems />
         {/* Outcome notices float over the canvas: a zero-height anchor sits
             directly above the mini player (or tab bar), so a row appearing
             never takes page space or moves anything, and never covers the

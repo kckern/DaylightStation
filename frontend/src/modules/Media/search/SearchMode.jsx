@@ -331,7 +331,7 @@ export function SearchMode({ onClose, addTo = null }) {
             <ResultRow
               item={item}
               title={displayTitle(item)}
-              subtitle={resultSubtitle(item)}
+              subtitle={rowLabelsFor(item)?.subtitle ?? resultSubtitle(item)}
               thumbnail={item.thumbnail}
               // The shared combobox select() helper commits and closes its
               // editing machine after onChange. SearchMode is a retained work

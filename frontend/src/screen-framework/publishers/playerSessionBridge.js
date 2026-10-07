@@ -451,8 +451,11 @@ export function createPlayerSessionBridge({
     const resolvedCurrent = !canResolveMountedContent || (currentEntry
       && resolvedContentId != null
       && String(currentEntry.contentId) === String(resolvedContentId));
+    let problem = null;
+    try { problem = handle.getProblem?.() ?? null; } catch { /* ignore */ }
     return {
       queue,
+      problem,
       issuedIdentity: validIssuedIdentity,
       currentItem: getCurrentItem(),
       config: getConfig(),

@@ -1539,7 +1539,22 @@ const Player = forwardRef(function Player(props, ref) {
     });
   }, [scheduleSinglePlayerRemount, transportAdapter, playerType, currentMediaGuid, resolvedWaitKeyFields, activeSource, resolvedMeta]);
 
+  // RELY.5a/AC4: what this Player last gave up on (and what plays instead),
+  // published in the screen's session snapshot so whoever sent or steered this
+  // screen can be told. A record, not a live state: it carries its own time.
+  const lastProblemRef = useRef(null);
   const handleResilienceExhausted = useCallback(({ reason, attempts, waitKey: exhaustedWaitKey }) => {
+    {
+      const failed = effectiveMeta ?? {};
+      const next = isQueue && hasNextQueueItem ? (playQueue?.[1] ?? null) : null;
+      lastProblemRef.current = {
+        kind: next ? 'skipped' : 'failed',
+        reason: typeof reason === 'string' && reason ? reason : 'playback-failed',
+        item: { contentId: failed.contentId ?? failed.assetId ?? null, title: failed.title ?? null },
+        replacement: next ? { contentId: next.contentId ?? next.assetId ?? null, title: next.title ?? null } : null,
+        at: Date.now(),
+      };
+    }
     if (isQueue && hasNextQueueItem) {
       playbackLog('resilience-exhausted-auto-skip', {
         reason,
@@ -1562,7 +1577,7 @@ const Player = forwardRef(function Player(props, ref) {
       onResilienceEvent?.({ kind: 'resilience-exhausted', reason, attempts });
       clear();
     }
-  }, [isQueue, hasNextQueueItem, advance, clear, playQueue, onResilienceEvent]);
+  }, [isQueue, hasNextQueueItem, advance, clear, playQueue, onResilienceEvent, effectiveMeta]);
 
   // Self-contained formats (titlecard, etc.) have no media element —
   // suppress the resilience overlay which would never exit startup.
@@ -2021,6 +2036,7 @@ const Player = forwardRef(function Player(props, ref) {
   }, [seekOwner, withTransport]);
 
   useImperativeHandle(isValidImperativeRef ? ref : null, () => ({
+    getProblem: () => lastProblemRef.current,
     seek: (t) => {
       seekOwner(t);
     },

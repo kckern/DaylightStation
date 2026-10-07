@@ -165,6 +165,14 @@ describe('createPlayerSessionBridge', () => {
     bridge.stop();
   });
 
+  it('RELY.5a/AC4: carries what the Player last gave up on into the owner capture', () => {
+    const problem = { kind: 'skipped', reason: 'stalled', item: { contentId: 'plex:1', title: 'Arrival' }, replacement: { contentId: 'plex:2', title: 'Disclosure Day' }, at: 1234 };
+    const handle = { ...makeHandle({ el: document.createElement('video') }), getProblem: () => problem };
+    const bridge = startBridge(() => handle);
+    expect(bridge.queueController.capture('sid')).toMatchObject({ problem });
+    bridge.stop();
+  });
+
   it('refreshes native observation when only the admitted owner revision changes', () => {
     const el = document.createElement('video');
     Object.defineProperties(el, {
