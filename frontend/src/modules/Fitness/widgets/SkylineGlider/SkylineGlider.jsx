@@ -139,6 +139,7 @@ export default function SkylineGlider() {
   const previousInputRef = useRef(null);
   const effectTimersRef = useRef(new Set());
   const checkpointNoticeRef = useRef(null);
+  const renderHealthRef = useRef({ startedAt: 0, frames: 0, longFrames: 0 });
   const audioRef = useRef(null);
   const lockedSelectionRef = useRef(null);
   if (!audioRef.current) audioRef.current = createSkylineAudio();
@@ -251,7 +252,25 @@ export default function SkylineGlider() {
     if (phase !== 'flight' || !flightRef.current) return undefined;
     let prior = performance.now();
     let frameId = 0;
+    renderHealthRef.current = { startedAt: prior, frames: 0, longFrames: 0 };
     const frame = (now) => {
+      const frameMs = Math.max(0, now - prior);
+      const health = renderHealthRef.current;
+      health.frames += 1;
+      if (frameMs > 50) health.longFrames += 1;
+      const healthElapsedMs = now - health.startedAt;
+      if (healthElapsedMs >= 10000) {
+        log.info('skyline_glider.render.health', {
+          runId: runRef.current?.runId, riderId, equipmentId: equipment?.id,
+          courseId: course.id, courseVersion: course.version,
+          courseTime: flightRef.current.courseTime,
+          frameCount: health.frames,
+          updateRateHz: Math.round((health.frames * 100000) / healthElapsedMs) / 100,
+          longFrameCount: health.longFrames,
+          windowMs: Math.round(healthElapsedMs),
+        });
+        renderHealthRef.current = { startedAt: now, frames: 0, longFrames: 0 };
+      }
       const cadence = fitnessSessionInstance?.getEquipmentCadence?.(equipment?.id) || { rpm: 0, connected: false };
       const previous = flightRef.current;
       const previousCheckpointId = previous.checkpoint.id;

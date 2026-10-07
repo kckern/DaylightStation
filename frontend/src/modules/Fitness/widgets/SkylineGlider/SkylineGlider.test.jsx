@@ -137,6 +137,20 @@ describe('SkylineGlider', () => {
     vi.useRealTimers();
   });
 
+  it('logs aggregate render health once per ten-second window without frame logs', async () => {
+    vi.useFakeTimers();
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
+    act(() => vi.advanceTimersByTime(3000));
+    act(() => vi.advanceTimersByTime(10050));
+    const health = mockLog.info.mock.calls.filter(([event]) => event === 'skyline_glider.render.health');
+    expect(health).toHaveLength(1);
+    expect(health[0][1]).toMatchObject({ frameCount: expect.any(Number), updateRateHz: expect.any(Number), longFrameCount: expect.any(Number), windowMs: expect.any(Number) });
+    expect(mockLog.info.mock.calls.some(([event]) => event === 'skyline_glider.render.frame')).toBe(false);
+    vi.useRealTimers();
+  });
+
   it('executes and logs a bell pop once, then removes the transient presentation', async () => {
     vi.useFakeTimers();
     const { container } = render(<SkylineGlider />);
