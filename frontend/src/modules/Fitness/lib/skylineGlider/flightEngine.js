@@ -31,6 +31,7 @@ function applyCourseEvents(state, previousTime, course) {
       checkpoint: {
         id: checkpoint.id,
         time: checkpoint.start_s,
+        restartAltitude: checkpoint.restart_altitude ?? 0.5,
         collectedIds: [...next.collectedIds],
       },
     };
@@ -50,16 +51,20 @@ function applyCourseEvents(state, previousTime, course) {
 }
 
 function collide(state, course) {
-  if (state.collisionProtected || state.invincibleRemaining > 0 || state.phase !== 'playing') return state;
+  if (state.phase !== 'playing') return state;
   const terrain = terrainOverlappingCraft(course, state.courseTime).find((segment) => {
     const bounds = terrainBounds(segment);
     return state.altitude - SKYLINE_CRAFT_GEOMETRY.radius < bounds.top
       || state.altitude + SKYLINE_CRAFT_GEOMETRY.radius > bounds.bottom;
   });
-  if (!terrain) return state;
+  if (!terrain) return state.contactSegmentId == null ? state : { ...state, contactSegmentId: null };
+  if (terrain.id === state.contactSegmentId) return state;
+  if (state.collisionProtected || state.invincibleRemaining > 0) {
+    return { ...state, contactSegmentId: terrain.id };
+  }
   const lives = state.lives - 1;
   if (lives <= 0) {
-    return { ...state, lives: 0, phase: 'crashed', crashRemaining: course.rules.restart_delay_s, collisions: state.collisions + 1, lastCollisionSegmentId: terrain.id };
+    return { ...state, lives: 0, phase: 'crashed', crashRemaining: course.rules.restart_delay_s, collisions: state.collisions + 1, lastCollisionSegmentId: terrain.id, contactSegmentId: terrain.id };
   }
   const bounds = terrainBounds(terrain);
   const centre = clamp((bounds.top + bounds.bottom) / 2, HIGH_ALTITUDE, LOW_ALTITUDE);
@@ -68,6 +73,7 @@ function collide(state, course) {
     lives,
     collisions: state.collisions + 1,
     lastCollisionSegmentId: terrain.id,
+    contactSegmentId: terrain.id,
     altitude: moveToward(state.altitude, centre, 0.08),
     invincibleRemaining: course.rules.invincibility_s,
   };
@@ -80,12 +86,11 @@ function restartAtCheckpoint(state, course) {
     crashRemaining: 0,
     courseTime: state.checkpoint.time,
     lives: course.rules.lives,
-    altitude: LOW_ALTITUDE,
-    targetAltitude: LOW_ALTITUDE,
-    filteredRpm: state.calibration.lowRpm,
+    altitude: state.checkpoint.restartAltitude ?? 0.5,
     verticalRate: 0,
     zeroElapsed: 0,
     invincibleRemaining: 0,
+    contactSegmentId: null,
     collectedIds: [...state.checkpoint.collectedIds],
     restarts: state.restarts + 1,
   };
@@ -98,7 +103,9 @@ function singleStep(state, input, dt, course) {
     return crashRemaining === 0 ? restartAtCheckpoint({ ...state, crashRemaining }, course) : { ...state, crashRemaining };
   }
 
-  const missing = !input?.connected || input?.transportStalled;
+  const transportStalled = !!input?.transportStalled;
+  const disconnected = !input?.connected && !transportStalled;
+  const missing = disconnected || transportStalled;
   const inputTs = Number(input?.ts);
   if (!state.inputReady) {
     const freshAfterArm = !missing && Number.isFinite(inputTs) && inputTs > state.armedAtMs;
@@ -109,19 +116,32 @@ function singleStep(state, input, dt, course) {
         lastInputTs: Number.isFinite(inputTs) ? inputTs : state.lastInputTs,
         pausedForSensor: true,
         collisionProtected: true,
+        inputMode: transportStalled ? 'transport-paused' : 'sensor-paused',
       };
     }
     state = { ...state, inputReady: true, pausedForSensor: false, collisionProtected: false, lastInputTs: inputTs };
   }
-  if (missing) {
+  if (transportStalled) {
     const missingFor = state.sensorMissingFor + dt;
     if (missingFor - course.motion.disconnect_grace_s > 1e-9) {
-      return { ...state, sensorMissingFor: missingFor, pausedForSensor: true, collisionProtected: true };
+      return { ...state, sensorMissingFor: missingFor, pausedForSensor: true, collisionProtected: true, inputMode: 'transport-paused' };
+    }
+  }
+  if (disconnected) {
+    const missingFor = state.sensorMissingFor + dt;
+    const grace = Number(course.motion.slow_signal_grace_s ?? 5);
+    if (missingFor - grace > 1e-9) {
+      return { ...state, sensorMissingFor: missingFor, pausedForSensor: true, collisionProtected: true, inputMode: 'sensor-paused' };
     }
   }
 
   const previousTime = state.courseTime;
-  const rawRpm = Math.max(0, Number(input?.rpm) || 0);
+  const measuredRpm = Math.max(0, Number(input?.rpm) || 0);
+  const inferredFor = disconnected ? state.sensorMissingFor + dt : 0;
+  const slowdownSeconds = Math.max(STEP, Number(course.motion.inferred_slowdown_s ?? 0.5));
+  const rawRpm = disconnected
+    ? Math.max(0, state.filteredRpm * (1 - Math.min(1, inferredFor / slowdownSeconds)))
+    : measuredRpm;
   const zeroElapsed = !missing && rawRpm === 0 ? state.zeroElapsed + dt : 0;
   let filteredRpm = state.filteredRpm;
   const delta = rawRpm - filteredRpm;
@@ -131,8 +151,8 @@ function singleStep(state, input, dt, course) {
   }
 
   let targetAltitude = state.targetAltitude;
-  if (!missing && rawRpm > 0) targetAltitude = targetForRpm(filteredRpm, state.calibration);
-  if (!missing && rawRpm === 0 && zeroElapsed > course.motion.coast_s) targetAltitude = 0.95;
+  if (!missing) targetAltitude = targetForRpm(rawRpm === 0 ? 0 : filteredRpm, state.calibration);
+  if (disconnected) targetAltitude = targetForRpm(rawRpm, state.calibration);
 
   const desiredRate = (targetAltitude - state.altitude) / course.motion.response_s;
   const rate = clamp(desiredRate, -course.motion.max_climb_rate, course.motion.max_descent_rate);
@@ -149,6 +169,7 @@ function singleStep(state, input, dt, course) {
     sensorMissingFor: missing ? state.sensorMissingFor + dt : 0,
     pausedForSensor: false,
     collisionProtected: missing,
+    inputMode: disconnected ? 'inferred-slowdown' : 'measured',
     invincibleRemaining: Math.max(0, state.invincibleRemaining - dt),
     courseTime: state.courseTime + dt,
   };
@@ -172,6 +193,7 @@ export function createFlightState(course, {
     lives: course.rules.lives,
     collisions: 0,
     lastCollisionSegmentId: null,
+    contactSegmentId: null,
     restarts: 0,
     invincibleRemaining: 0,
     crashRemaining: 0,
@@ -179,11 +201,12 @@ export function createFlightState(course, {
     sensorMissingFor: 0,
     pausedForSensor: false,
     collisionProtected: false,
+    inputMode: 'measured',
     armedAtMs: Number.isFinite(Number(armedAtMs)) ? Number(armedAtMs) : 0,
     inputReady: armedAtMs == null,
     lastInputTs: null,
     collectedIds: [],
-    checkpoint: { id: 'start', time: 0, collectedIds: [] },
+    checkpoint: { id: 'start', time: 0, restartAltitude: 0.5, collectedIds: [] },
   };
 }
 
