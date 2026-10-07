@@ -1,57 +1,46 @@
 schema: skyline-glider-course/v1
 id: mountain-pass
-version: 2
+version: 3
 name: Mountain Pass
-description: Climb from the valley, thread the ice caves, and glide home at sunset.
+description: Hold steady through long climbs, ease down beneath one cloud shelf, and finish strong.
 duration_s: 300
 motion:
   filter_s: 0.25
   deadband_rpm: 2
   response_s: 0.6
   max_climb_rate: 0.30
-  max_descent_rate: 0.22
+  max_descent_rate: 0.30
   coast_s: 1
   disconnect_grace_s: 0.75
+  slow_signal_grace_s: 5
+  inferred_slowdown_s: 0.5
 rules:
   lives: 3
   invincibility_s: 1.25
   restart_delay_s: 2
 segments:
   - { id: valley, type: open, start_s: 0, end_s: 300 }
-  - id: training-bells
+  - { id: meadow-hold, type: lower-terrain, start_s: 15, end_s: 55, top: 0.55 }
+  - id: course-bells
     type: collectible-path
-    start_s: 4
-    end_s: 54
+    start_s: 20
+    end_s: 280
     collectibles:
-      - { id: mp-bell-01, at_s: 14, altitude: 0.48 }
-      - { id: mp-bell-02, at_s: 31, altitude: 0.55 }
-      - { id: mp-bell-03, at_s: 48, altitude: 0.47 }
-  - { id: valley-rise, type: lower-terrain, start_s: 10, end_s: 20, top: 0.62 }
-  - { id: cloud-shelf, type: upper-terrain, start_s: 26, end_s: 36, bottom: 0.42 }
-  - { id: first-pass, type: corridor, start_s: 42, end_s: 54, ceiling: 0.28, floor: 0.66 }
-  - { id: pine-rise, type: lower-terrain, start_s: 60, end_s: 70, top: 0.56 }
-  - id: ridge-bells
-    type: collectible-path
-    start_s: 72
-    end_s: 212
-    collectibles:
-      - { id: mp-bell-04, at_s: 84, altitude: 0.52 }
-      - { id: mp-bell-05, at_s: 151, altitude: 0.44 }
-      - { id: mp-bell-06, at_s: 206, altitude: 0.50 }
-  - { id: checkpoint-one, type: checkpoint, start_s: 75 }
-  - { id: eagle-ceiling, type: upper-terrain, start_s: 78, end_s: 88, bottom: 0.46 }
-  - { id: narrow-gap, type: corridor, start_s: 94, end_s: 106, ceiling: 0.32, floor: 0.68 }
-  - { id: granite-rise, type: lower-terrain, start_s: 110, end_s: 122, top: 0.52 }
-  - { id: hanging-ice, type: upper-terrain, start_s: 128, end_s: 140, bottom: 0.40 }
-  - { id: ice-gate, type: corridor, start_s: 142, end_s: 148, ceiling: 0.26, floor: 0.62 }
-  - { id: checkpoint-two, type: checkpoint, start_s: 150 }
-  - { id: glacier-rise, type: lower-terrain, start_s: 160, end_s: 172, top: 0.48 }
-  - { id: cave-roof, type: upper-terrain, start_s: 178, end_s: 190, bottom: 0.44 }
-  - { id: blue-cave, type: corridor, start_s: 196, end_s: 208, ceiling: 0.30, floor: 0.66 }
-  - { id: summit-rise, type: lower-terrain, start_s: 214, end_s: 223, top: 0.54 }
-  - { id: checkpoint-three, type: checkpoint, start_s: 225 }
-  - { id: sunset-shelf, type: upper-terrain, start_s: 232, end_s: 244, bottom: 0.38 }
-  - { id: sunset-gate, type: corridor, start_s: 250, end_s: 262, ceiling: 0.28, floor: 0.64 }
-  - { id: home-rise, type: lower-terrain, start_s: 268, end_s: 280, top: 0.58 }
-  - { id: barn-roof, type: upper-terrain, start_s: 286, end_s: 298, bottom: 0.48 }
+      - { id: mp-bell-01, at_s: 30, altitude: 0.50 }
+      - { id: mp-bell-02, at_s: 48, altitude: 0.48 }
+      - { id: mp-bell-03, at_s: 100, altitude: 0.44 }
+      - { id: mp-bell-04, at_s: 115, altitude: 0.44 }
+      - { id: mp-bell-05, at_s: 138, altitude: 0.54 }
+      - { id: mp-bell-06, at_s: 183, altitude: 0.40 }
+      - { id: mp-bell-07, at_s: 215, altitude: 0.50 }
+      - { id: mp-bell-08, at_s: 252, altitude: 0.39 }
+      - { id: mp-bell-09, at_s: 272, altitude: 0.40 }
+  - { id: checkpoint-one, type: checkpoint, start_s: 75, restart_altitude: 0.50 }
+  - { id: ridge-hold, type: lower-terrain, start_s: 88, end_s: 120, top: 0.48 }
+  - { id: cloud-descent, type: upper-terrain, start_s: 132, end_s: 145, bottom: 0.43 }
+  - { id: checkpoint-two, type: checkpoint, start_s: 150, restart_altitude: 0.50 }
+  - { id: summit-hold, type: lower-terrain, start_s: 170, end_s: 200, top: 0.45 }
+  - { id: wide-tunnel, type: corridor, start_s: 210, end_s: 220, ceiling: 0.22, floor: 0.64 }
+  - { id: checkpoint-three, type: checkpoint, start_s: 225, restart_altitude: 0.50 }
+  - { id: final-hold, type: lower-terrain, start_s: 238, end_s: 278, top: 0.44 }
   - { id: finish, type: finish, start_s: 300 }
