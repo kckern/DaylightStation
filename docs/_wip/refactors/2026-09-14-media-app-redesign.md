@@ -169,21 +169,19 @@ Phase 0 of `docs/superpowers/specs/2026-10-06-media-proof-gaps-design.md` (ledge
 | After Phase 0 | 157 | 79 | 52 |
 | After the journey repair (below) | 161 | 75 | 52 |
 | After Phase 1 (below) | 166 | 70 | 52 |
+| After Phase 2b (below) | 241 | 42 | 5 |
 | After Phase 2a (below) | 180 | 64 | 44 |
 
 Net: 17 rows promoted to Accepted from existing journeys (RELY.4a AC1/AC2/AC4, RELY.7a AC3, AUTO.2a AC2/AC3, STEER.3a/AC1, 4a/AC1-2, 6a/AC1-2, 7a/AC1-2, 8a/AC2, PLAY.1a/AC2, PLAY.6a/AC2, PLACE.1a/AC4), and 4 rows demoted to Partial (`FIND.5a/AC2`, `FIND.6a/AC1-3`: the `browse-breadcrumb` manifest journey fails on the redesign's renamed artwork label): 144 + 17 - 4 = 157. 42 Unverified rows moved to Partial because some runtime evidence exists.
 
 | Priority | Reason code | Rows | Stories (rows) |
 |---|---|---|---|
-| P0 | `NEEDS-DEVICE` | 1 | STEER.1a (1) |
-| P0 | `NEEDS-FEATURE` | 11 | FIND.8b (2), HOUSE.2a (2), PLACE.6a (1), PLACE.7a (1), PLAY.1a (1), PLAY.5a (1), RELY.5a (1), STEER.1a (1), STEER.4a (1) |
-| P0 | `NEEDS-FIXTURE` | 15 | HOUSE.3a (1), PLACE.5a (3), PLACE.7a (2), PLAY.1a (1), RELY.2a (2), RELY.7a (1), STEER.1b (2), STEER.3a (1), STEER.6a (1), STEER.7a (1) |
-| P0 | `NEEDS-JOURNEY` | 77 | AUTO.3a (1), FIND.1a (5), FIND.3a (3), FIND.4a (3), FIND.5a (1), FIND.8a (4), FIND.8b (3), HOUSE.2a (1), PLACE.1a (3), PLACE.2a (2), PLACE.3a (3), PLACE.5a (1), PLACE.6a (3), PLACE.7a (2), PLACE.8a (3), PLAY.1a (2), PLAY.2a (3), PLAY.3a (3), PLAY.5a (2), PLAY.6a (1), PLAY.7a (3), RELY.13a (1), RELY.1a (5), RELY.6a (2), STEER.1a (1), STEER.1b (3), STEER.3a (2), STEER.5a (3), STEER.7a (1), STEER.8a (3), STEER.9a (4) |
-| P0 | `NEEDS-SEEDED-BACKEND` | 8 | AUTO.1a (3), AUTO.1b (3), AUTO.2a (1), STEER.7a (1) |
-| P1/P2 | `NEEDS-FEATURE` | 2 | HOUSE.5a (1), PLACE.4a (1) |
-| P1/P2 | `NEEDS-FIXTURE` | 3 | AUTO.4a (1), HOUSE.6a (1), STEER.11a (1) |
-| P1/P2 | `NEEDS-JOURNEY` | 3 | HOUSE.4a (1), RELY.4a (1), STEER.10a (1) |
-| P1/P2 | `NEEDS-SEEDED-BACKEND` | 7 | FIND.10a (2), FIND.11a (1), FIND.12a (1), FIND.13a (1), FIND.7a (1), STEER.13b (1) |
+| P0 | NEEDS-DEVICE | 1 | STEER.1a (1) |
+| P0 | NEEDS-FEATURE | 18 | FIND.1a (1), FIND.8a (1), PLACE.6a (1), PLACE.7a (1), PLACE.8a (2), PLAY.2a (1), PLAY.7a (1), RELY.13a (1), RELY.1a (1), STEER.1b (1), STEER.3a (1), STEER.5a (1), STEER.7a (1), STEER.8a (3), STEER.9a (1) |
+| P0 | NEEDS-FIXTURE | 6 | AUTO.1b (3), FIND.8b (1), STEER.1b (1), STEER.3a (1) |
+| P0 | NEEDS-JOURNEY | 13 | FIND.5a (1), HOUSE.2a (1), PLACE.3a (3), STEER.1b (2), STEER.5a (2), STEER.6a (1), STEER.9a (3) |
+| P1/P2 | NEEDS-FEATURE | 2 | HOUSE.5a (1), PLACE.4a (1) |
+| P1/P2 | NEEDS-JOURNEY | 7 | AUTO.4a (1), HOUSE.4a (1), HOUSE.6a (1), RELY.4a (1), STEER.10a (1), STEER.11a (1), STEER.13b (1) |
 
 Journeys that fail on this build (not product regressions in this phase's scope; reported, not fixed): `autoplay`, `deep-link-input`, `design-screens`, `discovery`, `mini-toggle`, `move-safety`, `now-playing-exit`, `outcome-overlay` (phone), `peek`, `playback-journey` (Office test), `search-lifecycle`, `search-typing`, `url-sync`, `browse-breadcrumb`. Most look up selectors/devices the redesign or the virtual-device fixture no longer provide (for example `fleet-peek-office-tv`, `media-mini-player` idle text, the artwork-unavailable label); `browse-breadcrumb` is in the P0 manifest and needs its assertion updated.
 
@@ -221,6 +219,34 @@ Nine P0 features built on branch `feat/media-p0-features` (product code at exact
 | Unknown-source id settles at once | FIND.4a/AC4 (evidence only) | `p0-features-search` |
 
 Result in the ledger: 180 Accepted / 64 Partial / 44 Unverified AC (was 166 / 70 / 52). Two things were found on the way: a Move that stopped this device on the screen's mere acceptance (now it waits for the screen to confirm playing), and that a screen whose stream is aborted at the network layer stalls after two recovery attempts without ever giving up (not changed).
+
+### Phase 2b — P0 journeys and test-infrastructure fixes (PROOF-GAPS-PHASE2B)
+
+Tests, fixtures and docs only (no product code), branch `test/media-proof-gaps`; final SHA `abbd5e64e4c034f5901a799618a6db07144691f7`. Evidence: ledger run `PROOF-GAPS-PHASE2B`.
+
+- **Infrastructure fixes from the Fable review.** `tests/live/flow/media/**` runs in its own single-worker Playwright project (the household reset in `beforeEach` wipes shared server state); the household fixture's `reset` builds the new tree beside the live one and swaps it in with `renameSync` (no read sees a half-copied tree). The P0 and stable-core gates share one runner (`scripts/media-gate-runner.mjs`): every group runs and the run exits 1 listing every failed group; one retry per group, only after a failed attempt and only when `os.loadavg()[0] < os.cpus().length` (else `DEFERRED: load`); each attempt writes its own `-attempt-N` json/log and nothing is overwritten; `PASS`, `PASS-AFTER-RETRY (flaky)` and `FAIL` read as distinct lines with a summary; `--strict` refuses ledger-grade acceptance when any group passed only after a retry. `validateReport` names every non-passed test, not the first. Unit tests: `tests/unit/tooling/mediaGateRunner.test.mjs`, `mediaPlaywrightConfig.test.mjs`, `tests/_lib/media-household-fixture.test.mjs`.
+- **Ledger honesty fixes.** RELY.4a/AC1 has a real 10 second expiry assertion (fake clock) after Remove and after Clear; AUTO.2a/AC2-AC3 are re-run as real routine starts with the fake Home Assistant caller; FIND.10a/AC7 now says it is server-rule evidence over a seeded finished item.
+- **Fixtures** (ordinary-device fixture + `media-scripted-receiver.test.mjs`): scripted receiver states for a screen with no mounted page (playing/paused/idle/off, started by another device or a routine, live, slideshow, photo queue, capability limit, screen notes, a heartbeat or silence for the two-minute rule); a virtual volume step and a virtual wake ("Turning on TV…") step recorded per screen; a wake that fails; queue item actions, edits, Undo and shuffle/repeat opened for virtual screens; a controllable search stream (`sseServer.mjs`).
+- **Journeys** (new files `media-app-{find,verbs,place,move,steer,rely,house,misc,contrast}-proof`, `media-app-routines`, plus `media-app-queue-journey`): FIND search entry/arrival/close, retention, the "still searching" sign, widened/empty results, browse kinds, details, tap rule; PLAY/PLACE verbs at the aim on every surface, collections, busy aim, Play on…, picker states, the stale-screen rule, hand-off and Move; STEER handle, Remote, queue, shuffle/repeat, volume, Stop and turn off; HOUSE overview and connection loss; RELY confirmations, retry on another screen, wake wording, network hiccup; AUTO routines.
+- **Gate (exact SHA, `--strict`):** P0 gate (`--strict`, exact SHA `abbd5e64e`, preview built from a clean detached checkout, run on prod catalog healthy since 08:30): 62 groups; PASS 57; PASS-AFTER-RETRY (flaky) 1 (move-proof); FAIL 2 (place-proof, steer-proof: host network-change navigation aborts plus the rows listed Partial in the ledger); DEFERRED: load 2 (find-proof, RELY.9a), exit 1 so the run is NOT ledger-grade as a whole; only tests that passed in their final attempt were promoted. Known-gap tests (`test.fail`) run once separately and behaved as expected. The merge of main (Phase 2a features, hotfix) happened AFTER this run: the merged tree was not re-run, so 2a's promotions keep 2a's evidence and the merged manifest still needs one full gate run.
+
+**Product defects found** (the journeys that expose them are `test.fail` and go red when the product is fixed; none was fixed here):
+
+1. Tablet/laptop dock search drops its words after a one-shot **Play on…** (the phone's SearchMode keeps them) — FIND.1a/AC5.
+2. **Details** show picture, title, progress and verbs, but not the item's length or kind (description only when the info API has one) — FIND.8a/AC2.
+3. A whole-collection start or add confirms with the collection, screen and Undo but **not the number of items** — PLAY.2a/AC3, PLAY.7a/AC2.
+4. **Keep playing here too** starts the screen's copy at 0:00, not at the local spot — PLACE.8a/AC2.
+5. Now Playing's **hand-off Move to an idle screen fails** with `INVALID_CAPTURE` ("Playback here was kept"): `useHandOff.js` uses the typed hand-off only, while the Remote's Move to… (`screenMove.js`) has the idle-screen adopt-load fallback — PLACE.8a/AC3, PLACE.6a/AC4.
+6. The **Move here** confirmation does not say which screen it came from — PLACE.7a/AC3.
+7. **Control boundaries measure ~1.35:1** (search field, destination control, secondary buttons) against the 3:1 non-text bar — RELY.13a/AC1.
+8. **Undo of a queue removal** (put back) shows no confirmation of its own — RELY.1a/AC1.
+9. A **screen ignores a remote queue reorder** (`ScreenActionHandler` applies play-now/next/add and item actions only) — STEER.8a/AC1, AC4.
+10. A **screen ignores the Remote's shuffle, repeat and volume** (the `config` command is acknowledged; `media:config-set` has no handler) — STEER.9a/AC3, STEER.5a/AC3, STEER.3a/AC3.
+11. **Undo of a remote queue edit** is gone at about 8 s, not 10 s — STEER.8a/AC3.
+12. A **live channel** shows a one-item queue panel with Shuffle/Repeat/Clear — STEER.7a/AC4.
+13. The Remote has **no one-step screen switcher** (Back to the house list, then pick) — STEER.1b/AC3.
+14. Against the deployed catalog, **browsing a season lists only the season itself**, and Play on a show or season sent to a screen fails with `EMPTY_COLLECTION` (the screen expands collections from `/list/<source>/<id>`); the verbs journeys use an album, whose list does expand.
+15. Observed while testing: a **prod redeploy at ~07:33 PDT on 2026-10-07 left the container crash-looping** (`[FATAL] Server initialization failed: Bundled Skyline Glider course is invalid`), which interrupted this phase's runs; not a Media defect and not touched here.
 
 ## Next action
 
