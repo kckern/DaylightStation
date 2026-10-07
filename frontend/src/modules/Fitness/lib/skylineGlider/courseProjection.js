@@ -3,6 +3,7 @@ const DEFAULTS = Object.freeze({
   height: 600,
   secondsPerViewport: 14,
   margin: 160,
+  playerX: 240,
 });
 
 const PROJECTED_TYPES = new Set([
@@ -14,7 +15,7 @@ const round = (value) => Math.round(value * 100) / 100;
 export function projectCourseWindow(course, courseTime, options = {}) {
   const view = { ...DEFAULTS, ...options };
   const unitsPerSecond = view.width / view.secondsPerViewport;
-  const xForTime = (time) => (Number(time) - Number(courseTime || 0)) * unitsPerSecond;
+  const xForTime = (time) => view.playerX + (Number(time) - Number(courseTime || 0)) * unitsPerSecond;
   const visible = (startX, endX = startX) => endX >= -view.margin && startX <= view.width + view.margin;
 
   const segments = (course?.segments || [])

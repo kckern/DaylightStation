@@ -19,15 +19,21 @@ describe('course projection', () => {
     const atZero = projectCourseWindow(course, 0);
     const atFourteen = projectCourseWindow(course, 14);
 
-    expect(atZero.segments.find((item) => item.id === 'hill')).toMatchObject({ x: 714.29, width: 714.29 });
-    expect(atFourteen.segments.find((item) => item.id === 'hill')).toMatchObject({ x: -285.71, width: 714.29 });
+    expect(atZero.segments.find((item) => item.id === 'hill')).toMatchObject({ x: 954.29, width: 714.29 });
+    expect(atFourteen.segments.find((item) => item.id === 'hill')).toMatchObject({ x: -45.71, width: 714.29 });
   });
 
   it('projects collectibles at their authored time and altitude', () => {
     const projected = projectCourseWindow(course, 2);
 
-    expect(projected.collectibles).toContainEqual({ id: 'bell-a', x: 714.29, y: 300, altitude: 0.5 });
+    expect(projected.collectibles).toContainEqual({ id: 'bell-a', x: 954.29, y: 300, altitude: 0.5 });
     expect(projected.collectibles.some((item) => item.id === 'bell-b')).toBe(false);
+  });
+
+  it('places the active collision boundary at the glider anchor', () => {
+    const projected = projectCourseWindow(course, 10);
+
+    expect(projected.segments.find((item) => item.id === 'hill').x).toBe(240);
   });
 
   it('clips geometry outside the small behind and preview margins', () => {
