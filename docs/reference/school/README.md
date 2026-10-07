@@ -231,7 +231,7 @@ required default. The author may use any compatible combination of:
 - `prompt_suffix_by_profile` for a clue after it.
 
 At issuance, the worksheet combines them as prefix + replacement (or base
-prompt) + suffix for `lower`, `upper`, `lower-3`, or `upper-5`. The resolved
+prompt) + suffix for `lower`, `upper`, `lower-3`, `upper-5`, or `upper-6`. The resolved
 wording is stored in the immutable issued snapshot, so reprints and grading
 remain faithful even if the author changes the bank later. This is the right
 place for a lower prefix such as “Look on p. 132.” while the upper profile asks
@@ -2624,3 +2624,5 @@ A publisher ISBN13 received through scan ingress can wake the configured School 
 The household kiosk API is `GET /api/v1/school/book-scans/pending?screenId=<id>` (`{intent:null}` or a preview with `id,screenId,isbn13,receivedAt,expiresAt,status,book,error`), `POST /:id/claim` (`{screenId,learnerId}`), and `POST /:id/dismiss` (`{screenId}`), all under `/api/v1/school/book-scans` and all `no-store`. Preview status is `loading|ready|not-found|unavailable|invalid`. Only scanner ingress creates random five-minute capabilities. Claim validates the current learner directory before returning `{intentId,launchTarget,bookEntry}` with the existing book-shelf grant. Same-learner retries reuse that grant; expired, dismissed, superseded, mismatched-screen, and other-learner requests refuse. The `school.book-scan` WebSocket event is only an invalidation; retained HTTP state recovers cold mounts and reconnects.
 
 After a fresh successful shelf read, the one-time entry opens the matching active book, the finished/read-again context, or the existing combined cover/actions view. It does not create shelf items. Failed shelf refreshes keep mutation controls blocked. On landscape screens, known-book tasks place the cover/title/context on the left and actions, page/minute keypad, calendar, or tracking-mode chooser on the right. The learner and Done remain visible above every shelf task. ISBN entry stays centered until a book is known; narrow mounts stack. The scan chooser uses the same cleaned book presentation beside a two-column learner grid with 72px portraits. Alternate-date tasks use a compact calendar with direct Save finish. Supplemental Reading circles describe book/finish/progress counts accessibly without changing required totals or daily completion.
+
+The `upper-6` worksheet profile selects six upper-level questions with five visible choices and one or two multi-select questions, matching the difficulty of the ten-question `upper` profile. Existing worksheet snapshots retain their originally issued questions.
