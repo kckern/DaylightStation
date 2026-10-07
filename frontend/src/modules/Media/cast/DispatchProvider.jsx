@@ -128,7 +128,7 @@ export function DispatchProvider({ children }) {
     });
   }, [peek]);
 
-  const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot, title, itemAction, startOver = false, resumedFrom = null, brief = false }, { bypassDedupe = false } = {}) => {
+  const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot, title, itemAction, startOver = false, resumedFrom = null, brief = false, onSucceeded = null }, { bypassDedupe = false } = {}) => {
     if (!Array.isArray(targetIds) || targetIds.length === 0) return [];
     if (itemAction && !itemAction.operationId) {
       itemAction = { ...itemAction, operationId: uuid(), tappedAt: Date.now() };
@@ -217,6 +217,7 @@ export function DispatchProvider({ children }) {
           if (res?.ok) {
             dispatch({ type: 'SUCCEEDED', dispatchId, totalElapsedMs: res.totalElapsedMs ?? null, ...(res.appliedAs ? { appliedAs: res.appliedAs } : {}) });
             mediaLog.dispatchSucceeded({ dispatchId, totalElapsedMs: res.totalElapsedMs });
+            try { onSucceeded?.({ dispatchId, deviceId }); } catch { /* a follow-up must never break the outcome */ }
           } else {
             // Failure must not poison the idempotency cache — the user's
             // retry within the window has to actually re-dispatch (C6.4).
