@@ -10,7 +10,7 @@ const course = { schema: 'skyline-glider-course/v1', id: 'mountain-pass', versio
 
 beforeEach(() => {
   localStorage.clear();
-  mockCtx = { equipment: [{ id: 'bike', name: 'Bike', cadence: 7, rpm: { min: 30, max: 100 } }], fitnessSessionInstance: { getEquipmentRider: () => 'dad', getEquipmentCadence: () => ({ rpm: 60, connected: true }) }, getDisplayName: () => 'Dad', setGovernanceSuspended: vi.fn() };
+  mockCtx = { equipment: [{ id: 'bike', name: 'Bike', cadence: 7, rpm: { min: 30, max: 100 } }], fitnessSessionInstance: { getEquipmentRider: () => 'dad', getEquipmentCadence: () => ({ rpm: 60, connected: true }) }, getDisplayName: () => ({ displayName: 'Dad', source: 'userProfile', preferredGroupLabel: false }), setGovernanceSuspended: vi.fn() };
   global.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ courses: [course] }) }));
 });
 
@@ -49,6 +49,20 @@ describe('SkylineGlider', () => {
     await act(async () => Promise.resolve());
     expect(screen.getByTestId('skyline-glider-lobby')).toHaveTextContent('CycleAce');
     expect(screen.getByTestId('skyline-glider-lobby')).toHaveTextContent('Dad');
+  });
+
+  it('renders the display name from the canonical identity result', async () => {
+    mockCtx.getDisplayName = () => ({
+      displayName: 'Test Rider',
+      source: 'userProfile',
+      preferredGroupLabel: false,
+    });
+
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+
+    expect(screen.getByTestId('skyline-glider-lobby')).toHaveTextContent('Test Rider');
+    expect(screen.getByRole('button', { name: /start flight/i })).toBeEnabled();
   });
 
   it('offers resume and start over for a saved checkpoint', async () => {
