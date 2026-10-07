@@ -9,10 +9,39 @@
 .skyline-glider--countdown strong { font-size: 14rem; color: #f3c777; text-shadow: 0 .08em 0 #6c4335; }
 .skyline-glider--flight { position: relative; display: block; padding: 0; }
 .skyline-glider__scene { width: 100vw; height: 100vh; display: block; }
-.skyline-glider__craft { transition: transform .1s linear; }
-.skyline-glider__hud { position: absolute; inset: 1.5rem 2rem auto; display: flex; justify-content: space-between; gap: 1rem; padding: 1rem 1.5rem; border-radius: 999px; color: #fff; background: rgba(9, 31, 37, .72); font-size: 1.25rem; font-weight: 800; }
+.skyline-glider__parallax path { stroke: none; }
+.skyline-glider__parallax--far path { fill: #527c75; opacity: .42; }
+.skyline-glider__parallax--middle path { fill: #365f59; opacity: .62; }
+.skyline-glider__parallax--near path { fill: #244b45; opacity: .82; }
+.skyline-glider__terrain { fill: url(#glider-rock); stroke: #183a36; stroke-width: 5; }
+.skyline-glider__terrain--upper { fill: #294d49; }
+.skyline-glider__snowline { fill: none; stroke: #d8edf0; stroke-width: 12; stroke-linejoin: round; }
+.skyline-glider__cave-edge, .skyline-glider__corridor-edge { fill: none; stroke: #9fc9c9; stroke-width: 8; stroke-linejoin: round; }
+.skyline-glider__checkpoint line { stroke: #f5d477; stroke-width: 8; }
+.skyline-glider__checkpoint path { fill: #f5d477; stroke: #67462f; stroke-width: 4; }
+.skyline-glider__finish path { fill: none; stroke: #f5d477; stroke-width: 18; filter: drop-shadow(0 0 14px rgba(255, 233, 145, .85)); }
+.skyline-glider__bell path { fill: #ffd35f; stroke: #67462f; stroke-width: 3; }
+.skyline-glider__bell circle { fill: #6b422c; }
+.skyline-glider__wind path { fill: none; stroke: rgba(255, 255, 255, .72); stroke-linecap: round; stroke-width: 5; }
+.skyline-glider__craft { transition: transform .1s linear; filter: drop-shadow(0 7px 5px rgba(13, 39, 44, .35)); }
+.skyline-glider__wing { fill: #fff2bf; stroke: #5b3d2f; stroke-linejoin: round; stroke-width: 4; }
+.skyline-glider__body { fill: #e77b4f; stroke: #5b3d2f; stroke-width: 3; }
+.skyline-glider__frame { fill: none; stroke: #533b31; stroke-linecap: round; stroke-width: 4; }
+.skyline-glider__pilot { fill: #214b5a; stroke: #fff2bf; stroke-width: 3; }
+.skyline-glider__collision-burst { animation: skyline-impact .28s ease-out infinite alternate; }
+.skyline-glider__collision-burst path { fill: none; stroke: #fff1a8; stroke-linecap: round; stroke-width: 7; }
+.skyline-glider__hud { position: absolute; inset: 1.5rem 2rem auto 10rem; display: flex; justify-content: space-between; gap: 1rem; padding: 1rem 1.5rem; border-radius: 999px; color: #fff; background: rgba(9, 31, 37, .72); font-size: 1.25rem; font-weight: 800; }
+.skyline-glider__rpm-gauge { position: absolute; z-index: 4; inset: 5.5rem auto 3rem 1.25rem; width: 6.4rem; display: grid; grid-template-rows: auto 1fr auto auto; place-items: center; gap: .25rem; padding: .75rem .55rem; border: 3px solid rgba(255,255,255,.7); border-radius: 2rem; color: #fff; background: rgba(7, 28, 34, .82); box-shadow: 0 .8rem 2rem rgba(0,0,0,.28); font-weight: 900; }
+.skyline-glider__rpm-track { position: relative; width: 1rem; height: 100%; min-height: 16rem; border-radius: 999px; background: linear-gradient(to top, #e48a52, #f1cf68 48%, #62d4cf); box-shadow: inset 0 0 0 3px rgba(255,255,255,.4); }
+.skyline-glider__rpm-target { position: absolute; left: -.45rem; width: 1.9rem; height: .25rem; border-radius: 999px; background: #fff; opacity: .55; }
+.skyline-glider__rpm-chevron { position: absolute; left: 1.3rem; width: 0; height: 0; transform: translateY(-50%); border-top: .72rem solid transparent; border-bottom: .72rem solid transparent; border-right: 1.05rem solid #fff4a8; filter: drop-shadow(0 2px 2px rgba(0,0,0,.4)); }
+.skyline-glider__rpm-chevron span { position: absolute; left: 1.35rem; top: -.9rem; min-width: 2.6rem; color: #fff; font-size: 1.3rem; text-shadow: 0 2px 3px #102f39; }
+.skyline-glider__rpm-high, .skyline-glider__rpm-low { font-size: .85rem; opacity: .8; }
+.skyline-glider__rpm-gauge strong { color: #f5d477; font-size: .85rem; letter-spacing: .12em; }
 .skyline-glider__overlay { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; background: rgba(9, 25, 31, .78); backdrop-filter: blur(.35rem); }
 .skyline-glider__overlay h2 { margin: 0; font-size: 4rem; }
 .skyline-glider .skyline-glider__end { position: absolute; right: 2rem; bottom: 2rem; color: #fff; background: rgba(9, 31, 37, .72); }
+.skyline-glider .skyline-glider__mute { position: absolute; right: 2rem; bottom: 6rem; padding: .65rem 1rem; color: #fff; background: rgba(9, 31, 37, .72); }
 .skyline-glider--result { text-align: center; background: radial-gradient(circle at 50% 20%, #db8d60, #17333f 70%); }
-@media (max-width: 760px) { .skyline-glider--lobby { grid-template-columns: 1fr; } .skyline-glider__hud { inset: 1rem; font-size: .85rem; } }
+@keyframes skyline-impact { to { opacity: .25; transform: scale(1.2); } }
+@media (max-width: 760px) { .skyline-glider--lobby { grid-template-columns: 1fr; } .skyline-glider__hud { inset: 1rem 1rem auto 7rem; font-size: .85rem; } .skyline-glider__rpm-gauge { left: .5rem; width: 5rem; } }
