@@ -1,0 +1,46 @@
+schema: skyline-glider-course/v1
+id: mountain-pass
+version: 1
+name: Mountain Pass
+description: Climb from the valley, thread the ice caves, and glide home at sunset.
+duration_s: 300
+motion:
+  filter_s: 0.75
+  deadband_rpm: 2
+  response_s: 1.5
+  max_climb_rate: 0.30
+  max_descent_rate: 0.22
+  coast_s: 1
+  disconnect_grace_s: 0.75
+rules:
+  lives: 3
+  invincibility_s: 1.25
+  restart_delay_s: 2
+segments:
+  - { id: valley, type: open, start_s: 0, end_s: 35 }
+  - { id: foothills, type: lower-terrain, start_s: 35, end_s: 70, top: 0.65 }
+  - id: bells-one
+    type: collectible-path
+    start_s: 45
+    end_s: 80
+    collectibles:
+      - { id: mp-bell-01, at_s: 48, altitude: 0.58 }
+      - { id: mp-bell-02, at_s: 61, altitude: 0.49 }
+      - { id: mp-bell-03, at_s: 74, altitude: 0.40 }
+  - { id: checkpoint-one, type: checkpoint, start_s: 75 }
+  - { id: pine-ridge, type: lower-terrain, start_s: 80, end_s: 120, top: 0.52 }
+  - { id: high-clouds, type: upper-terrain, start_s: 125, end_s: 145, bottom: 0.38 }
+  - { id: checkpoint-two, type: checkpoint, start_s: 150 }
+  - { id: ice-cave, type: corridor, start_s: 160, end_s: 205, ceiling: 0.31, floor: 0.62 }
+  - id: cave-bells
+    type: collectible-path
+    start_s: 165
+    end_s: 205
+    collectibles:
+      - { id: mp-bell-04, at_s: 170, altitude: 0.47 }
+      - { id: mp-bell-05, at_s: 185, altitude: 0.42 }
+      - { id: mp-bell-06, at_s: 199, altitude: 0.51 }
+  - { id: checkpoint-three, type: checkpoint, start_s: 225 }
+  - { id: sunset-descent, type: upper-terrain, start_s: 235, end_s: 270, bottom: 0.52 }
+  - { id: home-valley, type: open, start_s: 270, end_s: 300 }
+  - { id: finish, type: finish, start_s: 300 }
