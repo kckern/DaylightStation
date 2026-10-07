@@ -575,3 +575,5 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-10-07 | feat/media-p0-features | 51b0ec82e | Media P0 features (merged caed85eb8, deployed with hotfix) |
 | 2026-10-07 | fix/skyline-course-bundle | 072c55cbc | Hotfix: bundled Skyline Glider course (merged 3371725bc, deployed) |
 | 2026-10-07 | test/media-proof-gaps | 949ba271c | Media proof gaps phases 0-2b tests/docs (merged ed7f825fa) |
+
+| 2026-10-07 | feat/korean-course | f5bf8d890eebaf3504316d5f026f85898e452ad5 | Korean Lesson 1 hybrid practice/assessment, merged into main and deployed |
