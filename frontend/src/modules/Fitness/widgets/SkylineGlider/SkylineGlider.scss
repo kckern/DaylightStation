@@ -13,5 +13,6 @@
 .skyline-glider__hud { position: absolute; inset: 1.5rem 2rem auto; display: flex; justify-content: space-between; gap: 1rem; padding: 1rem 1.5rem; border-radius: 999px; color: #fff; background: rgba(9, 31, 37, .72); font-size: 1.25rem; font-weight: 800; }
 .skyline-glider__overlay { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; background: rgba(9, 25, 31, .78); backdrop-filter: blur(.35rem); }
 .skyline-glider__overlay h2 { margin: 0; font-size: 4rem; }
+.skyline-glider .skyline-glider__end { position: absolute; right: 2rem; bottom: 2rem; color: #fff; background: rgba(9, 31, 37, .72); }
 .skyline-glider--result { text-align: center; background: radial-gradient(circle at 50% 20%, #db8d60, #17333f 70%); }
 @media (max-width: 760px) { .skyline-glider--lobby { grid-template-columns: 1fr; } .skyline-glider__hud { inset: 1rem; font-size: .85rem; } }

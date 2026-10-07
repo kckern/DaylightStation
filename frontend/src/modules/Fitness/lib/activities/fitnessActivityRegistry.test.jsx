@@ -28,6 +28,14 @@ describe('fitnessActivityRegistry', () => {
     expect(getActivityDisplay('nope')).toBeNull();
   });
 
+  it('renders Skyline Glider history with a vector poster', () => {
+    const d = getActivityDisplay('skyline-glider');
+    expect(d.label(1)).toBe('1 flight');
+    const { container } = render(<d.Poster />);
+    expect(container.querySelector('svg')).toBeTruthy();
+    expect(container.querySelector('img')).toBeNull();
+  });
+
   it('primaryActivity picks the highest-count activity', () => {
     expect(primaryActivity([])).toBeNull();
     expect(primaryActivity([{ type: 'a', count: 2 }, { type: 'b', count: 5 }]).type).toBe('b');
