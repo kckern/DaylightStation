@@ -57,6 +57,7 @@ config.app.yml
 config.secrets.yml
 config.app-local.yml
 /scripts/*
+!scripts/media-gate-runner.mjs
 !scripts/generate-elementary-math-course.mjs
 !scripts/generate-elementary-math-course.test.mjs
 !scripts/school/
