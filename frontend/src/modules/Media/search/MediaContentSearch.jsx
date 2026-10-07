@@ -37,6 +37,7 @@ import { collapseResultEditions } from './collapseResultEditions.js';
 import { applyResultRowVerb } from './resultRowVerbs.js';
 import { useRowLabels } from './useRowLabels.js';
 import getLogger from '../../../lib/logging/Logger.js';
+import mediaLog from '../logging/mediaLog.js';
 import { ItemDestinationPicker } from '../actions/ItemDestinationPicker.jsx';
 import { useHouseholdResultActions } from '../household/useHouseholdResultActions.js';
 import './Search.scss';

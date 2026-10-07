@@ -60,6 +60,13 @@ describe('normalizePlayableItem', () => {
     expect(normalizePlayableItem({ title: 'no identity' })).toBeNull();
   });
 
+  it('STEER.4a/AC3: a live item keeps isLive and publishes no duration', () => {
+    expect(normalizePlayableItem({ contentId: 'fixture:live', format: 'hls_video', isLive: true, duration: 71 })).toEqual({
+      contentId: 'fixture:live', format: 'hls_video', isLive: true,
+    });
+    expect(normalizePlayableItem({ contentId: 'plex:1', duration: 60 })).toEqual({ contentId: 'plex:1', format: 'video', duration: 60 });
+  });
+
   it('maps mediaType to a known format and keeps valid formats', () => {
     expect(normalizePlayableItem({ id: 'x', mediaType: 'audio' }).format).toBe('audio');
     expect(normalizePlayableItem({ id: 'x', format: 'readalong' }).format).toBe('readalong');

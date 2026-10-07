@@ -184,7 +184,7 @@ export function useDispatchTargetPicker({ source, onComplete, intent = 'dispatch
           const identity = mode === 'transfer' ? (local?.portability?.capture?.()?.identity ?? null) : null;
           mediaLog.playOnChoiceApplied({ mode, targetIds });
           if (mode === 'transfer') {
-            params.onSucceeded = () => {
+            params.onConfirmed = () => {
               const result = identity && local?.portability?.stopIfCurrent
                 ? local.portability.stopIfCurrent(identity)
                 : { ok: false, code: 'NO_IDENTITY' };

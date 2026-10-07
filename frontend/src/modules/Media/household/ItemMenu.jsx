@@ -8,6 +8,7 @@ import React from 'react';
 import { ActionIcon, Menu } from '@mantine/core';
 import { IconDotsVertical } from '@tabler/icons-react';
 import { isCollection } from './useItemVerbs.jsx';
+import { isShowItem } from '../search/showOn.js';
 import { usePressHoldOffer } from '../../../lib/ui/usePressHoldOffer.js';
 import mediaLog from '../logging/mediaLog.js';
 
@@ -66,7 +67,7 @@ export function ItemMenu({
         <PlayNextItems testId={testId} fire={fire} />
         <Menu.Item data-testid={`${testId}-verb-playFirst`} onClick={fire('playFirst')}>Play first</Menu.Item>
         <Menu.Item data-testid={`${testId}-verb-add`} onClick={fire('add')}>Add to queue</Menu.Item>
-        <Menu.Item data-testid={`${testId}-verb-playOn`} onClick={fire('playOn')}>Play on…</Menu.Item>
+        <Menu.Item data-testid={`${testId}-verb-playOn`} onClick={fire('playOn')}>{isShowItem(item) ? 'Show on…' : 'Play on…'}</Menu.Item>
         <Menu.Item data-testid={`${testId}-verb-addOn`} onClick={fire('addOn')}>Add on…</Menu.Item>
         <Menu.Item data-testid={`${testId}-verb-details`} onClick={fire('details')}>Details</Menu.Item>
         {Array.isArray(editions) && editions.length > 1 && onEdition && (
