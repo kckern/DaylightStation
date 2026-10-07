@@ -468,6 +468,19 @@ export default function SkylineGlider() {
     });
   }, [course, equipment, log, riderId, saved.identity, saved.state, saved.status, selectedBike]);
 
+  const retryPendingTerminalAndBegin = useCallback(async () => {
+    if (saved.status !== 'pending_terminal' || !selectedBike) return;
+    lockedSelectionRef.current = selectedBike;
+    runRef.current = { runId: saved.identity.runId, startedAt: saved.identity.startedAt };
+    flightRef.current = saved.state;
+    setFlight(saved.state);
+    finalizingRef.current = false;
+    const persisted = await finalize(saved.terminalRecord.run.status, saved.state, saved.terminalRecord);
+    if (!persisted) return;
+    lockedSelectionRef.current = null;
+    begin(false);
+  }, [begin, finalize, saved, selectedBike]);
+
   const exitFlight = () => {
     log.info('skyline_glider.flight.exited', {
       runId: runRef.current?.runId, riderId, equipmentId: equipment?.id,
@@ -507,8 +520,33 @@ export default function SkylineGlider() {
     if (pendingStart.equipmentId !== equipment.id || pendingStart.userId !== riderId) return;
     if (!accessGranted) return;
     setPendingStart(null);
+    if (saved.status === 'pending_terminal') {
+      void retryPendingTerminalAndBegin();
+      return;
+    }
     begin(saved.status === 'compatible');
-  }, [accessGranted, begin, equipment, pendingStart, phase, riderId, saved.status]);
+  }, [accessGranted, begin, equipment, pendingStart, phase, retryPendingTerminalAndBegin, riderId, saved.status]);
+
+  useEffect(() => {
+    if (!['countdown', 'flight'].includes(phase) || accessGranted || access.status === 'loading') return;
+    const current = flightRef.current;
+    if (current && course && riderId && checkpointIdentity) {
+      writeFlightCheckpoint(riderId, course, {
+        identity: { ...runRef.current, ...checkpointIdentity },
+        state: current,
+      });
+    }
+    log.info('skyline_glider.access.suspended', {
+      runId: runRef.current?.runId || null,
+      riderId,
+      equipmentId: equipment?.id || null,
+      courseId: course?.id || null,
+      phase,
+      accessState: access.state,
+    });
+    setPendingStart(null);
+    setPhase('lobby');
+  }, [access.status, access.state, accessGranted, checkpointIdentity, course, equipment?.id, log, phase, riderId]);
 
   const requestAdminOverride = async () => {
     if (!pendingStart || pendingStart.userId === 'guest') return;

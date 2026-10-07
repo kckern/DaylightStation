@@ -5,7 +5,7 @@ import { isGenericGuestProfileId } from '../../modules/Fitness/lib/guestPlacehol
 
 export class User {
   constructor(name, birthyear, hrDeviceId = null, cadenceDeviceId = null, options = {}) {
-    const { id: configuredId, globalZones, zoneOverrides, groupLabel, source, category, avatarUrl } = options;
+    const { id: configuredId, globalZones, zoneOverrides, groupLabel, source, category, avatarUrl, schoolLearner } = options;
     // ID must be explicitly provided - never derive from name
     if (!configuredId) {
       getLogger().warn('user.missing_id', { name });
@@ -23,6 +23,7 @@ export class User {
     this.source = source || null; // e.g., "Primary", "Secondary", "Guest"
     this.category = category || null; // e.g., "Family", "Friend"
     this.avatarUrl = avatarUrl || null;
+    this.schoolLearner = typeof schoolLearner === 'boolean' ? schoolLearner : undefined;
     this.age = new Date().getFullYear() - (birthyear || new Date().getFullYear());
     this.zoneConfig = buildZoneConfig(globalZones, zoneOverrides);
     this.zoneSnapshot = deriveZoneProgressSnapshot({ zoneConfig: this.zoneConfig, heartRate: 0 });
@@ -371,6 +372,7 @@ export class UserManager {
     const source = config.source ?? null;
     const category = config.category ?? null;
     const avatarUrl = config.avatar_url ?? config.avatarUrl ?? null;
+    const schoolLearner = config.school_learner ?? config.schoolLearner;
 
     if (!this.users.has(resolvedUserId)) {
       const user = new User(config.name, birthYear, hrDeviceId, cadenceDeviceId, {
@@ -380,7 +382,8 @@ export class UserManager {
         groupLabel,
         source,
         category,
-        avatarUrl
+        avatarUrl,
+        schoolLearner,
       });
       // If backend sent multiple device IDs, add them all
       if (Array.isArray(hrDeviceIds)) {
@@ -410,6 +413,7 @@ export class UserManager {
       user.source = source ?? user.source;
       user.category = category ?? user.category;
       user.avatarUrl = avatarUrl ?? user.avatarUrl;
+      if (typeof schoolLearner === 'boolean') user.schoolLearner = schoolLearner;
       if (birthYear && user.birthyear !== birthYear) {
         user.birthyear = birthYear;
         user.age = new Date().getFullYear() - birthYear;
