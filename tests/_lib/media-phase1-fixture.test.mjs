@@ -131,4 +131,42 @@ describe('fixture reset', () => {
     await request(bare.app).get('/acceptance-media/receiver-ready').expect(200);
     await bare.stop();
   });
+
+  it('a load that names a volume runs the real volume step and records the level for that screen only (never hardware)', async () => {
+    fixture.reset();
+    const ha = createHomeAssistantCaller({ baseUrl });
+    // No subscriber is mounted, so the load itself may fail; the volume step runs before it.
+    await ha.load('acceptance-media', { play: 'plex:1', volume: '12' }).catch(() => null);
+    const { calls } = await (await fetch(`${baseUrl}/api/v1/device/acceptance-media/device-control-calls`)).json();
+    expect(calls).toEqual([expect.objectContaining({ deviceId: 'acceptance-media', action: 'volume', level: 12 })]);
+    const other = await (await fetch(`${baseUrl}/api/v1/device/acceptance-media-b/device-control-calls`)).json();
+    expect(other.calls).toEqual([]);
+    fixture.reset();
+    expect((await (await fetch(`${baseUrl}/api/v1/device/acceptance-media/device-control-calls`)).json()).calls).toEqual([]);
+  });
+
+  it('a send to the power screen runs the wake (Turning on) step and records it; a send to another screen has no wake step', async () => {
+    fixture.reset();
+    const ha = createHomeAssistantCaller({ baseUrl });
+    await ha.load(POWER_DEVICE_ID, { play: 'plex:1' }).catch(() => null);
+    const { calls } = await (await fetch(`${baseUrl}/api/v1/device/${POWER_DEVICE_ID}/device-control-calls`)).json();
+    expect(calls.map((c) => c.action)).toContain('on');
+    await ha.load(SPEAKER_DEVICE_ID, { play: 'plex:1' }).catch(() => null);
+    expect((await (await fetch(`${baseUrl}/api/v1/device/${SPEAKER_DEVICE_ID}/device-control-calls`)).json()).calls).toEqual([]);
+    fixture.reset();
+  });
+
+  it('a send to the power screen fails outright when its wake step is told to fail (and not otherwise), and reset clears it', async () => {
+    fixture.reset();
+    const post = (body) => fetch(`${baseUrl}/api/v1/media/_fixture/wake`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    expect((await post({ deviceId: SPEAKER_DEVICE_ID, fail: true })).status).toBe(400); // no virtual device control
+    expect((await post({ deviceId: POWER_DEVICE_ID, fail: true })).status).toBe(200);
+    const ha = createHomeAssistantCaller({ baseUrl });
+    const failed = await ha.load(POWER_DEVICE_ID, { play: 'plex:1', routine: 'wake-fail' });
+    expect(failed.body?.ok).toBe(false);
+    expect(failed.body?.failedStep).toBe('power');
+    fixture.reset();
+    const after = await ha.load(POWER_DEVICE_ID, { play: 'plex:1', routine: 'wake-ok' });
+    expect(after.body?.failedStep).not.toBe('power');
+  });
 });

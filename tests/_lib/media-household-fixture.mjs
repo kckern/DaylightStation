@@ -202,9 +202,19 @@ export function createMediaHouseholdFixture({ catalog, livenessService = null, s
   app.use(errorHandlerMiddleware({ logger: quiet }));
 
   function seed({ empty = false } = {}) {
-    for (const entry of fs.readdirSync(dataDir)) fs.rmSync(path.join(dataDir, entry), { recursive: true, force: true });
+    // Build the new tree beside the live one and swap by rename: a request
+    // never reads a half-copied tree (a rename cannot replace a non-empty
+    // directory, so the old tree moves aside first; both renames are atomic).
+    const nextDir = `${dataDir}.next`;
+    const oldDir = `${dataDir}.old`;
+    fs.rmSync(nextDir, { recursive: true, force: true });
+    fs.rmSync(oldDir, { recursive: true, force: true });
+    const nextSeeded = materializeSeed({ seedDir, dataDir: nextDir, nowMs: nowMs(), empty });
+    if (fs.existsSync(dataDir)) fs.renameSync(dataDir, oldDir);
+    fs.renameSync(nextDir, dataDir);
+    fs.rmSync(oldDir, { recursive: true, force: true });
     resetAt = Date.now();
-    seeded = materializeSeed({ seedDir, dataDir, nowMs: nowMs(), empty });
+    seeded = nextSeeded;
     suggestions.invalidateAll();
     return seeded;
   }
@@ -234,6 +244,6 @@ export function createMediaHouseholdFixture({ catalog, livenessService = null, s
         app(req, res, () => { res.statusCode = 404; res.end(); });
       });
     },
-    cleanup() { fs.rmSync(dataDir, { recursive: true, force: true }); },
+    cleanup() { for (const dir of [dataDir, `${dataDir}.next`, `${dataDir}.old`]) fs.rmSync(dir, { recursive: true, force: true }); },
   };
 }

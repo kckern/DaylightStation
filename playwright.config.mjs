@@ -7,6 +7,24 @@ export default defineConfig({
   testDir: './tests',
   testMatch: '**/*.runtime.test.mjs',
   timeout: 90000,
+  // The Media journeys reset the one shared household/server state in
+  // beforeEach, so two Media files running in parallel corrupt each other.
+  // Media gets its own single-worker project; every
+  // other flow keeps the default project. Project `workers: 1` caps parallelism
+  // for this project even when the global worker count is higher.
+  projects: [
+    {
+      name: 'media',
+      testMatch: 'live/flow/media/**/*.runtime.test.mjs',
+      fullyParallel: false,
+      workers: 1,
+    },
+    {
+      name: 'default',
+      testMatch: '**/*.runtime.test.mjs',
+      testIgnore: 'live/flow/media/**',
+    },
+  ],
   use: {
     baseURL: process.env.BASE_URL || `http://localhost:${appPort}`,
     headless: true,
