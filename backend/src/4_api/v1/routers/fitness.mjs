@@ -186,6 +186,8 @@ export function createFitnessRouter(config) {
     fitnessSuggestionService = null,
     cycleRaceService = null,
     cycleRaceApi = null,
+    skylineGliderCourses = null,
+    skylineGliderRuns = null,
     // Session lock + simulation supervision are constructed at the composition
     // root and injected here — they must NOT be module-scope in this router
     // (shared-state-across-requests bug).
@@ -218,6 +220,29 @@ export function createFitnessRouter(config) {
   } = config;
 
   const router = express.Router();
+
+  router.get('/skyline-glider/courses', asyncHandler(async (req, res) => {
+    if (!skylineGliderCourses) return res.status(503).json({ error: 'Skyline Glider courses unavailable' });
+    return res.json({ courses: skylineGliderCourses.list(req.query.household || defaultHouseholdId) });
+  }));
+
+  router.post('/skyline-glider/runs', asyncHandler(async (req, res) => {
+    if (!skylineGliderRuns) return res.status(503).json({ error: 'Skyline Glider runs unavailable' });
+    try {
+      const result = await skylineGliderRuns.save(req.body?.record, req.body?.household || defaultHouseholdId);
+      return res.status(result.created ? 201 : 200).json(result);
+    } catch (error) {
+      if (error?.code === 'RUN_CONFLICT') return res.status(409).json({ error: error.message });
+      if (error?.code === 'INVALID_RUN') return res.status(400).json({ error: error.message });
+      throw error;
+    }
+  }));
+
+  router.get('/skyline-glider/runs/:runId', asyncHandler(async (req, res) => {
+    if (!skylineGliderRuns) return res.status(503).json({ error: 'Skyline Glider runs unavailable' });
+    const record = await skylineGliderRuns.get(req.params.runId, req.query.household || defaultHouseholdId);
+    return record ? res.json({ record }) : res.status(404).json({ error: 'run not found' });
+  }));
 
   router.post('/garage-human-activity', asyncHandler(async (req, res) => {
     const { deviceId, emulationOpen, hrSessionActive } = req.body ?? {};
