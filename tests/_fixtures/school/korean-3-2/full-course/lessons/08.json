@@ -1,0 +1,384 @@
+{
+  "lesson": 8,
+  "title": "Watching and giving impressions",
+  "koreanTitle": "너 오늘 기분이 좋아 보여",
+  "kind": "new",
+  "textbookPages": [
+    84,
+    93
+  ],
+  "workbookPages": [
+    42,
+    46
+  ],
+  "objectives": [
+    "Describe how people and things look.",
+    "Describe two actions done at the same time."
+  ],
+  "vocabulary": [
+    {
+      "id": "movie",
+      "term": "영화",
+      "gloss": "movie",
+      "source": {
+        "book": "textbook",
+        "page": 87
+      }
+    },
+    {
+      "id": "performance",
+      "term": "공연",
+      "gloss": "performance",
+      "source": {
+        "book": "textbook",
+        "page": 87
+      }
+    },
+    {
+      "id": "match",
+      "term": "경기",
+      "gloss": "sports match",
+      "source": {
+        "book": "textbook",
+        "page": 87
+      }
+    },
+    {
+      "id": "attend",
+      "term": "관람하다",
+      "gloss": "to attend and watch a performance or match",
+      "source": {
+        "book": "textbook",
+        "page": 87
+      }
+    },
+    {
+      "id": "watch",
+      "term": "보다",
+      "gloss": "to see or watch",
+      "source": {
+        "book": "textbook",
+        "page": 87
+      }
+    },
+    {
+      "id": "appreciate",
+      "term": "감상하다",
+      "gloss": "to appreciate a work of art or music",
+      "source": {
+        "book": "textbook",
+        "page": 87
+      }
+    },
+    {
+      "id": "funny",
+      "term": "웃기다",
+      "gloss": "to be funny",
+      "source": {
+        "book": "textbook",
+        "page": 87
+      }
+    },
+    {
+      "id": "sad",
+      "term": "슬프다",
+      "gloss": "to be sad",
+      "source": {
+        "book": "textbook",
+        "page": 87
+      }
+    },
+    {
+      "id": "scary",
+      "term": "무섭다",
+      "gloss": "to be scary",
+      "source": {
+        "book": "textbook",
+        "page": 87
+      }
+    },
+    {
+      "id": "interesting",
+      "term": "재미있다",
+      "gloss": "to be interesting or fun",
+      "source": {
+        "book": "textbook",
+        "page": 87
+      }
+    },
+    {
+      "id": "boring",
+      "term": "지루하다",
+      "gloss": "to be boring",
+      "source": {
+        "book": "textbook",
+        "page": 87
+      }
+    },
+    {
+      "id": "moving",
+      "term": "감동적이다",
+      "gloss": "to be moving or touching",
+      "source": {
+        "book": "textbook",
+        "page": 87
+      }
+    },
+    {
+      "id": "popcorn",
+      "term": "팝콘",
+      "gloss": "popcorn",
+      "source": {
+        "book": "textbook",
+        "page": 87
+      }
+    },
+    {
+      "id": "kingdom",
+      "term": "왕국",
+      "gloss": "kingdom",
+      "source": {
+        "book": "textbook",
+        "page": 87
+      }
+    }
+  ],
+  "patterns": [
+    {
+      "id": "appearance",
+      "label": "-아/어 보이다",
+      "explanation": "Use an adjective with -아/어 보이다 to describe how someone or something looks or seems from observation, rather than stating a known fact. 하다 adjectives become -해 보이다; apply irregular changes (춥다 → 추워). 보여요 is polite; 보여 is familiar.",
+      "source": {
+        "book": "textbook",
+        "page": 88
+      },
+      "models": [
+        {
+          "id": "good-mood",
+          "term": "기분이 좋아 보여.",
+          "gloss": "You look like you are in a good mood.",
+          "source": {
+            "book": "textbook",
+            "page": 88
+          },
+          "pronunciation": "Gibuni joa boyeo."
+        },
+        {
+          "id": "movie-interest",
+          "term": "재미있어 보여.",
+          "gloss": "It looks interesting.",
+          "source": {
+            "book": "textbook",
+            "page": 88
+          },
+          "pronunciation": "Jaemiisseo boyeo."
+        },
+        {
+          "id": "cold-look",
+          "term": "너무 추워 보여.",
+          "gloss": "You look very cold.",
+          "source": {
+            "book": "textbook",
+            "page": 88
+          },
+          "pronunciation": "Neomu chuwo boyeo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "appearance-01",
+          "modelId": "good-mood",
+          "explanation": "좋아 보여요 describes an observed impression, rather than a reported fact.",
+          "formA": {
+            "prompt": "You look cheerful: 기분이 ___.",
+            "choices": [
+              "좋아 보여요",
+              "좋았대요",
+              "좋아야 돼요",
+              "좋으면 좋겠어요"
+            ],
+            "answer": "좋아 보여요"
+          },
+          "formB": {
+            "prompt": "This pizza looks tasty: 피자가 ___.",
+            "choices": [
+              "맛있었대요",
+              "맛있어야 돼요",
+              "맛있으면 좋겠어요",
+              "맛있어 보여요"
+            ],
+            "answer": "맛있어 보여요"
+          }
+        },
+        {
+          "id": "appearance-02",
+          "modelId": "movie-interest",
+          "explanation": "재미있다 → 재미있어 보이다; 지루하다 → 지루해 보이다.",
+          "formA": {
+            "prompt": "The movie looks interesting: 영화가 ___ 보여요.",
+            "choices": [
+              "재미있아",
+              "재미있는",
+              "재미있으면",
+              "재미있어"
+            ],
+            "answer": "재미있어"
+          },
+          "formB": {
+            "prompt": "The performance looks boring: 공연이 ___ 보여요.",
+            "choices": [
+              "지루한",
+              "지루하면",
+              "지루해",
+              "지루하아"
+            ],
+            "answer": "지루해"
+          }
+        },
+        {
+          "id": "appearance-03",
+          "modelId": "cold-look",
+          "explanation": "Apply adjective irregulars before 보이다: 춥다 → 추워; 어렵다 → 어려워.",
+          "formA": {
+            "prompt": "You look cold: ___ 보여요.",
+            "choices": [
+              "추운",
+              "추우면",
+              "추워",
+              "춥어"
+            ],
+            "answer": "추워"
+          },
+          "formB": {
+            "prompt": "The problem looks difficult: 문제가 ___ 보여요.",
+            "choices": [
+              "어려우면",
+              "어려워",
+              "어렵어",
+              "어려운"
+            ],
+            "answer": "어려워"
+          }
+        }
+      ]
+    },
+    {
+      "id": "simultaneous",
+      "label": "-(으)면서",
+      "explanation": "Use -(으)면서 for two actions happening at the same time, usually by the same subject. Add -으면서 after a consonant and -면서 after a vowel or ㄹ. 듣다 becomes 들으면서. The final verb carries tense and politeness.",
+      "source": {
+        "book": "textbook",
+        "page": 89
+      },
+      "models": [
+        {
+          "id": "music-book",
+          "term": "음악을 들으면서 책을 읽을 거예요.",
+          "gloss": "I will read a book while listening to music.",
+          "source": {
+            "book": "textbook",
+            "page": 89
+          },
+          "pronunciation": "Eumageul deureumyeonseo chaegeul ilgeul geoyeyo."
+        },
+        {
+          "id": "sing-dance",
+          "term": "노래를 부르면서 춤을 출 거야.",
+          "gloss": "I will dance while singing.",
+          "source": {
+            "book": "textbook",
+            "page": 89
+          },
+          "pronunciation": "Noraereul bureumyeonseo chumeul chul geoya."
+        },
+        {
+          "id": "breakfast-news",
+          "term": "아빠는 아침을 드시면서 뉴스를 보신다.",
+          "gloss": "Dad watches the news while eating breakfast.",
+          "source": {
+            "book": "textbook",
+            "page": 89
+          },
+          "pronunciation": "Appaneun achimeul deusimyeonseo nyuseureul bosinda."
+        }
+      ],
+      "questions": [
+        {
+          "id": "simultaneous-01",
+          "modelId": "music-book",
+          "explanation": "The same person listens and reads at the same time; 듣다 changes to 들으면서.",
+          "formA": {
+            "prompt": "Read while listening to music: 음악을 ___ 책을 읽어요.",
+            "choices": [
+              "들었기 때문에",
+              "들으려면",
+              "듣느라고",
+              "들으면서"
+            ],
+            "answer": "들으면서"
+          },
+          "formB": {
+            "prompt": "Read while eating fruit: 과일을 ___ 책을 읽어요.",
+            "choices": [
+              "먹으려면",
+              "먹느라고",
+              "먹으면서",
+              "먹었기 때문에"
+            ],
+            "answer": "먹으면서"
+          }
+        },
+        {
+          "id": "simultaneous-02",
+          "modelId": "sing-dance",
+          "explanation": "A vowel-final verb takes -면서 for simultaneous actions.",
+          "formA": {
+            "prompt": "Dance while singing: 노래를 ___ 춤을 춰요.",
+            "choices": [
+              "부르느라고",
+              "불렀기 때문에",
+              "부르면서",
+              "부르려면"
+            ],
+            "answer": "부르면서"
+          },
+          "formB": {
+            "prompt": "Eat popcorn while watching a movie: 영화를 ___ 팝콘을 먹어요.",
+            "choices": [
+              "봤기 때문에",
+              "보면서",
+              "보려면",
+              "보느라고"
+            ],
+            "answer": "보면서"
+          }
+        },
+        {
+          "id": "simultaneous-03",
+          "modelId": "breakfast-news",
+          "explanation": "Use one shared subject and the simultaneous connective; the last verb gives tense.",
+          "formA": {
+            "prompt": "Dad watches news while eating: 아빠는 아침을 ___ 뉴스를 보세요.",
+            "choices": [
+              "드셨기 때문에",
+              "드시면서",
+              "드시려면",
+              "드시느라고"
+            ],
+            "answer": "드시면서"
+          },
+          "formB": {
+            "prompt": "Mom cooks while singing: 엄마는 노래를 ___ 요리하세요.",
+            "choices": [
+              "부르면서",
+              "부르려면",
+              "부르느라고",
+              "불렀기 때문에"
+            ],
+            "answer": "부르면서"
+          }
+        }
+      ]
+    }
+  ]
+}

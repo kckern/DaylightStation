@@ -1,0 +1,981 @@
+{
+  "lesson": 16,
+  "title": "Cumulative course review",
+  "koreanTitle": "종합 연습",
+  "kind": "final",
+  "textbookPages": [
+    164,
+    172
+  ],
+  "workbookPages": [
+    84,
+    88
+  ],
+  "objectives": [
+    "Apply all twenty grammar targets from lessons 1–15.",
+    "Transfer grammar across school, shopping, health, careers and family activities."
+  ],
+  "vocabulary": [],
+  "patterns": [
+    {
+      "id": "permission",
+      "label": "-아/어도 되다",
+      "explanation": "Ask or give permission with -아/어도 되다. This is permission, rather than an invitation or report.",
+      "source": {
+        "book": "textbook",
+        "page": 18
+      },
+      "models": [
+        {
+          "id": "permission-model",
+          "term": "여기에서 사진을 찍어도 돼요?",
+          "gloss": "May I take pictures here?",
+          "source": {
+            "book": "textbook",
+            "page": 18
+          },
+          "pronunciation": "Yeogieseo sajineul jjigeodo dwaeyo?"
+        }
+      ],
+      "questions": [
+        {
+          "id": "permission-01",
+          "modelId": "permission-model",
+          "explanation": "The intent is permission: 찍다 becomes 찍어도 돼요; 하다 becomes 해도 돼요. The other endings report statements, suggestions or questions.",
+          "formA": {
+            "prompt": "Ask permission: 여기에서 사진을 ___?",
+            "choices": [
+              "찍어도 돼요",
+              "찍재요",
+              "찍느냬요",
+              "찍는대요"
+            ],
+            "answer": "찍어도 돼요"
+          },
+          "formB": {
+            "prompt": "Give permission to ask: 질문을 ___ .",
+            "choices": [
+              "하재요",
+              "하느냬요",
+              "한대요",
+              "해도 돼요"
+            ],
+            "answer": "해도 돼요"
+          }
+        }
+      ]
+    },
+    {
+      "id": "intention-ground",
+      "label": "-(으)ㄹ 테니까",
+      "explanation": "The speaker states an intention as the basis for a request or suggestion. Use -을 테니까 after a consonant and -ㄹ 테니까 after a vowel or ㄹ-final stem.",
+      "source": {
+        "book": "textbook",
+        "page": 19
+      },
+      "models": [
+        {
+          "id": "intention-ground-model",
+          "term": "내가 꽃을 살 테니까 네가 편지를 쓸래?",
+          "gloss": "I will buy flowers, so will you write the letter?",
+          "source": {
+            "book": "textbook",
+            "page": 19
+          },
+          "pronunciation": "Naega kkocheul sal tenikka nega pyeonjireul sseullae?"
+        }
+      ],
+      "questions": [
+        {
+          "id": "intention-ground-01",
+          "modelId": "intention-ground-model",
+          "explanation": "The speaker offers an intention as grounds for the request. 사다 becomes 살 테니까; 기다리다 becomes 기다릴 테니까. The following requests are 편지를 써 줘 and 끝나면 연락해 줘.",
+          "formA": {
+            "prompt": "I will buy the gift, so please write: 내가 선물을 ___ 편지를 써 줘.",
+            "choices": [
+              "샀으면서",
+              "사느냬요",
+              "산대요",
+              "살 테니까"
+            ],
+            "answer": "살 테니까"
+          },
+          "formB": {
+            "prompt": "I will wait, so contact me: 내가 여기에서 ___ 끝나면 연락해 줘.",
+            "choices": [
+              "기다리느냬요",
+              "기다린대요",
+              "기다릴 테니까",
+              "기다렸으면서"
+            ],
+            "answer": "기다릴 테니까"
+          }
+        }
+      ]
+    },
+    {
+      "id": "plain-style",
+      "label": "-(ㄴ/는)다 / -았/었다",
+      "explanation": "Plain declarative writing uses -ㄴ다/-는다 for present action verbs, -다 for present adjectives, and -았/었다 for past events. Match the stated time and written register.",
+      "source": {
+        "book": "textbook",
+        "page": 28
+      },
+      "models": [
+        {
+          "id": "plain-style-model",
+          "term": "어제는 비가 많이 왔다.",
+          "gloss": "It rained a lot yesterday.",
+          "source": {
+            "book": "textbook",
+            "page": 28
+          },
+          "pronunciation": "Eojeneun biga mani watda."
+        }
+      ],
+      "questions": [
+        {
+          "id": "plain-style-01",
+          "modelId": "plain-style-model",
+          "explanation": "The diary reports a completed yesterday action with 읽었다, but an ongoing present action with 읽는다. 읽다 has a consonant-final stem, so present action writing takes -는다.",
+          "formA": {
+            "prompt": "Diary, completed yesterday: 어제 동화책을 ___ .",
+            "choices": [
+              "읽는대요",
+              "읽느냬요",
+              "읽었다",
+              "읽는다"
+            ],
+            "answer": "읽었다"
+          },
+          "formB": {
+            "prompt": "Diary, ongoing present: 지금 나는 책을 ___ .",
+            "choices": [
+              "읽느냬요",
+              "읽는다",
+              "읽었다",
+              "읽는대요"
+            ],
+            "answer": "읽는다"
+          }
+        }
+      ]
+    },
+    {
+      "id": "conjecture",
+      "label": "-(으)ㄴ/는/(으)ㄹ 것 같다",
+      "explanation": "Choose the tense of the guess: past action -(으)ㄴ 것 같다, present action -는 것 같다, future action -(으)ㄹ 것 같다. Present adjectives use -(으)ㄴ 것 같다.",
+      "source": {
+        "book": "textbook",
+        "page": 29
+      },
+      "models": [
+        {
+          "id": "conjecture-model",
+          "term": "곧 비가 올 것 같아요.",
+          "gloss": "I think it will rain soon.",
+          "source": {
+            "book": "textbook",
+            "page": 29
+          },
+          "pronunciation": "Got biga ol geot gatayo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "conjecture-01",
+          "modelId": "conjecture-model",
+          "explanation": "곧 cues a future guess, 오다 → 올 것 같아요. 벌써 다 and an empty plate cue a completed action, 먹다 → 먹은 것 같아요; neither sentence reports someone else’s words.",
+          "formA": {
+            "prompt": "Guess a future event: 곧 비가 ___ .",
+            "choices": [
+              "왔느냬요",
+              "올 것 같아요",
+              "온 것 같아요",
+              "왔대요"
+            ],
+            "answer": "올 것 같아요"
+          },
+          "formB": {
+            "prompt": "Guess a completed event from an empty plate: 케이크를 벌써 다 ___ .",
+            "choices": [
+              "먹은 것 같아요",
+              "먹을 것 같아요",
+              "먹재요",
+              "먹으래요"
+            ],
+            "answer": "먹은 것 같아요"
+          }
+        }
+      ]
+    },
+    {
+      "id": "worry",
+      "label": "-(으)ㄹ까 봐",
+      "explanation": "Use -(으)ㄹ까 봐 for fear of a possible event, often followed by worry or preventive action.",
+      "source": {
+        "book": "textbook",
+        "page": 48
+      },
+      "models": [
+        {
+          "id": "worry-model",
+          "term": "지각할까 봐 뛰어왔어.",
+          "gloss": "I ran here because I was afraid of being late.",
+          "source": {
+            "book": "textbook",
+            "page": 48
+          },
+          "pronunciation": "Jigakalkka bwa ttwieowasseo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "worry-01",
+          "modelId": "worry-model",
+          "explanation": "The preventive action follows a feared possibility. 잃어버리다 becomes 잃어버릴까 봐; 미끄럽다 changes to 미끄러울까 봐 through the ㅂ irregular form.",
+          "formA": {
+            "prompt": "Fear of losing it: 지갑을 ___ 가방에 넣었어요.",
+            "choices": [
+              "잃어버릴까 봐",
+              "잃어버리재요",
+              "잃어버리느냬요",
+              "잃어버렸으면서"
+            ],
+            "answer": "잃어버릴까 봐"
+          },
+          "formB": {
+            "prompt": "Fear of slippery roads: 길이 ___ 일찍 출발했어요.",
+            "choices": [
+              "미끄럽재요",
+              "미끄럽느라고",
+              "미끄러웠으면서",
+              "미끄러울까 봐"
+            ],
+            "answer": "미끄러울까 봐"
+          }
+        }
+      ]
+    },
+    {
+      "id": "occupied-cause",
+      "label": "-느라고",
+      "explanation": "An action occupied the same subject and caused an undesirable result. Attach -느라고 to an action stem without past -았/었-, including when the result is past.",
+      "source": {
+        "book": "textbook",
+        "page": 49
+      },
+      "models": [
+        {
+          "id": "occupied-cause-model",
+          "term": "샤워하느라고 못 받았어.",
+          "gloss": "I could not answer because I was showering.",
+          "source": {
+            "book": "textbook",
+            "page": 49
+          },
+          "pronunciation": "Syawohaneurago mot badasseo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "occupied-cause-01",
+          "modelId": "occupied-cause-model",
+          "explanation": "The same person was occupied reading or doing homework, causing a missed bus or inability to play. Attach -느라고 to 읽-/하-: 읽느라고, 하느라고. Past -었/-했 cannot precede this connector.",
+          "formA": {
+            "prompt": "Busy reading, so missed the bus: 책을 ___ 버스를 놓쳤어요.",
+            "choices": [
+              "읽었느라고",
+              "읽을까 봐",
+              "읽재요",
+              "읽느라고"
+            ],
+            "answer": "읽느라고"
+          },
+          "formB": {
+            "prompt": "Busy doing homework, so could not play: 숙제를 ___ 친구와 못 놀았어요.",
+            "choices": [
+              "할까 봐",
+              "하재요",
+              "하느라고",
+              "했느라고"
+            ],
+            "answer": "하느라고"
+          }
+        }
+      ]
+    },
+    {
+      "id": "reported-noun",
+      "label": "(이)래(요)",
+      "explanation": "Report a noun statement: -이래요 after a consonant and -래요 after a vowel. This target reports what someone is, rather than a question or suggestion.",
+      "source": {
+        "book": "textbook",
+        "page": 58
+      },
+      "models": [
+        {
+          "id": "reported-noun-model",
+          "term": "요즘 인기 있는 한국 가수래요.",
+          "gloss": "They say this is a popular Korean singer these days.",
+          "source": {
+            "book": "textbook",
+            "page": 58
+          },
+          "pronunciation": "Yojeum ingi inneun Hanguk gasuraeyo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "reported-noun-01",
+          "modelId": "reported-noun-model",
+          "explanation": "Report identity with noun + (이)래요: vowel-final 가수 takes 가수래요, consonant-final 회사원 takes 회사원이래요. These are noun statements, not suggestions or questions.",
+          "formA": {
+            "prompt": "They say that person is a singer: 저분은 ___ .",
+            "choices": [
+              "가수느냬요",
+              "가수는대요",
+              "가수래요",
+              "가수재요"
+            ],
+            "answer": "가수래요"
+          },
+          "formB": {
+            "prompt": "They say Dad is an office worker: 아빠는 ___ .",
+            "choices": [
+              "회사원는대요",
+              "회사원이래요",
+              "회사원래요",
+              "회사원재요"
+            ],
+            "answer": "회사원이래요"
+          }
+        }
+      ]
+    },
+    {
+      "id": "reported-statement",
+      "label": "-(ㄴ/는)대(요)",
+      "explanation": "Report present action statements with -ㄴ대요 after a vowel and -는대요 after a consonant; adjectives take -대요. This is a report of a statement.",
+      "source": {
+        "book": "textbook",
+        "page": 59
+      },
+      "models": [
+        {
+          "id": "reported-statement-model",
+          "term": "박물관으로 간대.",
+          "gloss": "They say they are going to the museum.",
+          "source": {
+            "book": "textbook",
+            "page": 59
+          },
+          "pronunciation": "Bangmulgwaneuro gandae."
+        }
+      ],
+      "questions": [
+        {
+          "id": "reported-statement-01",
+          "modelId": "reported-statement-model",
+          "explanation": "Report the quoted statements: consonant-final action 먹다 takes 먹는대요; adjective 아름답다 takes 아름답대요. -재요, -(으)래요 and -(으)냬요 convey different speech acts.",
+          "formA": {
+            "prompt": "Report “Ujin eats cucumbers.” 우진이가 오이를 ___ .",
+            "choices": [
+              "먹느냬요",
+              "먹는대요",
+              "먹재요",
+              "먹으래요"
+            ],
+            "answer": "먹는대요"
+          },
+          "formB": {
+            "prompt": "Report “The fireworks are beautiful.” 불꽃놀이가 ___ .",
+            "choices": [
+              "아름답대요",
+              "아름답재요",
+              "아름다우냬요",
+              "아름답는대요"
+            ],
+            "answer": "아름답대요"
+          }
+        }
+      ]
+    },
+    {
+      "id": "concession",
+      "label": "-아/어도",
+      "explanation": "Use -아/어도 for even if/even though: the result remains true despite the condition. This is distinct from giving permission with -아/어도 되다.",
+      "source": {
+        "book": "textbook",
+        "page": 78
+      },
+      "models": [
+        {
+          "id": "concession-model",
+          "term": "아침은 안 먹고 싶어도 먹어야 돼.",
+          "gloss": "Even if you do not want breakfast, you need to eat.",
+          "source": {
+            "book": "textbook",
+            "page": 78
+          },
+          "pronunciation": "Achimeun an meokgo sipeodo meogeoya dwae."
+        }
+      ],
+      "questions": [
+        {
+          "id": "concession-01",
+          "modelId": "concession-model",
+          "explanation": "Even if cues concession: 오다 contracts to 와도; 비싸다 becomes 비싸도. Adding 돼요 would instead give permission and would break the following clause here.",
+          "formA": {
+            "prompt": "Even if it rains, we go: 비가 ___ 캠핑을 가요.",
+            "choices": [
+              "와도",
+              "와도 돼요",
+              "오재요",
+              "오느냬요"
+            ],
+            "answer": "와도"
+          },
+          "formB": {
+            "prompt": "Even if it is expensive, I will buy it: 이 구두가 ___ 살 거예요.",
+            "choices": [
+              "비싸도 돼요",
+              "비싸재요",
+              "비싸느냬요",
+              "비싸도"
+            ],
+            "answer": "비싸도"
+          }
+        }
+      ]
+    },
+    {
+      "id": "wish",
+      "label": "-(으)면 좋겠다",
+      "explanation": "Use -(으)면 좋겠다 to express a wish: -으면 after a consonant and -면 after a vowel or ㄹ-final stem.",
+      "source": {
+        "book": "textbook",
+        "page": 79
+      },
+      "models": [
+        {
+          "id": "wish-model",
+          "term": "제주도에 가면 좋겠어.",
+          "gloss": "I wish I could go to Jeju Island.",
+          "source": {
+            "book": "textbook",
+            "page": 79
+          },
+          "pronunciation": "Jejudoe gamyeon jokesseo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "wish-01",
+          "modelId": "wish-model",
+          "explanation": "The speaker wishes to buy shoes or learn ballet. Vowel-final 사-/배우- take -면 좋겠어요: 사면 좋겠어요 and 배우면 좋겠어요. The other choices report speech or past experience.",
+          "formA": {
+            "prompt": "I wish I could buy new shoes: 새 구두를 ___ .",
+            "choices": [
+              "사느냬요",
+              "사재요",
+              "사 봤어요",
+              "사면 좋겠어요"
+            ],
+            "answer": "사면 좋겠어요"
+          },
+          "formB": {
+            "prompt": "I wish I could learn ballet: 발레를 ___ .",
+            "choices": [
+              "배우재요",
+              "배워 봤어요",
+              "배우면 좋겠어요",
+              "배우느냬요"
+            ],
+            "answer": "배우면 좋겠어요"
+          }
+        }
+      ]
+    },
+    {
+      "id": "appearance",
+      "label": "-아/어 보이다",
+      "explanation": "Attach -아/어 보이다 to adjectives to describe the appearance or impression of a person or thing.",
+      "source": {
+        "book": "textbook",
+        "page": 88
+      },
+      "models": [
+        {
+          "id": "appearance-model",
+          "term": "오늘 기분이 좋아 보여.",
+          "gloss": "You look in a good mood today.",
+          "source": {
+            "book": "textbook",
+            "page": 88
+          },
+          "pronunciation": "Oneul gibuni joa boyeo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "appearance-01",
+          "modelId": "appearance-model",
+          "explanation": "The objects look fun or delicious: 재미있다 → 재미있어 보여요, 맛있다 → 맛있어 보여요. -어 봤어요 expresses action experience and cannot replace adjective appearance here.",
+          "formA": {
+            "prompt": "The movie looks fun: 이 영화는 ___ .",
+            "choices": [
+              "재미있으면서요",
+              "재미있으려면요",
+              "재미있어 보여요",
+              "재미있어 봤어요"
+            ],
+            "answer": "재미있어 보여요"
+          },
+          "formB": {
+            "prompt": "The apples look delicious: 사과가 ___ .",
+            "choices": [
+              "맛있으려면요",
+              "맛있어 보여요",
+              "맛있어 봤어요",
+              "맛있으면서요"
+            ],
+            "answer": "맛있어 보여요"
+          }
+        }
+      ]
+    },
+    {
+      "id": "simultaneous",
+      "label": "-(으)면서",
+      "explanation": "Use -(으)면서 for simultaneous actions by the same subject. Add -으면서 after most consonants and -면서 after a vowel or ㄹ-final stem.",
+      "source": {
+        "book": "textbook",
+        "page": 89
+      },
+      "models": [
+        {
+          "id": "simultaneous-model",
+          "term": "음악을 들으면서 책을 읽을 거예요.",
+          "gloss": "I will read a book while listening to music.",
+          "source": {
+            "book": "textbook",
+            "page": 89
+          },
+          "pronunciation": "Eumageul deureumyeonseo chaegeul ilgeul geoyeyo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "simultaneous-01",
+          "modelId": "simultaneous-model",
+          "explanation": "One speaker does two actions at the same time. 듣다 uses its ㄷ-irregular vowel form 들으면서; 부르다 takes 부르면서. The following actions are reading and dancing, respectively.",
+          "formA": {
+            "prompt": "While listening to music, I read: 음악을 ___ 책을 읽어요.",
+            "choices": [
+              "들으재요",
+              "들으면서",
+              "듣으면",
+              "듣느냬요"
+            ],
+            "answer": "들으면서"
+          },
+          "formB": {
+            "prompt": "While singing, I dance: 노래를 ___ 춤을 춰요.",
+            "choices": [
+              "부르면서",
+              "부르면 좋겠어요",
+              "부르느냬요",
+              "부르재요"
+            ],
+            "answer": "부르면서"
+          }
+        }
+      ]
+    },
+    {
+      "id": "background",
+      "label": "-는/(으)ㄴ데",
+      "explanation": "Introduce background for a following question or request. Present actions use -는데; adjectives use -(으)ㄴ데, and 있다/없다 use -는데.",
+      "source": {
+        "book": "textbook",
+        "page": 108
+      },
+      "models": [
+        {
+          "id": "background-model",
+          "term": "배가 아픈데 일찍 가도 돼요?",
+          "gloss": "My stomach hurts, so may I leave early?",
+          "source": {
+            "book": "textbook",
+            "page": 108
+          },
+          "pronunciation": "Baega apeunde iljjik gado dwaeyo?"
+        }
+      ],
+      "questions": [
+        {
+          "id": "background-01",
+          "modelId": "background-model",
+          "explanation": "Give present background for a question. Adjective 아프다 uses 아픈데; action 먹다 uses 먹는데. 아프는데 and 먹은데 do not supply the requested present adjective/action forms.",
+          "formA": {
+            "prompt": "Use adjective background: 배가 ___ 집에 가도 돼요?",
+            "choices": [
+              "아픈데",
+              "아프는데",
+              "아프재요",
+              "아프느냬요"
+            ],
+            "answer": "아픈데"
+          },
+          "formB": {
+            "prompt": "Use action background: 매일 약을 ___ 병원에 또 가야 해요?",
+            "choices": [
+              "먹은데",
+              "먹재요",
+              "먹느냬요",
+              "먹는데"
+            ],
+            "answer": "먹는데"
+          }
+        }
+      ]
+    },
+    {
+      "id": "experience",
+      "label": "-아/어 보다",
+      "explanation": "With a past ending, -아/어 보다 asks or tells about having experienced an action. It attaches to action verbs, unlike adjective + -아/어 보이다.",
+      "source": {
+        "book": "textbook",
+        "page": 109
+      },
+      "models": [
+        {
+          "id": "experience-model",
+          "term": "나도 불고기를 먹어 봤어.",
+          "gloss": "I have tried bulgogi too.",
+          "source": {
+            "book": "textbook",
+            "page": 109
+          },
+          "pronunciation": "Nado bulgogireul meogeo bwasseo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "experience-01",
+          "modelId": "experience-model",
+          "explanation": "The intent is past experience, so action 먹다 becomes 먹어 봤어요 and 가다 becomes 가 봤어요. -어 보여요 is appearance, while -재요/-느냬요 relay speech.",
+          "formA": {
+            "prompt": "Ask about past experience: 한국 음식을 ___?",
+            "choices": [
+              "먹어 보여요",
+              "먹재요",
+              "먹느냬요",
+              "먹어 봤어요"
+            ],
+            "answer": "먹어 봤어요"
+          },
+          "formB": {
+            "prompt": "Tell about past experience: 저도 제주도에 ___ .",
+            "choices": [
+              "가재요",
+              "가느냬요",
+              "가 봤어요",
+              "가 보여요"
+            ],
+            "answer": "가 봤어요"
+          }
+        }
+      ]
+    },
+    {
+      "id": "goal-condition",
+      "label": "-(으)려면",
+      "explanation": "Use -(으)려면 for if you want/intend to do something, before advice about the needed condition. Use -으려면 after most consonants and -려면 after vowels or ㄹ-final stems.",
+      "source": {
+        "book": "textbook",
+        "page": 118
+      },
+      "models": [
+        {
+          "id": "goal-condition-model",
+          "term": "튼튼해지려면 운동을 열심히 해야 돼.",
+          "gloss": "If you want to become strong, you need to exercise hard.",
+          "source": {
+            "book": "textbook",
+            "page": 118
+          },
+          "pronunciation": "Teunteunhaejiryeomyeon undongeul yeolsimhi haeya dwae."
+        }
+      ],
+      "questions": [
+        {
+          "id": "goal-condition-01",
+          "modelId": "goal-condition-model",
+          "explanation": "The intended goal precedes advice: 되다 → 되려면; consonant-final 읽다 → 읽으려면. -면서 means simultaneous action, rather than the stated if-you-want condition.",
+          "formA": {
+            "prompt": "If you want to be a singer: 가수가 ___ 노래 연습을 해야 해요.",
+            "choices": [
+              "되재요",
+              "되느냬요",
+              "되려면",
+              "되면서"
+            ],
+            "answer": "되려면"
+          },
+          "formB": {
+            "prompt": "If you want to read a book: 책을 ___ 책상에서 읽으세요.",
+            "choices": [
+              "읽느냬요",
+              "읽으려면",
+              "읽으면서",
+              "읽재요"
+            ],
+            "answer": "읽으려면"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explicit-cause",
+      "label": "-기 때문에",
+      "explanation": "Use stem + -기 때문에 for an explicit cause of the following result. It can attach to action verbs and adjectives; a past cause can use -았/었기 때문에.",
+      "source": {
+        "book": "textbook",
+        "page": 119
+      },
+      "models": [
+        {
+          "id": "explicit-cause-model",
+          "term": "길이 미끄럽기 때문에 천천히 걸어 왔어요.",
+          "gloss": "I walked slowly because the road was slippery.",
+          "source": {
+            "book": "textbook",
+            "page": 119
+          },
+          "pronunciation": "Giri mikkeureopgi ttaemune cheoncheonhi georeo wasseoyo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "explicit-cause-01",
+          "modelId": "explicit-cause-model",
+          "explanation": "The road’s slipperiness or food’s rich nutrients explain the result: 미끄럽기 때문에 and 풍부하기 때문에. The adjectives cannot take occupying-action connector -느라고.",
+          "formA": {
+            "prompt": "Give the cause: 길이 ___ 천천히 걸었어요.",
+            "choices": [
+              "미끄러우냬요",
+              "미끄럽기 때문에",
+              "미끄럽느라고",
+              "미끄럽재요"
+            ],
+            "answer": "미끄럽기 때문에"
+          },
+          "formB": {
+            "prompt": "Give the cause: 영양분이 ___ 이 음식을 먹어요.",
+            "choices": [
+              "풍부하기 때문에",
+              "풍부하느라고",
+              "풍부하재요",
+              "풍부하냬요"
+            ],
+            "answer": "풍부하기 때문에"
+          }
+        }
+      ]
+    },
+    {
+      "id": "embedded-question",
+      "label": "-는지 알다/모르다",
+      "explanation": "Embed an information question before 알다/모르다: present action verbs use -는지. Past actions use -았/었는지; adjective stems use -(으)ㄴ지, and nouns use -인지. The question word remains inside the embedded clause. 있다/없다 are exceptions to ordinary adjective forms: use 있는지/없는지.",
+      "source": {
+        "book": "textbook",
+        "page": 138
+      },
+      "models": [
+        {
+          "id": "embedded-question-model",
+          "term": "몇 시에 스케이트장 문을 닫는지 알아?",
+          "gloss": "Do you know what time the skating rink closes?",
+          "source": {
+            "book": "textbook",
+            "page": 138
+          },
+          "pronunciation": "Myeot sie seukeiteujang muneul danneunji ara?"
+        }
+      ],
+      "questions": [
+        {
+          "id": "embedded-question-01",
+          "modelId": "embedded-question-model",
+          "explanation": "Embed the information question before 알아요/몰라요. 무엇을 준비해야 하는지 asks what to prepare; 어떻게 접는지 states not knowing how to fold. -는 것을 would make a noun phrase instead.",
+          "formA": {
+            "prompt": "Ask if they know what to prepare: 무엇을 준비해야 ___?",
+            "choices": [
+              "하는지 알아요",
+              "하는 것을 좋아해요",
+              "하재요",
+              "해 봤어요"
+            ],
+            "answer": "하는지 알아요"
+          },
+          "formB": {
+            "prompt": "Say you do not know how to fold a bird: 종이로 새를 어떻게 ___ .",
+            "choices": [
+              "접는 것을 좋아해요",
+              "접재요",
+              "접어 봤어요",
+              "접는지 몰라요"
+            ],
+            "answer": "접는지 몰라요"
+          }
+        }
+      ]
+    },
+    {
+      "id": "action-noun",
+      "label": "-는 것",
+      "explanation": "Use present action verb + -는 것 to turn an action into a noun phrase, or to refer to the thing someone does. Add particles to 것: 것이 for the subject and 것을 for the object. Adjectives instead take -(으)ㄴ 것, and nouns take -인 것.",
+      "source": {
+        "book": "textbook",
+        "page": 139
+      },
+      "models": [
+        {
+          "id": "action-noun-model",
+          "term": "저는 노래 부르는 것을 좋아해요.",
+          "gloss": "I like singing.",
+          "source": {
+            "book": "textbook",
+            "page": 139
+          },
+          "pronunciation": "Jeoneun norae bureuneun geoseul joahaeyo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "action-noun-01",
+          "modelId": "action-noun-model",
+          "explanation": "하는 것이 makes exercising the subject of 중요해요. 그리는 것을 makes drawing the object of 좋아해요. The requested action noun uses -는 것 plus the appropriate subject/object particle.",
+          "formA": {
+            "prompt": "Exercising is important: 운동을 ___ 중요해요.",
+            "choices": [
+              "하는지",
+              "하느라고",
+              "하재요",
+              "하는 것이"
+            ],
+            "answer": "하는 것이"
+          },
+          "formB": {
+            "prompt": "I like drawing: 저는 그림 ___ .",
+            "choices": [
+              "그릴까 봐 걱정해요",
+              "그리재요",
+              "그리는 것을 좋아해요",
+              "그리는지 알아요"
+            ],
+            "answer": "그리는 것을 좋아해요"
+          }
+        }
+      ]
+    },
+    {
+      "id": "reported-suggestion",
+      "label": "-재(요)",
+      "explanation": "Report a suggestion with action verb + -재(요), the contraction of -자고 해(요). It means someone suggests doing something together, rather than reporting a command or statement. Use -지 말재요 for a negative suggestion.",
+      "source": {
+        "book": "textbook",
+        "page": 148
+      },
+      "models": [
+        {
+          "id": "reported-suggestion-model",
+          "term": "아빠가 낚시를 하재요.",
+          "gloss": "Dad suggests going fishing.",
+          "source": {
+            "book": "textbook",
+            "page": 148
+          },
+          "pronunciation": "Appaga naksireul hajaeyo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "reported-suggestion-01",
+          "modelId": "reported-suggestion-model",
+          "explanation": "The quoted positive suggestion “Let’s play” becomes 치재요. “Let’s not go” becomes 가지 말재요, rather than command 가지 말래요 or statement 가지 않는대요.",
+          "formA": {
+            "prompt": "Minji said “Let’s play badminton.” 민지가 배드민턴을 ___ .",
+            "choices": [
+              "치래요",
+              "치느냬요",
+              "치재요",
+              "친대요"
+            ],
+            "answer": "치재요"
+          },
+          "formB": {
+            "prompt": "Mom said “Let’s not go today.” 엄마가 오늘은 ___ .",
+            "choices": [
+              "가지 않느냬요",
+              "가지 말재요",
+              "가지 않는대요",
+              "가지 말래요"
+            ],
+            "answer": "가지 말재요"
+          }
+        }
+      ]
+    },
+    {
+      "id": "reported-question",
+      "label": "-느냬(요)/(으)냬(요)",
+      "explanation": "Report a question: action verbs take -느냬(요); adjectives take -(으)냬(요), with -으냬 after a consonant and -냬 after a vowel. Past questions take -았/었냬(요). These contract reported questions with -냐고 해(요). For this course, 있다/없다 use -느냬(요), as in 시간이 있느냬요, rather than the ordinary adjective ending.",
+      "source": {
+        "book": "textbook",
+        "page": 149
+      },
+      "models": [
+        {
+          "id": "reported-question-model",
+          "term": "방학에 어디로 여행을 가느냬요?",
+          "gloss": "They ask where we are traveling during the vacation.",
+          "source": {
+            "book": "textbook",
+            "page": 149
+          },
+          "pronunciation": "Banghage eodiro yeohaengeul ganeunyaeyo?"
+        }
+      ],
+      "questions": [
+        {
+          "id": "reported-question-01",
+          "modelId": "reported-question-model",
+          "explanation": "The first quoted question uses action 먹다 → 먹느냬요. The second uses adjective 덥다 → 더우냬요 with the ㅂ irregular form. Statement/suggestion/command endings cannot relay these questions.",
+          "formA": {
+            "prompt": "Report “What are you eating?” 민지가 무엇을 ___ .",
+            "choices": [
+              "먹으래요",
+              "먹느냬요",
+              "먹재요",
+              "먹는대요"
+            ],
+            "answer": "먹느냬요"
+          },
+          "formB": {
+            "prompt": "Report “Is it hot outside?” 엄마가 밖이 ___ .",
+            "choices": [
+              "더우냬요",
+              "덥대요",
+              "덥느냬요",
+              "덥재요"
+            ],
+            "answer": "더우냬요"
+          }
+        }
+      ]
+    }
+  ]
+}

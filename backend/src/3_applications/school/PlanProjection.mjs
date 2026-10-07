@@ -339,7 +339,11 @@ export class PlanProjection {
         if (!owner || !program) continue;
         program.linkedUnitId = owner.unitId;
         program.assessment = assessmentByUnit.get(owner.unitId) ?? { stage: 'locked', message: 'Course readiness is unavailable.' };
-        if (['locked', 'dormant', 'upcoming'].includes(owner.status)) { program.status = owner.status; program.lockedBy = owner.lockedBy; }
+        // A linked deck follows its assessed lesson's lifetime. Ordinary
+        // standalone programs remain daily; a completed course deck retires.
+        program.status = owner.status === 'completed' ? 'completed'
+          : ['locked', 'dormant', 'upcoming'].includes(owner.status) ? owner.status : program.status;
+        program.lockedBy = owner.lockedBy;
         for (const key of ['entries', 'assigned', 'available', 'locked', 'inProgress', 'completed']) if (Array.isArray(plan[key])) plan[key] = plan[key].filter((e) => e.unitId !== owner.unitId);
       }
     }
@@ -347,8 +351,12 @@ export class PlanProjection {
       this.#logger.warn?.(planErrorEvent, { learnerId, errors: plan.errors });
     }
 
+    // Keep future/completed units in the full plan for course browsing and
+    // access checks, but only the current linked deck is a daily obligation.
+    const agendaPlan = { ...plan, entries: plan.entries.filter((entry) => !entry.linkedUnitId
+      || !['completed', 'locked', 'dormant', 'upcoming'].includes(entry.status)) };
     const statuses = programStatuses ?? await collectProgramStatuses({
-      plan, learnerId, launchers: this.#launchers, logger: this.#logger,
+      plan: agendaPlan, learnerId, launchers: this.#launchers, logger: this.#logger,
       logEvent: launcherFailedEvent,
       declaredEntryActions: this.#resolveDeclaredEntryActions(),
       day,
@@ -358,7 +366,7 @@ export class PlanProjection {
 
     // RAW history, never the overlaid one — see the class header, subtlety 1.
     const { sections: rawSections } = planDailyAgenda({
-      plan, sessions: rawHistory, programStatuses: statuses, now: nowIso,
+      plan: agendaPlan, sessions: rawHistory, programStatuses: statuses, now: nowIso,
       timezone: this.#timezone, logger: this.#logger,
       householdSchedule: this.#householdSchedule,
     });

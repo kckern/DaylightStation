@@ -1,0 +1,395 @@
+{
+  "lesson": 7,
+  "title": "Shopping and wishes",
+  "koreanTitle": "구두를 사면 좋겠어",
+  "kind": "new",
+  "textbookPages": [
+    74,
+    83
+  ],
+  "workbookPages": [
+    36,
+    40
+  ],
+  "objectives": [
+    "Express wishes about buying things.",
+    "State that something remains true despite another condition."
+  ],
+  "vocabulary": [
+    {
+      "id": "buy",
+      "term": "사다",
+      "gloss": "to buy",
+      "source": {
+        "book": "textbook",
+        "page": 77
+      }
+    },
+    {
+      "id": "sell",
+      "term": "팔다",
+      "gloss": "to sell",
+      "source": {
+        "book": "textbook",
+        "page": 77
+      }
+    },
+    {
+      "id": "cheap",
+      "term": "싸다",
+      "gloss": "to be inexpensive",
+      "source": {
+        "book": "textbook",
+        "page": 77
+      }
+    },
+    {
+      "id": "expensive",
+      "term": "비싸다",
+      "gloss": "to be expensive",
+      "source": {
+        "book": "textbook",
+        "page": 77
+      }
+    },
+    {
+      "id": "pay",
+      "term": "돈을 내다",
+      "gloss": "to pay",
+      "source": {
+        "book": "textbook",
+        "page": 77
+      },
+      "pronunciation": "doneul naeda"
+    },
+    {
+      "id": "change-money",
+      "term": "거스름돈을 받다",
+      "gloss": "to receive change",
+      "source": {
+        "book": "textbook",
+        "page": 77
+      },
+      "pronunciation": "geoseureumdoneul batda"
+    },
+    {
+      "id": "browse",
+      "term": "구경하다",
+      "gloss": "to look around",
+      "source": {
+        "book": "textbook",
+        "page": 77
+      }
+    },
+    {
+      "id": "choose",
+      "term": "고르다",
+      "gloss": "to choose",
+      "source": {
+        "book": "textbook",
+        "page": 77
+      }
+    },
+    {
+      "id": "order",
+      "term": "주문하다",
+      "gloss": "to order",
+      "source": {
+        "book": "textbook",
+        "page": 77
+      }
+    },
+    {
+      "id": "bargain",
+      "term": "깎다",
+      "gloss": "to bargain down the price",
+      "source": {
+        "book": "textbook",
+        "page": 77
+      }
+    },
+    {
+      "id": "exchange",
+      "term": "바꾸다",
+      "gloss": "to exchange",
+      "source": {
+        "book": "textbook",
+        "page": 77
+      }
+    },
+    {
+      "id": "refund",
+      "term": "환불하다",
+      "gloss": "to refund",
+      "source": {
+        "book": "textbook",
+        "page": 77
+      }
+    },
+    {
+      "id": "need",
+      "term": "필요하다",
+      "gloss": "to need",
+      "source": {
+        "book": "textbook",
+        "page": 77
+      }
+    },
+    {
+      "id": "fashion",
+      "term": "유행하다",
+      "gloss": "to be in fashion",
+      "source": {
+        "book": "textbook",
+        "page": 77
+      }
+    },
+    {
+      "id": "excited",
+      "term": "신나다",
+      "gloss": "to be excited",
+      "source": {
+        "book": "textbook",
+        "page": 77
+      }
+    }
+  ],
+  "patterns": [
+    {
+      "id": "concession",
+      "label": "-아/어도",
+      "explanation": "Connect a verb or adjective with -아/어도 to say “even if/even though.” The second clause still holds despite the first. This is concession; -아/어도 되다 adds permission. 하다 becomes 해도.",
+      "source": {
+        "book": "textbook",
+        "page": 78
+      },
+      "models": [
+        {
+          "id": "short-basketball",
+          "term": "키가 작아도 농구를 잘해요.",
+          "gloss": "Even though he is short, he plays basketball well.",
+          "source": {
+            "book": "textbook",
+            "page": 78
+          },
+          "pronunciation": "Kiga jagado nonggureul jalhaeyo."
+        },
+        {
+          "id": "repeat-book",
+          "term": "여러 번 읽어도 재미있어요.",
+          "gloss": "Even after reading it several times, it is interesting.",
+          "source": {
+            "book": "textbook",
+            "page": 78
+          },
+          "pronunciation": "Yeoreo beon ilgeodo jaemiisseoyo."
+        },
+        {
+          "id": "slow-okay",
+          "term": "천천히 가도 괜찮아.",
+          "gloss": "It is okay even if we go slowly.",
+          "source": {
+            "book": "textbook",
+            "page": 78
+          },
+          "pronunciation": "Cheoncheonhi gado gwaenchana."
+        }
+      ],
+      "questions": [
+        {
+          "id": "concession-01",
+          "modelId": "short-basketball",
+          "explanation": "작다 → 작아도; the height does not prevent good basketball.",
+          "formA": {
+            "prompt": "Even though he is short: 키가 ___ 농구를 잘해요.",
+            "choices": [
+              "작아도",
+              "작아서",
+              "작으면",
+              "작느라고"
+            ],
+            "answer": "작아도"
+          },
+          "formB": {
+            "prompt": "Even though the shoes are expensive: 운동화가 ___ 사고 싶어요.",
+            "choices": [
+              "비싸서",
+              "비싸면",
+              "비싸느라고",
+              "비싸도"
+            ],
+            "answer": "비싸도"
+          }
+        },
+        {
+          "id": "concession-02",
+          "modelId": "repeat-book",
+          "explanation": "-어도 marks a result holding despite repetition or difficulty.",
+          "formA": {
+            "prompt": "Even after reading it repeatedly: 여러 번 ___ 재미있어요.",
+            "choices": [
+              "읽으면",
+              "읽느라고",
+              "읽기 때문에",
+              "읽어도"
+            ],
+            "answer": "읽어도"
+          },
+          "formB": {
+            "prompt": "Even if homework is hard: 숙제가 ___ 열심히 할 거예요.",
+            "choices": [
+              "힘들면",
+              "힘들기 때문에",
+              "힘들어도",
+              "힘들어서"
+            ],
+            "answer": "힘들어도"
+          }
+        },
+        {
+          "id": "concession-03",
+          "modelId": "slow-okay",
+          "explanation": "Concession permits the second clause to hold even under the first condition.",
+          "formA": {
+            "prompt": "It is okay even if we go slowly: 천천히 ___ 괜찮아.",
+            "choices": [
+              "가면서",
+              "갔기 때문에",
+              "가도",
+              "가느라고"
+            ],
+            "answer": "가도"
+          },
+          "formB": {
+            "prompt": "Even if it rains, I will exercise: 비가 ___ 운동할 거예요.",
+            "choices": [
+              "오느라고",
+              "와도",
+              "오기 때문에",
+              "오면서"
+            ],
+            "answer": "와도"
+          }
+        }
+      ]
+    },
+    {
+      "id": "wish",
+      "label": "-(으)면 좋겠다",
+      "explanation": "Use -(으)면 좋겠다 to express a wish: “I hope…” or “It would be nice if….” Add -으면 after a consonant and -면 after a vowel or ㄹ; apply irregular stem changes. 좋겠어요 is polite; 좋겠어 is familiar.",
+      "source": {
+        "book": "textbook",
+        "page": 79
+      },
+      "models": [
+        {
+          "id": "jeju-wish",
+          "term": "제주도에 가면 좋겠어.",
+          "gloss": "I hope I can go to Jeju Island.",
+          "source": {
+            "book": "textbook",
+            "page": 79
+          },
+          "pronunciation": "Jejudoe gamyeon jokesseo."
+        },
+        {
+          "id": "ballet-wish",
+          "term": "발레를 배우면 좋겠어.",
+          "gloss": "I hope I can learn ballet.",
+          "source": {
+            "book": "textbook",
+            "page": 79
+          },
+          "pronunciation": "Ballereul baeumyeon jokesseo."
+        },
+        {
+          "id": "snow-wish",
+          "term": "하얀 눈이 오면 좋겠어.",
+          "gloss": "I hope white snow falls.",
+          "source": {
+            "book": "textbook",
+            "page": 79
+          },
+          "pronunciation": "Hayan nuni omyeon jokesseo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "wish-01",
+          "modelId": "jeju-wish",
+          "explanation": "-면 좋겠다 expresses a wish, not a report or permission.",
+          "formA": {
+            "prompt": "I hope I can go to Jeju: 제주도에 ___.",
+            "choices": [
+              "가도 돼요",
+              "간대요",
+              "가 봤어요",
+              "가면 좋겠어요"
+            ],
+            "answer": "가면 좋겠어요"
+          },
+          "formB": {
+            "prompt": "I hope I can buy new crayons: 새 크레파스를 ___.",
+            "choices": [
+              "샀대요",
+              "사 봤어요",
+              "사면 좋겠어요",
+              "사도 돼요"
+            ],
+            "answer": "사면 좋겠어요"
+          }
+        },
+        {
+          "id": "wish-02",
+          "modelId": "ballet-wish",
+          "explanation": "배우다 → 배우면; 먹다 → 먹으면. Keep the wish ending.",
+          "formA": {
+            "prompt": "I hope I can learn ballet: 발레를 ___ 좋겠어요.",
+            "choices": [
+              "배우는",
+              "배우느라고",
+              "배우면",
+              "배우도"
+            ],
+            "answer": "배우면"
+          },
+          "formB": {
+            "prompt": "I hope I can eat ice cream every day: 매일 아이스크림을 ___ 좋겠어요.",
+            "choices": [
+              "먹느라고",
+              "먹으면",
+              "먹면",
+              "먹는"
+            ],
+            "answer": "먹으면"
+          }
+        },
+        {
+          "id": "wish-03",
+          "modelId": "snow-wish",
+          "explanation": "Use a conditional plus 좋겠어요 for a hoped-for situation.",
+          "formA": {
+            "prompt": "I hope it snows at Christmas: 크리스마스에 눈이 ___.",
+            "choices": [
+              "와 보여요",
+              "오면 좋겠어요",
+              "와도 돼요",
+              "왔대요"
+            ],
+            "answer": "오면 좋겠어요"
+          },
+          "formB": {
+            "prompt": "I hope there is no homework: 숙제가 ___.",
+            "choices": [
+              "없으면 좋겠어요",
+              "없기 때문에",
+              "없어도 돼요",
+              "없었대요"
+            ],
+            "answer": "없으면 좋겠어요"
+          }
+        }
+      ]
+    }
+  ]
+}

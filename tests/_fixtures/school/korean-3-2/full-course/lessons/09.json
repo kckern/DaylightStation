@@ -1,0 +1,403 @@
+{
+  "lesson": 9,
+  "title": "Promises and family time",
+  "koreanTitle": "아빠랑 야구하면서 놀 때가 제일 좋아요",
+  "kind": "review",
+  "textbookPages": [
+    94,
+    103
+  ],
+  "workbookPages": [
+    48,
+    50
+  ],
+  "objectives": [
+    "Make and keep promises.",
+    "Review wishes, concession, appearances and simultaneous actions."
+  ],
+  "vocabulary": [
+    {
+      "id": "appointment",
+      "term": "약속",
+      "gloss": "promise or appointment",
+      "source": {
+        "book": "textbook",
+        "page": 97
+      }
+    },
+    {
+      "id": "promise",
+      "term": "약속을 하다",
+      "gloss": "to make a promise or appointment",
+      "source": {
+        "book": "textbook",
+        "page": 97
+      },
+      "pronunciation": "yaksogeul hada"
+    },
+    {
+      "id": "arrange",
+      "term": "약속을 정하다",
+      "gloss": "to arrange an appointment",
+      "source": {
+        "book": "textbook",
+        "page": 97
+      },
+      "pronunciation": "yaksogeul jeonghada"
+    },
+    {
+      "id": "keep",
+      "term": "약속을 지키다",
+      "gloss": "to keep a promise or appointment",
+      "source": {
+        "book": "textbook",
+        "page": 97
+      },
+      "pronunciation": "yaksogeul jikida"
+    },
+    {
+      "id": "postpone",
+      "term": "약속을 미루다",
+      "gloss": "to postpone an appointment",
+      "source": {
+        "book": "textbook",
+        "page": 97
+      },
+      "pronunciation": "yaksogeul miruda"
+    },
+    {
+      "id": "move",
+      "term": "약속을 옮기다",
+      "gloss": "to move an appointment to another time",
+      "source": {
+        "book": "textbook",
+        "page": 97
+      },
+      "pronunciation": "yaksogeul omgida"
+    },
+    {
+      "id": "break",
+      "term": "약속을 어기다",
+      "gloss": "to break a promise",
+      "source": {
+        "book": "textbook",
+        "page": 97
+      },
+      "pronunciation": "yaksogeul eogida"
+    },
+    {
+      "id": "cancel",
+      "term": "약속을 취소하다",
+      "gloss": "to cancel an appointment",
+      "source": {
+        "book": "textbook",
+        "page": 97
+      },
+      "pronunciation": "yaksogeul chwisohada"
+    },
+    {
+      "id": "forget",
+      "term": "약속을 잊다",
+      "gloss": "to forget an appointment or promise",
+      "source": {
+        "book": "textbook",
+        "page": 97
+      },
+      "pronunciation": "yaksogeul itda"
+    }
+  ],
+  "patterns": [
+    {
+      "id": "concession",
+      "label": "-아/어도",
+      "explanation": "Connect a verb or adjective with -아/어도 to say “even if/even though.” The second clause still holds despite the first. This is concession; -아/어도 되다 adds permission. 하다 becomes 해도. Review of Lesson 7.",
+      "source": {
+        "book": "textbook",
+        "page": 78
+      },
+      "models": [
+        {
+          "id": "repeat-book",
+          "term": "여러 번 읽어도 재미있어요.",
+          "gloss": "Even after reading it several times, it is interesting.",
+          "source": {
+            "book": "textbook",
+            "page": 98
+          },
+          "pronunciation": "Yeoreo beon ilgeodo jaemiisseoyo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "concession-01",
+          "modelId": "repeat-book",
+          "explanation": "아무리 … -아/어도 emphasizes “no matter how much.”",
+          "formA": {
+            "prompt": "Even if I search, I cannot find it: 아무리 ___ 지갑이 안 보여요.",
+            "choices": [
+              "찾아도",
+              "찾으면서",
+              "찾느라고",
+              "찾기 때문에"
+            ],
+            "answer": "찾아도"
+          },
+          "formB": {
+            "prompt": "Even if I think hard, I do not know: 아무리 ___ 모르겠어요.",
+            "choices": [
+              "생각하면서",
+              "생각하느라고",
+              "생각하기 때문에",
+              "생각해도"
+            ],
+            "answer": "생각해도"
+          }
+        },
+        {
+          "id": "concession-02",
+          "modelId": "repeat-book",
+          "explanation": "The second statement remains true despite the first.",
+          "formA": {
+            "prompt": "Even if I am busy, I keep promises: ___ 약속을 지켜요.",
+            "choices": [
+              "바빠서",
+              "바쁘면",
+              "바쁘기 때문에",
+              "바빠도"
+            ],
+            "answer": "바빠도"
+          },
+          "formB": {
+            "prompt": "Even though the book is long, it is fun: 책이 ___ 재미있어요.",
+            "choices": [
+              "길면",
+              "길기 때문에",
+              "길어도",
+              "길어서"
+            ],
+            "answer": "길어도"
+          }
+        }
+      ]
+    },
+    {
+      "id": "wish",
+      "label": "-(으)면 좋겠다",
+      "explanation": "Use -(으)면 좋겠다 to express a wish: “I hope…” or “It would be nice if….” Add -으면 after a consonant and -면 after a vowel or ㄹ; apply irregular stem changes. 좋겠어요 is polite; 좋겠어 is familiar. Review of Lesson 7.",
+      "source": {
+        "book": "textbook",
+        "page": 79
+      },
+      "models": [
+        {
+          "id": "puppy-wish",
+          "term": "우리 집에도 강아지가 있으면 좋겠어요.",
+          "gloss": "I hope we can have a puppy at home too.",
+          "source": {
+            "book": "textbook",
+            "page": 99
+          },
+          "pronunciation": "Uri jibedo gangajiga isseumyeon jokesseoyo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "wish-01",
+          "modelId": "puppy-wish",
+          "explanation": "A hope uses -(으)면 좋겠어요 rather than obligation, permission or hearsay.",
+          "formA": {
+            "prompt": "I hope we have a puppy: 강아지가 ___.",
+            "choices": [
+              "있어야 돼요",
+              "있었대요",
+              "있어 보여요",
+              "있으면 좋겠어요"
+            ],
+            "answer": "있으면 좋겠어요"
+          },
+          "formB": {
+            "prompt": "I hope I draw better: 그림을 더 잘 ___.",
+            "choices": [
+              "그렸대요",
+              "그려도 돼요",
+              "그리면 좋겠어요",
+              "그려야 돼요"
+            ],
+            "answer": "그리면 좋겠어요"
+          }
+        },
+        {
+          "id": "wish-02",
+          "modelId": "puppy-wish",
+          "explanation": "Use the correct conditional form before 좋겠어요.",
+          "formA": {
+            "prompt": "I hope Dad can rest: 아빠가 ___ 좋겠어요.",
+            "choices": [
+              "쉬는",
+              "쉬느라고",
+              "쉬면",
+              "쉬으면"
+            ],
+            "answer": "쉬면"
+          },
+          "formB": {
+            "prompt": "I hope we can keep the promise: 약속을 ___ 좋겠어요.",
+            "choices": [
+              "지키느라고",
+              "지키면",
+              "지키으면",
+              "지키는"
+            ],
+            "answer": "지키면"
+          }
+        }
+      ]
+    },
+    {
+      "id": "appearance",
+      "label": "-아/어 보이다",
+      "explanation": "Use an adjective with -아/어 보이다 to describe how someone or something looks or seems from observation, rather than stating a known fact. 하다 adjectives become -해 보이다; apply irregular changes (춥다 → 추워). 보여요 is polite; 보여 is familiar. Review of Lesson 8.",
+      "source": {
+        "book": "textbook",
+        "page": 88
+      },
+      "models": [
+        {
+          "id": "dad-tired",
+          "term": "아빠, 많이 피곤해 보이세요.",
+          "gloss": "Dad, you look very tired.",
+          "source": {
+            "book": "textbook",
+            "page": 96
+          },
+          "pronunciation": "Appa, mani pigonhae boiseyo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "appearance-01",
+          "modelId": "dad-tired",
+          "explanation": "Use 보이다 for an observed impression; 피곤하다 becomes 피곤해.",
+          "formA": {
+            "prompt": "Dad looks tired: 아빠가 ___.",
+            "choices": [
+              "피곤하셔야 돼요",
+              "피곤하시면 좋겠어요",
+              "피곤해 보이세요",
+              "피곤하셨대요"
+            ],
+            "answer": "피곤해 보이세요"
+          },
+          "formB": {
+            "prompt": "The friends look close: 친구들이 ___.",
+            "choices": [
+              "친하면 좋겠어요",
+              "친해 보여요",
+              "친했대요",
+              "친해야 돼요"
+            ],
+            "answer": "친해 보여요"
+          }
+        },
+        {
+          "id": "appearance-02",
+          "modelId": "dad-tired",
+          "explanation": "The adjective joins 보이다 using its 아/어 form.",
+          "formA": {
+            "prompt": "The bag looks heavy: 가방이 ___ 보여요.",
+            "choices": [
+              "무거우면",
+              "무거워",
+              "무겁어",
+              "무거운"
+            ],
+            "answer": "무거워"
+          },
+          "formB": {
+            "prompt": "The food looks tasty: 음식이 ___ 보여요.",
+            "choices": [
+              "맛있어",
+              "맛있아",
+              "맛있는",
+              "맛있으면"
+            ],
+            "answer": "맛있어"
+          }
+        }
+      ]
+    },
+    {
+      "id": "simultaneous",
+      "label": "-(으)면서",
+      "explanation": "Use -(으)면서 for two actions happening at the same time, usually by the same subject. Add -으면서 after a consonant and -면서 after a vowel or ㄹ. 듣다 becomes 들으면서. The final verb carries tense and politeness. Review of Lesson 8.",
+      "source": {
+        "book": "textbook",
+        "page": 89
+      },
+      "models": [
+        {
+          "id": "baseball-dad",
+          "term": "아빠랑 야구하면서 놀 때가 제일 좋아요.",
+          "gloss": "I like it best when I play baseball with Dad.",
+          "source": {
+            "book": "textbook",
+            "page": 96
+          },
+          "pronunciation": "Apparang yaguhamyeonseo nol ttaega jeil joayo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "simultaneous-01",
+          "modelId": "baseball-dad",
+          "explanation": "-면서 joins two activities at the same time; it does not express a goal.",
+          "formA": {
+            "prompt": "Take photos while watching the match: 경기를 ___ 사진을 찍어요.",
+            "choices": [
+              "봤기 때문에",
+              "보면서",
+              "보려면",
+              "보느라고"
+            ],
+            "answer": "보면서"
+          },
+          "formB": {
+            "prompt": "Build it while looking at instructions: 설명서를 ___ 만들어요.",
+            "choices": [
+              "보면서",
+              "보려면",
+              "보느라고",
+              "봤기 때문에"
+            ],
+            "answer": "보면서"
+          }
+        },
+        {
+          "id": "simultaneous-02",
+          "modelId": "baseball-dad",
+          "explanation": "Choose the simultaneous form with the same person doing both actions.",
+          "formA": {
+            "prompt": "Talk while walking with Dad: 아빠와 ___ 이야기해요.",
+            "choices": [
+              "걸으면서",
+              "걸으려면",
+              "걷느라고",
+              "걸었기 때문에"
+            ],
+            "answer": "걸으면서"
+          },
+          "formB": {
+            "prompt": "Eat while listening to music: 음악을 ___ 밥을 먹어요.",
+            "choices": [
+              "들으려면",
+              "듣느라고",
+              "들었기 때문에",
+              "들으면서"
+            ],
+            "answer": "들으면서"
+          }
+        }
+      ]
+    }
+  ]
+}

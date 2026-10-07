@@ -1,0 +1,363 @@
+{
+  "lesson": 14,
+  "title": "Camping and reported conversations",
+  "koreanTitle": "민지가 배드민턴 치재요",
+  "kind": "new",
+  "textbookPages": [
+    144,
+    153
+  ],
+  "workbookPages": [
+    74,
+    78
+  ],
+  "objectives": [
+    "Report suggestions made during outdoor activities.",
+    "Relay questions accurately using verb and adjective endings."
+  ],
+  "vocabulary": [
+    {
+      "id": "campground",
+      "term": "캠핑장",
+      "gloss": "campground",
+      "source": {
+        "book": "textbook",
+        "page": 147
+      }
+    },
+    {
+      "id": "come-camping",
+      "term": "캠핑을 오다",
+      "gloss": "come camping",
+      "source": {
+        "book": "textbook",
+        "page": 147
+      },
+      "pronunciation": "Kaempingeul oda"
+    },
+    {
+      "id": "pitch-tent",
+      "term": "텐트를 치다",
+      "gloss": "put up a tent",
+      "source": {
+        "book": "textbook",
+        "page": 147
+      },
+      "pronunciation": "Tenteureul chida"
+    },
+    {
+      "id": "pack",
+      "term": "짐을 싸다",
+      "gloss": "pack luggage",
+      "source": {
+        "book": "textbook",
+        "page": 147
+      },
+      "pronunciation": "Jimeul ssada"
+    },
+    {
+      "id": "barbecue",
+      "term": "바비큐를 하다",
+      "gloss": "have a barbecue",
+      "source": {
+        "book": "textbook",
+        "page": 147
+      },
+      "pronunciation": "Babikyureul hada"
+    },
+    {
+      "id": "travel",
+      "term": "여행을 가다",
+      "gloss": "go on a trip",
+      "source": {
+        "book": "textbook",
+        "page": 147
+      },
+      "pronunciation": "Yeohaengeul gada"
+    },
+    {
+      "id": "go-camping",
+      "term": "캠핑을 가다",
+      "gloss": "go camping",
+      "source": {
+        "book": "textbook",
+        "page": 147
+      },
+      "pronunciation": "Kaempingeul gada"
+    },
+    {
+      "id": "mountain",
+      "term": "산",
+      "gloss": "mountain",
+      "source": {
+        "book": "textbook",
+        "page": 147
+      }
+    },
+    {
+      "id": "river",
+      "term": "강",
+      "gloss": "river",
+      "source": {
+        "book": "textbook",
+        "page": 147
+      }
+    },
+    {
+      "id": "sea",
+      "term": "바다",
+      "gloss": "sea",
+      "source": {
+        "book": "textbook",
+        "page": 147
+      }
+    },
+    {
+      "id": "long-time",
+      "term": "오랜만",
+      "gloss": "the first time in a long while",
+      "source": {
+        "book": "textbook",
+        "page": 147
+      }
+    }
+  ],
+  "patterns": [
+    {
+      "id": "reported-suggestion",
+      "label": "-재(요)",
+      "explanation": "Report a suggestion with action verb + -재(요), the contraction of -자고 해(요). It means someone suggests doing something together, rather than reporting a command or statement. Use -지 말재요 for a negative suggestion.",
+      "source": {
+        "book": "textbook",
+        "page": 148
+      },
+      "models": [
+        {
+          "id": "fishing-suggestion",
+          "term": "아빠가 낚시를 하재요.",
+          "gloss": "Dad suggests going fishing.",
+          "source": {
+            "book": "textbook",
+            "page": 148
+          },
+          "pronunciation": "Appaga naksireul hajaeyo."
+        },
+        {
+          "id": "grilling-suggestion",
+          "term": "민지가 고기를 구워 먹재요.",
+          "gloss": "Minji suggests grilling and eating meat.",
+          "source": {
+            "book": "textbook",
+            "page": 148
+          },
+          "pronunciation": "Minjiga gogireul guwo meokjaeyo."
+        },
+        {
+          "id": "tent-suggestion",
+          "term": "아빠가 같이 텐트를 치재요.",
+          "gloss": "Dad suggests putting up the tent together.",
+          "source": {
+            "book": "textbook",
+            "page": 148
+          },
+          "pronunciation": "Appaga gachi tenteureul chijaeyo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "suggest-01",
+          "modelId": "fishing-suggestion",
+          "explanation": "하자 becomes 하재요 when reporting a suggestion.",
+          "formA": {
+            "prompt": "Dad said “Let’s fish.” 아빠가 낚시를 ___ .",
+            "choices": [
+              "하래요",
+              "하느냬요",
+              "하재요",
+              "한대요"
+            ],
+            "answer": "하재요"
+          },
+          "formB": {
+            "prompt": "Mom said “Let’s travel.” 엄마가 여행을 ___ .",
+            "choices": [
+              "가느냬요",
+              "가재요",
+              "간대요",
+              "가래요"
+            ],
+            "answer": "가재요"
+          }
+        },
+        {
+          "id": "suggest-02",
+          "modelId": "grilling-suggestion",
+          "explanation": "A together-suggestion uses -재요, regardless of the stem-final consonant.",
+          "formA": {
+            "prompt": "Minji said “Let’s eat meat.” 민지가 고기를 ___ .",
+            "choices": [
+              "먹느냬요",
+              "먹재요",
+              "먹는대요",
+              "먹으래요"
+            ],
+            "answer": "먹재요"
+          },
+          "formB": {
+            "prompt": "Brother said “Let’s catch fish.” 형이 물고기를 ___ .",
+            "choices": [
+              "잡재요",
+              "잡는대요",
+              "잡으래요",
+              "잡느냬요"
+            ],
+            "answer": "잡재요"
+          }
+        },
+        {
+          "id": "suggest-03",
+          "modelId": "tent-suggestion",
+          "explanation": "Report “Let’s…” with -재요 and “Let’s not…” with -지 말재요.",
+          "formA": {
+            "prompt": "Dad said “Let’s put up the tent.” 아빠가 텐트를 ___ .",
+            "choices": [
+              "치재요",
+              "친대요",
+              "치래요",
+              "치느냬요"
+            ],
+            "answer": "치재요"
+          },
+          "formB": {
+            "prompt": "Suji said “Let’s not go outside.” 수지가 밖에 ___ .",
+            "choices": [
+              "나가지 않는대요",
+              "나가지 말래요",
+              "나가지 않느냬요",
+              "나가지 말재요"
+            ],
+            "answer": "나가지 말재요"
+          }
+        }
+      ]
+    },
+    {
+      "id": "reported-question",
+      "label": "-느냬(요)/(으)냬(요)",
+      "explanation": "Report a question: action verbs take -느냬(요); adjectives take -(으)냬(요), with -으냬 after a consonant and -냬 after a vowel. Past questions take -았/었냬(요). These contract reported questions with -냐고 해(요). For this course, 있다/없다 use -느냬(요), as in 시간이 있느냬요, rather than the ordinary adjective ending.",
+      "source": {
+        "book": "textbook",
+        "page": 149
+      },
+      "models": [
+        {
+          "id": "travel-question",
+          "term": "방학에 어디로 여행을 가느냬요?",
+          "gloss": "They ask where we are traveling during the vacation.",
+          "source": {
+            "book": "textbook",
+            "page": 149
+          },
+          "pronunciation": "Banghage eodiro yeohaengeul ganeunyaeyo?"
+        },
+        {
+          "id": "dream-question",
+          "term": "커서 뭐가 되고 싶으냬?",
+          "gloss": "They ask what you want to be when you grow up.",
+          "source": {
+            "book": "textbook",
+            "page": 149
+          },
+          "pronunciation": "Keoseo mwoga doego sipeunyae?"
+        },
+        {
+          "id": "cold-question",
+          "term": "유나가 밖이 추우냬요.",
+          "gloss": "Yuna asks whether it is cold outside.",
+          "source": {
+            "book": "textbook",
+            "page": 149
+          },
+          "pronunciation": "Yunaga bakki chuunyaeyo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "ask-01",
+          "modelId": "travel-question",
+          "explanation": "가다 and 하다 are action verbs and take -느냬요 for present questions.",
+          "formA": {
+            "prompt": "Report Mom’s “Where are you going?” 엄마가 어디에 ___ .",
+            "choices": [
+              "가래요",
+              "가느냬요",
+              "가재요",
+              "간대요"
+            ],
+            "answer": "가느냬요"
+          },
+          "formB": {
+            "prompt": "Report Ujin’s “What do you do on weekends?” 우진이가 주말에 뭐 ___ .",
+            "choices": [
+              "하느냬요",
+              "하재요",
+              "한대요",
+              "하래요"
+            ],
+            "answer": "하느냬요"
+          }
+        },
+        {
+          "id": "ask-02",
+          "modelId": "dream-question",
+          "explanation": "싶다 and 작다 take adjective question ending -으냬 after the consonant.",
+          "formA": {
+            "prompt": "Report “What do you want to be?” 커서 뭐가 되고 ___ .",
+            "choices": [
+              "싶으냬요",
+              "싶대요",
+              "싶재요",
+              "싶는냬요"
+            ],
+            "answer": "싶으냬요"
+          },
+          "formB": {
+            "prompt": "Report “Is the tent small?” 텐트가 ___ .",
+            "choices": [
+              "작대요",
+              "작재요",
+              "작느냬요",
+              "작으냬요"
+            ],
+            "answer": "작으냬요"
+          }
+        },
+        {
+          "id": "ask-03",
+          "modelId": "cold-question",
+          "explanation": "Adjectives use -(으)냬; 춥다 changes to 추우냬, and vowel-final 예쁘다 to 예쁘냬.",
+          "formA": {
+            "prompt": "Yuna asks “Is it cold outside?” 유나가 밖이 ___ .",
+            "choices": [
+              "춥대요",
+              "춥느냬요",
+              "춥재요",
+              "추우냬요"
+            ],
+            "answer": "추우냬요"
+          },
+          "formB": {
+            "prompt": "Suji asks “Is the dress pretty?” 수지가 치마가 ___ .",
+            "choices": [
+              "예쁘느냬요",
+              "예쁘재요",
+              "예쁘냬요",
+              "예쁘대요"
+            ],
+            "answer": "예쁘냬요"
+          }
+        }
+      ]
+    }
+  ]
+}

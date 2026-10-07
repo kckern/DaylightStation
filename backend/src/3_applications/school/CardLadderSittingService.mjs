@@ -84,6 +84,7 @@ function isoWithOffset(ms, timezone) {
 }
 
 export class CardLadderSittingService {
+  #courseAccess = null;
   #stores; #decks; #lexicons; #assignments; #attempts; #assets; #judge; #judgementCache; #teacherGate; #recordings; #settings; #bounds; #timezone; #now; #logger; #mode;
   #counter = 0;
 
@@ -129,9 +130,22 @@ export class CardLadderSittingService {
   async #assertAssigned(userId, deckId) {
     if (typeof userId !== 'string' || !userId) throw new ValidationError('userId is required');
     if (typeof deckId !== 'string' || !deckId) throw new ValidationError('deckId is required');
-    const ok = (await this.#enrollments(userId)).some((row) => (row.deckId ?? row.corpusId) === deckId);
-    if (!ok) throw new GuestForbiddenError(`'${userId}' has no card-ladder assignment for '${deckId}'`);
+    const enrollment = (await this.#enrollments(userId)).find((row) => (row.deckId ?? row.corpusId) === deckId);
+    if (!enrollment) throw new GuestForbiddenError(`'${userId}' has no card-ladder assignment for '${deckId}'`);
+    return enrollment;
   }
+
+  async #assertStudyAccess(userId, deckId) {
+    const enrollment = await this.#assertAssigned(userId, deckId);
+    if (enrollment.linkedUnitId && this.#mode !== 'test') {
+      if (!this.#courseAccess) throw new ValidationError('Course readiness is not configured.');
+      const assessment = await this.#courseAccess({ learnerId: userId, deckId });
+      if (!assessment || assessment.stage === 'locked') throw new GuestForbiddenError(assessment?.message ?? 'Finish the preceding lesson first.');
+    }
+  }
+
+  /** Composed after the course service, which uses our read-only evidence. */
+  configureCourseAccess({ getAssessment }) { this.#courseAccess = getAssessment; }
 
   /** The deck, its validated lexicon, and the word package both belong to. */
   async #load(deckId) {
@@ -215,8 +229,39 @@ export class CardLadderSittingService {
    */
   async #pool(status, deck, learnerId) {
     const order = this.#settings().batch?.order ?? 'random';
-    const ids = orderNewWords(await this.#deckGroups(status, deck), { order, learnerId: learnerId ?? '' });
+    let groups = await this.#deckGroups(status, deck);
+    if (this.#mode !== 'test') {
+      const enrollments = await this.#enrollments(learnerId);
+      // Learned words stay in status for ordinary spaced review. Only unseen
+      // cards need the lesson to remain unlocked after a correction or pause.
+      const eligible = await Promise.all(groups.map(async (group) => {
+        const enrollment = enrollments.find(row => (row.deckId ?? row.corpusId) === group.deckId);
+        if (!enrollment?.linkedUnitId || !group.ids.some(id => (status.words[id]?.state ?? 'new') === 'new')) return true;
+        const assessment = await this.#courseAccess?.({ learnerId, deckId: group.deckId });
+        return Boolean(assessment && assessment.stage !== 'locked');
+      }));
+      groups = groups.filter((_group, index) => eligible[index]);
+    }
+    const ids = orderNewWords(groups, { order, learnerId: learnerId ?? '' });
     return ids.filter((id) => (status.words[id]?.state ?? 'new') === 'new');
+  }
+
+  /** Reconcile a frozen introduction queue without changing any answered evidence. */
+  #deferUnavailableIntroductions(status, dayFile, pool) {
+    if (this.#mode === 'test' || !this.#courseAccess) return [];
+    const round = dayFile.rounds.at(-1);
+    if (round?.phase !== 'intro') return [];
+    const allowed = new Set(pool);
+    const deferred = round.newWords.filter(id => (status.words[id]?.state ?? 'new') === 'new' && !allowed.has(id));
+    if (!deferred.length) return [];
+    const blocked = new Set(deferred);
+    const keep = id => !blocked.has(id);
+    round.intro.index = round.newWords.slice(0, round.intro.index).filter(keep).length;
+    round.newWords = round.newWords.filter(keep);
+    round.words = round.words.filter(keep);
+    round.stream.queue = round.stream.queue.filter(keep);
+    if (round.intro.index >= round.newWords.length) round.phase = round.words.length ? 'stream' : 'done';
+    return deferred;
   }
 
   /**
@@ -365,13 +410,24 @@ export class CardLadderSittingService {
     const dayFile = store.readDay(userId, pkg, day);
     const sitting = dayFile.sittings?.[sittingId];
     if (!sitting) throw new EntityNotFoundError('card-ladder sitting', sittingId);
+    await this.#assertStudyAccess(userId, sitting.deckId);
     const { deck, lexicon, pkg: deckPkg } = await this.#load(sitting.deckId);
     // A deck moved to another package must not write across packages.
     if (deckPkg !== pkg) throw new EntityNotFoundError('card-ladder sitting', sittingId);
     const status = store.readStatus(userId, pkg);
     const media = this.#media(deck, lexicon);
     const settings = this.#daySettings(dayFile, { store, userId, pkg });
-    const ctx = { status, dayFile, day, lexicon, media, pool: await this.#pool(status, deck, userId), settings, learnerId: userId };
+    const pool = await this.#pool(status, deck, userId);
+    const ctx = { status, dayFile, day, lexicon, media, pool, settings, learnerId: userId };
+    const deferred = this.#deferUnavailableIntroductions(status, structuredClone(dayFile), pool);
+    if (deferred.length) {
+      const out = store.transact(userId, pkg, day, ({ status, dayFile }) => {
+        this.#deferUnavailableIntroductions(status, dayFile, pool);
+        return openDay({ ...ctx, status, dayFile, deckId: deck.id, at: isoWithOffset(this.#now(), this.#timezone), capabilities: dayFile.capabilities });
+      });
+      ctx.status = out.status; ctx.dayFile = out.dayFile;
+      this.#logger.info?.('school.card-ladder.course-introductions-deferred', { learnerId: userId, deckId: deck.id, wordIds: deferred });
+    }
     return { store, pkg, lexicon, media, settings, ctx, day, sitting };
   }
 
@@ -535,7 +591,7 @@ export class CardLadderSittingService {
   /** Opens (or resumes) today's sitting. Paper attempts fold here — only here, never mid-sitting. */
   async open({ userId, deckId, scenario = null, capabilities = null } = {}) {
     const caps = { microphone: capabilities?.microphone === true };
-    await this.#assertAssigned(userId, deckId);
+    await this.#assertStudyAccess(userId, deckId);
     const { deck, lexicon, pkg } = await this.#load(deckId);
     const openedMs = this.#now();
     const day = this.#today(openedMs);
@@ -552,12 +608,14 @@ export class CardLadderSittingService {
     let foldTransitions = [];
     let changes = { reopened: false, idleClosed: [] };
     let beforeDay = null;
+    let deferredCardIds = [];
     const next = store.transact(userId, pkg, day, ({ status, dayFile }) => {
       beforeDay = structuredClone(dayFile);
       const settings = this.#daySettings(dayFile, { store, userId, pkg });
       const afterFold = this.#fold(status, read, quizDocumentIds, day, settings, { learnerId: userId, deckDir: deckDirOf(deck.id), pkg });
       folded = afterFold.folded;
       foldTransitions = afterFold.transitions;
+      deferredCardIds = this.#deferUnavailableIntroductions(afterFold.status, dayFile, pool);
       const opened = openDay({ status: afterFold.status, dayFile, day, deckId, pool, settings, learnerId: userId, at: isoWithOffset(openedMs, this.#timezone), media, capabilities: caps, lexicon });
       changes = this.#housekeep(opened.dayFile, sittingId, openedMs, { reopen: false });
       opened.dayFile.sittings[sittingId] = { deckId, openedAt: isoWithOffset(openedMs, this.#timezone), closedAt: null, reason: null };
@@ -572,7 +630,7 @@ export class CardLadderSittingService {
     this.#logTransitions({ learnerId: userId, sittingId, pkg, day }, foldTransitions, next.status.words);
     this.#logger.info?.('school.card-ladder.opened', {
       learnerId: userId, deckId, package: pkg, day, sittingId, mode: this.#mode, scenario, folded: folded.length, microphone: caps.microphone,
-      first: item.type, phase: progress.phase, rechecks: next.dayFile.atOpen?.dueRechecks?.length ?? 0,
+      first: item.type, phase: progress.phase, deferredCardIds, rechecks: next.dayFile.atOpen?.dueRechecks?.length ?? 0,
     });
     this.#logSequencing({ learnerId: userId, sittingId, pkg, day }, { ctx, item, via: 'open', beforeDay, beforeWords: before.words });
     return {

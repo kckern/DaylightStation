@@ -1,0 +1,495 @@
+{
+  "lesson": 2,
+  "title": "Reading and diary writing",
+  "koreanTitle": "생일 선물로 받은 동화책을 읽었다",
+  "kind": "new",
+  "textbookPages": [
+    24,
+    33
+  ],
+  "workbookPages": [
+    10,
+    15
+  ],
+  "objectives": [
+    "Write diary and reading-response statements in plain style.",
+    "Infer past events, current situations, and future possibilities."
+  ],
+  "vocabulary": [
+    {
+      "id": "europe",
+      "term": "유럽",
+      "gloss": "Europe",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      }
+    },
+    {
+      "id": "asia",
+      "term": "아시아",
+      "gloss": "Asia",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      }
+    },
+    {
+      "id": "north-america",
+      "term": "북아메리카",
+      "gloss": "North America",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      }
+    },
+    {
+      "id": "south-america",
+      "term": "남아메리카",
+      "gloss": "South America",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      }
+    },
+    {
+      "id": "africa",
+      "term": "아프리카",
+      "gloss": "Africa",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      }
+    },
+    {
+      "id": "oceania",
+      "term": "오세아니아",
+      "gloss": "Oceania",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      }
+    },
+    {
+      "id": "arctic-ocean",
+      "term": "북극해",
+      "gloss": "Arctic Ocean",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      }
+    },
+    {
+      "id": "indian-ocean",
+      "term": "인도양",
+      "gloss": "Indian Ocean",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      }
+    },
+    {
+      "id": "pacific-ocean",
+      "term": "태평양",
+      "gloss": "Pacific Ocean",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      }
+    },
+    {
+      "id": "atlantic-ocean",
+      "term": "대서양",
+      "gloss": "Atlantic Ocean",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      }
+    },
+    {
+      "id": "raise-livestock",
+      "term": "가축을 기르다",
+      "gloss": "raise livestock",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      },
+      "pronunciation": "gachugeul gireuda"
+    },
+    {
+      "id": "catch-fish",
+      "term": "고기를 잡다",
+      "gloss": "catch fish",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      },
+      "pronunciation": "gogireul japda"
+    },
+    {
+      "id": "farm",
+      "term": "농사를 짓다",
+      "gloss": "farm; grow crops",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      },
+      "pronunciation": "nongsareul jitda"
+    },
+    {
+      "id": "village",
+      "term": "마을",
+      "gloss": "village",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      }
+    },
+    {
+      "id": "life",
+      "term": "생활",
+      "gloss": "daily life",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      }
+    },
+    {
+      "id": "also",
+      "term": "또한",
+      "gloss": "also; furthermore",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      }
+    },
+    {
+      "id": "each-other",
+      "term": "서로",
+      "gloss": "each other",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      }
+    },
+    {
+      "id": "transport",
+      "term": "교통",
+      "gloss": "transportation",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      }
+    },
+    {
+      "id": "mall",
+      "term": "쇼핑몰",
+      "gloss": "shopping mall",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      }
+    },
+    {
+      "id": "convenient",
+      "term": "편리하다",
+      "gloss": "be convenient",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      }
+    },
+    {
+      "id": "happy",
+      "term": "행복하다",
+      "gloss": "be happy",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      }
+    },
+    {
+      "id": "science",
+      "term": "과학",
+      "gloss": "science",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      }
+    },
+    {
+      "id": "technology",
+      "term": "기술",
+      "gloss": "technology",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      }
+    },
+    {
+      "id": "develop",
+      "term": "발달하다",
+      "gloss": "develop; advance",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      }
+    },
+    {
+      "id": "want",
+      "term": "원하다",
+      "gloss": "want",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      }
+    },
+    {
+      "id": "become-close",
+      "term": "가까워지다",
+      "gloss": "become closer",
+      "source": {
+        "book": "textbook",
+        "page": 27
+      }
+    }
+  ],
+  "patterns": [
+    {
+      "id": "plain-style",
+      "label": "-(ㄴ/는)다 / -았/었다",
+      "explanation": "Diary and written plain statements: present action verbs take -ㄴ다 after a vowel or ㄹ (drop ㄹ), -는다 after other consonants. Present adjectives and 있다/없다 keep -다. Past verbs and adjectives take -았/었다.",
+      "source": {
+        "book": "textbook",
+        "page": 28
+      },
+      "models": [
+        {
+          "id": "read-story",
+          "term": "동화책을 읽었다.",
+          "gloss": "I read a storybook.",
+          "source": {
+            "book": "textbook",
+            "page": 28
+          },
+          "pronunciation": "donghwachaegeul ilgeotda"
+        },
+        {
+          "id": "go-trip",
+          "term": "우리는 가족 여행을 간다.",
+          "gloss": "We go on a family trip.",
+          "source": {
+            "book": "textbook",
+            "page": 28
+          },
+          "pronunciation": "urineun gajok yeohaengeul ganda"
+        },
+        {
+          "id": "good-mood",
+          "term": "기분이 정말 좋다.",
+          "gloss": "I feel really good.",
+          "source": {
+            "book": "textbook",
+            "page": 28
+          },
+          "pronunciation": "gibuni jeongmal jota"
+        }
+      ],
+      "questions": [
+        {
+          "id": "plain-style-01",
+          "modelId": "go-trip",
+          "explanation": "Present action verbs use -ㄴ다 or -는다, according to the stem.",
+          "formA": {
+            "prompt": "Present diary style: 나는 매일 학교에 ___.",
+            "choices": [
+              "간다",
+              "가요",
+              "갔다",
+              "가는다"
+            ],
+            "answer": "간다"
+          },
+          "formB": {
+            "prompt": "Present diary style: 우리는 매일 동화책을 ___.",
+            "choices": [
+              "읽는다",
+              "읽다",
+              "읽었다",
+              "읽는대요"
+            ],
+            "answer": "읽는다"
+          }
+        },
+        {
+          "id": "plain-style-02",
+          "modelId": "good-mood",
+          "explanation": "Present adjectives keep -다; they do not take -는다.",
+          "formA": {
+            "prompt": "Present diary style: 오늘은 기분이 ___. (good)",
+            "choices": [
+              "좋다",
+              "좋는다",
+              "좋았다",
+              "좋아요"
+            ],
+            "answer": "좋다"
+          },
+          "formB": {
+            "prompt": "Present diary style: 오늘 날씨가 ___. (hot)",
+            "choices": [
+              "덥다",
+              "덥는다",
+              "더웠다",
+              "더워요"
+            ],
+            "answer": "덥다"
+          }
+        },
+        {
+          "id": "plain-style-03",
+          "modelId": "read-story",
+          "explanation": "Use -았/었다 for a completed past event in written plain style.",
+          "formA": {
+            "prompt": "Past diary style: 어제 동화책을 ___. (read)",
+            "choices": [
+              "읽었다",
+              "읽는다",
+              "읽어요",
+              "읽는 것 같다"
+            ],
+            "answer": "읽었다"
+          },
+          "formB": {
+            "prompt": "Past diary style: 어제 비가 많이 ___. (came)",
+            "choices": [
+              "왔다",
+              "온다",
+              "오는다",
+              "와요"
+            ],
+            "answer": "왔다"
+          }
+        }
+      ]
+    },
+    {
+      "id": "seems",
+      "label": "-(으)ㄴ/는/(으)ㄹ 것 같다",
+      "explanation": "Express an inference, not certainty. Past actions use -(으)ㄴ, current actions and 있다/없다 use -는, current adjectives use -(으)ㄴ, and predictions use -(으)ㄹ 것 같다. Nouns use 인 것 같다.",
+      "source": {
+        "book": "textbook",
+        "page": 29
+      },
+      "models": [
+        {
+          "id": "ate-cake",
+          "term": "영준이가 케이크를 다 먹은 것 같아요.",
+          "gloss": "It seems Yeongjun ate all the cake.",
+          "source": {
+            "book": "textbook",
+            "page": 29
+          },
+          "pronunciation": "yeongjuniga keikeureul da meogeun geot gatayo"
+        },
+        {
+          "id": "studying",
+          "term": "민수가 공부하는 것 같아요.",
+          "gloss": "It seems Minsu is studying.",
+          "source": {
+            "book": "textbook",
+            "page": 29
+          },
+          "pronunciation": "minsuga gongbuhaneun geot gatayo"
+        },
+        {
+          "id": "rain-soon",
+          "term": "곧 비가 올 것 같아요.",
+          "gloss": "It looks like it will rain soon.",
+          "source": {
+            "book": "textbook",
+            "page": 29
+          },
+          "pronunciation": "got biga ol geot gatayo"
+        }
+      ],
+      "questions": [
+        {
+          "id": "seems-01",
+          "modelId": "ate-cake",
+          "explanation": "Past action inference uses -(으)ㄴ 것 같다.",
+          "formA": {
+            "prompt": "Infer a completed action: 케이크를 다 ___. (ate)",
+            "choices": [
+              "먹은 것 같아요",
+              "먹는 것 같아요",
+              "먹을 것 같아요",
+              "먹는대요"
+            ],
+            "answer": "먹은 것 같아요"
+          },
+          "formB": {
+            "prompt": "Infer they already left: 모두 집에 ___. (went)",
+            "choices": [
+              "간 것 같아요",
+              "가는 것 같아요",
+              "갈 것 같아요",
+              "가도 돼요"
+            ],
+            "answer": "간 것 같아요"
+          }
+        },
+        {
+          "id": "seems-02",
+          "modelId": "studying",
+          "explanation": "Current actions take -는; 있다 and 없다 also take -는.",
+          "formA": {
+            "prompt": "Infer an action happening now: 지금 민수가 ___. (study)",
+            "choices": [
+              "공부하는 것 같아요",
+              "공부한 것 같아요",
+              "공부할 것 같아요",
+              "공부해도 돼요"
+            ],
+            "answer": "공부하는 것 같아요"
+          },
+          "formB": {
+            "prompt": "Infer a current quality: 이 음식이 ___. (delicious)",
+            "choices": [
+              "맛있는 것 같아요",
+              "맛있은 것 같아요",
+              "맛있다고 해요",
+              "맛있었대요"
+            ],
+            "answer": "맛있는 것 같아요"
+          }
+        },
+        {
+          "id": "seems-03",
+          "modelId": "rain-soon",
+          "explanation": "Predictions take -(으)ㄹ 것 같다, even with adjectives.",
+          "formA": {
+            "prompt": "Predict future rain: 곧 비가 ___.",
+            "choices": [
+              "올 것 같아요",
+              "온 것 같아요",
+              "오는대요",
+              "와도 돼요"
+            ],
+            "answer": "올 것 같아요"
+          },
+          "formB": {
+            "prompt": "Predict a future crowd: 내일 사람이 ___. (many)",
+            "choices": [
+              "많을 것 같아요",
+              "많은 것 같아요",
+              "많는 것 같아요",
+              "많았대요"
+            ],
+            "answer": "많을 것 같아요"
+          }
+        }
+      ]
+    }
+  ]
+}

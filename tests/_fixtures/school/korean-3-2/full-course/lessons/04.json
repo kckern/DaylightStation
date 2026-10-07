@@ -1,0 +1,350 @@
+{
+  "lesson": 4,
+  "title": "School life and worries",
+  "koreanTitle": "과학 만화를 읽느라고 늦게 잤어",
+  "kind": "new",
+  "textbookPages": [
+    44,
+    53
+  ],
+  "workbookPages": [
+    20,
+    25
+  ],
+  "objectives": [
+    "Describe school routines and worries.",
+    "Explain an activity that caused a negative result."
+  ],
+  "vocabulary": [
+    {
+      "id": "go-school",
+      "term": "등교하다",
+      "gloss": "go to school",
+      "source": {
+        "book": "textbook",
+        "page": 47
+      }
+    },
+    {
+      "id": "attend",
+      "term": "출석하다",
+      "gloss": "attend; be present",
+      "source": {
+        "book": "textbook",
+        "page": 47
+      }
+    },
+    {
+      "id": "leave-school",
+      "term": "하교하다",
+      "gloss": "leave school for home",
+      "source": {
+        "book": "textbook",
+        "page": 47
+      }
+    },
+    {
+      "id": "absent",
+      "term": "결석하다",
+      "gloss": "be absent",
+      "source": {
+        "book": "textbook",
+        "page": 47
+      }
+    },
+    {
+      "id": "class-time",
+      "term": "수업 시간",
+      "gloss": "class time",
+      "source": {
+        "book": "textbook",
+        "page": 47
+      },
+      "pronunciation": "sueop sigan"
+    },
+    {
+      "id": "break-time",
+      "term": "쉬는 시간",
+      "gloss": "break time",
+      "source": {
+        "book": "textbook",
+        "page": 47
+      },
+      "pronunciation": "swineun sigan"
+    },
+    {
+      "id": "lunch-time",
+      "term": "점심시간",
+      "gloss": "lunchtime",
+      "source": {
+        "book": "textbook",
+        "page": 47
+      }
+    },
+    {
+      "id": "late",
+      "term": "지각하다",
+      "gloss": "be late",
+      "source": {
+        "book": "textbook",
+        "page": 47
+      }
+    },
+    {
+      "id": "leave-early",
+      "term": "조퇴하다",
+      "gloss": "leave school early",
+      "source": {
+        "book": "textbook",
+        "page": 47
+      }
+    },
+    {
+      "id": "school-bus",
+      "term": "스쿨버스",
+      "gloss": "school bus",
+      "source": {
+        "book": "textbook",
+        "page": 47
+      }
+    }
+  ],
+  "patterns": [
+    {
+      "id": "worried",
+      "label": "-(으)ㄹ까 봐",
+      "explanation": "Describe worry that an unwanted possibility may happen, or an action taken to prevent it. Use -을까 봐 after a consonant and -ㄹ까 봐 after a vowel or ㄹ. Verbs and adjectives both work.",
+      "source": {
+        "book": "textbook",
+        "page": 48
+      },
+      "models": [
+        {
+          "id": "late-fear",
+          "term": "지각할까 봐 뛰어왔어.",
+          "gloss": "I ran here because I was afraid I would be late.",
+          "source": {
+            "book": "textbook",
+            "page": 48
+          },
+          "pronunciation": "jigakalkka bwa ttwieowasseo"
+        },
+        {
+          "id": "small-fear",
+          "term": "작을까 봐 걱정했어.",
+          "gloss": "I worried it might be too small.",
+          "source": {
+            "book": "textbook",
+            "page": 48
+          },
+          "pronunciation": "jageulkka bwa geokjeonghaesseo"
+        },
+        {
+          "id": "rain-fear",
+          "term": "비가 올까 봐 우산을 가져왔어.",
+          "gloss": "I brought an umbrella because I feared rain.",
+          "source": {
+            "book": "textbook",
+            "page": 48
+          },
+          "pronunciation": "biga olkka bwa usaneul gajyeowasseo"
+        }
+      ],
+      "questions": [
+        {
+          "id": "worried-01",
+          "modelId": "late-fear",
+          "explanation": "-(으)ㄹ까 봐 marks a feared possibility; preventive action follows.",
+          "formA": {
+            "prompt": "Fear being late: 지각___ 뛰어왔어.",
+            "choices": [
+              "할까 봐",
+              "하느라고",
+              "한대요",
+              "해도 돼서"
+            ],
+            "answer": "할까 봐"
+          },
+          "formB": {
+            "prompt": "Fear oversleeping: 늦게 일어___ 알람을 두 개 사용해.",
+            "choices": [
+              "날까 봐",
+              "나느라고",
+              "난대요",
+              "나도 돼서"
+            ],
+            "answer": "날까 봐"
+          }
+        },
+        {
+          "id": "worried-02",
+          "modelId": "small-fear",
+          "explanation": "Adjectives can express fears; 춥다 becomes 추울까 봐.",
+          "formA": {
+            "prompt": "Worry it may be small: 옷이 ___ 걱정했어.",
+            "choices": [
+              "작을까 봐",
+              "작느라고",
+              "작은대요",
+              "작아도 돼서"
+            ],
+            "answer": "작을까 봐"
+          },
+          "formB": {
+            "prompt": "Fear cold weather: 날씨가 ___ 목도리를 가져왔어.",
+            "choices": [
+              "추울까 봐",
+              "춥느라고",
+              "춥는대요",
+              "추워도 돼서"
+            ],
+            "answer": "추울까 봐"
+          }
+        },
+        {
+          "id": "worried-03",
+          "modelId": "rain-fear",
+          "explanation": "Use -(으)ㄹ까 봐 for prevention of an unwanted future event.",
+          "formA": {
+            "prompt": "Fear possible rain: 비가 ___ 우산을 가져왔어.",
+            "choices": [
+              "올까 봐",
+              "오느라고",
+              "온대요",
+              "와도 돼서"
+            ],
+            "answer": "올까 봐"
+          },
+          "formB": {
+            "prompt": "Fear forgetting: 약속을 ___ 수첩에 적었어.",
+            "choices": [
+              "잊어버릴까 봐",
+              "잊어버리느라고",
+              "잊어버린대요",
+              "잊어버려도 돼서"
+            ],
+            "answer": "잊어버릴까 봐"
+          }
+        }
+      ]
+    },
+    {
+      "id": "busy-cause",
+      "label": "-느라고",
+      "explanation": "An action occupies the subject and causes a negative result or prevents another action. Attach -느라고 directly to action stems (drop ㄹ); do not add a past-tense marker. Normally both clauses share the subject. Not used with adjective stems.",
+      "source": {
+        "book": "textbook",
+        "page": 49
+      },
+      "models": [
+        {
+          "id": "shower",
+          "term": "샤워하느라고 전화를 못 받았어.",
+          "gloss": "I could not answer the phone because I was showering.",
+          "source": {
+            "book": "textbook",
+            "page": 49
+          },
+          "pronunciation": "syawohaneurago jeonhwareul mot badasseo"
+        },
+        {
+          "id": "tidy",
+          "term": "방 정리를 하느라고 늦었어.",
+          "gloss": "I was late because I was tidying my room.",
+          "source": {
+            "book": "textbook",
+            "page": 49
+          },
+          "pronunciation": "bang jeongnireul haneurago neujeosseo"
+        },
+        {
+          "id": "music",
+          "term": "음악을 듣느라고 못 들었어.",
+          "gloss": "I did not hear because I was listening to music.",
+          "source": {
+            "book": "textbook",
+            "page": 49
+          },
+          "pronunciation": "eumageul deunneurago mot deureosseo"
+        }
+      ],
+      "questions": [
+        {
+          "id": "busy-cause-01",
+          "modelId": "shower",
+          "explanation": "The action itself causes the negative result; attach -느라고 to the stem.",
+          "formA": {
+            "prompt": "Busy showering caused a missed call: 샤워___ 전화를 못 받았어.",
+            "choices": [
+              "하느라고",
+              "할까 봐",
+              "했느라고",
+              "하대요"
+            ],
+            "answer": "하느라고"
+          },
+          "formB": {
+            "prompt": "Busy watching a film: 영화를 ___ 벨 소리를 못 들었어.",
+            "choices": [
+              "보느라고",
+              "볼까 봐",
+              "봤느라고",
+              "보는대요"
+            ],
+            "answer": "보느라고"
+          }
+        },
+        {
+          "id": "busy-cause-02",
+          "modelId": "tidy",
+          "explanation": "The same person performs the activity and experiences its negative consequence.",
+          "formA": {
+            "prompt": "Busy tidying caused lateness: 방 정리를 ___ 늦었어.",
+            "choices": [
+              "하느라고",
+              "할까 봐",
+              "했느라고",
+              "하대요"
+            ],
+            "answer": "하느라고"
+          },
+          "formB": {
+            "prompt": "Busy buying gifts used up money: 선물을 ___ 돈을 다 썼어.",
+            "choices": [
+              "사느라고",
+              "살까 봐",
+              "샀느라고",
+              "사는대요"
+            ],
+            "answer": "사느라고"
+          }
+        },
+        {
+          "id": "busy-cause-03",
+          "modelId": "music",
+          "explanation": "With -느라고, ㄹ drops: 놀다 → 노느라고. 듣다 keeps ㄷ here.",
+          "formA": {
+            "prompt": "Busy listening prevented hearing: 음악을 ___ 못 들었어.",
+            "choices": [
+              "듣느라고",
+              "들을까 봐",
+              "들었느라고",
+              "듣은대요"
+            ],
+            "answer": "듣느라고"
+          },
+          "formB": {
+            "prompt": "Busy playing delayed homework: 친구하고 ___ 숙제를 못 했어.",
+            "choices": [
+              "노느라고",
+              "놀까 봐",
+              "놀았느라고",
+              "놀느라고"
+            ],
+            "answer": "노느라고"
+          }
+        }
+      ]
+    }
+  ]
+}

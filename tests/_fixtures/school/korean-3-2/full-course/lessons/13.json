@@ -1,0 +1,366 @@
+{
+  "lesson": 13,
+  "title": "Dreams and careers",
+  "koreanTitle": "무엇을 준비해야 하는지 아세요?",
+  "kind": "new",
+  "textbookPages": [
+    134,
+    143
+  ],
+  "workbookPages": [
+    68,
+    72
+  ],
+  "objectives": [
+    "Ask for information about careers and preparations.",
+    "Use actions as noun phrases when discussing dreams."
+  ],
+  "vocabulary": [
+    {
+      "id": "doctor",
+      "term": "의사",
+      "gloss": "doctor",
+      "source": {
+        "book": "textbook",
+        "page": 137
+      }
+    },
+    {
+      "id": "nurse",
+      "term": "간호사",
+      "gloss": "nurse",
+      "source": {
+        "book": "textbook",
+        "page": 137
+      }
+    },
+    {
+      "id": "lawyer",
+      "term": "변호사",
+      "gloss": "lawyer",
+      "source": {
+        "book": "textbook",
+        "page": 137
+      }
+    },
+    {
+      "id": "pilot",
+      "term": "조종사",
+      "gloss": "pilot",
+      "source": {
+        "book": "textbook",
+        "page": 137
+      }
+    },
+    {
+      "id": "writer",
+      "term": "작가",
+      "gloss": "writer",
+      "source": {
+        "book": "textbook",
+        "page": 137
+      }
+    },
+    {
+      "id": "painter",
+      "term": "화가",
+      "gloss": "painter",
+      "source": {
+        "book": "textbook",
+        "page": 137
+      }
+    },
+    {
+      "id": "architect",
+      "term": "건축가",
+      "gloss": "architect",
+      "source": {
+        "book": "textbook",
+        "page": 137
+      }
+    },
+    {
+      "id": "musician",
+      "term": "음악가",
+      "gloss": "musician",
+      "source": {
+        "book": "textbook",
+        "page": 137
+      }
+    },
+    {
+      "id": "office-worker",
+      "term": "회사원",
+      "gloss": "office worker",
+      "source": {
+        "book": "textbook",
+        "page": 137
+      }
+    },
+    {
+      "id": "bank-worker",
+      "term": "은행원",
+      "gloss": "bank employee",
+      "source": {
+        "book": "textbook",
+        "page": 137
+      }
+    },
+    {
+      "id": "researcher",
+      "term": "연구원",
+      "gloss": "researcher",
+      "source": {
+        "book": "textbook",
+        "page": 137
+      }
+    },
+    {
+      "id": "civil-servant",
+      "term": "공무원",
+      "gloss": "civil servant",
+      "source": {
+        "book": "textbook",
+        "page": 137
+      }
+    }
+  ],
+  "patterns": [
+    {
+      "id": "embedded-question",
+      "label": "-는지 알다/모르다",
+      "explanation": "Embed an information question before 알다/모르다: present action verbs use -는지. Past actions use -았/었는지; adjective stems use -(으)ㄴ지, and nouns use -인지. The question word remains inside the embedded clause. 있다/없다 are exceptions to ordinary adjective forms: use 있는지/없는지.",
+      "source": {
+        "book": "textbook",
+        "page": 138
+      },
+      "models": [
+        {
+          "id": "closing-time",
+          "term": "몇 시에 스케이트장 문을 닫는지 알아?",
+          "gloss": "Do you know what time the skating rink closes?",
+          "source": {
+            "book": "textbook",
+            "page": 138
+          },
+          "pronunciation": "Myeot sie seukeiteujang muneul danneunji ara?"
+        },
+        {
+          "id": "taking-medicine",
+          "term": "이 약을 언제 먹는지 알아요?",
+          "gloss": "Do you know when to take this medicine?",
+          "source": {
+            "book": "textbook",
+            "page": 138
+          },
+          "pronunciation": "I yageul eonje meongneunji arayo?"
+        },
+        {
+          "id": "museum-route",
+          "term": "박물관까지 어떻게 가는지 알아요.",
+          "gloss": "I know how to get to the museum.",
+          "source": {
+            "book": "textbook",
+            "page": 138
+          },
+          "pronunciation": "Bangmulgwankkaji eotteoke ganeunji arayo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "know-01",
+          "modelId": "closing-time",
+          "explanation": "닫다 is an action verb: 닫는지 알아요 embeds the closing-time question.",
+          "formA": {
+            "prompt": "Ask if they know the closing time: 몇 시에 문을 ___?",
+            "choices": [
+              "닫는 것을 좋아해요",
+              "닫재요",
+              "닫아 봤어요",
+              "닫는지 알아요"
+            ],
+            "answer": "닫는지 알아요"
+          },
+          "formB": {
+            "prompt": "Ask if they know the departure time: 버스가 몇 시에 ___?",
+            "choices": [
+              "출발하재요",
+              "출발해 봤어요",
+              "출발하는지 알아요",
+              "출발하는 것을 좋아해요"
+            ],
+            "answer": "출발하는지 알아요"
+          }
+        },
+        {
+          "id": "know-02",
+          "modelId": "taking-medicine",
+          "explanation": "Keep 언제 inside the embedded question and use 먹는지 or 시작하는지.",
+          "formA": {
+            "prompt": "Ask if they know when to take medicine: 이 약을 언제 ___?",
+            "choices": [
+              "먹어 보여요",
+              "먹재요",
+              "먹는지 알아요",
+              "먹는 것이 좋아요"
+            ],
+            "answer": "먹는지 알아요"
+          },
+          "formB": {
+            "prompt": "Ask if they know when class starts: 수업이 언제 ___?",
+            "choices": [
+              "시작해 봤어요",
+              "시작하는지 알아요",
+              "시작하는 것이 좋아요",
+              "시작하재요"
+            ],
+            "answer": "시작하는지 알아요"
+          }
+        },
+        {
+          "id": "know-03",
+          "modelId": "museum-route",
+          "explanation": "알다/모르다 takes the embedded how-question with -는지.",
+          "formA": {
+            "prompt": "Say you do not know how to get there: 박물관까지 어떻게 ___ .",
+            "choices": [
+              "가 봤어요",
+              "가는지 몰라요",
+              "가는 것을 좋아해요",
+              "가재요"
+            ],
+            "answer": "가는지 몰라요"
+          },
+          "formB": {
+            "prompt": "Say you know how to make it: 김밥을 어떻게 ___ .",
+            "choices": [
+              "만드는지 알아요",
+              "만드는 것이 어려워요",
+              "만들재요",
+              "만들어 봤어요"
+            ],
+            "answer": "만드는지 알아요"
+          }
+        }
+      ]
+    },
+    {
+      "id": "action-noun",
+      "label": "-는 것",
+      "explanation": "Use present action verb + -는 것 to turn an action into a noun phrase, or to refer to the thing someone does. Add particles to 것: 것이 for the subject and 것을 for the object. Adjectives instead take -(으)ㄴ 것, and nouns take -인 것.",
+      "source": {
+        "book": "textbook",
+        "page": 139
+      },
+      "models": [
+        {
+          "id": "singing",
+          "term": "저는 노래 부르는 것을 좋아해요.",
+          "gloss": "I like singing.",
+          "source": {
+            "book": "textbook",
+            "page": 139
+          },
+          "pronunciation": "Jeoneun norae bureuneun geoseul joahaeyo."
+        },
+        {
+          "id": "healthy-sleep",
+          "term": "잘 자는 것이 건강을 지키는 좋은 방법이에요.",
+          "gloss": "Sleeping well is a good way to stay healthy.",
+          "source": {
+            "book": "textbook",
+            "page": 139
+          },
+          "pronunciation": "Jal janeun geosi geongangeul jikineun joeun bangbeobieyo."
+        },
+        {
+          "id": "wearing-shoes",
+          "term": "운동화를 신는 것이 좋겠어.",
+          "gloss": "It would be good to wear sneakers.",
+          "source": {
+            "book": "textbook",
+            "page": 139
+          },
+          "pronunciation": "Undonghwareul sinneun geosi jokesseo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "thing-01",
+          "modelId": "singing",
+          "explanation": "An action as the object of 좋아하다 uses -는 것을.",
+          "formA": {
+            "prompt": "I like singing: 저는 노래 ___ .",
+            "choices": [
+              "부를까 봐 걱정해요",
+              "부르재요",
+              "부르는 것을 좋아해요",
+              "부르는지 알아요"
+            ],
+            "answer": "부르는 것을 좋아해요"
+          },
+          "formB": {
+            "prompt": "I like reading books: 저는 책 ___ .",
+            "choices": [
+              "읽재요",
+              "읽는 것을 좋아해요",
+              "읽는지 알아요",
+              "읽을까 봐 걱정해요"
+            ],
+            "answer": "읽는 것을 좋아해요"
+          }
+        },
+        {
+          "id": "thing-02",
+          "modelId": "healthy-sleep",
+          "explanation": "The action is the subject: 자는 것이 / 먹는 것이.",
+          "formA": {
+            "prompt": "Sleeping well is important: 잘 ___ 중요해요.",
+            "choices": [
+              "자재요",
+              "자는 것이",
+              "자는지",
+              "자느라고"
+            ],
+            "answer": "자는 것이"
+          },
+          "formB": {
+            "prompt": "Eating a balanced diet is important: 골고루 ___ 중요해요.",
+            "choices": [
+              "먹는 것이",
+              "먹는지",
+              "먹느라고",
+              "먹재요"
+            ],
+            "answer": "먹는 것이"
+          }
+        },
+        {
+          "id": "thing-03",
+          "modelId": "wearing-shoes",
+          "explanation": "Use -는 것이 to make the recommended action the subject of 좋겠어요.",
+          "formA": {
+            "prompt": "It would be good to wear sneakers: 운동화를 ___ 좋겠어요.",
+            "choices": [
+              "신는 것이",
+              "신는지",
+              "신느라고",
+              "신으면서"
+            ],
+            "answer": "신는 것이"
+          },
+          "formB": {
+            "prompt": "It would be good to wear a raincoat: 비옷을 ___ 좋겠어요.",
+            "choices": [
+              "입는지",
+              "입느라고",
+              "입으면서",
+              "입는 것이"
+            ],
+            "answer": "입는 것이"
+          }
+        }
+      ]
+    }
+  ]
+}

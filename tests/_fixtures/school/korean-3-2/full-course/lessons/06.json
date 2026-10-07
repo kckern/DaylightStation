@@ -1,0 +1,517 @@
+{
+  "lesson": 6,
+  "title": "Learning activities",
+  "koreanTitle": "잊어버릴까 봐 혼자 복습하신대",
+  "kind": "review",
+  "textbookPages": [
+    64,
+    73
+  ],
+  "workbookPages": [
+    32,
+    35
+  ],
+  "objectives": [
+    "Describe and introduce learning activities.",
+    "Review worries, activity causes, and reported statements."
+  ],
+  "vocabulary": [
+    {
+      "id": "practice",
+      "term": "연습하다",
+      "gloss": "practice",
+      "source": {
+        "book": "textbook",
+        "page": 67
+      }
+    },
+    {
+      "id": "memorize",
+      "term": "외우다",
+      "gloss": "memorize",
+      "source": {
+        "book": "textbook",
+        "page": 67
+      }
+    },
+    {
+      "id": "explain",
+      "term": "설명하다",
+      "gloss": "explain",
+      "source": {
+        "book": "textbook",
+        "page": 67
+      }
+    },
+    {
+      "id": "investigate",
+      "term": "조사하다",
+      "gloss": "investigate; research",
+      "source": {
+        "book": "textbook",
+        "page": 67
+      }
+    },
+    {
+      "id": "observe",
+      "term": "관찰하다",
+      "gloss": "observe",
+      "source": {
+        "book": "textbook",
+        "page": 67
+      }
+    },
+    {
+      "id": "learn",
+      "term": "학습하다",
+      "gloss": "learn; study",
+      "source": {
+        "book": "textbook",
+        "page": 67
+      }
+    },
+    {
+      "id": "remember",
+      "term": "기억하다",
+      "gloss": "remember",
+      "source": {
+        "book": "textbook",
+        "page": 67
+      }
+    },
+    {
+      "id": "forget",
+      "term": "잊어버리다",
+      "gloss": "forget",
+      "source": {
+        "book": "textbook",
+        "page": 67
+      }
+    },
+    {
+      "id": "preview",
+      "term": "예습하다",
+      "gloss": "study a lesson in advance",
+      "source": {
+        "book": "textbook",
+        "page": 67
+      }
+    },
+    {
+      "id": "review",
+      "term": "복습하다",
+      "gloss": "review a lesson",
+      "source": {
+        "book": "textbook",
+        "page": 67
+      }
+    },
+    {
+      "id": "think",
+      "term": "생각하다",
+      "gloss": "think",
+      "source": {
+        "book": "textbook",
+        "page": 67
+      }
+    },
+    {
+      "id": "understand",
+      "term": "이해하다",
+      "gloss": "understand",
+      "source": {
+        "book": "textbook",
+        "page": 67
+      }
+    },
+    {
+      "id": "present",
+      "term": "발표하다",
+      "gloss": "present; give a presentation",
+      "source": {
+        "book": "textbook",
+        "page": 67
+      }
+    },
+    {
+      "id": "repeat",
+      "term": "반복하다",
+      "gloss": "repeat",
+      "source": {
+        "book": "textbook",
+        "page": 67
+      }
+    },
+    {
+      "id": "impressive",
+      "term": "대단하다",
+      "gloss": "be remarkable; be impressive",
+      "source": {
+        "book": "textbook",
+        "page": 67
+      }
+    },
+    {
+      "id": "young",
+      "term": "젊다",
+      "gloss": "be young",
+      "source": {
+        "book": "textbook",
+        "page": 67
+      }
+    },
+    {
+      "id": "work",
+      "term": "일하다",
+      "gloss": "work",
+      "source": {
+        "book": "textbook",
+        "page": 67
+      }
+    },
+    {
+      "id": "welfare-center",
+      "term": "복지 센터",
+      "gloss": "community welfare center",
+      "source": {
+        "book": "textbook",
+        "page": 67
+      },
+      "pronunciation": "bokji senteo"
+    }
+  ],
+  "patterns": [
+    {
+      "id": "worried",
+      "label": "-(으)ㄹ까 봐",
+      "explanation": "Describe worry that an unwanted possibility may happen, or an action taken to prevent it. Use -을까 봐 after a consonant and -ㄹ까 봐 after a vowel or ㄹ. Verbs and adjectives both work.",
+      "source": {
+        "book": "textbook",
+        "page": 48
+      },
+      "models": [
+        {
+          "id": "late-fear",
+          "term": "지각할까 봐 뛰어왔어.",
+          "gloss": "I ran here because I was afraid I would be late.",
+          "source": {
+            "book": "textbook",
+            "page": 48
+          },
+          "pronunciation": "jigakalkka bwa ttwieowasseo"
+        },
+        {
+          "id": "small-fear",
+          "term": "작을까 봐 걱정했어.",
+          "gloss": "I worried it might be too small.",
+          "source": {
+            "book": "textbook",
+            "page": 48
+          },
+          "pronunciation": "jageulkka bwa geokjeonghaesseo"
+        }
+      ],
+      "questions": [
+        {
+          "id": "worried-01",
+          "modelId": "late-fear",
+          "explanation": "-(으)ㄹ까 봐 marks a feared possibility; preventive action follows.",
+          "formA": {
+            "prompt": "Fear being late: 지각___ 뛰어왔어.",
+            "choices": [
+              "할까 봐",
+              "하느라고",
+              "한대요",
+              "해도 돼서"
+            ],
+            "answer": "할까 봐"
+          },
+          "formB": {
+            "prompt": "Fear oversleeping: 늦게 일어___ 알람을 두 개 사용해.",
+            "choices": [
+              "날까 봐",
+              "나느라고",
+              "난대요",
+              "나도 돼서"
+            ],
+            "answer": "날까 봐"
+          }
+        },
+        {
+          "id": "worried-02",
+          "modelId": "small-fear",
+          "explanation": "Adjectives can express fears; 춥다 becomes 추울까 봐.",
+          "formA": {
+            "prompt": "Worry it may be small: 옷이 ___ 걱정했어.",
+            "choices": [
+              "작을까 봐",
+              "작느라고",
+              "작은대요",
+              "작아도 돼서"
+            ],
+            "answer": "작을까 봐"
+          },
+          "formB": {
+            "prompt": "Fear cold weather: 날씨가 ___ 목도리를 가져왔어.",
+            "choices": [
+              "추울까 봐",
+              "춥느라고",
+              "춥는대요",
+              "추워도 돼서"
+            ],
+            "answer": "추울까 봐"
+          }
+        }
+      ]
+    },
+    {
+      "id": "busy-cause",
+      "label": "-느라고",
+      "explanation": "An action occupies the subject and causes a negative result or prevents another action. Attach -느라고 directly to action stems (drop ㄹ); do not add a past-tense marker. Normally both clauses share the subject. Not used with adjective stems.",
+      "source": {
+        "book": "textbook",
+        "page": 49
+      },
+      "models": [
+        {
+          "id": "shower",
+          "term": "샤워하느라고 전화를 못 받았어.",
+          "gloss": "I could not answer the phone because I was showering.",
+          "source": {
+            "book": "textbook",
+            "page": 49
+          },
+          "pronunciation": "syawohaneurago jeonhwareul mot badasseo"
+        },
+        {
+          "id": "tidy",
+          "term": "방 정리를 하느라고 늦었어.",
+          "gloss": "I was late because I was tidying my room.",
+          "source": {
+            "book": "textbook",
+            "page": 49
+          },
+          "pronunciation": "bang jeongnireul haneurago neujeosseo"
+        }
+      ],
+      "questions": [
+        {
+          "id": "busy-cause-01",
+          "modelId": "shower",
+          "explanation": "The action itself causes the negative result; attach -느라고 to the stem.",
+          "formA": {
+            "prompt": "Busy showering caused a missed call: 샤워___ 전화를 못 받았어.",
+            "choices": [
+              "하느라고",
+              "할까 봐",
+              "했느라고",
+              "하대요"
+            ],
+            "answer": "하느라고"
+          },
+          "formB": {
+            "prompt": "Busy watching a film: 영화를 ___ 벨 소리를 못 들었어.",
+            "choices": [
+              "보느라고",
+              "볼까 봐",
+              "봤느라고",
+              "보는대요"
+            ],
+            "answer": "보느라고"
+          }
+        },
+        {
+          "id": "busy-cause-02",
+          "modelId": "tidy",
+          "explanation": "The same person performs the activity and experiences its negative consequence.",
+          "formA": {
+            "prompt": "Busy tidying caused lateness: 방 정리를 ___ 늦었어.",
+            "choices": [
+              "하느라고",
+              "할까 봐",
+              "했느라고",
+              "하대요"
+            ],
+            "answer": "하느라고"
+          },
+          "formB": {
+            "prompt": "Busy buying gifts used up money: 선물을 ___ 돈을 다 썼어.",
+            "choices": [
+              "사느라고",
+              "살까 봐",
+              "샀느라고",
+              "사는대요"
+            ],
+            "answer": "사느라고"
+          }
+        }
+      ]
+    },
+    {
+      "id": "report-noun",
+      "label": "(이)래(요)",
+      "explanation": "Report someone else’s noun statement, shortened from -(이)라고 해요. After a consonant use 이래요, after a vowel 래요. This is reported information, not a direct identity statement or a command.",
+      "source": {
+        "book": "textbook",
+        "page": 58
+      },
+      "models": [
+        {
+          "id": "vacation",
+          "term": "6월 23일부터 방학이래요.",
+          "gloss": "They say vacation starts on June 23.",
+          "source": {
+            "book": "textbook",
+            "page": 58
+          },
+          "pronunciation": "yuwol isipsamilbuteo banghagiraeyo"
+        },
+        {
+          "id": "singer",
+          "term": "한국 가수래요.",
+          "gloss": "They say the person is a Korean singer.",
+          "source": {
+            "book": "textbook",
+            "page": 58
+          },
+          "pronunciation": "hanguk gasuraeyo"
+        }
+      ],
+      "questions": [
+        {
+          "id": "report-noun-01",
+          "modelId": "vacation",
+          "explanation": "A noun ending in a consonant takes 이래요.",
+          "formA": {
+            "prompt": "Report “It is vacation”: 방학___.",
+            "choices": [
+              "이래요",
+              "래요",
+              "인대요",
+              "이에요"
+            ],
+            "answer": "이래요"
+          },
+          "formB": {
+            "prompt": "Report “It is Saturday”: 토요일___.",
+            "choices": [
+              "이래요",
+              "래요",
+              "인대요",
+              "이에요"
+            ],
+            "answer": "이래요"
+          }
+        },
+        {
+          "id": "report-noun-02",
+          "modelId": "singer",
+          "explanation": "A noun ending in a vowel takes 래요.",
+          "formA": {
+            "prompt": "Report “a singer”: 가수___.",
+            "choices": [
+              "래요",
+              "이래요",
+              "대요",
+              "예요"
+            ],
+            "answer": "래요"
+          },
+          "formB": {
+            "prompt": "Report “her older sister”: 언니___.",
+            "choices": [
+              "래요",
+              "이래요",
+              "대요",
+              "예요"
+            ],
+            "answer": "래요"
+          }
+        }
+      ]
+    },
+    {
+      "id": "report-statement",
+      "label": "-(ㄴ/는)대(요)",
+      "explanation": "Relay a declarative statement: present action verbs use -ㄴ대 after a vowel or ㄹ (drop ㄹ), -는대 after other consonants. Adjectives and 있다/없다 use -대. Past statements use -았/었대. Add 요 for polite speech.",
+      "source": {
+        "book": "textbook",
+        "page": 59
+      },
+      "models": [
+        {
+          "id": "not-cucumber",
+          "term": "우진이가 오이를 안 먹는대.",
+          "gloss": "They say Ujin does not eat cucumbers.",
+          "source": {
+            "book": "textbook",
+            "page": 59
+          },
+          "pronunciation": "ujiniga oireul an meongneundae"
+        },
+        {
+          "id": "museum",
+          "term": "박물관으로 간대.",
+          "gloss": "They say they are going to the museum.",
+          "source": {
+            "book": "textbook",
+            "page": 59
+          },
+          "pronunciation": "bangmulgwaneuro gandae"
+        }
+      ],
+      "questions": [
+        {
+          "id": "report-statement-01",
+          "modelId": "not-cucumber",
+          "explanation": "Present action stems with a consonant take -는대요.",
+          "formA": {
+            "prompt": "Report “does not eat”: 우진이가 오이를 안 ___.",
+            "choices": [
+              "먹는대요",
+              "먹대요",
+              "먹은대요",
+              "먹어요"
+            ],
+            "answer": "먹는대요"
+          },
+          "formB": {
+            "prompt": "Report “reads a book”: 지연이가 책을 ___.",
+            "choices": [
+              "읽는대요",
+              "읽대요",
+              "읽은대요",
+              "읽어요"
+            ],
+            "answer": "읽는대요"
+          }
+        },
+        {
+          "id": "report-statement-02",
+          "modelId": "museum",
+          "explanation": "Vowel stems take -ㄴ대요; ㄹ drops, so 놀다 becomes 논대요.",
+          "formA": {
+            "prompt": "Report “goes to a museum”: 박물관으로 ___.",
+            "choices": [
+              "간대요",
+              "가는대요",
+              "가대요",
+              "가요"
+            ],
+            "answer": "간대요"
+          },
+          "formB": {
+            "prompt": "Report “plays with a friend”: 친구하고 ___.",
+            "choices": [
+              "논대요",
+              "놀는대요",
+              "노는대요",
+              "놀아요"
+            ],
+            "answer": "논대요"
+          }
+        }
+      ]
+    }
+  ]
+}

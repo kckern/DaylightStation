@@ -184,3 +184,34 @@ it('retains teacher progression overrides when practice-linked paper targets are
   expect(plan.entries.find(e=>e.unitId===second.unitId).status).not.toBe('locked');
  }
 });
+
+it('offers only the current linked lesson without owing completed or locked decks', async () => {
+  const units = [1, 2, 3].map((sequence) => ({ unitId: `k.${sequence}`, courseId: 'k', sequence, title: `Korean ${sequence}`, subject: 'language', practice: { deckId: `language/k/${sequence}` } }));
+  const status = vi.fn(async () => ({ doneToday: false }));
+  const projection = new PlanProjection({
+    curriculum: { listUnits: async () => units },
+    assignments: { get: async () => ({ courses: ['k'], programs: units.map((unit) => ({ programId: 'flashcards', deckId: unit.practice.deckId, linkedUnitId: unit.unitId, subject: 'language' })) }) },
+    sessions: { listForLearner: async () => [] },
+    attestations: { list: () => [{ id: 'a1', unitId: units[0].unitId, at: '2026-10-01T12:00:00Z' }] },
+    practiceAssessments: { get: async ({ unitId }) => ({ stage: unitId === 'k.1' ? 'completed' : unitId === 'k.2' ? 'practice' : 'locked' }) },
+    launchers: new Map([['flashcards', { status }]]),
+  });
+  const result = await projection.project({ learnerId: 'test-learner' });
+  expect(result.plan.entries.find((e) => e.linkedUnitId === 'k.1').status).toBe('completed');
+  expect(result.plan.entries.find((e) => e.linkedUnitId === 'k.3').status).toBe('locked');
+  expect(result.sections.find((s) => s.subject === 'language').next.linkedUnitId).toBe('k.2');
+  expect(status).toHaveBeenCalledTimes(1);
+  expect(status).toHaveBeenCalledWith(expect.objectContaining({ programInstance: 'language/k/2' }));
+});
+
+it('finishes the current linked daily goal without requiring future lessons today', async () => {
+  const units = [1, 2, 3].map((sequence) => ({ unitId: `k.${sequence}`, courseId: 'k', sequence, title: `Korean ${sequence}`, subject: 'language', practice: { deckId: `language/k/${sequence}` } }));
+  const projection = new PlanProjection({ curriculum: { listUnits: async () => units },
+    assignments: { get: async () => ({ courses: ['k'], programs: units.map((unit) => ({ programId: 'flashcards', deckId: unit.practice.deckId, linkedUnitId: unit.unitId, subject: 'language' })) }) },
+    sessions: { listForLearner: async () => [] },
+    practiceAssessments: { get: async ({ unitId }) => ({ stage: unitId === 'k.1' ? 'practice' : 'locked' }) },
+    launchers: new Map([['flashcards', { status: async ({ programInstance }) => ({ doneToday: programInstance === 'language/k/1' }) }]]),
+  });
+  const result = await projection.project({ learnerId: 'test-learner' });
+  expect(result.sections.find((s) => s.subject === 'language').obligation).toEqual({ state: 'served', reason: null });
+});

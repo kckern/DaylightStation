@@ -1,0 +1,491 @@
+{
+  "lesson": 12,
+  "title": "Protecting the environment",
+  "koreanTitle": "환경을 보호하려면 어떻게 해야 돼요?",
+  "kind": "review",
+  "textbookPages": [
+    124,
+    133
+  ],
+  "workbookPages": [
+    64,
+    66
+  ],
+  "objectives": [
+    "Explain causes of pollution and methods of environmental protection.",
+    "Review background, experience, goal conditions and reasons."
+  ],
+  "vocabulary": [
+    {
+      "id": "disposables",
+      "term": "일회용품",
+      "gloss": "disposable items",
+      "source": {
+        "book": "textbook",
+        "page": 127
+      }
+    },
+    {
+      "id": "recycling",
+      "term": "재활용",
+      "gloss": "recycling",
+      "source": {
+        "book": "textbook",
+        "page": 127
+      }
+    },
+    {
+      "id": "paper-cup",
+      "term": "종이컵",
+      "gloss": "paper cup",
+      "source": {
+        "book": "textbook",
+        "page": 127
+      }
+    },
+    {
+      "id": "wood-chopsticks",
+      "term": "나무젓가락",
+      "gloss": "wooden chopsticks",
+      "source": {
+        "book": "textbook",
+        "page": 127
+      }
+    },
+    {
+      "id": "paper",
+      "term": "종이",
+      "gloss": "paper",
+      "source": {
+        "book": "textbook",
+        "page": 127
+      }
+    },
+    {
+      "id": "glass",
+      "term": "유리",
+      "gloss": "glass",
+      "source": {
+        "book": "textbook",
+        "page": 127
+      }
+    },
+    {
+      "id": "can",
+      "term": "캔",
+      "gloss": "can",
+      "source": {
+        "book": "textbook",
+        "page": 127
+      }
+    },
+    {
+      "id": "plastic",
+      "term": "플라스틱",
+      "gloss": "plastic",
+      "source": {
+        "book": "textbook",
+        "page": 127
+      }
+    },
+    {
+      "id": "good-air",
+      "term": "공기가 좋다",
+      "gloss": "the air is clean or fresh",
+      "source": {
+        "book": "textbook",
+        "page": 127
+      },
+      "pronunciation": "gonggiga jota"
+    },
+    {
+      "id": "bad-air",
+      "term": "공기가 나쁘다",
+      "gloss": "the air is poor",
+      "source": {
+        "book": "textbook",
+        "page": 127
+      },
+      "pronunciation": "gonggiga nappeuda"
+    },
+    {
+      "id": "soil-pollution",
+      "term": "흙이 오염되다",
+      "gloss": "the soil becomes polluted",
+      "source": {
+        "book": "textbook",
+        "page": 127
+      },
+      "pronunciation": "heulgi oyeomdoeda"
+    },
+    {
+      "id": "water-pollution",
+      "term": "물이 오염되다",
+      "gloss": "the water becomes polluted",
+      "source": {
+        "book": "textbook",
+        "page": 127
+      },
+      "pronunciation": "muri oyeomdoeda"
+    },
+    {
+      "id": "air-pollution",
+      "term": "공기가 오염되다",
+      "gloss": "the air becomes polluted",
+      "source": {
+        "book": "textbook",
+        "page": 127
+      },
+      "pronunciation": "gonggiga oyeomdoeda"
+    },
+    {
+      "id": "exhaust",
+      "term": "배기가스",
+      "gloss": "exhaust fumes",
+      "source": {
+        "book": "textbook",
+        "page": 127
+      }
+    },
+    {
+      "id": "fine-dust",
+      "term": "미세먼지",
+      "gloss": "fine dust",
+      "source": {
+        "book": "textbook",
+        "page": 127
+      }
+    },
+    {
+      "id": "protect-environment",
+      "term": "환경을 보호하다",
+      "gloss": "to protect the environment",
+      "source": {
+        "book": "textbook",
+        "page": 127
+      },
+      "pronunciation": "hwangyeongeul bohohada"
+    },
+    {
+      "id": "sort-waste",
+      "term": "분리수거",
+      "gloss": "sorting waste for separate collection",
+      "source": {
+        "book": "textbook",
+        "page": 127
+      }
+    },
+    {
+      "id": "leave-over",
+      "term": "남기다",
+      "gloss": "to leave something over",
+      "source": {
+        "book": "textbook",
+        "page": 127
+      }
+    },
+    {
+      "id": "carelessly",
+      "term": "함부로",
+      "gloss": "carelessly or without regard",
+      "source": {
+        "book": "textbook",
+        "page": 127
+      }
+    }
+  ],
+  "patterns": [
+    {
+      "id": "background",
+      "label": "-는/(으)ㄴ데",
+      "explanation": "Use -는데 with present verbs and 있다/없다, and -(으)ㄴ데 with present adjectives, to give background for a following question, request or statement. Nouns take -인데; past forms take -았/었는데. This connective introduces context; it does not itself mark a reason or goal. Review of Lesson 10.",
+      "source": {
+        "book": "textbook",
+        "page": 108
+      },
+      "models": [
+        {
+          "id": "homework-request",
+          "term": "숙제를 해야 하는데 좀 도와주세요.",
+          "gloss": "I need to do my homework; please help me.",
+          "source": {
+            "book": "textbook",
+            "page": 126
+          },
+          "pronunciation": "Sukjereul haeya haneunde jom dowajuseyo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "background-01",
+          "modelId": "homework-request",
+          "explanation": "Introduce the need as background using 하는데.",
+          "formA": {
+            "prompt": "Give context for a request: 숙제를 해야 ___ 좀 도와주세요.",
+            "choices": [
+              "하는데",
+              "한데",
+              "하은데",
+              "하는지"
+            ],
+            "answer": "하는데"
+          },
+          "formB": {
+            "prompt": "Give current sorting as context: 분리수거를 ___ 이것도 넣을까요?",
+            "choices": [
+              "한데",
+              "하은데",
+              "하는지",
+              "하는데"
+            ],
+            "answer": "하는데"
+          }
+        },
+        {
+          "id": "background-02",
+          "modelId": "homework-request",
+          "explanation": "없다 uses 없는데; a past experience uses -았/었는데.",
+          "formA": {
+            "prompt": "Give lack of a cup as background: 컵이 ___ 빌려도 돼요?",
+            "choices": [
+              "없은데",
+              "없ㄴ데",
+              "없는지",
+              "없는데"
+            ],
+            "answer": "없는데"
+          },
+          "formB": {
+            "prompt": "Give yesterday’s reading as background: 어제 책을 ___ 재미있었어요.",
+            "choices": [
+              "읽었ㄴ데",
+              "읽었는지",
+              "읽었는데",
+              "읽었은데"
+            ],
+            "answer": "읽었는데"
+          }
+        }
+      ]
+    },
+    {
+      "id": "experience",
+      "label": "-아/어 보다",
+      "explanation": "Use a verb with -아/어 보다 to describe trying an action. For an experience already had, use -아/어 봤어요 (familiar: 봤어); a negative experience can be 아직 안 … 봤어요. 하다 becomes 해 보다. This lesson focuses on experience, not an adjective’s appearance. Review of Lesson 10.",
+      "source": {
+        "book": "textbook",
+        "page": 109
+      },
+      "models": [
+        {
+          "id": "sort-experience",
+          "term": "분리수거를 해 봤어.",
+          "gloss": "I have tried sorting waste for separate collection.",
+          "source": {
+            "book": "textbook",
+            "page": 128
+          },
+          "pronunciation": "Bullisugeoreul hae bwasseo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "experience-01",
+          "modelId": "sort-experience",
+          "explanation": "해 봤어요 describes an experience already had.",
+          "formA": {
+            "prompt": "I have tried sorting waste: 분리수거를 ___.",
+            "choices": [
+              "해야 돼요",
+              "하려고 해요",
+              "해도 돼요",
+              "해 봤어요"
+            ],
+            "answer": "해 봤어요"
+          },
+          "formB": {
+            "prompt": "I have tried walking to school: 학교에 걸어서 ___.",
+            "choices": [
+              "가려고 해요",
+              "가도 돼요",
+              "가 봤어요",
+              "가야 돼요"
+            ],
+            "answer": "가 봤어요"
+          }
+        },
+        {
+          "id": "experience-02",
+          "modelId": "sort-experience",
+          "explanation": "Use -아/어 봤어요 for tried activities, not -아/어 보이다.",
+          "formA": {
+            "prompt": "I have tried rice noodles: 쌀국수를 ___.",
+            "choices": [
+              "먹으려고 해요",
+              "먹어도 돼요",
+              "먹어 봤어요",
+              "먹어 보여요"
+            ],
+            "answer": "먹어 봤어요"
+          },
+          "formB": {
+            "prompt": "I have tried making a cake: 케이크를 ___.",
+            "choices": [
+              "만들어도 돼요",
+              "만들어 봤어요",
+              "만들어 보여요",
+              "만들려고 해요"
+            ],
+            "answer": "만들어 봤어요"
+          }
+        }
+      ]
+    },
+    {
+      "id": "goal-condition",
+      "label": "-(으)려면",
+      "explanation": "Use -(으)려면 to introduce a desired goal and the condition or action needed to reach it: “If you want to….” Add -으려면 after a consonant and -려면 after a vowel or ㄹ. Adjective examples describe a desired change or outcome, such as 키가 크려면. A following clause often gives advice or a requirement. Review of Lesson 11.",
+      "source": {
+        "book": "textbook",
+        "page": 118
+      },
+      "models": [
+        {
+          "id": "reduce-waste",
+          "term": "쓰레기를 줄이려면 어떻게 해야 돼요?",
+          "gloss": "What should I do if I want to reduce waste?",
+          "source": {
+            "book": "textbook",
+            "page": 128
+          },
+          "pronunciation": "Sseuregireul juriryeomyeon eotteoke haeya dwaeyo?"
+        }
+      ],
+      "questions": [
+        {
+          "id": "goal-condition-01",
+          "modelId": "reduce-waste",
+          "explanation": "Use -려면 to introduce the environmental goal.",
+          "formA": {
+            "prompt": "If you want to reduce waste: 쓰레기를 ___ 일회용품을 쓰지 마세요.",
+            "choices": [
+              "줄이면서",
+              "줄여도",
+              "줄이려면",
+              "줄였기 때문에"
+            ],
+            "answer": "줄이려면"
+          },
+          "formB": {
+            "prompt": "If you want to protect the environment: 환경을 ___ 가까운 곳은 걸어가세요.",
+            "choices": [
+              "보호해도",
+              "보호하려면",
+              "보호했기 때문에",
+              "보호하면서"
+            ],
+            "answer": "보호하려면"
+          }
+        },
+        {
+          "id": "goal-condition-02",
+          "modelId": "reduce-waste",
+          "explanation": "A goal uses -(으)려면; consonant-final 먹다 takes 먹으려면.",
+          "formA": {
+            "prompt": "If you want not to leave food: 음식을 안 ___ 조금씩 담으세요.",
+            "choices": [
+              "남겨도",
+              "남기려면",
+              "남겼기 때문에",
+              "남기면서"
+            ],
+            "answer": "남기려면"
+          },
+          "formB": {
+            "prompt": "If you want to eat without leftovers: 음식을 남기지 않고 ___ 조금씩 담으세요.",
+            "choices": [
+              "먹으려면",
+              "먹려면",
+              "먹을려면",
+              "먹으면려"
+            ],
+            "answer": "먹으려면"
+          }
+        }
+      ]
+    },
+    {
+      "id": "reason",
+      "label": "-기 때문에",
+      "explanation": "Use a verb or adjective stem + -기 때문에 for a reason: “because….” Past reasons use -았/었기 때문에; nouns take -(이)기 때문에. The reason precedes the result. Keep tense accurate, and distinguish a reason from a desired goal. Review of Lesson 11.",
+      "source": {
+        "book": "textbook",
+        "page": 119
+      },
+      "models": [
+        {
+          "id": "food-waste",
+          "term": "사람들이 음식을 남기기 때문에 음식 쓰레기가 너무 많이 생겨.",
+          "gloss": "Because people leave food over, too much food waste is produced.",
+          "source": {
+            "book": "textbook",
+            "page": 126
+          },
+          "pronunciation": "Saramdeuri eumsigeul namgigi ttaemune eumsik sseuregiga neomu mani saenggyeo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "reason-01",
+          "modelId": "food-waste",
+          "explanation": "State a reason with -기 때문에 rather than a goal, concession or simultaneity.",
+          "formA": {
+            "prompt": "Waste results because people leave food: 음식을 ___ 음식 쓰레기가 생겨요.",
+            "choices": [
+              "남겨도",
+              "남기기 때문에",
+              "남기려면",
+              "남기면서"
+            ],
+            "answer": "남기기 때문에"
+          },
+          "formB": {
+            "prompt": "The soil is polluted because plastic does not rot easily: 비닐이 잘 썩지 ___ 땅이 오염돼요.",
+            "choices": [
+              "않기 때문에",
+              "않으려면",
+              "않으면서",
+              "않아도"
+            ],
+            "answer": "않기 때문에"
+          }
+        },
+        {
+          "id": "reason-02",
+          "modelId": "food-waste",
+          "explanation": "Keep past reasons in the past; a noun reason uses 이기 때문에.",
+          "formA": {
+            "prompt": "We drank it because the water was clean then: 그때 물이 ___ 그냥 마셨어요.",
+            "choices": [
+              "깨끗했기 때문에",
+              "깨끗하려면",
+              "깨끗하면서",
+              "깨끗해도"
+            ],
+            "answer": "깨끗했기 때문에"
+          },
+          "formB": {
+            "prompt": "We sort it because this is plastic: 이것은 플라스틱___ 따로 모아요.",
+            "choices": [
+              "기 때문에",
+              "하기 때문에",
+              "을 때문에",
+              "이기 때문에"
+            ],
+            "answer": "이기 때문에"
+          }
+        }
+      ]
+    }
+  ]
+}

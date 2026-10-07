@@ -25,7 +25,7 @@ const lexicon = {
   entries: new Map([['gawi', { id: 'gawi', group: 'week-01', term: '가위', gloss: 'Scissors', kind: 'word', decoys: { term: ['a', 'b', 'c'], gloss: ['x', 'y', 'z'] } }],
     ['pul', { id: 'pul', group: 'week-01', term: '풀', gloss: 'Glue', kind: 'word', decoys: { term: ['d', 'e', 'f'], gloss: ['u', 'v', 'w'] } }]]),
 };
-function make({ judgementCache = null, recordings = null, mode = 'live', attempts = null, attemptsReader = null, teacherGate = null, judge = null, store = memoryStore(), media = false, decks = null, bounds = null, peek = undefined } = {}) {
+function make({ judgementCache = null, recordings = null, mode = 'live', attempts = null, attemptsReader = null, teacherGate = null, judge = null, store = memoryStore(), media = false, decks = null, bounds = null, peek = undefined, linkedUnitId = null, programs = null, lexiconData = lexicon } = {}) {
   let t = Date.parse('2026-09-22T16:00:00-07:00');
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   const judgeFn = judge ?? vi.fn(async ({ typed, entry }) => ({ score: typed === entry.term ? 10 : 2, judge: 'exact', reason: null, pass: typed === entry.term }));
@@ -36,8 +36,8 @@ function make({ judgementCache = null, recordings = null, mode = 'live', attempt
       getFlashcardDeck: async (id) => (id === DECK ? { id: DECK, title: 'Week 1: Classroom', words: ['gawi', 'pul'], lexicon: REF } : null),
       listFlashcardDecks: async () => [{ id: DECK, words: ['gawi', 'pul'], lexicon: REF }, { id: DECK_OTHER, words: ['pul'], lexicon: REF }, { id: 'biology/cells', cards: [] }],
     },
-    lexicons: { getLexicon: () => lexicon },
-    assignments: { get: async (u) => (u === 'test-learner' ? { programs: [{ programId: 'flashcards', deckId: DECK, policy: { mode: 'card-ladder' } }] } : { programs: [] }) },
+    lexicons: { getLexicon: () => lexiconData },
+    assignments: { get: async (u) => (u === 'test-learner' ? { programs: programs ?? [{ programId: 'flashcards', deckId: DECK, ...(linkedUnitId ? { linkedUnitId } : {}), policy: { mode: 'card-ladder' } }] } : { programs: [] }) },
     attempts: attemptsReader ? { readAttemptsInRange: attemptsReader } : attempts ? { readAttemptsInRange: vi.fn(() => attempts) } : null,
     assets: { exists: typeof media === 'function' ? media : () => media },
     judge: { judge: judgeFn },
@@ -1194,4 +1194,101 @@ it('folds direct course vocabulary misses once without promoting correct answers
   await f.service.coursePaperFeedback({ userId: 'test-learner', deckId: DECK, cardIds: ['gawi'], attemptKey: 's1:graded' });
   expect(f.store.s.status.words.gawi).toEqual(once);
   expect(once.recognizedCount).toBe(before.recognizedCount);
+});
+
+it('refuses to introduce cards from an upcoming linked lesson before writing a sitting', async () => {
+  const { service, store } = make({ linkedUnitId: 'korean.02' });
+  service.configureCourseAccess({ getAssessment: async () => ({ stage: 'locked', message: 'Finish Lesson 1 first.' }) });
+  await expect(service.open({ userId: 'test-learner', deckId: DECK })).rejects.toThrow('Finish Lesson 1 first.');
+  expect(store.s.writes).toBe(0);
+  expect(await service.courseEvidence({ userId: 'test-learner', deckId: DECK })).toMatchObject({ status: { decksSeen: [] } });
+});
+it('requires course readiness configuration for linked study and permits current/completed practice', async () => {
+  const { service, store } = make({ linkedUnitId: 'korean.02' });
+  await expect(service.open({ userId: 'test-learner', deckId: DECK })).rejects.toThrow(/readiness/);
+  expect(store.s.writes).toBe(0);
+  for (const stage of ['practice', 'review', 'completed']) {
+    service.configureCourseAccess({ getAssessment: async () => ({ stage }) });
+    expect(await service.open({ userId: 'test-learner', deckId: DECK })).toHaveProperty('sittingId');
+  }
+});
+it('keeps isolated test-mode lesson previews independent of live course readiness', async () => {
+  const { service } = make({ linkedUnitId: 'korean.02', mode: 'test' });
+  expect(await service.open({ userId: 'test-learner', deckId: DECK })).toHaveProperty('sittingId');
+});
+
+
+it('stops an existing live sitting after its lesson is relocked without altering evidence', async () => {
+  const { service, store } = make({ linkedUnitId: 'korean.02' });
+  let stage = 'practice';
+  service.configureCourseAccess({ getAssessment: async () => ({ stage, message: 'Lesson paused or prerequisite corrected.' }) });
+  const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+  const before = structuredClone(store.s);
+  stage = 'locked';
+  const args = { userId: 'test-learner', sittingId: opened.sittingId };
+  for (const call of [
+    () => service.respond({ ...args, itemId: opened.item.id, response: { seen: true } }),
+    () => service.get(args),
+    () => service.practice({ ...args, mode: 'flashcards' }),
+    () => service.learnMore(args),
+  ]) await expect(call()).rejects.toThrow('Lesson paused or prerequisite corrected.');
+  expect(store.s).toEqual(before);
+  expect((await service.courseEvidence({ userId: 'test-learner', deckId: DECK })).status).toEqual(before.status);
+  stage = 'practice';
+  expect((await service.get(args)).item.id).toBe(opened.item.id);
+});
+
+it('omits unseen cards from relocked seen decks while retaining learned-card review', async () => {
+  const store = memoryStore();
+  store.s.status.decksSeen = [DECK_OTHER];
+  store.s.status.words.gawi = { ...emptyWordV3(), state: 'mastered', dueDay: '2026-10-01', introducedDay: '2026-09-20' };
+  const decks = { getFlashcardDeck: async id => ({ id, words: id === DECK ? ['gawi'] : ['gawi', 'pul', 'chaek'], lexicon: REF }) };
+  const programs = [DECK, DECK_OTHER].map((deckId, i) => ({ programId: 'flashcards', deckId, linkedUnitId: `k.${i}`, policy: { mode: 'card-ladder' } }));
+  const lexiconData = { ...lexicon, entries: new Map([...lexicon.entries, ['chaek', { ...lexicon.entries.get('pul'), id: 'chaek', term: '책', gloss: 'Book' }]]) };
+  const { service } = make({ store, decks, programs, lexiconData });
+  service.configureCourseAccess({ getAssessment: async ({ deckId }) => ({ stage: deckId === DECK_OTHER ? 'locked' : 'practice' }) });
+  const intro = await service.intro({ userId: 'test-learner', deckId: DECK });
+  expect(intro.today.newCount).toBe(0);
+  store.s.status.words.gawi.dueDay = TODAY;
+  const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+  expect(opened.item).toMatchObject({ wordId: 'gawi', source: 'recheck' });
+  expect(store.s.status.words.pul).toBeUndefined();
+  expect(store.s.status.words.gawi.introducedDay).toBe('2026-09-20');
+});
+
+it.each(['open', 'resume'])('switching to an allowed deck via %s cannot resume untouched cards in a relocked touched round', async (route) => {
+  const store = memoryStore();
+  for (const id of ['gawi', 'pul']) store.s.status.words[id] = { ...emptyWordV3(), state: 'mastered', dueDay: '2026-10-01', introducedDay: '2026-09-20' };
+  const lexiconData = { ...lexicon, entries: new Map([...lexicon.entries,
+    ['chaek', { ...lexicon.entries.get('pul'), id: 'chaek', term: '책', gloss: 'Book' }],
+    ['yeonpil', { ...lexicon.entries.get('pul'), id: 'yeonpil', term: '연필', gloss: 'Pencil' }],
+  ]) };
+  const decks = { getFlashcardDeck: async id => ({ id, words: id === DECK ? ['gawi', 'pul'] : ['chaek', 'yeonpil'], lexicon: REF }) };
+  const programs = [DECK, DECK_OTHER].map((deckId, i) => ({ programId: 'flashcards', deckId, linkedUnitId: `k.${i}`, policy: { mode: 'card-ladder' } }));
+  const { service } = make({ store, decks, programs, lexiconData });
+  let locked = false;
+  service.configureCourseAccess({ getAssessment: async ({ deckId }) => ({ stage: locked && deckId === DECK_OTHER ? 'locked' : 'practice' }) });
+  const prior = route === 'resume' ? await service.open({ userId: 'test-learner', deckId: DECK }) : null;
+  const first = await service.open({ userId: 'test-learner', deckId: DECK_OTHER });
+  if (prior) Object.assign(first, await service.learnMore({ userId: 'test-learner', sittingId: first.sittingId }));
+  expect(first.item.wordId).toBe('chaek');
+  await service.respond({ userId: 'test-learner', sittingId: first.sittingId, itemId: first.item.id, response: { seen: true } });
+  const evidence = structuredClone(store.s.days[TODAY].items[first.item.id]);
+  const learned = structuredClone(store.s.status.words.chaek);
+  locked = true;
+  const switched = prior ? { sittingId: prior.sittingId, ...await service.get({ userId: 'test-learner', sittingId: prior.sittingId }) }
+    : await service.open({ userId: 'test-learner', deckId: DECK });
+  expect(store.s.status.words.chaek).toEqual(learned);
+  let item = switched.item;
+  for (let step = 0; step < 30 && !['summary', 'menu'].includes(item.type); step++) {
+    expect(item.wordId).not.toBe('yeonpil');
+    const response = item.type === 'copy' ? { typed: lexiconData.entries.get(item.wordId).term }
+      : item.type === 'flashcard' ? { sort: 'claimed' }
+        : item.type === 'match' ? { done: true }
+          : { choice: item.task === '2.2' ? lexiconData.entries.get(item.wordId).gloss : lexiconData.entries.get(item.wordId).term };
+    ({ item } = await service.respond({ userId: 'test-learner', sittingId: switched.sittingId, itemId: item.id, response }));
+  }
+  expect(['summary', 'menu']).toContain(item.type);
+  expect(store.s.status.words.yeonpil).toBeUndefined();
+  expect(store.s.days[TODAY].items[first.item.id]).toEqual(evidence);
 });

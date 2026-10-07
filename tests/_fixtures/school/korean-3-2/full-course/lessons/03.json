@@ -1,0 +1,434 @@
+{
+  "lesson": 3,
+  "title": "Expressing feelings",
+  "koreanTitle": "아빠가 좋아하실 것 같아요",
+  "kind": "review",
+  "textbookPages": [
+    34,
+    43
+  ],
+  "workbookPages": [
+    16,
+    19
+  ],
+  "objectives": [
+    "Express everyday feelings.",
+    "Review permission, intention as reason, plain writing, and inference."
+  ],
+  "vocabulary": [
+    {
+      "id": "anger-subside",
+      "term": "화가 풀리다",
+      "gloss": "anger subside",
+      "source": {
+        "book": "textbook",
+        "page": 37
+      },
+      "pronunciation": "hwaga pullida"
+    },
+    {
+      "id": "angry",
+      "term": "화가 나다",
+      "gloss": "become angry",
+      "source": {
+        "book": "textbook",
+        "page": 37
+      },
+      "pronunciation": "hwaga nada"
+    },
+    {
+      "id": "good-mood-vocab",
+      "term": "기분이 좋다",
+      "gloss": "feel good",
+      "source": {
+        "book": "textbook",
+        "page": 37
+      },
+      "pronunciation": "gibuni jota"
+    },
+    {
+      "id": "bad-mood",
+      "term": "기분이 나쁘다",
+      "gloss": "feel bad",
+      "source": {
+        "book": "textbook",
+        "page": 37
+      },
+      "pronunciation": "gibuni nappeuda"
+    },
+    {
+      "id": "like",
+      "term": "마음에 들다",
+      "gloss": "like; be to one’s liking",
+      "source": {
+        "book": "textbook",
+        "page": 37
+      },
+      "pronunciation": "maeume deulda"
+    },
+    {
+      "id": "dislike",
+      "term": "마음에 안 들다",
+      "gloss": "dislike; not be to one’s liking",
+      "source": {
+        "book": "textbook",
+        "page": 37
+      },
+      "pronunciation": "maeume an deulda"
+    },
+    {
+      "id": "heart-hurt",
+      "term": "마음이 아프다",
+      "gloss": "feel heartbroken; be saddened",
+      "source": {
+        "book": "textbook",
+        "page": 37
+      },
+      "pronunciation": "maeumi apeuda"
+    },
+    {
+      "id": "resolve",
+      "term": "마음을 먹다",
+      "gloss": "make up one’s mind",
+      "source": {
+        "book": "textbook",
+        "page": 37
+      },
+      "pronunciation": "maeumeul meokda"
+    },
+    {
+      "id": "open-heart",
+      "term": "마음을 열다",
+      "gloss": "open one’s heart",
+      "source": {
+        "book": "textbook",
+        "page": 37
+      },
+      "pronunciation": "maeumeul yeolda"
+    },
+    {
+      "id": "heart-ease",
+      "term": "마음이 풀리다",
+      "gloss": "feel relieved; soften one’s feelings",
+      "source": {
+        "book": "textbook",
+        "page": 37
+      },
+      "pronunciation": "maeumi pullida"
+    }
+  ],
+  "patterns": [
+    {
+      "id": "permission",
+      "label": "-아/어도 되다",
+      "explanation": "Ask for or grant permission with -아/어도 되다. This differs from obligation (-아/어야 하다) and prohibition (-(으)면 안 되다).",
+      "source": {
+        "book": "textbook",
+        "page": 18
+      },
+      "models": [
+        {
+          "id": "ask",
+          "term": "질문해도 돼요?",
+          "gloss": "May I ask a question?",
+          "source": {
+            "book": "textbook",
+            "page": 18
+          },
+          "pronunciation": "jilmunhaedo dwaeyo"
+        }
+      ],
+      "questions": [
+        {
+          "id": "permission-01",
+          "modelId": "ask",
+          "explanation": "Permission uses -아/어도 돼요.",
+          "formA": {
+            "prompt": "Ask permission: 여기에서 수영___?",
+            "choices": [
+              "해도 돼요",
+              "해야 돼요",
+              "하면 안 돼요",
+              "했어요"
+            ],
+            "answer": "해도 돼요"
+          },
+          "formB": {
+            "prompt": "Ask permission: 지우개를 ___? (borrow)",
+            "choices": [
+              "빌려도 돼요",
+              "빌려야 돼요",
+              "빌리면 안 돼요",
+              "빌렸어요"
+            ],
+            "answer": "빌려도 돼요"
+          }
+        },
+        {
+          "id": "permission-02",
+          "modelId": "ask",
+          "explanation": "A permission statement permits the action without requiring it.",
+          "formA": {
+            "prompt": "Grant permission: 강아지하고 ___. (may play)",
+            "choices": [
+              "놀아도 돼요",
+              "놀아야 돼요",
+              "놀면 안 돼요",
+              "놀았어요"
+            ],
+            "answer": "놀아도 돼요"
+          },
+          "formB": {
+            "prompt": "Grant permission: 케이크를 ___. (may eat)",
+            "choices": [
+              "먹어도 돼요",
+              "먹어야 돼요",
+              "먹으면 안 돼요",
+              "먹었어요"
+            ],
+            "answer": "먹어도 돼요"
+          }
+        }
+      ]
+    },
+    {
+      "id": "intention-reason",
+      "label": "-(으)ㄹ 테니까",
+      "explanation": "The speaker offers a plan or intention as the reason for a request or suggestion. -을 테니까 follows a consonant; -ㄹ 테니까 follows a vowel or ㄹ. Full clauses are shown because the following request gives essential context.",
+      "source": {
+        "book": "textbook",
+        "page": 19
+      },
+      "models": [
+        {
+          "id": "flowers",
+          "term": "내가 꽃을 살 테니까 네가 편지를 쓸래?",
+          "gloss": "I will buy flowers, so will you write a letter?",
+          "source": {
+            "book": "textbook",
+            "page": 19
+          },
+          "pronunciation": "naega kkocheul sal tenikka nega pyeonjireul sseullae"
+        }
+      ],
+      "questions": [
+        {
+          "id": "intention-reason-01",
+          "modelId": "flowers",
+          "explanation": "An offered future intention supports the request that follows.",
+          "formA": {
+            "prompt": "Offer a future plan as reason: 내가 꽃을 ___ 네가 편지를 써 줘.",
+            "choices": [
+              "살 테니까",
+              "사는 동안",
+              "샀지만",
+              "사도 돼서"
+            ],
+            "answer": "살 테니까"
+          },
+          "formB": {
+            "prompt": "Offer a future plan as reason: 내가 ___ 너는 좀 쉬어. (help)",
+            "choices": [
+              "도와줄 테니까",
+              "도와줬지만",
+              "도와주는 동안",
+              "도와줘도 돼서"
+            ],
+            "answer": "도와줄 테니까"
+          }
+        },
+        {
+          "id": "intention-reason-02",
+          "modelId": "flowers",
+          "explanation": "The speaker’s intention takes -(으)ㄹ 테니까, with 받침 controlling 을/ㄹ.",
+          "formA": {
+            "prompt": "Say “I will wait, so call”: 집에서 ___ 연락 줘.",
+            "choices": [
+              "기다릴 테니까",
+              "기다렸지만",
+              "기다리는 동안",
+              "기다려도 돼서"
+            ],
+            "answer": "기다릴 테니까"
+          },
+          "formB": {
+            "prompt": "Say “I will take a picture, so smile”: 사진을 ___ 웃으세요.",
+            "choices": [
+              "찍을 테니까",
+              "찍었지만",
+              "찍는 동안",
+              "찍어도 돼서"
+            ],
+            "answer": "찍을 테니까"
+          }
+        }
+      ]
+    },
+    {
+      "id": "plain-style",
+      "label": "-(ㄴ/는)다 / -았/었다",
+      "explanation": "Diary and written plain statements: present action verbs take -ㄴ다 after a vowel or ㄹ (drop ㄹ), -는다 after other consonants. Present adjectives and 있다/없다 keep -다. Past verbs and adjectives take -았/었다.",
+      "source": {
+        "book": "textbook",
+        "page": 28
+      },
+      "models": [
+        {
+          "id": "read-story",
+          "term": "동화책을 읽었다.",
+          "gloss": "I read a storybook.",
+          "source": {
+            "book": "textbook",
+            "page": 28
+          },
+          "pronunciation": "donghwachaegeul ilgeotda"
+        },
+        {
+          "id": "go-trip",
+          "term": "우리는 가족 여행을 간다.",
+          "gloss": "We go on a family trip.",
+          "source": {
+            "book": "textbook",
+            "page": 28
+          },
+          "pronunciation": "urineun gajok yeohaengeul ganda"
+        }
+      ],
+      "questions": [
+        {
+          "id": "plain-style-01",
+          "modelId": "go-trip",
+          "explanation": "Present action verbs use -ㄴ다 or -는다, according to the stem.",
+          "formA": {
+            "prompt": "Present diary style: 나는 매일 학교에 ___.",
+            "choices": [
+              "간다",
+              "가요",
+              "갔다",
+              "가는다"
+            ],
+            "answer": "간다"
+          },
+          "formB": {
+            "prompt": "Present diary style: 우리는 매일 동화책을 ___.",
+            "choices": [
+              "읽는다",
+              "읽다",
+              "읽었다",
+              "읽는대요"
+            ],
+            "answer": "읽는다"
+          }
+        },
+        {
+          "id": "plain-style-03",
+          "modelId": "read-story",
+          "explanation": "Use -았/었다 for a completed past event in written plain style.",
+          "formA": {
+            "prompt": "Past diary style: 어제 동화책을 ___. (read)",
+            "choices": [
+              "읽었다",
+              "읽는다",
+              "읽어요",
+              "읽는 것 같다"
+            ],
+            "answer": "읽었다"
+          },
+          "formB": {
+            "prompt": "Past diary style: 어제 비가 많이 ___. (came)",
+            "choices": [
+              "왔다",
+              "온다",
+              "오는다",
+              "와요"
+            ],
+            "answer": "왔다"
+          }
+        }
+      ]
+    },
+    {
+      "id": "seems",
+      "label": "-(으)ㄴ/는/(으)ㄹ 것 같다",
+      "explanation": "Express an inference, not certainty. Past actions use -(으)ㄴ, current actions and 있다/없다 use -는, current adjectives use -(으)ㄴ, and predictions use -(으)ㄹ 것 같다. Nouns use 인 것 같다.",
+      "source": {
+        "book": "textbook",
+        "page": 29
+      },
+      "models": [
+        {
+          "id": "ate-cake",
+          "term": "영준이가 케이크를 다 먹은 것 같아요.",
+          "gloss": "It seems Yeongjun ate all the cake.",
+          "source": {
+            "book": "textbook",
+            "page": 29
+          },
+          "pronunciation": "yeongjuniga keikeureul da meogeun geot gatayo"
+        },
+        {
+          "id": "rain-soon",
+          "term": "곧 비가 올 것 같아요.",
+          "gloss": "It looks like it will rain soon.",
+          "source": {
+            "book": "textbook",
+            "page": 29
+          },
+          "pronunciation": "got biga ol geot gatayo"
+        }
+      ],
+      "questions": [
+        {
+          "id": "seems-01",
+          "modelId": "ate-cake",
+          "explanation": "Past action inference uses -(으)ㄴ 것 같다.",
+          "formA": {
+            "prompt": "Infer a completed action: 케이크를 다 ___. (ate)",
+            "choices": [
+              "먹은 것 같아요",
+              "먹는 것 같아요",
+              "먹을 것 같아요",
+              "먹는대요"
+            ],
+            "answer": "먹은 것 같아요"
+          },
+          "formB": {
+            "prompt": "Infer they already left: 모두 집에 ___. (went)",
+            "choices": [
+              "간 것 같아요",
+              "가는 것 같아요",
+              "갈 것 같아요",
+              "가도 돼요"
+            ],
+            "answer": "간 것 같아요"
+          }
+        },
+        {
+          "id": "seems-03",
+          "modelId": "rain-soon",
+          "explanation": "Predictions take -(으)ㄹ 것 같다, even with adjectives.",
+          "formA": {
+            "prompt": "Predict future rain: 곧 비가 ___.",
+            "choices": [
+              "올 것 같아요",
+              "온 것 같아요",
+              "오는대요",
+              "와도 돼요"
+            ],
+            "answer": "올 것 같아요"
+          },
+          "formB": {
+            "prompt": "Predict a future crowd: 내일 사람이 ___. (many)",
+            "choices": [
+              "많을 것 같아요",
+              "많은 것 같아요",
+              "많는 것 같아요",
+              "많았대요"
+            ],
+            "answer": "많을 것 같아요"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,349 @@
+{
+  "lesson": 5,
+  "title": "Reporting school events",
+  "koreanTitle": "불꽃놀이가 아주 멋있대요",
+  "kind": "new",
+  "textbookPages": [
+    54,
+    63
+  ],
+  "workbookPages": [
+    26,
+    31
+  ],
+  "objectives": [
+    "Describe school outings and events.",
+    "Relay noun identities and declarative information."
+  ],
+  "vocabulary": [
+    {
+      "id": "visit",
+      "term": "견학",
+      "gloss": "educational visit",
+      "source": {
+        "book": "textbook",
+        "page": 57
+      }
+    },
+    {
+      "id": "picnic",
+      "term": "소풍",
+      "gloss": "school outing; picnic",
+      "source": {
+        "book": "textbook",
+        "page": 57
+      }
+    },
+    {
+      "id": "experiential-learning",
+      "term": "체험 학습",
+      "gloss": "experiential learning",
+      "source": {
+        "book": "textbook",
+        "page": 57
+      },
+      "pronunciation": "cheheom hakseup"
+    },
+    {
+      "id": "school-trip",
+      "term": "수학여행",
+      "gloss": "school study trip",
+      "source": {
+        "book": "textbook",
+        "page": 57
+      }
+    },
+    {
+      "id": "sports-day",
+      "term": "운동회",
+      "gloss": "school sports day",
+      "source": {
+        "book": "textbook",
+        "page": 57
+      }
+    },
+    {
+      "id": "exhibition",
+      "term": "전시회",
+      "gloss": "exhibition",
+      "source": {
+        "book": "textbook",
+        "page": 57
+      }
+    },
+    {
+      "id": "arts-festival",
+      "term": "학예회",
+      "gloss": "school arts festival",
+      "source": {
+        "book": "textbook",
+        "page": 57
+      }
+    },
+    {
+      "id": "presentation-event",
+      "term": "발표회",
+      "gloss": "presentation; recital event",
+      "source": {
+        "book": "textbook",
+        "page": 57
+      }
+    },
+    {
+      "id": "fireworks-vocab",
+      "term": "불꽃놀이",
+      "gloss": "fireworks display",
+      "source": {
+        "book": "textbook",
+        "page": 57
+      }
+    },
+    {
+      "id": "even-so",
+      "term": "그래도",
+      "gloss": "even so; nevertheless",
+      "source": {
+        "book": "textbook",
+        "page": 57
+      }
+    }
+  ],
+  "patterns": [
+    {
+      "id": "report-noun",
+      "label": "(이)래(요)",
+      "explanation": "Report someone else’s noun statement, shortened from -(이)라고 해요. After a consonant use 이래요, after a vowel 래요. This is reported information, not a direct identity statement or a command.",
+      "source": {
+        "book": "textbook",
+        "page": 58
+      },
+      "models": [
+        {
+          "id": "vacation",
+          "term": "6월 23일부터 방학이래요.",
+          "gloss": "They say vacation starts on June 23.",
+          "source": {
+            "book": "textbook",
+            "page": 58
+          },
+          "pronunciation": "yuwol isipsamilbuteo banghagiraeyo"
+        },
+        {
+          "id": "singer",
+          "term": "한국 가수래요.",
+          "gloss": "They say the person is a Korean singer.",
+          "source": {
+            "book": "textbook",
+            "page": 58
+          },
+          "pronunciation": "hanguk gasuraeyo"
+        },
+        {
+          "id": "teacher",
+          "term": "영어 선생님이래요.",
+          "gloss": "They say the person is an English teacher.",
+          "source": {
+            "book": "textbook",
+            "page": 58
+          },
+          "pronunciation": "yeongeo seonsaengnimiraeyo"
+        }
+      ],
+      "questions": [
+        {
+          "id": "report-noun-01",
+          "modelId": "vacation",
+          "explanation": "A noun ending in a consonant takes 이래요.",
+          "formA": {
+            "prompt": "Report “It is vacation”: 방학___.",
+            "choices": [
+              "이래요",
+              "래요",
+              "인대요",
+              "이에요"
+            ],
+            "answer": "이래요"
+          },
+          "formB": {
+            "prompt": "Report “It is Saturday”: 토요일___.",
+            "choices": [
+              "이래요",
+              "래요",
+              "인대요",
+              "이에요"
+            ],
+            "answer": "이래요"
+          }
+        },
+        {
+          "id": "report-noun-02",
+          "modelId": "singer",
+          "explanation": "A noun ending in a vowel takes 래요.",
+          "formA": {
+            "prompt": "Report “a singer”: 가수___.",
+            "choices": [
+              "래요",
+              "이래요",
+              "대요",
+              "예요"
+            ],
+            "answer": "래요"
+          },
+          "formB": {
+            "prompt": "Report “her older sister”: 언니___.",
+            "choices": [
+              "래요",
+              "이래요",
+              "대요",
+              "예요"
+            ],
+            "answer": "래요"
+          }
+        },
+        {
+          "id": "report-noun-03",
+          "modelId": "teacher",
+          "explanation": "Report a noun identity using (이)래요; direct 이에요 does not convey hearsay.",
+          "formA": {
+            "prompt": "Report “an English teacher”: 영어 선생님___.",
+            "choices": [
+              "이래요",
+              "래요",
+              "는대요",
+              "이에요"
+            ],
+            "answer": "이래요"
+          },
+          "formB": {
+            "prompt": "Report “a day off”: 쉬는 날___.",
+            "choices": [
+              "이래요",
+              "래요",
+              "는대요",
+              "이에요"
+            ],
+            "answer": "이래요"
+          }
+        }
+      ]
+    },
+    {
+      "id": "report-statement",
+      "label": "-(ㄴ/는)대(요)",
+      "explanation": "Relay a declarative statement: present action verbs use -ㄴ대 after a vowel or ㄹ (drop ㄹ), -는대 after other consonants. Adjectives and 있다/없다 use -대. Past statements use -았/었대. Add 요 for polite speech.",
+      "source": {
+        "book": "textbook",
+        "page": 59
+      },
+      "models": [
+        {
+          "id": "not-cucumber",
+          "term": "우진이가 오이를 안 먹는대.",
+          "gloss": "They say Ujin does not eat cucumbers.",
+          "source": {
+            "book": "textbook",
+            "page": 59
+          },
+          "pronunciation": "ujiniga oireul an meongneundae"
+        },
+        {
+          "id": "museum",
+          "term": "박물관으로 간대.",
+          "gloss": "They say they are going to the museum.",
+          "source": {
+            "book": "textbook",
+            "page": 59
+          },
+          "pronunciation": "bangmulgwaneuro gandae"
+        },
+        {
+          "id": "fireworks",
+          "term": "불꽃놀이가 아주 멋있대요.",
+          "gloss": "They say the fireworks are very impressive.",
+          "source": {
+            "book": "textbook",
+            "page": 59
+          },
+          "pronunciation": "bulkkonnoriga aju meositdaeyo"
+        }
+      ],
+      "questions": [
+        {
+          "id": "report-statement-01",
+          "modelId": "not-cucumber",
+          "explanation": "Present action stems with a consonant take -는대요.",
+          "formA": {
+            "prompt": "Report “does not eat”: 우진이가 오이를 안 ___.",
+            "choices": [
+              "먹는대요",
+              "먹대요",
+              "먹은대요",
+              "먹어요"
+            ],
+            "answer": "먹는대요"
+          },
+          "formB": {
+            "prompt": "Report “reads a book”: 지연이가 책을 ___.",
+            "choices": [
+              "읽는대요",
+              "읽대요",
+              "읽은대요",
+              "읽어요"
+            ],
+            "answer": "읽는대요"
+          }
+        },
+        {
+          "id": "report-statement-02",
+          "modelId": "museum",
+          "explanation": "Vowel stems take -ㄴ대요; ㄹ drops, so 놀다 becomes 논대요.",
+          "formA": {
+            "prompt": "Report “goes to a museum”: 박물관으로 ___.",
+            "choices": [
+              "간대요",
+              "가는대요",
+              "가대요",
+              "가요"
+            ],
+            "answer": "간대요"
+          },
+          "formB": {
+            "prompt": "Report “plays with a friend”: 친구하고 ___.",
+            "choices": [
+              "논대요",
+              "놀는대요",
+              "노는대요",
+              "놀아요"
+            ],
+            "answer": "논대요"
+          }
+        },
+        {
+          "id": "report-statement-03",
+          "modelId": "fireworks",
+          "explanation": "Adjectives use -대요, not -는대요.",
+          "formA": {
+            "prompt": "Report “very impressive”: 불꽃놀이가 아주 ___.",
+            "choices": [
+              "멋있대요",
+              "멋있는대요",
+              "멋있은대요",
+              "멋있어요"
+            ],
+            "answer": "멋있대요"
+          },
+          "formB": {
+            "prompt": "Report “cold tomorrow”: 내일은 아주 ___.",
+            "choices": [
+              "춥대요",
+              "춥는대요",
+              "추운대요",
+              "추워요"
+            ],
+            "answer": "춥대요"
+          }
+        }
+      ]
+    }
+  ]
+}

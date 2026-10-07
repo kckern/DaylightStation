@@ -1,0 +1,367 @@
+{
+  "lesson": 11,
+  "title": "Healthy habits and advice",
+  "koreanTitle": "키가 크려면 음식을 골고루 먹어야 돼",
+  "kind": "new",
+  "textbookPages": [
+    114,
+    123
+  ],
+  "workbookPages": [
+    58,
+    62
+  ],
+  "objectives": [
+    "Explain what is needed to reach a goal.",
+    "Give reasons for habits and events."
+  ],
+  "vocabulary": [
+    {
+      "id": "height-measure",
+      "term": "키를 재다",
+      "gloss": "to measure height",
+      "source": {
+        "book": "textbook",
+        "page": 117
+      },
+      "pronunciation": "kireul jaeda"
+    },
+    {
+      "id": "weight-measure",
+      "term": "몸무게를 재다",
+      "gloss": "to measure weight",
+      "source": {
+        "book": "textbook",
+        "page": 117
+      },
+      "pronunciation": "mommugereul jaeda"
+    },
+    {
+      "id": "grow-tall",
+      "term": "키가 크다",
+      "gloss": "to grow taller",
+      "source": {
+        "book": "textbook",
+        "page": 117
+      },
+      "pronunciation": "kiga keuda"
+    },
+    {
+      "id": "height-grow",
+      "term": "키가 자라다",
+      "gloss": "to grow in height",
+      "source": {
+        "book": "textbook",
+        "page": 117
+      },
+      "pronunciation": "kiga jarada"
+    },
+    {
+      "id": "weight-loss",
+      "term": "몸무게가 줄다",
+      "gloss": "to lose weight",
+      "source": {
+        "book": "textbook",
+        "page": 117
+      },
+      "pronunciation": "mommugega julda"
+    },
+    {
+      "id": "weight-gain",
+      "term": "몸무게가 늘다",
+      "gloss": "to gain weight",
+      "source": {
+        "book": "textbook",
+        "page": 117
+      },
+      "pronunciation": "mommugega neulda"
+    },
+    {
+      "id": "healthy",
+      "term": "건강하다",
+      "gloss": "to be healthy",
+      "source": {
+        "book": "textbook",
+        "page": 117
+      }
+    },
+    {
+      "id": "strong",
+      "term": "몸이 튼튼하다",
+      "gloss": "to have a strong body",
+      "source": {
+        "book": "textbook",
+        "page": 117
+      },
+      "pronunciation": "momi teunteunhada"
+    },
+    {
+      "id": "weak",
+      "term": "몸이 약하다",
+      "gloss": "to have a weak body",
+      "source": {
+        "book": "textbook",
+        "page": 117
+      },
+      "pronunciation": "momi yakada"
+    },
+    {
+      "id": "nutrient-rich",
+      "term": "영양분이 풍부하다",
+      "gloss": "to be rich in nutrients",
+      "source": {
+        "book": "textbook",
+        "page": 117
+      },
+      "pronunciation": "yeongyangbuni pungbuhada"
+    },
+    {
+      "id": "nutrient-poor",
+      "term": "영양분이 부족하다",
+      "gloss": "to be lacking in nutrients",
+      "source": {
+        "book": "workbook",
+        "page": 59
+      },
+      "pronunciation": "yeongyangbuni bujokhada"
+    }
+  ],
+  "patterns": [
+    {
+      "id": "goal-condition",
+      "label": "-(으)려면",
+      "explanation": "Use -(으)려면 to introduce a desired goal and the condition or action needed to reach it: “If you want to….” Add -으려면 after a consonant and -려면 after a vowel or ㄹ. Adjective examples describe a desired change or outcome, such as 키가 크려면. A following clause often gives advice or a requirement.",
+      "source": {
+        "book": "textbook",
+        "page": 118
+      },
+      "models": [
+        {
+          "id": "strong-goal",
+          "term": "튼튼해지려면 운동을 열심히 해야 돼.",
+          "gloss": "If you want to become strong, you need to exercise diligently.",
+          "source": {
+            "book": "textbook",
+            "page": 118
+          },
+          "pronunciation": "Teunteunhaejiryeomyeon undongeul yeolsimhi haeya dwae."
+        },
+        {
+          "id": "read-goal",
+          "term": "책을 읽으려면 책상에서 읽어.",
+          "gloss": "If you want to read a book, read at a desk.",
+          "source": {
+            "book": "textbook",
+            "page": 118
+          },
+          "pronunciation": "Chaegeul ilgeuryeomyeon chaeksangeseo ilgeo."
+        },
+        {
+          "id": "bike-goal",
+          "term": "자전거를 잘 타려면 어떻게 해야 돼요?",
+          "gloss": "What should I do if I want to ride a bicycle well?",
+          "source": {
+            "book": "textbook",
+            "page": 118
+          },
+          "pronunciation": "Jajeongeoreul jal taryeomyeon eotteoke haeya dwaeyo?"
+        }
+      ],
+      "questions": [
+        {
+          "id": "goal-condition-01",
+          "modelId": "strong-goal",
+          "explanation": "A desired goal and its required action use -(으)려면.",
+          "formA": {
+            "prompt": "If you want to become strong: ___ 운동을 해야 돼요.",
+            "choices": [
+              "튼튼해지려면",
+              "튼튼해져도",
+              "튼튼해지면서",
+              "튼튼해졌기 때문에"
+            ],
+            "answer": "튼튼해지려면"
+          },
+          "formB": {
+            "prompt": "If you want to get up early: 일찍 ___ 빨리 자야 돼요.",
+            "choices": [
+              "일어나도",
+              "일어나면서",
+              "일어났기 때문에",
+              "일어나려면"
+            ],
+            "answer": "일어나려면"
+          }
+        },
+        {
+          "id": "goal-condition-02",
+          "modelId": "read-goal",
+          "explanation": "읽다 has a final consonant, so use 읽으려면; 입다 similarly takes 입으려면.",
+          "formA": {
+            "prompt": "If you want to read: 책을 ___ 책상에서 읽어요.",
+            "choices": [
+              "읽려면",
+              "읽을려면",
+              "읽으면려",
+              "읽으려면"
+            ],
+            "answer": "읽으려면"
+          },
+          "formB": {
+            "prompt": "If you want to wear your sister’s clothes: 언니 옷을 ___ 먼저 물어봐요.",
+            "choices": [
+              "입을려면",
+              "입으면려",
+              "입으려면",
+              "입려면"
+            ],
+            "answer": "입으려면"
+          }
+        },
+        {
+          "id": "goal-condition-03",
+          "modelId": "bike-goal",
+          "explanation": "Use -려면 for the goal, rather than a cause or concession.",
+          "formA": {
+            "prompt": "If you want to ride well: 자전거를 잘 ___ 앞을 보세요.",
+            "choices": [
+              "타면서",
+              "타도",
+              "타려면",
+              "탔기 때문에"
+            ],
+            "answer": "타려면"
+          },
+          "formB": {
+            "prompt": "If you want to avoid a cold: 감기에 안 ___ 손을 잘 씻으세요.",
+            "choices": [
+              "걸려도",
+              "걸리려면",
+              "걸렸기 때문에",
+              "걸리면서"
+            ],
+            "answer": "걸리려면"
+          }
+        }
+      ]
+    },
+    {
+      "id": "reason",
+      "label": "-기 때문에",
+      "explanation": "Use a verb or adjective stem + -기 때문에 for a reason: “because….” Past reasons use -았/었기 때문에; nouns take -(이)기 때문에. The reason precedes the result. Keep tense accurate, and distinguish a reason from a desired goal.",
+      "source": {
+        "book": "textbook",
+        "page": 119
+      },
+      "models": [
+        {
+          "id": "rain-boots",
+          "term": "비가 오기 때문에 장화가 편할 것 같아요.",
+          "gloss": "Because it is raining, rain boots will probably be comfortable.",
+          "source": {
+            "book": "textbook",
+            "page": 119
+          },
+          "pronunciation": "Biga ogi ttaemune janghwaga pyeonhal geot gatayo."
+        },
+        {
+          "id": "slippery-road",
+          "term": "길이 미끄럽기 때문에 천천히 걸어 왔어요.",
+          "gloss": "Because the road is slippery, I walked slowly.",
+          "source": {
+            "book": "textbook",
+            "page": 119
+          },
+          "pronunciation": "Giri mikkeureopgi ttaemune cheoncheonhi georeo wasseoyo."
+        },
+        {
+          "id": "party-noise",
+          "term": "옆집에서 파티를 하기 때문에 시끄러워요.",
+          "gloss": "It is noisy because they are having a party next door.",
+          "source": {
+            "book": "textbook",
+            "page": 119
+          },
+          "pronunciation": "Yeopjibeseo patireul hagi ttaemune sikkeureowoyo."
+        }
+      ],
+      "questions": [
+        {
+          "id": "reason-01",
+          "modelId": "rain-boots",
+          "explanation": "-기 때문에 introduces a reason, not a desired goal.",
+          "formA": {
+            "prompt": "Because it is raining: 비가 ___ 장화를 신어요.",
+            "choices": [
+              "오려면",
+              "오면서",
+              "와도",
+              "오기 때문에"
+            ],
+            "answer": "오기 때문에"
+          },
+          "formB": {
+            "prompt": "Because I have much homework: 숙제가 ___ 같이 못 놀아요.",
+            "choices": [
+              "많아도",
+              "많은데도",
+              "많기 때문에",
+              "많으려면"
+            ],
+            "answer": "많기 때문에"
+          }
+        },
+        {
+          "id": "reason-02",
+          "modelId": "slippery-road",
+          "explanation": "Attach -기 때문에 directly to the adjective stem, including 미끄럽-.",
+          "formA": {
+            "prompt": "Because the road is slippery: 길이 ___ 천천히 걸어요.",
+            "choices": [
+              "미끄러워기 때문에",
+              "미끄러운기 때문에",
+              "미끄럽기 때문에",
+              "미끄럽기 때문"
+            ],
+            "answer": "미끄럽기 때문에"
+          },
+          "formB": {
+            "prompt": "Because it is cold: 날씨가 ___ 두꺼운 옷을 입어요.",
+            "choices": [
+              "추운기 때문에",
+              "춥기 때문에",
+              "춥기 때문",
+              "추워기 때문에"
+            ],
+            "answer": "춥기 때문에"
+          }
+        },
+        {
+          "id": "reason-03",
+          "modelId": "party-noise",
+          "explanation": "하다 → 하기 때문에; past result causes use -았/었기 때문에.",
+          "formA": {
+            "prompt": "Noisy because of a party now: 파티를 ___ 시끄러워요.",
+            "choices": [
+              "할기 때문에",
+              "하기 때문에",
+              "해기 때문에",
+              "하는기 때문에"
+            ],
+            "answer": "하기 때문에"
+          },
+          "formB": {
+            "prompt": "Everyone went home because class ended: 수업이 ___ 모두 집에 갔어요.",
+            "choices": [
+              "끝났기 때문에",
+              "끝나려면",
+              "끝나면서",
+              "끝나도"
+            ],
+            "answer": "끝났기 때문에"
+          }
+        }
+      ]
+    }
+  ]
+}
