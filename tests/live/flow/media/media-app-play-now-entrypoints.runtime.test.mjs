@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { revealBrowseRow } from '../../../_lib/mediaBrowseScroll.mjs';
+import { resetHouseholdAt } from './lib/household.mjs';
+test.beforeEach(async ({ request, baseURL }) => { await resetHouseholdAt(request, baseURL); });
 
 test.use({ viewport: { width: 1440, height: 900 }, trace: 'retain-on-failure' });
 
@@ -84,13 +86,8 @@ async function openPlayNowEntry(sender, entry) {
     await expect(sender.getByTestId('detail-view')).toBeVisible({ timeout: 30000 });
     await sender.getByTestId('detail-play-now').click();
   } else {
-    // Home's Recent is the household's list, which the acceptance server
-    // blocks; only that list is answered here (Arrival). The tap is real.
-    await sender.route('**/api/v1/media/household/recent*', route => route.fulfill({
-      status: 200, contentType: 'application/json',
-      body: JSON.stringify({ items: [{ contentId: 'plex:55854', title: 'Arrival', type: 'movie', thumbnail: null,
-        lastPlayed: '2026-10-03 08:00:00', finished: false, playedOn: null, spots: [], plays: [] }] }),
-    }));
+    // Home's Recent is the household's list, answered by the seeded household
+    // backend of the acceptance server (Arrival is in the seed). The tap is real.
     await sender.getByTestId('app-nav-browse').click();
     await sender.getByTestId('app-nav-home').click();
     await expect(sender.getByTestId('home-tile-recent-plex:55854')).toBeVisible({ timeout: 10000 });

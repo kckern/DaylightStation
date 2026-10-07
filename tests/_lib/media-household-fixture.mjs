@@ -155,8 +155,16 @@ export function createMediaHouseholdFixture({ catalog, livenessService = null, s
   const markContentWatched = new MarkContentWatched({
     contentCatalog: catalog, mediaProgressMemory: progress, nowTimestamp: nowLocal, logger,
   });
-  const nowPlaying = livenessService?.knownDeviceIds && livenessService?.getLastSnapshot
+  // What is playing on a screen right now (the real reader over device liveness).
+  // Journeys share one server, so what a PREVIOUS journey left playing on the
+  // virtual receiver is ignored after a reset: only state heard from since then counts.
+  let resetAt = 0;
+  const liveReader = livenessService?.knownDeviceIds && livenessService?.getLastSnapshot
     ? new LivenessNowPlayingReader({ livenessService }) : null;
+  const nowPlaying = liveReader ? {
+    list: async (...args) => (await liveReader.list(...args))
+      .filter((row) => (Date.parse(livenessService.getLastSnapshot(row.screenId)?.lastSeenAt) || 0) >= resetAt),
+  } : null;
   const memory = new HouseholdMediaMemoryService({
     progressMemory: progress,
     listsStore: new YamlHouseholdMediaListsDatastore({ configService }),
@@ -194,6 +202,7 @@ export function createMediaHouseholdFixture({ catalog, livenessService = null, s
 
   function seed() {
     for (const entry of fs.readdirSync(dataDir)) fs.rmSync(path.join(dataDir, entry), { recursive: true, force: true });
+    resetAt = Date.now();
     seeded = materializeSeed({ seedDir, dataDir, nowMs: nowMs() });
     suggestions.invalidateAll();
     return seeded;

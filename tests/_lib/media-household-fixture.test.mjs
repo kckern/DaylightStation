@@ -149,6 +149,26 @@ describe('seeded household (real services over a temp data dir)', () => {
   });
 });
 
+describe('now on another screen', () => {
+  const playing = (lastSeenAt) => ({
+    knownDeviceIds: () => ['acceptance-media'],
+    getLastSnapshot: () => ({ online: true, lastSeenAt: new Date(lastSeenAt).toISOString(), snapshot: { state: 'playing', currentItem: { contentId: ID.ARRIVAL }, position: 12 } }),
+  });
+
+  it('reports an item playing on a screen as nowOn, and leaves it out of carry on', async () => {
+    const f = make({ livenessService: playing(Date.now() + 60_000) });
+    const { body } = await get(f, '/household/carry-on').expect(200);
+    expect(body.nowOn.map((n) => n.contentId)).toEqual([ID.ARRIVAL]);
+    expect(body.items.map((i) => i.contentId)).not.toContain(ID.ARRIVAL);
+  });
+
+  it('ignores what a previous journey left playing before the last reset', async () => {
+    const f = make({ livenessService: playing(Date.now() - 30_000) });
+    expect((await get(f, '/household/carry-on')).body.nowOn).toEqual([]);
+    expect((await get(f, '/household/carry-on')).body.items.map((i) => i.contentId)).toContain(ID.ARRIVAL);
+  });
+});
+
 describe('seeded screens and routines', () => {
   it('lists the kid tablet as a screen and the 45-day-silent one under not seen lately', async () => {
     const f = make();

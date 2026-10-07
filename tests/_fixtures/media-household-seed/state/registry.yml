@@ -10,6 +10,16 @@ screens:
     renames: []
     retiredAt: null
     source: seen
+  # The journeys' own browser (pinBrowserIdentity): it has history of its own.
+  'browser:acceptance-tester':
+    name: Acceptance browser
+    room: null
+    firstSeen: '${iso:10,0}'
+    lastSeen: '${iso:0,-6}'
+    playedAt: '${iso:0,-6}'
+    renames: []
+    retiredAt: null
+    source: seen
   # Silent for 45 days: lands in "Not seen lately".
   'browser:oldtablet':
     name: Old tablet

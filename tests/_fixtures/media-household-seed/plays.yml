@@ -13,3 +13,7 @@
 - { startedAt: '${iso:1,0}',  localTime: '${local:1,0}',  deviceId: 'fleet:acceptance-media', contentId: 'plex:697368', title: Disclosure Day, kind: movie, parentId: null, grandparentId: null, origin: null }
 - { startedAt: '${iso:0,-200}', localTime: '${local:0,-200}', deviceId: 'fleet:acceptance-media', contentId: 'plex:665638', title: Countdown, kind: episode, parentId: null, grandparentId: null, origin: null }
 - { startedAt: '${iso:0,-300}', localTime: '${local:0,-300}', deviceId: 'fleet:acceptance-media', contentId: 'plex:665639', title: Red Coast, kind: episode, parentId: null, grandparentId: null, origin: null }
+# The journeys' own browser: Faith a few minutes ago, Hospital an hour ago
+# (what "Played earlier" shows for that screen, newest first).
+- { startedAt: '${iso:0,-6}',  localTime: '${local:0,-6}',  deviceId: 'browser:acceptance-tester', contentId: 'plex:584614', title: Faith, kind: track, parentId: null, grandparentId: null, origin: null }
+- { startedAt: '${iso:0,-66}', localTime: '${local:0,-66}', deviceId: 'browser:acceptance-tester', contentId: 'plex:266151', title: Hospital, kind: episode, parentId: 'plex:59494', grandparentId: 'plex:59493', origin: null }
