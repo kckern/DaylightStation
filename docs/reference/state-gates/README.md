@@ -11,9 +11,9 @@ entitlement decisions. It does not execute the gated action or decide how a deni
 capability looks in a UI.
 
 **Implementation status:** the core backend is complete. School now publishes learner
-study-day completion, Fitness publishes weekly ring totals, Piano consumes the
-fail-closed `piano.games` entitlement, and School's Agenda board reads ring progress
-from `fitness.weekly-rings`. Chore, companion-media, and screen migrations remain open.
+study-day completion, Piano and Skyline Glider consume fail-closed school-completion
+entitlements, Fitness publishes weekly ring totals, and School's Agenda board reads
+ring progress from `fitness.weekly-rings`. Chore, companion-media, and screen migrations remain open.
 
 ## Reference map
 
@@ -181,7 +181,7 @@ installed policy declares:
 
 | Producer fact | Gate/entitlement consumer |
 |---|---|
-| `school.day.complete` on `interval/school-day:YYYY-MM-DD` | `school.day-complete` -> fail-closed `piano.games` |
+| `school.day.complete` on `interval/school-day:YYYY-MM-DD` | `school.day-complete` -> fail-closed `piano.games` and `fitness.skyline-glider` |
 | `fitness.weekly.rings` on `interval/fitness-week:FROM:TO` | `fitness.weekly-rings` progress -> Agenda ring count |
 | `kiosk.friction-score` on `interval/kiosk-day:DEVICE:YYYY-MM-DD` | `kiosk.friction-ok` -> fail-open `kiosk.access` |
 

@@ -1509,6 +1509,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
           }
 
           session.ingestData(data);
+          if (data?.topic === 'rider_select') {
+            emitAppEvent('rider-select', data, data.equipmentId || 'rider-selector', { persist: false });
+          }
           batchedForceUpdate(); // Batched: multiple messages in same frame = 1 render
         }
       );
@@ -1544,7 +1547,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       Object.values(vibrationTimeoutRefs.current || {}).forEach(clearTimeout);
       vibrationTimeoutRefs.current = {};
     };
-  }, [batchedForceUpdate, handlePressureMatEvent, handleVibrationEvent]);
+  }, [batchedForceUpdate, emitAppEvent, handlePressureMatEvent, handleVibrationEvent]);
 
   // Run device pruning unconditionally for the lifetime of FitnessProvider.
   // Previously gated by currentSessionId — but ANT+ packets can still arrive

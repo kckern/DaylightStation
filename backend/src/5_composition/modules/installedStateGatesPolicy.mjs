@@ -18,7 +18,7 @@ export const INSTALLED_STATE_GATES_POLICY = Object.freeze({
   // types/gates/entitlements never exist at runtime. See
   // tests/isolated/composition/installedStateGatesPolicy.test.mjs for the
   // regression test covering this exact failure mode.
-  policy_revision: 2,
+  policy_revision: 3,
   publishers: {
     school: { description: 'School learner-day completion authority' },
     fitness: { description: 'Fitness weekly movement authority' },
@@ -123,6 +123,7 @@ export const INSTALLED_STATE_GATES_POLICY = Object.freeze({
   },
   entitlements: {
     'piano.games': { gate: 'school.day-complete', failure_posture: 'fail_closed' },
+    'fitness.skyline-glider': { gate: 'school.day-complete', failure_posture: 'fail_closed' },
     'kiosk.access': { gate: 'kiosk.friction-ok', failure_posture: 'fail_open' },
   },
 });

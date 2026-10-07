@@ -111,3 +111,39 @@ describe('FitnessProvider pressure-mat websocket contract', () => {
     expect(context.pressureMatActivities.step_mat.sessionSteps).toBe(2);
   });
 });
+
+describe('FitnessProvider rider-selector websocket contract', () => {
+  beforeEach(() => { messageHandler = null; });
+
+  it('updates the equipment claim before emitting the transient start event', async () => {
+    const events = [];
+    function Probe() {
+      const context = useFitnessContext();
+      const { subscribeToAppEvent } = context;
+      useEffect(() => subscribeToAppEvent('rider-select', (event) => {
+        events.push({ event, rider: context.fitnessSessionInstance.getEquipmentRider('niceday') });
+      }), [context.fitnessSessionInstance, subscribeToAppEvent]);
+      return null;
+    }
+
+    await act(async () => {
+      render(<FitnessProvider fitnessConfiguration={MINIMAL_CONFIG}><Probe /></FitnessProvider>);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      messageHandler({ topic: 'rider_select', equipmentId: 'niceday', userId: 'test-rider', action: '1_single' });
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      rider: 'test-rider',
+      event: {
+        type: 'rider-select',
+        source: 'niceday',
+        payload: { equipmentId: 'niceday', userId: 'test-rider', action: '1_single' },
+      },
+    });
+  });
+});
