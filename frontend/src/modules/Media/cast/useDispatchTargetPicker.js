@@ -42,21 +42,37 @@ export function useDispatchTargetPicker({ source, onComplete, intent = 'dispatch
   const fleet = useFleetContext();
   const { dispatchToTarget } = useDispatch();
   const handOff = useHandOff();
-  const { targetIds: defaultTargets, mode: defaultMode } = useCastTarget();
+  const { targetIds: defaultTargets, mode: defaultMode, setMode: rememberMode } = useCastTarget();
+  const local = useContext(LocalSessionContext)?.controller ?? null;
   const [selected, setSelected] = useState(() => new Set(defaultTargets));
   const [multi, setMulti] = useState(() => defaultTargets.length > 1);
   // A play/queue source has no session to move, so it can only ever fork.
   const noSnapshotSource = !!(source?.play || source?.queue) && !(source?.getSnapshot || source?.snapshot);
-  const [mode, setMode] = useState(source?.itemAction || source?.brief || noSnapshotSource ? 'fork' : (defaultMode ?? 'transfer'));
-  const [dispatchError, setDispatchError] = useState(null);
   const localPlaying = useLocalPlaybackActive(source);
+  // PLACE.6a/AC2: a one-off Play on… of an item, while something plays HERE,
+  // asks at that moment whether this device stops (Move) or keeps playing,
+  // pre-set to the remembered choice. Brief shows and destination-only picks
+  // never touch local playback, so they never ask.
+  const asksKeepOrStop = noSnapshotSource && !source?.brief && intent !== 'destination' && localPlaying;
+  const [mode, setModeState] = useState(
+    asksKeepOrStop ? (defaultMode ?? 'transfer')
+      : (source?.itemAction || source?.brief || noSnapshotSource ? 'fork' : (defaultMode ?? 'transfer'))
+  );
+  const setMode = useCallback((next) => {
+    setModeState(next);
+    if (asksKeepOrStop) {
+      rememberMode?.(next);
+      mediaLog.playOnChoiceChanged({ mode: next });
+    }
+  }, [asksKeepOrStop, rememberMode]);
+  const [dispatchError, setDispatchError] = useState(null);
   // This only controls whether the picker can offer playback choices. A
   // getSnapshot source can disappear between render and submit, so it must
   // never be used as proof that submit has a payload to dispatch.
   const hasPotentialContent = !!(source?.getSnapshot || source?.snapshot || source?.play || source?.queue);
   const hasMoveSnapshot = !!(source?.getSnapshot || source?.snapshot);
   const moveSupported = hasMoveSnapshot && selected.size === 1;
-  const moveUnavailable = hasPotentialContent && mode === 'transfer' && !moveSupported;
+  const moveUnavailable = hasPotentialContent && mode === 'transfer' && !moveSupported && !asksKeepOrStop;
 
   const devices = fleet.devices ?? [];
 
@@ -77,11 +93,11 @@ export function useDispatchTargetPicker({ source, onComplete, intent = 'dispatch
   // select -> confirm.
   const submitRef = useRef(null);
   const autoSendOnSelect = useCallback((id) => {
-    if (multi || intent === 'destination' || source?.brief || hasMoveSnapshot) return false;
+    if (multi || intent === 'destination' || source?.brief || hasMoveSnapshot || asksKeepOrStop) return false;
     if (!(source?.play || source?.queue)) return false;
     if (describeBusy(fleet.store?.getEntry?.(id))) return false;
     return true;
-  }, [multi, intent, source, hasMoveSnapshot, fleet.store]);
+  }, [multi, intent, source, hasMoveSnapshot, fleet.store, asksKeepOrStop]);
 
   // Tap a tile: radio-like in single mode (tap again to deselect),
   // accumulating in multi mode.
@@ -148,7 +164,7 @@ export function useDispatchTargetPicker({ source, onComplete, intent = 'dispatch
     // A destination-only sheet (DestinationLine) mounts this picker with no
     // source at all: it changes the preferred target but does not dispatch.
     let dispatchIds = [];
-    if (hasDispatchContent && mode === 'transfer') {
+    if (hasDispatchContent && mode === 'transfer' && !asksKeepOrStop) {
       const outcome = await handOff(targetIds[0], { mode });
       if (!outcome?.ok) {
         setDispatchError(`Could not confirm the move${outcome?.error ? `: ${outcome.error}` : ''}. Playback here was kept.`);
@@ -160,6 +176,22 @@ export function useDispatchTargetPicker({ source, onComplete, intent = 'dispatch
     }
     if (hasDispatchContent) {
       try {
+        if (asksKeepOrStop) {
+          // The item is a second-room start either way; Move additionally
+          // stops THIS device, but only once the screen has accepted the
+          // start, and only if this device is still on what it was playing.
+          params.mode = 'fork';
+          const identity = mode === 'transfer' ? (local?.portability?.capture?.()?.identity ?? null) : null;
+          mediaLog.playOnChoiceApplied({ mode, targetIds });
+          if (mode === 'transfer') {
+            params.onConfirmed = () => {
+              const result = identity && local?.portability?.stopIfCurrent
+                ? local.portability.stopIfCurrent(identity)
+                : { ok: false, code: 'NO_IDENTITY' };
+              mediaLog.playOnStopHere({ targetIds, ok: result?.ok === true, code: result?.code ?? null });
+            };
+          }
+        }
         dispatchIds = await dispatchToTarget(params);
       } catch {
         setDispatchError('Could not start playback on that device. Nothing was moved.');
@@ -173,11 +205,11 @@ export function useDispatchTargetPicker({ source, onComplete, intent = 'dispatch
     setDispatchError(null);
     onComplete?.({ targetIds, mode });
     return { ok: true, dispatchIds };
-  }, [moveUnavailable, hasMoveSnapshot, selected, mode, source, dispatchToTarget, handOff, onComplete, hasPotentialContent]);
+  }, [moveUnavailable, hasMoveSnapshot, selected, mode, source, dispatchToTarget, handOff, onComplete, hasPotentialContent, asksKeepOrStop, local]);
 
   submitRef.current = submit;
 
-  return { devices, selected, multi, mode, canSubmit, localPlaying, hasPotentialContent, moveSupported, moveUnavailable, dispatchError, select, toggleMulti, setMode, submit };
+  return { devices, selected, multi, mode, asksKeepOrStop, canSubmit, localPlaying, hasPotentialContent, moveSupported, moveUnavailable, dispatchError, select, toggleMulti, setMode, submit };
 }
 
 export default useDispatchTargetPicker;

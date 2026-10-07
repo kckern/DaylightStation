@@ -183,6 +183,8 @@ export function createSessionSource({
         updatedAt: new Date().toISOString(),
         ...(playbackOwner ? { playbackOwner } : {}),
         ...(ownerCapture?.issuedIdentity ? { queueOwner: ownerCapture.issuedIdentity } : {}),
+        // RELY.5a/AC4: the last playback this screen gave up on, for the sender.
+        ...(ownerCapture?.problem ? { problem: ownerCapture.problem } : {}),
       },
     };
   }

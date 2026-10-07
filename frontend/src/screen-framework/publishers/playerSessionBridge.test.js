@@ -60,6 +60,13 @@ describe('normalizePlayableItem', () => {
     expect(normalizePlayableItem({ title: 'no identity' })).toBeNull();
   });
 
+  it('STEER.4a/AC3: a live item keeps isLive and publishes no duration', () => {
+    expect(normalizePlayableItem({ contentId: 'fixture:live', format: 'hls_video', isLive: true, duration: 71 })).toEqual({
+      contentId: 'fixture:live', format: 'hls_video', isLive: true,
+    });
+    expect(normalizePlayableItem({ contentId: 'plex:1', duration: 60 })).toEqual({ contentId: 'plex:1', format: 'video', duration: 60 });
+  });
+
   it('maps mediaType to a known format and keeps valid formats', () => {
     expect(normalizePlayableItem({ id: 'x', mediaType: 'audio' }).format).toBe('audio');
     expect(normalizePlayableItem({ id: 'x', format: 'readalong' }).format).toBe('readalong');
@@ -162,6 +169,14 @@ describe('createPlayerSessionBridge', () => {
 
     el.dispatchEvent(new Event('playing'));
     expect(bridge.player.getState()).toBe('playing');
+    bridge.stop();
+  });
+
+  it('RELY.5a/AC4: carries what the Player last gave up on into the owner capture', () => {
+    const problem = { kind: 'skipped', reason: 'stalled', item: { contentId: 'plex:1', title: 'Arrival' }, replacement: { contentId: 'plex:2', title: 'Disclosure Day' }, at: 1234 };
+    const handle = { ...makeHandle({ el: document.createElement('video') }), getProblem: () => problem };
+    const bridge = startBridge(() => handle);
+    expect(bridge.queueController.capture('sid')).toMatchObject({ problem });
     bridge.stop();
   });
 

@@ -35,6 +35,9 @@ import { applyRememberedTracks, trackStateFor, checkSelection, rememberSelection
 import { usePlayerConfig } from './hooks/usePlayerConfig.js';
 import { REVIEW_ACTIVE } from '../../lib/Player/reviewParams.js';
 import { DaylightAPI } from '../../lib/api.mjs';
+import { seekToLiveEdge } from '../../lib/media/liveEdge.js';
+import { problemClearedByPlaying } from './lib/lastProblem.js';
+import { getActionBus } from '../../screen-framework/input/ActionBus.js';
 import {
   preparePlaybackOwnerAdoption,
   samePlaybackOwnerIdentity,
@@ -1409,6 +1412,8 @@ const Player = forwardRef(function Player(props, ref) {
 
   const resolvedResilienceOnState = resolvedResilience.onStateChange;
 
+  // See handleResilienceExhausted: what this Player last gave up on.
+  const lastProblemRef = useRef(null);
   const compositeAwareOnState = useCallback((state) => {
     // A pending backoff remount exists because playback was not progressing.
     // The hook saying "playing" means that reason is gone; a timer that fires
@@ -1429,6 +1434,9 @@ const Player = forwardRef(function Player(props, ref) {
         guid: currentMediaGuid
       }, { level: 'info' });
       clearRemountTimer();
+    }
+    if (state?.status === RESILIENCE_STATUS.playing && problemClearedByPlaying(lastProblemRef.current)) {
+      lastProblemRef.current = null;
     }
     if (typeof resolvedResilienceOnState === 'function') {
       resolvedResilienceOnState(state);
@@ -1538,7 +1546,21 @@ const Player = forwardRef(function Player(props, ref) {
     });
   }, [scheduleSinglePlayerRemount, transportAdapter, playerType, currentMediaGuid, resolvedWaitKeyFields, activeSource, resolvedMeta]);
 
+  // RELY.5a/AC4: what this Player last gave up on (and what plays instead),
+  // published in the screen's session snapshot so whoever sent or steered this
+  // screen can be told. A record, not a live state: it carries its own time.
   const handleResilienceExhausted = useCallback(({ reason, attempts, waitKey: exhaustedWaitKey }) => {
+    {
+      const failed = effectiveMeta ?? {};
+      const next = isQueue && hasNextQueueItem ? (playQueue?.[1] ?? null) : null;
+      lastProblemRef.current = {
+        kind: next ? 'skipped' : 'failed',
+        reason: typeof reason === 'string' && reason ? reason : 'playback-failed',
+        item: { contentId: failed.contentId ?? failed.assetId ?? null, title: failed.title ?? null },
+        replacement: next ? { contentId: next.contentId ?? next.assetId ?? null, title: next.title ?? null } : null,
+        at: Date.now(),
+      };
+    }
     if (isQueue && hasNextQueueItem) {
       playbackLog('resilience-exhausted-auto-skip', {
         reason,
@@ -1561,7 +1583,7 @@ const Player = forwardRef(function Player(props, ref) {
       onResilienceEvent?.({ kind: 'resilience-exhausted', reason, attempts });
       clear();
     }
-  }, [isQueue, hasNextQueueItem, advance, clear, playQueue, onResilienceEvent]);
+  }, [isQueue, hasNextQueueItem, advance, clear, playQueue, onResilienceEvent, effectiveMeta]);
 
   // Self-contained formats (titlecard, etc.) have no media element —
   // suppress the resilience overlay which would never exit startup.
@@ -2020,6 +2042,7 @@ const Player = forwardRef(function Player(props, ref) {
   }, [seekOwner, withTransport]);
 
   useImperativeHandle(isValidImperativeRef ? ref : null, () => ({
+    getProblem: () => lastProblemRef.current,
     seek: (t) => {
       seekOwner(t);
     },
@@ -2235,6 +2258,23 @@ const Player = forwardRef(function Player(props, ref) {
       seekOwnerRelative(payload.value);
       return;
     }
+    if (op === 'go-live') {
+      // Only a live stream has an edge to return to; a finite duration is not
+      // one (seeking a VOD item to its end would end it and advance the queue).
+      if (!(effectiveMeta?.isLive === true || activeSource?.isLive === true)) {
+        getActionBus().emit('command-handler-error', {
+          commandId: payload.commandId, code: 'NOT_LIVE', error: 'This is not a live stream',
+        });
+        return;
+      }
+      const result = seekToLiveEdge(_getMediaElFallback());
+      if (!result.ok) {
+        getActionBus().emit('command-handler-error', {
+          commandId: payload.commandId, code: result.code, error: 'This playback has no live edge to return to',
+        });
+      }
+      return;
+    }
     if (op === 'skip-prev') {
       ownerStoppedRef.current = false;
       advance(-1);
@@ -2331,7 +2371,7 @@ const Player = forwardRef(function Player(props, ref) {
     }
 
     pushOnDeck(item, { displaceToQueue: !!onDeckCfg?.displace_to_queue });
-  }, [playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, append, playerInstanceId, queueShader, classes, setShader, setShaderUserCycled, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, seekOwnerRelative, advance, isQueue, singleAdvance]);
+  }, [playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, append, playerInstanceId, queueShader, classes, setShader, setShaderUserCycled, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, seekOwnerRelative, advance, isQueue, singleAdvance, effectiveMeta?.isLive, activeSource?.isLive]);
 
   // Register once in mount order while the ref supplies the latest stateful
   // callback. Re-registering on every queue change would let a background

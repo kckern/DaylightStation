@@ -153,6 +153,37 @@ wraps at phone width, so nothing is lost to a narrow screen.
 - **Lock screen.** Playback on this device shows its title, show and artwork
   in the system media controls (lock screen, notification), with play/pause,
   next/previous and seek — the same commands as the app's own buttons.
+- **Live content** (STEER.4a/AC3). Where a position would be, a live item
+  shows a **LIVE** badge and **Go to live**: one 44 px button, on this device
+  and on any screen's Remote. It moves playback to the live edge (the newest
+  moment the stream can show) and keeps it playing. Pausing a live stream
+  lets it fall behind; Go to live is the way back. The screen publishes
+  `isLive` for its item, so a Remote shows the same thing.
+- **The handle for another screen** (STEER.1a/AC4). Besides this device's own
+  handle, a second slim bar names the screen you most recently sent to or
+  steered ("Living Room TV · Playing", the title) with one Pause/Resume
+  button, in every part of the app — so pausing the TV when the phone rings
+  is one tap. Tapping the title opens that screen's full controls, and the
+  bar steps aside while they are open. It exists only while that screen is
+  playing or paused; it is never a notice and never covers content.
+- **Play on… while something plays here** (PLACE.6a/AC2). A one-off **Play on…**
+  of an item asks, at that moment, **Move: stop playing here** or **Keep
+  playing here too**, pre-set to the choice made last time (shown before you
+  confirm; the tap on a screen then waits for the confirm instead of sending
+  at once). Keep leaves this device playing. Move stops this device only
+  after the screen has **confirmed it is playing** — a screen that fails or
+  never confirms leaves this device playing.
+- **Move here from the house** (HOUSE.2a/AC4, PLACE.7a/AC1). Every playing
+  row in Devices carries **Move here** next to Pause and Stop (not on this
+  device's own row; disabled with the reason when the screen carries no
+  playback-owner identity). It is the same failure-safe move as Home's
+  "Now on <screen>": this device starts the same item at the same moment with
+  the same queue, and only then is the screen stopped; if it cannot start
+  here, the outcome says why and the screen keeps playing.
+- **Failures a screen raises itself** (RELY.5a/AC4). When a screen you sent
+  to or steer gives up on an item and skips (or stops), the outcome tray on
+  your device says so — the item, the screen and what plays instead — with
+  Retry, wherever you are in the app.
 ## Subtitles, Show briefly, and music behind a slideshow
 
 These live in the one set of playback controls, so they work the same for
@@ -348,6 +379,28 @@ the full verb set.
 Local playback reports its progress with this device's identity (every request
 carries `X-Daylight-Device`); when a routine or another device started the item,
 that origin rides the progress report too, so "started by" and the ledger know.
+
+## Finding and starting things
+
+- **Collections carry an inline play** (FIND.8b/AC2). A collection result (show,
+  season, album, playlist) shows **Play**, or **Continue S2E7** when the
+  household has that show under way (an unfinished episode, or the episode
+  after the last finished one). Continue plays that episode at the aim; Play
+  plays the whole collection as a queue. A collection tap still opens it.
+- **Cameras and single photos** (FIND.8b/AC3) are the exception to "a tap plays
+  at the aim": a tap shows them on this device, and the second action reads
+  **Show on…** (instead of Play on…) to send them to another screen.
+- **Starting on…** (PLAY.1a/AC5). While an item's start on a screen is in
+  flight (sent, not yet confirmed playing), the item itself reads **Starting
+  on Living Room TV…** — in the result row, the start-page tile and the
+  detail page — and a second tap does not send it again.
+- **Play next, held** (PLAY.5a/AC3). Pressing and holding **Play next** (about
+  half a second; a held Enter or Space works too) offers **At the very
+  front**, which queues the item ahead of the other "next" items. Releasing a
+  hold does not also run Play next. Play first remains in the menus.
+- **An id for a source that does not exist** (`plex-main:12345`) settles within
+  a second to "No results": the search names the unknown source instead of
+  asking every library for the literal text.
 
 ## Visual system
 

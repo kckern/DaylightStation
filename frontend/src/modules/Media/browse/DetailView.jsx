@@ -17,6 +17,9 @@ import { useItemVerbs, householdEntryFor } from '../household/useItemVerbs.jsx';
 import { useFavourites } from '../household/useHousehold.js';
 import { spotsSummary, formatLeft, whereLine } from '../household/householdModel.js';
 import { IconHeart, IconHeartFilled, IconEye, IconEyeOff } from '@tabler/icons-react';
+import { useStartingOn } from '../cast/useStartingOn.js';
+import { usePressHoldOffer } from '../../../lib/ui/usePressHoldOffer.js';
+import mediaLog from '../logging/mediaLog.js';
 
 export function DetailView({ contentId }) {
   const [oneShot, setOneShot] = useState(null);
@@ -25,6 +28,10 @@ export function DetailView({ contentId }) {
   const { pop, backDestination } = useNav();
   const { run, overlays, nameFor } = useItemVerbs();
   const favourites = useFavourites();
+  // PLAY.5a/AC3: pressing and holding Play Next offers "At the very front".
+  const { startingOnFor } = useStartingOn();
+  const startingOn = startingOnFor(contentId);
+  const playNextHold = usePressHoldOffer({ onOffered: () => mediaLog.playNextHoldOffered({ surface: 'detail' }) });
   const back = (
     <Button variant="subtle" color="gray" data-testid="detail-back" className="detail-back" onClick={() => pop()}>
       <IconChevronLeft size={16} aria-hidden /> {backDestination ?? 'Home'}
@@ -69,6 +76,7 @@ export function DetailView({ contentId }) {
       <Title order={1}>{info.title ?? contentId}</Title>
       {info.description && <Text c="dimmed">{info.description}</Text>}
       {progress && <Text size="sm" data-testid="detail-progress">{progress}</Text>}
+      {startingOn && <Text size="sm" data-testid="detail-starting" role="status">{startingOn}</Text>}
       <DestinationLine surface="detail" />
       <Group className="detail-actions" gap="sm">
         <Button
@@ -80,9 +88,16 @@ export function DetailView({ contentId }) {
         </Button>
         {isContainer(detailItem) && <Button variant="default" onClick={() => dispatchLeafVerb('shuffle', contentId, detailItem)}>Shuffle</Button>}
         <Button data-testid="detail-play-next" variant="default" leftSection={<IconPlayerTrackNext size={16} />}
-                onClick={() => dispatchLeafVerb('playNext', contentId, detailItem)}>
+                {...playNextHold.bind}
+                onClick={playNextHold.guardClick(() => dispatchLeafVerb('playNext', contentId, detailItem))}>
           Play Next
         </Button>
+        {playNextHold.offered && (
+          <Button data-testid="detail-play-next-front" variant="default" leftSection={<IconRowInsertTop size={16} />}
+                  onClick={() => { mediaLog.playNextFrontChosen({ surface: 'detail' }); playNextHold.dismiss(); dispatchLeafVerb('playFirst', contentId, detailItem); }}>
+            At the very front
+          </Button>
+        )}
         <Button data-testid="detail-up-next" variant="default" leftSection={<IconRowInsertTop size={16} />}
                 onClick={() => dispatchLeafVerb('playFirst', contentId, detailItem)}>
           Play First

@@ -179,10 +179,79 @@ describe('DispatchTargetPicker / useDispatchTargetPicker', () => {
     });
   });
 
-  it('hides Move entirely for a plain play source (no disabled noise option)', () => {
-    render(withLocalPlaybackActive(<DispatchTargetPicker source={{ play: 'plex:1' }} />));
-    expect(screen.queryByTestId('picker-mode-transfer')).toBeNull();
-    expect(screen.queryByTestId('picker-move-unavailable')).toBeNull();
+  describe('PLACE.6a/AC2 — item-level Play on… asks Move or Keep when something plays here', () => {
+    // A controller that records the stop: Move must only stop THIS device after the send succeeded.
+    function localWith({ stopIfCurrent = vi.fn(() => ({ ok: true })), capture = () => ({ identity: { ownerInstanceId: 'o1', playbackRevision: 3 } }) } = {}) {
+      const snapshot = { currentItem: { id: 1 }, state: 'playing' };
+      const controller = {
+        subscribe: () => () => {}, getSnapshot: () => snapshot,
+        portability: { capture, stopIfCurrent },
+        transport: { stop: vi.fn() },
+      };
+      return { controller, stopIfCurrent, wrap: (children) => (
+        <LocalSessionContext.Provider value={{ controller }}>{children}</LocalSessionContext.Provider>
+      ) };
+    }
+
+    it('offers Move (stop here) and Keep for a plain play source, with no unavailable noise', () => {
+      render(withLocalPlaybackActive(<DispatchTargetPicker source={{ play: 'plex:1' }} />));
+      fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
+      expect(screen.getByTestId('picker-mode-transfer')).toHaveTextContent(/stop playing here/i);
+      expect(screen.getByTestId('picker-mode-fork')).toHaveTextContent('Keep playing here too');
+      expect(screen.queryByTestId('picker-move-unavailable')).toBeNull();
+    });
+
+    it('does not ask when nothing plays here (tap sends at once)', () => {
+      render(<DispatchTargetPicker source={{ play: 'plex:1' }} />);
+      expect(screen.queryByTestId('picker-mode-transfer')).toBeNull();
+      fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
+      expect(dispatchToTarget).toHaveBeenCalled();
+    });
+
+    it('a tile tap no longer sends at once when it must ask; the CTA sends', () => {
+      render(withLocalPlaybackActive(<DispatchTargetPicker source={{ play: 'plex:1' }} />));
+      fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
+      expect(dispatchToTarget).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByTestId('picker-submit'));
+      expect(dispatchToTarget).toHaveBeenCalledTimes(1);
+    });
+
+    it('is pre-set to the remembered choice and shows it before confirming', () => {
+      castTargetState = { targetIds: [], mode: 'fork', setMode: vi.fn() };
+      render(withLocalPlaybackActive(<DispatchTargetPicker source={{ play: 'plex:1' }} />));
+      expect(screen.getByTestId('picker-mode-fork')).toHaveAttribute('aria-checked', 'true');
+      castTargetState = { targetIds: [], mode: 'transfer', setMode: vi.fn() };
+    });
+
+    it('Keep sends and leaves this device playing; the choice is remembered', async () => {
+      const setMode = vi.fn();
+      castTargetState = { targetIds: [], mode: 'transfer', setMode };
+      const { stopIfCurrent, wrap } = localWith();
+      render(wrap(<DispatchTargetPicker source={{ play: 'plex:1' }} />));
+      fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
+      fireEvent.click(screen.getByTestId('picker-mode-fork'));
+      expect(setMode).toHaveBeenCalledWith('fork');
+      fireEvent.click(screen.getByTestId('picker-submit'));
+      await waitFor(() => expect(dispatchToTarget).toHaveBeenCalled());
+      expect(dispatchToTarget.mock.calls[0][0]).toMatchObject({ mode: 'fork', play: 'plex:1' });
+      expect(dispatchToTarget.mock.calls[0][0].onConfirmed).toBeUndefined();
+      expect(stopIfCurrent).not.toHaveBeenCalled();
+    });
+
+    it('Move sends as a second-room start and stops this device only after the screen confirmed playing', async () => {
+      castTargetState = { targetIds: [], mode: 'transfer', setMode: vi.fn() };
+      const { stopIfCurrent, wrap } = localWith();
+      render(wrap(<DispatchTargetPicker source={{ play: 'plex:1' }} />));
+      fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
+      fireEvent.click(screen.getByTestId('picker-submit'));
+      await waitFor(() => expect(dispatchToTarget).toHaveBeenCalled());
+      const params = dispatchToTarget.mock.calls[0][0];
+      expect(params.mode).toBe('fork');
+      expect(typeof params.onConfirmed).toBe('function');
+      expect(stopIfCurrent).not.toHaveBeenCalled();
+      params.onConfirmed();
+      expect(stopIfCurrent).toHaveBeenCalledWith({ ownerInstanceId: 'o1', playbackRevision: 3 });
+    });
   });
 
   describe('intent="destination" (DestinationLine\'s device sheet)', () => {

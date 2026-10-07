@@ -656,3 +656,63 @@ describe('ContentQueryService', () => {
     });
   });
 });
+
+describe('ContentQueryService — an id for a source that does not exist', () => {
+  // `plex-main:12345` once waited on every adapter's timeout (8 s and more) because the
+  // literal text was searched everywhere; it must settle at once with a stated outcome.
+  function build() {
+    const slow = { source: 'plex', search: vi.fn(() => new Promise(() => {})), getSearchCapabilities: () => ({ canonical: ['text'], specific: [] }), getQueryMappings: () => ({}) };
+    const registry = {
+      get: vi.fn((name) => (name === 'plex' ? slow : undefined)),
+      list: vi.fn(() => [slow]),
+      resolveSource: vi.fn((selector) => (selector === undefined || selector === 'plex' ? [slow] : [])),
+    };
+    return { slow, service: new ContentQueryService({ registry, adapterTimeoutMs: 60_000 }) };
+  }
+
+  it('search() answers empty with an UNKNOWN_SOURCE warning, without touching any adapter', async () => {
+    const { slow, service } = build();
+    const result = await service.search({ text: 'plex-main:12345' });
+    expect(result.items).toEqual([]);
+    expect(result.warnings).toEqual([expect.objectContaining({ source: 'plex-main', code: 'UNKNOWN_SOURCE' })]);
+    expect(slow.search).not.toHaveBeenCalled();
+  });
+
+  it('searchStream() completes immediately with the same warning and no pending sources', async () => {
+    const { slow, service } = build();
+    const events = [];
+    for await (const event of service.searchStream({ text: 'plex-main:12345' })) events.push(event);
+    expect(events.map((e) => e.event)).toEqual(['pending', 'complete']);
+    expect(events[0].sources).toEqual([]);
+    expect(events[1].warnings).toEqual([expect.objectContaining({ source: 'plex-main', code: 'UNKNOWN_SOURCE' })]);
+    expect(slow.search).not.toHaveBeenCalled();
+  });
+
+  it.each(['Shrek: 2', 'Bluey: 3', '12:30', 'Spider-Man: 2', 'Toy Story:3'])(
+    'does not swallow the title %j (prefix is not source-like)', async (text) => {
+      const { slow, service } = build();
+      slow.search = vi.fn(async () => ({ items: [] }));
+      const events = [];
+      for await (const event of service.searchStream({ text })) events.push(event);
+      expect(events[0].sources).toEqual(['plex']);
+      expect(events.at(-1).warnings ?? []).not.toEqual([expect.objectContaining({ code: 'UNKNOWN_SOURCE' })]);
+    });
+
+  it('still short-circuits an underscored unknown source quickly', async () => {
+    const { slow, service } = build();
+    const result = await service.search({ text: 'plex_main:12345' });
+    expect(result.warnings).toEqual([expect.objectContaining({ source: 'plex_main', code: 'UNKNOWN_SOURCE' })]);
+    expect(slow.search).not.toHaveBeenCalled();
+  });
+
+  it('does not intercept a known source, or non-id text with a colon', async () => {
+    const { slow, service } = build();
+    slow.search = vi.fn(async () => ({ items: [] }));
+    const events = [];
+    for await (const event of service.searchStream({ text: 'plex:12345' })) events.push(event);
+    expect(slow.search).toHaveBeenCalled();
+    const other = [];
+    for await (const event of service.searchStream({ text: 'mission:impossible' })) other.push(event);
+    expect(other[0].sources).toEqual(['plex']);
+  });
+});

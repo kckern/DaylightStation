@@ -86,8 +86,13 @@ export function normalizePlayableItem(meta, hint = null) {
   const thumbnail = firstString(src?.thumbnail, src?.image, fallback?.thumbnail, fallback?.image);
   if (thumbnail) item.thumbnail = thumbnail;
 
+  // A live stream says so (STEER.4a/AC3: whoever steers this screen offers
+  // Go to live, not a position) and has no length to publish.
+  const live = (src?.isLive ?? fallback?.isLive) === true;
+  if (live) item.isLive = true;
+
   const duration = Number(src?.duration ?? fallback?.duration);
-  if (Number.isFinite(duration) && duration > 0) item.duration = duration;
+  if (!live && Number.isFinite(duration) && duration > 0) item.duration = duration;
 
   return item;
 }
@@ -451,8 +456,11 @@ export function createPlayerSessionBridge({
     const resolvedCurrent = !canResolveMountedContent || (currentEntry
       && resolvedContentId != null
       && String(currentEntry.contentId) === String(resolvedContentId));
+    let problem = null;
+    try { problem = handle.getProblem?.() ?? null; } catch { /* ignore */ }
     return {
       queue,
+      problem,
       issuedIdentity: validIssuedIdentity,
       currentItem: getCurrentItem(),
       config: getConfig(),

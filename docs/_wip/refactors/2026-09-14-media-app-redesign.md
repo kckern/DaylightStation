@@ -169,6 +169,7 @@ Phase 0 of `docs/superpowers/specs/2026-10-06-media-proof-gaps-design.md` (ledge
 | After Phase 0 | 157 | 79 | 52 |
 | After the journey repair (below) | 161 | 75 | 52 |
 | After Phase 1 (below) | 166 | 70 | 52 |
+| After Phase 2a (below) | 180 | 64 | 44 |
 
 Net: 17 rows promoted to Accepted from existing journeys (RELY.4a AC1/AC2/AC4, RELY.7a AC3, AUTO.2a AC2/AC3, STEER.3a/AC1, 4a/AC1-2, 6a/AC1-2, 7a/AC1-2, 8a/AC2, PLAY.1a/AC2, PLAY.6a/AC2, PLACE.1a/AC4), and 4 rows demoted to Partial (`FIND.5a/AC2`, `FIND.6a/AC1-3`: the `browse-breadcrumb` manifest journey fails on the redesign's renamed artwork label): 144 + 17 - 4 = 157. 42 Unverified rows moved to Partial because some runtime evidence exists.
 
@@ -202,6 +203,24 @@ Shared test infrastructure for the proof-gaps phases; tests, fixtures and docs o
 
 Rows these make closable are re-coded `NEEDS-JOURNEY` in the ledger (Phase 2 writes the journeys). Five rows were promoted because the household journeys now prove them against the real services: FIND.7a/AC3, FIND.10a/AC5, FIND.10a/AC7, FIND.12a/AC3, FIND.13a/AC2 (ledger run `PROOF-GAPS-PHASE1`, exact SHA `9986ed8667f3a8bd3cf986efbc966fd00e37281b`). P0 manifest on that SHA: 47 of 49 groups in one gate run; the other two (`handle-controls` sleep at the end, `player-features` PLAY.9a) failed under host load average 14-17 and pass alone on the same preview. The `p0-accessibility` empty-household journey (RELY.14a/AC3) now resets the household to empty (`?seed=empty`) because the server's household is no longer empty.
 
+
+### Phase 2a — P0 product features (PROOF-GAPS-PHASE2A)
+
+Nine P0 features built on branch `feat/media-p0-features` (product code at exact SHA `71e4bc5b295598f7e701c45205668e1be5719118`, a tests/docs-only follow-up on top), each with unit tests, `mediaLog` events and a journey on the acceptance fixtures (five new `media-app-p0-features-*` files, +13 criteria in the P0 manifest: 65 stories / 159 criteria):
+
+| Feature | Criteria | Journey |
+|---|---|---|
+| Go to live (local and steered screens) | STEER.4a/AC3 | `p0-features-live` (real HLS live channel fixture) |
+| Move or keep when Play on… of an item | PLACE.6a/AC2-AC4 | `p0-features-send` |
+| House-row Move here (and its failure) | HOUSE.2a/AC2+AC4, PLACE.7a/AC1+AC2+AC4 | `p0-features-send` |
+| Inline Play / Continue S1E3; photos show here, Show on… | FIND.8b/AC2 (Accepted), AC3 (Partial: no camera result in the acceptance catalog) | `p0-features-find` |
+| Starting on <screen>… label | PLAY.1a/AC5 | `p0-features-find` |
+| Press-and-hold Play next, At the very front | PLAY.5a/AC3 | `p0-features-find` |
+| Handle for the screen last sent to or steered | STEER.1a/AC4 (AC5 stays `NEEDS-DEVICE`) | `p0-features-steer` |
+| Failures a steered screen raises itself | RELY.5a/AC4 | `p0-features-steer` |
+| Unknown-source id settles at once | FIND.4a/AC4 (evidence only) | `p0-features-search` |
+
+Result in the ledger: 180 Accepted / 64 Partial / 44 Unverified AC (was 166 / 70 / 52). Two things were found on the way: a Move that stopped this device on the screen's mere acceptance (now it waits for the screen to confirm playing), and that a screen whose stream is aborted at the network layer stalls after two recovery attempts without ever giving up (not changed).
 
 ## Next action
 

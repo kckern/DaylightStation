@@ -38,6 +38,7 @@ export function createBrowserSessionController({
     transport: {
       play: () => transport('play'), pause: () => transport('pause'), stop: () => transport('stop'),
       seekAbs: seconds => transport('seekAbs', seconds), seekRel: delta => transport('seekRel', delta),
+      goLive: () => transport('goLive'),
       skipNext: () => transport('skipNext'), skipPrev: () => transport('skipPrev'),
       restartCurrent: () => transport('seekAbs', 0),
     },

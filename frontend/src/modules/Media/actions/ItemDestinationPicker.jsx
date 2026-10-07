@@ -3,6 +3,7 @@ import { Modal } from '@mantine/core';
 import { DispatchTargetPicker } from '../cast/DispatchTargetPicker.jsx';
 import { resultToQueueInput } from '../search/resultToQueueInput.js';
 import { isContainerInput } from '../session/containerExpansion.js';
+import { isShowItem } from '../search/showOn.js';
 
 export function ItemDestinationPicker({ action, onClose }) {
   if (!action) return null;
@@ -14,11 +15,12 @@ export function ItemDestinationPicker({ action, onClose }) {
     </Modal>;
   }
   const adding = action.kind === 'addOn';
+  const showing = !adding && isShowItem(action.item);
   const source = {
     [adding ? 'queue' : 'play']: item.contentId, title: item.title,
     itemAction: { kind: adding ? 'add' : 'playNow', item, clearRest: !adding && isContainerInput(item) },
   };
-  return <Modal opened onClose={onClose} title={adding ? 'Add on…' : 'Play on…'}>
-    <DispatchTargetPicker source={source} verb={adding ? 'Add' : 'Play'} onComplete={onClose} />
+  return <Modal opened onClose={onClose} title={adding ? 'Add on…' : (showing ? 'Show on…' : 'Play on…')}>
+    <DispatchTargetPicker source={source} verb={adding ? 'Add' : (showing ? 'Show' : 'Play')} onComplete={onClose} />
   </Modal>;
 }

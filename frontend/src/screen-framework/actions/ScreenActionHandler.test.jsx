@@ -735,6 +735,20 @@ describe('ScreenActionHandler', () => {
     });
   });
 
+  describe('go to live', () => {
+    it('routes a remote go-live to the active Player owner', () => {
+      const owner = vi.fn();
+      getPlayerQueueOpRegistry().register(owner);
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler />
+        </ScreenOverlayProvider>
+      );
+      act(() => getActionBus().emit('media:go-live', { commandId: 'live-1' }));
+      expect(owner).toHaveBeenCalledWith(expect.objectContaining({ op: 'go-live', commandId: 'live-1' }));
+    });
+  });
+
   describe('playback secondary fallback', () => {
     it('uses secondary action when idle and when_idle is "secondary"', () => {
       render(

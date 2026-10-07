@@ -181,6 +181,36 @@ describe('LocalSessionController — transport', () => {
     expect(c.position.get().seconds).toBe(60);
   });
 
+  it('goLive moves the media element to its live edge and resumes', () => {
+    const c = makeController();
+    c.queue.playNow({ contentId: 'cam:1', isLive: true });
+    const media = {
+      currentTime: 10, duration: Infinity, play: vi.fn(),
+      seekable: { length: 1, start: () => 0, end: () => 120 },
+    };
+    c.setPlayerHandle({ play: vi.fn(), pause: vi.fn(), seek: vi.fn(), getMediaElement: () => media });
+    const result = c.transport.goLive();
+    expect(media.currentTime).toBe(120);
+    expect(media.play).toHaveBeenCalled();
+    expect(result).toMatchObject({ ok: true });
+  });
+
+  it('goLive refuses a VOD item with NOT_LIVE and never seeks it to its end', () => {
+    const c = makeController();
+    c.queue.playNow({ contentId: 'plex:1', isLive: false });
+    const media = { currentTime: 10, duration: 300, play: vi.fn() };
+    c.setPlayerHandle({ play: vi.fn(), pause: vi.fn(), seek: vi.fn(), getMediaElement: () => media });
+    expect(() => c.transport.goLive()).toThrow('NOT_LIVE');
+    expect(media.currentTime).toBe(10);
+  });
+
+  it('goLive reports failure when there is no media element', () => {
+    const c = makeController();
+    c.queue.playNow({ contentId: 'cam:1', isLive: true });
+    c.setPlayerHandle({ play: vi.fn(), pause: vi.fn(), seek: vi.fn(), getMediaElement: () => null });
+    expect(() => c.transport.goLive()).toThrow();
+  });
+
   it('resolves a relative seek from actual media time when the hot position is stale', () => {
     const c = makeController();
     const media = { currentTime: 40 };

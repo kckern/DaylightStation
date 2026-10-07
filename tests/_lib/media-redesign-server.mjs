@@ -9,7 +9,7 @@ import { build, createServer, preview } from 'vite';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { getAppPort } from './configHelper.mjs';
 import { PlexAdapter } from '../../backend/src/1_adapters/content/media/plex/PlexAdapter.mjs';
@@ -18,6 +18,8 @@ import { createLogger } from '../../backend/src/0_system/logging/logger.mjs';
 import { RegistryPlaybackStreamGateway } from '../../backend/src/1_adapters/proxy/RegistryPlaybackStreamGateway.mjs';
 import { MintPlaybackStream } from '../../backend/src/3_applications/proxy/MintPlaybackStream.mjs';
 import { createProxyRouter } from '../../backend/src/4_api/v1/routers/proxy.mjs';
+import { createContentRouter } from '../../backend/src/4_api/v1/routers/content.mjs';
+import { ContentQueryService } from '../../backend/src/3_applications/content/ContentQueryService.mjs';
 import { createPlayRouter } from '../../backend/src/4_api/v1/routers/play.mjs';
 import { createAcceptancePlaybackRead } from './media-redesign-playback-read.mjs';
 import { createMediaOrdinaryDeviceFixture } from './media-ordinary-device-fixture.mjs';
@@ -229,6 +231,153 @@ function serveSlideshowFixture(rawPath, res) {
   }
   return false;
 }
+// A live channel for the Go to live journey (STEER.4a/AC3): a real sliding-
+// window HLS live stream (test picture and tone) that one ffmpeg process,
+// started on first request and owned by this server, writes in real time.
+// Read-only, no household data; `isLive` rides the play descriptor exactly as
+// a real live source's would. The window slides while a player is paused, so
+// a paused viewer genuinely falls behind the live edge.
+export const LIVE_FIXTURE_ID = 'fixture:live';
+const LIVE_HLS_PREFIX = '/api/v1/_fixture/live/';
+export function liveFixtureDescriptor() {
+  return {
+    id: LIVE_FIXTURE_ID, contentId: LIVE_FIXTURE_ID, assetId: LIVE_FIXTURE_ID,
+    title: 'Acceptance live channel', mediaType: 'hls_video', format: 'hls_video', isLive: true,
+    mediaUrl: `${LIVE_HLS_PREFIX}index.m3u8`,
+  };
+}
+let liveEncoder = null;
+let liveEncoderSpawn = spawn;
+// Test seam: replace the spawn used for the live encoder (and forget any
+// running one) so a host without ffmpeg can be simulated.
+export function __setLiveEncoderSpawnForTests(spawnFn = spawn) {
+  liveEncoder?.stop?.();
+  liveEncoder = null;
+  liveEncoderSpawn = spawnFn;
+}
+function ensureLiveEncoder() {
+  if (liveEncoder) return liveEncoder;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'media-live-fixture-'));
+  const child = liveEncoderSpawn('ffmpeg', ['-loglevel', 'error', '-re',
+    '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=15',
+    '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=44100',
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p',
+    '-g', '30', '-keyint_min', '30', '-sc_threshold', '0', '-c:a', 'aac', '-b:a', '48k',
+    '-f', 'hls', '-hls_time', '2', '-hls_list_size', '6',
+    '-hls_flags', 'delete_segments+omit_endlist+independent_segments',
+    '-hls_segment_filename', path.join(dir, 'seg%d.ts'), path.join(dir, 'index.m3u8')], { stdio: 'ignore' });
+  const stop = () => { try { child.kill('SIGKILL'); } catch { /* already gone */ } try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ } };
+  const record = { child, dir, stop, error: null };
+  child.on('exit', () => { if (liveEncoder === record) liveEncoder = null; });
+  // A host without ffmpeg emits 'error' (ENOENT) on the child; unhandled it
+  // would crash the whole preview server. Keep the record so the live fixture
+  // route can answer with a clear message instead of polling for a playlist.
+  child.on('error', (error) => {
+    record.error = `ffmpeg is unavailable on this host (${error?.code ?? error?.message ?? 'spawn failed'}); the live fixture cannot run`;
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
+  });
+  process.once('exit', stop);
+  for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, stop);
+  liveEncoder = record;
+  return liveEncoder;
+}
+function serveLiveFixture(rawPath, req, res) {
+  let path_ = rawPath;
+  try { path_ = decodeURIComponent(rawPath); } catch { /* keep raw */ }
+  if (path_ === `/api/v1/play/${LIVE_FIXTURE_ID}`) {
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(liveFixtureDescriptor()));
+    return true;
+  }
+  if (path_ === `/api/v1/queue/${LIVE_FIXTURE_ID}`) {
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ source: 'fixture', id: LIVE_FIXTURE_ID, count: 1, totalDuration: 0, items: [liveFixtureDescriptor()] }));
+    return true;
+  }
+  if (path_.startsWith(LIVE_HLS_PREFIX)) {
+    const name = path_.slice(LIVE_HLS_PREFIX.length);
+    if (!/^(?:index\.m3u8|seg\d+\.ts)$/.test(name)) { res.statusCode = 404; res.end('not found'); return true; }
+    const encoder = ensureLiveEncoder();
+    const { dir } = encoder;
+    const file = path.join(dir, name);
+    const send = (attempt = 0) => {
+      if (encoder.error) {
+        res.statusCode = 404; res.setHeader('Content-Type', 'text/plain'); res.end(encoder.error);
+        return;
+      }
+      if (fs.existsSync(file)) {
+        res.setHeader('Content-Type', name.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t');
+        res.setHeader('Cache-Control', 'no-store');
+        try { res.end(fs.readFileSync(file)); } catch { res.statusCode = 404; res.end('gone'); }
+        return;
+      }
+      // The first playlist appears a few seconds after the encoder starts.
+      if (attempt < 40 && name === 'index.m3u8') { setTimeout(() => send(attempt + 1), attempt === 0 ? 50 : 500); return; }
+      res.statusCode = 404; res.end('not found');
+    };
+    send();
+    return true;
+  }
+  return false;
+}
+// A single photo as a search result (FIND.8b/AC3: a tap shows it on the device
+// in hand; "Show on…" sends it elsewhere). Typing "acceptance photo" answers
+// with the slideshow fixture's first public-domain painting as a leaf photo,
+// through the same SSE shape the real search stream uses. Nothing else about
+// search changes.
+function serveFixturePhotoSearch(rawUrl, res) {
+  const url = new URL(rawUrl, 'http://fixture.invalid');
+  if (url.pathname !== '/api/v1/content/query/search/stream') return false;
+  if (!/acceptance photo/i.test(url.searchParams.get('text') ?? '')) return false;
+  const art = slideshowFixtureItem(0);
+  const item = {
+    id: art.id, source: 'fixture', localId: 'art-1', title: `Acceptance photo: ${art.title}`,
+    type: 'photo', mediaType: 'image', thumbnail: art.mediaUrl, metadata: { type: 'photo' }, score: 100,
+  };
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.write(`data: ${JSON.stringify({ event: 'pending', sources: ['fixture'], intent: null })}\n\n`);
+  res.write(`data: ${JSON.stringify({ event: 'results', source: 'fixture', items: [item], pending: [] })}\n\n`);
+  res.end(`data: ${JSON.stringify({ event: 'complete', totalMs: 1 })}\n\n`);
+  return true;
+}
+// An id typed for a source that does not exist (`plex-main:12345`) is answered
+// by THIS branch's real content search router and query service, because the
+// upstream household backend predates that rule. Everything else about search
+// stays the household's real answer. The set of real source names is read once
+// from the upstream's own search stream (its first `pending` event).
+const SEARCH_PATHS = new Set(['/api/v1/content/query/search', '/api/v1/content/query/search/stream']);
+let upstreamSources = null;
+async function readUpstreamSources() {
+  if (upstreamSources) return upstreamSources;
+  try {
+    const response = await fetch(`${upstream}/api/v1/content/query/search/stream?text=zz`, { headers: { Accept: 'text/event-stream' } });
+    const reader = response.body.getReader();
+    let text = '';
+    for (let i = 0; i < 20 && !/\n\n/.test(text); i += 1) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      text += Buffer.from(value).toString('utf8');
+    }
+    await reader.cancel().catch(() => {});
+    upstreamSources = new Set(JSON.parse(/data: (.*)/.exec(text)[1]).sources);
+  } catch { upstreamSources = new Set(); }
+  return upstreamSources;
+}
+const branchSearchApp = express();
+branchSearchApp.use('/api/v1/content', createContentRouter({
+  contentQueryService: new ContentQueryService({
+    contentCatalog: new RegistryContentCatalogGateway({ registry: new Map([['plex', adapter]]), logger }), logger,
+  }),
+  logger,
+}));
+async function isIdForUnknownSource(req, path) {
+  if (req.method !== 'GET' || !SEARCH_PATHS.has(path)) return false;
+  const text = new URL(req.url, upstream).searchParams.get('text') ?? '';
+  const match = /^([\w-]+):(\S+)$/.exec(text);
+  if (!match || !/[-_]/.test(match[1]) || !(/^\d+$/.test(match[2]) || match[2].includes('/'))) return false;
+  return !(await readUpstreamSources()).has(match[1].toLowerCase()) && upstreamSources.size > 0;
+}
 const allowedTitles = new Set(policy === 'branch' ? BRANCH_ALLOWED_TITLES
   : policy === 'hls-copy-55854' ? ['55854'] : ['675677']);
 
@@ -245,6 +394,9 @@ export function createAcceptancePreviewPlugin({ app, allowedTitles, policy, sour
     if (ordinaryDeviceFixture && await ordinaryDeviceFixture.middleware(req, res)) return;
     const path = new URL(req.url, upstream).pathname;
     if (req.method === 'GET' && serveSlideshowFixture(path, res)) return;
+    if (req.method === 'GET' && serveLiveFixture(path, req, res)) return;
+    if (req.method === 'GET' && serveFixturePhotoSearch(req.url, res)) return;
+    if (await isIdForUnknownSource(req, path)) { res.setHeader('X-Media-Acceptance-Read', 'worktree-search'); return branchSearchApp(req, res, next); }
     // The ordinary journey gets only catalog/config/media reads. This also
     // blocks GET-shaped command routes outside `/device` (which the fixture
     // consumes separately) rather than trusting HTTP method alone.

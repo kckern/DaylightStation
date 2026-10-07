@@ -6,7 +6,7 @@
 // the screen is stopped — and the screen is stopped only if it is still on
 // the same playback (owner + revision) it was when the move began. Anything
 // short of that leaves the screen playing and says so.
-import { useCallback, useContext, useRef } from 'react';
+import { useCallback, useContext } from 'react';
 import { LocalSessionContext } from '../session/LocalSessionContext.js';
 import { FleetContext } from '../fleet/FleetProvider.jsx';
 import { PeekContext } from '../peek/PeekContext.js';
@@ -52,13 +52,15 @@ function newOperationId() {
   return globalThis.crypto?.randomUUID?.() ?? `move-here-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// One move per screen at a time, across every surface (a FleetCard and a Home
+// "Now on" card are separate hook instances): a second tap must not adopt twice.
+const inFlightScreens = new Set();
+
 export function useMoveHere() {
   const local = useContext(LocalSessionContext)?.controller ?? null;
   const fleet = useContext(FleetContext);
   const peek = useContext(PeekContext);
   const outcomes = useContext(DispatchContext);
-  // One move per screen at a time: a second tap must not adopt twice.
-  const inFlight = useRef(new Set());
 
   const move = useCallback(async (screenId, entry = {}) => {
     const deviceId = bareScreenId(screenId);
@@ -116,12 +118,12 @@ export function useMoveHere() {
 
   return useCallback(async (screenId, entry = {}) => {
     const key = bareScreenId(screenId);
-    if (inFlight.current.has(key)) {
+    if (inFlightScreens.has(key)) {
       mediaLog.moveHereIgnored({ deviceId: key, reason: 'in-flight' });
       return { ok: false, code: 'IN_FLIGHT' };
     }
-    inFlight.current.add(key);
-    try { return await move(screenId, entry); } finally { inFlight.current.delete(key); }
+    inFlightScreens.add(key);
+    try { return await move(screenId, entry); } finally { inFlightScreens.delete(key); }
   }, [move]);
 }
 

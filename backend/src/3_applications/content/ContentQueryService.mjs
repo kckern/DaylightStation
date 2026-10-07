@@ -43,6 +43,37 @@ export class ContentQueryService extends IContentQueryPort {
     this.#deadline = deadline;
   }
 
+  /**
+   * A `source:id` query whose source does not exist and whose id part is a
+   * direct id (digits, or a path) — `plex-main:12345`. It cannot match
+   * anything, and searching every adapter for that literal text only waits on
+   * the slowest adapter's timeout (8 s and more under load), leaving the UI on
+   * "Searching…". Name the unknown source and settle at once instead.
+   * `mission:impossible`-style text (a non-id term) still searches everywhere.
+   *
+   * @param {string} text
+   * @returns {string|null} the unknown source name, or null when it is not that case
+   */
+  #unknownDirectIdSource(text) {
+    // A typed source id has no space around the colon and a source-like name
+    // (hyphen or underscore: `plex-main`). Titles — "Shrek: 2", "Bluey: 3",
+    // "12:30" — must reach the adapters.
+    const match = typeof text === 'string' ? text.match(/^([\w-]+):(\S+)$/) : null;
+    if (!match || !/[-_]/.test(match[1])) return null;
+    const prefix = match[1].toLowerCase();
+    const term = match[2];
+    if (!(/^\d+$/.test(term) || term.includes('/'))) return null;
+    if (this.#contentCatalog.hasSource?.(prefix)) return null;
+    if (this.#contentCatalog.parseDirectReference?.(text)) return null;
+    if ((this.#contentCatalog.sourcesFor?.(prefix) ?? []).length > 0) return null;
+    if (this.#aliasResolver?.resolveContentQuery?.(prefix)?.sources?.length > 0) return null;
+    return prefix;
+  }
+
+  #unknownSourceWarning(source) {
+    return { source, code: 'UNKNOWN_SOURCE', error: `No source named "${source}"` };
+  }
+
   #within(work, ms, label) {
     if (!ms || ms <= 0) return work;
     return this.#deadline.run(work, { timeoutMs: ms, message: `${label} timeout after ${ms}ms` });
@@ -99,6 +130,13 @@ export class ContentQueryService extends IContentQueryPort {
       idLookupMs: null,
       mergeMs: 0,
     };
+
+    const unknownSource = this.#unknownDirectIdSource(query.text);
+    if (unknownSource) {
+      perf.totalMs = Math.round(performance.now() - searchStart);
+      this.#logger.info?.('content-query.search.unknown-source', { query: { text: query.text }, source: unknownSource });
+      return { items: [], total: 0, sources: [], warnings: [this.#unknownSourceWarning(unknownSource)], _perf: perf };
+    }
 
     // Parse prefix from query text for alias resolution
     const { prefix, term } = this.#parseContentQuery(query.text);
@@ -233,6 +271,14 @@ export class ContentQueryService extends IContentQueryPort {
   async *searchStream(query) {
     const searchStart = performance.now();
     const warnings = [];
+
+    const unknownSource = this.#unknownDirectIdSource(query.text);
+    if (unknownSource) {
+      this.#logger.info?.('content-query.searchStream.unknown-source', { query: { text: query.text }, source: unknownSource });
+      yield { event: 'pending', sources: [], intent: null };
+      yield { event: 'complete', totalMs: Math.round(performance.now() - searchStart), warnings: [this.#unknownSourceWarning(unknownSource)] };
+      return;
+    }
 
     // Parse prefix from query text (e.g., "music:beethoven" -> { prefix: 'music', term: 'beethoven' })
     const { prefix, term } = this.#parseContentQuery(query.text);

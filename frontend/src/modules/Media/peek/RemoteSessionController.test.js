@@ -74,6 +74,19 @@ describe('RemoteSessionController', () => {
     await expect(p).resolves.toMatchObject({ ok: true, commandId: 'cmd-1' });
   });
 
+  it('goLive POSTs a value-less transport action and resolves on ack', async () => {
+    const { ackRouter, http, ctl } = setup();
+    const p = ctl.transport.goLive();
+    expect(http).toHaveBeenCalledWith(
+      'api/v1/device/tv/session/transport',
+      expect.objectContaining({ action: 'goLive', commandId: 'cmd-1' }),
+      'POST'
+    );
+    expect(http.mock.calls[0][1]).not.toHaveProperty('value');
+    ackRouter.resolve({ commandId: 'cmd-1', ok: true });
+    await expect(p).resolves.toMatchObject({ ok: true });
+  });
+
   it('a stop carries the explicit keepMusic answer, and nothing when none is given', async () => {
     const { ackRouter, http, ctl } = setup();
     const a = ctl.transport.stop({ keepMusic: true });
