@@ -1,0 +1,17 @@
+# Routine catalog snapshot (what a HA import would have stored). One routine
+# pointed at the acceptance receiver (the Home Assistant caller helper fires it) and
+# one at the offline screen (flagged ahead of time: unreachable).
+- id: 'automation:acceptance_button'
+  name: 'Acceptance button: Morning'
+  kind: automation
+  source: fixture
+  targets:
+    - { deviceId: 'fleet:acceptance-media', screenId: acceptance-media, query: 'queue=morning-program' }
+  via: []
+- id: 'script:acceptance_guest_tv'
+  name: 'Acceptance guest room: Slow TV'
+  kind: script
+  source: fixture
+  targets:
+    - { deviceId: 'fleet:acceptance-offline', screenId: acceptance-offline, query: 'queue=slow-tv' }
+  via: []
