@@ -1,0 +1,17 @@
+.skyline-glider { min-height: 100%; color: var(--text-primary, #fff); background: #17333f; display: grid; place-items: center; padding: 2rem; overflow: hidden; font-family: var(--font-family, sans-serif); }
+.skyline-glider--lobby { grid-template-columns: minmax(0, 1.4fr) minmax(18rem, .6fr); gap: 3rem; background: linear-gradient(135deg, #143a4a, #795945); }
+.skyline-glider h1 { font-size: clamp(3rem, 8vw, 7rem); margin: .1em 0; line-height: .9; }
+.skyline-glider__eyebrow { text-transform: uppercase; letter-spacing: .18em; color: #f3c777; }
+.skyline-glider__launch { display: grid; gap: 1rem; padding: 2rem; border-radius: 1.5rem; background: rgba(7, 24, 31, .7); box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, .25); }
+.skyline-glider button { border: 0; border-radius: 999px; padding: 1rem 1.5rem; font: inherit; font-weight: 800; color: #17333f; background: #f3c777; }
+.skyline-glider button.secondary { color: #fff; background: rgba(255, 255, 255, .16); }
+.skyline-glider button:disabled { opacity: .45; }
+.skyline-glider--countdown strong { font-size: 14rem; color: #f3c777; text-shadow: 0 .08em 0 #6c4335; }
+.skyline-glider--flight { position: relative; display: block; padding: 0; }
+.skyline-glider__scene { width: 100vw; height: 100vh; display: block; }
+.skyline-glider__craft { transition: transform .1s linear; }
+.skyline-glider__hud { position: absolute; inset: 1.5rem 2rem auto; display: flex; justify-content: space-between; gap: 1rem; padding: 1rem 1.5rem; border-radius: 999px; color: #fff; background: rgba(9, 31, 37, .72); font-size: 1.25rem; font-weight: 800; }
+.skyline-glider__overlay { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; background: rgba(9, 25, 31, .78); backdrop-filter: blur(.35rem); }
+.skyline-glider__overlay h2 { margin: 0; font-size: 4rem; }
+.skyline-glider--result { text-align: center; background: radial-gradient(circle at 50% 20%, #db8d60, #17333f 70%); }
+@media (max-width: 760px) { .skyline-glider--lobby { grid-template-columns: 1fr; } .skyline-glider__hud { inset: 1rem; font-size: .85rem; } }

@@ -38,4 +38,10 @@ describe('fitness module resolution', () => {
   it('returns null for an unknown id', () => {
     expect(getModule('definitely-not-a-module')).toBeNull();
   });
+
+  it('resolves Skyline Glider by route and registry key', () => {
+    expect(getModule('skyline_glider')).toBeTruthy();
+    expect(getModule('skyline-glider')).toBeTruthy();
+    expect(getModuleManifest('fitness:skyline-glider')).toMatchObject({ id: 'skyline_glider' });
+  });
 });
