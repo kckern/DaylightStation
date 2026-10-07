@@ -8,9 +8,12 @@ import { HOUSEHOLD_SEED_IDS } from '../../../../_lib/media-household-fixture.mjs
 export { HOUSEHOLD_SEED_IDS as SEED };
 export const SEED_TESTER = Object.freeze({ clientId: 'acceptance-tester', name: 'Acceptance browser', deviceId: 'browser:acceptance-tester' });
 
-/** Put the seeded household, screen registry, routine history and device-control record back. */
-export async function resetHouseholdAt(request, baseURL) {
-  const response = await request.post(`${baseURL}/api/v1/media/_fixture/reset`);
+/**
+ * Put the seeded household, screen registry, routine history and device-control record back.
+ * `{ empty: true }`: a household that has played nothing yet (no progress, lists, plays or new items).
+ */
+export async function resetHouseholdAt(request, baseURL, { empty = false } = {}) {
+  const response = await request.post(`${baseURL}/api/v1/media/_fixture/reset${empty ? '?seed=empty' : ''}`);
   if (!response.ok()) throw new Error(`fixture reset failed: ${response.status()}`);
 }
 

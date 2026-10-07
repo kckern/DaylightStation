@@ -85,13 +85,14 @@ function copyTree(from, to, nowMs) {
 /**
  * Materialize the seed into `dataDir`: the data tree (progress, lists), the
  * play ledger day files, and the in-memory states (registry, routines, new).
+ * `empty`: a household that has played nothing (no progress, lists, plays or new additions).
  * @returns {{registry: Object, routines: Object[], recentAdditions: Object[]}}
  */
-export function materializeSeed({ seedDir = DEFAULT_SEED_DIR, dataDir, nowMs = Date.now() }) {
-  copyTree(path.join(seedDir, 'tree'), dataDir, nowMs);
+export function materializeSeed({ seedDir = DEFAULT_SEED_DIR, dataDir, nowMs = Date.now(), empty = false }) {
   const ledgerRoot = path.join(dataDir, 'household', 'history', 'media-plays');
   fs.mkdirSync(ledgerRoot, { recursive: true });
-  const rows = readSeedYaml(path.join(seedDir, 'plays.yml'), nowMs) || [];
+  if (!empty) copyTree(path.join(seedDir, 'tree'), dataDir, nowMs);
+  const rows = empty ? [] : (readSeedYaml(path.join(seedDir, 'plays.yml'), nowMs) || []);
   const byDay = new Map();
   for (const row of rows) {
     const day = String(row.localTime).slice(0, 10);
@@ -103,7 +104,7 @@ export function materializeSeed({ seedDir = DEFAULT_SEED_DIR, dataDir, nowMs = D
   return {
     registry: readSeedYaml(path.join(seedDir, 'state', 'registry.yml'), nowMs),
     routines: readSeedYaml(path.join(seedDir, 'state', 'routines.yml'), nowMs),
-    recentAdditions: readSeedYaml(path.join(seedDir, 'state', 'recent-additions.yml'), nowMs),
+    recentAdditions: empty ? [] : readSeedYaml(path.join(seedDir, 'state', 'recent-additions.yml'), nowMs),
   };
 }
 
@@ -200,10 +201,10 @@ export function createMediaHouseholdFixture({ catalog, livenessService = null, s
   app.use(router);
   app.use(errorHandlerMiddleware({ logger: quiet }));
 
-  function seed() {
+  function seed({ empty = false } = {}) {
     for (const entry of fs.readdirSync(dataDir)) fs.rmSync(path.join(dataDir, entry), { recursive: true, force: true });
     resetAt = Date.now();
-    seeded = materializeSeed({ seedDir, dataDir, nowMs: nowMs() });
+    seeded = materializeSeed({ seedDir, dataDir, nowMs: nowMs(), empty });
     suggestions.invalidateAll();
     return seeded;
   }
@@ -221,7 +222,7 @@ export function createMediaHouseholdFixture({ catalog, livenessService = null, s
     /** The seeded registry-only screens, routine snapshot and "New" list. */
     get seeded() { return seeded; },
     bindScreens(screens) { boundScreens = screens; },
-    /** Put the household back to its seeded state (a journey that mutated it). */
+    /** Put the household back to its seeded state (a journey that mutated it); `{ empty: true }` = nothing played yet. */
     reset: seed,
     /** Served by the house fixture's router: suggestions. Here: household routes. */
     handles: (p) => /^\/api\/v1\/media\/household(\/|$)/.test(p),
