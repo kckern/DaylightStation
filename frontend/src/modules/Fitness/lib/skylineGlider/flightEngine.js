@@ -1,7 +1,13 @@
+import {
+  HIGH_ALTITUDE,
+  LOW_ALTITUDE,
+  SKYLINE_CRAFT_GEOMETRY,
+  pointOverlapsCraft,
+  terrainBounds,
+  terrainOverlappingCraft,
+} from './flightGeometry.js';
+
 const STEP = 1 / 60;
-const PLAYER_RADIUS = 0.035;
-const LOW_ALTITUDE = 0.78;
-const HIGH_ALTITUDE = 0.18;
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const moveToward = (value, target, amount) => value < target
@@ -11,11 +17,6 @@ const moveToward = (value, target, amount) => value < target
 function targetForRpm(rpm, calibration) {
   const normalized = clamp((rpm - calibration.lowRpm) / (calibration.highRpm - calibration.lowRpm), 0, 1);
   return LOW_ALTITUDE + (HIGH_ALTITUDE - LOW_ALTITUDE) * normalized;
-}
-
-function activeTerrain(course, time) {
-  return course.segments.find((segment) => segment.safeBand
-    && time >= segment.start_s && time <= (segment.end_s ?? segment.start_s));
 }
 
 function crossingSegments(course, from, to, type) {
@@ -37,8 +38,8 @@ function applyCourseEvents(state, previousTime, course) {
   const collected = new Set(next.collectedIds);
   for (const segment of course.segments.filter((entry) => entry.type === 'collectible-path')) {
     for (const item of segment.collectibles || []) {
-      const crossed = item.at_s > previousTime && item.at_s <= next.courseTime;
-      if (crossed && Math.abs(next.altitude - item.altitude) <= 0.08) collected.add(item.id);
+      const reached = pointOverlapsCraft(item.at_s, next.courseTime);
+      if (reached && Math.abs(next.altitude - item.altitude) <= 0.08) collected.add(item.id);
     }
   }
   next = { ...next, collectedIds: [...collected] };
@@ -50,20 +51,23 @@ function applyCourseEvents(state, previousTime, course) {
 
 function collide(state, course) {
   if (state.collisionProtected || state.invincibleRemaining > 0 || state.phase !== 'playing') return state;
-  const terrain = activeTerrain(course, state.courseTime);
+  const terrain = terrainOverlappingCraft(course, state.courseTime).find((segment) => {
+    const bounds = terrainBounds(segment);
+    return state.altitude - SKYLINE_CRAFT_GEOMETRY.radius < bounds.top
+      || state.altitude + SKYLINE_CRAFT_GEOMETRY.radius > bounds.bottom;
+  });
   if (!terrain) return state;
-  const hit = state.altitude - PLAYER_RADIUS < terrain.safeBand.top
-    || state.altitude + PLAYER_RADIUS > terrain.safeBand.bottom;
-  if (!hit) return state;
   const lives = state.lives - 1;
   if (lives <= 0) {
-    return { ...state, lives: 0, phase: 'crashed', crashRemaining: course.rules.restart_delay_s, collisions: state.collisions + 1 };
+    return { ...state, lives: 0, phase: 'crashed', crashRemaining: course.rules.restart_delay_s, collisions: state.collisions + 1, lastCollisionSegmentId: terrain.id };
   }
-  const centre = (terrain.safeBand.top + terrain.safeBand.bottom) / 2;
+  const bounds = terrainBounds(terrain);
+  const centre = clamp((bounds.top + bounds.bottom) / 2, HIGH_ALTITUDE, LOW_ALTITUDE);
   return {
     ...state,
     lives,
     collisions: state.collisions + 1,
+    lastCollisionSegmentId: terrain.id,
     altitude: moveToward(state.altitude, centre, 0.08),
     invincibleRemaining: course.rules.invincibility_s,
   };
@@ -78,7 +82,7 @@ function restartAtCheckpoint(state, course) {
     lives: course.rules.lives,
     altitude: LOW_ALTITUDE,
     targetAltitude: LOW_ALTITUDE,
-    filteredRpm: 0,
+    filteredRpm: state.calibration.lowRpm,
     verticalRate: 0,
     zeroElapsed: 0,
     invincibleRemaining: 0,
@@ -95,6 +99,20 @@ function singleStep(state, input, dt, course) {
   }
 
   const missing = !input?.connected || input?.transportStalled;
+  const inputTs = Number(input?.ts);
+  if (!state.inputReady) {
+    const freshAfterArm = !missing && Number.isFinite(inputTs) && inputTs > state.armedAtMs;
+    if (!freshAfterArm) {
+      return {
+        ...state,
+        rawRpm: Math.max(0, Number(input?.rpm) || 0),
+        lastInputTs: Number.isFinite(inputTs) ? inputTs : state.lastInputTs,
+        pausedForSensor: true,
+        collisionProtected: true,
+      };
+    }
+    state = { ...state, inputReady: true, pausedForSensor: false, collisionProtected: false, lastInputTs: inputTs };
+  }
   if (missing) {
     const missingFor = state.sensorMissingFor + dt;
     if (missingFor - course.motion.disconnect_grace_s > 1e-9) {
@@ -126,6 +144,7 @@ function singleStep(state, input, dt, course) {
     targetAltitude,
     altitude,
     verticalRate: rate,
+    lastInputTs: Number.isFinite(inputTs) ? inputTs : state.lastInputTs,
     zeroElapsed,
     sensorMissingFor: missing ? state.sensorMissingFor + dt : 0,
     pausedForSensor: false,
@@ -137,7 +156,9 @@ function singleStep(state, input, dt, course) {
   return collide(next, course);
 }
 
-export function createFlightState(course, { calibration, altitude = LOW_ALTITUDE, courseTime = 0 } = {}) {
+export function createFlightState(course, {
+  calibration, altitude = LOW_ALTITUDE, courseTime = 0, armedAtMs = null,
+} = {}) {
   if (!calibration || calibration.highRpm <= calibration.lowRpm) throw new Error('Flight state requires valid calibration');
   return {
     phase: 'playing',
@@ -145,11 +166,12 @@ export function createFlightState(course, { calibration, altitude = LOW_ALTITUDE
     altitude,
     targetAltitude: altitude,
     rawRpm: 0,
-    filteredRpm: 0,
+    filteredRpm: calibration.lowRpm,
     verticalRate: 0,
     calibration: { ...calibration },
     lives: course.rules.lives,
     collisions: 0,
+    lastCollisionSegmentId: null,
     restarts: 0,
     invincibleRemaining: 0,
     crashRemaining: 0,
@@ -157,6 +179,9 @@ export function createFlightState(course, { calibration, altitude = LOW_ALTITUDE
     sensorMissingFor: 0,
     pausedForSensor: false,
     collisionProtected: false,
+    armedAtMs: Number.isFinite(Number(armedAtMs)) ? Number(armedAtMs) : 0,
+    inputReady: armedAtMs == null,
+    lastInputTs: null,
     collectedIds: [],
     checkpoint: { id: 'start', time: 0, collectedIds: [] },
   };

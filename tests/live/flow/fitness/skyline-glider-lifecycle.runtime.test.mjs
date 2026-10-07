@@ -2,36 +2,39 @@ import { test, expect } from '@playwright/test';
 import { FRONTEND_URL } from '#fixtures/runtime/urls.mjs';
 import { getEquipment, setEquipmentRider, setRpm } from '#testlib/FitnessSimHelper.mjs';
 
-const shortCourse = {
-  schema: 'skyline-glider-course/v1', id: 'mountain-pass', version: 1, name: 'Mountain Pass — Test Run', duration_s: 6,
-  description: 'Short simulator course',
-  motion: { filter_s: .2, deadband_rpm: 2, response_s: .4, max_climb_rate: .8, max_descent_rate: .8, coast_s: .2, disconnect_grace_s: .25 },
-  rules: { lives: 3, invincibility_s: .2, restart_delay_s: .25 },
-  segments: [
-    { id: 'open', type: 'open', start_s: 0, end_s: 6 },
-    { id: 'checkpoint', type: 'checkpoint', start_s: 1 },
-    { id: 'finish', type: 'finish', start_s: 6 },
-  ],
-};
-
-test('Skyline Glider cadence, checkpoint resume, completion, and save', async ({ page }) => {
-  test.setTimeout(90_000);
+test('Skyline Glider shipped course scrolls smoothly, responds, resumes, and saves', async ({ page }) => {
+  test.setTimeout(120_000);
   let savedRun = null;
-  await page.route('**/api/v1/fitness/skyline-glider/courses', (route) => route.fulfill({ json: { courses: [shortCourse] } }));
   await page.route('**/api/v1/fitness/skyline-glider/runs', async (route) => {
     savedRun = (await route.request().postDataJSON()).record;
     await route.fulfill({ status: 201, json: { created: true, record: savedRun } });
   });
 
   await page.goto(`${FRONTEND_URL}/fitness`);
+  await expect.poll(async () => (await getEquipment(page)).length, { timeout: 20_000 }).toBeGreaterThan(0);
   const equipment = await getEquipment(page);
-  const bike = equipment.find((item) => item.cadenceDeviceId);
+  const bike = equipment.find((item) => item.equipmentId === 'niceday' && item.cadenceDeviceId)
+    || equipment.find((item) => item.equipmentId === 'cycle_ace' && item.cadenceDeviceId)
+    || equipment.find((item) => item.cadenceDeviceId);
   expect(bike).toBeTruthy();
   await setEquipmentRider(page, bike.equipmentId, bike.eligibleUsers[0]);
+  await setRpm(page, bike.equipmentId, 60);
   await page.goto(`${FRONTEND_URL}/fitness/module/skyline_glider`);
   await expect(page.getByTestId('skyline-glider-lobby')).toBeVisible();
+  await setRpm(page, bike.equipmentId, 60);
+  await expect(page.getByRole('button', { name: 'Start flight' })).toBeEnabled({ timeout: 10_000 });
   await page.getByRole('button', { name: 'Start flight' }).click();
   await expect(page.getByTestId('skyline-glider-flight')).toBeVisible({ timeout: 10_000 });
+
+  const positions = await page.evaluate(async () => {
+    const samples = [];
+    for (let index = 0; index < 32; index += 1) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      samples.push(document.querySelector('[data-testid="course-segment-valley-rise"] rect')?.getAttribute('x'));
+    }
+    return samples.filter(Boolean);
+  });
+  expect(new Set(positions).size).toBeGreaterThanOrEqual(20);
 
   await setRpm(page, bike.equipmentId, 35);
   await page.waitForTimeout(700);
@@ -41,12 +44,25 @@ test('Skyline Glider cadence, checkpoint resume, completion, and save', async ({
   const highTransform = await page.locator('.skyline-glider__craft').getAttribute('transform');
   expect(highTransform).not.toBe(lowTransform);
 
+  await expect.poll(async () => Number(await page.getByTestId('skyline-glider-flight').getAttribute('data-course-time')), { timeout: 30_000 }).toBeGreaterThan(20);
+  await expect(page.locator('.skyline-glider__hud')).toContainText('♥ 3');
+  await setRpm(page, bike.equipmentId, 30);
+  await expect.poll(async () => Number(await page.getByTestId('skyline-glider-flight').getAttribute('data-course-time')), { timeout: 25_000 }).toBeGreaterThan(36);
+  await expect(page.locator('.skyline-glider__hud')).toContainText('♥ 3');
+  await setRpm(page, bike.equipmentId, 65);
+  await expect.poll(async () => Number(await page.getByTestId('skyline-glider-flight').getAttribute('data-course-time')), { timeout: 25_000 }).toBeGreaterThan(54);
+  await expect(page.locator('.skyline-glider__hud')).toContainText('♥ 3');
+  await expect.poll(async () => Number(await page.getByTestId('skyline-glider-flight').getAttribute('data-course-time')), { timeout: 30_000 }).toBeGreaterThan(76);
+
   await page.reload();
   await expect(page.getByRole('button', { name: 'Resume flight' })).toBeVisible({ timeout: 10_000 });
   await page.getByRole('button', { name: 'Resume flight' }).click();
   await setRpm(page, bike.equipmentId, 70);
-  await expect(page.getByTestId('skyline-glider-result')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('skyline-glider-flight')).toBeVisible({ timeout: 10_000 });
+  await expect.poll(async () => Number(await page.getByTestId('skyline-glider-flight').getAttribute('data-course-time'))).toBeGreaterThan(75);
+  await page.getByRole('button', { name: 'End flight' }).click();
+  await expect(page.getByTestId('skyline-glider-result')).toBeVisible({ timeout: 10_000 });
   await expect.poll(() => savedRun).not.toBeNull();
   expect(savedRun.result.schema).toBe('gaming-result/v1');
-  expect(savedRun.run.status).toBe('completed');
+  expect(savedRun.run).toMatchObject({ status: 'abandoned', course_id: 'mountain-pass', course_version: 2, equipment_id: bike.equipmentId });
 });
