@@ -17,7 +17,7 @@ describe('command enums', () => {
   });
   it('lists every transport action', () => {
     expect(TRANSPORT_ACTIONS).toEqual(
-      ['play', 'pause', 'stop', 'seekAbs', 'seekRel', 'skipNext', 'skipPrev']
+      ['play', 'pause', 'stop', 'seekAbs', 'seekRel', 'skipNext', 'skipPrev', 'goLive']
     );
   });
   it('lists every queue op', () => {

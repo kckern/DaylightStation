@@ -15,6 +15,7 @@ const ACTION_MAP = {
   // Structured-envelope media actions — dispatched from useScreenCommands via
   // WebSocket; no keyboard bindings (not human-input-driven).
   'media:seek-abs':      (params) => ({ action: 'media:seek-abs', payload: params ?? {} }),
+  'media:go-live':       (params) => ({ action: 'media:go-live', payload: params ?? {} }),
   'media:seek-rel':      (params) => ({ action: 'media:seek-rel', payload: params ?? {} }),
   'media:queue-op':      (params) => ({ action: 'media:queue-op', payload: params ?? {} }),
   'media:config-set':    (params) => ({ action: 'media:config-set', payload: params ?? {} }),

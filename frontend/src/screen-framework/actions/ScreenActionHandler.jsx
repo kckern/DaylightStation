@@ -357,6 +357,16 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     }
   }, []);
 
+  const handleMediaGoLive = useCallback((payload) => {
+    if (!getPlayerQueueOpRegistry().dispatch({ op: 'go-live', commandId: payload?.commandId })) {
+      getActionBus().emit('command-handler-error', {
+        commandId: payload?.commandId,
+        code: 'PLAYBACK_OWNER_UNAVAILABLE',
+        error: 'No playback owner is available to go live',
+      });
+    }
+  }, []);
+
   const handleMediaSeekAbs = useCallback((payload) => handleMediaSeek('seek-abs', payload), [handleMediaSeek]);
   const handleMediaSeekRel = useCallback((payload) => handleMediaSeek('seek-rel', payload), [handleMediaSeek]);
 
@@ -721,6 +731,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
   useScreenAction('media:adopt-snapshot', handleAdoptSnapshot);
   useScreenAction('media:seek-abs', handleMediaSeekAbs);
   useScreenAction('media:seek-rel', handleMediaSeekRel);
+  useScreenAction('media:go-live', handleMediaGoLive);
   useScreenAction('media:playback', handleMediaPlayback);
   useScreenAction('media:rate', handleMediaRate);
   useScreenAction('display:volume', handleVolume);
