@@ -45,7 +45,6 @@ export function collectFlightTelemetry({
       data: {
         connected: !!input?.connected,
         stalled: !!input?.transportStalled,
-        effectIds: [connected ? 'sensor-restored' : 'sensor-warning'],
       },
     });
   }
@@ -53,7 +52,7 @@ export function collectFlightTelemetry({
     const paused = !!next.pausedForSensor;
     events.push({
       type: paused ? 'sensor.paused' : 'sensor.resumed',
-      data: { effectIds: [paused ? 'reconnect-overlay' : 'reconnect-cleared'] },
+      data: {},
     });
   }
 
@@ -63,7 +62,7 @@ export function collectFlightTelemetry({
   if (isCoasting !== wasCoasting) {
     events.push({
       type: isCoasting ? 'coast.started' : 'coast.ended',
-      data: { effectIds: [isCoasting ? 'descent-cue' : 'lift-restored'] },
+      data: {},
     });
   }
 
@@ -73,8 +72,7 @@ export function collectFlightTelemetry({
       data: {
         count: next.collisions,
         lives: next.lives,
-        segmentId: activeTerrainId(course, next.courseTime),
-        effectIds: ['collision-burst', 'impact-cue'],
+        segmentId: next.lastCollisionSegmentId || activeTerrainId(course, next.courseTime),
       },
     });
   }
@@ -82,7 +80,7 @@ export function collectFlightTelemetry({
   const priorCollectibles = new Set(previous.collectedIds || []);
   for (const collectibleId of next.collectedIds || []) {
     if (!priorCollectibles.has(collectibleId)) {
-      events.push({ type: 'collectible', data: { collectibleId, effectIds: ['bell-pop', 'bell-cue'] } });
+      events.push({ type: 'collectible', data: { collectibleId } });
     }
   }
 
@@ -92,12 +90,11 @@ export function collectFlightTelemetry({
       data: {
         checkpointId: next.checkpoint.id,
         checkpointTime: next.checkpoint.time,
-        effectIds: ['checkpoint-banner', 'checkpoint-cue'],
       },
     });
   }
   if (next.phase === 'crashed' && previous.phase !== 'crashed') {
-    events.push({ type: 'crashed', data: { effectIds: ['crash-ceremony'] } });
+    events.push({ type: 'crashed', data: {} });
   }
   if (next.restarts > previous.restarts) {
     events.push({
@@ -105,12 +102,11 @@ export function collectFlightTelemetry({
       data: {
         restartCount: next.restarts,
         checkpointId: next.checkpoint.id,
-        effectIds: ['restart-ceremony'],
       },
     });
   }
   if (next.phase === 'completed' && previous.phase !== 'completed') {
-    events.push({ type: 'completed', data: { effectIds: ['finish-ceremony', 'finish-cue'] } });
+    events.push({ type: 'completed', data: {} });
   }
 
   const courseSecond = Math.floor(next.courseTime);
