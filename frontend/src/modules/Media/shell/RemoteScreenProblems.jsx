@@ -2,14 +2,13 @@
 // RELY.5a/AC4 — the same applies to failures on other screens I started or am
 // steering. A screen that gives up on an item (and skips to the next, or just
 // stops) says so in its session snapshot (`meta.problem`); when that screen is
-// one this device sent to or steers, the failure becomes an outcome record in
+// one this device sent to or steers (not one merely aimed at), the failure becomes an outcome record in
 // the one tray — naming the item, the screen and what plays instead — with its
 // own Retry, wherever the person is in the app. Renders nothing.
 import { useContext, useEffect, useRef } from 'react';
 import { FleetContext } from '../fleet/FleetProvider.jsx';
 import { DispatchContext } from '../cast/DispatchProvider.jsx';
 import { PeekContext } from '../peek/PeekContext.js';
-import { CastTargetContext } from '../cast/CastTargetProvider.jsx';
 import { deviceName } from '../fleet/deviceDisplay.js';
 import mediaLog from '../logging/mediaLog.js';
 
@@ -38,13 +37,13 @@ export function RemoteScreenProblems() {
   const fleet = useContext(FleetContext);
   const outcomes = useContext(DispatchContext);
   const peek = useContext(PeekContext);
-  const aim = useContext(CastTargetContext);
   const seenRef = useRef(new Set());
   const store = fleet?.store ?? null;
   const recordLocal = outcomes?.recordLocal;
 
-  // Screens this device started (any far outcome record), steers, or aims at.
-  const watched = new Set([...(aim?.targetIds ?? []), peek?.lastSteeredId].filter(Boolean));
+  // Screens this device started (any far outcome record) or steers. Merely
+  // aiming the cast target at a screen is not a relationship with it.
+  const watched = new Set([peek?.lastSteeredId].filter(Boolean));
   for (const record of outcomes?.outcomes?.values?.() ?? []) {
     if (record?.targetId && record.targetId !== 'local') watched.add(record.targetId);
   }

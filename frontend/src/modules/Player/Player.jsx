@@ -36,6 +36,7 @@ import { usePlayerConfig } from './hooks/usePlayerConfig.js';
 import { REVIEW_ACTIVE } from '../../lib/Player/reviewParams.js';
 import { DaylightAPI } from '../../lib/api.mjs';
 import { seekToLiveEdge } from '../../lib/media/liveEdge.js';
+import { problemClearedByPlaying } from './lib/lastProblem.js';
 import { getActionBus } from '../../screen-framework/input/ActionBus.js';
 import {
   preparePlaybackOwnerAdoption,
@@ -1411,6 +1412,8 @@ const Player = forwardRef(function Player(props, ref) {
 
   const resolvedResilienceOnState = resolvedResilience.onStateChange;
 
+  // See handleResilienceExhausted: what this Player last gave up on.
+  const lastProblemRef = useRef(null);
   const compositeAwareOnState = useCallback((state) => {
     // A pending backoff remount exists because playback was not progressing.
     // The hook saying "playing" means that reason is gone; a timer that fires
@@ -1431,6 +1434,9 @@ const Player = forwardRef(function Player(props, ref) {
         guid: currentMediaGuid
       }, { level: 'info' });
       clearRemountTimer();
+    }
+    if (state?.status === RESILIENCE_STATUS.playing && problemClearedByPlaying(lastProblemRef.current)) {
+      lastProblemRef.current = null;
     }
     if (typeof resolvedResilienceOnState === 'function') {
       resolvedResilienceOnState(state);
@@ -1543,7 +1549,6 @@ const Player = forwardRef(function Player(props, ref) {
   // RELY.5a/AC4: what this Player last gave up on (and what plays instead),
   // published in the screen's session snapshot so whoever sent or steered this
   // screen can be told. A record, not a live state: it carries its own time.
-  const lastProblemRef = useRef(null);
   const handleResilienceExhausted = useCallback(({ reason, attempts, waitKey: exhaustedWaitKey }) => {
     {
       const failed = effectiveMeta ?? {};

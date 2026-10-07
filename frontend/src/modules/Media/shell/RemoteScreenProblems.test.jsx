@@ -35,10 +35,10 @@ describe('RemoteScreenProblems', () => {
   let listeners; let entries; const recordLocal = vi.fn();
   const store = { getEntry: (id) => entries[id] ?? null, subscribeAll: (fn) => { listeners.add(fn); return () => listeners.delete(fn); } };
   const fire = () => act(() => { for (const fn of [...listeners]) fn(); });
-  const mount = (aimIds = ['tv']) => render(
+  const mount = ({ aimIds = [], steered = 'tv', sentTo = [] } = {}) => render(
     <FleetContext.Provider value={{ store, devices: [{ id: 'tv', name: 'Living Room TV' }] }}>
-      <DispatchContext.Provider value={{ recordLocal, outcomes: new Map() }}>
-        <PeekContext.Provider value={{ lastSteeredId: null }}>
+      <DispatchContext.Provider value={{ recordLocal, outcomes: new Map(sentTo.map((id) => [`o-${id}`, { targetId: id }])) }}>
+        <PeekContext.Provider value={{ lastSteeredId: steered }}>
           <CastTargetContext.Provider value={{ targetIds: aimIds }}>
             <RemoteScreenProblems />
           </CastTargetContext.Provider>
@@ -69,8 +69,22 @@ describe('RemoteScreenProblems', () => {
     expect(recordLocal).toHaveBeenCalledWith(expect.objectContaining({ phase: 'failed', replacement: null }));
   });
 
+  it('says nothing about a screen that is merely aimed at (not sent to or steered)', () => {
+    mount({ aimIds: ['tv'], steered: null });
+    entries.tv = { snapshot: { meta: { problem: problem() } } };
+    fire();
+    expect(recordLocal).not.toHaveBeenCalled();
+  });
+
+  it('reports a screen this device sent something to', () => {
+    mount({ steered: null, sentTo: ['tv'] });
+    entries.tv = { snapshot: { meta: { problem: problem() } } };
+    fire();
+    expect(recordLocal).toHaveBeenCalledTimes(1);
+  });
+
   it('says nothing about a screen this device neither sent to nor steers', () => {
-    mount([]);
+    mount({ steered: null });
     entries.tv = { snapshot: { meta: { problem: problem() } } };
     fire();
     expect(recordLocal).not.toHaveBeenCalled();

@@ -55,8 +55,11 @@ export class ContentQueryService extends IContentQueryPort {
    * @returns {string|null} the unknown source name, or null when it is not that case
    */
   #unknownDirectIdSource(text) {
-    const match = typeof text === 'string' ? text.match(/^([\w-]+):\s?(\S+)$/) : null;
-    if (!match) return null;
+    // A typed source id has no space around the colon and a source-like name
+    // (hyphen or underscore: `plex-main`). Titles — "Shrek: 2", "Bluey: 3",
+    // "12:30" — must reach the adapters.
+    const match = typeof text === 'string' ? text.match(/^([\w-]+):(\S+)$/) : null;
+    if (!match || !/[-_]/.test(match[1])) return null;
     const prefix = match[1].toLowerCase();
     const term = match[2];
     if (!(/^\d+$/.test(term) || term.includes('/'))) return null;
