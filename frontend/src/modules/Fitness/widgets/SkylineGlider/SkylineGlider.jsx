@@ -190,19 +190,35 @@ export default function SkylineGlider() {
   }, []);
 
   useEffect(() => {
-    const logSuspension = (reason) => {
+    const suspensionData = (reason) => {
       const current = flightRef.current;
       const run = runRef.current;
       const context = suspensionContextRef.current;
-      if (suspensionLoggedRef.current || phaseRef.current !== 'flight' || !current || !run || finalizingRef.current) return;
-      suspensionLoggedRef.current = true;
-      log.info('skyline_glider.flight.suspended', {
+      if (suspensionLoggedRef.current || phaseRef.current !== 'flight' || !current || !run || finalizingRef.current) return null;
+      return {
         runId: run.runId, riderId: context?.riderId, equipmentId: context?.equipmentId,
         courseId: context?.course?.id, courseVersion: context?.course?.version,
         courseTime: current.courseTime, inputMode: current.inputMode || 'unknown', reason,
-      });
+      };
     };
-    const onPageHide = () => logSuspension('pagehide');
+    const logSuspension = (reason) => {
+      const data = suspensionData(reason);
+      if (!data) return;
+      suspensionLoggedRef.current = true;
+      log.info('skyline_glider.flight.suspended', data);
+    };
+    const onPageHide = () => {
+      const data = suspensionData('pagehide');
+      if (!data) return;
+      try {
+        const body = new Blob([JSON.stringify(data)], { type: 'application/json' });
+        if (navigator.sendBeacon?.('/api/v1/fitness/skyline-glider/suspensions', body)) {
+          suspensionLoggedRef.current = true;
+          return;
+        }
+      } catch (_) { /* fall through to the buffered logger */ }
+      logSuspension('pagehide');
+    };
     window.addEventListener('pagehide', onPageHide);
     return () => {
       window.removeEventListener('pagehide', onPageHide);

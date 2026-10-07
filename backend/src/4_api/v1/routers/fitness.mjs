@@ -244,6 +244,29 @@ export function createFitnessRouter(config) {
     return record ? res.json({ record }) : res.status(404).json({ error: 'run not found' });
   }));
 
+  router.post('/skyline-glider/suspensions', (req, res) => {
+    const source = req.body || {};
+    if (typeof source.runId !== 'string' || !source.runId
+      || !Number.isFinite(source.courseTime)
+      || typeof source.inputMode !== 'string' || !source.inputMode
+      || source.reason !== 'pagehide') {
+      return res.status(400).json({ error: 'invalid Skyline Glider suspension' });
+    }
+    const data = {
+      runId: source.runId,
+      riderId: source.riderId ?? null,
+      equipmentId: source.equipmentId ?? null,
+      courseId: source.courseId ?? null,
+      courseVersion: source.courseVersion ?? null,
+      courseTime: source.courseTime,
+      inputMode: source.inputMode,
+      reason: source.reason,
+      delivery: 'http-beacon',
+    };
+    logger.info?.('skyline_glider.flight.suspended', data);
+    return res.status(202).json({ accepted: true });
+  });
+
   router.post('/garage-human-activity', asyncHandler(async (req, res) => {
     const { deviceId, emulationOpen, hrSessionActive } = req.body ?? {};
     if (deviceId !== 'garage-tv' || typeof emulationOpen !== 'boolean' || typeof hrSessionActive !== 'boolean') {

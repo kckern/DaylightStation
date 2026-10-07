@@ -155,6 +155,23 @@ describe('SkylineGlider', () => {
     vi.useRealTimers();
   });
 
+  it('delivers pagehide suspension through a lifecycle-safe beacon', async () => {
+    vi.useFakeTimers();
+    const sendBeacon = vi.fn(() => true);
+    Object.defineProperty(navigator, 'sendBeacon', { configurable: true, value: sendBeacon });
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
+    act(() => vi.advanceTimersByTime(3100));
+
+    window.dispatchEvent(new Event('pagehide'));
+
+    expect(sendBeacon).toHaveBeenCalledWith('/api/v1/fitness/skyline-glider/suspensions', expect.any(Blob));
+    const payload = JSON.parse(await sendBeacon.mock.calls[0][1].text());
+    expect(payload).toMatchObject({ runId: expect.any(String), courseTime: expect.any(Number), inputMode: expect.any(String), reason: 'pagehide' });
+    vi.useRealTimers();
+  });
+
   it('logs aggregate render health once per ten-second window without frame logs', async () => {
     vi.useFakeTimers();
     render(<SkylineGlider />);
