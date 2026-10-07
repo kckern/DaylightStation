@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, writeFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -8,9 +7,9 @@ import {
   SUPPORTING_ACCEPTED_CRITERIA,
   validateReport,
 } from './media-stable-core-gate.mjs';
+import { groupedJourneys, playwrightExecute, runGroups } from './media-gate-runner.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const MEDIA_JOURNEY_DIRECTORY = 'tests/live/flow/media';
 
 export const P0_EXTENSION_ENTRIES = Object.freeze([
   {
@@ -449,71 +448,27 @@ function requiredDirectory(env) {
   return evidenceDir;
 }
 
-function groupedJourneys(entries) {
-  const journeys = new Map();
-  for (const entry of entries) {
-    const key = `${entry.file}\u0000${entry.grep}`;
-    const journey = journeys.get(key) || { file: entry.file, grep: entry.grep, stories: [] };
-    journey.stories.push(entry);
-    journeys.set(key, journey);
-  }
-  return [...journeys.values()];
-}
-
-function logName(index, journey) {
-  return `${String(index + 1).padStart(2, '0')}-${journey.file.replace(/[^a-zA-Z0-9._-]/g, '_')}-${journey.grep.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-}
-
-export function runP0Gate({ env = process.env } = {}) {
+export function runP0Gate({ env = process.env, strict = false, execute, loadavg, cpus } = {}) {
   const entries = [...STABLE_ENTRIES, ...P0_EXTENSION_ENTRIES];
   const manifest = validateP0Manifest(entries);
   const evidenceDir = requiredDirectory(env);
-  const reports = [];
-
-  for (const [index, journey] of groupedJourneys(entries).entries()) {
-    const target = path.join(MEDIA_JOURNEY_DIRECTORY, journey.file);
-    const args = ['playwright', 'test', target, '--grep', journey.grep, '--workers=1', '--reporter=json'];
-    const result = spawnSync('npx', args, {
-      cwd: ROOT,
-      env,
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
-    });
-    const stem = logName(index, journey);
-    const jsonPath = path.join(evidenceDir, `${stem}.json`);
-    const textPath = path.join(evidenceDir, `${stem}.log`);
-    writeFileSync(jsonPath, result.stdout || '');
-    writeFileSync(textPath, [
-      `$ npx ${args.join(' ')}`,
-      `exit=${result.status ?? 'null'} signal=${result.signal ?? 'none'}`,
-      result.stderr || '',
-    ].join('\n'));
-    if (result.error) throw new Error(`Playwright could not start for ${journey.file}: ${result.error.message}`);
-    if (result.status !== 0) throw new Error(`Playwright failed for ${journey.file} (${journey.grep}), exit ${result.status}`);
-
-    let report;
-    try {
-      report = JSON.parse(result.stdout);
-    } catch (error) {
-      throw new Error(`invalid Playwright JSON for ${journey.file} (${journey.grep}): ${error.message}`);
-    }
-    reports.push({ journey, paths: { jsonPath, textPath }, ...validateReport(report) });
-  }
-
-  return { manifest, reports };
+  const outcome = runGroups({
+    groups: groupedJourneys(entries),
+    execute: execute || ((journey) => playwrightExecute(journey, { cwd: ROOT, env })),
+    validate: validateReport,
+    evidenceDir,
+    strict,
+    ...(loadavg ? { loadavg } : {}),
+    ...(cpus ? { cpus } : {}),
+  });
+  return { manifest, ...outcome };
 }
 
 function main() {
-  const { manifest, reports } = runP0Gate();
-  const output = [`media-p0: ${manifest.stories} stories / ${manifest.criteria} criteria`];
-  for (const { journey, tests, paths } of reports) {
-    const supported = journey.stories.map(({ story, criteria }) => `${story} (${criteria.join(', ')})`).join(', ');
-    output.push(
-      `PASS ${journey.file} --grep ${journey.grep}: ${tests} tests; ${supported}`,
-      `  json=${paths.jsonPath} text=${paths.textPath}`,
-    );
-  }
-  process.stdout.write(`${output.join('\n')}\n`);
+  const strict = process.argv.includes('--strict');
+  const { manifest, lines, exitCode } = runP0Gate({ strict });
+  process.stdout.write(`${[`media-p0: ${manifest.stories} stories / ${manifest.criteria} criteria`, ...lines].join('\n')}\n`);
+  process.exitCode = exitCode;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
