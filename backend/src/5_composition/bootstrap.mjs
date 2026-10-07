@@ -96,9 +96,13 @@ import { FitnessProgressClassifier } from '#domains/fitness/index.mjs';
 import { iconVocabulary } from '#domains/nutrition/services/icons.mjs';
 import { YamlSessionDatastore } from '#adapters/persistence/yaml/YamlSessionDatastore.mjs';
 import { YamlCycleRaceDatastore } from '#adapters/persistence/yaml/YamlCycleRaceDatastore.mjs';
+import { YamlSkylineGliderRunDatastore } from '#adapters/persistence/yaml/YamlSkylineGliderRunDatastore.mjs';
 import { CycleRaceService } from '#apps/fitness/services/CycleRaceService.mjs';
+import { SkylineGliderRunService } from '#apps/fitness/services/SkylineGliderRunService.mjs';
 import { ActivityRegistry } from '#apps/fitness/activities/ActivityRegistry.mjs';
 import { CycleGameProvider } from '#apps/fitness/activities/CycleGameProvider.mjs';
+import { SkylineGliderProvider } from '#apps/fitness/activities/SkylineGliderProvider.mjs';
+import { SkylineGliderCourseCatalog } from '#adapters/fitness/SkylineGliderCourseCatalog.mjs';
 import { SessionGroupingService } from '#apps/fitness/services/SessionGroupingService.mjs';
 import { AmbientLedAdapter } from '#adapters/fitness/AmbientLedAdapter.mjs';
 import { DanceLightingController } from '#adapters/fitness/DanceLightingController.mjs';
@@ -910,9 +914,13 @@ export function createFitnessServices(config) {
 
   const cycleRaceStore = new YamlCycleRaceDatastore({ configService });
   const cycleRaceService = new CycleRaceService({ datastore: cycleRaceStore, logger });
+  const skylineGliderRunStore = new YamlSkylineGliderRunDatastore({ configService });
+  const skylineGliderRunService = new SkylineGliderRunService({ datastore: skylineGliderRunStore, logger });
+  const skylineGliderCourseCatalog = new SkylineGliderCourseCatalog({ configService, logger });
 
   const activityRegistry = new ActivityRegistry()
-    .register(new CycleGameProvider({ cycleRaceService }));
+    .register(new CycleGameProvider({ cycleRaceService }))
+    .register(new SkylineGliderProvider({ runService: skylineGliderRunService }));
   const sessionGroupingService = new SessionGroupingService({ activityRegistry, sessionService, logger });
 
   // Home automation gateway (provided by composition root)
@@ -972,6 +980,9 @@ export function createFitnessServices(config) {
     sessionService,
     cycleRaceStore,
     cycleRaceService,
+    skylineGliderRunStore,
+    skylineGliderRunService,
+    skylineGliderCourseCatalog,
     sessionGroupingService,
     ambientLedController,
     danceLightingController,
