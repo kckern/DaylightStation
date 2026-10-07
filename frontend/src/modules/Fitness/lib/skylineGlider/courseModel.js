@@ -6,6 +6,7 @@ const TYPES = new Set([
 
 const finite = (value) => Number.isFinite(Number(value));
 const inBand = (value) => finite(value) && Number(value) >= 0 && Number(value) <= 1;
+const inPlayableAltitude = (value) => finite(value) && Number(value) >= 0.18 && Number(value) <= 0.78;
 
 function safeBandFor(segment) {
   if (segment.type === 'corridor') {
@@ -65,6 +66,10 @@ export function validateCourse(input) {
       if (!finite(segment.end_s) || segment.end_s < segment.start_s) errors.push(`segment ${segment.id} has invalid end_s`);
     }
     if (segment.type === 'finish') finishCount += 1;
+    if (segment.type === 'checkpoint' && segment.restart_altitude != null) {
+      if (!inPlayableAltitude(segment.restart_altitude)) errors.push(`segment ${segment.id} has invalid restart_altitude`);
+      else segment.restart_altitude = Number(segment.restart_altitude);
+    }
     if (segment.type === 'corridor' && (!inBand(segment.ceiling) || !inBand(segment.floor) || Number(segment.ceiling) >= Number(segment.floor))) {
       errors.push(`segment ${segment.id} has invalid corridor bounds`);
     }
@@ -87,6 +92,11 @@ export function validateCourse(input) {
     max_descent_rate: Number(input.motion?.max_descent_rate ?? 0.22),
   };
   if (motion.max_climb_rate <= 0 || motion.max_descent_rate <= 0) errors.push('motion rates must be positive');
+  for (const field of ['slow_signal_grace_s', 'inferred_slowdown_s']) {
+    if (input.motion?.[field] != null && (!finite(input.motion[field]) || Number(input.motion[field]) <= 0)) {
+      errors.push(`motion ${field} must be positive`);
+    }
+  }
   if (errors.length === 0) validateReachability(segments, motion, errors);
 
   return {
@@ -97,8 +107,9 @@ export function validateCourse(input) {
 }
 
 export function resolveCalibration(equipment = {}) {
-  const lowRpm = Number(equipment?.rpm?.min ?? 30);
-  const highRpm = Number(equipment?.rpm?.max ?? 100);
+  const rpm = equipment?.skyline_glider?.rpm || equipment?.rpm || {};
+  const lowRpm = Number(rpm.min ?? 30);
+  const highRpm = Number(rpm.max ?? 100);
   if (!Number.isFinite(lowRpm) || !Number.isFinite(highRpm) || lowRpm < 0 || highRpm <= lowRpm) {
     throw new Error('Invalid Skyline Glider cadence calibration');
   }
