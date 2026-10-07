@@ -16,4 +16,8 @@ describe('Skyline Glider terminal result', () => {
     expect(record.run.reward_rings).toBe(0);
     expect(record.result.status).toBe('abandoned');
   });
+  it('adds optional session, equipment, and calibration identity without changing the v1 schema', () => {
+    const record = buildSkylineGliderRun({ runId: 'abc', course: { id: 'mountain-pass', version: 2 }, riderId: 'test-rider', fitnessSessionId: 'fs-1', equipmentId: 'niceday', calibration: { lowRpm: 30, highRpm: 100 }, startedAt: '2026-10-07T18:00:00Z', endedAt: '2026-10-07T18:05:00Z', state: { courseTime: 300, collisions: 0, restarts: 0, collectedIds: [] }, status: 'completed' });
+    expect(record).toMatchObject({ schema: 'skyline-glider-run/v1', run: { fitness_session_id: 'fs-1', equipment_id: 'niceday', calibration: { low_rpm: 30, high_rpm: 100 } } });
+  });
 });
