@@ -174,6 +174,9 @@ test('[PLAY.5a/AC3] laptop: pressing and holding Play next offers "At the very f
   await search.fill('arrival');
   await page.getByTestId(`result-more-${ARRIVAL}`).click();
   await page.getByTestId(`result-action-playNext-${ARRIVAL}`).click();
+  // The confirmation states the position and the screen.
+  await expect(page.getByTestId('dispatch-tray')).toContainText('Arrival plays next here');
+  await expect(page.getByTestId('dispatch-tray')).toContainText('2nd in queue');
 
   // Press and hold on a second item: "At the very front" is offered, and Play next itself is NOT run.
   await search.fill('disclosure day');
