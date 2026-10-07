@@ -2836,7 +2836,7 @@ export class GovernanceEngine {
   /**
    * Strengthen a governed video's policy whenever no configured parent/admin
    * is in the live roster. The first real child to reach Hot opens playback;
-   * after that, one fixed all-Hot challenge is scheduled every three minutes.
+   * after that, configured all-child zone challenges cycle on a fixed interval.
    * Guests and configured exemptions are intentionally not eligible to open
    * the startup gate or satisfy the recurring challenge.
    */
@@ -2927,22 +2927,29 @@ export class GovernanceEngine {
 
     const intervalSeconds = Math.max(1, Math.round(Number(settings.challenge_interval_seconds) || 180));
     const timeAllowedSeconds = Math.max(1, Math.round(Number(settings.challenge_time_allowed_seconds) || 90));
+    const configuredChallengeZones = Array.isArray(settings.challenge_zones)
+      ? settings.challenge_zones
+      : ['warm', startupZone];
+    const challengeZones = [...new Set(configuredChallengeZones
+      .map((zone) => String(zone || '').toLowerCase())
+      .filter((zone) => Number.isFinite(this._getZoneRank(zone))))];
+    const effectiveChallengeZones = challengeZones.length > 0 ? challengeZones : [startupZone];
     return {
       ...policy,
       challenges: [{
-        id: '__unattended_all_hot',
+        id: '__unattended_zone_cycle',
         intervalRangeSeconds: [intervalSeconds, intervalSeconds],
         minParticipants: 1,
         selectionType: 'cyclic',
-        selections: [{
-          id: '__unattended_all_hot_selection',
+        selections: effectiveChallengeZones.map((zone, index) => ({
+          id: `__unattended_${zone}_${index}`,
           type: 'zone',
-          zone: startupZone,
+          zone,
           rule: 'all',
           timeAllowedSeconds,
           weight: 1,
-          label: `All ${startupZone}`,
-        }],
+          label: `All ${zone}`,
+        })),
       }],
     };
   }
