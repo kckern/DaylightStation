@@ -27,6 +27,30 @@ describe('SkylineGlider', () => {
     vi.useRealTimers();
   });
 
+  it('prefers NiceDay over CycleAce regardless of equipment order', async () => {
+    mockCtx.equipment = [
+      { id: 'cycle_ace', name: 'CycleAce', cadence: 10, rpm: { min: 30, max: 100 } },
+      { id: 'niceday', name: 'NiceDay', cadence: 20, rpm: { min: 30, max: 100 } },
+    ];
+    mockCtx.fitnessSessionInstance.getEquipmentRider = (id) => id === 'niceday' ? 'dad' : 'other';
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    expect(screen.getByTestId('skyline-glider-lobby')).toHaveTextContent('NiceDay');
+    expect(screen.getByTestId('skyline-glider-lobby')).toHaveTextContent('Dad');
+  });
+
+  it('uses CycleAce when NiceDay is unavailable', async () => {
+    mockCtx.equipment = [
+      { id: 'other-bike', name: 'Other Bike', cadence: 10, rpm: { min: 30, max: 100 } },
+      { id: 'cycle_ace', name: 'CycleAce', cadence: 20, rpm: { min: 30, max: 100 } },
+    ];
+    mockCtx.fitnessSessionInstance.getEquipmentRider = (id) => id === 'cycle_ace' ? 'dad' : 'other';
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    expect(screen.getByTestId('skyline-glider-lobby')).toHaveTextContent('CycleAce');
+    expect(screen.getByTestId('skyline-glider-lobby')).toHaveTextContent('Dad');
+  });
+
   it('offers resume and start over for a saved checkpoint', async () => {
     localStorage.setItem('fitness:skyline-glider:dad:mountain-pass', JSON.stringify({ courseTime: 75, altitude: .5, collectedIds: ['a'], checkpoint: { id: 'cp', time: 75, collectedIds: ['a'] } }));
     render(<SkylineGlider />);
