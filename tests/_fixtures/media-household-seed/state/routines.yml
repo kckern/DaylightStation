@@ -1,0 +1,9 @@
+# Routine catalog snapshot (what a HA import would have stored). One routine
+# pointed at the acceptance receiver (the Home Assistant caller helper fires it).
+- id: 'automation:acceptance_button'
+  name: 'Acceptance button: Morning'
+  kind: automation
+  source: fixture
+  targets:
+    - { deviceId: 'fleet:acceptance-media', screenId: acceptance-media, query: 'queue=morning-program' }
+  via: []

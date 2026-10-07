@@ -1,0 +1,23 @@
+# Screen registry (IScreenRegistryDatastore state). Configured screens come
+# from the fixture itself; these are the registry-only ones.
+screens:
+  'browser:kidtablet':
+    name: "Kid's tablet"
+    room: null
+    firstSeen: '${iso:20,0}'
+    lastSeen: '${iso:0,-30}'
+    playedAt: '${iso:0,-90}'
+    renames: []
+    retiredAt: null
+    source: seen
+  # Silent for 45 days: lands in "Not seen lately".
+  'browser:oldtablet':
+    name: Old tablet
+    room: null
+    firstSeen: '${iso:120,0}'
+    lastSeen: '${iso:45,0}'
+    playedAt: '${iso:46,0}'
+    renames: []
+    retiredAt: null
+    source: seen
+aliases: {}

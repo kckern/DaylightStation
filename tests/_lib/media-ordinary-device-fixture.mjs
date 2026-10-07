@@ -15,6 +15,7 @@ import { DeviceStartStatusService } from '../../backend/src/3_applications/devic
 import { createDeviceRouter } from '../../backend/src/4_api/v1/routers/device.mjs';
 import { deviceResolver } from '../../backend/src/4_api/middleware/deviceResolver.mjs';
 import { createMediaHouseFixture } from './media-house-fixture.mjs';
+import { createMediaHouseholdFixture } from './media-household-fixture.mjs';
 
 export const ORDINARY_DEVICE_ID = 'acceptance-media';
 // A second virtual receiver (batch B: several-screen aim, line up, move
@@ -22,12 +23,27 @@ export const ORDINARY_DEVICE_ID = 'acceptance-media';
 // own screen path in its own browser context; no household screen is used.
 export const SECOND_DEVICE_ID = 'acceptance-media-b';
 export const SECOND_SCREEN_PATH = 'acceptance-second';
+// Phase-1 fixture screens (media proof gaps). Each sits in its OWN room so the
+// several-screen drift warning for the first two is not disturbed.
+//   speaker  — a speaker-kind receiver (type `speaker`: no picture, no screen-off)
+//   offline  — registered but never connects: liveness is uncertain, a send fails honestly
+//   power    — has virtual `device_control`: off/on/toggle are answered by the
+//              fixture and recorded, never sent to hardware
+export const SPEAKER_DEVICE_ID = 'acceptance-speaker';
+export const OFFLINE_DEVICE_ID = 'acceptance-offline';
+export const POWER_DEVICE_ID = 'acceptance-power';
+export const SPEAKER_SCREEN_PATH = 'acceptance-speaker';
+export const OFFLINE_SCREEN_PATH = 'acceptance-offline';
+export const POWER_SCREEN_PATH = 'acceptance-power';
 const VIRTUAL_DEVICES = [
   { id: ORDINARY_DEVICE_ID, name: 'Acceptance receiver', screen: 'living-room' },
   { id: SECOND_DEVICE_ID, name: 'Acceptance second', screen: SECOND_SCREEN_PATH },
+  { id: SPEAKER_DEVICE_ID, name: 'Acceptance speaker', screen: SPEAKER_SCREEN_PATH, type: 'speaker', room: 'Acceptance kitchen' },
+  { id: OFFLINE_DEVICE_ID, name: 'Acceptance guest room TV', screen: OFFLINE_SCREEN_PATH, room: 'Acceptance guest room', offline: true },
+  { id: POWER_DEVICE_ID, name: 'Acceptance den TV', screen: POWER_SCREEN_PATH, room: 'Acceptance den', deviceControl: true },
 ];
-// Both virtual screens share one room so the several-screen drift warning
-// (PLACE.4a/AC6) has something true to say.
+// Both original virtual screens share one room so the several-screen drift
+// warning (PLACE.4a/AC6) has something true to say.
 export const VIRTUAL_ROOM = 'Acceptance room';
 const isVirtual = (id) => VIRTUAL_DEVICES.some((device) => device.id === id);
 const VIRTUAL_TRANSPORT_ACTIONS = new Set(['pause', 'play', 'seekAbs', 'seekRel', 'skipNext', 'skipPrev', 'stop']);
@@ -67,7 +83,14 @@ function virtualReceiver(eventBus, logger, deviceId = ORDINARY_DEVICE_ID, screen
   };
 }
 
-export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet } = {}) {
+/**
+ * @param {Object} options
+ * @param {string} options.upstream
+ * @param {Object} [options.catalog] - a (real or stub) content catalog gateway. With it the
+ *   household routes (`/api/v1/media/household/*`, `/suggestions`) run the REAL household
+ *   services over a seeded throwaway data dir; without it they are not mounted.
+ */
+export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet, catalog = null } = {}) {
   if (!upstream) throw new Error('createMediaOrdinaryDeviceFixture requires upstream');
   const eventBus = new WebSocketEventBus({ logger });
   registerClientIngress({ eventBus, logger });
@@ -82,6 +105,21 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet } = 
   const startStatus = new DeviceStartStatusService({ progressGateway: presenceGateway, logger });
   startStatus.start();
   eventBus.setStartStatusService(startStatus);
+  // Seeded household (real services over a temp data dir), when a catalog is given.
+  const household = catalog ? createMediaHouseholdFixture({ catalog, livenessService: deviceLiveness, logger }) : null;
+  // House contracts (screens, routines, started by) for the house view.
+  const house = createMediaHouseFixture({
+    deviceId: ORDINARY_DEVICE_ID, name: 'Acceptance receiver', room: 'Virtual browser', deviceLiveness, logger,
+    household,
+    registrySeed: household?.seeded.registry ?? null,
+    routineSnapshot: household?.seeded.routines ?? null,
+    // The second original receiver stays out of the registry (as before this phase);
+    // the three Phase-1 screens are registered with their own rooms.
+    extraScreens: VIRTUAL_DEVICES.filter(({ id }) => ![ORDINARY_DEVICE_ID, SECOND_DEVICE_ID].includes(id)).map(({ id, name, type, room, deviceControl }) => ({
+      id: `fleet:${id}`, screenId: id, name, room: room ?? 'Virtual browser', type: type ?? 'websocket-screen', wakeable: Boolean(deviceControl),
+    })),
+  });
+  house.warm();
   const receivers = new Map(VIRTUAL_DEVICES.map(({ id, screen }) => [id, virtualReceiver(eventBus, logger, id, screen)]));
   const deviceService = { get: (id) => receivers.get(id) ?? null };
   // Wired as in production (bootstrap): the adopt load (§4.7) needs it.
@@ -90,7 +128,7 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet } = 
     livenessService: deviceLiveness,
     logger,
   });
-  const wakeAndLoad = new WakeAndLoadService({
+  const wakeAndLoadService = new WakeAndLoadService({
     deviceService,
     sessionControlService: sessionControl,
     readinessPolicy: { isReady: async () => ({ ready: true }) },
@@ -106,6 +144,10 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet } = 
   const configuration = {
     device: (id) => isVirtual(id) ? { id, content_control: { type: 'websocket' }, fleet: true } : null,
   };
+  // As in production (mediaHouse composition): the REAL load recorder sits in
+  // front of the wake-and-load, so a Home Assistant caller is classified,
+  // matched to the routine catalog, deduped and written to the routine history.
+  const wakeAndLoad = house.wrapWakeAndLoad(wakeAndLoadService);
   const dispatchService = new DeviceContentDispatchService({
     wakeAndLoad,
     configuration,
@@ -113,9 +155,12 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet } = 
     logger,
   });
   const fleetService = {
-    configuration: () => ({ devices: Object.fromEntries(VIRTUAL_DEVICES.map(({ id, name, screen }) => [id, {
-      name, location: 'Virtual browser', icon: 'tv', fleet: true,
+    configuration: () => ({ devices: Object.fromEntries(VIRTUAL_DEVICES.map(({ id, name, screen, type, deviceControl }) => [id, {
+      name, location: 'Virtual browser', icon: type === 'speaker' ? 'speaker' : 'tv', fleet: true,
+      ...(type ? { type } : {}),
       content_control: { type: 'websocket' }, screen_path: `/screen/${screen}`,
+      // Virtual power: the fixture answers /on /off /toggle itself (never hardware).
+      ...(deviceControl ? { device_control: { virtual: true } } : {}),
     }])) }),
     list: () => VIRTUAL_DEVICES.map(({ id, name }) => ({ id, name, fleet: true })),
   };
@@ -125,15 +170,26 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet } = 
     fleetService, dispatchService, presenceService: unavailable, sessionService,
     screenService: unavailable, recoveryService: unavailable, startStatusService: startStatus,
   });
-  // House contracts (screens, routines, started by) for the house view.
-  const house = createMediaHouseFixture({
-    deviceId: ORDINARY_DEVICE_ID, name: 'Acceptance receiver', room: 'Virtual browser', deviceLiveness, logger,
-  });
   const app = express();
   app.use(express.json());
   // As in production: the X-Daylight-Device header names the asking device,
   // which the device router turns into the command origin.
   app.use(deviceResolver());
+  // Virtual device_control (the screen-off / power routes): recorded, never
+  // sent anywhere. The calls are readable over HTTP because the journeys run
+  // in a different process from this server.
+  const deviceControlCalls = [];
+  for (const { id } of VIRTUAL_DEVICES.filter((device) => device.deviceControl)) {
+    for (const action of ['on', 'off', 'toggle']) {
+      app.get(`/${id}/${action}`, (req, res) => {
+        const call = { deviceId: id, action, at: new Date().toISOString(), query: { ...req.query } };
+        deviceControlCalls.push(call);
+        logger.info?.('acceptance.device-control.virtual', call);
+        return res.json({ ok: true, deviceId: id, action, virtual: true });
+      });
+    }
+    app.get(`/${id}/device-control-calls`, (_req, res) => res.json({ calls: deviceControlCalls.filter((c) => c.deviceId === id) }));
+  }
   for (const { id } of VIRTUAL_DEVICES) {
     app.get(`/${id}/receiver-ready`, (_req, res) => {
       const subscribers = eventBus.getTopicSubscriberCount(`homeline:${id}`);
@@ -163,16 +219,37 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet } = 
       && new RegExp(`^/${id}/session/item-action/[^/]+/claim$`).test(path)) return next();
     return res.status(403).json({ ok: false, error: 'ordinary acceptance blocks physical device routes' });
   });
-  app.use(router);
+  // As in production: the device router runs inside the request context, so the
+  // load recorder can tell a Home Assistant User-Agent from a person.
+  app.use(house.withRequestContext(router));
 
+  const reset = () => { household?.reset(); house.reset(); house.warm(); deviceControlCalls.length = 0; };
   return {
     deviceId: ORDINARY_DEVICE_ID,
     eventBus,
     app,
+    house,
+    household,
+    deviceLiveness,
+    deviceControlCalls,
+    /** Put household, registry, routine history and recorded device-control calls back to the seed. */
+    reset,
     async attach(httpServer) { await eventBus.start(httpServer); },
-    async stop() { startStatus.stop(); commandLiveness.stop(); deviceLiveness.stop(); await eventBus.stop(); },
+    async stop() { startStatus.stop(); commandLiveness.stop(); deviceLiveness.stop(); await eventBus.stop(); household?.cleanup(); },
     async middleware(req, res) {
       const path = new URL(req.url, upstream).pathname;
+      // Journeys share one server: this puts the seeded household back between them.
+      if (path === '/api/v1/media/_fixture/reset' && req.method === 'POST') {
+        reset();
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ ok: true }));
+        return true;
+      }
+      if (household?.handles(path)) {
+        await household.serve(req, res);
+        return true;
+      }
       if (house.handles(path)) {
         await house.serve(req, res);
         return true;
@@ -183,17 +260,6 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet } = 
           res.once('finish', resolve);
           app(req, res, () => { res.statusCode = 404; res.end(); });
         });
-        return true;
-      }
-      // The screen registry for the virtual screens only (§2.5): their room,
-      // for the several-screen drift warning. Household screens are not listed.
-      if (path === '/api/v1/media/screens' && req.method === 'GET') {
-        res.statusCode = 200;
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ screens: VIRTUAL_DEVICES.map(({ id, name }) => ({
-          id: `fleet:${id}`, kind: 'screen', screenId: id, name, room: VIRTUAL_ROOM, configured: true,
-          online: true, aliases: [],
-        })), notSeenLately: [], retired: [] }));
         return true;
       }
       const virtualScreen = VIRTUAL_DEVICES.find(({ screen }) => path === `/api/v1/screens/${screen}`);
