@@ -48,6 +48,12 @@ describe('scripted receiver states', () => {
     expect(photos.queue.items.every((i) => i.format === 'image')).toBe(true);
   });
 
+  it('carries a picture when asked', () => {
+    const snapshot = buildScriptedSnapshot(POWER_DEVICE_ID, { title: 'Arrival', duration: 7000, thumbnail: '/api/v1/proxy/plex/library/metadata/55854/thumb/1' });
+    expect(snapshot.currentItem.thumbnail).toBe('/api/v1/proxy/plex/library/metadata/55854/thumb/1');
+    expect(validateSessionSnapshot(snapshot).valid).toBe(true);
+  });
+
   it('publishes the scripted state as the screen itself would, with its origin', async () => {
     const response = await script({ deviceId: SPEAKER_DEVICE_ID, state: 'paused', title: 'Faith', duration: 200, position: 50, origin: { kind: 'device', id: 'acceptance-media-b' } });
     expect(response.status).toBe(200);
@@ -87,5 +93,18 @@ describe('scripted receiver states', () => {
 
   it('only scripts fixture screens', () => {
     expect(() => fixture.scriptReceiver('not-a-screen', {})).toThrow(/not a virtual fixture screen/);
+  });
+
+  it('keeps reporting like a real screen: a heartbeat resets the liveness timer, so the screen stays in its state; a silent one does not', async () => {
+    const seen = [];
+    fixture.eventBus.subscribe?.('device-state:acceptance-power', (m) => seen.push(m.reason));
+    fixture.scriptReceiver(POWER_DEVICE_ID, { state: 'playing', title: 'Arrival', heartbeatMs: 30 });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(seen.filter((r) => r === 'heartbeat').length).toBeGreaterThanOrEqual(2);
+    fixture.scriptReceiver(POWER_DEVICE_ID, { state: 'playing', title: 'Arrival', heartbeatMs: 0 });
+    const before = seen.length;
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(seen.length).toBe(before);
+    fixture.reset();
   });
 });

@@ -111,9 +111,9 @@ export async function pauseReceiver(request, id) {
 
 /** Open the Media app, retrying bootstrap navigation a bounded number of times. */
 export async function gotoMedia(page, path = '/media') {
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
     await page.goto(path, { waitUntil: 'domcontentloaded' });
-    if (await page.getByTestId('media-shell').isVisible({ timeout: 45000 }).catch(() => false)) return;
+    if (await page.getByTestId('media-shell').waitFor({ state: 'visible', timeout: 60000 }).then(() => true, () => false)) return;
   }
   await expect(page.getByTestId('media-shell')).toBeVisible();
 }

@@ -144,4 +144,15 @@ describe('fixture reset', () => {
     fixture.reset();
     expect((await (await fetch(`${baseUrl}/api/v1/device/acceptance-media/device-control-calls`)).json()).calls).toEqual([]);
   });
+
+  it('a send to the power screen runs the wake (Turning on) step and records it; a send to another screen has no wake step', async () => {
+    fixture.reset();
+    const ha = createHomeAssistantCaller({ baseUrl });
+    await ha.load(POWER_DEVICE_ID, { play: 'plex:1' }).catch(() => null);
+    const { calls } = await (await fetch(`${baseUrl}/api/v1/device/${POWER_DEVICE_ID}/device-control-calls`)).json();
+    expect(calls.map((c) => c.action)).toContain('on');
+    await ha.load(SPEAKER_DEVICE_ID, { play: 'plex:1' }).catch(() => null);
+    expect((await (await fetch(`${baseUrl}/api/v1/device/${SPEAKER_DEVICE_ID}/device-control-calls`)).json()).calls).toEqual([]);
+    fixture.reset();
+  });
 });
