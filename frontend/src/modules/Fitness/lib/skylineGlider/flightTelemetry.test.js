@@ -64,8 +64,8 @@ describe('flight telemetry', () => {
     });
 
     expect(result.events).toEqual([
-      { type: 'input.disconnected', data: { connected: false, stalled: true, effectIds: ['sensor-warning'] } },
-      { type: 'coast.started', data: { effectIds: ['descent-cue'] } },
+      { type: 'input.disconnected', data: { connected: false, stalled: true } },
+      { type: 'coast.started', data: {} },
     ]);
   });
 
@@ -83,11 +83,11 @@ describe('flight telemetry', () => {
       lastSampleSecond: 0, course,
     });
 
-    expect(paused.events).toContainEqual({ type: 'sensor.paused', data: { effectIds: ['reconnect-overlay'] } });
-    expect(resumed.events).toContainEqual({ type: 'sensor.resumed', data: { effectIds: ['reconnect-cleared'] } });
+    expect(paused.events).toContainEqual({ type: 'sensor.paused', data: {} });
+    expect(resumed.events).toContainEqual({ type: 'sensor.resumed', data: {} });
   });
 
-  it('reports collision, collectible, checkpoint, and crash transitions with effect ids', () => {
+  it('reports collision, collectible, checkpoint, and crash transitions without claiming presentation effects', () => {
     const result = collectFlightTelemetry({
       previous: state({ courseTime: 9.9 }),
       next: state({
@@ -99,10 +99,10 @@ describe('flight telemetry', () => {
       lastSampleSecond: 9, course,
     });
 
-    expect(result.events).toContainEqual({ type: 'collision', data: { count: 1, lives: 0, segmentId: 'hill', effectIds: ['collision-burst', 'impact-cue'] } });
-    expect(result.events).toContainEqual({ type: 'collectible', data: { collectibleId: 'bell-1', effectIds: ['bell-pop', 'bell-cue'] } });
-    expect(result.events).toContainEqual({ type: 'checkpoint', data: { checkpointId: 'ridge', checkpointTime: 10, effectIds: ['checkpoint-banner', 'checkpoint-cue'] } });
-    expect(result.events).toContainEqual({ type: 'crashed', data: { effectIds: ['crash-ceremony'] } });
+    expect(result.events).toContainEqual({ type: 'collision', data: { count: 1, lives: 0, segmentId: 'hill' } });
+    expect(result.events).toContainEqual({ type: 'collectible', data: { collectibleId: 'bell-1' } });
+    expect(result.events).toContainEqual({ type: 'checkpoint', data: { checkpointId: 'ridge', checkpointTime: 10 } });
+    expect(result.events).toContainEqual({ type: 'crashed', data: {} });
   });
 
   it('reports restart and completion transitions', () => {
@@ -117,7 +117,7 @@ describe('flight telemetry', () => {
       previousInput: { connected: true }, lastSampleSecond: 299, course,
     });
 
-    expect(restarted.events).toContainEqual({ type: 'restarted', data: { restartCount: 1, checkpointId: 'start', effectIds: ['restart-ceremony'] } });
-    expect(completed.events).toContainEqual({ type: 'completed', data: { effectIds: ['finish-ceremony', 'finish-cue'] } });
+    expect(restarted.events).toContainEqual({ type: 'restarted', data: { restartCount: 1, checkpointId: 'start' } });
+    expect(completed.events).toContainEqual({ type: 'completed', data: {} });
   });
 });
