@@ -17,7 +17,7 @@ import { isPhone, goArea, openSearch, closeSearch, resultRow, searchSurface } fr
 test.use({ trace: 'retain-on-failure', serviceWorkers: 'block' });
 test.setTimeout(420000);
 
-test.beforeAll(async ({ browser }) => { await warmMedia(browser); });
+test.beforeAll(async ({ browser }) => { test.setTimeout(300000); await warmMedia(browser); });
 test.beforeEach(async ({ request, baseURL }) => { await resetHouseholdAt(request, baseURL); });
 
 const AIM = 'dispatch-aim'; // marker only; the aim is read from whichever aim label the surface has
@@ -122,6 +122,8 @@ test('[PLACE.3a/AC1][PLACE.3a/AC2][PLACE.3a/AC3] Play on… is offered on items 
   await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ITEM.ARRIVAL)}`);
   await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 60000 });
   await expect(page.getByTestId('detail-view').getByRole('button', { name: 'Add on…' })).toBeVisible();
+  // (details name its "Play on…" the Cast button)
+  await expect(page.getByTestId('detail-view').getByRole('button', { name: 'Cast', exact: true })).toBeVisible();
   await gotoMedia(page);
   await expect(page.getByTestId('home-row-recent')).toBeVisible({ timeout: 60000 });
   const tile = page.getByTestId(`home-tile-recent-${ITEM.ARRIVAL}`);

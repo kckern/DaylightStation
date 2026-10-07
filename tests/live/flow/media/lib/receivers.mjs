@@ -79,7 +79,18 @@ export async function reopenReceiver(receiver, request, id) {
  * it to play. `asDevice` names who started it (another device = "someone
  * else's playback"); `queue` is added after it the ordinary way.
  */
-export async function startOn(request, id, contentId, { queue = [], asDevice = null, timeout = 120000 } = {}) {
+export async function clearQueue(request, id) {
+  const done = await call(request, 'POST', `/api/v1/device/${id}/session/queue/item-action`, { kind: 'clear', operationId: randomUUID(), tappedAt: Date.now() });
+  expect(done.status).toBeLessThan(500);
+  await expect.poll(async () => (await receiverState(request, id))?.queue?.items?.length ?? 0, { timeout: 30000 }).toBe(0);
+}
+
+export async function startOn(request, id, contentId, { queue = [], asDevice = null, timeout = 120000, fresh = true } = {}) {
+  // A screen keeps what was queued after the previous item, so a journey that counts its queue starts from an empty one.
+  if (fresh && ((await receiverState(request, id))?.queue?.items?.length ?? 0) > 0) {
+    await stopReceiver(request, id);
+    await clearQueue(request, id);
+  }
   const loaded = await call(request, 'GET', `/api/v1/device/${id}/load?play=${encodeURIComponent(contentId)}&dispatchId=${randomUUID()}`, null,
     asDevice ? { 'X-Daylight-Device': asDevice } : undefined);
   expect(loaded.status).toBe(200);

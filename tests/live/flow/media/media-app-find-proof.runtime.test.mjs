@@ -14,7 +14,7 @@ import { startSseServer, streamItem } from './lib/sseServer.mjs';
 test.use({ trace: 'retain-on-failure', serviceWorkers: 'block' });
 test.setTimeout(420000);
 
-test.beforeAll(async ({ browser }) => { await warmMedia(browser); });
+test.beforeAll(async ({ browser }) => { test.setTimeout(300000); await warmMedia(browser); });
 test.beforeEach(async ({ request, baseURL }) => { await resetHouseholdAt(request, baseURL); });
 
 const ARRIVAL = ITEM.ARRIVAL;
@@ -174,7 +174,7 @@ for (const [label, vp] of Object.entries(VIEWPORTS)) {
     await receiver.context.close();
   });
 
-  test(`[FIND.1a/AC5] ${label}: after Play on… to another screen, search stays open with my words and narrowing`, async ({ browser, request }) => {
+  test(`[FIND.1a/AC5] ${label}: after Play on… to another screen, search stays open with my words and narrowing${isPhone(vp) ? '' : ' (known gap)'}`, async ({ browser, request }) => {
     // Known defect (reported, not fixed here): the tablet/laptop dock search drops its words when the one-shot
     // Play on… screen picker closes. The phone's SearchMode keeps them. test.fail() turns this red when it is fixed.
     test.fail(!isPhone(vp), 'DEFECT: dock search clears its query after a one-shot Play on… (tablet/laptop)');
@@ -405,7 +405,7 @@ test('[FIND.8a/AC3][FIND.8a/AC4] details offer the same play and line-up actions
   await receiver.context.close();
 });
 
-test('[FIND.8a/AC2] details show picture, title, description, length, kind and how far anyone has got', async ({ browser }) => {
+test('[FIND.8a/AC2] details show picture, title, description, length, kind and how far anyone has got (known gap)', async ({ browser }) => {
   // Known gap (reported, not fixed here): Details render the picture, title, progress and verbs, but not
   // the item's length or kind, and the description only when the info API supplies one. test.fail() turns
   // this red when the product shows them.
