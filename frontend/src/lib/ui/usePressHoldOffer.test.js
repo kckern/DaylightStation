@@ -35,10 +35,10 @@ describe('usePressHoldOffer (PLAY.5a/AC3)', () => {
     expect(result.current.offered).toBe(false);
   });
 
-  it('a held Enter (keyboard) offers it too; key repeat does not restart the hold', () => {
+  it('a held Space (keyboard) offers it too; key repeat does not restart the hold', () => {
     const { result } = renderHook(() => usePressHoldOffer());
-    act(() => result.current.bind.onKeyDown({ key: 'Enter', repeat: false }));
-    act(() => result.current.bind.onKeyDown({ key: 'Enter', repeat: true }));
+    act(() => result.current.bind.onKeyDown({ key: ' ', repeat: false }));
+    act(() => result.current.bind.onKeyDown({ key: ' ', repeat: true }));
     act(() => { vi.advanceTimersByTime(HOLD_MS + 10); });
     expect(result.current.offered).toBe(true);
   });
@@ -53,5 +53,40 @@ describe('usePressHoldOffer (PLAY.5a/AC3)', () => {
     act(() => { vi.advanceTimersByTime(HOLD_MS + 10); });
     act(() => result.current.dismiss());
     expect(result.current.offered).toBe(false);
+  });
+
+  it('a hold released OFF the element does not swallow the next ordinary tap', () => {
+    const run = vi.fn();
+    const { result } = renderHook(() => usePressHoldOffer());
+    act(() => result.current.bind.onPointerDown());
+    act(() => { vi.advanceTimersByTime(HOLD_MS + 10); });
+    expect(result.current.offered).toBe(true);
+    act(() => result.current.bind.onPointerLeave()); // finger slid off; no click follows
+    act(() => { vi.advanceTimersByTime(2000); });
+    act(() => result.current.guardClick(run)({}));
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('the release click right after a hold is still swallowed', () => {
+    const run = vi.fn();
+    const { result } = renderHook(() => usePressHoldOffer());
+    act(() => result.current.bind.onPointerDown());
+    act(() => { vi.advanceTimersByTime(HOLD_MS + 10); });
+    act(() => result.current.bind.onPointerUp());
+    act(() => { vi.advanceTimersByTime(100); });
+    act(() => result.current.guardClick(run)({}));
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('Enter never arms the hold (it clicks on keydown, so Play next already ran)', () => {
+    const run = vi.fn();
+    const { result } = renderHook(() => usePressHoldOffer());
+    act(() => result.current.bind.onKeyDown({ key: 'Enter', repeat: false }));
+    act(() => result.current.guardClick(run)({})); // the native click on keydown
+    act(() => { vi.advanceTimersByTime(HOLD_MS + 10); });
+    expect(result.current.offered).toBe(false);
+    act(() => result.current.bind.onKeyUp({ key: 'Enter' }));
+    act(() => result.current.guardClick(run)({}));
+    expect(run).toHaveBeenCalledTimes(2);
   });
 });
