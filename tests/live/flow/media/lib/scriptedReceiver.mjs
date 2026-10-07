@@ -19,3 +19,9 @@ export async function scriptReceiver(request, spec) {
   expect(response.status(), `scripting ${spec.deviceId}: ${await response.text()}`).toBe(200);
   return response.json();
 }
+
+/** Make the den TV's wake step fail (a send to it fails outright, with Retry / Another screen…). Cleared by reset. */
+export async function failWake(request, deviceId = SCRIPTED.POWER, fail = true) {
+  const response = await request.post('/api/v1/media/_fixture/wake', { data: { deviceId, fail } });
+  expect(response.status(), `wake failure for ${deviceId}: ${await response.text()}`).toBe(200);
+}

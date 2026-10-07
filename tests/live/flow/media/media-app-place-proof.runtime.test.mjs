@@ -14,7 +14,7 @@ import { isPhone, goArea, openSearch, closeSearch, resultRow, searchSurface } fr
 // the stale-screen rule. Receivers are real mounted screen pages; the screens
 // no page is mounted for (den TV, speaker) are put into states with the
 // scripted-receiver fixture (they publish exactly what a screen would).
-test.use({ trace: 'retain-on-failure', serviceWorkers: 'block' });
+test.use({ trace: 'retain-on-failure', serviceWorkers: 'block', actionTimeout: 30000 });
 test.setTimeout(420000);
 
 test.beforeAll(async ({ browser }) => { test.setTimeout(300000); await warmMedia(browser); });

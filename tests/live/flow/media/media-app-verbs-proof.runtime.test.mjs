@@ -12,7 +12,7 @@ import { goArea, openSearch, resultRow } from './lib/search.mjs';
 // mounted receiver (acceptance-media), read back through its own published
 // state; the browser under test plays nothing itself. Collection = the album
 // "Baby Joy Joy" (six tracks, natural order Track 1..6).
-test.use({ trace: 'retain-on-failure', serviceWorkers: 'block' });
+test.use({ trace: 'retain-on-failure', serviceWorkers: 'block', actionTimeout: 30000 });
 test.setTimeout(420000);
 
 const ALBUM = 'plex:592904';

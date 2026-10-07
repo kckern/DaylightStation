@@ -17,6 +17,7 @@ import { deviceResolver } from '../../backend/src/4_api/middleware/deviceResolve
 import { createMediaHouseFixture } from './media-house-fixture.mjs';
 import { createMediaHouseholdFixture } from './media-household-fixture.mjs';
 import { createIdleSessionSnapshot, validateSessionSnapshot } from '../../shared/contracts/media/shapes.mjs';
+import { createDefaultSessionControls } from '../../shared/contracts/media/sessionControls.mjs';
 
 export const ORDINARY_DEVICE_ID = 'acceptance-media';
 // A second virtual receiver (batch B: several-screen aim, line up, move
@@ -79,6 +80,7 @@ const VIRTUAL_SESSION_ROUTES = [
  * @param {number|null} [spec.duration] seconds; null = unknown (no seeking)
  * @param {number} [spec.position]
  * @param {string} [spec.thumbnail] picture url of the current item
+ * @param {Array<{kind?:string,label:string,count?:number,origin?:object,putBack?:boolean}>} [spec.notes] screen notes, grouped by count (what a speaker records on its house row)
  * @param {number} [spec.heartbeatMs=10000] how often it keeps reporting; 0 = silent after the first report
  * @param {'video'|'audio'|'photo'|'slideshow'|'live'} [spec.kind='video']
  * @param {{kind:'device',id:string}|{kind:'routine',name:string}} [spec.origin]
@@ -113,6 +115,18 @@ export function buildScriptedSnapshot(deviceId, spec = {}) {
       upNextCount: 0,
     };
   }
+  // Screen notes ("Paused by …", grouped by count) a screen that cannot show them records on its house row.
+  if (Array.isArray(spec.notes) && spec.notes.length) {
+    snapshot.controls = {
+      ...createDefaultSessionControls(),
+      notes: spec.notes.map((note, index) => ({
+        id: note.id ?? `scripted-note-${index}`, kind: note.kind ?? 'paused', label: note.label ?? 'Changed',
+        count: note.count ?? 1, at: new Date().toISOString(),
+        ...(note.origin ? { origin: note.origin } : {}),
+        putBack: note.putBack === false ? null : { availableUntil: new Date(Date.now() + 10 * 60_000).toISOString() },
+      })),
+    };
+  }
   snapshot.meta = {
     ownerId: deviceId,
     updatedAt: new Date().toISOString(),
@@ -134,7 +148,7 @@ const scheduler = {
 // This is deliberately not a browser-driving substitute for a real device:
 // it can only prepare an already-mounted receiver. A missing WS receiver
 // fails closed rather than loading a physical device or inventing success.
-function virtualReceiver(eventBus, logger, deviceId = ORDINARY_DEVICE_ID, screen = 'living-room', onVolume = () => {}, onPower = null) {
+function virtualReceiver(eventBus, logger, deviceId = ORDINARY_DEVICE_ID, screen = 'living-room', onVolume = () => {}, onPower = null, wakeFails = () => false) {
   const content = new WebSocketContentAdapter({
     deviceId,
     topic: `homeline:${deviceId}`,
@@ -154,6 +168,8 @@ function virtualReceiver(eventBus, logger, deviceId = ORDINARY_DEVICE_ID, screen
       if (!onPower) return { ok: true, skipped: 'no_device_control' };
       onPower(deviceId);
       await new Promise((resolve) => setTimeout(resolve, 1500));
+      // `wake: 'fail'` (see the fixture's wake route): the TV does not come on, so the send fails outright.
+      if (wakeFails(deviceId)) return { ok: false, error: 'tv_did_not_turn_on', elapsedMs: 1500 };
       return { ok: true, verified: true, elapsedMs: 1500 };
     },
     prepareForContent: async (options) => ({ ...(await content.prepareForContent(options)), coldRestart: false, cameraSkipped: true }),
@@ -213,9 +229,10 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet, cat
   });
   house.warm();
   const deviceControlCalls = [];
+  const wakeFailures = new Set();
   const recordVolume = (deviceId, level) => deviceControlCalls.push({ deviceId, action: 'volume', level: Number(level), at: new Date().toISOString() });
   const recordWake = (deviceId) => deviceControlCalls.push({ deviceId, action: 'on', via: 'wake', at: new Date().toISOString() });
-  const receivers = new Map(VIRTUAL_DEVICES.map(({ id, screen, deviceControl }) => [id, virtualReceiver(eventBus, logger, id, screen, recordVolume, deviceControl ? recordWake : null)]));
+  const receivers = new Map(VIRTUAL_DEVICES.map(({ id, screen, deviceControl }) => [id, virtualReceiver(eventBus, logger, id, screen, recordVolume, deviceControl ? recordWake : null, (deviceId) => wakeFailures.has(deviceId))]));
   const deviceService = { get: (id) => receivers.get(id) ?? null };
   // Wired as in production (bootstrap): the adopt load (§4.7) needs it.
   const sessionControl = new SessionControlService({
@@ -354,7 +371,7 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet, cat
     return snapshot;
   }
   const reset = (options) => {
-    household?.reset(options); house.reset(); house.warm(); deviceControlCalls.length = 0;
+    household?.reset(options); house.reset(); house.warm(); deviceControlCalls.length = 0; wakeFailures.clear();
     // A scripted screen goes quiet again: idle snapshot, so no journey inherits a busy screen.
     for (const deviceId of scripted) {
       stopBeat(deviceId);
@@ -405,6 +422,20 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet, cat
           res.statusCode = 400;
           res.end(JSON.stringify({ ok: false, error: error.message }));
         }
+        return true;
+      }
+      // `POST /api/v1/media/_fixture/wake` {deviceId, fail}: the (virtual device_control) screen's wake step fails, so a
+      // send to it fails outright (a failed attempt with Retry), instead of timing out as "may not have started".
+      if (path === '/api/v1/media/_fixture/wake' && req.method === 'POST') {
+        const chunks = [];
+        for await (const chunk of req) chunks.push(chunk);
+        res.setHeader('Content-Type', 'application/json');
+        try {
+          const { deviceId, fail = true } = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+          if (!VIRTUAL_DEVICES.some((d) => d.id === deviceId && d.deviceControl)) throw new Error(`${deviceId} has no virtual device control`);
+          if (fail) wakeFailures.add(deviceId); else wakeFailures.delete(deviceId);
+          res.statusCode = 200; res.end(JSON.stringify({ ok: true, deviceId, fail }));
+        } catch (error) { res.statusCode = 400; res.end(JSON.stringify({ ok: false, error: error.message })); }
         return true;
       }
       if (household?.handles(path)) {
