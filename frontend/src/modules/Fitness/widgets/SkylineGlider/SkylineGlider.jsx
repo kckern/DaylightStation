@@ -9,19 +9,12 @@ import { altitudeToTrackPercent } from '@/modules/Fitness/lib/skylineGlider/flig
 import { createSkylineAudio } from '@/modules/Fitness/lib/skylineGlider/skylineAudio.js';
 import { clearFlightCheckpoint, readFlightCheckpoint, writeFlightCheckpoint } from '@/modules/Fitness/lib/skylineGlider/checkpointRepository.js';
 import { buildSkylineGliderRun } from '@/modules/Fitness/lib/skylineGlider/runResult.js';
+import { listUsableSkylineBikes, selectSkylineBike } from '@/modules/Fitness/lib/skylineGlider/bikeSelection.js';
 import './SkylineGlider.scss';
 
 function formatTime(seconds) {
   const value = Math.max(0, Math.ceil(seconds));
   return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, '0')}`;
-}
-
-function selectBike(equipment = []) {
-  const cadenceEquipment = equipment.filter((item) => item?.cadence != null);
-  return cadenceEquipment.find((item) => item.id === 'niceday')
-    || cadenceEquipment.find((item) => item.id === 'cycle_ace')
-    || cadenceEquipment[0]
-    || null;
 }
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -137,6 +130,7 @@ export default function SkylineGlider() {
   const [flight, setFlight] = useState(null);
   const [saveState, setSaveState] = useState({ status: 'idle', record: null });
   const [muted, setMuted] = useState(false);
+  const [preferredEquipmentId, setPreferredEquipmentId] = useState(null);
   const [effects, setEffects] = useState({ collisionKey: 0, pops: [], banner: null });
   const flightRef = useRef(null);
   const runRef = useRef(null);
@@ -144,14 +138,36 @@ export default function SkylineGlider() {
   const lastSampleSecondRef = useRef(-1);
   const previousInputRef = useRef(null);
   const effectTimersRef = useRef(new Set());
+  const checkpointNoticeRef = useRef(null);
   const audioRef = useRef(null);
+  const lockedSelectionRef = useRef(null);
   if (!audioRef.current) audioRef.current = createSkylineAudio();
   const fitnessSessionInstance = ctx?.fitnessSessionInstance;
   const setGovernanceSuspended = ctx?.setGovernanceSuspended;
-  const equipment = selectBike(ctx?.equipment);
-  const riderId = equipment ? fitnessSessionInstance?.getEquipmentRider?.(equipment.id) : null;
+  const usableBikes = listUsableSkylineBikes(ctx?.equipment, fitnessSessionInstance);
+  const selectedBike = selectSkylineBike(ctx?.equipment, fitnessSessionInstance, preferredEquipmentId);
+  const activeBike = lockedSelectionRef.current || selectedBike;
+  const equipment = activeBike?.equipment || null;
+  const riderId = activeBike?.riderId || null;
   const course = courses[0] || null;
-  const saved = course && riderId ? readFlightCheckpoint(riderId, course) : null;
+  const checkpointIdentity = useMemo(() => course && equipment && riderId ? {
+    fitnessSessionId: fitnessSessionInstance?.sessionId || null,
+    riderId,
+    equipmentId: equipment.id,
+    calibration: resolveCalibration(equipment),
+  } : null, [course, equipment, fitnessSessionInstance?.sessionId, riderId]);
+  const saved = course && checkpointIdentity ? readFlightCheckpoint(riderId, course, checkpointIdentity) : { status: 'missing' };
+
+  useEffect(() => {
+    if (!['incompatible', 'invalid'].includes(saved.status)) return;
+    const signature = `${riderId}:${course?.id}:${saved.status}:${saved.reason}`;
+    if (checkpointNoticeRef.current === signature) return;
+    checkpointNoticeRef.current = signature;
+    log.warn('skyline_glider.checkpoint.discarded', {
+      riderId, equipmentId: equipment?.id, courseId: course?.id,
+      courseVersion: course?.version, status: saved.status, reason: saved.reason,
+    });
+  }, [course?.id, course?.version, equipment?.id, log, riderId, saved.reason, saved.status]);
 
   useEffect(() => {
     setGovernanceSuspended?.(true);
@@ -192,10 +208,17 @@ export default function SkylineGlider() {
     if (!runRef.current || finalizingRef.current) return;
     finalizingRef.current = true;
     const record = retryRecord || buildSkylineGliderRun({
-      ...runRef.current, course, riderId, state: terminalState, status,
+      ...runRef.current, course, riderId, equipmentId: equipment?.id,
+      fitnessSessionId: fitnessSessionInstance?.sessionId || null,
+      calibration: terminalState.calibration, state: terminalState, status,
       endedAt: new Date().toISOString(),
     });
     setSaveState({ status: 'saving', record });
+    setPhase('result');
+    writeFlightCheckpoint(riderId, course, {
+      identity: { ...runRef.current, ...checkpointIdentity }, state: terminalState,
+      lifecycle: 'pending_terminal', terminalRecord: record,
+    });
     try {
       const response = await fetch('/api/v1/fitness/skyline-glider/runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ record }) });
       if (!response.ok) throw new Error(`save failed (${response.status})`);
@@ -205,8 +228,8 @@ export default function SkylineGlider() {
           userId: riderId, rings: record.run.reward_rings, zoneId: 'skyline-glider', color: '#e0a85b',
           source: 'skyline-glider', metadata: { courseId: course.id, collectibles: record.collectibles.length },
         });
-        clearFlightCheckpoint(riderId, course);
       }
+      clearFlightCheckpoint(riderId, course);
       setSaveState({ status: 'saved', record });
       setPhase('result');
       log.info('skyline_glider.flight.saved', {
@@ -222,7 +245,7 @@ export default function SkylineGlider() {
         courseId: course.id, courseVersion: course.version, error: saveError.message,
       });
     }
-  }, [course, equipment?.id, fitnessSessionInstance, log, riderId]);
+  }, [checkpointIdentity, course, equipment?.id, fitnessSessionInstance, log, riderId]);
 
   useEffect(() => {
     if (phase !== 'flight' || !flightRef.current) return undefined;
@@ -296,24 +319,31 @@ export default function SkylineGlider() {
       }
       lastSampleSecondRef.current = telemetry.nextSampleSecond;
       previousInputRef.current = { ...cadence };
-      if (next.checkpoint.id !== previousCheckpointId || next.courseTime % 2 < .12) writeFlightCheckpoint(riderId, course, next);
+      if (next.checkpoint.id !== previousCheckpointId || next.courseTime % 2 < .12) writeFlightCheckpoint(riderId, course, {
+        identity: { ...runRef.current, ...checkpointIdentity }, state: next,
+      });
       if (next.phase === 'completed') finalize('completed', next);
       frameId = requestAnimationFrame(frame);
     };
     audioRef.current.startWind();
     frameId = requestAnimationFrame(frame);
     return () => { cancelAnimationFrame(frameId); audioRef.current.stop(); };
-  }, [phase, course, equipment?.id, riderId, finalize, fitnessSessionInstance, log, muted]);
+  }, [phase, checkpointIdentity, course, equipment?.id, riderId, finalize, fitnessSessionInstance, log, muted]);
 
   const begin = (resume = false) => {
     if (!equipment || !riderId || !course) return;
     const armedAtMs = Date.now();
     const initial = createFlightState(course, { calibration: resolveCalibration(equipment), armedAtMs });
-    const next = resume && saved ? { ...initial, ...saved, phase: 'playing', pausedForSensor: false, collisionProtected: false } : initial;
+    const canResume = resume && saved.status === 'compatible';
+    const next = canResume ? { ...initial, ...saved.state, phase: 'playing', pausedForSensor: false, collisionProtected: false } : initial;
     if (!resume) clearFlightCheckpoint(riderId, course);
     flightRef.current = next;
-    const run = { runId: globalThis.crypto?.randomUUID?.() || `flight-${Date.now()}`, startedAt: new Date().toISOString() };
+    const run = canResume ? { runId: saved.identity.runId, startedAt: saved.identity.startedAt } : {
+      runId: globalThis.crypto?.randomUUID?.() || `flight-${Date.now()}`,
+      startedAt: new Date().toISOString(),
+    };
     runRef.current = run;
+    lockedSelectionRef.current = selectedBike;
     finalizingRef.current = false;
     lastSampleSecondRef.current = -1;
     previousInputRef.current = null;
@@ -324,7 +354,7 @@ export default function SkylineGlider() {
     void audioRef.current.prime();
     log.info('skyline_glider.flight.started', {
       runId: run.runId, courseId: course.id, courseVersion: course.version,
-      riderId, equipmentId: equipment.id, calibration: initial.calibration, resumed: resume,
+      riderId, equipmentId: equipment.id, calibration: initial.calibration, resumed: canResume,
     });
   };
 
@@ -333,7 +363,6 @@ export default function SkylineGlider() {
       runId: runRef.current?.runId, riderId, equipmentId: equipment?.id,
       courseId: course?.id, courseVersion: course?.version,
       courseTime: flightRef.current?.courseTime,
-      effectIds: ['exit-transition'],
     });
     finalize('abandoned');
   };
@@ -342,12 +371,20 @@ export default function SkylineGlider() {
   if (phase === 'error') return <main className="skyline-glider"><h1>Skyline Glider</h1><p role="alert">{error}</p></main>;
   if (phase === 'lobby') return <main className="skyline-glider skyline-glider--lobby" data-testid="skyline-glider-lobby">
     <div><p className="skyline-glider__eyebrow">Alpine cadence adventure</p><h1>Skyline Glider</h1><h2>{course.name}</h2><p>{course.description}</p><p>Pedal faster to climb. Ease off to descend.</p></div>
-    <div className="skyline-glider__launch"><span>{equipment ? equipment.name : 'Connect a cadence bike'}</span><span>{riderId ? ctx?.getDisplayName?.(riderId)?.displayName || riderId : 'Assign a rider'}</span>
-      {saved ? <><button onClick={() => begin(true)}>Resume flight</button><button className="secondary" onClick={() => begin(false)}>Start over</button></> : <button disabled={!equipment || !riderId} onClick={() => begin(false)}>Start flight</button>}
+    <div className="skyline-glider__launch"><span>{equipment ? equipment.name : 'Connect and assign a cadence bike'}</span><span>{riderId ? ctx?.getDisplayName?.(riderId)?.displayName || riderId : 'Waiting for a live rider'}</span>
+      {usableBikes.length > 1 && <label>Bike <select aria-label="Bike" value={equipment?.id || ''} onChange={(event) => setPreferredEquipmentId(event.target.value)}>{usableBikes.map((item) => <option key={item.equipment.id} value={item.equipment.id}>{item.equipment.name}</option>)}</select></label>}
+      {saved.status === 'compatible' ? <><button onClick={() => begin(true)}>Resume flight</button><button className="secondary" onClick={() => begin(false)}>Start over</button></> : saved.status === 'pending_terminal' ? <button onClick={() => {
+        lockedSelectionRef.current = selectedBike;
+        runRef.current = { runId: saved.identity.runId, startedAt: saved.identity.startedAt };
+        flightRef.current = saved.state;
+        setFlight(saved.state);
+        setSaveState({ status: 'error', record: saved.terminalRecord });
+        setPhase('result');
+      }}>Retry saving previous flight</button> : <button disabled={!equipment || !riderId} onClick={() => begin(false)}>Start flight</button>}
     </div>
   </main>;
   if (phase === 'countdown') return <main className="skyline-glider skyline-glider--countdown" data-testid="skyline-glider-countdown"><p>Ready your wings</p><strong>{countdown}</strong></main>;
-  if (phase === 'result') return <main className="skyline-glider skyline-glider--result" data-testid="skyline-glider-result"><p>{saveState.record?.run.status === 'completed' ? 'Mountain Pass complete' : 'Flight ended'}</p><h1>{saveState.record?.run.status === 'completed' ? 'Touchdown!' : 'Back at base'}</h1><p>{flight.collectedIds.length} bells found · {flight.collisions} bumps</p>{saveState.status === 'saving' && <p>Saving flight…</p>}{saveState.status === 'error' && <button onClick={() => finalize(saveState.record.run.status, flight, saveState.record)}>Retry save</button>}{saveState.status === 'saved' && <p>{saveState.record.run.reward_rings ? `+${saveState.record.run.reward_rings} rings` : 'Flight saved'}</p>}<button onClick={() => { setPhase('lobby'); setFlight(null); }}>Fly again</button></main>;
+  if (phase === 'result') return <main className="skyline-glider skyline-glider--result" data-testid="skyline-glider-result"><p>{saveState.record?.run.status === 'completed' ? 'Mountain Pass complete' : 'Flight ended'}</p><h1>{saveState.record?.run.status === 'completed' ? 'Touchdown!' : 'Back at base'}</h1><p>{flight?.collectedIds?.length || 0} bells found · {flight?.collisions || 0} bumps</p>{saveState.status === 'saving' && <p>Saving flight…</p>}{saveState.status === 'error' && <button onClick={() => finalize(saveState.record.run.status, flight, saveState.record)}>Retry save</button>}{saveState.status === 'saved' && <p>{saveState.record.run.reward_rings ? `+${saveState.record.run.reward_rings} rings` : 'Flight saved'}</p>}<button onClick={() => { lockedSelectionRef.current = null; setPhase('lobby'); setFlight(null); }}>Fly again</button></main>;
   return <main className="skyline-glider skyline-glider--flight" data-testid="skyline-glider-flight" data-course-time={flight.courseTime}>
     <FlightScene state={flight} course={course} effects={effects}/>
     <RpmGauge state={flight}/>

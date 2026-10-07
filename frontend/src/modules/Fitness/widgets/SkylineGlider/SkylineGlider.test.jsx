@@ -37,7 +37,7 @@ beforeEach(() => {
   mockLog.warn.mockClear();
   mockLog.error.mockClear();
   mockLog.sampled.mockClear();
-  mockCtx = { equipment: [{ id: 'bike', name: 'Bike', cadence: 7, rpm: { min: 30, max: 100 } }], fitnessSessionInstance: { getEquipmentRider: () => 'dad', getEquipmentCadence: () => ({ rpm: 60, connected: true, ts: Date.now() + 1 }) }, getDisplayName: () => ({ displayName: 'Dad', source: 'userProfile', preferredGroupLabel: false }), setGovernanceSuspended: vi.fn() };
+  mockCtx = { equipment: [{ id: 'bike', name: 'Bike', cadence: 7, rpm: { min: 30, max: 100 } }], fitnessSessionInstance: { sessionId: 'fs-test', getEquipmentRider: () => 'dad', getEquipmentCadence: () => ({ rpm: 60, connected: true, ts: Date.now() + 1 }) }, getDisplayName: () => ({ displayName: 'Dad', source: 'userProfile', preferredGroupLabel: false }), setGovernanceSuspended: vi.fn() };
   global.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ courses: [course] }) }));
 });
 
@@ -193,11 +193,61 @@ describe('SkylineGlider', () => {
   });
 
   it('offers resume and start over for a saved checkpoint', async () => {
-    localStorage.setItem('fitness:skyline-glider:dad:mountain-pass', JSON.stringify({ schema: 'skyline-glider-checkpoint/v2', course: { id: 'mountain-pass', version: 1 }, state: { courseTime: 75, altitude: .5, collectedIds: ['a'], checkpoint: { id: 'cp', time: 75, collectedIds: ['a'] } } }));
+    localStorage.setItem('fitness:skyline-glider:dad:mountain-pass', JSON.stringify({ schema: 'skyline-glider-checkpoint/v3', course: { id: 'mountain-pass', version: 1 }, lifecycle: 'active', identity: { fitnessSessionId: 'fs-test', riderId: 'dad', equipmentId: 'bike', calibration: { lowRpm: 30, highRpm: 100 }, runId: 'original-run', startedAt: '2026-10-07T18:00:00Z' }, state: { courseTime: 75, altitude: .5, collectedIds: ['a'], checkpoint: { id: 'cp', time: 75, collectedIds: ['a'] } } }));
     render(<SkylineGlider />);
     await act(async () => Promise.resolve());
     expect(screen.getByRole('button', { name: /resume/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /start over/i })).toBeTruthy();
+  });
+
+  it('falls back to connected CycleAce when configured NiceDay is unusable', async () => {
+    mockCtx.equipment = [
+      { id: 'niceday', name: 'NiceDay', cadence: 20, rpm: { min: 30, max: 100 } },
+      { id: 'cycle_ace', name: 'CycleAce', cadence: 10, rpm: { min: 30, max: 100 } },
+    ];
+    mockCtx.fitnessSessionInstance.getEquipmentRider = () => 'dad';
+    mockCtx.fitnessSessionInstance.getEquipmentCadence = (id) => id === 'cycle_ace'
+      ? { rpm: 60, connected: true, ts: Date.now() + 1 }
+      : { rpm: 0, connected: false };
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    expect(screen.getByTestId('skyline-glider-lobby')).toHaveTextContent('CycleAce');
+  });
+
+  it('lets the rider choose another usable bike and locks it for the attempt', async () => {
+    vi.useFakeTimers();
+    mockCtx.equipment = [
+      { id: 'niceday', name: 'NiceDay', cadence: 20, rpm: { min: 30, max: 100 } },
+      { id: 'cycle_ace', name: 'CycleAce', cadence: 10, rpm: { min: 30, max: 100 } },
+    ];
+    mockCtx.fitnessSessionInstance.getEquipmentRider = (id) => id === 'niceday' ? 'test-rider' : 'dad';
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    fireEvent.change(screen.getByRole('combobox', { name: 'Bike' }), { target: { value: 'cycle_ace' } });
+    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
+    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.flight.started', expect.objectContaining({ equipmentId: 'cycle_ace', riderId: 'dad' }));
+    act(() => vi.advanceTimersByTime(3000));
+    expect(screen.getByTestId('skyline-glider-flight')).toBeTruthy();
+    vi.useRealTimers();
+  });
+
+  it('freezes immediately and preserves an exact pending terminal record when saving fails', async () => {
+    vi.useFakeTimers();
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ courses: [course] }) })
+      .mockResolvedValueOnce({ ok: false, status: 503 });
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
+    act(() => vi.advanceTimersByTime(3000));
+    fireEvent.click(screen.getByRole('button', { name: /end flight/i }));
+    expect(screen.getByTestId('skyline-glider-result')).toHaveTextContent('Saving flight');
+    await act(async () => Promise.resolve());
+    expect(screen.getByRole('button', { name: /retry save/i })).toBeTruthy();
+    const pending = JSON.parse(localStorage.getItem('fitness:skyline-glider:dad:mountain-pass'));
+    expect(pending).toMatchObject({ schema: 'skyline-glider-checkpoint/v3', lifecycle: 'pending_terminal', terminalRecord: { run: { status: 'abandoned' } } });
+    expect(JSON.parse(global.fetch.mock.calls[1][1].body).record).toEqual(pending.terminalRecord);
+    vi.useRealTimers();
   });
 
   it('does not offer resume for a legacy unversioned checkpoint', async () => {
