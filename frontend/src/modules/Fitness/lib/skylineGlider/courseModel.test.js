@@ -38,6 +38,22 @@ describe('validateCourse', () => {
       .toEqual({ top: 0.2, bottom: 0.8 });
   });
 
+  it('normalizes single-sided terrain to physical open-world bounds', () => {
+    const result = validateCourse(course({
+      segments: [
+        { id: 'hill', type: 'lower-terrain', start_s: 10, end_s: 20, top: 0.62 },
+        { id: 'roof', type: 'upper-terrain', start_s: 30, end_s: 40, bottom: 0.42 },
+        { id: 'finish', type: 'finish', start_s: 300 },
+      ],
+    }));
+
+    expect(result.valid).toBe(true);
+    expect(result.course.segments.find((segment) => segment.id === 'hill').safeBand)
+      .toEqual({ top: 0, bottom: 0.62 });
+    expect(result.course.segments.find((segment) => segment.id === 'roof').safeBand)
+      .toEqual({ top: 0.42, bottom: 1 });
+  });
+
   it.each([
     ['wrong schema', { schema: 'flight/v0' }, 'schema'],
     ['duplicate ids', { segments: [{ id: 'same', type: 'open', start_s: 0 }, { id: 'same', type: 'finish', start_s: 300 }] }, 'duplicate'],
@@ -74,4 +90,3 @@ describe('resolveCalibration', () => {
     expect(() => resolveCalibration({ rpm: { min: 50, max: 50 } })).toThrow(/calibration/i);
   });
 });
-
