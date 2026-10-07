@@ -247,10 +247,18 @@ export function liveFixtureDescriptor() {
   };
 }
 let liveEncoder = null;
+let liveEncoderSpawn = spawn;
+// Test seam: replace the spawn used for the live encoder (and forget any
+// running one) so a host without ffmpeg can be simulated.
+export function __setLiveEncoderSpawnForTests(spawnFn = spawn) {
+  liveEncoder?.stop?.();
+  liveEncoder = null;
+  liveEncoderSpawn = spawnFn;
+}
 function ensureLiveEncoder() {
   if (liveEncoder) return liveEncoder;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'media-live-fixture-'));
-  const child = spawn('ffmpeg', ['-loglevel', 'error', '-re',
+  const child = liveEncoderSpawn('ffmpeg', ['-loglevel', 'error', '-re',
     '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=15',
     '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=44100',
     '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p',
@@ -259,10 +267,18 @@ function ensureLiveEncoder() {
     '-hls_flags', 'delete_segments+omit_endlist+independent_segments',
     '-hls_segment_filename', path.join(dir, 'seg%d.ts'), path.join(dir, 'index.m3u8')], { stdio: 'ignore' });
   const stop = () => { try { child.kill('SIGKILL'); } catch { /* already gone */ } try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ } };
-  child.on('exit', () => { if (liveEncoder?.child === child) liveEncoder = null; });
+  const record = { child, dir, stop, error: null };
+  child.on('exit', () => { if (liveEncoder === record) liveEncoder = null; });
+  // A host without ffmpeg emits 'error' (ENOENT) on the child; unhandled it
+  // would crash the whole preview server. Keep the record so the live fixture
+  // route can answer with a clear message instead of polling for a playlist.
+  child.on('error', (error) => {
+    record.error = `ffmpeg is unavailable on this host (${error?.code ?? error?.message ?? 'spawn failed'}); the live fixture cannot run`;
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
+  });
   process.once('exit', stop);
   for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, stop);
-  liveEncoder = { child, dir, stop };
+  liveEncoder = record;
   return liveEncoder;
 }
 function serveLiveFixture(rawPath, req, res) {
@@ -281,9 +297,14 @@ function serveLiveFixture(rawPath, req, res) {
   if (path_.startsWith(LIVE_HLS_PREFIX)) {
     const name = path_.slice(LIVE_HLS_PREFIX.length);
     if (!/^(?:index\.m3u8|seg\d+\.ts)$/.test(name)) { res.statusCode = 404; res.end('not found'); return true; }
-    const { dir } = ensureLiveEncoder();
+    const encoder = ensureLiveEncoder();
+    const { dir } = encoder;
     const file = path.join(dir, name);
     const send = (attempt = 0) => {
+      if (encoder.error) {
+        res.statusCode = 404; res.setHeader('Content-Type', 'text/plain'); res.end(encoder.error);
+        return;
+      }
       if (fs.existsSync(file)) {
         res.setHeader('Content-Type', name.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t');
         res.setHeader('Cache-Control', 'no-store');
@@ -291,7 +312,7 @@ function serveLiveFixture(rawPath, req, res) {
         return;
       }
       // The first playlist appears a few seconds after the encoder starts.
-      if (attempt < 40 && name === 'index.m3u8') { setTimeout(() => send(attempt + 1), 500); return; }
+      if (attempt < 40 && name === 'index.m3u8') { setTimeout(() => send(attempt + 1), attempt === 0 ? 50 : 500); return; }
       res.statusCode = 404; res.end('not found');
     };
     send();
