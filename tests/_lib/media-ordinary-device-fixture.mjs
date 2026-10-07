@@ -51,6 +51,10 @@ const VIRTUAL_TRANSPORT_ACTIONS = new Set(['pause', 'play', 'seekAbs', 'seekRel'
 // Screen session controls (P1): virtual receiver only, like transport.
 const VIRTUAL_SESSION_ROUTES = [
   ['PUT', /^\/session\/(add-only|end-of-queue|stop-after-current|volume)$/],
+  // Steering a virtual screen's queue (edits, Undo) and its shuffle/repeat. Starting content stays on the
+  // ordinary load route: queue play-now/add and item-action are NOT opened here.
+  ['POST', /^\/session\/queue\/(undo|remove|reorder|jump|clear)$/],
+  ['PUT', /^\/session\/(shuffle|repeat)$/],
   ['POST', /^\/session\/(sleep-timer|sleep-timer\/cancel|sleep-timer\/resume|put-back|countdown\/cancel|countdown\/start-now|claim)$/],
   ['GET', /^\/start-status$/],
   // Player features (P2): tracks, Show briefly, music behind.
@@ -296,7 +300,7 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet, cat
     const rest = path.slice(id.length + 1);
     if (VIRTUAL_SESSION_ROUTES.some(([method, pattern]) => method === req.method && pattern.test(rest))) return next();
     if (req.method === 'POST'
-      && new RegExp(`^/${id}/session/item-action/[^/]+/claim$`).test(path)) return next();
+      && new RegExp(`^/${id}/session/item-action/[^/]+/(claim|cancel)$`).test(path)) return next();
     return res.status(403).json({ ok: false, error: 'ordinary acceptance blocks physical device routes' });
   });
   // As in production: the device router runs inside the request context, so the
