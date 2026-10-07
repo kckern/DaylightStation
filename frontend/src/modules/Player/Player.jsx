@@ -35,6 +35,7 @@ import { applyRememberedTracks, trackStateFor, checkSelection, rememberSelection
 import { usePlayerConfig } from './hooks/usePlayerConfig.js';
 import { REVIEW_ACTIVE } from '../../lib/Player/reviewParams.js';
 import { DaylightAPI } from '../../lib/api.mjs';
+import { seekToLiveEdge } from '../../lib/media/liveEdge.js';
 import {
   preparePlaybackOwnerAdoption,
   samePlaybackOwnerIdentity,
@@ -2233,6 +2234,15 @@ const Player = forwardRef(function Player(props, ref) {
     }
     if (op === 'seek-rel') {
       seekOwnerRelative(payload.value);
+      return;
+    }
+    if (op === 'go-live') {
+      const result = seekToLiveEdge(_getMediaElFallback());
+      if (!result.ok) {
+        getActionBus().emit('command-handler-error', {
+          commandId: payload.commandId, code: result.code, error: 'This playback has no live edge to return to',
+        });
+      }
       return;
     }
     if (op === 'skip-prev') {

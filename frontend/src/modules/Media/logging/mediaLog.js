@@ -162,6 +162,8 @@ export const mediaLog = {
   playedEarlierShown:     debug('played-earlier.shown'),
   householdDegradedReload: info('household.degraded-reload'),
   moveHereIgnored:        debug('move-here.ignored'),
+  // P0 features (Phase 2a)
+  goLive:                 info('transport.go-live'),
 };
 
 export default mediaLog;

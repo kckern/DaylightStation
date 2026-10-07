@@ -40,11 +40,44 @@ export function SeekBar({ target, availability = null, onCommand = null, pending
   if (!item) return null;
 
   if (capabilities.live === true || item.isLive) {
+    const canGoLive = availability?.available !== false && typeof transport.goLive === 'function' && !pendingAction;
+    const goLive = () => {
+      setCommandFeedback(null);
+      const operation = () => transport.goLive();
+      const commandContext = context;
+      const reportFailure = () => {
+        if (contextRef.current === commandContext) {
+          setCommandFeedback({ message: 'Could not confirm change', context: commandContext });
+        }
+      };
+      let result;
+      try {
+        result = onCommand ? onCommand('goLive', operation) : operation();
+      } catch {
+        reportFailure();
+        return;
+      }
+      Promise.resolve(result).catch(reportFailure);
+    };
     return (
       <div className="np-seekbar np-seekbar--live">
         <span className="np-live-badge">LIVE</span>
+        {typeof transport.goLive === 'function' && (
+          <button
+            type="button"
+            data-testid="np-go-live"
+            className="np-go-live"
+            disabled={!canGoLive}
+            onClick={goLive}
+          >
+            Go to live
+          </button>
+        )}
         {capabilities.reason && (
           <span className="np-control-unavailable" role="status">{capabilities.reason}</span>
+        )}
+        {commandFeedback?.context === context && (
+          <div className="np-command-feedback" data-testid="np-seek-command-feedback" role="status">{commandFeedback.message}</div>
         )}
       </div>
     );
