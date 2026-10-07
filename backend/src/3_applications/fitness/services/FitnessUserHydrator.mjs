@@ -1,15 +1,20 @@
 /** Fitness-specific projection over generic user profiles. */
 export class FitnessUserHydrator {
-  constructor({ profileReader, logger = console } = {}) {
+  constructor({ profileReader, schoolLearnerDirectory = null, logger = console } = {}) {
     if (!profileReader?.getProfile) throw new Error('FitnessUserHydrator requires profileReader');
     this.profileReader = profileReader;
+    this.schoolLearnerDirectory = schoolLearnerDirectory;
     this.logger = logger;
   }
 
   hydrateUsers(userList, deviceMappings = {}) {
     if (!Array.isArray(userList)) return [];
     return userList.map((entry) => {
-      if (typeof entry === 'object' && entry !== null) return entry;
+      if (typeof entry === 'object' && entry !== null) {
+        const hydrated = { ...entry };
+        this.#attachSchoolMembership(hydrated, entry.id ?? entry.profileId);
+        return hydrated;
+      }
       const username = String(entry);
       const profile = this.profileReader.getProfile(username);
       if (!profile) {
@@ -28,6 +33,7 @@ export class FitnessUserHydrator {
       if (fitness?.max_heart_rate) hydrated.max_heart_rate = fitness.max_heart_rate;
       if (fitness?.resting_heart_rate) hydrated.resting_heart_rate = fitness.resting_heart_rate;
       if (fitness?.cadence_zones) hydrated.cadence_zones = fitness.cadence_zones;
+      this.#attachSchoolMembership(hydrated, hydrated.id);
       this.#attachHeartRateDevices(hydrated, username, deviceMappings);
       return hydrated;
     }).filter(Boolean);
@@ -48,6 +54,7 @@ export class FitnessUserHydrator {
           return null;
         }
         const copy = { ...user };
+        this.#attachSchoolMembership(copy, user.id);
         this.#attachHeartRateDevices(copy, user.id, deviceMappings);
         return copy;
       };
@@ -76,6 +83,18 @@ export class FitnessUserHydrator {
     if (matched.length) {
       target.hr = matched[0];
       target.hr_device_ids = matched;
+    }
+  }
+
+  #attachSchoolMembership(target, userId) {
+    if (!userId || typeof this.schoolLearnerDirectory?.hasLearner !== 'function') return;
+    try {
+      target.schoolLearner = this.schoolLearnerDirectory.hasLearner(String(userId));
+    } catch (error) {
+      this.logger.warn?.('fitness.user.school_membership_unavailable', {
+        userId: String(userId),
+        error: error?.message || String(error),
+      });
     }
   }
 }

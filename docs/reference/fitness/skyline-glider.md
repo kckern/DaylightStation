@@ -4,9 +4,9 @@ Skyline Glider is a single-rider Fitness game in which cadence controls a hang g
 
 ## Play contract
 
-- A fresh press of a bike's physical rider-selector button starts the game, or resumes that rider's compatible checkpoint. The kiosk lobby does not require a touchscreen press.
+- A fresh press of a bike's physical rider-selector button starts the game, resumes that rider's compatible checkpoint, or leaves a prior result for the next flight. Failed terminal saves are retried before the new flight begins. The kiosk does not require a touchscreen press between runs.
 - The selector's equipment and assigned rider are locked together for the run. Checkpoints, saved runs, and rewards remain scoped to that rider.
-- School learners may fly only when the fail-closed `fitness.skyline-glider` entitlement grants access from `school.day-complete`. Missing identity, Guest, unavailable, expired or indeterminate state all stay locked; household members marked `schoolLearner: false` are outside this gate. The client honors the decision's `validFrom`/`validUntil` window and suspends an active countdown or flight immediately when access is revoked, preserving a resumable checkpoint.
+- School learners may fly only when the fail-closed `fitness.skyline-glider` entitlement grants access from `school.day-complete`. The Fitness roster derives `schoolLearner` from the same authoritative School learner directory used by the other school-gated surfaces. Missing identity, Guest, unavailable, expired or indeterminate state all stay locked; household members marked `schoolLearner: false` are outside this gate. The client honors the decision's `validFrom`/`validUntil` window and suspends an active countdown or flight immediately when access is revoked, preserving a resumable checkpoint and releasing the bike for another rider.
 - An admin fingerprint can approve a pending physical-button start. The admin authorizes the flight but does not become its rider or reward recipient.
 - Localhost and `127.0.0.1` deep links retain touchscreen Start/Resume controls for development. A non-local deep link still enters the gated kiosk lobby.
 - Equipment `rpm.min` and `rpm.max` calibrate the altitude range; the safe fallback is 30–100 RPM.
