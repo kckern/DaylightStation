@@ -505,15 +505,19 @@ export default function SkylineGlider() {
 
   useEffect(() => ctx?.subscribeToAppEvent?.('rider-select', (event) => {
     const selection = event?.payload || {};
-    if (phase !== 'lobby') return;
+    if (!['lobby', 'result'].includes(phase) || saveState.status === 'saving') return;
     if (!selection.equipmentId || !selection.userId) return;
     if (!ctx?.equipment?.some((item) => item?.id === selection.equipmentId && item?.cadence != null)) return;
+    if (phase === 'result') {
+      lockedSelectionRef.current = null;
+      setPhase('lobby');
+    }
     setPreferredEquipmentId(selection.equipmentId);
     setPendingStart({ equipmentId: selection.equipmentId, userId: selection.userId, timestamp: event.timestamp });
     log.info('skyline_glider.access.start_requested', {
       riderId: selection.userId, equipmentId: selection.equipmentId,
     });
-  }), [ctx, log, phase]);
+  }), [ctx, log, phase, saveState.status]);
 
   useEffect(() => {
     if (phase !== 'lobby' || !pendingStart || !equipment || !riderId) return;
@@ -544,6 +548,7 @@ export default function SkylineGlider() {
       phase,
       accessState: access.state,
     });
+    lockedSelectionRef.current = null;
     setPendingStart(null);
     setPhase('lobby');
   }, [access.status, access.state, accessGranted, checkpointIdentity, course, equipment?.id, log, phase, riderId]);

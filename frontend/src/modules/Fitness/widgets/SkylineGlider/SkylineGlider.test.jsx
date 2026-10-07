@@ -236,6 +236,50 @@ describe('SkylineGlider', () => {
     vi.useRealTimers();
   });
 
+  it('releases a revoked run so a different authorized rider can start by bike button', async () => {
+    vi.useFakeTimers();
+    gateMocks.localDev = false;
+    let rider = 'dad';
+    mockCtx.fitnessSessionInstance.getEquipmentRider = () => rider;
+    mockCtx.getUserByName = (id) => ({ id, schoolLearner: true });
+    gateMocks.entitlement = skylineEntitlement('granted', 'satisfied', 'dad');
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    await act(async () => mockCtx.__emitAppEvent('rider-select', { equipmentId: 'bike', userId: 'dad' }));
+    act(() => vi.advanceTimersByTime(3000));
+
+    gateMocks.entitlement = skylineEntitlement('denied', 'unsatisfied', 'dad');
+    await act(async () => vi.advanceTimersByTime(15_000));
+    expect(screen.getByTestId('skyline-glider-school-lock')).toBeTruthy();
+
+    rider = 'test-rider';
+    gateMocks.entitlement = skylineEntitlement('granted', 'satisfied', 'test-rider');
+    await act(async () => mockCtx.__emitAppEvent('rider-select', { equipmentId: 'bike', userId: 'test-rider' }));
+    await act(async () => Promise.resolve());
+
+    expect(screen.getByTestId('skyline-glider-countdown')).toBeTruthy();
+    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.flight.started', expect.objectContaining({ riderId: 'test-rider' }));
+    vi.useRealTimers();
+  });
+
+  it('uses a bike-button press to leave a saved result and start the next flight', async () => {
+    vi.useFakeTimers();
+    gateMocks.localDev = false;
+    gateMocks.entitlement = skylineEntitlement('granted', 'satisfied');
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    await act(async () => mockCtx.__emitAppEvent('rider-select', { equipmentId: 'bike', userId: 'dad' }));
+    act(() => vi.advanceTimersByTime(3000));
+    fireEvent.click(screen.getByRole('button', { name: /end flight/i }));
+    await act(async () => Promise.resolve());
+    expect(screen.getByTestId('skyline-glider-result')).toHaveTextContent(/flight saved/i);
+
+    await act(async () => mockCtx.__emitAppEvent('rider-select', { equipmentId: 'bike', userId: 'dad' }));
+
+    expect(screen.getByTestId('skyline-glider-countdown')).toBeTruthy();
+    vi.useRealTimers();
+  });
+
   it('expires a granted decision at validUntil instead of waiting for the poll interval', async () => {
     vi.useFakeTimers();
     gateMocks.localDev = false;
@@ -533,6 +577,11 @@ describe('SkylineGlider', () => {
     const pending = JSON.parse(localStorage.getItem('fitness:skyline-glider:dad:mountain-pass'));
     expect(pending).toMatchObject({ schema: 'skyline-glider-checkpoint/v3', lifecycle: 'pending_terminal', terminalRecord: { run: { status: 'abandoned' } } });
     expect(JSON.parse(global.fetch.mock.calls[1][1].body).record).toEqual(pending.terminalRecord);
+
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+    await act(async () => mockCtx.__emitAppEvent('rider-select', { equipmentId: 'bike', userId: 'dad' }));
+    expect(JSON.parse(global.fetch.mock.calls[2][1].body).record).toEqual(pending.terminalRecord);
+    expect(screen.getByTestId('skyline-glider-countdown')).toBeTruthy();
     vi.useRealTimers();
   });
 

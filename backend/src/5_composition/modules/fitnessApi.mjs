@@ -43,6 +43,7 @@ import { QuerySessions } from '#apps/fitness/usecases/QuerySessions.mjs';
 import { WorkoutCatalogService } from '#apps/fitness/services/WorkoutCatalogService.mjs';
 import { FitnessContentService } from '#apps/fitness/services/FitnessContentService.mjs';
 import { FitnessUserHydrator } from '#apps/fitness/services/FitnessUserHydrator.mjs';
+import { ConfiguredSchoolLearningDirectory } from '#adapters/school/progress/ConfiguredSchoolLearningDirectory.mjs';
 import { FitnessHardwareService } from '#apps/fitness/services/FitnessHardwareService.mjs';
 import { FitnessWebhookService } from '#apps/fitness/services/FitnessWebhookService.mjs';
 import { EmergencyAccessService } from '#apps/fitness/services/EmergencyAccessService.mjs';
@@ -310,10 +311,17 @@ export function createFitnessApiRouter(config) {
     mediaDir: configService.getMediaDir(),
     logger,
   });
+  const householdId = configService?.getDefaultHouseholdId?.() ?? null;
+  const schoolLearnerDirectory = new ConfiguredSchoolLearningDirectory({
+    userService,
+    config: configService.getHouseholdAppConfig(householdId, 'school') || {},
+    householdId,
+    logger,
+  });
   const voiceMemoDebugStore = new FilesystemVoiceMemoDebugStore({ dataDir: configService.getDataDir() });
   const fitnessContentService = new FitnessContentService({
     fitnessConfigService,
-    userHydrator: new FitnessUserHydrator({ profileReader: userService, logger }),
+    userHydrator: new FitnessUserHydrator({ profileReader: userService, schoolLearnerDirectory, logger }),
     contentAccessAvailable: Boolean(contentRegistry),
     contentCatalog: fitnessContentCatalog,
     logger,
