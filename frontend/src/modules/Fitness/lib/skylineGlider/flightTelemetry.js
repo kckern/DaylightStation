@@ -72,7 +72,7 @@ export function collectFlightTelemetry({
       data: {
         count: next.collisions,
         lives: next.lives,
-        segmentId: activeTerrainId(course, next.courseTime),
+        segmentId: next.lastCollisionSegmentId || activeTerrainId(course, next.courseTime),
       },
     });
   }

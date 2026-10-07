@@ -5,7 +5,7 @@ import { validateCourse, resolveCalibration } from '@/modules/Fitness/lib/skylin
 import { createFlightState, stepFlight } from '@/modules/Fitness/lib/skylineGlider/flightEngine.js';
 import { projectCourseWindow } from '@/modules/Fitness/lib/skylineGlider/courseProjection.js';
 import { collectFlightTelemetry } from '@/modules/Fitness/lib/skylineGlider/flightTelemetry.js';
-import { altitudeToTrackPercent } from '@/modules/Fitness/lib/skylineGlider/flightGeometry.js';
+import { altitudeToTrackPercent, SKYLINE_CRAFT_GEOMETRY } from '@/modules/Fitness/lib/skylineGlider/flightGeometry.js';
 import { createSkylineAudio } from '@/modules/Fitness/lib/skylineGlider/skylineAudio.js';
 import { clearFlightCheckpoint, readFlightCheckpoint, writeFlightCheckpoint } from '@/modules/Fitness/lib/skylineGlider/checkpointRepository.js';
 import { buildSkylineGliderRun } from '@/modules/Fitness/lib/skylineGlider/runResult.js';
@@ -62,6 +62,9 @@ export function FlightScene({ state, course, effects = {} }) {
   const craftX = projected.playerX;
   const craftY = state.altitude * projected.height;
   const pitch = clamp((state.verticalRate || 0) * 50, -12, 12);
+  const craftFront = SKYLINE_CRAFT_GEOMETRY.frontSeconds * projected.unitsPerSecond;
+  const craftRear = SKYLINE_CRAFT_GEOMETRY.rearSeconds * projected.unitsPerSecond;
+  const craftRadius = SKYLINE_CRAFT_GEOMETRY.radius * projected.height;
   const farOffset = -((state.courseTime * 10) % 1000);
   const middleOffset = -((state.courseTime * 22) % 1000);
   const nearOffset = -((state.courseTime * 38) % 1000);
@@ -87,11 +90,11 @@ export function FlightScene({ state, course, effects = {} }) {
       </g>)}
     </g>
     <g className="skyline-glider__wind" transform={`translate(${craftX - 72} ${craftY})`}><path d="M0 -14 h42 M-18 0 h55 M5 14 h32"/></g>
-    <g data-testid="skyline-glider-craft" data-facing="right" transform={`translate(${craftX} ${craftY}) rotate(${pitch})`} className="skyline-glider__craft">
-      <path d="M-48 -7 L4 -15 57 0 6 12 -42 8 -58 1Z" className="skyline-glider__wing"/>
-      <path d="M-28 2 Q4 -3 43 0 Q6 8 -30 7Z" className="skyline-glider__body"/>
-      <path d="M-24 4 L-38 24 M-38 24 L-47 30" className="skyline-glider__frame"/>
-      <circle cx="-36" cy="25" r="5" className="skyline-glider__pilot"/>
+    <g data-testid="skyline-glider-craft" data-facing="right" data-front-seconds={SKYLINE_CRAFT_GEOMETRY.frontSeconds} data-rear-seconds={SKYLINE_CRAFT_GEOMETRY.rearSeconds} data-radius={SKYLINE_CRAFT_GEOMETRY.radius} transform={`translate(${craftX} ${craftY}) rotate(${pitch})`} className="skyline-glider__craft">
+      <path d={`M-${craftRear} -7 L4 -15 ${craftFront} 0 L6 12 L-${craftRear - 6} 8 L-${craftRear} 1Z`} className="skyline-glider__wing"/>
+      <path d={`M-${craftRear - 18} 2 Q4 -3 ${craftFront - 14} 0 Q6 8 -${craftRear - 16} 7Z`} className="skyline-glider__body"/>
+      <path d={`M-${craftRear - 24} 4 L-${craftRear - 10} ${craftRadius - 6} M-${craftRear - 10} ${craftRadius - 6} L-${craftRear - 2} ${craftRadius - 1}`} className="skyline-glider__frame"/>
+      <circle cx={-(craftRear - 12)} cy={craftRadius - 6} r="4" className="skyline-glider__pilot"/>
       {(effects.collisionKey || state.invincibleRemaining > 0) && <g key={effects.collisionKey || 'protected'} data-testid="skyline-glider-collision-effect" className="skyline-glider__collision-burst"><path d="M-62 -34 l-16 -18 M-67 0 h-28 M-55 31 l-20 16 M43 -28 l18 -16 M57 15 l25 8"/></g>}
       {(effects.pops || []).map((pop) => <g key={pop.key} className="skyline-glider__bell-pop"><circle r="28"/><path d="M-30 0 H30 M0 -30 V30"/></g>)}
     </g>
@@ -206,7 +209,7 @@ export default function SkylineGlider() {
   }, [phase]);
 
   const finalize = useCallback(async (status, terminalState = flightRef.current, retryRecord = null) => {
-    if (!runRef.current || finalizingRef.current) return;
+    if (!runRef.current || finalizingRef.current) return false;
     finalizingRef.current = true;
     const record = retryRecord || buildSkylineGliderRun({
       ...runRef.current, course, riderId, equipmentId: equipment?.id,
@@ -237,6 +240,7 @@ export default function SkylineGlider() {
         runId: record.run.id, status, riderId, equipmentId: equipment?.id,
         courseId: course.id, courseVersion: course.version,
       });
+      return true;
     } catch (saveError) {
       finalizingRef.current = false;
       setSaveState({ status: 'error', record });
@@ -245,6 +249,7 @@ export default function SkylineGlider() {
         runId: record.run.id, status, riderId, equipmentId: equipment?.id,
         courseId: course.id, courseVersion: course.version, error: saveError.message,
       });
+      return false;
     }
   }, [checkpointIdentity, course, equipment?.id, fitnessSessionInstance, log, riderId]);
 
@@ -354,7 +359,11 @@ export default function SkylineGlider() {
     const armedAtMs = Date.now();
     const initial = createFlightState(course, { calibration: resolveCalibration(equipment), armedAtMs });
     const canResume = resume && saved.status === 'compatible';
-    const next = canResume ? { ...initial, ...saved.state, phase: 'playing', pausedForSensor: false, collisionProtected: false } : initial;
+    const next = canResume ? {
+      ...initial, ...saved.state,
+      phase: 'playing', pausedForSensor: false, collisionProtected: false,
+      armedAtMs, inputReady: false, lastInputTs: null,
+    } : initial;
     if (!resume) clearFlightCheckpoint(riderId, course);
     flightRef.current = next;
     const run = canResume ? { runId: saved.identity.runId, startedAt: saved.identity.startedAt } : {
@@ -386,13 +395,26 @@ export default function SkylineGlider() {
     finalize('abandoned');
   };
 
+  const startOver = async () => {
+    if (saved.status !== 'compatible' || !selectedBike) return;
+    lockedSelectionRef.current = selectedBike;
+    runRef.current = { runId: saved.identity.runId, startedAt: saved.identity.startedAt };
+    flightRef.current = saved.state;
+    setFlight(saved.state);
+    finalizingRef.current = false;
+    const persisted = await finalize('abandoned', saved.state);
+    if (!persisted) return;
+    lockedSelectionRef.current = null;
+    begin(false);
+  };
+
   if (phase === 'loading') return <main className="skyline-glider" data-testid="skyline-glider-loading">Charting the course…</main>;
   if (phase === 'error') return <main className="skyline-glider"><h1>Skyline Glider</h1><p role="alert">{error}</p></main>;
   if (phase === 'lobby') return <main className="skyline-glider skyline-glider--lobby" data-testid="skyline-glider-lobby">
     <div><p className="skyline-glider__eyebrow">Alpine cadence adventure</p><h1>Skyline Glider</h1><h2>{course.name}</h2><p>{course.description}</p><p>Pedal faster to climb. Ease off to descend.</p></div>
     <div className="skyline-glider__launch"><span>{equipment ? equipment.name : 'Connect and assign a cadence bike'}</span><span>{riderId ? ctx?.getDisplayName?.(riderId)?.displayName || riderId : 'Waiting for a live rider'}</span>
       {usableBikes.length > 1 && <label>Bike <select aria-label="Bike" value={equipment?.id || ''} onChange={(event) => setPreferredEquipmentId(event.target.value)}>{usableBikes.map((item) => <option key={item.equipment.id} value={item.equipment.id}>{item.equipment.name}</option>)}</select></label>}
-      {saved.status === 'compatible' ? <><button onClick={() => begin(true)}>Resume flight</button><button className="secondary" onClick={() => begin(false)}>Start over</button></> : saved.status === 'pending_terminal' ? <button onClick={() => {
+      {saved.status === 'compatible' ? <><button onClick={() => begin(true)}>Resume flight</button><button className="secondary" onClick={() => void startOver()}>Start over</button></> : saved.status === 'pending_terminal' ? <button onClick={() => {
         lockedSelectionRef.current = selectedBike;
         runRef.current = { runId: saved.identity.runId, startedAt: saved.identity.startedAt };
         flightRef.current = saved.state;

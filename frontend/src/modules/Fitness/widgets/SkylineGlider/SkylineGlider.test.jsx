@@ -46,6 +46,8 @@ describe('SkylineGlider', () => {
     const { container } = render(<FlightScene state={flightState} course={course} />);
 
     expect(screen.getByTestId('skyline-glider-craft')).toHaveAttribute('data-facing', 'right');
+    expect(screen.getByTestId('skyline-glider-craft')).toHaveAttribute('data-front-seconds', '0.8');
+    expect(screen.getByTestId('skyline-glider-craft')).toHaveAttribute('data-rear-seconds', '0.67');
     expect(screen.getByTestId('skyline-glider-craft').getAttribute('transform')).toContain('translate(240 ');
     expect(screen.getByTestId('skyline-glider-craft').getAttribute('transform')).toContain('rotate(-');
     expect(screen.getByTestId('course-segment-hill')).toHaveAttribute('data-type', 'lower-terrain');
@@ -212,6 +214,33 @@ describe('SkylineGlider', () => {
     await act(async () => Promise.resolve());
     expect(screen.getByRole('button', { name: /resume/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /start over/i })).toBeTruthy();
+  });
+
+  it('re-arms input freshness when resuming and preserves the original run identity', async () => {
+    vi.useFakeTimers();
+    localStorage.setItem('fitness:skyline-glider:dad:mountain-pass', JSON.stringify({ schema: 'skyline-glider-checkpoint/v3', course: { id: 'mountain-pass', version: 1 }, lifecycle: 'active', identity: { fitnessSessionId: 'fs-test', riderId: 'dad', equipmentId: 'bike', calibration: { lowRpm: 30, highRpm: 100 }, runId: 'original-run', startedAt: '2026-10-07T18:00:00Z' }, state: { courseTime: 75, altitude: .5, inputReady: true, armedAtMs: 1, collectedIds: [], checkpoint: { id: 'cp', time: 75, collectedIds: [] }, phase: 'playing' } }));
+    mockCtx.fitnessSessionInstance.getEquipmentCadence = () => ({ rpm: 60, connected: true, ts: 2 });
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    fireEvent.click(screen.getByRole('button', { name: /resume flight/i }));
+    act(() => vi.advanceTimersByTime(3000));
+    expect(screen.getByTestId('skyline-glider-waiting-input')).toBeTruthy();
+    expect(screen.getByTestId('skyline-glider-flight')).toHaveAttribute('data-course-time', '75');
+    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.flight.started', expect.objectContaining({ runId: 'original-run', resumed: true }));
+    vi.useRealTimers();
+  });
+
+  it('persists the saved attempt as abandoned before Start Over begins a new run', async () => {
+    vi.useFakeTimers();
+    localStorage.setItem('fitness:skyline-glider:dad:mountain-pass', JSON.stringify({ schema: 'skyline-glider-checkpoint/v3', course: { id: 'mountain-pass', version: 1 }, lifecycle: 'active', identity: { fitnessSessionId: 'fs-test', riderId: 'dad', equipmentId: 'bike', calibration: { lowRpm: 30, highRpm: 100 }, runId: 'old-run', startedAt: '2026-10-07T18:00:00Z' }, state: { courseTime: 75, altitude: .5, collisions: 1, restarts: 0, collectedIds: [], checkpoint: { id: 'cp', time: 75, collectedIds: [] }, phase: 'playing', calibration: { lowRpm: 30, highRpm: 100 } } }));
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    fireEvent.click(screen.getByRole('button', { name: /start over/i }));
+    await act(async () => Promise.resolve());
+    const savedRecord = JSON.parse(global.fetch.mock.calls[1][1].body).record;
+    expect(savedRecord).toMatchObject({ run: { id: 'old-run', status: 'abandoned', duration_s: 75 } });
+    expect(screen.getByTestId('skyline-glider-countdown')).toBeTruthy();
+    vi.useRealTimers();
   });
 
   it('falls back to connected CycleAce when configured NiceDay is unusable', async () => {

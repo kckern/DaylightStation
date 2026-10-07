@@ -59,7 +59,7 @@ function collide(state, course) {
   if (!terrain) return state;
   const lives = state.lives - 1;
   if (lives <= 0) {
-    return { ...state, lives: 0, phase: 'crashed', crashRemaining: course.rules.restart_delay_s, collisions: state.collisions + 1 };
+    return { ...state, lives: 0, phase: 'crashed', crashRemaining: course.rules.restart_delay_s, collisions: state.collisions + 1, lastCollisionSegmentId: terrain.id };
   }
   const bounds = terrainBounds(terrain);
   const centre = clamp((bounds.top + bounds.bottom) / 2, HIGH_ALTITUDE, LOW_ALTITUDE);
@@ -67,6 +67,7 @@ function collide(state, course) {
     ...state,
     lives,
     collisions: state.collisions + 1,
+    lastCollisionSegmentId: terrain.id,
     altitude: moveToward(state.altitude, centre, 0.08),
     invincibleRemaining: course.rules.invincibility_s,
   };
@@ -170,6 +171,7 @@ export function createFlightState(course, {
     calibration: { ...calibration },
     lives: course.rules.lives,
     collisions: 0,
+    lastCollisionSegmentId: null,
     restarts: 0,
     invincibleRemaining: 0,
     crashRemaining: 0,

@@ -6,7 +6,7 @@ describe('Skyline audio', () => {
     const oscillator = { type: '', frequency: { value: 0 }, connect: vi.fn(), start: vi.fn(), stop: vi.fn() };
     const context = {
       state: 'suspended', destination: {}, currentTime: 0,
-      resume: vi.fn(async () => {}), createGain: vi.fn(() => master),
+      resume: vi.fn(async () => { context.state = 'running'; }), createGain: vi.fn(() => master),
       createOscillator: vi.fn(() => oscillator),
     };
     const { createSkylineAudio } = await import('./skylineAudio.js');
@@ -30,5 +30,15 @@ describe('Skyline audio', () => {
     await muted.prime();
     muted.setMuted(true);
     expect(muted.playCue('bell')).toBe(false);
+  });
+
+  it('does not claim a cue executed while the browser keeps audio suspended', async () => {
+    const { createSkylineAudio } = await import('./skylineAudio.js');
+    const master = { gain: { value: 1 }, connect: vi.fn() };
+    const context = { state: 'suspended', destination: {}, currentTime: 0, resume: vi.fn(async () => { throw new Error('gesture required'); }), createGain: vi.fn(() => master), createOscillator: vi.fn() };
+    const audio = createSkylineAudio({ AudioContextCtor: function AudioContext() { return context; } });
+    expect(await audio.prime()).toBe(false);
+    expect(audio.playCue('bell')).toBe(false);
+    expect(context.createOscillator).not.toHaveBeenCalled();
   });
 });

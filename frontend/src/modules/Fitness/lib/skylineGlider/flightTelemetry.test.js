@@ -91,7 +91,7 @@ describe('flight telemetry', () => {
     const result = collectFlightTelemetry({
       previous: state({ courseTime: 9.9 }),
       next: state({
-        courseTime: 10.1, phase: 'crashed', lives: 0, collisions: 1,
+        courseTime: 10.1, phase: 'crashed', lives: 0, collisions: 1, lastCollisionSegmentId: 'nose-hit',
         collectedIds: ['bell-1'], checkpoint: { id: 'ridge', time: 10 },
       }),
       input: { rpm: 40, connected: true, transportStalled: false },
@@ -99,7 +99,7 @@ describe('flight telemetry', () => {
       lastSampleSecond: 9, course,
     });
 
-    expect(result.events).toContainEqual({ type: 'collision', data: { count: 1, lives: 0, segmentId: 'hill' } });
+    expect(result.events).toContainEqual({ type: 'collision', data: { count: 1, lives: 0, segmentId: 'nose-hit' } });
     expect(result.events).toContainEqual({ type: 'collectible', data: { collectibleId: 'bell-1' } });
     expect(result.events).toContainEqual({ type: 'checkpoint', data: { checkpointId: 'ridge', checkpointTime: 10 } });
     expect(result.events).toContainEqual({ type: 'crashed', data: {} });
