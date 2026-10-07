@@ -834,6 +834,9 @@ export async function createSchoolLifecycle({
     curriculum, assignments: stores.assignments, sessions: stores.sessions, cardLadder: cardLadderStudyService, clock, newSessionId,
     attestations, curriculumExceptions: curriculumExceptionStore,
   }) : null;
+  if (practiceAssessments) cardLadderStudyService.configureCourseAccess?.({
+    getAssessment: (args) => practiceAssessments.forDeck(args),
+  });
   const planProjection = new PlanProjection({
     curriculum, assignments: stores.assignments, sessions: stores.sessions,
     attestations, curriculumExceptions: curriculumExceptionStore,
