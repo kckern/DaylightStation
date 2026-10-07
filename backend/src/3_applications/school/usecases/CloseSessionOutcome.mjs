@@ -56,7 +56,7 @@ import { formatPageSpans } from '#domains/school/questionBankV2.mjs';
 export class CloseSessionOutcome {
   #curriculum; #sessions; #tokens; #assignments; #economy; #economyAction; #economyEnabled;
   #receipts; #receiptCapture; #receiptArtifactPrinter; #grownUps; #teacherGate; #clock; #rng; #logger; #reviewQueue; #passOverrides; #worksheetInstances; #timezone;
-  #selfService; #realtime; #planProjection;
+  #selfService; #realtime; #planProjection; #practiceAssessments;
 
   /**
    * @param {object} deps
@@ -108,13 +108,14 @@ export class CloseSessionOutcome {
     realtime = null,
     // The shared assembler. This use case asks it for a DELIBERATELY narrower
     // projection than the agenda does — see `#projectPlan`.
-    planProjection = null,
+    planProjection = null, practiceAssessments = null,
     logger = console,
   } = {}) {
     if (!curriculum || !sessions || !tokens || !assignments) {
       throw new Error('CloseSessionOutcome requires curriculum, sessions, tokens and assignments');
     }
     if (!grownUps) throw new Error('CloseSessionOutcome requires grownUps (a GrownUpGate)');
+    this.#practiceAssessments = practiceAssessments;
     this.#curriculum = curriculum;
     this.#sessions = sessions;
     this.#tokens = tokens;
@@ -196,6 +197,7 @@ export class CloseSessionOutcome {
     if (!state.sessionId) return this.#unavailable(sessionId, 'We could not find that work.');
 
     const unit = await this.#curriculum.getUnit(state.unitId);
+    if (state.practiceAssessment) await this.#practiceAssessments?.recordFeedback({ state });
 
     if (state.outcome) {
       // ...UNLESS THE GATE HAS SINCE BEEN READ AGAIN (Task 11). A sheet the
@@ -265,6 +267,10 @@ export class CloseSessionOutcome {
       // Null on every ungated sheet, where it changes nothing.
       companionGate: state.companionGate,
     });
+    if (state.practiceAssessment && evaluated.result === 'passed') {
+      const progress = await this.#practiceAssessments?.get({ learnerId: state.learnerId, unitId: state.unitId });
+      if (progress && progress.stage !== 'completed') { evaluated.result = 'needs_remediation'; evaluated.reason = 'course_questions_unresolved'; }
+    }
     return this.#recordOutcomeAndSettle({
       sessionId, state, unit, nowIso, signedOff, result: evaluated.result, reason: evaluated.reason,
     });
@@ -372,7 +378,7 @@ export class CloseSessionOutcome {
       presentation: 'lesson',
       eyebrow: 'Try again',
       title: unit?.title ?? 'Fresh worksheet',
-      description: 'A fresh worksheet for the questions you missed.',
+      description: state.practiceAssessment ? 'Review the highlighted cards in your course, then print a quiz for the remaining questions.' : 'A fresh worksheet for the questions you missed.',
       icon: unit?.subject ?? null,
       // A `remediation` token can never carry a panel code — `tokens.mjs`'s
       // `createTokenRecord` whitelists `subject_next` only. `null` (not
@@ -599,7 +605,7 @@ export class CloseSessionOutcome {
           ? (companionVeto === 'exhausted'
             ? 'Ask a grown-up for a new sheet.'
             : `Almost there — finish ${unit?.companion?.label ?? 'your read-along'} first.`)
-          : 'Almost there — try again.'),
+          : state.practiceAssessment ? 'Review your course cards before printing the remaining questions.' : 'Almost there — try again.'),
       document,
       receiptArtifactId: receiptArtifact?.artifact?.manifest?.artifactId ?? null,
       ...printing,

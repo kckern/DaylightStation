@@ -262,7 +262,7 @@ export class IssueDocument {
   #assignments; #worksheetInstances; #publishPrintDocument; #companions;
   #companionCodes; #householdId;
   #issuedArtifacts; #renderIssuedArtifact; #curriculumExceptions;
-  #answerSheetPolicy; #printCooldownMinutes;
+  #answerSheetPolicy; #printCooldownMinutes; #practiceAssessments;
   #clock; #rng; #newArtifactId; #timezone; #logger;
 
   /**
@@ -313,7 +313,7 @@ export class IssueDocument {
     assignments = null, worksheetInstances = null, publishPrintDocument = null, companions = null,
     companionCodes = null, householdId = null,
     issuedArtifacts = null, renderIssuedArtifact = null, curriculumExceptions = null,
-    answerSheetPolicy = null, printCooldownMinutes = null,
+    answerSheetPolicy = null, printCooldownMinutes = null, practiceAssessments = null,
     // Optional: the room's realtime gateway. A printed sheet is the moment
     // a disc on the status board should turn amber, and until this the
     // board only learned of it on its five-minute poll.
@@ -321,6 +321,7 @@ export class IssueDocument {
     clock = () => new Date(), rng = Math.random, timezone = null,
     newArtifactId = () => `art_${shortId(8)}`, logger = console,
   } = {}) {
+    this.#practiceAssessments = practiceAssessments;
     this.#realtime = realtime;
     if (!curriculum || !sessions || !tokens || !renderer || !printer || !formMaps) {
       throw new Error('IssueDocument requires curriculum, sessions, tokens, renderer, printer and formMaps');
@@ -471,7 +472,19 @@ export class IssueDocument {
    * known — see `#reprintExact`'s doc comment for the full reasoning.
    */
   async #issueNew({ sessionId, nowIso, state, replacementArtifactId = null }) {
-    const unit = await this.#curriculum.getUnit(state.unitId);
+    let unit = await this.#curriculum.getUnit(state.unitId);
+    if (unit?.practice || state.practiceAssessment) {
+      if (!state.firstIssuedAt) {
+        if (!this.#practiceAssessments) return this.#unavailable(sessionId, 'practice-not-configured', 'Card practice readiness is not configured.');
+        try {
+          const assessment = await this.#practiceAssessments.prepare({ state, unit });
+          state = { ...state, practiceAssessment: assessment };
+        } catch (error) {
+          return this.#unavailable(sessionId, 'practice-required', error.message);
+        }
+      }
+      unit = { ...unit, document: state.practiceAssessment.document };
+    }
 
     // V2 bank-only lessons are printable worksheets. Their authored bank is
     // sampled once into a learner/enrollment-specific immutable instance;
@@ -1273,6 +1286,7 @@ export class IssueDocument {
       learnerId: state.learnerId ?? null,
       sessionId,
       tokens,
+      ...(state.practiceAssessment ? { assessmentItemIds: state.practiceAssessment.questionIds } : {}),
     };
 
     let rendered;

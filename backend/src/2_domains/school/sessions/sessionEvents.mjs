@@ -123,6 +123,13 @@ const percentIfPresent = (field) => (raw, push) => {
  * pass.
  */
 const SCHEMA = {
+  practice_prepared: {
+    fields: ['assessment'],
+    validate: (raw, push) => {
+      const a = raw.assessment;
+      if (!a || !a.practice || !Array.isArray(a.assessmentForms) || !isNonEmptyString(a.document) || !Array.isArray(a.questionIds) || !a.questionIds.length || !a.questionIds.every(isNonEmptyString) || !isNonEmptyString(a.readyAt)) push('assessment: requires practice, forms, document, questionIds and readiness time');
+    },
+  },
   created: {
     fields: ['learnerId', 'unitId', 'studyDay', 'remediationOf', 'variant', 'remediationItemIds', 'openedBy', 'replacementKey', 'replacesSessionId'],
     validate: allOf(stringField('learnerId'), stringField('unitId'), (raw, push) => {
@@ -559,7 +566,7 @@ export const ANNOTATION_EVENTS = Object.freeze(new Set([
   'evidence_invalidated', 'evidence_attributed',
   'reward_reconciled', 'reward_reconciliation_failed',
   'result_receipt_captured', 'result_receipt_reprinted', 'checkpoint_cleared',
-  'companion_gate_read', 'remediation_replaced',
+  'companion_gate_read', 'remediation_replaced', 'practice_prepared',
 ]));
 /**
  * Annotations that are legal only from specific states, overriding the default
@@ -590,6 +597,7 @@ export const ANNOTATION_EVENTS = Object.freeze(new Set([
  * below is the authority on annotation legality, as it always was.)
  */
 const ANNOTATION_STATES = new Map([
+  ['practice_prepared', new Set(['created'])],
   ['checkpoint_cleared', new Set(['media_dispatched', 'media_stalled'])],
   ['remediation_replaced', new Set(['remediation_opened'])],
 ]);
@@ -776,6 +784,10 @@ const emptyState = () => ({
   // once, by the first `issued` event, and never moved after.
   firstIssuedAt: null,
   attemptIds: [],
+  practiceAssessment: null,
+  practiceMachineVerdicts: null,
+  practiceQuestionVerdicts: {},
+  gradedAt: null,
   gradedPercent: null,
   machineGrade: null,
   gradeAdjustments: [],
@@ -831,7 +843,23 @@ const emptyState = () => ({
   errors: [],
 });
 
+/** Effective item changes get their own time; a correction to one answer must
+ * not replay unchanged failures over later retry credits. */
+function updatePracticeVerdicts(s, at) {
+  if (!s.practiceMachineVerdicts) return;
+  const effective = [...s.gradeAdjustments].reverse().find(row => !row.retracted);
+  for (const [id, original] of Object.entries(s.practiceMachineVerdicts)) {
+    let correct = original.correct;
+    if (Array.isArray(effective?.missedItemIds)) correct = effective.missedItemIds.includes(id) ? false : original.correct === null ? null : true;
+    const explicit = effective?.itemVerdicts?.find(row => row.itemId === id);
+    if (explicit) correct = explicit.voided === true ? null : explicit.correct;
+    const previous = s.practiceQuestionVerdicts[id];
+    if (!previous || previous.correct !== correct) s.practiceQuestionVerdicts[id] = { correct, at };
+  }
+}
+
 const APPLY = {
+  practice_prepared(s, e) { s.practiceAssessment = structuredClone(e.assessment); },
   created(s, e) {
     s.learnerId = e.learnerId ?? null;
     s.unitId = e.unitId ?? null;
@@ -939,6 +967,7 @@ const APPLY = {
     applyGate(s, e);
   },
   graded(s, e) {
+    s.gradedAt = e.at;
     (Array.isArray(e.attemptIds) ? e.attemptIds : []).forEach((id) => {
       if (isNonEmptyString(id) && !s.attemptIds.includes(id)) s.attemptIds.push(id);
     });
@@ -951,6 +980,11 @@ const APPLY = {
     // A re-scan of the same sheet re-states the gate; the latest read wins,
     // which is what makes Task 11's repair-by-re-scan possible at all.
     applyGate(s, e);
+    if (s.practiceAssessment) {
+      s.practiceMachineVerdicts = Object.fromEntries(s.practiceAssessment.questionIds.map(id => [id,
+        { correct: s.voidedItemIds.includes(id) ? null : !s.missedItemIds.includes(id) }]));
+      updatePracticeVerdicts(s, e.at);
+    }
     s.machineGrade = {
       percent: typeof e.percent === 'number' ? e.percent : null,
       passingPercent: typeof e.passingPercent === 'number' ? e.passingPercent : null,
@@ -1036,6 +1070,7 @@ const APPLY = {
       push(`duplicate adjustmentId "${e.adjustmentId}"`);
       return;
     }
+    s.gradedAt = e.at;
     s.gradeAdjustments.push({
       adjustmentId: e.adjustmentId,
       passingPercent: e.passingPercent ?? null,
@@ -1050,6 +1085,7 @@ const APPLY = {
       seq: e.seq,
       retracted: false,
     });
+    updatePracticeVerdicts(s, e.at);
   },
   grade_adjustment_retracted(s, e, push) {
     const target = [...s.gradeAdjustments].reverse().find((row) => row.adjustmentId === e.adjustmentId);
@@ -1061,10 +1097,12 @@ const APPLY = {
       push(`adjustmentId "${e.adjustmentId}" is already retracted`);
       return;
     }
+    s.gradedAt = e.at;
     target.retracted = true;
     target.retractedAt = e.at;
     target.retractedBy = e.retractedBy;
     target.retractionReason = e.reason;
+    updatePracticeVerdicts(s, e.at);
   },
   evidence_invalidated(s, e, push) {
     if (!s.machineGrade) {

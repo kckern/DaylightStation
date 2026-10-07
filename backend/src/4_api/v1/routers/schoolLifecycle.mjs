@@ -162,6 +162,7 @@ const capabilityProof = (req) => {
  * @returns {import('express').Router}
  */
 export function createSchoolLifecycleRouter({
+  practiceAssessments = null,
   resolveScanAction = null,
   lifecycleAgendaResource = null,
   lifecycleReadService = null,
@@ -199,6 +200,18 @@ export function createSchoolLifecycleRouter({
   logger = console,
 } = {}) {
   const router = express.Router();
+  if (practiceAssessments) {
+    router.get('/practice-assessments', asyncHandler(async (req, res) => {
+      res.set('Cache-Control', 'private, no-store').json(await practiceAssessments.forDeck({ learnerId: req.query.learnerId, deckId: req.query.deckId }));
+    }));
+    router.post('/practice-assessments/:unitId/print', asyncHandler(async (req, res) => {
+      res.set('Cache-Control', 'private, no-store').json(await practiceAssessments.print({ learnerId: req.body?.learnerId, unitId: req.params.unitId }));
+    }));
+    router.post('/practice-assessments/:unitId/review', asyncHandler(async (req, res) => {
+      res.set('Cache-Control', 'private, no-store').json(await practiceAssessments.review({ learnerId: req.body?.learnerId, unitId: req.params.unitId, sittingId: req.body?.sittingId }));
+    }));
+  }
+
 
   const wired = Object.entries({
     resolveScanAction,

@@ -118,6 +118,11 @@ beforeAll(async () => {
     buildAgenda,
     previewAgenda,
     getLearnerDayCompletion,
+    practiceAssessments: {
+      forDeck: async (args) => ({ ...args, stage: 'practice' }),
+      print: async (args) => ({ ...args, status: 'issued' }),
+      review: async (args) => ({ ...args, item: { source: 'course-review' } }),
+    },
     receiptPngRenderer,
     issueDocument: { execute: async ({ sessionId }) => ({ status: sessionId === 'ses_bad' ? 'unavailable' : 'issued', sessionId, artifactId: 'art_1' }) },
     dispatchMedia: {
@@ -512,4 +517,14 @@ describe('stale-save baseline (M6 gate 3)', () => {
     expect(body.assignedBy).toBe('dad');
     expect(body.baseUpdatedAt).toBe('T9');
   });
+});
+
+it('exposes read-only course readiness and explicit print/review actions', async () => {
+  const ready = await fetch(`${base}/practice-assessments?learnerId=kid1&deckId=language%2Ftest%2Fone`);
+  expect(ready.headers.get('cache-control')).toBe('private, no-store');
+  expect(await ready.json()).toMatchObject({ learnerId: 'kid1', deckId: 'language/test/one', stage: 'practice' });
+  const print = await fetch(`${base}/practice-assessments/test.01/print`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({learnerId:'kid1'}) });
+  expect(await print.json()).toMatchObject({learnerId:'kid1',unitId:'test.01',status:'issued'});
+  const review = await fetch(`${base}/practice-assessments/test.01/review`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({learnerId:'kid1',sittingId:'sit1'}) });
+  expect(await review.json()).toMatchObject({learnerId:'kid1',unitId:'test.01',sittingId:'sit1',item:{source:'course-review'}});
 });

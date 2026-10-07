@@ -1,3 +1,4 @@
+import { startCourseReview } from '#domains/school/cardLadder/engine.mjs';
 // backend/src/3_applications/school/CardLadderSittingService.mjs
 /**
  * The card ladder's application service (mastery redesign rev 4, spec §4/§8).
@@ -28,7 +29,7 @@ import { offsetMinutesFor, studyDayForInstant } from '#domains/school/studyDay.m
 import { addDays } from '#domains/school/termVerdict.mjs';
 import { curriculumPosterRef } from '#apps/common/resources/publicResourceRefs.mjs';
 import {
-  addActiveTime, cueFor, currentItem, deckDirOf, deckProgress, emptyWordV3, introPlanLabel, introPreview, excludeWordFromDay, foldPaperAttempts, ladderLevel, markMastered, openDay, orderNewWords,
+  applyGraded, addActiveTime, cueFor, currentItem, deckDirOf, deckProgress, emptyWordV3, introPlanLabel, introPreview, excludeWordFromDay, foldPaperAttempts, ladderLevel, markMastered, openDay, orderNewWords,
   quizDocumentIdFor, respond, roundHasMatch, newWordsHeld, startPractice, learnMore, typedAnswers, withTunedValues, wordAssetIds, wordTransitions,
   servedWhy, dayChanges, prereqChanges, scriptFor, ruleForTarget,
 } from '#domains/school/cardLadder/index.mjs';
@@ -138,6 +139,42 @@ export class CardLadderSittingService {
     if (!deck || !Array.isArray(deck.words) || typeof deck.lexicon !== 'string') throw new EntityNotFoundError('card-ladder deck', deckId);
     const lexicon = this.#lexicons.getLexicon(deck.lexicon);
     return { deck, lexicon, pkg: lexicon.package };
+  }
+
+  async courseEvidence({ userId, deckId }) {
+    await this.#assertAssigned(userId, deckId);
+    const { pkg } = await this.#load(deckId);
+    const { store } = this.#stores.open(userId, pkg, this.#today(), { readOnly: true });
+    return { status: store.readStatus(userId, pkg), dayFiles: (store.listDays?.(userId, pkg) ?? []).map((day) => store.readDay(userId, pkg, day)) };
+  }
+
+  async coursePaperFeedback({ userId, deckId, cardIds, attemptKey }) {
+    await this.#assertAssigned(userId, deckId);
+    const { pkg, deck } = await this.#load(deckId);
+    const day = this.#today();
+    const { store } = this.#stores.open(userId, pkg, day);
+    const key = `course:${attemptKey}`;
+    const settings = this.#currentSettings(store, userId, pkg);
+    store.transact(userId, pkg, day, ({ status, dayFile }) => {
+      if (status.paperAttemptsFolded.includes(key)) return { status, dayFile };
+      for (const id of cardIds) {
+        if (!deck.words.includes(id)) throw new ValidationError('Paper feedback contains an unknown card.');
+        if (status.words[id]) status.words[id] = applyGraded(status.words[id], { source: 'paper', correct: false, day, task: '2.2', settings: { afterMisses: settings.drill.afterMisses } });
+      }
+      status.paperAttemptsFolded.push(key);
+      return { status, dayFile };
+    });
+    this.#logger.info?.('school.card-ladder.course-paper-feedback', { learnerId: userId, deckId, attemptKey, cardIds });
+  }
+
+  async courseReview({ userId, deckId, sittingId, unitId, chosen, after }) {
+    const { store, pkg, ctx, day, settings } = await this.#context(userId, sittingId);
+    const sitting = ctx.dayFile.sittings[sittingId];
+    if (sitting.deckId !== deckId) throw new ValidationError('Review belongs to a different deck.');
+    const out = store.transact(userId, pkg, day, ({ status, dayFile }) => startCourseReview({ ...ctx, status, dayFile: addActiveTime(dayFile, this.#now()) }, { unitId, chosen, after }));
+    const nextCtx = { ...ctx, status: out.status, dayFile: out.dayFile, settings };
+    this.#logger.info?.('school.card-ladder.course-review', { learnerId: userId, sittingId, unitId, cardIds: chosen });
+    return { item: this.#publicItem(currentItem(nextCtx), nextCtx), progress: this.#progress(nextCtx) };
   }
 
   async packageOf(deckId) { return (await this.#load(deckId)).pkg; }
@@ -263,7 +300,8 @@ export class CardLadderSittingService {
     const run = dayFile.practice;
     const practicing = Boolean(dayFile.doneAt && dayFile.summarySeen && run && run.index < run.queue.length);
     let phase = 'summary';
-    if (rechecksLeft) phase = 'rechecks';
+    if (dayFile.courseReview?.index < dayFile.courseReview?.queue.length) phase = 'course-review';
+    else if (rechecksLeft) phase = 'rechecks';
     else if (drill) phase = 'drill';
     else if (round) phase = 'round';
     else if (practicing) phase = 'practice';

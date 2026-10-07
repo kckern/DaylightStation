@@ -67,7 +67,7 @@ import { studyDayForInstant } from '#domains/school/studyDay.mjs';
  * the engine had graded it. The row is marked `attested: true` — a reader that
  * must distinguish evidence kinds can. Lifted verbatim from `BuildAgenda`.
  */
-function withAttestedPasses(history, attestations, learnerId, untilMs = null) {
+export function withAttestedPasses(history, attestations, learnerId, untilMs = null) {
   const entries = (attestations?.list?.({ learnerId }) ?? [])
     .filter((a) => untilMs == null || !(Date.parse(a?.at ?? '') >= untilMs));
   if (!entries.length) return history;
@@ -100,6 +100,7 @@ function historyBefore(history, untilMs) {
 }
 
 export class PlanProjection {
+  #practiceAssessments;
   #curriculum; #assignments; #sessions; #attestations; #curriculumExceptions;
   #launchers; #timezone; #clock; #logger; #planErrorEvent; #launcherFailedEvent;
   #declaredEntryActions; #householdSchedule; #dayBypasses;
@@ -143,12 +144,13 @@ export class PlanProjection {
     // The grown-up day-bypass ledger (`ManageProgramDayBypass`'s store). A
     // bypass on file settles that program's study day for EVERY launcher, not
     // only piano's. Null: bypasses are not consulted here.
-    dayBypasses = null,
+    dayBypasses = null, practiceAssessments = null,
     logger = console,
   } = {}) {
     if (!curriculum || !assignments || !sessions) {
       throw new Error('PlanProjection requires curriculum, assignments and sessions');
     }
+    this.#practiceAssessments = practiceAssessments;
     this.#householdSchedule = householdSchedule;
     this.#dayBypasses = dayBypasses;
     this.#curriculum = curriculum;
@@ -313,14 +315,34 @@ export class PlanProjection {
       ? withCurriculumExceptions(attestedHistory, activeExceptions, learnerId)
       : attestedHistory;
 
+    const linked = (assignment?.programs ?? []).filter((p) => p.programId === 'flashcards' && p.linkedUnitId);
+    const assessmentByUnit = new Map();
+    for (const enrollment of linked) {
+      if (!this.#practiceAssessments) continue;
+      try { assessmentByUnit.set(enrollment.linkedUnitId, await this.#practiceAssessments.get({ learnerId, unitId: enrollment.linkedUnitId })); }
+      catch (error) { this.#logger.warn?.('school.practice-assessment.projection-failed', { learnerId, unitId: enrollment.linkedUnitId, error: error.message }); }
+    }
+    const effectiveHistory = history.map((s) => !s.attested && !s.curriculumException && assessmentByUnit.has(s.unitId) && assessmentByUnit.get(s.unitId).stage !== 'completed' && s.outcome?.result === 'passed'
+      ? { ...s, outcome: { ...s.outcome, result: 'needs_remediation' } } : s);
     const coursePolicies = Object.fromEntries((works ?? [])
       .map((work) => [work.work, work.progression]).filter(([, p]) => p));
     const plan = planLearnerWork({
-      learnerId, assignment, units, sessions: history, now: nowIso,
+      learnerId, assignment, units, sessions: effectiveHistory, now: nowIso,
       timezone: this.#timezone, coursePolicies,
     });
     augmentPlan?.(plan, { assignment, nowIso });
-    if (assignedPrograms) appendAssignedProgramEntries(plan, assignment);
+    if (assignedPrograms) {
+      appendAssignedProgramEntries(plan, assignment);
+      for (const enrollment of linked) {
+        const owner = plan.entries.find((e) => e.unitId === enrollment.linkedUnitId);
+        const program = plan.entries.find((e) => e.program === 'flashcards' && e.programInstance === (enrollment.deckId ?? enrollment.corpusId));
+        if (!owner || !program) continue;
+        program.linkedUnitId = owner.unitId;
+        program.assessment = assessmentByUnit.get(owner.unitId) ?? { stage: 'locked', message: 'Course readiness is unavailable.' };
+        if (['locked', 'dormant', 'upcoming'].includes(owner.status)) { program.status = owner.status; program.lockedBy = owner.lockedBy; }
+        for (const key of ['entries', 'assigned', 'available', 'locked', 'inProgress', 'completed']) if (Array.isArray(plan[key])) plan[key] = plan[key].filter((e) => e.unitId !== owner.unitId);
+      }
+    }
     if (plan.errors.length) {
       this.#logger.warn?.(planErrorEvent, { learnerId, errors: plan.errors });
     }

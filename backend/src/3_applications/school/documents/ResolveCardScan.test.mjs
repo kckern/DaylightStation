@@ -1403,3 +1403,17 @@ async function useCaseExecute(deps, args) {
   const useCase = new ResolveCardScan(deps);
   return useCase.execute(args);
 }
+
+it('prints and grades only the pinned unresolved question subset', async () => {
+  const repository = fakeRepository();
+  const allocationStore = fakeAllocationStore();
+  const source = sourceDoc('subset-sheet', [mcQuestion('q1', 1, { choices: ['A', 'B'], answer: 'A' }), mcQuestion('q2', 2, { choices: ['C', 'D'], answer: 'D' })]);
+  const { allocation } = await publishAndAllocate({ repository, allocationStore, source, context: { cardId: '1234567', learnerId: 'test-learner', assessmentItemIds: ['q2'] } });
+  expect(allocation.rowRange).toEqual({ start: 1, end: 1 });
+  const records = await allocationStore.findByCard('1234567');
+  expect(records[0].assessmentItemIds).toEqual(['q2']);
+  const resolver = new ResolveCardScan({ repository, allocationStore });
+  const resolved = await resolver.execute({ testId: '1234567', answers: { 1: 'B' } });
+  expect(resolved.results[0].results.map((item) => item.itemId)).toEqual(['q2']);
+  expect(resolved.results[0].results[0].status).toBe('correct');
+});

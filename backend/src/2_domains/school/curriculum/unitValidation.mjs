@@ -1,3 +1,4 @@
+import { validatePracticeAssessment } from '../practiceAssessment.mjs';
 /**
  * Pure validation + normalisation of a curriculum unit (spec §3.1). No I/O.
  *
@@ -308,6 +309,9 @@ const isRequireParts = (v) => v === 'all' || (typeof v === 'number' && Number.is
 export function validateUnit(raw, sets = {}) {
   if (!isPlainObject(raw)) return { errors: ['unit must be a mapping'] };
   const errors = [];
+
+  const practiceResult = validatePracticeAssessment(raw);
+  errors.push(...practiceResult.errors);
 
   // Optional schema discriminator (admin advocacy #18): absent = v1.
   if (raw.schema !== undefined && raw.schema !== 'school.unit/v1') {
@@ -704,6 +708,7 @@ export function validateUnit(raw, sets = {}) {
       ...(checkpoints ? { checkpoints } : {}),
       ...(schoolcalc ? { schoolcalc } : {}),
       ...(companion ? { companion } : {}),
+      ...(practiceResult.practice ? { practice: practiceResult.practice, assessmentForms: practiceResult.assessmentForms } : {}),
       provenance: raw.provenance,
     },
   };

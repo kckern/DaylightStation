@@ -178,6 +178,7 @@ export class YamlAllocationStore {
         variant: request.variant ?? 0,
         ...(request.learnerId != null ? { learnerId: request.learnerId } : {}),
         ...(request.sessionId != null ? { sessionId: request.sessionId } : {}),
+        ...(request.assessmentItemIds ? { assessmentItemIds: [...request.assessmentItemIds] } : {}),
         ...(Array.isArray(request.rowItems) ? { rowItems: request.rowItems } : {}),
         // Optional immutable lesson ownership for a composed worksheet. It
         // is deliberately stored with the allocation, not inferred from a
@@ -950,6 +951,7 @@ function allocationRecord({
     variant: request.variant ?? 0,
     learnerId: request.learnerId,
     ...(request.sessionId != null ? { sessionId: request.sessionId } : {}),
+    ...(request.assessmentItemIds ? { assessmentItemIds: [...request.assessmentItemIds] } : {}),
     ...(Array.isArray(request.rowItems) ? { rowItems: structuredClone(request.rowItems) } : {}),
     ...(Array.isArray(request.sections) ? { sections: structuredClone(request.sections) } : {}),
     renderedAt,

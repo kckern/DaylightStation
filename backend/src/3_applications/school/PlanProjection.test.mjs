@@ -166,3 +166,21 @@ describe('PlanProjection', () => {
     await expect(projection.project({ learnerId: '  ' })).rejects.toThrow(/learnerId/);
   });
 });
+
+it('combines linked practice and assessed work while keeping the daily program status', async () => {
+ const unit = {unitId:'korean-3-2.lesson-01',title:'Korean Lesson 1',subject:'language',courseId:'korean-3-2',sequence:1,practice:{deckId:'language/korean-3-2/lesson-01'}};
+ const projection = new PlanProjection({curriculum:{listUnits:async()=>[unit]},assignments:{get:async()=>({courses:['korean-3-2'],programs:[{programId:'flashcards',deckId:unit.practice.deckId,linkedUnitId:unit.unitId,subject:'language'}]})},sessions:{listForLearner:async()=>[]},practiceAssessments:{get:async()=>({stage:'review',resolvedQuestionIds:['q1'],unresolvedQuestionIds:['q2']})},launchers:new Map([['flashcards',{id:'flashcards',status:async()=>({doneToday:true})}]])});
+ const {plan} = await projection.project({learnerId:'test-learner'});
+ expect(plan.entries).toHaveLength(1);
+ expect(plan.entries[0]).toMatchObject({program:'flashcards',linkedUnitId:unit.unitId,assessment:{stage:'review'}});
+ expect(plan.available.some((e)=>e.unitId===unit.unitId)).toBe(false);
+});
+it('retains teacher progression overrides when practice-linked paper targets are unresolved', async()=>{
+ const first={unitId:'k.01',courseId:'k',sequence:1,title:'One',subject:'language',practice:{deckId:'language/k/one'}};
+ const second={...first,unitId:'k.02',sequence:2,practice:undefined};
+ for(const type of ['attested','excused']){
+  const projection=new PlanProjection({curriculum:{listUnits:async()=>[first,second]},assignments:{get:async()=>({courses:['k'],programs:[{programId:'flashcards',deckId:first.practice.deckId,linkedUnitId:first.unitId,subject:'language'}]})},sessions:{listForLearner:async()=>[]},practiceAssessments:{get:async()=>({stage:'practice'})},attestations:type==='attested'?{list:()=>[{id:'att1',unitId:first.unitId,at:'2026-10-01T12:00:00Z'}]}:null,curriculumExceptions:type==='excused'?{active:async()=>[{exceptionId:'ex1',learnerId:'test-learner',kind:'excused',resolvedLessonIds:[first.unitId]}]}:null});
+  const {plan}=await projection.project({learnerId:'test-learner'});
+  expect(plan.entries.find(e=>e.unitId===second.unitId).status).not.toBe('locked');
+ }
+});

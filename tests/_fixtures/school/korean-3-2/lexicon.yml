@@ -1,0 +1,296 @@
+schema: school.card-lexicon/v3
+package: korean-3-2
+target:
+  code: ko
+  name: Korean
+anchor:
+  code: en
+  name: English
+program:
+  title: Korean 3-2 · Lesson 1
+entries:
+  - id: dolboda
+    group: lesson-01
+    kind: word
+    term: 돌보다
+    gloss: care for
+    pronunciation: dolboda
+    decoys:
+      term:
+        - 지진
+        - 태풍
+        - 홍수
+      gloss:
+        - earthquake
+        - typhoon
+        - flood
+  - id: give-help
+    group: lesson-01
+    kind: phrase
+    term: 도움을 주다
+    gloss: give help
+    pronunciation: doumeul juda
+    decoys:
+      term:
+        - 도움을 받다
+        - 불우 이웃을 돕다
+        - 보람을 느끼다
+      gloss:
+        - receive help
+        - help neighbors in need
+        - feel a sense of accomplishment
+  - id: receive-help
+    group: lesson-01
+    kind: phrase
+    term: 도움을 받다
+    gloss: receive help
+    pronunciation: doumeul batda
+    decoys:
+      term:
+        - 도움을 주다
+        - 불우 이웃을 돕다
+        - 보람을 느끼다
+      gloss:
+        - give help
+        - help neighbors in need
+        - feel a sense of accomplishment
+  - id: help-neighbors
+    group: lesson-01
+    kind: phrase
+    term: 불우 이웃을 돕다
+    gloss: help neighbors in need
+    pronunciation: buruu iuseul dopda
+    decoys:
+      term:
+        - 도움을 주다
+        - 도움을 받다
+        - 보람을 느끼다
+      gloss:
+        - give help
+        - receive help
+        - feel a sense of accomplishment
+  - id: feel-rewarded
+    group: lesson-01
+    kind: phrase
+    term: 보람을 느끼다
+    gloss: feel a sense of accomplishment
+    pronunciation: borameul neukkida
+    decoys:
+      term:
+        - 도움을 주다
+        - 도움을 받다
+        - 불우 이웃을 돕다
+      gloss:
+        - give help
+        - receive help
+        - help neighbors in need
+  - id: volunteer
+    group: lesson-01
+    kind: phrase
+    term: 자원봉사를 하다
+    gloss: volunteer
+    pronunciation: jawonbongsareul hada
+    decoys:
+      term:
+        - 도움을 주다
+        - 도움을 받다
+        - 불우 이웃을 돕다
+      gloss:
+        - give help
+        - receive help
+        - help neighbors in need
+  - id: earthquake
+    group: lesson-01
+    kind: word
+    term: 지진
+    gloss: earthquake
+    pronunciation: jijin
+    decoys:
+      term:
+        - 돌보다
+        - 태풍
+        - 홍수
+      gloss:
+        - care for
+        - typhoon
+        - flood
+  - id: typhoon
+    group: lesson-01
+    kind: word
+    term: 태풍
+    gloss: typhoon
+    pronunciation: taepung
+    decoys:
+      term:
+        - 돌보다
+        - 지진
+        - 홍수
+      gloss:
+        - care for
+        - earthquake
+        - flood
+  - id: flood
+    group: lesson-01
+    kind: word
+    term: 홍수
+    gloss: flood
+    pronunciation: hongsu
+    decoys:
+      term:
+        - 돌보다
+        - 지진
+        - 태풍
+      gloss:
+        - care for
+        - earthquake
+        - typhoon
+  - id: damage
+    group: lesson-01
+    kind: word
+    term: 피해
+    gloss: damage
+    pronunciation: pihae
+    decoys:
+      term:
+        - 돌보다
+        - 지진
+        - 태풍
+      gloss:
+        - care for
+        - earthquake
+        - typhoon
+  - id: donation
+    group: lesson-01
+    kind: word
+    term: 성금
+    gloss: donation
+    pronunciation: seonggeum
+    decoys:
+      term:
+        - 돌보다
+        - 지진
+        - 태풍
+      gloss:
+        - care for
+        - earthquake
+        - typhoon
+  - id: important
+    group: lesson-01
+    kind: word
+    term: 중요하다
+    gloss: be important
+    pronunciation: jungyohada
+    decoys:
+      term:
+        - 돌보다
+        - 지진
+        - 태풍
+      gloss:
+        - care for
+        - earthquake
+        - typhoon
+  - id: errand
+    group: lesson-01
+    kind: word
+    term: 심부름
+    gloss: errand
+    pronunciation: simbureum
+    decoys:
+      term:
+        - 돌보다
+        - 지진
+        - 태풍
+      gloss:
+        - care for
+        - earthquake
+        - typhoon
+  - id: ask-permission
+    group: lesson-01
+    kind: phrase
+    term: 질문해도 돼요?
+    gloss: May I ask a question?
+    pronunciation: jilmunhaedo dwaeyo?
+    decoys:
+      term:
+        - 도움을 주다
+        - 도움을 받다
+        - 불우 이웃을 돕다
+      gloss:
+        - give help
+        - receive help
+        - help neighbors in need
+  - id: photo-permission
+    group: lesson-01
+    kind: phrase
+    term: 사진을 찍어도 돼요?
+    gloss: May I take a photo?
+    pronunciation: sajineul jjigeodo dwaeyo?
+    decoys:
+      term:
+        - 도움을 주다
+        - 도움을 받다
+        - 불우 이웃을 돕다
+      gloss:
+        - give help
+        - receive help
+        - help neighbors in need
+  - id: eat-permission
+    group: lesson-01
+    kind: phrase
+    term: 먹어도 돼요?
+    gloss: May I eat it?
+    pronunciation: meogeodo dwaeyo?
+    decoys:
+      term:
+        - 도움을 주다
+        - 도움을 받다
+        - 불우 이웃을 돕다
+      gloss:
+        - give help
+        - receive help
+        - help neighbors in need
+  - id: dad-will-help
+    group: lesson-01
+    kind: phrase
+    term: 아빠가 도와줄 테니까
+    gloss: Dad will help you, so…
+    pronunciation: appaga dowajul tenikka
+    decoys:
+      term:
+        - 도움을 주다
+        - 도움을 받다
+        - 불우 이웃을 돕다
+      gloss:
+        - give help
+        - receive help
+        - help neighbors in need
+  - id: i-will-hold
+    group: lesson-01
+    kind: phrase
+    term: 내가 안고 있을 테니까
+    gloss: I will hold it, so…
+    pronunciation: naega ango isseul tenikka
+    decoys:
+      term:
+        - 도움을 주다
+        - 도움을 받다
+        - 불우 이웃을 돕다
+      gloss:
+        - give help
+        - receive help
+        - help neighbors in need
+  - id: mom-will-wake
+    group: lesson-01
+    kind: phrase
+    term: 엄마가 깨워 줄 테니까
+    gloss: Mom will wake you up, so…
+    pronunciation: eommaga kkaewo jul tenikka
+    decoys:
+      term:
+        - 도움을 주다
+        - 도움을 받다
+        - 불우 이웃을 돕다
+      gloss:
+        - give help
+        - receive help
+        - help neighbors in need

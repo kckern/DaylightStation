@@ -1,0 +1,78 @@
+schema: school.unit/v1
+unitId: korean-3-2.lesson-01
+title: 'Korean 3-2 · Lesson 1: Helping others'
+courseId: korean-3-2
+sequence: 1
+subject: language
+description: Practice 19 vocabulary and model-expression cards, then demonstrate the two grammar patterns on paper.
+reading: Textbook pages 14–23; workbook pages 4–8.
+sourceTitle: 재외동포를 위한 한국어 3-2
+objectives:
+  - Recognize Lesson 1 vocabulary and model expressions in both directions.
+  - Ask permission with -아/어도 되다.
+  - Offer an intended action with -(으)ㄹ 테니까 before a request or suggestion.
+passing:
+  percent: 100
+retry:
+  variants: 2
+practice:
+  programId: flashcards
+  deckId: language/korean-3-2/lesson-01
+  requiredCardIds:
+    - dolboda
+    - give-help
+    - receive-help
+    - help-neighbors
+    - feel-rewarded
+    - volunteer
+    - earthquake
+    - typhoon
+    - flood
+    - damage
+    - donation
+    - important
+    - errand
+    - ask-permission
+    - photo-permission
+    - eat-permission
+    - dad-will-help
+    - i-will-hold
+    - mom-will-wake
+  questionCards:
+    permission-01:
+      cardIds:
+        - ask-permission
+      kind: application
+      explanation: Use -아/어도 돼요? to ask permission. 질문하다 becomes 질문해도 돼요?
+    permission-02:
+      cardIds:
+        - photo-permission
+      kind: application
+      explanation: 찍다 becomes 찍어도 돼요? when asking permission to take a photo.
+    permission-03:
+      cardIds:
+        - eat-permission
+      kind: application
+      explanation: 먹다 becomes 먹어도 돼요? when asking permission to eat.
+    intention-01:
+      cardIds:
+        - dad-will-help
+      kind: application
+      explanation: 도와줄 테니까 says that Dad intends to help, followed by a request or suggestion.
+    intention-02:
+      cardIds:
+        - i-will-hold
+      kind: application
+      explanation: 안고 있을 테니까 offers to hold something, followed by a request to the other person.
+    intention-03:
+      cardIds:
+        - mom-will-wake
+      kind: application
+      explanation: 깨워 줄 테니까 offers to wake someone, followed by a request or reassurance.
+provenance:
+  source: 재외동포를 위한 한국어 3-2, textbook pp. 14–23; workbook pp. 4–8. Quiz examples authored from the source grammar.
+  reviewState: approved
+document: print/korean-3-2-lesson-01-a@f98f3af32
+assessmentForms:
+  - print/korean-3-2-lesson-01-a@f98f3af32
+  - print/korean-3-2-lesson-01-b@88cc84fc9

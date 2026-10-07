@@ -69,3 +69,9 @@ describe('the pre-rename word-ladder mode', () => {
     expect(canonicalizeProgramPolicy(fsrs)).toBe(fsrs);
   });
 });
+
+it('preserves a linked assessment unit and language subject in card-ladder enrollment', () => {
+ const result = validateFlashcardEnrollment({ programId:'flashcards', deckId:DECK, subject:'language', linkedUnitId:'korean-3-2.lesson-01', policy:{mode:'card-ladder'} });
+ expect(result.enrollment).toMatchObject({ linkedUnitId:'korean-3-2.lesson-01', subject:'language' });
+ expect(validateFlashcardEnrollment({programId:'flashcards',deckId:DECK,linkedUnitId:'bad unit',policy:{mode:'card-ladder'}}).errors.join(' ')).toMatch(/linkedUnitId/);
+});

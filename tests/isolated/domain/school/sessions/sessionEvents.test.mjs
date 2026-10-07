@@ -14,6 +14,7 @@ const SID = 'ses_abc123';
 
 /** Minimal legal payload for each type, so tests state only what they vary. */
 const PAYLOADS = {
+  practice_prepared: { assessment: { practice: { deckId: 'language/test/one' }, assessmentForms: ['print/test-a@123456789', 'print/test-b@123456789'], questionIds: ['q1'], document: 'print/test-a@123456789', readyAt: AT } },
   created: { learnerId: 'kid1', unitId: 'math-add-1' },
   issued: { artifactId: 'doc_1' },
   reprinted: { artifactId: 'doc_1' },
@@ -73,6 +74,7 @@ const log = (types, overrides = {}) => {
 describe('EVENT_TYPES', () => {
   it('is the closed spec §5.2 set', () => {
     expect(EVENT_TYPES).toEqual([
+      'practice_prepared',
       'created', 'issued', 'reprinted', 'result_receipt_captured', 'result_receipt_reprinted',
       'media_dispatched', 'media_completed', 'media_stalled', 'checkpoint_cleared',
       'launch_dispatched', 'program_dispatched', 'external_activity_dispatched', 'external_activity_assessed',

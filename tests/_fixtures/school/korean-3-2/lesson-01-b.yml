@@ -1,0 +1,101 @@
+schema: school.document-source/v1
+id: korean-3-2-lesson-01-b
+seed: 3202
+variant: 0
+target:
+  - letter
+archetype: quiz
+title: Korean 3-2 · Lesson 1 · Form B
+blocks:
+  - type: rich_text
+    md: Choose the Korean expression that fits the English instruction. Mark ONE answer for each question. If a question is uncertain, leave it blank and ask for help.
+  - type: question
+    itemId: permission-01
+    number: 1
+    blocks:
+      - type: rich_text
+        md: 'Ask permission to ask one more question: 질문을 하나 더 ___ 돼요?'
+      - type: omr_response
+        itemId: permission-01
+        choices: 4
+    choices:
+      - 하면
+      - 할 테니까
+      - 해서
+      - 해도
+    answer: 해도
+  - type: question
+    itemId: permission-02
+    number: 2
+    blocks:
+      - type: rich_text
+        md: 'Ask permission to take a photo here: 여기에서 사진을 ___ 돼요?'
+      - type: omr_response
+        itemId: permission-02
+        choices: 4
+    choices:
+      - 찍어도
+      - 찍으면
+      - 찍어서
+      - 찍을 테니까
+    answer: 찍어도
+  - type: question
+    itemId: permission-03
+    number: 3
+    blocks:
+      - type: rich_text
+        md: 'Ask permission to eat this bread: 이 빵을 ___ 돼요?'
+      - type: omr_response
+        itemId: permission-03
+        choices: 4
+    choices:
+      - 먹어서
+      - 먹어도
+      - 먹을 테니까
+      - 먹으면
+    answer: 먹어도
+  - type: question
+    itemId: intention-01
+    number: 4
+    blocks:
+      - type: rich_text
+        md: 'Dad offers help, then asks you to start the homework: 아빠가 ___ 숙제를 시작해 봐.'
+      - type: omr_response
+        itemId: intention-01
+        choices: 4
+    choices:
+      - 도와줬어요
+      - 도와줘도
+      - 도와줄 테니까
+      - 도와주면
+    answer: 도와줄 테니까
+  - type: question
+    itemId: intention-02
+    number: 5
+    blocks:
+      - type: rich_text
+        md: 'You offer to hold the puppy, then ask a friend to bring a towel: 내가 ___ 수건을 가져와 줘.'
+      - type: omr_response
+        itemId: intention-02
+        choices: 4
+    choices:
+      - 안고 있었어요
+      - 안고 있어도
+      - 안고 있으면
+      - 안고 있을 테니까
+    answer: 안고 있을 테니까
+  - type: question
+    itemId: intention-03
+    number: 6
+    blocks:
+      - type: rich_text
+        md: 'Mom offers to wake you up, then asks you to go to bed early: 엄마가 ___ 일찍 자.'
+      - type: omr_response
+        itemId: intention-03
+        choices: 4
+    choices:
+      - 깨워 줄 테니까
+      - 깨워 주면
+      - 깨워 줘도
+      - 깨워 줬어요
+    answer: 깨워 줄 테니까
