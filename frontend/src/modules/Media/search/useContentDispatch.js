@@ -64,6 +64,8 @@ import { resultToQueueInput } from './resultToQueueInput.js';
 import { PeekContext } from '../peek/PeekContext.js';
 import { executeItemAction, createOperationId } from '../actions/itemAction.js';
 import { FleetContext } from '../fleet/FleetProvider.jsx';
+import { isShowItem } from './showOn.js';
+import mediaLog from '../logging/mediaLog.js';
 
 // Screens that apply an item action's start position: Media sessions (named
 // browsers, and screens commanded over the websocket). Others load by URL and
@@ -210,6 +212,16 @@ export function useContentDispatch() {
       if (opts.replaceHistoryEntry) push('browse', browseParams, { replaceEntry: true });
       else push('browse', browseParams);
       return 'browse';
+    }
+    // FIND.8b/AC3: a camera or single photo shows on the device in hand,
+    // whatever is aimed; "Show on…" is how it goes to another screen.
+    if (item && isShowItem(item)) {
+      mediaLog.shownHere({ contentId: id, aimed: targetIds.length });
+      if (controller) return runAction('playNow', id, item, { targetIds: [] });
+      const input = resultToQueueInput({ ...item, id }) ?? { contentId: id, title, thumbnail: item?.thumbnail ?? null };
+      queue.playNow(input, { clearRest: true });
+      confirmLocal('playNow', input);
+      return 'local';
     }
     if (controller) return runAction('playNow', id, item);
     if (targetIds.length > 0) {

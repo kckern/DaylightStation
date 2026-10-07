@@ -167,6 +167,8 @@ export const mediaLog = {
   playOnChoiceChanged:    info('play-on.choice-changed'),
   playOnChoiceApplied:    info('play-on.choice-applied'),
   playOnStopHere:         info('play-on.stop-here'),
+  collectionContinued:    info('find.collection-continued'),
+  shownHere:              info('find.shown-here'),
 };
 
 export default mediaLog;
