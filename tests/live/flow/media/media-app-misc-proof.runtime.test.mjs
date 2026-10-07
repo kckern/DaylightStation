@@ -4,10 +4,11 @@ import {
   A, ITEM, VIEWPORTS, receiverState, openReceiver, startOn, stopReceiver, resetControls, newAppPage, gotoMedia, warmMedia, openHouse, openRemote,
 } from './lib/receivers.mjs';
 import { openSearch, resultRow, closeSearch } from './lib/search.mjs';
+import { scriptReceiver, SCRIPTED } from './lib/scriptedReceiver.mjs';
 
 // Smaller journeys that close single rows: skip back/forward for any queue,
 // and that a device in the app is visibly part of the house.
-test.use({ trace: 'retain-on-failure', serviceWorkers: 'block' });
+test.use({ trace: 'retain-on-failure', serviceWorkers: 'block', actionTimeout: 30000 });
 test.setTimeout(300000);
 test.beforeAll(async ({ browser }) => { test.setTimeout(300000); await warmMedia(browser); });
 test.beforeEach(async ({ request, baseURL }) => { await resetHouseholdAt(request, baseURL); });
@@ -70,5 +71,23 @@ test('[AUTO.3a/AC3] a device left open in the app shows, in the house overview, 
   await openHouse(page, vp);
   await expect(page.getByTestId(`fleet-card-${cardId}`)).toContainText('Faith', { timeout: 60000 });
   await expect(mine).toHaveText('This device');
+  await context.close();
+});
+
+test('[STEER.1b/AC6] a screen that cannot show a note, such as a speaker, records it on its row in the house view, repeated notes grouped', async ({ browser, request }) => {
+  const vp = VIEWPORTS.laptop;
+  const { context, page } = await newAppPage(browser, vp);
+  await gotoMedia(page);
+  await scriptReceiver(request, {
+    deviceId: SCRIPTED.SPEAKER, state: 'paused', title: 'Faith', duration: 200, position: 50,
+    notes: [{ kind: 'paused', label: 'Paused by the kitchen button', count: 3 }, { kind: 'replaced', label: 'Replaced by Morning routine', count: 1, putBack: false }],
+  });
+  await openHouse(page, vp);
+  const notes = page.getByTestId(`house-notes-${SCRIPTED.SPEAKER}`);
+  await expect(notes).toBeVisible({ timeout: 40000 });
+  // Grouped: one line with its count, not three lines.
+  await expect(notes.locator('li')).toHaveCount(2);
+  await expect(notes.getByTestId(`house-note-${SCRIPTED.SPEAKER}-scripted-note-0`)).toContainText('Paused by the kitchen button ×3');
+  await expect(notes.getByTestId(`house-note-${SCRIPTED.SPEAKER}-scripted-note-1`)).toContainText('Replaced by Morning routine');
   await context.close();
 });

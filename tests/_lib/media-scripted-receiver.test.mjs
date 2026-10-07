@@ -107,4 +107,11 @@ describe('scripted receiver states', () => {
     expect(seen.length).toBe(before);
     fixture.reset();
   });
+
+  it('carries screen notes in the shape a screen publishes', () => {
+    const snapshot = buildScriptedSnapshot(SPEAKER_DEVICE_ID, { state: 'paused', title: 'Faith', notes: [{ kind: 'paused', label: 'Paused by the kitchen button', count: 3 }] });
+    expect(snapshot.controls.notes).toHaveLength(1);
+    expect(snapshot.controls.notes[0]).toMatchObject({ kind: 'paused', count: 3 });
+    expect(validateSessionSnapshot(snapshot).valid).toBe(true);
+  });
 });

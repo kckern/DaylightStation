@@ -11,7 +11,7 @@ import { startSseServer, streamItem } from './lib/sseServer.mjs';
 // involved, ordinary pointer/keyboard input at the three promised sizes.
 // The "still arriving" sign needs a stream that can be held open, so those
 // journeys redirect the app's own search request to a controllable stream.
-test.use({ trace: 'retain-on-failure', serviceWorkers: 'block' });
+test.use({ trace: 'retain-on-failure', serviceWorkers: 'block', actionTimeout: 30000 });
 test.setTimeout(420000);
 
 test.beforeAll(async ({ browser }) => { test.setTimeout(300000); await warmMedia(browser); });

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { resetHouseholdAt } from './lib/household.mjs';
-import { scriptReceiver, SCRIPTED } from './lib/scriptedReceiver.mjs';
+import { scriptReceiver, failWake, SCRIPTED } from './lib/scriptedReceiver.mjs';
 import {
   A, A_NAME, ITEM, VIEWPORTS, call, receiverState, openReceiver, startOn, stopReceiver, newAppPage, gotoMedia, warmMedia,
 } from './lib/receivers.mjs';
@@ -10,7 +10,7 @@ import { goArea, openSearch, resultRow, closeSearch } from './lib/search.mjs';
 // another screen, wake step wording by kind of screen, and a quiet failure of
 // a screen that cannot be woken. Outcomes are read from the tray overlay the
 // person sees; no notification is faked.
-test.use({ trace: 'retain-on-failure', serviceWorkers: 'block' });
+test.use({ trace: 'retain-on-failure', serviceWorkers: 'block', actionTimeout: 30000 });
 test.setTimeout(420000);
 
 test.beforeAll(async ({ browser }) => { test.setTimeout(300000); await warmMedia(browser); });
@@ -112,6 +112,8 @@ test('[RELY.6a/AC2][RELY.6a/AC3] a failed send offers Retry and "Another screenâ
   const receiver = await openReceiver(browser, request, A);
   const { context, page } = await newAppPage(browser, vp);
   await gotoMedia(page);
+  // The den TV does not come on: a send to it fails outright (a failed attempt, not a "may not have started").
+  await failWake(request, SCRIPTED.POWER, true);
   const sendTo = async (id, text, deviceId) => {
     const input = await openSearch(page, vp);
     await input.fill('');
@@ -121,21 +123,22 @@ test('[RELY.6a/AC2][RELY.6a/AC3] a failed send offers Retry and "Another screenâ
     await page.getByRole('menuitem', { name: 'Play onâ€¦', exact: true }).click();
     await page.getByTestId(`picker-device-${deviceId}`).click();
   };
-  // Two sends to screens that cannot be reached: two failures, each with its own Retry (a failed start takes a while to be declared).
-  // (two screens: for ONE screen the app keeps only the newest "may not have started" notice by design)
-  await sendTo(ITEM.ARRIVAL, 'Arrival', OFFLINE);
-  await sendTo(ITEM.HOSPITAL, 'Hospital', SCRIPTED.SPEAKER);
-  await expect(rowWith(page, 'Arrival').filter({ has: page.locator('[data-testid^="dispatch-retry-"]') })).toBeVisible({ timeout: 240000 });
-  await expect(rowWith(page, 'Hospital').filter({ has: page.locator('[data-testid^="dispatch-retry-"]') })).toBeVisible({ timeout: 240000 });
+  await sendTo(ITEM.ARRIVAL, 'Arrival', SCRIPTED.POWER);
+  const failedRow = (text) => rowWith(page, text).filter({ has: page.locator('[data-phase="failed"], [data-testid^="dispatch-retry-"]') });
+  await expect(rowWith(page, 'Arrival').filter({ has: page.locator('[data-testid^="dispatch-retry-"]') })).toBeVisible({ timeout: 120000 });
+  await sendTo(ITEM.HOSPITAL, 'Hospital', SCRIPTED.POWER);
+  await expect(rowWith(page, 'Hospital').filter({ has: page.locator('[data-testid^="dispatch-retry-"]') })).toBeVisible({ timeout: 120000 });
+  void failedRow;
+  // AC3: both failures are on screen, each with its own Retry.
   await expect(page.locator('[data-testid^="dispatch-retry-"]')).toHaveCount(2);
   await expect(rows(page).filter({ has: page.locator('[data-testid^="dispatch-retry-"]') })).toHaveCount(2);
 
-  // Next to Retry: choose another screen for just that attempt.
+  // AC2: next to Retry, choose another screen for that attempt only.
   const arrivalRow = rowWith(page, 'Arrival').filter({ has: page.locator('[data-testid^="dispatch-elsewhere-"]') });
   await arrivalRow.locator('[data-testid^="dispatch-elsewhere-"]').first().click();
-  await arrivalRow.locator(`[data-testid^="dispatch-elsewhere-list-"]`).getByRole('button', { name: new RegExp(A_NAME) }).click();
+  await arrivalRow.locator('[data-testid^="dispatch-elsewhere-list-"]').getByRole('button', { name: new RegExp(A_NAME) }).click();
   await expect.poll(async () => (await receiverState(request, A))?.currentItem?.contentId, { timeout: 120000 }).toBe(ITEM.ARRIVAL);
-  // The other failed attempt is untouched: still failed, still has its own Retry, and nothing else was sent there.
+  // The other failed attempt is untouched: still failed, still has its own Retry, and nothing else went to the screen chosen.
   await expect(rowWith(page, 'Hospital').locator('[data-testid^="dispatch-retry-"]')).toBeVisible();
   expect((await receiverState(request, A)).queue.items.map((i) => i.contentId)).toEqual([ITEM.ARRIVAL]);
   await stopReceiver(request, A);

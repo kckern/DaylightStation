@@ -11,7 +11,7 @@ import { openSearch, resultRow, closeSearch } from './lib/search.mjs';
 // PLACE 6/7/8 — moving playback between this device and a screen, and the
 // aim label that says what the next tap will do. Real mounted receiver; a
 // scripted screen that cannot be reached for the failed move.
-test.use({ trace: 'retain-on-failure', serviceWorkers: 'block' });
+test.use({ trace: 'retain-on-failure', serviceWorkers: 'block', actionTimeout: 30000 });
 test.setTimeout(420000);
 
 test.beforeAll(async ({ browser }) => { test.setTimeout(300000); await warmMedia(browser); });

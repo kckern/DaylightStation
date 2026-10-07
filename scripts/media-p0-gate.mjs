@@ -34,7 +34,8 @@ export const P0_EXTENSION_ENTRIES = Object.freeze([
     story: 'RELY.4a',
     criteria: ['RELY.4a/AC1', 'RELY.4a/AC2'],
     file: 'media-app-queue-journey.runtime.test.mjs',
-    grep: 'Undo restores the previous paused native position and queue generation',
+    // Both journeys: Undo restores the paused position and queue (AC1/AC2), and the offer lasts 10 s then goes (AC1).
+    grep: 'RELY\\.4a/AC1',
   },
   {
     story: 'PLAY.6a',
