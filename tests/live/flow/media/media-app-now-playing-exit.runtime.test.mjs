@@ -1,20 +1,19 @@
 import { test, expect } from '@playwright/test';
+import { markFirstUseDone } from './lib/firstUse.mjs';
+import { playArrivalHere } from './lib/mediaDriver.mjs';
 
 test.describe('MediaApp — NowPlaying exit', () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, context }) => {
+    // A fresh browser opens the first-use naming card over the header (a real overlay).
+    await markFirstUseDone(context);
     await page.goto('/media');
     await page.evaluate(() => localStorage.clear());
   });
 
+  // Search, tap the movie (plays here), then open NowPlaying from the handle.
   async function startPlayback(page) {
     await page.goto('/media');
-    await page.getByTestId('media-search-input').fill('lonesome');
-    const row = page.locator('[data-testid^="result-row-"]').first();
-    await expect(row).toBeVisible({ timeout: 15000 });
-    const rowId = await row.getAttribute('data-testid');
-    const contentId = rowId?.replace(/^result-row-/, '');
-    // JS click bypasses search-overlay pointer-event interception.
-    await page.getByTestId(`result-play-now-${contentId}`).evaluate((el) => el.click());
+    await playArrivalHere(page);
     await page.getByTestId('mini-player-open-nowplaying').click();
     await expect(page.getByTestId('now-playing-view')).toBeVisible({ timeout: 10000 });
   }

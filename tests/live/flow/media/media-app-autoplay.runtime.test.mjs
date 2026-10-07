@@ -2,8 +2,9 @@ import { test, expect } from '@playwright/test';
 
 // In P2 the default canvas view is HomeView. These tests click the MiniPlayer
 // title (available when a current item exists) to navigate to NowPlayingView,
-// where the "Now Playing: X" heading lives. When idle, we assert via Home view
-// + MiniPlayer "Idle" text instead.
+// where the "Now Playing: X" heading lives. When idle (STEER.7a) there is no
+// session to show a handle for, so the MiniPlayer renders nothing: no strip and
+// no "Idle" text -- we assert that via Home view instead.
 
 test.describe('MediaApp — P1 foundation', () => {
   test.beforeEach(async ({ page }) => {
@@ -18,9 +19,10 @@ test.describe('MediaApp — P1 foundation', () => {
     await page.goto('/media');
     await expect(page.getByTestId('media-dock')).toBeVisible();
     await expect(page.getByTestId('media-canvas')).toBeVisible();
-    // Home view is the default canvas view; MiniPlayer shows "Idle" with no session.
+    // Home view is the default canvas view; with no session the handle is absent.
     await expect(page.getByTestId('home-view')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByTestId('media-mini-player')).toHaveText(/idle/i);
+    await expect(page.getByTestId('media-mini-player')).toHaveCount(0);
+    await expect(page.getByTestId('mini-player-open-nowplaying')).toHaveCount(0);
   });
 
   test('autoplays content via ?play=<contentId>', async ({ page }) => {
@@ -50,8 +52,8 @@ test.describe('MediaApp — P1 foundation', () => {
     await page.getByTestId('settings-menu-trigger').click();
     await page.getByTestId('settings-reset-session').click();
     await page.getByTestId('confirm-ok').click();
-    // After reset, mini-player shows Idle again
-    await expect(page.getByTestId('media-mini-player')).toHaveText(/idle/i);
+    // After reset there is no session, so the handle is gone again (no item, no queue).
+    await expect(page.getByTestId('media-mini-player')).toHaveCount(0);
 
     const persisted = await page.evaluate(() => localStorage.getItem('media-app.session'));
     const parsed = persisted ? JSON.parse(persisted) : null;

@@ -179,9 +179,12 @@ async function playMovie(page) {
   return video;
 }
 
-test('[PLACE.1a/AC3][PLACE.1a/AC4][STEER.1b] opening Office controls does not redirect local-aim playback', async ({ page }) => {
+test('[PLACE.1a/AC3][PLACE.1a/AC4][STEER.1b] opening a screen\'s controls does not redirect local-aim playback', async ({ page }) => {
   const blockedCommands = [];
-  // Safety boundary: observing Office is read-only. Any attempted device
+  // The screen observed is the fixture's virtual receiver (the acceptance
+  // fixture has no office-tv entry and no household screen is commanded). The
+  // intent is screen-agnostic: steering a screen must not redirect a fresh
+  // local aim. Safety boundary: observing is read-only; any attempted device
   // mutation fails the test and is blocked before it can affect hardware.
   await page.route('**/api/v1/device/**', async route => {
     const request = route.request();
@@ -195,7 +198,7 @@ test('[PLACE.1a/AC3][PLACE.1a/AC4][STEER.1b] opening Office controls does not re
   await page.goto('/media');
   await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible({ timeout: 30000 });
   await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: /^(?:\d+\s+)?Devices$/ }).click();
-  await page.getByTestId('fleet-peek-office-tv').click();
+  await page.getByTestId('fleet-peek-acceptance-media').click();
   await expect(page.getByTestId('peek-panel')).toBeVisible();
   await playMovie(page);
   expect(blockedCommands, 'Steering must not redirect playback away from the fresh local aim').toEqual([]);
