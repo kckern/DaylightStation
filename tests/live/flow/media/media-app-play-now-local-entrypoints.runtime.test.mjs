@@ -3,6 +3,8 @@ import { markFirstUseDone } from './lib/firstUse.mjs';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 import { revealBrowseRow } from '../../../_lib/mediaBrowseScroll.mjs';
+import { resetHouseholdAt } from './lib/household.mjs';
+test.beforeEach(async ({ request, baseURL }) => { await resetHouseholdAt(request, baseURL); });
 
 // FIND.1b's result-row More → Play Now journey already proves Search locally
 // at phone, tablet, and laptop widths. This file covers the other finite
@@ -34,15 +36,9 @@ const entries = [
     return { content, action: page.getByTestId('detail-play-now') };
   }],
   ['Home Recents', async (page, nav) => {
-    // Home's Recent is the household's list (GET /api/v1/media/household/recent,
-    // batch A), which the acceptance server blocks. Only that list is answered
-    // here — Arrival, last played on this device; the tap, aim and playback
-    // below stay real.
-    await page.route('**/api/v1/media/household/recent*', route => route.fulfill({
-      status: 200, contentType: 'application/json',
-      body: JSON.stringify({ items: [{ contentId: 'plex:55854', title: 'Arrival', type: 'movie', thumbnail: null,
-        lastPlayed: '2026-10-03 08:00:00', finished: false, playedOn: null, spots: [], plays: [] }] }),
-    }));
+    // Home's Recent is the household's list (GET /api/v1/media/household/recent),
+    // answered by the seeded household backend of the acceptance server
+    // (Arrival is in the seed); the tap, aim and playback below stay real.
     // Leave and re-enter Home so it reads the list afresh.
     await page.getByTestId(nav('browse')).click();
     await page.getByTestId(nav('home')).click();

@@ -56,9 +56,12 @@ const VIRTUAL_SESSION_ROUTES = [
   ['POST', /^\/session\/(tracks|brief\/close|music-behind)$/],
 ];
 const quiet = { info() {}, warn() {}, error() {}, debug() {} };
+// `expireNow` lets the fixture publish one heartbeat for a screen and have its
+// offline timer fire at once (the screen "was seen, then went silent").
+const timers = { expireNow: false };
 const scheduler = {
   wait: (ms) => new Promise(resolve => setTimeout(resolve, ms)),
-  after: (ms, fn) => { const timer = setTimeout(fn, ms); return () => clearTimeout(timer); },
+  after: (ms, fn) => { const timer = setTimeout(fn, timers.expireNow ? 0 : ms); return () => clearTimeout(timer); },
   withDeadline: (promise) => promise,
 };
 
@@ -100,6 +103,17 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet, cat
   });
   deviceLiveness.start();
   eventBus.setLivenessService(deviceLiveness);
+  // The offline screen: registered, heard from once, then silent for good. Its
+  // liveness reads online:false (never online again: nothing connects as it).
+  for (const { id } of VIRTUAL_DEVICES.filter((device) => device.offline)) {
+    timers.expireNow = true;
+    try {
+      presenceGateway.publishDeviceState({
+        deviceId: id, reason: 'initial', ts: new Date().toISOString(),
+        snapshot: { state: 'stopped', currentItem: null, position: 0, queue: { items: [], currentIndex: -1 }, config: {} },
+      });
+    } finally { timers.expireNow = false; }
+  }
   const commandLiveness = new CommandHandlerLivenessService({ presenceGateway, logger });
   commandLiveness.start();
   const startStatus = new DeviceStartStatusService({ progressGateway: presenceGateway, logger });

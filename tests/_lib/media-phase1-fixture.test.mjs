@@ -44,11 +44,15 @@ describe('Phase 1 fixture screens', () => {
     expect(devices['acceptance-media'].device_control).toBeUndefined();
   });
 
-  it('an offline screen never connects: liveness is not online, a send fails honestly', async () => {
+  it('an offline screen was heard once and never connects again: liveness reads offline, a send fails honestly', async () => {
+    await new Promise((resolve) => setTimeout(resolve, 50));
     const { screens: list } = await screens();
     const offline = list.find((s) => s.screenId === OFFLINE_DEVICE_ID);
-    expect(offline.online).not.toBe(true);
-    expect(offline.lastSeen).toBeNull();
+    expect(offline.online).toBe(false);
+    expect(offline.lastSeen).toBeTruthy();
+    // The routine pointed at it is flagged ahead of time (unreachable, since it cannot be woken).
+    const flags = await (await fetch(`${baseUrl}/api/v1/media/routines/flags`)).json();
+    expect(flags.items.map((f) => [f.problem, f.screenId ?? f.deviceId])).toContainEqual(['unreachable', `fleet:${OFFLINE_DEVICE_ID}`]);
     const sent = await (await fetch(`${baseUrl}/api/v1/device/${OFFLINE_DEVICE_ID}/load?play=plex:55854&dispatchId=to-offline`)).json();
     expect(sent.ok).toBe(false);
   });
