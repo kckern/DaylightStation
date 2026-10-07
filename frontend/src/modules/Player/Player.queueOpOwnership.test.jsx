@@ -19,11 +19,15 @@ vi.mock('./components/SinglePlayer.jsx', () => ({
 vi.mock('../../lib/api.mjs', () => ({
   DaylightAPI: vi.fn(async (path) => {
     const contentId = String(path).replace(/^api\/v1\/play\//, '');
-    return { contentId, id: contentId, title: contentId, mediaUrl: `/stream/${contentId}` };
+    return {
+      contentId, id: contentId, title: contentId, mediaUrl: `/stream/${contentId}`,
+      ...(contentId.includes('live') ? { isLive: true } : {}),
+    };
   }),
 }));
 
 import Player from './Player.jsx';
+import { getActionBus, resetActionBus } from '../../screen-framework/input/ActionBus.js';
 
 describe('Player queue-op ownership integration', () => {
   beforeEach(() => {
@@ -220,5 +224,32 @@ describe('Player queue-op ownership integration', () => {
     });
     expect(transport.pause).toHaveBeenCalledTimes(2);
     expect(transport.toggle).not.toHaveBeenCalled();
+  });
+  describe('go-live', () => {
+    const goLive = async (play) => {
+      const errors = [];
+      const off = getActionBus().subscribe('command-handler-error', (e) => errors.push(e));
+      const ref = createRef();
+      render(<Player ref={ref} play={play} />);
+      await waitFor(() => expect(ref.current?.getQueueSnapshot().items).toHaveLength(1));
+      await act(async () => {
+        getPlayerQueueOpRegistry().dispatch({ op: 'go-live', commandId: 'gl-1' });
+        await Promise.resolve();
+      });
+      off?.();
+      return errors;
+    };
+
+    it('refuses a VOD item with NOT_LIVE instead of seeking it to its end', async () => {
+      resetActionBus();
+      const errors = await goLive([{ contentId: 'plex:movie' }]);
+      expect(errors).toEqual([expect.objectContaining({ commandId: 'gl-1', code: 'NOT_LIVE' })]);
+    });
+
+    it('does not answer NOT_LIVE for a live item', async () => {
+      resetActionBus();
+      const errors = await goLive([{ contentId: 'cam:live-1', isLive: true }]);
+      expect(errors.map((e) => e.code)).not.toContain('NOT_LIVE');
+    });
   });
 });

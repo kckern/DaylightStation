@@ -36,6 +36,7 @@ import { usePlayerConfig } from './hooks/usePlayerConfig.js';
 import { REVIEW_ACTIVE } from '../../lib/Player/reviewParams.js';
 import { DaylightAPI } from '../../lib/api.mjs';
 import { seekToLiveEdge } from '../../lib/media/liveEdge.js';
+import { getActionBus } from '../../screen-framework/input/ActionBus.js';
 import {
   preparePlaybackOwnerAdoption,
   samePlaybackOwnerIdentity,
@@ -2253,6 +2254,14 @@ const Player = forwardRef(function Player(props, ref) {
       return;
     }
     if (op === 'go-live') {
+      // Only a live stream has an edge to return to; a finite duration is not
+      // one (seeking a VOD item to its end would end it and advance the queue).
+      if (!(effectiveMeta?.isLive === true || activeSource?.isLive === true)) {
+        getActionBus().emit('command-handler-error', {
+          commandId: payload.commandId, code: 'NOT_LIVE', error: 'This is not a live stream',
+        });
+        return;
+      }
       const result = seekToLiveEdge(_getMediaElFallback());
       if (!result.ok) {
         getActionBus().emit('command-handler-error', {
@@ -2357,7 +2366,7 @@ const Player = forwardRef(function Player(props, ref) {
     }
 
     pushOnDeck(item, { displaceToQueue: !!onDeckCfg?.displace_to_queue });
-  }, [playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, append, playerInstanceId, queueShader, classes, setShader, setShaderUserCycled, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, seekOwnerRelative, advance, isQueue, singleAdvance]);
+  }, [playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, append, playerInstanceId, queueShader, classes, setShader, setShaderUserCycled, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, seekOwnerRelative, advance, isQueue, singleAdvance, effectiveMeta?.isLive, activeSource?.isLive]);
 
   // Register once in mount order while the ref supplies the latest stateful
   // callback. Re-registering on every queue change would let a background
