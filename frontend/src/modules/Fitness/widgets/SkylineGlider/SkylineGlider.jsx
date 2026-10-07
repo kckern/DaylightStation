@@ -5,6 +5,8 @@ import { validateCourse, resolveCalibration } from '@/modules/Fitness/lib/skylin
 import { createFlightState, stepFlight } from '@/modules/Fitness/lib/skylineGlider/flightEngine.js';
 import { projectCourseWindow } from '@/modules/Fitness/lib/skylineGlider/courseProjection.js';
 import { collectFlightTelemetry } from '@/modules/Fitness/lib/skylineGlider/flightTelemetry.js';
+import { altitudeToTrackPercent } from '@/modules/Fitness/lib/skylineGlider/flightGeometry.js';
+import { createSkylineAudio } from '@/modules/Fitness/lib/skylineGlider/skylineAudio.js';
 import { clearFlightCheckpoint, readFlightCheckpoint, writeFlightCheckpoint } from '@/modules/Fitness/lib/skylineGlider/checkpointRepository.js';
 import { buildSkylineGliderRun } from '@/modules/Fitness/lib/skylineGlider/runResult.js';
 import './SkylineGlider.scss';
@@ -30,14 +32,14 @@ function TerrainSegment({ segment }) {
     const y = segment.top * 600;
     return <g data-testid={`course-segment-${segment.id}`} data-type={segment.type}>
       <rect x={segment.x} y={y} width={width} height={600 - y} className="skyline-glider__terrain skyline-glider__terrain--lower"/>
-      <path d={`M${segment.x} ${y} l22 -24 28 24 32 -34 34 34 H${segment.x + width}`} className="skyline-glider__snowline"/>
+      <path d={`M${segment.x} ${y} l22 24 28 -24 32 34 34 -34 H${segment.x + width}`} className="skyline-glider__snowline"/>
     </g>;
   }
   if (segment.type === 'upper-terrain') {
     const y = segment.bottom * 600;
     return <g data-testid={`course-segment-${segment.id}`} data-type={segment.type}>
       <rect x={segment.x} y="0" width={width} height={y} className="skyline-glider__terrain skyline-glider__terrain--upper"/>
-      <path d={`M${segment.x} ${y} l24 20 28 -20 30 28 34 -28 H${segment.x + width}`} className="skyline-glider__cave-edge"/>
+      <path d={`M${segment.x} ${y} l24 -20 28 20 30 -28 34 28 H${segment.x + width}`} className="skyline-glider__cave-edge"/>
     </g>;
   }
   if (segment.type === 'corridor') {
@@ -62,11 +64,9 @@ function TerrainSegment({ segment }) {
   return null;
 }
 
-export function FlightScene({ state, course }) {
+export function FlightScene({ state, course, effects = {} }) {
   const projected = projectCourseWindow(course, state.courseTime);
-  const cadenceSpan = Math.max(1, state.calibration.highRpm - state.calibration.lowRpm);
-  const drift = clamp((state.rawRpm - state.filteredRpm) / cadenceSpan * 90, -30, 30);
-  const craftX = projected.playerX + drift;
+  const craftX = projected.playerX;
   const craftY = state.altitude * projected.height;
   const pitch = clamp((state.verticalRate || 0) * 50, -12, 12);
   const farOffset = -((state.courseTime * 10) % 1000);
@@ -89,7 +89,7 @@ export function FlightScene({ state, course }) {
     </g>
     <g className="skyline-glider__course-geometry">
       {projected.segments.map((segment) => <TerrainSegment key={segment.id} segment={segment}/>)}
-      {projected.collectibles.map((item) => <g key={item.id} transform={`translate(${item.x} ${item.y})`} className="skyline-glider__bell" data-testid={`course-collectible-${item.id}`}>
+      {projected.collectibles.filter((item) => !(state.collectedIds || []).includes(item.id)).map((item) => <g key={item.id} transform={`translate(${item.x} ${item.y})`} className="skyline-glider__bell" data-testid={`course-collectible-${item.id}`}>
         <path d="M-12 9 Q-9 1 -7 -10 Q0 -18 7 -10 Q9 1 12 9Z"/><circle cy="12" r="3"/>
       </g>)}
     </g>
@@ -99,14 +99,16 @@ export function FlightScene({ state, course }) {
       <path d="M-28 2 Q4 -3 43 0 Q6 8 -30 7Z" className="skyline-glider__body"/>
       <path d="M-24 4 L-38 24 M-38 24 L-47 30" className="skyline-glider__frame"/>
       <circle cx="-36" cy="25" r="5" className="skyline-glider__pilot"/>
-      {state.invincibleRemaining > 0 && <g data-testid="skyline-glider-collision-effect" className="skyline-glider__collision-burst"><path d="M-62 -34 l-16 -18 M-67 0 h-28 M-55 31 l-20 16 M43 -28 l18 -16 M57 15 l25 8"/></g>}
+      {(effects.collisionKey || state.invincibleRemaining > 0) && <g key={effects.collisionKey || 'protected'} data-testid="skyline-glider-collision-effect" className="skyline-glider__collision-burst"><path d="M-62 -34 l-16 -18 M-67 0 h-28 M-55 31 l-20 16 M43 -28 l18 -16 M57 15 l25 8"/></g>}
+      {(effects.pops || []).map((pop) => <g key={pop.key} className="skyline-glider__bell-pop"><circle r="28"/><path d="M-30 0 H30 M0 -30 V30"/></g>)}
     </g>
   </svg>;
 }
 
 export function RpmGauge({ state }) {
   const rpm = Math.max(0, Math.round(state.rawRpm || 0));
-  const altitude = clamp(Number(state.altitude) || 0, 0.18, 0.78);
+  const altitude = altitudeToTrackPercent(state.altitude);
+  const target = altitudeToTrackPercent(state.targetAltitude);
   return <aside
     className="skyline-glider__rpm-gauge"
     role="meter"
@@ -117,8 +119,8 @@ export function RpmGauge({ state }) {
   >
     <span className="skyline-glider__rpm-high">{state.calibration.highRpm}</span>
     <div className="skyline-glider__rpm-track">
-      <div className="skyline-glider__rpm-target" style={{ top: `${state.targetAltitude * 100}%` }}/>
-      <div className="skyline-glider__rpm-chevron" data-testid="rpm-chevron" data-altitude={state.altitude} style={{ top: `${altitude * 100}%` }}><span>{rpm}</span></div>
+      <div className="skyline-glider__rpm-target" data-testid="rpm-target" style={{ top: `${target}%` }}/>
+      <div className="skyline-glider__rpm-chevron" data-testid="rpm-chevron" data-altitude={state.altitude} style={{ top: `${altitude}%` }}><span>{rpm}</span></div>
     </div>
     <span className="skyline-glider__rpm-low">{state.calibration.lowRpm}</span>
     <strong>RPM</strong>
@@ -135,11 +137,15 @@ export default function SkylineGlider() {
   const [flight, setFlight] = useState(null);
   const [saveState, setSaveState] = useState({ status: 'idle', record: null });
   const [muted, setMuted] = useState(false);
+  const [effects, setEffects] = useState({ collisionKey: 0, pops: [], banner: null });
   const flightRef = useRef(null);
   const runRef = useRef(null);
   const finalizingRef = useRef(false);
   const lastSampleSecondRef = useRef(-1);
   const previousInputRef = useRef(null);
+  const effectTimersRef = useRef(new Set());
+  const audioRef = useRef(null);
+  if (!audioRef.current) audioRef.current = createSkylineAudio();
   const fitnessSessionInstance = ctx?.fitnessSessionInstance;
   const setGovernanceSuspended = ctx?.setGovernanceSuspended;
   const equipment = selectBike(ctx?.equipment);
@@ -151,6 +157,12 @@ export default function SkylineGlider() {
     setGovernanceSuspended?.(true);
     return () => setGovernanceSuspended?.(false);
   }, [setGovernanceSuspended]);
+
+  useEffect(() => () => {
+    effectTimersRef.current.forEach((timer) => clearTimeout(timer));
+    effectTimersRef.current.clear();
+    audioRef.current.stop();
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -215,12 +227,12 @@ export default function SkylineGlider() {
   useEffect(() => {
     if (phase !== 'flight' || !flightRef.current) return undefined;
     let prior = performance.now();
-    const timer = setInterval(() => {
-      const now = performance.now();
+    let frameId = 0;
+    const frame = (now) => {
       const cadence = fitnessSessionInstance?.getEquipmentCadence?.(equipment?.id) || { rpm: 0, connected: false };
       const previous = flightRef.current;
       const previousCheckpointId = previous.checkpoint.id;
-      const next = stepFlight(previous, cadence, Math.min(.25, (now - prior) / 1000), course);
+      const next = stepFlight(previous, cadence, Math.min(.1, Math.max(0, (now - prior) / 1000)), course);
       prior = now;
       flightRef.current = next;
       setFlight(next);
@@ -235,18 +247,68 @@ export default function SkylineGlider() {
       if (telemetry.sample) log.info('skyline_glider.flight.sample', { ...correlation, ...telemetry.sample });
       for (const event of telemetry.events) {
         log.info(`skyline_glider.flight.${event.type}`, { ...correlation, courseTime: next.courseTime, ...event.data });
+        const executeVisual = (effectId, update) => {
+          try {
+            update?.();
+            log.info('skyline_glider.effect.executed', { ...correlation, courseTime: next.courseTime, eventType: event.type, effectId });
+          } catch (effectError) {
+            log.error('skyline_glider.effect.failed', { ...correlation, courseTime: next.courseTime, eventType: event.type, effectId, error: effectError.message });
+          }
+        };
+        const executeCue = (effectId, cue) => {
+          try {
+            if (audioRef.current.playCue(cue)) log.info('skyline_glider.effect.executed', { ...correlation, courseTime: next.courseTime, eventType: event.type, effectId });
+            else log.info('skyline_glider.effect.skipped', { ...correlation, courseTime: next.courseTime, eventType: event.type, effectId, reason: muted ? 'muted' : 'audio-unavailable' });
+          } catch (effectError) {
+            log.error('skyline_glider.effect.failed', { ...correlation, courseTime: next.courseTime, eventType: event.type, effectId, error: effectError.message });
+          }
+        };
+        if (event.type === 'collision') {
+          executeVisual('collision-burst', () => {
+            setEffects((current) => ({ ...current, collisionKey: current.collisionKey + 1 }));
+            const timer = setTimeout(() => setEffects((current) => ({ ...current, collisionKey: 0 })), 450);
+            effectTimersRef.current.add(timer);
+          });
+          executeCue('collision-cue', 'collision');
+        } else if (event.type === 'collectible') {
+          executeVisual('bell-pop', () => {
+            const key = `${event.data.collectibleId}-${next.courseTime}`;
+            setEffects((current) => ({ ...current, pops: [...current.pops, { key }] }));
+            const timer = setTimeout(() => setEffects((current) => ({ ...current, pops: current.pops.filter((pop) => pop.key !== key) })), 600);
+            effectTimersRef.current.add(timer);
+          });
+          executeCue('bell-cue', 'bell');
+        } else if (event.type === 'checkpoint') {
+          executeVisual('checkpoint-banner', () => {
+            const label = `Checkpoint ${event.data.checkpointId}`;
+            setEffects((current) => ({ ...current, banner: label }));
+            const timer = setTimeout(() => setEffects((current) => ({ ...current, banner: current.banner === label ? null : current.banner })), 1500);
+            effectTimersRef.current.add(timer);
+          });
+          executeCue('checkpoint-cue', 'checkpoint');
+        } else if (event.type === 'restarted') {
+          executeVisual('restart-ceremony');
+          executeCue('restart-cue', 'restart');
+        } else if (event.type === 'completed') {
+          executeVisual('finish-ceremony');
+          executeCue('finish-cue', 'finish');
+        }
       }
       lastSampleSecondRef.current = telemetry.nextSampleSecond;
       previousInputRef.current = { ...cadence };
       if (next.checkpoint.id !== previousCheckpointId || next.courseTime % 2 < .12) writeFlightCheckpoint(riderId, course, next);
       if (next.phase === 'completed') finalize('completed', next);
-    }, 100);
-    return () => clearInterval(timer);
-  }, [phase, course, equipment?.id, riderId, finalize, fitnessSessionInstance, log]);
+      frameId = requestAnimationFrame(frame);
+    };
+    audioRef.current.startWind();
+    frameId = requestAnimationFrame(frame);
+    return () => { cancelAnimationFrame(frameId); audioRef.current.stop(); };
+  }, [phase, course, equipment?.id, riderId, finalize, fitnessSessionInstance, log, muted]);
 
   const begin = (resume = false) => {
     if (!equipment || !riderId || !course) return;
-    const initial = createFlightState(course, { calibration: resolveCalibration(equipment) });
+    const armedAtMs = Date.now();
+    const initial = createFlightState(course, { calibration: resolveCalibration(equipment), armedAtMs });
     const next = resume && saved ? { ...initial, ...saved, phase: 'playing', pausedForSensor: false, collisionProtected: false } : initial;
     if (!resume) clearFlightCheckpoint(riderId, course);
     flightRef.current = next;
@@ -259,6 +321,7 @@ export default function SkylineGlider() {
     setFlight(next);
     setCountdown(3);
     setPhase('countdown');
+    void audioRef.current.prime();
     log.info('skyline_glider.flight.started', {
       runId: run.runId, courseId: course.id, courseVersion: course.version,
       riderId, equipmentId: equipment.id, calibration: initial.calibration, resumed: resume,
@@ -285,13 +348,15 @@ export default function SkylineGlider() {
   </main>;
   if (phase === 'countdown') return <main className="skyline-glider skyline-glider--countdown" data-testid="skyline-glider-countdown"><p>Ready your wings</p><strong>{countdown}</strong></main>;
   if (phase === 'result') return <main className="skyline-glider skyline-glider--result" data-testid="skyline-glider-result"><p>{saveState.record?.run.status === 'completed' ? 'Mountain Pass complete' : 'Flight ended'}</p><h1>{saveState.record?.run.status === 'completed' ? 'Touchdown!' : 'Back at base'}</h1><p>{flight.collectedIds.length} bells found · {flight.collisions} bumps</p>{saveState.status === 'saving' && <p>Saving flight…</p>}{saveState.status === 'error' && <button onClick={() => finalize(saveState.record.run.status, flight, saveState.record)}>Retry save</button>}{saveState.status === 'saved' && <p>{saveState.record.run.reward_rings ? `+${saveState.record.run.reward_rings} rings` : 'Flight saved'}</p>}<button onClick={() => { setPhase('lobby'); setFlight(null); }}>Fly again</button></main>;
-  return <main className="skyline-glider skyline-glider--flight" data-testid="skyline-glider-flight">
-    <FlightScene state={flight} course={course}/>
+  return <main className="skyline-glider skyline-glider--flight" data-testid="skyline-glider-flight" data-course-time={flight.courseTime}>
+    <FlightScene state={flight} course={course} effects={effects}/>
     <RpmGauge state={flight}/>
     <header className="skyline-glider__hud"><span>♥ {flight.lives}</span><span>{Math.round(flight.rawRpm)} RPM</span><span>{formatTime(course.duration_s - flight.courseTime)}</span><span>🔔 {flight.collectedIds.length}</span></header>
     {flight.phase === 'crashed' && <div className="skyline-glider__overlay"><h2>Wing down!</h2><p>Returning to the last windsock…</p></div>}
-    {flight.pausedForSensor && <div className="skyline-glider__overlay" data-testid="skyline-glider-reconnect"><h2>Cadence signal lost</h2><p>Reconnect the bike to continue safely.</p></div>}
+    {!flight.inputReady && <div className="skyline-glider__overlay" data-testid="skyline-glider-waiting-input"><h2>Ready to fly</h2><p>Pedal once to start the course.</p></div>}
+    {flight.inputReady && flight.pausedForSensor && <div className="skyline-glider__overlay" data-testid="skyline-glider-reconnect"><h2>Cadence signal lost</h2><p>Reconnect the bike to continue safely.</p></div>}
+    {effects.banner && <div className="skyline-glider__checkpoint-banner">{effects.banner}</div>}
     <button className="skyline-glider__end" onClick={exitFlight}>End flight</button>
-    <button className="skyline-glider__mute" aria-pressed={muted} onClick={() => setMuted((value) => !value)}>{muted ? 'Sound on' : 'Mute'}</button>
+    <button className="skyline-glider__mute" aria-pressed={muted} onClick={() => setMuted((value) => { const next = !value; audioRef.current.setMuted(next); return next; })}>{muted ? 'Sound on' : 'Mute'}</button>
   </main>;
 }

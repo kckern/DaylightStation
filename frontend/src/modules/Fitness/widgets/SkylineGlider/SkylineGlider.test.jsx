@@ -37,7 +37,7 @@ beforeEach(() => {
   mockLog.warn.mockClear();
   mockLog.error.mockClear();
   mockLog.sampled.mockClear();
-  mockCtx = { equipment: [{ id: 'bike', name: 'Bike', cadence: 7, rpm: { min: 30, max: 100 } }], fitnessSessionInstance: { getEquipmentRider: () => 'dad', getEquipmentCadence: () => ({ rpm: 60, connected: true }) }, getDisplayName: () => ({ displayName: 'Dad', source: 'userProfile', preferredGroupLabel: false }), setGovernanceSuspended: vi.fn() };
+  mockCtx = { equipment: [{ id: 'bike', name: 'Bike', cadence: 7, rpm: { min: 30, max: 100 } }], fitnessSessionInstance: { getEquipmentRider: () => 'dad', getEquipmentCadence: () => ({ rpm: 60, connected: true, ts: Date.now() + 1 }) }, getDisplayName: () => ({ displayName: 'Dad', source: 'userProfile', preferredGroupLabel: false }), setGovernanceSuspended: vi.fn() };
   global.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ courses: [course] }) }));
 });
 
@@ -46,6 +46,7 @@ describe('SkylineGlider', () => {
     const { container } = render(<FlightScene state={flightState} course={course} />);
 
     expect(screen.getByTestId('skyline-glider-craft')).toHaveAttribute('data-facing', 'right');
+    expect(screen.getByTestId('skyline-glider-craft').getAttribute('transform')).toContain('translate(240 ');
     expect(screen.getByTestId('skyline-glider-craft').getAttribute('transform')).toContain('rotate(-');
     expect(screen.getByTestId('course-segment-hill')).toHaveAttribute('data-type', 'lower-terrain');
     expect(screen.getByTestId('course-segment-ceiling')).toHaveAttribute('data-type', 'upper-terrain');
@@ -54,15 +55,49 @@ describe('SkylineGlider', () => {
     expect(screen.getByTestId('skyline-glider-collision-effect')).toBeTruthy();
   });
 
+  it('removes a collected bell from the course scene', () => {
+    render(<FlightScene state={{ ...flightState, collectedIds: ['bell'] }} course={course} />);
+
+    expect(screen.queryByTestId('course-collectible-bell')).toBeNull();
+  });
+
   it('shows a vertical calibrated RPM gauge whose chevron mirrors craft altitude', () => {
-    render(<RpmGauge state={flightState} />);
+    render(<RpmGauge state={{ ...flightState, altitude: 0.18, targetAltitude: 0.78 }} />);
 
     const gauge = screen.getByRole('meter', { name: /cadence altitude/i });
     expect(gauge).toHaveAttribute('aria-valuemin', '30');
     expect(gauge).toHaveAttribute('aria-valuemax', '100');
     expect(gauge).toHaveAttribute('aria-valuenow', '64');
-    expect(screen.getByTestId('rpm-chevron')).toHaveAttribute('data-altitude', '0.5');
+    expect(screen.getByTestId('rpm-chevron')).toHaveAttribute('data-altitude', '0.18');
+    expect(screen.getByTestId('rpm-chevron')).toHaveStyle({ top: '0%' });
+    expect(screen.getByTestId('rpm-target')).toHaveStyle({ top: '100%' });
     expect(screen.getByText('64')).toBeTruthy();
+  });
+
+  it('drives flight presentation with animation frames instead of a 100ms interval', async () => {
+    vi.useFakeTimers();
+    const raf = vi.spyOn(globalThis, 'requestAnimationFrame');
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
+    act(() => vi.advanceTimersByTime(3000));
+
+    expect(raf).toHaveBeenCalled();
+    raf.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it('waits at course time zero for a cadence packet newer than Start', async () => {
+    vi.useFakeTimers();
+    mockCtx.fitnessSessionInstance.getEquipmentCadence = () => ({ rpm: 60, connected: true, ts: Date.now() - 1 });
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
+    act(() => vi.advanceTimersByTime(3500));
+
+    expect(screen.getByTestId('skyline-glider-flight')).toHaveAttribute('data-course-time', '0');
+    expect(screen.getByTestId('skyline-glider-waiting-input')).toHaveTextContent(/pedal/i);
+    vi.useRealTimers();
   });
 
   it('loads the lobby and begins with a countdown', async () => {
@@ -99,6 +134,23 @@ describe('SkylineGlider', () => {
     expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.flight.exited', expect.objectContaining({ runId: started[1].runId }));
     await act(async () => Promise.resolve());
     expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.flight.saved', expect.objectContaining({ runId: started[1].runId, status: 'abandoned' }));
+    vi.useRealTimers();
+  });
+
+  it('executes and logs a bell pop once, then removes the transient presentation', async () => {
+    vi.useFakeTimers();
+    const { container } = render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
+    act(() => vi.advanceTimersByTime(3000));
+    act(() => vi.advanceTimersByTime(6600));
+
+    expect(container.querySelectorAll('.skyline-glider__bell-pop')).toHaveLength(1);
+    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.effect.executed', expect.objectContaining({ effectId: 'bell-pop', eventType: 'collectible' }));
+    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.effect.skipped', expect.objectContaining({ effectId: 'bell-cue', reason: 'audio-unavailable' }));
+
+    act(() => vi.advanceTimersByTime(700));
+    expect(container.querySelectorAll('.skyline-glider__bell-pop')).toHaveLength(0);
     vi.useRealTimers();
   });
 
@@ -158,11 +210,14 @@ describe('SkylineGlider', () => {
 
   it('shows a reconnect overlay when cadence transport is absent', async () => {
     vi.useFakeTimers();
-    mockCtx.fitnessSessionInstance.getEquipmentCadence = () => ({ rpm: 0, connected: false });
+    let cadence = { rpm: 60, connected: true, ts: Date.now() + 1 };
+    mockCtx.fitnessSessionInstance.getEquipmentCadence = () => cadence;
     render(<SkylineGlider />);
     await act(async () => Promise.resolve());
     fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
     act(() => vi.advanceTimersByTime(3000));
+    act(() => vi.advanceTimersByTime(20));
+    cadence = { rpm: 0, connected: false };
     act(() => vi.advanceTimersByTime(1000));
     expect(screen.getByTestId('skyline-glider-reconnect')).toBeTruthy();
     vi.useRealTimers();
