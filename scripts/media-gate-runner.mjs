@@ -2,6 +2,7 @@ import { existsSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 
 /**
  * Shared Playwright group runner for the Media gates (stable core + P0).
@@ -31,7 +32,11 @@ export function groupedJourneys(entries) {
 
 export function groupStem(index, journey) {
   const safe = (value) => value.replace(/[^a-zA-Z0-9._-]/g, '_');
-  return `${String(index + 1).padStart(2, '0')}-${safe(journey.file)}-${safe(journey.grep)}`;
+  // A grep can be a long alternation of titles: keep the file name readable and unique (hash), never over the OS name limit.
+  const grep = journey.grep.length > 40
+    ? `${safe(journey.grep).slice(0, 32)}-${createHash('sha1').update(journey.grep).digest('hex').slice(0, 8)}`
+    : safe(journey.grep);
+  return `${String(index + 1).padStart(2, '0')}-${safe(journey.file)}-${grep}`;
 }
 
 /** Evidence path that never replaces an existing file. */
