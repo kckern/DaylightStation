@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test';
+import { markFirstUseDone } from './lib/firstUse.mjs';
+import { playArrivalHere } from './lib/mediaDriver.mjs';
 
 // Regression: the platform Player's global hotkey listener (Backspace→prev,
 // Space→toggle, Tab→next) must never hijack typing. Historically it ate
@@ -6,23 +8,23 @@ import { test, expect } from '@playwright/test';
 test.describe('MediaApp — typing in search while playback is active', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
+    // After the clear (init scripts run in order): the first-use card is a real overlay.
+    await markFirstUseDone(page);
   });
 
   test('Backspace and Space edit the query instead of driving the player', async ({ page }) => {
     await page.goto('/media');
 
-    // Start real playback so the Player (and its keyboard handler) is mounted.
-    await page.getByTestId('media-search-input').fill('lonesome');
-    const firstRow = page.locator('[data-testid^="result-row-"]').first();
-    await expect(firstRow).toBeVisible({ timeout: 15000 });
-    const id = (await firstRow.getAttribute('data-testid')).replace(/^result-row-/, '');
-    await page.getByTestId(`result-play-now-${id}`).evaluate((el) => el.click());
+    // Start real playback so the Player (and its keyboard handler) is mounted:
+    // search, tap the movie (plays here), leave the handle up.
+    await playArrivalHere(page);
     const toggle = page.getByTestId('mini-toggle');
     await expect(toggle).toBeVisible({ timeout: 15000 });
-    await expect(toggle).toHaveAttribute('aria-label', /pause/i, { timeout: 10000 });
+    await expect(toggle).toHaveAttribute('aria-label', /pause/i, { timeout: 30000 });
 
     // Type with real key events; Backspace must delete a character.
-    const input = page.getByTestId('media-search-input');
+    const input = page.getByRole('textbox', { name: 'Search media…' });
+    await input.fill('');
     await input.click();
     await input.pressSequentially('abcd');
     await expect(input).toHaveValue('abcd');

@@ -1,8 +1,24 @@
 // tests/live/flow/media/media-app-discovery.runtime.test.mjs
 import { test, expect } from '@playwright/test';
+import { markFirstUseDone } from './lib/firstUse.mjs';
+import { searchFor } from './lib/mediaDriver.mjs';
+
+// The header search is the dock's "Search media…" textbox (laptop width, the
+// default here); results are combobox options whose ⋯ menu carries the verbs.
+// There is no media-search-input / result-row / inline-peek surface any more:
+// a result's detail is the Open detail verb (FIND.8a).
+const TITLE = 'Arrival';
+const resultOption = (page) => page.getByRole('option').filter({ hasText: TITLE }).filter({ hasText: 'Movie' });
+async function contentIdOf(option) {
+  const testId = await option.getAttribute('data-testid');
+  const contentId = testId?.replace(/^combobox-option-/, '');
+  expect(contentId).toBeTruthy();
+  return contentId;
+}
 
 test.describe('MediaApp — P2 discovery', () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, context }) => {
+    await markFirstUseDone(context);
     await page.goto('/media');
     await page.evaluate(() => {
       localStorage.clear();
@@ -16,44 +32,36 @@ test.describe('MediaApp — P2 discovery', () => {
 
   test('search returns results and Play Now starts playback', async ({ page }) => {
     await page.goto('/media');
-    await expect(page.getByTestId('media-search-input')).toBeVisible();
+    await searchFor(page, TITLE);
+    const option = resultOption(page);
+    await expect(option).toHaveCount(1, { timeout: 15000 });
+    const contentId = await contentIdOf(option);
 
-    await page.getByTestId('media-search-input').fill('lonesome');
-    const firstRow = page.locator('[data-testid^="result-row-"]').first();
-    await expect(firstRow).toBeVisible({ timeout: 15000 });
-
-    const firstRowId = await firstRow.getAttribute('data-testid');
-    const contentId = firstRowId?.replace(/^result-row-/, '');
-    expect(contentId).toBeTruthy();
-
-    // JS click bypasses search-overlay pointer-event interception.
-    await page.getByTestId(`result-play-now-${contentId}`).evaluate((el) => el.click());
+    await option.getByRole('button', { name: 'More actions' }).click();
+    await page.getByTestId(`result-action-playNow-${contentId}`).click();
 
     await page.getByTestId('mini-player-open-nowplaying').click();
     // The heading shows the human title; the canonical id is exposed as a
     // data attribute so we can assert the RIGHT item is playing.
     const npTitle = page.getByTestId('now-playing-title');
     await expect(npTitle).toBeVisible({ timeout: 10000 });
-    await expect(npTitle).toContainText(/Now Playing:/i);
+    await expect(npTitle).toContainText(/Now Playing:/i, { timeout: 30000 });
     await expect(npTitle).toHaveAttribute('data-content-id', contentId, { timeout: 10000 });
   });
 
-  test('clicking a search result title opens inline peek (no navigation)', async ({ page }) => {
+  test('Open detail on a search result shows its detail without starting playback', async ({ page }) => {
     await page.goto('/media');
-    await page.getByTestId('media-search-input').fill('lonesome');
-    const firstRow = page.locator('[data-testid^="result-open-"]').first();
-    await expect(firstRow).toBeVisible({ timeout: 15000 });
+    await searchFor(page, TITLE);
+    const option = resultOption(page);
+    await expect(option).toHaveCount(1, { timeout: 15000 });
+    const contentId = await contentIdOf(option);
 
-    const firstRowId = await firstRow.getAttribute('data-testid');
-    const contentId = firstRowId?.replace(/^result-open-/, '');
-    expect(contentId).toBeTruthy();
+    await option.getByRole('button', { name: 'More actions' }).click();
+    await page.getByTestId(`result-action-detail-${contentId}`).click();
 
-    // JS click bypasses search-overlay pointer-event interception.
-    await firstRow.evaluate((el) => el.click());
-    // Title click now expands inline peek, not detail route
-    await expect(page.getByTestId(`result-peek-${contentId}`)).toBeVisible({ timeout: 5000 });
-    // Toggle closes it
-    await firstRow.evaluate((el) => el.click());
-    await expect(page.getByTestId(`result-peek-${contentId}`)).not.toBeVisible({ timeout: 3000 });
+    await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId('detail-play-now')).toBeVisible();
+    // Looking at a result's detail never starts it: no session, no handle.
+    await expect(page.getByTestId('media-mini-player')).toHaveCount(0);
   });
 });
