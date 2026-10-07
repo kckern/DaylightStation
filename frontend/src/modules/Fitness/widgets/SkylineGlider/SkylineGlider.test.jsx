@@ -139,6 +139,22 @@ describe('SkylineGlider', () => {
     vi.useRealTimers();
   });
 
+  it('logs resumable flight state when the game unmounts mid-flight', async () => {
+    vi.useFakeTimers();
+    const view = render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
+    act(() => vi.advanceTimersByTime(3100));
+
+    view.unmount();
+
+    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.flight.suspended', expect.objectContaining({
+      runId: expect.any(String), courseTime: expect.any(Number), inputMode: expect.any(String), reason: 'unmount',
+    }));
+    expect(mockLog.info.mock.calls.some(([event]) => event === 'skyline_glider.flight.saved')).toBe(false);
+    vi.useRealTimers();
+  });
+
   it('logs aggregate render health once per ten-second window without frame logs', async () => {
     vi.useFakeTimers();
     render(<SkylineGlider />);
@@ -326,7 +342,7 @@ describe('SkylineGlider', () => {
     expect(screen.getByRole('button', { name: /start flight/i })).toBeEnabled();
   });
 
-  it('shows a reconnect overlay when cadence transport is absent', async () => {
+  it('shows a reconnect overlay only after the inferred-slowdown grace expires', async () => {
     vi.useFakeTimers();
     let cadence = { rpm: 60, connected: true, ts: Date.now() + 1 };
     mockCtx.fitnessSessionInstance.getEquipmentCadence = () => cadence;
@@ -337,6 +353,8 @@ describe('SkylineGlider', () => {
     act(() => vi.advanceTimersByTime(20));
     cadence = { rpm: 0, connected: false };
     act(() => vi.advanceTimersByTime(1000));
+    expect(screen.queryByTestId('skyline-glider-reconnect')).toBeNull();
+    act(() => vi.advanceTimersByTime(4500));
     expect(screen.getByTestId('skyline-glider-reconnect')).toBeTruthy();
     vi.useRealTimers();
   });

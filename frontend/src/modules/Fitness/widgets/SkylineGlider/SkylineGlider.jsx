@@ -145,6 +145,9 @@ export default function SkylineGlider() {
   const renderHealthRef = useRef({ startedAt: 0, frames: 0, longFrames: 0 });
   const audioRef = useRef(null);
   const lockedSelectionRef = useRef(null);
+  const phaseRef = useRef(phase);
+  const suspensionContextRef = useRef(null);
+  const suspensionLoggedRef = useRef(false);
   if (!audioRef.current) audioRef.current = createSkylineAudio();
   const fitnessSessionInstance = ctx?.fitnessSessionInstance;
   const setGovernanceSuspended = ctx?.setGovernanceSuspended;
@@ -161,6 +164,8 @@ export default function SkylineGlider() {
     calibration: resolveCalibration(equipment),
   } : null, [course, equipment, fitnessSessionInstance?.sessionId, riderId]);
   const saved = course && checkpointIdentity ? readFlightCheckpoint(riderId, course, checkpointIdentity) : { status: 'missing' };
+  phaseRef.current = phase;
+  suspensionContextRef.current = { course, equipmentId: equipment?.id, riderId };
 
   useEffect(() => {
     if (!['incompatible', 'invalid'].includes(saved.status)) return;
@@ -183,6 +188,27 @@ export default function SkylineGlider() {
     effectTimersRef.current.clear();
     audioRef.current.stop();
   }, []);
+
+  useEffect(() => {
+    const logSuspension = (reason) => {
+      const current = flightRef.current;
+      const run = runRef.current;
+      const context = suspensionContextRef.current;
+      if (suspensionLoggedRef.current || phaseRef.current !== 'flight' || !current || !run || finalizingRef.current) return;
+      suspensionLoggedRef.current = true;
+      log.info('skyline_glider.flight.suspended', {
+        runId: run.runId, riderId: context?.riderId, equipmentId: context?.equipmentId,
+        courseId: context?.course?.id, courseVersion: context?.course?.version,
+        courseTime: current.courseTime, inputMode: current.inputMode || 'unknown', reason,
+      });
+    };
+    const onPageHide = () => logSuspension('pagehide');
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      window.removeEventListener('pagehide', onPageHide);
+      logSuspension('unmount');
+    };
+  }, [log]);
 
   useEffect(() => {
     let active = true;
@@ -387,6 +413,7 @@ export default function SkylineGlider() {
       armedAtMs, inputReady: false, lastInputTs: null,
     } : initial;
     if (!resume) clearFlightCheckpoint(riderId, course);
+    suspensionLoggedRef.current = false;
     flightRef.current = next;
     const run = canResume ? { runId: saved.identity.runId, startedAt: saved.identity.startedAt } : {
       runId: globalThis.crypto?.randomUUID?.() || `flight-${Date.now()}`,
