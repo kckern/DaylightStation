@@ -88,7 +88,7 @@ function copyTree(from, to, nowMs) {
  * @returns {{registry: Object, routines: Object[], recentAdditions: Object[]}}
  */
 export function materializeSeed({ seedDir = DEFAULT_SEED_DIR, dataDir, nowMs = Date.now() }) {
-  copyTree(path.join(seedDir, 'data'), dataDir, nowMs);
+  copyTree(path.join(seedDir, 'tree'), dataDir, nowMs);
   const ledgerRoot = path.join(dataDir, 'household', 'history', 'media-plays');
   fs.mkdirSync(ledgerRoot, { recursive: true });
   const rows = readSeedYaml(path.join(seedDir, 'plays.yml'), nowMs) || [];

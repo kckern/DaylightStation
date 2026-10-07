@@ -1,0 +1,91 @@
+# Progress records in the real YamlMediaProgressMemory shape (contentId ->
+# record, `spots` keyed by device id). Timestamps are tokens, expanded when the
+# acceptance server starts (see tests/_lib/media-household-fixture.mjs):
+#   ${local:D,M}  local 'YYYY-MM-DD HH:mm:ss' of now - D days + M minutes
+#   ${iso:D,M}    the same instant as an ISO string
+# Item ids are BRANCH_ALLOWED_TITLES, so catalog lookups stay inside the allowlist.
+
+# Arrival (6983 s): one screen stopped at 26 %, open.
+'plex:55854':
+  playhead: 1800
+  duration: 6983
+  percent: 26
+  playCount: 1
+  lastPlayed: '${local:0,-30}'
+  watchTime: 1800
+  lastDevice: 'fleet:acceptance-media'
+  spots:
+    'fleet:acceptance-media': { playhead: 1800, duration: 6983, percent: 26, lastPlayed: '${local:0,-30}' }
+
+# Disclosure Day (8833 s): two screens hold DIFFERENT spots (8 % and 54 %).
+'plex:697368':
+  playhead: 720
+  duration: 8833
+  percent: 8
+  playCount: 2
+  lastPlayed: '${local:0,-90}'
+  watchTime: 5520
+  lastDevice: 'browser:kidtablet'
+  spots:
+    'browser:kidtablet': { playhead: 720, duration: 8833, percent: 8, lastPlayed: '${local:0,-90}' }
+    'fleet:acceptance-media': { playhead: 4800, duration: 8833, percent: 54, lastPlayed: '${local:1,0}' }
+
+# Faith (219 s track): finished; also the time-of-day candidate (see plays).
+'plex:584614':
+  playhead: 219
+  duration: 219
+  percent: 100
+  playCount: 4
+  lastPlayed: '${local:0,-5}'
+  watchTime: 876
+  completedAt: '${local:3,0}'
+  lastDevice: 'fleet:acceptance-media'
+  spots: {}
+
+# Hospital (438 s episode of Bluey S1): finished at 91 % -> Keepy Uppy is next.
+'plex:266151':
+  playhead: 400
+  duration: 438
+  percent: 91
+  playCount: 1
+  lastPlayed: '${local:0,-65}'
+  watchTime: 400
+  completedAt: '${local:0,-65}'
+  lastDevice: 'fleet:acceptance-media'
+  spots: {}
+
+# Countdown (3635 s): 200 s = 6 % -> open by PERCENT although under 5 minutes.
+'plex:665638':
+  playhead: 200
+  duration: 3635
+  percent: 6
+  playCount: 1
+  lastPlayed: '${local:0,-200}'
+  watchTime: 200
+  lastDevice: 'fleet:acceptance-media'
+  spots:
+    'fleet:acceptance-media': { playhead: 200, duration: 3635, percent: 6, lastPlayed: '${local:0,-200}' }
+
+# Red Coast (3831 s): 170 s = 4 % and under 5 minutes -> NOT unfinished.
+'plex:665639':
+  playhead: 170
+  duration: 3831
+  percent: 4
+  playCount: 1
+  lastPlayed: '${local:0,-300}'
+  watchTime: 170
+  lastDevice: 'fleet:acceptance-media'
+  spots:
+    'fleet:acceptance-media': { playhead: 170, duration: 3831, percent: 4, lastPlayed: '${local:0,-300}' }
+
+# Anatomy of a Fall (8709 s): 310 s = 3.6 % -> open by SECONDS (>= 5 min), and
+# only a `legacy` spot (a pre-spots single playhead). Also on the removed list.
+'plex:703558':
+  playhead: 310
+  duration: 8709
+  percent: 4
+  playCount: 1
+  lastPlayed: '${local:2,0}'
+  watchTime: 310
+  spots:
+    legacy: { playhead: 310, duration: 8709, percent: 4, lastPlayed: '${local:2,0}' }
