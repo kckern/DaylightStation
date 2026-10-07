@@ -42,9 +42,20 @@ export function isInputChannel(event) { return event?.context?.channel === 'inpu
  * never reloads — so the ceiling has to live here. See ingestRateLimiter.mjs.
  */
 const rateLimiter = createIngestRateLimiter();
+const flightSampleRateLimiter = createIngestRateLimiter({ capacity: 180, refillPerMinute: 120 });
+
+function limiterFor(event) {
+  return event?.event === 'skyline_glider.flight.sample' ? flightSampleRateLimiter : rateLimiter;
+}
+
+/** Test seam: exercise the same routing policy used by ingestion. */
+export function __checkIngestRateLimit(event) { return limiterFor(event).check(event); }
 
 /** Test seam: drop all accumulated buckets. */
-export function __resetIngestRateLimiter() { rateLimiter.reset(); }
+export function __resetIngestRateLimiter() {
+  rateLimiter.reset();
+  flightSampleRateLimiter.reset();
+}
 
 export function ingestFrontendLogs(payload, clientMeta = {}, hooks = {}) {
   if (!isLoggingInitialized()) {
@@ -82,7 +93,7 @@ export function ingestFrontendLogs(payload, clientMeta = {}, hooks = {}) {
       // A flood is contained to the client producing it — see ingestRateKey.
       // The summary is dispatched even when the event itself is dropped, so a
       // suppressed stretch is visible as a count rather than as a silent gap.
-      const { allow, summary } = rateLimiter.check(normalized);
+      const { allow, summary } = __checkIngestRateLimit(normalized);
       if (summary) dispatcher.dispatch(summary);
       if (!allow) {
         // Counted as processed: it was received and accounted for, and the

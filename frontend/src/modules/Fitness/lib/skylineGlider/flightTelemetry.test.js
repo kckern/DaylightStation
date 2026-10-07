@@ -15,7 +15,7 @@ const state = (overrides = {}) => ({
   targetAltitude: .42, altitude: .5, verticalRate: -.12,
   calibration: { lowRpm: 30, highRpm: 100 }, lives: 3, collisions: 0,
   restarts: 0, collectedIds: [], checkpoint: { id: 'start', time: 0 },
-  pausedForSensor: false, zeroElapsed: 0, ...overrides,
+  pausedForSensor: false, inputMode: 'measured', zeroElapsed: 0, ...overrides,
 });
 
 describe('flight telemetry', () => {
@@ -35,11 +35,31 @@ describe('flight telemetry', () => {
 
     expect(first.sample).toMatchObject({
       courseSecond: 1, rawRpm: 61, filteredRpm: 58, altitude: .5,
-      targetAltitude: .42, verticalRate: -.12, lives: 3,
+      targetAltitude: .42, verticalRate: -.12, lives: 3, inputMode: 'measured',
       sensor: { connected: true, stalled: false, paused: false },
     });
     expect(first.nextSampleSecond).toBe(1);
     expect(duplicate.sample).toBeNull();
+  });
+
+  it('reports inferred slowdown start, recovery, and escalation transitions', () => {
+    const started = collectFlightTelemetry({
+      previous: state(), next: state({ inputMode: 'inferred-slowdown' }),
+      input: { connected: false }, previousInput: { connected: true }, lastSampleSecond: 0, course,
+    });
+    const recovered = collectFlightTelemetry({
+      previous: state({ inputMode: 'inferred-slowdown' }), next: state(),
+      input: { connected: true }, previousInput: { connected: false }, lastSampleSecond: 0, course,
+    });
+    const escalated = collectFlightTelemetry({
+      previous: state({ inputMode: 'inferred-slowdown' }),
+      next: state({ inputMode: 'sensor-paused', pausedForSensor: true }),
+      input: { connected: false }, previousInput: { connected: false }, lastSampleSecond: 0, course,
+    });
+
+    expect(started.events).toContainEqual({ type: 'inferred_slowdown.started', data: {} });
+    expect(recovered.events).toContainEqual({ type: 'inferred_slowdown.recovered', data: {} });
+    expect(escalated.events).toContainEqual({ type: 'inferred_slowdown.escalated', data: {} });
   });
 
   it('resets the sample cursor when checkpoint recovery rewinds course time', () => {

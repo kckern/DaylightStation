@@ -139,6 +139,39 @@ describe('SkylineGlider', () => {
     vi.useRealTimers();
   });
 
+  it('logs resumable flight state when the game unmounts mid-flight', async () => {
+    vi.useFakeTimers();
+    const view = render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
+    act(() => vi.advanceTimersByTime(3100));
+
+    view.unmount();
+
+    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.flight.suspended', expect.objectContaining({
+      runId: expect.any(String), courseTime: expect.any(Number), inputMode: expect.any(String), reason: 'unmount',
+    }));
+    expect(mockLog.info.mock.calls.some(([event]) => event === 'skyline_glider.flight.saved')).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it('delivers pagehide suspension through a lifecycle-safe beacon', async () => {
+    vi.useFakeTimers();
+    const sendBeacon = vi.fn(() => true);
+    Object.defineProperty(navigator, 'sendBeacon', { configurable: true, value: sendBeacon });
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
+    act(() => vi.advanceTimersByTime(3100));
+
+    window.dispatchEvent(new Event('pagehide'));
+
+    expect(sendBeacon).toHaveBeenCalledWith('/api/v1/fitness/skyline-glider/suspensions', expect.any(Blob));
+    const payload = JSON.parse(await sendBeacon.mock.calls[0][1].text());
+    expect(payload).toMatchObject({ runId: expect.any(String), courseTime: expect.any(Number), inputMode: expect.any(String), reason: 'pagehide' });
+    vi.useRealTimers();
+  });
+
   it('logs aggregate render health once per ten-second window without frame logs', async () => {
     vi.useFakeTimers();
     render(<SkylineGlider />);
@@ -326,7 +359,7 @@ describe('SkylineGlider', () => {
     expect(screen.getByRole('button', { name: /start flight/i })).toBeEnabled();
   });
 
-  it('shows a reconnect overlay when cadence transport is absent', async () => {
+  it('shows a reconnect overlay only after the inferred-slowdown grace expires', async () => {
     vi.useFakeTimers();
     let cadence = { rpm: 60, connected: true, ts: Date.now() + 1 };
     mockCtx.fitnessSessionInstance.getEquipmentCadence = () => cadence;
@@ -337,6 +370,8 @@ describe('SkylineGlider', () => {
     act(() => vi.advanceTimersByTime(20));
     cadence = { rpm: 0, connected: false };
     act(() => vi.advanceTimersByTime(1000));
+    expect(screen.queryByTestId('skyline-glider-reconnect')).toBeNull();
+    act(() => vi.advanceTimersByTime(4500));
     expect(screen.getByTestId('skyline-glider-reconnect')).toBeTruthy();
     vi.useRealTimers();
   });
