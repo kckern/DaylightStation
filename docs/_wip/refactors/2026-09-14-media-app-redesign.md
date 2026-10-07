@@ -168,6 +168,7 @@ Phase 0 of `docs/superpowers/specs/2026-10-06-media-proof-gaps-design.md` (ledge
 | Before Phase 0 (288 AC) | 144 | 37 | 107 |
 | After Phase 0 | 157 | 79 | 52 |
 | After the journey repair (below) | 161 | 75 | 52 |
+| After Phase 1 (below) | 166 | 70 | 52 |
 
 Net: 17 rows promoted to Accepted from existing journeys (RELY.4a AC1/AC2/AC4, RELY.7a AC3, AUTO.2a AC2/AC3, STEER.3a/AC1, 4a/AC1-2, 6a/AC1-2, 7a/AC1-2, 8a/AC2, PLAY.1a/AC2, PLAY.6a/AC2, PLACE.1a/AC4), and 4 rows demoted to Partial (`FIND.5a/AC2`, `FIND.6a/AC1-3`: the `browse-breadcrumb` manifest journey fails on the redesign's renamed artwork label): 144 + 17 - 4 = 157. 42 Unverified rows moved to Partial because some runtime evidence exists.
 
@@ -199,7 +200,7 @@ Shared test infrastructure for the proof-gaps phases; tests, fixtures and docs o
 - **Fake Home Assistant caller** (`tests/_lib/media-ha-caller.mjs`): a `HomeAssistant/...` User-Agent load through the REAL `RoutineLoadRecorder` (origin, catalog match, dedupe, routine history) with the seed's routine catalog.
 - **Helpers** (`tests/live/flow/media/lib/`): `networkLoss.mjs` (offline plus dropped and refused bus sockets), `fakeClock.mjs` (30-minute timers), `household.mjs` (reset, request recording, identity pinning); each has a live demo in `media-app-infra-helpers.runtime.test.mjs`.
 
-Rows these make closable are re-coded `NEEDS-JOURNEY` in the ledger (Phase 2 writes the journeys). Rows a journey touched in this phase now prove with real assertions (see the ledger run `PROOF-GAPS-PHASE1`).
+Rows these make closable are re-coded `NEEDS-JOURNEY` in the ledger (Phase 2 writes the journeys). Five rows were promoted because the household journeys now prove them against the real services: FIND.7a/AC3, FIND.10a/AC5, FIND.10a/AC7, FIND.12a/AC3, FIND.13a/AC2 (ledger run `PROOF-GAPS-PHASE1`, exact SHA `9986ed8667f3a8bd3cf986efbc966fd00e37281b`). P0 manifest on that SHA: 47 of 49 groups in one gate run; the other two (`handle-controls` sleep at the end, `player-features` PLAY.9a) failed under host load average 14-17 and pass alone on the same preview. The `p0-accessibility` empty-household journey (RELY.14a/AC3) now resets the household to empty (`?seed=empty`) because the server's household is no longer empty.
 
 
 ## Next action
