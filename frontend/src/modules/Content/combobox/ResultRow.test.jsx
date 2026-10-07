@@ -163,3 +163,20 @@ describe('ResultRow — FIND.8b labelled inline play and Show on…', () => {
     expect(onAction).toHaveBeenCalledWith({ kind: 'playOn', item: leafItem });
   });
 });
+
+describe('ResultRow — PLAY.5a/AC3 press and hold Play Next', () => {
+  it('a quick press is Play Next; holding offers "At the very front" and does not run Play Next', async () => {
+    const onAction = vi.fn();
+    renderWithProvider(<ResultRow item={leafItem} title="Bluey" onTap={() => {}} onAction={onAction} />);
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    const next = await screen.findByRole('menuitem', { name: 'Play Next', exact: true });
+    // Hold: press, wait past the hold time, release (the click that ends a hold is swallowed).
+    fireEvent.pointerDown(next);
+    const front = await screen.findByRole('menuitem', { name: 'At the very front' }, { timeout: 2000 });
+    fireEvent.pointerUp(next);
+    fireEvent.click(next);
+    expect(onAction).not.toHaveBeenCalled();
+    fireEvent.click(front);
+    expect(onAction).toHaveBeenCalledWith({ kind: 'playFirst', item: leafItem });
+  });
+});

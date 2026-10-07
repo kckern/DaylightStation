@@ -168,6 +168,12 @@ export const mediaLog = {
   playOnChoiceApplied:    info('play-on.choice-applied'),
   playOnStopHere:         info('play-on.stop-here'),
   collectionContinued:    info('find.collection-continued'),
+  playNextHoldOffered:    info('play-next.hold-offered'),
+  playNextFrontChosen:    info('play-next.front-chosen'),
+  screenHandleShown:      info('screen-handle.shown'),
+  screenHandleHidden:     debug('screen-handle.hidden'),
+  screenHandleCommand:    info('screen-handle.command'),
+  screenHandleFailed:     warn('screen-handle.failed'),
   shownHere:              info('find.shown-here'),
 };
 
