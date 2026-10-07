@@ -9,6 +9,8 @@ import { MantineProvider } from '@mantine/core';
 
 const fleet = { devices: [], entries: {} };
 const getController = vi.fn();
+const moveHere = vi.fn(async () => ({ ok: true }));
+vi.mock('../household/useMoveHere.js', () => ({ useMoveHere: () => moveHere }));
 
 vi.mock('../fleet/useFleetContext.js', () => ({
   useFleetContext: () => ({ devices: fleet.devices, loading: false, error: null, store: {}, connected: fleet.connected }),
@@ -59,6 +61,7 @@ beforeEach(() => {
   fleet.entries = {};
   fleet.connected = true;
   getController.mockReset();
+  moveHere.mockClear();
 });
 
 describe('FleetView Play… affordance', () => {
@@ -76,12 +79,32 @@ describe('FleetView Play… affordance', () => {
     expect(screen.getByTestId('fleet-this-device-browser:browser-a')).toHaveTextContent('This device');
   });
 
-  it('disables Play here with a truthful Move-unavailable explanation for an active remote session', () => {
+  it('HOUSE.2a/AC4: Move here on an active row hands that screen\'s playback to this device', () => {
+    fleet.entries = { 'livingroom-tv': { snapshot: {
+      state: 'playing', currentItem: { title: 'Bluey', contentId: 'plex:9' },
+      meta: { playbackOwner: { ownerInstanceId: 'o1', playbackRevision: 2 } },
+    } } };
+    renderFleet();
+    const button = screen.getByTestId('fleet-takeover-livingroom-tv');
+    expect(button).toBeEnabled();
+    expect(button).toHaveTextContent('Move here');
+    expect(screen.queryByTestId('fleet-takeover-unavailable-livingroom-tv')).toBeNull();
+    fireEvent.click(button);
+    expect(moveHere).toHaveBeenCalledWith('livingroom-tv', { contentId: 'plex:9', title: 'Bluey' });
+  });
+
+  it('says why Move here is unavailable when the screen carries no playback-owner identity', () => {
     fleet.entries = { 'livingroom-tv': { snapshot: { state: 'playing', currentItem: { title: 'Bluey' } } } };
     renderFleet();
-
     expect(screen.getByTestId('fleet-takeover-livingroom-tv')).toBeDisabled();
-    expect(screen.getByTestId('fleet-takeover-unavailable-livingroom-tv')).toHaveTextContent('Move playback is not available yet');
+    expect(screen.getByTestId('fleet-takeover-unavailable-livingroom-tv')).toHaveTextContent(/can't be moved here/i);
+  });
+
+  it('does not offer Move here on this device\'s own row', () => {
+    fleet.devices = [{ id: 'browser:browser-a', name: 'Browser A', type: 'browser', isLocal: true }];
+    fleet.entries = { 'browser:browser-a': { snapshot: { state: 'playing', currentItem: { title: 'Arrival' }, meta: { playbackOwner: { ownerInstanceId: 'o', playbackRevision: 1 } } } } };
+    renderFleet();
+    expect(screen.queryByTestId('fleet-takeover-browser:browser-a')).toBeNull();
   });
 
   it('renders a Play… button on every card alongside the existing actions', () => {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,6 +11,7 @@ import {
   resolveAcceptanceBuildOutput,
   validateAcceptedSnapshot,
   validateArtifactProvenance,
+  __setLiveEncoderSpawnForTests,
 } from './media-redesign-server.mjs';
 
 function attach(plugin, hook = 'configurePreviewServer') {
@@ -159,5 +161,32 @@ describe('media redesign bundled-preview middleware', () => {
     expect(result.headers.get('x-media-acceptance-mint')).toBe('worktree');
     expect(result.headers.get('x-media-acceptance-policy')).toBe('branch');
     expect(result.body).toBe('minted');
+  });
+});
+
+describe('live fixture encoder', () => {
+  it('answers 404 with a clear message, not a crash, when ffmpeg cannot be spawned', async () => {
+    const child = new EventEmitter();
+    child.kill = () => {};
+    __setLiveEncoderSpawnForTests(() => {
+      setTimeout(() => child.emit('error', Object.assign(new Error('spawn ffmpeg ENOENT'), { code: 'ENOENT' })), 0);
+      return child;
+    });
+    try {
+      const middleware = attach(createAcceptancePreviewPlugin({
+        app: (_request, response) => response.end('composed'), allowedTitles: new Set(['55854']), policy: 'branch',
+        sourceSha: '0c0c37e77e66837efc4bd4d620f60e4d26194965', upstream: 'http://127.0.0.1:3111',
+      }));
+      // The route answers asynchronously (it polls for the first playlist),
+      // so use a response that records when it ends.
+      let body = null;
+      const response = { statusCode: 200, setHeader() {}, end(value = '') { body = value; } };
+      await middleware({ url: '/api/v1/_fixture/live/index.m3u8', method: 'GET' }, response, () => {});
+      for (let i = 0; i < 80 && body === null; i += 1) await new Promise((r) => setTimeout(r, 25));
+      expect(response.statusCode).toBe(404);
+      expect(body).toMatch(/ffmpeg is unavailable/);
+    } finally {
+      __setLiveEncoderSpawnForTests();
+    }
   });
 });

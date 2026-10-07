@@ -90,9 +90,21 @@ describe('Media P0 gate manifest', () => {
       expect.objectContaining({ story: 'RELY.12a', criteria: ['RELY.12a/AC1', 'RELY.12a/AC2'], file: 'media-app-p0-accessibility.runtime.test.mjs' }),
       expect.objectContaining({ story: 'RELY.13a', criteria: ['RELY.13a/AC2'], file: 'media-app-p0-accessibility.runtime.test.mjs' }),
       expect.objectContaining({ story: 'RELY.14a', criteria: ['RELY.14a/AC3'], file: 'media-app-p0-accessibility.runtime.test.mjs' }),
+      // Phase 2a (proof gaps): P0 product features.
+      expect.objectContaining({ story: 'STEER.4a', criteria: ['STEER.4a/AC3'], file: 'media-app-p0-features-live.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'PLACE.6a', criteria: ['PLACE.6a/AC2'], file: 'media-app-p0-features-send.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'HOUSE.2a', criteria: ['HOUSE.2a/AC2', 'HOUSE.2a/AC4'], file: 'media-app-p0-features-send.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'PLACE.7a', criteria: ['PLACE.7a/AC1', 'PLACE.7a/AC2'], file: 'media-app-p0-features-send.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'PLACE.7a', criteria: ['PLACE.7a/AC4'], file: 'media-app-p0-features-send.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'FIND.8b', criteria: ['FIND.8b/AC2'], file: 'media-app-p0-features-find.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'FIND.8b', criteria: ['FIND.8b/AC3'], file: 'media-app-p0-features-find.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'PLAY.1a', criteria: ['PLAY.1a/AC5'], file: 'media-app-p0-features-find.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'PLAY.5a', criteria: ['PLAY.5a/AC3'], file: 'media-app-p0-features-find.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'STEER.1a', criteria: ['STEER.1a/AC4'], file: 'media-app-p0-features-steer.runtime.test.mjs' }),
+      expect.objectContaining({ story: 'RELY.5a', criteria: ['RELY.5a/AC4'], file: 'media-app-p0-features-steer.runtime.test.mjs' }),
     ]));
-    expect(P0_EXTENSION_ENTRIES).toHaveLength(61);
-    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 59, criteria: 146 });
+    expect(P0_EXTENSION_ENTRIES).toHaveLength(72);
+    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 65, criteria: 159 });
   });
 
   it('rejects skipped, duplicated, weakened, or unjourneyed criteria', () => {

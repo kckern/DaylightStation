@@ -12,7 +12,7 @@
 // Resume all (RQ-STEER-13) and leads to screen admin and routine history.
 import React, { useCallback, useMemo, useState } from 'react';
 import { Title, Text, Badge, Button, Progress, Group, Alert, Stack } from '@mantine/core';
-import { IconDeviceRemote, IconAlertCircle, IconPlayerPlay, IconPlayerPauseFilled, IconDevices, IconHistory } from '@tabler/icons-react';
+import { IconDeviceRemote, IconAlertCircle, IconPlayerPlay, IconPlayerPauseFilled, IconDevices, IconHistory, IconArrowBarToDown } from '@tabler/icons-react';
 import { useFleetContext } from '../fleet/useFleetContext.js';
 import { useDevice } from '../fleet/useDevice.js';
 import { FleetPlayPicker } from '../fleet/FleetPlayPicker.jsx';
@@ -26,11 +26,13 @@ import Skeleton from '@/lib/ui/Skeleton.jsx';
 import { deviceKind } from '../cast/castCopy.js';
 import { canShowNotes, wasNameLabel } from '../house/houseCopy.js';
 import { useStartStatuses, useStartedByAll } from '../house/useHouseSignals.js';
+import { useMoveHere } from '../household/useMoveHere.js';
 import { useSlideshowStopGuard } from './PlayerFeatureControls.jsx';
 import { StartStatusLine, StartedByLine, AddOnlyNotice, RowNotes, ScreenStopControl } from '../house/RowExtras.jsx';
 import { HouseQuietBar } from '../house/HouseQuietControls.jsx';
 import '../house/House.scss';
 
+const MOVE_HERE_UNAVAILABLE = "This screen's playback can't be moved here.";
 const ACTIVE_STATES = new Set(['playing', 'paused', 'buffering', 'stalled']);
 
 function fmt(s) {
@@ -43,6 +45,7 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
   const { device, entry } = useDevice(deviceId);
   const { push } = useNav();
   const { getController } = usePeek();
+  const moveHere = useMoveHere();
   // Inline "play something on this device" panel (FleetPlayPicker).
   const [playOpen, setPlayOpen] = useState(false);
   const closePlay = useCallback(() => setPlayOpen(false), []);
@@ -60,6 +63,9 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
   const name = deviceName(device, deviceId);
   const was = wasNameLabel(device);
   const controls = !offline ? snap?.controls ?? null : null;
+  // Move here needs the playback-owner identity the move transaction checks
+  // before it stops the other screen (household/useMoveHere.js).
+  const canMoveHere = !!snap?.meta?.playbackOwner;
   // Stopping a slideshow with music behind asks "Keep the music?" here too,
   // and the answer rides the stop command (never inferred from who sent it).
   const [guardStop, stopGuardDialog] = useSlideshowStopGuard({ deviceId }, snap ?? null);
@@ -151,18 +157,24 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
             </Button>
             <ScreenStopControl device={device ?? { id: deviceId }} name={name} onStop={() => guardStop((opts) => sendTransport('stop', opts))} />
             {stopGuardDialog}
-            <Button
-              data-testid={`fleet-takeover-${deviceId}`}
-              size="compact-sm"
-              variant="light"
-              disabled
-              title="Move playback is not available yet."
-            >
-              Move here
-            </Button>
-            <Text data-testid={`fleet-takeover-unavailable-${deviceId}`} size="xs" c="dimmed">
-              Move playback is not available yet.
-            </Text>
+            {!device?.isLocal && (
+              <Button
+                data-testid={`fleet-takeover-${deviceId}`}
+                size="compact-sm"
+                variant="default"
+                leftSection={<IconArrowBarToDown size={16} aria-hidden />}
+                disabled={!canMoveHere}
+                title={canMoveHere ? undefined : MOVE_HERE_UNAVAILABLE}
+                onClick={() => moveHere(deviceId, { contentId: item?.contentId ?? null, title: item?.title ?? null })}
+              >
+                Move here
+              </Button>
+            )}
+            {!device?.isLocal && !canMoveHere && (
+              <Text data-testid={`fleet-takeover-unavailable-${deviceId}`} size="xs" c="dimmed">
+                {MOVE_HERE_UNAVAILABLE}
+              </Text>
+            )}
           </>
         )}
       </Group>

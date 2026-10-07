@@ -392,6 +392,75 @@ export const P0_EXTENSION_ENTRIES = Object.freeze([
     file: 'media-app-p0-accessibility.runtime.test.mjs',
     grep: 'RELY\\.14a/AC3',
   },
+  // Phase 2a (proof gaps): P0 product features, exact-SHA runtime evidence on
+  // the acceptance fixtures (live HLS channel, virtual receiver, offline
+  // screen, seeded household, photo search result).
+  {
+    story: 'STEER.4a',
+    criteria: ['STEER.4a/AC3'],
+    file: 'media-app-p0-features-live.runtime.test.mjs',
+    grep: 'STEER\\.4a/AC3',
+  },
+  {
+    story: 'PLACE.6a',
+    criteria: ['PLACE.6a/AC2'],
+    file: 'media-app-p0-features-send.runtime.test.mjs',
+    grep: 'PLACE\\.6a/AC2',
+  },
+  {
+    story: 'HOUSE.2a',
+    criteria: ['HOUSE.2a/AC2', 'HOUSE.2a/AC4'],
+    file: 'media-app-p0-features-send.runtime.test.mjs',
+    grep: 'HOUSE\\.2a/AC2\\+AC4',
+  },
+  {
+    story: 'PLACE.7a',
+    criteria: ['PLACE.7a/AC1', 'PLACE.7a/AC2'],
+    file: 'media-app-p0-features-send.runtime.test.mjs',
+    grep: 'HOUSE\\.2a/AC2\\+AC4',
+  },
+  {
+    story: 'PLACE.7a',
+    criteria: ['PLACE.7a/AC4'],
+    file: 'media-app-p0-features-send.runtime.test.mjs',
+    grep: 'PLACE\\.7a/AC4',
+  },
+  {
+    story: 'FIND.8b',
+    criteria: ['FIND.8b/AC2'],
+    file: 'media-app-p0-features-find.runtime.test.mjs',
+    grep: 'FIND\\.8b/AC2',
+  },
+  {
+    story: 'FIND.8b',
+    criteria: ['FIND.8b/AC3'],
+    file: 'media-app-p0-features-find.runtime.test.mjs',
+    grep: 'FIND\\.8b/AC3',
+  },
+  {
+    story: 'PLAY.1a',
+    criteria: ['PLAY.1a/AC5'],
+    file: 'media-app-p0-features-find.runtime.test.mjs',
+    grep: 'PLAY\\.1a/AC5',
+  },
+  {
+    story: 'PLAY.5a',
+    criteria: ['PLAY.5a/AC3'],
+    file: 'media-app-p0-features-find.runtime.test.mjs',
+    grep: 'PLAY\\.5a/AC3',
+  },
+  {
+    story: 'STEER.1a',
+    criteria: ['STEER.1a/AC4'],
+    file: 'media-app-p0-features-steer.runtime.test.mjs',
+    grep: 'STEER\\.1a/AC4',
+  },
+  {
+    story: 'RELY.5a',
+    criteria: ['RELY.5a/AC4'],
+    file: 'media-app-p0-features-steer.runtime.test.mjs',
+    grep: 'RELY\\.5a/AC4',
+  },
 ]);
 
 const STABLE_ENTRIES = [...ACCEPTED_STORIES, ...SUPPORTING_ACCEPTED_CRITERIA];

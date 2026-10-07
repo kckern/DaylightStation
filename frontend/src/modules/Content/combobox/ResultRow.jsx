@@ -26,9 +26,10 @@
 // that onto its own dispatch/queue/nav plumbing (see
 // Media/search/resultRowVerbs.js).
 import React from 'react';
-import { ActionIcon, Menu } from '@mantine/core';
+import { ActionIcon, Button, Menu } from '@mantine/core';
 import { IconPlayerPlay, IconDotsVertical } from '@tabler/icons-react';
 import { isContainer } from './comboboxMachine.js';
+import { usePressHoldOffer } from '../../../lib/ui/usePressHoldOffer.js';
 
 /**
  * Trailing action control for a result row: a container gets a single ▶
@@ -40,14 +41,35 @@ import { isContainer } from './comboboxMachine.js';
  */
 export function ResultRowActions({
   item, isContainerItem, onPlayAll, onDetails, detailsTestId, onMore, onAction, testId, extraActions = null,
+  playLabel = null, playOnLabel = null,
   onMoreMenuPointerDown, onMoreMenuChange, onMoreMenuAction, onMoreMenuTriggerFocus, onMoreBoundaryBlur,
 }) {
   const container = isContainerItem ?? (item ? isContainer(item) : false);
   const idPart = testId ?? item?.id ?? 'row';
   const moreTriggerRef = React.useRef(null);
+  // PLAY.5a/AC3: pressing and holding Play Next offers "At the very front".
+  const hold = usePressHoldOffer();
+
+  // FIND.8b/AC2: a caller that names the inline play ("Play", "Continue S2E7")
+  // gets a labelled button in place of the bare ▶ icon.
+  const playAll = (extra = {}) => (playLabel ? (
+    <Button
+      size="compact-sm"
+      variant="default"
+      className="result-play-label"
+      data-testid={`result-play-all-${idPart}`}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPlayAll(); }}
+      leftSection={<IconPlayerPlay size={14} aria-hidden />}
+      {...extra}
+    >
+      {playLabel}
+    </Button>
+  ) : null);
 
   if (container && !onAction) {
     if (!onPlayAll) return null;
+    if (playLabel) return playAll();
     return (
       <ActionIcon
         size="sm"
@@ -96,7 +118,8 @@ export function ResultRowActions({
         Details
       </button>
     )}
-    {container && onAction && onPlayAll && <ActionIcon size="sm" variant="subtle" aria-label="Play as queue" data-testid={`result-play-all-${idPart}`}
+    {container && onAction && onPlayAll && playLabel && playAll()}
+    {container && onAction && onPlayAll && !playLabel && <ActionIcon size="sm" variant="subtle" aria-label="Play as queue" data-testid={`result-play-all-${idPart}`}
       onMouseDown={event => event.preventDefault()} onClick={event => { event.preventDefault(); event.stopPropagation(); onPlayAll(); }}><IconPlayerPlay size={16} /></ActionIcon>}
     {(onMore || onAction) && (
     <Menu withinPortal position="bottom-end" shadow="sm" onChange={onMoreMenuChange}>
@@ -139,10 +162,13 @@ export function ResultRowActions({
       >
         <Menu.Item data-testid={`result-action-playNow-${idPart}`} onClick={fire('playNow')}>Play Now</Menu.Item>
         {container && onAction && <Menu.Item onClick={fire('shuffle')}>Shuffle</Menu.Item>}
-        <Menu.Item data-testid={`result-action-playNext-${idPart}`} onClick={fire('playNext')}>Play Next</Menu.Item>
+        <Menu.Item data-testid={`result-action-playNext-${idPart}`} closeMenuOnClick={!hold.offered} {...hold.bind} onClick={hold.guardClick(fire('playNext'))}>Play Next</Menu.Item>
+        {hold.offered && (
+          <Menu.Item data-testid={`result-action-playNextFront-${idPart}`} onClick={fire('upNext')}>At the very front</Menu.Item>
+        )}
         <Menu.Item data-testid={`result-action-upNext-${idPart}`} onClick={fire('upNext')}>{onAction ? 'Play First' : 'Up Next'}</Menu.Item>
         <Menu.Item data-testid={`result-action-add-${idPart}`} onClick={fire('add')}>Add to Queue</Menu.Item>
-        {onAction && <Menu.Item onClick={fire('playOn')}>Play on…</Menu.Item>}
+        {onAction && <Menu.Item data-testid={`result-action-playOn-${idPart}`} onClick={fire('playOn')}>{playOnLabel ?? 'Play on…'}</Menu.Item>}
         {onAction && <Menu.Item onClick={fire('addOn')}>Add on…</Menu.Item>}
         <Menu.Divider />
         <Menu.Item data-testid={`result-action-detail-${idPart}`} onClick={fire('detail')}>Open detail</Menu.Item>
@@ -181,7 +207,7 @@ export function ResultRowActions({
  * @param {(item: object) => Array<{kind: string, label: string}>} [props.extraActions] - additive
  *   menu verbs, delivered through onAction({ kind, item }) (onAction contract only)
  */
-export function ResultRow({ item, title, subtitle, thumbnail, leading = null, onTap, onPlayAll, onDetails, detailsTestId, onMore, onAction, testId, focusId, extraActions = null }) {
+export function ResultRow({ item, title, subtitle, thumbnail, leading = null, onTap, onPlayAll, onDetails, detailsTestId, onMore, onAction, testId, focusId, extraActions = null, rowLabels = null }) {
   const container = item ? isContainer(item) : false;
   const idPart = item?.id ?? 'row';
   const rowTestId = testId ?? `result-row-${idPart}`;
@@ -214,7 +240,7 @@ export function ResultRow({ item, title, subtitle, thumbnail, leading = null, on
           (flex, gap 4px, flex-shrink 0) — reused here rather than inventing a
           new one, mirroring .browse-row-actions' role in BrowseView.jsx. */}
       <span className="media-result-actions">
-        <ResultRowActions item={item} isContainerItem={container} onPlayAll={onPlayAll} onDetails={onDetails} detailsTestId={detailsTestId} onMore={onMore} onAction={onAction} testId={idPart} extraActions={extraActions} />
+        <ResultRowActions item={item} isContainerItem={container} onPlayAll={onPlayAll} onDetails={onDetails} detailsTestId={detailsTestId} onMore={onMore} onAction={onAction} testId={idPart} extraActions={extraActions} playLabel={rowLabels?.play ?? null} playOnLabel={rowLabels?.playOn ?? null} />
       </span>
     </>
   );
