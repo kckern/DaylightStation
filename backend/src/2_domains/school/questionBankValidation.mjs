@@ -120,7 +120,7 @@ export function validateQuestionBank(raw) {
           errors.push(`${at}: ${field} must be a mapping when present`);
           continue;
         }
-        const allowedProfiles = new Set(['lower', 'upper', 'lower-3', 'upper-5']);
+        const allowedProfiles = new Set(['lower', 'upper', 'lower-3', 'upper-5', 'upper-6']);
         const unknown = Object.keys(item[field]).filter((profile) => !allowedProfiles.has(profile));
         if (unknown.length) errors.push(`${at}.${field}: unknown profiles ${unknown.join(', ')}`);
         for (const [profile, prompt] of Object.entries(item[field])) {

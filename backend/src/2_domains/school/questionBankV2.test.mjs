@@ -313,3 +313,21 @@ describe('question-bank/v2', () => {
     ]));
   });
 });
+
+it('offers six upper-level questions with five choices and the existing multi-select mix', () => {
+  const upperBank = { ...bank, items: [...bank.items.map(entry => ({ ...entry, levels: ['upper'] })), { ...item('lower-only'), levels: ['lower'] }] };
+  for (let seed = 0; seed < 20; seed++) {
+    const issued = issueWorksheet({ bank: upperBank, learnerId: 'learner', enrollmentId: 'atlas', lessonId: 'state', profile: 'upper-6', seed: String(seed) });
+    expect(issued.items).toHaveLength(6);
+    expect(issued.items.every(entry => entry.options.length === 5 && entry.itemId !== 'lower-only')).toBe(true);
+    const multi = issued.items.filter(entry => entry.type === 'multi_select');
+    expect(multi.length).toBeGreaterThanOrEqual(1);
+    expect(multi.length).toBeLessThanOrEqual(2);
+  }
+  expect(issueWorksheet({ bank, learnerId: 'learner', enrollmentId: 'atlas', lessonId: 'state', profile: 'upper', seed: 'unchanged' }).items).toHaveLength(10);
+  const sixOnly = { ...bank, items: [{ ...item('six-only'), levels: ['upper-6'], prompt_by_profile: { 'upper-6': 'Six-question wording.' } }] };
+  expect(validateQuestionBank(sixOnly).ok).toBe(true);
+  const retry = issueWorksheet({ bank: sixOnly, learnerId: 'learner', enrollmentId: 'atlas', lessonId: 'state', profile: 'upper-6', seed: 'retry', itemIds: ['six-only'] });
+  expect(retry.items).toHaveLength(1);
+  expect(retry.items[0].prompt).toBe('Six-question wording.');
+});

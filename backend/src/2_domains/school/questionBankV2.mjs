@@ -50,6 +50,7 @@ function profileSpec(profile) {
   if (profile === 'lower') return { count: 6, visible: [3, 4], multiMin: 0, multiMax: 0 };
   if (profile === 'upper') return { count: 10, visible: [5], multiMin: 1, multiMax: 2 };
   if (profile === 'lower-3') return { count: 3, visible: [3, 4], multiMin: 0, multiMax: 0 };
+  if (profile === 'upper-6') return { count: 6, visible: [5], multiMin: 1, multiMax: 2 };
   if (profile === 'upper-5') return { count: 5, visible: [5], multiMin: 0, multiMax: 0 };
   throw new Error(`unknown worksheet profile: ${profile}`);
 }
@@ -105,7 +106,7 @@ export function issueWorksheet({ bank, learnerId, enrollmentId, lessonId, profil
   }
   let selected;
   if (itemIds) selected = shuffled(eligible, random);
-  else if (profile === 'upper') {
+  else if (spec.multiMax > 0) {
     const multi = shuffled(eligible.filter((item) => item.type === 'multi_select'), random);
     const singles = shuffled(eligible.filter((item) => item.type === 'multiple_choice'), random);
     const multiCount = Math.min(spec.multiMax, Math.max(spec.multiMin, Math.floor(random() * 2) + 1));
