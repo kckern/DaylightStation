@@ -100,6 +100,19 @@ describe('useMoveHere', () => {
     await first;
   });
 
+  it('two surfaces (separate hook instances) cannot start two moves of one screen', async () => {
+    local.lifecycle.adoptSnapshot = vi.fn(() => ({ ok: true }));
+    const a = harness();
+    const b = harness();
+    let first; let second;
+    act(() => { first = a.result.current('fleet:livingroom-tv', { contentId: 'plex:9' }); });
+    await act(async () => { second = await b.result.current('fleet:livingroom-tv', { contentId: 'plex:9' }); });
+    expect(second).toMatchObject({ ok: false, code: 'IN_FLIGHT' });
+    expect(local.lifecycle.adoptSnapshot).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(21_000); });
+    await first;
+  });
+
   it('refuses when the screen is no longer playing that item', async () => {
     fleetSnapshot = { ...remoteSnapshot(), currentItem: { contentId: 'plex:other' } };
     const { result } = harness();

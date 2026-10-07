@@ -374,8 +374,8 @@ branchSearchApp.use('/api/v1/content', createContentRouter({
 async function isIdForUnknownSource(req, path) {
   if (req.method !== 'GET' || !SEARCH_PATHS.has(path)) return false;
   const text = new URL(req.url, upstream).searchParams.get('text') ?? '';
-  const match = /^([\w-]+):\s?(\S+)$/.exec(text);
-  if (!match || !(/^\d+$/.test(match[2]) || match[2].includes('/'))) return false;
+  const match = /^([\w-]+):(\S+)$/.exec(text);
+  if (!match || !/[-_]/.test(match[1]) || !(/^\d+$/.test(match[2]) || match[2].includes('/'))) return false;
   return !(await readUpstreamSources()).has(match[1].toLowerCase()) && upstreamSources.size > 0;
 }
 const allowedTitles = new Set(policy === 'branch' ? BRANCH_ALLOWED_TITLES

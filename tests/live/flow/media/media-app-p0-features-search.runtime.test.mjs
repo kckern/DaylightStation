@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { test, expect } from '@playwright/test';
 import { markFirstUseDone } from './lib/firstUse.mjs';
 
@@ -11,6 +13,8 @@ test.use({ trace: 'retain-on-failure', serviceWorkers: 'block' });
 test.setTimeout(120000);
 
 const SETTLE_MS = 12000;
+const EVIDENCE = process.env.MEDIA_P0_FEATURES_EVIDENCE_DIR || path.resolve('test-results', 'media-p0-features');
+fs.mkdirSync(EVIDENCE, { recursive: true });
 
 async function openMedia(page) {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -33,7 +37,7 @@ test('[FIND.4a/AC4] desktop: an id for a source that does not exist settles to "
   expect(elapsed, `settled in ${elapsed} ms`).toBeLessThan(SETTLE_MS);
   await expect(page.getByTestId('stream-status-line')).toHaveCount(0);
   await expect(page.getByTestId('media-mini-player')).toHaveCount(0);
-  await page.screenshot({ path: 'test-results/media-p0-features/search-unknown-source-laptop.png' });
+  await page.screenshot({ path: path.join(EVIDENCE, 'search-unknown-source-laptop.png') });
 });
 
 test('[FIND.4a/AC4] phone: the same id settles to a stated outcome in the full-screen search', async ({ page }) => {
@@ -46,5 +50,5 @@ test('[FIND.4a/AC4] phone: the same id settles to a stated outcome in the full-s
   await expect(page.getByTestId('search-mode-empty')).toContainText(/No results for/i, { timeout: SETTLE_MS });
   expect(Date.now() - started).toBeLessThan(SETTLE_MS);
   await expect(page.getByTestId('media-mini-player')).toHaveCount(0);
-  await page.screenshot({ path: 'test-results/media-p0-features/search-unknown-source-phone.png' });
+  await page.screenshot({ path: path.join(EVIDENCE, 'search-unknown-source-phone.png') });
 });
