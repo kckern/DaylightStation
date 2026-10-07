@@ -237,7 +237,7 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet, cat
   // load recorder can tell a Home Assistant User-Agent from a person.
   app.use(house.withRequestContext(router));
 
-  const reset = () => { household?.reset(); house.reset(); house.warm(); deviceControlCalls.length = 0; };
+  const reset = (options) => { household?.reset(options); house.reset(); house.warm(); deviceControlCalls.length = 0; };
   return {
     deviceId: ORDINARY_DEVICE_ID,
     eventBus,
@@ -246,7 +246,7 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet, cat
     household,
     deviceLiveness,
     deviceControlCalls,
-    /** Put household, registry, routine history and recorded device-control calls back to the seed. */
+    /** Put household, registry, routine history and recorded device-control calls back to the seed (`{ empty: true }`: household that played nothing). */
     reset,
     async attach(httpServer) { await eventBus.start(httpServer); },
     async stop() { startStatus.stop(); commandLiveness.stop(); deviceLiveness.stop(); await eventBus.stop(); household?.cleanup(); },
@@ -254,7 +254,8 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet, cat
       const path = new URL(req.url, upstream).pathname;
       // Journeys share one server: this puts the seeded household back between them.
       if (path === '/api/v1/media/_fixture/reset' && req.method === 'POST') {
-        reset();
+        // `?seed=empty`: a household that has played nothing yet.
+        reset({ empty: new URL(req.url, upstream).searchParams.get('seed') === 'empty' });
         res.statusCode = 200;
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify({ ok: true }));

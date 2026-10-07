@@ -149,6 +149,20 @@ describe('seeded household (real services over a temp data dir)', () => {
   });
 });
 
+describe('empty household', () => {
+  it('reset({ empty: true }) is a household that has played nothing: no recent, carry on, favourites, new; a normal reset brings the seed back', async () => {
+    const f = make();
+    f.reset({ empty: true });
+    expect((await get(f, '/household/recent')).body.items).toEqual([]);
+    expect((await get(f, '/household/carry-on')).body.items).toEqual([]);
+    expect((await get(f, '/household/favourites')).body.items).toEqual([]);
+    expect(f.seeded.recentAdditions).toEqual([]);
+    f.reset();
+    expect((await get(f, '/household/favourites')).body.items.length).toBe(2);
+    expect((await get(f, '/household/recent?limit=20')).body.items.length).toBeGreaterThan(3);
+  });
+});
+
 describe('now on another screen', () => {
   const playing = (lastSeenAt) => ({
     knownDeviceIds: () => ['acceptance-media'],

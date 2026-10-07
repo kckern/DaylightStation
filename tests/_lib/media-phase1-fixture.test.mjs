@@ -118,6 +118,13 @@ describe('fixture reset', () => {
     expect((await (await fetch(`${baseUrl}/api/v1/media/household/favourites`)).json()).items.map((i) => i.id)).not.toContain('plex:55854');
   });
 
+  it('?seed=empty resets to a household that has played nothing', async () => {
+    await fetch(`${baseUrl}/api/v1/media/_fixture/reset?seed=empty`, { method: 'POST' });
+    expect((await (await fetch(`${baseUrl}/api/v1/media/household/recent`)).json()).items).toEqual([]);
+    await fetch(`${baseUrl}/api/v1/media/_fixture/reset`, { method: 'POST' });
+    expect((await (await fetch(`${baseUrl}/api/v1/media/household/recent`)).json()).items.length).toBeGreaterThan(0);
+  });
+
   it('without a catalog the household routes are not mounted (unit-test default)', async () => {
     const bare = createMediaOrdinaryDeviceFixture({ upstream: 'http://127.0.0.1:3111' });
     expect(bare.household).toBeNull();
