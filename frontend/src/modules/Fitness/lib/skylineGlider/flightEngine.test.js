@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { validateCourse } from './courseModel.js';
 import { createFlightState, stepFlight } from './flightEngine.js';
 
 const course = {
@@ -16,7 +17,7 @@ const course = {
   ],
 };
 const calibration = { lowRpm: 30, highRpm: 100 };
-const fresh = (rpm) => ({ rpm, connected: true, transportStalled: false });
+const fresh = (rpm, ts = 1) => ({ rpm, connected: true, transportStalled: false, ts });
 
 const run = (state, seconds, input, dt = 1 / 60) => {
   let next = state;
@@ -77,6 +78,70 @@ describe('flight motion', () => {
 });
 
 describe('collisions, checkpoints, and completion', () => {
+  it('does not collide with an invisible ceiling above lower terrain', () => {
+    const lowerOnly = validateCourse({
+      schema: 'skyline-glider-course/v1', id: 'lower-only', version: 1, name: 'Lower only',
+      duration_s: 20, motion: course.motion, rules: course.rules,
+      segments: [
+        { id: 'hill', type: 'lower-terrain', start_s: 10, end_s: 19, top: 0.62 },
+        { id: 'finish', type: 'finish', start_s: 20 },
+      ],
+    }).course;
+    const state = createFlightState(lowerOnly, { calibration, altitude: 0.19, courseTime: 10 });
+
+    const next = stepFlight(state, fresh(100), 1 / 60, lowerOnly);
+
+    expect(next.lives).toBe(3);
+  });
+
+  it('does not collide with an invisible floor below upper terrain', () => {
+    const upperOnly = validateCourse({
+      schema: 'skyline-glider-course/v1', id: 'upper-only', version: 1, name: 'Upper only',
+      duration_s: 20, motion: course.motion, rules: course.rules,
+      segments: [
+        { id: 'roof', type: 'upper-terrain', start_s: 10, end_s: 19, bottom: 0.42 },
+        { id: 'finish', type: 'finish', start_s: 20 },
+      ],
+    }).course;
+    const state = createFlightState(upperOnly, { calibration, altitude: 0.78, courseTime: 10 });
+
+    const next = stepFlight(state, fresh(30), 1 / 60, upperOnly);
+
+    expect(next.lives).toBe(3);
+  });
+
+  it('collides when the visible nose reaches terrain and clears after the tail leaves', () => {
+    const sweptCourse = {
+      ...course,
+      segments: [
+        { id: 'hill', type: 'lower-terrain', start_s: 10, end_s: 12, top: 0.62, safeBand: { top: 0, bottom: 0.62 } },
+        { id: 'finish', type: 'finish', start_s: 20 },
+      ],
+    };
+    const beforeNose = createFlightState(sweptCourse, { calibration, altitude: 0.7, courseTime: 9.18 });
+    const atNose = createFlightState(sweptCourse, { calibration, altitude: 0.7, courseTime: 9.2 });
+    const afterTail = createFlightState(sweptCourse, { calibration, altitude: 0.7, courseTime: 12.69 });
+
+    expect(stepFlight(beforeNose, fresh(30), 1 / 60, sweptCourse).lives).toBe(3);
+    expect(stepFlight(atNose, fresh(30), 1 / 60, sweptCourse).lives).toBe(2);
+    expect(stepFlight(afterTail, fresh(30), 1 / 60, sweptCourse).lives).toBe(3);
+  });
+
+  it('collects a bell when the visible nose reaches it', () => {
+    const bellCourse = {
+      ...course,
+      segments: [
+        { id: 'bells', type: 'collectible-path', start_s: 10, end_s: 11, collectibles: [{ id: 'bell', at_s: 10, altitude: 0.5 }] },
+        { id: 'finish', type: 'finish', start_s: 20 },
+      ],
+    };
+    const state = createFlightState(bellCourse, { calibration, altitude: 0.5, courseTime: 9.2 });
+
+    const next = stepFlight(state, fresh(65), 1 / 60, bellCourse);
+
+    expect(next.collectedIds).toEqual(['bell']);
+  });
+
   it('takes one life per contact and respects invincibility', () => {
     let state = createFlightState(course, { calibration, altitude: 0.7, courseTime: 2.1 });
     state = stepFlight(state, fresh(30), 1 / 60, course);
@@ -110,5 +175,31 @@ describe('collisions, checkpoints, and completion', () => {
     state = { ...state, courseTime: 19.99 };
     state = run(state, 0.1, fresh(65));
     expect(state.phase).toBe('completed');
+  });
+});
+
+describe('fresh input and shipped response', () => {
+  it('holds course time at zero until a post-arm cadence packet arrives', () => {
+    let state = createFlightState(course, { calibration, armedAtMs: 1000 });
+
+    state = stepFlight(state, fresh(60, 999), 1, course);
+    expect(state.courseTime).toBe(0);
+    expect(state.inputReady).toBe(false);
+
+    state = stepFlight(state, fresh(60, 1001), 1 / 60, course);
+    expect(state.courseTime).toBeCloseTo(1 / 60, 4);
+    expect(state.inputReady).toBe(true);
+    expect(state.lastInputTs).toBe(1001);
+  });
+
+  it('responds promptly to a normal cadence correction with shipped tuning', () => {
+    const tuned = { ...course, motion: { ...course.motion, filter_s: 0.25, response_s: 0.6 } };
+    let state = createFlightState(tuned, { calibration });
+
+    for (let index = 0; index < 60; index += 1) {
+      state = stepFlight(state, fresh(65, index + 1), 1 / 60, tuned);
+    }
+
+    expect(state.altitude).toBeCloseTo(0.57, 2);
   });
 });

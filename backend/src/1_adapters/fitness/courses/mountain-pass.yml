@@ -5,9 +5,9 @@ name: Mountain Pass
 description: Climb from the valley, thread the ice caves, and glide home at sunset.
 duration_s: 300
 motion:
-  filter_s: 0.75
+  filter_s: 0.25
   deadband_rpm: 2
-  response_s: 1.5
+  response_s: 0.6
   max_climb_rate: 0.30
   max_descent_rate: 0.22
   coast_s: 1

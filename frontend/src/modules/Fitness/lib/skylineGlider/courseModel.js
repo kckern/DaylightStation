@@ -12,10 +12,10 @@ function safeBandFor(segment) {
     return { top: Number(segment.ceiling), bottom: Number(segment.floor) };
   }
   if (segment.type === 'lower-terrain') {
-    return { top: 0.18, bottom: Number(segment.top) };
+    return { top: 0, bottom: Number(segment.top) };
   }
   if (segment.type === 'upper-terrain') {
-    return { top: Number(segment.bottom), bottom: 0.78 };
+    return { top: Number(segment.bottom), bottom: 1 };
   }
   return null;
 }
@@ -104,4 +104,3 @@ export function resolveCalibration(equipment = {}) {
   }
   return { lowRpm, highRpm };
 }
-

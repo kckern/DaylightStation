@@ -19,6 +19,7 @@ describe('SkylineGliderCourseCatalog', () => {
     expect(courses).toHaveLength(1);
     const course = courses[0];
     expect(course).toMatchObject({ id: 'mountain-pass', version: 2, schema: 'skyline-glider-course/v1', duration_s: 300 });
+    expect(course.motion).toMatchObject({ filter_s: 0.25, response_s: 0.6 });
     const maneuvers = course.segments.filter((segment) => ['lower-terrain', 'upper-terrain', 'corridor'].includes(segment.type));
     expect(maneuvers[0].start_s).toBe(10);
     expect(maneuvers.filter((segment) => segment.type === 'lower-terrain')).toHaveLength(6);
