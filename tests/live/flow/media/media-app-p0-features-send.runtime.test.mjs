@@ -207,7 +207,7 @@ test('[HOUSE.2a/AC2+AC4, PLACE.7a/AC1+AC2] the house row\'s Move here brings tha
   }
 });
 
-test('[PLACE.7a/AC4] if it cannot move, the person is told why and the other screen keeps playing', async ({ browser, context, request }) => {
+test('[PLACE.7a/AC4] [HOUSE.2a/AC2+AC4] if it cannot move, the person is told why and the other screen keeps playing; the row\'s Pause and Stop work', async ({ browser, context, request }) => {
   const receiver = await openReceiver(context, request);
   const senderContext = await browser.newContext({ viewport: VIEWPORTS.laptop, serviceWorkers: 'block' });
   await markFirstUseDone(senderContext);
@@ -225,6 +225,12 @@ test('[PLACE.7a/AC4] if it cannot move, the person is told why and the other scr
     await sender.screenshot({ path: path.join(EVIDENCE, 'move-here-failed.png') });
     expect((await state(request))?.state, 'the other screen keeps playing').toBe('playing');
     expect((await state(request))?.currentItem?.contentId).toBe(HOSPITAL);
+
+    // The row carries Pause and Stop beside Move here (HOUSE.2a/AC4), and both work on that screen.
+    await sender.getByTestId(`fleet-pause-${DEVICE}`).click();
+    await expect.poll(async () => (await state(request))?.state, { timeout: 30000 }).toBe('paused');
+    await sender.getByTestId(`fleet-stop-${DEVICE}`).click();
+    await expect.poll(async () => (await state(request))?.currentItem ?? null, { timeout: 30000 }).toBeNull();
   } finally {
     await senderContext.close();
     await receiver.close();
