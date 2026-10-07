@@ -4,6 +4,7 @@ import path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SkylineGliderCourseCatalog } from './SkylineGliderCourseCatalog.mjs';
 import { validateCourse as validateFrontendCourse } from '../../../../frontend/src/modules/Fitness/lib/skylineGlider/courseModel.js';
+import { createFlightState, stepFlight } from '../../../../frontend/src/modules/Fitness/lib/skylineGlider/flightEngine.js';
 
 let root;
 beforeEach(() => { root = fs.mkdtempSync(path.join(os.tmpdir(), 'glider-courses-')); });
@@ -27,7 +28,15 @@ describe('SkylineGliderCourseCatalog', () => {
     expect(course.segments.filter((segment) => segment.type === 'checkpoint').map((segment) => segment.start_s)).toEqual([75, 150, 225]);
     expect(course.segments.find((segment) => segment.type === 'finish').start_s).toBe(300);
     expect(course.segments.flatMap((segment) => segment.collectibles || [])).toHaveLength(6);
-    expect(validateFrontendCourse(course)).toMatchObject({ valid: true, errors: [] });
+    const validated = validateFrontendCourse(course);
+    expect(validated).toMatchObject({ valid: true, errors: [] });
+    for (const checkpoint of validated.course.segments.filter((segment) => segment.type === 'checkpoint')) {
+      const initial = createFlightState(validated.course, {
+        calibration: { lowRpm: 30, highRpm: 100 }, courseTime: checkpoint.start_s,
+      });
+      const afterRecovery = stepFlight(initial, { rpm: 100, connected: true, transportStalled: false }, 1 / 60, validated.course);
+      expect(afterRecovery.lives, checkpoint.id).toBe(3);
+    }
   });
 
   it('adds valid household overrides but ignores malformed and unreachable ones', () => {

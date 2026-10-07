@@ -114,7 +114,8 @@ export function collectFlightTelemetry({
   }
 
   const courseSecond = Math.floor(next.courseTime);
-  const shouldSample = courseSecond > lastSampleSecond;
+  const rewound = next.courseTime < previous.courseTime || next.restarts > previous.restarts;
+  const shouldSample = rewound || courseSecond > lastSampleSecond;
   return {
     sample: shouldSample ? buildSample(next, input, course, courseSecond) : null,
     events,
