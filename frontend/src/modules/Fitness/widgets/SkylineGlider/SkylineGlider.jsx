@@ -145,7 +145,7 @@ export default function SkylineGlider() {
   const equipment = selectBike(ctx?.equipment);
   const riderId = equipment ? fitnessSessionInstance?.getEquipmentRider?.(equipment.id) : null;
   const course = courses[0] || null;
-  const saved = course && riderId ? readFlightCheckpoint(riderId, course.id) : null;
+  const saved = course && riderId ? readFlightCheckpoint(riderId, course) : null;
 
   useEffect(() => {
     setGovernanceSuspended?.(true);
@@ -193,7 +193,7 @@ export default function SkylineGlider() {
           userId: riderId, rings: record.run.reward_rings, zoneId: 'skyline-glider', color: '#e0a85b',
           source: 'skyline-glider', metadata: { courseId: course.id, collectibles: record.collectibles.length },
         });
-        clearFlightCheckpoint(riderId, course.id);
+        clearFlightCheckpoint(riderId, course);
       }
       setSaveState({ status: 'saved', record });
       setPhase('result');
@@ -238,7 +238,7 @@ export default function SkylineGlider() {
       }
       lastSampleSecondRef.current = telemetry.nextSampleSecond;
       previousInputRef.current = { ...cadence };
-      if (next.checkpoint.id !== previousCheckpointId || next.courseTime % 2 < .12) writeFlightCheckpoint(riderId, course.id, next);
+      if (next.checkpoint.id !== previousCheckpointId || next.courseTime % 2 < .12) writeFlightCheckpoint(riderId, course, next);
       if (next.phase === 'completed') finalize('completed', next);
     }, 100);
     return () => clearInterval(timer);
@@ -248,7 +248,7 @@ export default function SkylineGlider() {
     if (!equipment || !riderId || !course) return;
     const initial = createFlightState(course, { calibration: resolveCalibration(equipment) });
     const next = resume && saved ? { ...initial, ...saved, phase: 'playing', pausedForSensor: false, collisionProtected: false } : initial;
-    if (!resume) clearFlightCheckpoint(riderId, course.id);
+    if (!resume) clearFlightCheckpoint(riderId, course);
     flightRef.current = next;
     const run = { runId: globalThis.crypto?.randomUUID?.() || `flight-${Date.now()}`, startedAt: new Date().toISOString() };
     runRef.current = run;

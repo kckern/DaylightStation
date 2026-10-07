@@ -42,6 +42,19 @@ describe('flight telemetry', () => {
     expect(duplicate.sample).toBeNull();
   });
 
+  it('resets the sample cursor when checkpoint recovery rewinds course time', () => {
+    const result = collectFlightTelemetry({
+      previous: state({ courseTime: 110, restarts: 0 }),
+      next: state({ courseTime: 75, restarts: 1 }),
+      input: { rpm: 60, connected: true, transportStalled: false },
+      previousInput: { rpm: 60, connected: true, transportStalled: false },
+      lastSampleSecond: 110, course,
+    });
+
+    expect(result.sample).toMatchObject({ courseSecond: 75 });
+    expect(result.nextSampleSecond).toBe(75);
+  });
+
   it('reports connection and coasting state changes once', () => {
     const result = collectFlightTelemetry({
       previous: state({ zeroElapsed: .8 }), next: state({ courseTime: 1.1, zeroElapsed: 1.1 }),

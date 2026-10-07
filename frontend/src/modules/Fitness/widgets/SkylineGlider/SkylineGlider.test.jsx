@@ -141,11 +141,19 @@ describe('SkylineGlider', () => {
   });
 
   it('offers resume and start over for a saved checkpoint', async () => {
-    localStorage.setItem('fitness:skyline-glider:dad:mountain-pass', JSON.stringify({ courseTime: 75, altitude: .5, collectedIds: ['a'], checkpoint: { id: 'cp', time: 75, collectedIds: ['a'] } }));
+    localStorage.setItem('fitness:skyline-glider:dad:mountain-pass', JSON.stringify({ schema: 'skyline-glider-checkpoint/v2', course: { id: 'mountain-pass', version: 1 }, state: { courseTime: 75, altitude: .5, collectedIds: ['a'], checkpoint: { id: 'cp', time: 75, collectedIds: ['a'] } } }));
     render(<SkylineGlider />);
     await act(async () => Promise.resolve());
     expect(screen.getByRole('button', { name: /resume/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /start over/i })).toBeTruthy();
+  });
+
+  it('does not offer resume for a legacy unversioned checkpoint', async () => {
+    localStorage.setItem('fitness:skyline-glider:dad:mountain-pass', JSON.stringify({ courseTime: 75, altitude: .5 }));
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    expect(screen.queryByRole('button', { name: /resume/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /start flight/i })).toBeEnabled();
   });
 
   it('shows a reconnect overlay when cadence transport is absent', async () => {
