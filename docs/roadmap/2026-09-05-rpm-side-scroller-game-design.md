@@ -1,9 +1,11 @@
 # RPM Side-Scroller Fitness Game
 
-**Status:** Proposed; product direction established, implementation details still to validate  
+**Status:** Implemented as the Skyline Glider vertical slice (2026-10-06); real-device tuning remains
 **Created:** 2026-09-05  
 **Owners:** Fitness, shared game platform  
 **Decision:** Build an authored side-scrolling fitness game in which equipment cadence selects target screen altitude. Extract only genuinely reusable simulation and game-lifecycle concepts from the Piano side-scroller; keep sensor interpretation, course rules, and presentation replaceable through explicit policies and YAML configuration.
+
+**Implementation:** See [Skyline Glider](../reference/fitness/skyline-glider.md) for the shipped module, API, persistence, reward, and course-authoring contracts. The vertical slice deliberately fixes the first theme and course; multiplayer, HR gameplay modifiers, split paths, and additional themes remain follow-ons.
 
 ---
 
