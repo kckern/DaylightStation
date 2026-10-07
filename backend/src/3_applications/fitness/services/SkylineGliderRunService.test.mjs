@@ -17,6 +17,13 @@ describe('SkylineGliderRunService', () => {
     expect(rows.size).toBe(1);
   });
 
+  it('preserves optional fitness identity fields exactly', async () => {
+    const { service, rows } = harness();
+    const identified = record({ fitness_session_id: 'fs-1', equipment_id: 'niceday', calibration: { low_rpm: 30, high_rpm: 100 } });
+    await service.save(identified, 'home');
+    expect(rows.get('run-1').run).toMatchObject({ fitness_session_id: 'fs-1', equipment_id: 'niceday', calibration: { low_rpm: 30, high_rpm: 100 } });
+  });
+
   it('conflicts when a reused run id has different content', async () => {
     const { service } = harness();
     await service.save(record(), 'home');
