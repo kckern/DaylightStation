@@ -11,6 +11,7 @@ test('Skyline Glider shipped course scrolls smoothly, responds, resumes, and sav
   });
 
   await page.goto(`${FRONTEND_URL}/fitness`);
+  await expect.poll(async () => (await getEquipment(page)).length, { timeout: 20_000 }).toBeGreaterThan(0);
   const equipment = await getEquipment(page);
   const bike = equipment.find((item) => item.equipmentId === 'niceday' && item.cadenceDeviceId)
     || equipment.find((item) => item.equipmentId === 'cycle_ace' && item.cadenceDeviceId)
@@ -20,6 +21,8 @@ test('Skyline Glider shipped course scrolls smoothly, responds, resumes, and sav
   await setRpm(page, bike.equipmentId, 60);
   await page.goto(`${FRONTEND_URL}/fitness/module/skyline_glider`);
   await expect(page.getByTestId('skyline-glider-lobby')).toBeVisible();
+  await setRpm(page, bike.equipmentId, 60);
+  await expect(page.getByRole('button', { name: 'Start flight' })).toBeEnabled({ timeout: 10_000 });
   await page.getByRole('button', { name: 'Start flight' }).click();
   await expect(page.getByTestId('skyline-glider-flight')).toBeVisible({ timeout: 10_000 });
 
