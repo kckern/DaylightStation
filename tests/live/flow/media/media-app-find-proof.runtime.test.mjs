@@ -384,7 +384,7 @@ test('[FIND.8a/AC3][FIND.8a/AC4] details offer the same play and line-up actions
   const { startOn } = await import('./lib/receivers.mjs');
   await startOn(request, A, ITEM.HOSPITAL, { queue: [ITEM.KEEPY] });
   const before = await receiverState(request, A);
-  await page.goto(`/media?view=detail&contentId=${encodeURIComponent(ARRIVAL)}`);
+  await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ARRIVAL)}`);
   const detail = page.getByTestId('detail-view');
   await expect(detail).toBeVisible({ timeout: 60000 });
   // AC3: the same verbs as everywhere else, and the destination is stated.
@@ -411,7 +411,7 @@ test('[FIND.8a/AC2] details show picture, title, description, length, kind and h
   // this red when the product shows them.
   test.fail(true, 'NEEDS-FEATURE: details show length and kind (and description)');
   const { context, page } = await newAppPage(browser, VIEWPORTS.laptop);
-  await page.goto(`/media?view=detail&contentId=${encodeURIComponent(ARRIVAL)}`);
+  await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ARRIVAL)}`);
   const detail = page.getByTestId('detail-view');
   await expect(detail).toBeVisible({ timeout: 60000 });
   await expect(detail.locator('img')).toBeVisible();

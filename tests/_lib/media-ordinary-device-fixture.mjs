@@ -78,6 +78,8 @@ const VIRTUAL_SESSION_ROUTES = [
  * @param {string} [spec.contentId]
  * @param {number|null} [spec.duration] seconds; null = unknown (no seeking)
  * @param {number} [spec.position]
+ * @param {string} [spec.thumbnail] picture url of the current item
+ * @param {number} [spec.heartbeatMs=20000] how often it keeps reporting; 0 = silent after the first report
  * @param {'video'|'audio'|'photo'|'slideshow'|'live'} [spec.kind='video']
  * @param {{kind:'device',id:string}|{kind:'routine',name:string}} [spec.origin]
  * @param {Array<{title:string,contentId?:string,kind?:string}>} [spec.queue] items after the current one
@@ -97,6 +99,7 @@ export function buildScriptedSnapshot(deviceId, spec = {}) {
   } else {
     const current = {
       ...item({ contentId: spec.contentId, title: spec.title ?? 'Scripted item', kind }, 0),
+      ...(spec.thumbnail ? { thumbnail: spec.thumbnail } : {}),
       ...(kind === 'live' ? { isLive: true } : {}),
       ...(spec.duration === null || kind === 'live' ? {} : { duration: spec.duration ?? 600 }),
     };
@@ -131,7 +134,7 @@ const scheduler = {
 // This is deliberately not a browser-driving substitute for a real device:
 // it can only prepare an already-mounted receiver. A missing WS receiver
 // fails closed rather than loading a physical device or inventing success.
-function virtualReceiver(eventBus, logger, deviceId = ORDINARY_DEVICE_ID, screen = 'living-room', onVolume = () => {}) {
+function virtualReceiver(eventBus, logger, deviceId = ORDINARY_DEVICE_ID, screen = 'living-room', onVolume = () => {}, onPower = null) {
   const content = new WebSocketContentAdapter({
     deviceId,
     topic: `homeline:${deviceId}`,
@@ -142,9 +145,13 @@ function virtualReceiver(eventBus, logger, deviceId = ORDINARY_DEVICE_ID, screen
     // Volume is the one virtual device capability every screen has: a load that
     // names a volume (a routine's "chosen volume") runs the real volume step, and
     // the level is recorded (readable at /<id>/device-control-calls), never sent anywhere.
-    hasCapability: (capability) => capability === 'volume',
+    hasCapability: (capability) => capability === 'volume' || (Boolean(onPower) && capability === 'deviceControl'),
     setVolume: async (level) => { onVolume(deviceId, level); return { ok: true, virtual: true, level }; },
-    powerOn: async () => ({ ok: true, skipped: 'no_device_control' }),
+    // A screen with virtual device_control wakes for real (the "Turning on" step runs and is recorded,
+    // never sent to hardware); every other virtual screen has no device control to wake.
+    powerOn: async () => (onPower
+      ? (onPower(deviceId), { ok: true, verified: true, elapsedMs: 5 })
+      : { ok: true, skipped: 'no_device_control' }),
     prepareForContent: async (options) => ({ ...(await content.prepareForContent(options)), coldRestart: false, cameraSkipped: true }),
     // WakeAndLoad's ordinary warm path broadcasts directly after positive
     // subscriber+liveness proof. This real adapter is the service's cold/fallback
@@ -203,7 +210,8 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet, cat
   house.warm();
   const deviceControlCalls = [];
   const recordVolume = (deviceId, level) => deviceControlCalls.push({ deviceId, action: 'volume', level: Number(level), at: new Date().toISOString() });
-  const receivers = new Map(VIRTUAL_DEVICES.map(({ id, screen }) => [id, virtualReceiver(eventBus, logger, id, screen, recordVolume)]));
+  const recordWake = (deviceId) => deviceControlCalls.push({ deviceId, action: 'on', via: 'wake', at: new Date().toISOString() });
+  const receivers = new Map(VIRTUAL_DEVICES.map(({ id, screen, deviceControl }) => [id, virtualReceiver(eventBus, logger, id, screen, recordVolume, deviceControl ? recordWake : null)]));
   const deviceService = { get: (id) => receivers.get(id) ?? null };
   // Wired as in production (bootstrap): the adopt load (§4.7) needs it.
   const sessionControl = new SessionControlService({
@@ -310,24 +318,42 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet, cat
   // Scripted receiver states (see buildScriptedSnapshot). Published as the
   // screen itself would; `off` is the screen heard once and then silent.
   const scripted = new Set();
+  const beats = new Map();
+  const stopBeat = (deviceId) => { clearInterval(beats.get(deviceId)); beats.delete(deviceId); };
+  /**
+   * A scripted screen keeps reporting like a real one (a heartbeat every `heartbeatMs`, default 20 s), so it
+   * stays in its state beyond the liveness timeout. `heartbeatMs: 0` = said once and then silent (it goes
+   * Off at the liveness timeout), for journeys about a screen that stopped reporting.
+   */
   function scriptReceiver(deviceId, spec = {}) {
     if (!isVirtual(deviceId)) throw new Error(`scriptReceiver: ${deviceId} is not a virtual fixture screen`);
     const snapshot = buildScriptedSnapshot(deviceId, spec);
     const validation = validateSessionSnapshot(snapshot);
     if (!validation.valid) throw new Error(`scriptReceiver: invalid snapshot: ${validation.errors.join('; ')}`);
     scripted.add(deviceId);
+    stopBeat(deviceId);
     timers.expireNow = spec.state === 'off';
     try {
       presenceGateway.publishDeviceState({
         deviceId, reason: spec.state === 'off' ? 'initial' : 'change', ts: new Date().toISOString(), snapshot,
       });
     } finally { timers.expireNow = false; }
+    const heartbeatMs = spec.heartbeatMs ?? 20_000;
+    if (spec.state !== 'off' && heartbeatMs > 0) {
+      const beat = setInterval(() => presenceGateway.publishDeviceState({
+        deviceId, reason: 'heartbeat', ts: new Date().toISOString(),
+        snapshot: { ...snapshot, meta: { ...snapshot.meta, updatedAt: new Date().toISOString() } },
+      }), heartbeatMs);
+      beat.unref?.();
+      beats.set(deviceId, beat);
+    }
     return snapshot;
   }
   const reset = (options) => {
     household?.reset(options); house.reset(); house.warm(); deviceControlCalls.length = 0;
     // A scripted screen goes quiet again: idle snapshot, so no journey inherits a busy screen.
     for (const deviceId of scripted) {
+      stopBeat(deviceId);
       if (deviceId === OFFLINE_DEVICE_ID) continue;
       presenceGateway.publishDeviceState({
         deviceId, reason: 'change', ts: new Date().toISOString(),
@@ -348,7 +374,7 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet, cat
     reset,
     scriptReceiver,
     async attach(httpServer) { await eventBus.start(httpServer); },
-    async stop() { startStatus.stop(); commandLiveness.stop(); deviceLiveness.stop(); await eventBus.stop(); household?.cleanup(); },
+    async stop() { for (const deviceId of [...beats.keys()]) stopBeat(deviceId); startStatus.stop(); commandLiveness.stop(); deviceLiveness.stop(); await eventBus.stop(); household?.cleanup(); },
     async middleware(req, res) {
       const path = new URL(req.url, upstream).pathname;
       // Journeys share one server: this puts the seeded household back between them.
