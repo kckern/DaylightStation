@@ -6,15 +6,19 @@ import { useCallback } from 'react';
 import { useCollectionContinue } from '../household/collectionContinue.js';
 import { isShowItem } from './showOn.js';
 import { isContainer } from '../../Content/combobox/comboboxMachine.js';
+import { useStartingOn } from '../cast/useStartingOn.js';
 
 export function useRowLabels() {
   const { continueFor } = useCollectionContinue();
+  const { startingOnFor } = useStartingOn();
   const rowLabelsFor = useCallback((item) => {
     if (!item) return null;
-    if (isContainer(item)) return { play: continueFor(item)?.label ?? 'Play' };
-    if (isShowItem(item)) return { playOn: 'Show on…' };
-    return null;
-  }, [continueFor]);
+    // PLAY.1a/AC5: while its start is in flight the item itself says so.
+    const subtitle = startingOnFor(item.id) ?? undefined;
+    if (isContainer(item)) return { play: continueFor(item)?.label ?? 'Play', subtitle };
+    if (isShowItem(item)) return { playOn: 'Show on…', subtitle };
+    return subtitle ? { subtitle } : null;
+  }, [continueFor, startingOnFor]);
   return { rowLabelsFor, continueFor };
 }
 

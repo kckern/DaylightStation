@@ -146,6 +146,15 @@ describe('DispatchProgressTray outcomes', () => {
     expect(screen.getByTestId('dispatch-retry-w1')).toBeInTheDocument();
   });
 
+  it('RELY.5a/AC4: a skip a steered screen reported names that screen, not this device', () => {
+    outcomes.set('r1', record({ attemptId: 'r1', dispatchId: 'r1', targetId: 'livingroom-tv', targetName: 'Living Room TV', deviceId: 'livingroom-tv', distance: 'direct', kind: 'playback', phase: 'skipped', reason: 'stalled', item: { contentId: 'plex:1', title: 'Arrival' }, title: 'Arrival', replacement: { contentId: 'plex:2', title: 'Nova' }, command: { kind: 'playNow', item: { contentId: 'plex:1' } } }));
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    const row = screen.getByTestId('dispatch-row-r1');
+    expect(row).toHaveTextContent('Arrival stopped making progress on Living Room TV');
+    expect(row).toHaveTextContent('Now playing Nova');
+    expect(row).not.toHaveTextContent('this device');
+  });
+
   it('RELY.5a: an unavailable file reads "skipped — file unavailable" with what plays next', () => {
     outcomes.set('u1', record({ attemptId: 'u1', dispatchId: 'u1', targetId: 'local', deviceId: 'local', distance: 'here', kind: 'playback', phase: 'skipped', reason: 'file-unavailable', item: { contentId: 'plex:1', title: 'Arrival' }, title: 'Arrival', replacement: { contentId: 'plex:2', title: 'Nova' }, command: { kind: 'playNow', item: { contentId: 'plex:1' } } }));
     render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
