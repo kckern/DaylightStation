@@ -21,6 +21,8 @@ import { createProxyRouter } from '../../backend/src/4_api/v1/routers/proxy.mjs'
 import { createPlayRouter } from '../../backend/src/4_api/v1/routers/play.mjs';
 import { createAcceptancePlaybackRead } from './media-redesign-playback-read.mjs';
 import { createMediaOrdinaryDeviceFixture } from './media-ordinary-device-fixture.mjs';
+import { createAllowlistedCatalog, seedAllowlist } from './media-household-fixture.mjs';
+import { RegistryContentCatalogGateway } from '../../backend/src/1_adapters/content/RegistryContentCatalogGateway.mjs';
 
 const upstream = `http://127.0.0.1:${getAppPort()}`;
 const logger = createLogger({ app: 'media-redesign-acceptance' });
@@ -33,6 +35,9 @@ const ORDINARY_READ_PATHS = [
   /^\/api\/v1\/(?:list|info|siblings)\//, /^\/api\/v1\/screens\/living-room$/,
   /^\/api\/v1\/config\/player$/, /^\/api\/v1\/queue\/(?:plex:|plex\/)\d+$/,
   /^\/api\/v1\/play\//, /^\/api\/v1\/proxy\/plex\/stream\/\d+$/,
+  // Item pictures (read-only images): the seeded household's tiles show real covers.
+  /^\/api\/v1\/display\/plex\/\d+$/,
+  /^\/api\/v1\/proxy\/plex\/library\/metadata\/\d+\/thumb(?:\/\d+)?$/,
   /^\/api\/v1\/proxy\/plex\/library\/parts\/\d+\/\d+\/file\.(?:mp4|mkv|m4v|mp3|flac|m4a|aac|ogg|wav)$/,
   // Plex start manifests and their session-scoped playlists/fragments are
   // browser media reads. Keep control endpoints (notably `stop`) outside this
@@ -348,7 +353,14 @@ export async function runAcceptanceServer() {
     validateArtifactProvenance(dist, sourceSha);
   }
   process.env.COMMIT_HASH = sourceSha;
-  const ordinaryDeviceFixture = createMediaOrdinaryDeviceFixture({ upstream, logger });
+  // The household routes run the REAL household services over a seeded temp
+  // data dir. Catalog describe calls reach the real upstream through the same
+  // adapter as playback, confined to the acceptance allowlist.
+  const catalog = createAllowlistedCatalog(
+    new RegistryContentCatalogGateway({ registry: new Map([['plex', adapter]]), logger }),
+    seedAllowlist([...allowedTitles].map(id => `plex:${id}`)),
+  );
+  const ordinaryDeviceFixture = createMediaOrdinaryDeviceFixture({ upstream, logger, catalog });
   const plugin = createAcceptancePreviewPlugin({ app, allowedTitles, policy, sourceSha, upstream, ordinaryDeviceFixture });
   const shared = {
     root: 'frontend', configFile: 'frontend/vite.config.js', plugins: [plugin],
