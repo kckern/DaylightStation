@@ -11,7 +11,7 @@ async function snap(page, name) {
 
 test.describe('MediaApp — design screenshots', () => {
   test.beforeEach(async ({ page }) => {
-    await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
+    await page.addInitScript(() => { try { localStorage.clear(); localStorage.setItem('media-app.first-use-done', 'journey'); } catch {} });
   });
 
   test('canonical states', async ({ page }) => {
@@ -22,29 +22,29 @@ test.describe('MediaApp — design screenshots', () => {
     await page.waitForSelector('[data-testid="home-view"]');
     await snap(page, '01-home-idle');
 
-    // 02 search results — click input to focus (keeps overlay open), then fill
-    await page.getByTestId('media-search-input').click();
-    await page.getByTestId('media-search-input').fill('lonesome');
-    await page.waitForSelector('[data-testid^="result-row-"]', { timeout: 15000 });
+    // 02 search results — the dock's "Search media…" textbox; results are combobox options.
+    const searchBox = page.getByRole('textbox', { name: 'Search media…' });
+    await searchBox.click();
+    await searchBox.fill('Arrival');
+    await page.waitForSelector('[data-testid^="combobox-option-"]', { timeout: 20000 });
     await page.waitForTimeout(400);
     await snap(page, '02-search-results');
 
-    // 03 result peek — JS click on the title button of the first result to open peek.
-    // (.evaluate bypasses overlay pointer-event interception without dispatching pointerdown,
-    //  so the search bar's useDismissable does not close the overlay.)
-    const firstOpen = page.locator('[data-testid^="result-open-"]').first();
-    await firstOpen.evaluate((el) => el.click());
-    await page.waitForSelector('[data-testid^="result-peek-"]');
+    // 03 result actions — the first result's ⋯ menu (the inline peek was retired with the unified selector;
+    // a result's verbs and Open detail live here now). Real pointer input: the menu keeps the combobox open.
+    await page.locator('[data-testid^="combobox-option-"]').first().getByRole('button', { name: 'More actions' }).click();
+    await page.waitForSelector('[data-testid^="result-more-menu-"]');
     await page.waitForTimeout(200);
-    await snap(page, '03-result-peek');
+    await snap(page, '03-result-actions');
+    await page.keyboard.press('Escape');
 
-    // 04 cast picker open — JS click on the cast <button> (not the root <span>).
-    // 'button[data-testid^="cast-button-"]' skips cast-button-root-* spans.
-    const firstCast = page.locator('button[data-testid^="cast-button-"]').first();
-    await firstCast.evaluate((el) => el.click());
-    await page.waitForSelector('[data-testid="dispatch-target-picker"]');
+    // 04 destination picker open — the header "Playing on" control.
+    await page.keyboard.press('Escape');
+    await page.getByTestId('cast-target-chip').click();
+    await page.waitForSelector('[data-testid="cast-popover"]');
     await page.waitForTimeout(200);
     await snap(page, '04-cast-picker-open');
+    await page.keyboard.press('Escape');
 
     // 05 search empty state — stub SSE to return instant empty complete so Immich
     // results don't prevent the empty state from appearing.
@@ -55,18 +55,18 @@ test.describe('MediaApp — design screenshots', () => {
         body: 'data: {"event":"complete","query":"zzzqqq-nonsense-1234"}\n\n',
       });
     });
-    await page.getByTestId('media-search-input').click();
-    await page.getByTestId('media-search-input').fill('zzzqqq-nonsense-1234');
-    await page.waitForSelector('[data-testid="search-empty"]', { timeout: 10000 });
+    await searchBox.click();
+    await searchBox.fill('zzzqqq-nonsense-1234');
+    await page.getByRole('listbox').getByText('No results').waitFor({ timeout: 10000 });
     await page.waitForTimeout(200);
     await snap(page, '05-search-empty');
     await page.unroute('**/api/v1/content/query/search/stream**');
 
     // 06 search error state — stub SSE to abort, click input to refocus, then fill
     await page.route('**/api/v1/content/query/search/stream**', (route) => route.abort('failed'));
-    await page.getByTestId('media-search-input').click();
-    await page.getByTestId('media-search-input').fill('hello');
-    await page.waitForSelector('[data-testid="search-error"]', { timeout: 10000 });
+    await searchBox.click();
+    await searchBox.fill('hello');
+    await page.waitForSelector('[data-testid="stream-global-error"]', { timeout: 10000 });
     await page.waitForTimeout(200);
     await snap(page, '06-search-error');
     await page.unroute('**/api/v1/content/query/search/stream**');

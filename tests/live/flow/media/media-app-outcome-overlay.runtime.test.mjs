@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { markFirstUseDone } from './lib/firstUse.mjs';
 
 // Owner rule (PR-6 / RELY.1a): an outcome notice never takes page space or
 // moves the page, and never covers the mini player's controls. Measured with
@@ -25,6 +26,9 @@ for (const [size, viewport] of SIZES) {
       await page.addInitScript(() => {
         if (!sessionStorage.getItem('cleared')) { localStorage.clear(); sessionStorage.setItem('cleared', '1'); }
       });
+      // A fresh browser opens the first-use naming card, a real overlay that on a
+      // phone sits over the notice's Undo; this journey is about the notice, not naming.
+      await markFirstUseDone(page);
       await page.goto('/media');
       if (size === 'phone') {
         await expect(page.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });

@@ -207,7 +207,9 @@ test.describe('Media M0 Move safety', () => {
         withinPositionTolerance: true,
       });
 
-      await expect(page.getByTestId('now-playing-title')).toHaveText('Nothing playing', { timeout: 30000 });
+      // The source has stopped but keeps its queue (stop never clears it), and a
+      // stopped queue names the item waiting instead of "Nothing playing".
+      await expect(page.getByTestId('now-playing-title')).toHaveText('Ready to play: Arrival', { timeout: 30000 });
       await expect.poll(() => page.locator('video, audio')
         .evaluateAll(nodes => nodes.every(node => node.paused || node.ended))).toBe(true);
       await expect.poll(() => page.evaluate(async (expected) => {
