@@ -3,7 +3,7 @@ import { FRONTEND_URL } from '#fixtures/runtime/urls.mjs';
 import { getEquipment, setEquipmentRider, setRpm } from '#testlib/FitnessSimHelper.mjs';
 
 test('Skyline Glider shipped course scrolls smoothly, responds, resumes, and saves', async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   let savedRun = null;
   await page.route('**/api/v1/fitness/skyline-glider/runs', async (route) => {
     savedRun = (await route.request().postDataJSON()).record;
@@ -40,6 +40,15 @@ test('Skyline Glider shipped course scrolls smoothly, responds, resumes, and sav
   await page.waitForTimeout(900);
   const highTransform = await page.locator('.skyline-glider__craft').getAttribute('transform');
   expect(highTransform).not.toBe(lowTransform);
+
+  await expect.poll(async () => Number(await page.getByTestId('skyline-glider-flight').getAttribute('data-course-time')), { timeout: 30_000 }).toBeGreaterThan(20);
+  await expect(page.locator('.skyline-glider__hud')).toContainText('♥ 3');
+  await setRpm(page, bike.equipmentId, 30);
+  await expect.poll(async () => Number(await page.getByTestId('skyline-glider-flight').getAttribute('data-course-time')), { timeout: 25_000 }).toBeGreaterThan(36);
+  await expect(page.locator('.skyline-glider__hud')).toContainText('♥ 3');
+  await setRpm(page, bike.equipmentId, 65);
+  await expect.poll(async () => Number(await page.getByTestId('skyline-glider-flight').getAttribute('data-course-time')), { timeout: 25_000 }).toBeGreaterThan(54);
+  await expect(page.locator('.skyline-glider__hud')).toContainText('♥ 3');
 
   await page.reload();
   await expect(page.getByRole('button', { name: 'Resume flight' })).toBeVisible({ timeout: 10_000 });

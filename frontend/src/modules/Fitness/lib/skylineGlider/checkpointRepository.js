@@ -25,12 +25,12 @@ export function readFlightCheckpoint(userId, course, expectedIdentity = {}) {
     if (saved?.schema !== SCHEMA) return { status: 'incompatible', reason: 'legacy-schema' };
     if (saved.course?.id !== id || saved.course?.version !== course?.version) return { status: 'incompatible', reason: 'course-identity' };
     if (!saved.identity || !saved.state) return { status: 'invalid', reason: 'missing-payload' };
+    if (saved.lifecycle === 'pending_terminal') return { status: 'pending_terminal', identity: saved.identity, state: saved.state, terminalRecord: saved.terminalRecord };
     const fields = ['fitnessSessionId', 'riderId', 'equipmentId', 'runId', 'startedAt'];
     const mismatched = fields.find((field) => expectedIdentity[field] != null && saved.identity[field] !== expectedIdentity[field]);
     if (mismatched || (expectedIdentity.calibration && !sameCalibration(saved.identity.calibration, expectedIdentity.calibration))) {
       return { status: 'incompatible', reason: mismatched || 'calibration' };
     }
-    if (saved.lifecycle === 'pending_terminal') return { status: 'pending_terminal', identity: saved.identity, state: saved.state, terminalRecord: saved.terminalRecord };
     if (saved.lifecycle !== 'active') return { status: 'invalid', reason: 'lifecycle' };
     return { status: 'compatible', identity: saved.identity, state: saved.state };
   } catch { return { status: 'invalid', reason: 'parse' }; }

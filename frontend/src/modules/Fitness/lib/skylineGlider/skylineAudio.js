@@ -34,11 +34,11 @@ export function createSkylineAudio({
       if (!ensure()) return false;
       try {
         if (context.state === 'suspended') await context.resume();
-        return true;
+        return context.state === 'running';
       } catch { return false; }
     },
     startWind() {
-      if (!ensure() || wind) return !!wind;
+      if (!ensure() || context.state !== 'running' || wind) return !!wind;
       try {
         wind = context.createOscillator();
         wind.type = 'sine';
@@ -52,7 +52,7 @@ export function createSkylineAudio({
       }
     },
     playCue(cue) {
-      if (muted || !ensure() || !CUE_FREQUENCIES[cue]) return false;
+      if (muted || !ensure() || context.state !== 'running' || !CUE_FREQUENCIES[cue]) return false;
       try {
         const oscillator = context.createOscillator();
         oscillator.type = cue === 'collision' ? 'square' : 'sine';
