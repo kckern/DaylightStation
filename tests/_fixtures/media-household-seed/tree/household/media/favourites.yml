@@ -1,0 +1,14 @@
+# A collection (the show) and an item.
+items:
+  - id: 'plex:59493'
+    kind: collection
+    type: show
+    title: Bluey
+    thumbnail: /api/v1/display/plex/59493
+    addedAt: '${iso:12,0}'
+  - id: 'plex:665639'
+    kind: item
+    type: episode
+    title: Red Coast
+    thumbnail: /api/v1/display/plex/665639
+    addedAt: '${iso:11,0}'

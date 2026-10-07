@@ -1,0 +1,3 @@
+# What the "New" row reads (the catalog's recently-added list, stubbed because
+# the real one cannot be confined to the allowed titles).
+- { id: 'plex:675677', type: episode, title: Mario Kart Arcade GP, thumbnail: /api/v1/display/plex/675677, addedAt: '${iso:1,0}' }

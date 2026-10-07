@@ -1,0 +1,19 @@
+# Play-ledger rows (real row shape). The loader writes them to the real day
+# files (<local date>.yml) of the temporary data dir.
+# Faith: the same time of day on three earlier days plus five minutes ago ->
+# a "usually here at this time" candidate for fleet:acceptance-media.
+- { startedAt: '${iso:3,0}',  localTime: '${local:3,0}',  deviceId: 'fleet:acceptance-media', contentId: 'plex:584614', title: Faith, kind: track, parentId: null, grandparentId: null, origin: null }
+- { startedAt: '${iso:2,0}',  localTime: '${local:2,0}',  deviceId: 'fleet:acceptance-media', contentId: 'plex:584614', title: Faith, kind: track, parentId: null, grandparentId: null, origin: null }
+- { startedAt: '${iso:1,0}',  localTime: '${local:1,0}',  deviceId: 'fleet:acceptance-media', contentId: 'plex:584614', title: Faith, kind: track, parentId: null, grandparentId: null, origin: null }
+- { startedAt: '${iso:0,-5}', localTime: '${local:0,-5}', deviceId: 'fleet:acceptance-media', contentId: 'plex:584614', title: Faith, kind: track, parentId: null, grandparentId: null, origin: null }
+# Hospital an hour ago, sent from the kid's tablet.
+- { startedAt: '${iso:0,-65}', localTime: '${local:0,-65}', deviceId: 'fleet:acceptance-media', contentId: 'plex:266151', title: Hospital, kind: episode, parentId: 'plex:59494', grandparentId: 'plex:59493', origin: { kind: device, id: 'browser:kidtablet', name: "Kid's tablet" } }
+- { startedAt: '${iso:0,-30}', localTime: '${local:0,-30}', deviceId: 'fleet:acceptance-media', contentId: 'plex:55854', title: Arrival, kind: movie, parentId: null, grandparentId: null, origin: null }
+- { startedAt: '${iso:0,-90}', localTime: '${local:0,-90}', deviceId: 'browser:kidtablet', contentId: 'plex:697368', title: Disclosure Day, kind: movie, parentId: null, grandparentId: null, origin: null }
+- { startedAt: '${iso:1,0}',  localTime: '${local:1,0}',  deviceId: 'fleet:acceptance-media', contentId: 'plex:697368', title: Disclosure Day, kind: movie, parentId: null, grandparentId: null, origin: null }
+- { startedAt: '${iso:0,-200}', localTime: '${local:0,-200}', deviceId: 'fleet:acceptance-media', contentId: 'plex:665638', title: Countdown, kind: episode, parentId: null, grandparentId: null, origin: null }
+- { startedAt: '${iso:0,-300}', localTime: '${local:0,-300}', deviceId: 'fleet:acceptance-media', contentId: 'plex:665639', title: Red Coast, kind: episode, parentId: null, grandparentId: null, origin: null }
+# The journeys' own browser: Faith a few minutes ago, Hospital an hour ago
+# (what "Played earlier" shows for that screen, newest first).
+- { startedAt: '${iso:0,-6}',  localTime: '${local:0,-6}',  deviceId: 'browser:acceptance-tester', contentId: 'plex:584614', title: Faith, kind: track, parentId: null, grandparentId: null, origin: null }
+- { startedAt: '${iso:0,-66}', localTime: '${local:0,-66}', deviceId: 'browser:acceptance-tester', contentId: 'plex:266151', title: Hospital, kind: episode, parentId: 'plex:59494', grandparentId: 'plex:59493', origin: null }

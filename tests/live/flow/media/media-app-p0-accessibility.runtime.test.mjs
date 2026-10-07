@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { SIZES, smallTargets, offscreenControls, noHorizontalScroll, contrastOf, layoutShiftDuring } from './lib/a11yProbe.mjs';
 import { freshPage, isPhone, playArrivalHere, searchFor, skipFirstUse } from './lib/mediaDriver.mjs';
+import { resetHouseholdAt } from './lib/household.mjs';
 
 // Task 8 — accessibility and size parity (RELY.11a, RELY.12a, RELY.13a, NF-A11Y,
 // NF-DEV). Everything is measured from the live page with ordinary pointer and
@@ -396,6 +397,9 @@ test.describe('one-thumb reach (phone)', () => {
 for (const [size, viewport] of SIZES) {
   test.describe(`${size} first visit`, () => {
     test.use({ viewport });
+    // The acceptance server's household is seeded; this journey is about the empty one.
+    test.beforeEach(async ({ request, baseURL }) => { await resetHouseholdAt(request, baseURL, { empty: true }); });
+    test.afterEach(async ({ request, baseURL }) => { await resetHouseholdAt(request, baseURL); });
     test(`[RELY.14a/AC3] ${size}: a household with nothing played yet is offered a way into browsing by kind`, async ({ page }) => {
       await freshPage(page);
       await skipFirstUse(page);
