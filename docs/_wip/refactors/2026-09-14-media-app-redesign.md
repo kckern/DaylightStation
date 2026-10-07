@@ -159,6 +159,37 @@ All closed; the rulings are recorded in the reference requirements §10.
 | O3 | What "this screen usually plays at this time of day" means | **Closed.** ±90 min, last 30 days, ranked by distinct days (≥ 3), whole-household fallback; row order favourites, carry on, usually at this time, new. |
 | O4 | Turning off speakers | **Closed 2026-10-02:** speakers are not turned off; capability-gated per RQ-STEER-11. |
 
+## Proof gaps
+
+Phase 0 of `docs/superpowers/specs/2026-10-06-media-proof-gaps-design.md` (ledger reconciliation, no product or fixture code) ran on exact SHA `83d288916` (run `PROOF-GAPS-PHASE0` in the acceptance ledger).
+
+| | Accepted | Partial | Unverified |
+|---|---|---|---|
+| Before Phase 0 (288 AC) | 144 | 37 | 107 |
+| After Phase 0 | 157 | 79 | 52 |
+| After the journey repair (below) | 161 | 75 | 52 |
+
+Net: 17 rows promoted to Accepted from existing journeys (RELY.4a AC1/AC2/AC4, RELY.7a AC3, AUTO.2a AC2/AC3, STEER.3a/AC1, 4a/AC1-2, 6a/AC1-2, 7a/AC1-2, 8a/AC2, PLAY.1a/AC2, PLAY.6a/AC2, PLACE.1a/AC4), and 4 rows demoted to Partial (`FIND.5a/AC2`, `FIND.6a/AC1-3`: the `browse-breadcrumb` manifest journey fails on the redesign's renamed artwork label): 144 + 17 - 4 = 157. 42 Unverified rows moved to Partial because some runtime evidence exists.
+
+| Priority | Reason code | Rows | Stories (rows) |
+|---|---|---|---|
+| P0 | `NEEDS-DEVICE` | 1 | STEER.1a (1) |
+| P0 | `NEEDS-FEATURE` | 11 | FIND.8b (2), HOUSE.2a (2), PLACE.6a (1), PLACE.7a (1), PLAY.1a (1), PLAY.5a (1), RELY.5a (1), STEER.1a (1), STEER.4a (1) |
+| P0 | `NEEDS-FIXTURE` | 15 | HOUSE.3a (1), PLACE.5a (3), PLACE.7a (2), PLAY.1a (1), RELY.2a (2), RELY.7a (1), STEER.1b (2), STEER.3a (1), STEER.6a (1), STEER.7a (1) |
+| P0 | `NEEDS-JOURNEY` | 77 | AUTO.3a (1), FIND.1a (5), FIND.3a (3), FIND.4a (3), FIND.5a (1), FIND.8a (4), FIND.8b (3), HOUSE.2a (1), PLACE.1a (3), PLACE.2a (2), PLACE.3a (3), PLACE.5a (1), PLACE.6a (3), PLACE.7a (2), PLACE.8a (3), PLAY.1a (2), PLAY.2a (3), PLAY.3a (3), PLAY.5a (2), PLAY.6a (1), PLAY.7a (3), RELY.13a (1), RELY.1a (5), RELY.6a (2), STEER.1a (1), STEER.1b (3), STEER.3a (2), STEER.5a (3), STEER.7a (1), STEER.8a (3), STEER.9a (4) |
+| P0 | `NEEDS-SEEDED-BACKEND` | 8 | AUTO.1a (3), AUTO.1b (3), AUTO.2a (1), STEER.7a (1) |
+| P1/P2 | `NEEDS-FEATURE` | 2 | HOUSE.5a (1), PLACE.4a (1) |
+| P1/P2 | `NEEDS-FIXTURE` | 3 | AUTO.4a (1), HOUSE.6a (1), STEER.11a (1) |
+| P1/P2 | `NEEDS-JOURNEY` | 3 | HOUSE.4a (1), RELY.4a (1), STEER.10a (1) |
+| P1/P2 | `NEEDS-SEEDED-BACKEND` | 7 | FIND.10a (2), FIND.11a (1), FIND.12a (1), FIND.13a (1), FIND.7a (1), STEER.13b (1) |
+
+Journeys that fail on this build (not product regressions in this phase's scope; reported, not fixed): `autoplay`, `deep-link-input`, `design-screens`, `discovery`, `mini-toggle`, `move-safety`, `now-playing-exit`, `outcome-overlay` (phone), `peek`, `playback-journey` (Office test), `search-lifecycle`, `search-typing`, `url-sync`, `browse-breadcrumb`. Most look up selectors/devices the redesign or the virtual-device fixture no longer provide (for example `fleet-peek-office-tv`, `media-mini-player` idle text, the artwork-unavailable label); `browse-breadcrumb` is in the P0 manifest and needs its assertion updated.
+
+### Journey repair (PROOF-GAPS-REPAIR)
+
+All 14 journeys listed above were stale tests; none was a product regression. They were retargeted to the current UI through ordinary input (`29fb13d52`, `934a3ba48`; no product code changed) and pass on exact-SHA previews of those commits, and the P0 manifest (`scripts/media-p0-gate.mjs`, 49 groups, 59 stories / 146 criteria) is green again, so `FIND.5a/AC2` and `FIND.6a/AC1-3` are Accepted. Whether each failure predates the redesign, measured by running the original journeys against the product at `1866e4e3e` (the commit before the redesign merge): 10 already failed there (`autoplay`, `deep-link-input`, `design-screens`, `discovery`, `mini-toggle`, `now-playing-exit`, `peek`, `playback-journey`, `search-typing`, `url-sync`: they use selectors retired by earlier work, such as `media-search-input`, `result-row-*`, the idle mini-player strip, `home-card-*`, `peek-play`, and the fixture's lack of `office-tv`); 4 passed there and were broken by the redesign (`browse-breadcrumb`: kind icon instead of an 'artwork unavailable' tile; `move-safety`: a stopped queue now reads 'Ready to play: Arrival'; `search-lifecycle` and `outcome-overlay` phone: the first-use naming card now sits over the header and Home content and intercepts pointer input on a fresh browser). Journeys that are not about naming a device mark the first-use card answered (`tests/live/flow/media/lib/firstUse.mjs`).
+
+
 ## Next action
 
 Merge `fix/media-task8` and deploy through the deploy gate. After that the refactor can be closed: move this page and the remaining superseded `_wip` plans to `docs/_archive/` with the outcome recorded.

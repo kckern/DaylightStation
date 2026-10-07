@@ -18,6 +18,13 @@ async function openBrowse(page) {
   await expect(page.getByTestId('browse-view')).toBeVisible({ timeout: 15000 });
 }
 
+// An artwork-less row shows a kind icon in the thumbnail slot instead of a picture.
+async function expectKindPlaceholder(page, rowTestId) {
+  const row = page.getByTestId(rowTestId);
+  await expect(row.locator('img')).toHaveCount(0);
+  await expect(row.locator('.media-result-thumb--icon svg')).toBeVisible();
+}
+
 test.describe('MediaApp — browse lifecycle', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => { try { (() => { const k = 'media-app.first-use-done'; const v = localStorage.getItem(k); localStorage.clear(); if (v) localStorage.setItem(k, v); })(); } catch {} });
@@ -50,7 +57,9 @@ test.describe('MediaApp — browse lifecycle', () => {
 
     await openBrowse(page);
     await expect(page.getByRole('img', { name: 'Example Show artwork' })).toBeVisible();
-    await expect(page.getByLabel('Other Show artwork unavailable')).toBeVisible();
+    // No artwork: the row leads with a kind icon (the redesign's recognisable
+    // placeholder, never a letter tile) and still names its title and kind.
+    await expectKindPlaceholder(page, 'browse-row-demo:other');
     await expect(page.getByTestId('browse-row-demo:show')).toContainText('Show');
 
     await page.getByTestId('browse-open-demo:show').click();
@@ -70,7 +79,7 @@ test.describe('MediaApp — browse lifecycle', () => {
       'Episode 1', 'Episode 2', 'Episode 10',
     ]);
     await expect(page.getByRole('img', { name: 'Episode 2 artwork' })).toBeVisible();
-    await expect(page.getByLabel('Episode 1 artwork unavailable')).toBeVisible();
+    await expectKindPlaceholder(page, 'browse-row-demo:e1');
     await expect(page.getByTestId('browse-row-demo:e1')).toContainText('Episode');
 
     await page.getByTestId('browse-crumb-parent-1').click();

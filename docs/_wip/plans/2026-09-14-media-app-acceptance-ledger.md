@@ -25,7 +25,7 @@ P0 extension manifest requires its `RELY.4a/AC1` and `RELY.4a/AC2` checks. This 
 pending exact-commit owned-server execution, not new Accepted evidence. Existing
 Task 2 and stable-core receipt evidence below remains unchanged.
 
-**Status:** In progress. Batch B (2026-10-03) adds 24 Accepted and 3 Partial AC across PLAY.10a, STEER.13a/b, RELY.4b, STEER.1b, PLACE.9a, PLACE.4a, STEER.10a, STEER.1a (`BATCH-B-CONTROLS`; review-fix round 2026-10-05: a held natural end now reads ended and releases the Player completion key so replay advances again (`PlayerBridge.test.jsx` held-end test); Add only shown unavailable with its reason on this device; countdown seconds hidden from assistive tech; failed screen adopts fail fast; a paused move to an idle screen stays paused (`WakeAndLoadService.adoptAutoplay.test.mjs`) — unit evidence, counts unchanged); **Totals recomputed 2026-10-06 from the criteria tables below, after Task 8: 28 accepted stories / 144 accepted AC; 38 partial stories / 37 partial AC; 16 unverified stories / 107 unverified AC (82 stories, 288 AC).** The P0 manifest (`validateP0Manifest`) is 59 stories / 146 criteria; 144 of them are Accepted here — `RELY.4a/AC1–AC2` are in the manifest but stay Unverified in this ledger because their journey (`media-app-queue-journey`, Undo restores the paused native position) fails on a test defect that is being repaired separately and has not passed since. No component, test count or API response earns acceptance by itself.
+**Status:** In progress. Batch B (2026-10-03) adds 24 Accepted and 3 Partial AC across PLAY.10a, STEER.13a/b, RELY.4b, STEER.1b, PLACE.9a, PLACE.4a, STEER.10a, STEER.1a (`BATCH-B-CONTROLS`; review-fix round 2026-10-05: a held natural end now reads ended and releases the Player completion key so replay advances again (`PlayerBridge.test.jsx` held-end test); Add only shown unavailable with its reason on this device; countdown seconds hidden from assistive tech; failed screen adopts fail fast; a paused move to an idle screen stays paused (`WakeAndLoadService.adoptAutoplay.test.mjs`) — unit evidence, counts unchanged); **Totals recomputed 2026-10-06 after Proof-gaps Phase 0 (`PROOF-GAPS-PHASE0`): 27 accepted stories / 157 accepted AC; 55 partial stories / 79 partial AC; 0 stories with only Unverified criteria / 52 unverified AC (82 stories, 288 AC). Before Phase 0 (after Task 8): 28 / 144 accepted, 38 / 37 partial, 16 / 107 unverified. Every non-Accepted row now ends with one bold reason code.** The P0 manifest (`validateP0Manifest`) is 59 stories / 146 criteria; 144 of them are Accepted here — `RELY.4a/AC1–AC2` were in the manifest but Unverified here until `PROOF-GAPS-PHASE0`, which ran their journey green on an exact SHA (they are Accepted now). No component, test count or API response earns acceptance by itself.
 
 **Contract:** taxonomy §3 and accepted requirements. P0 first, then P1/P2. Each criterion must have evidence of the complete applicable path: user input → target → command → actual player/result → state → displayed feedback. Office is the only physical test screen authorized.
 
@@ -37,6 +37,7 @@ Task 2 and stable-core receipt evidence below remains unchanged.
 
 | Run | Scope | Red / baseline | Green / acceptance |
 |---|---|---|---|
+| PROOF-GAPS-PHASE0 | Proof-gaps Phase 0: every Media journey (51 files in `tests/live/flow/media/`) once on one exact-SHA acceptance preview; ledger reconciled row by row from the assertions of passing tests | Baseline 144 Accepted / 37 Partial / 107 Unverified. | Exact SHA `83d2889161357e8dc57dcbbe17b5f7e7e9bdbf2d` (branch `test/media-proof-gaps`, clean detached checkout, preview `/tmp/daylight-media-preview-3lYru9`, port 45369, policy `branch`). 36 of 51 files exited 0 within the allowed retry (`media-app-queue-journey` on its retry); 15 failed twice and were re-run a third time, after which `screen-session-controls` passed (a load flake) and 14 failed 3 of 3: `autoplay`, `deep-link-input`, `design-screens`, `discovery`, `mini-toggle`, `move-safety`, `now-playing-exit`, `outcome-overlay` (phone variant only), `peek`, `playback-journey` (only the Office test, `fleet-peek-office-tv` absent from the fixture device list), `search-lifecycle`, `search-typing`, `url-sync`, `browse-breadcrumb` (artwork-unavailable label renamed by the redesign; this is a manifest journey). Host load average was 13-21 throughout. Per-test results: 212 passed, 11 timed out, 7 failed, 1 skipped (`stream-capacity` 60fps). Manifest groups (stable core + P0 extension, 50 distinct file/grep groups) all pass except the `browse-breadcrumb` group. Result: 157 Accepted / 79 Partial / 52 Unverified. Evidence JSON and logs: `/tmp/media-proof-p0/evidence/`. **Repair (PROOF-GAPS-REPAIR):** all 14 failing journeys were stale tests, none a product regression; they were retargeted to the current UI (commits `29fb13d52`, `934a3ba48`) and pass on exact-SHA previews, and the demoted rows above are Accepted again. `playback-journey`'s Office test now observes the fixture's virtual receiver (the fixture has no `office-tv`); no household screen is commanded. |
 | TASK-8-CLOSEOUT | Task 8: accessibility and size parity, TV input, tap budgets, persona walkthroughs, deletions | Measured on the running app (not guessed): 36 px house indicator/inputs/Undo, 30 px Retry, 40 px handle Next/Stop, 26–28 px queue controls, 22 px result row icons, 35 px menu items, 28/20 px dialog close/checkbox, a 40 px-wide handle title and a 30 px seek track on a phone, a clipped aim label and scope chips on a laptop, `/` bound to a testid that did not exist, no reduced-motion support anywhere, TV prompts that needed Esc | Evidence gathered at compiled exact source `ddfe8f7db` (clean detached checkout, `--build`); the later edits before the review round were test-only (`media-p0-gate.mjs` dropped RELY.13a/AC1 from 147 to 146 criteria, `mediaP0Gate.test.mjs`, personas journey TAP-06 exact assertion); the review-round fixes (non-modal Show-briefly bar, OK-prompt focus/overlay guard, reduced-motion spinners, picker tap-to-send NF-TAP-10) are re-verified by their own journeys at the final SHA. Compiled at `ddfe8f7db`: 43/43 journeys (`media-app-p0-accessibility`, `media-app-p0-personas`, `screen-tv-input`) pass. Full manifest, each journey group run on its own against the same artifact: 41/49 on the first pass; six of the eight others (`PLAY.1b`, a screen's Remote controls, `PLAY.10a/AC2`, `PLACE.4a`, `FIND.10a/AC3`, and `STEER.1b/AC7` whose search for a second title found nothing under load) passed when re-run alone; the last two (`RELY.4b/STEER.1b` Put it back copy, and this device's sleep label in `STEER.10a/STEER.13a`) fail on test-assertion defects being repaired separately. P0 manifest 59 stories / 146 criteria; stable core 11/11 stories retained (every stable-core journey passed). Unit: Media and screen-framework suites pass; `npm run test:unit:vitest` exits 1 on 16 files outside this work (7 Piano, 3 that cannot resolve Node's `stream` inside a worktree, 6 that pass alone). |
 | BATCH-B-CONTROLS | Batch B (handle and controls, P1): session controls on this device and screens, Add only result, Put it back, Add to this queue, Move to…, several screens + line up, lock screen | Focused Vitest REDs per behaviour (local controls 15, whitelist 3, appliedAs 3, Player completion guard 1, screen adopt-snapshot 1, play-after-ended 1); runtime REDs found three real defects fixed here: screens acked `adopt-snapshot` without adopting, the Player's duplicate-completion guard swallowed the end of a resumed item, and a move to an idle screen had no path. | Exact preview of product SHA `67c40028e` (journey file edits after it are test-only). Every test of `media-app-handle-controls.runtime.test.mjs` passed on it, run singly where the host (load ≈ 30) stalled Plex streams: 9/10 in one full run (local journey stalled on "Having trouble streaming"), the local journey passed in a separate run at the same SHA. `screen-session-controls.runtime.test.mjs` (touched fixture) 7/7 on re-run (first run: one 4 s receiver-ack timeout under load). Logs and screenshots: `/tmp/daylight-media-p0-evidence/67c40028e59f93d3b6ce6e4fd0c82800769ca9b7/batch-b/`. |
 | TASK-D-PLAYER-FEATURES | Batch D player features (P2): STEER.12a, PLAY.8a, PLAY.8b, PLAY.9a | Focused Vitest for contract, Plex mint, routes, WakeAndLoad, screen features, Player seam, Media controls; dev-server runs exposed an off-screen 44-item menu, a slideshow remote Next that never skipped, and slideshows published as buffering (all fixed). | Exact preview of `8cd380a3b` (`media-redesign-server.mjs --build`, header `accepted-8cd380a3b6d8…`), `media-app-player-features.runtime.test.mjs`: full-file run 5/7 (audio journey and the tablet music journey failed on Plex/search load and passed alone: audio 1/1, PLAY.9a 2/2); the earlier full run on `2b8c1f173` passed 6/6. Regression on `2b8c1f173`: screen-session-controls, remote-controls, playback-journey 29/32 — two passed alone; the Office test needs a real Office device absent from the fixture (unrelated). Screenshots under the run's evidence dir. |
@@ -122,11 +123,11 @@ As a **Seeker**, I want to start typing a title from anywhere in the app, so tha
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| FIND.1a/AC1 | From any part of the app, one obvious action (or starting to type, where there is a keyboard) opens search with the cursor ready. | Unverified | — |
-| FIND.1a/AC2 | Results begin appearing while I type, each with a picture, title, and kind. | Unverified | — |
-| FIND.1a/AC3 | The search looks and behaves the same on a phone, tablet, or laptop, and whatever I was doing before (including steering another screen). | Unverified | — |
-| FIND.1a/AC4 | Closing search returns me to exactly where I was. | Unverified | — |
-| FIND.1a/AC5 | After **Play**, **Add to queue**, or **Play on…**, search stays open with my words and narrowing, so I can keep going (R24). | Partial | JOURNEY-SEARCH: phone ordinary Play retains query/narrowing/dialog with actual advancing video, GREEN30.9s on8303c16b0; Add and explicit Play on paths plus device-size parity pending |
+| FIND.1a/AC1 | From any part of the app, one obvious action (or starting to type, where there is a keyboard) opens search with the cursor ready. | Unverified | **[NEEDS-JOURNEY]** No journey opens search from any part of the app or by starting to type with cursor ready; only launcher click/fill into an already-focused box. |
+| FIND.1a/AC2 | Results begin appearing while I type, each with a picture, title, and kind. | Partial | **[NEEDS-JOURNEY]** Phone search-journey shows picture+title+kind on result; desktop/tablet rows lack picture assertion and typing-while-arriving not shown. |
+| FIND.1a/AC3 | The search looks and behaves the same on a phone, tablet, or laptop, and whatever I was doing before (including steering another screen). | Partial | **[NEEDS-JOURNEY]** search-scopes runs per surface, but no tablet size and no search-while-steering-another-screen parity assertion. |
+| FIND.1a/AC4 | Closing search returns me to exactly where I was. | Unverified | **[NEEDS-JOURNEY]** Escape/close tests only assert dropdown hidden; none proves return to exact prior page/scroll/state. |
+| FIND.1a/AC5 | After **Play**, **Add to queue**, or **Play on…**, search stays open with my words and narrowing, so I can keep going (R24). | Partial | JOURNEY-SEARCH: phone ordinary Play retains query/narrowing/dialog with actual advancing video, GREEN30.9s on8303c16b0; Add and explicit Play on paths plus device-size parity pending **[NEEDS-JOURNEY]** Phone+desktop Play and Add retain query/narrowing (search-journey, queue-journey); explicit Play on... and tablet size not covered. |
 
 ### FIND.1b
 
@@ -154,10 +155,10 @@ As a **Seeker**, I want to know whether the results are complete, so that I can 
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| FIND.3a/AC1 | While sources are still answering, I see that results are still arriving. | Unverified | — |
-| FIND.3a/AC2 | When all are in, the "still arriving" sign disappears. | Unverified | — |
+| FIND.3a/AC1 | While sources are still answering, I see that results are still arriving. | Unverified | **[NEEDS-JOURNEY]** No journey asserts the 'Still searching' sign visible while sources are pending (recovery test only withholds to failure). |
+| FIND.3a/AC2 | When all are in, the "still arriving" sign disappears. | Unverified | **[NEEDS-JOURNEY]** Only waitForSearchSettled poll and a count-0 check on a stubbed all-failed stream; no visible-then-gone transition asserted. |
 | FIND.3a/AC3 | If a source didn't answer, I'm told which, in plain words, with a way to try it again. | Accepted | Task 4 exact five-file browser matrix: `media-app-search-states.runtime.test.mjs` names Plex in plain words and exposes its Retry action before widening. Artifact provenance and command are recorded in the Task 4 report. |
-| FIND.3a/AC4 | These signs look and read identically wherever search appears. | Unverified | — |
+| FIND.3a/AC4 | These signs look and read identically wherever search appears. | Unverified | **[NEEDS-JOURNEY]** No journey compares the arriving signs across phone/desktop/other search surfaces. |
 
 ### FIND.4a
 
@@ -165,10 +166,10 @@ As a **Seeker**, I want a helpful next step when nothing matches, so that I'm no
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| FIND.4a/AC1 | If nothing matches in the chosen kind, matches from all kinds appear under a divider ("Not in Audiobooks — from everything:"), with the kind in words on every row (R25). | Unverified | — |
+| FIND.4a/AC1 | If nothing matches in the chosen kind, matches from all kinds appear under a divider ("Not in Audiobooks — from everything:"), with the kind in words on every row (R25). | Partial | **[NEEDS-JOURNEY]** search-states stub proves 'From everything:' widening notice; no widened rows with kind on every row asserted. |
 | FIND.4a/AC2 | If a source didn't answer, I'm told that before any widening, so a failure never looks like "not there" (R25). | Accepted | Task 4 exact five-file browser matrix: the failed-source notice precedes the `From everything` notice, retains incomplete-result wording, and removes the still-searching claim. Artifact provenance and command are recorded in the Task 4 report. |
-| FIND.4a/AC3 | If nothing matches anywhere, I'm told so plainly and offered to check spelling or browse the nearest kind. | Unverified | — |
-| FIND.4a/AC4 | An empty result never looks like a result still loading. | Unverified | — |
+| FIND.4a/AC3 | If nothing matches anywhere, I'm told so plainly and offered to check spelling or browse the nearest kind. | Partial | **[NEEDS-JOURNEY]** search-states asserts 'No results' only; no spelling/browse-nearest-kind offer asserted in a journey. |
+| FIND.4a/AC4 | An empty result never looks like a result still loading. | Partial | **[NEEDS-JOURNEY]** Recovery test asserts error is not 'No results'; no journey contrasts empty vs loading state. |
 
 ### FIND.5a
 
@@ -176,8 +177,8 @@ As a **Wanderer**, I want to explore the catalog by kind with pictures, so that 
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| FIND.5a/AC1 | I can reach every kind of content without typing. | Unverified | — |
-| FIND.5a/AC2 | Every title shows a picture (or a recognisable placeholder), title, and kind. | Accepted | Task 4 exact five-file browser matrix: deterministic browse rows render supplied artwork or a labelled placeholder alongside title and kind. Artifact provenance and command are recorded in the Task 4 report. |
+| FIND.5a/AC1 | I can reach every kind of content without typing. | Unverified | **[NEEDS-JOURNEY]** Browse tests stub /api/v1/list with fake data; no journey reaches every real kind without typing. |
+| FIND.5a/AC2 | Every title shows a picture (or a recognisable placeholder), title, and kind. | Accepted | Task 4 exact five-file browser matrix: deterministic browse rows render supplied artwork or a labelled placeholder alongside title and kind. Artifact provenance and command are recorded in the Task 4 report. PROOF-GAPS-REPAIR (exact SHA `29fb13d5223fad39accdc56f6ee79b841bbffc2e`, preview of a clean detached checkout, policy `branch`): the journey `media-app-browse-breadcrumb` 'browse shows pictures, natural order, every parent, and collection actions' passes again and the P0 manifest group for it passes (`scripts/media-p0-gate.mjs` exit 0, 49 groups, 59 stories / 146 criteria; evidence `/tmp/media-proof-p0/evidence-repair/`). Phase 0's failure was a stale test, not a product defect: the redesign (647f55369) replaced the letter tile and its 'artwork unavailable' label with a kind icon for artwork-less rows (`ResultRow` `leading`, decorative; the row's own name carries title and kind). The journey now asserts no `<img>` and a visible kind icon in the thumbnail slot alongside the title and kind text. |
 | FIND.5a/AC3 | Long collections load more as I scroll, without a separate button hunt. | Accepted | Task 4 exact five-file browser matrix: reaching the page sentinel automatically fetched and displayed item 51 while no load-more button existed. Artifact provenance and command are recorded in the Task 4 report. |
 | FIND.5a/AC4 | Backing out returns me to the same scroll position. | Accepted | Task 4 exact five-file browser matrix: browser Back restored the exact captured scrollTop and the collection row that launched the child. Artifact provenance and command are recorded in the Task 4 report. |
 
@@ -187,9 +188,9 @@ As a **Wanderer**, I want to open a show, album, or folder and see its parts in 
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| FIND.6a/AC1 | Parts appear in their natural order (episodes by season, tracks by number). | Accepted | Task 4 exact five-file browser matrix: out-of-order seasons and episodes rendered as Season 1/2 and Episode 1/2/10. Artifact provenance and command are recorded in the Task 4 report. |
-| FIND.6a/AC2 | I can see where I am as a trail (for example: TV → Bluey → Season 2) and jump to any level. | Accepted | Task 4 exact five-file browser matrix: All → Example Show → Season 2 rendered every parent and jumping to Example Show restored its child list. Artifact provenance and command are recorded in the Task 4 report. |
-| FIND.6a/AC3 | The whole-collection actions (play, shuffle, add) are available at the top and name the screen they will use. | Accepted | Task 4 exact five-file browser matrix: collection header exposed Play, Shuffle and Add with `This device` as the destination. Artifact provenance and command are recorded in the Task 4 report. |
+| FIND.6a/AC1 | Parts appear in their natural order (episodes by season, tracks by number). | Accepted | Task 4 exact five-file browser matrix: out-of-order seasons and episodes rendered as Season 1/2 and Episode 1/2/10. Artifact provenance and command are recorded in the Task 4 report. PROOF-GAPS-REPAIR (exact SHA `29fb13d5223fad39accdc56f6ee79b841bbffc2e`, preview of a clean detached checkout, policy `branch`): the journey `media-app-browse-breadcrumb` 'browse shows pictures, natural order, every parent, and collection actions' passes again and the P0 manifest group for it passes (`scripts/media-p0-gate.mjs` exit 0, 49 groups, 59 stories / 146 criteria; evidence `/tmp/media-proof-p0/evidence-repair/`). Phase 0's failure was a stale test, not a product defect: the redesign (647f55369) replaced the letter tile and its 'artwork unavailable' label with a kind icon for artwork-less rows (`ResultRow` `leading`, decorative; the row's own name carries title and kind). The journey now asserts no `<img>` and a visible kind icon in the thumbnail slot alongside the title and kind text. |
+| FIND.6a/AC2 | I can see where I am as a trail (for example: TV → Bluey → Season 2) and jump to any level. | Accepted | Task 4 exact five-file browser matrix: All → Example Show → Season 2 rendered every parent and jumping to Example Show restored its child list. Artifact provenance and command are recorded in the Task 4 report. PROOF-GAPS-REPAIR (exact SHA `29fb13d5223fad39accdc56f6ee79b841bbffc2e`, preview of a clean detached checkout, policy `branch`): the journey `media-app-browse-breadcrumb` 'browse shows pictures, natural order, every parent, and collection actions' passes again and the P0 manifest group for it passes (`scripts/media-p0-gate.mjs` exit 0, 49 groups, 59 stories / 146 criteria; evidence `/tmp/media-proof-p0/evidence-repair/`). Phase 0's failure was a stale test, not a product defect: the redesign (647f55369) replaced the letter tile and its 'artwork unavailable' label with a kind icon for artwork-less rows (`ResultRow` `leading`, decorative; the row's own name carries title and kind). The journey now asserts no `<img>` and a visible kind icon in the thumbnail slot alongside the title and kind text. |
+| FIND.6a/AC3 | The whole-collection actions (play, shuffle, add) are available at the top and name the screen they will use. | Accepted | Task 4 exact five-file browser matrix: collection header exposed Play, Shuffle and Add with `This device` as the destination. Artifact provenance and command are recorded in the Task 4 report. PROOF-GAPS-REPAIR (exact SHA `29fb13d5223fad39accdc56f6ee79b841bbffc2e`, preview of a clean detached checkout, policy `branch`): the journey `media-app-browse-breadcrumb` 'browse shows pictures, natural order, every parent, and collection actions' passes again and the P0 manifest group for it passes (`scripts/media-p0-gate.mjs` exit 0, 49 groups, 59 stories / 146 criteria; evidence `/tmp/media-proof-p0/evidence-repair/`). Phase 0's failure was a stale test, not a product defect: the redesign (647f55369) replaced the letter tile and its 'artwork unavailable' label with a kind icon for artwork-less rows (`ResultRow` `leading`, decorative; the row's own name carries title and kind). The journey now asserts no `<img>` and a visible kind icon in the thumbnail slot alongside the title and kind text. |
 
 ### FIND.7a
 
@@ -199,7 +200,7 @@ As a **Wanderer**, I want to be offered things that suit the moment, so that I h
 |---|---|---|---|
 | FIND.7a/AC1 | Opening the app shows a small set of suggestions: favourites, what's unfinished, what has played on this screen at this time of day, and new additions (R15, R46). | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): phone/tablet/laptop start page renders this screen's `/media/suggestions?deviceId=<own X-Daylight-Device id>` rows in server order (Favourites, Carry on, Usually here at this time, New), `media-app-household-home.runtime.test.mjs` `household start page`; unit `browse/HomeView.test.jsx` |
 | FIND.7a/AC2 | Suggestions follow the same tap rule as every other item: a collection opens, a playable item plays at the aim, and details are one step away (Q2). | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): a favourite collection's picture opens Browse with its Play header; a playable tile plays here with Undo; Details in every tile menu (3 viewports, `media-app-household-home.runtime.test.mjs`) |
-| FIND.7a/AC3 | Suggestions never include what's already playing on any screen (R16). | Partial | Server rule (suggestions leave out anything playing): backend `mediaSuggestions.test.mjs`; client renders server rows unfiltered and moves `nowOn` items to "Now on". Journey answers household routes in-test, so not runtime-accepted here. |
+| FIND.7a/AC3 | Suggestions never include what's already playing on any screen (R16). | Partial | Server rule (suggestions leave out anything playing): backend `mediaSuggestions.test.mjs`; client renders server rows unfiltered and moves `nowOn` items to "Now on". Journey answers household routes in-test, so not runtime-accepted here. **[NEEDS-SEEDED-BACKEND]** Server rule (suggestions exclude playing); journey answers household routes in-test, not real services. |
 
 ### FIND.8a
 
@@ -207,10 +208,10 @@ As a **Wanderer**, I want to see details about one item without starting it, so 
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| FIND.8a/AC1 | From any item, wherever it appears (search, browsing, suggestions, recent), I can open its details in one step. | Unverified | — |
-| FIND.8a/AC2 | Details show picture, title, description, length, kind, and how far anyone has got. | Unverified | — |
-| FIND.8a/AC3 | Details offer the same play and line-up actions as everywhere else, with the destination stated. | Unverified | — |
-| FIND.8a/AC4 | Opening details never starts, stops, or changes playback. | Unverified | — |
+| FIND.8a/AC1 | From any item, wherever it appears (search, browsing, suggestions, recent), I can open its details in one step. | Partial | **[NEEDS-JOURNEY]** Details verb is present on search/home menus and opened from home tile; no journey opens it from search, browse, suggestions and recent. |
+| FIND.8a/AC2 | Details show picture, title, description, length, kind, and how far anyone has got. | Unverified | **[NEEDS-JOURNEY]** No journey asserts details content (picture, title, description, length, kind, progress). |
+| FIND.8a/AC3 | Details offer the same play and line-up actions as everywhere else, with the destination stated. | Unverified | **[NEEDS-JOURNEY]** No journey asserts play/line-up actions with stated destination inside details. |
+| FIND.8a/AC4 | Opening details never starts, stops, or changes playback. | Unverified | **[NEEDS-JOURNEY]** No journey asserts opening details leaves playback untouched. |
 
 ### FIND.8b
 
@@ -218,11 +219,11 @@ As a **Seeker**, I want tapping a result to do the obvious thing while details s
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| FIND.8b/AC1 | Tapping a playable item (episode, song, film) plays it at the aim; tapping a collection (show, season, album, playlist, artist, folder) opens it. Same everywhere (Q2). | Unverified | — |
-| FIND.8b/AC2 | Collection results also carry an inline **Play** button, or **Continue S2E7** when one is under way, so "Put on Bluey" is one tap (R8). | Unverified | — |
-| FIND.8b/AC3 | Cameras and single photos are the exception: a tap shows them on the device in hand, with **Show on…** as the second action (R10). | Unverified | — |
-| FIND.8b/AC4 | A mis-tap costs nothing: the confirmation offers undo (`RELY.4`). | Unverified | — |
-| FIND.8b/AC5 | A secondary action on every result opens its details. | Unverified | — |
+| FIND.8b/AC1 | Tapping a playable item (episode, song, film) plays it at the aim; tapping a collection (show, season, album, playlist, artist, folder) opens it. Same everywhere (Q2). | Partial | **[NEEDS-JOURNEY]** household-home asserts collection picture opens, playable plays at aim on home tiles only; search and browse tap rule unproven. |
+| FIND.8b/AC2 | Collection results also carry an inline **Play** button, or **Continue S2E7** when one is under way, so "Put on Bluey" is one tap (R8). | Unverified | **[NEEDS-FEATURE:Continue S2E7 label on collection search rows]** Search container rows have 'Play as queue' icon only; no Play/Continue label in search code. |
+| FIND.8b/AC3 | Cameras and single photos are the exception: a tap shows them on the device in hand, with **Show on…** as the second action (R10). | Unverified | **[NEEDS-FEATURE:Show on... action for cameras and photos]** No 'Show on...' action exists in Media module code. |
+| FIND.8b/AC4 | A mis-tap costs nothing: the confirmation offers undo (`RELY.4`). | Partial | **[NEEDS-JOURNEY]** Home tap shows Undo (household-home, RELY.4a undo); mis-tap undo from search/browse rows not journeyed. |
+| FIND.8b/AC5 | A secondary action on every result opens its details. | Unverified | **[NEEDS-JOURNEY]** Search row 'detail' menu item only read in actionSnapshot; no journey activates it. |
 
 ### FIND.9a
 
@@ -244,9 +245,9 @@ As a **Resumer**, I want to see unfinished things and next episodes, so that I c
 | FIND.10a/AC2 | For a series, the next unwatched episode is offered. | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): a favourite show's next episode is its Continue ("Next: Keepy Uppy"); unit `HomeView.test.jsx` covers a next-episode carry-on tile |
 | FIND.10a/AC3 | Anything playing on any screen right now is not offered as "carry on"; it shows instead as "Now on Living Room TV · Remote · Move here" (R16). | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): an item reported playing on Acceptance receiver shows as "Now on Acceptance receiver" with Remote (opens Peek) and Move here, not in Carry on; Move here adopted it with native playback here and the receiver stopped (`media-app-household-home.runtime.test.mjs` `Now on another screen`, laptop); unit `household/useMoveHere.test.jsx` |
 | FIND.10a/AC4 | Each screen keeps its own spot; when they differ, both are shown (R14). | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): differing spots shown as separate unclipped lines "12 m on Kid's tablet" / "1 h 20 m on Acceptance receiver" (3 viewports, `media-app-household-home.runtime.test.mjs`) |
-| FIND.10a/AC5 | Something counts as unfinished only after 5 minutes or 5% has been watched (default), and as finished once the credits start (R41). | Partial | Server rule (5 min/5 %, 90 %): backend `mediaSpots`/`MediaProgress` tests; the client shows what carry-on returns. |
+| FIND.10a/AC5 | Something counts as unfinished only after 5 minutes or 5% has been watched (default), and as finished once the credits start (R41). | Partial | Server rule (5 min/5 %, 90 %): backend `mediaSpots`/`MediaProgress` tests; the client shows what carry-on returns. **[NEEDS-SEEDED-BACKEND]** Server rule (5 min/5%, credits); journey cannot run real progress services. |
 | FIND.10a/AC6 | Any item can be marked watched or unwatched (R41). | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): Mark watched from a carry-on tile POSTs `household/watched` and confirms "Marked Arrival watched" (3 viewports); detail/search/browse rows offer both marks (unit `DetailView.test.jsx`, `ResultRow.extraActions.test.jsx`) |
-| FIND.10a/AC7 | Finished items drop off the list on their own. | Partial | Server rule (finished items leave carry on): backend `householdMediaList.test.mjs`; client adds no filtering. |
+| FIND.10a/AC7 | Finished items drop off the list on their own. | Partial | Server rule (finished items leave carry on): backend `householdMediaList.test.mjs`; client adds no filtering. **[NEEDS-SEEDED-BACKEND]** Server rule drops finished items; journey uses in-test household routes. |
 
 ### FIND.11a
 
@@ -255,7 +256,7 @@ As an **Ambient listener**, I want to see what played earlier on a screen, item 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
 | FIND.11a/AC1 | Each screen's queue has a **Played earlier** list, newest first, with picture, title, and the time it played. | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): this device's queue panel lists Played earlier from `/media/screens/<own id>/played-earlier`, newest first, with picture, title and "Calvin Harris · Today …" (3 viewports, `media-app-household-home.runtime.test.mjs` `Played earlier`); remote panels use the screen's id (QueuePanel) |
-| FIND.11a/AC2 | Items from shuffled or "keep similar things playing" runs are included. | Partial | Every ledger start is a row (backend `ScreenPlaybackService` tests); the client lists rows as returned. |
+| FIND.11a/AC2 | Items from shuffled or "keep similar things playing" runs are included. | Partial | Every ledger start is a row (backend `ScreenPlaybackService` tests); the client lists rows as returned. **[NEEDS-SEEDED-BACKEND]** Shuffled/keep-similar starts are ledger rows server-side; journey fixture cannot drive real ledger. |
 | FIND.11a/AC3 | Any item there offers the same actions as everywhere else, including adding it to favourites. | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): a Played earlier row's ⋯ adds it to favourites (POST `household/favourites`, "Added Hospital to favourites"); rows carry the full verb set (3 viewports, `media-app-household-home.runtime.test.mjs`) |
 
 ### FIND.12a
@@ -266,7 +267,7 @@ As an **Ambient listener**, I want to keep favourites, so that the things we put
 |---|---|---|---|
 | FIND.12a/AC1 | Any item or collection can be added to or removed from favourites in one step, wherever it appears. | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): favourite added from a recent tile and removed from Details in one step each (3 viewports, `media-app-household-home.runtime.test.mjs`); search/browse rows offer it via ResultRow `extraActions` (unit) |
 | FIND.12a/AC2 | Favourites appear first on the start page and among suggestions. | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): Favourites is the first suggestions row and a newly added favourite leads it (3 viewports, `media-app-household-home.runtime.test.mjs`) |
-| FIND.12a/AC3 | Favourites are shared by the household (Q3); anyone can remove one. | Partial | Favourites are household-wide on the server (`/household/favourites`); any device's Remove sends DELETE (journey, unit). |
+| FIND.12a/AC3 | Favourites are shared by the household (Q3); anyone can remove one. | Partial | Favourites are household-wide on the server (`/household/favourites`); any device's Remove sends DELETE (journey, unit). **[NEEDS-SEEDED-BACKEND]** Household-wide favourites need real shared backend; journey only observes DELETE sent from one device. |
 
 ### FIND.12b
 
@@ -284,7 +285,7 @@ As a **Hand-Held Viewer**, I want to remove something from the household list, s
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
 | FIND.13a/AC1 | Any item in recent, carry on, or suggestions can be removed from the household list in one step. | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): Remove from household list in one step from a recent tile; it leaves Recent and Carry on (3 viewports, `media-app-household-home.runtime.test.mjs`) |
-| FIND.13a/AC2 | A removed item stops appearing in suggestions on every screen. | Partial | Server applies removals to suggestions on every screen (backend tests); client refetches every household view after a removal (`media-app-household-home.runtime.test.mjs` shows it gone from this screen's lists). |
+| FIND.13a/AC2 | A removed item stops appearing in suggestions on every screen. | Partial | Server applies removals to suggestions on every screen (backend tests); client refetches every household view after a removal (`media-app-household-home.runtime.test.mjs` shows it gone from this screen's lists). **[NEEDS-SEEDED-BACKEND]** Removals applied to suggestions on every screen is a server rule; journey shows only this screen. |
 | FIND.13a/AC3 | Removal can be undone for 10 seconds (default). | Accepted | Exact source `1dd7ea8f5` (`HOUSEHOLD-HOME`): the removal notice's Undo sends `DELETE household/removed?id=` and the item returns (3 viewports, `media-app-household-home.runtime.test.mjs`); unit `useHousehold.test.jsx` |
 
 ### PLAY.1a
@@ -293,11 +294,11 @@ As a **Seeker**, I want "play now" to play at my aim, whichever control I use, s
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLAY.1a/AC1 | "Play now" on a search result, a browsed item, an item's details, a suggestion, or a recent item all play at the aim shown on screen. | Partial | `JOURNEY-ORDINARY-REMOTE-PLAY-ADD` verifies ordinary aimed Search Play. `JOURNEY-RESULT-MORE-PLAY-NOW` verifies result-More Play now to the explicitly aimed receiver in both fork and fresh/default modes, with the latest paired run passing native new-visit, queue-tail and truthful-tray checks. The earlier source `8b338aefd02cc6047b624898574fe06569f6c697` run failed Detail’s tray check due to session buffering despite native advancement; `JOURNEY-PLAY-NOW-ENTRYPOINTS-REMOTE-CONTROLS` on `b750538ca82e315e66bfff2d22d7b2d237d2fd4d` subsequently passed Browse, Detail and Recents native new-visit and truthful-tray checks. Suggestions remain unverified. |
-| PLAY.1a/AC2 | The item starts now on that screen; whatever was queued after the old item stays queued (R1). | Partial | `JOURNEY-RESULT-MORE-PLAY-NOW` verifies an actual new receiver visit/revision, Disclosure retaining its `queueItemId` and queue tail, advancing native playback, and a matching tray in both explicit-fork and fresh/default modes on source `1cb363b1e73e1b6a3d5d11ee314ab7c3384f215d` (paired run 2/2). Earlier `d49abd2` fork evidence and `17602653` combined default tray failure are retained in the journey history; the latest paired run resolves that specific discrepancy. `JOURNEY-PLAY-NOW-ENTRYPOINTS-REMOTE-CONTROLS` also passed native new visits and same-tail checks for Browse, Detail and Recents on source `b750538ca82e315e66bfff2d22d7b2d237d2fd4d`; its remote-control flow failed before the queue identity/index assertions, so it does not verify remote Stop queue retention. Other Play now surfaces are not all covered by this paired result-More case. |
-| PLAY.1a/AC3 | A confirmation names the item and the screen (see `RELY.1`). | Partial | `JOURNEY-ORDINARY-REMOTE-PLAY-ADD` showed “Playing on Acceptance receiver” after matching receiver state. `JOURNEY-PLAY-NOW-ENTRYPOINTS-REMOTE-CONTROLS` also verified truthful tray feedback for Browse, Detail and Recents Play now; other surfaces remain unverified. |
-| PLAY.1a/AC4 | If the aim is busy with someone else's playback, the aim label says so before I tap (`PLACE.5`); the tap itself never stops to ask (R2). | Unverified | — |
-| PLAY.1a/AC5 | Tapping the same item again while it is still starting doesn't start it twice; the item reads "Starting on Living Room TV…" (R34). | Unverified | — |
+| PLAY.1a/AC1 | "Play now" on a search result, a browsed item, an item's details, a suggestion, or a recent item all play at the aim shown on screen. | Partial | `JOURNEY-ORDINARY-REMOTE-PLAY-ADD` verifies ordinary aimed Search Play. `JOURNEY-RESULT-MORE-PLAY-NOW` verifies result-More Play now to the explicitly aimed receiver in both fork and fresh/default modes, with the latest paired run passing native new-visit, queue-tail and truthful-tray checks. The earlier source `8b338aefd02cc6047b624898574fe06569f6c697` run failed Detail’s tray check due to session buffering despite native advancement; `JOURNEY-PLAY-NOW-ENTRYPOINTS-REMOTE-CONTROLS` on `b750538ca82e315e66bfff2d22d7b2d237d2fd4d` subsequently passed Browse, Detail and Recents native new-visit and truthful-tray checks. Suggestions remain unverified. **[NEEDS-JOURNEY]** Search, Browse, Detail, Recents Play now proven (desktop/3 sizes search); Suggestions tile Play now at remote aim not journeyed |
+| PLAY.1a/AC2 | The item starts now on that screen; whatever was queued after the old item stays queued (R1). | Accepted | PROOF-GAPS-PHASE0 (83d288916): media-app-result-play-now.runtime.test.mjs :: explicit fork: aimed More → Play Now starts a new receiver visit and preserves the queued tail (queueItemId/tail retained, new native visit advancing; also fresh/default test and media-app-play-now-entrypoints Browse/Detail/Recent test) |
+| PLAY.1a/AC3 | A confirmation names the item and the screen (see `RELY.1`). | Partial | `JOURNEY-ORDINARY-REMOTE-PLAY-ADD` showed “Playing on Acceptance receiver” after matching receiver state. `JOURNEY-PLAY-NOW-ENTRYPOINTS-REMOTE-CONTROLS` also verified truthful tray feedback for Browse, Detail and Recents Play now; other surfaces remain unverified. **[NEEDS-JOURNEY]** Tray asserts 'Playing on Acceptance receiver' (screen) but remote tray never asserts the item name |
+| PLAY.1a/AC4 | If the aim is busy with someone else's playback, the aim label says so before I tap (`PLACE.5`); the tap itself never stops to ask (R2). | Unverified | **[NEEDS-FIXTURE:receiver busy with another device's playback]** No journey asserts the aim label busy state or that the tap does not prompt |
+| PLAY.1a/AC5 | Tapping the same item again while it is still starting doesn't start it twice; the item reads "Starting on Living Room TV…" (R34). | Unverified | **[NEEDS-FEATURE:in-flight 'Starting on <screen>…' item label]** No such copy in frontend (only generic 'Starting…'); no double-tap-while-starting journey |
 
 ### PLAY.1b
 
@@ -314,9 +315,9 @@ As a **Wanderer**, I want to play a whole show or album in order, so that I don'
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLAY.2a/AC1 | A whole-collection "play" is available wherever the collection appears (result, browse, details). | Unverified | — |
-| PLAY.2a/AC2 | Playback starts at the first part (or the first unfinished part; see `PLAY.4`) and the queue lists the rest in order. | Unverified | — |
-| PLAY.2a/AC3 | Playing a collection replaces that screen's queue, in order with shuffle off. The confirmation names the collection, the number of items, and the screen, and offers undo (R1, R26). | Unverified | — |
+| PLAY.2a/AC1 | A whole-collection "play" is available wherever the collection appears (result, browse, details). | Partial | **[NEEDS-JOURNEY]** Result play-all (NF-TAP-02) and browse-dispatch-play visible; details collection Play not covered |
+| PLAY.2a/AC2 | Playback starts at the first part (or the first unfinished part; see `PLAY.4`) and the queue lists the rest in order. | Unverified | **[NEEDS-JOURNEY]** No journey asserts first/first-unfinished start and rest-in-order queue after collection Play |
+| PLAY.2a/AC3 | Playing a collection replaces that screen's queue, in order with shuffle off. The confirmation names the collection, the number of items, and the screen, and offers undo (R1, R26). | Unverified | **[NEEDS-JOURNEY]** NF-TAP-02 only asserts an outcome row exists; no replace, order, count/screen text or undo |
 
 ### PLAY.3a
 
@@ -324,9 +325,9 @@ As a **Queue Builder**, I want to shuffle a whole collection in one step, so tha
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLAY.3a/AC1 | "Shuffle" is offered beside "play" on every collection, wherever it appears. | Unverified | — |
-| PLAY.3a/AC2 | The queue shows the shuffled order and shuffle reads as on. | Unverified | — |
-| PLAY.3a/AC3 | Starting a collection with **Shuffle** turns shuffle on; starting one with **Play** turns it off (R26). | Unverified | — |
+| PLAY.3a/AC1 | "Shuffle" is offered beside "play" on every collection, wherever it appears. | Partial | **[NEEDS-JOURNEY]** Only browse-dispatch-shuffle visibility seen on browse header; result/details not covered |
+| PLAY.3a/AC2 | The queue shows the shuffled order and shuffle reads as on. | Unverified | **[NEEDS-JOURNEY]** No journey starts a collection with Shuffle and reads queue order/shuffle state |
+| PLAY.3a/AC3 | Starting a collection with **Shuffle** turns shuffle on; starting one with **Play** turns it off (R26). | Unverified | **[NEEDS-JOURNEY]** No journey checks Shuffle sets and Play clears shuffle on collection start |
 
 ### PLAY.4a
 
@@ -373,9 +374,9 @@ As a **Queue Builder**, I want one clear "play next" action, so that I know exac
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLAY.5a/AC1 | There is one "play next" verb, available on every item wherever it appears. | Unverified | — |
-| PLAY.5a/AC2 | The item appears immediately after what's playing now; if I add several, they play in the order I added them (Q4). | Unverified | — |
-| PLAY.5a/AC3 | The confirmation states the position and screen, for example "Next · 3rd in line on Kitchen speaker"; pressing and holding **Play next** offers "at the very front" (R27). | Unverified | — |
+| PLAY.5a/AC1 | There is one "play next" verb, available on every item wherever it appears. | Partial | **[NEEDS-JOURNEY]** playNext verb asserted visible only in Home recent tile menu; other surfaces not covered |
+| PLAY.5a/AC2 | The item appears immediately after what's playing now; if I add several, they play in the order I added them (Q4). | Unverified | **[NEEDS-JOURNEY]** No journey executes Play next or checks ordering of several |
+| PLAY.5a/AC3 | The confirmation states the position and screen, for example "Next · 3rd in line on Kitchen speaker"; pressing and holding **Play next** offers "at the very front" (R27). | Unverified | **[NEEDS-FEATURE:press-and-hold Play next 'at the very front']** No hold gesture in itemAction/UI; confirmation position text not journeyed |
 
 ### PLAY.6a
 
@@ -383,8 +384,8 @@ As a **Seeker**, I want to add something to the end without interrupting, so tha
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLAY.6a/AC1 | "Add to queue" is available on every item wherever it appears and uses the aim. | Partial | Desktop keyboard/pointer Add→held queue→explicit Play and actual receiver route pass. `JOURNEY-ORDINARY-REMOTE-PLAY-ADD` and `TASK-2-EXACT-RUNTIME-603DD2E` exercise aimed result-menu Add into the receiver; all-surface and device parity remain open. |
-| PLAY.6a/AC2 | What's playing continues without a pause or skip. | Partial | Paused video remains paused through Add (26262). Bundled accepted0c0c37e77 browser3846 GREEN9.3s: Arrival advances through Add, exact native node/currentSrc retained, no pause/emptied/loadstart events; queue grows to2 and query stays. `JOURNEY-ORDINARY-REMOTE-PLAY-ADD` and exact-source `TASK-2-EXACT-RUNTIME-603DD2E` also prove the same native node advances beyond a fresh pre-Add timestamp, stays unpaused, emits no pause/emptied/loadstart events, and receiver queue revision advances without changing playback revision. Other targets/devices remain open. |
+| PLAY.6a/AC1 | "Add to queue" is available on every item wherever it appears and uses the aim. | Partial | Desktop keyboard/pointer Add→held queue→explicit Play and actual receiver route pass. `JOURNEY-ORDINARY-REMOTE-PLAY-ADD` and `TASK-2-EXACT-RUNTIME-603DD2E` exercise aimed result-menu Add into the receiver; all-surface and device parity remain open. **[NEEDS-JOURNEY]** Add via search results at aim proven on 3 sizes (FIND.1b); Browse/Detail/Home tile Add not executed |
+| PLAY.6a/AC2 | What's playing continues without a pause or skip. | Accepted | PROOF-GAPS-PHASE0 (83d288916): media-app-queue-journey.runtime.test.mjs :: [PLAY.6a/AC2] Add keeps the actual playing video advancing without pause or reload (local: same node advancing, no pause/emptied/loadstart); remote proven by media-app-ordinary-dispatch.runtime.test.mjs :: ordinary aimed Play then Queue reaches the virtual screen receiver and truthful sender tray |
 | PLAY.6a/AC3 | The confirmation names the item, its position ("7th"), and the screen. | Accepted | `TASK-2-EXACT-RUNTIME-603DD2E`: on exact compiled source `603dd2ebbd9f85e1faff1bd4336929c8f1d73e00`, the combined actual-receiver Add/Next/Previous journey first proved authoritative queue growth and revision with Disclosure appended at ordinal 2 while Arrival and its owner/playback revision were preserved, then displayed `Added Disclosure Day to Acceptance receiver` and `2nd in queue`. The exact 16/16 runtime report is `/tmp/daylight-media-p0-evidence/603dd2ebbd9f85e1faff1bd4336929c8f1d73e00/task2/runtime.log`. |
 
 ### PLAY.7a
@@ -393,9 +394,9 @@ As a **Queue Builder**, I want to add a whole album or season to the queue, next
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLAY.7a/AC1 | Whole-collection "play next" and "add to queue" are available wherever a collection appears. | Unverified | — |
-| PLAY.7a/AC2 | The confirmation states how many items were added and where. | Unverified | — |
-| PLAY.7a/AC3 | The added items keep their natural order. | Unverified | — |
+| PLAY.7a/AC1 | Whole-collection "play next" and "add to queue" are available wherever a collection appears. | Partial | **[NEEDS-JOURNEY]** Only browse-dispatch-queue visibility asserted; whole-collection play next/add not executed or on other surfaces |
+| PLAY.7a/AC2 | The confirmation states how many items were added and where. | Unverified | **[NEEDS-JOURNEY]** No journey executes a collection Add/Play next and reads count/position confirmation |
+| PLAY.7a/AC3 | The added items keep their natural order. | Unverified | **[NEEDS-JOURNEY]** No journey checks added collection items keep natural order |
 
 ### PLAY.10a
 
@@ -414,10 +415,10 @@ As a **Big-Screen Sender**, I want the aim shown next to every play action, so t
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLACE.1a/AC1 | Everywhere a play or line-up action appears, the aim is visible on the same screen, on every device size. | Unverified | — |
-| PLACE.1a/AC2 | The aim uses the screen's name and room ("Living Room TV"), or "This device (Dad's phone)", or "3 screens" (R49). | Unverified | — |
-| PLACE.1a/AC3 | What the aim says is always what happens. No control ignores it. | Partial | JOURNEY-PEEK-AIM local playback after Office controls passes; all other surfaces/verbs pending |
-| PLACE.1a/AC4 | When I'm steering another screen, the aim is still shown as its own thing and does not change unless I change it (see Tension T2). | Partial | JOURNEY-PEEK-AIM proves no redirection; complete label visibility and other aims pending |
+| PLACE.1a/AC1 | Everywhere a play or line-up action appears, the aim is visible on the same screen, on every device size. | Partial | **[NEEDS-JOURNEY]** Aim line seen in search (phone/dock), browse header, Now Playing; Home tiles, Detail, item menus not asserted |
+| PLACE.1a/AC2 | The aim uses the screen's name and room ("Living Room TV"), or "This device (Dad's phone)", or "3 screens" (R49). | Partial | **[NEEDS-JOURNEY]** Names 'Acceptance receiver'/'This device' and 'A + B' asserted; room name and '3 screens' count not |
+| PLACE.1a/AC3 | What the aim says is always what happens. No control ignores it. | Partial | JOURNEY-PEEK-AIM local playback after Office controls passes; all other surfaces/verbs pending **[NEEDS-JOURNEY]** Search Play/Add and Add-to-this-queue honour aim; other surfaces/verbs (Play next, Shuffle, collections) not covered |
+| PLACE.1a/AC4 | When I'm steering another screen, the aim is still shown as its own thing and does not change unless I change it (see Tension T2). | Accepted | PROOF-GAPS-PHASE0 (83d288916): media-app-handle-controls.runtime.test.mjs :: STEER.1b/AC7 — Add to this queue opens the one search pointed at that screen, adds once, and the aim stays (aim-label text identical before/after while steering, phone+laptop) |
 
 ### PLACE.2a
 
@@ -428,9 +429,9 @@ As a **Big-Screen Sender**, I want to aim at a TV for the evening, so that every
 | PLACE.2a/AC1 | I can change the aim in one step from wherever the aim is shown. | Accepted | `JOURNEY-AIM-PERSISTENCE-MATRIX` covers phone SearchMode and tablet/laptop Browse headers; combined with the existing ordinary dock chooser and accepted `PLACE.2b` phone Browse chooser, all actual shared aim-change surfaces use the same visible target state. |
 | PLACE.2a/AC2 | The chosen aim persists as I move around the app and after a reload. | Accepted | `JOURNEY-AIM-PERSISTENCE-MATRIX`: target remained visible when navigating between SearchMode/Browse or Browse/dock and after reload on phone, tablet, and laptop. |
 | PLACE.2a/AC3 | After 2 hours of no use (default), the aim returns to "this device" on its own, so a phone is never left aimed at a TV for days (Q1). | Accepted | `JOURNEY-AIM-PERSISTENCE-MATRIX`: after two idle hours the visible aim became This device on phone, tablet, and laptop; reload retained the local aim. No device commands. |
-| PLACE.2a/AC4 | That clock doesn't run while the aimed screen is playing something this device sent or is steering (R4). | Partial | `JOURNEY-AIM-ACTIVE-SENT`, compiled `f2cf4d6fa89dd8a86994d7f644419402c0e9938d`, preview port 43877: ordinary aimed Play kept the actual native receiver video advancing/unpaused for >20s while the two-hour sender-clock jump retained finite exemption timestamps and the visible selected aim. `TASK-2-EXACT-RUNTIME-603DD2E` reran the strengthened matching-sent-playback case on exact source `603dd2e` as part of the 16/16 report. Separate actual-steering coverage remains open, so the criterion remains Partial. |
+| PLACE.2a/AC4 | That clock doesn't run while the aimed screen is playing something this device sent or is steering (R4). | Partial | `JOURNEY-AIM-ACTIVE-SENT`, compiled `f2cf4d6fa89dd8a86994d7f644419402c0e9938d`, preview port 43877: ordinary aimed Play kept the actual native receiver video advancing/unpaused for >20s while the two-hour sender-clock jump retained finite exemption timestamps and the visible selected aim. `TASK-2-EXACT-RUNTIME-603DD2E` reran the strengthened matching-sent-playback case on exact source `603dd2e` as part of the 16/16 report. Separate actual-steering coverage remains open, so the criterion remains Partial. **[NEEDS-JOURNEY]** Sent-playback exemption proven (JOURNEY-AIM-ACTIVE-SENT); steering-case clock exemption not journeyed |
 | PLACE.2a/AC5 | Opening the app after that much idle starts on "this device", even though a reload otherwise restores the aim (R7). | Accepted | JOURNEY-AIM-CLOSED-APP-EXPIRY, accepted source `1bc54a7d9f05732ecc25c1a047f900b4b8f6d6fd`, preview port 44769 header matched: closed page, reopened before expiry restores Office, then renewed aim and reopened after expiry; ordinary Search open showed This device before storage diagnostic. Focused run 1 passed (7.9s), zero device commands. Earlier failures were harness-ordering/setup results, not product evidence. |
-| PLACE.2a/AC6 | Every play and line-up action then uses it (see `PLAY.1a`). | Partial | `JOURNEY-ORDINARY-REMOTE-PLAY-ADD` verified ordinary Search Play and result-More Add against the aimed receiver. `JOURNEY-RESULT-MORE-PLAY-NOW` verifies result-More Play now against the explicitly aimed receiver in both fork and fresh/default modes, preserving the queue tail and advancing native playback; the latest paired run passed 2/2. This resolves the earlier default-mode tray discrepancy for that action. Other play/line-up verbs and surfaces remain unverified. |
+| PLACE.2a/AC6 | Every play and line-up action then uses it (see `PLAY.1a`). | Partial | `JOURNEY-ORDINARY-REMOTE-PLAY-ADD` verified ordinary Search Play and result-More Add against the aimed receiver. `JOURNEY-RESULT-MORE-PLAY-NOW` verifies result-More Play now against the explicitly aimed receiver in both fork and fresh/default modes, preserving the queue tail and advancing native playback; the latest paired run passed 2/2. This resolves the earlier default-mode tray discrepancy for that action. Other play/line-up verbs and surfaces remain unverified. **[NEEDS-JOURNEY]** Search Play, Play now, Add proven at aim; Play next, Shuffle, collection and other-surface verbs not |
 
 ### PLACE.2b
 
@@ -448,9 +449,9 @@ As a **Big-Screen Sender**, I want to send a single item to a different screen w
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLACE.3a/AC1 | Every item, wherever it appears, offers "play on…" (and "add to queue on…"). | Unverified | — |
-| PLACE.3a/AC2 | Choosing a screen sends only that item there; the aim reads the same afterwards. | Unverified | — |
-| PLACE.3a/AC3 | The confirmation names the item and the screen it went to. | Unverified | — |
+| PLACE.3a/AC1 | Every item, wherever it appears, offers "play on…" (and "add to queue on…"). | Partial | **[NEEDS-JOURNEY]** Play on… in result More menu and Home tile verbs (playOn/addOn); Browse/Detail/other not asserted |
+| PLACE.3a/AC2 | Choosing a screen sends only that item there; the aim reads the same afterwards. | Partial | **[NEEDS-JOURNEY]** Play on… send to receiver proven (household-home FIND.10a/AC3); aim-unchanged afterwards not asserted |
+| PLACE.3a/AC3 | The confirmation names the item and the screen it went to. | Unverified | **[NEEDS-JOURNEY]** No journey asserts the Play on… confirmation names item and screen |
 
 ### PLACE.3b
 
@@ -472,7 +473,7 @@ As a **Big-Screen Sender**, I want to play on several screens at once, so that t
 | PLACE.4a/AC3 | Progress and confirmation are shown per screen, so one failing doesn't hide the others succeeding. | Accepted | `BATCH-B-CONTROLS`: One outcome per screen: "Playing on Acceptance receiver" and "Playing on Acceptance second". `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
 | PLACE.4a/AC4 | The screens start at about the same time, then each is steered on its own; they may drift apart (Q8). | Accepted | `BATCH-B-CONTROLS`: Both started; seeking one left the other's spot untouched. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
 | PLACE.4a/AC5 | Either screen's Remote offers **Line up with Kitchen** to bring them back together (R29). | Accepted | `BATCH-B-CONTROLS`: A's Remote offered "Line up with Acceptance second"; afterwards the two spots were within 8 s; tray "Lined up …". `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
-| PLACE.4a/AC6 | Choosing screens in the same or neighbouring rooms warns that drift may be audible (R29). | Partial | `BATCH-B-CONTROLS`: Same-room warning shown for two screens in one registry room (journey screenshot `several-screens-drift-phone`). "Neighbouring" rooms cannot be detected: the screen registry has rooms but no adjacency. |
+| PLACE.4a/AC6 | Choosing screens in the same or neighbouring rooms warns that drift may be audible (R29). | Partial | `BATCH-B-CONTROLS`: Same-room warning shown for two screens in one registry room (journey screenshot `several-screens-drift-phone`). "Neighbouring" rooms cannot be detected: the screen registry has rooms but no adjacency. **[NEEDS-FEATURE:room adjacency (neighbouring rooms)]** Same-room warning journeyed; screen registry has no adjacency data/code |
 | PLACE.4a/AC7 | **Add to queue** with several screens aimed adds to each, and the confirmation says so (R29). | Accepted | `BATCH-B-CONTROLS`: Add to Queue with both aimed: "Added Keepy Uppy to …" for each screen. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
 
 ### PLACE.5a
@@ -481,10 +482,10 @@ As a **Big-Screen Sender**, I want to see what each screen is doing while I choo
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLACE.5a/AC1 | Each choice shows the screen's name, room, and whether it is playing (with title and time left), paused, idle, or off. | Unverified | — |
-| PLACE.5a/AC2 | Screens that haven't reported in the last 2 minutes (default) are marked as uncertain. | Unverified | — |
-| PLACE.5a/AC3 | Choosing a screen that is playing someone else's content warns me what will be replaced before it happens, and the aim label keeps showing that it's busy, so no later tap needs to ask (R2). | Unverified | — |
-| PLACE.5a/AC4 | "Someone else's playback" means something started from a different device, or by a routine, since that screen was last idle (R3). | Unverified | — |
+| PLACE.5a/AC1 | Each choice shows the screen's name, room, and whether it is playing (with title and time left), paused, idle, or off. | Partial | **[NEEDS-FIXTURE:receivers paused/idle/off with title and time left]** Only 'Playing' status in picker asserted |
+| PLACE.5a/AC2 | Screens that haven't reported in the last 2 minutes (default) are marked as uncertain. | Unverified | **[NEEDS-FIXTURE:time-to-live (2-minute stale heartbeat)]** No journey ages a screen to stale/uncertain |
+| PLACE.5a/AC3 | Choosing a screen that is playing someone else's content warns me what will be replaced before it happens, and the aim label keeps showing that it's busy, so no later tap needs to ask (R2). | Partial | **[NEEDS-JOURNEY]** Busy warning appears and send needs confirm tap (NF-TAP-10); warning text and busy aim label not asserted |
+| PLACE.5a/AC4 | "Someone else's playback" means something started from a different device, or by a routine, since that screen was last idle (R3). | Unverified | **[NEEDS-FIXTURE:screen playing content started by a different device or routine]** Only same-device busy case exists |
 
 ### PLACE.6a
 
@@ -492,10 +493,10 @@ As a **Room Hopper**, I want to decide, when I send, whether this device stops o
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLACE.6a/AC1 | Whenever this device is playing and the aim is another screen, the aim label shows what will happen here ("move it" or "keep playing here too"), and I can change it there before tapping, on every device size (R2). | Unverified | — |
-| PLACE.6a/AC2 | A one-off **Play on…** or **Move to…** asks at that moment, pre-set to my usual choice. | Partial | Now Playing's **Move to…** hand-off picker asks Move/Keep, but the item-level **Play on…** path uses item-action/fork, has no movable session snapshot, disables Move, and does not show a remembered stop/keep choice. The prior Task 5 Now Playing evidence therefore did not prove this whole criterion. |
-| PLACE.6a/AC3 | My usual choice is remembered and pre-selected, and visible before I confirm. | Unverified | — |
-| PLACE.6a/AC4 | Afterwards, this device does exactly what the choice said. | Unverified | — |
+| PLACE.6a/AC1 | Whenever this device is playing and the aim is another screen, the aim label shows what will happen here ("move it" or "keep playing here too"), and I can change it there before tapping, on every device size (R2). | Partial | **[NEEDS-JOURNEY]** Handoff picker shows Move playback/Keep playing here too (desktop); aim label and every size not covered |
+| PLACE.6a/AC2 | A one-off **Play on…** or **Move to…** asks at that moment, pre-set to my usual choice. | Partial | Now Playing's **Move to…** hand-off picker asks Move/Keep, but the item-level **Play on…** path uses item-action/fork, has no movable session snapshot, disables Move, and does not show a remembered stop/keep choice. The prior Task 5 Now Playing evidence therefore did not prove this whole criterion. **[NEEDS-FEATURE:item-level Play on… Move/keep choice]** ItemDestinationPicker has no transfer/fork choice; Now Playing hand-off only |
+| PLACE.6a/AC3 | My usual choice is remembered and pre-selected, and visible before I confirm. | Unverified | **[NEEDS-JOURNEY]** No journey checks remembered/pre-selected move-keep choice |
+| PLACE.6a/AC4 | Afterwards, this device does exactly what the choice said. | Partial | **[NEEDS-JOURNEY]** Move stops this device (move-safety paused move); keep-playing success path not asserted |
 
 ### PLACE.7a
 
@@ -503,11 +504,11 @@ As a **Room Hopper**, I want to bring what's playing on the TV to the device in 
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| PLACE.7a/AC1 | Wherever I can see another screen's playback (the house overview or its controls), "move to this device" is offered. | Unverified | — |
-| PLACE.7a/AC2 | This device starts the same item at the same moment with the same queue; the other screen stops. | Unverified | — |
-| PLACE.7a/AC3 | A confirmation says it moved, and from where. | Unverified | — |
-| PLACE.7a/AC4 | If it can't move, I'm told why and the other screen keeps playing. | Unverified | — |
-| PLACE.7a/AC5 | Video, audio, and photo slideshows move at the same spot; a live channel or camera simply starts fresh on the new screen (Q5). | Unverified | — |
+| PLACE.7a/AC1 | Wherever I can see another screen's playback (the house overview or its controls), "move to this device" is offered. | Partial | **[NEEDS-FEATURE:house row Move here (disabled in FleetView)]** Remote Move to… offers This device, but the house overview row's Move here button is disabled |
+| PLACE.7a/AC2 | This device starts the same item at the same moment with the same queue; the other screen stops. | Partial | **[NEEDS-JOURNEY]** Same item and position at this device, source stops (PLACE.9a); same queue not asserted |
+| PLACE.7a/AC3 | A confirmation says it moved, and from where. | Partial | **[NEEDS-JOURNEY]** Source screen note 'Moved by…' and 'Moved Arrival here' asserted; local confirmation naming origin not asserted |
+| PLACE.7a/AC4 | If it can't move, I'm told why and the other screen keeps playing. | Unverified | **[NEEDS-FIXTURE:move-here failure (source unreachable/refuses)]** No journey fails a move to this device |
+| PLACE.7a/AC5 | Video, audio, and photo slideshows move at the same spot; a live channel or camera simply starts fresh on the new screen (Q5). | Unverified | **[NEEDS-FIXTURE:photo slideshow and live channel content]** Only video (and Faith audio) fixtures; no slideshow/live move |
 
 ### PLACE.8a
 
@@ -516,9 +517,9 @@ As a **Room Hopper**, I want to send what's playing here to a TV at the same mom
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
 | PLACE.8a/AC1 | From the handle on my own playback, "move to…" is offered, wherever I am in the app. | Accepted | `TASK-5-EXACT-RUNTIME`: after an ordinary Search play, the persistent handle opened full controls and the shared hand-off picker offered **Move playback to Living Room TV**. The exact journey uses ordinary pointer input and no store/controller mutation. `JOURNEY-TASK5-HANDOFF-PICKER`. |
-| PLACE.8a/AC2 | The chosen screen starts at the same moment with the same queue. | Unverified | — |
-| PLACE.8a/AC3 | This device stops or keeps playing according to `PLACE.6`. | Unverified | — |
-| PLACE.8a/AC4 | Progress and confirmation follow `RELY.2` and `RELY.3`. | Unverified | — |
+| PLACE.8a/AC2 | The chosen screen starts at the same moment with the same queue. | Partial | **[NEEDS-JOURNEY]** Paused Arrival starts at same position on chosen screen (move-safety); same queue not asserted |
+| PLACE.8a/AC3 | This device stops or keeps playing according to `PLACE.6`. | Partial | **[NEEDS-JOURNEY]** Move stops this device proven; Keep playing here too success path not asserted |
+| PLACE.8a/AC4 | Progress and confirmation follow `RELY.2` and `RELY.3`. | Unverified | **[NEEDS-JOURNEY]** No hand-off journey asserts progress/confirmation per RELY.2/3 |
 
 ### PLACE.9a
 
@@ -536,11 +537,11 @@ As a **Hand-Held Viewer**, I want a persistent handle on what's playing here, so
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| STEER.1a/AC1 | While anything is playing or paused on this device, a compact handle is visible in every part of the app with title, picture, progress, and play/pause. | Unverified | — |
+| STEER.1a/AC1 | While anything is playing or paused on this device, a compact handle is visible in every part of the app with title, picture, progress, and play/pause. | Partial | **[NEEDS-JOURNEY]** Handle title+play/pause seen on search/home/fleet; no assertion of picture or progress, nor every area |
 | STEER.1a/AC2 | Tapping it opens full controls and the queue. | Accepted | `TASK-5-EXACT-RUNTIME`: ordinary local playback exposed the compact handle; tapping its accessible title opened Now Playing with the shared transport and visible queue panel. `JOURNEY-TASK5-HANDOFF-PICKER`. |
 | STEER.1a/AC3 | When full controls are open, the compact handle doesn't duplicate them. | Accepted | `TASK-5-EXACT-RUNTIME`: after opening full controls from the compact handle, the journey asserted that `media-mini-player` had count zero while full transport and queue remained visible. `JOURNEY-TASK5-HANDOFF-PICKER`. |
-| STEER.1a/AC4 | The handle also covers the screen I most recently sent to or steered, so pausing the TV when the phone rings is one tap (R21). | Unverified | — |
-| STEER.1a/AC5 | The same controls are available from the lock screen and notifications (R21). | Partial | `BATCH-B-CONTROLS`: Journey: `navigator.mediaSession` metadata title "Hospital" and `playbackState: playing` for local playback. System button presses are unit-only (`useMediaSession.test.js`); no physical lock screen was driven. |
+| STEER.1a/AC4 | The handle also covers the screen I most recently sent to or steered, so pausing the TV when the phone rings is one tap (R21). | Unverified | **[NEEDS-FEATURE:handle control for most-recently steered screen]** Handle only has local controls plus Pause all/Resume all menu; no per-screen steer control |
+| STEER.1a/AC5 | The same controls are available from the lock screen and notifications (R21). | Partial | `BATCH-B-CONTROLS`: Journey: `navigator.mediaSession` metadata title "Hospital" and `playbackState: playing` for local playback. System button presses are unit-only (`useMediaSession.test.js`); no physical lock screen was driven. **[NEEDS-DEVICE:phone lock screen]** mediaSession metadata/state asserted; system buttons never pressed on a real lock screen |
 
 ### STEER.1b
 
@@ -548,12 +549,12 @@ As a **House Watch**, I want to steer another screen with the same controls I us
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| STEER.1b/AC1 | Opening another screen's playback shows the same controls, in the same layout, with that screen's name clearly at the top. | Unverified | — |
-| STEER.1b/AC2 | Controls the screen can't support are shown as unavailable with a short reason, not missing. | Unverified | — |
-| STEER.1b/AC3 | It is always obvious which screen I am steering, and I can switch to another in one step. | Unverified | — |
-| STEER.1b/AC4 | Leaving the controls of another screen never changes my aim. | Unverified | — |
+| STEER.1b/AC1 | Opening another screen's playback shows the same controls, in the same layout, with that screen's name clearly at the top. | Partial | **[NEEDS-JOURNEY]** Remote controls proven on 3 viewports, but screen-name-at-top and same-layout-as-local never asserted on real receiver |
+| STEER.1b/AC2 | Controls the screen can't support are shown as unavailable with a short reason, not missing. | Partial | **[NEEDS-FIXTURE:receiver lacking a capability (no seek/speed)]** Offline disabled + 'This device is offline' proven; capability-limited screen with reason not exercised |
+| STEER.1b/AC3 | It is always obvious which screen I am steering, and I can switch to another in one step. | Partial | **[NEEDS-JOURNEY]** Aim label shown and aim-back switch proven; switching the steered screen from its controls in one step not journeyed |
+| STEER.1b/AC4 | Leaving the controls of another screen never changes my aim. | Partial | **[NEEDS-JOURNEY]** Opening controls / Add keep aim; no journey leaves another screen's controls then asserts aim unchanged |
 | STEER.1b/AC5 | When I pause, stop, replace, or move another screen's playback, that screen shows a brief note saying where it came from, for example "Paused from Dad's phone", with **Put it back** (Q7, R30). | Accepted | `BATCH-B-CONTROLS`: Note names the change and the device it came from ("Paused by Browser …") with Put it back. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
-| STEER.1b/AC6 | Volume changes don't produce notes, and repeated notes are grouped. A screen that can't show a note, such as a speaker, records it on its row in the house view (R30). | Partial | House-view half: a speaker's `controls.notes` are listed on its row, grouped (×N), with Put it back while available (unit `shell/FleetView.house.test.jsx`). The screen-side grouping and volume rule are covered by `screen-session-controls.runtime.test.mjs`. No speaker runtime evidence. |
+| STEER.1b/AC6 | Volume changes don't produce notes, and repeated notes are grouped. A screen that can't show a note, such as a speaker, records it on its row in the house view (R30). | Partial | House-view half: a speaker's `controls.notes` are listed on its row, grouped (×N), with Put it back while available (unit `shell/FleetView.house.test.jsx`). The screen-side grouping and volume rule are covered by `screen-session-controls.runtime.test.mjs`. No speaker runtime evidence. **[NEEDS-FIXTURE:speaker device in house view]** Screen-side grouping (2x) and volume-no-note proven via API setup; speaker row notes unit-only |
 | STEER.1b/AC7 | While controlling another screen, **Add to this queue** opens the one search pointed at that screen for that add only; my aim doesn't change (R23). | Accepted | `BATCH-B-CONTROLS`: Remote → Add to this queue opened the search ("Adding to the queue on Acceptance receiver — just this once"); a pick added it there (tray "Added Keepy Uppy to …"), search closed, aim label unchanged; phone and laptop. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
 
 ### STEER.1c
@@ -581,10 +582,10 @@ As a **House Watch**, I want to pause, resume, and skip on any screen, so that I
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| STEER.3a/AC1 | Play/pause is one control that shows whether it is playing or paused. | Partial | `JOURNEY-LOCAL` verifies local pause/resume. `JOURNEY-REMOTE-CONTROLS-C21` verifies the visible fleet Peek toggle changes actual receiver native pause/play state and exposes the corresponding Play/Pause action; parity across duplicate controls/surfaces remains unverified. |
-| STEER.3a/AC2 | Skip forward and back are available for any queue. | Partial | `JOURNEY-REMOTE-QUEUE-SKIP-09B9` exposed the old Previous restart defect after Next had advanced the actual two-item queue. `TASK-2-EXACT-RUNTIME-603DD2E` proves the repair on exact source `603dd2e`: Next selected Disclosure/index 1 and Previous returned to Arrival/index 0 through correlated commands, with ordered queue IDs and owner instance preserved, playback revision increased, and native media changed and advanced unpaused in each direction. “Any queue” and broader surface/device coverage remain open, so the criterion remains Partial. Existing ±10 evidence is `seekRel` and belongs to STEER.4a/AC2, not this criterion. |
-| STEER.3a/AC3 | After a press, the control reflects the change within 2 seconds, or tells me it hasn't happened yet (R46). | Partial | `JOURNEY-REMOTE-CONTROLS-B63` and `JOURNEY-REMOTE-CONTROLS-RESPONSIVE-B63`: one Pause press showed paused UI or visible pending feedback within 2 seconds, then correlated ack, receiver paused state and native pause were verified on desktop, phone and tablet. This timing/feedback assertion was not applied to every control or surface. |
-| STEER.3a/AC4 | If the screen can't be reached, the press reads "not sent" and is never carried out later (R35). | Partial | `JOURNEY-REMOTE-CONTROLS-B63`: after real receiver disconnect, Offline/disabled control was visibly tappable; tapping caused zero transport POSTs for 5 seconds, and actual receiver reconnect caused no deferred POST for the next 5 seconds. Runtime verified disabled offline UI (“This device is offline”), not a `DEVICE_OFFLINE` rejection or “Not sent” copy. `TransportBar.test.jsx` covers that explicit rejection copy at unit level only. Uncommitted `SessionControlService.offline.characterization.test.mjs` passed 1/1 for the existing service's `DEVICE_OFFLINE` zero-send and no-replay behavior; it is characterization, not a RED product test. |
+| STEER.3a/AC1 | Play/pause is one control that shows whether it is playing or paused. | Accepted | PROOF-GAPS-PHASE0 (83d288916): media-app-playback-journey.runtime.test.mjs :: [STEER.3a/AC1][STEER.3a/AC3] pause and resume reflect the real player without a false startup stall (np-toggle name Pause/Play follows real video.paused); also media-app-mini-toggle.runtime.test.mjs :: mini player shows exactly one transport button that toggles; media-app-remote-controls.runtime.test.mjs :: Peek Pause, Resume, and Seek control the actual receiver video while paused (phone/tablet/desktop) |
+| STEER.3a/AC2 | Skip forward and back are available for any queue. | Partial | `JOURNEY-REMOTE-QUEUE-SKIP-09B9` exposed the old Previous restart defect after Next had advanced the actual two-item queue. `TASK-2-EXACT-RUNTIME-603DD2E` proves the repair on exact source `603dd2e`: Next selected Disclosure/index 1 and Previous returned to Arrival/index 0 through correlated commands, with ordered queue IDs and owner instance preserved, playback revision increased, and native media changed and advanced unpaused in each direction. “Any queue” and broader surface/device coverage remain open, so the criterion remains Partial. Existing ±10 evidence is `seekRel` and belongs to STEER.4a/AC2, not this criterion. **[NEEDS-JOURNEY]** Remote Next/Previous proven on 2-item queue; local Previous and non-video queues not exercised |
+| STEER.3a/AC3 | After a press, the control reflects the change within 2 seconds, or tells me it hasn't happened yet (R46). | Partial | `JOURNEY-REMOTE-CONTROLS-B63` and `JOURNEY-REMOTE-CONTROLS-RESPONSIVE-B63`: one Pause press showed paused UI or visible pending feedback within 2 seconds, then correlated ack, receiver paused state and native pause were verified on desktop, phone and tablet. This timing/feedback assertion was not applied to every control or surface. **[NEEDS-JOURNEY]** 2s feedback asserted for Pause only; not for other controls/surfaces |
+| STEER.3a/AC4 | If the screen can't be reached, the press reads "not sent" and is never carried out later (R35). | Partial | `JOURNEY-REMOTE-CONTROLS-B63`: after real receiver disconnect, Offline/disabled control was visibly tappable; tapping caused zero transport POSTs for 5 seconds, and actual receiver reconnect caused no deferred POST for the next 5 seconds. Runtime verified disabled offline UI (“This device is offline”), not a `DEVICE_OFFLINE` rejection or “Not sent” copy. `TransportBar.test.jsx` covers that explicit rejection copy at unit level only. Uncommitted `SessionControlService.offline.characterization.test.mjs` passed 1/1 for the existing service's `DEVICE_OFFLINE` zero-send and no-replay behavior; it is characterization, not a RED product test. **[NEEDS-FIXTURE:receiver that looks online but rejects send with DEVICE_OFFLINE]** Disabled offline UI + zero POSTs proven; 'Not sent' copy never shown at runtime |
 
 ### STEER.4a
 
@@ -592,9 +593,9 @@ As a **Hand-Held Viewer**, I want to scrub and jump a few seconds back or forwar
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| STEER.4a/AC1 | A position bar can be dragged; the time is shown while dragging. | Partial | `JOURNEY-PAUSED-SEEK` verifies local seek completion. `JOURNEY-REMOTE-CONTROLS-C21` verifies a real 12% drag while paused, elapsed time matching the target, and native video settling at the requested position without resuming. Broader viewport/receiver parity remains unverified. |
-| STEER.4a/AC2 | Jump back and forward buttons are present for every playback, local or on another screen. | Partial | `JOURNEY-LOCAL` verifies local ±10-second jumps. `JOURNEY-REMOTE-CONTROLS-C21` verifies remote paused ±10 controls reached matching native positions in both directions; coverage is one remote item/surface, not every playback context. |
-| STEER.4a/AC3 | Live content shows that it's live and offers "go to live" instead of a position. | Unverified | Task 2 gives local/remote seek capabilities an explicit `{ seekable, live, reason }` contract and renders the live reason in shared transport/seek UI tests. No actual live source journey has run, and Go to live is not implemented, so this remains unverified. |
+| STEER.4a/AC1 | A position bar can be dragged; the time is shown while dragging. | Accepted | PROOF-GAPS-PHASE0 (83d288916): media-app-remote-controls.runtime.test.mjs :: Peek Pause, Resume, and Seek control the actual receiver video while paused (real mouse drag, np-seek-elapsed matches target while dragging, native settles; run on phone/tablet/desktop and audio); local: media-app-playback-journey.runtime.test.mjs :: [PLAY.1b/AC1][STEER.4a/AC1] discovered movie duration and progress reach the visible seek bar |
+| STEER.4a/AC2 | Jump back and forward buttons are present for every playback, local or on another screen. | Accepted | PROOF-GAPS-PHASE0 (83d288916): media-app-playback-journey.runtime.test.mjs :: [STEER.4a/AC2] forward and back controls seek the real video (local +/-10 on real video); media-app-remote-controls.runtime.test.mjs :: Peek Pause, Resume, and Seek control the actual Faith audio while paused (remote np-ffw/np-rew +/-10 on native, video and audio, 3 viewports) |
+| STEER.4a/AC3 | Live content shows that it's live and offers "go to live" instead of a position. | Unverified | Task 2 gives local/remote seek capabilities an explicit `{ seekable, live, reason }` contract and renders the live reason in shared transport/seek UI tests. No actual live source journey has run, and Go to live is not implemented, so this remains unverified. **[NEEDS-FEATURE:Go to live control]** SeekBar shows LIVE badge only; no 'Go to live' exists in frontend or backend; no live-source journey |
 
 ### STEER.5a
 
@@ -602,9 +603,9 @@ As a **House Watch**, I want to change volume and speed for whatever I'm steerin
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| STEER.5a/AC1 | Volume can be changed with large tap targets (steps up and down), not only by dragging, and the level is shown. | Unverified | — |
-| STEER.5a/AC2 | Speed can be changed for spoken word and video wherever the screen supports it. | Unverified | — |
-| STEER.5a/AC3 | Changes take effect on the screen being steered, not on this device. | Unverified | — |
+| STEER.5a/AC1 | Volume can be changed with large tap targets (steps up and down), not only by dragging, and the level is shown. | Partial | **[NEEDS-JOURNEY]** Local +/- steps change real video.volume and show level; remote volume steps not journeyed |
+| STEER.5a/AC2 | Speed can be changed for spoken word and video wherever the screen supports it. | Partial | **[NEEDS-JOURNEY]** np-rate changes real playbackRate for local video only; spoken word and remote speed not journeyed |
+| STEER.5a/AC3 | Changes take effect on the screen being steered, not on this device. | Unverified | **[NEEDS-JOURNEY]** Remote volume/speed exercised only via API, never via UI on the steered screen |
 
 ### STEER.6a
 
@@ -612,10 +613,10 @@ As a **Fixer**, I want to stop playback and know what stopping leaves, so that I
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| STEER.6a/AC1 | There is one "stop" control, meaning the same thing everywhere. | Partial | `JOURNEY-STOP-RESTART` verifies local Stop; `JOURNEY-REMOTE-STOP-PLAY` verifies remote Stop via correlated ack, ready/null-current receiver state, native pause/reset and successful same-item Play resume. Consistent semantics across all surfaces remain unverified. |
-| STEER.6a/AC2 | After stopping, I'm told what remains ("Queue kept: 8 items") and can reopen it. | Partial | `JOURNEY-STOP-RESTART` verifies local queue reopen. `JOURNEY-REMOTE-STOP-PLAY` on c21 verifies remote queue-retained feedback, exact queue identity, Open queue and Play resume. Broader device/surface parity remains unverified. |
+| STEER.6a/AC1 | There is one "stop" control, meaning the same thing everywhere. | Accepted | PROOF-GAPS-PHASE0 (83d288916): media-app-playback-journey.runtime.test.mjs :: [STEER.6a/AC1][STEER.6a/AC2][STEER.7a/AC2] stop ends actual playback and keeps the queue reachable (np-stop); media-app-stop-flow.runtime.test.mjs :: Stop keeps the queue reachable and separates Clear (mini-stop); media-app-remote-controls.runtime.test.mjs :: Peek Stop retains the receiver queue and Play resumes the stopped item (remote np-stop: ready/null current, queue kept, native reset) |
+| STEER.6a/AC2 | After stopping, I'm told what remains ("Queue kept: 8 items") and can reopen it. | Accepted | PROOF-GAPS-PHASE0 (83d288916): media-app-playback-journey.runtime.test.mjs :: [STEER.6a/AC2] Stop explicitly says how many queue items were kept (text visible in viewport, persists, reopen); media-app-remote-controls.runtime.test.mjs :: Peek Stop retains the receiver queue and Play resumes the stopped item (peek-queue-kept 'Queue kept: N item(s)', Open queue lists items) |
 | STEER.6a/AC3 | Emptying the queue is a separate, clearly named action (`STEER.8`). | Accepted | `TASK-5-EXACT-RUNTIME`: ordinary Stop left a visible `1 item ready` handle; reopening it showed an enabled, separately named **Clear queue** action. `JOURNEY-TASK5-STOP-FLOW`. |
-| STEER.6a/AC4 | Where the screen supports it, stop also offers **and turn the screen off** (R42). | Partial | Stop offers **Stop and turn the screen off** only for screens with `device_control` that are not speakers or browsers (stop, then `/device/:id/off`); unit `shell/FleetView.house.test.jsx`. The virtual receiver has no device control and physical screens other than Office are off limits, so no runtime evidence. |
+| STEER.6a/AC4 | Where the screen supports it, stop also offers **and turn the screen off** (R42). | Unverified | Stop offers **Stop and turn the screen off** only for screens with `device_control` that are not speakers or browsers (stop, then `/device/:id/off`); unit `shell/FleetView.house.test.jsx`. The virtual receiver has no device control and physical screens other than Office are off limits, so no runtime evidence. **[NEEDS-FIXTURE:virtual receiver with device_control for stop-and-turn-off]** Unit-only; no journey and the virtual receiver has no device control |
 
 ### STEER.10a
 
@@ -624,7 +625,7 @@ As a **Resumer**, I want a sleep timer, so that a bedtime audiobook stops once I
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
 | STEER.10a/AC1 | I can set it to stop after a number of minutes, or at the end of this chapter or episode. | Accepted | `BATCH-B-CONTROLS`: Menu offers 15–90 minutes and "At the end of this item"; minutes set on a Remote (published `minutes: 30`), end-of-item on this device stopped at the item end. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
-| STEER.10a/AC2 | Playback fades out rather than cutting off, and the time left shows on the handle. | Partial | `BATCH-B-CONTROLS`: Time left shows on the handle (end-of-item sleep, journey) and on a Remote ("Sleep in 30:00"). The 10 s fade is unit-only (`LocalSessionController.sessionControls.test.js`, `PlayerBridge.test.jsx`): no journey waits out a minutes timer. |
+| STEER.10a/AC2 | Playback fades out rather than cutting off, and the time left shows on the handle. | Partial | `BATCH-B-CONTROLS`: Time left shows on the handle (end-of-item sleep, journey) and on a Remote ("Sleep in 30:00"). The 10 s fade is unit-only (`LocalSessionController.sessionControls.test.js`, `PlayerBridge.test.jsx`): no journey waits out a minutes timer. **[NEEDS-JOURNEY]** Fade (volume ramp) proven only with API-set 15s timer; time-left on handle only for end-of-item, not a minutes timer via UI |
 | STEER.10a/AC3 | Continue later offers both where it stopped and where the timer was set. | Accepted | `BATCH-B-CONTROLS`: After the end-of-item stop: "Continue where it stopped" and "Continue from m:ss, where the timer was set"; the latter resumed within 15 s of the set spot. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
 
 ### STEER.11a
@@ -635,7 +636,7 @@ As a **House Watch**, I want to pause or stop every screen at once, so that I ca
 |---|---|---|---|
 | STEER.11a/AC1 | **Pause all** and **Stop all** are on the house view and the handle. | Accepted | `BATCH-C-HOUSE`: Pause all / Stop all on the house view (tablet) and in the handle's house menu (phone). `media-app-house-view.runtime.test.mjs`. |
 | STEER.11a/AC2 | After pausing all, **Resume all** brings back exactly the screens that were playing. | Accepted | `BATCH-C-HOUSE`: from the handle, Pause all paused the receiver and this phone's own video ("Paused 2 screens"); **Resume all (2)** played both again; on the house view Resume all (1) resumed exactly the one paused receiver. `media-app-house-view.runtime.test.mjs`. |
-| STEER.11a/AC3 | Screens that couldn't be reached are listed as not paused. | Partial | Offline screens are listed "not reachable" and non-answering ones "didn't answer" in the outcome (unit `house/houseQuiet.test.jsx`, `cast/DispatchProgressTray.house.test.jsx`); the acceptance fixture has one screen and no unreachable one, so no journey evidence. |
+| STEER.11a/AC3 | Screens that couldn't be reached are listed as not paused. | Unverified | Offline screens are listed "not reachable" and non-answering ones "didn't answer" in the outcome (unit `house/houseQuiet.test.jsx`, `cast/DispatchProgressTray.house.test.jsx`); the acceptance fixture has one screen and no unreachable one, so no journey evidence. **[NEEDS-FIXTURE:unreachable screen in the house]** Unit-only; fixture has no unreachable screen |
 
 ### STEER.12a
 
@@ -653,11 +654,11 @@ As a **Queue Builder**, I want to open the queue for any playback from anywhere,
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| STEER.7a/AC1 | The queue is reachable in one step from the handle on my playback and from any screen's controls. | Unverified | — |
-| STEER.7a/AC2 | It's still reachable after stopping, until I clear it or start fresh. | Partial | JOURNEY-STOP-RESTART local reopen and actual restart pass; clear/reset and remote journeys pending |
-| STEER.7a/AC3 | It shows what's playing now, what's next (including items placed "next"), and a count. | Unverified | — |
-| STEER.7a/AC4 | Photos have a queue like video and audio; a live channel or camera is a single thing with no queue or position (Q5). | Unverified | — |
-| STEER.7a/AC5 | Each queue also shows what **played earlier** (`FIND.11`). | Unverified | — |
+| STEER.7a/AC1 | The queue is reachable in one step from the handle on my playback and from any screen's controls. | Accepted | PROOF-GAPS-PHASE0 (83d288916): media-app-queue-journey.runtime.test.mjs :: [PLAY.6a/AC1][STEER.8a/AC2] add without interrupting, then jump to a same-title queue entry at zero (one click on handle's mini-player-open-nowplaying shows queue-panel entries); media-app-remote-controls.runtime.test.mjs :: Peek Stop retains the receiver queue and Play resumes the stopped item (queue-jump rows in screen's controls, peek-open-queue one click) |
+| STEER.7a/AC2 | It's still reachable after stopping, until I clear it or start fresh. | Accepted | PROOF-GAPS-PHASE0 (83d288916): media-app-playback-journey.runtime.test.mjs :: [STEER.6a/AC1][STEER.6a/AC2][STEER.7a/AC2] stop ends actual playback and keeps the queue reachable; remote: media-app-remote-controls.runtime.test.mjs :: Peek Stop retains the receiver queue and Play resumes the stopped item; ends at Start fresh: media-app-reset-confirm.runtime.test.mjs :: [RELY.8a] Start fresh lists exactly what it clears, keeps what is unticked, and confirms first (handle and queue gone, stays gone after reload) |
+| STEER.7a/AC3 | It shows what's playing now, what's next (including items placed "next"), and a count. | Partial | **[NEEDS-JOURNEY]** Queue rows and handle count (1/2) asserted; items placed 'next' ordering and 'what's next' never asserted |
+| STEER.7a/AC4 | Photos have a queue like video and audio; a live channel or camera is a single thing with no queue or position (Q5). | Unverified | **[NEEDS-FIXTURE:photo queue and live source]** No photo queue or live item journey exists |
+| STEER.7a/AC5 | Each queue also shows what **played earlier** (`FIND.11`). | Partial | **[NEEDS-SEEDED-BACKEND]** This-screen Played earlier shown but from stubbed API in household-home journey; remote queue and real ledger not run |
 
 ### STEER.8a
 
@@ -665,10 +666,10 @@ As a **Queue Builder**, I want to reorder, jump to, remove, and clear queue item
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| STEER.8a/AC1 | I can move an item up or down, or drag it, and the new order shows immediately. | Unverified | — |
-| STEER.8a/AC2 | Tapping an item plays it now. | Unverified | — |
-| STEER.8a/AC3 | Removing one item or clearing all can be undone for 10 seconds (default; see `RELY.4`). | Unverified | — |
-| STEER.8a/AC4 | These work identically for this device and another screen. | Unverified | — |
+| STEER.8a/AC1 | I can move an item up or down, or drag it, and the new order shows immediately. | Unverified | **[NEEDS-JOURNEY]** queue-moveup/movedown exist in QueuePanel; no journey clicks them or checks immediate order |
+| STEER.8a/AC2 | Tapping an item plays it now. | Accepted | PROOF-GAPS-PHASE0 (83d288916): media-app-queue-journey.runtime.test.mjs :: [PLAY.6a/AC1][STEER.8a/AC2] add without interrupting, then jump to a same-title queue entry at zero (click queue entry, real video restarts at 0) |
+| STEER.8a/AC3 | Removing one item or clearing all can be undone for 10 seconds (default; see `RELY.4`). | Partial | **[NEEDS-JOURNEY]** Remove and Clear Undo proven immediately; 10-second window (and expiry) not asserted |
+| STEER.8a/AC4 | These work identically for this device and another screen. | Unverified | **[NEEDS-JOURNEY]** No journey edits another screen's queue (reorder/remove/clear) and compares with local |
 
 ### STEER.9a
 
@@ -676,10 +677,10 @@ As a **Queue Builder**, I want to set repeat and shuffle once, in one place, so 
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| STEER.9a/AC1 | Repeat (off, all, one) and shuffle each appear once, alongside the queue, and show whether they are on. | Unverified | — |
-| STEER.9a/AC2 | Changing them doesn't interrupt what's playing. | Unverified | — |
-| STEER.9a/AC3 | They behave the same for any screen. | Unverified | — |
-| STEER.9a/AC4 | Shuffle only reorders what's already queued; items placed "next" are never shuffled, and turning shuffle off restores the original order (R26). | Unverified | — |
+| STEER.9a/AC1 | Repeat (off, all, one) and shuffle each appear once, alongside the queue, and show whether they are on. | Partial | **[NEEDS-JOURNEY]** Shuffle aria-pressed and Repeat all asserted locally; repeat one/off and single placement/remote not asserted |
+| STEER.9a/AC2 | Changing them doesn't interrupt what's playing. | Unverified | **[NEEDS-JOURNEY]** Playing only incidentally observed after toggles in resume journey; no explicit uninterrupted-node assertion |
+| STEER.9a/AC3 | They behave the same for any screen. | Unverified | **[NEEDS-JOURNEY]** No journey toggles repeat/shuffle on another screen |
+| STEER.9a/AC4 | Shuffle only reorders what's already queued; items placed "next" are never shuffled, and turning shuffle off restores the original order (R26). | Unverified | **[NEEDS-JOURNEY]** Shuffle-vs-placed-next ordering and restore-on-off unit-only |
 
 ### STEER.13a
 
@@ -699,7 +700,7 @@ As a **Resumer**, I want the next episode to start on its own after a countdown,
 |---|---|---|---|
 | STEER.13b/AC1 | At the end of an episode, the next starts after a visible countdown that can be cancelled. | Accepted | `BATCH-B-CONTROLS`: Screen Remote (phone) after a tap near the episode end: "Next: Keepy Uppy in Ns" with Cancel → banner gone, next not started; this device: countdown shown and cancelled, queue kept. `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
 | STEER.13b/AC2 | **Stop after this one** can be set during an episode, on this device or from a Remote. | Accepted | `BATCH-B-CONTROLS`: Set from a screen's Remote (published `stopAfterCurrent: true`) and on this device, where it stopped at the item end and read "Stopped after that one, as asked". `JOURNEY-BATCH-B` (`media-app-handle-controls.runtime.test.mjs`). |
-| STEER.13b/AC3 | Next-episode behaviour lives here; carry on only lists what's next (`FIND.10`). | Unverified | — |
+| STEER.13b/AC3 | Next-episode behaviour lives here; carry on only lists what's next (`FIND.10`). | Partial | **[NEEDS-SEEDED-BACKEND]** Countdown local+remote proven; carry-on excludes next episode only against stubbed household API |
 
 ### HOUSE.1a
 
@@ -717,10 +718,10 @@ As a **House Watch**, I want to see what every screen is doing, all together, so
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| HOUSE.2a/AC1 | Each screen shows its name, room, whether it is playing, paused, idle, or off, and, when playing, picture, title, and progress. | Unverified | — |
-| HOUSE.2a/AC2 | From any screen in the overview I can open its controls (`STEER.1b`), move its playback here (`PLACE.7`), or play something on it (`PLACE.3`). | Unverified | — |
+| HOUSE.2a/AC1 | Each screen shows its name, room, whether it is playing, paused, idle, or off, and, when playing, picture, title, and progress. | Partial | **[NEEDS-JOURNEY]** Journeys assert name, title and state words only; room, picture, progress and the Off state are never asserted. |
+| HOUSE.2a/AC2 | From any screen in the overview I can open its controls (`STEER.1b`), move its playback here (`PLACE.7`), or play something on it (`PLACE.3`). | Partial | **[NEEDS-FEATURE:row Move here]** Remote and Play... proven from rows; row Move here is disabled ("not available yet"); move only via Remote Move to. |
 | HOUSE.2a/AC3 | Screens that are playing appear before idle and off ones. | Accepted | `TASK-6-EXACT-RUNTIME`: two isolated browser identities shared canonical Fleet state; the browser playing real Arrival appeared first, ahead of the caller's idle row. Exact source `2259c69a7`, artifact `/tmp/daylight-media-preview-xPwXp5`; full P0 evidence `/tmp/daylight-task6-p0-evidence-7hWG4m/21-media-app-browser-control.runtime.test.mjs-stable_browser_identities_route_a_queue_command_through_the_actual_receiver_and_return_its_ack.json`. |
-| HOUSE.2a/AC4 | Each row has **Pause**, **Stop**, and **Move here** directly on it (R22). | Unverified | — |
+| HOUSE.2a/AC4 | Each row has **Pause**, **Stop**, and **Move here** directly on it (R22). | Partial | **[NEEDS-FEATURE:row Move here]** Row Pause proven; no row Stop journey; row Move here button is disabled in FleetView.jsx. |
 | HOUSE.2a/AC5 | A row shows that screen's current start progress or last failure to everyone, not only to the device that sent it (R36). | Accepted | `BATCH-C-HOUSE`: a start sent from one browser's row showed **Started** on that row in a second browser (tablet) and in the sender (laptop); with the receiver closed, a later automation start's watchdog failure showed "Couldn't start at …: The screen did not confirm playback" on the observer's row. Reads `GET /device/:id/start-status` on open + `device-start:*`. `media-app-house-view.runtime.test.mjs`. |
 | HOUSE.2a/AC6 | The overview offers **Pause all** and **Stop all** (`STEER.11`). | Accepted | `BATCH-C-HOUSE`: **Pause all** / **Stop all** on the overview paused and then stopped the actual receiver (receiver state polled), outcome "Paused 1 screen" / "Stopped 1 screen". `media-app-house-view.runtime.test.mjs`. |
 
@@ -740,7 +741,7 @@ As a **House Watch**, I want to know when information might be out of date, so t
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
 | HOUSE.3a/AC1 | A screen that hasn't reported in the last 2 minutes (default) is marked with when it was last heard from. | Accepted | `TASK-6-EXACT-RUNTIME`: after the sender browser closed, the observer retained the stopped row, advanced its browser clock 120,001 ms, and saw **Uncertain**, **Out of date**, and **Last heard**. Exact source `2259c69a7`; full P0 journey 22/22 passed. |
-| HOUSE.3a/AC2 | If this device loses touch with the house, the whole overview says so, and recovers on its own. | Unverified | — |
+| HOUSE.3a/AC2 | If this device loses touch with the house, the whole overview says so, and recovers on its own. | Unverified | **[NEEDS-FIXTURE:network loss/WS drop]** No journey drops this device's connection to the house. |
 | HOUSE.3a/AC3 | Controls on an uncertain screen say that the result may not be confirmed. | Accepted | The same exact two-browser close/liveness journey asserted the uncertain row's visible “control results may not be confirmed” copy after the two-minute boundary. Evidence `/tmp/daylight-task6-p0-evidence-7hWG4m/22-media-app-house-browser-session.runtime.test.mjs-two_browser_devices_agree_on_the_local_player_title_and_state.json`. |
 
 ### HOUSE.4a
@@ -749,7 +750,7 @@ As a **Routine Setter**, I want every screen, including browsers, to have a huma
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| HOUSE.4a/AC1 | Every screen is listed under a name like "Kitchen tablet" or "Dad's laptop", never a code. | Unverified | — |
+| HOUSE.4a/AC1 | Every screen is listed under a name like "Kitchen tablet" or "Dad's laptop", never a code. | Partial | **[NEEDS-JOURNEY]** Named cards asserted individually; no assertion that every card shows a name and never a raw code. |
 | HOUSE.4a/AC2 | Anyone can name or rename a device from within the app; TVs and kiosks come already named (Q10). | Accepted | `TASK-6-EXACT-RUNTIME`: ordinary Settings UI renamed the target browser **Kitchen tablet**, assigned room **Kitchen**, and the other browser's Fleet row showed both values. Existing configured-device rows remained named. Exact source `2259c69a7`, artifact `/tmp/daylight-media-preview-xPwXp5`. |
 | HOUSE.4a/AC3 | Names are unique. After a rename, the house view shows "Poo (was Kitchen tablet)" for a week (default), and renaming a screen a routine uses says so first (R31). | Accepted | `BATCH-C-HOUSE`: a second device choosing a taken name was offered and took the registry's free suggestion; renaming the routine-targeted receiver in Screens first listed "Acceptance button: Morning" and needed **Rename anyway**, after which the row read "Den receiver … (was Acceptance receiver)". Real registry rules (`ScreenRegistryService`) on the fixture's in-memory store. `media-app-house-view.runtime.test.mjs`. A placeholder "Browser 1a2b…" old name is deliberately not shown as "(was …)". |
 | HOUSE.4a/AC4 | The name stays the same across reloads and appears everywhere the screen is mentioned. | Accepted | The exact compiled-artifact journey reloaded the renamed browser, asserted the same persisted `clientId`, derived `deviceId`, name and room, then routed control to that stable identity and observed **Kitchen tablet** in the caller's Fleet. Evidence `/tmp/daylight-task6-p0-evidence-7hWG4m/21-media-app-browser-control.runtime.test.mjs-stable_browser_identities_route_a_queue_command_through_the_actual_receiver_and_return_its_ack.json`. |
@@ -761,7 +762,7 @@ As a **House Watch**, I want to see whether a person or a routine started someth
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
 | HOUSE.5a/AC1 | A screen's playback shows how it started, for example "Started by kitchen button, 7:02". | Accepted | `BATCH-C-HOUSE`: after the sender (named "House sender …") started Arrival from the receiver's row, both browsers' rows read "Started by House sender …, <time>" (live snapshot `meta.origin`, named through the registry — the request header is now `browser:<clientId>`). `media-app-house-view.runtime.test.mjs`. |
-| HOUSE.5a/AC2 | The same note appears in the screen's controls. | Partial | `house/RowExtras.jsx` `StartedByLine` (reads `GET /screens/:id/started-by` given only a `deviceId`) is ready for a screen's controls header; mounting it in the controls is batch B's surface. Unit: `house/useHouseSignals.test.jsx`. |
+| HOUSE.5a/AC2 | The same note appears in the screen's controls. | Unverified | `house/RowExtras.jsx` `StartedByLine` (reads `GET /screens/:id/started-by` given only a `deviceId`) is ready for a screen's controls header; mounting it in the controls is batch B's surface. Unit: `house/useHouseSignals.test.jsx`. **[NEEDS-FEATURE:StartedByLine in controls header]** StartedByLine only mounted in FleetView row, not in Remote/controls (verified by grep). |
 
 ### HOUSE.6a
 
@@ -772,7 +773,7 @@ As a **Setup person**, I want to add, place, merge, and retire screens, so that 
 | HOUSE.6a/AC1 | I can add a screen and give it a name and a room. | Accepted | `BATCH-C-HOUSE`: Screens → Add a screen with name "Garage speaker …" and room "Garage" listed it with its room. `media-app-house-view.runtime.test.mjs`. |
 | HOUSE.6a/AC2 | When a device reappears as a duplicate, I can merge it with its earlier self. | Accepted | `BATCH-C-HOUSE`: a duplicate browser was merged into the earlier one after a confirmation dialog (the merged screen showed "Includes Old tablet …", the duplicate left the list, Undo offered on the outcome), then **Unmerge** restored it. `media-app-house-view.runtime.test.mjs`. |
 | HOUSE.6a/AC3 | Before retiring an old screen, I'm shown which routines point at it. | Accepted | `BATCH-C-HOUSE`: Retire on the receiver first listed "Acceptance button: Morning" (cancelled); Retire on a screen with none said "No routines point at it.", retired it into Retired, and Restore brought it back. `media-app-house-view.runtime.test.mjs`. |
-| HOUSE.6a/AC4 | Screens silent for more than 30 days (default) fold into a "not seen lately" section. | Partial | `ScreenAdminView` folds `notSeenLately` (server rule: silent > 30 days, not online) into **Not seen lately**; unit `house/ScreenAdminView.test.jsx`. No runtime screen is 30 days silent, so no journey evidence. |
+| HOUSE.6a/AC4 | Screens silent for more than 30 days (default) fold into a "not seen lately" section. | Unverified | `ScreenAdminView` folds `notSeenLately` (server rule: silent > 30 days, not online) into **Not seen lately**; unit `house/ScreenAdminView.test.jsx`. No runtime screen is 30 days silent, so no journey evidence. **[NEEDS-FIXTURE:screen silent >30 days]** Admin view opened in journey but no seeded >30-day-silent screen or fold assertion. |
 
 ### RELY.1a
 
@@ -780,11 +781,11 @@ As a **Seeker**, I want every play, add, and send to confirm in the same way, so
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| RELY.1a/AC1 | Every action that changes what's playing or lined up gives a short confirmation naming the item and the screen. | Partial | `JOURNEY-ORDINARY-REMOTE-PLAY-ADD` (earlier) plus Task 7: every play/add/send/queue edit/problem reports through one outcome record (`DispatchProvider`); ad-hoc `notifications.show` call sites removed. Unit/component evidence only (Task 7) for local confirmations: `useContentDispatch.outcomes.test.jsx`, `DispatchProgressTray.outcomes.test.jsx`, `QueuePanel.test.jsx`, `MediaApp.test.jsx`. |
-| RELY.1a/AC2 | The same outcome confirms the same way, whichever control started it, on every device size. | Unverified | Unit/component evidence only (Task 7): Search pick, More → Add and container ▶ record through the same `recordLocal`/dispatch path (`useContentDispatch.outcomes.test.jsx`). Size parity is Task 8. |
-| RELY.1a/AC3 | When the result is already obvious on this device (it visibly starts playing here), the confirmation is brief and unobtrusive. | Unverified | Unit/component evidence only (Task 7): local rows are quiet (`cast-tray-row--quiet`, “Playing X here”, clear after 2.5 s or the Undo window). |
-| RELY.1a/AC4 | Confirmations don't pile up; a newer one replaces an older one of the same kind. | Unverified | Unit/component evidence only (Task 7): same-kind confirmations for the same screen replace each other (`outcomeRecords.test.js`). |
-| RELY.1a/AC5 | "The same outcome" includes where it happened: playing here confirms quietly, while playing on another screen confirms with that screen's name and progress (T8). | Unverified | Unit/component evidence only (Task 7): quiet “here” rows vs named far rows with step progress (`DispatchProgressTray.outcomes.test.jsx`). |
+| RELY.1a/AC1 | Every action that changes what's playing or lined up gives a short confirmation naming the item and the screen. | Partial | `JOURNEY-ORDINARY-REMOTE-PLAY-ADD` (earlier) plus Task 7: every play/add/send/queue edit/problem reports through one outcome record (`DispatchProvider`); ad-hoc `notifications.show` call sites removed. Unit/component evidence only (Task 7) for local confirmations: `useContentDispatch.outcomes.test.jsx`, `DispatchProgressTray.outcomes.test.jsx`, `QueuePanel.test.jsx`, `MediaApp.test.jsx`. **[NEEDS-JOURNEY]** Play here/far, Add, Put back, Move, favourite, remove, watched named; queue remove/clear/reorder confirmations not asserted. |
+| RELY.1a/AC2 | The same outcome confirms the same way, whichever control started it, on every device size. | Partial | Unit/component evidence only (Task 7): Search pick, More → Add and container ▶ record through the same `recordLocal`/dispatch path (`useContentDispatch.outcomes.test.jsx`). Size parity is Task 8. **[NEEDS-JOURNEY]** Search pick proven at 3 sizes; More-Add and container play confirmations only at laptop. |
+| RELY.1a/AC3 | When the result is already obvious on this device (it visibly starts playing here), the confirmation is brief and unobtrusive. | Partial | Unit/component evidence only (Task 7): local rows are quiet (`cast-tray-row--quiet`, “Playing X here”, clear after 2.5 s or the Undo window). **[NEEDS-JOURNEY]** Local row is quiet, overlay-safe and leaves on its own; no assertion it clears within a brief bound. |
+| RELY.1a/AC4 | Confirmations don't pile up; a newer one replaces an older one of the same kind. | Unverified | Unit/component evidence only (Task 7): same-kind confirmations for the same screen replace each other (`outcomeRecords.test.js`). **[NEEDS-JOURNEY]** No journey fires two same-kind confirmations and asserts the newer replaces the older. |
+| RELY.1a/AC5 | "The same outcome" includes where it happened: playing here confirms quietly, while playing on another screen confirms with that screen's name and progress (T8). | Partial | Unit/component evidence only (Task 7): quiet “here” rows vs named far rows with step progress (`DispatchProgressTray.outcomes.test.jsx`). **[NEEDS-JOURNEY]** tablet/laptop overlay journeys pass; the phone variant timed out 3/3 on this build, so "every size" is unproven |
 
 ### RELY.2a
 
@@ -792,9 +793,9 @@ As a **Big-Screen Sender**, I want to see progress while a TV turns on and loads
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| RELY.2a/AC1 | While a far screen gets ready, I see its steps in plain words ("Turning on", "Loading"). | Unverified | Unit/component evidence only (Task 7): step wording (`castCopy.kind.test.js`). The runtime row reads “Sending Arrival to Acceptance receiver / Starting…”, but the held request never reached the wake steps, so step words are not runtime-proven. |
+| RELY.2a/AC1 | While a far screen gets ready, I see its steps in plain words ("Turning on", "Loading"). | Partial | Unit/component evidence only (Task 7): step wording (`castCopy.kind.test.js`). The runtime row reads “Sending Arrival to Acceptance receiver / Starting…”, but the held request never reached the wake steps, so step words are not runtime-proven. **[NEEDS-FIXTURE:far screen that needs waking (Turning on/Loading steps)]** Journey sees only "Sending Arrival to ..." then Playing; wake/load step words never reached. |
 | RELY.2a/AC2 | Progress is visible wherever I go in the app until the outcome is known. | Accepted | Task 7 exact-SHA runtime (`TASK-7-OUTCOMES`): product source `41afea7fe`, journeys at `d751db570`, owned preview, ordinary input, virtual Acceptance receiver: `media-app-outcomes.runtime.test.mjs` “[RELY.2a]…” holds the real load request, sees the running row on Devices, Browse and Home, then “▶ Playing on Acceptance receiver” with Steer it and the receiver's own state. P0 manifest entry. |
-| RELY.2a/AC3 | The wording fits the screen type (it doesn't say "TV" for a speaker). | Unverified | Unit/component evidence only (Task 7): speaker/screen never read “TV” (`castCopy.kind.test.js`, tray test). The fixture has only a TV-kind screen. |
+| RELY.2a/AC3 | The wording fits the screen type (it doesn't say "TV" for a speaker). | Unverified | Unit/component evidence only (Task 7): speaker/screen never read “TV” (`castCopy.kind.test.js`, tray test). The fixture has only a TV-kind screen. **[NEEDS-FIXTURE:speaker-kind screen]** Fixture has only a TV-kind receiver; no speaker wording to check. |
 
 ### RELY.3a
 
@@ -813,10 +814,10 @@ As a **Queue Builder**, I want to undo my last change, so that a slip costs noth
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| RELY.4a/AC1 | After replacing what's playing, removing, or clearing, an undo is offered for 10 seconds (default). | Unverified | — |
-| RELY.4a/AC2 | Undo restores the previous item, position, and queue on that screen. | Unverified | — |
-| RELY.4a/AC3 | Truly irreversible actions (starting fresh) ask first instead of offering undo. | Unverified | — |
-| RELY.4a/AC4 | Undo (**Put it back**) is also available from the affected screen's Remote on any device, not only on the device that made the change (R13). | Unverified | — |
+| RELY.4a/AC1 | After replacing what's playing, removing, or clearing, an undo is offered for 10 seconds (default). | Accepted | PROOF-GAPS-PHASE0 (83d288916): media-app-queue-journey.runtime.test.mjs :: [RELY.4a/AC1][RELY.4a/AC2] Undo restores the previous paused native position and queue generation (Undo offered after remove, clear and replace) + media-app-outcomes.runtime.test.mjs :: [RELY.3a][RELY.6a] a start nobody received... (Undo visible then gone after ~10s) |
+| RELY.4a/AC2 | Undo restores the previous item, position, and queue on that screen. | Accepted | PROOF-GAPS-PHASE0 (83d288916): media-app-queue-journey.runtime.test.mjs :: [RELY.4a/AC1][RELY.4a/AC2] Undo restores the previous paused native position and queue generation (asserts restored item, paused position within 1s, queue entries) |
+| RELY.4a/AC3 | Truly irreversible actions (starting fresh) ask first instead of offering undo. | Partial | **[NEEDS-JOURNEY]** Start fresh asks first (confirm dialog, cancel is a no-op) but no assertion that no Undo is offered afterwards. |
+| RELY.4a/AC4 | Undo (**Put it back**) is also available from the affected screen's Remote on any device, not only on the device that made the change (R13). | Accepted | PROOF-GAPS-PHASE0 (83d288916): media-app-handle-controls.runtime.test.mjs :: RELY.4b/STEER.1b — a pause from this Remote leaves a note on the screen; any Remote offers Put it back, which restores item, spot and queue (Put it back clicked from another device's Remote restores item, spot, queue) |
 
 ### RELY.4b
 
@@ -837,7 +838,7 @@ As a **Hand-Held Viewer**, I want to be told when playback fails or skips an ite
 | RELY.5a/AC1 | A failure shows a notice naming the item and screen, in plain words, even if I'm in another part of the app. | Accepted | Exact SHA `800ab005c`, `media-app-local-failure.runtime.test.mjs` (3 journeys, 3 serial runs, 9/9): a refused file (the proxy's real 503 `source-unreadable` answer, check answered `unreadable`) shows “Waiting for Arrival — the file is being repaired” with Skip now and Retry and the handle's problem sign within seconds, on the Devices area; it resumes when the file comes back, or at Media's 60 s limit (never before) reads “Arrival skipped — file unavailable · Now playing Disclosure Day” with Retry. A failing stream on a readable file is skipped by the stall ladder with “… on this device · Skipped it. Now playing Disclosure Day”, and the sign clears only once the replacement actually plays. The earlier intermittency was a Player hang (code-4 load failure after a recovery left the item on “Recovering…”), fixed in `800ab005c`; it was not the source-healing wait. P0 manifest entry. |
 | RELY.5a/AC2 | If an item was skipped because it failed, the notice says so and what's playing instead. | Accepted | Exact SHA `800ab005c`, `media-app-local-failure.runtime.test.mjs` (3 journeys, 3 serial runs, 9/9): a refused file (the proxy's real 503 `source-unreadable` answer, check answered `unreadable`) shows “Waiting for Arrival — the file is being repaired” with Skip now and Retry and the handle's problem sign within seconds, on the Devices area; it resumes when the file comes back, or at Media's 60 s limit (never before) reads “Arrival skipped — file unavailable · Now playing Disclosure Day” with Retry. A failing stream on a readable file is skipped by the stall ladder with “… on this device · Skipped it. Now playing Disclosure Day”, and the sign clears only once the replacement actually plays. The earlier intermittency was a Player hang (code-4 load failure after a recovery left the item on “Recovering…”), fixed in `800ab005c`; it was not the source-healing wait. P0 manifest entry. |
 | RELY.5a/AC3 | The handle on my playback shows a problem sign until things recover. | Accepted | Exact SHA `800ab005c`, `media-app-local-failure.runtime.test.mjs` (3 journeys, 3 serial runs, 9/9): a refused file (the proxy's real 503 `source-unreadable` answer, check answered `unreadable`) shows “Waiting for Arrival — the file is being repaired” with Skip now and Retry and the handle's problem sign within seconds, on the Devices area; it resumes when the file comes back, or at Media's 60 s limit (never before) reads “Arrival skipped — file unavailable · Now playing Disclosure Day” with Retry. A failing stream on a readable file is skipped by the stall ladder with “… on this device · Skipped it. Now playing Disclosure Day”, and the sign clears only once the replacement actually plays. The earlier intermittency was a Player hang (code-4 load failure after a recovery left the item on “Recovering…”), fixed in `800ab005c`; it was not the source-healing wait. P0 manifest entry. |
-| RELY.5a/AC4 | The same applies to failures on other screens I started or am steering. | Unverified | Far-screen failures are reported by the outcome tray (unit); failures that a steered screen raises on its own are not observed from the sender yet. |
+| RELY.5a/AC4 | The same applies to failures on other screens I started or am steering. | Partial | Far-screen failures are reported by the outcome tray (unit); failures that a steered screen raises on its own are not observed from the sender yet. **[NEEDS-FEATURE:sender observes failures a steered screen raises on its own]** Failed start shows on every device row (house-view); screen-originated failures after steering not surfaced to sender. |
 
 ### RELY.6a
 
@@ -846,8 +847,8 @@ As a **Fixer**, I want to retry exactly the attempt that failed, so that fixing 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
 | RELY.6a/AC1 | Every failure notice has its own retry, which retries that attempt (same item, same screen), no other. | Accepted | Task 7 exact-SHA runtime (`TASK-7-OUTCOMES`): product source `41afea7fe`, journeys at `d751db570`, owned preview, ordinary input, virtual Acceptance receiver: Try again on the unconfirmed attempt issues exactly one new load for the same item and screen (`deferredRetry=0`) and the receiver plays it; fan-out sibling exclusion and Not sent never replayed are unit-pinned (`DispatchProvider.outcomes.test.jsx`). P0 manifest entry. |
-| RELY.6a/AC2 | Next to retry, I can choose another screen for that attempt. | Unverified | Unit/component evidence only (Task 7): “Another screen…” sends that attempt to the chosen screen only (`DispatchProvider.outcomes.test.jsx`, tray test). The ordinary fixture has a single screen. |
-| RELY.6a/AC3 | Several failures are each shown separately with their own retry. | Unverified | Unit/component evidence only (Task 7): several failures render separately with their own Retry (`DispatchProgressTray.outcomes.test.jsx`). |
+| RELY.6a/AC2 | Next to retry, I can choose another screen for that attempt. | Unverified | Unit/component evidence only (Task 7): “Another screen…” sends that attempt to the chosen screen only (`DispatchProvider.outcomes.test.jsx`, tray test). The ordinary fixture has a single screen. **[NEEDS-JOURNEY]** Try again replays the same screen; no journey uses "Another screen..." on a failed attempt (fixture has two screens). |
+| RELY.6a/AC3 | Several failures are each shown separately with their own retry. | Unverified | Unit/component evidence only (Task 7): several failures render separately with their own Retry (`DispatchProgressTray.outcomes.test.jsx`). **[NEEDS-JOURNEY]** Only one failed attempt is shown with Retry; no journey with several concurrent failures. |
 
 ### RELY.7a
 
@@ -857,8 +858,8 @@ As a **Hand-Held Viewer**, I want everything to survive a reload or a network hi
 |---|---|---|---|
 | RELY.7a/AC1 | After a reload or crash, what was playing, its position, its queue, and repeat and shuffle are as they were, with playback paused rather than suddenly playing aloud (R38). | Accepted | Task 7 exact-SHA runtime (`TASK-7-OUTCOMES`): product source `41afea7fe`, journeys at `d751db570`, owned preview, ordinary input, virtual Acceptance receiver: `media-app-resume.runtime.test.mjs` “[RELY.7a] a reload restores…”: reload while Arrival plays restores title, spot (within the 5 s cadence), 2-item queue, shuffle, Repeat all — with no media element and no playback/media request until Play, then resumes at the spot. Malformed/older saves are discarded (same file). P0 manifest entry. |
 | RELY.7a/AC2 | My aim is restored too, unless the idle time has passed (R7). | Accepted | The resume journey above shows the aim restored after reload; the expiry half is the accepted closed-app journey (`media-app-aim-journey.runtime.test.mjs` “a closed app restores”), now also listed for this criterion in the P0 manifest. |
-| RELY.7a/AC3 | Every screen keeps its spot and queue through a power cut (R38). | Unverified | P1 (power-cut survival per screen). |
-| RELY.7a/AC4 | A brief network hiccup doesn't reload the app or interrupt what I'm doing; I see a quiet "reconnecting" note if it lasts. | Unverified | Unit/component evidence only (Task 7): `ReconnectingNote.test.jsx` (silent under 3 s, quiet note after). The app already suppresses WS auto-reload. No runtime network-loss journey yet. |
+| RELY.7a/AC3 | Every screen keeps its spot and queue through a power cut (R38). | Accepted | PROOF-GAPS-PHASE0 (83d288916): screen-session-controls.runtime.test.mjs :: A screen keeps its spot and queue through a power cut and comes back PAUSED (RQ-RELY-08) (page killed without unload; item, spot within 6s, queue kept, never autoplays; one virtual receiver) |
+| RELY.7a/AC4 | A brief network hiccup doesn't reload the app or interrupt what I'm doing; I see a quiet "reconnecting" note if it lasts. | Unverified | Unit/component evidence only (Task 7): `ReconnectingNote.test.jsx` (silent under 3 s, quiet note after). The app already suppresses WS auto-reload. No runtime network-loss journey yet. **[NEEDS-FIXTURE:network loss/WS drop]** No journey drops the network briefly or for >3s to check no reload and the reconnecting note. |
 | RELY.7a/AC5 | The part of the app I was in is restored. | Accepted | Task 7 exact-SHA runtime (`TASK-7-OUTCOMES`): product source `41afea7fe`, journeys at `d751db570`, owned preview, ordinary input, virtual Acceptance receiver: the same reload returns to Now Playing with the identical URL view. P0 manifest entry. |
 
 ### RELY.8a
@@ -925,7 +926,7 @@ As a **Big-Screen Sender** on a sunny patio, I want the app readable in glare, s
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| RELY.13a/AC1 | Text and controls keep enough contrast to read outdoors. | Partial | `TASK-8-CLOSEOUT`: text contrast measured ≥ 4.5:1 (confirmation row and Undo measured at `ddfe8f7db`; transient, no longer probed) on handle title, house indicator, tab label, Browse button, seek times and queue controls (all three sizes). Control *boundaries* (3:1 non-text contrast, e.g. the default dark buttons) are not measured, so the criterion is not accepted as a whole. |
+| RELY.13a/AC1 | Text and controls keep enough contrast to read outdoors. | Partial | `TASK-8-CLOSEOUT`: text contrast measured ≥ 4.5:1 (confirmation row and Undo measured at `ddfe8f7db`; transient, no longer probed) on handle title, house indicator, tab label, Browse button, seek times and queue controls (all three sizes). Control *boundaries* (3:1 non-text contrast, e.g. the default dark buttons) are not measured, so the criterion is not accepted as a whole. **[NEEDS-JOURNEY]** 4.5:1 text contrast asserted at 3 sizes; 3:1 control boundary contrast not measured. |
 | RELY.13a/AC2 | The aim label and confirmations stay legible at arm's length. | Accepted | `TASK-8-CLOSEOUT`: the aim line is 14 px or more and keeps ≥ 4.5:1 contrast; confirmations and their Undo kept ≥ 4.5:1 when measured at `ddfe8f7db` (transient, so the journey no longer probes them; it requires the aim line, handle title, house indicator, tab label, Browse and queue controls at every size). |
 
 ### AUTO.1a
@@ -934,9 +935,9 @@ As a **Routine Setter**, I want a button, tag, or routine to start content on a 
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| AUTO.1a/AC1 | When the trigger fires, the named screen starts the chosen item, queue, or shuffled collection, with the chosen volume. | Unverified | — |
-| AUTO.1a/AC2 | It starts within the same few seconds a person's send would. | Unverified | — |
-| AUTO.1a/AC3 | Progress and failures are reported like any other send, visible to anyone looking at that screen in the overview (see `HOUSE.5`), and recorded in routine history (`AUTO.4`). | Unverified | — |
+| AUTO.1a/AC1 | When the trigger fires, the named screen starts the chosen item, queue, or shuffled collection, with the chosen volume. | Partial | **[NEEDS-SEEDED-BACKEND]** Automation-style load (no device named) starts an item; real routine trigger with queue/shuffle/volume params not run. |
+| AUTO.1a/AC2 | It starts within the same few seconds a person's send would. | Unverified | **[NEEDS-SEEDED-BACKEND]** No journey fires a real routine trigger or measures start latency against a person's send. |
+| AUTO.1a/AC3 | Progress and failures are reported like any other send, visible to anyone looking at that screen in the overview (see `HOUSE.5`), and recorded in routine history (`AUTO.4`). | Partial | **[NEEDS-SEEDED-BACKEND]** Failed automation-style start shows on every device row; routine history is seeded, not recorded from a live run. |
 
 ### AUTO.1b
 
@@ -944,9 +945,9 @@ As a **Routine Setter**, I want a routine to be able to start playback on a devi
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| AUTO.1b/AC1 | Any named device left open in the app can be a target for routines (Q10). | Unverified | — |
-| AUTO.1b/AC2 | Routines follow the screen itself, so renaming it doesn't break them (R31). | Unverified | — |
-| AUTO.1b/AC3 | Playback started this way appears on that device as if someone had started it there. | Unverified | — |
+| AUTO.1b/AC1 | Any named device left open in the app can be a target for routines (Q10). | Unverified | **[NEEDS-SEEDED-BACKEND]** No journey targets a routine at an open browser device. |
+| AUTO.1b/AC2 | Routines follow the screen itself, so renaming it doesn't break them (R31). | Partial | **[NEEDS-SEEDED-BACKEND]** Rename warns and the renamed screen still lists its routine (fixed fixture catalog); live routine resolution not run. |
+| AUTO.1b/AC3 | Playback started this way appears on that device as if someone had started it there. | Unverified | **[NEEDS-SEEDED-BACKEND]** No journey starts playback on a browser device by routine and checks it looks person-started. |
 
 ### AUTO.2a
 
@@ -954,9 +955,9 @@ As a **Routine Setter**, I want repeated or overlapping triggers to give one pre
 
 | Criterion | Observable outcome | Status | Test / evidence |
 |---|---|---|---|
-| AUTO.2a/AC1 | Firing the same trigger twice within 10 seconds (default) doesn't start it twice or add duplicates to the queue. | Unverified | — |
-| AUTO.2a/AC2 | Reloading a device that a routine started doesn't restart the routine's content from the beginning. | Unverified | — |
-| AUTO.2a/AC3 | A person's action on that screen after a routine always takes effect; the routine doesn't fight it. | Unverified | — |
+| AUTO.2a/AC1 | Firing the same trigger twice within 10 seconds (default) doesn't start it twice or add duplicates to the queue. | Unverified | **[NEEDS-SEEDED-BACKEND]** Server dedupe rule (10 s window); no journey fires one trigger twice. |
+| AUTO.2a/AC2 | Reloading a device that a routine started doesn't restart the routine's content from the beginning. | Accepted | PROOF-GAPS-PHASE0 (83d288916): screen-session-controls.runtime.test.mjs :: A screen keeps its spot and queue through a power cut and comes back PAUSED (RQ-RELY-08) (item started by a no-device automation load; reloaded screen keeps spot, not restarted from 0) |
+| AUTO.2a/AC3 | A person's action on that screen after a routine always takes effect; the routine doesn't fight it. | Accepted | PROOF-GAPS-PHASE0 (83d288916): screen-tv-input.runtime.test.mjs :: [TV input] OK presses Put it back after another start replaces the programme (OK key after an automation start takes effect) + media-app-handle-controls.runtime.test.mjs :: RELY.4b/STEER.1b — a pause from this Remote ... (Put it back after automation load) |
 
 ### AUTO.3a
 
@@ -966,7 +967,7 @@ As a **House Watch**, I want every screen, including browsers, to report what it
 |---|---|---|---|
 | AUTO.3a/AC1 | Anything playing on any device in the app appears in the overview and on other household displays. | Accepted | `TASK-6-EXACT-RUNTIME`: a stable-ID command started real native Arrival playback on one browser; its title, art, progress and Playing state appeared in the other browser's canonical Fleet. The independent two-browser journey also agreed on title and state before and after remote Pause. Exact source `2259c69a7`; full P0 25 stories / 54 criteria. |
 | AUTO.3a/AC2 | When a device stops or is closed, it shows as stopped soon after, not as still playing. | Accepted | The exact two-browser journey closed the sender context and the observer changed promptly from Paused to Idle/Stopped, without first calling it stale; only after 120,001 ms did it become Uncertain. Evidence `/tmp/daylight-task6-p0-evidence-7hWG4m/22-media-app-house-browser-session.runtime.test.mjs-two_browser_devices_agree_on_the_local_player_title_and_state.json`. |
-| AUTO.3a/AC3 | A person using the app on a device can see that it is visible to the house. | Unverified | — |
+| AUTO.3a/AC3 | A person using the app on a device can see that it is visible to the house. | Partial | **[NEEDS-JOURNEY]** Own card shows "This device" while playing (house-browser-session); not asserted for an idle device or as an explicit visibility cue. |
 
 ### AUTO.4a
 
@@ -976,5 +977,5 @@ As a **Routine Setter**, I want a record of recent routine starts and how they w
 |---|---|---|---|
 | AUTO.4a/AC1 | A list shows each routine start: when, which screen, what, and whether it played. | Accepted | `BATCH-C-HOUSE`: Routines listed each run with time, routine, screen and what ("Acceptance receiver — morning-program") and its outcome (real `RoutineHistoryService` over two seeded runs). `media-app-house-view.runtime.test.mjs`. "Whether it played" reads `played` ("Played" / "Started, not seen playing"). |
 | AUTO.4a/AC2 | A failure is marked plainly, with the reason ("Kitchen tablet was asleep"). | Accepted | `BATCH-C-HOUSE`: the failed run read "Failed: Acceptance receiver didn't respond — it may be asleep or closed". `media-app-house-view.runtime.test.mjs`. |
-| AUTO.4a/AC3 | A routine pointed at a screen that isn't on or reachable is flagged ahead of time. | Partial | Flags render under **Before they run** (`warn` → "Needs attention"); the journey shows the `last-start-failed` flag. The off/unreachable flags (`off`, `unreachable`) are covered by unit `house/RoutineHistoryView.test.jsx` only — the fixture receiver has no offline state to flag. |
+| AUTO.4a/AC3 | A routine pointed at a screen that isn't on or reachable is flagged ahead of time. | Partial | Flags render under **Before they run** (`warn` → "Needs attention"); the journey shows the `last-start-failed` flag. The off/unreachable flags (`off`, `unreachable`) are covered by unit `house/RoutineHistoryView.test.jsx` only — the fixture receiver has no offline state to flag. **[NEEDS-FIXTURE:routine target screen off/unreachable]** last-start-failed flag shown in journey; off/unreachable flags have only unit coverage. |
 | TASK-B-FOLLOWUPS | Fable review follow-ups for batch B | n/a | Unit REDs then GREEN: adopt-snapshot ack at the ack-publisher layer (no ack at dispatch; one ok ack on outcome; `ok:false` + code on failure), handler emits `media:session-control-applied` on a good adopt; one-item repeat queue never reads `ended` while restarting; hydrate-time sleep stop persisted and logged. Nits: TV countdown announced once via a hidden polite region (seconds `aria-hidden`), sleep time left in the handle button's accessible name, doc note that a persisted `ended` replays from 0 on Play. | Unit-only: no flow in `media-app-handle-controls` / `screen-session-controls` journeys changed observably (the wire ack path is covered at the publisher layer). |
