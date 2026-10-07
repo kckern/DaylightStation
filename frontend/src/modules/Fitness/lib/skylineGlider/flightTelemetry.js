@@ -22,6 +22,7 @@ function buildSample(next, input, course, courseSecond) {
     altitude: next.altitude,
     targetAltitude: next.targetAltitude,
     verticalRate: next.verticalRate,
+    inputMode: next.inputMode,
     lives: next.lives,
     phase: next.phase,
     visibleSegmentIds: visibleSegmentIds(course, next.courseTime),
@@ -54,6 +55,16 @@ export function collectFlightTelemetry({
       type: paused ? 'sensor.paused' : 'sensor.resumed',
       data: {},
     });
+  }
+
+  if (next.inputMode !== previous.inputMode) {
+    if (next.inputMode === 'inferred-slowdown') {
+      events.push({ type: 'inferred_slowdown.started', data: {} });
+    } else if (previous.inputMode === 'inferred-slowdown' && next.inputMode === 'measured') {
+      events.push({ type: 'inferred_slowdown.recovered', data: {} });
+    } else if (previous.inputMode === 'inferred-slowdown' && next.inputMode === 'sensor-paused') {
+      events.push({ type: 'inferred_slowdown.escalated', data: {} });
+    }
   }
 
   const coastSeconds = Number(course?.motion?.coast_s) || 0;

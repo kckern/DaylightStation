@@ -19,17 +19,33 @@ describe('SkylineGliderCourseCatalog', () => {
     const courses = catalog.list('home');
     expect(courses).toHaveLength(1);
     const course = courses[0];
-    expect(course).toMatchObject({ id: 'mountain-pass', version: 2, schema: 'skyline-glider-course/v1', duration_s: 300 });
-    expect(course.motion).toMatchObject({ filter_s: 0.25, response_s: 0.6 });
+    expect(course).toMatchObject({ id: 'mountain-pass', version: 3, schema: 'skyline-glider-course/v1', duration_s: 300 });
+    expect(course.motion).toMatchObject({
+      filter_s: 0.25, response_s: 0.6, max_climb_rate: 0.3, max_descent_rate: 0.3,
+      slow_signal_grace_s: 5, inferred_slowdown_s: 0.5,
+    });
     const maneuvers = course.segments.filter((segment) => ['lower-terrain', 'upper-terrain', 'corridor'].includes(segment.type));
-    expect(maneuvers[0].start_s).toBe(10);
-    expect(maneuvers.filter((segment) => segment.type === 'lower-terrain')).toHaveLength(6);
-    expect(maneuvers.filter((segment) => segment.type === 'upper-terrain')).toHaveLength(6);
-    expect(maneuvers.filter((segment) => segment.type === 'corridor')).toHaveLength(5);
-    expect(maneuvers.slice(1).every((segment, index) => segment.start_s - maneuvers[index].start_s <= 18)).toBe(true);
-    expect(course.segments.filter((segment) => segment.type === 'checkpoint').map((segment) => segment.start_s)).toEqual([75, 150, 225]);
+    expect(maneuvers).toEqual([
+      expect.objectContaining({ type: 'lower-terrain', start_s: 15, end_s: 55, top: 0.55 }),
+      expect.objectContaining({ type: 'lower-terrain', start_s: 88, end_s: 120, top: 0.48 }),
+      expect.objectContaining({ type: 'upper-terrain', start_s: 132, end_s: 145, bottom: 0.43 }),
+      expect.objectContaining({ type: 'lower-terrain', start_s: 170, end_s: 200, top: 0.45 }),
+      expect.objectContaining({ type: 'corridor', start_s: 210, end_s: 220, ceiling: 0.22, floor: 0.64 }),
+      expect.objectContaining({ type: 'lower-terrain', start_s: 238, end_s: 278, top: 0.44 }),
+    ]);
+    const checkpoints = course.segments.filter((segment) => segment.type === 'checkpoint');
+    expect(checkpoints).toEqual([
+      expect.objectContaining({ start_s: 75, restart_altitude: 0.5 }),
+      expect.objectContaining({ start_s: 150, restart_altitude: 0.5 }),
+      expect.objectContaining({ start_s: 225, restart_altitude: 0.5 }),
+    ]);
+    for (const checkpoint of checkpoints) {
+      const next = maneuvers.find((segment) => segment.start_s > checkpoint.start_s);
+      expect(next.start_s - checkpoint.start_s - 0.8, checkpoint.id).toBeGreaterThanOrEqual(12);
+    }
     expect(course.segments.find((segment) => segment.type === 'finish').start_s).toBe(300);
-    expect(course.segments.flatMap((segment) => segment.collectibles || [])).toHaveLength(6);
+    expect(course.segments.flatMap((segment) => segment.collectibles || []).map((item) => item.at_s))
+      .toEqual([30, 48, 100, 115, 138, 183, 215, 252, 272]);
     const validated = validateFrontendCourse(course);
     expect(validated).toMatchObject({ valid: true, errors: [] });
     for (const checkpoint of validated.course.segments.filter((segment) => segment.type === 'checkpoint')) {
@@ -39,6 +55,18 @@ describe('SkylineGliderCourseCatalog', () => {
       const afterRecovery = stepFlight(initial, { rpm: 100, connected: true, transportStalled: false }, 1 / 60, validated.course);
       expect(afterRecovery.lives, checkpoint.id).toBe(3);
     }
+  });
+
+  it('lets a steady 75 RPM fitness effort finish without a crash', () => {
+    const course = validateFrontendCourse(new SkylineGliderCourseCatalog({ configService: configService() }).list('home')[0]).course;
+    let state = createFlightState(course, { calibration: { lowRpm: 15, highRpm: 100 } });
+    for (let frame = 0; frame < 20_000 && state.phase === 'playing'; frame += 1) {
+      state = stepFlight(state, { rpm: 75, connected: true, transportStalled: false, ts: frame + 1 }, 1 / 60, course);
+    }
+
+    expect(state.phase).toBe('completed');
+    expect(state.restarts).toBe(0);
+    expect(state.collisions).toBeLessThanOrEqual(1);
   });
 
   it('keeps every shipped obstacle navigable with cadence-only altitude control', () => {
