@@ -1,6 +1,6 @@
 schema: skyline-glider-course/v1
 id: mountain-pass
-version: 1
+version: 2
 name: Mountain Pass
 description: Climb from the valley, thread the ice caves, and glide home at sunset.
 duration_s: 300
@@ -17,30 +17,41 @@ rules:
   invincibility_s: 1.25
   restart_delay_s: 2
 segments:
-  - { id: valley, type: open, start_s: 0, end_s: 35 }
-  - { id: foothills, type: lower-terrain, start_s: 35, end_s: 70, top: 0.65 }
-  - id: bells-one
+  - { id: valley, type: open, start_s: 0, end_s: 300 }
+  - id: training-bells
     type: collectible-path
-    start_s: 45
-    end_s: 80
+    start_s: 4
+    end_s: 54
     collectibles:
-      - { id: mp-bell-01, at_s: 48, altitude: 0.58 }
-      - { id: mp-bell-02, at_s: 61, altitude: 0.49 }
-      - { id: mp-bell-03, at_s: 74, altitude: 0.40 }
+      - { id: mp-bell-01, at_s: 14, altitude: 0.48 }
+      - { id: mp-bell-02, at_s: 31, altitude: 0.55 }
+      - { id: mp-bell-03, at_s: 48, altitude: 0.47 }
+  - { id: valley-rise, type: lower-terrain, start_s: 10, end_s: 20, top: 0.62 }
+  - { id: cloud-shelf, type: upper-terrain, start_s: 26, end_s: 36, bottom: 0.42 }
+  - { id: first-pass, type: corridor, start_s: 42, end_s: 54, ceiling: 0.28, floor: 0.66 }
+  - { id: pine-rise, type: lower-terrain, start_s: 60, end_s: 70, top: 0.56 }
+  - id: ridge-bells
+    type: collectible-path
+    start_s: 72
+    end_s: 212
+    collectibles:
+      - { id: mp-bell-04, at_s: 84, altitude: 0.52 }
+      - { id: mp-bell-05, at_s: 151, altitude: 0.44 }
+      - { id: mp-bell-06, at_s: 206, altitude: 0.50 }
   - { id: checkpoint-one, type: checkpoint, start_s: 75 }
-  - { id: pine-ridge, type: lower-terrain, start_s: 80, end_s: 120, top: 0.52 }
-  - { id: high-clouds, type: upper-terrain, start_s: 125, end_s: 145, bottom: 0.38 }
+  - { id: eagle-ceiling, type: upper-terrain, start_s: 78, end_s: 88, bottom: 0.46 }
+  - { id: narrow-gap, type: corridor, start_s: 94, end_s: 106, ceiling: 0.32, floor: 0.68 }
+  - { id: granite-rise, type: lower-terrain, start_s: 110, end_s: 122, top: 0.52 }
+  - { id: hanging-ice, type: upper-terrain, start_s: 128, end_s: 140, bottom: 0.40 }
+  - { id: ice-gate, type: corridor, start_s: 146, end_s: 158, ceiling: 0.26, floor: 0.62 }
   - { id: checkpoint-two, type: checkpoint, start_s: 150 }
-  - { id: ice-cave, type: corridor, start_s: 160, end_s: 205, ceiling: 0.31, floor: 0.62 }
-  - id: cave-bells
-    type: collectible-path
-    start_s: 165
-    end_s: 205
-    collectibles:
-      - { id: mp-bell-04, at_s: 170, altitude: 0.47 }
-      - { id: mp-bell-05, at_s: 185, altitude: 0.42 }
-      - { id: mp-bell-06, at_s: 199, altitude: 0.51 }
+  - { id: glacier-rise, type: lower-terrain, start_s: 164, end_s: 176, top: 0.48 }
+  - { id: cave-roof, type: upper-terrain, start_s: 182, end_s: 194, bottom: 0.44 }
+  - { id: blue-cave, type: corridor, start_s: 200, end_s: 212, ceiling: 0.30, floor: 0.66 }
+  - { id: summit-rise, type: lower-terrain, start_s: 218, end_s: 230, top: 0.54 }
   - { id: checkpoint-three, type: checkpoint, start_s: 225 }
-  - { id: sunset-descent, type: upper-terrain, start_s: 235, end_s: 270, bottom: 0.52 }
-  - { id: home-valley, type: open, start_s: 270, end_s: 300 }
+  - { id: sunset-shelf, type: upper-terrain, start_s: 236, end_s: 248, bottom: 0.38 }
+  - { id: sunset-gate, type: corridor, start_s: 254, end_s: 266, ceiling: 0.28, floor: 0.64 }
+  - { id: home-rise, type: lower-terrain, start_s: 272, end_s: 282, top: 0.58 }
+  - { id: barn-roof, type: upper-terrain, start_s: 288, end_s: 298, bottom: 0.48 }
   - { id: finish, type: finish, start_s: 300 }
