@@ -234,11 +234,11 @@ describe('DispatchTargetPicker / useDispatchTargetPicker', () => {
       fireEvent.click(screen.getByTestId('picker-submit'));
       await waitFor(() => expect(dispatchToTarget).toHaveBeenCalled());
       expect(dispatchToTarget.mock.calls[0][0]).toMatchObject({ mode: 'fork', play: 'plex:1' });
-      expect(dispatchToTarget.mock.calls[0][0].onSucceeded).toBeUndefined();
+      expect(dispatchToTarget.mock.calls[0][0].onConfirmed).toBeUndefined();
       expect(stopIfCurrent).not.toHaveBeenCalled();
     });
 
-    it('Move sends as a second-room start and stops this device only after the screen accepted', async () => {
+    it('Move sends as a second-room start and stops this device only after the screen confirmed playing', async () => {
       castTargetState = { targetIds: [], mode: 'transfer', setMode: vi.fn() };
       const { stopIfCurrent, wrap } = localWith();
       render(wrap(<DispatchTargetPicker source={{ play: 'plex:1' }} />));
@@ -247,9 +247,9 @@ describe('DispatchTargetPicker / useDispatchTargetPicker', () => {
       await waitFor(() => expect(dispatchToTarget).toHaveBeenCalled());
       const params = dispatchToTarget.mock.calls[0][0];
       expect(params.mode).toBe('fork');
-      expect(typeof params.onSucceeded).toBe('function');
+      expect(typeof params.onConfirmed).toBe('function');
       expect(stopIfCurrent).not.toHaveBeenCalled();
-      params.onSucceeded();
+      params.onConfirmed();
       expect(stopIfCurrent).toHaveBeenCalledWith({ ownerInstanceId: 'o1', playbackRevision: 3 });
     });
   });

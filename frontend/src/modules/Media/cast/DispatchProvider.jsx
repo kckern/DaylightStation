@@ -80,6 +80,7 @@ export function DispatchProvider({ children }) {
   // be retried without replaying successful siblings.
   const attemptsRef = useRef(new Map());
   const dedupCacheRef = useRef(new Map());
+  const followUpsRef = useRef(new Map());
   // Identical dispatches still IN FLIGHT, keyed the same way as the dedupe
   // cache. The 5s window (C9.8) assumes a dispatch resolves quickly, but a
   // cold LG OLED holds the power step for up to 80s — on 2026-08-12 a user
@@ -128,7 +129,7 @@ export function DispatchProvider({ children }) {
     });
   }, [peek]);
 
-  const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot, title, itemAction, startOver = false, resumedFrom = null, brief = false, onSucceeded = null }, { bypassDedupe = false } = {}) => {
+  const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot, title, itemAction, startOver = false, resumedFrom = null, brief = false, onConfirmed = null }, { bypassDedupe = false } = {}) => {
     if (!Array.isArray(targetIds) || targetIds.length === 0) return [];
     if (itemAction && !itemAction.operationId) {
       itemAction = { ...itemAction, operationId: uuid(), tappedAt: Date.now() };
@@ -193,6 +194,9 @@ export function DispatchProvider({ children }) {
       const dispatchId = uuid();
       dispatchIds.push(dispatchId);
       inFlightRef.current.get(key)?.add(dispatchId);
+      // A follow-up (e.g. "Move: stop playing here") runs only once that screen
+      // CONFIRMS playing — never on the mere acceptance of the request.
+      if (typeof onConfirmed === 'function') followUpsRef.current.set(dispatchId, { run: onConfirmed, deviceId });
       attemptsRef.current.set(dispatchId, {
         targetIds: [deviceId], play, queue, mode, shader, volume, shuffle, snapshot: retrySnapshot, title, itemAction,
         ...(brief ? { brief: true } : {}),
@@ -217,7 +221,6 @@ export function DispatchProvider({ children }) {
           if (res?.ok) {
             dispatch({ type: 'SUCCEEDED', dispatchId, totalElapsedMs: res.totalElapsedMs ?? null, ...(res.appliedAs ? { appliedAs: res.appliedAs } : {}) });
             mediaLog.dispatchSucceeded({ dispatchId, totalElapsedMs: res.totalElapsedMs });
-            try { onSucceeded?.({ dispatchId, deviceId }); } catch { /* a follow-up must never break the outcome */ }
           } else {
             // Failure must not poison the idempotency cache — the user's
             // retry within the window has to actually re-dispatch (C6.4).
@@ -389,6 +392,23 @@ export function DispatchProvider({ children }) {
     return fleetStore.subscribeAll(() => reconcileScreens());
   }, [fleetStore, reconcileScreens]);
   useEffect(() => { reconcileScreens(); }, [state.byId, reconcileScreens]);
+
+  // Follow-ups wait for their own attempt to be CONFIRMED playing; an attempt
+  // that fails, goes unconfirmed or vanishes drops its follow-up unrun, so
+  // whatever it would have changed here is left exactly as it was.
+  useEffect(() => {
+    for (const [dispatchId, followUp] of [...followUpsRef.current]) {
+      const record = state.byId.get(dispatchId);
+      const phase = record ? (record.phase ?? outcomePhase(record)) : null;
+      if (phase === 'confirmed') {
+        followUpsRef.current.delete(dispatchId);
+        try { followUp.run({ dispatchId, deviceId: followUp.deviceId }); } catch { /* a follow-up must never break the outcome */ }
+      } else if (!record || ['failed', 'not-sent', 'unconfirmed'].includes(phase)) {
+        followUpsRef.current.delete(dispatchId);
+        mediaLog.followUpDropped({ dispatchId, deviceId: followUp.deviceId, phase });
+      }
+    }
+  }, [state.byId]);
 
   // Replay inputs live only as long as their record (review d): a record the
   // reducer superseded or removed can never be replayed afterwards.
