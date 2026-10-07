@@ -591,6 +591,15 @@ guest is cancelled neutrally. Guests still contribute to cycle boosts. This
 policy differs from a configured household exemption: the cadence floor can
 hold an exempt household rider to an established ride.
 
+When `unattended_policy` is enabled and none of the configured `superusers` is
+in the active roster, each governed video starts locked until a non-guest,
+non-exempt child reaches the configured startup zone. That achievement is
+latched for the current media item. The engine then replaces the ordinary
+random challenge schedule with an `all` challenge at that zone on the exact
+configured interval. A missed challenge locks playback until every governed
+child reaches the target. A superuser joining immediately stands this policy
+down and restores the normal policy; leaving again starts a fresh startup gate.
+
 ## Configuration
 
 ### Governance Policies
@@ -602,6 +611,11 @@ governance:
   grace_period_seconds: 30
   superusers:
     - user_1
+  unattended_policy:
+    enabled: true
+    startup_zone: hot
+    challenge_interval_seconds: 180
+    challenge_time_allowed_seconds: 90
   exemptions:
     - user_5  # Excluded from "all" requirements
   policies:
