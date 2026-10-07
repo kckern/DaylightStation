@@ -274,8 +274,16 @@ Incremental search via Server-Sent Events.
 |---|---|---|
 | `pending` | `{ sources: string[] }` | First, lists adapters about to run. |
 | `results` | `{ source, items: SearchResult[], remaining: string[] }` | Once per adapter as it completes. |
-| `complete` | `{ totalMs, resultCount }` | Final event. |
+| `complete` | `{ totalMs, warnings? }` | Final event. |
 | `error` | `{ message }` | Fatal stream error. |
+
+An id typed for a source that does not exist (`plex-main:12345`: a `source:id`
+whose id part is digits or a path, and whose source is no registered source,
+alias or provider) settles at once instead of searching every adapter for the
+literal text: `pending` with no sources, then `complete` with a warning
+`{ source: "plex-main", code: "UNKNOWN_SOURCE", error: "No source named …" }`
+(`GET …/search` answers the same warning with no items). Text such as
+`mission:impossible` still searches everywhere.
 
 **App behavior requirement:** the app MUST use `/stream` for live search.
 
@@ -1013,10 +1021,15 @@ Drives transport on the remote session.
 
 **Request body:**
 ```json
-{ "action": "play" | "pause" | "stop" | "seekAbs" | "seekRel" | "skipNext" | "skipPrev",
+{ "action": "play" | "pause" | "stop" | "seekAbs" | "seekRel" | "skipNext" | "skipPrev" | "goLive",
   "value": <number, optional>,
   "commandId": "<uuid>" }
 ```
+
+`goLive` (STEER.4a/AC3) takes no `value`: the screen moves its media element to
+its live edge (the furthest of the end of the last seekable range, the last
+buffered range and a finite duration) and plays. A playback with no edge
+answers `command-handler-error` `NO_LIVE_EDGE`.
 
 **Response (200):** `{ ok: true, commandId, appliedAt }`
 **Response (404):** unknown device.
@@ -1501,7 +1514,7 @@ shape consumed by `useScreenCommands`):
 
 #### 6.2.1 `command: "transport"`
 ```json
-{ "action": "play" | "pause" | "stop" | "seekAbs" | "seekRel" | "skipNext" | "skipPrev",
+{ "action": "play" | "pause" | "stop" | "seekAbs" | "seekRel" | "skipNext" | "skipPrev" | "goLive",
   "value": <number>,
   "intent": "move",     /* optional: this stop takes playback to another screen */
   "keepMusic": true     /* optional boolean, `stop` only: the sender's explicit answer to
@@ -1587,6 +1600,18 @@ Screens stamp the latest playback-relevant command's origin into
 `snapshot.meta.origin` (volume and shader changes do not count) and use it to
 name screen notes. Local input on the screen stamps `{ kind: "device", id:
 <the screen's own deviceId> }`.
+
+A screen that gives up on an item by itself (its Player's resilience is
+exhausted, so it skips to the next queue item or stops) records it in
+`snapshot.meta.problem` (RELY.5a/AC4):
+`{ kind: "skipped" | "failed", reason, item: { contentId, title }, replacement:
+{ contentId, title } | null, at: <epoch ms> }`. It is a record carrying its own
+time, not a live state. A Media sender that started, aimed at or last steered
+that screen turns a problem newer than two minutes into a playback outcome on
+that screen ("<item> stopped making progress on <screen> · Now playing
+<next>"), once per `at`. A live item publishes `isLive: true` and no
+`duration` in `currentItem` (STEER.4a/AC3), so any Remote shows LIVE and Go to
+live instead of a position.
 
 ### 6.3 Published topic — device acks
 

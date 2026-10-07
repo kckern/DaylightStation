@@ -14,6 +14,7 @@ import * as qOps from './queueOps.js';
 import { pickNextQueueItem } from './advancement.js';
 import { isContainerInput, expandContainerInput } from './containerExpansion.js';
 import mediaLog from '../logging/mediaLog.js';
+import { seekToLiveEdge } from '../../../lib/media/liveEdge.js';
 import { createItemActionOwner } from '../actions/itemActionOwner.js';
 import { createLocalSessionControls } from './localSessionControls.js';
 
@@ -883,6 +884,22 @@ export function createLocalSessionController({
           ? mediaTime
           : (position.get().seconds ?? snap().position ?? 0);
         controller.transport.seekAbs(Math.max(0, current + delta));
+      },
+      // STEER.4a/AC3: return a live stream to its live edge. The media element
+      // owns the edge (its newest seekable moment), so the move is made there.
+      goLive: () => {
+        beginAction();
+        mediaLog.transportCommand({ action: 'goLive', target: 'local' });
+        if (snap().currentItem?.isLive !== true) {
+          mediaLog.goLive({ target: 'local', ok: false, edge: null, code: 'NOT_LIVE' });
+          throw new Error('NOT_LIVE');
+        }
+        controls?.noteCommand('seek');
+        const media = player.getMediaElement?.() ?? null;
+        const result = seekToLiveEdge(media);
+        mediaLog.goLive({ target: 'local', ok: result.ok, edge: result.edge ?? null, code: result.code ?? null });
+        if (!result.ok) throw new Error(result.code);
+        return result;
       },
       skipNext: () => {
         beginAction();

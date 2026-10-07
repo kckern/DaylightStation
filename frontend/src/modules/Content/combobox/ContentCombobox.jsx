@@ -133,6 +133,7 @@ export function ContentCombobox({
   onAction = null,
   transformResults = null, // Media: collapse editions of one film/book/album in the list
   resultExtraActions = null,
+  resultRowLabels = null,
   destinationInteractionActive = false,
   retainQueryOnEscape = false,
   retainPlayableSelection = false,
@@ -579,7 +580,7 @@ export function ContentCombobox({
               </Group>
               <Group gap={4} wrap="nowrap">
                 <TypeIcon size={12} style={{ flexShrink: 0, opacity: 0.5 }} />
-                <Text size="xs" c="dimmed" truncate>{subtitleText}</Text>
+                <Text size="xs" c="dimmed" truncate data-testid={`combobox-subtitle-${item.id}`}>{resultRowLabels?.(item)?.subtitle ?? subtitleText}</Text>
               </Group>
             </Stack>
           </Group>
@@ -635,6 +636,8 @@ export function ContentCombobox({
               onMore={onMore ? (action) => onMore(action, item) : null}
               onAction={onAction}
               extraActions={resultExtraActions}
+              playLabel={resultRowLabels?.(item)?.play ?? null}
+              playOnLabel={resultRowLabels?.(item)?.playOn ?? null}
               onMoreMenuPointerDown={handleMoreMenuPointerDown}
               onMoreMenuChange={handleMoreMenuChange}
               onMoreMenuAction={handleMoreMenuAction}

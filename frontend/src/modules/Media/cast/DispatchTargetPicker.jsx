@@ -96,7 +96,7 @@ function DriftWarning({ targetIds, devices }) {
 
 export function DispatchTargetPicker({ source, onComplete, autoFocus = true, verb = 'Cast', intent = 'dispatch' }) {
   const {
-    devices, selected, multi, mode, canSubmit, localPlaying, hasPotentialContent, moveSupported, moveUnavailable, dispatchError,
+    devices, selected, multi, mode, asksKeepOrStop, canSubmit, localPlaying, hasPotentialContent, moveSupported, moveUnavailable, dispatchError,
     select, toggleMulti, setMode, submit,
   } = useDispatchTargetPicker({ source, onComplete, intent });
 
@@ -156,7 +156,7 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
           actually about to happen — a destination-only pick never plays or
           moves anything, so the choice would be pure noise (and a lie about
           what pressing the CTA does). */}
-      {hasMoveSnapshot && devices.length > 0 && !isDestination && !source?.brief && (
+      {(hasMoveSnapshot || asksKeepOrStop) && devices.length > 0 && !isDestination && !source?.brief && (
         <div className="cast-picker-mode" role="radiogroup" aria-label="What happens to playback here">
           {/* Only a session can be moved; a plain play source has no choice to make, so no group at all. */}
           <button
@@ -165,12 +165,12 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
             aria-checked={mode === 'transfer'}
             data-testid="picker-mode-transfer"
             className={`cast-picker-mode-option ${mode === 'transfer' ? 'cast-picker-mode-option--on' : ''}`}
-            disabled={!moveSupported}
+            disabled={!moveSupported && !asksKeepOrStop}
             onClick={() => setMode('transfer')}
           >
-            Move playback to {targetLabel ?? 'device'}
+            {asksKeepOrStop ? `Move: stop playing here${targetLabel ? `, play on ${targetLabel}` : ''}` : `Move playback to ${targetLabel ?? 'device'}`}
           </button>
-          {!moveSupported && <div data-testid="picker-move-unavailable" className="cast-picker-warning" role="status">
+          {!moveSupported && !asksKeepOrStop && <div data-testid="picker-move-unavailable" className="cast-picker-warning" role="status">
             {selected.size > 1
               ? 'Move playback to one screen at a time.'
               : 'Move playback is not available yet for a single item. Keep playing here instead.'}

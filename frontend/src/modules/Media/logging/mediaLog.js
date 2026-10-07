@@ -162,6 +162,21 @@ export const mediaLog = {
   playedEarlierShown:     debug('played-earlier.shown'),
   householdDegradedReload: info('household.degraded-reload'),
   moveHereIgnored:        debug('move-here.ignored'),
+  // P0 features (Phase 2a)
+  goLive:                 info('transport.go-live'),
+  playOnChoiceChanged:    info('play-on.choice-changed'),
+  playOnChoiceApplied:    info('play-on.choice-applied'),
+  playOnStopHere:         info('play-on.stop-here'),
+  followUpDropped:        info('dispatch.follow-up-dropped'),
+  collectionContinued:    info('find.collection-continued'),
+  playNextHoldOffered:    info('play-next.hold-offered'),
+  playNextFrontChosen:    info('play-next.front-chosen'),
+  remoteProblemReported:  warn('remote-problem.reported'),
+  screenHandleShown:      info('screen-handle.shown'),
+  screenHandleHidden:     debug('screen-handle.hidden'),
+  screenHandleCommand:    info('screen-handle.command'),
+  screenHandleFailed:     warn('screen-handle.failed'),
+  shownHere:              info('find.shown-here'),
 };
 
 export default mediaLog;

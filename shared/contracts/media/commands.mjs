@@ -7,6 +7,8 @@ export const COMMAND_KINDS = Object.freeze([
 
 export const TRANSPORT_ACTIONS = Object.freeze([
   'play', 'pause', 'stop', 'seekAbs', 'seekRel', 'skipNext', 'skipPrev',
+  // Return a live stream to its live edge (STEER.4a/AC3). Carries no value.
+  'goLive',
 ]);
 
 export const QUEUE_OPS = Object.freeze([

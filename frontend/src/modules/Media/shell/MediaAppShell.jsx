@@ -9,10 +9,12 @@ import { Dock } from './Dock.jsx';
 import { NavRail, TabBar } from './PrimaryNav.jsx';
 import { Canvas } from './Canvas.jsx';
 import { MiniPlayer } from './MiniPlayer.jsx';
+import { ScreenHandle } from './ScreenHandle.jsx';
 import { DispatchProgressTray } from '../cast/DispatchProgressTray.jsx';
 import { SearchMode } from '../search/SearchMode.jsx';
 import { ReconnectingNote } from './ReconnectingNote.jsx';
 import { LocalPlaybackOutcomes } from './LocalPlaybackOutcomes.jsx';
+import { RemoteScreenProblems } from './RemoteScreenProblems.jsx';
 import { LocalStopFeedbackProvider, useLocalStopFeedbackCount } from './LocalStopFeedbackContext.jsx';
 import { SearchLauncherContext } from './SearchLauncherContext.js';
 import { slashIsNotForSearch } from './searchShortcut.js';
@@ -67,6 +69,7 @@ function ShellInner() {
         </div>
         <ReconnectingNote />
         <LocalPlaybackOutcomes />
+        <RemoteScreenProblems />
         {/* Outcome notices float over the canvas: a zero-height anchor sits
             directly above the mini player (or tab bar), so a row appearing
             never takes page space or moves anything, and never covers the
@@ -74,6 +77,7 @@ function ShellInner() {
         <div className="media-outcome-anchor" data-testid="media-outcome-anchor">
           <DispatchProgressTray />
         </div>
+        <ScreenHandle />
         <MiniPlayer />
         {queueKeptCount != null && (
           <div className="np-queue-kept" data-testid="np-queue-kept" role="status">

@@ -20,6 +20,7 @@ function logger() {
 const ACKED_COMMAND_EVENTS = Object.freeze([
   'media:playback',
   'media:seek-abs',
+  'media:go-live',
   'media:seek-rel',
   'media:queue-op',
   'media:config-set',
