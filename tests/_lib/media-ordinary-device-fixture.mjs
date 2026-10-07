@@ -51,9 +51,9 @@ const VIRTUAL_TRANSPORT_ACTIONS = new Set(['pause', 'play', 'seekAbs', 'seekRel'
 // Screen session controls (P1): virtual receiver only, like transport.
 const VIRTUAL_SESSION_ROUTES = [
   ['PUT', /^\/session\/(add-only|end-of-queue|stop-after-current|volume)$/],
-  // Steering a virtual screen's queue (edits, Undo) and its shuffle/repeat. Starting content stays on the
-  // ordinary load route: queue play-now/add and item-action are NOT opened here.
-  ['POST', /^\/session\/queue\/(undo|remove|reorder|jump|clear)$/],
+  // Steering a virtual screen's queue (item actions such as remove/clear, edits, Undo) and its shuffle/repeat.
+  // Plain queue play-now/add stay closed: starting content uses the ordinary load route.
+  ['POST', /^\/session\/queue\/(undo|remove|reorder|jump|clear|item-action)$/],
   ['PUT', /^\/session\/(shuffle|repeat)$/],
   ['POST', /^\/session\/(sleep-timer|sleep-timer\/cancel|sleep-timer\/resume|put-back|countdown\/cancel|countdown\/start-now|claim)$/],
   ['GET', /^\/start-status$/],
@@ -79,7 +79,7 @@ const VIRTUAL_SESSION_ROUTES = [
  * @param {number|null} [spec.duration] seconds; null = unknown (no seeking)
  * @param {number} [spec.position]
  * @param {string} [spec.thumbnail] picture url of the current item
- * @param {number} [spec.heartbeatMs=20000] how often it keeps reporting; 0 = silent after the first report
+ * @param {number} [spec.heartbeatMs=10000] how often it keeps reporting; 0 = silent after the first report
  * @param {'video'|'audio'|'photo'|'slideshow'|'live'} [spec.kind='video']
  * @param {{kind:'device',id:string}|{kind:'routine',name:string}} [spec.origin]
  * @param {Array<{title:string,contentId?:string,kind?:string}>} [spec.queue] items after the current one
@@ -149,9 +149,13 @@ function virtualReceiver(eventBus, logger, deviceId = ORDINARY_DEVICE_ID, screen
     setVolume: async (level) => { onVolume(deviceId, level); return { ok: true, virtual: true, level }; },
     // A screen with virtual device_control wakes for real (the "Turning on" step runs and is recorded,
     // never sent to hardware); every other virtual screen has no device control to wake.
-    powerOn: async () => (onPower
-      ? (onPower(deviceId), { ok: true, verified: true, elapsedMs: 5 })
-      : { ok: true, skipped: 'no_device_control' }),
+    // A TV takes a moment to wake: the step is observable ("Turning on TV…") rather than instantaneous.
+    powerOn: async () => {
+      if (!onPower) return { ok: true, skipped: 'no_device_control' };
+      onPower(deviceId);
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      return { ok: true, verified: true, elapsedMs: 1500 };
+    },
     prepareForContent: async (options) => ({ ...(await content.prepareForContent(options)), coldRestart: false, cameraSkipped: true }),
     // WakeAndLoad's ordinary warm path broadcasts directly after positive
     // subscriber+liveness proof. This real adapter is the service's cold/fallback
@@ -321,7 +325,7 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet, cat
   const beats = new Map();
   const stopBeat = (deviceId) => { clearInterval(beats.get(deviceId)); beats.delete(deviceId); };
   /**
-   * A scripted screen keeps reporting like a real one (a heartbeat every `heartbeatMs`, default 20 s), so it
+   * A scripted screen keeps reporting like a real one (a heartbeat every `heartbeatMs`, default 10 s, inside the app's 15 s stale rule), so it
    * stays in its state beyond the liveness timeout. `heartbeatMs: 0` = said once and then silent (it goes
    * Off at the liveness timeout), for journeys about a screen that stopped reporting.
    */
@@ -338,7 +342,7 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet, cat
         deviceId, reason: spec.state === 'off' ? 'initial' : 'change', ts: new Date().toISOString(), snapshot,
       });
     } finally { timers.expireNow = false; }
-    const heartbeatMs = spec.heartbeatMs ?? 20_000;
+    const heartbeatMs = spec.heartbeatMs ?? 10_000;
     if (spec.state !== 'off' && heartbeatMs > 0) {
       const beat = setInterval(() => presenceGateway.publishDeviceState({
         deviceId, reason: 'heartbeat', ts: new Date().toISOString(),

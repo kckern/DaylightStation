@@ -165,16 +165,16 @@ describe('media ordinary device fixture', () => {
     await fixture.stop();
   });
 
-  it('opens queue edits, Undo and shuffle/repeat for a virtual screen only; starting content stays on the load route', async () => {
+  it('opens queue item actions, edits, Undo and shuffle/repeat for a virtual screen only; plain play-now/add stay closed', async () => {
     const fixture = createMediaOrdinaryDeviceFixture({ upstream: 'http://127.0.0.1:3111' });
-    for (const op of ['undo', 'remove', 'reorder', 'jump', 'clear']) {
+    for (const op of ['undo', 'remove', 'reorder', 'jump', 'clear', 'item-action']) {
       await request(fixture.app).post(`/livingroom-tv/session/queue/${op}`).send({ commandId: 'p' }).expect(403);
       expect((await request(fixture.app).post(`/${ORDINARY_DEVICE_ID}/session/queue/${op}`).send({ commandId: `v-${op}` })).status).not.toBe(403);
     }
     await request(fixture.app).put('/livingroom-tv/session/shuffle').send({ commandId: 'p', enabled: true }).expect(403);
     expect((await request(fixture.app).put(`/${ORDINARY_DEVICE_ID}/session/shuffle`).send({ commandId: 'v', enabled: true })).status).not.toBe(403);
     expect((await request(fixture.app).put(`/${ORDINARY_DEVICE_ID}/session/repeat`).send({ commandId: 'v', mode: 'all' })).status).not.toBe(403);
-    for (const op of ['play-now', 'add', 'item-action']) {
+    for (const op of ['play-now', 'add']) {
       await request(fixture.app).post(`/${ORDINARY_DEVICE_ID}/session/queue/${op}`).send({ commandId: `v-${op}`, contentId: 'plex:1' }).expect(403);
     }
     await fixture.stop();

@@ -19,7 +19,7 @@ const ALBUM = 'plex:592904';
 const ALBUM_TRACKS = ['plex:592905', 'plex:592906', 'plex:592907', 'plex:592908', 'plex:592909', 'plex:592910'];
 const vp = VIEWPORTS.laptop;
 
-test.beforeAll(async ({ browser }) => { await warmMedia(browser); });
+test.beforeAll(async ({ browser }) => { test.setTimeout(300000); await warmMedia(browser); });
 test.beforeEach(async ({ request, baseURL }) => { await resetHouseholdAt(request, baseURL); });
 
 const queueIds = async (request, id = A) => (await receiverState(request, id))?.queue?.items?.map((item) => item.contentId) ?? [];
@@ -222,7 +222,7 @@ test('[PLAY.7a/AC1][PLAY.7a/AC3] a whole collection can be played next or added 
   await done();
 });
 
-test('[PLAY.2a/AC3][PLAY.7a/AC2] the confirmation of a whole-collection start or add states how many items and where', async ({ browser, request }) => {
+test('[PLAY.2a/AC3][PLAY.7a/AC2] the confirmation of a whole-collection start or add states how many items and where (known gap)', async ({ browser, request }) => {
   // Known gap (reported, not fixed here): the confirmation names the collection and the screen with Undo,
   // but not how many items went there. test.fail() turns this red when the product states the count.
   test.fail(true, 'NEEDS-FEATURE: collection confirmation states the item count');

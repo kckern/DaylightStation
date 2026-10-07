@@ -17,7 +17,7 @@ test.setTimeout(360000);
 test.describe.configure({ mode: 'serial' });
 
 let ha;
-test.beforeAll(async ({ browser }) => { await warmMedia(browser); });
+test.beforeAll(async ({ browser }) => { test.setTimeout(300000); await warmMedia(browser); });
 test.beforeEach(async ({ request, baseURL }) => {
   await resetHouseholdAt(request, baseURL);
   ha = createHomeAssistantCaller({ baseUrl: baseURL });
