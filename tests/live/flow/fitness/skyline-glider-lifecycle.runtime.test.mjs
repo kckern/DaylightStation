@@ -49,12 +49,14 @@ test('Skyline Glider shipped course scrolls smoothly, responds, resumes, and sav
   await setRpm(page, bike.equipmentId, 65);
   await expect.poll(async () => Number(await page.getByTestId('skyline-glider-flight').getAttribute('data-course-time')), { timeout: 25_000 }).toBeGreaterThan(54);
   await expect(page.locator('.skyline-glider__hud')).toContainText('♥ 3');
+  await expect.poll(async () => Number(await page.getByTestId('skyline-glider-flight').getAttribute('data-course-time')), { timeout: 30_000 }).toBeGreaterThan(76);
 
   await page.reload();
   await expect(page.getByRole('button', { name: 'Resume flight' })).toBeVisible({ timeout: 10_000 });
   await page.getByRole('button', { name: 'Resume flight' }).click();
   await setRpm(page, bike.equipmentId, 70);
   await expect(page.getByTestId('skyline-glider-flight')).toBeVisible({ timeout: 10_000 });
+  await expect.poll(async () => Number(await page.getByTestId('skyline-glider-flight').getAttribute('data-course-time'))).toBeGreaterThan(75);
   await page.getByRole('button', { name: 'End flight' }).click();
   await expect(page.getByTestId('skyline-glider-result')).toBeVisible({ timeout: 10_000 });
   await expect.poll(() => savedRun).not.toBeNull();
