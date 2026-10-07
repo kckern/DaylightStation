@@ -3,16 +3,23 @@
 // progressive source. Shared by the local Media controller ("Go to live") and
 // the screen receiver that executes a remote `goLive` command.
 
-/** @returns {number|null} seconds, or null when the element offers no edge. */
+/**
+ * The newest moment the element can show: the furthest of the last seekable
+ * range's end, the last buffered range's end and a finite duration. (A live
+ * HLS/DASH stream reports its edge through `seekable`; a live progressive
+ * stream reports an empty seekable range and a duration that grows with the
+ * stream.)
+ * @returns {number|null} seconds, or null when the element offers no edge.
+ */
 export function liveEdgeSeconds(el) {
   if (!el) return null;
-  const ranges = el.seekable;
-  if (ranges && ranges.length > 0) {
-    const end = ranges.end(ranges.length - 1);
-    if (Number.isFinite(end) && end >= 0) return end;
+  const ends = [];
+  for (const ranges of [el.seekable, el.buffered]) {
+    if (ranges && ranges.length > 0) ends.push(ranges.end(ranges.length - 1));
   }
-  if (Number.isFinite(el.duration) && el.duration > 0) return el.duration;
-  return null;
+  if (Number.isFinite(el.duration) && el.duration > 0) ends.push(el.duration);
+  const finite = ends.filter((end) => Number.isFinite(end) && end > 0);
+  return finite.length ? Math.max(...finite) : null;
 }
 
 /**

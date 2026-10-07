@@ -9,7 +9,7 @@ import { build, createServer, preview } from 'vite';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { getAppPort } from './configHelper.mjs';
 import { PlexAdapter } from '../../backend/src/1_adapters/content/media/plex/PlexAdapter.mjs';
@@ -229,6 +229,50 @@ function serveSlideshowFixture(rawPath, res) {
   }
   return false;
 }
+// A live channel for the Go to live journey (STEER.4a/AC3): a never-ending,
+// real-time fragmented MP4 (test picture and tone, made by ffmpeg as it is
+// requested). Read-only, no household data; `isLive` rides the play descriptor
+// exactly as a real live source's would.
+export const LIVE_FIXTURE_ID = 'fixture:live';
+const LIVE_STREAM_PATH = '/api/v1/_fixture/live/stream.mp4';
+export function liveFixtureDescriptor() {
+  return {
+    id: LIVE_FIXTURE_ID, contentId: LIVE_FIXTURE_ID, assetId: LIVE_FIXTURE_ID,
+    title: 'Acceptance live channel', mediaType: 'video', format: 'video', isLive: true,
+    mediaUrl: LIVE_STREAM_PATH,
+  };
+}
+function serveLiveFixture(rawPath, req, res) {
+  let path = rawPath;
+  try { path = decodeURIComponent(rawPath); } catch { /* keep raw */ }
+  if (path === `/api/v1/play/${LIVE_FIXTURE_ID}`) {
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(liveFixtureDescriptor()));
+    return true;
+  }
+  if (path === `/api/v1/queue/${LIVE_FIXTURE_ID}`) {
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ source: 'fixture', id: LIVE_FIXTURE_ID, count: 1, totalDuration: 0, items: [liveFixtureDescriptor()] }));
+    return true;
+  }
+  if (path === LIVE_STREAM_PATH) {
+    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Cache-Control', 'no-store');
+    const ffmpeg = spawn('ffmpeg', ['-loglevel', 'error', '-re',
+      '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=15',
+      '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=44100',
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p', '-g', '15',
+      '-c:a', 'aac', '-b:a', '48k',
+      '-f', 'mp4', '-movflags', 'frag_keyframe+empty_moov+default_base_moof', 'pipe:1'], { stdio: ['ignore', 'pipe', 'ignore'] });
+    ffmpeg.stdout.pipe(res);
+    const stop = () => { try { ffmpeg.kill('SIGKILL'); } catch { /* already gone */ } };
+    res.on('close', stop);
+    req.on('close', stop);
+    ffmpeg.on('error', () => { try { res.end(); } catch { /* socket gone */ } });
+    return true;
+  }
+  return false;
+}
 const allowedTitles = new Set(policy === 'branch' ? BRANCH_ALLOWED_TITLES
   : policy === 'hls-copy-55854' ? ['55854'] : ['675677']);
 
@@ -245,6 +289,7 @@ export function createAcceptancePreviewPlugin({ app, allowedTitles, policy, sour
     if (ordinaryDeviceFixture && await ordinaryDeviceFixture.middleware(req, res)) return;
     const path = new URL(req.url, upstream).pathname;
     if (req.method === 'GET' && serveSlideshowFixture(path, res)) return;
+    if (req.method === 'GET' && serveLiveFixture(path, req, res)) return;
     // The ordinary journey gets only catalog/config/media reads. This also
     // blocks GET-shaped command routes outside `/device` (which the fixture
     // consumes separately) rather than trusting HTTP method alone.
