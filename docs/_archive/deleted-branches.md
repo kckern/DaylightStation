@@ -577,3 +577,5 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-10-07 | test/media-proof-gaps | 949ba271c | Media proof gaps phases 0-2b tests/docs (merged ed7f825fa) |
 
 | 2026-10-07 | feat/korean-course | f5bf8d890eebaf3504316d5f026f85898e452ad5 | Korean Lesson 1 hybrid practice/assessment, merged into main and deployed |
+
+| 2026-10-07 | feat/korean-full-course | 8213fbb1f70a2eb8ff98794ee112e210db7d1182 | Complete sixteen-unit Korean hybrid course, reviewed, merged and deployed |
