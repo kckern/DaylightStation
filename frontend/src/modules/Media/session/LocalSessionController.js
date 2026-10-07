@@ -890,6 +890,10 @@ export function createLocalSessionController({
       goLive: () => {
         beginAction();
         mediaLog.transportCommand({ action: 'goLive', target: 'local' });
+        if (snap().currentItem?.isLive !== true) {
+          mediaLog.goLive({ target: 'local', ok: false, edge: null, code: 'NOT_LIVE' });
+          throw new Error('NOT_LIVE');
+        }
         controls?.noteCommand('seek');
         const media = player.getMediaElement?.() ?? null;
         const result = seekToLiveEdge(media);
