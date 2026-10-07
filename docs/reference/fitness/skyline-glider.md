@@ -4,7 +4,11 @@ Skyline Glider is a single-rider Fitness game in which cadence controls a hang g
 
 ## Play contract
 
-- The first claimed cadence-capable equipment and its rider are used.
+- A fresh press of a bike's physical rider-selector button starts the game, or resumes that rider's compatible checkpoint. The kiosk lobby does not require a touchscreen press.
+- The selector's equipment and assigned rider are locked together for the run. Checkpoints, saved runs, and rewards remain scoped to that rider.
+- School learners may fly only when the fail-closed `fitness.skyline-glider` entitlement grants access from `school.day-complete`. Missing identity, Guest, unavailable or indeterminate state all stay locked; household members marked `schoolLearner: false` are outside this gate.
+- An admin fingerprint can approve a pending physical-button start. The admin authorizes the flight but does not become its rider or reward recipient.
+- Localhost and `127.0.0.1` deep links retain touchscreen Start/Resume controls for development. A non-local deep link still enters the gated kiosk lobby.
 - Equipment `rpm.min` and `rpm.max` calibrate the altitude range; the safe fallback is 30–100 RPM.
 - Faster cadence climbs and slower cadence descends. Zero RPM coasts for one second before descending.
 - A missing or stalled cadence transport is collision-protected for 0.75 seconds, then freezes the course behind a reconnect overlay.

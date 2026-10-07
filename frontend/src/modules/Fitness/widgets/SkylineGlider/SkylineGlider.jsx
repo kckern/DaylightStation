@@ -10,6 +10,10 @@ import { createSkylineAudio } from '@/modules/Fitness/lib/skylineGlider/skylineA
 import { clearFlightCheckpoint, readFlightCheckpoint, writeFlightCheckpoint } from '@/modules/Fitness/lib/skylineGlider/checkpointRepository.js';
 import { buildSkylineGliderRun } from '@/modules/Fitness/lib/skylineGlider/runResult.js';
 import { listUsableSkylineBikes, selectSkylineBike } from '@/modules/Fitness/lib/skylineGlider/bikeSelection.js';
+import { useIdentity } from '@/modules/Fitness/identity/useIdentity.js';
+import UnlockPrompt from '@/modules/Fitness/player/overlays/UnlockPrompt.jsx';
+import { isLocalDevHost } from '@/lib/kioskEnv.js';
+import useSkylineAccess from './useSkylineAccess.js';
 import './SkylineGlider.scss';
 
 function formatTime(seconds) {
@@ -124,6 +128,7 @@ export function RpmGauge({ state }) {
 
 export default function SkylineGlider() {
   const ctx = useFitnessContext();
+  const { registerAdmin, clearUnlock, unlockState, unlockedUser } = useIdentity();
   const log = useMemo(() => getLogger().child({ component: 'skyline-glider' }), []);
   const [courses, setCourses] = useState([]);
   const [error, setError] = useState('');
@@ -135,6 +140,9 @@ export default function SkylineGlider() {
   const [preferredEquipmentId, setPreferredEquipmentId] = useState(null);
   const [, setSelectionTick] = useState(0);
   const [effects, setEffects] = useState({ collisionKey: 0, pops: [], banner: null });
+  const [pendingStart, setPendingStart] = useState(null);
+  const [accessOverride, setAccessOverride] = useState(null);
+  const [adminPromptOpen, setAdminPromptOpen] = useState(false);
   const flightRef = useRef(null);
   const runRef = useRef(null);
   const finalizingRef = useRef(false);
@@ -156,6 +164,10 @@ export default function SkylineGlider() {
   const activeBike = lockedSelectionRef.current || selectedBike;
   const equipment = activeBike?.equipment || null;
   const riderId = activeBike?.riderId || null;
+  const localDev = isLocalDevHost();
+  const schoolLearner = riderId ? ctx?.getUserByName?.(riderId)?.schoolLearner : undefined;
+  const access = useSkylineAccess(riderId, { schoolLearner });
+  const accessGranted = access.unlocked || accessOverride?.riderId === riderId;
   const course = courses[0] || null;
   const checkpointIdentity = useMemo(() => course && equipment && riderId ? {
     fitnessSessionId: fitnessSessionInstance?.sessionId || null,
@@ -182,6 +194,11 @@ export default function SkylineGlider() {
     setGovernanceSuspended?.(true);
     return () => setGovernanceSuspended?.(false);
   }, [setGovernanceSuspended]);
+
+  useEffect(() => {
+    setAccessOverride((current) => current?.riderId === riderId ? current : null);
+    setPendingStart((current) => current?.userId === riderId ? current : null);
+  }, [riderId]);
 
   useEffect(() => () => {
     effectTimersRef.current.forEach((timer) => clearTimeout(timer));
@@ -418,7 +435,7 @@ export default function SkylineGlider() {
     return () => { cancelAnimationFrame(frameId); audioRef.current.stop(); };
   }, [phase, checkpointIdentity, course, equipment?.id, riderId, finalize, fitnessSessionInstance, log, muted]);
 
-  const begin = (resume = false) => {
+  const begin = useCallback((resume = false) => {
     if (!equipment || !riderId || !course) return;
     const armedAtMs = Date.now();
     const initial = createFlightState(course, { calibration: resolveCalibration(equipment), armedAtMs });
@@ -449,7 +466,7 @@ export default function SkylineGlider() {
       runId: run.runId, courseId: course.id, courseVersion: course.version,
       riderId, equipmentId: equipment.id, calibration: initial.calibration, resumed: canResume,
     });
-  };
+  }, [course, equipment, log, riderId, saved.identity, saved.state, saved.status, selectedBike]);
 
   const exitFlight = () => {
     log.info('skyline_glider.flight.exited', {
@@ -473,13 +490,59 @@ export default function SkylineGlider() {
     begin(false);
   };
 
+  useEffect(() => ctx?.subscribeToAppEvent?.('rider-select', (event) => {
+    const selection = event?.payload || {};
+    if (phase !== 'lobby') return;
+    if (!selection.equipmentId || !selection.userId) return;
+    if (!ctx?.equipment?.some((item) => item?.id === selection.equipmentId && item?.cadence != null)) return;
+    setPreferredEquipmentId(selection.equipmentId);
+    setPendingStart({ equipmentId: selection.equipmentId, userId: selection.userId, timestamp: event.timestamp });
+    log.info('skyline_glider.access.start_requested', {
+      riderId: selection.userId, equipmentId: selection.equipmentId,
+    });
+  }), [ctx, log, phase]);
+
+  useEffect(() => {
+    if (phase !== 'lobby' || !pendingStart || !equipment || !riderId) return;
+    if (pendingStart.equipmentId !== equipment.id || pendingStart.userId !== riderId) return;
+    if (!accessGranted) return;
+    setPendingStart(null);
+    begin(saved.status === 'compatible');
+  }, [accessGranted, begin, equipment, pendingStart, phase, riderId, saved.status]);
+
+  const requestAdminOverride = async () => {
+    if (!pendingStart || pendingStart.userId === 'guest') return;
+    setAdminPromptOpen(true);
+    log.info('skyline_glider.access.override_requested', {
+      riderId, equipmentId: equipment?.id,
+    });
+    const result = await registerAdmin('skyline_glider');
+    if (!result?.matched || !result.userId) {
+      log.info('skyline_glider.access.override_denied', {
+        riderId, equipmentId: equipment?.id, reason: result?.reason || 'denied',
+      });
+      return;
+    }
+    setAccessOverride({ riderId, adminUserId: result.userId });
+    setAdminPromptOpen(false);
+    clearUnlock();
+    log.info('skyline_glider.access.override_granted', {
+      riderId, equipmentId: equipment?.id, adminUserId: result.userId,
+    });
+  };
+
   if (phase === 'loading') return <main className="skyline-glider" data-testid="skyline-glider-loading">Charting the course…</main>;
   if (phase === 'error') return <main className="skyline-glider"><h1>Skyline Glider</h1><p role="alert">{error}</p></main>;
+  if (phase === 'lobby' && !localDev && !accessGranted) return <main className="skyline-glider skyline-glider--lobby" data-testid="skyline-glider-school-lock">
+    <div><p className="skyline-glider__eyebrow">Skyline Glider</p><h1>{access.status === 'error' ? 'School status unavailable' : 'Finish school to fly'}</h1><p>{access.state === 'incomplete' ? 'Today’s schoolwork still needs to be completed.' : 'Waiting for today’s school completion.'}</p></div>
+    <div className="skyline-glider__launch"><span>{riderId ? ctx?.getDisplayName?.(riderId)?.displayName || riderId : 'Press your rider button'}</span><p>{pendingStart ? 'Admin approval can start this flight.' : 'Press your bike rider button to request a flight.'}</p><button disabled={!pendingStart} onClick={() => void requestAdminOverride()}>Admin unlock</button></div>
+    <UnlockPrompt open={adminPromptOpen} state={unlockState} lockLabel="Skyline Glider" unlockedUser={unlockedUser} onCancel={() => { setAdminPromptOpen(false); clearUnlock(); }}/>
+  </main>;
   if (phase === 'lobby') return <main className="skyline-glider skyline-glider--lobby" data-testid="skyline-glider-lobby">
     <div><p className="skyline-glider__eyebrow">Alpine cadence adventure</p><h1>Skyline Glider</h1><h2>{course.name}</h2><p>{course.description}</p><p>Pedal faster to climb. Ease off to descend.</p></div>
     <div className="skyline-glider__launch"><span>{equipment ? equipment.name : 'Connect and assign a cadence bike'}</span><span>{riderId ? ctx?.getDisplayName?.(riderId)?.displayName || riderId : 'Waiting for a live rider'}</span>
       {usableBikes.length > 1 && <label>Bike <select aria-label="Bike" value={equipment?.id || ''} onChange={(event) => setPreferredEquipmentId(event.target.value)}>{usableBikes.map((item) => <option key={item.equipment.id} value={item.equipment.id}>{item.equipment.name}</option>)}</select></label>}
-      {saved.status === 'compatible' ? <><button onClick={() => begin(true)}>Resume flight</button><button className="secondary" onClick={() => void startOver()}>Start over</button></> : saved.status === 'pending_terminal' ? <button onClick={() => {
+      {!localDev ? <p>Press your bike rider button to {saved.status === 'compatible' ? 'resume' : 'start'}.</p> : saved.status === 'compatible' ? <><button onClick={() => begin(true)}>Resume flight</button><button className="secondary" onClick={() => void startOver()}>Start over</button></> : saved.status === 'pending_terminal' ? <button onClick={() => {
         lockedSelectionRef.current = selectedBike;
         runRef.current = { runId: saved.identity.runId, startedAt: saved.identity.startedAt };
         flightRef.current = saved.state;
