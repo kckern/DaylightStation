@@ -90,6 +90,20 @@ describe('useContentDispatch', () => {
     expect(result.current.addContainerToQueue).toBe(first.addContainerToQueue);
   });
 
+  describe('FIND.8b/AC3 cameras and single photos show on this device', () => {
+    it('a photo tap shows here even with another screen aimed; an ordinary leaf still goes to the aim', () => {
+      castTargetState = { targetIds: ['livingroom-tv'], mode: 'fork' };
+      const { dispatch } = setup();
+      let photoRoute; let filmRoute;
+      act(() => { photoRoute = dispatch('immich:asset:1', { id: 'immich:asset:1', title: 'Beach', type: 'photo' }); });
+      expect(photoRoute).toBe('local');
+      expect(dispatchToTarget).not.toHaveBeenCalled();
+      expect(playNow).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'immich:asset:1' }), expect.anything());
+      act(() => { filmRoute = dispatch('plex:1', { id: 'plex:1', title: 'Arrival', type: 'movie' }); });
+      expect(filmRoute).toBe('cast');
+    });
+  });
+
   describe('leaf More verbs', () => {
     it('routes More Play Now to the aimed device without changing the local queue', () => {
       castTargetState = { targetIds: ['livingroom-tv'], mode: 'fork' };

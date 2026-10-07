@@ -137,3 +137,29 @@ describe('ResultRowActions — used standalone (desktop ContentCombobox reuse)',
     expect(screen.getByTestId('result-play-all-x')).toBeInTheDocument();
   });
 });
+
+describe('ResultRow — FIND.8b labelled inline play and Show on…', () => {
+  it('names the inline play on a collection row and plays it without opening the row', () => {
+    const onPlayAll = vi.fn(), onTap = vi.fn();
+    renderWithProvider(<ResultRow item={containerItem} title="Tuttle Twins" onTap={onTap} onPlayAll={onPlayAll} rowLabels={{ play: 'Continue S2E7' }} />);
+    const button = screen.getByTestId('result-play-all-plex:663508');
+    expect(button).toHaveTextContent('Continue S2E7');
+    fireEvent.click(button);
+    expect(onPlayAll).toHaveBeenCalledTimes(1);
+    expect(onTap).not.toHaveBeenCalled();
+  });
+
+  it('keeps the icon-only play when no label is given (admin pickers unchanged)', () => {
+    renderWithProvider(<ResultRow item={containerItem} title="Tuttle Twins" onTap={() => {}} onPlayAll={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Play as queue' })).toBeInTheDocument();
+  });
+
+  it('renames Play on… to Show on… for a camera or photo and still reports playOn', async () => {
+    const onAction = vi.fn();
+    renderWithProvider(<ResultRow item={leafItem} title="Garage" onTap={() => {}} onAction={onAction} rowLabels={{ playOn: 'Show on…' }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    expect(screen.queryByRole('menuitem', { name: 'Play on…' })).toBeNull();
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Show on…' }));
+    expect(onAction).toHaveBeenCalledWith({ kind: 'playOn', item: leafItem });
+  });
+});

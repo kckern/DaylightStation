@@ -11,7 +11,7 @@ const EPISODES = {
   // season 1 of show 100: 11, 12 ; season 2: 21
   'plex:11': { id: 'plex:11', title: 'S1E1', type: 'episode', thumbnail: '/t/11', metadata: { type: 'episode', parentId: '10', grandparentId: '100', parentTitle: 'Season 1', grandparentTitle: 'Bluey' } },
   'plex:12': { id: 'plex:12', title: 'S1E2', type: 'episode', thumbnail: '/t/12', metadata: { type: 'episode', parentId: '10', grandparentId: '100', parentTitle: 'Season 1', grandparentTitle: 'Bluey' } },
-  'plex:21': { id: 'plex:21', title: 'S2E1', type: 'episode', thumbnail: '/t/21', metadata: { type: 'episode', parentId: '20', grandparentId: '100', parentTitle: 'Season 2', grandparentTitle: 'Bluey' } },
+  'plex:21': { id: 'plex:21', title: 'S2E1', type: 'episode', thumbnail: '/t/21', metadata: { type: 'episode', parentId: '20', grandparentId: '100', parentTitle: 'Season 2', parentIndex: 2, itemIndex: 1, grandparentTitle: 'Bluey' } },
   'plex:film': { id: 'plex:film', title: 'Film', type: 'movie', thumbnail: '/t/film', metadata: { type: 'movie' } },
   'plex:doc': { id: 'plex:doc', title: 'Doc', type: 'movie', thumbnail: '/t/doc', metadata: { type: 'movie' } },
 };
@@ -283,6 +283,8 @@ describe('shared views for other household lists', () => {
     expect([...first.keys()]).toEqual(['plex:21', 'plex:nope']);
     expect(first.get('plex:nope')).toBeNull();
     expect(first.get('plex:21')).toEqual(expect.objectContaining({ title: EPISODES['plex:21'].title }));
+    // The season's own number and the episode's place ride the display fields (FIND.8b/AC2: "Continue S2E1").
+    expect(first.get('plex:21')).toEqual(expect.objectContaining({ parentIndex: 2, itemIndex: 1 }));
     await service.describeMany(['plex:21']);
     expect(deps.contentCatalog.getItem.mock.calls.filter(([, id]) => id === 'plex:21')).toHaveLength(1);
   });

@@ -35,6 +35,7 @@ import { useNav } from '../shell/NavProvider.jsx';
 import { useDismissLayer } from '../shell/useDismissLayer.js';
 import { collapseResultEditions } from './collapseResultEditions.js';
 import { applyResultRowVerb } from './resultRowVerbs.js';
+import { useRowLabels } from './useRowLabels.js';
 import getLogger from '../../../lib/logging/Logger.js';
 import { ItemDestinationPicker } from '../actions/ItemDestinationPicker.jsx';
 import { useHouseholdResultActions } from '../household/useHouseholdResultActions.js';
@@ -44,6 +45,7 @@ export function MediaContentSearch() {
   const [oneShotAction, setOneShotAction] = useState(null);
   const { scopes, currentScopeKey, currentScope, scopeError, resetScope } = useSearchContext();
   const { dispatch, dispatchLeafVerb, playContainerAsQueue } = useContentDispatch();
+  const { rowLabelsFor, continueFor } = useRowLabels();
   const { extraActions, runHousehold } = useHouseholdResultActions();
   const { queue } = useSessionController('local');
   const { push } = useNav();
@@ -98,9 +100,17 @@ export function MediaContentSearch() {
     const id = item?.id;
     if (!id) return;
     log.info('select', { contentId: id, title: item?.title ?? null, type: item?.type ?? null, verb: 'playAll' });
+    // FIND.8b/AC2: with a part under way the inline play IS "Continue S2E7".
+    const cont = continueFor(item);
+    if (cont) {
+      mediaLog.collectionContinued({ collectionId: id, contentId: cont.contentId, label: cont.label });
+      const route = dispatchLeafVerb('playNow', cont.contentId, { id: cont.contentId, title: cont.title, type: 'episode', itemType: 'leaf' });
+      log.info('dispatch', { contentId: cont.contentId, route, verb: 'continue' });
+      return;
+    }
     const route = playContainerAsQueue(id, item);
     log.info('dispatch', { contentId: id, route, verb: 'playAll' });
-  }, [playContainerAsQueue, log]);
+  }, [playContainerAsQueue, dispatchLeafVerb, continueFor, log]);
 
   // Trailing ⋯ on a leaf row: Play Now / Play Next / Up Next / Add to Queue
   // / Open detail.
@@ -136,6 +146,7 @@ export function MediaContentSearch() {
             onAction={({ kind, item }) => handleMore(kind, item)}
             transformResults={collapseResultEditions}
             resultExtraActions={extraActions}
+            resultRowLabels={rowLabelsFor}
             placeholder="Search media…"
             selectContainers
             quietErrors
