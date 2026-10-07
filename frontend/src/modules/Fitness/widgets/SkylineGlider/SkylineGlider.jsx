@@ -147,7 +147,7 @@ export default function SkylineGlider() {
   if (phase === 'error') return <main className="skyline-glider"><h1>Skyline Glider</h1><p role="alert">{error}</p></main>;
   if (phase === 'lobby') return <main className="skyline-glider skyline-glider--lobby" data-testid="skyline-glider-lobby">
     <div><p className="skyline-glider__eyebrow">Alpine cadence adventure</p><h1>Skyline Glider</h1><h2>{course.name}</h2><p>{course.description}</p><p>Pedal faster to climb. Ease off to descend.</p></div>
-    <div className="skyline-glider__launch"><span>{equipment ? equipment.name : 'Connect a cadence bike'}</span><span>{riderId ? ctx?.getDisplayName?.(riderId) || riderId : 'Assign a rider'}</span>
+    <div className="skyline-glider__launch"><span>{equipment ? equipment.name : 'Connect a cadence bike'}</span><span>{riderId ? ctx?.getDisplayName?.(riderId)?.displayName || riderId : 'Assign a rider'}</span>
       {saved ? <><button onClick={() => begin(true)}>Resume flight</button><button className="secondary" onClick={() => begin(false)}>Start over</button></> : <button disabled={!equipment || !riderId} onClick={() => begin(false)}>Start flight</button>}
     </div>
   </main>;
