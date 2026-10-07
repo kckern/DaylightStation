@@ -140,15 +140,17 @@ export default function SkylineGlider() {
   const finalizingRef = useRef(false);
   const lastSampleSecondRef = useRef(-1);
   const previousInputRef = useRef(null);
+  const fitnessSessionInstance = ctx?.fitnessSessionInstance;
+  const setGovernanceSuspended = ctx?.setGovernanceSuspended;
   const equipment = selectBike(ctx?.equipment);
-  const riderId = equipment ? ctx?.fitnessSessionInstance?.getEquipmentRider?.(equipment.id) : null;
+  const riderId = equipment ? fitnessSessionInstance?.getEquipmentRider?.(equipment.id) : null;
   const course = courses[0] || null;
   const saved = course && riderId ? readFlightCheckpoint(riderId, course.id) : null;
 
   useEffect(() => {
-    ctx?.setGovernanceSuspended?.(true);
-    return () => ctx?.setGovernanceSuspended?.(false);
-  }, [ctx?.setGovernanceSuspended]);
+    setGovernanceSuspended?.(true);
+    return () => setGovernanceSuspended?.(false);
+  }, [setGovernanceSuspended]);
 
   useEffect(() => {
     let active = true;
@@ -186,7 +188,7 @@ export default function SkylineGlider() {
       const response = await fetch('/api/v1/fitness/skyline-glider/runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ record }) });
       if (!response.ok) throw new Error(`save failed (${response.status})`);
       if (status === 'completed') {
-        ctx?.fitnessSessionInstance?.treasureBox?.awardBonus?.({
+        fitnessSessionInstance?.treasureBox?.awardBonus?.({
           idempotencyKey: `rpm-flight:${record.run.id}:completion:${riderId}`,
           userId: riderId, rings: record.run.reward_rings, zoneId: 'skyline-glider', color: '#e0a85b',
           source: 'skyline-glider', metadata: { courseId: course.id, collectibles: record.collectibles.length },
@@ -208,14 +210,14 @@ export default function SkylineGlider() {
         courseId: course.id, courseVersion: course.version, error: saveError.message,
       });
     }
-  }, [course, ctx?.fitnessSessionInstance, equipment?.id, log, riderId]);
+  }, [course, equipment?.id, fitnessSessionInstance, log, riderId]);
 
   useEffect(() => {
     if (phase !== 'flight' || !flightRef.current) return undefined;
     let prior = performance.now();
     const timer = setInterval(() => {
       const now = performance.now();
-      const cadence = ctx?.fitnessSessionInstance?.getEquipmentCadence?.(equipment?.id) || { rpm: 0, connected: false };
+      const cadence = fitnessSessionInstance?.getEquipmentCadence?.(equipment?.id) || { rpm: 0, connected: false };
       const previous = flightRef.current;
       const previousCheckpointId = previous.checkpoint.id;
       const next = stepFlight(previous, cadence, Math.min(.25, (now - prior) / 1000), course);
@@ -240,7 +242,7 @@ export default function SkylineGlider() {
       if (next.phase === 'completed') finalize('completed', next);
     }, 100);
     return () => clearInterval(timer);
-  }, [phase, course, ctx?.fitnessSessionInstance, equipment?.id, riderId, finalize]);
+  }, [phase, course, equipment?.id, riderId, finalize, fitnessSessionInstance, log]);
 
   const begin = (resume = false) => {
     if (!equipment || !riderId || !course) return;
