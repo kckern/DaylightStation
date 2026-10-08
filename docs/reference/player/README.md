@@ -145,6 +145,20 @@ resets, the user-facing forceReload, and the controller's nudge and
 duration-lost softReinit (softReinit bypasses the cooldown but is still
 cap-bounded). No actuator retries outside the ledger's accounting.
 
+**In-place recovery must still reach the cap (2026-10-07).** A stream aborted at
+the network layer (an hls.js fatal `networkError`) is recovered in place: the
+renderer's `hardReset` reloads the manifest without a remount, so the Player's
+`status` stays `recovering`. The startup-deadline watchdog (15s) used to re-arm
+only on a status change, so such an item got two attempts (startup, then
+recovering) and then sat on the spinner forever with no `onExhausted`. The
+deadline path now re-arms itself after every recovery it triggers
+(`resilience-deadline-rearm`, debug), so the ledger's cap (5, with its 4s x3
+cooldown backoff, a few minutes in all) ends in `resilience-recovery-exhausted`
+and the usual `onExhausted` (queue skip / owner failure report). The same re-arm covers the transcode-warmup deadline. A browser-refused autoplay
+(`autoplayBlocked`, awaiting a tap) is not a failing stream: the deadline holds and
+no attempt is spent. Covered by `useMediaResilience.inPlaceExhaustion.test.jsx`. Remounting recoveries are
+unaffected: a remount already starts a fresh watchdog.
+
 ### The layers
 
 | Layer | Watches for | Response |

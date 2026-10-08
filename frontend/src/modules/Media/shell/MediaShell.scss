@@ -114,7 +114,7 @@ $amber-ink: #1a1300;
   max-width: 100%;
   min-height: 44px;
   padding: 0 12px;
-  border: 1px solid var(--media-line);
+  border: 1px solid var(--media-control-line);
   border-radius: var(--mantine-radius-sm);
   color: var(--media-muted);
   @include media-focus-ring;
@@ -355,7 +355,7 @@ $amber-ink: #1a1300;
     min-height: 44px;
     padding: 0 var(--mantine-spacing-sm);
     background: var(--media-surface);
-    border: 1px solid var(--media-line);
+    border: 1px solid var(--media-control-line);
     border-radius: var(--mantine-radius-sm);
     color: var(--media-muted);
     font-size: 0.9375rem;
@@ -1388,4 +1388,11 @@ $amber-ink: #1a1300;
   min-height: 44px;
   min-width: 44px;
   padding: 0 var(--mantine-spacing-xs);
+}
+
+// RELY.13a/AC1 — the edge of a text field is a control boundary (>= 3:1). Mantine draws it from
+// --input-bd (dark-4 in the dark scheme); resting state only, so the focus ring keeps its own colour.
+html:has(.media-app) .mantine-Input-input:not(:focus):not([data-expanded="true"]):not([data-error]),
+.media-app .mantine-Input-input:not(:focus):not([data-expanded="true"]):not([data-error]) {
+  --input-bd: var(--media-control-line);
 }

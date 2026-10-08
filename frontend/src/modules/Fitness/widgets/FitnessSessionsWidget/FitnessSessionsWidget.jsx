@@ -46,6 +46,26 @@ function formatDate(dateStr) {
   return formatFitnessDate(dateStr + 'T12:00:00');
 }
 
+function formatMinutes(durationMs) {
+  if (!Number.isFinite(durationMs) || durationMs <= 0) return null;
+  return `${Math.max(1, Math.round(durationMs / 60000))}m`;
+}
+
+function formatElapsed(durationMs) {
+  if (!Number.isFinite(durationMs) || durationMs <= 0) return null;
+  const minutes = Math.max(1, Math.round(durationMs / 60000));
+  if (minutes < 60) return `${minutes}m elapsed`;
+  const remainder = minutes % 60;
+  return `${Math.floor(minutes / 60)}h${remainder ? ` ${remainder}m` : ''} elapsed`;
+}
+
+function formatClock(timestamp, timezone) {
+  if (!timestamp) return null;
+  return new Date(timestamp).toLocaleTimeString([], {
+    hour: 'numeric', minute: '2-digit', ...(timezone ? { timeZone: timezone } : {}),
+  }).toLowerCase().replace(' ', '');
+}
+
 // ─── Sessions Card ─────────────────────────────────────────
 
 function SessionsCardSkeleton() {
@@ -106,6 +126,9 @@ function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) 
               const pm = s.media?.primary;
               const sessionTitle = resolveSessionTitle(s);
               const sessionActivity = resolveSessionActivity(s);
+              const elapsedMs = s.elapsedMs ?? s.durationMs;
+              const elapsedLabel = formatElapsed(elapsedMs);
+              const durationLabel = formatMinutes(elapsedMs);
               const bgUrl = pm?.grandparentId
                 ? mediaDisplayUrl(pm.contentId)
                 : null;
@@ -161,9 +184,9 @@ function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) 
                       <div className="session-row__title-line">
                         {pm?.showTitle && (
                           <div className="session-row__show-line">
-                            {s.durationMs > 0 && (
+                            {durationLabel && (
                               <span className="session-row__duration-badge">
-                                {Math.round(s.durationMs / 60000)}m
+                                {durationLabel}
                               </span>
                             )}
                             <Text size="xs" c="dimmed" truncate="end" title={pm.showTitle}>
@@ -173,9 +196,9 @@ function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) 
                         )}
                         {!pm?.showTitle && s.strava?.type && (
                           <div className="session-row__show-line">
-                            {s.durationMs > 0 && (
+                            {durationLabel && (
                               <span className="session-row__duration-badge">
-                                {Math.round(s.durationMs / 60000)}m
+                                {durationLabel}
                               </span>
                             )}
                             <Text size="xs" c="dimmed" truncate="end">
@@ -183,9 +206,9 @@ function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) 
                             </Text>
                           </div>
                         )}
-                        {!pm?.showTitle && !s.strava?.type && s.durationMs > 0 && (
+                        {!pm?.showTitle && !s.strava?.type && durationLabel && (
                           <span className="session-row__duration-badge">
-                            {Math.round(s.durationMs / 60000)}m
+                            {durationLabel}
                           </span>
                         )}
                         <Text size="md" fw={700} truncate="end" title={sessionTitle}>
@@ -199,15 +222,20 @@ function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) 
                           ? s.voiceMemos.map(m => m.transcript).filter(Boolean).join(' \u2022 ')
                           : null;
                         const isSolo = participantIds.length === 1;
-                        const timeStr = s.startTime
-                          ? new Date(s.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', ...(s.timezone ? { timeZone: s.timezone } : {}) }).toLowerCase().replace(' ', '')
-                          : null;
+                        const startTimeStr = formatClock(s.startTime, s.timezone);
+                        const endTimestamp = s.endTime || (s.startTime && elapsedMs ? s.startTime + elapsedMs : null);
+                        const endTimeStr = formatClock(endTimestamp, s.timezone);
+                        const timeStr = startTimeStr && endTimeStr
+                          ? `${startTimeStr}–${endTimeStr}`
+                          : startTimeStr;
 
                         return (
                           <>
                             {!memoText && timeStr && (
                               <div className="session-row__meta">
                                 <Text size="xs" c="dimmed" fw={500}>{timeStr}</Text>
+                                {elapsedLabel && <Text size="xs" c="dimmed">·</Text>}
+                                {elapsedLabel && <Text size="xs" c="dimmed" fw={500}>{elapsedLabel}</Text>}
                               </div>
                             )}
 
@@ -222,6 +250,11 @@ function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) 
                                       className="session-avatar"
                                       onError={(e) => { e.target.style.display = 'none'; }}
                                     />
+                                    {formatMinutes(p.measuredDurationMs) && (
+                                      <span className="session-row__participant-time" title={`${p.displayName} measured time`}>
+                                        {formatMinutes(p.measuredDurationMs)}
+                                      </span>
+                                    )}
                                   </span>
                                 ))}
                                 {s.totalRings > 0 && (
@@ -236,7 +269,9 @@ function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) 
                             {memoText && (
                               <div className="session-row__memo-line">
                                 {timeStr && (
-                                  <span className="session-row__memo-time">{timeStr}</span>
+                                  <span className="session-row__memo-time">
+                                    {timeStr}{elapsedLabel ? ` · ${elapsedLabel}` : ''}
+                                  </span>
                                 )}
                                 <span className="session-row__memo-icon">{'\uD83C\uDF99'}</span>
                                 <span className={`session-row__memo-text${isSolo ? ' session-row__memo-text--2line' : ''}`}>{memoText}</span>

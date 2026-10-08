@@ -6,6 +6,8 @@ import {
   sourceNoticeText,
   sourcePollDelayMs,
   toHealableContentId,
+  resolveSourceContentId,
+  holdsAfterGaveUp,
   SOURCE_POLL_MAX_DELAY_MS,
 } from './sourceAvailability.js';
 
@@ -95,7 +97,69 @@ describe('decideSourceCheck', () => {
 
 describe('sourceNoticeText', () => {
   it('says what is wrong and how long it has been', () => {
-    expect(sourceNoticeText({ mediaType: 'video', unavailableMs: 125_400 })).toBe('Video file unavailable — retrying · 2:05');
-    expect(sourceNoticeText({ mediaType: 'audio', unavailableMs: 0 })).toBe('Audio file unavailable — retrying · 0:00');
+    expect(sourceNoticeText({ mediaType: 'video', unavailableMs: 125_400 })).toBe('Fixing this video… · 2:05');
+    expect(sourceNoticeText({ mediaType: 'audio', unavailableMs: 0 })).toBe('Fixing this audio… · 0:00');
+  });
+});
+
+// 2026-10-07: useMediaResilience passed `meta.contentId || null` plus `plexId`,
+// and a Player's `plexId` is the queue ROOT (the show). /play responses carry
+// id/assetId, not contentId, so the healer was asked about the show.
+describe('resolveSourceContentId', () => {
+  it('prefers the item identity: contentId, then assetId, then id', () => {
+    expect(resolveSourceContentId({ contentId: 'plex:1', assetId: 'plex:2', id: 'plex:3' }, '59493')).toBe('plex:1');
+    expect(resolveSourceContentId({ assetId: 'plex:59546', id: 'plex:3' }, '59493')).toBe('plex:59546');
+    expect(resolveSourceContentId({ id: '59546' }, '59493')).toBe('plex:59546');
+  });
+
+  it('never lets the queue-root plexId win over the playing item', () => {
+    expect(resolveSourceContentId({ id: 'plex:59546', title: 'Ticklecrabs' }, 59493)).toBe('plex:59546');
+  });
+
+  it('skips non-Plex identities and falls to the next candidate', () => {
+    expect(resolveSourceContentId({ contentId: 'immich:abc', assetId: 'plex:77' }, null)).toBe('plex:77');
+  });
+
+  it('uses plexId only as a last resort', () => {
+    expect(resolveSourceContentId({}, 59493)).toBe('plex:59493');
+    expect(resolveSourceContentId(null, '12')).toBe('plex:12');
+    expect(resolveSourceContentId({ contentId: 'immich:abc' }, null)).toBeNull();
+  });
+});
+
+describe('decideSourceCheck — screens hold', () => {
+  it('keeps waiting on a CONFIRMED refusal the backend cannot judge (unknown / failed check)', () => {
+    expect(decideSourceCheck({ state: 'unknown', waiting: false, hold: true, confirmed: true })).toBe('wait');
+    expect(decideSourceCheck({ state: null, waiting: false, hold: true, confirmed: true })).toBe('wait');
+  });
+  it('does not hold without the option, without a confirmed refusal, or when the file is missing', () => {
+    expect(decideSourceCheck({ state: 'unknown', waiting: false, hold: false, confirmed: true })).toBe('normal');
+    expect(decideSourceCheck({ state: 'unknown', waiting: false, hold: true, confirmed: false })).toBe('normal');
+    expect(decideSourceCheck({ state: 'missing', waiting: false, hold: true, confirmed: true })).toBe('normal');
+  });
+  it('readable still resumes/retries as before', () => {
+    expect(decideSourceCheck({ state: 'readable', waiting: true, hold: true, confirmed: true })).toBe('resume');
+    expect(decideSourceCheck({ state: 'readable', waiting: false, hold: true, confirmed: true })).toBe('retry');
+  });
+});
+
+describe('decideSourceCheck - held item that stays unknown is treated as missing', () => {
+  it('waits for the first answers, then falls to the ladder after 4 unknowns', () => {
+    for (const n of [1, 2, 3]) expect(decideSourceCheck({ state: 'unknown', waiting: true, hold: true, confirmed: false, unknownPolls: n })).toBe('wait');
+    expect(decideSourceCheck({ state: 'unknown', waiting: true, hold: true, confirmed: false, unknownPolls: 4 })).toBe('normal');
+  });
+  it('a non-screen owner is unchanged: unknown outside a wait is normal, inside a wait keeps waiting', () => {
+    expect(decideSourceCheck({ state: 'unknown', waiting: false, hold: false, confirmed: true })).toBe('normal');
+    expect(decideSourceCheck({ state: 'unknown', waiting: true, hold: false, unknownPolls: 9 })).toBe('wait');
+  });
+});
+
+describe('holdsAfterGaveUp', () => {
+  it('a screen (no resilience-event owner) never auto-skips after the cap', () => {
+    expect(holdsAfterGaveUp({ reason: 'source-unavailable-gave-up', hold: true })).toBe(true);
+  });
+  it('Media (listens) keeps its own policy; other reasons are unaffected', () => {
+    expect(holdsAfterGaveUp({ reason: 'source-unavailable-gave-up', hold: false })).toBe(false);
+    expect(holdsAfterGaveUp({ reason: 'stall-jolt-exhausted', hold: true })).toBe(false);
   });
 });

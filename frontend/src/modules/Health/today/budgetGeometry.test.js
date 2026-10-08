@@ -8,6 +8,17 @@ const day = (food, exercise = 941, overrides = {}) => ({
 });
 
 describe('the single budget bar', () => {
+  it('describes the goal range and separates spent from available workout room', () => {
+    const g = budgetGeometry(day(1800, 400), { widthPx: 900 });
+    expect(g.goalRange).toMatchObject({ from: 1200, to: 2000 });
+    expect(g.goalRange.bonus).toMatchObject({ from: 1600, to: 2000, spentTo: 1800 });
+    expect(g.goalRange.fromPct).toBe(40);
+    expect(g.goalRange.widthPct).toBeCloseTo(26.67, 2);
+    expect(g.goalRange.bonus.fromPct).toBeCloseTo(53.33, 2);
+    expect(g.goalRange.bonus.spentWidthPct).toBeCloseTo(6.67, 2);
+    expect(g.goalRange.bonus.availableWidthPct).toBeCloseTo(6.67, 2);
+  });
+
   it('keeps earlier intake stable when food crosses the plan', () => {
     const before = budgetGeometry(day(2464), { widthPx: 900 });
     const after = budgetGeometry(day(2624), { widthPx: 900 });

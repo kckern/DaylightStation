@@ -1001,7 +1001,7 @@ describe('LocalSessionController — container expansion', () => {
     expect(snap.currentItem?.contentId).toBe('plex:1'); // first child loaded…
     expect(snap.state).toBe('loading'); // …and playing immediately
     expect(snap.queue.items[1].containerTitle).toBe('The Album');
-    expect(fetchImpl).toHaveBeenCalledWith('/api/v1/list/plex/900');
+    expect(fetchImpl).toHaveBeenCalledWith('/api/v1/list/plex/900/expand');
   });
 
   it('playNext on a container inserts the whole batch at the front of the band, in order', async () => {

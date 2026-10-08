@@ -3404,12 +3404,14 @@ export class GovernanceEngine {
     // A guest can appear alone (or outlast the registered riders). That must
     // be neutral, never a warning/lock: guests may earn a challenge win but
     // must never create a blocker or punishment.
-    const requiredCount = subjectCount === 0
+    const cls = this._classifyParticipants(activeParticipants);
+    const anchorMissing = subjectCount === 0 && cls.exempt.length > 0;
+    const requiredCount = anchorMissing ? 1 : subjectCount === 0
       ? 0
       : this._normalizeRequiredCount(rule, totalCount, activeParticipants);
     // Steady-state: only SUBJECTS satisfy it (guests/exempt can't clear the
     // always-on requirement — anti-cheat). They are also never blamed.
-    const satisfied = subjectCount === 0 || subjectMetCount >= requiredCount;
+    const satisfied = !anchorMissing && subjectMetCount >= requiredCount;
     const missingUsers = activeParticipants.filter((participantId) =>
       !metUsers.includes(participantId) && isSubject(participantId)
     );
@@ -3419,7 +3421,6 @@ export class GovernanceEngine {
     // classification whenever a non-subject is present or the requirement is
     // unmet (the interesting cases), so a real session can verify guests/exempt
     // neither satisfy nor get blamed here. Rate-limited (runs ~5-10Hz).
-    const cls = this._classifyParticipants(activeParticipants);
     if (cls.guests.length || cls.exempt.length || !satisfied) {
       getLogger().sampled('governance.steadystate_eval', {
         zone: zoneId,
@@ -3444,6 +3445,7 @@ export class GovernanceEngine {
       ruleLabel: this._describeRule(rule, requiredCount),
       requiredCount,
       actualCount: subjectMetCount,
+      ...(anchorMissing ? { reason: 'non_exempt_contributor_required' } : {}),
       metUsers,
       missingUsers,
       satisfied
@@ -3453,8 +3455,9 @@ export class GovernanceEngine {
   /**
    * Challenge zone scoring. Unlike steady-state, the numerator counts EVERY
    * eligible participant who met the zone (subjects + guests + exempt) — a guest
-   * can fill the group tally. requiredCount + missingUsers stay subjects-only,
-   * so guests/exempt are never required and never blamed.
+   * can fill the group tally. Household challenges also need a contributing
+   * subject; pure guest scoring retains its standalone tally. When subjects
+   * are present they set requiredCount, and only subjects appear in missingUsers.
    */
   evaluateChallengeZone(challenge, activeParticipants, userZoneMap, totalCount) {
     const zoneId = challenge.zone;
@@ -3469,7 +3472,9 @@ export class GovernanceEngine {
     });
 
     const requiredCount = this._normalizeChallengeRequiredCount(challenge.rule, totalCount, activeParticipants);
-    const satisfied = metUsers.length >= requiredCount; // eligible numerator
+    const cls = this._classifyParticipants(activeParticipants);
+    const anchorMissing = (cls.subjects.length > 0 || cls.exempt.length > 0) && !metUsers.some(isSubject);
+    const satisfied = !anchorMissing && metUsers.length >= requiredCount;
     const missingUsers = activeParticipants.filter((participantId) =>
       !metUsers.includes(participantId) && isSubject(participantId)
     );
@@ -3478,7 +3483,6 @@ export class GovernanceEngine {
     // so log which non-subjects (guests/exempt) fed the count, plus the
     // subjects-only missingUsers, whenever a non-subject is present or it's unmet.
     // Lets a real session confirm a guest's contribution counts but never blames.
-    const cls = this._classifyParticipants(activeParticipants);
     const nonSubjectContributors = metUsers.filter(
       (id) => cls.guests.includes(id) || cls.exempt.includes(id)
     );
@@ -3503,6 +3507,7 @@ export class GovernanceEngine {
       metUsers,
       missingUsers,
       actualCount: metUsers.length,
+      ...(anchorMissing ? { reason: 'non_exempt_contributor_required' } : {}),
       requiredCount,
       zoneLabel: zoneInfo?.name || zoneId
     };
@@ -3519,33 +3524,11 @@ export class GovernanceEngine {
    */
   _buildSubjectFilter(activeParticipants) {
     const guestIds = new Set(this._latestInputs?.guestIds || []);
-    // Guests are never governed.  The separate exemption anti-freeload rule
-    // may suspend configured-user exemptions when no baseline rider remains,
-    // but it must not turn a guest into a blocker/punishment target.
-    if (!this._exemptionsApply(activeParticipants)) {
-      return (participantId) => !guestIds.has(participantId);
-    }
+    // Exemptions never turn into obligations when the other riders leave.
     const exemptUsers = (this.config?.exemptions || []).map((u) => normalizeName(u));
     return (participantId) =>
       !guestIds.has(participantId) &&
       !exemptUsers.includes(normalizeName(participantId));
-  }
-
-  /**
-   * Configured-user exemptions apply only while a REAL participant is carrying
-   * the session — i.e. ≥1 active BASELINE subject (registered, not exempt, not
-   * guest) is present. Guests remain non-subjects in every circumstance.
-   * Falls back to the latest captured roster when called without an explicit list.
-   * @param {string[]} [activeParticipants]
-   * @returns {boolean}
-   */
-  _exemptionsApply(activeParticipants) {
-    const list = Array.isArray(activeParticipants) && activeParticipants.length
-      ? activeParticipants
-      : (this._latestInputs?.activeParticipants || []);
-    const exemptUsers = (this.config?.exemptions || []).map((u) => normalizeName(u));
-    const guestIds = new Set(this._latestInputs?.guestIds || []);
-    return list.some((id) => !guestIds.has(id) && !exemptUsers.includes(normalizeName(id)));
   }
 
   /**
@@ -3558,13 +3541,12 @@ export class GovernanceEngine {
   _classifyParticipants(activeParticipants = []) {
     const exemptUsers = (this.config?.exemptions || []).map((u) => normalizeName(u));
     const guestSet = new Set(this._latestInputs?.guestIds || []);
-    const exemptionsApply = this._exemptionsApply(activeParticipants);
     const subjects = [];
     const guests = [];
     const exempt = [];
     for (const id of activeParticipants) {
       if (guestSet.has(id)) guests.push(id);
-      else if (exemptionsApply && exemptUsers.includes(normalizeName(id))) exempt.push(id);
+      else if (exemptUsers.includes(normalizeName(id))) exempt.push(id);
       else subjects.push(id);
     }
     return { subjects, guests, exempt };
@@ -4344,7 +4326,7 @@ export class GovernanceEngine {
     const activeCycle = this.challengeState.activeChallenge;
     const guestCycleRider = activeCycle?.type === 'cycle'
       && (this._latestInputs?.guestIds || []).includes(activeCycle.rider?.id ?? activeCycle.rider);
-    if ((classification.guests.length > 0 && classification.subjects.length === 0) || guestCycleRider) {
+    if ((classification.guests.length > 0 && classification.subjects.length === 0 && classification.exempt.length === 0) || guestCycleRider) {
       if (this.challengeState.activeChallenge || this.challengeState.nextChallenge) {
         getLogger().info('governance.challenge.cancelled', {
           id: this.challengeState.activeChallenge?.id || null,

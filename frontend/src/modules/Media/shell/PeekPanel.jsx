@@ -2,12 +2,14 @@
 // Remote control for one device. The shared TransportBar remains target-bound;
 // this panel supplies only the remote overlay policy (predicted state and
 // pending fields) rather than a second set of transport controls.
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Button, Title, Text, Group, Stack, Badge } from '@mantine/core';
-import { IconPlaylistAdd, IconChevronLeft } from '@tabler/icons-react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef } from 'react';
+import { Button, Title, Text, Group, Stack, Badge, Menu } from '@mantine/core';
+import { IconPlaylistAdd, IconChevronLeft, IconSwitchHorizontal } from '@tabler/icons-react';
 import { useSessionController } from '../controller/useSessionController.js';
 import { usePeek } from '../peek/usePeek.js';
 import { useDevice } from '../fleet/useDevice.js';
+import { FleetContext } from '../fleet/FleetProvider.jsx';
+import mediaLog from '../logging/mediaLog.js';
 import { deviceName, deviceLocation } from '../fleet/deviceDisplay.js';
 import { DeviceIcon } from '../fleet/DeviceIcon.jsx';
 import { useStatusOverlay } from '../../../hooks/useStatusOverlay';
@@ -23,6 +25,7 @@ import { SessionControlsPanel } from './SessionControlsPanel.jsx';
 import { useSearchLauncher } from './SearchLauncherContext.js';
 import { LineUpOffer } from './LineUpOffer.jsx';
 import { MoveToMenu } from './MoveToMenu.jsx';
+import { StartedByLine } from '../house/RowExtras.jsx';
 
 export function PeekPanel({ deviceId }) {
   const { enterPeek, exitPeek } = usePeek();
@@ -34,7 +37,14 @@ export function PeekPanel({ deviceId }) {
   const ctl = useSessionController({ deviceId });
   const realSnap = ctl.snapshot;
   const { device, entry } = useDevice(deviceId);
-  const { pop, backDestination } = useNav();
+  const { push, pop, backDestination } = useNav();
+  const devices = useContext(FleetContext)?.devices ?? [];
+  // Steer another screen in one step (STEER.1b/AC3): the controls move to it; my aim is untouched.
+  const otherScreens = devices.filter((d) => typeof d?.id === 'string' && d.id !== deviceId);
+  const switchTo = (toId) => {
+    mediaLog.peekSwitched({ from: deviceId, to: toId });
+    push('peek', { deviceId: toId });
+  };
   const queueRef = useRef(null);
   const searchLauncher = useSearchLauncher();
   const { queueKeptCount, noteStop } = useRemoteStopFeedback(deviceId, realSnap, entry);
@@ -68,6 +78,8 @@ export function PeekPanel({ deviceId }) {
     if (action === 'play') predict(deviceId, { state: 'playing' });
     if (action === 'pause') predict(deviceId, { state: 'paused' });
     if (action === 'stop') {
+      // Stop takes as long as the screen takes: say it is pending at once rather than looking unchanged (STEER.3a/AC3).
+      pending(deviceId, ['state']);
       const result = invoke();
       noteStop(result);
       return result;
@@ -95,6 +107,23 @@ export function PeekPanel({ deviceId }) {
         <Button data-testid="peek-back" variant="subtle" color="gray" onClick={() => pop()}>
           <IconChevronLeft size={16} aria-hidden /> {backDestination ?? 'Home'}
         </Button>
+        {otherScreens.length > 0 && (
+          <Menu position="bottom-start" withinPortal shadow="md">
+            <Menu.Target>
+              <Button data-testid="peek-switch" className="session-controls-btn" variant="subtle" color="gray" leftSection={<IconSwitchHorizontal size={16} aria-hidden />}>
+                Switch screen
+              </Button>
+            </Menu.Target>
+            <Menu.Dropdown data-testid="peek-switch-menu">
+              <Menu.Label>Steer another screen</Menu.Label>
+              {otherScreens.map((d) => (
+                <Menu.Item key={d.id} data-testid={`peek-switch-${d.id}`} className="session-controls-menu-item" onClick={() => switchTo(d.id)}>
+                  {deviceName(d, d.id)}{deviceLocation(d) ? ` · ${deviceLocation(d)}` : ''}
+                </Menu.Item>
+              ))}
+            </Menu.Dropdown>
+          </Menu>
+        )}
         {entry?.isStale && <Badge color="yellow" variant="light">Out of date</Badge>}
         {entry?.offline && <Badge color="gray" variant="light">Offline</Badge>}
       </Group>
@@ -111,6 +140,9 @@ export function PeekPanel({ deviceId }) {
       >
         {statusLine}
       </Text>
+      {snap?.currentItem && (
+        <StartedByLine deviceId={deviceId} contentId={snap.currentItem.contentId ?? null} />
+      )}
 
       <GlobalAimLabel />
 

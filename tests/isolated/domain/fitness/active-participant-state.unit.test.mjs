@@ -178,7 +178,7 @@ describe('ParticipantRoster.getActiveParticipantState()', () => {
     // memories — this is a standing product rule, not negotiable). But since
     // 920f61dfe "feat(governance): plumb guestIds through snapshot + pulse
     // paths" (2026-06-25), the exemption is enforced downstream in
-    // GovernanceEngine's `_buildSubjectFilter`/`_exemptionsApply` (guests are
+    // GovernanceEngine's `_buildSubjectFilter` (guests are
     // "eligible" for challenge credit but never "subjects" for blame/unlock),
     // not by dropping guests out of this roster snapshot. Dropping them here
     // would also silently break challenge-credit accounting, which needs

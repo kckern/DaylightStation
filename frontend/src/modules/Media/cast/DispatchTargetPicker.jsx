@@ -24,7 +24,7 @@ import { useDevice } from '../fleet/useDevice.js';
 import { deviceName, deviceIcon, deviceLocation } from '../fleet/deviceDisplay.js';
 import { deviceStatusLine, describeBusy } from './castCopy.js';
 import { aimName } from './AimLabel.jsx';
-import { useScreenRooms, sharedRoomGroups, driftWarningText } from './screenRooms.js';
+import { useScreenRooms, sharedRoomGroups, neighbouringRoomGroups, driftWarningText } from './screenRooms.js';
 import mediaLog from '../logging/mediaLog.js';
 import './Cast.scss';
 
@@ -79,15 +79,20 @@ function BusyWarning({ device, intent }) {
   );
 }
 
-// PLACE.4a/AC6 (RQ-PLACE-10): several screens in the same room drift apart
-// audibly; say so while they are being chosen.
+// PLACE.4a/AC6 (RQ-PLACE-10): several screens in the same or a neighbouring
+// room drift apart audibly; say so while they are being chosen.
 function DriftWarning({ targetIds, devices }) {
   const rooms = useScreenRooms(targetIds.length > 1);
   const groups = targetIds.length > 1 ? sharedRoomGroups(targetIds, devices, rooms) : [];
-  const text = driftWarningText(groups);
-  const key = groups.map((group) => `${group.room}:${group.names.join('|')}`).join(';');
+  const neighbours = targetIds.length > 1 ? neighbouringRoomGroups(targetIds, devices, rooms) : [];
+  const text = driftWarningText(groups, neighbours);
+  const key = [...groups.map((group) => `${group.room}:${group.names.join('|')}`), ...neighbours.map((n) => `${n.rooms.join('+')}:${n.names.join('|')}`)].join(';');
   React.useEffect(() => {
-    if (key) mediaLog.aimDriftWarned({ state: 'shown', targetIds, rooms: groups.map((group) => group.room) });
+    if (key) {
+      mediaLog.aimDriftWarned({
+        state: 'shown', targetIds, rooms: groups.map((group) => group.room), neighbouringRooms: neighbours.map((n) => n.rooms),
+      });
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- once per distinct warning
   }, [key]);
   if (!text) return null;

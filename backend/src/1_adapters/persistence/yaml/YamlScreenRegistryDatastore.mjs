@@ -1,7 +1,8 @@
 /**
  * YamlScreenRegistryDatastore — the household screen registry on disk.
  *
- *   household[-{id}]/media/screens.yml   { screens: {<id>: {...}}, aliases: {<id>: {into, mergedAt}} }
+ *   household[-{id}]/media/screens.yml   { screens: {<id>: {...}}, aliases: {<id>: {into, mergedAt}},
+ *                  adjacency?: {<room>: [<neighbouring rooms>]} }
  *
  * Shape and rules: #domains/media/screenRegistry.mjs. Written only through the
  * app (ScreenRegistryService), never by hand: devices.yml stays the source of
@@ -36,13 +37,18 @@ export class YamlScreenRegistryDatastore extends IScreenRegistryDatastore {
     return {
       screens: isMap(data?.screens) ? { ...data.screens } : {},
       aliases: isMap(data?.aliases) ? { ...data.aliases } : {},
+      ...(isMap(data?.adjacency) ? { adjacency: { ...data.adjacency } } : {}),
     };
   }
 
   async save(state, householdId) {
     const file = this._path(householdId);
     ensureDir(path.dirname(file));
-    saveYaml(file, { screens: state?.screens ?? {}, aliases: state?.aliases ?? {} });
+    saveYaml(file, {
+      screens: state?.screens ?? {},
+      aliases: state?.aliases ?? {},
+      ...(state?.adjacency && Object.keys(state.adjacency).length ? { adjacency: state.adjacency } : {}),
+    });
   }
 }
 

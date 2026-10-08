@@ -48,6 +48,7 @@ export class ScreenPlaybackService {
   #liveness;
   #memory;
   #screens;
+  #browserPlayback;
   #clock;
   #logger;
   #runGapMs;
@@ -59,12 +60,13 @@ export class ScreenPlaybackService {
    * @param {Object} [deps.memory] - HouseholdMediaMemoryService (describeMany, nowPlaying)
    * @param {Object} [deps.screens] - ScreenRegistryService (aliasesOf, nameOf, resolve)
    */
-  constructor({ playLedger, livenessService = null, memory = null, screens = null, clock = Date, logger = console, runGapMs = DEFAULT_RUN_GAP_MS }) {
+  constructor({ playLedger, livenessService = null, memory = null, screens = null, browserPlayback = null, clock = Date, logger = console, runGapMs = DEFAULT_RUN_GAP_MS }) {
     if (typeof playLedger?.plays !== 'function') throw new TypeError('ScreenPlaybackService requires playLedger.plays');
     this.#ledger = playLedger;
     this.#liveness = livenessService;
     this.#memory = memory;
     this.#screens = screens;
+    this.#browserPlayback = browserPlayback;
     this.#clock = clock;
     this.#logger = logger;
     this.#runGapMs = runGapMs;
@@ -90,6 +92,15 @@ export class ScreenPlaybackService {
       this.#logger.warn?.('media.screen-playback.ledger_read_failed', { error: error.message });
       return [];
     }
+  }
+
+  #browserState(aliases) {
+    if (!this.#browserPlayback) return null;
+    for (const id of aliases) {
+      const entry = this.#browserPlayback.get?.(id);
+      if (entry) return entry;
+    }
+    return null;
   }
 
   #snapshot(aliases) {
@@ -134,7 +145,8 @@ export class ScreenPlaybackService {
     const now = this.#clock.now();
     const snapshot = this.#snapshot(aliases);
     const live = await this.#nowPlaying(aliases);
-    const currentId = snapshot?.currentItem?.contentId ?? live?.contentId ?? null;
+    const browser = this.#browserState(aliases);
+    const currentId = snapshot?.currentItem?.contentId ?? live?.contentId ?? browser?.contentId ?? null;
     const rows = await this.#rows(aliases, now - STARTED_BY_LOOKBACK_MS, 500);
 
     // The current run: newest start back through starts ≤ runGapMs apart.
@@ -150,10 +162,14 @@ export class ScreenPlaybackService {
     let startedBy = null;
     let at = null;
     let source = null;
-    const snapshotOrigin = readOrigin(snapshot?.meta?.origin);
+    // A browser has no device snapshot: its own state frame says how the item it
+    // is playing now started (the routine that drove the tab, the device that sent it).
+    const browserOrigin = browser && browser.contentId === currentId ? readOrigin(browser.origin) : null;
+    const snapshotOrigin = readOrigin(snapshot?.meta?.origin) ?? browserOrigin;
     if (snapshotOrigin && snapshotOrigin.kind !== 'unknown') {
       startedBy = snapshotOrigin;
-      at = currentRow?.startedAt ?? originRow?.startedAt ?? snapshot?.meta?.updatedAt ?? null;
+      at = currentRow?.startedAt ?? originRow?.startedAt ?? snapshot?.meta?.updatedAt
+        ?? (browserOrigin ? new Date(browser.at).toISOString() : null);
       source = 'snapshot';
     } else if (originRow) {
       startedBy = readOrigin(originRow.origin);
@@ -179,7 +195,8 @@ export class ScreenPlaybackService {
     } catch {
       live = [];
     }
-    const ids = [...new Set(live.map((np) => np.deviceId).filter(Boolean))];
+    const browsers = this.#browserPlayback?.list?.() ?? [];
+    const ids = [...new Set([...live.map((np) => np.deviceId), ...browsers.map((b) => b.deviceId)].filter(Boolean))];
     const items = await Promise.all(ids.map((deviceId) => this.startedBy({ householdId, deviceId })));
     return { items };
   }

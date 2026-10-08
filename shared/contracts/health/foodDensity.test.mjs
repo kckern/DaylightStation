@@ -59,7 +59,6 @@ describe('food density', () => {
     expect(foodDensity({ grams: null, amount: 1, unit: 'cup', calories: 120 })).toBe(0.5);
     expect(foodDensity({ grams: null, amount: 1, unit: 'lb', calories: 453.592 })).toBeCloseTo(1, 6);
   });
-
   it('requires complete counted food coverage', () => {
     expect(foodDensityOfRows([])).toBeNull();
     expect(foodDensityOfRows([

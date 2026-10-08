@@ -212,10 +212,25 @@ for (const [size, viewport] of SIZES) {
       await playArrivalHere(page);
       await page.mouse.click(2, 2);
       const seen = [];
-      for (let i = 0; i < 40; i += 1) {
+      // Home lists many tiles before the handle in tab order, so walk until the handle's last stop
+      // (bounded), then a few more stops to see what follows it.
+      let afterStop = 0;
+      for (let i = 0; i < 160 && afterStop < 3; i += 1) {
         await page.keyboard.press('Tab');
+        // A focused tile in a sideways row scrolls into view (snapping, asynchronously): measure once it has settled.
+        await page.evaluate(() => new Promise((resolve) => {
+          let last = null; let still = 0;
+          const tick = () => {
+            const r = document.activeElement?.getBoundingClientRect?.();
+            const key = r ? `${Math.round(r.left)},${Math.round(r.top)},${document.activeElement.closest('.home-row-scroll')?.scrollLeft ?? ''}` : '';
+            still = key === last ? still + 1 : 0; last = key;
+            if (still >= 10) resolve(); else requestAnimationFrame(tick);
+          };
+          tick();
+        }));
         const info = await page.evaluate(FOCUS_RING);
         if (info) seen.push(info);
+        if (seen.some((x) => x.id === 'mini-stop')) afterStop += 1;
       }
       const withoutRing = seen.filter((x) => !x.ring);
       expect(withoutRing, `focus without a visible ring: ${withoutRing.map((x) => x.id ?? x.name).join(', ')}`).toEqual([]);

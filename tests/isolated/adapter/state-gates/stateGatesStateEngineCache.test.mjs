@@ -5,11 +5,11 @@ function countingEngine() {
   const files = new Map();
   let loads = 0; let failSave = false;
   const engine = new YamlStateGatesStateEngine({
-    resolveFilePath: (id) => `/virtual/${id}/current.yml`,
-    load: (p) => { loads += 1; return files.has(p) ? structuredClone(files.get(p)) : null; },
+    resolveFilePath: (id) => `/virtual/${id}/current.json`,
+    load: (p) => { loads += 1; return files.has(p) ? JSON.parse(files.get(p)) : null; },
     save: (p, v) => {
       if (failSave) throw new Error('simulated interrupted write');
-      files.set(p, structuredClone(v));
+      files.set(p, v);
     },
   });
   return { engine, loads: () => loads, failSave: (v) => { failSave = v; } };

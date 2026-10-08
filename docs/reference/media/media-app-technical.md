@@ -609,7 +609,8 @@ Bare devices.yml keys are accepted wherever a screen id is (`livingroom-tv`
 → `fleet:livingroom-tv`).
 
 **Stored** at `household[-{id}]/media/screens.yml` (`{ screens: {<id>: …},
-aliases: {<duplicate id>: {into, mergedAt}} }`), written only through the app.
+aliases: {<duplicate id>: {into, mergedAt}}, adjacency?: {<room>: [<neighbouring rooms>]} }`;
+`adjacency` is optional and read symmetrically, rooms matched case-insensitively), written only through the app.
 An announce from a known screen refreshes an in-memory `lastSeen` and
 persists it at most every 10 min. `lastSeen` also comes from fleet
 `device-state` heartbeats (online/offline) and each screen's newest play-ledger
@@ -648,9 +649,11 @@ null when unknown (browsers, or no heartbeat since the backend started).
 
 | Route | Body / query | Response |
 |---|---|---|
-| `GET /screens` | — | `{ screens: [Screen], notSeenLately: [Screen], retired: [Screen], unnamed: [Screen] }` — by name; `unnamed` = placeholder-named browsers that never played (opened the app only), kept out of `screens`; each Screen has `aliasNames` (`{alias: name it had}`) and `lastPlayed`; `notSeenLately` = silent > **30 days** *(default)* and not online |
+| `GET /screens` | — | `{ screens: [Screen], notSeenLately: [Screen], retired: [Screen], unnamed: [Screen], roomAdjacency }` — by name; `unnamed` = placeholder-named browsers that never played (opened the app only), kept out of `screens`; each Screen has `aliasNames` (`{alias: name it had}`) and `lastPlayed`; `notSeenLately` = silent > **30 days** *(default)* and not online |
 | `POST /screens` | `{ name, room? }` | **201** `{ screen }` (`screen:<slug>`) |
 | `POST /screens/announce` | `{ id?, name?, room?, playing?, previousId? }` — `id` defaults to `X-Daylight-Device`. A browser nobody named that has not played is **not registered** (`screen: null`); a made-up "Browser 1a2b3c4d" name is ignored. `playing: true` registers it (the playback relay sets it). `previousId` (the browser's old header token) is folded into `id` like a confirmed merge, spots included; a repeat is a no-op, and an id another *named* screen holds is never folded | `{ screen }` |
+| `GET /screens/rooms/adjacency` | — | `{ roomAdjacency: { "<room>": ["<neighbouring room>", …] } }` |
+| `PUT /screens/rooms/adjacency` | `{ room, neighbours: [room] }` — replaces that room's neighbours (`[]` clears them); the link is mutual. **400** `INVALID_ROOM` | `{ roomAdjacency }` |
 | `GET /screens/:id` | — | `{ screen, routines }` (**404** unknown) |
 | `PATCH /screens/:id` | `{ name?, room?, onCollision?: "reject"\|"suffix", confirm? }` (`room: null` clears an override) | `{ screen, routines }` |
 | `POST /screens/:id/merge` | `{ into, confirm }` — without `confirm: true`, **409** `CONFIRM_REQUIRED` with `routines` targeting either screen | `{ screen, movedSpots }` |
@@ -697,7 +700,7 @@ send `PATCH` and hand `NAME_TAKEN` / `ROUTINES_TARGET` back to the dialog
 dialog showed the routines of both screens (`GET /screens/:id/routines`),
 and retires likewise. Client events: `house.registry-loaded|failed`,
 `house.screen-announced`, `house.announce-failed`, `house.screen-renamed`,
-`house.rename-conflict`, `house.room-set`, `house.screen-added|merged|unmerged|retired|restored`,
+`house.rename-conflict`, `house.room-set`, `house.room-neighbours-set`, `house.screen-added|merged|unmerged|retired|restored`,
 `house.admin-action-failed`, `house.first-use-shown|named|skipped`.
 
 ### 2.6 Routines
@@ -816,6 +819,12 @@ included) in the last 24 h are walked back through the **current run** —
 starts no more than 30 min apart — to the first carrying an origin, so every
 item of a queue a routine started reads "Started by Kitchen button, 7:02".
 A device origin is named from the registry.
+A **browser tab** has no device snapshot and its ledger rows only appear after
+10 s of play (and only where play/log is wired), so its own `playback_state`
+frames (which carry `currentItem` and `origin`) are tracked
+(`BrowserPlaybackTracker`, fed by `EventBusBrowserPlayback`, 2 min freshness):
+when the tab's current item is the one playing, its `origin` answers as
+`source: "snapshot"`, and `GET /started-by` lists the tabs playing now.
 
 ```json
 { "deviceId": "fleet:livingroom-tv",
@@ -837,8 +846,9 @@ start before origins were recorded). `kind` may be `unknown` for legacy text.
 plays on any row changes, and every 60 s, and shows
 `houseCopy.startedByText` — "Started by <name>, <h:mm>" (weekday added when not
 today) — on rows that are active. `StartedByLine` with only a `deviceId`
-reads `GET /screens/:id/started-by` itself (re-read when the item changes), for
-a screen's controls header. Events `house.started-by-loaded|failed`.
+reads `GET /screens/:id/started-by` itself (re-read when the item changes); it
+is mounted in the screen's controls header (`shell/PeekPanel.jsx`, under the
+status line) while an item plays. Events `house.started-by-loaded|failed`.
 
 ### 2.8 Played earlier
 
@@ -1324,8 +1334,10 @@ to that one screen — and the surface closes. The aim is not read or written.
 **Several screens.** The aim names up to three known screens
 (`"Kitchen + Living Room"`), else `"N screens"`. Rooms come from
 `GET /api/v1/media/screens` (cached 60 s; fleet `location` as fallback); two
-or more chosen screens sharing a room show the drift warning. The registry
-holds no room adjacency, so "neighbouring" rooms are not detected.
+or more chosen screens sharing a room, or in rooms the registry marks as
+neighbours (`roomAdjacency`, §2.5), show the drift warning
+(`screenRooms.neighbouringRoomGroups`; `aim.drift-warned` carries
+`neighbouringRooms`).
 Line up seeks the steered target to another's reported spot
 (`cast/reportedSpot.js`: position + time since heard × rate, capped at the
 duration).
@@ -1679,6 +1691,20 @@ Payload:
 | New hook: `useSessionStatePublisher(sessionSource)` — subscribes to local session and publishes on `device-state:<id>` per §6.4. | State publication. |
 | New hook: `useCommandAckPublisher()` — publishes acks on `device-ack:<id>` when ActionBus handlers complete. | Per-command acknowledgement. |
 | `sessionSource` contract — device's queue controller and player expose a stable read interface the publisher subscribes to. | Decouple publisher from player internals. |
+
+Receiver handling of the playback-config and reorder commands (Phase 2b fixes):
+`media:config-set` for `shuffle`, `repeat` and `volume` is handled in
+`ScreenActionHandler.jsx` (`handleMediaConfigSet`), which hands a `set-config`
+queue op to the mounted playback owner (`Player.jsx` `handleQueueOp`): repeat
+sets the queue controller's repeat mode, volume sets the session volume
+(snapshot units 0..100, Player units 0..1), and shuffle sets a play-order flag
+and rewrites the queue's `executionOrder` only (`modules/Player/lib/shuffleExecutionOrder.js`:
+current item and Up Next band stay in front, the listing is never reordered).
+Bad values and a missing owner raise `command-handler-error`. The other config
+settings (`shader`, `addOnly`, `endOfQueue`, `stopAfterCurrent`) keep their own
+paths. A queue `reorder` op (`{from,to}` or `{items}`) runs as an item action
+(`kind: 'reorder'` in `itemActionOwner.js`, `queueOps.reorder`), so it is one
+undoable operation and its ack waits for the new order to be readable.
 
 ### 6.6 Screen session controls (P1)
 
@@ -2413,7 +2439,7 @@ Screen session controls (component `ScreenSessionControls` / `ScreenSessionContr
 | `media-session.bound` / `.unavailable` / `.action` / `.failed` | info/warn | Lock-screen / system controls for local playback. | `actions`, `action`, `seekTime`, `error` |
 | `add-to-queue.opened` / `.closed` | info | Add to this queue opened from a Remote / closed (`added` \| `dismissed`). | `deviceId`, `reason`, `contentId` |
 | `line-up.requested` / `.failed` | info/warn | Line up with another screen. | `target`, `withId`, `contentId`, `seconds` |
-| `aim.drift-warned` | info | Several screens chosen in one room (or the registry was unreadable). | `targetIds`, `rooms`, `state` |
+| `aim.drift-warned` | info | Several screens chosen in one or neighbouring rooms (or the registry was unreadable). | `targetIds`, `rooms`, `neighbouringRooms`, `state` |
 | `screen-move.initiated` / `.succeeded` / `.failed` | info/warn | Move to… between screens / to this device. | `sourceId`, `destinationId`, `operationId`, `path`, `status`, `reason`, `sourceStopped` |
 
 ### 10.2 Sampling

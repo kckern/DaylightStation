@@ -103,6 +103,18 @@ describe('useCommandAckPublisher', () => {
     expect(ids).toEqual(['c1', 'c2']);
   });
 
+  it('acks shuffle/repeat/volume config by outcome, not on receipt; other settings still ack on receipt', () => {
+    renderHook(() => useCommandAckPublisher({ deviceId: 'tv-1', actionBus: bus }));
+    act(() => bus.emit('media:config-set', { setting: 'shuffle', value: true, commandId: 'k1' }));
+    act(() => bus.emit('media:config-set', { setting: 'shader', value: 'dark', commandId: 'k2' }));
+    expect(ackCalls().map(([m]) => m.commandId)).toEqual(['k2']);
+    act(() => bus.emit('media:session-control-applied', { commandId: 'k1' }));
+    expect(ackCalls().map(([m]) => m.commandId)).toEqual(['k2', 'k1']);
+    act(() => bus.emit('media:config-set', { setting: 'volume', value: 5, commandId: 'k3' }));
+    act(() => bus.emit('command-handler-error', { commandId: 'k3', code: 'QUEUE_OWNER_UNAVAILABLE', error: 'x' }));
+    expect(ackCalls().at(-1)[0]).toMatchObject({ commandId: 'k3', ok: false });
+  });
+
   it('emits ok=false with error when command-handler-error is emitted', () => {
     renderHook(() => useCommandAckPublisher({ deviceId: 'tv-1', actionBus: bus }));
 

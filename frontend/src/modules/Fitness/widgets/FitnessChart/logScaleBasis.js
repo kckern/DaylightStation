@@ -17,14 +17,10 @@
  * real field out and the exempt line renders flat near the bottom, which is the
  * intended reading.
  *
- * Exemption suspension is MODELLED ON `GovernanceEngine._exemptionsApply` but is
- * deliberately not exact parity: the engine also requires an ACTIVE, non-guest
- * subject, whereas this counts guests and absent/historical entries as subjects.
- * That divergence is safe because this feeds the y-scale only and never
- * governance. The rule: when NO
- * non-exempt participant is present the exemption is suspended and everyone
- * counts, so an exempt-only roster still gets a usable scale rather than an
- * empty basis.
+ * The chart has one presentation-only fallback that governance deliberately
+ * does not share: when no non-exempt participant exists, every line defines the
+ * scale so an exempt-only historical chart remains readable. This never feeds
+ * eligibility, requirements, warnings, or locks.
  */
 
 /** Parity with GovernanceEngine's private `normalizeName` (exemptions are usernames). */
@@ -53,7 +49,7 @@ export function isExemptEntry(entry, exemptions) {
 export function computeScaleBasisValue(entries, exemptions, minDataValue) {
   const all = Array.isArray(entries) ? entries : [];
   const subjects = all.filter((e) => !isExemptEntry(e, exemptions));
-  // Suspension: with no non-exempt participant, everyone defines the basis.
+  // Presentation fallback: an exempt-only chart still needs a finite scale.
   const basis = subjects.length > 0 ? subjects : all;
 
   let min = Number.POSITIVE_INFINITY;

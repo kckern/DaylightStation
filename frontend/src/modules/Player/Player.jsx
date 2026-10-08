@@ -6,6 +6,8 @@ import { SinglePlayer } from './components/SinglePlayer.jsx';
 import { AudioLayer } from './components/AudioLayer.jsx';
 import { AmbientLayer } from './components/AmbientLayer.jsx';
 import { PlayerOverlayLoading } from './components/PlayerOverlayLoading.jsx';
+import { holdsAfterGaveUp } from './lib/sourceAvailability.js';
+import { useSourceWaitSkipKeys, playerIsHitTarget } from '../../lib/Player/useSourceWaitSkipKeys.js';
 import { PlayerOverlayPaused } from './components/PlayerOverlayPaused.jsx';
 import { PlayerOverlayStateDebug } from './components/PlayerOverlayStateDebug.jsx';
 import { PlayerOverlayAutoplayBlocked } from './components/PlayerOverlayAutoplayBlocked.jsx';
@@ -16,6 +18,7 @@ import { resolveCollectionKey } from './utils/collectionKey.js';
 import { nextPlaybackRate } from './utils/playbackRateCycle.js';
 import { guid } from './lib/helpers.js';
 import { playbackLog } from './lib/playbackLogger.js';
+import { shuffleExecutionOrder } from './lib/shuffleExecutionOrder.js';
 import { resolveContentId, resolveMediaIdentity, resolveSourceContentKey } from './utils/mediaIdentity.js';
 import { getLogWaitKey, describeWaitKey } from './lib/waitKeyLabel.js';
 import { useMediaTransportAdapter } from './hooks/transport/useMediaTransportAdapter.js';
@@ -181,7 +184,12 @@ const Player = forwardRef(function Player(props, ref) {
     // An auxiliary Player (music behind a slideshow, RQ-PLAY-12) never takes
     // screen-level queue commands: those belong to the main playback owner.
     auxiliary = false,
+    // Opt-in by the SCREEN-FRAMEWORK owner only (ScreenPlayer, MenuStack): hold
+    // a refused video until healed instead of the ladder's skip. Fitness, piano
+    // and school-lesson Players never pass it and keep the previous cap action.
+    holdOnRefusal: holdOnRefusalProp = false,
   } = props || {};
+  const holdRefusals = holdOnRefusalProp === true && !auxiliary && typeof onResilienceEvent !== 'function';
 
   const ownerInputsRef = useRef({ play, queue });
   if (ownerInputsRef.current.play !== play || ownerInputsRef.current.queue !== queue) {
@@ -225,6 +233,8 @@ const Player = forwardRef(function Player(props, ref) {
     setShaderUserCycled,
     isShuffle,
     repeatMode,
+    setRepeatMode,
+    setIsContinuous,
   } = useQueueController({
     play,
     queue,
@@ -234,6 +244,13 @@ const Player = forwardRef(function Player(props, ref) {
     queueFetchTimeoutMs: 10_000,
     onOwnerRevision: issueOwnerRevision,
   });
+
+  // A remote Shuffle on a running screen is a playback-order flag (applied as the queue's execution order by the
+  // screen receiver), not a re-fetch of the queue: the queue controller's own `isShuffle` is a fetch-time input and
+  // flipping it would reload the queue under the person watching. `null` = follow the controller.
+  const [remoteShuffle, setRemoteShuffle] = useState(null);
+  useEffect(() => { setRemoteShuffle(null); }, [isShuffle]);
+  const shuffleOn = remoteShuffle ?? isShuffle;
 
   // Gated advance: marks the queue as advanced so activeSource starts following
   // playQueue[0] instead of the original `play` prop.
@@ -1508,6 +1525,11 @@ const Player = forwardRef(function Player(props, ref) {
       }, { level: 'info' });
       clearRemountTimer();
     }
+    // A HELD ("waiting") record describes a wait, not history: the moment the
+    // item plays, the wait is over and a phone must stop seeing it.
+    if (state?.status === RESILIENCE_STATUS.playing && lastProblemRef.current?.kind === 'waiting') {
+      lastProblemRef.current = null;
+    }
     if (state?.status === RESILIENCE_STATUS.playing && problemClearedByPlaying(lastProblemRef.current)) {
       lastProblemRef.current = null;
     }
@@ -1622,7 +1644,37 @@ const Player = forwardRef(function Player(props, ref) {
   // RELY.5a/AC4: what this Player last gave up on (and what plays instead),
   // published in the screen's session snapshot so whoever sent or steered this
   // screen can be told. A record, not a live state: it carries its own time.
+  // The item a screen is HOLDING after the maximum wait (Tap to Retry + Skip).
+  const [refusalHeldGuid, setRefusalHeldGuid] = useState(null);
+  // A phone steering this screen must be able to see it is PARKED on a refused
+  // video (the `waiting` problem kind Media already labels), not just silent.
+  const publishHeldProblem = useCallback((reason) => {
+    const held = effectiveMeta ?? {};
+    lastProblemRef.current = {
+      kind: 'waiting',
+      reason,
+      item: { contentId: held.contentId ?? held.assetId ?? null, title: held.title ?? null },
+      replacement: null,
+      at: Date.now(),
+    };
+  }, [effectiveMeta]);
+  // Moving to another item ends the wait the held record described.
+  useEffect(() => {
+    if (lastProblemRef.current?.kind === 'waiting' && refusalHeldGuid !== currentMediaGuid) {
+      lastProblemRef.current = null;
+    }
+  }, [currentMediaGuid, refusalHeldGuid]);
   const handleResilienceExhausted = useCallback(({ reason, attempts, waitKey: exhaustedWaitKey }) => {
+    // A screen never gives a refused video up to its queue, even after the
+    // maximum wait: it stays on "Tap to Retry" (and Skip) until someone decides.
+    if (holdsAfterGaveUp({ reason, hold: holdRefusals })) {
+      playbackLog('resilience-exhausted-hold', {
+        reason, attempts, ...describeWaitKey(exhaustedWaitKey), action: 'hold', queueRemaining: playQueue?.length ?? 0,
+      }, { level: 'warn' });
+      publishHeldProblem('source-unavailable-gave-up');
+      setRefusalHeldGuid(currentMediaGuid);
+      return;
+    }
     {
       const failed = effectiveMeta ?? {};
       const next = isQueue && hasNextQueueItem ? (playQueue?.[1] ?? null) : null;
@@ -1656,7 +1708,7 @@ const Player = forwardRef(function Player(props, ref) {
       onResilienceEvent?.({ kind: 'resilience-exhausted', reason, attempts });
       clear();
     }
-  }, [isQueue, hasNextQueueItem, advance, clear, playQueue, onResilienceEvent, effectiveMeta]);
+  }, [isQueue, hasNextQueueItem, advance, clear, playQueue, onResilienceEvent, effectiveMeta, currentMediaGuid, holdRefusals, publishHeldProblem]);
 
   // Self-contained formats (titlecard, etc.) have no media element —
   // suppress the resilience overlay which would never exit startup.
@@ -1665,6 +1717,7 @@ const Player = forwardRef(function Player(props, ref) {
   const { overlayProps, cancelDeadline, requestRecovery } = useMediaResilience({
     getMediaEl: transportAdapter.getMediaEl,
     registrationSignal: mediaAccess,
+    autoplayBlocked: !!mediaAccess?.autoplayBlocked,
     meta: effectiveMeta,
     seconds: effectiveMeta ? playbackMetrics.seconds : 0,
     isPaused: effectiveMeta ? playbackMetrics.isPaused : false,
@@ -1677,7 +1730,13 @@ const Player = forwardRef(function Player(props, ref) {
     onExhausted: handleResilienceExhausted,
     // An owner that opts in (Media) hears when a refused source is being
     // waited out and when that wait ends; other owners see nothing new.
-    onSourceWait: (event) => onResilienceEvent?.({ kind: event.waiting ? 'source-wait' : 'source-wait-ended', ...event }),
+    onSourceWait: (event) => {
+      if (holdRefusals && event.waiting) publishHeldProblem('source-refused');
+      onResilienceEvent?.({ kind: event.waiting ? 'source-wait' : 'source-wait-ended', ...event });
+    },
+    // Screens HOLD a refused video until it is healed (owner ruling 2026-10-07,
+    // screen-framework owners only; see `holdOnRefusal` above).
+    holdOnRefusal: holdRefusals,
     configOverrides: resolvedResilience.config,
     controllerRef: resilienceControllerRef,
     plexId,
@@ -1950,6 +2009,42 @@ const Player = forwardRef(function Player(props, ref) {
   // makes skip/back/load-failure incapable of earning completion.
   const manualAdvance = isQueue ? advance : singleAdvance;
 
+  // The one way OUT of a screen's source wait (it never skips by itself): OK,
+  // D-pad, media-next or the Remote's skip, or a tap on the pill. Media
+  // (onResilienceEvent) has its own Skip and storm guard.
+  const sourceWaitSkippable = holdRefusals && (
+    Boolean(overlayProps?.sourceNotice)
+    || (overlayProps?.isExhausted === true && refusalHeldGuid !== null && refusalHeldGuid === currentMediaGuid)
+  );
+  const skipRefusedSource = useCallback((origin) => {
+    if (typeof manualAdvance !== 'function') return false;
+    playbackLog('source-wait-skip', {
+      key: origin?.key ?? null, queueRemaining: playQueue?.length ?? 0, hasNext: Boolean(isQueue && hasNextQueueItem),
+    }, { level: 'info' });
+    ownerStoppedRef.current = false;
+    manualAdvance();
+    return true;
+  }, [manualAdvance, playQueue, isQueue, hasNextQueueItem]);
+  // The Skip pill is only really on screen when the loading overlay renders it
+  // (visible, not blacked out); keys are consumed only then.
+  const skipPillShowing = sourceWaitSkippable
+    && effectiveShader !== 'blackout'
+    && overlayProps?.shouldRender !== false
+    && overlayProps?.isVisible !== false
+    && (!overlayProps?.pauseOverlayActive || overlayProps?.stalled === true);
+  const skipPillShowingRef = useRef(false);
+  skipPillShowingRef.current = skipPillShowing;
+  const playerShellRef = useRef(null);
+  // The sleep shader sets pointer-events on while a screen sleeps; a Player
+  // underneath must not eat the wake key (OK) meant for the screen.
+  const canConsumeSkipKey = useCallback(() => {
+    if (!skipPillShowingRef.current) return false;
+    return playerIsHitTarget(playerShellRef.current);
+  }, []);
+  useSourceWaitSkipKeys({
+    active: sourceWaitSkippable, onSkip: skipRefusedSource, canConsume: canConsumeSkipKey, rootRef: playerShellRef,
+  });
+
   // Compose onMediaRef so we keep existing external callback semantics
   const handleMediaRef = useCallback((el, registration = {}) => {
     const ownership = registration.ownership ?? null;
@@ -2183,7 +2278,7 @@ const Player = forwardRef(function Player(props, ref) {
     // A bridge consumer must never be able to mutate the live queue owner.
     getQueueSnapshot: () => JSON.parse(JSON.stringify(queueSnapshot)),
     applyQueueSnapshot,
-    getQueueConfig: () => ({ shuffle: isShuffle, repeat: repeatMode }),
+    getQueueConfig: () => ({ shuffle: shuffleOn, repeat: repeatMode }),
     setShader: (value) => {
       setShaderUserCycled(true);
       setShader(value ?? 'default');
@@ -2302,7 +2397,7 @@ const Player = forwardRef(function Player(props, ref) {
         fromContentId: effectiveMeta?.contentId ?? effectiveMeta?.assetId ?? null,
       }, { level: 'info' });
     },
-  }), [isQueue, isShuffle, repeatMode, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setOwnerVolume, setOwnerPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport, queueSnapshot, playerInstanceId, queueShader, issueOwnerRevision, adoptQueueSnapshot, applyQueueSnapshot, setTargetTimeSeconds, setShader, setShaderUserCycled, inspectRendererBoundaryRequest, beginRendererBoundary, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, currentTrackState, forceSinglePlayerRemount]);
+  }), [isQueue, isShuffle, shuffleOn, repeatMode, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setOwnerVolume, setOwnerPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport, queueSnapshot, playerInstanceId, queueShader, issueOwnerRevision, adoptQueueSnapshot, applyQueueSnapshot, setTargetTimeSeconds, setShader, setShaderUserCycled, inspectRendererBoundaryRequest, beginRendererBoundary, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, currentTrackState, forceSinglePlayerRemount]);
 
   useEffect(() => () => {
     clearRemountTimer();
@@ -2315,6 +2410,20 @@ const Player = forwardRef(function Player(props, ref) {
     const { op, contentId, shader: requestedShader } = payload;
     if (op === 'stop') {
       stopOwner();
+      return;
+    }
+    if (op === 'set-config') {
+      // Remote shuffle / repeat / volume (screen receiver `media:config-set`). Never interrupts playback.
+      const { setting, value } = payload;
+      issueOwnerRevision({ queue: true });
+      if (setting === 'shuffle') {
+        setRemoteShuffle(!!value);
+        const reordered = shuffleExecutionOrder(queueSnapshot, !!value);
+        if (reordered !== queueSnapshot) applyQueueSnapshot(JSON.parse(JSON.stringify(reordered)));
+      }
+      else if (setting === 'repeat') { setRepeatMode(value); setIsContinuous(value === 'all'); }
+      else if (setting === 'volume') setOwnerVolume(Math.max(0, Math.min(1, Number(value) / 100)));
+      playbackLog('remote-config-applied', { setting, value });
       return;
     }
     if (op === 'play') {
@@ -2471,7 +2580,7 @@ const Player = forwardRef(function Player(props, ref) {
     }
 
     pushOnDeck(item, { displaceToQueue: !!onDeckCfg?.displace_to_queue });
-  }, [playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, replaceQueue, append, playerInstanceId, queueShader, classes, setShader, setShaderUserCycled, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, seekOwnerRelative, advance, isQueue, singleAdvance, effectiveMeta?.isLive, activeSource?.isLive]);
+  }, [queueSnapshot, applyQueueSnapshot, issueOwnerRevision, setRepeatMode, setIsContinuous, setOwnerVolume, playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, replaceQueue, append, playerInstanceId, queueShader, classes, setShader, setShaderUserCycled, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, seekOwnerRelative, advance, isQueue, singleAdvance, effectiveMeta?.isLive, activeSource?.isLive]);
 
   // Register once in mount order while the ref supplies the latest stateful
   // callback. Re-registering on every queue change would let a background
@@ -2490,6 +2599,7 @@ const Player = forwardRef(function Player(props, ref) {
     <>
       <PlayerOverlayLoading
         {...overlayProps}
+        onSkipSource={sourceWaitSkippable ? skipRefusedSource : null}
         effectiveMetaIsNull={!effectiveMeta}
         suppressForBlackout={suppressOverlaysForBlackout}
       />
@@ -2634,7 +2744,7 @@ const Player = forwardRef(function Player(props, ref) {
   ) : fallbackContent;
 
   const shell = (
-    <div className={playerShellClass}>
+    <div className={playerShellClass} ref={playerShellRef}>
       <AmbientLayer ambientUrl={ambientUrl} ambientVolume={ambientVolumeFromMeta} />
       {audioConfig && (
         <AudioLayer
@@ -2672,6 +2782,7 @@ Player.propTypes = {
   }),
   playerType: PropTypes.string,
   ignoreKeys: PropTypes.bool,
+  holdOnRefusal: PropTypes.bool,
   keyboardOverrides: PropTypes.object,
   resilience: PropTypes.shape({
     config: PropTypes.object,

@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { houseApi as defaultApi, screenIdFor } from './houseApi.js';
 import houseLog from './houseLog.js';
 
-const EMPTY = { screens: [], notSeenLately: [], retired: [], unnamed: [] };
+const EMPTY = { screens: [], notSeenLately: [], retired: [], unnamed: [], roomAdjacency: {} };
 export const REGISTRY_POLL_MS = 120_000;
 
 export function useScreenRegistry({ api = defaultApi, pollMs = REGISTRY_POLL_MS } = {}) {
@@ -26,6 +26,7 @@ export function useScreenRegistry({ api = defaultApi, pollMs = REGISTRY_POLL_MS 
         notSeenLately: Array.isArray(res?.notSeenLately) ? res.notSeenLately : [],
         retired: Array.isArray(res?.retired) ? res.retired : [],
         unnamed: Array.isArray(res?.unnamed) ? res.unnamed : [],
+        roomAdjacency: res?.roomAdjacency && typeof res.roomAdjacency === 'object' ? res.roomAdjacency : {},
       };
       houseLog.registryLoaded({ screens: next.screens.length, notSeenLately: next.notSeenLately.length, retired: next.retired.length });
       setState({ ...next, loaded: true, available: true, error: null });

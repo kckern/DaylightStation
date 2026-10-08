@@ -35,9 +35,12 @@ export function PlayerOverlayLoading({
   showPauseIcon = false,
   isExhausted = false,
   onRetryFromExhausted,
-  // "Video file unavailable — retrying · 2:05" while the Player waits out a
+  // "Fixing this video… · 2:05" while the Player waits out a
   // file the server refuses to read (useSourceAvailability). Null otherwise.
-  sourceNotice = null
+  sourceNotice = null,
+  // Screens only: a way out of the wait (OK / tap). The keys live in
+  // lib/Player/useSourceWaitSkipKeys; this is the visible half.
+  onSkipSource = null
 }) {
   // Removed on 2026-08-16, all for the same reason: no caller anywhere in the
   // repo supplied them, so every value they ever reported came from the default
@@ -435,6 +438,18 @@ export function PlayerOverlayLoading({
           </div>
           {sourceNotice ? (
             <div className="loading-notice" data-testid="player-source-notice">{sourceNotice}</div>
+          ) : null}
+          {(sourceNotice || isExhausted) && typeof onSkipSource === 'function' ? (
+            <div
+              className="loading-skip"
+              data-testid="player-source-skip"
+              data-no-fullscreen="true"
+              role="button"
+              tabIndex={-1}
+              onClick={(event) => { event.preventDefault(); event.stopPropagation(); onSkipSource({ key: 'tap' }); }}
+            >
+              Skip<span className="loading-skip__key">OK</span>
+            </div>
           ) : null}
         </div>
       </div>

@@ -113,12 +113,14 @@ export function useCommandAckPublisher({ deviceId, actionBus, handoffExecutor = 
       // Add requires a durable queue-owner mutation. Its receipt event is not
       // success; ScreenActionHandler emits media:queue-op-applied only after the
       // owning Player exposes the appended item in its post-mutation snapshot.
-      if (['add', 'item-action', 'undo'].includes(payload?.op)) return;
+      if (['add', 'item-action', 'undo', 'reorder'].includes(payload?.op)) return;
+      // Shuffle/repeat/volume are acked by their outcome (ScreenActionHandler.handleMediaConfigSet), so a bad value or a missing owner reaches the Remote.
+      if (payload?.setting && ['shuffle', 'repeat', 'volume'].includes(payload.setting)) return;
       publishAck({ commandId, ok: true });
     };
 
     const queueOpAppliedHandler = (payload) => {
-      if (!['add', 'item-action', 'undo'].includes(payload?.op)) return;
+      if (!['add', 'item-action', 'undo', 'reorder'].includes(payload?.op)) return;
       // Add only (RQ-PLAY-10) rewrote a Play into an Add — the ack says so.
       publishAck({
         commandId: payload?.commandId, ok: true,

@@ -48,6 +48,20 @@ export function toHealableContentId(contentId, plexId = null) {
   return match ? `plex:${match[1]}` : null;
 }
 
+/**
+ * The id the backend should check for the item that is PLAYING. A Player's
+ * `plexId` is the queue ROOT (a show, a playlist), so it is only the last
+ * resort: the playing item's own identity comes first. The backend rejects any
+ * container that still slips through (`reason: 'not-a-leaf'`).
+ */
+export function resolveSourceContentId(meta, plexId = null) {
+  for (const candidate of [meta?.contentId, meta?.assetId, meta?.id]) {
+    const healable = toHealableContentId(candidate);
+    if (healable) return healable;
+  }
+  return toHealableContentId(null, plexId);
+}
+
 const POLL_DELAYS_MS = Object.freeze([2_000, 4_000, 8_000]);
 export const SOURCE_POLL_MAX_DELAY_MS = 15_000;
 
@@ -62,6 +76,9 @@ export function sourcePollDelayMs(attempt) {
  * video, so in practice a screen waits for as long as someone is in front of it.
  */
 export const SOURCE_UNAVAILABLE_MAX_MS = 30 * 60_000;
+
+/** Screens only: consecutive `unknown` answers after which a held item counts as missing. */
+export const UNKNOWN_POLLS_BEFORE_MISSING = 4;
 
 /**
  * What a check answer means for the Player.
@@ -80,21 +97,38 @@ export const SOURCE_UNAVAILABLE_MAX_MS = 30 * 60_000;
  * file is fine and the stream is the problem — that is the stall ladder's job,
  * so `normal`, never an extra reload outside the ladder's budget.
  */
-export function decideSourceCheck({ state, waiting, suspected = false }) {
+export function decideSourceCheck({ state, waiting, suspected = false, hold = false, confirmed = false, unknownPolls = 0 }) {
   if (state === 'unreadable') return 'wait';
   if (state === 'readable') {
     if (waiting) return 'resume';
     return suspected ? 'normal' : 'retry';
   }
   if (state === 'missing') return 'normal';
+  // A SCREEN (`hold`, opted in by the screen-framework owner only) never gives
+  // a refused video up to the queue: when the element CONFIRMED a refusal
+  // (403/404/503 / source-unreadable) and the backend cannot say more (unknown,
+  // or the check itself failed), keep waiting — but a deleted item answers
+  // `unknown` forever, so after UNKNOWN_POLLS_BEFORE_MISSING such answers it
+  // is treated as missing (`normal`). Every other owner: previous behaviour.
+  if (hold && (confirmed || waiting)) return unknownPolls >= UNKNOWN_POLLS_BEFORE_MISSING ? 'normal' : 'wait';
   return waiting ? 'wait' : 'normal';
 }
 
-/** "Video file unavailable — retrying · 2:05" */
+/**
+ * After the maximum wait a SCREEN (`hold`: opted in by the screen-framework
+ * owner) holds on Tap to Retry / Skip instead of advancing the queue. Every
+ * other owner (fitness, piano, school lessons, Media) keeps its previous cap
+ * action.
+ */
+export function holdsAfterGaveUp({ reason, hold }) {
+  return reason === 'source-unavailable-gave-up' && hold === true;
+}
+
+/** "Fixing this video… · 2:05" — quiet, TV-legible, no instructions in it. */
 export function sourceNoticeText({ mediaType, unavailableMs }) {
-  const kind = mediaType === 'audio' ? 'Audio' : 'Video';
+  const kind = mediaType === 'audio' ? 'audio' : 'video';
   const totalSeconds = Math.max(0, Math.floor((unavailableMs || 0) / 1000));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = String(totalSeconds % 60).padStart(2, '0');
-  return `${kind} file unavailable — retrying · ${minutes}:${seconds}`;
+  return `Fixing this ${kind}… · ${minutes}:${seconds}`;
 }

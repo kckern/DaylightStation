@@ -95,7 +95,7 @@ const contracts = [
         expect(module.stateGatesRouter).toEqual(expect.any(Function));
         expect(module.entitlementsRouter).toEqual(expect.any(Function));
         expect(await module.container.getCurrentGates('home')).toMatchObject({ currentRevision: 1, items: [] });
-        expect(fs.existsSync(path.join(directory, 'state-gates/current.yml'))).toBe(true);
+        expect(fs.existsSync(path.join(directory, 'state-gates/current.json'))).toBe(true);
       } finally {
         module.dispose();
         fs.rmSync(directory, { recursive: true, force: true });

@@ -202,8 +202,8 @@ describe('State Gates lifecycle retries', () => {
     try {
       expect((await module.container.getCurrentGates('west')).items[0].evaluation.state).toBe('satisfied');
       expect((await module.container.getCurrentGates('utc')).items[0].evaluation.state).toBe('unsatisfied');
-      expect(fs.existsSync(path.join(directory, 'west/state-gates/current.yml'))).toBe(true);
-      expect(fs.existsSync(path.join(directory, 'utc/state-gates/current.yml'))).toBe(true);
+      expect(fs.existsSync(path.join(directory, 'west/state-gates/current.json'))).toBe(true);
+      expect(fs.existsSync(path.join(directory, 'utc/state-gates/current.json'))).toBe(true);
     } finally {
       module.dispose();
       fs.rmSync(directory, { recursive: true, force: true });
@@ -239,6 +239,28 @@ describe('State Gates lifecycle retries', () => {
       expect(loads).toBeGreaterThanOrEqual(3);
     } finally {
       loadSpy.mockRestore();
+      module.dispose();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('logs the read-failure cause code alongside the startup-unavailable code', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'state-gates-startup-cause-'));
+    fs.mkdirSync(path.join(directory, 'state-gates'), { recursive: true });
+    // A JSON file with an unsupported schema — the guard's cause code must
+    // distinguish this from LEGACY_STATE_NEWER or a plain parse failure.
+    fs.writeFileSync(path.join(directory, 'state-gates/current.json'), JSON.stringify({ schema: 'daylight.state-gates-state/v0' }));
+    const log = logger();
+    const module = await createStateGatesModule({
+      householdId: 'home', eventBus: { publish: vi.fn() }, configService: config(directory, emptyPolicy()),
+      clock: { now: () => Date.now() }, logger: log,
+    });
+    try {
+      expect(log.error).toHaveBeenCalledWith('state-gates.startup.unavailable', {
+        householdId: 'home', code: 'STATE_GATES_STATE_UNAVAILABLE',
+        error: 'State Gates state could not be read', cause: 'UNSUPPORTED_STATE_SCHEMA',
+      });
+    } finally {
       module.dispose();
       fs.rmSync(directory, { recursive: true, force: true });
     }

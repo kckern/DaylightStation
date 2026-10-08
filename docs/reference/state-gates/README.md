@@ -86,7 +86,7 @@ State Gates owns:
 - deterministic four-state evaluation;
 - explicit progress projections and validity boundaries;
 - binary entitlement decisions with `fail_open` or `fail_closed` posture;
-- durable current projection and a bounded transition journal (default 500 entries / 7 days — the journal shares `current.yml` with the projection, so its size is the cost of every commit);
+- durable current projection and a bounded transition journal (default 500 entries / 7 days — the journal shares `current.json` with the projection, so its size is the cost of every commit);
 - current-state queries, replay, and administrative diagnostics; and
 - startup reconciliation, live delivery recovery, and time-bound reevaluation.
 
@@ -105,9 +105,9 @@ It does not own:
 |---|---|
 | Bounded-context namespace | `state-gates` |
 | Policy source | Household `state-gates/config.yml`, or the installed School/Fitness policy when absent |
-| Durable state | `data/household[-{hid}]/state-gates/current.yml` |
+| Durable state | `data/household[-{hid}]/state-gates/current.json` |
 | Policy schema | `daylight.state-gates-policy/v1` |
-| State schema | `daylight.state-gates-state/v1` |
+| State schema | `daylight.state-gates-state/v2` (YAML v1 before 2026-09-25, migrated on first read) |
 | Query schema | `daylight.state-gates-query/v1` |
 | Replay schema | `daylight.state-gates-replay/v1` |
 | Event schema | `daylight.state-gates-event/v1` |

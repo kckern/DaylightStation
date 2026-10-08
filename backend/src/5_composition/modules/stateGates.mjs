@@ -51,8 +51,9 @@ export async function createStateGatesModule({
   configService, eventBus, householdId, clock = { now: () => Date.now() }, logger = console,
   roleIds = [], producerPrincipals = {},
   installedPolicy = INSTALLED_STATE_GATES_POLICY,
-  // Journal + projection share current.yml and every commit dumps the whole
-  // file, so journal size is the cost of every write. 5000 entries / 30 days
+  // Journal + projection share current.json and every commit rewrites the
+  // whole file, so journal size is the cost of every write (JSON since
+  // 2026-09-25: about 5 ms for 500 entries). 5000 entries / 30 days
   // let it reach 2.6 MB and never compact; 500 / 7d keeps a commit cheap while
   // still exceeding what replay (limit <= 500) or delivery recovery consumes.
   // Cursors older than compactedThrough get the 410 the design already handles.
@@ -63,8 +64,11 @@ export async function createStateGatesModule({
   const retryPolicy = normalizeRetryPolicy(retryPolicyInput);
   const identity = new HttpStateGatesIdentityAdapter();
   const subjectCatalog = new ConfigStateGatesSubjectCatalog({ configService });
+  const statePath = id => configService.getHouseholdPath('state-gates/current', id);
   const engine = new YamlStateGatesStateEngine({
-    resolveFilePath: id => `${configService.getHouseholdPath('state-gates/current', id)}.yml`,
+    resolveFilePath: id => `${statePath(id)}.json`,
+    // Read once to migrate the pre-2026-09-25 YAML state; never written.
+    resolveLegacyFilePath: id => `${statePath(id)}.yml`,
     ...journalRetention,
     logger: moduleLogger,
   });
@@ -236,7 +240,10 @@ export async function createStateGatesModule({
       // State Gates may be unavailable without taking down unrelated household
       // capabilities. The admin endpoint retains activation diagnostics and can
       // recover after the candidate is corrected.
-      moduleLogger.error?.('state-gates.startup.unavailable', { householdId: id, code: error.code, error: error.message });
+      moduleLogger.error?.('state-gates.startup.unavailable', {
+        householdId: id, code: error.code, error: error.message,
+        cause: error.cause?.code ?? error.cause?.message,
+      });
     }
   }
   return {

@@ -261,6 +261,40 @@ describe('ScreenActionHandler', () => {
     expect(queryByTestId('menu-stack')).toBeNull();
   });
 
+  describe('media:config-set (Remote shuffle / repeat / volume)', () => {
+    const mountHandler = () => render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler actions={{}} />
+      </ScreenOverlayProvider>
+    );
+
+    it('hands shuffle, repeat and volume to the queue owner', () => {
+      const owner = vi.fn();
+      getPlayerQueueOpRegistry().register(owner);
+      const { unmount } = mountHandler();
+      act(() => getActionBus().emit('media:config-set', { setting: 'shuffle', value: true, commandId: 'c1' }));
+      act(() => getActionBus().emit('media:config-set', { setting: 'repeat', value: 'all', commandId: 'c2' }));
+      act(() => getActionBus().emit('media:config-set', { setting: 'volume', value: 40, commandId: 'c3' }));
+      expect(owner).toHaveBeenCalledWith(expect.objectContaining({ op: 'set-config', setting: 'shuffle', value: true }));
+      expect(owner).toHaveBeenCalledWith(expect.objectContaining({ op: 'set-config', setting: 'repeat', value: 'all' }));
+      expect(owner).toHaveBeenCalledWith(expect.objectContaining({ op: 'set-config', setting: 'volume', value: 40 }));
+      unmount();
+    });
+
+    it('leaves other settings (shader, session flags) alone, and rejects a bad value or a missing owner', () => {
+      const owner = vi.fn();
+      const errors = [];
+      getActionBus().subscribe('command-handler-error', (e) => errors.push(e));
+      const { unmount } = mountHandler();
+      act(() => getActionBus().emit('media:config-set', { setting: 'shader', value: 'dark', commandId: 'c4' }));
+      act(() => getActionBus().emit('media:config-set', { setting: 'repeat', value: 'sometimes', commandId: 'c5' }));
+      act(() => getActionBus().emit('media:config-set', { setting: 'shuffle', value: true, commandId: 'c6' }));
+      expect(owner).not.toHaveBeenCalled();
+      expect(errors.map((e) => [e.commandId, e.code])).toEqual([['c5', 'INVALID_VALUE'], ['c6', 'QUEUE_OWNER_UNAVAILABLE']]);
+      unmount();
+    });
+  });
+
   describe('sleep wake mode', () => {
     afterEach(() => {
       document.querySelectorAll('.screen-action-shader').forEach(el => el.remove());

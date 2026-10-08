@@ -222,17 +222,14 @@ test('[PLAY.7a/AC1][PLAY.7a/AC3] a whole collection can be played next or added 
   await done();
 });
 
-test('[PLAY.2a/AC3][PLAY.7a/AC2] the confirmation of a whole-collection start or add states how many items and where (known gap)', async ({ browser, request }) => {
-  // Known gap (reported, not fixed here): the confirmation names the collection and the screen with Undo,
-  // but not how many items went there. test.fail() turns this red when the product states the count.
-  test.fail(true, 'NEEDS-FEATURE: collection confirmation states the item count');
+test('[PLAY.2a/AC3][PLAY.7a/AC2] the confirmation of a whole-collection start or add states how many items and where', async ({ browser, request }) => {
   const { page, done } = await setup(browser, request);
   await searchFor(page, 'Baby Joy Joy', ALBUM);
   await page.getByTestId(`result-more-${ALBUM}`).click();
   await page.getByRole('menuitem', { name: 'Add to Queue', exact: true }).click();
   const row = trayRow(page, 'Baby Joy Joy').first();
   await expect(row).toBeVisible({ timeout: 30000 });
-  await expect(row).toContainText(/\b6\b/);
+  await expect(row).toContainText(/\b6 items\b/);
   await expect(row).toContainText(A_NAME);
   await done();
 });

@@ -53,4 +53,25 @@ describe('PlexSourceProbe', () => {
     const client = clientWith({ parts: [accessiblePart] });
     expect((await new PlexSourceProbe({ client }).probe('59546')).state).toBe('readable');
   });
+  it('says not-a-leaf for a container (show/season) instead of a silent unknown', async () => {
+    for (const type of ['show', 'season', 'artist', 'album', 'collection', 'playlist']) {
+      const client = {
+        request: vi.fn(async () => ({ MediaContainer: { Metadata: [{ type, title: 'Bluey', ratingKey: '59493' }] } })),
+        partStatus: vi.fn(),
+      };
+      const result = await new PlexSourceProbe({ client }).probe('59493');
+      expect(result).toMatchObject({ state: 'unknown', reason: 'not-a-leaf', itemType: type });
+      expect(client.partStatus).not.toHaveBeenCalled();
+    }
+  });
+
+  it('an item Plex has no metadata for says no-metadata (deleted), distinct from an outage', async () => {
+    const client = { request: vi.fn(async () => ({ MediaContainer: { Metadata: [] } })) };
+    expect(await new PlexSourceProbe({ client }).probe('1')).toMatchObject({ state: 'unknown', reason: 'no-metadata' });
+  });
+
+  it('an item with no Media at all is also not-a-leaf', async () => {
+    const client = { request: vi.fn(async () => ({ MediaContainer: { Metadata: [{ type: 'episode', title: 'x' }] } })) };
+    expect((await new PlexSourceProbe({ client }).probe('1')).reason).toBe('not-a-leaf');
+  });
 });

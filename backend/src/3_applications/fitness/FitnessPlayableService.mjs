@@ -40,6 +40,7 @@ export class FitnessPlayableService {
    * must become one fetch rather than four queued ones.
    */
   #structureCache = new Map();
+  #structureSnapshot;
   #structureTtlMs;
   #now;
 
@@ -52,7 +53,7 @@ export class FitnessPlayableService {
    */
   constructor({
     fitnessConfigService, contentCatalog, createProgressClassifier,
-    logger = console, structureTtlMs = null, now = () => Date.now(),
+    logger = console, structureTtlMs = null, structureSnapshot = null, now = () => Date.now(),
   }) {
     this.#fitnessConfigService = fitnessConfigService;
     this.#contentCatalog = contentCatalog;
@@ -62,7 +63,18 @@ export class FitnessPlayableService {
     // which is a human-scale event, and the cost of being a few minutes late
     // to notice is nil. Injectable so tests do not sleep.
     this.#structureTtlMs = Number.isFinite(structureTtlMs) ? structureTtlMs : 5 * 60_000;
+    this.#structureSnapshot = structureSnapshot;
     this.#now = now;
+    if (structureSnapshot) {
+      try {
+        for (const [key, entry] of structureSnapshot.load()) {
+          this.#structureCache.set(key, { value: Promise.resolve(entry.value), at: entry.at, pending: false });
+        }
+        this.#logger.info?.('fitness.playable.snapshot-seeded', { count: this.#structureCache.size });
+      } catch (err) {
+        this.#logger.warn?.('fitness.playable.snapshot-seed-failed', { error: err?.message ?? String(err) });
+      }
+    }
   }
 
   /**
@@ -97,9 +109,26 @@ export class FitnessPlayableService {
     const entry = { value, at: now, pending: true };
     this.#structureCache.set(key, entry);
     value.then(
-      () => { entry.pending = false; entry.at = this.#now(); },
-      () => { this.#structureCache.delete(key); },
+      (resolved) => {
+        entry.pending = false;
+        entry.at = this.#now();
+        this.#structureSnapshot?.put(key, resolved, entry.at);
+      },
+      () => {
+        if (hit) this.#structureCache.set(key, hit);
+        else this.#structureCache.delete(key);
+      },
     );
+    // Expiry means revalidate, not evict. Course structure changes rarely and
+    // is not learner evidence, so a known value is always safer than making a
+    // board request wait on Plex. Progress is enriched separately below and
+    // remains live on every call.
+    if (hit) {
+      value.catch((err) => this.#logger.warn?.('fitness.playable.structure-refresh-failed', {
+        key, error: err?.message ?? String(err),
+      }));
+      return hit.value.then(FitnessPlayableService.#detach);
+    }
     return value.then(FitnessPlayableService.#detach);
   }
 

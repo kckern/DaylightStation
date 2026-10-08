@@ -102,9 +102,12 @@ describe('Media P0 gate manifest', () => {
       expect.objectContaining({ story: 'PLAY.5a', criteria: ['PLAY.5a/AC3'], file: 'media-app-p0-features-find.runtime.test.mjs' }),
       expect.objectContaining({ story: 'STEER.1a', criteria: ['STEER.1a/AC4'], file: 'media-app-p0-features-steer.runtime.test.mjs' }),
       expect.objectContaining({ story: 'RELY.5a', criteria: ['RELY.5a/AC4'], file: 'media-app-p0-features-steer.runtime.test.mjs' }),
+      // Phase 3 (batch D): nine P1/P2 criteria in one journey file.
+      ...['HOUSE.4a/AC1', 'HOUSE.5a/AC2', 'HOUSE.6a/AC4', 'PLACE.4a/AC6', 'RELY.4a/AC3', 'STEER.10a/AC2', 'STEER.11a/AC3', 'STEER.13b/AC3', 'AUTO.4a/AC3']
+        .map((criterion) => expect.objectContaining({ story: criterion.split('/')[0], criteria: [criterion], file: 'media-app-gaps-d-proof.runtime.test.mjs' })),
     ]));
-    expect(P0_EXTENSION_ENTRIES).toHaveLength(106);
-    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 79, criteria: 231 });
+    expect(P0_EXTENSION_ENTRIES).toHaveLength(138);
+    expect(validateP0Manifest([...BASE, ...P0_EXTENSION_ENTRIES])).toEqual({ stories: 81, criteria: 267 });
   });
 
   it('Phase 2b journeys: a known gap (a test.fail that pins a product defect) is never part of a manifest grep', () => {

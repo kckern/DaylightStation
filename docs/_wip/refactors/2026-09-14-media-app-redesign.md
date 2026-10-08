@@ -218,7 +218,7 @@ Nine P0 features built on branch `feat/media-p0-features` (product code at exact
 | Failures a steered screen raises itself | RELY.5a/AC4 | `p0-features-steer` |
 | Unknown-source id settles at once | FIND.4a/AC4 (evidence only) | `p0-features-search` |
 
-Result in the ledger: 180 Accepted / 64 Partial / 44 Unverified AC (was 166 / 70 / 52). Two things were found on the way: a Move that stopped this device on the screen's mere acceptance (now it waits for the screen to confirm playing), and that a screen whose stream is aborted at the network layer stalls after two recovery attempts without ever giving up (not changed).
+Result in the ledger: 180 Accepted / 64 Partial / 44 Unverified AC (was 166 / 70 / 52). Two things were found on the way: a Move that stopped this device on the screen's mere acceptance (now it waits for the screen to confirm playing), and that a screen whose stream is aborted at the network layer stalls after two recovery attempts without ever giving up (since fixed on `fix/media-gaps-player-stall`: the startup deadline re-arms after in-place recovery, so the ledger cap exhausts).
 
 ### Phase 2b — P0 journeys and test-infrastructure fixes (PROOF-GAPS-PHASE2B)
 
@@ -234,19 +234,66 @@ Tests, fixtures and docs only (no product code), branch `test/media-proof-gaps`;
 
 1. Tablet/laptop dock search drops its words after a one-shot **Play on…** (the phone's SearchMode keeps them) — FIND.1a/AC5.
 2. **Details** show picture, title, progress and verbs, but not the item's length or kind (description only when the info API has one) — FIND.8a/AC2.
-3. A whole-collection start or add confirms with the collection, screen and Undo but **not the number of items** — PLAY.2a/AC3, PLAY.7a/AC2.
-4. **Keep playing here too** starts the screen's copy at 0:00, not at the local spot — PLACE.8a/AC2.
-5. Now Playing's **hand-off Move to an idle screen fails** with `INVALID_CAPTURE` ("Playback here was kept"): `useHandOff.js` uses the typed hand-off only, while the Remote's Move to… (`screenMove.js`) has the idle-screen adopt-load fallback — PLACE.8a/AC3, PLACE.6a/AC4.
-6. The **Move here** confirmation does not say which screen it came from — PLACE.7a/AC3.
+3. A whole-collection start or add confirms with the collection, screen and Undo but **not the number of items** — PLAY.2a/AC3, PLAY.7a/AC2. **Fixed in batch B (below).**
+4. **Keep playing here too** starts the screen's copy at 0:00, not at the local spot — PLACE.8a/AC2. **Not a product defect: the screen's copy does start at the local spot (batch B, below).**
+5. Now Playing's **hand-off Move to an idle screen fails** with `INVALID_CAPTURE` ("Playback here was kept"): `useHandOff.js` uses the typed hand-off only, while the Remote's Move to… (`screenMove.js`) has the idle-screen adopt-load fallback — PLACE.8a/AC3, PLACE.6a/AC4. **Fixed in batch B.**
+6. The **Move here** confirmation does not say which screen it came from — PLACE.7a/AC3. **Fixed in batch B.**
 7. **Control boundaries measure ~1.35:1** (search field, destination control, secondary buttons) against the 3:1 non-text bar — RELY.13a/AC1.
-8. **Undo of a queue removal** (put back) shows no confirmation of its own — RELY.1a/AC1.
-9. A **screen ignores a remote queue reorder** (`ScreenActionHandler` applies play-now/next/add and item actions only) — STEER.8a/AC1, AC4.
-10. A **screen ignores the Remote's shuffle, repeat and volume** (the `config` command is acknowledged; `media:config-set` has no handler) — STEER.9a/AC3, STEER.5a/AC3, STEER.3a/AC3.
-11. **Undo of a remote queue edit** is gone at about 8 s, not 10 s — STEER.8a/AC3.
-12. A **live channel** shows a one-item queue panel with Shuffle/Repeat/Clear — STEER.7a/AC4.
-13. The Remote has **no one-step screen switcher** (Back to the house list, then pick) — STEER.1b/AC3.
+8. **Undo of a queue removal** (put back) shows no confirmation of its own — RELY.1a/AC1. **Fixed in batch B.**
+9. (Fixed, see below) A **screen ignores a remote queue reorder** (`ScreenActionHandler` applies play-now/next/add and item actions only) — STEER.8a/AC1, AC4.
+10. (Fixed, see below) A **screen ignores the Remote's shuffle, repeat and volume** (the `config` command is acknowledged; `media:config-set` has no handler) — STEER.9a/AC3, STEER.5a/AC3, STEER.3a/AC3.
+11. (Fixed, see below) **Undo of a remote queue edit** is gone at about 8 s, not 10 s — STEER.8a/AC3.
+12. (Fixed, see below) A **live channel** shows a one-item queue panel with Shuffle/Repeat/Clear — STEER.7a/AC4.
+13. (Fixed, see below) The Remote has **no one-step screen switcher** (Back to the house list, then pick) — STEER.1b/AC3.
 14. Against the deployed catalog, **browsing a season lists only the season itself**, and Play on a show or season sent to a screen fails with `EMPTY_COLLECTION` (the screen expands collections from `/list/<source>/<id>`); the verbs journeys use an album, whose list does expand.
+    - *Fixed (branch fix/media-gaps-collection-bug, frontend only):* the list router wraps a bare Plex season as one self tile unless the `/expand` modifier is in the path; Media browse and container expansion now request `/list/<source>/<id>/expand`. Needs a frontend build/deploy, no backend change.
 15. Observed while testing: a **prod redeploy at ~07:33 PDT on 2026-10-07 left the container crash-looping** (`[FATAL] Server initialization failed: Bundled Skyline Glider course is invalid`), which interrupted this phase's runs; not a Media defect and not touched here.
+
+### Batch C — Phase 2b defects 1, 2, 7 (PROOF-GAPS-BATCH-C)
+
+Branch `fix/media-gaps-batch-c`, product code at exact SHA `e0a76884e8c3bdc6fab216ee1badafb445e6b764`; ledger run `PROOF-GAPS-BATCH-C`. Defects 1, 2 and 7 above are fixed and their journeys are ordinary passing tests again (no `test.fail`):
+
+1. Dock search keeps its words after a one-shot Play on… / Add on… (the picker is a destination interaction of that search, and its modal sits above the search dropdown). FIND.1a/AC5 Accepted at phone, tablet and laptop.
+2. Details state the kind and length ("Movie · 1 hr 56 min", "TV Show · 12 episodes"), show the source summary when there is no description, and load the household lists themselves so progress shows on a page opened straight to the item. FIND.8a/AC2 Accepted.
+7. Control boundaries: `--media-control-line` (the ramp's dimmed grey step; no new colour, no amber) on the edges of controls only, 3:1 or more at 390/820/1440. RELY.13a/AC1 Accepted. Hairlines between regions keep `--media-line`.
+
+Also: FIND.5a/AC1 was a race in the journey (it read the Plex library list before it loaded), fixed without loosening; FIND.8b/AC3 gained a camera search result in the acceptance catalog (`acceptance camera`), so cameras are proved as well as photos. Also: `tests/unit/tooling/mediaP0Gate.test.mjs` counted 106 extension entries and 231 criteria (the merged manifest has 117 and 242; stale since the 2a merge, updated here), and the p0-accessibility keyboard-order journeys fail on the base commit too (focus lands out of view on Home tiles).
+
+### Phase 2b defects 9-13 fixed (PROOF-GAPS-PHASE2B-FIXES)
+
+Branch `fix/media-gaps-batch-a`, product code at exact SHA `44656972d49c2528523f89cb22b7aaf19a5a2467` (ledger run `PROOF-GAPS-PHASE2B-FIXES`):
+
+- **9** A screen applies a Remote queue reorder: `ScreenActionHandler` routes `reorder` through the item-action owner (`kind: 'reorder'`), so it is undoable and its ack waits for the new order.
+- **10** A screen applies the Remote's shuffle, repeat and volume: `media:config-set` is handled by `ScreenActionHandler` and applied by the playback owner (`Player.jsx` `set-config`). Shuffle rewrites only the execution order behind the current item and the Up Next band; repeat and volume never interrupt playback. Fitness, piano and school screens are untouched by construction (the handler reacts only to those three settings and the `reorder` op; their suites pass).
+- **11** Undo of a remote queue edit: the journey now measures from the tap and the window is 10 s for both Remove and Clear; the earlier 8 s could not be reproduced and came from advancing a clock that keeps flowing. No product change was needed for the window.
+- **12** A live channel shows no queue panel (QueuePanel).
+- **13** The Remote has a Switch screen control (`peek-switch`) that moves the controls to another screen in one tap.
+- Also: Remote Stop reads pending at once (STEER.3a/AC3); the offline-looking receiver fixture (`serverOffline: true`); journey fixes for STEER.3a/AC3 transport, 5a/AC2 and 6a/AC4.
+
+### Proof-gaps batch B — Phase 2b defects 3, 4, 5, 6, 8 (PROOF-GAPS-BATCH-B)
+
+Branch `fix/media-gaps-batch-b`, product code at exact SHA `86d2bef07219dfb92b0f7e3dfaceef59e033651f`; ledger run `PROOF-GAPS-BATCH-B` (14 AC promoted to Accepted).
+
+- **3. Collection counts.** Playing, shuffling or adding a whole collection confirms with the item count ("Added <collection> (6 items) to <screen>"), here and on a screen (the backend now also reports `count` on a play-now step). PLAY.2a/AC3, PLAY.7a/AC2.
+- **4. Keep playing here too.** Not a defect: with the screen's FIRST playing report measured instead of the position read straight after the item matched, the screen starts at the local spot, on the unchanged product too (checked at `ed7f825fa`). The journey now asserts it. PLACE.8a/AC2.
+- **5. Hand-off Move to an idle screen.** `useHandOff` uses `createScreenMoveDestination` (the typed hand-off, else the adopt load for an idle screen), shared with the Remote's Move to…. PLACE.8a/AC3, PLACE.6a/AC4.
+- **6. Move confirmations name the source** ("Moved <item> here from <screen>"), for the Remote's Move to… and the house row's Move here. PLACE.7a/AC3.
+- **8. Undo has its own confirmation** ("Put back <item> here"; "Took back <item> …" for an add or a start). RELY.1a/AC1.
+- **Flake root causes.** The fixture built an invalid snapshot (`state: stopped`) for a scripted `off` screen, which failed HOUSE.2a/AC1 (now `idle`); `gotoMedia` now asks again after a superseded navigation (`net::ERR_ABORTED`), the PLACE.3a failure on the exact-SHA run; AUTO.1b gets its journey and the fake Home Assistant caller a browser path (`loadBrowser`, a routine origin over `client-control:<stable id>`). Browser started-by (found while writing AUTO.1b, fixed): a tab's own `playback_state` frames (which carry `origin` and the item) are now tracked server-side (`BrowserPlaybackTracker`, fed by `EventBusBrowserPlayback`) and `ScreenPlaybackService` uses them for `started-by` and `started-by` for all, so a routine start on a browser names the routine on its house row without waiting for a play/log ledger row. This is a backend change.
+- The P0 manifest gains seven extension entries carrying 11 criteria (80 stories / 253 criteria in total); `mediaP0Gate.test.mjs` counts updated (they already failed on the merged base).
+
+### Phase 3 — P1/P2 rows (PROOF-GAPS-PHASE3-BATCH-D)
+
+Branch `fix/media-gaps-batch-d`; exact SHA `b06c9db325c5ecaa87e75b9c467c651d563a66c7` (journeys on an exact-SHA preview). The nine P1/P2 rows listed under "Priority" above are Accepted:
+
+- **Features.** HOUSE.5a/AC2: `StartedByLine` is mounted in a screen's controls header (`shell/PeekPanel.jsx`). PLACE.4a/AC6: the screens registry gains optional room adjacency (`screens.yml` `adjacency`, `GET|PUT /screens/rooms/adjacency`, `roomAdjacency` on `GET /screens`), screen admin gains "Rooms next to each other" (mutual neighbour links), and the several-screen drift warning now covers neighbouring rooms. No household data was written; the household sets its own neighbours in screen admin.
+- **Journeys** (`media-app-gaps-d-proof`): names never codes (HOUSE.4a/AC1), "Not seen lately" fold (HOUSE.6a/AC4), Start fresh offers no Undo (RELY.4a/AC3), a minutes sleep timer's time left, fade and stop under the fake clock (STEER.10a/AC2), Pause all listing the screens that did not answer (STEER.11a/AC3), next-episode behaviour in the controls and carry-on listing only what is next (STEER.13b/AC3), routine flags for an off or unreachable screen (AUTO.4a/AC3).
+- **Fixture fix.** Scripting a receiver `off` built an invalid snapshot and was rejected with 400, so every journey that scripted a screen off failed; it is now an idle snapshot whose liveness expires at once.
+- **Manifest.** +9 criteria in `scripts/media-p0-gate.mjs` (the pins in `tests/unit/tooling/mediaP0Gate.test.mjs` were already stale on main, 106 entries / 231 criteria against 117 / 242, and now read 126 / 251). STEER.1a/AC5 (phone lock screen) stays `NEEDS-DEVICE`.
+
+### Final integration (test/media-gaps-final)
+
+The six proof-gaps branches are merged here. P0 manifest: 138 extension entries, 81 stories / 267 criteria (two entries added: STEER.1b/AC2, STEER.5a/AC1). Ledger: 287 Accepted / 1 Partial (STEER.1a/AC5, NEEDS-DEVICE) / 0 Unverified. The strict P0 gate and stable-core gate ran on the exact-SHA preview of `6b9153aca9`; groups that failed under host load all pass re-run alone (see the PROOF-GAPS-FINAL-INTEGRATION ledger row). Fixes found on the way: the acceptance server answered the Player's media-source check 403 (cause of the Faith audio / local video start flakes when Plex briefly refuses a file); Escape on a Browse row menu also went Back. The status page of batch C had been emptied by its tip commit and was restored.
 
 ## Next action
 

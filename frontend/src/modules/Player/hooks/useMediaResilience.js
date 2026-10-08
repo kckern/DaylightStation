@@ -14,7 +14,7 @@ import { getRecoveryLedger, RECOVERY_MAX_ATTEMPTS } from '../lib/recoveryLedger.
 import { evaluatePlayheadProgress } from '../lib/playheadProgress.js';
 import { isNearEnd } from '../lib/nearEnd.js';
 import { useSourceAvailability } from './useSourceAvailability.js';
-import { sourceNoticeText } from '../lib/sourceAvailability.js';
+import { sourceNoticeText, resolveSourceContentId } from '../lib/sourceAvailability.js';
 
 export { DEFAULT_MEDIA_RESILIENCE_CONFIG, MediaResilienceConfigContext, mergeMediaResilienceConfig } from './useResilienceConfig.js';
 export { RESILIENCE_STATUS } from './useResilienceState.js';
@@ -67,6 +67,9 @@ export function useMediaResilience({
   onExhausted,       // NEW: called when all recovery attempts are exhausted
   // Owner report of a refused-source wait: ({ waiting, since?, decision? }).
   onSourceWait,
+  // Screens (every owner but Media) hold a refused video instead of letting an
+  // unknown answer fall through to the ladder and its queue skip.
+  holdOnRefusal = false,
   configOverrides,
   controllerRef,
   plexId,
@@ -79,6 +82,9 @@ export function useMediaResilience({
   externalStalled = null,
   // Self-contained formats (titlecard, etc.) have no media element — disable resilience monitoring
   disabled = false,
+  // The browser refused autoplay and is waiting for a tap: nothing is wrong with
+  // the stream, so the deadline holds and no recovery attempt is spent.
+  autoplayBlocked = false,
   // Identity changes when a renderer registers/deregisters its media element.
   // The transcode-warmup effect below bails when no element exists yet; since the
   // 2026-07-21 leak fix made `getMediaEl` identity-stable, this is what re-runs it
@@ -208,8 +214,13 @@ export function useMediaResilience({
   const onSourceWaitRef = useRef(onSourceWait);
   onSourceWaitRef.current = onSourceWait;
   const sourceAvailability = useSourceAvailability({
-    contentId: meta?.contentId || null,
-    plexId,
+    // The PLAYING item's identity; `plexId` is the queue root (see
+    // resolveSourceContentId) so it only counts as a last resort.
+    contentId: resolveSourceContentId(meta, plexId),
+    plexId: null,
+    holdOnRefusal,
+    getMediaEl,
+    registrationSignal,
     errorCode: playbackHealth.elementSignals?.errorCode ?? null,
     errorMessage: playbackHealth.elementSignals?.errorMessage ?? null,
     mediaType: mediaTypeHint || meta?.mediaType || null,
@@ -336,7 +347,7 @@ export function useMediaResilience({
           reason, ...waitKeyFields, waitMs: gate.waitMs, attempts: gate.attempt
         }, { level: 'debug' });
       }
-      return;
+      return gate.deniedBy === 'session-cap' ? 'exhausted' : 'denied';
     }
 
     const attempt = gate.attempt;
@@ -504,6 +515,17 @@ export function useMediaResilience({
     })
     : null;
 
+  // A deadline-driven recovery. An in-place recovery (hls.js network abort: the
+  // renderer's hardReset reattaches without a remount) leaves `status` at
+  // `recovering`, so the arm effect would not run again and the item stalled
+  // after two attempts, never reaching the ledger cap. Re-arm after every
+  // deadline recovery; the ledger bounds it and its cap exhausts.
+  const recoverAndRearm = useCallback((reason) => {
+    if (triggerRecovery(reason) === 'exhausted') return;
+    playbackLog('resilience-deadline-rearm', { reason, ...waitKeyFields }, { level: 'debug' });
+    setRecoveryNonce((n) => n + 1);
+  }, [triggerRecovery, waitKeyFields]);
+
   useEffect(() => {
     // Self-contained formats (titlecard, etc.) have no media element —
     // skip resilience monitoring to avoid false startup-deadline-exceeded remounts.
@@ -521,6 +543,14 @@ export function useMediaResilience({
       clearTimeout(startupDeadlineRef.current);
       startupDeadlineRef.current = null;
       if (status !== STATUS.recovering) actions.setStatus(STATUS.recovering);
+      return;
+    }
+
+    // Autoplay refused by the browser: waiting for a tap, not a failing stream.
+    // Hold (no deadline, no ledger spend); the effect re-runs when it clears.
+    if (autoplayBlocked) {
+      clearTimeout(startupDeadlineRef.current);
+      startupDeadlineRef.current = null;
       return;
     }
 
@@ -578,15 +608,15 @@ export function useMediaResilience({
           // (`wait` holds, `retry`/`resume` reload via onSettled).
           if (sourceAvailability.healable) {
             sourceAvailability.checkNow('startup-deadline').then((decision) => {
-              if (decision === 'normal') triggerRecovery('startup-deadline-exceeded');
+              if (decision === 'normal') recoverAndRearm('startup-deadline-exceeded');
             });
             return;
           }
-          triggerRecovery('startup-deadline-exceeded');
+          recoverAndRearm('startup-deadline-exceeded');
         }, hardRecoverLoadingGraceMs);
       }
     }
-  }, [status, playbackHealth.progressToken, playbackHealth.lastProgressSeconds, userIntent, actions, triggerRecovery, hardRecoverLoadingGraceMs, playbackSessionKey, disabled, hasMediaMeta, recoveryNonce, sourceUnavailable, sourceAvailability.healable, sourceAvailability.checkNow]);
+  }, [status, playbackHealth.progressToken, playbackHealth.lastProgressSeconds, userIntent, actions, triggerRecovery, hardRecoverLoadingGraceMs, playbackSessionKey, disabled, hasMediaMeta, recoveryNonce, sourceUnavailable, autoplayBlocked, sourceAvailability.healable, sourceAvailability.checkNow, recoverAndRearm]);
 
   // Clean up timers on unmount or waitKey change
   useEffect(() => {
@@ -626,8 +656,8 @@ export function useMediaResilience({
       warmupDeadlineArmedRef.current = true;
       startupDeadlineRef.current = setTimeout(() => {
         warmupDeadlineArmedRef.current = false;
-        triggerRecovery(reason);
         startupDeadlineRef.current = null;
+        recoverAndRearm(reason);
       }, deadlineMs);
     };
 
@@ -653,7 +683,7 @@ export function useMediaResilience({
       target.removeEventListener('transcodewarmed', handleWarmed);
     };
     // registrationSignal: re-run once a renderer's element actually exists.
-  }, [disabled, getMediaEl, waitKeyFields, triggerRecovery, registrationSignal]);
+  }, [disabled, getMediaEl, waitKeyFields, recoverAndRearm, registrationSignal]);
 
   // Handle outside onStateChange
   useEffect(() => {

@@ -44,6 +44,28 @@ beforeEach(() => {
     screenRoutines: vi.fn(async (id) => ({ items: id === 'fleet:livingroom-tv' ? [{ id: 'automation:k1', name: 'Kitchen Button 1' }] : [] })),
     retireScreen: vi.fn(async () => ({ screen: {}, routines: [] })),
     restoreScreen: vi.fn(async (id) => ({ screen: { id, name: 'Attic TV' } })),
+    setRoomNeighbours: vi.fn(async (room, neighbours) => ({ roomAdjacency: { [room]: neighbours } })),
+  });
+});
+
+describe('ScreenAdminView room neighbours (PLACE.4a/AC6)', () => {
+  it('shows each room with its neighbours and saves a mutual link from the checkboxes', async () => {
+    ctx.registry.roomAdjacency = { Kitchen: ['Den'] };
+    wrap();
+    expect(screen.getByTestId('screen-admin-room-near-den')).toHaveTextContent('Next to Kitchen');
+    fireEvent.click(screen.getByTestId('screen-admin-room-edit-den'));
+    const kitchen = within(await screen.findByTestId('room-neighbours-dialog')).getByRole('checkbox', { name: 'Kitchen' });
+    expect(kitchen).toBeChecked();
+    fireEvent.click(kitchen);
+    fireEvent.click(screen.getByTestId('room-neighbours-save'));
+    await waitFor(() => expect(api.setRoomNeighbours).toHaveBeenCalledWith('Den', []));
+    expect(ctx.registry.refresh).toHaveBeenCalled();
+  });
+
+  it('is hidden while the household has fewer than two rooms', () => {
+    ctx.registry.screens = ctx.registry.screens.map((s) => ({ ...s, room: 'Den' }));
+    wrap();
+    expect(screen.queryByTestId('screen-admin-rooms')).toBeNull();
   });
 });
 

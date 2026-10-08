@@ -167,7 +167,9 @@ export function MediaContentSearch() {
             retainQueryOnEscape
             retainPlayableSelection
             onClose={resetScope}
-            destinationInteractionActive={destinationInteractionActive}
+            // A one-shot Play on… / Add on… picker is a destination choice made FOR this search: its
+            // modal takes focus, which must not read as leaving the search (FIND.1a/AC5).
+            destinationInteractionActive={destinationInteractionActive || oneShotAction !== null}
           />
         </div>
       </div>

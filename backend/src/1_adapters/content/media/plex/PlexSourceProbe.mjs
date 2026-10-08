@@ -10,6 +10,9 @@
 
 import { classifyPlexParts, SOURCE_STATE } from '#domains/media/sourceHealth.mjs';
 
+/** Plex types that hold items rather than a file. */
+const CONTAINER_TYPES = new Set(['show', 'season', 'artist', 'album', 'collection', 'playlist']);
+
 export class PlexSourceProbe {
   #client;
 
@@ -26,8 +29,20 @@ export class PlexSourceProbe {
   async probe(ratingKey) {
     const data = await this.#client.request(`/library/metadata/${ratingKey}?checkFiles=1`, { deadline: 15_000 });
     const item = data?.MediaContainer?.Metadata?.[0];
-    if (!item) return { state: SOURCE_STATE.unknown, path: null, title: null, showTitle: null };
+    if (!item) return { state: SOURCE_STATE.unknown, reason: 'no-metadata', path: null, title: null, showTitle: null };
     const parts = (item.Media || []).flatMap((media) => media?.Part || []);
+    // A show/season/album/collection has no file to be unreadable. Asking about
+    // one (2026-10-07: the queue ROOT was asked) must say so, not read `unknown`.
+    if (!parts.length && (CONTAINER_TYPES.has(item.type) || !item.Media?.length)) {
+      return {
+        state: SOURCE_STATE.unknown,
+        reason: 'not-a-leaf',
+        itemType: item.type ?? null,
+        path: null,
+        title: item.title ?? null,
+        showTitle: item.grandparentTitle ?? item.parentTitle ?? null,
+      };
+    }
     const { state, part } = classifyPlexParts(parts);
     const answer = {
       state,

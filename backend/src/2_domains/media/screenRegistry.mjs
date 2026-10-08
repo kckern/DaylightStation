@@ -91,6 +91,7 @@ function clone(state) {
   return {
     screens: Object.fromEntries(Object.entries(base.screens || {}).map(([id, s]) => [id, { ...s, renames: [...(s.renames || [])] }])),
     aliases: Object.fromEntries(Object.entries(base.aliases || {}).map(([id, a]) => [id, structuredClone(a)])),
+    ...(base.adjacency ? { adjacency: Object.fromEntries(Object.entries(base.adjacency).map(([room, list]) => [room, [...list]])) } : {}),
   };
 }
 
@@ -336,6 +337,66 @@ export function setScreenRoom(state, id, rawRoom, { configured = [], at = null }
   const entry = writableEntry(next, id, { configured, at });
   entry.room = normalizeRoom(rawRoom);
   return { state: next, screen: findView(next, id, configured, nowOf(at)) };
+}
+
+const roomKey = (room) => String(room).toLocaleLowerCase();
+
+/**
+ * Which rooms neighbour which (PLACE.4a/AC6, RQ-PLACE-10), as the registry
+ * stores it: `adjacency: { <room name>: [<neighbouring room names>] }`. Read
+ * symmetrically (A lists B, or B lists A, means they neighbour), so the view
+ * is `{ <room>: [neighbours sorted] }` with every link present on both sides.
+ * Rooms are matched case-insensitively and a room is never its own neighbour.
+ */
+export function roomAdjacencyView(state) {
+  const names = new Map(); // key -> display name
+  const links = new Map(); // key -> Set(key)
+  const note = (room) => { const k = roomKey(room); if (!names.has(k)) names.set(k, room); if (!links.has(k)) links.set(k, new Set()); return k; };
+  for (const [room, list] of Object.entries(state?.adjacency || {})) {
+    const a = normalizeRoom(room);
+    if (!a) continue;
+    const ka = note(a);
+    for (const other of Array.isArray(list) ? list : []) {
+      const b = normalizeRoom(other);
+      if (!b || roomKey(b) === ka) continue;
+      const kb = note(b);
+      links.get(ka).add(kb);
+      links.get(kb).add(ka);
+    }
+  }
+  const out = {};
+  for (const [k, set] of [...links].sort((x, y) => names.get(x[0]).localeCompare(names.get(y[0])))) {
+    if (!set.size) continue;
+    out[names.get(k)] = [...set].map((n) => names.get(n)).sort((x, y) => x.localeCompare(y));
+  }
+  return out;
+}
+
+/** Replace the neighbours of `room` (an empty list clears them). The link is mutual. */
+export function setRoomNeighbours(state, rawRoom, rawNeighbours) {
+  const room = normalizeRoom(rawRoom);
+  if (!room) throw new ScreenRegistryError('A room needs a name', { code: 'INVALID_ROOM' });
+  if (!Array.isArray(rawNeighbours)) throw new ScreenRegistryError('neighbours must be a list of room names', { code: 'INVALID_ROOM' });
+  const key = roomKey(room);
+  const wanted = new Map();
+  for (const raw of rawNeighbours) {
+    const name = normalizeRoom(raw);
+    if (name && roomKey(name) !== key) wanted.set(roomKey(name), name);
+  }
+  // Start from the symmetric view, drop every link to this room, then add the new ones.
+  const view = roomAdjacencyView(state);
+  const next = clone(state);
+  const adjacency = {};
+  for (const [r, list] of Object.entries(view)) {
+    if (roomKey(r) === key) continue;
+    const kept = list.filter((n) => roomKey(n) !== key);
+    if (kept.length) adjacency[r] = kept;
+  }
+  if (wanted.size) {
+    adjacency[room] = [...wanted.values()];
+  }
+  next.adjacency = adjacency;
+  return { state: next, adjacency: roomAdjacencyView(next) };
 }
 
 function slugOf(name) {

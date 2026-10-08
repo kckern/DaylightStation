@@ -149,7 +149,7 @@
     min-height: 44px;
     padding: 0 var(--mantine-spacing-sm);
     background: var(--mantine-color-dark-6);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--media-control-line);
     border-radius: var(--mantine-radius-sm);
     color: var(--mantine-color-dark-0);
     font-size: 16px; // >=16px prevents iOS auto-zoom on focus

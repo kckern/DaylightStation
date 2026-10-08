@@ -46,3 +46,41 @@ describe('PlexProxyAdapter playlist art fallback', () => {
     expect(adapter().getFallbackPath('/library/metadata/..%2Fetc/thumb/9', 404)).toBeNull();
   });
 });
+
+// 2026-10-07: HLS refusals are invisible — the manifest answers 200 and the
+// refusal surfaces later as a transcode SEGMENT 404, which the proxy passed
+// through as a plain 404 (only /library/parts/... was replaced with 503).
+describe('PlexProxyAdapter transcode segment refusals', () => {
+  const SEGMENTS = [
+    '/video/:/transcode/universal/session/abc-123/base/00012.ts',
+    '/video/:/transcode/universal/session/abc-123/base/00012.ts?X-Plex-Token=t',
+    '/api/v1/proxy/plex/video/:/transcode/universal/session/abc-123/0/12.m4s',
+    '/video/:/transcode/universal/session/abc-123/base/header',
+  ];
+
+  it('replaces a persistent segment 404 with the same 503 source-unreadable as a part', () => {
+    for (const path of SEGMENTS) {
+      expect(adapter().getErrorReplacement(path, 404)).toMatchObject({
+        status: 503,
+        body: { reason: 'source-unreadable' },
+      });
+    }
+  });
+
+  it('retries a segment 404 briefly (3x) before replacing', () => {
+    const a = adapter();
+    expect(a.shouldRetry(404, 0, SEGMENTS[0])).toBe(true);
+    expect(a.shouldRetry(404, 2, SEGMENTS[0])).toBe(true);
+    expect(a.shouldRetry(404, 3, SEGMENTS[0])).toBe(false);
+  });
+
+  it('leaves other transcode and non-media 404s alone', () => {
+    const a = adapter();
+    expect(a.getErrorReplacement('/video/:/transcode/universal/start.m3u8?x=1', 404)).toBeNull();
+    expect(a.getErrorReplacement('/video/:/transcode/universal/session/abc/base/00012.ts', 500)).toBeNull();
+    // playlists are not segment files: their 404 is passed through
+    expect(a.getErrorReplacement('/video/:/transcode/universal/session/abc/base/index.m3u8', 404)).toBeNull();
+    expect(a.shouldRetry(404, 0, '/video/:/transcode/universal/session/abc/base/index.m3u8')).toBe(false);
+    expect(a.getErrorReplacement('/library/metadata/1/thumb/2', 404)).toBeNull();
+  });
+});

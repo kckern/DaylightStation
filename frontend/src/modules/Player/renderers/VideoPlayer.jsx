@@ -22,6 +22,7 @@ import { REVIEW_GOTO } from '../../../lib/Player/reviewParams.js';
 import { FilterOverlay } from '../components/FilterOverlay.jsx';
 import { FilterDebugHud } from '../components/FilterDebugHud.jsx';
 import { appendRefreshParam, withOffsetParam } from './dashStreamUrl.js';
+import { createHlsRefusalTracker, reportHlsError } from '../lib/hlsRefusal.js';
 
 // Content filtering is opt-in via ?filter=1 so normal playback is unaffected.
 // The debug HUD (?filter-debug=1) implies filtering is on — it exists to QA cues.
@@ -547,10 +548,14 @@ export function VideoPlayer({
       // the saved native resume position. Do not alter live/non-Plex starts.
       hls = new Hls({ enableWorker: true, ...(isPlex ? { startPosition: 0 } : {}) });
       owner.hls = hls;
+      const refusalTracker = createHlsRefusalTracker();
       hls.on(Hls.Events.ERROR, (_e, data) => {
         if (cancelled || hlsOwnerRef.current !== owner || containerRef.current !== video) return;
         if (data?.fatal) owner.fatalType = data.type;
-        hlsLogger.warn('video.hls.error', { fatal: data?.fatal, type: data?.type });
+        // Logs details/status/URL kind, and raises a refusal event when a
+        // segment/manifest keeps answering 403/404/5xx (a transcode of a file
+        // Plex cannot read) — hls.js errors are not MediaErrors.
+        reportHlsError({ video, tracker: refusalTracker, data, logger: hlsLogger });
       });
       const observeSession = (_event, data) => {
         if (cancelled || hlsOwnerRef.current !== owner || containerRef.current !== video) return;

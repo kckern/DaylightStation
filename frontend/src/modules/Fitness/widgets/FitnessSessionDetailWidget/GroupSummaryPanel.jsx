@@ -10,12 +10,17 @@ import PropTypes from 'prop-types';
 export default function GroupSummaryPanel({
   riders = [],
   segmentCount = 0,
+  elapsedMs = 0,
   sessionId,
   onClose,
   onDelete,
   deleting = false,
   onAddMemo,
 }) {
+  const elapsedMinutes = Math.max(0, Math.round(elapsedMs / 60000));
+  const elapsedLabel = elapsedMinutes >= 60
+    ? `${Math.floor(elapsedMinutes / 60)}h${elapsedMinutes % 60 ? ` ${elapsedMinutes % 60}m` : ''} elapsed`
+    : (elapsedMinutes ? `${elapsedMinutes}m elapsed` : null);
   return (
     <div className="session-detail__thumb session-detail__thumb--summary">
       <button className="session-detail__close" onClick={onClose} title="Close">&times;</button>
@@ -30,6 +35,7 @@ export default function GroupSummaryPanel({
       >{'🎙'}</button>
 
       <div className="session-detail__summary">
+        {elapsedLabel && <div className="session-detail__summary-elapsed">{elapsedLabel}</div>}
         <div className="session-detail__summary-label">Riders</div>
         <div className="session-detail__summary-riders">
           {riders.map((r) => (
@@ -40,6 +46,9 @@ export default function GroupSummaryPanel({
                 onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
               />
               <span>{r.name}</span>
+              {r.measuredDurationMs > 0 && (
+                <small>{Math.max(1, Math.round(r.measuredDurationMs / 60000))}m measured</small>
+              )}
             </div>
           ))}
         </div>
@@ -60,8 +69,9 @@ export default function GroupSummaryPanel({
 }
 
 GroupSummaryPanel.propTypes = {
-  riders: PropTypes.arrayOf(PropTypes.shape({ id: PropTypes.string, name: PropTypes.string })),
+  riders: PropTypes.arrayOf(PropTypes.shape({ id: PropTypes.string, name: PropTypes.string, measuredDurationMs: PropTypes.number })),
   segmentCount: PropTypes.number,
+  elapsedMs: PropTypes.number,
   sessionId: PropTypes.string,
   onClose: PropTypes.func,
   onDelete: PropTypes.func,

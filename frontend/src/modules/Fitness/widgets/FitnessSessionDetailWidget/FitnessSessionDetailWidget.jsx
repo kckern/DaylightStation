@@ -46,6 +46,20 @@ function formatDate(dateStr) {
   return formatFitnessDate(dateStr + 'T12:00:00');
 }
 
+function formatElapsed(durationMs) {
+  if (!Number.isFinite(durationMs) || durationMs <= 0) return null;
+  const minutes = Math.max(1, Math.round(durationMs / 60000));
+  if (minutes < 60) return `${minutes}m elapsed`;
+  const remainder = minutes % 60;
+  return `${Math.floor(minutes / 60)}h${remainder ? ` ${remainder}m` : ''} elapsed`;
+}
+
+function measuredDurationMs(participant = {}) {
+  if (Number.isFinite(participant.measuredDurationMs)) return participant.measuredDurationMs;
+  return Object.values(participant.zone_minutes || participant.zoneMinutes || {})
+    .reduce((total, value) => total + (Number(value) || 0), 0) * 60000;
+}
+
 function FitText({ children, maxSize = 2.4, minSize = 0.8, wrapBelow = 1.3, breakOn, className }) {
   const containerRef = useRef(null);
   const textRef = useRef(null);
@@ -265,12 +279,15 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       : (sessionData.start != null ? new Date(sessionData.start).getTime()
         : (Number.isFinite(sessionData.startTime) ? sessionData.startTime : null));
     const endMs = Number.isFinite(sessionData.endTime) ? sessionData.endTime
-      : (sessionData.end ? new Date(sessionData.end).getTime() : null);
+      : (session.end ? new Date(session.end).getTime()
+        : (sessionData.end ? new Date(sessionData.end).getTime() : null));
     const durationSec = session.duration_seconds ?? sessionData.duration_seconds ?? 0;
     const durationMs = durationSec * 1000;
+    const elapsedMs = sessionData.elapsedMs || (startMs && endMs ? Math.max(0, endMs - startMs) : durationMs);
 
     // Extract max suffer score and first activityId across all participants
     const participants = sessionData.participants || {};
+    const participantSummaries = summary.participants || {};
     let sufferScore = null;
     let stravaActivityId = null;
     for (const p of Object.values(participants)) {
@@ -309,11 +326,16 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       date: dateStr ? formatDate(dateStr) : '',
       time: startMs ? formatTime(startMs, sessionData.timezone) : null,
       endTime: endMs ? formatTime(endMs, sessionData.timezone) : null,
-      durationMin: durationMs > 0 ? Math.round(durationMs / 60000) : null,
+      elapsedLabel: formatElapsed(elapsedMs),
       isGroup: !!sessionData.isGroup,
       raceCount: act?.count || 0,
       segmentCount: Array.isArray(sessionData.segments) ? sessionData.segments.length : 0,
-      riders: Object.entries(participants).map(([id, p]) => ({ id, name: p?.displayName || id })),
+      riders: [...new Set([...Object.keys(participants), ...Object.keys(participantSummaries)])].map((id) => ({
+        id,
+        name: participants[id]?.displayName || participants[id]?.display_name || id,
+        measuredDurationMs: measuredDurationMs(participants[id]) || measuredDurationMs(participantSummaries[id]),
+      })),
+      elapsedMs,
       totalRings: sessionData.treasureBox?.totalRings || summary.rings?.total || sessionData.totalRings || 0,
       sufferScore,
       stravaActivityId,
@@ -432,13 +454,12 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
                 // "·" when time/duration/rings are missing (e.g. merged race-group sessions).
                 const items = [];
                 if (header?.date) items.push(<span key="date" className="session-detail__meta-item">{header.date}</span>);
-                // groups show a start–end range; single sessions show the start time
                 if (header?.time) items.push(
                   <span key="time" className="session-detail__meta-item">
-                    {header.isGroup && header.endTime ? `${header.time} – ${header.endTime}` : header.time}
+                    {header.endTime ? `${header.time} – ${header.endTime}` : header.time}
                   </span>
                 );
-                if (header?.durationMin) items.push(<span key="dur" className="session-detail__meta-item">{header.durationMin}m</span>);
+                if (header?.elapsedLabel) items.push(<span key="dur" className="session-detail__meta-item">{header.elapsedLabel}</span>);
                 if (header?.isGroup && header?.raceCount > 0) items.push(<span key="races" className="session-detail__meta-item">{header.raceCount} races</span>);
                 if (header?.totalRings > 0) items.push(<span key="rings" className="session-detail__meta-item session-detail__rings"><RingIcon size={14} /> {header.totalRings}</span>);
                 if (header?.sufferScore != null) items.push(
@@ -449,6 +470,13 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
                 return items.flatMap((node, i) => i === 0 ? [node] : [<span key={`sep${i}`} className="session-detail__meta-sep" />, node]);
               })()}
             </div>
+            {header?.riders?.some((rider) => rider.measuredDurationMs > 0) && (
+              <div className="session-detail__measured-row">
+                {header.riders.filter((rider) => rider.measuredDurationMs > 0).map((rider) => (
+                  <span key={rider.id}>{rider.name} {Math.max(1, Math.round(rider.measuredDurationMs / 60000))}m measured</span>
+                ))}
+              </div>
+            )}
             {(header?.voiceMemos?.length > 0 || header?.stravaNotes) && (
               <div className="session-detail__memos">
                 {header.voiceMemos?.map((memo, i) => (
@@ -570,6 +598,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
           <GroupSummaryPanel
             riders={header.riders}
             segmentCount={header.segmentCount}
+            elapsedMs={header.elapsedMs}
             sessionId={sessionId}
             onClose={() => restore('right-area')}
             onDelete={handleDelete}

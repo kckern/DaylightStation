@@ -88,7 +88,22 @@ function TileRow({ rowId, title, children }) {
           </ActionIcon>
         </div>
       </div>
-      <div className="home-row-scroll" ref={scrollRef} onScroll={measure}>{children}</div>
+      <div
+        className="home-row-scroll"
+        ref={scrollRef}
+        onScroll={measure}
+        // A tile focused by keyboard is brought wholly into the row. The browser's own focus scroll stops short
+        // and the row's snap then pulls it back, leaving the tile half outside; aligning it to a snap point
+        // (the row's start edge) is the position the snap leaves alone.
+        onFocus={(e) => {
+          const tile = e.target?.closest?.('.home-tile');
+          const row = scrollRef.current;
+          if (!tile || !row) return;
+          const t = tile.getBoundingClientRect();
+          const r = row.getBoundingClientRect();
+          if (t.left < r.left - 1 || t.right > r.right + 1) tile.scrollIntoView({ inline: 'start', block: 'nearest' });
+        }}
+      >{children}</div>
     </section>
   );
 }

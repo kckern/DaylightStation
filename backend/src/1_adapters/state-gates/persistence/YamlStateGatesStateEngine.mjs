@@ -1,11 +1,27 @@
-import { readYamlFromPath, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
+import { fileExists, fileMtimeMs, readTextFromPath, readYamlFromPath, writeFileAtomic } from '#system/utils/FileIO.mjs';
 
-function strictLoad(filePath) {
+export const STATE_SCHEMA_V1 = 'daylight.state-gates-state/v1';
+export const STATE_SCHEMA_V2 = 'daylight.state-gates-state/v2';
+
+// Default JSON loader: null when the file is absent; a parse error throws
+// and becomes STATE_GATES_STATE_UNAVAILABLE. It never falls back to YAML.
+function loadJson(filePath) {
+  if (!fileExists(filePath)) return null;
+  return JSON.parse(readTextFromPath(filePath));
+}
+
+// Legacy v1 YAML loader, for the one-time migration only.
+function loadLegacyYaml(filePath) {
   try { return readYamlFromPath(filePath); }
   catch (error) {
     if (error?.code === 'ENOENT') return null;
     throw error;
   }
+}
+
+function unsupportedSchema() {
+  return persistenceError('State Gates state could not be read',
+    Object.assign(new Error('Unsupported State Gates state schema'), { code: 'UNSUPPORTED_STATE_SCHEMA' }));
 }
 
 function persistenceError(message, cause) {
@@ -26,7 +42,7 @@ function camel(key) { return key.replace(/_([a-z])/g, (_, letter) => letter.toUp
 
 const DYNAMIC_MAPS = new Set([
   'publishers', 'subjectSets', 'subject_sets', 'claimTypes', 'claim_types',
-  'gates', 'entitlements', 'subjectSets', 'reasonLabels', 'reason_labels',
+  'gates', 'entitlements', 'reasonLabels', 'reason_labels',
 ]);
 
 function mapKeys(value, mapper, parentKey = null) {
@@ -38,9 +54,21 @@ function mapKeys(value, mapper, parentKey = null) {
   return value;
 }
 
+/**
+ * JSON (v2) state → the v1 YAML object a pre-JSON build reads. For a
+ * deliberate rollback: `node cli/state-gates-legacy-yaml.cli.mjs`.
+ */
+export function toLegacyV1(state) {
+  const { schema: ignoredSchema, ...rest } = state;
+  void ignoredSchema;
+  const stored = mapKeys(plain(rest), snake);
+  stored.schema = STATE_SCHEMA_V1;
+  return stored;
+}
+
 function emptyState() {
   return {
-    schema: 'daylight.state-gates-state/v1',
+    schema: STATE_SCHEMA_V2,
     projection: null,
     journal: [],
     compactedThrough: 0,
@@ -48,13 +76,21 @@ function emptyState() {
   };
 }
 
+// Storage is JSON (current.json, schema v2) since 2026-09-25; the class keeps
+// its Yaml- name to avoid churning blame in a performance fix. See
+// docs/_wip/plans/2026-09-25-state-gates-json-persistence-design.md.
 export class YamlStateGatesStateEngine {
   #resolveFilePath; #load; #save; #maxEntries; #maxAgeMs; #queues = new Map(); #cache = new Map(); #logger;
+  #resolveLegacyFilePath; #loadLegacy; #mtime;
   // Retention defaults match composition's (5_composition/modules/stateGates.mjs).
-  // The journal shares current.yml with the projection, so its size is the cost
+  // The journal shares current.json with the projection, so its size is the cost
   // of every commit — these are deliberately small, and a direct construction
   // that omits them should not silently inherit the old 5000/30d.
-  constructor({ filePath, resolveFilePath, load = strictLoad, save = saveYamlToPathAtomic, maxEntries = 500, maxAgeMs = 7 * 24 * 60 * 60 * 1000, logger = null }) {
+  constructor({
+    filePath, resolveFilePath, load = loadJson, save = writeFileAtomic,
+    maxEntries = 500, maxAgeMs = 7 * 24 * 60 * 60 * 1000, logger = null,
+    legacyFilePath, resolveLegacyFilePath, loadLegacy = loadLegacyYaml, mtime = fileMtimeMs,
+  }) {
     if (!filePath && !resolveFilePath) throw new Error('YamlStateGatesStateEngine requires filePath or resolveFilePath');
     if (!Number.isInteger(maxEntries) || maxEntries < 1 || !Number.isFinite(maxAgeMs) || maxAgeMs < 1) {
       throw new Error('YamlStateGatesStateEngine retention must be positive');
@@ -65,18 +101,67 @@ export class YamlStateGatesStateEngine {
     this.#maxEntries = maxEntries;
     this.#maxAgeMs = maxAgeMs;
     this.#logger = logger;
+    this.#resolveLegacyFilePath = resolveLegacyFilePath ?? (legacyFilePath ? () => legacyFilePath : null);
+    this.#loadLegacy = loadLegacy;
+    this.#mtime = mtime;
   }
 
   #read(householdId) {
+    const jsonPath = this.#resolveFilePath(householdId);
+    const legacyPath = this.#resolveLegacyFilePath?.(householdId) ?? null;
     let stored;
-    try { stored = this.#load(this.#resolveFilePath(householdId)); }
+    try { stored = this.#load(jsonPath); }
     catch (error) { throw persistenceError('State Gates state could not be read', error); }
-    if (!stored) return emptyState();
-    if (stored.schema !== 'daylight.state-gates-state/v1') {
-      const cause = Object.assign(new Error('Unsupported State Gates state schema'), { code: 'UNSUPPORTED_STATE_SCHEMA' });
-      throw persistenceError('State Gates state could not be read', cause);
+    if (stored) {
+      if (stored.schema !== STATE_SCHEMA_V2) throw unsupportedSchema();
+      // An older (YAML) build may have re-stamped the yml's mtime (Dropbox, a
+      // `cp`, a restore) without actually writing a newer revision into it.
+      // The mtime is only a cheap pre-check; the guard that can refuse boot
+      // is revision-based, comparing the legacy file's own
+      // household_revision against the JSON's.
+      if (legacyPath) {
+        const legacyAt = this.#mtime(legacyPath);
+        const jsonAt = this.#mtime(jsonPath);
+        if (legacyAt !== null && jsonAt !== null && legacyAt > jsonAt) {
+          const jsonRevision = stored.projection?.householdRevision ?? 0;
+          let legacy = null;
+          let loadError = null;
+          try { legacy = this.#loadLegacy(legacyPath); }
+          catch (error) { loadError = error; }
+          if (!loadError && legacy && legacy.schema === STATE_SCHEMA_V1) {
+            const legacyRevision = legacy.projection?.household_revision ?? 0;
+            if (legacyRevision > jsonRevision) {
+              // An older build wrote after the switch: preferring JSON would
+              // silently discard that window. Refuse; the runbook says how to choose.
+              throw persistenceError('State Gates state could not be read', Object.assign(
+                new Error(`Legacy YAML state (revision ${legacyRevision}) is newer than the JSON state (revision ${jsonRevision})`),
+                { code: 'LEGACY_STATE_NEWER' }));
+            }
+            this.#logger?.warn?.('state-gates.state.legacy-touched', { householdId, legacyRevision, jsonRevision });
+          } else {
+            // A broken or stale legacy file must not block boot while a valid
+            // JSON exists — it's evidence someone touched the yml, not proof
+            // it's ahead.
+            const error = loadError
+              ? (loadError.message ?? String(loadError))
+              : `unsupported legacy schema: ${legacy?.schema ?? 'none'}`;
+            this.#logger?.warn?.('state-gates.state.legacy-touched', { householdId, jsonRevision, error });
+          }
+        }
+      }
+      return stored;
     }
-    return mapKeys(stored, camel);
+    if (!legacyPath) return emptyState();
+    let legacy;
+    try { legacy = this.#loadLegacy(legacyPath); }
+    catch (error) { throw persistenceError('State Gates state could not be read', error); }
+    if (!legacy) return emptyState();
+    if (legacy.schema !== STATE_SCHEMA_V1) throw unsupportedSchema();
+    const state = mapKeys(legacy, camel);
+    this.#logger?.info?.('state-gates.state.migrated', {
+      householdId, householdRevision: state.projection?.householdRevision ?? 0,
+    });
+    return state;
   }
 
   /**
@@ -100,13 +185,15 @@ export class YamlStateGatesStateEngine {
   }
 
   #write(householdId, state) {
-    const stored = mapKeys(plain(state), snake);
-    stored.schema = 'daylight.state-gates-state/v1';
+    const startedAt = performance.now();
+    // State is plain by construction (commit() runs plain() on caller input
+    // before it touches the cached copy), so no deep walk is needed here.
+    const content = JSON.stringify({ ...state, schema: STATE_SCHEMA_V2 });
     // Only the save is guarded. `state` is plain by construction here — commit()
     // serialises caller input before it touches the cached copy — so widening
-    // this try to cover mapKeys/plain guards nothing reachable, and an
+    // this try to cover the stringify guards nothing reachable, and an
     // unreachable guard no test can kill does not earn its place.
-    try { this.#save(this.#resolveFilePath(householdId), stored, { noRefs: true, sortKeys: true }); }
+    try { this.#save(this.#resolveFilePath(householdId), content); }
     catch (error) {
       this.#cache.delete(householdId); // disk is truth again; re-parse on the next read
       // The drop IS the durability contract working, and it is otherwise
@@ -120,6 +207,12 @@ export class YamlStateGatesStateEngine {
       });
       throw persistenceError('State Gates state could not be saved', error);
     }
+    this.#logger?.sampled?.('state-gates.state.written', {
+      householdId,
+      durationMs: Math.round((performance.now() - startedAt) * 10) / 10,
+      bytes: Buffer.byteLength(content),
+      journalEntries: state.journal.length,
+    }, { maxPerMinute: 4 });
   }
 
   async #serialized(householdId, operation) {

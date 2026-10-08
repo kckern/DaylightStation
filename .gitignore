@@ -64,6 +64,7 @@ config.app-local.yml
 !scripts/school/build-course-posters.mjs
 !scripts/school/elementary-math-source-map.yml
 !scripts/camera-archive/
+!scripts/bench/
 !scripts/port-manager.mjs
 !scripts/dev-server.sh
 !scripts/media-source-heal.sh

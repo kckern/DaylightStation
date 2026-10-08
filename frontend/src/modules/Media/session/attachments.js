@@ -42,7 +42,22 @@ export function attachPersistence(store, { write, timing = TIMING, setTimeoutFn 
     }
   });
 
+  // A reload inside the throttle window would drop the trailing write — and
+  // with it the observed duration and position the handle's progress strip is
+  // restored from. Flush it when the page is going away.
+  const flushPending = () => {
+    if (!trailing) return;
+    clearTimeoutFn(trailing);
+    trailing = null;
+    doWrite(store.getSnapshot());
+  };
+  const onVisibility = () => { if (globalThis.document?.visibilityState === 'hidden') flushPending(); };
+  globalThis.addEventListener?.('pagehide', flushPending);
+  globalThis.document?.addEventListener?.('visibilitychange', onVisibility);
+
   return () => {
+    globalThis.removeEventListener?.('pagehide', flushPending);
+    globalThis.document?.removeEventListener?.('visibilitychange', onVisibility);
     detachTransition();
     if (trailing) { clearTimeoutFn(trailing); trailing = null; }
   };

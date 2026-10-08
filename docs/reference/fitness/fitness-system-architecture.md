@@ -12,6 +12,12 @@ For BLE heart rate monitor support (Apple Watch, etc.), see `ble-heart-rate.md`.
 
 The fitness system enables family workout sessions on a large touchscreen TV. Heart rate monitors broadcast data over ANT+ wireless, which a backend service relays to the browser via WebSocket. The frontend orchestrates sessions, tracks zones and coins, enforces governance rules (requiring exercise to watch certain content), and persists session data for historical review.
 
+### Household workout episodes
+
+Session history derives household workout episodes from the immutable raw session files. Adjacent same-day records join when the gap is at most 15 minutes; roster and media changes remain activity markers inside the episode. An explicitly finalized session is a hard boundary on both sides, and imported non-cycling Strava activities remain standalone.
+
+Episode cards report wall-clock elapsed time (`elapsedMs`) and each participant's measured sensor time (`measuredDurationMs`). Raw segment durations are still retained for timeline stitching and audit evidence. After an explicit End, packets from the devices active at that moment are held before ingestion until that device has been absent for the configured removal timeout (30 minutes by default), with the hold persisted across reloads and expired at the next local day boundary.
+
 ### High-Level Architecture
 
 ```

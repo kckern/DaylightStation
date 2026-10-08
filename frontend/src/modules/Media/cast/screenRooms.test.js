@@ -1,7 +1,7 @@
 // PLACE.4a/AC6 (RQ-PLACE-10): screens chosen together in the same room warn
 // that drift may be audible; rooms come from the screen registry (§2.5).
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fetchScreenRooms, resetScreenRoomsCache, sharedRoomGroups, driftWarningText } from './screenRooms.js';
+import { fetchScreenRooms, resetScreenRoomsCache, sharedRoomGroups, neighbouringRoomGroups, driftWarningText } from './screenRooms.js';
 
 vi.mock('../logging/mediaLog.js', () => {
   const stub = new Proxy({}, { get: (t, k) => (t[k] ??= vi.fn()) });
@@ -42,5 +42,21 @@ describe('screen rooms and the drift warning', () => {
     const rooms = await fetchScreenRooms({ api: async () => { throw new Error('501'); } });
     expect(sharedRoomGroups(['livingroom-tv', 'office-tv'], devices, rooms)).toEqual([]);
     expect(driftWarningText([])).toBeNull();
+  });
+
+  it('warns for screens in neighbouring rooms, from the registry adjacency, and not for rooms that do not neighbour', async () => {
+    const withAdjacency = { ...registry, roomAdjacency: { 'Living Room': ["Kids' Rooms"], "Kids' Rooms": ['Living Room'] } };
+    const rooms = await fetchScreenRooms({ api: async () => withAdjacency });
+    const near = neighbouringRoomGroups(['speaker-blue', 'livingroom-tv'], devices, rooms);
+    expect(near).toEqual([{ rooms: ["Kids' Rooms", 'Living Room'], names: ['Blue speaker', 'Living Room TV'] }]);
+    expect(driftWarningText([], near)).toBe("Blue speaker and Living Room TV are in neighbouring rooms (Kids' Rooms and Living Room) — they start together but can drift apart, and you may hear it.");
+    // Office is not next to anything; two screens in one room are the shared-room case, not this one.
+    expect(neighbouringRoomGroups(['livingroom-tv', 'office-tv'], devices, rooms)).toEqual([]);
+    expect(neighbouringRoomGroups(['speaker-blue', 'speaker-red'], devices, rooms)).toEqual([]);
+  });
+
+  it('records no neighbours when the registry has no adjacency', async () => {
+    const rooms = await fetchScreenRooms({ api: async () => registry });
+    expect(neighbouringRoomGroups(['speaker-blue', 'livingroom-tv'], devices, rooms)).toEqual([]);
   });
 });

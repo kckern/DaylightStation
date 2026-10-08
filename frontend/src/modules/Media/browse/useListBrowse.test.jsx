@@ -34,6 +34,13 @@ describe('useListBrowse', () => {
     expect(apiMock).toHaveBeenCalledWith('api/v1/list/music/recent/playable/shuffle?take=5');
   });
 
+  it('passes the expand modifier so a Plex season lists its episodes, not itself', async () => {
+    apiMock.mockResolvedValueOnce({ items: [], total: 0 });
+    renderHook(() => useListBrowse('plex/70265', { modifiers: { expand: true }, take: 5 }));
+    await waitFor(() => expect(apiMock).toHaveBeenCalled());
+    expect(apiMock).toHaveBeenCalledWith('api/v1/list/plex/70265/expand?take=5');
+  });
+
   it('loadMore appends the next page with skip', async () => {
     apiMock
       .mockResolvedValueOnce({ items: [{ id: '1' }], total: 2 })

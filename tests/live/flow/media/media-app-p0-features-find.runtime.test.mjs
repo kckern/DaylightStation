@@ -108,7 +108,10 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
   });
 }
 
-test('[FIND.8b/AC3] laptop: a single photo shows here whatever is aimed; Show on… sends it to another screen', async ({ context, page, request }) => {
+for (const { kind, query, id, title } of [
+  { kind: 'single photo', query: 'acceptance photo', id: PHOTO, title: 'Acceptance photo' },
+  { kind: 'camera', query: 'acceptance camera', id: 'fixture:cam-1', title: 'Acceptance camera' },
+]) test(`[FIND.8b/AC3] laptop: a ${kind} shows here whatever is aimed; Show on… sends it to another screen`, async ({ context, page, request }) => {
   await page.setViewportSize(VIEWPORTS.laptop);
   const receiver = await openReceiver(context, request);
   const loads = [];
@@ -116,30 +119,30 @@ test('[FIND.8b/AC3] laptop: a single photo shows here whatever is aimed; Show on
   await openMedia(page);
   await aimAtReceiver(page);
   const search = page.getByRole('textbox', { name: 'Search media…' });
-  await search.fill('acceptance photo');
-  const option = page.getByTestId(`combobox-option-${PHOTO}`);
+  await search.fill(query);
+  const option = page.getByTestId(`combobox-option-${id}`);
   await expect(option).toBeVisible({ timeout: 30000 });
   // The second action is named for what it does.
-  await page.getByTestId(`result-more-${PHOTO}`).click();
-  await expect(page.getByTestId(`result-action-playOn-${PHOTO}`)).toHaveText('Show on…');
+  await page.getByTestId(`result-more-${id}`).click();
+  await expect(page.getByTestId(`result-action-playOn-${id}`)).toHaveText('Show on…');
   await page.keyboard.press('Escape');
   // Tap: it shows on THIS device even though the receiver is aimed.
-  await search.fill('acceptance photo');
-  await page.getByTestId(`combobox-option-${PHOTO}`).click();
-  await expect(page.getByTestId('mini-player-open-nowplaying')).toContainText('Acceptance photo', { timeout: 60000 });
+  await search.fill(query);
+  await page.getByTestId(`combobox-option-${id}`).click();
+  await expect(page.getByTestId('mini-player-open-nowplaying')).toContainText(title, { timeout: 60000 });
   expect(loads, 'a photo tap is not sent to the aimed screen').toHaveLength(0);
-  expect((await state(request))?.currentItem?.contentId ?? null).not.toBe(PHOTO);
+  expect((await state(request))?.currentItem?.contentId ?? null).not.toBe(id);
 
   // Show on… : the picker is named for showing, and the screen shows it.
-  await search.fill('acceptance photo');
-  await page.getByTestId(`result-more-${PHOTO}`).click();
-  await page.getByTestId(`result-action-playOn-${PHOTO}`).click();
+  await search.fill(query);
+  await page.getByTestId(`result-more-${id}`).click();
+  await page.getByTestId(`result-action-playOn-${id}`).click();
   await expect(page.getByText('Show on…', { exact: true }).first()).toBeVisible();
-  await page.screenshot({ path: path.join(EVIDENCE, 'find-show-on-laptop.png') });
+  await page.screenshot({ path: path.join(EVIDENCE, `find-show-on-${kind.replace(' ', '-')}-laptop.png`) });
   // A still photo on this device is not "playing" here, so there is nothing to keep or stop: the tap on a screen sends it.
   await expect(page.getByTestId('picker-mode-fork')).toHaveCount(0);
   await page.getByTestId(`picker-device-${DEVICE}`).click();
-  await expect.poll(async () => (await state(request))?.currentItem?.contentId, { timeout: 90000 }).toBe(PHOTO);
+  await expect.poll(async () => (await state(request))?.currentItem?.contentId, { timeout: 90000 }).toBe(id);
   await receiver.close();
 });
 

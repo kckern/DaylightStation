@@ -14,12 +14,13 @@ import { isContainer } from '../../Content/combobox/comboboxMachine.js';
 import { ItemDestinationPicker } from '../actions/ItemDestinationPicker.jsx';
 import { DestinationLine } from '../cast/DestinationLine.jsx';
 import { useItemVerbs, householdEntryFor } from '../household/useItemVerbs.jsx';
-import { useFavourites } from '../household/useHousehold.js';
+import { useFavourites, useHouseholdEntry } from '../household/useHousehold.js';
 import { spotsSummary, formatLeft, whereLine } from '../household/householdModel.js';
 import { IconHeart, IconHeartFilled, IconEye, IconEyeOff } from '@tabler/icons-react';
 import { useStartingOn } from '../cast/useStartingOn.js';
 import { usePressHoldOffer } from '../../../lib/ui/usePressHoldOffer.js';
 import mediaLog from '../logging/mediaLog.js';
+import { resultSubtitle } from '../search/resultPresentation.js';
 
 export function DetailView({ contentId }) {
   const [oneShot, setOneShot] = useState(null);
@@ -28,6 +29,7 @@ export function DetailView({ contentId }) {
   const { pop, backDestination } = useNav();
   const { run, overlays, nameFor } = useItemVerbs();
   const favourites = useFavourites();
+  const loadedEntry = useHouseholdEntry(contentId);
   // PLAY.5a/AC3: pressing and holding Play Next offers "At the very front".
   const { startingOnFor } = useStartingOn();
   const startingOn = startingOnFor(contentId);
@@ -60,12 +62,15 @@ export function DetailView({ contentId }) {
   const collection = isContainer(detailItem);
   // How far anyone has got, per screen (FIND.8a / PLAY.4a), when the
   // household lists already know this item.
-  const entry = householdEntryFor(contentId);
+  const entry = loadedEntry ?? householdEntryFor(contentId);
   const progress = entry && !entry.finished
     ? (spotsSummary(entry, nameFor)
       ?? [formatLeft(entry.playhead, entry.duration), whereLine(entry, nameFor)].filter(Boolean).join(' · '))
     : null;
   const favourite = favourites.has(contentId);
+  // FIND.8a/AC2: what kind of thing it is and how long, in words ("Movie · 1 hr 56 min").
+  const facts = resultSubtitle(detailItem);
+  const description = info.description || info.metadata?.summary || null;
 
   return (
     <Stack data-testid="detail-view" className="detail-view" gap="md">
@@ -74,7 +79,8 @@ export function DetailView({ contentId }) {
         <Image src={info.thumbnail} alt={info.title ?? contentId} className="detail-poster" radius="md" />
       )}
       <Title order={1}>{info.title ?? contentId}</Title>
-      {info.description && <Text c="dimmed">{info.description}</Text>}
+      {facts && <Text size="sm" c="dimmed" data-testid="detail-facts">{facts}</Text>}
+      {description && <Text c="dimmed">{description}</Text>}
       {progress && <Text size="sm" data-testid="detail-progress">{progress}</Text>}
       {startingOn && <Text size="sm" data-testid="detail-starting" role="status">{startingOn}</Text>}
       <DestinationLine surface="detail" />

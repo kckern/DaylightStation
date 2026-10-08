@@ -226,9 +226,8 @@ export function useScreenCommands(wsConfig, actionBus, screenId, controls = null
       // consumers (shader, volume display) keep working without rewiring.
       if (setting === 'shader') {
         bus.emit('display:shader', { shader: value });
-      } else if (setting === 'volume') {
-        bus.emit('display:volume', { level: value });
       }
+      // Volume is applied by the playback owner via media:config-set (ScreenActionHandler); no legacy display event.
       return;
     }
 

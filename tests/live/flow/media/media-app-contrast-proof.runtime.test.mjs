@@ -60,10 +60,7 @@ async function boundaryContrast(page, selector) {
 }
 
 for (const [label, vp] of Object.entries(VIEWPORTS)) {
-  test(`[RELY.13a/AC1] ${label}: the boundary of every ordinary control reaches 3:1 against what is behind it (known gap)`, async ({ browser, request }) => {
-    // Measured, not assumed: the default dark controls (search field, destination control, secondary buttons) have
-    // boundaries near 1.35:1 against the page. Reported, not fixed here (design tokens). test.fail() turns red when fixed.
-    test.fail(true, 'NEEDS-FEATURE: control boundary contrast 3:1 (measured ~1.35:1 on default dark controls)');
+  test(`[RELY.13a/AC1] ${label}: the boundary of every ordinary control reaches 3:1 against what is behind it`, async ({ browser, request }) => {
     const { context, page } = await newAppPage(browser, vp);
     await gotoMedia(page);
     const measured = [];

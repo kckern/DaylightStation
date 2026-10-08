@@ -16,6 +16,7 @@ import { toLiveSeries } from './liveSeriesKeys.js';
 import { DeviceEventRouter } from './DeviceEventRouter.js';
 import { VibrationActivityTracker } from './VibrationActivityTracker.js';
 import { PressureMatActivityTracker, PRESSURE_MAT_STARTUP_WINDOW_MS } from './PressureMatActivityTracker.js';
+import { EndedDeviceHold } from './EndedDeviceHold.js';
 import { findUnclosedMedia } from './closeOpenMedia.js';
 import getLogger from '../../lib/logging/Logger.js';
 import { heapSnapshotFields } from '../../lib/perf/memoryProbe.js';
@@ -167,6 +168,7 @@ export class FitnessSession {
     this.endTime = null;
     this.lastActivityTime = null;
     this.activeDeviceIds = new Set();
+    this._endedDeviceHold = new EndedDeviceHold();
     this.eventLog = [];
     this._saveTriggered = false;
     this._finalized = false;
@@ -385,6 +387,14 @@ export class FitnessSession {
     // All three update synchronously in this call. If any path becomes async,
     // the triple-storage must be collapsed to a single authoritative store.
     if (!payload) return;
+
+    // Explicit End means the attached equipment is finished, even if its sensor
+    // keeps broadcasting. Apply this before routing or buffering so stale packets
+    // cannot recreate devices, participants, or a replacement session.
+    const deviceId = payload.deviceId ?? payload.id;
+    const now = Date.now();
+    this._endedDeviceHold.observeAbsence([], this._getTimeouts().remove, now);
+    if (!this._endedDeviceHold.filter(deviceId, now)) return;
 
     // Route through DeviceEventRouter for all device types
     const result = this._deviceRouter.route(payload);
@@ -2187,7 +2197,6 @@ export class FitnessSession {
         
         // ... (Logic to populate series from device properties)
     });
-
     // ... (Rest of snapshot update logic: playQueue, mediaPlaylists, etc. - similar to original)
     if (Array.isArray(playQueue)) {
         this.snapshot.playQueue = deepClone(playQueue);
@@ -2481,6 +2490,7 @@ export class FitnessSession {
             stillActive.add(d.id);
         }
     });
+    this._endedDeviceHold.observeAbsence(stillActive, remove, now);
     
     this.activeDeviceIds = stillActive;
     if (this.activeDeviceIds.size === 0) {
@@ -2588,6 +2598,7 @@ export class FitnessSession {
     // pre-session buffer). Auto/inactivity/empty_roster ends keep the cooldown to
     // suppress duplicate sessions from leftover HR.
     const deliberateEnd = reason === 'manual' || reason === 'user_initiated' || reason === 'force_break';
+    if (deliberateEnd) this._endedDeviceHold.hold(this.activeDeviceIds, now);
     _lastSessionEndTimestamp = deliberateEnd ? 0 : Date.now();
     this.reset();
     return true;

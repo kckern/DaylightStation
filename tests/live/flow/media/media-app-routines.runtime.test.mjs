@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { createHomeAssistantCaller } from '../../../_lib/media-ha-caller.mjs';
-import { resetHouseholdAt } from './lib/household.mjs';
+import { resetHouseholdAt, pinBrowserIdentity } from './lib/household.mjs';
 import {
   A, A_NAME, ITEM, VIEWPORTS, call, receiverState, openReceiver, reopenReceiver, startOn, stopReceiver, resetControls,
   newAppPage, gotoMedia, openHouse, warmMedia,
@@ -161,4 +161,49 @@ test('[AUTO.2a/AC2][AUTO.2a/AC3] a routine-started screen keeps its spot through
   await idle(request);
   await context.close();
   await receiver.context.close();
+});
+
+test('[AUTO.1b/AC1-AC3] a routine can start playback on a named browser left open, still reaches it after it is renamed, and the start looks like someone started it there', async ({ browser, request }) => {
+  // The routine addresses the tab by its stable id over its client-control topic
+  // (the fake Home Assistant caller's browser path), never by its name.
+  const suffix = randomUUID().slice(0, 4);
+  const firstName = `Kitchen tablet ${suffix}`;
+  const secondName = `Pantry tablet ${suffix}`;
+  const stableId = `auto1b-${suffix}`;
+  const { context: tabletContext, page: tablet } = await newAppPage(browser, VIEWPORTS.laptop);
+  await pinBrowserIdentity(tabletContext, { clientId: stableId, name: firstName });
+  await gotoMedia(tablet);
+  await expect(tablet.getByRole('textbox', { name: 'Search media…' })).toBeVisible({ timeout: 40000 });
+  const { context, page } = await newAppPage(browser, VIEWPORTS.laptop);
+  await gotoMedia(page);
+  await openHouse(page, VIEWPORTS.laptop);
+  const card = page.getByTestId(`fleet-card-browser:${stableId}`);
+  await expect(card).toContainText(firstName, { timeout: 40000 });
+
+  // AC1: the named tab is a routine target.
+  const routine = `Journey tablet routine ${suffix}`;
+  const first = await ha.loadBrowser(stableId, { play: ITEM.ARRIVAL, routine });
+  expect(first, 'the tab acknowledged the routine').toMatchObject({ ok: true });
+  // AC3: it plays on that device like a start made there: its own player and the house overview shows the tablet playing it.
+  const native = tablet.locator('.video-player video');
+  await expect(native).toBeVisible({ timeout: 60000 });
+  await expect.poll(() => native.evaluate((video) => video.readyState >= 2 && !video.paused && video.currentTime > 0), { timeout: 60000 }).toBe(true);
+  await expect(tablet.getByTestId('mini-player-open-nowplaying')).toContainText('Arrival', { timeout: 60000 });
+  await expect(card).toContainText('Arrival', { timeout: 40000 });
+  // ... and says the routine started it, as for any routine-started screen.
+  await expect(page.getByTestId(`house-started-by-browser:${stableId}`)).toContainText(routine, { timeout: 40000 });
+
+  // AC2: the tab is renamed; the routine still reaches it (it follows the tab, not the name).
+  await tablet.getByTestId('settings-menu-trigger').click();
+  await tablet.getByTestId('settings-rename-device').click();
+  await tablet.getByRole('textbox', { name: 'Device name' }).fill(secondName);
+  await tablet.getByRole('button', { name: 'Save device name' }).click();
+  await expect(card).toContainText(secondName, { timeout: 40000 });
+  const second = await ha.loadBrowser(stableId, { play: ITEM.HOSPITAL, routine: `${routine} again` });
+  expect(second, 'the renamed tab still acknowledged the routine').toMatchObject({ ok: true });
+  await expect(tablet.getByTestId('mini-player-open-nowplaying')).toContainText('Hospital', { timeout: 60000 });
+  await expect(card).toContainText(secondName);
+
+  await context.close();
+  await tabletContext.close();
 });

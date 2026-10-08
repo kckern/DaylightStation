@@ -37,6 +37,7 @@ import { ResultRow } from '../../Content/combobox/ResultRow.jsx';
 import { ItemDestinationPicker } from '../actions/ItemDestinationPicker.jsx';
 import { sourceIconFor, dedupeSourceRows } from './sourceIcons.jsx';
 import { sourceRootPresentation } from '../search/resultPresentation.js';
+import { useDismissLayer } from '../shell/useDismissLayer.js';
 import { useHouseholdResultActions } from '../household/useHouseholdResultActions.js';
 
 function splitPath(path) {
@@ -76,11 +77,20 @@ export function BrowseView({
   path, label, modifiers, containerItem = null, take = 50,
   breadcrumbs = [], scrollTop = 0, focusedId = null, loadedCount = 0,
 }) {
+  // Only a container id (source/localId) can be a season/playlist the router
+  // would wrap as one tile; the root and a source's own root list as-is.
+  const listModifiers = useMemo(
+    () => (/^\/?[^/]+\/[^/]+/.test(String(path)) ? { ...modifiers, expand: true } : modifiers),
+    [path, modifiers],
+  );
   const { items: rawItems, total, loading, loadingMore = false, error, loadMore, reload } = useListBrowse(
-    path, { modifiers, take, initialTake: loadedCount },
+    path, { modifiers: listModifiers, take, initialTake: loadedCount },
   );
   const items = useMemo(() => dedupeSourceRows(naturalBrowseOrder(rawItems)), [rawItems]);
   const [oneShot, setOneShot] = useState(null);
+  // A row's ⋯ menu closes itself on Escape; registering it keeps that Escape from also going Back.
+  const [rowMenuOpen, setRowMenuOpen] = useState(false);
+  useDismissLayer(rowMenuOpen, () => {}, { managed: true });
   const { push, replace, pop, depth, backDestination } = useNav();
   const { dispatchLeafVerb, playContainerAsQueue, addContainerToQueue } = useContentDispatch();
   const { extraActions, runHousehold } = useHouseholdResultActions();
@@ -254,6 +264,7 @@ export function BrowseView({
                   onDetails={rowIsContainer ? null : () => openDetail(id)}
                   detailsTestId={rowIsContainer ? null : `browse-detail-${id}`}
                   extraActions={extraActions}
+                  onMenuOpenChange={setRowMenuOpen}
                   onAction={action => {
                   if (runHousehold(action.kind, { ...row, id })) return;
                   if (['playOn', 'addOn'].includes(action.kind)) setOneShot(action);

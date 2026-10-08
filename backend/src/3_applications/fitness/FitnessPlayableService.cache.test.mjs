@@ -22,7 +22,7 @@ const catalog = ({ resolvePlayables, getContainerInfo, getItem, enrichWithWatchS
   describeFrom: (item, info) => ({ title: item?.title ?? null, labels: info?.labels ?? [] }),
 });
 
-function makeService({ now = () => 0, structureTtlMs = 1000 } = {}) {
+function makeService({ now = () => 0, structureTtlMs = 1000, structureSnapshot = null } = {}) {
   const resolvePlayables = vi.fn(async () => [{ id: 'plex:1', title: 'Lesson 1' }]);
   const getContainerInfo = vi.fn(async () => ({ type: 'show', labels: ['Piano'] }));
   const getItem = vi.fn(async () => ({ id: 'plex:675689', title: 'Hoffman' }));
@@ -34,12 +34,39 @@ function makeService({ now = () => 0, structureTtlMs = 1000 } = {}) {
     createProgressClassifier: () => ({ classify: () => 'unwatched' }),
     logger: { warn() {}, debug() {}, info() {} },
     structureTtlMs,
+    structureSnapshot,
     now,
   });
   return { service, resolvePlayables, getContainerInfo, getItem, enrichWithWatchState, listConfiguredShows };
 }
 
 describe('FitnessPlayableService structure cache', () => {
+  it('seeds course structure from a durable snapshot so a post-deploy School read never waits on Plex', async () => {
+    const structureSnapshot = {
+      load: () => new Map([
+        ['playables:plex:675689', { value: [{ id: 'plex:1', title: 'Snapshotted lesson' }], at: 900 }],
+        ['info:plex:675689', { value: { type: 'show', labels: ['Piano'] }, at: 900 }],
+        ['item:plex:675689', { value: { id: 'plex:675689', title: 'Snapshotted Hoffman' }, at: 900 }],
+      ]),
+      put: vi.fn(),
+    };
+    const { service, resolvePlayables, getContainerInfo, getItem } = makeService({
+      now: () => 1000, structureSnapshot,
+    });
+
+    const result = await Promise.race([
+      service.getPlayableEpisodes('675689', 'h'),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('blocked on Plex refresh')), 25)),
+    ]);
+
+    expect(result.items[0].title).toBe('Snapshotted lesson');
+    expect(result.info.labels).toEqual(['Piano']);
+    expect(result.containerItem.title).toBe('Snapshotted Hoffman');
+    expect(resolvePlayables).not.toHaveBeenCalled();
+    expect(getContainerInfo).not.toHaveBeenCalled();
+    expect(getItem).not.toHaveBeenCalled();
+  });
+
   it('fetches the Plex episode list once for repeat reads inside the TTL', async () => {
     const { service, resolvePlayables } = makeService();
     await service.getPlayableEpisodes('675689', 'h');
@@ -66,6 +93,24 @@ describe('FitnessPlayableService structure cache', () => {
     clock = 1500;
     await service.getPlayableEpisodes('675689', 'h');
     expect(resolvePlayables).toHaveBeenCalledTimes(2);
+  });
+
+  it('serves expired structure immediately while Plex refreshes in the background', async () => {
+    let clock = 0;
+    let releaseRefresh;
+    const { service, resolvePlayables } = makeService({ now: () => clock, structureTtlMs: 1000 });
+    await service.getPlayableEpisodes('675689', 'h');
+    resolvePlayables.mockImplementationOnce(() => new Promise((resolve) => { releaseRefresh = resolve; }));
+    clock = 1500;
+
+    const result = await Promise.race([
+      service.getPlayableEpisodes('675689', 'h'),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('blocked on Plex refresh')), 25)),
+    ]);
+
+    expect(result.items[0].title).toBe('Lesson 1');
+    expect(resolvePlayables).toHaveBeenCalledTimes(2);
+    releaseRefresh([{ id: 'plex:2', title: 'Fresh lesson' }]);
   });
 
   it('describeItem reuses the cached item/info reads', async () => {

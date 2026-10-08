@@ -124,3 +124,15 @@ test('allocateBucketsRedistribute: zero-weight color falls back to ring-share', 
   assert.equal(sum(part1), 10);              // part totals exact
   assert.equal(sum(part2), 20);
 });
+
+test('allocateBucketsRedistribute: preserves custom bonus-ring buckets', () => {
+  const colors = ['blue', 'green', 'yellow', 'orange', 'red', '#e0a85b'];
+  const orig = { blue: 0, green: 4, yellow: 0, orange: 0, red: 0, '#e0a85b': 1 };
+  const { part1, part2 } = allocateBucketsRedistribute(orig, { green: 2 }, { green: 2 }, 2, 3);
+
+  for (const color of colors) {
+    assert.equal((part1[color] || 0) + (part2[color] || 0), orig[color] || 0);
+  }
+  assert.equal(colors.reduce((total, color) => total + (part1[color] || 0), 0), 2);
+  assert.equal(colors.reduce((total, color) => total + (part2[color] || 0), 0), 3);
+});

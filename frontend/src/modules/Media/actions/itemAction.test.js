@@ -47,7 +47,7 @@ describe('item actions at the owner boundary', () => {
     const args = id => ({ kind, item: { contentId: `plex:${id}`, type: 'album' }, destination, operationId: id });
     const first = executeItemAction(args('first'));
     const second = executeItemAction(args('second'));
-    const resolveCollection = id => resolvers.get([...resolvers.keys()].find(key => key.endsWith(`/${id}`)))({ ok: true, json: async () => ({ items: [{ id: `plex:${id}-child`, type: 'track' }] }) });
+    const resolveCollection = id => resolvers.get([...resolvers.keys()].find(key => key.endsWith(`/${id}/expand`)))({ ok: true, json: async () => ({ items: [{ id: `plex:${id}-child`, type: 'track' }] }) });
     resolveCollection('second');
     await Promise.resolve(); await Promise.resolve();
     resolveCollection('first');

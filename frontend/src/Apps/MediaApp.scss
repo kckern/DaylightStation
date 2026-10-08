@@ -28,6 +28,9 @@ html:has(.media-app) {
   --media-ink: var(--mantine-color-dark-7);
   --media-surface: var(--mantine-color-dark-5);
   --media-line: var(--mantine-color-dark-4);
+  // Control boundaries (RELY.13a/AC1): the existing dimmed step of the ramp, >= 3:1 on ink, panel and surface.
+  // Hairlines between regions stay on --media-line; only the edge of something you press or type in uses this.
+  --media-control-line: var(--mantine-color-dark-2);
   --media-text: var(--mantine-color-dark-0);
   --media-muted: var(--mantine-color-dark-1);
   --media-accent: var(--mantine-color-amber-5);
@@ -39,9 +42,19 @@ html:has(.media-app) {
   --media-ink: var(--mantine-color-dark-7);
   --media-surface: var(--mantine-color-dark-5);
   --media-line: var(--mantine-color-dark-4);
+  // Control boundaries (RELY.13a/AC1): the existing dimmed step of the ramp, >= 3:1 on ink, panel and surface.
+  // Hairlines between regions stay on --media-line; only the edge of something you press or type in uses this.
+  --media-control-line: var(--mantine-color-dark-2);
   --media-text: var(--mantine-color-dark-0);
   --media-muted: var(--mantine-color-dark-1);
   --media-accent: var(--mantine-color-amber-5);
+}
+
+// Mantine's default-variant controls (inputs, default buttons, checkboxes) draw their edge from this one
+// variable; pointing it at the control-boundary token lifts every ordinary control at once, portals included.
+html:has(.media-app)[data-mantine-color-scheme],
+.media-app {
+  --mantine-color-default-border: var(--media-control-line);
 }
 
 @media (min-width: 48em) {

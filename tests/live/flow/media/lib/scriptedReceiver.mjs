@@ -8,7 +8,8 @@
 //     origin: { kind: 'device', id: 'acceptance-media-b' } });
 //
 // Specs: state playing|paused|idle|off; kind video|audio|photo|slideshow|live;
-// duration null = unknown (no seeking); queue = items after the current one.
+// duration null = unknown (no seeking); queue = items after the current one;
+// serverOffline: true = it keeps reporting (devices show it playing) but the server refuses a send with DEVICE_OFFLINE.
 // A scripted screen goes silent (Off) after about a minute, as a real one would.
 import { expect } from '@playwright/test';
 

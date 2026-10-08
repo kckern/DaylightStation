@@ -36,6 +36,9 @@ const DEFAULTS = Object.freeze({
   alertAfterMs: 120_000,
   // An episode nobody has asked about for this long is over (the screen moved on).
   episodeIdleMs: 10 * 60_000,
+  // A refusal the PROXY saw refreshes the file on the host even when Plex says
+  // it can read it; at most once per file per this long.
+  proxyRefreshCooldownMs: 60_000,
 });
 
 export class MediaSourceHealer {
@@ -47,6 +50,7 @@ export class MediaSourceHealer {
   #cfg;
   #episodes = new Map();
   #inflight = new Map();
+  #proxyRefreshAt = new Map();
 
   /**
    * @param {Object} deps
@@ -90,6 +94,19 @@ export class MediaSourceHealer {
     const steps = [];
     let probe = await this.#step(steps, ratingKey, 'plex-check', () => this.#probe.probe(ratingKey));
 
+    if (probe.reason === 'not-a-leaf') {
+      this.#logger.warn?.('media.source.heal.not-a-leaf', {
+        ratingKey, contentId, itemType: probe.itemType ?? null, title: probe.title ?? null,
+        origin: context.origin ?? null, deviceId: context.deviceId ?? null,
+      });
+      return { ...this.#answer(contentId, probe, steps, null), reason: 'not-a-leaf', ...(probe.itemType ? { itemType: probe.itemType } : {}) };
+    }
+
+    if (probe.state === SOURCE_STATE.readable && context.origin === 'proxy') {
+      const refreshed = await this.#proxyRefresh(steps, ratingKey, contentId, probe);
+      if (refreshed) probe = refreshed;
+    }
+
     if (probe.state !== SOURCE_STATE.unreadable) {
       // `unknown` (Plex itself unreachable, say) says nothing about the file, so
       // it neither opens nor closes an episode.
@@ -118,6 +135,36 @@ export class MediaSourceHealer {
     episode.lastCheckAt = this.#clock();
     await this.#maybeAlert(ratingKey, episode);
     return this.#answer(contentId, probe, steps, episode);
+  }
+
+  /**
+   * Plex's probe says readable but the PROXY just watched it refuse the file —
+   * a per-user access-cache ghost: the host (a different user) reads it fine and
+   * Plex's stat passes. Re-applying the file's mode bumps its ctime, which is
+   * the only thing that makes this host's NFS client re-trust it. Rate-limited
+   * per file. Returns the re-check answer, or null when nothing ran.
+   */
+  async #proxyRefresh(steps, ratingKey, contentId, probe) {
+    if (!this.#hostHealer || !probe.path) return null;
+    const now = this.#clock();
+    const last = this.#proxyRefreshAt.get(ratingKey);
+    if (last !== undefined && now - last < this.#cfg.proxyRefreshCooldownMs) return null;
+    if (this.#proxyRefreshAt.size >= 500) {
+      // Drop only EXPIRED cooldowns. If the map is still full, refuse the
+      // refresh: evicting a live cooldown would let a flood of ids reset them all.
+      for (const [key, at] of this.#proxyRefreshAt) {
+        if (now - at >= this.#cfg.proxyRefreshCooldownMs) this.#proxyRefreshAt.delete(key);
+      }
+      if (this.#proxyRefreshAt.size >= 500) return null;
+    }
+    this.#proxyRefreshAt.set(ratingKey, now);
+    const host = await this.#step(steps, ratingKey, 'host-heal', () => this.#hostHealer.heal(probe.path));
+    this.#logger.info?.('media.source.heal.proxy-refresh', {
+      ratingKey, contentId, title: probe.title ?? null, ok: host.ok ?? null,
+      chmodApplied: host.chmodApplied ?? null, cacheRefreshed: host.cacheRefreshed ?? null,
+    });
+    if (host.ok === false) return null;
+    return this.#step(steps, ratingKey, 'plex-recheck', () => this.#probe.probe(ratingKey));
   }
 
   async #step(steps, ratingKey, name, fn) {
@@ -219,6 +266,7 @@ export class MediaSourceHealer {
     return {
       state: probe.state ?? SOURCE_STATE.unknown,
       contentId,
+      ...(probe.reason ? { reason: probe.reason } : {}),
       ...(episode ? { unreadableSince: episode.since, unreadableMs: now - episode.since } : {}),
       steps,
     };

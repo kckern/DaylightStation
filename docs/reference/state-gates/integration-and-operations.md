@@ -139,10 +139,11 @@ truth.
 State is stored at:
 
 ```text
-data/household[-{hid}]/state-gates/current.yml
+data/household[-{hid}]/state-gates/current.json
 ```
 
-The envelope schema is `daylight.state-gates-state/v1` and contains:
+The envelope schema is `daylight.state-gates-state/v2`: compact JSON with camelCase
+keys, and the same contents list:
 
 - current projection;
 - active policy candidate and validation context;
@@ -153,6 +154,14 @@ The envelope schema is `daylight.state-gates-state/v1` and contains:
 - bounded journal of publication envelopes;
 - compaction checkpoint; and
 - delivery checkpoint.
+
+Before 2026-09-25 the state was YAML (`current.yml`, v1, snake_case). The engine reads
+`current.yml` on each cold read (every process start, until the first commit writes
+`current.json`) whenever `current.json` is absent, logs `state-gates.state.migrated`
+once per read, and writes `current.json` on the next commit. `current.json` therefore
+does not appear immediately after a deploy — `reconcile` writes nothing when nothing is
+pending, so its absence right after a restart with no pending work is normal, not a
+failed migration. The engine never modifies or deletes `current.yml`.
 
 The projection and journal are written atomically through FileIO. Repository adapters
 share one internal engine so projection replacement and outbox insertion cannot split
@@ -189,15 +198,44 @@ Default retention is:
 - maximum 500 entries; and
 - maximum age 7 days.
 
-The journal shares `current.yml` with the projection and every commit rewrites
+The journal shares `current.json` with the projection and every commit rewrites
 the whole file, so these bounds are the cost of every write — not just a
 storage ceiling. They were 5,000 / 30 days until 2026-09-02, which let the file
 reach 2.6 MB and never compact; see
 `docs/_wip/bugs/2026-09-02-fitness-rpm-false-zeros-pause-video-during-cycle-challenge.md`.
+Each write is about 5 ms (`state-gates.state.written`, sampled).
 
 Compaction removes only complete published revision batches, oldest first. It never
 removes an unpublished batch. Retraction tombstones stay in current assertion
 provenance even after their transition envelopes age out.
+
+### Rollback
+
+- A build older than 2026-09-25 reads the stale `current.yml`:
+  - the household revision regresses;
+  - changes since the switch are lost;
+  - subscribers holding a newer replay cursor get `INVALID_REPLAY_CURSOR` (400)
+    and resubscribe.
+- A deliberate rollback is not lossless just by running the converter: the new
+  build keeps committing between the CLI run and the container stop — about
+  255 commits a day, 2–3 a minute during a workout — and anything committed in
+  that window is lost. Do it in this order:
+  1. confirm `./scripts/deploy-gate.sh` reports clear;
+  2. run the converter inside the container:
+     `node cli/state-gates-legacy-yaml.cli.mjs data/household/state-gates/current.json data/household/state-gates/current.yml`
+  3. immediately stop the container — anything committed between step 2 and
+     this step is the residual loss window, not covered by the converter;
+  4. move `current.json` into `data/_deleteme/`;
+  5. `chown node:node` the converted `current.yml` (`docker exec` runs as
+     root, so the file it just wrote is root-owned);
+  6. start the older build.
+- Rolling forward again after an older build has written `current.yml`
+  makes State Gates refuse to start (`STATE_GATES_STATE_UNAVAILABLE`, cause
+  `LEGACY_STATE_NEWER`). Choose one:
+  - keep the newer YAML: move `current.json` aside, and it re-migrates;
+  - keep the JSON: move `current.yml` aside.
+- A lost or damaged `current.json` is recovered from Dropbox version history
+  on the data tree.
 
 ## Startup lifecycle
 

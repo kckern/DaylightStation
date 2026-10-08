@@ -104,19 +104,13 @@ describe('GovernanceEngine — subject filter (guests + exempt)', () => {
   });
 });
 
-/**
- * Anti-freeload applies to configured-user exemptions: without a real baseline
- * rider, an exempt household user is governed normally. Guests are different:
- * product policy says they never create a blocker or punishment, even when they
- * are the only active rider; they may still earn a positive challenge win.
- */
-describe('GovernanceEngine — exemption suspension when no real subject present', () => {
-  it('_buildSubjectFilter treats an exempt-only roster as all-subjects', () => {
+describe('GovernanceEngine — exemptions remain non-subjects without a baseline rider', () => {
+  it('_buildSubjectFilter keeps an exempt-only roster non-subject', () => {
     const eng = new GovernanceEngine();
     eng.config = { exemptions: ['mom'] };
     eng._captureLatestInputs({ activeParticipants: ['mom'], guestIds: [] });
     const isSubject = eng._buildSubjectFilter(['mom']);
-    expect(isSubject('mom')).toBe(true); // suspended → exempt user is governed
+    expect(isSubject('mom')).toBe(false);
   });
 
   it('_buildSubjectFilter keeps a guest-only roster non-subject', () => {
@@ -137,37 +131,33 @@ describe('GovernanceEngine — exemption suspension when no real subject present
     expect(isSubject('g1')).toBe(false);   // still guest
   });
 
-  it('only an exempt household user becomes subject when no baseline rider remains', () => {
+  it('does not add an exempt household user to the required denominator', () => {
     const eng = new GovernanceEngine();
     eng.config = { exemptions: ['mom'] };
     eng._captureLatestInputs({ activeParticipants: ['mom', 'g1'], guestIds: ['g1'] });
-    // Suspended exemption → mom is subject, but the guest remains non-subject.
-    expect(eng._normalizeRequiredCount('all', 2, ['mom', 'g1'])).toBe(1);
+    expect(eng._normalizeRequiredCount('all', 2, ['mom', 'g1'])).toBe(0);
   });
 
-  it('steady-state: exempt-only roster must meet the zone (loophole closed)', () => {
+  it('steady-state: exempt-only roster stays blocked without blaming the exempt user', () => {
     const eng = new GovernanceEngine();
     eng.config = { exemptions: ['mom'] };
     const zoneRankMap = { cold: 0, warm: 1, hot: 2 };
     const zoneInfoMap = { hot: { id: 'hot', name: 'Hot' } };
     eng._captureLatestInputs({ activeParticipants: ['mom'], guestIds: [], zoneRankMap, zoneInfoMap });
-    // Exempt 'mom' alone, cold → cannot vacuously satisfy, and is now blamed.
     const cold = eng._evaluateZoneRequirement('hot', 'all', ['mom'], { mom: 'cold' }, zoneRankMap, zoneInfoMap, 1);
-    expect(cold.satisfied).toBe(false);
-    expect(cold.missingUsers).toEqual(['mom']);
-    // Exempt 'mom' alone, in zone → she is actually working out → satisfies.
     const hot = eng._evaluateZoneRequirement('hot', 'all', ['mom'], { mom: 'hot' }, zoneRankMap, zoneInfoMap, 1);
-    expect(hot.satisfied).toBe(true);
+    expect(cold).toMatchObject({ satisfied: false, missingUsers: [], reason: 'non_exempt_contributor_required' });
+    expect(hot).toMatchObject({ satisfied: false, missingUsers: [], reason: 'non_exempt_contributor_required' });
   });
 
-  it('_classifyParticipants preserves guest status while suspending exemptions', () => {
+  it('_classifyParticipants preserves both guest and exempt status', () => {
     const eng = new GovernanceEngine();
     eng.config = { exemptions: ['mom'] };
     eng._captureLatestInputs({ activeParticipants: ['mom', 'g1'], guestIds: ['g1'] });
     const cls = eng._classifyParticipants(['mom', 'g1']);
-    expect(cls.subjects).toEqual(['mom']);
+    expect(cls.subjects).toEqual([]);
     expect(cls.guests).toEqual(['g1']);
-    expect(cls.exempt).toEqual([]);
+    expect(cls.exempt).toEqual(['mom']);
   });
 
   it('a below-zone guest alone never creates a steady-state blocker', () => {
@@ -191,9 +181,114 @@ describe('GovernanceEngine — exemption suspension when no real subject present
   });
 });
 
+describe('GovernanceEngine — exempt users require a non-exempt anchor', () => {
+  it('keeps an exempt-only roster exempt instead of promoting it to subjects', () => {
+    const eng = new GovernanceEngine();
+    eng.config = { exemptions: ['user_5'] };
+    eng._captureLatestInputs({ activeParticipants: ['user_5'], guestIds: [] });
+
+    expect(eng._classifyParticipants(['user_5'])).toEqual({
+      subjects: [],
+      guests: [],
+      exempt: ['user_5'],
+    });
+  });
+
+  it('does not let an exempt-only in-zone participant clear steady-state governance', () => {
+    const eng = new GovernanceEngine();
+    eng.config = { exemptions: ['user_5'] };
+    const zoneRankMap = { cold: 0, active: 1 };
+    const zoneInfoMap = { active: { id: 'active', name: 'Active' } };
+    eng._captureLatestInputs({ activeParticipants: ['user_5'], guestIds: [], zoneRankMap, zoneInfoMap });
+
+    const result = eng._evaluateZoneRequirement(
+      'active', 'all', ['user_5'], { user_5: 'active' }, zoneRankMap, zoneInfoMap, 1
+    );
+
+    expect(result).toMatchObject({
+      satisfied: false,
+      requiredCount: 1,
+      actualCount: 0,
+      missingUsers: [],
+      reason: 'non_exempt_contributor_required',
+    });
+  });
+
+  it('does not let an exempt participant be the sole challenge satisfier', () => {
+    const eng = new GovernanceEngine();
+    eng.config = { exemptions: ['user_5'] };
+    const zoneRankMap = { cold: 0, active: 1 };
+    eng._captureLatestInputs({
+      activeParticipants: ['user_2', 'user_5'], guestIds: [], zoneRankMap,
+    });
+
+    const result = eng.evaluateChallengeZone(
+      { zone: 'active', rule: 1 },
+      ['user_2', 'user_5'],
+      { user_2: 'cold', user_5: 'active' },
+      2
+    );
+
+    expect(result).toMatchObject({
+      satisfied: false,
+      requiredCount: 1,
+      actualCount: 1,
+      missingUsers: ['user_2'],
+      reason: 'non_exempt_contributor_required',
+    });
+  });
+
+  it('credits an exempt participant once a non-exempt participant also contributes', () => {
+    const eng = new GovernanceEngine();
+    eng.config = { exemptions: ['user_5'] };
+    const zoneRankMap = { cold: 0, active: 1 };
+    eng._captureLatestInputs({
+      activeParticipants: ['user_2', 'user_5'], guestIds: [], zoneRankMap,
+    });
+
+    const result = eng.evaluateChallengeZone(
+      { zone: 'active', rule: 2 },
+      ['user_2', 'user_5'],
+      { user_2: 'active', user_5: 'active' },
+      2
+    );
+
+    expect(result).toMatchObject({
+      satisfied: true,
+      requiredCount: 1,
+      actualCount: 2,
+      missingUsers: [],
+    });
+  });
+
+  it('does not let a guest unlock a challenge for an exempt-plus-guest roster', () => {
+    const eng = new GovernanceEngine();
+    eng.config = { exemptions: ['user_5'] };
+    const zoneRankMap = { cold: 0, active: 1 };
+    eng._captureLatestInputs({
+      activeParticipants: ['user_5', 'visitor'], guestIds: ['visitor'], zoneRankMap,
+    });
+
+    const result = eng.evaluateChallengeZone(
+      { zone: 'active', rule: 'any' },
+      ['user_5', 'visitor'],
+      { user_5: 'cold', visitor: 'active' },
+      2
+    );
+
+    expect(result).toMatchObject({
+      satisfied: false,
+      requiredCount: 1,
+      actualCount: 1,
+      missingUsers: [],
+      reason: 'non_exempt_contributor_required',
+    });
+  });
+});
+
 
 describe('challenge targets never grow because a visitor joined', () => {
-  it.each(['all', 'most', 'some', 6])('uses subjects for %s while crediting every rider', (rule) => {
+  it.each(['all', 'most', 'some', 6])('uses subjects for %s and requires a subject contributor', (rule) => {
     const eng = new GovernanceEngine();
     eng.config = { exemptions: ['exempt'] };
     const people = ['rider', 'guest', 'exempt'];
@@ -201,7 +296,12 @@ describe('challenge targets never grow because a visitor joined', () => {
     const result = eng.evaluateChallengeZone({ zone: 'hot', rule }, people, { rider: 'hot', guest: 'cold', exempt: 'cold' }, 3);
     expect(result).toMatchObject({ requiredCount: 1, satisfied: true, missingUsers: [] });
     const guestCredit = eng.evaluateChallengeZone({ zone: 'hot', rule }, people, { rider: 'cold', guest: 'hot', exempt: 'cold' }, 3);
-    expect(guestCredit.satisfied).toBe(true);
+    expect(guestCredit).toMatchObject({
+      requiredCount: 1,
+      satisfied: false,
+      missingUsers: ['rider'],
+      reason: 'non_exempt_contributor_required',
+    });
   });
 });
 
@@ -283,5 +383,9 @@ it('retains household enforcement when an exempt resident is present with a gues
   expect(eng._cancelGuestChallenge(['resident', 'visitor'])).toBe(false);
   expect(eng.challengeState.activeChallenge).toBe(active);
   expect(eng.challengeState.videoLocked).toBe(true);
-  expect(eng._classifyParticipants(['resident', 'visitor']).subjects).toEqual(['resident']);
+  expect(eng._classifyParticipants(['resident', 'visitor'])).toEqual({
+    subjects: [],
+    guests: ['visitor'],
+    exempt: ['resident'],
+  });
 });

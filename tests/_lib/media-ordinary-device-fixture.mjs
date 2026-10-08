@@ -9,6 +9,8 @@ import { DeviceContentDispatchService } from '../../backend/src/3_applications/d
 import { DeviceLivenessService } from '../../backend/src/3_applications/devices/services/DeviceLivenessService.mjs';
 import { CommandHandlerLivenessService } from '../../backend/src/3_applications/devices/services/CommandHandlerLivenessService.mjs';
 import { DispatchIdempotencyService } from '../../backend/src/3_applications/devices/services/DispatchIdempotencyService.mjs';
+import { EventBusBrowserPlayback } from '../../backend/src/1_adapters/eventbus/EventBusBrowserPlayback.mjs';
+import { BrowserPlaybackTracker } from '../../backend/src/3_applications/media/BrowserPlaybackTracker.mjs';
 import { SessionControlService } from '../../backend/src/3_applications/devices/services/SessionControlService.mjs';
 import { DeviceSessionApiService } from '../../backend/src/3_applications/devices/services/DeviceSessionApiService.mjs';
 import { DeviceStartStatusService } from '../../backend/src/3_applications/devices/services/DeviceStartStatusService.mjs';
@@ -74,7 +76,7 @@ const VIRTUAL_SESSION_ROUTES = [
  * state. Never script a screen whose page a journey has mounted.
  *
  * @param {Object} spec
- * @param {'playing'|'paused'|'idle'|'stopped'|'off'} [spec.state='playing']
+ * @param {'playing'|'paused'|'idle'|'off'} [spec.state='playing']
  * @param {string} [spec.title] item title
  * @param {string} [spec.contentId]
  * @param {number|null} [spec.duration] seconds; null = unknown (no seeking)
@@ -87,7 +89,9 @@ const VIRTUAL_SESSION_ROUTES = [
  * @param {Array<{title:string,contentId?:string,kind?:string}>} [spec.queue] items after the current one
  */
 export function buildScriptedSnapshot(deviceId, spec = {}) {
-  const state = spec.state === 'off' ? 'stopped' : (spec.state ?? 'playing');
+  // `off` is not a SessionSnapshot state (the contract's idle state is `idle`): an off screen reports
+  // idle; `off` is the same snapshot from a screen that then goes silent (scriptReceiver).
+  const state = spec.state === 'off' ? 'idle' : (spec.state ?? 'playing');
   const snapshot = createIdleSessionSnapshot({ sessionId: `scripted-${deviceId}`, ownerId: deviceId });
   const kind = spec.kind ?? 'video';
   const item = (entry, index) => ({
@@ -96,7 +100,7 @@ export function buildScriptedSnapshot(deviceId, spec = {}) {
     format: (entry.kind ?? kind) === 'audio' ? 'audio' : ((entry.kind ?? kind) === 'photo' || (entry.kind ?? kind) === 'slideshow') ? 'image' : 'video',
     mediaType: entry.kind ?? kind,
   });
-  if (state === 'idle' || state === 'stopped') {
+  if (state === 'idle') {
     snapshot.state = state;
   } else {
     const current = {
@@ -216,7 +220,11 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet, cat
   // Seeded household (real services over a temp data dir), when a catalog is given.
   const household = catalog ? createMediaHouseholdFixture({ catalog, livenessService: deviceLiveness, logger }) : null;
   // House contracts (screens, routines, started by) for the house view.
+  // What each browser tab says it plays and who started it, as the real composition tracks it.
+  const browserPlayback = new BrowserPlaybackTracker();
+  new EventBusBrowserPlayback({ eventBus, tracker: browserPlayback }).attach();
   const house = createMediaHouseFixture({
+    browserPlayback,
     deviceId: ORDINARY_DEVICE_ID, name: 'Acceptance receiver', room: 'Virtual browser', deviceLiveness, logger,
     household,
     registrySeed: household?.seeded.registry ?? null,
@@ -339,6 +347,15 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet, cat
   // Scripted receiver states (see buildScriptedSnapshot). Published as the
   // screen itself would; `off` is the screen heard once and then silent.
   const scripted = new Set();
+  // `serverOffline: true` on a scripted screen: the screen keeps reporting, so a person's device still shows it
+  // playing, but the server's own liveness gate says it is offline, so a send is refused with DEVICE_OFFLINE
+  // (the screen "looks online but cannot be reached").
+  const serverOffline = new Set();
+  const realLastSnapshot = deviceLiveness.getLastSnapshot.bind(deviceLiveness);
+  deviceLiveness.getLastSnapshot = (deviceId) => {
+    const last = realLastSnapshot(deviceId);
+    return last && serverOffline.has(deviceId) ? { ...last, online: false } : last;
+  };
   const beats = new Map();
   const stopBeat = (deviceId) => { clearInterval(beats.get(deviceId)); beats.delete(deviceId); };
   /**
@@ -352,6 +369,7 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet, cat
     const validation = validateSessionSnapshot(snapshot);
     if (!validation.valid) throw new Error(`scriptReceiver: invalid snapshot: ${validation.errors.join('; ')}`);
     scripted.add(deviceId);
+    if (spec.serverOffline === true) serverOffline.add(deviceId); else serverOffline.delete(deviceId);
     stopBeat(deviceId);
     timers.expireNow = spec.state === 'off';
     try {
@@ -382,6 +400,7 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet, cat
       });
     }
     scripted.clear();
+    serverOffline.clear();
   };
   return {
     deviceId: ORDINARY_DEVICE_ID,

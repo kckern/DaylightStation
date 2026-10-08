@@ -373,6 +373,12 @@
     color: rgba(255, 255, 255, 0.4);
   }
 
+  &__summary-elapsed {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.82);
+  }
+
   &__summary-riders {
     display: flex;
     flex-wrap: wrap;
@@ -403,12 +409,26 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+
+    small {
+      font-size: 0.55rem;
+      color: rgba(255, 255, 255, 0.45);
+      white-space: nowrap;
+    }
   }
 
   &__summary-foot {
     font-size: 0.62rem;
     color: rgba(255, 255, 255, 0.35);
     letter-spacing: 0.03em;
+  }
+
+  &__measured-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.75rem;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.65rem;
   }
 
   // Chart row — grows to fill space left by header + gutter + timeline

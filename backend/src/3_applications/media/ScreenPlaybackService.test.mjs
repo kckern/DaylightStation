@@ -6,7 +6,7 @@ const NOW = Date.parse('2026-10-03T15:00:00.000Z');
 const at = (minAgo) => new Date(NOW - minAgo * 60_000).toISOString();
 const routine = { kind: 'routine', id: 'automation:kitchen_button_1', name: 'Kitchen Button 1' };
 
-function build({ rows = [], snapshot = null, nowPlaying = [], aliases = null } = {}) {
+function build({ rows = [], snapshot = null, nowPlaying = [], aliases = null, browserPlayback = null } = {}) {
   const playLedger = { plays: vi.fn(async (q) => selectPlays(rows, { deviceId: q.deviceId, from: q.from, limit: q.limit })) };
   const memory = {
     nowPlaying: async () => ({ known: true, list: nowPlaying }),
@@ -18,7 +18,7 @@ function build({ rows = [], snapshot = null, nowPlaying = [], aliases = null } =
     nameOf: async (id) => ({ 'browser:dad': "Dad's laptop" }[id] ?? null),
   };
   const livenessService = { getLastSnapshot: (id) => (snapshot && id === 'livingroom-tv' ? { online: true, snapshot } : null) };
-  const service = new ScreenPlaybackService({ playLedger, livenessService, memory, screens, clock: { now: () => NOW }, logger: { warn: vi.fn() } });
+  const service = new ScreenPlaybackService({ playLedger, livenessService, memory, screens, browserPlayback, clock: { now: () => NOW }, logger: { warn: vi.fn() } });
   return { service, memory, playLedger };
 }
 
@@ -69,6 +69,23 @@ describe('ScreenPlaybackService.startedBy', () => {
     expect(await service.startedBy({ deviceId: 'livingroom-tv' })).toMatchObject({
       startedBy: { kind: 'device', id: 'browser:dad', name: "Dad's laptop" }, at: at(3), source: 'snapshot',
     });
+  });
+
+  it('a browser tab a routine started: its own state frame names the routine, before any ledger row exists', async () => {
+    const browserPlayback = { get: (id) => (id === 'browser:k' ? { deviceId: 'browser:k', contentId: 'plex:5', origin: routine, at: NOW } : null), list: () => [{ deviceId: 'browser:k', contentId: 'plex:5', origin: routine, at: NOW }] };
+    const { service } = build({ browserPlayback });
+    expect(await service.startedBy({ deviceId: 'browser:k' })).toMatchObject({
+      playing: { contentId: 'plex:5' }, startedBy: routine, source: 'snapshot',
+    });
+    const { items } = await service.startedByAll({});
+    expect(items.map((i) => i.deviceId)).toEqual(['browser:k']);
+    expect(items[0].startedBy).toEqual(routine);
+  });
+
+  it('a browser frame about another item does not name its origin for this one', async () => {
+    const browserPlayback = { get: () => ({ deviceId: 'browser:k', contentId: 'plex:9', origin: routine, at: NOW }), list: () => [] };
+    const { service } = build({ browserPlayback, nowPlaying: [{ deviceId: 'browser:k', contentId: 'plex:5' }] });
+    expect((await service.startedBy({ deviceId: 'browser:k' })).startedBy).toBeNull();
   });
 
   it('startedByAll answers for every screen playing now', async () => {

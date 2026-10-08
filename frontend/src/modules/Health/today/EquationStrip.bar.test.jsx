@@ -10,19 +10,23 @@ const show = (budget, overrides = {}) => render(
     onDateChange={() => {}} {...overrides} /></MantineProvider>,
 );
 
-describe('redesigned single budget bar', () => {
-  it('separates eaten, available workout room, and the four meaningful posts', () => {
+describe('hybrid budget ruler', () => {
+  it('shows the goal range, exercise hatch, semantic intake, and exact posts together', () => {
     show(base);
     const bar = screen.getByTestId('budget-ruler');
     expect(bar.querySelectorAll('[data-budget-consumed]')).toHaveLength(2);
     expect(bar.querySelector('[data-budget-consumed="workout"]')).toBeTruthy();
     expect(bar.querySelector('[data-budget-available="workout"]')).toBeTruthy();
+    expect(bar).toHaveClass('health-budget__track--in-range');
+    expect(screen.getByTestId('budget-goal-range')).toHaveTextContent('Goal 1,200–2,541');
+    expect(bar.querySelector('[data-budget-goal-band]')).toBeTruthy();
+    expect(bar.querySelector('[data-budget-bonus="spent"]')).toBeTruthy();
+    expect(bar.querySelector('[data-budget-bonus="available"]')).toBeTruthy();
     expect(screen.getByTestId('budget-cursor').getAttribute('aria-label')).toBe('2,464 kcal eaten');
     expect(screen.getByTestId('budget-key').textContent).toContain('Log floor 1,200');
     expect(screen.getByTestId('budget-key').textContent).toContain('Base target 1,600');
     expect(screen.getByTestId('budget-key').textContent).toContain('Plan end 2,541');
     expect(screen.getByTestId('budget-key').textContent).toContain('Break even 2,941');
-    expect(bar.querySelector('.health-budget__range-band')).toBeNull();
   });
 
   it('adds only an amber overrun when food goes beyond the boosted plan', () => {
@@ -56,5 +60,6 @@ describe('redesigned single budget bar', () => {
     const bar = screen.getByTestId('budget-ruler');
     expect(bar.querySelectorAll('[data-budget-consumed]')).toHaveLength(2);
     expect(bar.querySelectorAll('[data-budget-available]')).toHaveLength(0);
+    expect(bar.querySelector('[data-budget-bonus="available"]')).toBeNull();
   });
 });

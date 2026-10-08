@@ -709,6 +709,24 @@ export const P0_EXTENSION_ENTRIES = Object.freeze([
     grep: 'FIND\\.8b/AC3',
   },
   {
+    story: 'FIND.1a',
+    criteria: ['FIND.1a/AC5'],
+    file: 'media-app-find-proof.runtime.test.mjs',
+    grep: 'FIND\\.1a/AC5',
+  },
+  {
+    story: 'FIND.8a',
+    criteria: ['FIND.8a/AC2'],
+    file: 'media-app-find-proof.runtime.test.mjs',
+    grep: 'FIND\\.8a/AC2',
+  },
+  {
+    story: 'RELY.13a',
+    criteria: ['RELY.13a/AC1'],
+    file: 'media-app-contrast-proof.runtime.test.mjs',
+    grep: 'RELY\\.13a/AC1',
+  },
+  {
     story: 'PLAY.1a',
     criteria: ['PLAY.1a/AC5'],
     file: 'media-app-p0-features-find.runtime.test.mjs',
@@ -731,6 +749,120 @@ export const P0_EXTENSION_ENTRIES = Object.freeze([
     criteria: ['RELY.5a/AC4'],
     file: 'media-app-p0-features-steer.runtime.test.mjs',
     grep: 'RELY\\.5a/AC4',
+  },
+  // Media proof gaps, batch B: defects found by the Phase 2b journeys, now fixed.
+  {
+    story: 'PLAY.2a',
+    criteria: ['PLAY.2a/AC3', 'PLAY.7a/AC2'],
+    file: 'media-app-verbs-proof.runtime.test.mjs',
+    grep: '\\[PLAY\\.2a/AC3\\]\\[PLAY\\.7a/AC2\\] the confirmation of a whole',
+  },
+  {
+    story: 'PLACE.8a',
+    criteria: ['PLACE.8a/AC2'],
+    file: 'media-app-move-proof.runtime.test.mjs',
+    grep: '\\[PLACE\\.8a/AC4\\] hand\\-off from Now Playing with "Keep pla',
+  },
+  {
+    story: 'PLACE.8a',
+    criteria: ['PLACE.8a/AC3', 'PLACE.6a/AC4'],
+    file: 'media-app-move-proof.runtime.test.mjs',
+    grep: '\\[PLACE\\.8a/AC3\\]\\[PLACE\\.6a/AC4\\] hand\\-off from Now Playing with "Move play',
+  },
+  {
+    story: 'PLACE.7a',
+    criteria: ['PLACE.7a/AC3'],
+    file: 'media-app-move-proof.runtime.test.mjs',
+    grep: "\\[PLACE\\.7a/AC2\\] Move to this device from another screen'",
+  },
+  {
+    story: 'RELY.1a',
+    criteria: ['RELY.1a/AC1'],
+    file: 'media-app-rely-proof.runtime.test.mjs',
+    grep: '\\[RELY\\.1a/AC2\\]\\[RELY\\.1a/AC3\\]\\[RELY\\.1a/AC4\\] (laptop|phone|tablet): every change to what is lined up',
+  },
+  {
+    story: 'HOUSE.2a',
+    criteria: ['HOUSE.2a/AC1'],
+    file: 'media-app-house-proof.runtime.test.mjs',
+    grep: '\\[HOUSE\\.2a/AC1\\] (phone|laptop): each screen shows',
+  },
+  {
+    story: 'AUTO.1b',
+    criteria: ['AUTO.1b/AC1', 'AUTO.1b/AC2', 'AUTO.1b/AC3'],
+    file: 'media-app-routines.runtime.test.mjs',
+    grep: '\\[AUTO\\.1b/AC1\\-AC3\\] a routine can start playback on a named browser',
+  },
+  // Phase 3 (proof gaps): the P1/P2 rows closed by media-app-gaps-d-proof. The
+  // StartedByLine in the controls header (HOUSE.5a/AC2) and room adjacency
+  // (PLACE.4a/AC6) are product features; the rest are journeys on the fixtures.
+  {
+    story: 'HOUSE.4a',
+    criteria: ['HOUSE.4a/AC1'],
+    file: 'media-app-gaps-d-proof.runtime.test.mjs',
+    grep: 'HOUSE\\.4a/AC1',
+  },
+  {
+    story: 'HOUSE.5a',
+    criteria: ['HOUSE.5a/AC2'],
+    file: 'media-app-gaps-d-proof.runtime.test.mjs',
+    grep: 'HOUSE\\.5a/AC2',
+  },
+  {
+    story: 'HOUSE.6a',
+    criteria: ['HOUSE.6a/AC4'],
+    file: 'media-app-gaps-d-proof.runtime.test.mjs',
+    grep: 'HOUSE\\.6a/AC4',
+  },
+  {
+    story: 'PLACE.4a',
+    criteria: ['PLACE.4a/AC6'],
+    file: 'media-app-gaps-d-proof.runtime.test.mjs',
+    grep: 'PLACE\\.4a/AC6',
+  },
+  {
+    story: 'RELY.4a',
+    criteria: ['RELY.4a/AC3'],
+    file: 'media-app-gaps-d-proof.runtime.test.mjs',
+    grep: 'RELY\\.4a/AC3',
+  },
+  {
+    story: 'STEER.10a',
+    criteria: ['STEER.10a/AC2'],
+    file: 'media-app-gaps-d-proof.runtime.test.mjs',
+    grep: 'STEER\\.10a/AC2',
+  },
+  {
+    story: 'STEER.11a',
+    criteria: ['STEER.11a/AC3'],
+    file: 'media-app-gaps-d-proof.runtime.test.mjs',
+    grep: 'STEER\\.11a/AC3',
+  },
+  {
+    story: 'STEER.13b',
+    criteria: ['STEER.13b/AC3'],
+    file: 'media-app-gaps-d-proof.runtime.test.mjs',
+    grep: 'STEER\\.13b/AC3',
+  },
+  {
+    story: 'AUTO.4a',
+    criteria: ['AUTO.4a/AC3'],
+    file: 'media-app-gaps-d-proof.runtime.test.mjs',
+    grep: 'AUTO\\.4a/AC3',
+  },
+  // Final integration: two Partial rows whose journeys already exist in media-app-steer-proof
+  // (a screen that cannot seek/change speed says so; volume steps with large targets, local).
+  {
+    story: 'STEER.1b',
+    criteria: ['STEER.1b/AC2'],
+    file: 'media-app-steer-proof.runtime.test.mjs',
+    grep: '\\[STEER\\.1b/AC2\\] controls a screen cannot support',
+  },
+  {
+    story: 'STEER.5a',
+    criteria: ['STEER.5a/AC1'],
+    file: 'media-app-steer-proof.runtime.test.mjs',
+    grep: '\\[STEER\\.5a/AC1\\] (laptop|phone|tablet): volume changes in steps',
   },
 ]);
 

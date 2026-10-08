@@ -7,6 +7,7 @@ import { useCallback, useContext } from 'react';
 import { DispatchContext } from '../cast/DispatchProvider.jsx';
 import { houseApi as defaultApi } from './houseApi.js';
 import houseLog from './houseLog.js';
+import { resetScreenRoomsCache } from '../cast/screenRooms.js';
 
 const UNDO_MS = 10_000;
 
@@ -39,6 +40,20 @@ export function useScreenAdmin({ registry, api = defaultApi } = {}) {
     } catch (error) {
       if (error?.code === 'NAME_TAKEN' || error?.code === 'ROUTINES_TARGET') houseLog.renameConflict({ deviceId: screen.id, code: error.code });
       else houseLog.adminActionFailed({ action: 'name', deviceId: screen.id, status: error?.status ?? null, code: error?.code ?? null, error: error?.message });
+      return failure(error);
+    }
+  }, [api, refresh]);
+
+  // Which rooms neighbour `room` (the several-screen drift warning); the link is mutual.
+  const setNeighbours = useCallback(async (room, neighbours) => {
+    try {
+      const res = await api.setRoomNeighbours(room, neighbours);
+      houseLog.roomNeighboursSet({ room, neighbours });
+      resetScreenRoomsCache();
+      await refresh?.();
+      return { ok: true, roomAdjacency: res?.roomAdjacency ?? null };
+    } catch (error) {
+      houseLog.adminActionFailed({ action: 'room-neighbours', status: error?.status ?? null, code: error?.code ?? null, error: error?.message });
       return failure(error);
     }
   }, [api, refresh]);
@@ -122,7 +137,7 @@ export function useScreenAdmin({ registry, api = defaultApi } = {}) {
     }
   }, [api, refresh, report]);
 
-  return { nameScreen, addScreen, merge, unmerge, routinesFor, retire, restore };
+  return { nameScreen, setNeighbours, addScreen, merge, unmerge, routinesFor, retire, restore };
 }
 
 export default useScreenAdmin;

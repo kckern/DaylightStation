@@ -11,9 +11,10 @@ const capture = vi.fn(() => ({
 }));
 const adopt = vi.fn();
 vi.mock('./useDispatch.js', () => ({ useDispatch: () => ({ dispatchToTarget }) }));
-vi.mock('./remoteMoveDestination.js', () => ({
-  createRemoteMoveDestination: () => ({ adopt }),
-}));
+// The destination is the shared screen-move one (typed hand-off, else the
+// adopt load for an idle screen): see screenMove.js.
+const createScreenMoveDestination = vi.fn(() => ({ adopt }));
+vi.mock('./screenMove.js', () => ({ createScreenMoveDestination: (...args) => createScreenMoveDestination(...args) }));
 vi.mock('../logging/mediaLog.js', () => ({ default: new Proxy({}, { get: () => vi.fn() }) }));
 
 import { useHandOff } from './useHandOff.js';
@@ -37,6 +38,14 @@ describe('useHandOff failure-safe transfer', () => {
     expect(adopt).toHaveBeenCalledWith(expect.objectContaining({ destinationId: 'livingroom-tv', keepSource: false }));
     expect(stopIfCurrent).toHaveBeenCalled();
     expect(dispatchToTarget).not.toHaveBeenCalled();
+  });
+
+  it('uses the shared screen-move destination (adopt-load fallback for an idle screen)', async () => {
+    adopt.mockResolvedValue({ status: 'adopted', destinationRevision: 7 });
+    stopIfCurrent.mockReturnValue({ ok: true });
+    const { result } = renderHook(() => useHandOff(), { wrapper });
+    await act(async () => { await result.current('livingroom-tv'); });
+    expect(createScreenMoveDestination).toHaveBeenCalledWith(expect.objectContaining({ deviceId: 'livingroom-tv' }));
   });
 
   it('does not stop when destination adoption is rejected', async () => {

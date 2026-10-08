@@ -78,31 +78,57 @@
   &__headline--job-judge.health-budget__headline--incomplete { color: var(--health-zone-incomplete); }
 
   &__ruler { position: relative; min-width: 0; }
+  &__goal-rail { position: relative; height: 1.2rem; }
+  &__goal-bracket {
+    position: absolute; bottom: 0; height: 5px; border: 1px solid var(--ds-text-mid);
+    border-bottom: 0; border-radius: 2px 2px 0 0;
+  }
+  &__goal-range-label {
+    position: absolute; bottom: 7px; max-width: 100%; transform: translateX(-50%); white-space: nowrap;
+    color: var(--ds-text-mid); font-size: 0.64rem; line-height: 1;
+    letter-spacing: 0.03em; text-transform: uppercase; font-variant-numeric: tabular-nums;
+    &--end { transform: translateX(-100%); }
+  }
   // The single food-scale bar. Strong fills are history; pale fills are room
   // still available. Numbers live in the key, never inside narrow segments.
   &__track--ruler { height: 18px; overflow: visible; }
-  &__available, &__consumed { position: absolute; top: 0; bottom: 0; }
+  &__goal-band, &__available, &__consumed, &__bonus { position: absolute; top: 0; bottom: 0; }
+  &__goal-band {
+    z-index: 3; pointer-events: none;
+    background: color-mix(in srgb, var(--ds-success) 22%, transparent);
+    box-shadow: inset 0 2px color-mix(in srgb, var(--ds-success) 72%, transparent),
+      inset 0 -2px color-mix(in srgb, var(--ds-success) 72%, transparent);
+  }
   &__available { z-index: 1;
     &--base { background: color-mix(in srgb, var(--ds-success) 23%, var(--ds-surface-alt)); }
     &--workout { background: color-mix(in srgb, var(--ds-info) 24%, var(--ds-surface-alt)); }
   }
   &__consumed { z-index: 2;
-    &--base { background: color-mix(in srgb, var(--ds-text-mid) 55%, var(--ds-surface-alt)); }
-    &--workout { background: var(--ds-info); }
+    &--base { background: var(--ds-success); }
+    &--workout { background: color-mix(in srgb, var(--ds-success) 72%, var(--ds-info)); }
     &--over { background: var(--ds-warning); }
     &--surplus { background: var(--ds-danger); }
   }
-  &__post { position: absolute; top: -2px; bottom: -2px; z-index: 3; width: 0; pointer-events: none;
+  &__track--incomplete &__consumed--base { background: var(--ds-info); }
+  &__bonus {
+    z-index: 4; pointer-events: none;
+    background: repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--ds-success) 72%, transparent) 0 3px,
+      transparent 3px 6px);
+    &--spent { background-color: color-mix(in srgb, var(--ds-warning) 32%, transparent); }
+    &--available { background-color: color-mix(in srgb, var(--ds-success) 12%, transparent); }
+  }
+  &__post { position: absolute; top: -2px; bottom: -2px; z-index: 6; width: 0; pointer-events: none;
     &--floor { border-left: 1px dotted var(--ds-text-high); }
     &--base { border-left: 2px dashed var(--ds-text-high); }
     &--plan { border-left: 2px solid var(--ds-text-high); }
     &--even { border-left: 3px double var(--ds-text-high); }
   }
-  &__cursor { position: absolute; top: -4px; bottom: -4px; z-index: 4; width: 2px;
+  &__cursor { position: absolute; top: -4px; bottom: -4px; z-index: 7; width: 2px;
     background: var(--ds-text-high); box-shadow: 0 0 0 1px var(--ds-surface); pointer-events: none;
     &::before { content: ''; position: absolute; top: -4px; left: -3px; width: 8px; height: 8px;
       border-radius: 50%; background: var(--ds-text-high); box-shadow: 0 0 0 1px var(--ds-surface); }
-    &--baseline { z-index: 3; width: 0; border-left: 2px dashed var(--ds-text-mid); background: none; box-shadow: none;
+    &--baseline { z-index: 5; width: 0; border-left: 2px dashed var(--ds-text-mid); background: none; box-shadow: none;
       &::before { display: none; } }
     &--overflow { left: calc(100% - 2px) !important;
       &::before { border-radius: 0; transform: rotate(45deg); } }

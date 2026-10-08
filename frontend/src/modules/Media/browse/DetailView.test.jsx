@@ -1,6 +1,6 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 const dispatchLeafVerb = vi.fn();
@@ -27,6 +27,30 @@ beforeEach(() => {
   vi.clearAllMocks();
   contentState = { info: { title: 'Episode 3', type: 'episode', thumbnail: 'episode.jpg' }, loading: false, error: null };
   backDestination = 'Browse';
+  apiMock.mockReset();
+  apiMock.mockImplementation(() => Promise.resolve({ items: [] }));
+});
+
+describe('DetailView facts (FIND.8a/AC2)', () => {
+  it('states the kind and the length in words, and the summary as the description', () => {
+    contentState.info = { title: 'Arrival', type: 'movie', duration: 6983, metadata: { type: 'movie', librarySectionTitle: 'Movies', summary: 'Linguist meets aliens.' } };
+    render(<MantineProvider><DetailView contentId="plex:55854" /></MantineProvider>);
+    expect(screen.getByTestId('detail-facts')).toHaveTextContent('Movie · 1 hr 56 min');
+    expect(screen.getByText('Linguist meets aliens.')).toBeVisible();
+  });
+  it('knows how far anyone has got on a page opened straight to the item (lists not loaded yet)', async () => {
+    contentState.info = { title: 'Arrival', type: 'movie', duration: 6000 };
+    apiMock.mockImplementation((url) => Promise.resolve(String(url).includes('carry-on')
+      ? { items: [{ contentId: 'plex:55854', playhead: 1560, duration: 6000, finished: false }] }
+      : { items: [] }));
+    render(<MantineProvider><DetailView contentId="plex:55854" /></MantineProvider>);
+    await waitFor(() => expect(screen.getByTestId('detail-progress')).toHaveTextContent(/min left/));
+  });
+  it('says how many items a collection holds instead of a length', () => {
+    contentState.info = { title: 'Show', type: 'show', childCount: 12 };
+    render(<MantineProvider><DetailView contentId="plex:9" /></MantineProvider>);
+    expect(screen.getByTestId('detail-facts')).toHaveTextContent('TV Show · 12 episodes');
+  });
 });
 
 describe('DetailView Play Now', () => {

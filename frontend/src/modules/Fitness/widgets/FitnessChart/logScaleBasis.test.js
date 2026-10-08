@@ -9,7 +9,7 @@ describe('isExemptEntry', () => {
     expect(isExemptEntry(entry('learner1', 12), exempt)).toBe(true);
     expect(isExemptEntry(entry('learner1', 12), exempt)).toBe(true);
     expect(isExemptEntry(entry('grandparent1', 12), exempt)).toBe(true);
-    expect(isExemptEntry(entry('kckern', 382), exempt)).toBe(false);
+    expect(isExemptEntry(entry('user_1', 382), exempt)).toBe(false);
   });
 
   it('falls back to profileId when id is absent', () => {
@@ -28,7 +28,7 @@ describe('computeScaleBasisValue', () => {
   const session = [
     entry('learner4', 463),
     entry('learner2', 456),
-    entry('kckern', 382),
+    entry('user_1', 382),
     entry('learner3', 401),
     entry('learner1', 12)
   ];
@@ -41,9 +41,7 @@ describe('computeScaleBasisValue', () => {
     expect(computeScaleBasisValue(session, [], 0)).toBe(12);
   });
 
-  it('suspends exemptions when every participant is exempt', () => {
-    // Mirrors GovernanceEngine._exemptionsApply: with no non-exempt participant
-    // the exemption is suspended rather than yielding an empty basis.
+  it('uses all lines as a presentation fallback when every participant is exempt', () => {
     const allExempt = [entry('learner1', 12), entry('grandparent1', 30)];
     expect(computeScaleBasisValue(allExempt, ['learner1', 'grandparent1'], 0)).toBe(12);
   });
@@ -63,7 +61,7 @@ describe('computeScaleBasisValue', () => {
   });
 
   it('keeps the exempt participant out even when it is not the lowest', () => {
-    const entries = [entry('learner1', 500), entry('kckern', 382)];
+    const entries = [entry('learner1', 500), entry('user_1', 382)];
     expect(computeScaleBasisValue(entries, ['learner1'], 0)).toBe(382);
   });
 });

@@ -180,7 +180,7 @@ export function useContentDispatch() {
       if (result?.ok === false) {
         resolveLocal?.(attemptId, { phase: 'failed', reason: result.reason ?? result.code ?? 'Could not apply action' });
       } else {
-        resolveLocal?.(attemptId, { phase: 'confirmed', ordinal: Number.isInteger(result?.ordinal) ? result.ordinal : null });
+        resolveLocal?.(attemptId, { phase: 'confirmed', ordinal: Number.isInteger(result?.ordinal) ? result.ordinal : null, count: Number.isInteger(result?.count) ? result.count : null });
       }
     }).catch(error => {
       if (!remote) resolveLocal?.(attemptId, { phase: 'failed', reason: error?.message ?? 'Could not apply action' });

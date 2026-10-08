@@ -67,7 +67,7 @@ function snapshotStore(routines) {
  * @param {Object} [deps.household] - seeded household (media-household-fixture.mjs)
  */
 export function createMediaHouseFixture({
-  deviceId, name, room, deviceLiveness, logger, extraScreens = [], registrySeed = null, routineSnapshot = null, household = null,
+  deviceId, name, room, deviceLiveness, logger, extraScreens = [], registrySeed = null, routineSnapshot = null, household = null, browserPlayback = null,
 }) {
   const screenId = `fleet:${deviceId}`;
   const configured = [
@@ -115,7 +115,7 @@ export function createMediaHouseFixture({
       return { list: playing ? [{ deviceId: screenId, contentId: snap.currentItem.contentId, title: snap.currentItem.title ?? null }] : [] };
     },
   };
-  const playback = new ScreenPlaybackService({ playLedger, livenessService: deviceLiveness, memory, screens, logger });
+  const playback = new ScreenPlaybackService({ playLedger, livenessService: deviceLiveness, memory, screens, browserPlayback, logger });
   const originHints = household?.originHints ?? new LoadOriginHints();
   const dedupe = new RoutineTriggerDedupeService();
   const app = express();

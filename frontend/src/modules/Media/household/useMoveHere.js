@@ -14,6 +14,7 @@ import { DispatchContext } from '../cast/DispatchProvider.jsx';
 import { createMoveRequest, executeMove } from '../cast/movePlayback.js';
 import mediaLog from '../logging/mediaLog.js';
 import { bareScreenId } from './householdModel.js';
+import { deviceName } from '../fleet/deviceDisplay.js';
 
 export const MOVE_HERE_EVIDENCE_TIMEOUT_MS = 20_000;
 
@@ -69,7 +70,10 @@ export function useMoveHere() {
     const title = snapshot?.currentItem?.title ?? entry.title ?? null;
     const operationId = newOperationId();
     mediaLog.moveHereInitiated({ deviceId, contentId, operationId });
-    const attemptId = outcomes?.recordLocal?.({ kind: 'moveHere', phase: 'running', item: { contentId, title } }) ?? null;
+    // PLACE.7a/AC3: the confirmation says which screen it came from.
+    const sourceDevice = (fleet?.devices ?? []).find((device) => device?.id === deviceId) ?? null;
+    const sourceName = deviceName(sourceDevice ?? { id: deviceId }, deviceId);
+    const attemptId = outcomes?.recordLocal?.({ kind: 'moveHere', phase: 'running', item: { contentId, title }, command: { sourceId: deviceId, sourceName } }) ?? null;
     const fail = (reason, code) => {
       mediaLog.moveHereFailed({ deviceId, contentId, operationId, error: code ?? reason });
       outcomes?.resolveLocal?.(attemptId, { phase: 'failed', reason });

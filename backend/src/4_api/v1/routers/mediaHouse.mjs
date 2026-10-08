@@ -9,6 +9,7 @@
  * - POST   /screens/announce            — a screen reporting in { id, name?, room? }
  * - GET    /screens/:id                 — one screen + the routines that target it
  * - PATCH  /screens/:id                 — { name?, room?, onCollision?, confirm? }
+ * - GET|PUT /screens/rooms/adjacency    — neighbouring rooms { room, neighbours: [room] } (drift warning)
  * - POST   /screens/:id/merge           — { into, confirm } fold this duplicate into another screen
  * - POST   /screens/:id/unmerge         — undo a merge (:id = the merged duplicate)
  * - POST   /screens/:id/retire          — { confirm? }
@@ -39,6 +40,7 @@ const SCREEN_ID = /^(fleet|browser|screen):[A-Za-z0-9._-]{1,96}$/;
 
 const ERROR_STATUS = {
   INVALID_NAME: 400,
+  INVALID_ROOM: 400,
   INVALID_SCREEN_ID: 400,
   INVALID_MERGE: 400,
   INVALID_ROUTINES: 400,
@@ -112,6 +114,17 @@ export function createMediaHouseRouter({ screenRegistry = null, routineCatalog =
     const name = str(req.body?.name);
     if (!name) return res.status(400).json({ error: 'name is required', code: 'INVALID_NAME' });
     res.status(201).json(await screenRegistry.add({ householdId: hid(req), name, room: str(req.body?.room) }));
+  }));
+
+  // Which rooms neighbour which (the several-screen drift warning). Declared before /screens/:id.
+  router.get('/screens/rooms/adjacency', screens, guarded(async (req, res) => {
+    res.json({ roomAdjacency: await screenRegistry.roomAdjacency({ householdId: hid(req) }) });
+  }));
+
+  router.put('/screens/rooms/adjacency', screens, guarded(async (req, res) => {
+    const room = str(req.body?.room);
+    if (!room) return res.status(400).json({ error: 'room is required', code: 'INVALID_ROOM' });
+    res.json(await screenRegistry.setRoomNeighbours({ householdId: hid(req), room, neighbours: req.body?.neighbours }));
   }));
 
   router.post('/screens/announce', screens, guarded(async (req, res) => {
