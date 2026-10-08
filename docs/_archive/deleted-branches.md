@@ -583,3 +583,5 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-10-07 | feat/atlas-six-questions | 76e710020aac93d1d508291793c2d08c31322826 | Six-question upper atlas profile; integrated newer deployed release 3cbe5f58ae, deployed as a two-module overlay, and verified 580 worksheets across 58 banks |
 
 | 2026-10-07 | fix/school-audit-repairs | 98364c64e423e3302641e4d24ab4745b9e9ed0ab | Five hybrid-course audit fixes; Astra approved, 4,456 tests passed, merged and deployed with guarded content activation |
+
+| 2026-10-07 | fix/queue-immich-direct-play | c02a839e43 | Queue photos and clip segments skip /play again (saved-query montage went dark after the title card); fast-forwarded into main, not deployed |
