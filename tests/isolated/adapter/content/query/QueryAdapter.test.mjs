@@ -78,6 +78,37 @@ describe('QueryAdapter', () => {
     });
   });
 
+  describe('getItem cover', () => {
+    // A query whose first item is a title card has no thumbnail of its own, so
+    // its menu tile fell back to a placeholder. `cover:` names one explicitly.
+    function adapterWithCover(cover) {
+      return new QueryAdapter({
+        savedQueryService: {
+          getQuery: () => ({ title: 'Montage', cover, items: [{ type: 'titlecard', text: { title: 'Hi' } }] }),
+        },
+      });
+    }
+
+    it('uses an Immich cover as a preview-size proxy URL', async () => {
+      const item = await adapterWithCover('immich:abc-123').getItem('query:montage');
+      expect(item.thumbnail).toBe('/api/v1/proxy/immich/assets/abc-123/thumbnail?size=preview');
+    });
+
+    it('passes a site path cover through unchanged', async () => {
+      expect((await adapterWithCover('/media/img/lists/x.jpg').getItem('query:m')).thumbnail).toBe('/media/img/lists/x.jpg');
+    });
+
+    it('routes any other content id through the display endpoint', async () => {
+      const item = await adapterWithCover('plex:738829').getItem('query:m');
+      expect(item.thumbnail).toBe('/api/v1/display/plex:738829');
+    });
+
+    it('falls back to the first playable when no cover is set', async () => {
+      const item = await adapterWithCover(undefined).getItem('query:m');
+      expect(item.thumbnail).toBeNull();
+    });
+  });
+
   describe('resolvePlayables (freshvideo)', () => {
     it('returns selected video from freshvideo query', async () => {
       const videos = [
