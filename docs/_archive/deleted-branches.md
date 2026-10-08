@@ -608,3 +608,9 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-10-08 | release/media-final | 3e89448fd7 | Media release (proof gaps, refusal recovery) — content in main via cb15bc68c4 |
 | 2026-10-08 | fix/media-heal-gaps | c19c6cbb9d | Media release (proof gaps, refusal recovery) — content in main via cb15bc68c4 |
 | 2026-10-08 | test/media-gaps-final | 6010b55982 | Media release (proof gaps, refusal recovery) — content in main via cb15bc68c4 |
+| 2026-10-08 | fix/media-gaps-batch-a | 2b45f22667 | Media proof-gaps batch — content in main via cb15bc68c4 |
+| 2026-10-08 | fix/media-gaps-batch-b | 816feb7d3c | Media proof-gaps batch — content in main via cb15bc68c4 |
+| 2026-10-08 | fix/media-gaps-batch-c | 32a91e5a0b | Media proof-gaps batch — content in main via cb15bc68c4 |
+| 2026-10-08 | fix/media-gaps-batch-d | 2f130c554d | Media proof-gaps batch — content in main via cb15bc68c4 |
+| 2026-10-08 | fix/media-gaps-collection-bug | 7427f98cc6 | Media proof-gaps batch — content in main via cb15bc68c4 |
+| 2026-10-08 | fix/media-gaps-player-stall | 9a301ca281 | Media proof-gaps batch — content in main via cb15bc68c4 |
