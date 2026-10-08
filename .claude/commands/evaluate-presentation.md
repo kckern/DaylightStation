@@ -12,7 +12,7 @@ Bundle under review: `$ARGUMENTS` (default `showcase-v2` if empty).
 
 QA root: `$DAYLIGHT_BASE_PATH/media/games/_common/previews/qa/<bundle>/`
 Catalog root: `$DAYLIGHT_BASE_PATH/media/games/_common/catalog/`
-Spec: `docs/reference/gaming/presentation-framework-v2.md`, `docs/reference/gaming/asset-metadata.md`
+Spec: `docs/reference/gaming/presentation-framework-v2.md`
 
 ## Standing orders
 
