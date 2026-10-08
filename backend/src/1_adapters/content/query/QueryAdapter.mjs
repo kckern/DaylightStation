@@ -59,9 +59,10 @@ export class QueryAdapter {
     const query = this.#savedQueryService.getQuery(name);
     if (!query) return null;
 
-    // Resolve first playable to use its thumbnail for the query
+    // An explicit cover wins; otherwise the first playable's thumbnail (which
+    // is null when the query opens with a title card).
     const playables = await this.resolvePlayables(id);
-    const thumbnail = playables[0]?.thumbnail || null;
+    const thumbnail = this.#resolveCoverUrl(query.cover) || playables[0]?.thumbnail || null;
 
     // Derive query type from the first content entry (skip titlecards)
     const firstContent = (query.items || []).find(e => e.source && e.type !== 'titlecard');
@@ -170,6 +171,21 @@ export class QueryAdapter {
     };
 
     return item;
+  }
+
+  /**
+   * Resolve a query's `cover` to a menu-tile URL: an Immich asset at preview
+   * size, a site path as given, any other content id via /display. No absolute
+   * URLs — /display rewrites their host onto this source's proxy.
+   * @param {string|undefined} cover
+   * @returns {string|null}
+   */
+  #resolveCoverUrl(cover) {
+    if (typeof cover !== 'string' || !cover) return null;
+    const immich = cover.match(/^immich:(.+)$/);
+    if (immich) return `/api/v1/proxy/immich/assets/${immich[1]}/thumbnail?size=preview`;
+    if (cover.startsWith('/')) return cover;
+    return `/api/v1/display/${cover}`;
   }
 
   /**

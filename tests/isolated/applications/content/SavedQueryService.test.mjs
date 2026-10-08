@@ -79,6 +79,18 @@ describe('SavedQueryService', () => {
       expect(query).not.toHaveProperty('audio');
     });
 
+    it('passes through a cover for composite and flat queries', () => {
+      const composite = new SavedQueryService({
+        readQuery: () => ({ title: 'Montage', cover: 'immich:abc', items: [{ type: 'titlecard' }] }),
+      }).getQuery('montage');
+      expect(composite.cover).toBe('immich:abc');
+      const flat = new SavedQueryService({
+        readQuery: () => ({ type: 'immich', cover: 'immich:abc' }),
+      }).getQuery('flat');
+      expect(flat.cover).toBe('immich:abc');
+      expect(service.getQuery('dailynews')).not.toHaveProperty('cover');
+    });
+
     it('wraps flat query into single-element items array', () => {
       const result = service.getQuery('dailynews');
       expect(result.items).toEqual([{

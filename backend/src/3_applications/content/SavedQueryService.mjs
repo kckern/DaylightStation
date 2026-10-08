@@ -44,6 +44,9 @@ export class SavedQueryService {
     const base = {
       title: raw.title || name,
       ...(raw.audio != null && { audio: raw.audio }),
+      // Menu-tile image for the query as a whole. Not `image`, which a flat
+      // titlecard query already uses for the card's own picture.
+      ...(raw.cover != null && { cover: raw.cover }),
     };
 
     // Composite query — items array provided
