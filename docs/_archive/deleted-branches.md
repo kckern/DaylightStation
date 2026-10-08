@@ -614,3 +614,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-10-08 | fix/media-gaps-batch-d | 2f130c554d | Media proof-gaps batch — content in main via cb15bc68c4 |
 | 2026-10-08 | fix/media-gaps-collection-bug | 7427f98cc6 | Media proof-gaps batch — content in main via cb15bc68c4 |
 | 2026-10-08 | fix/media-gaps-player-stall | 9a301ca281 | Media proof-gaps batch — content in main via cb15bc68c4 |
+| 2026-10-08 | fix/broken-tests | 589272ad9e | Stale test repairs + print baselines + empty vitest gate baseline — merged via 834ebbbaa8 |
