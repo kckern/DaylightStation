@@ -18,6 +18,7 @@ export class ISchoolRealtimeGateway {
   onCompletionStateObserved(_handler) { throw new Error('onCompletionStateObserved must be implemented'); }
   onPrintSheet(_readerConfig, _handler) { throw new Error('onPrintSheet must be implemented'); }
   languageDayCompleted(_fact) { throw new Error('languageDayCompleted must be implemented'); }
+  cardPracticeDayCompleted(_fact) { /* optional */ }
   sessionOutcomeRecorded(_fact) { throw new Error('sessionOutcomeRecorded must be implemented'); }
   sessionGradeChanged(_fact) { throw new Error('sessionGradeChanged must be implemented'); }
   /** A sheet was printed for a session — the board's disc turns amber on this. Optional. */

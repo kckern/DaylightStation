@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
+import { GuestForbiddenError } from '#domains/school/errors.mjs';
 import request from 'supertest';
 import { createSchoolTestRouter as createSchoolRouter } from '../../../../../tests/_lib/school/schoolRouterTestSupport.mjs';
 
@@ -242,4 +243,27 @@ describe('teacher workspace routes', () => {
     expect(response.body[0]).toMatchObject({ itemId: 'i1', unitTitle: 'Illinois' });
     expect(response.body[1]).toMatchObject({ itemId: 'n1', kind: 'note', unitTitle: null });
   });
+});
+
+
+it('gates course-outcome recovery and defaults to a non-mutating preview', async () => {
+  const teacherGate = { assert: vi.fn() };
+  const closeSessionOutcome = { recoverCourseOutcome: vi.fn(async args => ({ ...args, eligible: true })) };
+  const server = app({ teacherGate, closeSessionOutcome });
+  await request(server).post('/api/v1/school/teacher/sessions/ses/course-outcome-recovery')
+    .send({ recoveredBy: 'parent' }).expect(200).expect('Cache-Control', 'no-store');
+  expect(closeSessionOutcome.recoverCourseOutcome).toHaveBeenLastCalledWith({ sessionId: 'ses', apply: false });
+  await request(server).post('/api/v1/school/teacher/sessions/ses/course-outcome-recovery')
+    .send({ recoveredBy: 'parent', apply: true }).expect(201);
+  expect(teacherGate.assert).toHaveBeenLastCalledWith({ userId: 'parent', pin: null, action: 'sessions.course-outcome.recover', context: { sessionId: 'ses' } });
+  expect(closeSessionOutcome.recoverCourseOutcome).toHaveBeenLastCalledWith({ sessionId: 'ses', apply: true });
+});
+
+
+it('refuses recovery when teacher authorization fails before evaluating or mutating evidence', async () => {
+  const closeSessionOutcome = { recoverCourseOutcome: vi.fn() };
+  const teacherGate = { assert: vi.fn(() => { throw new GuestForbiddenError('A grown-up is required'); }) };
+  await request(app({ teacherGate, closeSessionOutcome, schoolErrors: { GuestForbiddenError } })).post('/api/v1/school/teacher/sessions/ses/course-outcome-recovery')
+    .send({ recoveredBy: 'child', apply: true }).expect(403);
+  expect(closeSessionOutcome.recoverCourseOutcome).not.toHaveBeenCalled();
 });

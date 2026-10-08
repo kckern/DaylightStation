@@ -345,7 +345,7 @@ export class RetractSessionGradeAdjustment {
 }
 
 async function announceCorrection(realtime, state, logger) {
-  try { await realtime?.sessionGradeChanged?.({ learnerId: state.learnerId, sessionId: state.sessionId }); }
+  try { await realtime?.sessionGradeChanged?.({ learnerId: state.learnerId, sessionId: state.sessionId, unitId: state.unitId }); }
   catch (error) { logger.warn?.('school.grade-correction.notification-failed', { sessionId: state.sessionId, error: error.message }); }
 }
 

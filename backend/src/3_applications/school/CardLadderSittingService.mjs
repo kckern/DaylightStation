@@ -85,12 +85,13 @@ function isoWithOffset(ms, timezone) {
 
 export class CardLadderSittingService {
   #courseAccess = null;
+  #realtime = null;
   #stores; #decks; #lexicons; #assignments; #attempts; #assets; #judge; #judgementCache; #teacherGate; #recordings; #settings; #bounds; #timezone; #now; #logger; #mode;
   #counter = 0;
 
   constructor({
     stores, decks, lexicons, assignments, attempts = null, assets = null, judge, judgementCache = null, teacherGate = null, recordings = null,
-    settings, bounds = null, timezone = null, now, logger = console, mode = 'live',
+    settings, bounds = null, timezone = null, now, logger = console, realtime = null, mode = 'live',
   } = {}) {
     if (typeof stores?.open !== 'function' || typeof stores?.forToken !== 'function') throw new Error('CardLadderSittingService requires stores');
     if (typeof decks?.getFlashcardDeck !== 'function') throw new Error('CardLadderSittingService requires decks.getFlashcardDeck');
@@ -101,11 +102,34 @@ export class CardLadderSittingService {
     if (mode !== 'live' && mode !== 'test') throw new Error(`CardLadderSittingService mode must be live or test, got '${mode}'`);
     if (recordings !== null && typeof recordings?.save !== 'function') throw new Error('CardLadderSittingService recordings must have save()');
     if (judgementCache !== null && typeof judgementCache?.set !== 'function') throw new Error('CardLadderSittingService judgementCache must have set()');
+    this.#realtime = realtime;
     this.#recordings = recordings;
     this.#judgementCache = judgementCache;
     this.#stores = stores; this.#decks = decks; this.#lexicons = lexicons; this.#assignments = assignments;
     this.#attempts = attempts; this.#assets = assets; this.#judge = judge; this.#teacherGate = teacherGate;
     this.#settings = settings; this.#bounds = bounds; this.#timezone = timezone; this.#now = now; this.#logger = logger; this.#mode = mode;
+  }
+
+  configureRealtime(realtime) { this.#realtime = realtime; }
+
+  /** Observe a fresh transaction's completion transition only after persistence succeeds. */
+  #transact(store, learnerId, pkg, day, deckId, change) {
+    let beforeDoneAt = null;
+    const out = store.transact(learnerId, pkg, day, input => {
+      beforeDoneAt = input.dayFile.doneAt;
+      return change(input);
+    });
+    if (this.#mode === 'live' && !beforeDoneAt && out.dayFile.doneAt) {
+      const fact = { learnerId, package: pkg, deckId, studyDay: day, doneAt: out.dayFile.doneAt,
+        evidenceId: `card-ladder:${learnerId}:${pkg}:${day}:${out.dayFile.doneAt}` };
+      try {
+        const notification = this.#realtime?.cardPracticeDayCompleted?.(fact);
+        notification?.catch?.(error => this.#logger.warn?.('school.card-ladder.completion-notification-failed', { learnerId, evidenceId: fact.evidenceId, error: error.message }));
+      } catch (error) {
+        this.#logger.warn?.('school.card-ladder.completion-notification-failed', { learnerId, evidenceId: fact.evidenceId, error: error.message });
+      }
+    }
+    return out;
   }
 
   #today(ms = this.#now()) { return studyDayForInstant(ms, { timezone: this.#timezone }); }
@@ -140,7 +164,7 @@ export class CardLadderSittingService {
     if (enrollment.linkedUnitId && this.#mode !== 'test') {
       if (!this.#courseAccess) throw new ValidationError('Course readiness is not configured.');
       const assessment = await this.#courseAccess({ learnerId: userId, deckId });
-      if (!assessment || assessment.stage === 'locked') throw new GuestForbiddenError(assessment?.message ?? 'Finish the preceding lesson first.');
+      if (!assessment || assessment.access?.allowed === false || assessment.stage === 'locked') throw new GuestForbiddenError(assessment?.access?.reason ?? assessment?.message ?? 'Finish the preceding lesson first.');
     }
   }
 
@@ -169,7 +193,7 @@ export class CardLadderSittingService {
     const { store } = this.#stores.open(userId, pkg, day);
     const key = `course:${attemptKey}`;
     const settings = this.#currentSettings(store, userId, pkg);
-    store.transact(userId, pkg, day, ({ status, dayFile }) => {
+    this.#transact(store, userId, pkg, day, deckId, ({ status, dayFile }) => {
       if (status.paperAttemptsFolded.includes(key)) return { status, dayFile };
       for (const id of cardIds) {
         if (!deck.words.includes(id)) throw new ValidationError('Paper feedback contains an unknown card.');
@@ -185,7 +209,7 @@ export class CardLadderSittingService {
     const { store, pkg, ctx, day, settings } = await this.#context(userId, sittingId);
     const sitting = ctx.dayFile.sittings[sittingId];
     if (sitting.deckId !== deckId) throw new ValidationError('Review belongs to a different deck.');
-    const out = store.transact(userId, pkg, day, ({ status, dayFile }) => startCourseReview({ ...ctx, status, dayFile: addActiveTime(dayFile, this.#now()) }, { unitId, chosen, after }));
+    const out = this.#transact(store, userId, pkg, day, deckId, ({ status, dayFile }) => startCourseReview({ ...ctx, status, dayFile: addActiveTime(dayFile, this.#now()) }, { unitId, chosen, after }));
     const nextCtx = { ...ctx, status: out.status, dayFile: out.dayFile, settings };
     this.#logger.info?.('school.card-ladder.course-review', { learnerId: userId, sittingId, unitId, cardIds: chosen });
     return { item: this.#publicItem(currentItem(nextCtx), nextCtx), progress: this.#progress(nextCtx) };
@@ -238,7 +262,7 @@ export class CardLadderSittingService {
         const enrollment = enrollments.find(row => (row.deckId ?? row.corpusId) === group.deckId);
         if (!enrollment?.linkedUnitId || !group.ids.some(id => (status.words[id]?.state ?? 'new') === 'new')) return true;
         const assessment = await this.#courseAccess?.({ learnerId, deckId: group.deckId });
-        return Boolean(assessment && assessment.stage !== 'locked');
+        return Boolean(assessment && assessment.access?.allowed !== false && assessment.stage !== 'locked');
       }));
       groups = groups.filter((_group, index) => eligible[index]);
     }
@@ -421,7 +445,7 @@ export class CardLadderSittingService {
     const ctx = { status, dayFile, day, lexicon, media, pool, settings, learnerId: userId };
     const deferred = this.#deferUnavailableIntroductions(status, structuredClone(dayFile), pool);
     if (deferred.length) {
-      const out = store.transact(userId, pkg, day, ({ status, dayFile }) => {
+      const out = this.#transact(store, userId, pkg, day, sitting.deckId, ({ status, dayFile }) => {
         this.#deferUnavailableIntroductions(status, dayFile, pool);
         return openDay({ ...ctx, status, dayFile, deckId: deck.id, at: isoWithOffset(this.#now(), this.#timezone), capabilities: dayFile.capabilities });
       });
@@ -609,7 +633,7 @@ export class CardLadderSittingService {
     let changes = { reopened: false, idleClosed: [] };
     let beforeDay = null;
     let deferredCardIds = [];
-    const next = store.transact(userId, pkg, day, ({ status, dayFile }) => {
+    const next = this.#transact(store, userId, pkg, day, deckId, ({ status, dayFile }) => {
       beforeDay = structuredClone(dayFile);
       const settings = this.#daySettings(dayFile, { store, userId, pkg });
       const afterFold = this.#fold(status, read, quizDocumentIds, day, settings, { learnerId: userId, deckDir: deckDirOf(deck.id), pkg });
@@ -668,7 +692,7 @@ export class CardLadderSittingService {
     let changes = null;
     let transitions = [];
     let graded = null;
-    const out = store.transact(userId, pkg, day, ({ status, dayFile }) => {
+    const out = this.#transact(store, userId, pkg, day, ctx.dayFile.sittings[sittingId].deckId, ({ status, dayFile }) => {
       if (!dayFile.sittings?.[sittingId]) throw new EntityNotFoundError('card-ladder sitting', sittingId);
       // Race: another request answered while this one was being prepared, so
       // the typed item now on screen was never judged here. Stale, not a
@@ -730,7 +754,7 @@ export class CardLadderSittingService {
     const probe = this.#housekeep(structuredClone(ctx.dayFile), sittingId, nowMs);
     if (probe.reopened || probe.idleClosed.length) {
       let changes = null;
-      const out = store.transact(userId, pkg, day, ({ status, dayFile }) => {
+      const out = this.#transact(store, userId, pkg, day, ctx.dayFile.sittings[sittingId].deckId, ({ status, dayFile }) => {
         changes = this.#housekeep(dayFile, sittingId, nowMs);
         return { status, dayFile };
       });
@@ -779,7 +803,7 @@ export class CardLadderSittingService {
     const { store, pkg, day, ctx, settings } = await this.#context(userId, sittingId);
     const ms = this.#now();
     let changes = null;
-    const out = store.transact(userId, pkg, day, ({ status, dayFile }) => {
+    const out = this.#transact(store, userId, pkg, day, ctx.dayFile.sittings[sittingId].deckId, ({ status, dayFile }) => {
       if (!dayFile.sittings?.[sittingId]) throw new EntityNotFoundError('card-ladder sitting', sittingId);
       changes = this.#housekeep(dayFile, sittingId, ms);
       return startPractice({ ...ctx, status, dayFile: addActiveTime(dayFile, ms) }, { mode, help, filter, chosen, frontSide });
@@ -806,7 +830,7 @@ export class CardLadderSittingService {
     const ms = this.#now();
     const at = isoWithOffset(ms, this.#timezone);
     let changes = null;
-    const out = store.transact(userId, pkg, day, ({ status, dayFile }) => {
+    const out = this.#transact(store, userId, pkg, day, ctx.dayFile.sittings[sittingId].deckId, ({ status, dayFile }) => {
       if (!dayFile.sittings?.[sittingId]) throw new EntityNotFoundError('card-ladder sitting', sittingId);
       changes = this.#housekeep(dayFile, sittingId, ms);
       return learnMore({ ...ctx, status, dayFile: addActiveTime(dayFile, ms) }, { at });
@@ -864,7 +888,7 @@ export class CardLadderSittingService {
     const nowMs = this.#now();
     const at = isoWithOffset(nowMs, this.#timezone);
     let changes = null;
-    const out = store.transact(userId, pkg, day, ({ status, dayFile }) => {
+    const out = this.#transact(store, userId, pkg, day, ctx.dayFile.sittings[sittingId].deckId, ({ status, dayFile }) => {
       changes = this.#housekeep(dayFile, sittingId, nowMs, { reopen: false });
       const row = dayFile.sittings[sittingId];
       if (row && !row.closedAt) dayFile.sittings[sittingId] = { ...row, closedAt: at, reason: why };
@@ -906,7 +930,7 @@ export class CardLadderSittingService {
       const deckDir = deckDirOf(deck.id);
       let folded = [];
       let transitions = [];
-      store.transact(learnerId, pkg, today, ({ status, dayFile }) => {
+      this.#transact(store, learnerId, pkg, today, deck.id, ({ status, dayFile }) => {
         const out = this.#fold(status, read, quizDocumentIds, today, this.#daySettings(dayFile, { store, userId: learnerId, pkg }), { learnerId, deckDir, pkg });
         folded = out.folded;
         transitions = out.transitions;
@@ -955,7 +979,7 @@ export class CardLadderSittingService {
     const prepared = prepare ? await prepare(found) : {};
     let transitions = [];
     let word = null;
-    store.transact(learnerId, pkg, day, ({ status, dayFile }) => {
+    this.#transact(store, learnerId, pkg, day, args.deckId, ({ status, dayFile }) => {
       const before = status.words[wordId] ?? emptyWordV3();
       const settings = this.#daySettings(dayFile, { store, userId: learnerId, pkg });
       const out = change(before, { status, dayFile, day, settings, ...prepared });
@@ -1053,7 +1077,7 @@ export class CardLadderSittingService {
     if (dropDeckId === deckId || enrolled) {
       throw new ValidationError(`'${dropDeckId}' is a deck the learner is still enrolled in; end that assignment first`);
     }
-    const out = store.transact(learnerId, pkg, day, ({ status, dayFile }) => {
+    const out = this.#transact(store, learnerId, pkg, day, deckId, ({ status, dayFile }) => {
       if (!status.decksSeen.includes(dropDeckId)) throw new EntityNotFoundError('card-ladder deck in the pool', dropDeckId);
       return { status: { ...status, decksSeen: status.decksSeen.filter((id) => id !== dropDeckId) }, dayFile };
     });
@@ -1082,7 +1106,7 @@ export class CardLadderSittingService {
     const rule = ruleForTarget(lexicon.entries.get(answer.wordId)?.term ?? '', lexicon.targetScript ?? scriptFor(lexicon.language?.code));
     this.#judgementCache.set(pkg, answer.wordId, rule.normalize(answer.typed), { score, judge: 'grown-up', reason: REGRADE_REASON });
     const regraded = { at: isoWithOffset(this.#now(), this.#timezone), actorId, pass };
-    store.transact(learnerId, pkg, day, ({ status, dayFile: file }) => {
+    this.#transact(store, learnerId, pkg, day, deckId, ({ status, dayFile: file }) => {
       if (file.items?.[itemId]) file.items[itemId] = { ...file.items[itemId], regraded };
       return { status, dayFile: file };
     });

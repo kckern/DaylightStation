@@ -33,7 +33,7 @@ export function validatePracticeAssessment(raw) {
 }
 
 /** Snapshot-based cumulative credits; the latest effective verdict per question wins. */
-export function projectPracticeAssessment({ unit, status = {}, sessions = [], dayFiles = [] }) {
+export function projectPracticeAssessment({ unit, status = {}, sessions = [], dayFiles = [], readinessKnown = true }) {
   const history = sessions.filter((s) => s.unitId === unit.unitId && !s.evidenceInvalidated && !s.replacedBySessionId);
   const frozen = history.find((s) => s.practiceAssessment)?.practiceAssessment;
   const practice = frozen?.practice ?? unit.practice;
@@ -81,11 +81,12 @@ export function projectPracticeAssessment({ unit, status = {}, sessions = [], da
   else if (active) stage = 'quiz_issued';
   else if (requirements.size) stage = pendingReviewCardIds.length ? 'review' : 'retry_ready';
   else if (!missingCardIds.length) stage = 'quiz_ready';
-  return { unitId: unit.unitId, deckId: practice.deckId, stage, totalQuestions: questionIds.length,
+  if (!readinessKnown && stage === 'practice') stage = 'unknown';
+  return { unitId: unit.unitId, deckId: practice.deckId, stage, readinessKnown, totalQuestions: questionIds.length,
     resolvedQuestionIds, unresolvedQuestionIds, missingCardIds,
     reviewCardIds: [...requirements.keys()], pendingReviewCardIds, reviewRequirements: [...requirements.values()],
     feedback: unresolvedQuestionIds.filter((id) => verdicts.has(id)).map((questionId) => ({ questionId, ...practice.questionCards[questionId] })),
-    activeSessionId: active?.sessionId ?? null, practice, assessmentForms: frozen?.assessmentForms ?? unit.assessmentForms,
+    activeSessionId: active?.sessionId ?? null, practice, assessmentForms: unit.assessmentForms,
   };
 }
 

@@ -65,3 +65,18 @@ describe('EventBusSchoolRealtimeAdapter', () => {
     expect([...bus.handlers.keys()]).toEqual(['omr', 'omr-study']);
   });
 });
+
+
+it('broadcasts authoritative assessment invalidations and subscribes completion to card facts', async () => {
+  const bus = busDouble(), gateway = new EventBusSchoolRealtimeAdapter({ eventBus: bus });
+  const change = vi.fn(); gateway.onCompletionInputChanged(change);
+  gateway.sessionOutcomeRecorded({ learnerId: 'kid', unitId: 'lesson', sessionId: 'session', result: 'passed' });
+  expect(bus.sent).toContainEqual({ topic: 'school', payload: { event: 'assessment-changed', learnerId: 'kid', unitId: 'lesson', sessionId: 'session' } });
+  gateway.sessionGradeChanged({ learnerId: 'kid', unitId: 'lesson', sessionId: 'session' });
+  expect(bus.sent.filter(x => x.payload.event === 'assessment-changed')).toHaveLength(2);
+  const fact = { learnerId: 'kid', package: 'ko', deckId: 'deck', studyDay: '2026-10-07', doneAt: 'stamp', evidenceId: 'stable' };
+  gateway.cardPracticeDayCompleted(fact);
+  expect(bus.sent).toContainEqual({ topic: 'school.card-ladder.day-complete', payload: fact });
+  await bus.handlers.get('school.card-ladder.day-complete')(fact);
+  expect(change).toHaveBeenCalledWith(fact);
+});

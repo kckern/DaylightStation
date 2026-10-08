@@ -292,6 +292,7 @@ export async function createSchoolLifecycle({
   clock = () => new Date(), rng = null, logger = console,
 } = {}) {
   const schoolRealtime = realtime ?? (eventBus ? new EventBusSchoolRealtimeAdapter({ eventBus }) : null);
+  cardLadderStudyService?.configureRealtime?.(schoolRealtime);
   const realtimeSubscriptionsAvailable = realtime != null || typeof eventBus?.subscribe === 'function';
   const cfg = configService.getHouseholdAppConfig?.(householdId, 'school') || {};
   const lifecycleCfg = cfg.lifecycle || {};
@@ -843,6 +844,8 @@ export async function createSchoolLifecycle({
     launchers, timezone, clock, logger,
     declaredEntryActions, householdSchedule, dayBypasses: programDayBypassStore, practiceAssessments,
   });
+
+  practiceAssessments?.configureProjection?.(planProjection);
 
   // --- use cases -------------------------------------------------------------
   const buildAgenda = new BuildAgenda({

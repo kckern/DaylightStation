@@ -57,7 +57,8 @@
 import { planLearnerWork } from '#domains/school/planner.mjs';
 import { planDailyAgenda, programStatusFor } from '#domains/school/agenda.mjs';
 import { collectProgramStatuses } from './programStatusCollection.mjs';
-import { withCurriculumExceptions } from './curriculumExceptionProjection.mjs';
+import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
+import { pausedExceptionFor, withCurriculumExceptions } from './curriculumExceptionProjection.mjs';
 import { appendAssignedProgramEntries, projectProgramEntry } from './assignedProgramPlan.mjs';
 import { studyDayForInstant } from '#domains/school/studyDay.mjs';
 
@@ -297,13 +298,20 @@ export class PlanProjection {
       this.#curriculum.listWorks?.() ?? [],
       this.#sessions.listForLearner(learnerId),
     ]);
-    const rawHistory = historyBefore(fullHistory, untilMs);
-    // `activeAsOf` where the store has it; a store that only knows `active()`
-    // (a test double, an older ledger) answers for now — a replay then sees
-    // today's exceptions, which is the pre-seam behaviour, not a new lie.
+    const practiceIds = new Set(units.filter((u) => u.practice).map((u) => u.unitId));
+    const scopedHistory = await Promise.all(fullHistory.map(async (row) => {
+      if (!practiceIds.has(row.unitId) || !this.#sessions.readEvents) return row;
+      const events = await this.#sessions.readEvents(row.sessionId);
+      const scoped = events.filter((event) => untilMs == null || Date.parse(event.at) < untilMs);
+      if (!scoped.length) return null;
+      return { ...reduceSession(scoped), updatedAt: scoped.at(-1).at };
+    }));
+    const rawHistory = historyBefore(scopedHistory.filter(Boolean), untilMs);
+    // A replay cannot borrow today's decisions from a store without historical
+    // reads. Only the time-scoped exception ledger is evidence for that day.
     const activeExceptions = untilMs != null && typeof this.#curriculumExceptions?.activeAsOf === 'function'
       ? await this.#curriculumExceptions.activeAsOf(historyUntil)
-      : await this.#curriculumExceptions?.active?.() ?? [];
+      : untilMs != null ? [] : await this.#curriculumExceptions?.active?.() ?? [];
 
     // The planner's view: raw history plus whichever overlays are in force.
     // Order matters only in that both are additive; it is kept identical to
@@ -319,7 +327,7 @@ export class PlanProjection {
     const assessmentByUnit = new Map();
     for (const enrollment of linked) {
       if (!this.#practiceAssessments) continue;
-      try { assessmentByUnit.set(enrollment.linkedUnitId, await this.#practiceAssessments.get({ learnerId, unitId: enrollment.linkedUnitId })); }
+      try { assessmentByUnit.set(enrollment.linkedUnitId, await this.#practiceAssessments.evaluate({ learnerId, unit: units.find((u) => u.unitId === enrollment.linkedUnitId), assignment, sessions: rawHistory, historyUntil })); }
       catch (error) { this.#logger.warn?.('school.practice-assessment.projection-failed', { learnerId, unitId: enrollment.linkedUnitId, error: error.message }); }
     }
     const effectiveHistory = history.map((s) => !s.attested && !s.curriculumException && assessmentByUnit.has(s.unitId) && assessmentByUnit.get(s.unitId).stage !== 'completed' && s.outcome?.result === 'passed'
@@ -330,6 +338,12 @@ export class PlanProjection {
       learnerId, assignment, units, sessions: effectiveHistory, now: nowIso,
       timezone: this.#timezone, coursePolicies,
     });
+    for (const [unitId, assessment] of assessmentByUnit) {
+      const entry = plan.entries.find((e) => e.unitId === unitId);
+      const paused = pausedExceptionFor(activeExceptions, unitId);
+      const allowed = !paused && !!entry && !['locked', 'dormant', 'upcoming'].includes(entry.status);
+      assessment.access = { allowed, reason: allowed ? null : paused ? `This lesson is paused: ${paused.reason}` : entry?.reason ?? 'Finish the preceding lesson first.' };
+    }
     augmentPlan?.(plan, { assignment, nowIso });
     if (assignedPrograms) {
       appendAssignedProgramEntries(plan, assignment);
@@ -379,6 +393,7 @@ export class PlanProjection {
       sections,
       programStatuses: statuses,
       activeExceptions,
+      assessmentByUnit,
       projection: { assignment, units, sessions: rawHistory, works, nowIso },
     };
   }

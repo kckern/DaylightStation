@@ -40,7 +40,7 @@ describe('AdjustSessionGrade', () => {
     await adjust.execute(args);
     expect(realtime.sessionGradeChanged).not.toHaveBeenCalled();
     await adjust.execute({ ...args, apply: true });
-    expect(realtime.sessionGradeChanged).toHaveBeenCalledWith({ learnerId: 'kid', sessionId: 'ses_1' });
+    expect(realtime.sessionGradeChanged).toHaveBeenCalledWith({ learnerId: 'kid', sessionId: 'ses_1', unitId: 'math' });
   });
   it('stamps the course passing rule when correcting an older grade without a threshold', async () => {
     const f = fixture();

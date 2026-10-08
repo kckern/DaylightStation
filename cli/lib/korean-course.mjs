@@ -2,6 +2,37 @@
 import { validateLexicon, expandLexiconDeck } from '../../backend/src/2_domains/school/cardLadder/lexicon.mjs';
 import { validateUnit } from '../../backend/src/2_domains/school/curriculum/unitValidation.mjs';
 import { publishDocument } from '../../backend/src/2_domains/school/documents/documentSource.mjs';
+/** Reject three consecutive repetitions of any block of length one through four. */
+export function validKoreanAnswerKey(key) {
+ const counts=[0,1,2,3].map(k=>key.filter(v=>v===k).length);
+ if(Math.max(...counts)-Math.min(...counts)>1)return false;
+ for(let p=1;p<=4;p++)for(let i=0;i+3*p<=key.length;i++){
+  if(Array.from({length:2*p},(_,j)=>key[i+p+j]===key[i+j%p]).every(Boolean))return false;
+ }
+ return true;
+}
+export function koreanAnswerKeys(count, lesson) {
+ let state=320000+lesson;
+ const random=()=>{state=(Math.imul(state,1664525)+1013904223)>>>0;return state/4294967296;};
+ const keys=[];
+ for(let variant=0;variant<2;variant++){
+  let key;
+  for(let attempt=0;attempt<100000;attempt++){
+   key=Array.from({length:count},(_,i)=>(i+lesson+variant)%4);
+   for(let i=count-1;i>0;i--){const j=Math.floor(random()*(i+1));[key[i],key[j]]=[key[j],key[i]];}
+   if(validKoreanAnswerKey(key)&&(!variant||key.filter((k,i)=>k!==keys[0][i]).length>=Math.ceil(count/2)))break;
+   key=null;
+  }
+  if(!key)throw Error('Could not schedule Korean answer positions');
+  keys.push(key);
+ }
+ return keys;
+}
+export function reorderKoreanChoices(choices, answer, position) {
+ const remaining=choices.filter(choice=>choice!==answer);
+ remaining.splice(position,0,answer);
+ return remaining;
+}
 const fold = (text) => text.trim().toLocaleLowerCase();
 const termKey = (term) => fold(term).replace(/[.!?。？！]+$/u, '');
 const pad = (n) => String(n).padStart(2, '0');
@@ -70,9 +101,10 @@ export function assembleKoreanCourse({ baseLexicon, baseUnit, lessons, requireCo
     const cardIds=[...new Set(expectedKind==='final'? [...decks.flatMap(d=>d.words),...words]:words)];
     const title=`Korean 3-2 · Lesson ${n}: ${lesson.title}`;
     const refs=[];
+    const answerKeys=koreanAnswerKeys(questions.length,n);
     for(const [variant,key] of ['formA','formB'].entries()){
       const letter=variant?'b':'a';
-      const source={schema:'school.document-source/v1',id:`korean-3-2-${group}-${letter}`,seed:3200+n*10+variant,variant,target:['letter'],archetype:'quiz',title:`Korean 3-2 · Lesson ${n} · Form ${letter.toUpperCase()}`,blocks:[{type:'rich_text',md:'Choose the Korean expression that fits the English instruction. Mark ONE answer for each question. Leave uncertain answers blank and ask for help.'},...questions.map((question,index)=>({type:'question',itemId:question.id,number:index+1,blocks:[{type:'rich_text',md:question[key].prompt},{type:'omr_response',itemId:question.id,choices:4}],choices:question[key].choices,answer:question[key].answer}))]};
+      const source={schema:'school.document-source/v1',id:`korean-3-2-${group}-${letter}`,seed:3200+n*10+variant,variant,target:['letter'],archetype:'quiz',title:`Korean 3-2 · Lesson ${n} · Form ${letter.toUpperCase()}`,blocks:[{type:'rich_text',md:'Choose the Korean expression that fits the English instruction. Mark ONE answer for each question. Leave uncertain answers blank and ask for help.'},...questions.map((question,index)=>({type:'question',itemId:question.id,number:index+1,blocks:[{type:'rich_text',md:question[key].prompt},{type:'omr_response',itemId:question.id,choices:4}],choices:reorderKoreanChoices(question[key].choices,question[key].answer,answerKeys[variant][index]),answer:question[key].answer}))]};
       const result=publishDocument(source);requireValid(result.errors,source.id);
       documents.push(source);published.push(result);refs.push(`print/${source.id}@${result.rev}`);
     }

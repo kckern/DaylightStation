@@ -37,6 +37,7 @@ Dry-run/preview by default; add --apply to write:
   school ops rematerialize <learner> --syllabus ID --teacher ID [--pin-env NAME] [--apply]
   school ops abandon <session> --learner ID --reason TEXT --teacher ID [--pin-env NAME] [--apply]
   school ops agenda-dispatch <learner> --teacher ID [--pin-env NAME] [--name NAME] [--idempotency-key KEY] [--apply]
+  school ops course-outcome-recover <session> --teacher ID [--pin-env NAME] [--apply]
   school ops grade-adjust <session> --percent N --reason TEXT --teacher ID [--pin-env NAME] [--base-revision N] [--apply]
   school ops grade-retract <session> --adjustment ID --reason TEXT --teacher ID [--pin-env NAME] [--base-revision N] [--apply]
   school ops completion-credit <learner> --unit ID --reason TEXT --teacher ID [--pin-env NAME] [--apply]
@@ -518,6 +519,10 @@ export async function runOps({
       const key = requiredOption(rest, '--idempotency-key', '--idempotency-key KEY is required with --apply');
       headers = { 'Idempotency-Key': key };
     } else previewViaApi = true;
+  } else if (command === 'course-outcome-recover') {
+    const sessionId = args[0]; if (!sessionId) throw new Error('course-outcome-recover requires a session id');
+    requestBase = base.school; requestPath = `/teacher/sessions/${enc(sessionId)}/course-outcome-recovery`;
+    previewViaApi = true; body = { recoveredBy: teacher, pin, apply };
   } else if (command === 'grade-adjust') {
     const sessionId = args[0]; if (!sessionId) throw new Error('grade-adjust requires a session id');
     requestBase = base.school; requestPath = `/teacher/sessions/${enc(sessionId)}/grade-adjustments`; previewViaApi = true;
