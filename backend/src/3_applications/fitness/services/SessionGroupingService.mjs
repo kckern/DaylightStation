@@ -118,6 +118,7 @@ export class SessionGroupingService {
     return {
       id: groupId, sessionId: groupId, isGroup: true, date,
       startTime: group.startTime, endTime: group.endTime, durationMs: totalDurationMs,
+      elapsedMs: group.elapsedMs,
       // `start` / `duration_seconds` mirror the normal-session shape the detail header reads
       start: group.startTime,
       duration_seconds: Math.round(totalDurationMs / 1000),
@@ -165,7 +166,8 @@ export class SessionGroupingService {
     const groups = groupSessions(sessions);
     if (!enrich || !this.activityRegistry) return groups;
     for (const g of groups) {
-      if (g.media) continue; // video sessions are not activity-enriched
+      const isPureMedia = g.segments?.length > 0 && g.segments.every((segment) => segment.media?.primary);
+      if (isPureMedia) continue;
       try {
         g.activities = await this.activityRegistry.enrich(g, householdId);
       } catch (e) {

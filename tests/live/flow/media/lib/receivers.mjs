@@ -123,7 +123,15 @@ export async function pauseReceiver(request, id) {
 /** Open the Media app, retrying bootstrap navigation a bounded number of times. */
 export async function gotoMedia(page, path = '/media') {
   for (let attempt = 1; attempt <= 4; attempt += 1) {
-    await page.goto(path, { waitUntil: 'domcontentloaded' });
+    // A navigation can be superseded by one the page started itself or lost to a
+    // network change (net::ERR_ABORTED); that says nothing about the app. Ask again,
+    // as a person would. Any other error, and the fourth failure, still fails.
+    try {
+      await page.goto(path, { waitUntil: 'domcontentloaded' });
+    } catch (error) {
+      if (attempt === 4 || !/net::ERR_(ABORTED|NETWORK_CHANGED|CONNECTION_RESET)/.test(String(error?.message))) throw error;
+      continue;
+    }
     if (await page.getByTestId('media-shell').waitFor({ state: 'visible', timeout: 60000 }).then(() => true, () => false)) return;
   }
   await expect(page.getByTestId('media-shell')).toBeVisible();

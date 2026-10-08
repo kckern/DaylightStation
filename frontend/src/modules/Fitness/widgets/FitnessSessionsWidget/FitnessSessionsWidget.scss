@@ -234,11 +234,18 @@
   min-height: 30px;
 }
 
+.session-row__participant-time {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.62rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .session-row__participant {
   display: inline-flex;
   align-items: center;
+  gap: 3px;
   flex-shrink: 0;
-  margin-right: -6px;
 }
 
 .session-row__rings,

@@ -111,6 +111,22 @@ describe('screens API', () => {
     expect((await request(app2).get('/api/v1/media/screens?household=x')).status).toBe(404);
   });
 
+  it('room adjacency: set mutually, listed with GET /screens, cleared with an empty list, 400 without a room', async () => {
+    const app = makeApp();
+    expect((await request(app).get('/api/v1/media/screens/rooms/adjacency')).body).toEqual({ roomAdjacency: {} });
+    const put = await request(app).put('/api/v1/media/screens/rooms/adjacency').send({ room: 'Kitchen', neighbours: ['Living Room'] });
+    expect(put.status).toBe(200);
+    expect(put.body.roomAdjacency).toEqual({ Kitchen: ['Living Room'], 'Living Room': ['Kitchen'] });
+    expect((await request(app).get('/api/v1/media/screens')).body.roomAdjacency).toEqual(put.body.roomAdjacency);
+    const cleared = await request(app).put('/api/v1/media/screens/rooms/adjacency').send({ room: 'kitchen', neighbours: [] });
+    expect(cleared.body.roomAdjacency).toEqual({});
+    const bad = await request(app).put('/api/v1/media/screens/rooms/adjacency').send({ neighbours: [] });
+    expect(bad.status).toBe(400);
+    expect(bad.body.code).toBe('INVALID_ROOM');
+    const notList = await request(app).put('/api/v1/media/screens/rooms/adjacency').send({ room: 'Den', neighbours: 'Hall' });
+    expect(notList.status).toBe(400);
+  });
+
   it('501 when the registry is not wired', async () => {
     const app = express();
     app.use('/api/v1/media', createMediaHouseRouter({}));

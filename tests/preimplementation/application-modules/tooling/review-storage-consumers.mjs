@@ -216,8 +216,8 @@ policy('IO-DEFAULT-PRINT-DOCUMENTS',['backend/src/1_adapters/school/documents/Ya
 policy('IO-DEFAULT-CALCULATOR-ARTIFACT',['backend/src/1_adapters/schoolcalc/persistence/FsSchoolCalcArtifactRepository.mjs'],'fileExists loadYamlFromPath readBinary saveYamlToPathAtomic writeBinaryAtomic',
   'Per-method exists/loadMetadata/readBytes/saveMetadata/writeBytes nullish fallback; binary and metadata remain separate operations.',
   'Injected artifact directory and validated IDs; two atomic files are not automatically a compound transaction.');
-policy('IO-DEFAULT-STATE-GATES',['backend/src/1_adapters/state-gates/persistence/YamlStateGatesStateEngine.mjs'],'saveYamlToPathAtomic',
-  'Destructured save default captured independently from strictLoad wrapper; preserve resolveFilePath timing.',
+policy('IO-DEFAULT-STATE-GATES',['backend/src/1_adapters/state-gates/persistence/YamlStateGatesStateEngine.mjs'],'fileExists fileMtimeMs readTextFromPath readYamlFromPath writeFileAtomic',
+  'Destructured load/loadLegacy/save/mtime defaults (loadJson, loadLegacyYaml, writeFileAtomic, fileMtimeMs); preserve resolveFilePath/resolveLegacyFilePath timing.',
   'Injected filePath or resolver and retained journal/projection state; do not merge with permissive loaders.');
 policy('IO-CLI-ARCHIVE',['cli/lib/fitness/reconstruct.mjs'],'loadYamlSafe',
   'Dynamic-import binding placed in archiveDeps and passed to local findArchive; parameter calls are not direct references to imported binding.',

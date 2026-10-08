@@ -28,7 +28,7 @@ import {
 import { parseArgs, bool, str } from './argv.mjs';
 import { CliError } from './context.mjs';
 
-const COLORS = ['blue', 'green', 'yellow', 'orange', 'red'];
+const STANDARD_COLORS = ['blue', 'green', 'yellow', 'orange', 'red'];
 
 export const spec = {
   name: 'split',
@@ -93,7 +93,7 @@ export async function run(argv, ctx) {
   const raw = fs.readFileSync(FILE, 'utf8');
   const doc = yaml.load(raw);
   const tz = doc.timezone || 'America/Los_Angeles';
-  const intervalMs = doc.treasureBox?.coinTimeUnitMs || 5000;
+  const intervalMs = doc.treasureBox?.ringTimeUnitMs || doc.treasureBox?.coinTimeUnitMs || 5000;
 
   // Resolve the split timestamp from whichever selector was given.
   let SPLIT_TS = NaN;
@@ -142,21 +142,23 @@ export async function run(argv, ctx) {
   const memo1 = memos.filter(m => Number(m.timestamp) < SPLIT_TS);
   const memo2 = memos.filter(m => Number(m.timestamp) >= SPLIT_TS);
 
-  const r1 = recomputeSummaryForPart({ series: s1, slugs, events: ev1, intervalMs, coinTimeUnitMs: intervalMs });
-  const r2 = recomputeSummaryForPart({ series: s2, slugs, events: ev2, intervalMs, coinTimeUnitMs: intervalMs });
+  const r1 = recomputeSummaryForPart({ series: s1, slugs, events: ev1, intervalMs, ringTimeUnitMs: intervalMs, minHrSamples: 1 });
+  const r2 = recomputeSummaryForPart({ series: s2, slugs, events: ev2, intervalMs, ringTimeUnitMs: intervalMs, minHrSamples: 1 });
 
   // Per-color buckets cannot be exactly reconstructed from persisted per-tick data
   // (coins are colored by the highest zone per award interval, which isn't stored).
   // Redistribute the KNOWN original buckets between the parts, weighted by each
   // part's estimated zone activity, preserving both the per-color totals and each
   // part's exact coin total. The recompute buckets above are used only as weights.
-  const origBuckets = doc.summary?.coins?.buckets || {};
+  const originalRings = doc.summary?.rings || doc.summary?.coins || {};
+  const origBuckets = originalRings.buckets || {};
+  const colors = [...new Set([...STANDARD_COLORS, ...Object.keys(origBuckets)])];
   const alloc = allocateBucketsRedistribute(
     origBuckets, r1.treasureBox.buckets, r2.treasureBox.buckets,
-    r1.treasureBox.totalCoins, r2.treasureBox.totalCoins
+    r1.treasureBox.totalRings, r2.treasureBox.totalRings
   );
-  r1.treasureBox.buckets = alloc.part1; r1.summary.coins.buckets = alloc.part1;
-  r2.treasureBox.buckets = alloc.part2; r2.summary.coins.buckets = alloc.part2;
+  r1.treasureBox.buckets = alloc.part1; r1.summary.rings.buckets = alloc.part1;
+  r2.treasureBox.buckets = alloc.part2; r2.summary.rings.buckets = alloc.part2;
 
   const newDate = moment.tz(SPLIT_TS, tz).format('YYYY-MM-DD');
   const part2Id = moment.tz(SPLIT_TS, tz).format('YYYYMMDDHHmmss');
@@ -172,37 +174,26 @@ export async function run(argv, ctx) {
   want(`tick_count reconciles: ${tick1} + ${tick2} == ${doc.timeline.tick_count}`, tick1 + tick2 === doc.timeline.tick_count);
   want(`events reconcile: ${ev1.length} + ${ev2.length} == ${allEvents.length}`, ev1.length + ev2.length === allEvents.length);
   want(`snapshots reconcile: ${cap1.length} + ${cap2.length} == ${caps.length}`, cap1.length + cap2.length === caps.length);
-  want(`coin total reconciles: ${r1.treasureBox.totalCoins} + ${r2.treasureBox.totalCoins} == ${doc.summary.coins.total}`,
-    r1.treasureBox.totalCoins + r2.treasureBox.totalCoins === doc.summary.coins.total);
-  for (const color of COLORS) {
+  want(`ring total reconciles: ${r1.treasureBox.totalRings} + ${r2.treasureBox.totalRings} == ${originalRings.total}`,
+    r1.treasureBox.totalRings + r2.treasureBox.totalRings === originalRings.total);
+  for (const color of colors) {
     const got = (r1.treasureBox.buckets[color] || 0) + (r2.treasureBox.buckets[color] || 0);
-    const orig = doc.summary.coins.buckets?.[color] || 0;
+    const orig = origBuckets[color] || 0;
     want(`bucket ${color} reconciles: ${got} == ${orig}`, got === orig);
   }
-  const bsum = (b) => COLORS.reduce((s, c) => s + (b[c] || 0), 0);
-  want(`part1 buckets sum to its coin total: ${bsum(r1.treasureBox.buckets)} == ${r1.treasureBox.totalCoins}`, bsum(r1.treasureBox.buckets) === r1.treasureBox.totalCoins);
-  want(`part2 buckets sum to its coin total: ${bsum(r2.treasureBox.buckets)} == ${r2.treasureBox.totalCoins}`, bsum(r2.treasureBox.buckets) === r2.treasureBox.totalCoins);
-  // Per-user cumulative coins reconcile (part1 last + part2 last == original last)
+  const bsum = (b) => colors.reduce((s, c) => s + (b[c] || 0), 0);
+  want(`part1 buckets sum to its ring total: ${bsum(r1.treasureBox.buckets)} == ${r1.treasureBox.totalRings}`, bsum(r1.treasureBox.buckets) === r1.treasureBox.totalRings);
+  want(`part2 buckets sum to its ring total: ${bsum(r2.treasureBox.buckets)} == ${r2.treasureBox.totalRings}`, bsum(r2.treasureBox.buckets) === r2.treasureBox.totalRings);
+  // Per-user cumulative rings reconcile (part1 last + part2 last == original last).
+  // The coins fallback keeps old archived v3 sessions repairable.
   for (const slug of slugs) {
-    const o = decoded[`${slug}:coins`] || [];
-    const a = s1[`${slug}:coins`] || [];
-    const b = s2[`${slug}:coins`] || [];
+    const metric = decoded[`${slug}:rings`] ? 'rings' : 'coins';
+    const o = decoded[`${slug}:${metric}`] || [];
+    const a = s1[`${slug}:${metric}`] || [];
+    const b = s2[`${slug}:${metric}`] || [];
     const last = (arr) => { for (let i = arr.length - 1; i >= 0; i--) if (arr[i] != null) return arr[i]; return 0; };
-    if (o.length) want(`${slug}:coins reconciles: ${last(a)} + ${last(b)} == ${last(o)}`, last(a) + last(b) === last(o));
+    if (o.length) want(`${slug}:${metric} reconciles: ${last(a)} + ${last(b)} == ${last(o)}`, last(a) + last(b) === last(o));
   }
-
-  console.log(`=== fitness session split ${WRITE ? '' : 'DRY RUN '}===`);
-  console.log(`file:        ${FILE}`);
-  console.log(`timezone:    ${tz}   intervalMs: ${intervalMs}`);
-  console.log(`startAbsMs:  ${startAbsMs}  (${fmt(startAbsMs)})`);
-  console.log(`splitTs:     ${SPLIT_TS}  (${fmt(SPLIT_TS)})  -> splitTick ${splitTick}`);
-  console.log(`part1 id:    ${part1Id}   ticks 0..${splitTick - 1}  (${tick1})  events ${ev1.length}  caps ${cap1.length}  memos ${memo1.length}`);
-  console.log(`part2 id:    ${part2Id}   ticks ${splitTick}..  (${tick2})  events ${ev2.length}  caps ${cap2.length}  memos ${memo2.length}`);
-  console.log(`part2 date:  ${newDate}`);
-  console.log('--- invariants ---');
-  for (const c of checks) console.log(`${c.ok ? 'OK  ' : 'FAIL'} ${c.label}`);
-  const allOk = checks.every(c => c.ok);
-  console.log(`--- ${allOk ? 'ALL INVARIANTS PASS' : 'INVARIANT FAILURE — refusing to write'} ---`);
 
   /** Build one of the two output documents. */
   const buildDoc = ({ id, date, startMs, endMs, series, events, summaryParts, treasureBox, captures, memos: partMemos }) => {
@@ -218,15 +209,24 @@ export async function run(argv, ctx) {
       if (!activeSlugs.has(slug)) continue;
       participants[slug] = { ...doc.participants[slug] };
     }
-    // Drop the inactive participants' own series so no orphan (no-HR) user data
-    // lingers in this part. Only user-keyed series are pruned; device/bike/global
-    // series are left intact.
-    const inactive = allSlugs.filter(s => !activeSlugs.has(s));
-    const prunedSeries = {};
-    for (const [key, arr] of Object.entries(series)) {
-      if (inactive.some(s => key.startsWith(`${s}:`))) continue;
-      prunedSeries[key] = arr;
-    }
+    // Preserve every sliced series as audit evidence. Participant visibility is
+    // controlled by the HR-backed `participants` block, not destructive pruning.
+    const outputSeries = { ...series };
+    const entities = (doc.entities || []).flatMap((entity) => {
+      if (!activeSlugs.has(entity.profileId)) return [];
+      const entityStart = Number(entity.startTime) || startAbsMs;
+      const entityEnd = Number(entity.endTime) || endAbsMs;
+      if (entityStart >= endMs || entityEnd <= startMs) return [];
+      const clippedStart = Math.max(entityStart, startMs);
+      const clippedEnd = Math.min(entityEnd, endMs);
+      return [{
+        ...entity,
+        startTime: clippedStart,
+        endTime: clippedEnd,
+        startTick: Math.max(0, Math.round((clippedStart - startMs) / intervalMs)),
+        status: 'ended',
+      }];
+    });
     const summary = { ...summaryParts };
     if (partMemos.length) summary.voiceMemos = partMemos; // else omit
     return {
@@ -242,18 +242,66 @@ export async function run(argv, ctx) {
       timezone: tz,
       participants,
       timeline: {
-        series: encodeStoredSeries(prunedSeries),
+        series: encodeStoredSeries(outputSeries),
         events,
-        tick_count: Math.max(0, ...Object.values(prunedSeries).map(a => a.length)),
+        tick_count: Math.max(0, ...Object.values(outputSeries).map(a => a.length)),
       },
       treasureBox,
       summary,
       snapshots: { captures },
+      entities,
+      ...(doc.metadata ? { metadata: doc.metadata } : {}),
       // A deliberate split: mark both parts finalized so the session-consolidation
       // policy treats each as a settled standalone session (won't re-merge them).
       finalized: true,
     };
   };
+
+  const doc1 = buildDoc({
+    id: part1Id, date: doc.session.date, startMs: startAbsMs, endMs: SPLIT_TS,
+    series: s1, events: ev1, summaryParts: r1.summary, treasureBox: r1.treasureBox,
+    captures: cap1, memos: memo1,
+  });
+  const doc2 = buildDoc({
+    id: part2Id, date: newDate, startMs: SPLIT_TS, endMs: endAbsMs,
+    series: s2, events: ev2, summaryParts: r2.summary, treasureBox: r2.treasureBox,
+    captures: cap2, memos: memo2,
+  });
+
+  // Validate the documents that would actually be written, not only the
+  // intermediate arrays. This catches accidental pruning during construction.
+  const output1 = decodeStoredSeries(doc1.timeline.series);
+  const output2 = decodeStoredSeries(doc2.timeline.series);
+  const retainsPart = (expected, actual = []) => {
+    if (actual.length > expected.length) return false;
+    for (let i = 0; i < actual.length; i++) {
+      if (!Object.is(actual[i], expected[i])) return false;
+    }
+    // Stored series deliberately omit trailing null runs. That compression is
+    // lossless because tick_count supplies the logical length.
+    return expected.slice(actual.length).every((value) => value == null);
+  };
+  for (const key of Object.keys(decoded)) {
+    const retained = retainsPart(s1[key] || [], output1[key]) && retainsPart(s2[key] || [], output2[key]);
+    want(`output series ${key} retains all non-null telemetry`, retained);
+  }
+  for (const entity of doc.entities || []) {
+    const retained = [...doc1.entities, ...doc2.entities].some((candidate) => candidate.entityId === entity.entityId);
+    want(`output entities retain ${entity.entityId}`, retained);
+  }
+
+  console.log(`=== fitness session split ${WRITE ? '' : 'DRY RUN '}===`);
+  console.log(`file:        ${FILE}`);
+  console.log(`timezone:    ${tz}   intervalMs: ${intervalMs}`);
+  console.log(`startAbsMs:  ${startAbsMs}  (${fmt(startAbsMs)})`);
+  console.log(`splitTs:     ${SPLIT_TS}  (${fmt(SPLIT_TS)})  -> splitTick ${splitTick}`);
+  console.log(`part1 id:    ${part1Id}   ticks 0..${splitTick - 1}  (${tick1})  events ${ev1.length}  caps ${cap1.length}  memos ${memo1.length}`);
+  console.log(`part2 id:    ${part2Id}   ticks ${splitTick}..  (${tick2})  events ${ev2.length}  caps ${cap2.length}  memos ${memo2.length}`);
+  console.log(`part2 date:  ${newDate}`);
+  console.log('--- invariants ---');
+  for (const c of checks) console.log(`${c.ok ? 'OK  ' : 'FAIL'} ${c.label}`);
+  const allOk = checks.every(c => c.ok);
+  console.log(`--- ${allOk ? 'ALL INVARIANTS PASS' : 'INVARIANT FAILURE — refusing to write'} ---`);
 
   const result = { splitTs: SPLIT_TS, splitTick, part1Id, part2Id, newDate, checks, allOk, written: false };
 
@@ -274,17 +322,6 @@ export async function run(argv, ctx) {
   const backup = path.join(backupDir, `${part1Id}.${doc.session.date}.PRE-SPLIT.bak.yml`);
   fs.writeFileSync(backup, raw, 'utf8');
   console.log(`backup written: ${backup}`);
-
-  const doc1 = buildDoc({
-    id: part1Id, date: doc.session.date, startMs: startAbsMs, endMs: SPLIT_TS,
-    series: s1, events: ev1, summaryParts: r1.summary, treasureBox: r1.treasureBox,
-    captures: cap1, memos: memo1,
-  });
-  const doc2 = buildDoc({
-    id: part2Id, date: newDate, startMs: SPLIT_TS, endMs: endAbsMs,
-    series: s2, events: ev2, summaryParts: r2.summary, treasureBox: r2.treasureBox,
-    captures: cap2, memos: memo2,
-  });
 
   const file1 = FILE; // overwrite original (part 1 keeps the id)
   const file2 = path.join(sessionsRoot, newDate, `${part2Id}.yml`);

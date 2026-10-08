@@ -74,7 +74,7 @@ check endpoint's job, and it answers `missing`.
 | Router | `backend/src/4_api/v1/routers/mediaSource.mjs` |
 | Host script (forced command) | `scripts/media-source-heal.sh` |
 
-Request: `{ contentId: 'plex:696316', deviceId? }`.
+Request: `{ contentId: 'plex:696316', deviceId?, origin? }` (`origin: 'proxy'` = the proxy refused the file: refresh it on the host even if Plex says readable).
 Response: `{ state, contentId, unreadableSince?, unreadableMs?, steps[] }`, where
 `state` is one of:
 
@@ -83,7 +83,7 @@ Response: `{ state, contentId, unreadableSince?, unreadableMs?, steps[] }`, wher
 | `readable` | Plex reports every part accessible | reload (resume after a wait) |
 | `unreadable` | the file exists but Plex cannot open it | wait and poll |
 | `missing` | Plex reports the file does not exist | ordinary recovery ladder |
-| `unknown` | not a Plex item, or Plex itself did not answer | ladder, or keep waiting if already waiting |
+| `unknown` | not a Plex item, a container (`reason: 'not-a-leaf'`), or Plex itself did not answer | ladder, or keep waiting if already waiting (a screen also keeps waiting on a confirmed refusal) |
 
 **Episodes.** The first `unreadable` answer opens an episode for that file. The
 host rung runs at most once every `hostHealCooldownMs` (20s) per file. The push
@@ -121,6 +121,10 @@ container mounts it. The backend SSHes to the host with a key that
   this.
 - The startup deadline, for Plex items: the Player checks first, and only an
   answer that says nothing about the file (`normal`) runs the ladder.
+- An **HLS refusal** (2026-10-07): hls.js network errors never become a
+  MediaError, so `VideoPlayer` raises `daylight:hls-refusal` (see "Refusal
+  recovery gaps closed"). It is a suspected refusal; a confirmed status
+  (403/404/503) lets a screen keep waiting when the backend cannot judge.
 - A **suspected** refusal: a code 2 or 4 error with no status in the message.
   Mid-playback, Chromium reports a refused part as `MEDIA_ELEMENT_ERROR: Format
   error` (after a URL refresh) or `PIPELINE_ERROR_READ` (after a remount), so
@@ -143,7 +147,7 @@ the part probe below, exist for that case.
 - Status is held at `recovering`, with no startup deadline armed.
 - `triggerRecovery` defers every call, and jolt rungs are held.
 - A user pause is not inferred from the pause the error caused.
-- The overlay reads `Video file unavailable — retrying · m:ss`.
+- The overlay reads `Fixing this video… · m:ss` (audio: `Fixing this audio…`). Before 2026-10-07 it read `Video file unavailable — retrying`.
 - Tapping the spinner checks again at once.
 - Checks back off: 2s, 4s, 8s, then every 15s.
 - A failed check, such as the backend restarting mid-outage, keeps waiting.
@@ -220,11 +224,45 @@ timing:
 Audio paths (garage menu music, playlists) just skip a refused track, so on
 2026-10-01 a ghosted Children's Music file stayed unreadable for 4h+ with no
 heal attempt. The proxy now reports every part 404 it turns into 503
-`source-unreadable` (`ProxyService.onErrorReplaced`); `app.mjs` maps the part
-back to its rating key (`PlexAdapter.ratingKeyForPart`, an index of every part
-URL the adapter has minted since startup) and runs the same
-`mediaSourceHealer.check`. A part minted before the last restart is logged as
-`media.source.heal.proxy-unmapped` and skipped.
+`source-unreadable` (`ProxyService.onErrorReplaced`);
+`3_applications/media/proxyRefusalTrigger.mjs` maps the path back to its rating
+key (`PlexAdapter.resolveRatingKeyForPath`) and runs the same
+`mediaSourceHealer.check`, marked `origin: 'proxy'`. It **awaits** the
+resolution before it gives up, so `media.source.heal.proxy-unmapped` now means
+"Plex itself could not say which item owns this part".
+
+**The part index (corrected 2026-10-07).** This section used to say the index
+held "every part URL the adapter has minted since startup". It did not: only
+`loadMediaUrl` indexed, so the direct-play URLs built by `getItem` /
+`_toPlayableItem` (and every queue/list builder, which all funnel through it)
+were never mapped, and the index was empty after every restart. Now:
+
+- `_toPlayableItem` indexes every `Media[].Part[].key` it can hand out;
+  `loadMediaUrl` still indexes the URL it mints. Bounded (5000, oldest falls off).
+- A part that is still unknown is resolved through Plex:
+  `GET /library/all?type=4&media.part.id=<id>`, then `type=1` (movie), then
+  `type=10` (track). The filter is `media.part.id` — a bare `part.id=` is
+  silently ignored and returns the whole library. A hit is cached in the index
+  and logs `media.source.heal.part-resolved {partId, ratingKey, via}`; a miss is
+  remembered for 30 s so one stuck file does not become three library queries
+  per proxy refusal.
+- Transcode segments (`/video/:/transcode/universal/session/<uuid>/...`) carry
+  **Plex's** session uuid, not the `X-Plex-Session-Identifier` we mint, so
+  nothing can be indexed at mint time. On a segment refusal the adapter asks
+  `GET /status/sessions` (read-only) and matches `Metadata[].TranscodeSession.key`
+  (the uuid) to `Metadata[].ratingKey` (`resolveRatingKeyForSession`). Hits are
+  cached (logs `media.source.heal.session-resolved`); an unmatched uuid is
+  remembered for 30 s. A session that already ended is not in the list and
+  stays unmapped (`proxy-unmapped`).
+- The proxy trigger is throttled: one resolve per refused file per 30 s (a
+  transcode's segments share one key) and one check per item per 30 s. Only
+  segment **files** (`.ts`, `.m4s`, `header`) become 503 `source-unreadable`;
+  a playlist 404 passes through.
+- `POST /check` honours `origin: 'proxy'` for at most 10 claims a minute
+  across the server (a claim can trigger a host chmod); past that the check
+  runs without it. Only the first check of a wait carries the claim; polls do
+  not. The healer's per-file refresh cooldowns are never evicted by a flood:
+  a full map refuses new refreshes instead.
 
 `drop_caches` (the watchdog) does not clear a ghost on an inode the kernel
 still holds; a ctime bump (below) or a directory listing of the folder does.
@@ -295,11 +333,64 @@ which rungs are live.
    `docker exec daylight-station su node -s /bin/sh -c 'cd /usr/src/app && ssh -i <key> -o UserKnownHostsFile=<known_hosts> <user>@<gateway> <base64 path>'`
    prints one JSON line, and any other command prints `{"ok":false,…}`.
 
+## Refusal recovery gaps closed (2026-10-07)
+
+On 2026-10-07 the living-room Shield burned ~6 Bluey episodes in a row: Plex
+refused each (an NFS per-user ghost, `Permission denied`), each stalled, recovery
+exhausted and the queue auto-skipped. The ghost lasted 25+ minutes; the host
+heal clears it in under a second. Recovery existed and never ran. Design:
+`docs/superpowers/specs/2026-10-07-media-refusal-recovery-design.md`.
+
+| Gap | Fix |
+|---|---|
+| **A. Wrong item asked.** The Player sent `meta.contentId || plexId`; `/play` carries `id`/`assetId`, and a Player's `plexId` is the queue ROOT, so the healer was asked about the show and said `unknown`. | `resolveSourceContentId(meta, plexId)`: `contentId`, then `assetId`, then `id`; `plexId` only as a last resort. The backend rejects a container (show/season/artist/album/collection/playlist, or an item with no `Media`) with `reason: 'not-a-leaf'` and logs `media.source.heal.not-a-leaf` — never a silent `unknown`. |
+| **B. Part not mappable.** | The part index above. |
+| **C. "Readable" skipped the host rung.** A per-user ghost refuses Plex's streamer while its stat passes. | A proxy-observed refusal (`origin: 'proxy'`, sent by the proxy trigger and by the Player for a confirmed 403/404/503) runs the host ctime refresh even when Plex says readable, then re-checks. Per-file cooldown `proxyRefreshCooldownMs` (60 s). Logged as `media.source.heal.proxy-refresh`. |
+| **D. HLS refusals invisible.** The manifest answers 200; the refusal is a transcode segment 404 and hls.js reports a `networkError` with no MediaError. | Proxy: a persistent transcode **segment** 404 becomes the same 503 `source-unreadable` (retried 3x first), so the backend trigger fires. Player: `lib/hlsRefusal.js` classifies hls.js errors (403/404/5xx on a manifest/level/fragment; the 2nd of a session, or any fatal one) and `VideoPlayer` raises `daylight:hls-refusal` on the element; `useSourceAvailability` asks the backend as a *suspected* refusal (readable -> the stall ladder, as before). Logged as `playback.refusal-hls {status, details, urlKind, decision}`. |
+
+**Screens hold (owner ruling, screens only).** A refusal NEVER auto-skips a
+*screen's* queue. "Screen" means a TV/kiosk screen rendered by the
+screen-framework (living-room, office, Portal screen pages): the screen
+framework opts in with `holdOnRefusal` (`ScreenPlayer`, `MenuStack`). **Fitness,
+piano and school-lesson Players do not opt in** and keep their previous
+behaviour exactly: wait up to 30 minutes, then the previous cap action
+(close / ladder / skip), no Skip keys.
+
+- A confirmed refusal (the element named 403/404/503; other 5xx on HLS is only
+  *suspected*) the backend cannot judge (`unknown`, or the check failed) keeps
+  a screen waiting. Four consecutive `unknown` *answers* (a failed request does
+  not count) are treated as missing, so a deleted item does not hold for 30
+  minutes. A `missing` file, an unlabelled error, and a file the backend calls
+  readable go to the ordinary ladder. A held screen publishes a `waiting`
+  problem record in its session snapshot, so a phone steering it sees it is
+  parked.
+- The wait is the existing one (poll 2/4/8/15 s, resume at the saved spot,
+  30-minute cap), with the quiet `Fixing this video…` note.
+- At the cap the Player does **not** advance (`resilience-exhausted-hold`); it
+  stays on Tap to Retry.
+- **Skip** on a screen: OK (Enter / NumpadEnter) or the media-next key, or a tap
+  on the `Skip · OK` pill, which shows during the wait AND in the held state
+  (`lib/Player/useSourceWaitSkipKeys.js`; Back is unreliable on the Shield, so
+  nothing depends on it). D-pad and Tab are never used. The listener only acts
+  when focus is on the page body or inside that Player, the pill is actually
+  visible (not blacked out), and the Player is not auxiliary; it swallows a key
+  (`stopImmediatePropagation`) only when a skip really happened, absorbs the
+  repeat within 1 s, and otherwise leaves every key to the listeners beneath it.
+  `playback.source-wait-skip` records it.
+- **Media on phones is unchanged**: it passes `onResilienceEvent`, keeps its 60 s
+  cap, its own Skip now / Retry and the storm guard, and gets none of the above.
+
 ## Observability
 
 | Event | Where | Meaning |
 |---|---|---|
 | `proxy.error-replaced` | backend | a media-file 404 became 503 after retries |
+| `media.source.heal.not-a-leaf` | backend | the healer was asked about a container (show/season/...): the caller sent the wrong id |
+| `media.source.heal.part-resolved` | backend | an unindexed part was resolved through Plex (`via` = the library type that matched) |
+| `media.source.heal.proxy-refresh` | backend | the host refresh ran for a proxy-observed refusal although Plex said readable |
+| `media.source.heal.proxy-unmapped` / `.proxy-failed` | backend | Plex could not say which item owns the refused path / the trigger failed |
+| `playback.refusal-hls` | frontend | an hls.js network refusal reached the resilience hook (`status`, `details`, `urlKind`, `decision`) |
+| `playback.source-wait-skip` / `playback.resilience-exhausted-hold` | frontend | a screen's wait was skipped by hand / a screen held after the cap instead of advancing |
 | `media.source.heal.opened` / `.step` / `.resolved` / `.abandoned` / `.alerted` | backend | the ladder, per file; `resolved.resolvedBy` says which rung fixed it (`plex-check`, `plex-recheck`, `host-chmod`) |
 | `playback.source-unavailable-entered` / `-poll` / `-resolved` / `-gave-up` | frontend | the Player's wait |
 | `playback.source-refusal-cleared` | frontend | refusal gone by the first check |
@@ -319,6 +410,8 @@ curl -s {env.log_store_url}/select/logsql/query \
 - Only Plex items are healed. Other sources go straight to the ordinary ladder.
 - DASH/transcode sessions reach the file through Plex's transcoder, which fails
   differently. The startup-deadline check still asks the backend, so a refused
-  file behind a transcode is still waited out.
+  file behind a transcode is still waited out. HLS segment refusals are now seen
+  (see above); a DASH segment refusal still relies on the proxy's 503 and the
+  startup/stall checks, since dash.js does not raise the HLS refusal event.
 - The host rung can chmod, but it cannot remount, clear the NFS client's caches,
   or see why the NAS zeroed the modes.

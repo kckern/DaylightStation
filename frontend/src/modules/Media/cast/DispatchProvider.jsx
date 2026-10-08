@@ -348,15 +348,15 @@ export function DispatchProvider({ children }) {
 
   // Local outcomes: this device's own plays, adds, queue edits and playback
   // problems, through the same records as far screens.
-  const recordLocal = useCallback(({ attemptId = uuid(), kind, phase = 'confirmed', item, command = null, reason = null, replacement = null, undo = null, ordinal = null, targetId = 'local', targetName = null, startOver = false, resumedFrom = null } = {}) => {
-    dispatch({ type: 'LOCAL', attemptId, kind, phase, item, command, reason, replacement, undo, ordinal, targetId, targetName, startOver, resumedFrom });
+  const recordLocal = useCallback(({ attemptId = uuid(), kind, phase = 'confirmed', item, command = null, reason = null, replacement = null, undo = null, ordinal = null, count = null, targetId = 'local', targetName = null, startOver = false, resumedFrom = null } = {}) => {
+    dispatch({ type: 'LOCAL', attemptId, kind, phase, item, command, reason, replacement, undo, ordinal, count, targetId, targetName, startOver, resumedFrom });
     mediaLog.outcomeRecorded({ attemptId, targetId, kind, phase, contentId: item?.contentId ?? null, reason });
     return attemptId;
   }, []);
 
-  const resolveLocal = useCallback((attemptId, { phase, reason = null, ordinal = null } = {}) => {
+  const resolveLocal = useCallback((attemptId, { phase, reason = null, ordinal = null, count = null } = {}) => {
     if (!attemptId || !phase) return;
-    dispatch({ type: 'LOCAL_RESOLVED', attemptId, phase, reason, ordinal });
+    dispatch({ type: 'LOCAL_RESOLVED', attemptId, phase, reason, ordinal, count });
     mediaLog.outcomeResolved({ attemptId, targetId: recordsRef.current.get(attemptId)?.targetId ?? 'local', phase, reason });
   }, []);
 

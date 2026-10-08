@@ -34,7 +34,8 @@ function logger() {
  *   menu:open       - Opens MenuStack as a fullscreen overlay
  *   media:play      - Opens Player with a single content item
  *   media:queue     - Opens Player with a queued content item
- *   media:queue-op  - Queue ops (play-now mounts Player; others logged as unhandled)
+ *   media:queue-op  - Queue ops (play-now mounts Player; reorder via item actions; others logged as unhandled)
+ *   media:config-set - Remote shuffle/repeat/volume applied by the playback owner
  *   media:playback  - Play/pause, prev, next, fwd, rew on active media
  *   media:rate      - Cycle playback speed (1x → 1.5x → 2x)
  *   display:volume  - Volume up/down/mute via API
@@ -294,6 +295,28 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
       return;
     }
 
+    // A remote queue reorder ({from,to} or {items}) goes through the same item-action owner as
+    // remove/clear, so it is one undoable queue operation and the ack waits for the new order.
+    if (op === 'reorder') {
+      // No item-action claim here: a reorder is idempotent by operationId on this screen's own ledger and has no second owner to race.
+      const operationId = payload.operationId ?? `reorder-${payload.commandId ?? Date.now()}`;
+      (async () => {
+        if (!(await ensurePlaybackOwner('reorder-owner-bootstrap'))) {
+          return { ok: false, code: 'QUEUE_OWNER_UNAVAILABLE', reason: 'The screen playback owner did not become ready.' };
+        }
+        return itemActions.execute({ kind: 'reorder', from: payload.from, to: payload.to, items: payload.items, collectionItems: [], operationId, tappedAt: Date.now() });
+      })().then((result) => {
+        if (result?.ok) {
+          logger().info('media.queue-op.reordered', { operationId, from: payload.from ?? null, count: payload.items?.length ?? null });
+          getActionBus().emit('media:queue-op-applied', { ...payload, ...result });
+        } else {
+          logger().warn('media.queue-op.reorder-failed', { operationId, code: result?.code });
+          getActionBus().emit('command-handler-error', { commandId: payload.commandId, code: result?.code, error: result?.reason ?? result?.code ?? 'Reorder failed' });
+        }
+      }).catch((error) => getActionBus().emit('command-handler-error', { commandId: payload.commandId, error: error.message }));
+      return;
+    }
+
     if (op === 'play-now' || op === 'play-next' || op === 'add') {
       const resultCallbacks = op === 'add' ? {
         onApplied: (result) => getActionBus().emit('media:queue-op-applied', {
@@ -337,6 +360,22 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
 
     logger().debug('media.queue-op.unhandled', { op, contentId: payload?.contentId });
   }, [showOverlay, dismissOverlay, isMediaDuplicate, itemActions, sessionSource, ensurePlaybackOwner]);
+
+  // --- Remote shuffle / repeat / volume (`config` command -> media:config-set) ---
+  // Only the playback-config settings are handled here; shader and the session-control settings
+  // (addOnly, endOfQueue, stopAfterCurrent) have their own paths and are ignored.
+  const handleMediaConfigSet = useCallback((payload = {}) => {
+    const { setting, value, commandId } = payload;
+    if (!['shuffle', 'repeat', 'volume'].includes(setting)) return;
+    const fail = (code, error) => getActionBus().emit('command-handler-error', { commandId, code, error });
+    if (setting === 'shuffle' && typeof value !== 'boolean') return fail('INVALID_VALUE', 'shuffle requires a boolean');
+    if (setting === 'repeat' && !['off', 'one', 'all'].includes(value)) return fail('INVALID_VALUE', 'repeat requires off|one|all');
+    if (setting === 'volume' && !Number.isFinite(Number(value))) return fail('INVALID_VALUE', 'volume requires a number');
+    const dispatched = getPlayerQueueOpRegistry().dispatch({ op: 'set-config', setting, value, commandId });
+    logger().info('media.config-set.dispatched', { setting, value, dispatched });
+    if (!dispatched) fail('QUEUE_OWNER_UNAVAILABLE', 'No player is available to apply this setting');
+    else getActionBus().emit('media:session-control-applied', { commandId });
+  }, []);
 
   // --- Media playback controls ---
   const handleMediaSeek = useCallback((op, payload) => {
@@ -701,6 +740,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
   useScreenAction('media:play', handleMediaPlay);
   useScreenAction('media:queue', handleMediaQueue);
   useScreenAction('media:queue-op', handleMediaQueueOp);
+  useScreenAction('media:config-set', handleMediaConfigSet);
   useScreenAction('media:restore-snapshot', handleRestoreSnapshot);
   // §6.2.4 adopt-snapshot (a move here from another screen, PLACE.9a): the
   // command was acknowledged but never adopted. It is the restore path —

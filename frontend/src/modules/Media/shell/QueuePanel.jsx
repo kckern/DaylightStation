@@ -66,6 +66,12 @@ export function QueuePanel({ target = 'local', availability = null }) {
     <PlayedEarlier screenId={remoteId ?? getDeviceId()} currentContentId={snapshot?.currentItem?.contentId ?? null} />
   );
 
+  // A live channel has no list to shuffle, repeat or clear (STEER.7a/AC4): when the only thing here is the live
+  // item, the screen's queue says nothing; what it played earlier still follows.
+  if (snapshot?.currentItem?.isLive === true && (q?.items?.length ?? 0) <= 1) {
+    return earlier;
+  }
+
   if (!q || !Array.isArray(q.items) || q.items.length === 0) {
     // A single dispatched item plays with an empty queue array (the device
     // has no up-next list) — "Queue is empty, add something" then reads as a

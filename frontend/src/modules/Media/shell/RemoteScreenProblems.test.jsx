@@ -32,12 +32,12 @@ describe('freshRemoteProblems', () => {
 });
 
 describe('RemoteScreenProblems', () => {
-  let listeners; let entries; const recordLocal = vi.fn();
+  let listeners; let entries; const recordLocal = vi.fn(() => 'row-1'); const removeDispatch = vi.fn();
   const store = { getEntry: (id) => entries[id] ?? null, subscribeAll: (fn) => { listeners.add(fn); return () => listeners.delete(fn); } };
   const fire = () => act(() => { for (const fn of [...listeners]) fn(); });
   const mount = ({ aimIds = [], steered = 'tv', sentTo = [] } = {}) => render(
     <FleetContext.Provider value={{ store, devices: [{ id: 'tv', name: 'Living Room TV' }] }}>
-      <DispatchContext.Provider value={{ recordLocal, outcomes: new Map(sentTo.map((id) => [`o-${id}`, { targetId: id }])) }}>
+      <DispatchContext.Provider value={{ recordLocal, removeDispatch, outcomes: new Map(sentTo.map((id) => [`o-${id}`, { targetId: id }])) }}>
         <PeekContext.Provider value={{ lastSteeredId: steered }}>
           <CastTargetContext.Provider value={{ targetIds: aimIds }}>
             <RemoteScreenProblems />
@@ -46,7 +46,7 @@ describe('RemoteScreenProblems', () => {
       </DispatchContext.Provider>
     </FleetContext.Provider>
   );
-  beforeEach(() => { listeners = new Set(); entries = {}; recordLocal.mockClear(); });
+  beforeEach(() => { listeners = new Set(); entries = {}; recordLocal.mockClear(); removeDispatch.mockClear(); });
 
   it('records a skip on the steered screen as an outcome naming the item, screen and replacement', () => {
     mount();
@@ -88,5 +88,19 @@ describe('RemoteScreenProblems', () => {
     entries.tv = { snapshot: { meta: { problem: problem() } } };
     fire();
     expect(recordLocal).not.toHaveBeenCalled();
+  });
+
+  it('labels a held screen as waiting, not failed, and withdraws the row when the screen resumes', () => {
+    mount();
+    const held = problem({ kind: 'waiting', reason: 'source-unavailable-gave-up', replacement: null });
+    entries.tv = { snapshot: { meta: { problem: held } } };
+    fire();
+    expect(recordLocal).toHaveBeenCalledWith(expect.objectContaining({ phase: 'waiting', targetId: 'tv' }));
+    expect(removeDispatch).not.toHaveBeenCalled();
+    entries.tv = { snapshot: { meta: {} } };
+    fire();
+    expect(removeDispatch).toHaveBeenCalledWith('row-1');
+    fire();
+    expect(removeDispatch).toHaveBeenCalledTimes(1);
   });
 });

@@ -55,3 +55,26 @@ it('marks items "keep similar playing" added, and shows the end-of-queue choice 
   expect(screen.getByTestId('queue-panel').lastElementChild).toBe(choice);
   expect(screen.getByTestId('queue-end-stop')).toHaveAttribute('aria-checked', 'true');
 });
+
+it('shows no queue for a live channel (no Shuffle, Repeat or Clear), but keeps a live item that has a real queue behind it (STEER.7a/AC4)', () => {
+  const live = createLocalSessionController({ clientId: 'queue-live' });
+  live.queue.playNow({ contentId: 'live:news', title: 'News channel', format: 'video', isLive: true });
+  const mount = (controller) => render(
+    <MantineProvider>
+      <LocalSessionContext.Provider value={{ controller }}>
+        <FleetContext.Provider value={{ store: createFleetStore(), devices: [] }}>
+          <DispatchProvider><QueuePanel /></DispatchProvider>
+        </FleetContext.Provider>
+      </LocalSessionContext.Provider>
+    </MantineProvider>,
+  );
+  const first = mount(live);
+  expect(live.getSnapshot().currentItem.isLive).toBe(true);
+  expect(screen.queryByTestId('queue-panel')).toBeNull();
+  expect(screen.queryByTestId('queue-shuffle')).toBeNull();
+  expect(screen.queryByTestId('queue-clear')).toBeNull();
+  first.unmount();
+  live.queue.add({ contentId: 'two', title: 'Two', format: 'video' });
+  mount(live);
+  expect(screen.getByTestId('queue-panel')).toBeInTheDocument();
+});

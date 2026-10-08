@@ -31,7 +31,7 @@ export function zoneToColor(zone) {
   return ZONE_COLOR[zone] ?? null;
 }
 
-const BUCKET_COLORS = ['blue', 'green', 'yellow', 'orange', 'red'];
+const STANDARD_BUCKET_COLORS = ['blue', 'green', 'yellow', 'orange', 'red'];
 
 /**
  * Split the ORIGINAL per-color ring buckets between two parts so that:
@@ -48,13 +48,14 @@ const BUCKET_COLORS = ['blue', 'green', 'yellow', 'orange', 'red'];
  * @returns {{ part1: Record<string, number>, part2: Record<string, number> }}
  */
 export function allocateBucketsRedistribute(orig, est1, est2, total1, total2) {
+  const bucketColors = [...new Set([...STANDARD_BUCKET_COLORS, ...Object.keys(orig || {})])];
   const O = {};
-  for (const c of BUCKET_COLORS) O[c] = Math.max(0, Math.round(orig?.[c] || 0));
+  for (const c of bucketColors) O[c] = Math.max(0, Math.round(orig?.[c] || 0));
 
   // Activity-weighted fractional part-1 target per color (seed), summing to total1
   // via water-filling that respects the [0, O[c]] caps.
   const seed = {};
-  for (const c of BUCKET_COLORS) {
+  for (const c of bucketColors) {
     const w1 = est1?.[c] || 0;
     const w2 = est2?.[c] || 0;
     const share = (w1 + w2) > 0
@@ -64,9 +65,9 @@ export function allocateBucketsRedistribute(orig, est1, est2, total1, total2) {
   }
 
   const part1f = {};
-  for (const c of BUCKET_COLORS) part1f[c] = 0;
+  for (const c of bucketColors) part1f[c] = 0;
   let remaining = total1;
-  let active = BUCKET_COLORS.filter(c => O[c] > 0);
+  let active = bucketColors.filter(c => O[c] > 0);
   for (let iter = 0; iter < 50 && active.length && remaining > 1e-9; iter++) {
     const dsum = active.reduce((s, c) => s + seed[c], 0);
     const overflow = [];
@@ -83,14 +84,14 @@ export function allocateBucketsRedistribute(orig, est1, est2, total1, total2) {
       else part1f[c] = want;
     }
     if (!overflow.length) break;
-    remaining = total1 - BUCKET_COLORS.reduce((s, c) => s + part1f[c], 0);
+    remaining = total1 - bucketColors.reduce((s, c) => s + part1f[c], 0);
     active = active.filter(c => !overflow.includes(c) && (O[c] - part1f[c]) > 1e-9);
   }
 
   // Integer rounding that preserves both margins exactly.
   const part1 = {};
   let used = 0;
-  for (const c of BUCKET_COLORS) {
+  for (const c of bucketColors) {
     part1[c] = Math.min(O[c], Math.floor(part1f[c]));
     used += part1[c];
   }
@@ -98,7 +99,7 @@ export function allocateBucketsRedistribute(orig, est1, est2, total1, total2) {
   let guard = 0;
   while (leftover > 0 && guard++ < 100000) {
     let best = null;
-    for (const c of BUCKET_COLORS) {
+    for (const c of bucketColors) {
       if (O[c] - part1[c] <= 0) continue;
       const r = part1f[c] - Math.floor(part1f[c]);
       if (best === null || r > best.r) best = { c, r };
@@ -109,7 +110,7 @@ export function allocateBucketsRedistribute(orig, est1, est2, total1, total2) {
   }
 
   const part2 = {};
-  for (const c of BUCKET_COLORS) part2[c] = O[c] - part1[c];
+  for (const c of bucketColors) part2[c] = O[c] - part1[c];
   return { part1, part2 };
 }
 

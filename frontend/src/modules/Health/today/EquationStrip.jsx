@@ -112,6 +112,7 @@ function useWidth(ref, fallback = 360) {
 }
 
 const at = (p) => `${p.toFixed(2)}%`;
+const endAnchored = (p) => (p > 50 ? ' health-budget__goal-range-label--end' : '');
 /** A single food-scale bar: past intake is solid, future room is quiet. */
 function RulerScale({ budget, baseline, spoken, finished, tentative }) {
   const ref = useRef(null);
@@ -126,14 +127,25 @@ function RulerScale({ budget, baseline, spoken, finished, tentative }) {
     .filter(Boolean).join(' ');
   const segment = (part) => ({ left: at(part.fromPct), width: at(part.widthPct) });
   const postTone = (group) => ['even', 'plan', 'base', 'floor'].find(key => group.posts.some(p => p.key === key));
+  const goalLabel = g.goalRange ? `Goal ${n(g.goalRange.from)}–${n(g.goalRange.to)}` : null;
   return (
     <div className={rulerClass} ref={ref}>
-      <div className="health-budget__track health-budget__track--ruler" role="img" data-testid="budget-ruler"
+      {g.goalRange ? <div className="health-budget__goal-rail" data-testid="budget-goal-range">
+        <span className="health-budget__goal-bracket" style={segment(g.goalRange)} />
+        <span className={`health-budget__goal-range-label${endAnchored(g.goalRange.toPct)}`}
+          style={{ left: at(g.goalRange.toPct) }}>{goalLabel}</span>
+      </div> : null}
+      <div className={`health-budget__track health-budget__track--ruler health-budget__track--${budget.zone || 'unknown'}`} role="img" data-testid="budget-ruler"
         aria-label={`${n(g.cursor.value)} kcal eaten${g.baselineCursor ? `, before preview ${n(g.baselineCursor.value)} kcal eaten` : ''}; ${g.posts.map(p => `${p.label.toLowerCase()} ${n(p.value)}`).join(', ')}; ${priced}; ${spoken}`}>
+        {g.goalRange ? <span className="health-budget__goal-band" data-budget-goal-band style={segment(g.goalRange)} /> : null}
         {g.available.map(p => <span key={p.key} className={`health-budget__available health-budget__available--${p.key}`}
           data-budget-available={p.key} style={segment(p)} />)}
         {g.consumed.map(p => <span key={p.key} className={`health-budget__consumed health-budget__consumed--${p.key}`}
           data-budget-consumed={p.key} style={segment(p)} />)}
+        {g.goalRange?.bonus?.spentWidthPct > 0 ? <span className="health-budget__bonus health-budget__bonus--spent"
+          data-budget-bonus="spent" style={{ left: at(g.goalRange.bonus.fromPct), width: at(g.goalRange.bonus.spentWidthPct) }} /> : null}
+        {g.goalRange?.bonus?.availableWidthPct > 0 ? <span className="health-budget__bonus health-budget__bonus--available"
+          data-budget-bonus="available" style={{ left: at(g.goalRange.bonus.availableFromPct), width: at(g.goalRange.bonus.availableWidthPct) }} /> : null}
         {g.postGroups.map((group, index) => <span key={index}
           className={`health-budget__post health-budget__post--${postTone(group)}`}
           style={{ left: at(group.pct) }} aria-hidden="true" />)}

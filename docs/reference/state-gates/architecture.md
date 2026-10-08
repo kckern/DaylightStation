@@ -992,7 +992,7 @@ The domain-first household layout is:
 ```text
 data/household[-{hid}]/state-gates/
   config.yml                     # authored candidate policy
-  current.yml                    # one atomic state + bounded journal/outbox envelope
+  current.json                   # one atomic state + bounded journal/outbox envelope
 ```
 
 Exact file splitting is an adapter decision, but the stored semantics are fixed:
@@ -1004,11 +1004,13 @@ Exact file splitting is an adapter decision, but the stored semantics are fixed:
 - household revision and delivery checkpoint; and
 - ordered, bounded transition/publication records.
 
-The first FileIO implementation uses one `current.yml` envelope so graph activation,
-projection replacement, and insertion of the corresponding transition/outbox batch are
-one atomic save. The two repository adapters receive the same internal state engine from
-composition and expose different application ports over that envelope. A future
-transactional database may split the physical records without changing either port.
+The first FileIO implementation uses one `current.json` envelope (schema
+`daylight.state-gates-state/v2`; YAML v1 before 2026-09-25, migrated on first read) so
+graph activation, projection replacement, and insertion of the corresponding
+transition/outbox batch are one atomic save. The two repository adapters receive the
+same internal state engine from composition and expose different application ports over
+that envelope. A future transactional database may split the physical records without
+changing either port.
 
 Domain objects contain no `toJSON`, `fromJSON`, YAML field names, file extensions, or
 storage paths.

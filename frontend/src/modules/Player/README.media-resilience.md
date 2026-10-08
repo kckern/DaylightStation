@@ -366,7 +366,10 @@ or the proxy's 503 `source-unreadable`) is **waited out**, not recovered from:
 reloading can't fix it. `useSourceAvailability` asks
 `POST api/v1/media-source/check`. While the answer is `unreadable`,
 `triggerRecovery` defers, jolt rungs are held, status stays `recovering`, and the
-overlay shows `Video file unavailable — retrying · m:ss`. When the answer comes
+overlay shows `Fixing this video… · m:ss`. On a screen-framework screen (the owner
+passes `holdOnRefusal`: living-room, office, Portal screen pages) that wait is a
+**hold**: it never auto-skips the queue, and OK / media-next skip it by hand.
+Fitness, piano and school-lesson Players do not opt in and keep the previous cap action. When the answer comes
 back `readable`, the Player resets the ledger and runs one `source-restored`
 remount at the saved position. Full design:
 [`docs/reference/player/media-source-healing.md`](../../../../docs/reference/player/media-source-healing.md).

@@ -106,7 +106,9 @@ export async function expandContainerInput(input, {
   const fetchChildren = async (contentId) => {
     const parsed = splitContentId(contentId);
     if (!parsed) return null;
-    const url = `/api/v1/list/${encodeURIComponent(parsed.source)}/${encodeURIComponent(parsed.localId)}`;
+    const url = `/api/v1/list/${encodeURIComponent(parsed.source)}/${encodeURIComponent(parsed.localId)}/expand`;
+    // `/expand` opts out of the list router's season/playlist-as-tile wrapping
+    // (a bare season lists only itself), so a season yields its episodes.
     const res = await doFetch(url);
     if (!res || !res.ok) return null;
     const body = await res.json();

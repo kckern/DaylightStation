@@ -379,6 +379,14 @@ describe('agendaDocument', () => {
       expect(doc.blocks.find((b) => b.type === 'rich_text' && b.md?.includes('999999'))).toBeUndefined();
     });
 
+    it('lists only explicitly printable subjects even when another active card has a token', () => {
+      const doc = agendaDocument({
+        learnerId: 'test-user', sections: bulkSections, tokensBySubject: bulkTokens,
+        bulkToken: 'sch:BULK1234', bulkAccessCode: '999999', bulkSubjects: ['maths'],
+      });
+      expect(doc.blocks.find(b => b.presentation === 'bulk_print').subjects).toEqual(['maths']);
+    });
+
     it('omits the bulk block when bulkToken is absent', () => {
       const doc = agendaDocument({
         learnerId: 'test-user',

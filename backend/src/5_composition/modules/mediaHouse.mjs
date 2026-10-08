@@ -9,6 +9,8 @@ import { ScreenSignalsReader } from '#apps/media/ScreenSignalsReader.mjs';
 import { YamlScreenRegistryDatastore } from '#adapters/persistence/yaml/YamlScreenRegistryDatastore.mjs';
 import { ConfigMediaScreenCatalog } from '#adapters/devices/ConfigMediaScreenCatalog.mjs';
 import { EventBusScreenPresence } from '#adapters/eventbus/EventBusScreenPresence.mjs';
+import { EventBusBrowserPlayback } from '#adapters/eventbus/EventBusBrowserPlayback.mjs';
+import { BrowserPlaybackTracker } from '#apps/media/BrowserPlaybackTracker.mjs';
 import { RoutineCatalogService } from '#apps/media/RoutineCatalogService.mjs';
 import { RoutineHistoryService } from '#apps/media/RoutineHistoryService.mjs';
 import { RoutineLoadRecorder } from '#apps/media/RoutineLoadRecorder.mjs';
@@ -66,6 +68,10 @@ export function createMediaHouseModule({
     }).attach();
   }
 
+  // What each browser tab says it is playing and who started it (started-by).
+  const browserPlayback = new BrowserPlaybackTracker();
+  if (eventBus?.onClientMessage) new EventBusBrowserPlayback({ eventBus, tracker: browserPlayback }).attach();
+
   // Routines: Home Assistant config read in place when this process can see
   // it (system config media-routines.yml `homeAssistant.configDir`), else the
   // last imported snapshot; plus routines only the history has seen.
@@ -101,7 +107,7 @@ export function createMediaHouseModule({
 
   const screenPlayback = playLedger
     ? new ScreenPlaybackService({
-      playLedger, livenessService, memory: householdMediaMemory, screens: screenRegistry, logger: log('media-screen-playback'),
+      playLedger, livenessService, memory: householdMediaMemory, screens: screenRegistry, browserPlayback, logger: log('media-screen-playback'),
     })
     : null;
 

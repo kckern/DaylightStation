@@ -119,6 +119,12 @@ test('[PLACE.3a/AC1][PLACE.3a/AC2][PLACE.3a/AC3] Play on… is offered on items 
   await leaf.click();
   await expect(page.getByRole('menuitem', { name: 'Play on…', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
+  // Escape closes the menu and nothing else: the shell's deferred dismiss task (one macrotask after
+  // the key) must find the menu's registered layer and not run Back. Flush that task, then prove the
+  // browse page is still the page, before leaving it.
+  await expect(page.getByRole('menuitem', { name: 'Play on…', exact: true })).toBeHidden();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0))));
+  await expect(leaf).toBeVisible();
   await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ITEM.ARRIVAL)}`);
   await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 60000 });
   await expect(page.getByTestId('detail-view').getByRole('button', { name: 'Add on…' })).toBeVisible();

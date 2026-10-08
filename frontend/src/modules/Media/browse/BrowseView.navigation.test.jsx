@@ -115,7 +115,7 @@ describe('Browse Detail browser history', () => {
     </NavProvider></CastTargetProvider></MantineProvider>);
 
     await screen.findByTestId('browse-row-plex:m100');
-    expect(DaylightAPI).toHaveBeenCalledWith('api/v1/list/plex/movies?take=150');
+    expect(DaylightAPI).toHaveBeenCalledWith('api/v1/list/plex/movies/expand?take=150');
     await waitFor(() => {
       expect(screen.getByTestId('scroll-host').scrollTop).toBe(137);
       expect(screen.getByTestId('result-play-now-plex:m100')).toHaveFocus();

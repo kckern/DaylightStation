@@ -37,10 +37,12 @@ export function MoveToMenu({ sourceId, available = true, title = null }) {
     if (moving) return;
     setMoving(true);
     const destinationName = destinationId === 'local' ? null : deviceName(devices.find((d) => d.id === destinationId), destinationId);
+    // PLACE.7a/AC3: the confirmation says which screen it came from.
+    const sourceName = deviceName(devices.find((d) => d.id === sourceId) ?? { id: sourceId }, sourceId);
     const originId = fleetIdentity?.deviceId ?? (identity?.clientId ? `browser:${identity.clientId}` : null);
     const attemptId = outcomes?.recordLocal?.({
       kind: 'move', phase: 'running', item: { title: title ?? 'what was playing' },
-      targetId: destinationId, targetName: destinationName,
+      targetId: destinationId, targetName: destinationName, command: { sourceId, sourceName },
     }) ?? null;
     const result = await moveScreenPlayback({
       sourceId, destinationId, fleetStore: store, localController,

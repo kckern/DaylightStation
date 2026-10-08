@@ -68,8 +68,14 @@ for (const [label, vp] of Object.entries(VIEWPORTS)) {
     await expect(rowWith(page, /Removed .* from the queue here/)).toBeVisible({ timeout: 15000 });
     await page.getByTestId('item-action-undo').last().click();
     await expect(removeButtons).toHaveCount(countBefore, { timeout: 15000 });
-    // (an Undo shows no confirmation of its own: recorded for PLACE/RELY.1a/AC1, which stays Partial)
-    test.info().annotations.push({ type: 'undo-confirmation', description: String(await rowWith(page, /Put back .* here/).count()) });
+    // RELY.1a/AC1: the Undo is itself an action on the queue and confirms on its own.
+    await expect(rowWith(page, /Put back .* here/)).toBeVisible({ timeout: 15000 });
+    await page.getByTestId('queue-clear').click();
+    await expect(rowWith(page, 'Cleared the queue here')).toBeVisible({ timeout: 15000 });
+    // Undo of a Clear confirms in its own words, and the queue is back.
+    await page.getByTestId('item-action-undo').last().click();
+    await expect(rowWith(page, 'Put the queue back here')).toBeVisible({ timeout: 15000 });
+    await expect(removeButtons).toHaveCount(countBefore, { timeout: 15000 });
     await page.getByTestId('queue-clear').click();
     await expect(rowWith(page, 'Cleared the queue here')).toBeVisible({ timeout: 15000 });
     // AC3: quiet and brief: it leaves on its own.
@@ -90,13 +96,18 @@ test('[RELY.1a/AC5][PLAY.1a/AC3] playing here confirms quietly; playing on anoth
   const here = rowWith(page, 'Playing Faith here');
   await expect(here).toBeVisible({ timeout: 30000 });
   await expect(here).toHaveClass(/cast-tray-row--quiet/);
-  // Another screen: its name, and the steps it goes through.
+  // Another screen: its name, and the steps it goes through. Wait until Faith really plays here first.
+  await expect(page.getByTestId('mini-toggle')).toHaveAttribute('aria-label', 'Pause', { timeout: 60000 });
   await input.fill('');
   await input.fill('Arrival');
   await expect(resultRow(page, vp, ITEM.ARRIVAL)).toBeVisible({ timeout: 40000 });
   await page.getByTestId(`result-more-${ITEM.ARRIVAL}`).click();
   await page.getByRole('menuitem', { name: 'Play on…', exact: true }).click();
   await page.getByTestId(`picker-device-${A}`).click();
+  // Faith is genuinely playing here, so a one-off Play on… asks whether this device stops or keeps
+  // playing (PLACE.6a/AC2) and is sent by its button, not by the tile tap. Keep it playing here.
+  await page.getByTestId('picker-mode-fork').click();
+  await page.getByTestId('picker-submit').click();
   const far = rowWith(page, A_NAME);
   await expect(far).toBeVisible({ timeout: 30000 });
   await expect(far).not.toHaveClass(/cast-tray-row--quiet/);

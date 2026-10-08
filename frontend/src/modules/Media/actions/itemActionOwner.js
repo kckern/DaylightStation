@@ -39,7 +39,7 @@ export function createItemActionOwner({ targetId, capture, revision, apply, getP
       if (pendingCommit) return pendingCommit.then(() => mutate(inputs));
       if (!replacesPlayback) ledger.rebasePending(operationId);
       if (!ledger.canApply(operationId)) return { ok: false, code: 'ITEM_ACTION_CANCELLED', operationId };
-      if (!Array.isArray(inputs) || !inputs.length) return { ok: false, code: 'EMPTY_COLLECTION', operationId };
+      if (!Array.isArray(inputs) || (!inputs.length && kind !== 'reorder')) return { ok: false, code: 'EMPTY_COLLECTION', operationId };
       // An insertion is always a new queue generation, even when the caller
       // selected a queue row carrying an existing queueItemId.
       inputs = inputs.map(input => { const { queueItemId: _priorId, ...fresh } = input ?? {}; return fresh; });
@@ -61,6 +61,8 @@ export function createItemActionOwner({ targetId, capture, revision, apply, getP
       else if (kind === 'add') next = queueOps.addMany(before, inputs);
       else if (kind === 'remove') next = queueOps.remove(before, command.queueItemId);
       else if (kind === 'clear') next = queueOps.clear(before);
+      // A queue reorder ({from,to} or {items}) is an item action too, so a screen gets the same undo ledger for it.
+      else if (kind === 'reorder') next = queueOps.reorder(before, command);
       else return { ok: false, code: 'INVALID_ITEM_ACTION' };
       // The ordinary published queue carries the operation correlation, not
       // a synthetic playback receipt. Native playing proof is still required.

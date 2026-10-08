@@ -83,8 +83,9 @@ Rejected or deferred:
   `state-gates.cache-dropped-after-failed-write`, and throws
   `STATE_GATES_STATE_UNAVAILABLE`.
 - **Timing event.** Each write logs `state-gates.state.written`
-  `{ householdId, durationMs, bytes, journalEntries }` at debug. It is
-  rate-sampled at info, so the log store can show the effect.
+  `{ householdId, durationMs, bytes, journalEntries }`, sampled at info only
+  (no per-write debug line — debug logs never ship, so one would be
+  unobservable in the field).
 
 ### Read (first access per household)
 
@@ -99,12 +100,19 @@ Order:
 
 1. **`current.json` exists:**
    - require schema `v2` and use it as is;
-   - **guard:** if `current.yml` also exists and its mtime is newer than
-     `current.json`'s, fail with `STATE_GATES_STATE_UNAVAILABLE` (code
-     `LEGACY_STATE_NEWER`). That means an older build ran after the switch.
-     Silently preferring JSON would discard that window: a double loss.
-     Composition already tolerates a State Gates startup failure
-     (`stateGates.mjs:224`).
+   - **guard (revision-based):** the mtime comparison is only a cheap
+     pre-check. If `current.yml` also exists and its mtime is newer than
+     `current.json`'s, load the legacy file and compare its own
+     `household_revision` against the JSON's. Only when the legacy revision
+     is strictly greater does the read fail with
+     `STATE_GATES_STATE_UNAVAILABLE` (code `LEGACY_STATE_NEWER`) — that means
+     an older build actually ran and committed after the switch. Silently
+     preferring JSON would discard that window: a double loss. Composition
+     already tolerates a State Gates startup failure (`stateGates.mjs:224`).
+     A newer mtime with a same-or-lower revision (a coarse re-stamp — Dropbox,
+     `cp`, a restore) or a legacy file that fails to load or has the wrong
+     schema logs `state-gates.state.legacy-touched` at warn and serves the
+     JSON; it must not block boot on a stale, broken file.
 2. **Else `current.yml` exists:** read it through the v1 path (require
    schema `v1`, `mapKeys(camel)`, verified byte-stable on the live state).
    Log `state-gates.state.migrated` `{ householdId, householdRevision }` once.
@@ -130,7 +138,7 @@ Other failures:
   - keeps the newer YAML (delete or move `current.json`, which re-migrates);
     or
   - restores `current.json` and moves the YAML aside.
-- **Converter.** An exported, tested `toLegacyV1Yaml(state)` (reusing
+- **Converter.** An exported, tested `toLegacyV1(state)` (reusing
   `mapKeys(snake)`) and a one-line CLI turn `current.json` back into a v1
   `current.yml`. That makes a deliberate rollback lossless.
 - Recovery of a lost `current.json` is from Dropbox version history on the
@@ -176,7 +184,7 @@ engine and both repositories together can follow separately.
   - when the YAML is newer, the read fails with `LEGACY_STATE_NEWER`;
   - corrupt JSON is a read failure, never a YAML fallback;
   - an unknown schema is `UNSUPPORTED_STATE_SCHEMA`.
-- **Converter:** `toLegacyV1Yaml` then the v1 read round-trips the live-shaped
+- **Converter:** `toLegacyV1` then the v1 read round-trips the live-shaped
   fixture.
 - **Composition expectations to update:**
   - `backend/src/5_composition/composition-contract-registry.test.mjs:94`;
@@ -190,7 +198,10 @@ engine and both repositories together can follow separately.
 
 ## Verification after deploy
 
-- `current.json` exists; its `householdRevision` advances; `state-gates.state.migrated` logged once.
+- `current.json` appears after the first commit (not immediately at boot —
+  `reconcile` writes nothing when nothing is pending, so its absence right
+  after deploy is normal); its `householdRevision` advances;
+  `state-gates.state.migrated` logged once.
 - `state-gates.state.written` `durationMs` is single-digit to low-tens of ms.
 - Compare worst lag in minutes with a State Gates commit
   (`state-gates.assertion.corrected` timestamps) against minutes without one.

@@ -36,21 +36,35 @@ async function startSession(session, deviceId = '1001') {
 }
 
 describe('FitnessSession deliberate-end cooldown bypass', () => {
-  beforeEach(() => { vi.restoreAllMocks(); });
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+  });
 
-  it('does NOT arm the auto-start cooldown after a user_initiated end', async () => {
+  it('does not restart from the same device after a user_initiated end', async () => {
     const session = new FitnessSession();
-    const firstId = await startSession(session);
+    const firstId = await startSession(session, '1001');
     expect(firstId).toBeTruthy();
 
     session.endSession('user_initiated');
     expect(session.sessionId).toBeNull();
 
-    // A fresh, genuine workout should be able to start immediately (no cooldown).
-    // NB: the id is a YYYYMMDDHHmmss timestamp, so a same-second restart in tests
-    // can reuse the id — the meaningful assertion is that a session starts at all.
+    const secondId = await startSession(session, '1001');
+    expect(secondId).toBeNull();
+  });
+
+  it('allows a different device to start immediately after a user_initiated end', async () => {
+    const session = new FitnessSession();
+    expect(await startSession(session, '1001')).toBeTruthy();
+    session.endSession('user_initiated');
+
     const secondId = await startSession(session, '1002');
     expect(secondId).toBeTruthy();
+
+    // The ended strap is still broadcasting, but must remain invisible even
+    // after the replacement workout has begun on another device.
+    session.ingestData(hrSample('1001', 125));
+    expect(session.deviceManager.getAllDevices().map((device) => String(device.id))).not.toContain('1001');
   });
 
   it('STILL arms the cooldown after an inactivity/empty_roster end', async () => {

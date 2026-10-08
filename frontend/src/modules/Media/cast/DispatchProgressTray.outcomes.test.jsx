@@ -3,8 +3,8 @@ import React from 'react';
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
-const { push, retry, removeDispatch, sendElsewhere, stopAttempt, skipLocal } = vi.hoisted(() => ({
-  push: vi.fn(), retry: vi.fn(), removeDispatch: vi.fn(), sendElsewhere: vi.fn(), stopAttempt: vi.fn(), skipLocal: vi.fn(),
+const { push, retry, removeDispatch, sendElsewhere, stopAttempt, skipLocal, recordLocal } = vi.hoisted(() => ({
+  recordLocal: vi.fn(), push: vi.fn(), retry: vi.fn(), removeDispatch: vi.fn(), sendElsewhere: vi.fn(), stopAttempt: vi.fn(), skipLocal: vi.fn(),
 }));
 const outcomes = new Map();
 const DEVICES = [
@@ -15,7 +15,7 @@ const DEVICES = [
 ];
 
 vi.mock('./useDispatch.js', () => ({
-  useDispatch: () => ({ dispatches: outcomes, outcomes, retry, removeDispatch, sendElsewhere, stopAttempt, skipLocal }),
+  useDispatch: () => ({ dispatches: outcomes, outcomes, retry, removeDispatch, sendElsewhere, stopAttempt, skipLocal, recordLocal }),
 }));
 vi.mock('../fleet/useDevice.js', () => ({
   useDevice: (id) => ({ device: DEVICES.find(d => d.id === id) ?? null }),
@@ -113,6 +113,51 @@ describe('DispatchProgressTray outcomes', () => {
     expect(undo).toHaveBeenCalledWith('op-1');
   });
 
+  it('RELY.1a/AC1: undoing a removal records its own confirmation naming the item and the screen', async () => {
+    const undo = vi.fn(() => ({ ok: true }));
+    outcomes.set('q2', record({ attemptId: 'q2', dispatchId: 'q2', targetId: 'local', deviceId: 'local', distance: 'here', kind: 'remove', phase: 'confirmed', item: { contentId: 'plex:1', title: 'Hospital' }, title: 'Hospital', undo: { operationId: 'op-2', expiresAt: Date.now() + 10_000, run: undo } }));
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    await act(async () => { fireEvent.click(screen.getByTestId('item-action-undo')); });
+    expect(recordLocal).toHaveBeenCalledWith(expect.objectContaining({ kind: 'undo', phase: 'confirmed', item: expect.objectContaining({ title: 'Hospital' }) }));
+  });
+
+  it('the put-back confirmation reads "Put back <item> here"; undoing an add reads "Took back"', () => {
+    outcomes.set('p1', record({ attemptId: 'p1', dispatchId: 'p1', targetId: 'local', deviceId: 'local', distance: 'here', kind: 'undo', phase: 'confirmed', item: { title: 'Hospital' }, title: 'Hospital', command: { undid: 'remove' } }));
+    outcomes.set('p2', record({ attemptId: 'p2', dispatchId: 'p2', targetId: 'local', deviceId: 'local', distance: 'here', kind: 'undo', phase: 'confirmed', item: { title: 'Arrival' }, title: 'Arrival', command: { undid: 'add' } }));
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    expect(screen.getByTestId('dispatch-row-p1')).toHaveTextContent('Put back Hospital here');
+    expect(screen.getByTestId('dispatch-row-p2')).toHaveTextContent('Took back Arrival here');
+  });
+
+  it('undoing a Clear says the queue was put back, not an item', () => {
+    outcomes.set('p3', record({ attemptId: 'p3', dispatchId: 'p3', targetId: 'local', deviceId: 'local', distance: 'here', kind: 'undo', phase: 'confirmed', item: { title: 'what was playing' }, title: 'what was playing', command: { undid: 'clear' } }));
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    expect(screen.getByTestId('dispatch-row-p3')).toHaveTextContent('Put the queue back here');
+  });
+
+  it('PLAY.2a/AC3, PLAY.7a/AC2: a whole collection states how many items, here and on a screen', () => {
+    outcomes.set('c1', record({ attemptId: 'c1', dispatchId: 'c1', targetId: 'local', deviceId: 'local', distance: 'here', kind: 'add', phase: 'confirmed', count: 6, item: { title: 'Baby Joy Joy' }, title: 'Baby Joy Joy' }));
+    outcomes.set('c2', record({ attemptId: 'c2', dispatchId: 'c2', targetId: 'livingroom-tv', deviceId: 'livingroom-tv', title: 'Baby Joy Joy', kind: 'add', operation: 'add', status: 'success', outcome: 'confirmed', phase: 'confirmed', outcomeIdentity: { count: 6, queueLength: 6, ordinal: 1 } }));
+    outcomes.set('c3', record({ attemptId: 'c3', dispatchId: 'c3', targetId: 'local', deviceId: 'local', distance: 'here', kind: 'add', phase: 'confirmed', count: 1, item: { title: 'Arrival' }, title: 'Arrival' }));
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    expect(screen.getByTestId('dispatch-row-c1')).toHaveTextContent('Added Baby Joy Joy (6 items) here');
+    expect(screen.getByTestId('dispatch-row-c2')).toHaveTextContent('Added Baby Joy Joy (6 items) to Living Room TV');
+    expect(screen.getByTestId('dispatch-row-c3')).toHaveTextContent('Added Arrival here');
+    expect(screen.getByTestId('dispatch-row-c3')).not.toHaveTextContent('items');
+  });
+
+  it('PLACE.7a/AC3: Move here names the screen it came from', () => {
+    outcomes.set('m1', record({ attemptId: 'm1', dispatchId: 'm1', targetId: 'local', deviceId: 'local', distance: 'here', kind: 'moveHere', phase: 'confirmed', item: { title: 'Hospital' }, title: 'Hospital', command: { sourceName: 'Living Room TV' } }));
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    expect(screen.getByTestId('dispatch-row-m1')).toHaveTextContent('Moved Hospital here from Living Room TV');
+  });
+
+  it('PLACE.7a/AC3: a Move from another screen says it moved here, from where', () => {
+    outcomes.set('m2', record({ attemptId: 'm2', dispatchId: 'm2', targetId: 'local', deviceId: 'local', distance: 'here', kind: 'move', phase: 'confirmed', item: { title: 'Hospital' }, title: 'Hospital', command: { sourceName: 'Kitchen' } }));
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    expect(screen.getByTestId('dispatch-row-m2')).toHaveTextContent('Moved Hospital here from Kitchen');
+  });
+
   it('O1: a far start still in progress offers Undo inside its window, then Stop (queue kept) after it expires', () => {
     outcomes.set('w1', record({ attemptId: 'w1', dispatchId: 'w1', targetId: 'office-tv', deviceId: 'office-tv', title: 'Arrival', status: 'running', phase: 'running',
       steps: [{ step: 'power', status: 'running' }],
@@ -144,6 +189,14 @@ describe('DispatchProgressTray outcomes', () => {
     fireEvent.click(screen.getByTestId('dispatch-skip-w1'));
     expect(skipLocal).toHaveBeenCalledWith('w1');
     expect(screen.getByTestId('dispatch-retry-w1')).toBeInTheDocument();
+  });
+
+  it('a remote screen\'s held video names that screen, never "this device"', () => {
+    outcomes.set('w2', record({ attemptId: 'w2', dispatchId: 'w2', targetId: 'livingroom-tv', targetName: 'Living Room TV', deviceId: 'livingroom-tv', distance: 'direct', kind: 'playback', phase: 'waiting', reason: 'source-unavailable', item: { contentId: 'plex:1', title: 'Arrival' }, title: 'Arrival', command: { kind: 'playNow', item: { contentId: 'plex:1' } } }));
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    const row = screen.getByTestId('dispatch-row-w2');
+    expect(row).toHaveTextContent('On Living Room TV');
+    expect(row).not.toHaveTextContent('this device');
   });
 
   it('RELY.5a/AC4: a skip a steered screen reported names that screen, not this device', () => {

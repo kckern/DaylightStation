@@ -204,10 +204,12 @@ export function ResultRowActions({
  * @param {() => void} [props.onDetails] - leaf-only: an explicit inline Detail verb
  * @param {(action: string) => void} [props.onMore] - leaf-only: the ⋯ verb
  * @param {string} [props.testId] - testid for the tap button (defaults to `result-row-${item.id}`)
+ * @param {(opened: boolean) => void} [props.onMenuOpenChange] - the ⋯ menu opened/closed, so a host
+ *   can register it as a dismiss layer (Escape closes the menu and nothing else)
  * @param {(item: object) => Array<{kind: string, label: string}>} [props.extraActions] - additive
  *   menu verbs, delivered through onAction({ kind, item }) (onAction contract only)
  */
-export function ResultRow({ item, title, subtitle, thumbnail, leading = null, onTap, onPlayAll, onDetails, detailsTestId, onMore, onAction, testId, focusId, extraActions = null, rowLabels = null }) {
+export function ResultRow({ item, title, subtitle, thumbnail, leading = null, onTap, onPlayAll, onDetails, detailsTestId, onMore, onAction, testId, focusId, extraActions = null, rowLabels = null, onMenuOpenChange }) {
   const container = item ? isContainer(item) : false;
   const idPart = item?.id ?? 'row';
   const rowTestId = testId ?? `result-row-${idPart}`;
@@ -240,7 +242,7 @@ export function ResultRow({ item, title, subtitle, thumbnail, leading = null, on
           (flex, gap 4px, flex-shrink 0) — reused here rather than inventing a
           new one, mirroring .browse-row-actions' role in BrowseView.jsx. */}
       <span className="media-result-actions">
-        <ResultRowActions item={item} isContainerItem={container} onPlayAll={onPlayAll} onDetails={onDetails} detailsTestId={detailsTestId} onMore={onMore} onAction={onAction} testId={idPart} extraActions={extraActions} playLabel={rowLabels?.play ?? null} playOnLabel={rowLabels?.playOn ?? null} />
+        <ResultRowActions item={item} isContainerItem={container} onPlayAll={onPlayAll} onDetails={onDetails} detailsTestId={detailsTestId} onMore={onMore} onAction={onAction} testId={idPart} extraActions={extraActions} playLabel={rowLabels?.play ?? null} playOnLabel={rowLabels?.playOn ?? null} onMoreMenuChange={onMenuOpenChange} />
       </span>
     </>
   );

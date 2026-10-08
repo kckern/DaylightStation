@@ -7,15 +7,24 @@ function memoryEngine(options = {}) {
   const files = new Map();
   let failSave = false;
   const engine = new YamlStateGatesStateEngine({
-    resolveFilePath: householdId => `/virtual/${householdId}/current.yml`,
-    load: filePath => files.has(filePath) ? structuredClone(files.get(filePath)) : null,
-    save: (filePath, value) => {
+    resolveFilePath: householdId => `/virtual/${householdId}/current.json`,
+    load: filePath => files.has(filePath) ? JSON.parse(files.get(filePath)) : null,
+    save: (filePath, content) => {
       if (failSave) throw new Error('simulated interrupted write');
-      files.set(filePath, structuredClone(value));
+      expect(typeof content).toBe('string');
+      files.set(filePath, content);
     },
     ...options,
   });
   return { engine, files, failSave: value => { failSave = value; } };
+}
+
+// What reached disk must be exactly what the engine holds: JSON drops
+// undefined keys and turns NaN into null, where YAML used to throw.
+async function expectDiskMatchesMemory(engine, files, householdId = 'home') {
+  const disk = JSON.parse(files.get(`/virtual/${householdId}/current.json`));
+  expect(disk.schema).toBe('daylight.state-gates-state/v2');
+  expect(disk.projection).toStrictEqual(await engine.loadProjection(householdId));
 }
 
 function projection(householdRevision, extras = {}) {
@@ -112,5 +121,22 @@ describe('State Gates durable-state verification matrix', () => {
     await expect(engine.replayAfter('home', 2, 10)).rejects.toMatchObject({
       code: 'INVALID_REPLAY_CURSOR', status: 400,
     });
+  });
+
+  it('writes compact v2 JSON that round-trips to exactly the in-memory state', async () => {
+    const { engine, files } = memoryEngine();
+    await engine.commit('home', 0, projection(1, { assertions: [{ id: 'a', observedAt: 1790371529737, value: { rings: 3 } }] }), [event(1)]);
+    await engine.markPublished('home', [event(1).transitionId]);
+    const content = files.get('/virtual/home/current.json');
+    expect(content.startsWith('{')).toBe(true);
+    expect(content).not.toContain('\n');
+    expect(JSON.parse(content).deliveryCheckpoint).toBe(1);
+    await expectDiskMatchesMemory(engine, files);
+  });
+
+  it('a value JSON cannot represent is caught by the disk check, not silently dropped', async () => {
+    const { engine, files } = memoryEngine();
+    await engine.commit('home', 0, projection(1, { assertions: [{ id: 'a', note: undefined }] }), []);
+    await expect(expectDiskMatchesMemory(engine, files)).rejects.toThrow();
   });
 });

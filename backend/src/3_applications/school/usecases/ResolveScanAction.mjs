@@ -145,7 +145,7 @@ export class ResolveScanAction {
     // Both classes name something other than a session — `identify` a
     // learner, `subject_next` a learner+subject — so neither has a
     // `sessionId` to look up ahead of resolving what the ticket means.
-    const sessionId = ['identify', 'subject_next', 'learning_action', 'answer_sheet_lost'].includes(record?.tokenClass)
+    const sessionId = ['identify', 'subject_next', 'learning_action', 'answer_sheet_lost', 'agenda_print'].includes(record?.tokenClass)
       ? null : (record?.subject?.sessionId ?? null);
     const sessionState = sessionId ? reduceSession(await this.#sessions.readEvents(sessionId)) : null;
     const resolution = resolveTokenState(record, { sessionState, now: this.#clock().toISOString() });

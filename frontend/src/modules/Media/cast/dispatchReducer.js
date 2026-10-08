@@ -219,7 +219,7 @@ export function reduceDispatch(state, action) {
       return next;
     }
     case 'LOCAL': {
-      const { attemptId, kind, phase, item, command, reason, replacement, undo, ordinal } = action;
+      const { attemptId, kind, phase, item, command, reason, replacement, undo, ordinal, count } = action;
       // A direct edit of another screen's queue (Remote) has no wake
       // progress; it is recorded like a local one but names that screen.
       const targetId = action.targetId ?? 'local';
@@ -237,6 +237,7 @@ export function reduceDispatch(state, action) {
         reason: reason ?? null,
         replacement: replacement ? { contentId: replacement.contentId ?? null, title: replacement.title ?? null } : null,
         ordinal: ordinal ?? null,
+        count: count ?? null,
         undo: undo ?? null,
         ...(action.startOver === true ? { startOver: true, resumedFrom: action.resumedFrom ?? null } : {}),
         createdAt,
@@ -260,7 +261,7 @@ export function reduceDispatch(state, action) {
       return { ...state, byId: next };
     }
     case 'LOCAL_RESOLVED': {
-      const { attemptId, phase, reason, ordinal } = action;
+      const { attemptId, phase, reason, ordinal, count } = action;
       const prev = state.byId.get(attemptId);
       if (!prev || prev.distance === 'far') return state;
       const next = new Map(state.byId);
@@ -269,6 +270,7 @@ export function reduceDispatch(state, action) {
         phase,
         reason: reason ?? prev.reason,
         ordinal: ordinal ?? prev.ordinal,
+        count: count ?? prev.count ?? null,
         updatedAt: now(),
       });
       if (phase === 'confirmed') {

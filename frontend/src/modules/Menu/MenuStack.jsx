@@ -274,7 +274,7 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
             getPlayerHandle={() => playerRef?.current ?? null}
             contentId={props.play ?? props.queue ?? null}
           >
-            <Player {...props} ref={playerRef} clear={exitToHome} />
+            <Player holdOnRefusal {...props} ref={playerRef} clear={exitToHome} />
           </SurroundHost>
         </Suspense>
       );
@@ -287,7 +287,7 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
             getPlayerHandle={() => playerRef?.current ?? null}
             contentId={props.play ?? props.queue ?? null}
           >
-            <Player {...props} ref={playerRef} clear={exitToHome} />
+            <Player holdOnRefusal {...props} ref={playerRef} clear={exitToHome} />
           </SurroundHost>
         </Suspense>
       );

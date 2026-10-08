@@ -62,7 +62,7 @@ Each numbered task has its own red/green cycle and commit. Within a task, implem
 - `densityRevision(levels): string`: deterministic serialization of ordered level, kcal/g, and macro-share inputs. Serialize tuples `[level, kcal_per_g, macros.protein_pct, macros.carb_pct, macros.fat_pct]`; labels, emoji, and hints remain in the public ladder shape unchanged.
 - `HealthOperations` accepts `densityLevels: () => Array`, defaulting to shared defaults. `context(): {userId, densityLevels, densityRevision}` reads this thunk once. The string is an equality token, not a security credential.
 
-- [ ] **Write failing density examples** in `foodDensity.test.mjs`:
+- [x] **Write failing density examples** in `foodDensity.test.mjs`:
 ```js
 import {describe, it, expect} from 'vitest';
 import {foodDensity, foodDensityOfRows, densityRevision} from './foodDensity.mjs';
@@ -84,16 +84,16 @@ describe('food density', () => {
   });
 });
 ```
-- [ ] **Run red:** `npx vitest run shared/contracts/health/foodDensity.test.mjs --maxWorkers=2`. Expect missing-module failure before implementation.
-- [ ] **Extract defaults** without changing any object fields. Re-export from the old module to keep kitchen-scale callers compatible:
+- [x] **Run red:** `npx vitest run shared/contracts/health/foodDensity.test.mjs --maxWorkers=2`. Expect missing-module failure before implementation.
+- [x] **Extract defaults** without changing any object fields. Re-export from the old module to keep kitchen-scale callers compatible:
 ```js
 import {DEFAULT_DENSITY_LEVELS} from '#shared-contracts/health/densityLevels.mjs';
 export {DEFAULT_DENSITY_LEVELS};
 ```
 The backend already maps `#shared-contracts/*` to its shared-contracts link; retain that mapping.
-- [ ] **Implement coverage first:** use existing `foodGrams` and `isCountedRow`; require known finite nonnegative calories, positive mass. Compute `sumCalories / sumGrams`, not a mean of individual densities. Bracket by physical kcal/g positions; reject malformed configuration through the existing normalizer, not by silently sorting client data.
-- [ ] **Add boundary tests** for exact level 1 and 9, between levels, zero below level 1, above 8.5, pending/deleted rows, and incomplete groups. For interpolation assert the fraction at the numeric midpoint is 0.5.
-- [ ] **Wire one source of configuration:** hoist the existing thunk before constructing HealthOperations, reuse it for ObservationPairing, and return the operation's context from the router:
+- [x] **Implement coverage first:** use existing `foodGrams` and `isCountedRow`; require known finite nonnegative calories, positive mass. Compute `sumCalories / sumGrams`, not a mean of individual densities. Bracket by physical kcal/g positions; reject malformed configuration through the existing normalizer, not by silently sorting client data.
+- [x] **Add boundary tests** for exact level 1 and 9, between levels, zero below level 1, above 8.5, pending/deleted rows, and incomplete groups. For interpolation assert the fraction at the numeric midpoint is 0.5.
+- [x] **Wire one source of configuration:** hoist the existing thunk before constructing HealthOperations, reuse it for ObservationPairing, and return the operation's context from the router:
 ```js
 const scaleConfig = () => normalizeScaleNutribotConfig(
   configService?.getHouseholdAppConfig?.(null, 'scales') || {},
@@ -106,8 +106,8 @@ const scaleConfig = () => normalizeScaleNutribotConfig(
 res.json(healthOperations.context());
 ```
 Add a real HealthOperations test with two successive thunk values: context reflects the new ladder and revision. Existing router test doubles must expose context; preserve default-user assertions.
-- [ ] **Run green:** `npx vitest run shared/contracts/health/foodDensity.test.mjs backend/src/3_applications/health/HealthOperations.density.test.mjs --maxWorkers=2`.
-- [ ] **Commit:** stage only the eight named files; `git commit -m "feat(health): share density ladder and context contract"`.
+- [x] **Run green:** `npx vitest run shared/contracts/health/foodDensity.test.mjs backend/src/3_applications/health/HealthOperations.density.test.mjs --maxWorkers=2`.
+- [x] **Commit:** stage only the eight named files; `git commit -m "feat(health): share density ladder and context contract"`.
 
 ## Task 2: Density placement preference and compact meal rows
 
@@ -125,7 +125,7 @@ Add a real HealthOperations test with two successive thunk values: context refle
 - `densityPresentation(value, levels)` returns `{color,label}` or null; consumes Task 1 bracketing. Palette: `#7fbddf`, `#71cfc1`, `#87ce95`, `#bbd37c`, `#edd477`, `#eda461`, `#dd795e`, `#c44859`, `#861e3f`.
 - `DensityBadge({row, className = ''})` gets current levels from context. Unknown values render an explained unavailable marker. Meal headers pass a read-only rollup rather than an editable group.
 
-- [ ] **Write failing placement behavior** with real provider and settings controls:
+- [x] **Write failing placement behavior** with real provider and settings controls:
 ```jsx
 import React from 'react';
 import {it, expect} from 'vitest';
@@ -150,15 +150,15 @@ it('updates the mounted log and persists the chosen placement', () => {
     .toEqual({densityPlacement:'after'});
 });
 ```
-- [ ] **Run red:** `npx vitest run frontend/src/modules/Health/display/HealthDisplayPreferences.test.jsx --maxWorkers=2`.
-- [ ] **Implement preference state and radio group.** Catch read/write failures; validate parsed shape. Subscribe/unsubscribe to storage events for the current user key. Wrap the existing resolved-user shell with this provider and pass the server ladder/revision. Export existing cleanup page logic as an internal component so its loading/error return cannot hide the display section:
+- [x] **Run red:** `npx vitest run frontend/src/modules/Health/display/HealthDisplayPreferences.test.jsx --maxWorkers=2`.
+- [x] **Implement preference state and radio group.** Catch read/write failures; validate parsed shape. Subscribe/unsubscribe to storage events for the current user key. Wrap the existing resolved-user shell with this provider and pass the server ladder/revision. Export existing cleanup page logic as an internal component so its loading/error return cannot hide the display section:
 ```jsx
 export default function HealthSettings() {
   return <><HealthDisplaySettings/><CleanupSettings/></>;
 }
 ```
-- [ ] **Extend preference tests:** remount same user retains A; another user defaults B; corrupt JSON falls back; storage event changes state; cleanup error leaves both placement options available.
-- [ ] **Separate identity controls.** Density must be a sibling of the edit-name button. Keep PhotoStore/FoodIcon fallback logic and actual-child grouping intact. Use placement class to reorder siblings:
+- [x] **Extend preference tests:** remount same user retains A; another user defaults B; corrupt JSON falls back; storage event changes state; cleanup error leaves both placement options available.
+- [x] **Separate identity controls.** Density must be a sibling of the edit-name button. Keep PhotoStore/FoodIcon fallback logic and actual-child grouping intact. Use placement class to reorder siblings:
 ```jsx
 <div className={`health-row-identity health-density-${densityPlacement}`}>
   <span className="health-row-artwork">{artwork}</span>
@@ -167,10 +167,10 @@ export default function HealthSettings() {
 </div>
 ```
 Here `artwork`, `name`, and `onEdit` are the existing EntryRow render values/handler, retained rather than new data sources. With after placement, put density after the truncated name and prevent it shrinking; before placement reserves one fixed slot.
-- [ ] **Implement row geometry:** share meal-local CSS grid tracks for headings, totals, groups, and items; identity alone absorbs name length. Set 28px fine-pointer minimum, 44px coarse/mobile controls, 75% child visual content opacity without dimming an open popover. Keep branch cells hit-testable; tree trunk aligns with artwork center, triangle uses text line-height and roughly `0.7em` visual height. Child macro circles stay centered in unchanged tracks. Density visual box is 24×14px inside its adequate hit area.
-- [ ] **Test marker semantics:** exact/between/outside names and values remain available without color; unknown mass does not show a false blue zero. Update intentional old 48px source-layout assertions; preserve edit/confirm/collapse behavior tests.
-- [ ] **Run green:** `npx vitest run frontend/src/modules/Health/display/HealthDisplayPreferences.test.jsx frontend/src/modules/Health/today/DensityBadge.test.jsx frontend/src/modules/Health/today/EntryRow.test.jsx frontend/src/modules/Health/today/layout.contract.test.js --maxWorkers=2`.
-- [ ] **Commit:** stage the named files only; `git commit -m "feat(health): add compact rows and density placement setting"`.
+- [x] **Implement row geometry:** share meal-local CSS grid tracks for headings, totals, groups, and items; identity alone absorbs name length. Set 28px fine-pointer minimum, 44px coarse/mobile controls, 75% child visual content opacity without dimming an open popover. Keep branch cells hit-testable; tree trunk aligns with artwork center, triangle uses text line-height and roughly `0.7em` visual height. Child macro circles stay centered in unchanged tracks. Density visual box is 24×14px inside its adequate hit area.
+- [x] **Test marker semantics:** exact/between/outside names and values remain available without color; unknown mass does not show a false blue zero. Update intentional old 48px source-layout assertions; preserve edit/confirm/collapse behavior tests.
+- [x] **Run green:** `npx vitest run frontend/src/modules/Health/display/HealthDisplayPreferences.test.jsx frontend/src/modules/Health/today/DensityBadge.test.jsx frontend/src/modules/Health/today/EntryRow.test.jsx frontend/src/modules/Health/today/layout.contract.test.js --maxWorkers=2`.
+- [x] **Commit:** stage the named files only; `git commit -m "feat(health): add compact rows and density placement setting"`.
 
 ## Task 3: Compact, stable daily rollup
 
@@ -178,15 +178,15 @@ Here `artwork`, `name`, and `onEdit` are the existing EntryRow render values/han
 
 **Interfaces:** `EquationStrip` adds `macroCoverage` (the existing `nutrientSummary(items)` object). `MacroBarRow` adds `showIntake = true`; Today passes false while retaining goals, watched micros, and coverage captions. Existing budget/date/goal editor props remain supported.
 
-- [ ] **Add a failing header case** to the existing Mantine-wrapped EquationStrip tests: render budget 2100, food 1280, exercise 320, under 1140 plus P/C/F coverage values 60/100/30. Assert seven labeled metrics, Food value 1280, no density, and an unknown macro remains unavailable rather than zero. Reuse the existing render helper and budget fixture; these expectations intentionally replace the old concatenated visual label:
+- [x] **Add a failing header case** to the existing Mantine-wrapped EquationStrip tests: render budget 2100, food 1280, exercise 320, under 1140 plus P/C/F coverage values 60/100/30. Assert seven labeled metrics, Food value 1280, no density, and an unknown macro remains unavailable rather than zero. Reuse the existing render helper and budget fixture; these expectations intentionally replace the old concatenated visual label:
 ```jsx
 expect(screen.getByLabelText('Food calories')).toHaveTextContent('1,280');
 expect(screen.getByLabelText('Protein')).toHaveTextContent('60');
 expect(screen.queryByLabelText(/daily density/i)).not.toBeInTheDocument();
 ```
-- [ ] **Run red:** `npx vitest run frontend/src/modules/Health/today/EquationStrip.test.jsx --maxWorkers=2`.
-- [ ] **Render the seven metrics** with semantic labels and stable value/unit/operator spans. Use the existing formatter and under/over equation. Food's color belongs to its card, not a green value. Scope `aria-label="Protein"` to the daily metric so it does not collide with food controls labeled with food names.
-- [ ] **Implement shared numeric sizing** and fixed tracks:
+- [x] **Run red:** `npx vitest run frontend/src/modules/Health/today/EquationStrip.test.jsx --maxWorkers=2`.
+- [x] **Render the seven metrics** with semantic labels and stable value/unit/operator spans. Use the existing formatter and under/over equation. Food's color belongs to its card, not a green value. Scope `aria-label="Protein"` to the daily metric so it does not collide with food controls labeled with food names.
+- [x] **Implement shared numeric sizing** and fixed tracks:
 ```scss
 .health-daily-metric-value {
   font-size: 24px;
@@ -197,9 +197,9 @@ expect(screen.queryByLabelText(/daily density/i)).not.toBeInTheDocument();
 .health-daily-metric-number { display: inline-block; min-width: 5ch; }
 ```
 Use responsive grid sizing for narrow widths, reducing all seven values together. Reserve operator and Under/Over label width; do not let changing content redefine adjacent card tracks.
-- [ ] **Connect coverage:** Today passes `nutrientSummary(preview.items)`, preserves partial `+` and unknown captions, and sets `showIntake={false}` on MacroBarRow. Keep the 409 “Set up goals” path and goal/micro bars.
-- [ ] **Run green:** `npx vitest run frontend/src/modules/Health/today/EquationStrip.test.jsx frontend/src/modules/Health/today/EntryRow.test.jsx --maxWorkers=2`.
-- [ ] **Commit:** stage the five named files; `git commit -m "feat(health): compact and stabilize the daily rollup"`.
+- [x] **Connect coverage:** Today passes `nutrientSummary(preview.items)`, preserves partial `+` and unknown captions, and sets `showIntake={false}` on MacroBarRow. Keep the 409 “Set up goals” path and goal/micro bars.
+- [x] **Run green:** `npx vitest run frontend/src/modules/Health/today/EquationStrip.test.jsx frontend/src/modules/Health/today/EntryRow.test.jsx --maxWorkers=2`.
+- [x] **Commit:** stage the five named files; `git commit -m "feat(health): compact and stabilize the daily rollup"`.
 
 ## Task 4: Pure adjustment arithmetic
 
@@ -212,7 +212,7 @@ Use responsive grid sizing for narrow widths, reducing all seven values together
 - `adjustmentMinimum(row, field): number`; portion uses current minimum (1g or 0.1 non-gram units); macro minimum is `max(0, originalMacro-originalCalories/energyPerGram)` when calories are known; other fields zero. Macro edits require known calories to preserve the residual.
 - `projectFoodAdjustment(row, {field,value}, levels = DEFAULT_DENSITY_LEVELS): Array<{id,changes}>`; only changed portion/nutrient keys, no metadata. Empty array for exact no-op. Throws RangeError for unavailable/invalid requests. Group parent nutrients remain non-additive.
 
-- [ ] **Write literal arithmetic tests**, independent of the implementation's own expected-value calculations:
+- [x] **Write literal arithmetic tests**, independent of the implementation's own expected-value calculations:
 ```js
 import {it, expect} from 'vitest';
 import {projectFoodAdjustment} from './foodAdjustment.mjs';
@@ -228,10 +228,10 @@ it('does not infer unknown macros or change micros at fixed mass', () => {
     .toEqual([{id:'x', changes:{calories:200, carbs:20, fat:4}}]);
 });
 ```
-- [ ] **Run red:** `npx vitest run shared/contracts/health/foodAdjustment.test.mjs --maxWorkers=2`.
-- [ ] **Implement portion and macro slices:** portion delegates to existing scaleFoodPortion; diff only approved numeric/unit keys. Macro calories are `oldCalories + coefficient * (newMacro-oldMacro)`, with coefficients `{protein:4,carbs:4,fat:9}`. Validate finite numbers and minimum before rounding. Compare exact original value before rounding so a no-op cannot quantize stored data.
-- [ ] **Implement fixed-mass calorie/density slice:** target calories are entered kcal or grams×density. Compute baseline energy `E=4P+4C+9F`, residual `r=K-E`, new energy `E2=K2-r*(K2/K)`. With complete positive baseline, add interpolated endpoint ladder share delta to measured normalized baseline shares, clamp to zero, normalize, and distribute E2. If clamping yields zero sum, retain original normalized shares. Incomplete macros scale only known values by K2/K. For K=0 or E=0 preserve existing zero/unknown macros. Preserve micros and mass. Round changed stored nutrients to two decimals, not intermediate shares.
-- [ ] **Add independent residual fixtures:** a custom constant-share ladder with row K100/P10/C8/F2 and target K200 yields P20/C16/F4; a custom ladder moving P40/C24/F36 to P30/C14/F56 with row K100/P10/C6/F4 and target K200 yields P15/C7/F12.44. Use these literal custom ladder fixtures:
+- [x] **Run red:** `npx vitest run shared/contracts/health/foodAdjustment.test.mjs --maxWorkers=2`.
+- [x] **Implement portion and macro slices:** portion delegates to existing scaleFoodPortion; diff only approved numeric/unit keys. Macro calories are `oldCalories + coefficient * (newMacro-oldMacro)`, with coefficients `{protein:4,carbs:4,fat:9}`. Validate finite numbers and minimum before rounding. Compare exact original value before rounding so a no-op cannot quantize stored data.
+- [x] **Implement fixed-mass calorie/density slice:** target calories are entered kcal or grams×density. Compute baseline energy `E=4P+4C+9F`, residual `r=K-E`, new energy `E2=K2-r*(K2/K)`. With complete positive baseline, add interpolated endpoint ladder share delta to measured normalized baseline shares, clamp to zero, normalize, and distribute E2. If clamping yields zero sum, retain original normalized shares. Incomplete macros scale only known values by K2/K. For K=0 or E=0 preserve existing zero/unknown macros. Preserve micros and mass. Round changed stored nutrients to two decimals, not intermediate shares.
+- [x] **Add independent residual fixtures:** a custom constant-share ladder with row K100/P10/C8/F2 and target K200 yields P20/C16/F4; a custom ladder moving P40/C24/F36 to P30/C14/F56 with row K100/P10/C6/F4 and target K200 yields P15/C7/F12.44. Use these literal custom ladder fixtures:
 ```js
 const constant = [
   {level:1, kcal_per_g:1, macros:{protein_pct:40, carb_pct:40, fat_pct:20}},
@@ -242,10 +242,10 @@ const shifting = [
   {level:2, kcal_per_g:2, macros:{protein_pct:30, carb_pct:14, fat_pct:56}},
 ];
 ``` Test out-of-ladder values without artificial maxima and zero-calorie beginnings.
-- [ ] **Implement atomic group patch calculation:** allocate target calories or target selected macro proportionally to positive child baselines. For density/calories use the same group ladder-share delta for every child; child mass stays fixed. Allocate nonnegative totals in integer cents: floor exact allocations, then distribute remaining cents by descending fractional remainder, breaking ties by entry ID. Do not apply a potentially negative “last child remainder.” Parents remain nutrient-zero headers; portion continues scaling all known extensive values.
-- [ ] **Test group cases:** two children K100/K200 targeted K450 become K150/K300; selected P10/P20 targeted P45 becomes P15/P30; unknown and zero aggregate selected fields are unavailable. Include rounding ties, unsorted IDs, immutability, unknown micros, and no-op exact identity.
-- [ ] **Run green:** `npx vitest run shared/contracts/health/foodAdjustment.test.mjs shared/contracts/health/foodDensity.test.mjs --maxWorkers=2`.
-- [ ] **Commit:** `git add shared/contracts/health/foodAdjustment.mjs shared/contracts/health/foodAdjustment.test.mjs` then `git commit -m "feat(health): define shared food adjustment arithmetic"`.
+- [x] **Implement atomic group patch calculation:** allocate target calories or target selected macro proportionally to positive child baselines. For density/calories use the same group ladder-share delta for every child; child mass stays fixed. Allocate nonnegative totals in integer cents: floor exact allocations, then distribute remaining cents by descending fractional remainder, breaking ties by entry ID. Do not apply a potentially negative “last child remainder.” Parents remain nutrient-zero headers; portion continues scaling all known extensive values.
+- [x] **Test group cases:** two children K100/K200 targeted K450 become K150/K300; selected P10/P20 targeted P45 becomes P15/P30; unknown and zero aggregate selected fields are unavailable. Include rounding ties, unsorted IDs, immutability, unknown micros, and no-op exact identity.
+- [x] **Run green:** `npx vitest run shared/contracts/health/foodAdjustment.test.mjs shared/contracts/health/foodDensity.test.mjs --maxWorkers=2`.
+- [x] **Commit:** `git add shared/contracts/health/foodAdjustment.mjs shared/contracts/health/foodAdjustment.test.mjs` then `git commit -m "feat(health): define shared food adjustment arithmetic"`.
 
 ## Task 5: Atomic adjustment and exact restore API
 

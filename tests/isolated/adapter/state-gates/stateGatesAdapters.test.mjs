@@ -124,7 +124,7 @@ describe('State Gates adapters', () => {
 
   it('atomically stores projections and replays whole revision batches', async () => {
     const memory = new Map();
-    const engine = new YamlStateGatesStateEngine({ resolveFilePath: householdId => `/virtual/${householdId}/current.yml`, load: path => memory.get(path) ?? null, save: (path, value) => memory.set(path, value) });
+    const engine = new YamlStateGatesStateEngine({ resolveFilePath: householdId => `/virtual/${householdId}/current.json`, load: path => memory.has(path) ? JSON.parse(memory.get(path)) : null, save: (path, content) => memory.set(path, content) });
     const projections = new YamlStateGatesProjectionRepository({ engine });
     const transitions = new YamlStateGatesTransitionRepository({ engine });
     expect(projections).toBeInstanceOf(IStateGatesProjectionRepository);
@@ -211,8 +211,8 @@ describe('State Gates adapters', () => {
 
   it('surfaces corrupt durable state instead of silently replacing it', async () => {
     const engine = new YamlStateGatesStateEngine({
-      filePath: '/virtual/corrupt.yml',
-      load: () => { throw new Error('bad yaml'); },
+      filePath: '/virtual/corrupt.json',
+      load: () => { throw new Error('bad json'); },
       save: () => {},
     });
     await expect(engine.loadProjection('home')).rejects.toMatchObject({ name: 'PersistenceError', code: 'STATE_GATES_STATE_UNAVAILABLE', status: 503 });

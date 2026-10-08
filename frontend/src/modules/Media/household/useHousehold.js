@@ -45,6 +45,23 @@ export function useFavourites() {
   }, [data]);
 }
 
+/**
+ * The household entry (spots) for one item, loading the carry-on and recent lists itself so a page
+ * opened straight to an item (a link, a reload) still knows how far anyone has got (FIND.8a/AC2).
+ */
+export function useHouseholdEntry(contentId) {
+  const carryOn = useApiResource(HOUSEHOLD_PATHS.carryOn, { swr: true, label: 'media-carry-on', logger: householdResourceLogger });
+  const recent = useApiResource(HOUSEHOLD_PATHS.recent, { swr: true, label: 'media-recent', logger: householdResourceLogger });
+  return useMemo(() => {
+    if (!contentId) return null;
+    for (const list of [carryOn.data?.items, recent.data?.items]) {
+      const found = Array.isArray(list) ? list.find(entry => entry?.contentId === contentId) : null;
+      if (found) return found;
+    }
+    return null;
+  }, [contentId, carryOn.data, recent.data]);
+}
+
 /** `nameFor(deviceId)` from GET /api/v1/media/screens; this device is "this device". */
 export function useScreenNamer() {
   const { data } = useApiResource(HOUSEHOLD_PATHS.screens, { swr: true, label: 'media-screens', logger: householdResourceLogger });

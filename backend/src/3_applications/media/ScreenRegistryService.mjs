@@ -18,6 +18,8 @@ import {
   touchScreen,
   renameScreen,
   setScreenRoom,
+  setRoomNeighbours,
+  roomAdjacencyView,
   addScreen,
   mergeScreens,
   retireScreen,
@@ -122,7 +124,25 @@ export class ScreenRegistryService {
   /** @returns {Promise<{screens:Object[], notSeenLately:Object[], retired:Object[], unnamed:Object[]}>} */
   async list({ householdId } = {}) {
     const [state, signals] = await Promise.all([this.#state(householdId), this.#signalMap(householdId)]);
-    return buildScreenView({ configured: this.#configuredList(householdId), state, now: this.#clock.now(), signals });
+    return {
+      ...buildScreenView({ configured: this.#configuredList(householdId), state, now: this.#clock.now(), signals }),
+      roomAdjacency: roomAdjacencyView(state),
+    };
+  }
+
+  /** Rooms that neighbour each other (PLACE.4a/AC6): `{ room: [neighbouring rooms] }`. */
+  async roomAdjacency({ householdId } = {}) {
+    return roomAdjacencyView(await this.#state(householdId));
+  }
+
+  /** Replace the neighbours of one room; the link is mutual. `[]` clears them. */
+  async setRoomNeighbours({ householdId, room, neighbours } = {}) {
+    return this.#write(householdId, async () => {
+      const result = setRoomNeighbours(await this.#state(householdId), room, neighbours);
+      await this.#store.save(result.state, householdId);
+      this.#logger.info?.('media.screens.room_neighbours_set', { householdId: householdId ?? null, room, neighbours: neighbours?.length ?? 0 });
+      return { roomAdjacency: result.adjacency };
+    });
   }
 
   /** One screen (any list), or null. Follows a merged id to its screen. */

@@ -22,6 +22,7 @@ export const houseLog = {
   screenRenamed:        info('house.screen-renamed'),
   renameConflict:       info('house.rename-conflict'),
   roomSet:              info('house.room-set'),
+  roomNeighboursSet:    info('house.room-neighbours-set'),
   screenAdded:          info('house.screen-added'),
   screenMerged:         info('house.screen-merged'),
   screenUnmerged:       info('house.screen-unmerged'),

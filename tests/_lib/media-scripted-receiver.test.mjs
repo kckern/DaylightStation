@@ -67,6 +67,20 @@ describe('scripted receiver states', () => {
     expect(fixture.deviceLiveness.isOnline?.(POWER_DEVICE_ID) ?? fixture.deviceLiveness.getEntry?.(POWER_DEVICE_ID)?.online).toBe(false);
   });
 
+  it('serverOffline: the screen keeps its state for people but the server refuses a send with DEVICE_OFFLINE; reset clears it', async () => {
+    await script({ deviceId: POWER_DEVICE_ID, state: 'playing', title: 'Arrival', duration: 7000, serverOffline: true });
+    expect((await stateOf(POWER_DEVICE_ID)).snapshot.state).toBe('playing');
+    expect(fixture.deviceLiveness.getLastSnapshot(POWER_DEVICE_ID).online).toBe(false);
+    const refused = await request(fixture.app).post(`/${POWER_DEVICE_ID}/session/transport`).send({ commandId: 'off-1', action: 'pause' });
+    expect(refused.status).toBeGreaterThanOrEqual(400);
+    expect(JSON.stringify(refused.body)).toMatch(/offline/i);
+    await script({ deviceId: POWER_DEVICE_ID, state: 'playing', title: 'Arrival', duration: 7000 });
+    expect(fixture.deviceLiveness.getLastSnapshot(POWER_DEVICE_ID).online).toBe(true);
+    await script({ deviceId: POWER_DEVICE_ID, state: 'playing', title: 'Arrival', serverOffline: true });
+    fixture.reset();
+    expect(fixture.deviceLiveness.getLastSnapshot(POWER_DEVICE_ID).online).toBe(true);
+  });
+
   it('refuses an unknown screen and an invalid spec without publishing', async () => {
     const unknown = await script({ deviceId: 'physical-livingroom-tv', state: 'playing' });
     expect(unknown.status).toBe(400);

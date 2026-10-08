@@ -14,6 +14,8 @@ import {
   resolveScreenId,
   aliasesOf,
   SCREEN_DEFAULTS,
+  roomAdjacencyView,
+  setRoomNeighbours,
 } from './screenRegistry.mjs';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -220,5 +222,33 @@ describe('retire / restore and Not seen lately', () => {
     });
     expect(view.screens.find((s) => s.id === 'browser:old').lastSeen).toBe(iso(NOW - DAY));
     expect(view.notSeenLately.map((s) => s.id)).toEqual(['fleet:office-tv']);
+  });
+});
+
+describe('room adjacency (PLACE.4a/AC6)', () => {
+  it('is empty until set, and a link is mutual', () => {
+    expect(roomAdjacencyView(emptyRegistry())).toEqual({});
+    const { state, adjacency } = setRoomNeighbours(emptyRegistry(), 'Kitchen', ['Den', ' living room ']);
+    expect(adjacency).toEqual({ Den: ['Kitchen'], Kitchen: ['Den', 'living room'], 'living room': ['Kitchen'] });
+    expect(roomAdjacencyView(state)).toEqual(adjacency);
+  });
+
+  it('replaces a room\'s neighbours (removing the mirrored links), ignores itself and blanks, matches case-insensitively', () => {
+    let { state } = setRoomNeighbours(emptyRegistry(), 'Kitchen', ['Den', 'Hall']);
+    ({ state } = setRoomNeighbours(state, 'kitchen', ['Hall', 'KITCHEN', '']));
+    expect(roomAdjacencyView(state)).toEqual({ Hall: ['kitchen'], kitchen: ['Hall'] });
+    ({ state } = setRoomNeighbours(state, 'Hall', []));
+    expect(roomAdjacencyView(state)).toEqual({});
+  });
+
+  it('rejects a blank room or a non-list', () => {
+    expect(() => setRoomNeighbours(emptyRegistry(), '  ', [])).toThrow(/room/i);
+    expect(() => setRoomNeighbours(emptyRegistry(), 'Den', 'Hall')).toThrow(/list/i);
+  });
+
+  it('survives renames and merges of screens (state is carried through clone)', () => {
+    const { state } = setRoomNeighbours(emptyRegistry(), 'Kitchen', ['Den']);
+    const renamed = setScreenRoom(state, 'fleet:livingroom-tv', 'Den', { configured, at: iso(NOW) });
+    expect(roomAdjacencyView(renamed.state)).toEqual({ Den: ['Kitchen'], Kitchen: ['Den'] });
   });
 });

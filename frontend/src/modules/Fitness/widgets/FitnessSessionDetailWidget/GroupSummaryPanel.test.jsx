@@ -18,6 +18,20 @@ describe('GroupSummaryPanel', () => {
     expect(queryByText(/blocks/)).toBeNull();
   });
 
+  it('shows elapsed episode time and measured time per rider', () => {
+    const timedRiders = [
+      { id: 'user_3', name: 'Test Rider', measuredDurationMs: 42 * 60_000 },
+      { id: 'user_4', name: 'the learner', measuredDurationMs: 17 * 60_000 },
+    ];
+    const { getByText } = render(
+      <GroupSummaryPanel riders={timedRiders} segmentCount={4} elapsedMs={173 * 60_000} />
+    );
+
+    expect(getByText('2h 53m elapsed')).toBeTruthy();
+    expect(getByText('42m measured')).toBeTruthy();
+    expect(getByText('17m measured')).toBeTruthy();
+  });
+
   it('wires the close / delete / memo affordances', () => {
     const onClose = vi.fn(); const onDelete = vi.fn(); const onAddMemo = vi.fn();
     const { getByTitle } = render(

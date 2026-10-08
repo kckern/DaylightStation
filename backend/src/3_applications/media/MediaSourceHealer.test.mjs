@@ -135,4 +135,74 @@ describe('MediaSourceHealer', () => {
     await healer.check('plex:696316');
     expect(hostHealer.heal).not.toHaveBeenCalled();
   });
+  describe('container ids (2026-10-07: the queue ROOT was asked about)', () => {
+    it('passes a no-metadata reason through so screens can tell a deleted item from an outage', async () => {
+      const probe = { probe: vi.fn(async () => ({ state: 'unknown', reason: 'no-metadata', path: null })) };
+      const { healer } = setup({ probe });
+      expect(await healer.check('plex:1', {})).toMatchObject({ state: 'unknown', reason: 'no-metadata' });
+    });
+
+    it('answers not-a-leaf and logs heal.not-a-leaf instead of a silent unknown', async () => {
+      const probe = { probe: vi.fn(async () => ({ state: 'unknown', reason: 'not-a-leaf', itemType: 'show', title: 'Bluey', path: null })) };
+      const hostHealer = { heal: vi.fn() };
+      const { healer, logger } = setup({ probe, hostHealer });
+      const result = await healer.check('plex:59493');
+      expect(result).toMatchObject({ state: 'unknown', reason: 'not-a-leaf' });
+      expect(hostHealer.heal).not.toHaveBeenCalled();
+      expect(events(logger, 'media.source.heal.not-a-leaf')[0]).toMatchObject({ ratingKey: '59493', itemType: 'show' });
+    });
+  });
+
+  describe('proxy-observed refusal (origin: proxy)', () => {
+    const hostOk = () => ({ heal: vi.fn(async () => ({ ok: true, mode: '777', chmodApplied: false, cacheRefreshed: true, readable: true })) });
+
+    it('runs the host ctime refresh even though Plex says readable, then re-checks', async () => {
+      const hostHealer = hostOk();
+      const probe = probeSequence('readable');
+      const { healer, logger } = setup({ probe, hostHealer });
+      const result = await healer.check('plex:59546', { origin: 'proxy' });
+      expect(hostHealer.heal).toHaveBeenCalledWith(PATH);
+      expect(result.state).toBe('readable');
+      expect(result.steps.map((s) => s.step)).toEqual(['plex-check', 'host-heal', 'plex-recheck']);
+      expect(events(logger, 'media.source.heal.proxy-refresh')[0]).toMatchObject({ ratingKey: '59546', cacheRefreshed: true });
+    });
+
+    it('does not refresh for an ordinary (player) check that reads readable', async () => {
+      const hostHealer = hostOk();
+      const { healer } = setup({ probe: probeSequence('readable'), hostHealer });
+      await healer.check('plex:59546');
+      expect(hostHealer.heal).not.toHaveBeenCalled();
+    });
+
+    it('rate-limits the proxy refresh per file (60 s), and allows it again after', async () => {
+      const hostHealer = hostOk();
+      const { healer, advance } = setup({ probe: probeSequence('readable'), hostHealer });
+      await healer.check('plex:59546', { origin: 'proxy' });
+      advance(30_000);
+      await healer.check('plex:59546', { origin: 'proxy' });
+      expect(hostHealer.heal).toHaveBeenCalledTimes(1);
+      advance(31_000);
+      await healer.check('plex:59546', { origin: 'proxy' });
+      expect(hostHealer.heal).toHaveBeenCalledTimes(2);
+      // a different file is not limited by the first
+      await healer.check('plex:11111', { origin: 'proxy' });
+      expect(hostHealer.heal).toHaveBeenCalledTimes(3);
+    });
+
+    it('a flood of distinct ids cannot evict live cooldowns: a full map refuses new refreshes', async () => {
+      const hostHealer = hostOk();
+      const { healer } = setup({ probe: probeSequence('readable'), hostHealer });
+      for (let i = 1; i <= 500; i += 1) await healer.check(`plex:${i}`, { origin: 'proxy' });
+      expect(hostHealer.heal).toHaveBeenCalledTimes(500);
+      await healer.check('plex:501', { origin: 'proxy' }); // map full of live cooldowns
+      expect(hostHealer.heal).toHaveBeenCalledTimes(500);
+      await healer.check('plex:1', { origin: 'proxy' }); // plex:1 was NOT evicted: still cooling down
+      expect(hostHealer.heal).toHaveBeenCalledTimes(500);
+    });
+
+    it('still answers readable when no host healer is configured', async () => {
+      const { healer } = setup({ probe: probeSequence('readable') });
+      expect((await healer.check('plex:59546', { origin: 'proxy' })).state).toBe('readable');
+    });
+  });
 });

@@ -229,17 +229,21 @@ net and the deficit are tiers on the ruler now.
   floor, every drawn plan boundary and break even, with 12% headroom rounded up
   to a 500 kcal step. A portion preview holds the baseline axis steady. A
   preview beyond its right edge shows an overflow pointer and exact text value.
-- Solid consumed spans have fixed meanings: neutral through the usable base
-  limit, blue through workout room, amber after the adjusted plan end, red only
-  past known break even. Adding food does not recolour earlier spans while the
-  boundaries are unchanged. Live available base and workout room are pale green
-  and blue. A finished day removes those available-looking fills.
+- Solid consumed spans keep fixed boundaries: green through the usable base
+  limit (blue while the log is incomplete), green/blue through workout room,
+  amber after the adjusted plan end, and red only past known break even. Adding
+  food does not move or recolour earlier boundaries. Live available base and
+  workout room are pale green and blue. A finished day removes those
+  available-looking fills.
 - The eaten cursor stays at the true food value. The floor is a small logging
   marker, the distinct base limit is dashed, plan end is solid, and break even
-  has an end mark. No hatch, goal-range band, internal number pill or arbitrary
-  numeric ticks remain. A wrapping key names every available marker and value;
-  markers within six rendered pixels form a visual cluster but keep their exact
-  values in the key.
+  has an end mark. A labelled bracket and green band show the complete goal
+  range from logging floor through the adjusted plan end. The exercise-earned
+  extension from base target to plan end uses diagonal hatching above both its
+  spent and available portions, so the bonus remains legible after it is eaten.
+  The bar has no internal number pill or arbitrary numeric ticks. A wrapping key
+  names every marker and exact value; markers within six rendered pixels form a
+  visual cluster but keep their separate values in the key.
 - The configured pre-workout target can exceed the usable capped limit. In that
   case the key shows the usable plan limit and a detail line names the configured
   target. The detail line also explains a partially capped exercise boost, a log

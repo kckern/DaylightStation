@@ -83,6 +83,7 @@ export const houseApi = {
     body: { name, ...(onCollision ? { onCollision } : {}), ...(confirm ? { confirm: true } : {}) },
   }),
   setScreenRoom: (id, room) => call(screen(id), { method: 'PATCH', body: { room: room ? room : null } }),
+  setRoomNeighbours: (room, neighbours = []) => call(media('screens/rooms/adjacency'), { method: 'PUT', body: { room, neighbours } }),
   addScreen: ({ name, room } = {}) => call(media('screens'), { method: 'POST', body: { name, ...(room ? { room } : {}) } }),
   mergeScreen: (id, { into, confirm } = {}) => call(`${screen(id)}/merge`, {
     method: 'POST', body: { into, ...(confirm ? { confirm: true } : {}) },

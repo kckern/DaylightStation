@@ -40,6 +40,9 @@ export function RemoteScreenProblems() {
   const seenRef = useRef(new Set());
   const store = fleet?.store ?? null;
   const recordLocal = outcomes?.recordLocal;
+  const removeDispatch = outcomes?.removeDispatch;
+  // deviceId -> the tray row of that screen's held (waiting) notice.
+  const heldRowsRef = useRef(new Map());
 
   // Screens this device started (any far outcome record) or steers. Merely
   // aiming the cast target at a screen is not a relationship with it.
@@ -49,19 +52,28 @@ export function RemoteScreenProblems() {
   }
   const watchedKey = [...watched].sort().join('|');
   const latest = useRef({});
-  latest.current = { watched, devices: fleet?.devices ?? [], recordLocal };
+  latest.current = { watched, devices: fleet?.devices ?? [], recordLocal, removeDispatch };
 
   useEffect(() => {
     if (!store?.subscribeAll) return undefined;
     const check = () => {
-      const { watched: ids, devices, recordLocal: record } = latest.current;
+      const { watched: ids, devices, recordLocal: record, removeDispatch: remove } = latest.current;
       if (!record) return;
+      // A held notice is withdrawn when that screen resumes (its problem is
+      // gone) or reports something newer.
+      for (const [deviceId, held] of [...heldRowsRef.current]) {
+        const current = store.getEntry(deviceId)?.snapshot?.meta?.problem ?? null;
+        if (!current || current.at !== held.at) {
+          if (held.attemptId) remove?.(held.attemptId);
+          heldRowsRef.current.delete(deviceId);
+        }
+      }
       for (const { deviceId, problem } of freshRemoteProblems({ watchedIds: ids, entryFor: (id) => store.getEntry(id), seen: seenRef.current })) {
         const targetName = deviceName(devices.find((d) => d.id === deviceId) ?? null, deviceId);
         mediaLog.remoteProblemReported({ deviceId, kind: problem.kind, contentId: problem.item?.contentId ?? null, reason: problem.reason ?? null });
-        record({
+        const attemptId = record({
           kind: 'playback',
-          phase: problem.kind === 'skipped' ? 'skipped' : 'failed',
+          phase: ['skipped', 'waiting', 'library-unavailable'].includes(problem.kind) ? problem.kind : 'failed',
           reason: problem.reason ?? null,
           item: problem.item,
           replacement: problem.replacement ?? null,
@@ -69,6 +81,9 @@ export function RemoteScreenProblems() {
           targetName,
           command: { kind: 'playNow', item: { contentId: problem.item?.contentId ?? null, title: problem.item?.title ?? null } },
         });
+        if (problem.kind === 'waiting' || problem.kind === 'library-unavailable') {
+          heldRowsRef.current.set(deviceId, { attemptId: attemptId ?? null, at: problem.at });
+        }
       }
     };
     check();

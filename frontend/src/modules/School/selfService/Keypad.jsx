@@ -304,6 +304,7 @@ export default function Keypad({
     }
     stopReject();
     setEntry((current) => (current.length >= length ? current : current + digit));
+    schoolLog.selfService('keypad.digit-pressed', {});
   }, [isStray, length, stopReject]);
 
   /**
@@ -318,13 +319,14 @@ export default function Keypad({
    * "start over".
    */
   const clearEntry = useCallback(() => {
-    if (reject) { stopReject(); return; }
+    if (reject) { schoolLog.selfService('keypad.reject-cancelled', { byKey: 'clear' }); stopReject(); return; }
     // Clear itself is never held back — "start over" has to work the instant
     // it is asked for. Its RELOAD branch is: inside the stray window the entry
     // is empty because `submit` just emptied it, not because the screen is
     // idle, and reloading the panel out from under a verdict still in flight
     // is the same rug pull by a louder route.
-    if (!entry && onReload && !isStray()) { onReload(); return; }
+    if (!entry && onReload && !isStray()) { schoolLog.selfService('keypad.clear-reload', {}); onReload(); return; }
+    schoolLog.selfService('keypad.clear', { entryLength: entry.length });
     setEntry('');
   }, [entry, isStray, onReload, reject, stopReject]);
   const backspace = useCallback(() => {
@@ -334,10 +336,15 @@ export default function Keypad({
     }
     stopReject();
     setEntry((c) => c.slice(0, -1));
+    schoolLog.selfService('keypad.backspace', {});
   }, [isStray, stopReject]);
 
   const submit = useCallback(async () => {
-    if (busy || entry.length !== length) return;
+    if (busy || entry.length !== length) {
+      schoolLog.selfService('keypad.submit-blocked', { reason: busy ? 'busy' : 'incomplete', entryLength: entry.length });
+      return;
+    }
+    schoolLog.selfService('keypad.submit', { entryLength: entry.length });
     // Cleared on the way out, not on the answer coming back: the next child
     // walking up must never find a half-typed code waiting for them, and the
     // refusal that follows is about a code they have already finished typing.

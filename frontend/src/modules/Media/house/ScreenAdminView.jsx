@@ -10,6 +10,7 @@ import { IconAlertCircle, IconArchive, IconArrowBackUp, IconArrowMerge, IconEdit
 import { useFleetContext } from '../fleet/useFleetContext.js';
 import { ConfirmDialog } from '../shell/ConfirmDialog.jsx';
 import { RenameScreenDialog } from './RenameScreenDialog.jsx';
+import { RoomNeighboursSection } from './RoomNeighboursSection.jsx';
 import { useScreenAdmin } from './useScreenAdmin.js';
 import { clockTime, wasNameLabel } from './houseCopy.js';
 import houseLog from './houseLog.js';
@@ -191,6 +192,7 @@ export function ScreenAdminView() {
         <Title order={2} size="h4" id="screen-admin-list-title">Every screen</Title>
         <ul className="house-list" data-testid="screen-admin-list">{screens.map(item)}</ul>
       </section>
+      <RoomNeighboursSection screens={live} adjacency={registry?.roomAdjacency ?? {}} admin={admin} />
       {notSeen.length > 0 && (
         <details className="house-section" data-testid="screen-admin-not-seen">
           <summary><Text span fw={600}>Not seen lately ({notSeen.length})</Text> <Text span size="sm" c="dimmed">— silent for more than 30 days</Text></summary>

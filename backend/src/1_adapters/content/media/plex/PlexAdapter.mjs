@@ -140,6 +140,8 @@ function recentlyAddedCollection(item) {
  * Plex content source adapter.
  * Implements IContentSource interface for accessing Plex Media Server content.
  */
+const PART_MISS_TTL_MS = 30_000;
+
 export class PlexAdapter {
   #httpClient;
   // part id -> rating key for every part URL this adapter hands out. Plex has
@@ -147,6 +149,16 @@ export class PlexAdapter {
   // when Plex refuses a file, so this is how a refused part finds the item to
   // heal (ratingKeyForPart). Bounded; oldest entries fall off.
   #partIndex = new Map();
+  // Parts Plex had no answer for (partId -> time asked), so a stuck file does
+  // not turn every proxy refusal into three library queries.
+  #partMisses = new Map();
+  // Plex's transcode session uuid (TranscodeSession.key) -> rating key. Segments
+  // of a refused transcode arrive at `/video/:/transcode/universal/session/<uuid>/...`
+  // with PLEX's uuid, not the X-Plex-Session-Identifier we mint, so it is learned
+  // lazily from GET /status/sessions on a refusal (resolveRatingKeyForPath).
+  #sessionIndex = new Map();
+  // uuids /status/sessions could not place (uuid -> time asked).
+  #sessionMisses = new Map();
   // partId -> tail of the chain of track-selection mints on that part. The
   // part's selection is per Plex account, so two mints must not interleave
   // their read-previous / select / decision / restore (RQ-STEER-14).
@@ -899,6 +911,11 @@ export class PlexAdapter {
    * @private
    */
   _toPlayableItem(item, opts = {}) {
+    // Every `/library/parts/...` URL this adapter builds (here, and in the
+    // queue/list builders that call this) must be mappable back to its item.
+    for (const media of item.Media || []) {
+      for (const part of media?.Part || []) this.#rememberPart(part?.key, item.ratingKey);
+    }
     const isVideo = ['movie', 'episode', 'clip'].includes(item.type);
     const isAudio = ['track'].includes(item.type);
 
@@ -1886,6 +1903,102 @@ export class PlexAdapter {
    */
   ratingKeyForPart(partId) {
     return this.#partIndex.get(String(partId)) ?? null;
+  }
+
+  /** The rating key behind a Plex transcode session uuid, if already resolved. */
+  ratingKeyForSession(sessionUuid) {
+    return this.#sessionIndex.get(String(sessionUuid)) ?? null;
+  }
+
+  /**
+   * Resolve a Plex transcode session uuid to its item: `GET /status/sessions`
+   * lists `Metadata[].TranscodeSession.key` (the uuid in the segment path) next
+   * to the item's `ratingKey`. Read-only. Hits are cached; a miss is cached for
+   * PART_MISS_TTL_MS (30s) so a dead session does not turn every refused segment
+   * into a Plex query.
+   * @param {string} sessionUuid
+   * @returns {Promise<string|null>}
+   */
+  async resolveRatingKeyForSession(sessionUuid) {
+    const uuid = String(sessionUuid ?? '');
+    if (!uuid) return null;
+    const known = this.ratingKeyForSession(uuid);
+    if (known) return known;
+    const missAt = this.#sessionMisses.get(uuid);
+    if (missAt !== undefined && Date.now() - missAt < PART_MISS_TTL_MS) return null;
+    try {
+      const data = await this.client.request('/status/sessions', { deadline: 10_000 });
+      const rows = data?.MediaContainer?.Metadata ?? [];
+      let found = null;
+      for (const row of Array.isArray(rows) ? rows : []) {
+        const key = String(row?.TranscodeSession?.key ?? '').split('/').filter(Boolean).pop();
+        if (!key || !row?.ratingKey) continue;
+        // Cache every transcode we see, not just the one asked about.
+        this.#sessionIndex.delete(key);
+        this.#sessionIndex.set(key, String(row.ratingKey));
+        if (key === uuid) found = String(row.ratingKey);
+      }
+      while (this.#sessionIndex.size > 2000) this.#sessionIndex.delete(this.#sessionIndex.keys().next().value);
+      if (found) {
+        this.logger.info?.('media.source.heal.session-resolved', { sessionUuid: uuid, ratingKey: found });
+        return found;
+      }
+    } catch (error) {
+      this.logger.warn?.('media.source.heal.session-resolve-failed', { sessionUuid: uuid, error: error.message });
+    }
+    this.#sessionMisses.set(uuid, Date.now());
+    if (this.#sessionMisses.size > 500) this.#sessionMisses.delete(this.#sessionMisses.keys().next().value);
+    return null;
+  }
+
+  /**
+   * Which item does this part belong to? The index first (every builder fills
+   * it), then Plex itself: `GET /library/all?type=<t>&media.part.id=<id>` —
+   * note `media.part.id`; a bare `part.id=` is silently ignored and returns the
+   * whole library. Positive answers are cached in the (bounded) index.
+   * @param {string|number} partId
+   * @returns {Promise<string|null>}
+   */
+  async resolveRatingKeyForPart(partId) {
+    const id = String(partId ?? '');
+    if (!/^\d+$/.test(id)) return null;
+    const known = this.ratingKeyForPart(id);
+    if (known) return known;
+    const missAt = this.#partMisses.get(id);
+    if (missAt !== undefined && Date.now() - missAt < PART_MISS_TTL_MS) return null;
+    for (const [type, via] of [[4, 'type-4'], [1, 'type-1'], [10, 'type-10']]) {
+      try {
+        const data = await this.client.request(`/library/all?type=${type}&media.part.id=${id}`, { deadline: 10_000 });
+        const ratingKey = data?.MediaContainer?.Metadata?.[0]?.ratingKey;
+        if (ratingKey) {
+          this.#partIndex.delete(id);
+          this.#partIndex.set(id, String(ratingKey));
+          if (this.#partIndex.size > 5000) this.#partIndex.delete(this.#partIndex.keys().next().value);
+          this.logger.info?.('media.source.heal.part-resolved', { partId: id, ratingKey: String(ratingKey), via });
+          return String(ratingKey);
+        }
+      } catch (error) {
+        this.logger.warn?.('media.source.heal.part-resolve-failed', { partId: id, via, error: error.message });
+      }
+    }
+    this.#partMisses.set(id, Date.now());
+    if (this.#partMisses.size > 500) this.#partMisses.delete(this.#partMisses.keys().next().value);
+    return null;
+  }
+
+  /**
+   * The item behind a proxied path Plex refused: a direct-play part
+   * (`/library/parts/<id>/...`) or a transcode segment of one of Plex's sessions
+   * (`/video/:/transcode/universal/session/<plex-uuid>/...`, resolved via /status/sessions).
+   * @param {string} path
+   * @returns {Promise<string|null>}
+   */
+  async resolveRatingKeyForPath(path) {
+    const pathname = String(path || '').split('?')[0];
+    const partId = /\/library\/parts\/(\d+)\//.exec(pathname)?.[1];
+    if (partId) return this.resolveRatingKeyForPart(partId);
+    const sessionId = /\/transcode\/universal\/session\/([^/]+)\//.exec(pathname)?.[1];
+    return sessionId ? this.resolveRatingKeyForSession(decodeURIComponent(sessionId)) : null;
   }
 
   #rememberPart(partPath, ratingKey) {

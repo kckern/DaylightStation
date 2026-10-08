@@ -37,7 +37,8 @@ export function ScreenPlayer(props) {
       getPlayerHandle={() => playerRef.current}
       contentId={props.play ?? props.queue ?? null}
     >
-      <Player {...props} ref={playerRef} />
+      {/* Screens HOLD a refused video until healed (owner ruling 2026-10-07). */}
+      <Player holdOnRefusal {...props} ref={playerRef} />
     </SurroundHost>
   );
 }

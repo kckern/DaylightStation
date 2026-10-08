@@ -48,16 +48,19 @@ vi.mock('../fleet/deviceDisplay.js', () => ({
 vi.mock('../../../hooks/useStatusOverlay', () => ({
   useStatusOverlay: () => ({ statusView: new Map([['tv-1', state.snapshot]]), predict, pending, pendingMatch }),
 }));
+const startedBy = { info: { startedBy: { kind: 'routine', name: 'Kitchen button' }, at: null } };
+vi.mock('../house/useHouseSignals.js', () => ({ useStartedBy: () => startedBy.info }));
 const peekPop = vi.fn();
+const peekPush = vi.fn();
 let backDestination = 'Devices';
-vi.mock('./NavProvider.jsx', () => ({ useNav: () => ({ pop: peekPop, backDestination }) }));
+vi.mock('./NavProvider.jsx', () => ({ useNav: () => ({ pop: peekPop, push: peekPush, backDestination }) }));
 import { PeekPanel } from './PeekPanel.jsx';
 
 const emptyFleetEntries = new Map();
 const peekFleetStore = { subscribeAll: () => () => {}, getAll: () => emptyFleetEntries, getEntry: () => null };
-function PeekTestProviders({ deviceId = 'tv-1' }) {
+function PeekTestProviders({ deviceId = 'tv-1', extraDevices = [] }) {
   return (
-    <FleetContext.Provider value={{ devices: [{ id: 'tv-1', name: 'Office TV', location: 'Office' }], store: peekFleetStore }}>
+    <FleetContext.Provider value={{ devices: [{ id: 'tv-1', name: 'Office TV', location: 'Office' }, ...extraDevices], store: peekFleetStore }}>
       <CastTargetProvider><MantineProvider><PeekPanel deviceId={deviceId} /></MantineProvider></CastTargetProvider>
     </FleetContext.Provider>
   );
@@ -99,6 +102,15 @@ describe('PeekPanel shared target controls', () => {
     renderPeekPanel();
     expect(screen.getByTestId('aim-label')).toHaveTextContent('Playing on This device');
     expect(screen.getByTestId('aim-label')).not.toHaveTextContent('Office TV');
+  });
+
+  it('HOUSE.5a/AC2: shows who started what plays in the controls header, and nothing when nothing plays', () => {
+    const view = renderPeekPanel();
+    expect(screen.getByTestId('house-started-by-tv-1')).toHaveTextContent('Started by Kitchen button');
+    view.unmount();
+    state.snapshot = { ...state.snapshot, state: 'ready', currentItem: null };
+    renderPeekPanel();
+    expect(screen.queryByTestId('house-started-by-tv-1')).toBeNull();
   });
 
   it('names the actual prior area on its visible Back control', () => {
@@ -265,5 +277,29 @@ describe('PeekPanel shared target controls', () => {
       expect(queue.reorder).not.toHaveBeenCalled();
       expect(queue.remove).not.toHaveBeenCalled();
     }
+  });
+});
+
+describe('PeekPanel screen switcher (STEER.1b/AC3)', () => {
+  it('lists the other screens and switches the Remote to one in a single tap', async () => {
+    render(<PeekTestProviders extraDevices={[{ id: 'kitchen', name: 'Kitchen' }]} />);
+    fireEvent.click(screen.getByTestId('peek-switch'));
+    expect(screen.queryByTestId('peek-switch-tv-1')).toBeNull();
+    fireEvent.click(await screen.findByTestId('peek-switch-kitchen'));
+    expect(peekPush).toHaveBeenCalledWith('peek', { deviceId: 'kitchen' });
+  });
+
+  it('offers no switcher when this is the only screen', () => {
+    render(<PeekTestProviders />);
+    expect(screen.queryByTestId('peek-switch')).toBeNull();
+  });
+});
+
+describe('PeekPanel Stop feedback (STEER.3a/AC3)', () => {
+  it('marks the screen\'s state pending the moment Stop is pressed', () => {
+    render(<PeekTestProviders />);
+    fireEvent.click(screen.getByTestId('np-stop'));
+    expect(transport.stop).toHaveBeenCalled();
+    expect(pending).toHaveBeenCalledWith('tv-1', ['state']);
   });
 });

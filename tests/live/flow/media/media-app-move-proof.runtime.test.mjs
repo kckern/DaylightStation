@@ -71,9 +71,8 @@ test('[PLACE.7a/AC2] Move to this device from another screen\'s controls: this d
   // A confirmation: it moved, and from where.
   const moved = rowWith(page, 'Moved Hospital here');
   await expect(moved).toBeVisible({ timeout: 30000 });
-  // "and from where": the confirmation says it moved HERE; whether it also names the screen it came from is
-  // recorded (the ledger row PLACE.7a/AC3 stays Partial while it does not).
-  test.info().annotations.push({ type: 'move-confirmation', description: (await moved.innerText().catch(() => 'Moved Hospital here')).replace(/\s+/g, ' ') });
+  // PLACE.7a/AC3 "and from where": it names the screen it came from.
+  await expect(moved).toContainText(`from ${A_NAME}`);
   await page.getByTestId('np-stop').click();
   await context.close();
   await receiver.context.close();
@@ -138,8 +137,20 @@ test('[PLACE.8a/AC4] hand-off from Now Playing with "Keep playing here too": the
     const s = await receiverState(request, A);
     return s?.currentItem?.contentId === ITEM.HOSPITAL ? s.queue.items.map((i) => i.contentId).join(',') : null;
   }, { timeout: 120000 }).toBe([ITEM.HOSPITAL, ITEM.KEEPY].join(','));
-  // "At the same moment": recorded, not asserted (PLACE.8a/AC2 stays Partial): Keep starts the screen's copy from the start.
-  test.info().annotations.push({ type: 'keep-position', description: `local ${Math.round(spot)} s; screen ${Math.round((await receiverState(request, A)).position)} s` });
+  // "At the same moment" (PLACE.8a/AC2): the screen's copy is playing from the local spot from its FIRST playing
+  // report, not from 0:00 (a copy that restarted would take `spot` seconds to get there).
+  let firstPlaying = null;
+  await expect.poll(async () => {
+    const s = await receiverState(request, A);
+    if (s?.state === 'playing' && s?.currentItem?.contentId === ITEM.HOSPITAL && Number.isFinite(s.position)) firstPlaying ??= s.position;
+    return firstPlaying !== null;
+  }, { timeout: 60000 }).toBe(true);
+  const hereNow = await local.evaluate((v) => v.currentTime);
+  expect(firstPlaying, `screen first played at ${Math.round(firstPlaying)} s; local spot was ${Math.round(spot)} s`).toBeGreaterThanOrEqual(spot - 3);
+  expect(Math.abs(firstPlaying - hereNow), 'and is within seconds of where this device is now').toBeLessThanOrEqual(20);
+  // The screen page's own video element agrees: it is playing from the spot, not from the start.
+  const screenVideo = receiver.page.locator('video').first();
+  await expect.poll(() => screenVideo.evaluate((v) => (v.readyState >= 2 && !v.paused ? v.currentTime : -1)), { timeout: 60000 }).toBeGreaterThanOrEqual(spot - 3);
   await expect(rowWith(page, A_NAME).first()).toBeVisible({ timeout: 20000 });
   await expect(rowWith(page, 'Hospital').first()).toBeVisible();
   // (keep) this device carries on, as chosen.
@@ -150,16 +161,13 @@ test('[PLACE.8a/AC4] hand-off from Now Playing with "Keep playing here too": the
   await receiver.context.close();
 });
 
-test('[PLACE.8a/AC3][PLACE.6a/AC4] hand-off from Now Playing with "Move playback": the screen starts and this device stops (known gap)', async ({ browser, request }) => {
-  // Known defect (reported, not fixed here): Now Playing's hand-off (useHandOff.js) uses the typed hand-off only, so an
-  // IDLE screen answers INVALID_CAPTURE ("Could not confirm the move ... Playback here was kept"); the Remote's
-  // Move to… (screenMove.js) has the adopt-load fallback for exactly this case and works. test.fail() turns red when fixed.
-  test.fail(true, 'DEFECT: Now Playing hand-off Move to an idle screen fails with INVALID_CAPTURE');
+test('[PLACE.8a/AC3][PLACE.6a/AC4] hand-off from Now Playing with "Move playback" to an idle screen: the screen starts and this device stops', async ({ browser, request }) => {
   const { receiver, context, page, local, picker } = await handoffSetup(browser, request);
   await picker.getByTestId('picker-mode-transfer').click();
   await picker.getByTestId('picker-submit').click();
   await expect.poll(async () => (await receiverState(request, A))?.currentItem?.contentId, { timeout: 60000 }).toBe(ITEM.HOSPITAL);
-  await expect.poll(() => local.evaluate((v) => v.paused || v.ended), { timeout: 60000 }).toBe(true);
+  // This device stopped: its player is gone (or at least paused).
+  await expect.poll(async () => (await local.count()) === 0 || await local.evaluate((v) => v.paused || v.ended), { timeout: 60000 }).toBe(true);
   await stopReceiver(request, A);
   await context.close();
   await receiver.context.close();

@@ -399,6 +399,29 @@
     font-variant-numeric: tabular-nums;
 }
 
+// "Skip · OK" under the fixing note, on screens only. Quiet pill, legible from
+// the couch; the OK hint is what a D-pad remote presses.
+.loading-overlay .loading-skip{
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 1rem;
+    padding: 0.4rem 1.1rem;
+    border: 2px solid #FFFFFF55;
+    border-radius: 999px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #FFFFFFCC;
+    cursor: pointer;
+    pointer-events: auto;
+}
+.loading-overlay .loading-skip__key{
+    padding: 0.05rem 0.5rem;
+    border-radius: 6px;
+    background: #FFFFFF33;
+    font-size: 0.95rem;
+}
+
 .loading-overlay .loading-timer{
     font-size: 2rem;
     font-weight: 700;

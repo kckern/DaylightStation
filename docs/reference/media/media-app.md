@@ -20,6 +20,8 @@ Escape dismisses an open More menu first. After a menu action closes it,
 Escape follows the outer search dismissal lifecycle instead of reopening More.
 The dismiss stack preserves layer ownership for the entire key event: a layer
 that closes before document bubbling cannot send that same Escape to view Back.
+A Browse row's More menu registers as a managed dismiss layer (`onMenuOpenChange` on
+`ResultRow`, `BrowseView`), so Escape closes the menu and does not also go Back.
 
 Each operation has a tap identity and a ten-second Undo deadline. The selected
 playback owner captures the prior native position and queue generations before
@@ -138,6 +140,16 @@ wraps at phone width, so nothing is lost to a narrow screen.
   screen or from any Remote.
 - **Add to this queue** (a screen's Remote) opens the one search pointed at
   that screen for a single addition; the aim does not change.
+- **Switch screen** (a screen's Remote, top of the controls) lists every other
+  screen: one tap moves the Remote to it. The aim is never changed by
+  switching, and Back returns to the Remote you left.
+- **Shuffle, Repeat and the volume steps** on a screen's Remote take effect on
+  that screen: its own state changes and the Remote shows it. They never
+  interrupt what is playing. Shuffle plays the queued items after the current
+  one (and any placed Up Next) in a random order without changing the listed
+  order; turning it off plays them in the listed order again. **Move up/down**
+  on a screen's queue reorders it and is undoable like Remove and Clear. A live
+  channel has no queue panel (it is one thing, with no position).
 - **Move to…** (a screen's Remote) lists every other screen and **This
   device**. The destination picks up at the same moment; only once it has
   started is the original stopped (it shows "Moved by …"). If the
@@ -145,7 +157,8 @@ wraps at phone width, so nothing is lost to a narrow screen.
   so. Moving to this device opens Now Playing.
 - **Several screens.** The screen picker's **Choose several screens** aims at
   more than one; the aim then reads "Kitchen + Living Room". Screens chosen
-  in the same room warn that they can drift apart audibly. Each screen gets
+  in the same room, or in rooms marked as neighbours in screen admin, warn
+  that they can drift apart audibly. Each screen gets
   its own progress and outcome, Add to queue adds to each, and they are
   steered separately; when two play the same item, either Remote (and Now
   Playing) offers **Line up with <other>**, which seeks it to the other's
@@ -166,6 +179,10 @@ wraps at phone width, so nothing is lost to a narrow screen.
   is one tap. Tapping the title opens that screen's full controls, and the
   bar steps aside while they are open. It exists only while that screen is
   playing or paused; it is never a notice and never covers content.
+- **Search keeps its words after a one-shot Play on… / Add on…** (FIND.1a/AC5).
+  The tablet and laptop dock search stays open with the typed words, the
+  narrowing and the results while the screen picker is open and after it
+  closes, as the phone's search does.
 - **Play on… while something plays here** (PLACE.6a/AC2). A one-off **Play on…**
   of an item asks, at that moment, **Move: stop playing here** or **Keep
   playing here too**, pre-set to the choice made last time (shown before you
@@ -179,7 +196,15 @@ wraps at phone width, so nothing is lost to a narrow screen.
   playback-owner identity). It is the same failure-safe move as Home's
   "Now on <screen>": this device starts the same item at the same moment with
   the same queue, and only then is the screen stopped; if it cannot start
-  here, the outcome says why and the screen keeps playing.
+  here, the outcome says why and the screen keeps playing. The confirmation
+  says where it came from: "Moved <item> here from <screen>" (PLACE.7a/AC3).
+- **Whole collections say how many** (PLAY.2a/AC3, PLAY.7a/AC2). Playing,
+  shuffling or adding an album, show or playlist confirms with the number of
+  items that went there ("Added <collection> (6 items) to <screen>"); a single
+  item reads as before.
+- **Undo has its own confirmation** (RELY.1a/AC1). Putting a removed item back reads "Put back <item> here", putting a cleared queue back reads
+  "Put the queue back here"; undoing an add or a start
+  reads "Took back <item> …". The window for the Undo itself is unchanged.
 - **Failures a screen raises itself** (RELY.5a/AC4). When a screen you sent
   to or steer gives up on an item and skips (or stops), the outcome tray on
   your device says so — the item, the screen and what plays instead — with
@@ -290,8 +315,9 @@ and progress:
   start on that screen succeeds.
 - **Started by** (RQ-HOUSE-07): "Started by Kitchen Button 1, 7:02" or
   "Started by Dad's phone, 7:02" while it plays; nothing when the start's
-  origin is unknown. `StartedByLine` (`house/RowExtras.jsx`) is the same line
-  for a screen's controls header.
+  origin is unknown. The same line shows in the header of that screen's
+  controls (its Remote), under the screen's name and what it is doing, while
+  something plays.
 - **Add only** (RQ-PLAY-10): "Add only is on: Play from other devices adds to
   the queue." with **Turn off** — anyone can switch it off from the row.
 - **Notes** (RQ-STEER-21): a screen that can't show notes itself (a speaker)
@@ -318,6 +344,9 @@ was last seen. **Add a screen** (name, room); **Name and room** for any screen;
 after a confirmation that names the routines on both (Undo on the outcome for
 10 s, **Unmerge** on the screen afterwards); **Retire** first lists the
 routines that point at the screen; retired screens can be **Restored**.
+**Rooms next to each other** (with two or more rooms): **Neighbours** per room
+ties it to the rooms beside it (mutual); screens chosen together in neighbouring
+rooms get the same drift warning as screens in one room.
 Screens silent for 30 days fold into **Not seen lately**. A configured TV or
 kiosk cannot be merged away.
 
@@ -750,7 +779,13 @@ advancing for a playing source, or ready and still paused at the captured
 position for a paused source. Paused adoption is issued without autoplay.
 Rejection, timeout/uncertainty, or any newer source revision keeps
 the source playing. Only confirmed adoption may conditionally stop the exact
-unchanged source; **Keep playing here too** never stops it.
+unchanged source; **Keep playing here too** never stops it. The Now Playing
+hand-off uses the same destination as the Remote's Move to…: the typed
+hand-off when the screen has a playback owner to capture, else (an idle
+screen, which answers `INVALID_CAPTURE`) the ordinary adopt load, counted as
+adopted only once the screen itself reports the same item playing
+(`cast/screenMove.js` `createScreenMoveDestination`, shared by `useHandOff`).
+The screen's copy starts at this device's spot, not at 0:00 (PLACE.8a/AC2).
 
 Aim labels always read the one persisted global aim, including while a person
 is steering a different screen in Peek. A busy origin is shown only when a
@@ -851,7 +886,11 @@ NF-A11Y, NF-DEV):
 - **Reduced motion.** Under `prefers-reduced-motion` the shell, menus, dialogs
   and the search dropdown stop animating (spinners keep turning).
 - **Contrast** of text and confirmations is at least 4.5:1; the aim line is
-  14 px or more.
+  14 px or more. The edge of every control you press or type in (search field,
+  destination control, secondary and transport buttons, scope chips) is at
+  least 3:1 against what is behind it. The edge uses `--media-control-line`
+  (the ramp's dimmed grey, no new colour and no amber); the quiet `--media-line`
+  hairlines between regions are unchanged.
 - **One thumb on a phone.** Search (tab bar), play/pause (handle) and the aim
   (tappable on Now Playing, and its picker) are all in the lower 60 % of the
   screen; none needs two hands.
@@ -876,7 +915,7 @@ informational and need no input. Journeys: `screen-tv-input.runtime.test.mjs`.
 |---|---|---|
 | **Home** | The start page: Resume, Playing now on other screens, this screen's suggestions (Favourites, Carry on, Usually (here) at this time, New) and the household's Recent — see [The start page](#the-start-page-and-the-households-memory). | Default; nav; breadcrumb. |
 | **Browse** | Hierarchical catalog listing with artwork or a recognisable placeholder, kind labels, natural part ordering, and a breadcrumb containing every parent. Long collections page automatically as the end approaches; there is no separate load-more hunt. Pages are 50 titles: `GET /api/v1/list/...?take=50&skip=N` returns `{ items, total }`, and for Plex path containers (e.g. `library/sections/6/all`) the page is fetched from Plex itself (`X-Plex-Container-Start/Size`), so a 2,800-title library opens in ~0.3 s instead of sending every title. Each history entry owns `{ path, scrollTop, focusedId, loadedCount }`, captured before drilling into a container or opening Detail through either Details or More → Open detail. Back re-fetches `loadedCount` rows in one request (capped at 1,000) so a row the person had scrolled to exists again, then restores the exact prior collection viewport and triggering row focus. `loadedCount` is a viewport snapshot like `scrollTop`: re-selecting the Browse area ignores it when matching the original root entry. A specific container adds Play / Shuffle / Add at the top and names the current destination. | Nav; container rows; container taps in search. |
-| **Detail** | One item: artwork, description, how far each screen has got, full action row (Play Now / Play Next / Play First / Add / Cast), favourite and watched marks. | Browse rows; search results; any item's Details. |
+| **Detail** | One item: artwork, what it is and how long ("Movie · 1 hr 56 min", "TV Show · 12 episodes"), description (the source's summary when it has no description), how far each screen has got, full action row (Play Now / Play Next / Play First / Add / Cast), favourite and watched marks. | Browse rows; search results; any item's Details. |
 | **Now Playing** | Full local transport: seek bar, prev/play-pause/next/stop, volume, the queue panel, the tappable aim line, and the same session controls as a screen's Remote. Hosts the visual output of the player. | The handle; Escape/Back returns (the Back button names where it goes, e.g. "Home" with a back chevron). |
 | **Fleet** | Configured devices and named browser screens, live and sorted with playing first. Each card offers **Remote**, **Play…**, inline **Pause**/**Stop** while active, and a truthful unavailable **Move here** until safe native adoption exists. Silent browser rows become uncertain after two minutes. Rows also carry start status, Started by, Add only, notes and "(was …)"; the view offers Pause all / Stop all / Resume all (see "The house view"). | Nav; fleet indicator. |
 | **Screens** | Screen admin: add, name and room, merge/unmerge, retire after the routines are shown, restore; "Not seen lately". | Devices → Screens; Settings. |

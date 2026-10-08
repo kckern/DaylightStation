@@ -601,7 +601,7 @@ export function agendaDocument({
   learnerId, learnerName = null, generatedAt = null, timeZone = 'UTC',
   sections = [], tokensBySubject = {}, accessCodesByToken = {},
   reopenCards = [],
-  bulkToken = null, bulkAccessCode = null,
+  bulkToken = null, bulkAccessCode = null, bulkSubjects = null,
   readingToken = null, readingAccessCode = null,
   readingFeature = null, readingSubject = DEFAULT_BOOK_LOG_SUBJECT,
   footer = null, notes = [],
@@ -855,7 +855,7 @@ export function agendaDocument({
     blocks.push(bulkPrintAction({
       token: bulkToken,
       label: 'Print all sheets',
-      subjects: cardSubjects,
+      subjects: Array.isArray(bulkSubjects) ? bulkSubjects : cardSubjects,
       accessCode: bulkAccessCode,
     }));
   }

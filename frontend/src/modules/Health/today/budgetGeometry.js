@@ -32,6 +32,12 @@ export function budgetGeometry(budget, {
     interval('base', food, base),
     interval('workout', Math.max(food, base), plan),
   ].filter(part => part.to > part.from);
+  const goalRange = floor > 0 && floor < plan ? {
+    from: floor,
+    to: plan,
+    ...segmentRange(floor, plan, pct),
+    bonus: plan > base ? workoutRange(base, plan, food, pct, finished) : null,
+  } : null;
 
   const posts = [
     ...(floor > 0 ? [{ key: 'floor', value: floor, label: 'Log floor' }] : []),
@@ -57,7 +63,7 @@ export function budgetGeometry(budget, {
     : boostCapped ? `${fmt(usableBoost)} of ${fmt(exercise)} workout kcal available before break even` : null;
 
   return {
-    right, pct, consumed, available, posts, postGroups,
+    right, pct, consumed, available, goalRange, posts, postGroups,
     boundaries: { floor, configuredBase, base, plan, even },
     cursor: { value: food, pct: pct(food), overflow: food > right },
     baselineCursor: baseline != null && baseline !== food
@@ -65,6 +71,23 @@ export function budgetGeometry(budget, {
     floorIssue: floor > plan,
     capNote,
     tiers,
+  };
+}
+
+function segmentRange(from, to, pct) {
+  return { fromPct: pct(from), toPct: pct(to), widthPct: pct(to) - pct(from) };
+}
+
+function workoutRange(from, to, food, pct, finished) {
+  const spentTo = Math.min(Math.max(food, from), to);
+  return {
+    from,
+    to,
+    spentTo,
+    ...segmentRange(from, to, pct),
+    spentWidthPct: pct(spentTo) - pct(from),
+    availableFromPct: pct(spentTo),
+    availableWidthPct: finished ? 0 : pct(to) - pct(spentTo),
   };
 }
 

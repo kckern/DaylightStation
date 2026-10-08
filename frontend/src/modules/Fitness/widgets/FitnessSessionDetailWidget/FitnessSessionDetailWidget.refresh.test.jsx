@@ -49,6 +49,35 @@ beforeEach(() => {
 const list = (...rows) => ({ sessions: rows });
 
 describe('FitnessSessionDetailWidget — refresh when its list row changes', () => {
+  it('shows an elapsed clock range and measured participant time for a singleton detail', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ session: {
+          sessionId: ID,
+          timezone: 'UTC',
+          session: {
+            date: '2026-05-28',
+            start: '2026-05-28T13:00:00.000Z',
+            end: '2026-05-28T15:45:00.000Z',
+            duration_seconds: 80 * 60,
+          },
+          participants: { 'test-rider': { display_name: 'Test Rider' } },
+          summary: {
+            participants: { 'test-rider': { zone_minutes: { active: 41 } } },
+            voiceMemos: [],
+          },
+          timeline: {},
+        } }),
+    });
+
+    const { container } = render(<FitnessSessionDetailWidget sessionId={ID} />);
+
+    await waitFor(() => expect(container.querySelector('.session-detail__header')).not.toBeNull());
+    expect(container.textContent).toContain('1:00pm – 3:45pm');
+    expect(container.textContent).toContain('2h 45m elapsed');
+    expect(container.textContent).toContain('Test Rider 41m measured');
+  });
+
   it('re-fetches in the background when this session\'s row changes (final save, memo)', async () => {
     sessionsValue = list({ sessionId: ID, voiceMemos: [] });
     const { rerender, container } = render(<FitnessSessionDetailWidget sessionId={ID} />);

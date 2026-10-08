@@ -11,7 +11,7 @@ for (const entrypoint of ['Details', 'More → Open detail']) {
       itemType: 'item', type: 'episode', index: index + 1,
     }));
     await page.route('**/api/v1/list/**', route => {
-      const { pathname } = new URL(route.request().url());
+      const pathname = new URL(route.request().url()).pathname.replace(/\/expand$/, '');
       const rows = pathname === '/api/v1/list/'
         ? [{ id: 'demo:season-2', title: 'Season 2', itemType: 'container', type: 'season' }]
         : items;

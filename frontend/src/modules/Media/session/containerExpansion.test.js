@@ -55,7 +55,7 @@ describe('expandContainerInput', () => {
       { contentId: 'plex:900', title: 'Beatles For Sale', itemType: 'container' },
       { fetchImpl },
     );
-    expect(fetchImpl).toHaveBeenCalledWith('/api/v1/list/plex/900');
+    expect(fetchImpl).toHaveBeenCalledWith('/api/v1/list/plex/900/expand');
     expect(out.map((i) => i.contentId)).toEqual(['plex:1', 'plex:2', 'plex:3']);
     expect(out[0]).toEqual({
       contentId: 'plex:1', title: 'Track 1', thumbnail: '/thumb/1',
@@ -69,12 +69,12 @@ describe('expandContainerInput', () => {
       play: { contentId: `plex:e${n}` }, duration: 600,
     });
     const bodies = {
-      '/api/v1/list/plex/show': { items: [
+      '/api/v1/list/plex/show/expand': { items: [
         { id: 'plex:s1', title: 'Season 1', itemType: 'container', type: 'season' },
         { id: 'plex:s2', title: 'Season 2', itemType: 'container', type: 'season' },
       ] },
-      '/api/v1/list/plex/s1': { items: [episode(1), episode(2)] },
-      '/api/v1/list/plex/s2': { items: [episode(3)] },
+      '/api/v1/list/plex/s1/expand': { items: [episode(1), episode(2)] },
+      '/api/v1/list/plex/s2/expand': { items: [episode(3)] },
     };
     const fetchImpl = vi.fn(async (url) => ok(bodies[url]));
     const out = await expandContainerInput(
@@ -86,9 +86,27 @@ describe('expandContainerInput', () => {
     expect(out[0].format).toBe('video');
   });
 
+  it('expands a show whose seasons the list router wraps as themselves unless /expand is asked (defect 14)', async () => {
+    const ep = (n) => ({ id: `plex:e${n}`, title: `Ep ${n}`, itemType: 'leaf', type: 'episode', play: { contentId: `plex:e${n}` } });
+    const season = (n) => ({ id: `plex:s${n}`, title: `Season ${n}`, itemType: 'container', type: 'show', childCount: 2 });
+    // Faithful to production: GET /list/plex/<season> (no expand) returns the season itself.
+    const bodies = {
+      '/api/v1/list/plex/show/expand': { items: [{ ...season(1), type: 'season' }, { ...season(2), type: 'season' }] },
+      '/api/v1/list/plex/s1': { items: [season(1)] },
+      '/api/v1/list/plex/s2': { items: [season(2)] },
+      '/api/v1/list/plex/s1/expand': { items: [ep(1), ep(2)] },
+      '/api/v1/list/plex/s2/expand': { items: [ep(3), ep(4)] },
+    };
+    const fetchImpl = vi.fn(async (url) => ok(bodies[url]));
+    const fromShow = await expandContainerInput({ contentId: 'plex:show', title: 'Show', itemType: 'container' }, { fetchImpl });
+    expect(fromShow.map((i) => i.contentId)).toEqual(['plex:e1', 'plex:e2', 'plex:e3', 'plex:e4']);
+    const fromSeason = await expandContainerInput({ contentId: 'plex:s1', title: 'Season 1', itemType: 'container' }, { fetchImpl });
+    expect(fromSeason.map((i) => i.contentId)).toEqual(['plex:e1', 'plex:e2']);
+  });
+
   it('stops recursing past the depth budget (containers of containers of containers)', async () => {
     const fetchImpl = vi.fn(async (url) => {
-      if (url === '/api/v1/list/plex/root') {
+      if (url === '/api/v1/list/plex/root/expand') {
         return ok({ items: [{ id: 'plex:mid', title: 'Mid', itemType: 'container' }, track(9)] });
       }
       // depth-1 fetch returns ANOTHER container — must not be fetched again
@@ -115,12 +133,12 @@ describe('expandContainerInput', () => {
 
   it('honors a custom limit across nested containers', async () => {
     const bodies = {
-      '/api/v1/list/plex/show': { items: [
+      '/api/v1/list/plex/show/expand': { items: [
         { id: 'plex:s1', itemType: 'container', title: 'S1' },
         { id: 'plex:s2', itemType: 'container', title: 'S2' },
       ] },
-      '/api/v1/list/plex/s1': { items: [track(1), track(2), track(3)] },
-      '/api/v1/list/plex/s2': { items: [track(4)] },
+      '/api/v1/list/plex/s1/expand': { items: [track(1), track(2), track(3)] },
+      '/api/v1/list/plex/s2/expand': { items: [track(4)] },
     };
     const fetchImpl = vi.fn(async (url) => ok(bodies[url]));
     const out = await expandContainerInput(
@@ -151,7 +169,7 @@ describe('expandContainerInput', () => {
 
   it('a failed nested branch is skipped, not fatal', async () => {
     const fetchImpl = vi.fn(async (url) => {
-      if (url === '/api/v1/list/plex/show') {
+      if (url === '/api/v1/list/plex/show/expand') {
         return ok({ items: [
           { id: 'plex:s1', itemType: 'container', title: 'S1' },
           track(7),

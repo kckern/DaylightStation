@@ -173,7 +173,7 @@ export class PlexProxyAdapter {
     // the NAS transiently zeroing modes, not a missing file, and the refusals
     // came and went. A short retry (3 × the 500ms delay) rides out the briefest
     // ones before the player ever sees an error.
-    if (statusCode === 404 && isMediaPartFile(path)) return attempt < MEDIA_PART_404_RETRIES;
+    if (statusCode === 404 && isRefusableMediaPath(path)) return attempt < MEDIA_PART_404_RETRIES;
     
     // Retry on server errors (5xx) - these are typically transient
     if (statusCode >= 500 && statusCode < 600) return true;
@@ -237,7 +237,7 @@ export class PlexProxyAdapter {
    * @returns {{status: number, headers?: Object, body: Object}|null}
    */
   getErrorReplacement(path, statusCode) {
-    if (statusCode !== 404 || !isMediaPartFile(path)) return null;
+    if (statusCode !== 404 || !isRefusableMediaPath(path)) return null;
     return {
       status: 503,
       headers: { 'retry-after': '5', 'cache-control': 'no-store' },
@@ -260,6 +260,23 @@ const MEDIA_PART_404_RETRIES = 3;
 function isMediaPartFile(path) {
   const pathname = String(path || '').split('?')[0];
   return /\/library\/parts\/\d+\/\d+\/file\.[A-Za-z0-9]+$/.test(pathname);
+}
+
+/**
+ * A transcode SEGMENT of a started session. An HLS/DASH refusal is invisible at
+ * the manifest (it answers 200): the transcoder fails opening its input and the
+ * segments 404 afterwards (2026-10-07). Only segment FILES
+ * (`session/<id>/<variant>/<n>.ts|.m4s|header`) — never playlists
+ * (`index.m3u8`, `start.m3u8`) or `decision`, whose 404 means something else.
+ */
+function isTranscodeSegment(path) {
+  const pathname = String(path || '').split('?')[0];
+  return /\/video\/:\/transcode\/universal\/session\/[^/]+\/[^/]+\/(?:[^/]+\.(?:ts|m4s)|header)$/.test(pathname);
+}
+
+/** A direct-play part or a transcode segment: what a refused source looks like at the proxy. */
+function isRefusableMediaPath(path) {
+  return isMediaPartFile(path) || isTranscodeSegment(path);
 }
 
 export default PlexProxyAdapter;

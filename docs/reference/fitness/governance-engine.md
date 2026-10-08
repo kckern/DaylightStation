@@ -591,6 +591,15 @@ guest is cancelled neutrally. Guests still contribute to cycle boosts. This
 policy differs from a configured household exemption: the cadence floor can
 hold an exempt household rider to an established ride.
 
+Configured household exemptions are permanent non-subjects: they are never
+required, blamed, or promoted into the governed subject set when everyone else
+leaves. An exempt participant may add positive credit to a group challenge, but
+cannot be its sole satisfier. At least one non-exempt subject must also satisfy
+the challenge. Likewise, an exempt-only roster never clears the continuous zone
+gate; it remains locked with `non_exempt_contributor_required` and no exempt
+user in `missingUsers`. This lets an exempt child race with the group without
+turning their monitor into a solo playback key.
+
 When `unattended_policy` is enabled and none of the configured `superusers` is
 in the active roster, each governed video starts locked until a non-guest,
 non-exempt child reaches the configured startup zone. That achievement is

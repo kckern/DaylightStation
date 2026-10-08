@@ -32,7 +32,14 @@ test.describe('MediaApp — browse lifecycle', () => {
 
   test('[FIND.5a/AC2][FIND.6a] browse shows pictures, natural order, every parent, and collection actions', async ({ page }) => {
     await page.route('**/api/v1/list/**', async route => {
-      const { pathname } = new URL(route.request().url());
+      const { pathname: rawPath } = new URL(route.request().url());
+      // Faithful to the list router: a bare season lists ONLY itself (defect
+      // 14); the `/expand` modifier lists its real episodes.
+      const expand = /\/expand$/.test(rawPath);
+      const pathname = rawPath.replace(/\/expand$/, '');
+      if (pathname === '/api/v1/list/demo/season-2' && !expand) {
+        return json(route, [{ id: 'demo:season-2', title: 'Season 2', itemType: 'container', type: 'show', sourceType: 'season', childCount: 3 }]);
+      }
       if (pathname === '/api/v1/list/') {
         return json(route, [
           { id: 'demo:show', title: 'Example Show', itemType: 'container', type: 'show', thumbnail: '/art/example.jpg' },
@@ -95,7 +102,7 @@ test.describe('MediaApp — browse lifecycle', () => {
       type: 'collection',
     }));
     await page.route('**/api/v1/list/**', async route => {
-      const { pathname } = new URL(route.request().url());
+      const pathname = new URL(route.request().url()).pathname.replace(/\/expand$/, '');
       if (pathname === '/api/v1/list/') return json(route, rootItems);
       return json(route, [{ id: 'demo:leaf', title: 'Leaf', itemType: 'item', type: 'movie' }]);
     });

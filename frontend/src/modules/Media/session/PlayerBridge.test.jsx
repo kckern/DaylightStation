@@ -853,3 +853,31 @@ describe('PlayerBridge — held natural end replays (duplicate-completion guard)
     expect(controller.sessionControls.getState().countdown).toBeTruthy();
   });
 });
+
+describe('PlayerBridge — session volume survives the Player resetting the element', () => {
+  it('re-applies the session volume when the element loads its metadata (the Player writes volume 1 then)', async () => {
+    vi.useFakeTimers();
+    const controller = makeRealController();
+    controller.queue.playNow({ contentId: 'plex:vol', title: 'Vol', duration: 600, format: 'audio' });
+    controller.config.setVolume(50);
+    mediaElement = document.createElement('audio');
+    mediaElement.play = () => Promise.resolve();
+    mediaElement.pause = () => {};
+    render(<Harness controller={controller} />);
+    await act(async () => { vi.advanceTimersByTime(50); });
+    expect(mediaElement.volume).toBeCloseTo(0.5);
+    // What the real Player does on loadedmetadata.
+    mediaElement.volume = 1;
+    await act(async () => { mediaElement.dispatchEvent(new Event('loadedmetadata')); });
+    expect(mediaElement.volume).toBeCloseTo(0.5);
+    mediaElement.volume = 1;
+    await act(async () => { mediaElement.dispatchEvent(new Event('canplay')); });
+    expect(mediaElement.volume).toBeCloseTo(0.5);
+    // A changed session volume is the new target.
+    await act(async () => { controller.config.setVolume(30); vi.advanceTimersByTime(50); });
+    mediaElement.volume = 1;
+    await act(async () => { mediaElement.dispatchEvent(new Event('loadedmetadata')); });
+    expect(mediaElement.volume).toBeCloseTo(0.3);
+    mediaElement = null;
+  });
+});

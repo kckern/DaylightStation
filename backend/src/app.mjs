@@ -1644,6 +1644,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   {
     const { createMediaSourceRouter } = await import('./4_api/v1/routers/mediaSource.mjs');
     const { MediaSourceHealer } = await import('./3_applications/media/MediaSourceHealer.mjs');
+    const { createProxyRefusalHandler } = await import('./3_applications/media/proxyRefusalTrigger.mjs');
     const { PlexSourceProbe } = await import('./1_adapters/content/media/plex/PlexSourceProbe.mjs');
     const { SshMediaHostHealer } = await import('./1_adapters/media/SshMediaHostHealer.mjs');
     const plexClient = contentRegistry?.get?.('plex')?.client ?? null;
@@ -1681,18 +1682,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // into 503 source-unreadable, map the part back to its item and run the
     // same check (in-flight dedupe + host-heal cooldown live in the healer).
     const plexAdapter = contentRegistry?.get?.('plex') ?? null;
-    if (mediaSourceHealer && typeof plexAdapter?.ratingKeyForPart === 'function') {
-      contentProxyService.onErrorReplaced(({ service, path: partPath, reason }) => {
-        if (service !== 'plex' || reason !== 'source-unreadable') return;
-        const partId = /\/library\/parts\/(\d+)\//.exec(String(partPath || ''))?.[1];
-        const ratingKey = partId ? plexAdapter.ratingKeyForPart(partId) : null;
-        if (!ratingKey) {
-          healLogger.info('media.source.heal.proxy-unmapped', { partId: partId ?? null });
-          return;
-        }
-        mediaSourceHealer.check(`plex:${ratingKey}`, { origin: 'proxy' })
-          .catch((error) => healLogger.warn('media.source.heal.proxy-failed', { ratingKey, error: error.message }));
-      });
+    if (mediaSourceHealer && typeof plexAdapter?.resolveRatingKeyForPath === 'function') {
+      contentProxyService.onErrorReplaced(createProxyRefusalHandler({
+        healer: mediaSourceHealer,
+        resolveRatingKey: (refusedPath) => plexAdapter.resolveRatingKeyForPath(refusedPath),
+        logger: healLogger,
+      }));
     }
   }
 

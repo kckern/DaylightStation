@@ -811,6 +811,9 @@ export function createHealthRouter(config) {
      * Update a nutrilist item
      */
     router.put('/nutrilist/:uuid', asyncHandler(async (req, res) => {
+      if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+        return res.status(400).json({ error: 'Nutrition update must be an object' });
+      }
       const { uuid } = req.params;
       const userId = getDefaultUsername(req);
       const { operationId, ...updateData } = req.body;
@@ -823,7 +826,8 @@ export function createHealthRouter(config) {
         updateData.icon = verdict.icon;
       }
 
-      // Check if item exists
+      // Adjustment and exact restore bodies share the update operation journal.
+      // Keep every precondition (including the density revision) in its fingerprint.
       const update = await runNutritionOperation(userId, operationId, { operation: 'entry-update', id: uuid, ...updateData },
         () => healthOperations.updateNutritionItem(userId, uuid, updateData));
       if (!update) {

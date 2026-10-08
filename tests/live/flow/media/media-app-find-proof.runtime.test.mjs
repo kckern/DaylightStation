@@ -174,10 +174,7 @@ for (const [label, vp] of Object.entries(VIEWPORTS)) {
     await receiver.context.close();
   });
 
-  test(`[FIND.1a/AC5] ${label}: after Play on… to another screen, search stays open with my words and narrowing${isPhone(vp) ? '' : ' (known gap)'}`, async ({ browser, request }) => {
-    // Known defect (reported, not fixed here): the tablet/laptop dock search drops its words when the one-shot
-    // Play on… screen picker closes. The phone's SearchMode keeps them. test.fail() turns this red when it is fixed.
-    test.fail(!isPhone(vp), 'DEFECT: dock search clears its query after a one-shot Play on… (tablet/laptop)');
+  test(`[FIND.1a/AC5] ${label}: after Play on… to another screen, search stays open with my words and narrowing`, async ({ browser, request }) => {
     const { receiver, context, retained, verb, page } = await retentionSetup(browser, request, vp);
     await verb('Play on…');
     await expect(page.getByTestId('dispatch-target-picker')).toBeVisible();
@@ -321,8 +318,11 @@ test('[FIND.5a/AC1] every kind of content (video, music, hymns, books, photos, Y
   // Music and video are separate libraries under the one Plex source.
   await goArea(page, vp, 'browse');
   await page.getByTestId('browse-open-plex:').click();
-  const libraries = await page.locator('.browse-list .media-result-title').allTextContents();
-  expect(libraries).toEqual(expect.arrayContaining(['Movies', 'TV Shows', 'Music']));
+  // Read the list only once it has loaded: the click returns before the listing arrives.
+  await expect(page.getByTestId('browse-view-loading')).toHaveCount(0, { timeout: 30000 });
+  await expect(page.locator('.browse-list .media-result-title').first()).toBeVisible({ timeout: 30000 });
+  await expect.poll(async () => page.locator('.browse-list .media-result-title').allTextContents(), { timeout: 30000 })
+    .toEqual(expect.arrayContaining(['Movies', 'TV Shows', 'Music']));
   expect(typed.length, 'nothing was typed to get there').toBe(0);
   await context.close();
 });
@@ -405,11 +405,7 @@ test('[FIND.8a/AC3][FIND.8a/AC4] details offer the same play and line-up actions
   await receiver.context.close();
 });
 
-test('[FIND.8a/AC2] details show picture, title, description, length, kind and how far anyone has got (known gap)', async ({ browser }) => {
-  // Known gap (reported, not fixed here): Details render the picture, title, progress and verbs, but not
-  // the item's length or kind, and the description only when the info API supplies one. test.fail() turns
-  // this red when the product shows them.
-  test.fail(true, 'NEEDS-FEATURE: details show length and kind (and description)');
+test('[FIND.8a/AC2] details show picture, title, description, length, kind and how far anyone has got', async ({ browser }) => {
   const { context, page } = await newAppPage(browser, VIEWPORTS.laptop);
   await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ARRIVAL)}`);
   const detail = page.getByTestId('detail-view');
@@ -418,7 +414,8 @@ test('[FIND.8a/AC2] details show picture, title, description, length, kind and h
   await expect(detail.getByRole('heading', { name: 'Arrival' })).toBeVisible();
   await expect(detail.getByTestId('detail-progress')).toContainText(/left|min/);
   await expect(detail).toContainText('Movie');
-  await expect(detail).toContainText(/\d+ h \d+ min|\d+ min/);
+  // Length and kind sit together on the facts line (not the progress line, which also says "min left").
+  await expect(detail.getByTestId('detail-facts')).toHaveText(/^Movie · \d+ hr( \d+ min)?$/);
   expect((await detail.innerText()).length).toBeGreaterThan(200);
   await context.close();
 });

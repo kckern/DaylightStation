@@ -176,12 +176,12 @@ export function createTokenRecord({
     throw new Error(`${caller}: ${tokenClass} subject requires a sessionId`);
   }
   // Class-specific too, and deliberately a whitelist: a panel code belongs to a
-  // `subject_next` agenda line and nowhere else. It is also the only class that
-  // reliably HAS an `expiresAt` for the code's clock to be shorter than —
+  // subject_next, worksheet_companion, or agenda_print action. These classes
+  // have an `expiresAt` for the code's clock to be shorter than —
   // `identify` and `learning_action` forbid an expiry outright, so a code on
   // those could never be held to the outlives-its-token rule below.
   if (accessCode != null && !['subject_next', 'worksheet_companion', 'agenda_print'].includes(tokenClass)) {
-    throw new ValidationError(`${caller}: only a subject_next token carries an access code`, {
+    throw new ValidationError(`${caller}: only subject_next, worksheet_companion, or agenda_print tokens carry an access code`, {
       code: 'SCHOOL_ACCESS_CODE_WRONG_CLASS', details: { caller, tokenClass },
     });
   }

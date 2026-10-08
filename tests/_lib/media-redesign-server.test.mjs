@@ -190,3 +190,46 @@ describe('live fixture encoder', () => {
     }
   });
 });
+
+describe('media redesign acceptance: read-only media-source check', () => {
+  const sha = 'a'.repeat(40);
+  const plugin = (probe) => createAcceptancePreviewPlugin({
+    app: () => {}, allowedTitles: new Set(['584614']), policy: 'branch', sourceSha: sha,
+    upstream: 'http://127.0.0.1:3111', ordinaryDeviceFixture: { middleware: async () => false },
+    sourceProbeFetch: probe,
+  });
+  const post = async (probe, body) => {
+    const middleware = attach(plugin(probe), 'configurePreviewServer');
+    const chunks = [Buffer.from(JSON.stringify(body))];
+    const req = { url: '/api/v1/media-source/check', method: 'POST', async *[Symbol.asyncIterator]() { yield* chunks; } };
+    const headers = new Map();
+    let out = '';
+    const res = { statusCode: 200, setHeader: (k, v) => headers.set(k.toLowerCase(), v), end: (v = '') => { out = v; } };
+    let nextCalled = false;
+    await middleware(req, res, () => { nextCalled = true; });
+    return { status: res.statusCode, body: out ? JSON.parse(out) : null, nextCalled };
+  };
+
+  // The Player's refused-file wait needs an answer from /media-source/check. The
+  // ordinary-journey allowlist used to 403 it, so a file Plex refused for a moment
+  // (503 source-unreadable) was never waited on and the receiver gave up in seconds.
+  it('answers readable when the title streams, without healing anything', async () => {
+    const calls = [];
+    const probe = async (url, init) => { calls.push([String(url), init?.method ?? 'GET']); return { ok: true, status: 206 }; };
+    const result = await post(probe, { contentId: 'plex:584614' });
+    expect(result).toMatchObject({ status: 200, body: { state: 'readable' }, nextCalled: false });
+    expect(calls).toEqual([['http://127.0.0.1:3111/api/v1/proxy/plex/stream/584614', 'GET']]);
+  });
+
+  it('answers unreadable on a source-unreadable 503 so the Player waits and polls', async () => {
+    const probe = async () => ({ ok: false, status: 503 });
+    expect((await post(probe, { contentId: 'plex:584614' })).body).toMatchObject({ state: 'unreadable' });
+  });
+
+  it('answers unknown for anything else and refuses titles outside the allowlist', async () => {
+    expect((await post(async () => { throw new Error('down'); }, { contentId: 'plex:584614' })).body).toMatchObject({ state: 'unknown' });
+    const other = await post(async () => ({ ok: true, status: 206 }), { contentId: 'plex:1' });
+    expect(other.status).toBe(403);
+  });
+});
+

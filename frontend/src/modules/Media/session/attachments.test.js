@@ -51,6 +51,20 @@ describe('attachPersistence', () => {
     expect(lastCall[1]).toEqual({ wasPlayingOnUnload: true });
   });
 
+  it('pagehide flushes a pending trailing write so a reload restores the latest state (duration)', () => {
+    const store = makeStore();
+    const write = vi.fn(() => ({ ok: true }));
+    attachPersistence(store, { write });
+    store.dispatch({ type: 'SET_CONFIG', patch: { volume: 10 } }); // leading write
+    store.dispatch({ type: 'SET_CONFIG', patch: { volume: 20 } }); // pending trailing
+    expect(write).toHaveBeenCalledTimes(1);
+    window.dispatchEvent(new Event('pagehide'));
+    expect(write).toHaveBeenCalledTimes(2);
+    expect(write.mock.calls[1][0].config.volume).toBe(20);
+    vi.advanceTimersByTime(1000);
+    expect(write).toHaveBeenCalledTimes(2); // trailing timer cancelled, no double write
+  });
+
   it('detach cancels the trailing write', () => {
     const store = makeStore();
     const write = vi.fn(() => ({ ok: true }));

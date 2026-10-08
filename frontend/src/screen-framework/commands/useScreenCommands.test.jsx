@@ -181,18 +181,14 @@ describe('useScreenCommands (structured envelope)', () => {
       expect(actionBus.emit).toHaveBeenCalledTimes(2);
     });
 
-    it('dispatches config setting volume and also emits display:volume', () => {
+    it('dispatches config setting volume as media:config-set only (no legacy display:volume)', () => {
       mountOk();
       act(() => capturedCallback(env('config', { setting: 'volume', value: 75 })));
       expect(actionBus.emit).toHaveBeenCalledWith(
         'media:config-set',
         { setting: 'volume', value: 75, commandId: 'c1' },
       );
-      expect(actionBus.emit).toHaveBeenCalledWith(
-        'display:volume',
-        { level: 75 },
-      );
-      expect(actionBus.emit).toHaveBeenCalledTimes(2);
+      expect(actionBus.emit).toHaveBeenCalledTimes(1);
     });
   });
 

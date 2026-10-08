@@ -1186,7 +1186,8 @@ export class WakeAndLoadService {
           playbackRevision: owner.playbackRevision,
           queueRevision: owner.queueRevision,
           ...(operation === 'add' ? { queueLength: snapshot.queue.items.length,
-            ...(itemAction ? { ordinal: snapshot.queue.items.findIndex(item => item.itemActionId === itemAction.operationId) + 1, count: actionEntries.length } : {}) } : {}),
+            ...(itemAction ? { ordinal: snapshot.queue.items.findIndex(item => item.itemActionId === itemAction.operationId) + 1, count: actionEntries.length } : {}) }
+            : (itemAction ? { count: actionEntries.length } : {})),
         });
       }
     });

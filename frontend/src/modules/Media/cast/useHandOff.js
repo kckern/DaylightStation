@@ -7,11 +7,13 @@ import { useCallback, useContext } from 'react';
 import { LocalSessionContext } from '../session/LocalSessionContext.js';
 import { useDispatch } from './useDispatch.js';
 import { createMoveRequest, executeMove } from './movePlayback.js';
-import { createRemoteMoveDestination } from './remoteMoveDestination.js';
+import { createScreenMoveDestination } from './screenMove.js';
+import { FleetContext } from '../fleet/FleetProvider.jsx';
 import mediaLog from '../logging/mediaLog.js';
 
 export function useHandOff() {
   const local = useContext(LocalSessionContext)?.controller ?? null;
+  const fleetStore = useContext(FleetContext)?.store ?? null;
   const { dispatchToTarget } = useDispatch();
   return useCallback(async (deviceId, { mode = 'transfer' } = {}) => {
     if (mode === 'transfer') {
@@ -38,7 +40,10 @@ export function useHandOff() {
       };
       const outcome = await executeMove(request, {
         source,
-        destination: createRemoteMoveDestination({ deviceId }),
+        // The typed hand-off where the screen has an owner to capture; the
+        // ordinary adopt load for an idle screen (shared with the Remote's
+        // Move to…, screenMove.js).
+        destination: createScreenMoveDestination({ deviceId, fleetStore }),
       });
       if (outcome.status !== 'adopted' || outcome.sourceStopped !== true) {
         mediaLog.handoffFailed?.({ deviceId, mode, operationId, error: outcome.reason });
@@ -51,7 +56,7 @@ export function useHandOff() {
     mediaLog.handoffInitiated({ deviceId, mode });
     const dispatchIds = await dispatchToTarget({ targetIds: [deviceId], snapshot, mode });
     return { ok: true, dispatchIds };
-  }, [local, dispatchToTarget]);
+  }, [local, dispatchToTarget, fleetStore]);
 }
 
 export default useHandOff;

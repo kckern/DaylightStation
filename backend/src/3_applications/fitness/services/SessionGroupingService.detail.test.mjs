@@ -5,8 +5,8 @@ const T0 = Date.parse('2026-06-05T16:22:00-07:00');
 const tl = (ticks, val) => ({ series: { 'user_3:heart_rate': Array(ticks).fill(val) }, events: [], tick_count: ticks, interval_seconds: 5 });
 
 // two no-video sessions that groupSessions will merge (overlap on user_3); 10-min idle gap
-const s1 = { sessionId: '20260605162200', date: '2026-06-05', startTime: T0, durationMs: 15000, participants: { user_3: { displayName: 'user_3' }, user_4: { displayName: 'user_4' } }, media: null, totalRings: 100 };
-const s2 = { sessionId: '20260605163000', date: '2026-06-05', startTime: T0 + 600000, durationMs: 10000, participants: { user_3: { displayName: 'user_3' } }, media: null, totalRings: 50 };
+const s1 = { sessionId: '20260605162200', date: '2026-06-05', startTime: T0, durationMs: 15000, participants: { user_3: { displayName: 'user_3', rings: 100, hrAvg: 120, zoneMinutes: { active: 0.25 } }, user_4: { displayName: 'user_4' } }, media: null, totalRings: 100 };
+const s2 = { sessionId: '20260605163000', date: '2026-06-05', startTime: T0 + 600000, durationMs: 10000, participants: { user_3: { displayName: 'user_3', rings: 50, hrAvg: 150, zoneMinutes: { warm: 1 / 6 } } }, media: null, totalRings: 50 };
 
 const sessionService = {
   resolveHouseholdId: () => 'household',
@@ -30,6 +30,8 @@ describe('SessionGroupingService.getGroupDetail', () => {
     expect(detail.seams).toEqual([{ atMs: 15000, gapMs: 585000 }]);   // gap = 600000 - 15000
     expect(detail.media).toBeNull();
     expect(Object.keys(detail.participants).sort()).toEqual(['user_3','user_4']);
+    expect(detail.elapsedMs).toBe(610000);
+    expect(detail.participants.user_3).toMatchObject({ rings: 150, measuredDurationMs: 25000, hrAvg: 132 });
   });
 
   it('rebases activity bands onto the compressed axis', async () => {

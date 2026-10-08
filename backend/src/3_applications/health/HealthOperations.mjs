@@ -14,6 +14,7 @@ import { densityRevision } from '#shared-contracts/health/foodDensity.mjs';
 import { closureStatus, fastedMealsOf, resolveMinCalories, DAY_STATUS } from '../coaching/dayCompleteness.mjs';
 import { MEAL_BUCKETS } from '#shared/contracts/health/mealBuckets.mjs';
 import { RECONSTRUCTION_LOG_ID, RECONSTRUCTION_ITEM_NAME, isReconstructedRow } from '#shared/contracts/nutrition/reconstruction.mjs';
+import { validateAdjustmentCommand, prepareAdjustmentCommand } from './HealthAdjustmentCommand.mjs';
 
 const NUTRITION_UPDATE_FIELDS = new Set([
   'item', 'name', 'unit', 'amount', 'grams', 'noom_color', 'color',
@@ -302,6 +303,7 @@ export class HealthOperations {
    *   estimate.
    */
   async updateNutritionItem(username, id, changes, options = {}) {
+    const adjustmentCommand = validateAdjustmentCommand(changes);
     for (const key of [...NUTRIENT_KEYS, 'grams']) {
       if (changes[key] != null && (typeof changes[key] !== 'number' || !Number.isFinite(changes[key]) || changes[key] < 0)) {
         throw Object.assign(new Error(`${key} must be a non-negative number`), { status: 400 });
@@ -315,6 +317,21 @@ export class HealthOperations {
     const ratify = changes.settled === true && options.ratify !== false;
     const siblings = existing.kind === 'group' ? await this.nutritionItems.findByDate(username, existing.date) : [];
     const children = siblings.filter(child => child.parentId != null && [existing.id, existing.uuid].includes(child.parentId));
+    if (adjustmentCommand) {
+      const command = prepareAdjustmentCommand(existing, children, changes, changes.adjustment ? this.context() : null);
+      let result;
+      try {
+        result = await this.nutritionItems.mutateEntries(username, command);
+      } catch (error) {
+        if (error.code === 'NOT_FOUND') throw Object.assign(new Error('This group changed. Reload it before saving.'), { status: 409, code: 'VERSION_CONFLICT' });
+        throw error;
+      }
+      const scope = [existing, ...children].map(row => result.items.find(item => (item.uuid ?? item.id) === (row.uuid ?? row.id)) ?? row);
+      return { item: scope[0], changedFields: Object.keys(command.updates[0].changes),
+        versions: Object.fromEntries(scope.map(row => [row.uuid ?? row.id, row.version ?? 1])),
+        cascadedIds: result.affectedIds.filter(value => value !== (existing.uuid ?? existing.id)),
+        affectedDates: result.affectedDates };
+    }
     if (changes.numericEdit != null) {
       // A changed baseline is a conflict even when it would make the intended
       // arithmetic invalid. The transaction still rechecks versions at commit.

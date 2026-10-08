@@ -212,9 +212,21 @@ export function slideshowFixtureItem(index) {
     slideshow: { duration: 20, effect: 'none', zoom: 1 },
   };
 }
+// A camera for the Show-here rule (FIND.8b/AC3): a still snapshot (another public-domain painting) that
+// a "camera" result presents. Read-only; the snapshot is an ordinary image play descriptor.
+export const CAMERA_FIXTURE_ID = 'fixture:cam-1';
+export function cameraFixtureItem() {
+  const art = slideshowFixtureItem(1);
+  return { ...art, id: CAMERA_FIXTURE_ID, contentId: CAMERA_FIXTURE_ID, assetId: CAMERA_FIXTURE_ID, title: 'Acceptance camera', slideshow: undefined };
+}
 function serveSlideshowFixture(rawPath, res) {
   let path = rawPath;
   try { path = decodeURIComponent(rawPath); } catch { /* keep raw */ }
+  if (path === `/api/v1/play/${CAMERA_FIXTURE_ID}`) {
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(cameraFixtureItem()));
+    return true;
+  }
   if (path === '/api/v1/queue/fixture:slideshow') {
     const items = SLIDESHOW_ART.map((_f, i) => slideshowFixtureItem(i));
     res.setHeader('Content-Type', 'application/json');
@@ -328,12 +340,15 @@ function serveLiveFixture(rawPath, req, res) {
 function serveFixturePhotoSearch(rawUrl, res) {
   const url = new URL(rawUrl, 'http://fixture.invalid');
   if (url.pathname !== '/api/v1/content/query/search/stream') return false;
-  if (!/acceptance photo/i.test(url.searchParams.get('text') ?? '')) return false;
+  const text = url.searchParams.get('text') ?? '';
+  const camera = /acceptance camera/i.test(text);
+  if (!camera && !/acceptance photo/i.test(text)) return false;
   const art = slideshowFixtureItem(0);
-  const item = {
-    id: art.id, source: 'fixture', localId: 'art-1', title: `Acceptance photo: ${art.title}`,
-    type: 'photo', mediaType: 'image', thumbnail: art.mediaUrl, metadata: { type: 'photo' }, score: 100,
-  };
+  const cam = cameraFixtureItem();
+  const item = camera
+    ? { id: cam.id, source: 'fixture', localId: 'cam-1', title: cam.title, type: 'camera', thumbnail: cam.mediaUrl, metadata: { type: 'camera' }, score: 100 }
+    : { id: art.id, source: 'fixture', localId: 'art-1', title: `Acceptance photo: ${art.title}`,
+      type: 'photo', mediaType: 'image', thumbnail: art.mediaUrl, metadata: { type: 'photo' }, score: 100 };
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.write(`data: ${JSON.stringify({ event: 'pending', sources: ['fixture'], intent: null })}\n\n`);
@@ -385,7 +400,39 @@ const allowedTitles = new Set(policy === 'branch' ? BRANCH_ALLOWED_TITLES
  * Shared by Vite dev and Vite preview: production-built assets retain the
  * exact branch mint/read composition rather than introducing another proxy.
  */
-export function createAcceptancePreviewPlugin({ app, allowedTitles, policy, sourceSha, upstream, ordinaryDeviceFixture = null }) {
+/**
+ * The Player's answer to "the media server refused this file" is to ask
+ * POST /api/v1/media-source/check and WAIT while the file is `unreadable`
+ * (docs/reference/player/media-source-healing.md). The ordinary-journey
+ * allowlist forbids upstream POSTs, so the check was answered 403 and the
+ * receiver fell back to its short recovery ladder: a title Plex refused for
+ * three seconds (NFS `Permission denied (13)`) failed the journey instead of
+ * being waited on. This answers the check read-only: it only tries to stream
+ * the allowlisted title and never asks the real healer to chmod anything.
+ */
+async function answerMediaSourceCheck(req, res, { allowedTitles, upstream, probeFetch }) {
+  let raw = '';
+  for await (const chunk of req) raw += chunk;
+  let contentId = null;
+  try { contentId = JSON.parse(raw || '{}')?.contentId ?? null; } catch { contentId = null; }
+  const ratingKey = /^plex:(\d+)$/.exec(String(contentId || ''))?.[1];
+  res.setHeader('Content-Type', 'application/json');
+  if (!ratingKey || !allowedTitles.has(ratingKey)) {
+    res.statusCode = 403;
+    return res.end(JSON.stringify({ error: 'Acceptance source check restricted to authorized test titles' }));
+  }
+  let state = 'unknown';
+  try {
+    const response = await probeFetch(new URL(`/api/v1/proxy/plex/stream/${ratingKey}`, upstream).toString(),
+      { headers: { Range: 'bytes=0-0' } });
+    if (response.ok) state = 'readable';
+    else if (response.status === 503) state = 'unreadable';
+  } catch { state = 'unknown'; }
+  res.statusCode = 200;
+  return res.end(JSON.stringify({ state, reason: 'acceptance-read-only-probe', steps: [] }));
+}
+
+export function createAcceptancePreviewPlugin({ app, allowedTitles, policy, sourceSha, upstream, ordinaryDeviceFixture = null, sourceProbeFetch = globalThis.fetch }) {
   if (!/^[0-9a-f]{40}$/.test(sourceSha || '')) throw new Error('Bundled preview source must be a full SHA');
   const acceptanceSource = `accepted-${sourceSha}`;
   const install = vite => {
@@ -393,6 +440,9 @@ export function createAcceptancePreviewPlugin({ app, allowedTitles, policy, sour
     res.setHeader('X-Media-Acceptance-Source', acceptanceSource);
     if (ordinaryDeviceFixture && await ordinaryDeviceFixture.middleware(req, res)) return;
     const path = new URL(req.url, upstream).pathname;
+    if (req.method === 'POST' && path === '/api/v1/media-source/check') {
+      return answerMediaSourceCheck(req, res, { allowedTitles, upstream, probeFetch: sourceProbeFetch });
+    }
     if (req.method === 'GET' && serveSlideshowFixture(path, res)) return;
     if (req.method === 'GET' && serveLiveFixture(path, req, res)) return;
     if (req.method === 'GET' && serveFixturePhotoSearch(req.url, res)) return;

@@ -277,7 +277,7 @@ describe('SearchMode history × dispatch', () => {
       currentItem: { contentId: 'plex:episode-1', title: 'First episode' },
       queue: { items: [expect.objectContaining({ contentId: 'plex:episode-1' })] },
     }));
-    expect(controllerFetch).toHaveBeenCalledWith('/api/v1/list/plex/663508');
+    expect(controllerFetch).toHaveBeenCalledWith('/api/v1/list/plex/663508/expand');
     expect(screen.getByTestId('search-mode')).toBeInTheDocument();
     expect(screen.getByTestId('search-mode-input')).toHaveValue('tuttle');
   });

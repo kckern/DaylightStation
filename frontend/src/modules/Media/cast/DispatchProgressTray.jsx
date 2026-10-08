@@ -53,6 +53,16 @@ function ordinal(value) {
   return `${value}th`;
 }
 
+// PLAY.2a/AC3, PLAY.7a/AC2: a whole collection says how many items went there.
+function itemsCount(d) {
+  const n = d.outcomeIdentity?.count ?? d.count;
+  return Number.isInteger(n) && n > 1 ? n : null;
+}
+function titleWithCount(title, d) {
+  const n = itemsCount(d);
+  return n && title ? `${title} (${n} items)` : title;
+}
+
 function StatusIcon({ phase, quiet }) {
   if (quiet) return <IconCheck size={14} className="cast-tray-icon--quiet" aria-hidden />;
   if (phase === 'running' || phase === 'sent') return <span className="cast-tray-spinner" aria-hidden />;
@@ -90,7 +100,7 @@ const HOUSEHOLD_COPY = {
   hide: { running: t => `Removing ${t} from the household list…`, done: t => `Removed ${t} from the household list`, failed: t => `Couldn't remove ${t} from the household list` },
   watched: { running: t => `Marking ${t} watched…`, done: t => `Marked ${t} watched`, failed: t => `Couldn't mark ${t} watched` },
   unwatched: { running: t => `Marking ${t} unwatched…`, done: t => `Marked ${t} unwatched`, failed: t => `Couldn't mark ${t} unwatched` },
-  moveHere: { running: t => `Moving ${t} here…`, done: t => `Moved ${t} here`, failed: t => `Couldn't move ${t} here` },
+  moveHere: { running: t => `Moving ${t} here…`, done: (t, _at, d) => `Moved ${t} here${d?.command?.sourceName ? ` from ${d.command.sourceName}` : ''}`, failed: t => `Couldn't move ${t} here` },
   startOver: { done: (t, at) => `Started ${t} over ${at}`, failed: (t, at) => `Couldn't start ${t} over ${at}` },
 };
 export const HOUSEHOLD_KINDS = new Set(Object.keys(HOUSEHOLD_COPY));
@@ -109,22 +119,23 @@ function localCopy(d, phase, name) {
   // House-wide actions (Pause all, Stop all, …) carry their own sentence:
   // they name several screens, not one item on one screen.
   if (d.command?.copy?.primary) return { primary: d.command.copy.primary, secondary: d.command.copy.secondary ?? null };
-  const title = d.item?.title ?? d.title ?? 'it';
+  const baseTitle = d.item?.title ?? d.title ?? 'it';
+  const title = ['play', 'shuffle', 'add', 'playNext', 'playFirst'].includes(d.kind) ? titleWithCount(baseTitle, d) : baseTitle;
   const at = d.distance === 'here' ? 'here' : `on ${d.targetName ?? name}`;
   if (HOUSEHOLD_COPY[d.kind]) {
     const copy = HOUSEHOLD_COPY[d.kind];
     if (phase === 'failed') return { primary: copy.failed(title, at), secondary: d.reason ?? null };
     if (phase === 'running' && copy.running) return { primary: copy.running(title, at), secondary: null };
-    return { primary: copy.done(title, at), secondary: null };
+    return { primary: copy.done(title, at, d), secondary: null };
   }
   if (d.kind === 'playback') {
     // RELY.5a: name the item, the screen (this device, or a steered one), and what plays instead.
     const where = d.distance === 'here' ? 'this device' : (d.targetName ?? name ?? 'that screen');
     if (phase === 'waiting') {
-      return { primary: `Waiting for ${title} — the file is being repaired`, secondary: 'On this device' };
+      return { primary: `Waiting for ${title} — the file is being repaired`, secondary: d.distance === 'here' ? 'On this device' : `On ${where}` };
     }
     if (phase === 'library-unavailable') {
-      return { primary: 'Library unavailable', secondary: `${title} is waiting for its file on this device` };
+      return { primary: 'Library unavailable', secondary: `${title} is waiting for its file on ${where}` };
     }
     if (phase === 'skipped' && d.reason === 'file-unavailable') {
       return {
@@ -153,9 +164,16 @@ function localCopy(d, phase, name) {
       secondary: d.reason ?? null,
     };
   }
+  if (d.kind === 'undo' && d.command?.undid === 'clear') {
+    return { primary: `Put the queue back ${at}`, secondary: null };
+  }
+  if (d.kind === 'undo' && d.command?.undid && d.command.undid !== 'remove') {
+    return { primary: `Took back ${title} ${at}`, secondary: null };
+  }
   const verb = LOCAL_VERB[d.kind] ?? LOCAL_VERB.play;
+  const from = d.kind === 'move' && d.command?.sourceName ? ` from ${d.command.sourceName}` : '';
   return {
-    primary: verb(title, at),
+    primary: `${verb(title, at)}${from}`,
     secondary: Number.isInteger(d.ordinal) && ['add', 'playNext', 'playFirst'].includes(d.kind)
       ? `${ordinal(d.ordinal)} in queue`
       : resumedLine(d),
@@ -170,7 +188,8 @@ function notSentReason(d, kind) {
 }
 
 function farCopy(d, phase, name, kind) {
-  const title = d.item?.title ?? d.title ?? null;
+  const rawTitle = d.item?.title ?? d.title ?? null;
+  const title = phase === 'confirmed' ? titleWithCount(rawTitle, d) : rawTitle;
   const isAdd = d.kind === 'add' || d.operation === 'add';
   switch (phase) {
     case 'running': {
@@ -282,6 +301,15 @@ function UndoAction({ d, removeDispatch, recordLocal }) {
       const result = await undo.run(undo.operationId);
       if (result?.ok === false) throw new Error(result.reason ?? result.code ?? 'Undo failed');
       removeDispatch(attemptId);
+      // RELY.1a/AC1: the undo is itself an action that changes the queue, so it
+      // gets its own short confirmation naming the item and the screen.
+      const far = d.distance === 'far';
+      recordLocal?.({
+        kind: 'undo', phase: 'confirmed', item: d.item ?? { title: d.title, contentId: d.contentId },
+        command: { undid: d.kind ?? d.operation ?? null },
+        ...(far || d.distance === 'direct' ? { targetId: d.targetId ?? d.deviceId, targetName: d.targetName ?? null } : {}),
+      });
+      mediaLog.outcomeUndone({ attemptId, targetId: d.targetId ?? d.deviceId, undid: d.kind ?? d.operation ?? null });
     } catch (error) {
       mediaLog.outcomeUndoFailed({ attemptId, operationId: undo.operationId, error: error?.message ?? String(error) });
       recordLocal?.({ kind: 'undo', phase: 'failed', item: d.item, reason: error?.message ?? 'Undo failed' });

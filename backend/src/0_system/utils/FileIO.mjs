@@ -295,6 +295,16 @@ export function fileSignature(filePath) {
 }
 
 /**
+ * Modification time in ms, or null when the file cannot be stat'ed.
+ * @param {string} filePath - File path
+ * @returns {number|null}
+ */
+export function fileMtimeMs(filePath) {
+  try { return fs.statSync(filePath).mtimeMs; }
+  catch { return null; }
+}
+
+/**
  * Ensure a directory exists, creating it if necessary
  * @param {string} dirPath - Directory path
  */

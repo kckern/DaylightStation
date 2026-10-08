@@ -9,6 +9,7 @@ import {
   toHealableContentId,
   SOURCE_UNAVAILABLE_MAX_MS,
 } from '../lib/sourceAvailability.js';
+import { HLS_REFUSAL_EVENT } from '../lib/hlsRefusal.js';
 
 /**
  * Waits out a media file the server refuses to read, instead of burning the
@@ -36,6 +37,14 @@ export function useSourceAvailability({
   // Owner report: ({ waiting: true, since }) when a wait opens and
   // ({ waiting: false, decision }) when it ends (resume/normal/gave-up/abandoned).
   onWaitChange,
+  // Screens hold (owner ruling 2026-10-07, screen-framework owners ONLY): a
+  // CONFIRMED refusal the backend cannot judge keeps waiting instead of falling
+  // to the ladder and its skip. Fitness / piano / school Players never set it.
+  holdOnRefusal = false,
+  // The renderer's element, for the HLS refusal event (hls.js errors are not
+  // MediaErrors). `registrationSignal` re-runs the attach when it appears.
+  getMediaEl = null,
+  registrationSignal = null,
 }) {
   const healableId = disabled ? null : toHealableContentId(contentId, plexId);
   const [unavailableSince, setUnavailableSince] = useState(null);
@@ -65,12 +74,20 @@ export function useSourceAvailability({
     clearPoll();
     sinceRef.current = null;
     attemptRef.current = 0;
+    unknownRef.current = 0;
     setUnavailableSince(null);
   }, []);
 
   // `suspected`: the error never named a refusal, so a readable answer hands
   // back to the stall ladder (`normal`) instead of reloading outside it.
-  const checkNow = useCallback((reason, { suspected = false } = {}) => {
+  const unknownRef = useRef(0);
+  const holdRef = useRef(holdOnRefusal);
+  holdRef.current = holdOnRefusal;
+
+  // `confirmed`: the element/renderer named a refusal (403/404/503). It tells
+  // the backend the PROXY refused the file (refresh it even if Plex says
+  // readable) and lets a screen keep waiting when the backend cannot judge.
+  const checkNow = useCallback((reason, { suspected = false, confirmed = false } = {}) => {
     const id = idRef.current;
     if (!id) return Promise.resolve('normal');
     if (inflightRef.current) return inflightRef.current;
@@ -78,18 +95,35 @@ export function useSourceAvailability({
     const run = (async () => {
       let state = null;
       let unreadableMs = null;
+      let checkFailed = false;
+      let res = null;
       try {
-        const res = await DaylightAPI('api/v1/media-source/check', { contentId: id }, 'POST');
+        res = await DaylightAPI(
+          'api/v1/media-source/check',
+          { contentId: id, ...(confirmed ? { origin: 'proxy' } : {}) },
+          'POST',
+        );
         state = res?.state ?? null;
         unreadableMs = res?.unreadableMs ?? null;
       } catch (error) {
+        checkFailed = true;
         playbackLog('source-check-failed', { contentId: id, reason, error: error?.message }, { level: 'warn' });
       }
       // The item changed or the Player unmounted while we were asking.
       if (!aliveRef.current || idRef.current !== id) return 'normal';
 
       const waiting = sinceRef.current !== null;
-      const decision = decideSourceCheck({ state, waiting, suspected });
+      const answered = state === 'unreadable' || state === 'readable' || state === 'missing';
+      // Only a real `unknown` ANSWER counts toward "treated as missing"; a failed
+      // request (backend restarting mid-deploy) says nothing about the file.
+      if (answered) unknownRef.current = 0;
+      // Only `no-metadata` (Plex answered: no such item) means deleted. A
+      // reasonless `unknown` is also what a Plex outage produces.
+      else if (!checkFailed && res?.reason === 'no-metadata') unknownRef.current += 1;
+      const decision = decideSourceCheck({
+        state, waiting, suspected, hold: holdRef.current, confirmed,
+        unknownPolls: unknownRef.current,
+      });
 
       if (decision === 'wait') {
         if (!waiting) {
@@ -153,7 +187,7 @@ export function useSourceAvailability({
     if (!healableId) return;
     if (sinceRef.current !== null) return; // already waiting; the poll owns it
     if (isSourceRefusal({ errorCode, errorMessage })) {
-      checkNow('media-error');
+      checkNow('media-error', { confirmed: true });
     } else if (isSuspectedRefusal({ errorCode, errorMessage })) {
       // Mid-playback a refused part arrives as "Format error" or
       // "PIPELINE_ERROR_READ" with no status (2026-09-29). Ask; the answer decides.
@@ -164,6 +198,28 @@ export function useSourceAvailability({
       });
     }
   }, [healableId, errorCode, errorMessage, checkNow]);
+
+  // HLS: a segment/manifest refusal never becomes a MediaError, so the renderer
+  // raises a DOM event on the element instead (see lib/hlsRefusal.js).
+  useEffect(() => {
+    if (!healableId) return undefined;
+    const el = getMediaEl?.();
+    if (!el?.addEventListener) return undefined;
+    const onHlsRefusal = (event) => {
+      const detail = event?.detail || {};
+      if (sinceRef.current !== null) return; // already waiting; the poll owns it
+      // 5xx other than 503 is only SUSPECTED: the proxy's own replacement is 503.
+      const confirmed = detail.status === 403 || detail.status === 404 || detail.status === 503;
+      checkNow('hls-refusal', { suspected: true, confirmed }).then((decision) => {
+        playbackLog('refusal-hls', {
+          contentId: healableId, status: detail.status ?? null, details: detail.details ?? null,
+          urlKind: detail.urlKind ?? null, fatal: detail.fatal === true, count: detail.count ?? null, decision,
+        }, { level: decision === 'wait' ? 'warn' : 'info' });
+      });
+    };
+    el.addEventListener(HLS_REFUSAL_EVENT, onHlsRefusal);
+    return () => el.removeEventListener?.(HLS_REFUSAL_EVENT, onHlsRefusal);
+  }, [healableId, getMediaEl, registrationSignal, checkNow]);
 
   // New item or unmount: drop any wait for the old one.
   useEffect(() => {

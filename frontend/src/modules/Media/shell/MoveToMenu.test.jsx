@@ -61,7 +61,7 @@ describe('MoveToMenu', () => {
     await act(async () => { fireEvent.click(screen.getByTestId('move-to-local')); });
     await waitFor(() => expect(resolveLocal).toHaveBeenCalled());
     expect(resolveLocal.mock.calls[0]).toEqual(['a1', { phase: 'confirmed' }]);
-    expect(recordLocal).toHaveBeenCalledWith(expect.objectContaining({ kind: 'move', phase: 'running', targetId: 'local', item: { title: 'Hospital' } }));
+    expect(recordLocal).toHaveBeenCalledWith(expect.objectContaining({ kind: 'move', phase: 'running', targetId: 'local', item: { title: 'Hospital' }, command: expect.objectContaining({ sourceId: 'kitchen' }) }));
     expect(local.getSnapshot().currentItem.contentId).toBe('plex:1');
     expect(api).toHaveBeenCalledWith('api/v1/device/kitchen/session/claim', expect.objectContaining({ origin: { kind: 'device', id: 'browser:me' } }), 'POST');
     expect(push).toHaveBeenCalledWith('nowPlaying', {});

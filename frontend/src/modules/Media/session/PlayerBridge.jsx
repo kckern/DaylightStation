@@ -165,18 +165,33 @@ export function PlayerBridge() {
   useEffect(() => {
     let cancelled = false;
     const target = Math.max(0, Math.min(1, (volume / 100) * outputFade));
+    // The Player resets the element's volume to 1 when its metadata loads
+    // (the bridge passes it no volume prop, to avoid remounting), so the
+    // session level is applied again at each of these points.
+    const REAPPLY_EVENTS = ['loadedmetadata', 'loadeddata', 'canplay'];
+    let attached = null;
+    const set = (el) => { try { el.volume = target; } catch { /* ignore */ } };
     const apply = () => {
       const el = playerRef.current?.getMediaElement?.();
-      if (el) {
-        try { el.volume = target; } catch { /* ignore */ }
-        return true;
+      if (!el) return false;
+      set(el);
+      if (attached !== el && typeof el.addEventListener === 'function') {
+        attached = el;
+        for (const name of REAPPLY_EVENTS) el.addEventListener(name, onMedia);
       }
-      return false;
+      return true;
     };
-    if (apply()) return () => {};
+    const onMedia = (event) => { if (!cancelled) set(event.currentTarget ?? attached); };
+    const detach = () => {
+      if (attached && typeof attached.removeEventListener === 'function') {
+        for (const name of REAPPLY_EVENTS) attached.removeEventListener(name, onMedia);
+      }
+      attached = null;
+    };
+    if (apply()) return () => { cancelled = true; detach(); };
     const id = setInterval(() => { if (cancelled || apply()) clearInterval(id); }, TIMING.VOLUME_APPLY_RETRY_MS);
     const timeout = setTimeout(() => clearInterval(id), TIMING.VOLUME_APPLY_GIVE_UP_MS);
-    return () => { cancelled = true; clearInterval(id); clearTimeout(timeout); };
+    return () => { cancelled = true; detach(); clearInterval(id); clearTimeout(timeout); };
   }, [volume, outputFade, currentItem?.contentId]);
 
   useEffect(() => () => {

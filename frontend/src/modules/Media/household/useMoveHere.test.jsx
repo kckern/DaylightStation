@@ -58,7 +58,7 @@ describe('useMoveHere', () => {
     expect(local.lifecycle.adoptSnapshot).toHaveBeenCalledWith(expect.objectContaining({ currentItem: expect.objectContaining({ contentId: 'plex:9' }) }), { autoplay: true });
     expect(remote.transport.stop).toHaveBeenCalled();
     expect(outcome).toEqual({ ok: true });
-    expect(outcomes.recordLocal).toHaveBeenCalledWith(expect.objectContaining({ kind: 'moveHere', phase: 'running' }));
+    expect(outcomes.recordLocal).toHaveBeenCalledWith(expect.objectContaining({ kind: 'moveHere', phase: 'running', command: expect.objectContaining({ sourceId: 'livingroom-tv', sourceName: 'Living Room TV' }) }));
     expect(outcomes.resolveLocal).toHaveBeenCalledWith('mv', { phase: 'confirmed' });
   });
 

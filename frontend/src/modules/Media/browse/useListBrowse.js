@@ -8,6 +8,9 @@ function buildPath(path, { modifiers = {} }) {
   if (modifiers.playable) segs.push('playable');
   if (modifiers.shuffle) segs.push('shuffle');
   if (modifiers.recent_on_top) segs.push('recent_on_top');
+  // Opt out of the router's season-as-one-tile wrapping: browsing a season
+  // must list its episodes, not the season itself (defect 14).
+  if (modifiers.expand) segs.push('expand');
   return `api/v1/list/${segs.join('/')}`;
 }
 
@@ -70,7 +73,7 @@ export function useListBrowse(path, { modifiers = {}, take = 50, initialTake = 0
       });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, take, firstTake, attempt, modifiers.playable, modifiers.shuffle, modifiers.recent_on_top]);
+  }, [path, take, firstTake, attempt, modifiers.playable, modifiers.shuffle, modifiers.recent_on_top, modifiers.expand]);
 
   const loadMore = useCallback(async () => {
     const generation = generationRef.current;

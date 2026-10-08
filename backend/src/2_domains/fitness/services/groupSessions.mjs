@@ -1,7 +1,13 @@
-export const GROUP_MAX_GAP_MS = 4 * 60 * 60 * 1000; // 4h ceiling
+export const GROUP_MAX_GAP_MS = 15 * 60 * 1000;
 
 const rosterSet = (s) => new Set(Object.keys(s.participants || {}));
 const hasVideo  = (s) => !!(s.media && s.media.primary);
+const measuredMinutes = (participant = {}) => {
+  if (Number.isFinite(participant.measuredDurationMs)) return participant.measuredDurationMs / 60000;
+  return Object.values(participant.zoneMinutes || {}).reduce(
+    (sum, value) => sum + (Number.isFinite(Number(value)) ? Number(value) : 0), 0
+  );
+};
 
 // Sport strings Strava reports for cycling (the only sport cycle-game races belong to).
 const CYCLING_SPORT = /ride|cycl|bike|velomobile|handcycle/i;
@@ -26,12 +32,12 @@ export function groupSessions(sessions, { maxGapMs = GROUP_MAX_GAP_MS } = {}) {
     const endMs   = s.startTime + (s.durationMs || 0);
     const newRoster = rosterSet(s);
 
-    // A new group starts on: a video session (stands alone + separates), a calendar-day
-    // change, or a gap exceeding the ceiling. Roster changes do NOT split — rotating
-    // riders across a continuous no-video block stay one merged session.
+    // Browser restarts and media/roster changes are implementation details inside one
+    // household visit. Explicit End, a foreign outdoor sport, a new date, or a real
+    // absence are human boundaries.
     const mustBreak =
       !cur ||
-      cur._hasVideo || hasVideo(s) ||
+      cur._lastFinalized || !!s.finalized ||
       cur._hasForeign || isForeignSport(s) ||
       s.date !== cur.date ||
       (startMs - cur._lastEndMs) > maxGapMs;
@@ -39,13 +45,18 @@ export function groupSessions(sessions, { maxGapMs = GROUP_MAX_GAP_MS } = {}) {
     if (mustBreak) {
       cur = { id: `group:${s.sessionId}`, isGroup: true, date: s.date,
               startTime: startMs, endTime: endMs, segments: [], _lastEndMs: endMs,
-              _hasVideo: hasVideo(s), _hasForeign: isForeignSport(s), _rings: 0, _prevEnd: endMs, _sessions: [] };
+              _hasVideo: hasVideo(s), _media: s.media || null,
+              _hasForeign: isForeignSport(s), _lastFinalized: !!s.finalized,
+              _rings: 0, _prevEnd: endMs, _sessions: [] };
       union = new Set(newRoster);
       groups.push(cur);
     } else {
       for (const r of newRoster) union.add(r);
-      cur.endTime = endMs;
-      cur._lastEndMs = endMs;
+      cur.endTime = Math.max(cur.endTime, endMs);
+      cur._lastEndMs = Math.max(cur._lastEndMs, endMs);
+      cur._hasVideo ||= hasVideo(s);
+      cur._media ||= s.media || null;
+      cur._lastFinalized = !!s.finalized;
     }
 
     cur.segments.push({
@@ -66,8 +77,33 @@ export function groupSessions(sessions, { maxGapMs = GROUP_MAX_GAP_MS } = {}) {
 function finalize(g) {
   const participants = {};
   for (const r of g._union) {
-    const seg = g.segments.find((x) => x.participants[r]);
-    participants[r] = seg ? seg.participants[r] : { displayName: r };
+    const entries = g.segments.map((x) => x.participants[r]).filter(Boolean);
+    const zoneMinutes = {};
+    let rings = 0;
+    let weightedHr = 0;
+    let hrWeightMinutes = 0;
+    let measuredDurationMs = 0;
+    for (const participant of entries) {
+      const minutes = measuredMinutes(participant);
+      measuredDurationMs += Math.round(minutes * 60000);
+      rings += Number(participant.rings) || 0;
+      for (const [zone, value] of Object.entries(participant.zoneMinutes || {})) {
+        zoneMinutes[zone] = (zoneMinutes[zone] || 0) + (Number(value) || 0);
+      }
+      if (participant.hrAvg != null && Number.isFinite(Number(participant.hrAvg)) && Number(participant.hrAvg) > 0 && minutes > 0) {
+        weightedHr += Number(participant.hrAvg) * minutes;
+        hrWeightMinutes += minutes;
+      }
+    }
+    const first = entries[0] || { displayName: r };
+    participants[r] = {
+      ...first,
+      displayName: first.displayName || r,
+      ...(Object.keys(zoneMinutes).length ? { zoneMinutes } : {}),
+      ...(rings ? { rings } : {}),
+      ...(hrWeightMinutes ? { hrAvg: Math.round(weightedHr / hrWeightMinutes) } : {}),
+      measuredDurationMs,
+    };
   }
   const single = g.segments.length === 1;
   const sessions = g._sessions || [];
@@ -100,10 +136,11 @@ function finalize(g) {
     // long they actually worked out (e.g. 85m of riding), matching the merged-detail's
     // active total — not the 229m clock span from first start to last finish.
     durationMs: g.segments.reduce((sum, x) => sum + (x.durationMs || 0), 0),
+    elapsedMs: Math.max(0, g.endTime - g.startTime),
     segments: g.segments,
     participants,
     totalRings: g._rings,
-    media: g._hasVideo ? g.segments[0].media : null,
+    media: g._hasVideo ? g._media : null,
     timezone: sessions[0]?.timezone,
     voiceMemos,
     maxSufferScore,

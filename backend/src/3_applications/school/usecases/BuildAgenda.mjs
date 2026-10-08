@@ -766,6 +766,7 @@ export class BuildAgenda {
           taxonomy: offerPresentation({ subject: offer.subject, next: offer.entry })?.taxonomy ?? null,
         })),
         bulkToken, bulkAccessCode,
+        bulkSubjects: bulkToken ? offers.filter(offer => offer.printable).map(offer => offer.subject) : null,
         readingToken, readingAccessCode, readingFeature, readingSubject,
         notes,
       }),

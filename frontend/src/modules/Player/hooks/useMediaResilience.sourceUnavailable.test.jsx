@@ -92,8 +92,8 @@ describe('useMediaResilience — refused source', () => {
 
     await refuse(el);
 
-    expect(checkCalls()[0][1]).toEqual({ contentId: 'plex:696316' });
-    expect(result.current.overlayProps.sourceNotice).toMatch(/^Video file unavailable — retrying · 0:0\d$/);
+    expect(checkCalls()[0][1]).toEqual({ contentId: 'plex:696316', origin: 'proxy' });
+    expect(result.current.overlayProps.sourceNotice).toMatch(/^Fixing this video… · 0:0\d$/);
     expect(result.current.overlayProps.shouldRender).toBe(true);
 
     // Two minutes of refusal: well past the 15s startup deadline and the jolt
