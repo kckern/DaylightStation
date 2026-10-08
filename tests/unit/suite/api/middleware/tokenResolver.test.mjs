@@ -24,7 +24,7 @@ describe('tokenResolver', () => {
     const req = mockReq(`Bearer ${token}`, ['kiosk']);
     middleware(req, mockRes(), () => {
       expect(req.roles).toEqual(expect.arrayContaining(['kiosk', 'parent']));
-      expect(req.user).toEqual({ sub: 'user_1', hid: 'default', roles: ['parent'] });
+      expect(req.user).toEqual({ sub: 'user_1', hid: 'default', sid: null, roles: ['parent'] });
       done();
     });
   });

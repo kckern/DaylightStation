@@ -1,4 +1,4 @@
-import { APP_CONFIGS } from '#apps/admin/AppsConfigService.mjs';
+import { APP_CONFIGS } from '#adapters/persistence/yaml/YamlAdminConfigStore.mjs';
 import { HOUSEHOLD_APP_CONFIGS } from '#shared/contracts/householdConfig.mjs';
 
 describe('AppsConfigService path registry', () => {
