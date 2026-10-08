@@ -8,6 +8,7 @@
 import express from 'express';
 import request from 'supertest';
 import { createDoNowRouter } from '#api/v1/routers/donow.mjs';
+import { authenticate } from '#apps/trigger/guards/authenticate.mjs';
 
 const approvals = {
   listPending: async () => [],
@@ -18,7 +19,7 @@ const approvals = {
 const app = (logger = { warn() {}, debug() {} }) => {
   const a = express();
   a.use('/donow', createDoNowRouter({
-    service: {}, approvals, expectedToken: 'sekrit', logger,
+    service: {}, approvals, authenticateApproval: authenticate, expectedToken: 'sekrit', logger,
   }));
   return a;
 };
