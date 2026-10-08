@@ -246,8 +246,13 @@ export function SinglePlayer(props = {}) {
     // direct-media bypass for identity-less embeds, which have no descriptor to
     // resolve; otherwise a stale queue `dash_video` makes dash.js parse HLS.
     const hasResolvableContent = Boolean(effectiveContentId);
+    // Some queue items own playback shape `/play` cannot reproduce: a photo's
+    // preview URL + slideshow config (`/play` returns an image with no mediaUrl
+    // at all), and a clip's segment window. Neither is an opaque stream with a
+    // stale format, so the queue item stays authoritative for them.
+    const queueOwnsPlayback = directFormat === 'image' || play?.segment != null;
     if (isSelfContainedFormat || ((directMediaUrl && directFormat && !getRenderer(directFormat)
-      && !hasResolvableContent) && !isRecoveryRemount)) {
+      && (!hasResolvableContent || queueOwnsPlayback)) && !isRecoveryRemount)) {
       const directInfo = {
         ...play,
         id: play.id || play.contentId || effectiveContentId,
