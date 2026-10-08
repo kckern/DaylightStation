@@ -19,6 +19,7 @@ function makeDeps({ idle = true } = {}) {
       let s = { owned: null, handled: {} };
       return { load: async () => s, save: async (next) => { s = next; }, peek: () => s };
     })(),
+    scheduler: { every: () => () => {} },
     timeZone: 'America/Los_Angeles',
     logger: { info() {}, warn() {}, error() {} },
   };
