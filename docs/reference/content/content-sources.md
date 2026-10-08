@@ -488,6 +488,20 @@ take: 1
 4. Results are returned as a dynamic container — each item carries the format from its originating source (e.g., `image` from Immich, `video` from Plex)
 5. The container is `queueable` — `resolvePlayables()` returns the filtered results as a playable queue
 
+#### Cover Image
+
+A query's menu tile uses its first playable's thumbnail. A query that opens with a title card has none, so the tile falls back to a placeholder. Name one with a top-level `cover:`:
+
+```yaml
+title: Birthday Videos & Photos
+cover: immich:<asset-id>          # or a site path (/media/img/...) or any content id
+items:
+  - type: titlecard
+    ...
+```
+
+`immich:` ids resolve to the asset's preview-size thumbnail. A path starting with `/` is used as given. Any other content id goes through `/api/v1/display/<id>`. Absolute `http(s)` URLs are not supported, because `/display` rewrites their host onto the query proxy. The field is `cover`, not `image`, because a flat titlecard query already uses `image` for the card's own picture. The menu reaches the cover through `/api/v1/display/query:<name>`, so no `image:` is needed on the menu entry.
+
 #### Cross-Source Queries
 
 When no `source` is specified, the query runs across all sources with `searchable` capability:
