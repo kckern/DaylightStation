@@ -591,3 +591,11 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-10-07 | fix/charades-history-import | c570089e6 | Merged; worktree edits already identical to main |
 | 2026-10-07 | fix/fitness-kiosk-polish | b669b1ce6 | Merged; clean worktree removed |
 | 2026-10-07 | worktree-agent-a2e40a82faec43217 | 3756857f7 | Merged agent worktree; clean, removed |
+| 2026-10-07 | feat/card-ladder-learn-more | 6b4f15be8 | Homeserver: merged into main, clean idle worktree removed |
+| 2026-10-07 | feat/card-ladder-random-order | 32f5d53e5 | Homeserver: merged into main, clean idle worktree removed |
+| 2026-10-07 | feat/pair-controller | ac2ab526e | Homeserver: merged into main, clean idle worktree removed |
+| 2026-10-07 | feature/sheet-music-learn-lab | afae527b0 | Homeserver: merged into main, clean idle worktree removed |
+| 2026-10-07 | feature/sheetmusic-learn-recovery | 887c7d863 | Homeserver: merged into main, clean idle worktree removed |
+| 2026-10-07 | feature/skyline-glider | 1a0649cbe | Homeserver: merged into main, clean idle worktree removed |
+| 2026-10-07 | fix/agenda-card-subject-korean | 955ea662d | Homeserver: merged into main, clean idle worktree removed |
+| 2026-10-07 | fix/portal-card-ladder-launch | 26f8f84ac | Homeserver: merged into main, clean idle worktree removed |
