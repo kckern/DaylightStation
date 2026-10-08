@@ -80,18 +80,6 @@
 # registered-but-absent config; the unregistered requirements/config.yml was
 # retired) and verified passing by hand afterwards.
 #
-backend/src/3_applications/piano-games/OpponentDialogueService.test.mjs
-backend/src/3_applications/playback-hub/runtime/HubStatusBroadcaster.test.mjs
-backend/src/3_applications/school/LanguageStudyService.test.mjs
-backend/src/4_api/v1/routers/config-context-boundaries.characterization.test.mjs
-backend/src/4_api/v1/routers/piano.economyHook.test.mjs
-backend/src/4_api/v1/routers/piano.routes.contract.test.mjs
-backend/tests/unit/adapters/harvester/fitness/FitnessSyncerHarvester.test.mjs
-backend/tests/unit/api/donow.approvalsAuth.test.mjs
-backend/tests/unit/applications/admin/appsConfigService.registry.test.mjs
-backend/tests/unit/applications/admin/yamlConfigFileService.allowlist.test.mjs
-backend/tests/unit/applications/ambient/AmbientSchedulerService.test.mjs
-backend/tests/unit/applications/devices/ScreenContentTracker.test.mjs
 #
 # 2026-09-16: the School domain imports a shared contract.
 # `backend/src/2_domains/school/language/transcription.mjs` imports
@@ -110,4 +98,14 @@ backend/tests/unit/applications/devices/ScreenContentTracker.test.mjs
 # both change what the rule MEANS rather than repair a defect. That belongs to
 # whoever owns the School boundary, not to a Connect Four opponent fix that
 # happened to be the first change to complete a full gate afterwards.
-tests/isolated/application/school/schoolcalcArchitecture.test.mjs
+#
+# 2026-10-08: the list is EMPTY again. A completed full gate run (3,988 files,
+# 43,570 tests) failed only 8 files: five baseline entries (OpponentDialogueService,
+# donow.approvalsAuth, appsConfigService.registry, AmbientSchedulerService,
+# FitnessSyncerHarvester) were stale specs against refactored contracts and are
+# fixed in the test; three print acceptance sweeps failed because their visual
+# baselines were gitignored, so every fresh checkout wrote a first snapshot and
+# failed. The other eight entries (HubStatusBroadcaster, LanguageStudyService,
+# config-context-boundaries, piano.economyHook, piano.routes.contract,
+# yamlConfigFileService.allowlist, ScreenContentTracker, schoolcalcArchitecture)
+# passed in that run and again individually, so they are dropped.
