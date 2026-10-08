@@ -605,3 +605,6 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-10-07 | integrate/fitness-policies | 02b7aa6ba | Homeserver: fully merged once rebased onto scrubbed history; old tip kept as refs/pre-scrub/ |
 | 2026-10-07 | feat/piano-ladder-hands | 1672f2f53 | Homeserver: merged; worktree held a 2026-09-15 draft superseded by main through 2026-09-27 (archived to homeserver _deleteme/salvage-2026-10-07) |
 | 2026-10-07 | worktree-encapsulate-piano-styles | 17c0c46e2 | Homeserver: merged; worktree held two agent report files (archived to homeserver _deleteme/salvage-2026-10-07) |
+| 2026-10-08 | release/media-final | 3e89448fd7 | Media release (proof gaps, refusal recovery) — content in main via cb15bc68c4 |
+| 2026-10-08 | fix/media-heal-gaps | c19c6cbb9d | Media release (proof gaps, refusal recovery) — content in main via cb15bc68c4 |
+| 2026-10-08 | test/media-gaps-final | 6010b55982 | Media release (proof gaps, refusal recovery) — content in main via cb15bc68c4 |
