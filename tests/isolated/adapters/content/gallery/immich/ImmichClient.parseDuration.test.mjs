@@ -29,9 +29,14 @@ describe('ImmichClient.parseDuration', () => {
     expect(() => c.parseDuration([1, 2, 3])).not.toThrow();
   });
 
-  it('coerces a finite number to a rounded second count', () => {
-    expect(c.parseDuration(90)).toBe(90);
-    expect(c.parseDuration(90.7)).toBe(91);
+  // Immich 3.x sends `duration` as integer MILLISECONDS (verified 2026-10-07 on
+  // 3.3.0: a 35.9 s clip reports 35946). Reading it as seconds made every video
+  // look 1000x longer, so the query adapter segmented 5-second clips and seeked
+  // hours past their end.
+  it('reads a numeric duration as milliseconds and returns rounded seconds', () => {
+    expect(c.parseDuration(35946)).toBe(36);
+    expect(c.parseDuration(90000)).toBe(90);
+    expect(c.parseDuration(1410600)).toBe(1411);
   });
 
   it('returns null for non-string, non-number inputs', () => {

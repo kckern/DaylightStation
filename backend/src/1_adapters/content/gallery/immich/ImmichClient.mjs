@@ -315,10 +315,10 @@ export class ImmichClient {
     // mean "no duration" → null. Numeric 0 intentionally maps to null too, for
     // consistency with the '0:00:00.00000' sentinel (a zero-length/absent duration).
     if (!durationStr || durationStr === '0:00:00.00000') return null;
-    // Immich has returned duration as a raw number (seconds) in some API
-    // versions — accept it directly instead of crashing on .split().
+    // Immich 3.x returns duration as integer milliseconds (3.3.0 reports a
+    // 35.9 s clip as 35946); older versions sent the HH:MM:SS string below.
     if (typeof durationStr === 'number') {
-      return Number.isFinite(durationStr) ? Math.round(durationStr) : null;
+      return Number.isFinite(durationStr) ? Math.round(durationStr / 1000) : null;
     }
     if (typeof durationStr !== 'string') return null;
     const parts = durationStr.split(':');
