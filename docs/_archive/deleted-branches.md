@@ -600,3 +600,8 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-10-07 | fix/agenda-card-subject-korean | 955ea662d | Homeserver: merged into main, clean idle worktree removed |
 | 2026-10-07 | fix/portal-card-ladder-launch | 26f8f84ac | Homeserver: merged into main, clean idle worktree removed |
 | 2026-10-07 | backup/pre-pii-scrub-20261007 | 935b44f14 | Pre-rewrite main before scrubbing real names from 228 unpushed commits; superseded by pushed 4acb7baad. Contains names: do not restore to a pushed branch |
+| 2026-10-07 | feat/skyline-fitness-first | 230298dc0 | Homeserver: fully merged once rebased onto scrubbed history; old tip kept as refs/pre-scrub/ |
+| 2026-10-07 | feat/skyline-glider-rebuild | 058f32477 | Homeserver: fully merged once rebased onto scrubbed history; old tip kept as refs/pre-scrub/ |
+| 2026-10-07 | integrate/fitness-policies | 02b7aa6ba | Homeserver: fully merged once rebased onto scrubbed history; old tip kept as refs/pre-scrub/ |
+| 2026-10-07 | feat/piano-ladder-hands | 1672f2f53 | Homeserver: merged; worktree held a 2026-09-15 draft superseded by main through 2026-09-27 (archived to homeserver _deleteme/salvage-2026-10-07) |
+| 2026-10-07 | worktree-encapsulate-piano-styles | 17c0c46e2 | Homeserver: merged; worktree held two agent report files (archived to homeserver _deleteme/salvage-2026-10-07) |
