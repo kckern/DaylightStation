@@ -581,3 +581,5 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-10-07 | feat/korean-full-course | 8213fbb1f70a2eb8ff98794ee112e210db7d1182 | Complete sixteen-unit Korean hybrid course, reviewed, merged and deployed |
 
 | 2026-10-07 | feat/atlas-six-questions | 76e710020aac93d1d508291793c2d08c31322826 | Six-question upper atlas profile; integrated newer deployed release 3cbe5f58ae, deployed as a two-module overlay, and verified 580 worksheets across 58 banks |
+
+| 2026-10-07 | fix/school-audit-repairs | 98364c64e423e3302641e4d24ab4745b9e9ed0ab | Five hybrid-course audit fixes; Astra approved, 4,456 tests passed, merged and deployed with guarded content activation |
