@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import moment from 'moment-timezone';
 import { FitnessSyncerHarvester } from '#adapters/harvester/fitness/FitnessSyncerHarvester.mjs';
-import { HarvesterCategory } from '#adapters/harvester/ports/IHarvester.mjs';
+import { HarvesterCategory } from '#apps/harvester/ports/IHarvester.mjs';
 
 describe('FitnessSyncerHarvester', () => {
   let harvester;
@@ -21,6 +21,10 @@ describe('FitnessSyncerHarvester', () => {
 
   const TEST_USERNAME = 'testuser';
   const TEST_TIMEZONE = 'America/New_York';
+  // The adapter drops items older than daysBack, so fixtures must be recent.
+  // Noon UTC two days ago is the same calendar day in New York.
+  const DAY = moment.utc().subtract(2, 'days').format('YYYY-MM-DD');
+  const PREV_DAY = moment.utc().subtract(3, 'days').format('YYYY-MM-DD');
 
   beforeEach(() => {
     // Mock dependencies
@@ -175,6 +179,13 @@ describe('FitnessSyncerHarvester', () => {
       });
 
       mockHttpClient.get.mockImplementation((url) => {
+        if (url.includes('/items')) {
+          return Promise.resolve({
+            data: {
+              items: mockActivities(),
+            },
+          });
+        }
         if (url.includes('/sources')) {
           return Promise.resolve({
             data: {
@@ -184,19 +195,12 @@ describe('FitnessSyncerHarvester', () => {
             },
           });
         }
-        if (url.includes('/activities')) {
-          return Promise.resolve({
-            data: {
-              items: mockActivities(),
-            },
-          });
-        }
         return Promise.reject(new Error('Unexpected URL'));
       });
     });
 
     function mockActivities() {
-      const date = '2026-02-07T10:00:00Z';
+      const date = `${DAY}T10:00:00Z`;
       return [
         // Steps activity
         {
@@ -214,7 +218,7 @@ describe('FitnessSyncerHarvester', () => {
         {
           itemId: 'run-activity-1',
           date,
-          endDate: '2026-02-07T11:00:00Z',
+          endDate: `${DAY}T11:00:00Z`,
           activity: 'Running',
           title: 'Morning Run',
           type: 'Running',
@@ -238,7 +242,7 @@ describe('FitnessSyncerHarvester', () => {
         TEST_USERNAME,
         'fitness',
         expect.objectContaining({
-          '2026-02-07': expect.objectContaining({
+          [DAY]: expect.objectContaining({
             steps: expect.objectContaining({
               steps_count: 5000,
               bmr: 1200,
@@ -261,7 +265,7 @@ describe('FitnessSyncerHarvester', () => {
         TEST_USERNAME,
         'fitness',
         expect.objectContaining({
-          '2026-02-07': expect.objectContaining({
+          [DAY]: expect.objectContaining({
             activities: expect.arrayContaining([
               expect.objectContaining({
                 title: 'Morning Run',
@@ -287,7 +291,7 @@ describe('FitnessSyncerHarvester', () => {
         call => call[1] === 'fitness'
       );
       const savedData = saveCall[2];
-      const activity = savedData['2026-02-07'].activities[0];
+      const activity = savedData[DAY].activities[0];
 
       // Check that times are formatted correctly for EST
       expect(activity.startTime).toMatch(/^\d{2}:\d{2} (am|pm)$/);
@@ -304,7 +308,7 @@ describe('FitnessSyncerHarvester', () => {
         TEST_USERNAME,
         'archives/fitness_long',
         expect.objectContaining({
-          '2026-02-07': expect.any(Object),
+          [DAY]: expect.any(Object),
         })
       );
 
@@ -313,7 +317,7 @@ describe('FitnessSyncerHarvester', () => {
         call => call[1] === 'archives/fitness_long'
       );
       const archiveData = archiveCall[2];
-      const dateEntry = archiveData['2026-02-07'];
+      const dateEntry = archiveData[DAY];
 
       // Check that archive entries exist
       expect(Object.keys(dateEntry).length).toBeGreaterThan(0);
@@ -324,7 +328,7 @@ describe('FitnessSyncerHarvester', () => {
 
       expect(firstEntry).toHaveProperty('src', 'garmin');
       expect(firstEntry).toHaveProperty('id');
-      expect(firstEntry).toHaveProperty('date', '2026-02-07');
+      expect(firstEntry).toHaveProperty('date', DAY);
       expect(firstEntry).toHaveProperty('type');
       expect(firstEntry).toHaveProperty('data');
 
@@ -345,7 +349,7 @@ describe('FitnessSyncerHarvester', () => {
       );
 
       // IDs should be the same for the same itemId
-      const ids1 = Object.keys(archiveCall1[2]['2026-02-07']);
+      const ids1 = Object.keys(archiveCall1[2][DAY]);
       expect(ids1.length).toBeGreaterThan(0);
       
       // Each ID should be a 32-character hex string (MD5)
@@ -357,14 +361,7 @@ describe('FitnessSyncerHarvester', () => {
     it('should handle invalid dates gracefully', async () => {
       // Mock activity with invalid date
       mockHttpClient.get.mockImplementation((url) => {
-        if (url.includes('/sources')) {
-          return Promise.resolve({
-            data: {
-              items: [{ id: 'source-123', providerType: 'GarminWellness' }],
-            },
-          });
-        }
-        if (url.includes('/activities')) {
+        if (url.includes('/items')) {
           return Promise.resolve({
             data: {
               items: [
@@ -375,6 +372,13 @@ describe('FitnessSyncerHarvester', () => {
                   steps: 5000,
                 },
               ],
+            },
+          });
+        }
+        if (url.includes('/sources')) {
+          return Promise.resolve({
+            data: {
+              items: [{ id: 'source-123', providerType: 'GarminWellness' }],
             },
           });
         }
@@ -396,7 +400,7 @@ describe('FitnessSyncerHarvester', () => {
     it('should merge new data with existing fitness file', async () => {
       // Mock existing data
       mockLifelogStore.load.mockResolvedValue({
-        '2026-02-06': {
+        [PREV_DAY]: {
           steps: { steps_count: 3000 },
           activities: [],
         },
@@ -412,18 +416,13 @@ describe('FitnessSyncerHarvester', () => {
       });
 
       mockHttpClient.get.mockImplementation((url) => {
-        if (url.includes('/sources')) {
-          return Promise.resolve({
-            data: { items: [{ id: 'source-123', providerType: 'GarminWellness' }] },
-          });
-        }
-        if (url.includes('/activities')) {
+        if (url.includes('/items')) {
           return Promise.resolve({
             data: {
               items: [
                 {
                   itemId: 'new-activity',
-                  date: '2026-02-07T10:00:00Z',
+                  date: `${DAY}T10:00:00Z`,
                   activity: 'Steps',
                   steps: 5000,
                   duration: 3600,
@@ -431,6 +430,11 @@ describe('FitnessSyncerHarvester', () => {
                 },
               ],
             },
+          });
+        }
+        if (url.includes('/sources')) {
+          return Promise.resolve({
+            data: { items: [{ id: 'source-123', providerType: 'GarminWellness' }] },
           });
         }
         return Promise.reject(new Error('Unexpected URL'));
@@ -444,8 +448,8 @@ describe('FitnessSyncerHarvester', () => {
       );
       const savedData = saveCall[2];
 
-      expect(savedData).toHaveProperty('2026-02-06'); // existing
-      expect(savedData).toHaveProperty('2026-02-07'); // new
+      expect(savedData).toHaveProperty(PREV_DAY); // existing
+      expect(savedData).toHaveProperty(DAY); // new
     });
   });
 
@@ -468,13 +472,13 @@ describe('FitnessSyncerHarvester', () => {
       });
 
       mockHttpClient.get.mockImplementation((url) => {
+        if (url.includes('/items')) {
+          return Promise.resolve({ data: { items: [] } });
+        }
         if (url.includes('/sources')) {
           return Promise.resolve({
             data: { items: [{ id: 'source-123', providerType: 'GarminWellness' }] },
           });
-        }
-        if (url.includes('/activities')) {
-          return Promise.resolve({ data: { items: [] } });
         }
         return Promise.reject(new Error('Unexpected URL'));
       });
