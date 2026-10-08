@@ -46,6 +46,7 @@ export class ContentAccessService {
     if (playables === null) return { kind: 'unsupported', source };
     return {
       kind: 'found', source, finalId, audio: playables.audio || null,
+      thumbnail: playables.thumbnail || null,
       items: await this.queueService.resolveQueue(playables, source, { shuffle }),
     };
   }

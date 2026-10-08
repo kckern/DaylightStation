@@ -238,8 +238,16 @@ export function SinglePlayer(props = {}) {
     const directFormat = play?.format;
     const directMediaUrl = play?.mediaUrl;
     const isRecoveryRemount = !!remountDiagnostics;
-    // Title cards are self-contained (no mediaUrl needed) — always use direct-play bypass
-    const isSelfContainedFormat = directFormat === 'titlecard';
+    // Title cards are self-contained (no mediaUrl needed). Queue images are also
+    // authoritative, resolved descriptors: re-fetching an Immich image through
+    // `/play` downgrades it to a browse item and drops both its display URL and
+    // queue-owned slideshow policy.
+    const isResolvedImmichMedia = Boolean(directMediaUrl)
+      && String(effectiveContentId || '').startsWith('immich:')
+      && (directFormat === 'image' || isMediaFormat(directFormat));
+    const isSelfContainedFormat = directFormat === 'titlecard'
+      || (directFormat === 'image' && Boolean(directMediaUrl))
+      || isResolvedImmichMedia;
     // A queue item may carry an opaque transport URL plus a stale format. When
     // it has a canonical content id, `/play` is the transport authority (and
     // may correctly describe that same opaque Plex stream as HLS). Reserve the
@@ -506,7 +514,19 @@ export function SinglePlayer(props = {}) {
           <SlideshowMetadataOverlay
             mediaId={videoMediaId}
             visible={videoMetaVisible}
-            variant="video"
+            preloaded={{
+              capturedAt: mediaInfo?.metadata?.capturedAt || null,
+              localDateTime: mediaInfo?.metadata?.localDateTime || null,
+              people: mediaInfo?.metadata?.people || null,
+              location: mediaInfo?.metadata?.location || null,
+              captureTimeZone: (
+                mediaInfo?.metadata?.captureTimeZone
+                && mediaInfo.metadata.captureTimeZone !== 'UTC'
+                  ? mediaInfo.metadata.captureTimeZone
+                  : null
+              ) || mediaInfo?.slideshow?.captureTimeZone
+                || mediaInfo?.metadata?.captureTimeZone || null,
+            }}
           />
         </>
       );

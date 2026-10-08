@@ -35,6 +35,7 @@ describe('ImmichClient.parseDuration', () => {
   // hours past their end.
   it('reads a numeric duration as milliseconds and returns rounded seconds', () => {
     expect(c.parseDuration(35946)).toBe(36);
+    expect(c.parseDuration(50155)).toBe(50);
     expect(c.parseDuration(90000)).toBe(90);
     expect(c.parseDuration(1410600)).toBe(1411);
   });

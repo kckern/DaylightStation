@@ -23,10 +23,10 @@ function makeMemory(entries = []) {
   };
 }
 
-function makeAdapter(mediaProgressMemory) {
+function makeAdapter(mediaProgressMemory, registry = null) {
   return new ListAdapter({
     dataPath: '/fake/data',
-    registry: null,
+    registry,
     mediaProgressMemory: mediaProgressMemory || null,
   });
 }
@@ -87,6 +87,27 @@ describe('ListAdapter._buildListItems progress enrichment', () => {
 });
 
 describe('ListAdapter._buildListItems display labels', () => {
+  it('uses the target adapter thumbnail for a queue tile with no explicit image', async () => {
+    const queryAdapter = {
+      source: 'query',
+      getThumbnailUrl: vi.fn(async () => '/api/v1/proxy/immich/assets/cover/thumbnail?size=preview'),
+    };
+    const registry = {
+      resolve: vi.fn(() => ({ adapter: queryAdapter, localId: 'oct8-videos-photos' })),
+    };
+    const adapter = makeAdapter(null, registry);
+
+    const [item] = await adapter._buildListItems(
+      [{ title: 'Birthday Highlights', queue: { contentId: 'query:oct8-videos-photos' } }],
+      'menu',
+      'TVApp',
+      {}
+    );
+
+    expect(queryAdapter.getThumbnailUrl).toHaveBeenCalledWith('oct8-videos-photos');
+    expect(item.thumbnail).toBe('/api/v1/proxy/immich/assets/cover/thumbnail?size=preview');
+  });
+
   it.each(['menu', 'program', 'watchlist'])(
     'preserves an admin-authored label instead of replacing it with the stale title for %s items',
     async (listType) => {

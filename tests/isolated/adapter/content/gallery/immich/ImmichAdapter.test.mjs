@@ -12,6 +12,26 @@ describe('ImmichAdapter', () => {
   });
 
   describe('constructor', () => {
+    test('resolves tag names and retrieves every page without date constraints', async () => {
+      mockHttpClient.get.mockResolvedValue({ data: [{ id: 'tag-id', value: 'MiloBirthday' }] });
+      mockHttpClient.post
+        .mockResolvedValueOnce({ data: { assets: { items: [{ id: 'a', type: 'IMAGE', originalFileName: 'a.jpg' }], nextPage: '2' } } })
+        .mockResolvedValueOnce({ data: { assets: { items: [{ id: 'b', type: 'IMAGE', originalFileName: 'b.jpg' }], nextPage: null } } });
+      const adapter = new ImmichAdapter({ host: 'http://immich', apiKey: 'key' }, { httpClient: mockHttpClient });
+      const result = await adapter.search({ tags: ['MiloBirthday'] });
+      expect(result.items.map(i => i.id)).toEqual(['immich:a', 'immich:b']);
+      expect(mockHttpClient.post.mock.calls[0][1]).toMatchObject({ tagIds: ['tag-id'], page: 1 });
+      expect(mockHttpClient.post.mock.calls[1][1]).toMatchObject({ tagIds: ['tag-id'], page: 2 });
+      expect(mockHttpClient.post.mock.calls[0][1]).not.toHaveProperty('takenAfter');
+    });
+
+    test('an unknown tag never falls back to an unfiltered library search', async () => {
+      mockHttpClient.get.mockResolvedValue({ data: [] });
+      const adapter = new ImmichAdapter({ host: 'http://immich', apiKey: 'key' }, { httpClient: mockHttpClient });
+      expect((await adapter.search({ tags: ['Missing'] })).items).toEqual([]);
+      expect(mockHttpClient.post).not.toHaveBeenCalled();
+    });
+
     test('has correct source and prefixes', () => {
       const adapter = new ImmichAdapter(
         { host: 'http://localhost:2283', apiKey: 'test-key' },
@@ -34,13 +54,15 @@ describe('ImmichAdapter', () => {
           id: 'abc-123',
           type: 'IMAGE',
           originalFileName: 'beach.jpg',
+          localDateTime: '2025-12-25T18:00:00.000Z',
           width: 1920,
           height: 1080,
           thumbhash: 'abc',
           isFavorite: false,
           exifInfo: {
             dateTimeOriginal: '2025-12-25T10:00:00Z',
-            city: 'Seattle'
+            city: 'Seattle',
+            timeZone: 'America/Los_Angeles'
           }
         }
       });
@@ -57,6 +79,8 @@ describe('ImmichAdapter', () => {
       expect(result.title).toBe('beach.jpg');
       expect(result.itemType).toBe('leaf');
       expect(result.thumbnail).toBe('/api/v1/proxy/immich/assets/abc-123/thumbnail');
+      expect(result.metadata.localDateTime).toBe('2025-12-25T18:00:00.000Z');
+      expect(result.metadata.captureTimeZone).toBe('America/Los_Angeles');
     });
 
     test('returns PlayableItem for video asset', async () => {
@@ -64,8 +88,10 @@ describe('ImmichAdapter', () => {
         data: {
           id: 'video-123',
           type: 'VIDEO',
-          originalFileName: 'clip.mp4',
+          originalFileName: '2018-10-08 16.08.28.mp4',
           duration: '00:01:30.000',
+          localDateTime: '2018-10-08T07:09:20.000Z',
+          exifInfo: { timeZone: 'UTC', dateTimeOriginal: '2018-10-08T07:09:20.000Z' },
           width: 1920,
           height: 1080
         }
@@ -82,6 +108,8 @@ describe('ImmichAdapter', () => {
       expect(result.mediaType).toBe('video');
       expect(result.duration).toBe(90);
       expect(result.mediaUrl).toBe('/api/v1/proxy/immich/assets/video-123/video/playback');
+      expect(result.metadata.localDateTime).toBe('2018-10-08T16:08:28');
+      expect(result.metadata.captureTimeZone).toBe('UTC');
     });
 
     test('returns null for non-existent asset', async () => {

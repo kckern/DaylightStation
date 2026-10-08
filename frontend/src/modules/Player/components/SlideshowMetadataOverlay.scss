@@ -13,17 +13,6 @@
     background: rgba(0, 0, 0, 0.5);
   }
 
-  &--video {
-    height: 33.33%;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-
-    .slideshow-metadata__backdrop {
-      background: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.6) 40%, rgba(0, 0, 0, 0.75) 100%);
-    }
-  }
-
   &__content {
     position: relative;
     display: flex;
@@ -61,4 +50,12 @@
     text-transform: uppercase;
     opacity: 0.7;
   }
+}
+
+// Player's legacy direct-child rule gives every direct <div> height: 100%.
+// Video metadata is a direct child while photo metadata is nested in
+// ImageFrame, so without this equally-specific override the same component
+// darkens the entire video. Keep both render paths content-height.
+.player > .slideshow-metadata {
+  height: auto;
 }

@@ -34,13 +34,13 @@ const makeLogger = () => {
   return l;
 };
 
-const makeApp = ({ items, surroundStore, logger = makeLogger(), localId = 'eroica', ...rest }) => {
+const makeApp = ({ items, surroundStore, logger = makeLogger(), localId = 'eroica', thumbnail = null, ...rest }) => {
   const app = express();
   app.use('/api/v1/queue', createQueueRouter({
     contentExpression: { fromQuery: () => ({ options: {} }) },
     contentAccessService: {
       queue: vi.fn().mockResolvedValue({
-        kind: 'found', source: 'plex', finalId: `plex:${localId}`, audio: null, items,
+        kind: 'found', source: 'plex', finalId: `plex:${localId}`, audio: null, thumbnail, items,
       }),
     },
     queuePresentationService: new QueuePresentationService({
@@ -83,6 +83,18 @@ const shuffledEpisodes = [
 
 describe('queue router surround attachment', () => {
   const items = [makeItem('plex:663134', 'Beethoven: 3. Sinfonie')];
+
+  it('uses the container cover when the first playable has no thumbnail', async () => {
+    const titlecard = { ...makeItem('titlecard:birthday:0', 'Happy Birthday'), thumbnail: null };
+    const res = await request(makeApp({
+      items: [titlecard],
+      surroundStore: null,
+      thumbnail: '/api/v1/proxy/immich/assets/cover/thumbnail?size=preview',
+    })).get('/api/v1/queue/query:birthday');
+
+    expect(res.status).toBe(200);
+    expect(res.body.thumbnail).toBe('/api/v1/proxy/immich/assets/cover/thumbnail?size=preview');
+  });
 
   it('attaches the payload verbatim to a matching queue item', async () => {
     const logger = makeLogger();
