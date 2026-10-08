@@ -118,6 +118,19 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
     setOriginalQueue((prev) => prev.length > 0 ? [ownedItem, ...prev.slice(1)] : [ownedItem]);
   }, [issueOwnerRevision]);
 
+  // A screen-level launch replaces the active program, including its tail and
+  // auxiliary audio. In-session playNow intentionally replaces only the head.
+  const replaceQueue = useCallback((items, { audio = null } = {}) => {
+    const ownedItems = items.map((item) => ({ ...item, guid: guid() }));
+    issueOwnerRevision({ playback: true, queue: true });
+    setOriginalQueue(ownedItems);
+    setQueue(ownedItems);
+    setQueueAudio(audio);
+    setOnDeckState(null);
+    setDetachedQueue(null);
+    playbackLog('queue-replaced', { queueLength: ownedItems.length, hasAudio: !!audio }, { level: 'info' });
+  }, [issueOwnerRevision]);
+
   // Append without changing the selected/current visit. The completion callback
   // is deferred until queueSnapshot contains the newly owned item, so callers
   // can distinguish an issued React update from a genuine post-mutation result.
@@ -665,6 +678,7 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
     clearOnDeck,
     flashOnDeck,
     playNow,
+    replaceQueue,
     append,
     adoptQueueSnapshot,
     applyQueueSnapshot,

@@ -113,6 +113,63 @@ describe('QueryAdapter composite queries', () => {
   });
 
   describe('mixed items array', () => {
+    it('includes tagged assets regardless of date and deduplicates date matches', async () => {
+      const birthday = { id: 'immich:birthday', mediaType: 'image', metadata: { localDateTime: '2025-10-08T12:00:00' } };
+      const tagged = { id: 'immich:tagged', mediaType: 'image', metadata: { localDateTime: '2018-09-01T12:00:00' } };
+      const search = vi.fn(async query => ({ items: query.tags ? [birthday, tagged] : [birthday] }));
+      const adapter = new QueryAdapter({
+        registry: { get: () => ({ search }) },
+        savedQueryService: { getQuery: () => ({ items: [{
+          type: 'immich', params: { month: 10, day: 8, yearFrom: 2025, yearTo: 2025, includeTags: ['MiloBirthday'] },
+          slideshow: { showMetadata: true }, sort: 'date_desc',
+        }] }) },
+      });
+      const items = await adapter.resolvePlayables('query:birthday');
+      expect(items.map(i => i.id)).toEqual(['immich:birthday', 'immich:tagged']);
+      expect(items[1].slideshow.showMetadata).toBe(true);
+      expect(search).toHaveBeenCalledWith({ tags: ['MiloBirthday'], mediaType: undefined });
+    });
+
+    it('selects the requested Immich day by capture-place local date, not UTC', async () => {
+      const mockImmichAdapter = {
+        search: vi.fn(async () => ({
+          items: [
+            {
+              id: 'immich:kst-oct8', title: 'korea.jpg', mediaType: 'image',
+              metadata: {
+                capturedAt: '2018-10-07T15:30:00.000Z',
+                localDateTime: '2018-10-08T00:30:00.000Z',
+                captureTimeZone: 'Asia/Seoul',
+              },
+            },
+            {
+              id: 'immich:utc-oct8-local-oct7', title: 'elsewhere.jpg', mediaType: 'image',
+              metadata: {
+                capturedAt: '2018-10-08T01:30:00.000Z',
+                localDateTime: '2018-10-07T21:30:00.000Z',
+                captureTimeZone: 'UTC-4',
+              },
+            },
+          ],
+        })),
+      };
+      const adapter = new QueryAdapter({
+        savedQueryService: {
+          getQuery: () => ({
+            items: [{
+              source: 'immich',
+              params: { month: 10, day: 8, yearFrom: 2018, yearTo: 2018 },
+            }],
+          }),
+        },
+        registry: { get: () => mockImmichAdapter },
+      });
+
+      const items = await adapter.resolvePlayables('query:local-oct8');
+
+      expect(items.map((item) => item.id)).toEqual(['immich:kst-oct8']);
+    });
+
     it('concatenates titlecard and content items in order', async () => {
       // Create a mock immich adapter that returns known items
       const mockImmichAdapter = {
@@ -163,6 +220,33 @@ describe('QueryAdapter composite queries', () => {
       expect(items[1].id).toBe('immich:photo1');
     });
 
+    it('applies a videoRules shader only to video items', async () => {
+      const adapter = new QueryAdapter({
+        savedQueryService: {
+          getQuery: () => ({
+            items: [{
+              source: 'immich',
+              params: { month: 10, day: 8, yearFrom: 2018 },
+              videoRules: { shader: 'focused' },
+            }],
+          }),
+        },
+        registry: {
+          get: () => ({
+            search: vi.fn(async () => ({ items: [
+              { id: 'immich:photo', title: '2018-10-08 12.00.00.jpg', mediaType: 'image' },
+              { id: 'immich:video', title: '2018-10-08 12.01.00.mp4', mediaType: 'video', duration: 10 },
+            ] })),
+          }),
+        },
+      });
+
+      const items = await adapter.resolvePlayables('query:focused-videos');
+
+      expect(items.find((item) => item.mediaType === 'video').shader).toBe('focused');
+      expect(items.find((item) => item.mediaType === 'image').shader).toBeUndefined();
+    });
+
     it('attaches audio config after all items are resolved', async () => {
       const adapter = new QueryAdapter({
         savedQueryService: {
@@ -181,6 +265,25 @@ describe('QueryAdapter composite queries', () => {
       const items = await adapter.resolvePlayables('query:withmusic');
       expect(items).toHaveLength(1);
       expect(items.audio).toEqual({ src: '/music/track.mp3', volume: 0.5 });
+    });
+
+    it('carries an explicit query cover alongside a titlecard-first playlist', async () => {
+      const adapter = new QueryAdapter({
+        savedQueryService: {
+          getQuery: () => ({
+            title: 'Birthday Memories',
+            cover: 'immich:cover-asset',
+            items: [{ type: 'titlecard', text: { title: 'Happy Birthday' } }],
+          }),
+        },
+      });
+
+      const items = await adapter.resolvePlayables('query:birthday');
+
+      expect(items[0].thumbnail).toBeNull();
+      expect(items.thumbnail).toBe('/api/v1/proxy/immich/assets/cover-asset/thumbnail?size=preview');
+      await expect(adapter.getThumbnailUrl('oct8-videos-photos'))
+        .resolves.toBe('/api/v1/proxy/immich/assets/cover-asset/thumbnail?size=preview');
     });
   });
 

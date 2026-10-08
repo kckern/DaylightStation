@@ -327,6 +327,7 @@ export class ImmichAdapter {
       if (!asset) return null;
 
       const { width, height } = immichDimensions(asset);
+      const capture = captureClock(asset);
       return new DisplayableItem({
         id: `immich:${asset.id}`,
         source: 'immich',
@@ -351,7 +352,8 @@ export class ImmichAdapter {
           // Wall-clock at the place (serialized with a misleading `Z`); the display
           // label is built from this, not capturedAt (a true UTC instant). See the
           // TIMEZONE CONTRACT in shared/content/immich/photoLabels.mjs.
-          localDateTime: asset.localDateTime,
+          localDateTime: capture.localDateTime,
+          captureTimeZone: capture.captureTimeZone,
           favorite: asset.isFavorite
         }
       });
@@ -410,8 +412,18 @@ export class ImmichAdapter {
   async #searchAssets(query) {
     const immichQuery = await this.#buildImmichQuery(query);
     const result = await this.#client.searchMetadata(immichQuery);
+    const assets = [...(result.items || [])];
+    // Explicit tag inclusions must not silently stop at the first search page.
+    let nextPage = result.nextPage;
+    const visitedPages = new Set();
+    while (query.tags?.length && nextPage && !visitedPages.has(nextPage)) {
+      visitedPages.add(nextPage);
+      const page = await this.#client.searchMetadata({ ...immichQuery, page: Number(nextPage) });
+      assets.push(...(page.items || []));
+      nextPage = page.nextPage;
+    }
 
-    const items = (result.items || []).map(asset =>
+    const items = assets.map(asset =>
       this.#toPlayableItem(asset)
     );
 
@@ -634,6 +646,17 @@ export class ImmichAdapter {
    */
   async #buildImmichQuery(query) {
     const immichQuery = {};
+    if (query.tags?.length) {
+      const tags = await this.#client.getTags();
+      immichQuery.tagIds = query.tags.map(name => {
+        const tag = tags.find(tag => tag.name === name || tag.value === name || tag.id === name);
+        if (!tag) throw new Error(`Immich tag not found: ${name}`);
+        return tag.id;
+      });
+      immichQuery.size = 1000;
+      immichQuery.page = 1;
+      immichQuery.withExif = true;
+    }
 
     // Free text matches the asset filename. `/api/search/metadata` has no
     // `query` field — sending one did not narrow anything, it was dropped and
@@ -808,6 +831,7 @@ export class ImmichAdapter {
     if (!exifInfo || typeof exifInfo !== 'object') return undefined;
     return {
       capturedAt: exifInfo.dateTimeOriginal,
+      timeZone: exifInfo.timeZone,
       city: exifInfo.city,
       state: exifInfo.state,
       country: exifInfo.country,
@@ -833,6 +857,7 @@ export class ImmichAdapter {
    */
   #toListableItem(asset, context = {}) {
     const { width, height } = immichDimensions(asset);
+    const capture = captureClock(asset);
     return new ListableItem({
       id: `immich:${asset.id}`,
       source: 'immich',
@@ -852,6 +877,8 @@ export class ImmichAdapter {
         width,
         height,
         capturedAt: asset.exifInfo?.dateTimeOriginal,
+        localDateTime: capture.localDateTime,
+        captureTimeZone: capture.captureTimeZone,
         location: asset.exifInfo?.city,
         exif: this.#curateExif(asset.exifInfo),
         favorite: asset.isFavorite,
@@ -883,6 +910,7 @@ export class ImmichAdapter {
       ? this.#client.parseDuration(asset.duration)
       : (forSlideshow ? this.slideDuration : null);
     const { width, height } = immichDimensions(asset);
+    const capture = captureClock(asset);
 
     return new PlayableItem({
       id: `immich:${asset.id}`,
@@ -904,6 +932,8 @@ export class ImmichAdapter {
         width,
         height,
         capturedAt: asset.exifInfo?.dateTimeOriginal,
+        localDateTime: capture.localDateTime,
+        captureTimeZone: capture.captureTimeZone,
         location: asset.exifInfo?.city,
         exif: this.#curateExif(asset.exifInfo),
         favorite: asset.isFavorite,
@@ -963,3 +993,25 @@ export class ImmichAdapter {
 }
 
 export default ImmichAdapter;
+/**
+ * Immich serializes localDateTime with a trailing Z even though it represents a
+ * wall clock, not UTC. Prefer that field when an original timezone survived.
+ * Older imports (notably videos) may be tagged UTC after losing their offset;
+ * their normalized YYYY-MM-DD HH.mm.ss filename is the reliable local fallback.
+ */
+function captureClock(asset) {
+  const match = asset.originalFileName?.match(
+    /(\d{4})-(\d{2})-(\d{2})[ _](\d{2})[.:](\d{2})[.:](\d{2})/
+  );
+  const filenameLocalDateTime = match
+    ? `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}`
+    : null;
+  const captureTimeZone = asset.exifInfo?.timeZone || null;
+  const metadataHasOriginalZone = captureTimeZone && captureTimeZone !== 'UTC';
+  return {
+    localDateTime: metadataHasOriginalZone
+      ? (asset.localDateTime || filenameLocalDateTime)
+      : (filenameLocalDateTime || asset.localDateTime || null),
+    captureTimeZone,
+  };
+}

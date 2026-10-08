@@ -44,4 +44,37 @@ describe('toQueueItem', () => {
 
     expect(qi.titlecard).toBeUndefined();
   });
+
+  it('preserves an item-level shader', () => {
+    const qi = toQueueItem({
+      id: 'immich:video',
+      source: 'immich',
+      mediaType: 'video',
+      shader: 'focused',
+      metadata: {},
+    });
+
+    expect(qi.shader).toBe('focused');
+  });
+
+  it('preserves capture-place wall clock and timezone for player overlays', () => {
+    const qi = toQueueItem({
+      id: 'immich:korea-photo',
+      source: 'immich',
+      title: '2018-10-08 16.30.33.jpg',
+      mediaType: 'image',
+      mediaUrl: '/photo.jpg',
+      metadata: {
+        capturedAt: '2018-10-08T07:30:33.095Z',
+        localDateTime: '2018-10-08T16:30:33.095Z',
+        captureTimeZone: 'Asia/Seoul',
+      },
+    });
+
+    expect(qi.metadata).toMatchObject({
+      capturedAt: '2018-10-08T07:30:33.095Z',
+      localDateTime: '2018-10-08T16:30:33.095Z',
+      captureTimeZone: 'Asia/Seoul',
+    });
+  });
 });

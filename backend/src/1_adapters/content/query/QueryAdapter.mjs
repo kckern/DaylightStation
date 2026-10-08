@@ -40,6 +40,13 @@ export class QueryAdapter {
   get source() { return 'query'; }
   get prefixes() { return [{ prefix: 'query' }]; }
 
+  /** Resolve only collection art; menu tiles must not execute the full query. */
+  async getThumbnailUrl(id) {
+    const name = this.#stripPrefix(id);
+    const query = this.#savedQueryService.getQuery(name);
+    return this.#resolveCoverUrl(query?.cover);
+  }
+
   /**
    * Strip query: prefix from an id.
    * @param {string} id
@@ -62,7 +69,7 @@ export class QueryAdapter {
     // An explicit cover wins; otherwise the first playable's thumbnail (which
     // is null when the query opens with a title card).
     const playables = await this.resolvePlayables(id);
-    const thumbnail = this.#resolveCoverUrl(query.cover) || playables[0]?.thumbnail || null;
+    const thumbnail = await this.getThumbnailUrl(name) || playables[0]?.thumbnail || null;
 
     // Derive query type from the first content entry (skip titlecards)
     const firstContent = (query.items || []).find(e => e.source && e.type !== 'titlecard');
@@ -129,6 +136,11 @@ export class QueryAdapter {
     }
 
     if (query.audio) allItems.audio = query.audio;
+    // Queue resolution returns an Array with collection-level properties (the
+    // existing audio contract uses the same mechanism). Preserve the explicit
+    // cover here because a titlecard-first query has no item thumbnail from
+    // which the queue API could reconstruct it.
+    if (query.cover) allItems.thumbnail = this.#resolveCoverUrl(query.cover);
 
     return allItems;
   }
@@ -329,7 +341,7 @@ export class QueryAdapter {
       return [];
     }
 
-    const { mediaType, month, day, yearFrom, yearTo } = query.params;
+    const { mediaType, month, day, yearFrom, yearTo, includeTags = [] } = query.params;
     if (!month || !day || !yearFrom) {
       console.warn('[QueryAdapter] Immich query missing required params (month, day, yearFrom)');
       return [];
@@ -369,11 +381,14 @@ export class QueryAdapter {
       return true;
     });
 
-    // Post-filter by local date extracted from filename (YYYY-MM-DD format)
-    // Filenames reflect the local capture time, not UTC
+    // Post-filter by the capture-place calendar date, never by the UTC instant.
+    // Immich's localDateTime is a wall clock serialized with a misleading Z;
+    // normalized filenames are the fallback for older imports that lost timezone.
     const dateFiltered = deduped.filter(item => {
-      const match = (item.title || '').match(/(\d{4})-(\d{2})-(\d{2})/);
-      return match && `${match[2]}-${match[3]}` === targetDate;
+      const localDate = item.metadata?.localDateTime?.slice(0, 10);
+      const filenameDate = (item.title || '').match(/(\d{4}-\d{2}-\d{2})/)?.[1];
+      const captureDate = localDate || filenameDate;
+      return captureDate?.slice(5) === targetDate;
     });
 
     // Apply date-specific time filters (e.g. timeFilter: { "2021-03-04": { from: "20:00" } })
@@ -391,6 +406,22 @@ export class QueryAdapter {
         if (rule.to && hhmm > rule.to) return false;
         return true;
       });
+    }
+
+    // Tags are explicit inclusions (OR), independent of every date/time filter.
+    // Merge before sorting/segmentation so overlap never creates duplicate clips.
+    if (includeTags.length) {
+      const taggedResults = await Promise.all(includeTags.map(tag =>
+        adapter.search({ tags: [tag], mediaType: mediaType || undefined })
+      ));
+      const includedIds = new Set(timeFiltered.map(item => item.id));
+      for (const result of taggedResults) {
+        for (const item of result.items || []) {
+          if (includedIds.has(item.id)) continue;
+          includedIds.add(item.id);
+          timeFiltered.push(item);
+        }
+      }
     }
 
     // Filter by mediaType if specified
@@ -416,7 +447,8 @@ export class QueryAdapter {
 
     // Sort if specified
     if (query.sort) {
-      const getDate = (item) => item.metadata?.capturedAt || item.title || '';
+      const getDate = (item) => item.metadata?.localDateTime
+        || item.metadata?.capturedAt || item.title || '';
       const getDay = (item) => getDate(item).slice(0, 10);
       const getTime = (item) => getDate(item).slice(10);
 
@@ -439,7 +471,12 @@ export class QueryAdapter {
 
     // Expand long videos into segments if videoRules specified
     if (query.videoRules) {
-      const { maxDuration, segmentCount, segmentLength } = query.videoRules;
+      const { maxDuration, segmentCount, segmentLength, shader } = query.videoRules;
+      if (shader) {
+        for (const item of filtered) {
+          if (item.mediaType === 'video') item.shader = shader;
+        }
+      }
       if (maxDuration && segmentCount && segmentLength) {
         const expanded = [];
         for (const item of filtered) {

@@ -156,6 +156,8 @@ async function actionPlay(args, deps) {
 
   const url = new URL(`${backendUrl()}/api/v1/device/${encodeURIComponent(device)}/load`);
   url.searchParams.set('queue', key);
+  // A device-level launch starts a new program rather than preserving the old tail.
+  url.searchParams.set('clearRest', '1');
   if (args.flags.shader) url.searchParams.set('shader', args.flags.shader);
   if (args.flags.shuffle) url.searchParams.set('shuffle', '1');
   if (args.flags.enqueue) url.searchParams.set('enqueue', args.flags.enqueue);

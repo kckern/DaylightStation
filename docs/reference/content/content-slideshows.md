@@ -137,8 +137,20 @@ Display configuration stamped onto every item in the query result.
 | `effect` | string | `kenburns` | Animation effect (`kenburns` or `none`) |
 | `zoom` | number | `1.2` | Ken Burns zoom scale (1.0 = no zoom) |
 | `showMetadata` | boolean | `false` | Show date/people/location overlay |
+| `captureTimeZone` | string | viewer timezone | IANA timezone used for the displayed capture date and time (for example, `Asia/Seoul`) |
 | `focusPerson` | string | — | Immich person name to target with smart zoom |
 | `transition` | string | `crossfade` | Transition between slides |
+
+### `videoRules`
+
+Optional handling applied only to video items returned by a content query.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `shader` | string | — | Player shader for videos, such as `focused` to suppress standard playback chrome |
+| `maxDuration` | number | — | Duration threshold in seconds before segment extraction applies |
+| `segmentCount` | number | — | Number of evenly spaced source regions sampled from a long video |
+| `segmentLength` | number | — | Playback length in seconds for each extracted segment |
 
 ### `audio`
 
@@ -235,7 +247,19 @@ Renders a background audio player that reacts to the current item's media type.
 | Behavior | On video start | On video end |
 |----------|---------------|--------------|
 | `pause` | Pauses audio | Resumes audio |
-| `duck` | Fades volume to `duckLevel` over 1s | Restores volume over 1s |
+| `duck` | Fades music volume to `duckLevel` over 300ms | Restores music volume over 300ms |
+
+AudioLayer ramps the nested music Player's controlled `volume` prop. Player gives
+that prop precedence over stored session preferences, and its media controller
+applies screen master volume. The foreground video's volume is independent.
+Interrupted fades resume from the current ramp value, without compounding ducks.
+
+Immich query entries can set `params.includeTags: [MiloBirthday]` to include
+assets with those exact tag names alongside their date matches. Tag matches
+bypass date, year, and time filters; explicit asset exclusions still apply.
+The union is deduplicated before sorting and video segmentation, and tagged
+assets receive the entry's slideshow and video rules. Each tag search retrieves
+all pages; missing tags contribute no assets rather than broadening the search.
 | `skip` | Audio continues unchanged | — |
 
 When `mode` is `hidden`, the audio player is rendered in a zero-size container with no pointer events.

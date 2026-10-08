@@ -918,6 +918,19 @@ export class ListAdapter {
         if (fileExists(imgPath)) thumbnail = `/media/img/lists/${item.uid}.jpg`;
       }
 
+      // A menu entry may point at a collection whose artwork is authored by
+      // that collection (for example a saved query cover). Ask for the cheap
+      // thumbnail capability only; never resolve the target's full queue just
+      // to paint a menu tile.
+      if (!thumbnail && this.registry) {
+        const resolved = this.registry.resolve(contentId);
+        if (typeof resolved?.adapter?.getThumbnailUrl === 'function') {
+          try {
+            thumbnail = await resolved.adapter.getThumbnailUrl(resolved.localId) || null;
+          } catch { /* thumbnail is decorative */ }
+        }
+      }
+
       results.push(new Item({
         id: compoundId || `${listPrefix}:${item.title || item.label}`,
         source,

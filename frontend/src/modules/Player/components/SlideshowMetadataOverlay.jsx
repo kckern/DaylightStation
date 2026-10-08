@@ -5,11 +5,28 @@ import './SlideshowMetadataOverlay.scss';
 
 const logger = getLogger().child({ component: 'SlideshowMetadataOverlay' });
 
-function formatPhotoDate(dateStr) {
+function formatPhotoDate(dateStr, timeZone, localDateTime) {
   if (!dateStr) return null;
   try {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    // Immich's localDateTime is a wall clock. Its trailing Z must not make the
+    // browser reinterpret lunch at noon as an instant in the player's zone.
+    const wallMatch = localDateTime?.match(
+      /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/
+    );
+    const d = wallMatch
+      ? new Date(Date.UTC(
+        Number(wallMatch[1]), Number(wallMatch[2]) - 1, Number(wallMatch[3]),
+        Number(wallMatch[4]), Number(wallMatch[5])
+      ))
+      : new Date(dateStr);
+    const zoneOptions = wallMatch ? { timeZone: 'UTC' } : (timeZone ? { timeZone } : {});
+    const date = d.toLocaleDateString('en-US', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', ...zoneOptions,
+    });
+    const time = d.toLocaleTimeString('en-US', {
+      hour: 'numeric', minute: '2-digit', ...zoneOptions,
+    });
+    return `${date} at ${time}`;
   } catch {
     return null;
   }
@@ -60,12 +77,14 @@ export function SlideshowMetadataOverlay({
   fadeInMs = 600,
   fadeOutMs = 800,
   preloaded,
-  variant,
 }) {
   const elRef = useRef(null);
   const animRef = useRef(null);
   const prevVisibleRef = useRef(false);
-  const [fetched, setFetched] = useState({ forId: null, capturedAt: null, people: null, location: null });
+  const [fetched, setFetched] = useState({
+    forId: null, capturedAt: null, localDateTime: null, people: null, location: null,
+    captureTimeZone: null,
+  });
 
   // JIT fetch metadata (skip if preloaded is provided for this ID)
   useEffect(() => {
@@ -83,8 +102,10 @@ export function SlideshowMetadataOverlay({
         setFetched({
           forId: mediaId,
           capturedAt: meta.capturedAt || null,
+          localDateTime: meta.localDateTime || null,
           people: meta.people?.length > 0 ? meta.people : null,
           location: meta.location || null,
+          captureTimeZone: meta.captureTimeZone || null,
         });
         logger.debug('metadata-overlay-fetched', {
           mediaId,
@@ -102,7 +123,10 @@ export function SlideshowMetadataOverlay({
 
   // Reset fetched state when mediaId changes
   useEffect(() => {
-    setFetched(prev => (prev.forId === mediaId ? prev : { forId: null, capturedAt: null, people: null, location: null }));
+    setFetched(prev => (prev.forId === mediaId ? prev : {
+      forId: null, capturedAt: null, localDateTime: null, people: null, location: null,
+      captureTimeZone: null,
+    }));
   }, [mediaId]);
 
   // Resolve effective metadata: preloaded > fetched
@@ -110,8 +134,14 @@ export function SlideshowMetadataOverlay({
   const overlay = useMemo(() => {
     if (!source) return null;
     const names = (source.people || []).map(p => p.name).filter(Boolean);
-    const date = formatPhotoDate(source.capturedAt);
-    const timeAgo = formatTimeAgo(source.capturedAt);
+    const date = formatPhotoDate(
+      source.capturedAt || source.localDateTime,
+      source.captureTimeZone,
+      source.localDateTime
+    );
+    // Older imported videos may retain only a recovered local wall clock.
+    // Recency is calendar-level information, so that is a valid fallback.
+    const timeAgo = formatTimeAgo(source.capturedAt || source.localDateTime);
     const location = source.location || null;
     if (!names.length && !date && !location) return null;
     return { names, date, timeAgo, location };
@@ -143,7 +173,7 @@ export function SlideshowMetadataOverlay({
   if (!overlay) return null;
 
   return (
-    <div ref={elRef} className={`slideshow-metadata${variant ? ` slideshow-metadata--${variant}` : ''}`} style={{ opacity: 0 }}>
+    <div ref={elRef} className="slideshow-metadata" style={{ opacity: 0 }}>
       <div className="slideshow-metadata__backdrop" />
       <div className="slideshow-metadata__content">
         {overlay.date && (
@@ -172,8 +202,9 @@ SlideshowMetadataOverlay.propTypes = {
   fadeOutMs: PropTypes.number,
   preloaded: PropTypes.shape({
     capturedAt: PropTypes.string,
+    localDateTime: PropTypes.string,
     people: PropTypes.array,
     location: PropTypes.string,
+    captureTimeZone: PropTypes.string,
   }),
-  variant: PropTypes.string,
 };

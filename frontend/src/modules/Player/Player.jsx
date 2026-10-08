@@ -145,6 +145,7 @@ const Player = forwardRef(function Player(props, ref) {
   const issuedOwnerRevisionsRef = useRef({ playbackRevision: 0, queueRevision: 0 });
   const itemActionStopRevisionRef = useRef(0);
   const ownerStoppedRef = useRef(false);
+  const queueNavigationGestureRef = useRef({ key: null, at: 0, longPressHandled: false });
   const issueOwnerRevision = useCallback(({ playback = false, queue = false } = {}) => {
     if (playback) issuedOwnerRevisionsRef.current.playbackRevision += 1;
     if (queue) issuedOwnerRevisionsRef.current.queueRevision += 1;
@@ -156,6 +157,7 @@ const Player = forwardRef(function Player(props, ref) {
     clear = noop,
     playbackrate,
     playbackKeys,
+    queueNavigationKeys,
     playerType,
     ignoreKeys,
     keyboardOverrides,
@@ -216,6 +218,7 @@ const Player = forwardRef(function Player(props, ref) {
     pushOnDeck,
     flashOnDeck,
     playNow,
+    replaceQueue,
     append,
     adoptQueueSnapshot,
     applyQueueSnapshot,
@@ -245,6 +248,76 @@ const Player = forwardRef(function Player(props, ref) {
     && Array.isArray(playQueue)
     && playQueue.length > 1
   ), [isQueue, playQueue]);
+
+  const isVisualSlideshowQueue = useMemo(() => (
+    Array.isArray(playQueue) && playQueue.some((item) => (
+      item?.slideshow || item?.titlecard || item?.format === 'image' || item?.mediaType === 'image'
+    ))
+  ), [playQueue]);
+  const queuePreviousKey = queueNavigationKeys?.previous
+    ?? (!ignoreKeys && isVisualSlideshowQueue ? 'ArrowLeft' : null);
+  const queueNextKey = queueNavigationKeys?.next
+    ?? (!ignoreKeys && isVisualSlideshowQueue ? 'ArrowRight' : null);
+  const currentQueueItem = Array.isArray(playQueue) ? playQueue[0] : null;
+  const currentQueueItemIsVideo = currentQueueItem?.mediaType === 'video'
+    || ['video', 'hls_video', 'dash_video'].includes(currentQueueItem?.format);
+  const hasExplicitQueueNavigation = Boolean(queueNavigationKeys);
+
+  useEffect(() => {
+    if (!queuePreviousKey && !queueNextKey) return undefined;
+
+    const handleQueueNavigation = (event) => {
+      if (event._menuNav) return;
+      const target = event.target;
+      if (target?.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName || '')) return;
+
+      const step = event.key === queueNextKey ? 1 : event.key === queuePreviousKey ? -1 : 0;
+      if (!step) return;
+
+      // Slideshow arrows normally change items immediately. While a video is
+      // active, preserve a single press for the renderer's seek controls and
+      // reserve double-press / long-press for changing the slideshow item.
+      if (!hasExplicitQueueNavigation && currentQueueItemIsVideo) {
+        const gesture = queueNavigationGestureRef.current;
+        const now = Date.now();
+        if (event.repeat) {
+          if (gesture.longPressHandled) return;
+          gesture.longPressHandled = true;
+        } else if (gesture.key !== event.key || now - gesture.at > 450) {
+          queueNavigationGestureRef.current = { key: event.key, at: now, longPressHandled: false };
+          return;
+        } else {
+          queueNavigationGestureRef.current = { key: null, at: 0, longPressHandled: false };
+        }
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+      ownerStoppedRef.current = false;
+      playbackLog('queue-keyboard-navigation', {
+        key: event.key,
+        direction: step > 0 ? 'next' : 'previous',
+        auxiliary,
+      }, { level: 'info' });
+      advance(step);
+    };
+
+    const handleQueueNavigationKeyUp = (event) => {
+      if (event.key === queuePreviousKey || event.key === queueNextKey) {
+        queueNavigationGestureRef.current.longPressHandled = false;
+      }
+    };
+
+    // Capture the arrows before a video renderer can interpret left/right as seek.
+    window.addEventListener('keydown', handleQueueNavigation, true);
+    window.addEventListener('keyup', handleQueueNavigationKeyUp, true);
+    return () => {
+      window.removeEventListener('keydown', handleQueueNavigation, true);
+      window.removeEventListener('keyup', handleQueueNavigationKeyUp, true);
+    };
+  }, [advance, auxiliary, currentQueueItemIsVideo, hasExplicitQueueNavigation,
+    queueNextKey, queuePreviousKey]);
 
   // Single-play inputs (`play: {contentId: ...}`) hand SinglePlayer the input
   // object so it can render immediately while useQueueController fetches the
@@ -1633,8 +1706,10 @@ const Player = forwardRef(function Player(props, ref) {
   );
 
   const currentItemVolume = effectiveMeta?.volume;
+  // A controlled owner (e.g. AudioLayer's duck ramp) must reach the renderer
+  // on every update, even after queue defaults have seeded session preferences.
   const effectiveVolume = (
-    sessionVolume ?? currentItemVolume ?? queueVolume ?? 1
+    props.volume ?? sessionVolume ?? currentItemVolume ?? queueVolume ?? 1
   );
 
   const hasExternalVolume = currentItemVolume != null || queueVolume != null;
@@ -1658,7 +1733,9 @@ const Player = forwardRef(function Player(props, ref) {
 
   // Get shader from the current item, falling back to queue/play level, then default
   // Shader aliases: legacy names map to canonical shader classes (must match useQueueController)
-  const currentItemShader = effectiveMeta?.shader;
+  // The queue item owns presentation policy. Resolved transport metadata can
+  // omit that policy, so never let it erase an item-level focused mode.
+  const currentItemShader = activeSource?.shader || effectiveMeta?.shader;
   const rawExplicitShader = play?.shader || queue?.shader || currentItemShader;
   const explicitShader = SHADER_ALIASES[rawExplicitShader] ?? rawExplicitShader;
   // willLoop drives the "hide progress bar" shader fallback. It must reflect
@@ -2290,6 +2367,29 @@ const Player = forwardRef(function Player(props, ref) {
     if (!contentId) return;
     if (op !== 'play-now' && op !== 'play-next' && op !== 'add') return;
 
+    if (op === 'play-now' && payload.clearRest) {
+      try {
+        const resolvedQueue = await DaylightAPI(`api/v1/queue/${contentId}`);
+        if (Array.isArray(resolvedQueue?.items) && resolvedQueue.items.length > 0) {
+          ownerStoppedRef.current = false;
+          setQueueHasAdvanced(true);
+          replaceQueue(resolvedQueue.items, { audio: resolvedQueue.audio || null });
+          const aliased = SHADER_ALIASES[requestedShader] ?? requestedShader;
+          if (aliased && classes.includes(aliased)) {
+            setShader(aliased);
+            setShaderUserCycled(true);
+          } else {
+            // Preserve item-level presentation such as focused slideshow videos.
+            setShader('default');
+            setShaderUserCycled(false);
+          }
+          return;
+        }
+      } catch {
+        // Leaf content may not expose a queue endpoint; fall through to /play.
+      }
+    }
+
     let info;
     try {
       info = await DaylightAPI(`api/v1/play/${contentId}`);
@@ -2371,7 +2471,7 @@ const Player = forwardRef(function Player(props, ref) {
     }
 
     pushOnDeck(item, { displaceToQueue: !!onDeckCfg?.displace_to_queue });
-  }, [playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, append, playerInstanceId, queueShader, classes, setShader, setShaderUserCycled, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, seekOwnerRelative, advance, isQueue, singleAdvance, effectiveMeta?.isLive, activeSource?.isLive]);
+  }, [playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, replaceQueue, append, playerInstanceId, queueShader, classes, setShader, setShaderUserCycled, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, seekOwnerRelative, advance, isQueue, singleAdvance, effectiveMeta?.isLive, activeSource?.isLive]);
 
   // Register once in mount order while the ref supplies the latest stateful
   // callback. Re-registering on every queue change would let a background
@@ -2566,6 +2666,10 @@ Player.propTypes = {
     PropTypes.arrayOf(PropTypes.string),
     PropTypes.objectOf(PropTypes.arrayOf(PropTypes.string))
   ]),
+  queueNavigationKeys: PropTypes.shape({
+    previous: PropTypes.string,
+    next: PropTypes.string,
+  }),
   playerType: PropTypes.string,
   ignoreKeys: PropTypes.bool,
   keyboardOverrides: PropTypes.object,

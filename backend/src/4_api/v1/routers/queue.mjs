@@ -33,6 +33,7 @@ export function toQueueItem(item) {
     continuous: item.continuous || false,
     resume: item.resume || false,
     active: item.active !== false,
+    ...(item.shader && { shader: item.shader }),
 
     // Hierarchy context
     parentTitle: item.metadata?.parentTitle,
@@ -74,6 +75,8 @@ export function toQueueItem(item) {
       partIndex: item.metadata.partIndex,
       ...(item.metadata.people?.length > 0 && { people: item.metadata.people }),
       ...(item.metadata.capturedAt && { capturedAt: item.metadata.capturedAt }),
+      ...(item.metadata.localDateTime && { localDateTime: item.metadata.localDateTime }),
+      ...(item.metadata.captureTimeZone && { captureTimeZone: item.metadata.captureTimeZone }),
       ...(item.metadata.location && { location: item.metadata.location }),
     };
   }
@@ -143,7 +146,7 @@ export function createQueueRouter(config) {
       id: compoundId,
       count: queueItems.length,
       totalDuration,
-      thumbnail: queueItems[0]?.thumbnail || null,
+      thumbnail: outcome.thumbnail || queueItems[0]?.thumbnail || null,
       ...(audioConfig && { audio: audioConfig }),
       items: queueItems
     });

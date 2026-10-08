@@ -8,16 +8,25 @@ import {
 
 let transport;
 vi.mock('./components/SinglePlayer.jsx', () => ({
-  SinglePlayer: ({ contentId, onController }) => {
+  SinglePlayer: ({ contentId, onController, volume }) => {
     React.useEffect(() => {
       onController?.(transport);
     }, [onController]);
-    return <div data-testid="single-player" data-content-id={contentId} />;
+    return <div data-testid="single-player" data-content-id={contentId} data-volume={volume} />;
   },
 }));
 
 vi.mock('../../lib/api.mjs', () => ({
   DaylightAPI: vi.fn(async (path) => {
+    if (path === 'api/v1/queue/query:birthday') {
+      return {
+        audio: { contentId: 'plex:music', behavior: 'duck', duckLevel: 0.2 },
+        items: [
+          { contentId: 'immich:photo', id: 'immich:photo', mediaType: 'image' },
+          { contentId: 'immich:video', id: 'immich:video', mediaType: 'video', shader: 'focused' },
+        ],
+      };
+    }
     const contentId = String(path).replace(/^api\/v1\/play\//, '');
     return {
       contentId, id: contentId, title: contentId, mediaUrl: `/stream/${contentId}`,
@@ -35,6 +44,18 @@ describe('Player queue-op ownership integration', () => {
     transport = { play: vi.fn(), pause: vi.fn(), toggle: vi.fn() };
   });
   afterEach(() => cleanup());
+
+  it('applies live owner volume through the real Player despite seeded session volume', async () => {
+    const queue = [{ contentId: 'plex:music', volume: 0.8 }];
+    const { rerender } = render(<Player queue={queue} volume={1} playerType="background" />);
+    await waitFor(() => expect(screen.getByTestId('single-player').dataset.volume).toBe('1'));
+    rerender(<Player queue={queue} volume={0.575} playerType="background" />);
+    await waitFor(() => expect(screen.getByTestId('single-player').dataset.volume).toBe('0.575'));
+    rerender(<Player queue={queue} volume={0.15} playerType="background" />);
+    await waitFor(() => expect(screen.getByTestId('single-player').dataset.volume).toBe('0.15'));
+    rerender(<Player queue={queue} volume={1} playerType="background" />);
+    await waitFor(() => expect(screen.getByTestId('single-player').dataset.volume).toBe('1'));
+  });
 
   it('mutates only the foreground Player when two Players are mounted', async () => {
     render(
@@ -67,6 +88,34 @@ describe('Player queue-op ownership integration', () => {
     });
     expect(screen.getByTestId('background').querySelector('[data-content-id]')?.dataset.contentId)
       .toBe('plex:background');
+  });
+
+  it('replaces the whole active queue when a collection is launched with clearRest', async () => {
+    const playerRef = createRef();
+    render(<Player ref={playerRef} play={[
+      { contentId: 'plex:old-current' },
+      { contentId: 'plex:old-tail' },
+    ]} />);
+    await waitFor(() => expect(playerRef.current?.getQueueSnapshot().items).toHaveLength(2));
+
+    await act(async () => {
+      expect(getPlayerQueueOpRegistry().dispatch({
+        op: 'play-now', contentId: 'query:birthday', clearRest: true,
+      })).toBe(true);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(playerRef.current?.getQueueSnapshot().items.map((item) => item.contentId))
+        .toEqual(['immich:photo', 'immich:video']);
+    });
+
+    await act(async () => {
+      getPlayerQueueOpRegistry().dispatch({ op: 'skip-next' });
+    });
+    await waitFor(() => {
+      expect(document.querySelector('.player')).toHaveClass('focused');
+    });
   });
 
   it('appends op=add to the foreground owner without replacing its current item', async () => {

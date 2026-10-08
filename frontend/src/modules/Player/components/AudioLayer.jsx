@@ -1,9 +1,46 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import PropTypes from 'prop-types';
-import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
 import getLogger from '../../../lib/logging/Logger.js';
 
 const logger = getLogger().child({ component: 'AudioLayer' });
+const DUCK_TRANSITION_MS = 300;
+
+const clampVolume = value => Math.max(0, Math.min(1, Number(value) || 0));
+
+function useRampedVolume(target, durationMs) {
+  const [volume, setVolume] = useState(1);
+  const volumeRef = useRef(1);
+  const frameRef = useRef(null);
+
+  useEffect(() => {
+    if (frameRef.current != null) cancelAnimationFrame(frameRef.current);
+
+    const from = volumeRef.current;
+    const to = clampVolume(target);
+    if (from === to) return undefined;
+
+    const startedAt = performance.now();
+    const tick = now => {
+      const progress = Math.min(1, (now - startedAt) / durationMs);
+      const next = from + ((to - from) * progress);
+      volumeRef.current = next;
+      setVolume(next);
+      if (progress < 1) {
+        frameRef.current = requestAnimationFrame(tick);
+      } else {
+        frameRef.current = null;
+      }
+    };
+    frameRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      if (frameRef.current != null) cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    };
+  }, [target, durationMs]);
+
+  return volume;
+}
 
 /**
  * AudioLayer — configurable audio track alongside a visual queue.
@@ -27,15 +64,8 @@ export function AudioLayer({
   ignoreKeys: parentIgnoreKeys,
 }) {
   const containerRef = useRef(null);
-  const prevMediaTypeRef = useRef(currentItemMediaType);
-  // savedVolume is the LOGICAL pre-duck volume (master-independent). Stored as
-  // el.volume / master so we can restore correctly even if master changes mid-duck.
-  const savedVolumeRef = useRef(1);
-  const fadeRafRef = useRef(null);
-  const isDuckedRef = useRef(false);
-  const lastAudioElRef = useRef(null);
+  const isPausedForVideoRef = useRef(false);
   const [audioQueue, setAudioQueue] = useState(null);
-  const { effectiveMaster: masterVolume } = useScreenVolume();
 
   /** Find the audio/video element rendered by the nested Player */
   const getAudioEl = useCallback(() => {
@@ -43,29 +73,10 @@ export function AudioLayer({
     return containerRef.current.querySelector('audio, video');
   }, []);
 
-  /** Smoothly fade an audio element's volume over durationMs */
-  const fadeVolume = useCallback((el, from, to, durationMs, onDone) => {
-    // Cancel any in-progress fade
-    if (fadeRafRef.current) cancelAnimationFrame(fadeRafRef.current);
-    const start = performance.now();
-    const tick = (now) => {
-      const t = Math.min(1, (now - start) / durationMs);
-      el.volume = Math.max(0, Math.min(1, from + (to - from) * t));
-      if (t < 1) {
-        fadeRafRef.current = requestAnimationFrame(tick);
-      } else {
-        fadeRafRef.current = null;
-        onDone?.();
-      }
-    };
-    fadeRafRef.current = requestAnimationFrame(tick);
-  }, []);
-
   // Mount/unmount logging
   useEffect(() => {
     logger.info('audio-layer-mount', { contentId, behavior, mode });
     return () => {
-      if (fadeRafRef.current) cancelAnimationFrame(fadeRafRef.current);
       logger.debug('audio-layer-unmount', { contentId });
     };
   }, [contentId, behavior, mode]);
@@ -101,99 +112,44 @@ export function AudioLayer({
     return () => { cancelled = true; };
   }, [contentId]);
 
-  // When master volume changes, the inner Player's master-change effect
-  // re-applies el.volume = adjustedVolume × master, which undoes any active
-  // duck. React commits child effects before parent effects, so by the time
-  // this runs, Player has already restored the un-ducked level — we just
-  // re-apply the duck on top.
+  const isVideo = currentItemMediaType === 'video';
+  // Make the nested music Player the sole owner of music volume. Its media
+  // controller applies this value together with screen master volume on mount,
+  // prop changes, master changes, and track changes. The foreground video is a
+  // different Player and never receives this prop.
+  const targetMusicVolume = behavior === 'duck' && isVideo ? clampVolume(duckLevel) : 1;
+  const musicVolume = useRampedVolume(targetMusicVolume, DUCK_TRANSITION_MS);
+
   useEffect(() => {
-    if (!isDuckedRef.current) return;
     if (behavior !== 'duck') return;
-    const el = getAudioEl();
-    if (!el) return;
-    el.volume = Math.max(0, Math.min(1, el.volume * duckLevel));
-    logger.debug('audio-layer-master-reduck', { contentId, volume: el.volume });
-  }, [masterVolume, behavior, duckLevel, contentId, getAudioEl]);
-
-  // Re-apply duck when the inner Player remounts (new audio element on track advance).
-  // Volume is track-level state on the DOM element; this promotes it to playlist-level.
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container || behavior !== 'duck') return;
-
-    const observer = new MutationObserver(() => {
-      const el = getAudioEl();
-      if (el && el !== lastAudioElRef.current) {
-        lastAudioElRef.current = el;
-        if (isDuckedRef.current) {
-          // duckLevel is a proportion of the new element's natural volume; the
-          // inner Player will have already set el.volume = adjustedVolume × master.
-          el.volume = Math.max(0, Math.min(1, el.volume * duckLevel));
-          logger.debug('audio-layer-reduck', { contentId, volume: el.volume, reason: 'track-advance' });
-        }
-      }
+    logger.info(isVideo ? 'audio-layer-duck' : 'audio-layer-unduck', {
+      contentId,
+      reason: isVideo ? 'video-start' : 'video-end',
+      fromMusicPlayerVolume: musicVolume,
+      targetMusicPlayerVolume: targetMusicVolume,
+      transitionMs: DUCK_TRANSITION_MS,
+      owner: 'nested-player-prop',
     });
+  // Log the requested transition once; musicVolume intentionally is not a dependency.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isVideo, behavior, contentId, targetMusicVolume]);
 
-    observer.observe(container, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, [behavior, duckLevel, contentId, getAudioEl]);
-
-  // React to media type changes for pause/duck/skip.
-  // audioQueue in deps ensures we retry when the Player mounts (its queue resolves).
+  // Pause behavior still needs a transport action. Duck behavior is entirely
+  // declarative above, avoiding two owners racing over HTMLMediaElement.volume.
   useEffect(() => {
-    const prev = prevMediaTypeRef.current;
     const el = getAudioEl();
-
-    logger.debug('audio-layer-media-type-check', {
-      prev, currentItemMediaType, behavior,
-      hasEl: !!el,
-      audioQueueReady: !!audioQueue,
-      same: prev === currentItemMediaType,
-    });
-
-    if (prev === currentItemMediaType) return;
-
-    if (!el) {
-      logger.warn('audio-layer-no-audio-el', { contentId, prev, currentItemMediaType, behavior });
-      return;
+    if (behavior === 'duck') return;
+    if (behavior !== 'pause' || !el) return;
+    if (isVideo && !isPausedForVideoRef.current) {
+      isPausedForVideoRef.current = true;
+      logger.info('audio-layer-pause', { contentId, reason: 'video-start' });
+      el.pause();
+    } else if (!isVideo && isPausedForVideoRef.current) {
+      isPausedForVideoRef.current = false;
+      logger.info('audio-layer-resume', { contentId, reason: 'video-end' });
+      el.play().catch(() => {});
     }
-
-    prevMediaTypeRef.current = currentItemMediaType;
-
-    const isVideo = currentItemMediaType === 'video';
-    const wasVideo = prev === 'video';
-
-    const FADE_MS = 1000;
-
-    if (isVideo && !wasVideo) {
-      if (behavior === 'pause') {
-        logger.info('audio-layer-pause', { contentId, reason: 'video-start', fromType: prev, toType: currentItemMediaType });
-        el.pause();
-      } else if (behavior === 'duck') {
-        // Capture LOGICAL pre-duck volume (master-independent). Recover later
-        // by multiplying back in by current master.
-        const safeMaster = masterVolume > 0 ? masterVolume : 1;
-        savedVolumeRef.current = el.volume / safeMaster;
-        isDuckedRef.current = true;
-        const target = Math.max(0, el.volume * duckLevel);
-        logger.info('audio-layer-duck', { contentId, reason: 'video-start', from: el.volume, to: target, fadeMs: FADE_MS, savedLogical: savedVolumeRef.current });
-        fadeVolume(el, el.volume, target, FADE_MS);
-      }
-    } else if (wasVideo && !isVideo) {
-      if (behavior === 'pause') {
-        logger.info('audio-layer-resume', { contentId, reason: 'video-end', fromType: prev, toType: currentItemMediaType });
-        el.play().catch(() => {});
-      } else if (behavior === 'duck') {
-        isDuckedRef.current = false;
-        // Restore: logical × current master. Handles mid-duck master changes.
-        const restoreTo = Math.max(0, Math.min(1, savedVolumeRef.current * masterVolume));
-        logger.info('audio-layer-unduck', { contentId, reason: 'video-end', from: el.volume, to: restoreTo, fadeMs: FADE_MS });
-        fadeVolume(el, el.volume, restoreTo, FADE_MS);
-      }
-    } else {
-      logger.debug('audio-layer-no-action', { isVideo, wasVideo, behavior });
-    }
-  }, [currentItemMediaType, behavior, audioQueue, getAudioEl, contentId, duckLevel, fadeVolume, masterVolume]);
+  }, [isVideo, behavior, audioQueue, getAudioEl, contentId]);
 
   const noop = useCallback(() => {}, []);
 
@@ -212,6 +168,8 @@ export function AudioLayer({
         queue={audioQueue}
         clear={noop}
         ignoreKeys={isHidden ? true : parentIgnoreKeys}
+        queueNavigationKeys={{ previous: 'ArrowUp', next: 'ArrowDown' }}
+        volume={musicVolume}
         shuffle={true}
       />
     </div>

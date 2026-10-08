@@ -177,6 +177,8 @@ export function ImageFrame({
           forId: imageId,
           people: meta.people?.length > 0 ? meta.people : null,
           capturedAt: meta.capturedAt || null,
+          localDateTime: meta.localDateTime || null,
+          captureTimeZone: meta.captureTimeZone || null,
           location: meta.location || null,
         });
       } catch (err) {
@@ -341,6 +343,8 @@ export function ImageFrame({
           data: {
             people: meta.people?.length > 0 ? meta.people : null,
             capturedAt: meta.capturedAt || null,
+            localDateTime: meta.localDateTime || null,
+            captureTimeZone: meta.captureTimeZone || null,
             location: meta.location || null,
           },
         };
@@ -556,8 +560,19 @@ export function ImageFrame({
     const enrichedForThis = enrichment.forId === imageId ? enrichment : null;
     return {
       capturedAt: enrichedForThis?.capturedAt || media?.metadata?.capturedAt || null,
+      localDateTime: enrichedForThis?.localDateTime || media?.metadata?.localDateTime || null,
       people: enrichedForThis?.people || media?.metadata?.people || null,
       location: enrichedForThis?.location || media?.metadata?.location || null,
+      captureTimeZone: (
+        enrichedForThis?.captureTimeZone && enrichedForThis.captureTimeZone !== 'UTC'
+          ? enrichedForThis.captureTimeZone
+          : null
+      ) || (
+        media?.metadata?.captureTimeZone && media.metadata.captureTimeZone !== 'UTC'
+          ? media.metadata.captureTimeZone
+          : null
+      ) || media?.slideshow?.captureTimeZone || enrichedForThis?.captureTimeZone
+        || media?.metadata?.captureTimeZone || null,
     };
   }, [slideshow.showMetadata, media?.metadata, enrichment, imageId]);
 
