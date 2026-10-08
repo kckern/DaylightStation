@@ -54,3 +54,22 @@ it('authors every source unit and all twenty final grammar targets without chang
   }
   expect(result.lexicon.entries.some(entry=>entry.group==='lesson-16')).toBe(false);
 });
+
+it('publishes balanced, noncyclic distinct keys deterministically and can rebuild a completed lexicon', () => {
+ const dir=new URL('full-course/lessons/',fixture);
+ const lessons=fs.readdirSync(dir).filter(n=>n.endsWith('.json')).map(n=>JSON.parse(fs.readFileSync(new URL(n,dir),'utf8')));
+ const inputs={baseLexicon,baseUnit,lessons},result=assembleKoreanCourse(inputs);
+ const keys=result.published.map(p=>p.bank.items.map(q=>q.choices.indexOf(q.answer)));
+ for(const key of keys){
+  const counts=[0,1,2,3].map(k=>key.filter(v=>v===k).length);
+  expect(Math.max(...counts)-Math.min(...counts)).toBeLessThanOrEqual(1);
+  for(let period=1;period<=4;period++)for(let start=0;start+3*period<=key.length;start++){
+   const block=key.slice(start,start+period);
+   expect(key.slice(start+period,start+3*period)).not.toEqual([...block,...block]);
+  }
+ }
+ for(let i=0;i<keys.length;i+=2)expect(keys[i].filter((k,j)=>k!==keys[i+1][j]).length).toBeGreaterThanOrEqual(Math.ceil(keys[i].length/2));
+ expect(assembleKoreanCourse(inputs)).toEqual(result);
+ const rebuilt=assembleKoreanCourse({...inputs,baseLexicon:result.lexicon});
+ expect(rebuilt).toEqual(result);
+});

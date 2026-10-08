@@ -344,3 +344,13 @@ describe('school ops option parsing', () => {
     expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ verdict: 'correct', note: 'eraser', gradedBy: 'dad', pin: null });
   });
 });
+
+it.each([false, true])('evaluates course recovery via the same authorized route (apply=%s)', async (apply) => {
+  const fetchImpl = vi.fn(async () => response({ eligible: true, applied: apply }));
+  let output = '';
+  await runOps({ argv: ['course-outcome-recover', 's1', '--teacher', 'dad', '--pin-env', 'PIN', '--base-url', 'http://school', ...(apply ? ['--apply'] : [])],
+    fetchImpl, env: { PIN: '7410' }, stdout: { write: (s) => { output += s; } } });
+  expect(fetchImpl.mock.calls[0][0]).toBe('http://school/teacher/sessions/s1/course-outcome-recovery');
+  expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ recoveredBy: 'dad', pin: '7410', apply });
+  expect(output).not.toContain('7410');
+});

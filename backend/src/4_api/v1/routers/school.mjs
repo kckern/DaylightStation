@@ -78,6 +78,7 @@ export function createSchoolRouter({
   teacherCapabilitySessions = null,
   teacherGate = null,
   openRemediation = null,
+  closeSessionOutcome = null,
   schoolCalcRouter = null,
   surfaceCertification = null,
   // Report cards, period close, teacher digest (Task 6, spec R5b).
@@ -1229,6 +1230,14 @@ export function createSchoolRouter({
       revealedBy: body.revealedBy ?? null,
       pin: body.pin ?? null,
     }));
+  }));
+  router.post('/teacher/sessions/:sessionId/course-outcome-recovery', wrap(async (req, res) => {
+    if (!closeSessionOutcome?.recoverCourseOutcome || !teacherGate) throw new EntityNotFoundError('course outcome recovery', 'not configured');
+    const body = req.body || {};
+    teacherGate.assert({ userId: body.recoveredBy ?? null, pin: body.pin ?? null,
+      action: 'sessions.course-outcome.recover', context: { sessionId: req.params.sessionId } });
+    const result = await closeSessionOutcome.recoverCourseOutcome({ sessionId: req.params.sessionId, apply: body.apply === true });
+    res.set('Cache-Control', 'no-store').status(body.apply === true ? 201 : 200).json(result);
   }));
   router.post('/teacher/sessions/:sessionId/remediation', wrap(async (req, res) => {
     if (!openRemediation || !teacherGate) throw new EntityNotFoundError('teacher remediation', 'not configured');

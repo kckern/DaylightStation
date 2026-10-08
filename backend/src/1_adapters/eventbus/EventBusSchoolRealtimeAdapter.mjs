@@ -86,6 +86,7 @@ export class EventBusSchoolRealtimeAdapter extends ISchoolRealtimeGateway {
       ? learner(wire) : null;
     const unsubscribers = [
       this.#on('school.session.outcome-recorded', handler, learner),
+      this.#on('school.card-ladder.day-complete', handler, learner),
       this.#on('piano.lesson.completed', handler, learner),
       this.#on('piano.school-challenge.completed', handler, learner),
       this.#on('school.assignments.changed', handler, learner),
@@ -102,11 +103,20 @@ export class EventBusSchoolRealtimeAdapter extends ISchoolRealtimeGateway {
   }
 
   languageDayCompleted(fact) { return this.#publish('school.language.day-complete', fact); }
-  sessionOutcomeRecorded(fact) { return this.#publish('school.session.outcome-recorded', fact); }
+  cardPracticeDayCompleted(fact) { return this.#publish('school.card-ladder.day-complete', fact); }
+  #assessmentChanged({ learnerId, unitId, sessionId }) {
+    if (unitId) return this.#broadcast('school', { event: 'assessment-changed', learnerId, unitId, sessionId });
+  }
+  sessionOutcomeRecorded(fact) {
+    const published = this.#publish('school.session.outcome-recorded', fact);
+    this.#assessmentChanged(fact);
+    return published;
+  }
   sessionIssued({ learnerId, sessionId, unitId, type }) {
     return this.#broadcast('school', { event: 'session-issued', learnerId, sessionId, unitId, type });
   }
-  sessionGradeChanged({ learnerId, sessionId }) {
+  sessionGradeChanged({ learnerId, sessionId, unitId }) {
+    this.#assessmentChanged({ learnerId, unitId, sessionId });
     this.#publish('school.session.outcome-recorded', { learnerId, sessionId });
     return this.#broadcast('school', { event: 'session-grade-changed', learnerId, sessionId });
   }

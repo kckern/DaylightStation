@@ -18,3 +18,9 @@ it('shows missed-skill explanations, a focused review action and retained questi
  fireEvent.click(screen.getByRole('button',{name:'Review missed skills'}));
  expect(review).toHaveBeenCalledTimes(1);
 });
+it.each(['quiz_ready','review','completed'])('retains academic stage %s while access is paused', (stage) => {
+ render(<PracticeAssessmentPanel progress={{stage,access:{allowed:false,reason:'Course paused'},totalQuestions:6}} />);
+ expect(screen.getByText('Course paused')).toBeInTheDocument();
+ for (const button of screen.queryAllByRole('button')) expect(button).toBeDisabled();
+ if(stage==='completed') expect(screen.getByText('Lesson complete')).toBeInTheDocument();
+});

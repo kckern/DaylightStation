@@ -171,3 +171,13 @@ describe('state observation publish', () => {
     expect(eventBus.published ?? []).toHaveLength(0);
   });
 });
+
+
+it('observes card practice completion immediately through the semantic adapter', async () => {
+  bridge.start();
+  await eventBus.emit('school.session.outcome-recorded', { learnerId: 'kid' });
+  nextState = 'complete';
+  await eventBus.emit('school.card-ladder.day-complete', { learnerId: 'kid', package: 'ko', studyDay: nextStudyDate, doneAt: clock.now().toISOString(), evidenceId: 'card:kid:ko:day' });
+  expect(eventBus.published.at(-1)).toMatchObject({ topic: 'school.completion.state-observed', payload: { learnerId: 'kid', state: 'complete', previousState: 'incomplete', initial: false } });
+  bridge.stop();
+});

@@ -56,6 +56,7 @@ import { formatPageSpans } from '#domains/school/questionBankV2.mjs';
 export class CloseSessionOutcome {
   #curriculum; #sessions; #tokens; #assignments; #economy; #economyAction; #economyEnabled;
   #receipts; #receiptCapture; #receiptArtifactPrinter; #grownUps; #teacherGate; #clock; #rng; #logger; #reviewQueue; #passOverrides; #worksheetInstances; #timezone;
+  #courseRecovery = new Map();
   #selfService; #realtime; #planProjection; #practiceAssessments;
 
   /**
@@ -174,6 +175,47 @@ export class CloseSessionOutcome {
    *   `printed` is whether the result document actually reached the roll — a
    *   false here on a FAIL means the retry ticket is not in the child's hand.
    */
+  /** Narrow append-only repair for the former access-derived academic veto.
+   * Preview and apply intentionally share every eligibility check.
+   */
+  async recoverCourseOutcome({ sessionId, apply = false } = {}) {
+    if (!apply) return this.#recoverCourseOutcome({ sessionId, apply });
+    if (this.#courseRecovery.has(sessionId)) return this.#courseRecovery.get(sessionId);
+    const pending = this.#recoverCourseOutcome({ sessionId, apply }).finally(() => this.#courseRecovery.delete(sessionId));
+    this.#courseRecovery.set(sessionId, pending);
+    return pending;
+  }
+  async #recoverCourseOutcome({ sessionId, apply }) {
+    const events = await this.#sessions.readEvents(sessionId);
+    const checkedSeq = events.at(-1)?.seq ?? 0;
+    const state = reduceSession(events);
+    const refused = (reason) => ({ sessionId, eligible: false, applied: false, reason });
+    if (!state.practiceAssessment || state.evidenceInvalidated || state.replacedBySessionId)
+      return refused('invalid_or_non_course_evidence');
+    if (state.outcome?.reason !== 'course_questions_unresolved' || state.outcome.result !== 'needs_remediation')
+      return refused('not_access_veto');
+    if (state.state !== 'outcome_recorded') return refused('settlement_already_advanced');
+    const unit = await this.#curriculum.getUnit(state.unitId);
+    const gradeValid = (s) => evaluateOutcome({ gradedPercent: s.gradedPercent,
+      passingPercent: s.gradedPassingPercent ?? unit?.passing?.percent,
+      companionGate: s.companionGate }).result === 'passed';
+    const outcomeIndex = events.findIndex((e) => e.type === 'outcome_recorded' && e.reason === 'course_questions_unresolved');
+    if (outcomeIndex < 0 || !Number.isFinite(Date.parse(events[outcomeIndex].at))) return refused('missing_original_settlement');
+    const original = reduceSession(events.slice(0, outcomeIndex + 1));
+    if (!gradeValid(original) || !gradeValid(state)) return refused('effective_grade_or_gate_failed');
+    const args = { learnerId: state.learnerId, unitId: state.unitId };
+    const historical = await this.#practiceAssessments?.get({ ...args,
+      historyUntil: new Date(Date.parse(events[outcomeIndex].at) + 1).toISOString() });
+    if (historical?.stage !== 'completed') return refused('original_paper_incomplete');
+    const current = await this.#practiceAssessments?.get(args);
+    if (current?.stage !== 'completed') return refused('current_paper_incomplete');
+    if (!apply) return { sessionId, eligible: true, applied: false, reason: 'academic_access_veto' };
+    const settled = await this.#recordOutcomeAndSettle({ sessionId, state, unit,
+      nowIso: this.#clock().toISOString(), signedOff: false,
+      result: 'passed', reason: 'course_academic_access_recovered', expectedSeq: checkedSeq, printReceipt: false });
+    return { sessionId, eligible: true, applied: true, settlement: settled };
+  }
+
   async execute({
     sessionId, honorClose = false, signedOff = false, signedOffBy = null, pin = null, rewardOverride = null,
   } = {}) {
@@ -311,13 +353,13 @@ export class CloseSessionOutcome {
    * one path a graded close and an honor-close both funnel through, so the
    * reward guard, unlock line and result receipt stay uniform between them.
    */
-  async #recordOutcomeAndSettle({ sessionId, state, unit, nowIso, signedOff, rewardOverride = null, result, reason }) {
+  async #recordOutcomeAndSettle({ sessionId, state, unit, nowIso, signedOff, rewardOverride = null, result, reason, expectedSeq = null, printReceipt = true }) {
     const outcomeId = outcomeIdFor(sessionId);
     const { errors, event } = createEvent({
       type: 'outcome_recorded', at: nowIso, sessionId, outcomeId, result, reason,
     });
     if (errors.length) throw new Error(`CloseSessionOutcome: could not record the outcome: ${errors.join('; ')}`);
-    await this.#sessions.appendEvent(sessionId, event);
+    await this.#sessions.appendEvent(sessionId, event, expectedSeq == null ? {} : { expectedSeq });
     this.#logger.info?.('school.outcome.recorded', {
       sessionId, unitId: state.unitId, result, reason, percent: state.gradedPercent,
     });
@@ -328,10 +370,10 @@ export class CloseSessionOutcome {
     // resettle reads the same field back off `state.outcome` (`sessionEvents`'
     // `outcome_recorded` reducer), so both paths reach `#settle` alike.
     const outcome = { outcomeId, result, reason, at: nowIso };
-    return this.#settle({ sessionId, state, unit, outcome, signedOff, rewardOverride, nowIso, resettling: false });
+    return this.#settle({ sessionId, state, unit, outcome, signedOff, rewardOverride, nowIso, resettling: false, printReceipt });
   }
 
-  async #settle({ sessionId, state, unit, outcome, signedOff, rewardOverride = null, nowIso, resettling }) {
+  async #settle({ sessionId, state, unit, outcome, signedOff, rewardOverride = null, nowIso, resettling, printReceipt = true }) {
     // Unconditional on pass/fail and on resettling: a fail settle changes no
     // section's `obligation`, and a resettle republishing an unchanged fact
     // is harmless — `SchoolCompletionBridge` only acts on an actual state
@@ -507,7 +549,7 @@ export class CloseSessionOutcome {
     const marks = (worksheet?.questions?.length && worksheet.questions.length === state.gradedTotalCount)
       ? worksheet.questions.map((question) => !missed.has(question.itemId))
       : null;
-    const document = ['program_dispatched', 'external_activity_assessed'].includes(state.state) ? null : resultDocument({
+    const document = !printReceipt || ['program_dispatched', 'external_activity_assessed'].includes(state.state) ? null : resultDocument({
       sessionId,
       dayComplete,
       unitTitle: unit?.title ?? state.unitId,
@@ -547,7 +589,7 @@ export class CloseSessionOutcome {
     });
 
     let receiptArtifact = null;
-    let printing = document ? { printed: false, printReason: 'not_wired' }
+    let printing = !printReceipt ? { printed: false, printReason: 'recovery-no-print' } : document ? { printed: false, printReason: 'not_wired' }
       : { printed: false, printReason: state.state === 'external_activity_assessed' ? 'digital_activity' : 'program' };
     if (document) {
       // `original`, not the outcome id. `outcomeIdFor` is deterministic —

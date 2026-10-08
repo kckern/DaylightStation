@@ -5024,6 +5024,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       return typeof pin === 'string' && pin.length > 0;
     },
     openRemediation: schoolLifecycle.useCases?.openRemediation ?? null,
+    closeSessionOutcome: schoolLifecycle.useCases?.closeSessionOutcome ?? null,
     renderArtifactPostview: createArtifactPostviewRenderer(),
     renderWorksheetThumbnail: renderPdfFirstPagePng,
     milestoneStore: schoolMilestoneStore,

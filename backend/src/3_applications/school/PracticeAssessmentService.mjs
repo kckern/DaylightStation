@@ -1,43 +1,40 @@
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { GuestForbiddenError } from '#domains/school/errors.mjs';
-import { projectPracticeAssessment, practiceAssessmentHistory } from '#domains/school/practiceAssessment.mjs';
-import { planLearnerWork } from '#domains/school/planner.mjs';
-import { createEvent, reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
-import { withAttestedPasses } from './PlanProjection.mjs';
-import { withCurriculumExceptions, pausedExceptionFor } from './curriculumExceptionProjection.mjs';
+import { projectPracticeAssessment } from '#domains/school/practiceAssessment.mjs';
+import { PlanProjection } from './PlanProjection.mjs';
+import { createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { isCardLadderPolicy } from '#domains/school/flashcards/index.mjs';
 
 /** Coordinates course feedback; progress is derived from durable paper and card evidence. */
 export class PracticeAssessmentService {
-  #curriculum; #assignments; #sessions; #cards; #clock; #issuer = null; #remediation = null; #newSessionId; #printing = new Map(); #documents = null; #attestations; #exceptions;
+  #projection; #assignments; #sessions; #cards; #clock; #issuer = null; #remediation = null; #newSessionId; #printing = new Map(); #documents = null;
   constructor({ curriculum, assignments, sessions, cardLadder, clock = () => new Date(), newSessionId = null, attestations = null, curriculumExceptions = null }) {
-    this.#attestations = attestations; this.#exceptions = curriculumExceptions;
-    this.#curriculum = curriculum; this.#assignments = assignments; this.#sessions = sessions; this.#cards = cardLadder; this.#clock = clock; this.#newSessionId = newSessionId;
+    this.#assignments = assignments; this.#sessions = sessions; this.#cards = cardLadder; this.#clock = clock; this.#newSessionId = newSessionId;
+    this.#projection = new PlanProjection({ curriculum, assignments, sessions, attestations, curriculumExceptions, clock, practiceAssessments: this });
   }
   configurePrinting({ issueDocument, openRemediation, printDocuments = null }) { this.#issuer = issueDocument; this.#remediation = openRemediation; this.#documents = printDocuments; }
-  async #context({ learnerId, unitId }) {
-    const [unit, assignment, rows, units] = await Promise.all([this.#curriculum.getUnit(unitId), this.#assignments.get(learnerId), this.#sessions.listForLearner(learnerId), this.#curriculum.listUnits()]);
-    if (!unit?.practice || unit.unitId !== unitId) throw new EntityNotFoundError('practice assessment', unitId);
-    const assigned = assignment?.units?.some((u) => (typeof u === 'string' ? u : u.unitId) === unitId)
+  configureProjection(planProjection) { this.#projection = planProjection; }
+  async evaluate({ learnerId, unit, assignment, sessions, historyUntil = null }) {
+    if (!unit?.practice) throw new EntityNotFoundError('practice assessment', unit?.unitId);
+    const assigned = assignment?.units?.some((u) => (typeof u === 'string' ? u : u.unitId) === unit.unitId)
       || assignment?.courses?.some((c) => (typeof c === 'string' ? c : c.courseId) === unit.courseId);
-    const enrollment = assignment?.programs?.find((p) => p.programId === 'flashcards' && p.linkedUnitId === unitId && (p.deckId ?? p.corpusId) === unit.practice.deckId && isCardLadderPolicy(p.policy));
+    const enrollment = assignment?.programs?.find((p) => p.programId === 'flashcards' && p.linkedUnitId === unit.unitId && (p.deckId ?? p.corpusId) === unit.practice.deckId && isCardLadderPolicy(p.policy));
     if (!assigned || !enrollment) throw new GuestForbiddenError('This practice assessment is not assigned to this learner.');
-    const history = await Promise.all(rows.map(async (row) => {
-      if (!units.some((u) => u.unitId === row.unitId && u.practice)) return row;
-      const state = reduceSession(await this.#sessions.readEvents(row.sessionId));
-      return { ...state, updatedAt: row.updatedAt };
-    }));
-    const evidence = await this.#cards.courseEvidence({ userId: learnerId, deckId: unit.practice.deckId });
-    const progress = projectPracticeAssessment({ unit, ...evidence, sessions: history.filter((s) => s.learnerId === learnerId) });
-    const exceptions = await this.#exceptions?.active?.() ?? [];
-    const planningHistory = withCurriculumExceptions(withAttestedPasses(practiceAssessmentHistory(units, history), this.#attestations, learnerId), exceptions, learnerId);
-    const plan = planLearnerWork({ learnerId, assignment, units, sessions: planningHistory, now: this.#clock().toISOString() });
-    const entry = plan.entries.find((e) => e.unitId === unitId);
-    const paused = pausedExceptionFor(exceptions, unitId);
-    if (paused || !entry || ['locked', 'dormant', 'upcoming'].includes(entry.status)) {
-      progress.stage = 'locked'; progress.message = paused ? `This lesson is paused: ${paused.reason}` : entry?.reason ?? 'Finish the preceding lesson first.';
+    // Current mastery is not evidence of readiness at a past instant.
+    const evidence = historyUntil == null ? await this.#cards.courseEvidence({ userId: learnerId, deckId: unit.practice.deckId })
+      : { status: {}, dayFiles: [], readinessKnown: false };
+    return projectPracticeAssessment({ unit, ...evidence, sessions });
+  }
+  async #context(args) {
+    const projected = await this.#projection.project({ ...args, assignedPrograms: false, programStatuses: {} });
+    const unit = projected.projection.units.find((u) => u.unitId === args.unitId);
+    const progress = projected.assessmentByUnit.get(args.unitId);
+    if (!progress) {
+      // Preserve assignment validation even for a unit without a linked enrollment.
+      await this.evaluate({ ...args, unit, ...projected.projection });
+      throw new EntityNotFoundError('practice assessment', args.unitId);
     }
-    return { unit, history, progress };
+    return { unit, history: projected.projection.sessions, progress };
   }
   async forDeck({ learnerId, deckId }) {
     const assignment = await this.#assignments.get(learnerId);
@@ -47,8 +44,14 @@ export class PracticeAssessmentService {
   async get(args) { return (await this.#context(args)).progress; }
   async prepare({ state, unit }) {
     const { progress } = await this.#context({ learnerId: state.learnerId, unitId: state.unitId });
+    if (state.firstIssuedAt && state.practiceAssessment) return state.practiceAssessment;
+    const links = (practice) => Object.entries(practice.questionCards).sort(([a], [b]) => a.localeCompare(b))
+      .map(([id, link]) => [id, link.kind, [...link.cardIds].sort()]);
+    if (JSON.stringify(links(unit.practice)) !== JSON.stringify(links(progress.practice)))
+      throw new ValidationError('Current assessment question roster or card links differ from frozen course credits.');
+    if (!progress.access.allowed) throw new ValidationError(progress.access.reason);
     if (!['quiz_ready', 'retry_ready'].includes(progress.stage)) throw new ValidationError(`Complete the ${progress.stage === 'review' ? 'focused review' : 'card practice'} before printing this quiz.`);
-    if (state.practiceAssessment && JSON.stringify(state.practiceAssessment.questionIds) === JSON.stringify(progress.unresolvedQuestionIds)) return state.practiceAssessment;
+    if (state.practiceAssessment && JSON.stringify(state.practiceAssessment.assessmentForms) === JSON.stringify(progress.assessmentForms) && JSON.stringify(state.practiceAssessment.questionIds) === JSON.stringify(progress.unresolvedQuestionIds)) return state.practiceAssessment;
     if (this.#documents) {
       const expected = Object.keys(progress.practice.questionCards).sort();
       const questions = (blocks) => (blocks ?? []).flatMap((block) => block.type === 'question' ? [block.itemId] : questions(block.blocks));
@@ -78,6 +81,7 @@ export class PracticeAssessmentService {
   }
   async review({ learnerId, unitId, sittingId }) {
     const progress = await this.get({ learnerId, unitId });
+    if (!progress.access.allowed) throw new ValidationError(progress.access.reason);
     if (progress.stage !== 'review') throw new ValidationError('There are no outstanding course review cards.');
     return this.#cards.courseReview({ userId: learnerId, deckId: progress.deckId, sittingId, unitId, chosen: progress.pendingReviewCardIds,
       after: progress.reviewRequirements.map((r) => r.after).sort().at(-1) });
@@ -91,6 +95,7 @@ export class PracticeAssessmentService {
   async #print(args) {
     if (!this.#issuer || !this.#newSessionId) throw new ValidationError('Course printing is not configured.');
     const { history, progress } = await this.#context(args);
+    if (!progress.access.allowed) throw new ValidationError(progress.access.reason);
     if (!['quiz_ready', 'retry_ready', 'quiz_issued'].includes(progress.stage)) throw new ValidationError('Finish the card practice or focused review before printing.');
     const own = history.filter((s) => s.unitId === args.unitId);
     let sessionId = progress.activeSessionId ?? [...own].reverse().find((s) => s.state === 'created' && !s.terminal)?.sessionId;

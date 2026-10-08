@@ -25,7 +25,7 @@ const lexicon = {
   entries: new Map([['gawi', { id: 'gawi', group: 'week-01', term: '가위', gloss: 'Scissors', kind: 'word', decoys: { term: ['a', 'b', 'c'], gloss: ['x', 'y', 'z'] } }],
     ['pul', { id: 'pul', group: 'week-01', term: '풀', gloss: 'Glue', kind: 'word', decoys: { term: ['d', 'e', 'f'], gloss: ['u', 'v', 'w'] } }]]),
 };
-function make({ judgementCache = null, recordings = null, mode = 'live', attempts = null, attemptsReader = null, teacherGate = null, judge = null, store = memoryStore(), media = false, decks = null, bounds = null, peek = undefined, linkedUnitId = null, programs = null, lexiconData = lexicon } = {}) {
+function make({ realtime = null, judgementCache = null, recordings = null, mode = 'live', attempts = null, attemptsReader = null, teacherGate = null, judge = null, store = memoryStore(), media = false, decks = null, bounds = null, peek = undefined, linkedUnitId = null, programs = null, lexiconData = lexicon } = {}) {
   let t = Date.parse('2026-09-22T16:00:00-07:00');
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   const judgeFn = judge ?? vi.fn(async ({ typed, entry }) => ({ score: typed === entry.term ? 10 : 2, judge: 'exact', reason: null, pass: typed === entry.term }));
@@ -41,7 +41,7 @@ function make({ judgementCache = null, recordings = null, mode = 'live', attempt
     attempts: attemptsReader ? { readAttemptsInRange: attemptsReader } : attempts ? { readAttemptsInRange: vi.fn(() => attempts) } : null,
     assets: { exists: typeof media === 'function' ? media : () => media },
     judge: { judge: judgeFn },
-    teacherGate, recordings, judgementCache,
+    teacherGate, recordings, judgementCache, realtime,
     settings: () => SETTINGS, bounds, timezone: 'America/Los_Angeles', now: () => (t += 4000), logger, mode,
   });
   return { service, store, logger, judge: judgeFn, advance: (ms) => { t += ms; } };
@@ -1291,4 +1291,50 @@ it.each(['open', 'resume'])('switching to an allowed deck via %s cannot resume u
   expect(['summary', 'menu']).toContain(item.type);
   expect(store.s.status.words.yeonpil).toBeUndefined();
   expect(store.s.days[TODAY].items[first.item.id]).toEqual(evidence);
+});
+
+
+describe('durable card-day completion facts', () => {
+  it('publishes once after an answered day commits, not on duplicate response or reopen', async () => {
+    const fact = vi.fn(); const store = memoryStore();
+    const realtime = { cardPracticeDayCompleted: fact };
+    const { service } = make({ store, realtime });
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+    let { item } = opened;
+    for (let i = 0; i < 40 && item.type !== 'match'; i++) {
+      const response = item.type === 'copy' ? { typed: item.word.term }
+        : item.type === 'flashcard' ? (item.mode === 'intro' ? { seen: true } : { sort: 'claimed' })
+        : { choice: item.task === '2.2' ? lexicon.entries.get(item.wordId).gloss : lexicon.entries.get(item.wordId).term };
+      ({ item } = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response }));
+    }
+    expect(fact).not.toHaveBeenCalled();
+    fact.mockImplementation(event => expect(store.s.days[TODAY].doneAt).toBe(event.doneAt));
+    const args = { userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response: { done: true } };
+    await service.respond(args); await service.respond(args); await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(fact).toHaveBeenCalledTimes(1);
+    expect(fact).toHaveBeenCalledWith(expect.objectContaining({ learnerId: 'test-learner', package: 'korean-vocab', deckId: DECK, studyDay: TODAY, evidenceId: expect.any(String), doneAt: expect.any(String) }));
+  });
+  it('emits when a teacher exclusion completes the day, but never from test mode or failed writes', async () => {
+    const fact = vi.fn(); const store = dueStore(2);
+    const { service } = make({ store, realtime: { cardPracticeDayCompleted: fact }, teacherGate: { assert: vi.fn() } });
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    await service.adminExclude({ learnerId: 'test-learner', deckId: DECK, wordId: 'gawi', actorId: 'parent' });
+    expect(store.s.days[TODAY].doneAt).toBeTruthy(); expect(fact).toHaveBeenCalledTimes(1);
+    const testStore = dueStore(2); testStore.s.status.words.gawi.dueDay = '2026-10-30';
+    const test = make({ mode: 'test', realtime: { cardPracticeDayCompleted: fact }, store: testStore });
+    await test.service.open({ userId: 'test-learner', deckId: DECK });
+    expect(testStore.s.days[TODAY].doneAt).toBeTruthy();
+    expect(fact).toHaveBeenCalledTimes(1);
+    const failedStore = dueStore(2);
+    const failed = make({ store: failedStore, realtime: { cardPracticeDayCompleted: fact }, teacherGate: { assert: vi.fn() } });
+    await failed.service.open({ userId: 'test-learner', deckId: DECK });
+    failedStore.transact = (_user, _package, day, change) => {
+      const candidate = change({ status: structuredClone(failedStore.s.status), dayFile: structuredClone(failedStore.s.days[day]) });
+      expect(candidate.dayFile.doneAt).toBeTruthy();
+      throw Error('disk failure');
+    };
+    await expect(failed.service.adminExclude({ learnerId: 'test-learner', deckId: DECK, wordId: 'gawi', actorId: 'parent' })).rejects.toThrow('disk failure');
+    expect(failedStore.s.days[TODAY].doneAt).toBeNull();
+    expect(fact).toHaveBeenCalledTimes(1);
+  });
 });

@@ -1,3 +1,5 @@
+import getLogger from '../../../../../lib/logging/Logger.js';
+import { useWebSocketStatus, useWebSocketSubscription } from '../../../../../hooks/useWebSocket.js';
 import { schoolApi } from '../../../schoolApi.js';
 import PracticeAssessmentPanel from './PracticeAssessmentPanel.jsx';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -439,29 +441,82 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
   const [assessment, setAssessment] = useState(null);
   const [assessmentBusy, setAssessmentBusy] = useState(false);
   const [assessmentNotice, setAssessmentNotice] = useState(null);
-  const refreshAssessment = useCallback(async () => {
-    if (test || !userId || !deckId) return;
-    const reply = await schoolApi.practiceAssessment({ learnerId: userId, deckId });
-    if (live.current && reply.ok) setAssessment(reply.data);
-  }, [test, userId, deckId]);
-  useEffect(() => { refreshAssessment(); }, [refreshAssessment, started, item?.type, item?.source]);
+  const assessmentLogger = useMemo(() => getLogger().child({ component: 'card-ladder-assessment' }), []);
+  const assessmentRef = useRef(null);
+  const assessmentRequest = useRef(null);
+  const refreshAssessment = useCallback(() => {
+    const request = assessmentRequest.current;
+    if (!request || request.cancelled || test || !userId || !deckId) return Promise.resolve();
+    if (request.running) { request.dirty = true; return request.running; }
+    request.running = (async () => {
+      do {
+        request.dirty = false;
+        try {
+          const reply = await schoolApi.practiceAssessment({ learnerId: userId, deckId });
+          if (request.cancelled) return;
+          if (reply.ok) {
+            assessmentRef.current = reply.data; setAssessment(reply.data);
+            assessmentLogger.debug('school.assessment.refreshed', { learnerId: userId, deckId, unitId: reply.data?.unitId, stage: reply.data?.stage });
+          }
+        } catch (error) {
+          if (!request.cancelled) {
+            assessmentLogger.warn('school.assessment.refresh-failed', { learnerId: userId, deckId, error: error.message });
+            setAssessmentNotice('Lesson progress could not refresh. Try again.');
+          }
+        }
+      } while (request.dirty && !request.cancelled);
+    })().finally(() => { request.running = null; });
+    return request.running;
+  }, [test, userId, deckId, assessmentLogger]);
+  useEffect(() => {
+    const request = { cancelled: false, running: null, dirty: false };
+    assessmentRequest.current = request;
+    assessmentRef.current = null;
+    setAssessment(null); setAssessmentNotice(null); setAssessmentBusy(false);
+    return () => { request.cancelled = true; };
+  }, [refreshAssessment]);
+  useEffect(() => { refreshAssessment(); }, [refreshAssessment, started, item?.id, item?.type, item?.source]);
+  useWebSocketSubscription('school', (message) => {
+    if (test || message.event !== 'assessment-changed' || message.learnerId !== userId) return;
+    if (assessmentRef.current?.unitId && message.unitId !== assessmentRef.current.unitId) return;
+    refreshAssessment();
+  }, [test, userId, refreshAssessment]);
+  const { connected } = useWebSocketStatus();
+  const previouslyConnected = useRef(connected);
+  useEffect(() => {
+    if (connected && !previouslyConnected.current) refreshAssessment();
+    previouslyConnected.current = connected;
+  }, [connected, refreshAssessment]);
+  useEffect(() => {
+    const focused = () => { refreshAssessment(); };
+    const visible = () => { if (document.visibilityState === 'visible') refreshAssessment(); };
+    window.addEventListener('focus', focused);
+    document.addEventListener('visibilitychange', visible);
+    return () => {
+      window.removeEventListener('focus', focused);
+      document.removeEventListener('visibilitychange', visible);
+    };
+  }, [refreshAssessment]);
   const printAssessment = useCallback(async () => {
-    if (!assessment || assessmentBusy) return;
+    if (!assessment || assessmentBusy || assessment.access?.allowed === false) return;
+    const request = assessmentRequest.current;
     setAssessmentBusy(true);
     const reply = await schoolApi.printPracticeAssessment({ learnerId: userId, unitId: assessment.unitId });
-    if (live.current) {
+    if (!request.cancelled) {
       setAssessmentBusy(false);
       setAssessmentNotice(reply.data?.message ?? (reply.ok ? 'Your quiz is ready.' : 'The quiz could not be printed. Try again.'));
       await refreshAssessment();
     }
   }, [assessment, assessmentBusy, userId, refreshAssessment]);
   const reviewAssessment = useCallback(async () => {
-    if (!assessment || assessmentBusy) return;
+    if (!assessment || assessmentBusy || assessment.access?.allowed === false) return;
+    const request = assessmentRequest.current;
     setAssessmentBusy(true);
     let id = sittingRef.current;
     if (!id) {
       // A focused review can start from the course's start card.
       const reply = await api.open({ userId, deckId, capabilities: { microphone: false } });
+      if (request.cancelled) return;
       if (!reply.ok || !reply.data?.sittingId) { setAssessmentBusy(false); setAssessmentNotice('Card review could not open. Try again.'); return; }
       id = reply.data.sittingId;
       sittingRef.current = id; closedRef.current = false;
@@ -471,7 +526,7 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
       setStarted(true);
     }
     const reply = await schoolApi.reviewPracticeAssessment({ learnerId: userId, unitId: assessment.unitId, sittingId: id });
-    if (!live.current) return;
+    if (request.cancelled) return;
     setAssessmentBusy(false);
     if (reply.ok && reply.data?.item) { show(reply.data.item, reply.data.progress); setAssessmentNotice(null); }
     else { setStarted(false); setAssessmentNotice(reply.data?.error?.message ?? 'Review could not start. Try again.'); }

@@ -2626,3 +2626,14 @@ The household kiosk API is `GET /api/v1/school/book-scans/pending?screenId=<id>`
 After a fresh successful shelf read, the one-time entry opens the matching active book, the finished/read-again context, or the existing combined cover/actions view. It does not create shelf items. Failed shelf refreshes keep mutation controls blocked. On landscape screens, known-book tasks place the cover/title/context on the left and actions, page/minute keypad, calendar, or tracking-mode chooser on the right. The learner and Done remain visible above every shelf task. ISBN entry stays centered until a book is known; narrow mounts stack. The scan chooser uses the same cleaned book presentation beside a two-column learner grid with 72px portraits. Alternate-date tasks use a compact calendar with direct Save finish. Supplemental Reading circles describe book/finish/progress counts accessibly without changing required totals or daily completion.
 
 The `upper-6` worksheet profile selects six upper-level questions with five visible choices and one or two multi-select questions, matching the difficulty of the ten-question `upper` profile. Existing worksheet snapshots retain their originally issued questions.
+
+
+### Hybrid assessment repairs
+
+Academic `stage` is derived from paper/card evidence; `access: { allowed, reason }` separately governs starting practice, review, and printing. A global pause blocks new work but does not revoke credit from an issued quiz. All assessment reads share the canonical plan projection context. Historical projections reduce linked session events before the requested boundary and explicitly mark historical card readiness unknown rather than using current mastery.
+
+The card screen refetches assessment truth after learner/unit-scoped `assessment-changed` notifications on the `school` channel, item changes, focus, visibility restoration, and reconnect. Live card-day completion emits `school.card-ladder.day-complete` only after the durable transition; the completion bridge recomputes immediately and State Gates retain polling as recovery.
+
+Korean choice repairs use `cli/korean-course-repair.cli.mjs --base <content-base> --out <staging>` to preview and `--apply` to activate checked immutable document revisions and compatible unit pins. Existing issued worksheets retain their original revision, allocation, and answer key; new unissued attempts use compatible current forms. The normal course installer remains append-only.
+
+`school ops course-outcome-recover SESSION --teacher ID [--pin-env NAME] [--apply]` previews or applies narrow recovery of an erroneous `course_questions_unresolved` outcome. Recovery requires original and current cumulative completion, valid grading/gates, and eligible session evidence; it reuses normal settlement and reward identity without physically printing during repair.
