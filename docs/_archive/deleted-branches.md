@@ -585,3 +585,9 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-10-07 | fix/school-audit-repairs | 98364c64e423e3302641e4d24ab4745b9e9ed0ab | Five hybrid-course audit fixes; Astra approved, 4,456 tests passed, merged and deployed with guarded content activation |
 
 | 2026-10-07 | fix/queue-immich-direct-play | c02a839e43 | Queue photos and clip segments skip /play again (saved-query montage went dark after the title card); fast-forwarded into main, not deployed |
+| 2026-10-07 | feat/arcade-session-overlay-v2 | 73321703c | Merged; worktree held an older draft superseded by dc16eeb0a (moved to _deleteme/salvage-2026-10-07) |
+| 2026-10-07 | feat/nutrition-auditor-transparency | 91dafbc5f | Merged; clean worktree removed |
+| 2026-10-07 | feat/sheetmusic-learn-engraving | c431bfd52 | Merged; clean worktree removed |
+| 2026-10-07 | fix/charades-history-import | c570089e6 | Merged; worktree edits already identical to main |
+| 2026-10-07 | fix/fitness-kiosk-polish | b669b1ce6 | Merged; clean worktree removed |
+| 2026-10-07 | worktree-agent-a2e40a82faec43217 | 3756857f7 | Merged agent worktree; clean, removed |
