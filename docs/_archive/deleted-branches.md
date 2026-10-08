@@ -599,3 +599,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-10-07 | feature/skyline-glider | 1a0649cbe | Homeserver: merged into main, clean idle worktree removed |
 | 2026-10-07 | fix/agenda-card-subject-korean | 955ea662d | Homeserver: merged into main, clean idle worktree removed |
 | 2026-10-07 | fix/portal-card-ladder-launch | 26f8f84ac | Homeserver: merged into main, clean idle worktree removed |
+| 2026-10-07 | backup/pre-pii-scrub-20261007 | 935b44f14 | Pre-rewrite main before scrubbing real names from 228 unpushed commits; superseded by pushed 4acb7baad. Contains names: do not restore to a pushed branch |
