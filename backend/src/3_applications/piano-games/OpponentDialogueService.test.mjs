@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { OpponentDialogueService } from './OpponentDialogueService.mjs';
+import { OpponentDialogueGenerator } from '#adapters/ai/OpponentDialogueGenerator.mjs';
 
 const adapter = (transcript, { sessionId, ply }) => transcript?.valid && ply === 2
   ? { event: { actor: 'opponent', capture: true }, eventId: `${sessionId}:2:test`, fallback: 'That one was mine.' }
@@ -41,9 +42,18 @@ describe('OpponentDialogueService', () => {
   });
 
   it('allowlists the model and clamps cosmetic generation options', async () => {
+    // The service clamps the deadline; the provider adapter owns model + token
+    // budget (the gateway options), so assert through the real adapter.
     const chat = vi.fn(async () => 'Still your turn!');
-    await make({ chat, config: { model: 'expensive-model', timeout_ms: 99999, max_chars: 999 } })
-      .react('test', { sessionId: 'g1', ply: 2, transcript: { valid: true } });
+    const dialogueGenerator = new OpponentDialogueGenerator({ aiGateway: { chat } });
+    await new OpponentDialogueService({
+      dialogueGenerator,
+      adapters: { test: adapter },
+      readConfig: async () => ({ personality: { enabled: true, model: 'expensive-model', timeout_ms: 99999, max_chars: 999 } }),
+      resolveOpponent: async () => ({ level: 1, position: 1, total: 7, rosterPack: 'test', opponent: { name: 'Pip' } }),
+      recallRivalry: async () => null,
+      readLadder: async () => null,
+    }).react('test', { sessionId: 'g1', ply: 2, transcript: { valid: true } });
     expect(chat.mock.calls[0][1]).toMatchObject({ model: 'gpt-5.6-luna', timeout: 2500, maxTokens: 40 });
   });
 
