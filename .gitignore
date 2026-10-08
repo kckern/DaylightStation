@@ -193,6 +193,11 @@ docs/_moveme/
 !scripts/migrate-household-config.mjs
 *.png
 !tests/isolated/rendering/school/golden/snapshots/answer-sheet-*.png
+# Committed visual baselines the print-design acceptance sweeps compare against
+# (they write a fresh one and FAIL when it is missing, so it must be tracked).
+!docs/_wip/audits/2026-08-04-print-design-phase-a-acceptance/proof-standard-p02.png
+!docs/_wip/audits/2026-08-04-print-design-phase-b-acceptance/kitchen-sink-student-p01.png
+!docs/_wip/audits/2026-08-04-print-design-phase-c-acceptance/card-continuation-student-p01.png
 
 # TI-86 install images are BUILD OUTPUT, regenerable by tools/build-*-install.mjs.
 # 31MB of binaries, and the .86s payloads carry learner identities baked in at
