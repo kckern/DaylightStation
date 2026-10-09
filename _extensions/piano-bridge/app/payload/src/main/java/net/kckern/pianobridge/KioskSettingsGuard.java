@@ -74,6 +74,10 @@ public final class KioskSettingsGuard {
         Map<String, String> listSettings();
         boolean setBoolean(String key, String value);
         boolean setString(String key, String value);
+        /** FKB's deviceInfo.foregroundApp; null/empty means UNKNOWN. */
+        default String foregroundApp() { return null; }
+        /** Bring FKB back to the front (device: a11y HOME, then FKB toForeground). */
+        default boolean toForeground() { return false; }
     }
 
     /** Durable event sink — CrashLog on device, a recorder in tests. */
@@ -99,8 +103,21 @@ public final class KioskSettingsGuard {
         public final long installHoldUntilMs;
         public final long disarmUntilMs;
         public final boolean hasPassword;
+        public final boolean foregroundEnabled;
+        public final long foregroundIntervalMs;
+        /** How long Android Settings may stay in front (Bluetooth pairing) before recall. */
+        public final long settingsGraceMs;
         public Params(boolean enabled, long intervalMs, long installHoldMs,
                       long installHoldUntilMs, long disarmUntilMs, boolean hasPassword) {
+            this(enabled, intervalMs, installHoldMs, installHoldUntilMs, disarmUntilMs, hasPassword,
+                    true, 10_000L, 180_000L);
+        }
+        public Params(boolean enabled, long intervalMs, long installHoldMs,
+                      long installHoldUntilMs, long disarmUntilMs, boolean hasPassword,
+                      boolean foregroundEnabled, long foregroundIntervalMs, long settingsGraceMs) {
+            this.foregroundEnabled = foregroundEnabled;
+            this.foregroundIntervalMs = foregroundIntervalMs;
+            this.settingsGraceMs = settingsGraceMs;
             this.enabled = enabled;
             this.intervalMs = intervalMs;
             this.installHoldMs = installHoldMs;
@@ -142,6 +159,22 @@ public final class KioskSettingsGuard {
     private volatile Long installHoldUntilOverride = null;
 
     private java.util.Timer timer;
+    private java.util.Timer foregroundTimer;
+
+    /**
+     * Hard ceiling on any window in which the guard stands down (disarm or install
+     * hold). Kids reached other apps on 2026-10-09; a stand-down is the one state in
+     * which nothing pulls them back, so no stand-down may outlast an hour — including
+     * one written straight into config with `pbctl config set`.
+     */
+    static final long MAX_STAND_DOWN_MS = 60 * 60_000L;
+
+    /** Fully Kiosk's own package — the only app that belongs in front. */
+    static final String FKB_PACKAGE = "de.ozerov.fully";
+    /** Android Settings: reachable on purpose (Bluetooth pairing tile), so it gets a grace. */
+    static final String SETTINGS_PACKAGE = "com.android.settings";
+    /** The bridge's own activity (`fkb launch net.kckern.pianobridge` bounces the process). */
+    static final String BRIDGE_PACKAGE = "net.kckern.pianobridge";
 
     /** Device wiring: config from {@link DeviceConfig}, FKB over REST, log to CrashLog. */
     public KioskSettingsGuard(BridgeCore service, DeviceConfig cfg) {
@@ -154,13 +187,30 @@ public final class KioskSettingsGuard {
                     c.watchdogKioskSettingsInstallHoldMs(),
                     c.kioskSettingsInstallHoldUntilMs(),
                     c.kioskSettingsDisarmUntilMs(),
-                    !c.fkbPassword().isEmpty());
+                    !c.fkbPassword().isEmpty(),
+                    c.watchdogKioskForegroundEnabled(),
+                    c.watchdogKioskForegroundIntervalMs(),
+                    c.watchdogKioskForegroundSettingsGraceMs());
         };
         this.lastUpdateRequestAtMs = service::lastUpdateRequestAtMs;
         this.fkb = new Fkb() {
             @Override public Map<String, String> listSettings() { return FkbRest.listSettings(held[0]); }
             @Override public boolean setBoolean(String key, String value) { return set("setBooleanSetting", key, value); }
             @Override public boolean setString(String key, String value) { return set("setStringSetting", key, value); }
+            @Override public String foregroundApp() {
+                JSONObject info = FkbRest.deviceInfo(held[0]);
+                Object fg = info.opt("foreground");
+                return fg == null || fg == JSONObject.NULL ? null : String.valueOf(fg);
+            }
+            @Override public boolean toForeground() {
+                // Android refuses FKB's own toForeground from the background (it answers
+                // OK and does nothing). HOME, then a direct start from the a11y context,
+                // which is exempt from that block; toForeground last, belt and braces.
+                boolean home = A11y.home();
+                boolean launched = A11y.launch(FKB_PACKAGE);
+                int code = FkbRest.command(held[0], "toForeground");
+                return home || launched || (code >= 200 && code < 400);
+            }
             private boolean set(String cmd, String key, String value) {
                 Map<String, String> p = new LinkedHashMap<>();
                 p.put("key", key);
@@ -226,12 +276,127 @@ public final class KioskSettingsGuard {
                 try { tick(); } catch (Throwable t) { Log.e(TAG, "tick failed", t); }
             }
         }, period, period);
+        long fgPeriod = Math.max(2_000L, params.get().foregroundIntervalMs);
+        foregroundTimer = new java.util.Timer("kiosk-foreground-guard", true);
+        foregroundTimer.scheduleAtFixedRate(new java.util.TimerTask() {
+            @Override public void run() {
+                try { foregroundTick(); } catch (Throwable t) { Log.e(TAG, "foreground tick failed", t); }
+            }
+        }, fgPeriod, fgPeriod);
         notes.note("KIOSKSET", "guard started (intervalMs=" + period
+                + " foregroundIntervalMs=" + fgPeriod
                 + " keys=" + KioskSettings.DESIRED.size() + ")");
     }
 
     public void stop() {
         if (timer != null) { timer.cancel(); timer = null; }
+        if (foregroundTimer != null) { foregroundTimer.cancel(); foregroundTimer = null; }
+    }
+
+    // --- the foreground pass ------------------------------------------------
+
+    /** What the foreground pass concluded. */
+    public enum ForegroundVerdict {
+        DISABLED, DISARMED, INSTALL_HOLD, NO_PASSWORD,
+        /** FKB did not report a foreground app. */
+        UNKNOWN,
+        /** FKB is in front. */
+        HOME,
+        /** An allowed app (Settings, the bridge) is in front, within its grace. */
+        GRACE,
+        /** Something else was in front and toForeground was sent. */
+        RECALLED,
+        /** toForeground was sent and FKB refused it. */
+        RECALL_FAILED
+    }
+
+    private volatile ForegroundVerdict lastForegroundVerdict = null;
+    private volatile String lastForegroundApp = null;
+    /** First moment FKB was seen NOT in front, 0 while it is. Grace counts from here. */
+    private volatile long awaySinceMs = 0;
+    private volatile String lastRecall = null;
+    private final AtomicInteger recallsSinceBoot = new AtomicInteger();
+    private volatile int recallsThisExcursion = 0;
+
+    /**
+     * One foreground check: if anything but FKB is in front, call FKB back.
+     *
+     * <p>The grace is measured from FIRST LEAVING FKB, not from entering the current
+     * app, so hopping Settings → another app → Settings cannot restart the clock. Any
+     * non-allowed app is recalled on the very tick it is seen. Honors the same disarm
+     * and install hold as the settings pass — the install dialog and the battery-
+     * exemption dialog are not FKB either.
+     */
+    synchronized ForegroundVerdict foregroundTick() {
+        Params p = params.get();
+        long now = clock.getAsLong();
+        if (!p.enabled || !p.foregroundEnabled) return fg(ForegroundVerdict.DISABLED, null);
+        if (now < effectiveDisarmUntil(now)) return fg(ForegroundVerdict.DISARMED, null);
+        if (now < effectiveInstallHoldUntil(now)) return fg(ForegroundVerdict.INSTALL_HOLD, null);
+        if (!p.hasPassword) return fg(ForegroundVerdict.NO_PASSWORD, null);
+
+        String app = fkb.foregroundApp();
+        if (app == null || app.isEmpty()) return fg(ForegroundVerdict.UNKNOWN, null);
+        if (FKB_PACKAGE.equals(app)) {
+            awaySinceMs = 0;
+            recallsThisExcursion = 0;
+            return fg(ForegroundVerdict.HOME, app);
+        }
+        if (awaySinceMs == 0) awaySinceMs = now;
+        long away = now - awaySinceMs;
+        long grace = graceFor(app, p);
+        if (away < grace) return fg(ForegroundVerdict.GRACE, app);
+
+        boolean ok = fkb.toForeground();
+        int n = recallsSinceBoot.incrementAndGet();
+        lastRecall = app + " after " + (away / 1000) + "s" + (ok ? "" : " [toForeground FAILED]");
+        // The away clock is NOT reset here — only seeing FKB in front resets it, so a
+        // recall that did not take keeps being retried and stays visible as awayForMs.
+        // Note the first recall of an excursion and every 30th retry, so a stuck one
+        // cannot evict real history from the head-truncated durable log.
+        recallsThisExcursion++;
+        if (recallsThisExcursion == 1 || recallsThisExcursion % 30 == 0) {
+            notes.note("KIOSKSET", "foreground recalled: " + lastRecall
+                    + (recallsThisExcursion > 1 ? " (retry " + recallsThisExcursion + ")" : ""));
+        }
+        Log.w(TAG, "foreground recalled (#" + n + "): " + lastRecall);
+        return fg(ok ? ForegroundVerdict.RECALLED : ForegroundVerdict.RECALL_FAILED, app);
+    }
+
+    private static long graceFor(String app, Params p) {
+        if (SETTINGS_PACKAGE.equals(app)) return p.settingsGraceMs;
+        if (BRIDGE_PACKAGE.equals(app)) return 120_000L;
+        return 0L;
+    }
+
+    private ForegroundVerdict fg(ForegroundVerdict v, String app) {
+        lastForegroundVerdict = v;
+        if (app != null) lastForegroundApp = app;
+        return v;
+    }
+
+    // --- stand-down ceiling -------------------------------------------------
+
+    /** Disarm deadline, cut back to {@link #MAX_STAND_DOWN_MS} from now if longer. */
+    private long effectiveDisarmUntil(long now) {
+        long until = disarmUntilMs();
+        if (until > now + MAX_STAND_DOWN_MS) {
+            until = now + MAX_STAND_DOWN_MS;
+            applyDeadline(KEY_DISARM_UNTIL, until, "kiosk_settings_disarm_capped",
+                    "disarm deadline beyond the 1h ceiling — capped to " + until);
+        }
+        return until;
+    }
+
+    /** Install-hold deadline, cut back to {@link #MAX_STAND_DOWN_MS} from now if longer. */
+    private long effectiveInstallHoldUntil(long now) {
+        long until = installHoldUntilMs();
+        if (until > now + MAX_STAND_DOWN_MS) {
+            until = now + MAX_STAND_DOWN_MS;
+            applyDeadline(KEY_INSTALL_HOLD_UNTIL, until, "kiosk_settings_install_hold_capped",
+                    "install-hold deadline beyond the 1h ceiling — capped to " + until);
+        }
+        return until;
     }
 
     // --- the tick -----------------------------------------------------------
@@ -277,12 +442,12 @@ public final class KioskSettingsGuard {
 
         if (!p.enabled) return refuse(Verdict.DISABLED);
 
-        long disarmUntil = disarmUntilMs();
+        long disarmUntil = effectiveDisarmUntil(now);
         if (now < disarmUntil) return refuse(Verdict.DISARMED);
 
         // Stand down while an APK install may be in flight — re-arming kiosk mode
         // mid-install auto-dismisses the confirm dialog and aborts the install.
-        if (!force && now < installHoldUntilMs()) return refuse(Verdict.INSTALL_HOLD);
+        if (!force && now < effectiveInstallHoldUntil(now)) return refuse(Verdict.INSTALL_HOLD);
 
         if (!p.hasPassword) {
             // ONCE, not every tick: the durable log is head-truncated at 128KB, so a
@@ -401,7 +566,7 @@ public final class KioskSettingsGuard {
         return o != null ? o : params.get().installHoldUntilMs;
     }
 
-    /** Disarm for {@code minutes}, persisting the deadline. Clamped 1…1440 by the caller. */
+    /** Disarm for {@code minutes}, persisting the deadline. Clamped 1…60 by the caller. */
     public JSONObject disarmForMinutes(int minutes) {
         long until = clock.getAsLong() + minutes * 60_000L;
         return applyDeadline(KEY_DISARM_UNTIL, until, "kiosk_settings_disarm",
@@ -501,6 +666,18 @@ public final class KioskSettingsGuard {
                 repairs.put(e.getKey(), e.getValue().get());
             }
             o.put("repairsSinceBoot", repairs);
+
+            JSONObject fgo = new JSONObject();
+            fgo.put("enabled", p.foregroundEnabled);
+            fgo.put("intervalMs", p.foregroundIntervalMs);
+            fgo.put("settingsGraceMs", p.settingsGraceMs);
+            fgo.put("verdict", lastForegroundVerdict == null ? JSONObject.NULL : lastForegroundVerdict.name());
+            fgo.put("lastApp", lastForegroundApp == null ? JSONObject.NULL : lastForegroundApp);
+            fgo.put("awayForMs", awaySinceMs == 0 ? JSONObject.NULL : now - awaySinceMs);
+            fgo.put("lastRecall", lastRecall == null ? JSONObject.NULL : lastRecall);
+            fgo.put("recallsSinceBoot", recallsSinceBoot.get());
+            o.put("foreground", fgo);
+            o.put("maxStandDownMs", MAX_STAND_DOWN_MS);
 
             JSONObject desired = new JSONObject();
             for (Map.Entry<String, KioskSettings.Desired> e : KioskSettings.DESIRED.entrySet()) {

@@ -648,4 +648,114 @@ public class KioskSettingsGuardTest {
         assertEquals(1, s.optJSONObject("repairsSinceBoot").optInt("kioskMode"));
         assertEquals(1_000_000L, s.optLong("lastCheckAtMs"));
     }
+
+    // --- foreground guard (2026-10-09: kids roamed from Settings with kioskMode=true) ---
+
+    private static class FgFkb extends FakeFkb {
+        String front = KioskSettingsGuard.FKB_PACKAGE;
+        int recalls = 0;
+        @Override public String foregroundApp() { return front; }
+        @Override public boolean toForeground() { recalls++; front = KioskSettingsGuard.FKB_PACKAGE; return true; }
+    }
+
+    private static KioskSettingsGuard fgGuard(FgFkb fkb, FakeNotes notes, Params p, long[] now) {
+        return new KioskSettingsGuard(() -> p, () -> 0L, fkb, notes, () -> now[0]);
+    }
+
+    @Test
+    public void foreground_otherApp_isRecalledOnFirstSight() {
+        FgFkb fkb = new FgFkb();
+        fkb.front = "com.android.chrome";
+        FakeNotes notes = new FakeNotes();
+        long[] now = { 1_000_000L };
+        KioskSettingsGuard g = fgGuard(fkb, notes, params(true, true, 0, 0), now);
+        assertEquals(KioskSettingsGuard.ForegroundVerdict.RECALLED, g.foregroundTick());
+        assertEquals(1, fkb.recalls);
+        assertEquals(1, notes.countContaining("foreground recalled: com.android.chrome"));
+    }
+
+    @Test
+    public void foreground_settingsGetsGrace_countedFromFirstLeavingFkb() {
+        FgFkb fkb = new FgFkb();
+        FakeNotes notes = new FakeNotes();
+        long[] now = { 1_000_000L };
+        KioskSettingsGuard g = fgGuard(fkb, notes, params(true, true, 0, 0), now);
+        fkb.front = KioskSettingsGuard.SETTINGS_PACKAGE;
+        assertEquals(KioskSettingsGuard.ForegroundVerdict.GRACE, g.foregroundTick());
+        now[0] += 170_000L;
+        assertEquals(KioskSettingsGuard.ForegroundVerdict.GRACE, g.foregroundTick());
+        now[0] += 20_000L;  // 190s away > 180s grace
+        assertEquals(KioskSettingsGuard.ForegroundVerdict.RECALLED, g.foregroundTick());
+        assertEquals(1, fkb.recalls);
+    }
+
+    @Test
+    public void foreground_hoppingAppsCannotRestartTheGrace() {
+        FgFkb fkb = new FgFkb();
+        long[] now = { 1_000_000L };
+        KioskSettingsGuard g = fgGuard(fkb, new FakeNotes(), params(true, true, 0, 0), now);
+        fkb.front = KioskSettingsGuard.SETTINGS_PACKAGE;
+        g.foregroundTick();
+        now[0] += 200_000L;
+        fkb.front = "com.sec.android.app.launcher";
+        assertEquals(KioskSettingsGuard.ForegroundVerdict.RECALLED, g.foregroundTick());
+    }
+
+    @Test
+    public void foreground_recallThatDidNotTake_isRetried_withoutSpammingNotes() {
+        FgFkb fkb = new FgFkb() {
+            @Override public boolean toForeground() { recalls++; return true; } // Android ignored it
+        };
+        fkb.front = "com.android.chrome";
+        FakeNotes notes = new FakeNotes();
+        long[] now = { 1_000_000L };
+        KioskSettingsGuard g = fgGuard(fkb, notes, params(true, true, 0, 0), now);
+        for (int i = 0; i < 31; i++) { g.foregroundTick(); now[0] += 10_000L; }
+        assertEquals(31, fkb.recalls);
+        assertEquals("first recall + the 30th retry only", 2, notes.countContaining("foreground recalled"));
+        assertTrue(g.snapshot().optJSONObject("foreground").optLong("awayForMs") >= 300_000L);
+        fkb.front = KioskSettingsGuard.FKB_PACKAGE;
+        assertEquals(KioskSettingsGuard.ForegroundVerdict.HOME, g.foregroundTick());
+        assertTrue(g.snapshot().optJSONObject("foreground").isNull("awayForMs"));
+    }
+
+    @Test
+    public void foreground_fkbInFront_doesNothing_andUnknownIsNotARecall() {
+        FgFkb fkb = new FgFkb();
+        long[] now = { 1_000_000L };
+        KioskSettingsGuard g = fgGuard(fkb, new FakeNotes(), params(true, true, 0, 0), now);
+        assertEquals(KioskSettingsGuard.ForegroundVerdict.HOME, g.foregroundTick());
+        fkb.front = null;
+        assertEquals(KioskSettingsGuard.ForegroundVerdict.UNKNOWN, g.foregroundTick());
+        assertEquals(0, fkb.recalls);
+    }
+
+    @Test
+    public void foreground_respectsDisarmAndInstallHold() {
+        FgFkb fkb = new FgFkb();
+        fkb.front = "com.android.packageinstaller";
+        long now = 1_000_000L;
+        assertEquals(KioskSettingsGuard.ForegroundVerdict.DISARMED,
+                fgGuard(fkb, new FakeNotes(), params(true, true, now + 60_000L, 0), new long[] { now }).foregroundTick());
+        assertEquals(KioskSettingsGuard.ForegroundVerdict.INSTALL_HOLD,
+                fgGuard(fkb, new FakeNotes(), params(true, true, 0, now + 60_000L), new long[] { now }).foregroundTick());
+        assertEquals(0, fkb.recalls);
+    }
+
+    @Test
+    public void standDown_longerThanAnHour_isCappedToOneHour() {
+        FgFkb fkb = new FgFkb();
+        fkb.front = "com.android.chrome";
+        FakeConfigStore store = new FakeConfigStore();
+        long[] now = { 1_000_000L };
+        long tenHours = now[0] + 10 * 3_600_000L;
+        Params p = params(true, true, tenHours, 0);
+        KioskSettingsGuard g = new KioskSettingsGuard(() -> p, () -> 0L, fkb, new FakeNotes(), () -> now[0], store);
+        assertEquals(KioskSettingsGuard.ForegroundVerdict.DISARMED, g.foregroundTick());
+        assertEquals(now[0] + KioskSettingsGuard.MAX_STAND_DOWN_MS, g.disarmUntilMs());
+        assertEquals(now[0] + KioskSettingsGuard.MAX_STAND_DOWN_MS,
+                store.get(KioskSettingsGuard.KEY_DISARM_UNTIL));
+        now[0] += KioskSettingsGuard.MAX_STAND_DOWN_MS + 1;
+        assertEquals(KioskSettingsGuard.ForegroundVerdict.RECALLED, g.foregroundTick());
+    }
 }
