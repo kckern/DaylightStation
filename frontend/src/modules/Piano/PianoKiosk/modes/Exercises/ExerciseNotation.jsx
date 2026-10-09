@@ -9,6 +9,7 @@ import {
   SharpShape, FlatShape, ledgerLineYs,
   ACCIDENTAL_WIDTH, ACCIDENTAL_GAP, NOTEHEAD_RX, NOTEHEAD_RY,
 } from '../../../../MusicNotation/renderers/staffGlyphs.jsx';
+import { placeGhosts, stemDirection } from './ghostEngraving.js';
 import {
   accidentalForKey, clefForInstance, eventsToStaffNotes, instanceKeySignature,
 } from './runPresentation.js';
@@ -24,19 +25,44 @@ const DRIFT_TICK = Object.freeze({ early: '\u25C2', late: '\u25B8' });
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /**
- * Lane and ghost geometry, in glyph units (multiplied by `scale` at draw time).
+ * Lane geometry, in glyph units (multiplied by `scale` at draw time).
  *
- * The lane is CENTRED ON THE NOTEHEAD — that is its whole job, and nothing may
- * be drawn inside it that is not the note being read. Everything about the
- * ghost is therefore derived from the lane's right edge outward, so a ghost can
- * never re-enter the lane no matter how the numbers are tuned later. The
- * previous hard-coded offsets put the ghost's head 7 units past the lane edge
- * and its accidental 1.5 units from the lane's CENTRE — i.e. stamped on top of
- * the very notehead the lane exists to show.
+ * THE LANE FRAMES THE COLUMN. It is centred on the notehead being read and
+ * widens only as far as it must to contain whatever the ghost engraving adds to
+ * that column (a flipped head and its accidental) — see `ghostEngraving.js`.
+ *
+ * This used to be the opposite rule: "nothing may be drawn inside the lane that
+ * is not the note being read", with the ghost measured out from the lane's
+ * right edge (6c4073c14f / 61a86825d5). That kept the ghost off the target
+ * head, but it floated the wrong note beside the column, lower, with no stem,
+ * touching nothing. The owner's engraving requirement wins: notes on the same
+ * beat are one chord on one stem, and a second flips to the other side of the
+ * stem. The ghost is the same column, so the lane that frames the column
+ * frames the ghost too.
  */
 const LANE_HALF_WIDTH = 18;
-/** Air between the lane edge and whatever the ghost puts next to it. */
-const GHOST_GUTTER = 4;
+/** Air between the lane's frame and the outermost ghost ink. */
+const LANE_PAD = 3;
+/** How far a ledger line reaches past a head, in glyph units. */
+const LEDGER_REACH = 5;
+
+/** The column the cursor is on: its heads (root space), stem and measured head half-width. */
+function measureColumn(note, { bottom, spacing }) {
+  const els = note.els.filter(Boolean);
+  const heads = els.flatMap(el => [...el.querySelectorAll('.abcjs-notehead')]).map((el) => {
+    const b = rootBox(el);
+    return { position: Math.round((bottom - (b.y + b.height / 2)) / (spacing / 2)), cx: b.x + b.width / 2, y: b.y + b.height / 2, half: b.width / 2 };
+  });
+  const stemEl = els.map(el => el.querySelector('.abcjs-stem')).find(Boolean);
+  let stem = null;
+  if (stemEl) {
+    const b = rootBox(stemEl);
+    stem = { x: b.x + b.width / 2, halfWidth: b.width / 2, top: b.y, bottom: b.y + b.height };
+    stem.dir = stemDirection(stem, heads.map(h => h.y));
+  }
+  const half = heads.length ? Math.max(...heads.map(h => h.half)) : null;
+  return { heads, stem, half };
+}
 
 /**
  * An element's bounding box mapped into THE SVG ROOT'S OWN USER SPACE — the
@@ -210,18 +236,25 @@ export default function ExerciseNotation({ instance, eventIndex = 0, activeNotes
         // Keep ledger-line notes inside the same lane, including abcjs's
         // slightly taller noteheads at the bottom edge of the stave.
         const height = Math.max(84 * scale, box.y + box.height + 4 * scale - y);
-        if (current && !preview) lanes.push({ x, y, height, bottom, scale, spacing, ghosts });
+        const column = measureColumn(note, { bottom, spacing });
+        const engrave = (list) => placeGhosts({
+          ghosts: list, heads: column.heads, stem: column.stem, bottom, spacing,
+          rx: column.half ?? NOTEHEAD_RX * scale,
+          accidentalWidth: ACCIDENTAL_WIDTH * scale, accidentalGap: ACCIDENTAL_GAP * scale,
+          ledgerReach: LEDGER_REACH * scale, targetMidis: [...targets],
+        });
+        if (current && !preview) {
+          const placed = engrave(ghosts);
+          lanes.push({ x, y, height, bottom, scale, spacing, rx: column.half ?? NOTEHEAD_RX * scale, ghosts: placed.ghosts, minX: placed.minX, maxX: placed.maxX });
+        }
         if (marked) {
-          // Recorded marks, beside the event they belong to: an off-beat tick
-          // under the notehead, and the wrong pitch as a red ghost placed the
-          // way the live ghost is, out from where this event's lane would be.
+          // Recorded marks, on the event they belong to: an off-beat tick under
+          // the notehead, and the wrong pitch as a red ghost engraved into the
+          // target's column exactly as the live ghost is.
           lanes.push({
-            x, y, height, bottom, scale, spacing, marksOnly: true,
-            // Out from the NOTEHEAD, not from a lane that is not drawn here: a
-            // lane-width gutter would stand the ghost on the next note.
-            edge: box.x + box.width,
+            x, y, height, bottom, scale, spacing, marksOnly: true, rx: column.half ?? NOTEHEAD_RX * scale,
+            ...(({ ghosts: g, minX, maxX }) => ({ ghosts: g, minX, maxX }))(engrave(wrongs.filter(onThisStaff).map(({ midi }) => ({ midi, wrong: true, ...getStaffPositionOnClef(midi, clef, accidental) })))),
             tick: offbeat ? { side: offbeat, midi: target, x, y: box.y + box.height + 16 * scale } : null,
-            ghosts: wrongs.filter(onThisStaff).map(({ midi }) => ({ midi, wrong: true, ...getStaffPositionOnClef(midi, clef, accidental) })),
           });
         }
       });
@@ -239,33 +272,26 @@ export default function ExerciseNotation({ instance, eventIndex = 0, activeNotes
     {decoration && createPortal(decoration.lanes.map((lane, index) => <g key={index}>
       {/* Same lane geometry and yellow treatment as the original sequence
           cursor (39cf60b81), scaled to this engraving's staff spacing. */}
-      {!lane.marksOnly && <rect className={`exercise-notation__cursor${windowOpen === true ? ' is-window-open' : windowOpen === false ? ' is-window-closed' : ''}`} x={lane.x - LANE_HALF_WIDTH * lane.scale} y={lane.y}
-        width={LANE_HALF_WIDTH * 2 * lane.scale} height={lane.height} rx={4 * lane.scale} />}
+      {!lane.marksOnly && (() => {
+        const pad = LANE_PAD * lane.scale;
+        const half = LANE_HALF_WIDTH * lane.scale;
+        const left = Math.min(lane.x - half, lane.minX == null ? Infinity : lane.minX - pad);
+        const right = Math.max(lane.x + half, lane.maxX == null ? -Infinity : lane.maxX + pad);
+        return <rect className={`exercise-notation__cursor${windowOpen === true ? ' is-window-open' : windowOpen === false ? ' is-window-closed' : ''}`} x={left} y={lane.y}
+          width={right - left} height={lane.height} rx={4 * lane.scale} />;
+      })()}
       {lane.tick && <text className={`exercise-notation__drift exercise-notation__drift--${lane.tick.side}`} data-midi={lane.tick.midi}
         x={lane.tick.x} y={lane.tick.y} textAnchor="middle" fontSize={18 * lane.scale} fill="rgb(180, 110, 0)" stroke="none">{DRIFT_TICK[lane.tick.side]}</text>}
-      {lane.ghosts.map(ghost => {
-        // Everything here is measured OUT FROM the lane's right edge, so the
-        // ghost sits beside the note being read rather than on top of it. An
-        // accidental claims the first slot; without one the head moves in to
-        // close the gap, which keeps the annotation tight to its note.
-        const laneEdge = lane.edge ?? lane.x + LANE_HALF_WIDTH * lane.scale;
-        const hasAccidental = ghost.isSharp || ghost.isFlat;
-        const accX = laneEdge + (GHOST_GUTTER + ACCIDENTAL_WIDTH / 2) * lane.scale;
-        const x = hasAccidental
-          ? accX + (ACCIDENTAL_WIDTH / 2 + ACCIDENTAL_GAP + NOTEHEAD_RX) * lane.scale
-          : laneEdge + (GHOST_GUTTER + NOTEHEAD_RX) * lane.scale;
-        const y = lane.bottom - ghost.position * lane.spacing / 2;
-        return <g className={`exercise-notation__ghost${ghost.wrong ? ' is-wrong' : ''}`} key={ghost.midi}>
-          {ledgerLineYs(ghost.position, lane.bottom, lane.spacing / 2).map(ly =>
-            <line key={ly} x1={x - (NOTEHEAD_RX + 5) * lane.scale} x2={x + (NOTEHEAD_RX + 5) * lane.scale}
-              y1={ly} y2={ly} />)}
-          <ellipse data-midi={ghost.midi} cx={x} cy={y} rx={NOTEHEAD_RX * lane.scale} ry={NOTEHEAD_RY * lane.scale}
-            transform={`rotate(-12, ${x}, ${y})`} />
-          {hasAccidental && <g transform={`translate(${accX}, ${y}) scale(${lane.scale})`}>
-            {ghost.isSharp ? <SharpShape /> : <FlatShape />}
-          </g>}
-        </g>;
-      })}
+      {lane.ghosts.map(ghost => <g className={`exercise-notation__ghost${ghost.wrong ? ' is-wrong' : ''}${ghost.flipped ? ' is-flipped' : ''}`} key={ghost.midi}>
+        {ghost.ledgers.map(l => <line key={l.y} x1={l.x1} x2={l.x2} y1={l.y} y2={l.y} />)}
+        {ghost.stemSegment && <line className="exercise-notation__ghost-stem" x1={ghost.stemSegment.x} x2={ghost.stemSegment.x}
+          y1={ghost.stemSegment.y1} y2={ghost.stemSegment.y2} strokeWidth={Math.max(ghost.stemSegment.halfWidth * 2, 0.5)} />}
+        <ellipse data-midi={ghost.midi} cx={ghost.cx} cy={ghost.cy} rx={lane.rx} ry={NOTEHEAD_RY * lane.scale}
+          transform={`rotate(-12, ${ghost.cx}, ${ghost.cy})`} />
+        {ghost.accX != null && <g transform={`translate(${ghost.accX}, ${ghost.cy}) scale(${lane.scale})`}>
+          {ghost.isSharp ? <SharpShape /> : <FlatShape />}
+        </g>}
+      </g>)}
     </g>), decoration.host)}
   </>;
 }

@@ -718,6 +718,9 @@
   color: rgba(0, 0, 0, .55);
   ellipse { fill: rgba(0, 0, 0, .45); stroke: rgba(0, 0, 0, .6); }
   > line { stroke: rgba(0, 0, 0, .35); }
+  // The short stem that joins a far ghost to the target's stem: same ink as the
+  // head, so the pair reads as one chord on one stem.
+  > .exercise-notation__ghost-stem { stroke: rgba(0, 0, 0, .45); }
 }
 // Timed runs paint RECORDED verdicts (ExerciseNotation's `verdicts`): the
 // right pitch off the beat is amber with a ◂/▸ tick, a lapsed or missed note
@@ -731,6 +734,7 @@
   color: rgba(200, 40, 40, .85);
   ellipse { fill: rgba(200, 40, 40, .8); stroke: none; }
   > line { stroke: rgba(200, 40, 40, .5); }
+  > .exercise-notation__ghost-stem { stroke: rgba(200, 40, 40, .8); }
 }
 // The lane is lit while the current event's window is open, dim between.
 .exercise-notation__cursor.is-window-closed { fill: rgba(255, 200, 60, .1); stroke: rgba(200, 150, 0, .2); }
