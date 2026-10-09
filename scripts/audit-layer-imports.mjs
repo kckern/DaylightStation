@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // scripts/audit-layer-imports.mjs
-// Layer-import ratchet. Scans backend/src for forbidden import patterns per
+// Layer-import ratchet. Scans legacy backend and destination server layers per
 // docs/reference/core/layers-of-abstraction/. Compares counts to
 // scripts/audit-baseline.json; exits 1 if any rule's count INCREASED.
 // Usage:
@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { parse } from '@babel/parser';
 import traverseModule from '@babel/traverse';
 import { listIndexFiles, readIndexFile, readIndexFiles } from './index-snapshot.mjs';
+import { DESTINATION_ROOTS, destinationServerPath, matchesAuditLayer, targetsAuditLayer } from './audit-server-layout.mjs';
 
 const traverse = typeof traverseModule === 'function' ? traverseModule : traverseModule.default;
 
@@ -34,7 +35,8 @@ const DOMAIN_LEVELS = Object.freeze({
 });
 
 function domainFromPath(filePath) {
-  return filePath?.match(/\/2_domains\/([^/]+)\//)?.[1] ?? null;
+  const destination = destinationServerPath(filePath);
+  return destination?.layer === 'domain' ? destination.owner : filePath?.match(/\/2_domains\/([^/]+)\//)?.[1] ?? null;
 }
 
 function domainFromSpecifier(specifier, resolved) {
@@ -57,10 +59,12 @@ function staticModuleSpecifier(node) {
 
 function targetsLayer(resolvedPath, ...layers) {
   return Boolean(resolvedPath) && layers.some((layer) =>
-    resolvedPath.includes(`${SOURCE_ROOT}${layer}/`));
+    targetsAuditLayer(resolvedPath, layer));
 }
 
 function adapterFamily(filePath) {
+  const destination = destinationServerPath(filePath);
+  if (destination) return destination.layer === 'adapters' ? `${destination.tree}/${destination.owner}` : null;
   const physicalFamily = filePath?.match(/\/1_adapters\/([^/]+)/)?.[1] ?? null;
   // Telegram transport, webhook and messaging gateway files are one external
   // integration family retained in two historical directories.
@@ -69,7 +73,7 @@ function adapterFamily(filePath) {
 }
 
 // exempt: composition root (5_composition) — the one sanctioned cross-layer zone
-const isCompositionRoot = (f) => f.includes('5_composition/');
+const isCompositionRoot = (f) => matchesAuditLayer(f, '5_composition/');
 const isCompositionSource = (f) => isCompositionRoot(f) || /(?:^|\/)backend\/src\/app\.mjs$/.test(f);
 const isTest = (f) => /(^|\/)(__tests__|test|tests|fixtures)(\/|$)/.test(f) ||
   /\.(test|spec)\.(mjs|js|cjs)$/.test(f);
@@ -97,7 +101,7 @@ export const RULES = [
   { rule: 'adapters-no-rendering', layer: '1_adapters/', bad: (s, p) => /^#rendering\//.test(s) || targetsLayer(p, '1_rendering') },
   { rule: 'adapters-no-app-internals', layer: '1_adapters/', bad: (s, p) => {
     const targetsApplication = /^#apps\//.test(s) || targetsLayer(p, '3_applications');
-    const targetsPort = /^#apps\/.*\/ports\//.test(s) || p?.includes('/3_applications/') && p.includes('/ports/');
+    const targetsPort = /^#apps\/.*\/ports\//.test(s) || p && matchesAuditLayer(p, '3_applications/') && p.includes('/ports/');
     return targetsApplication && !targetsPort;
   } },
   { rule: 'adapters-no-cross-adapter', layer: '1_adapters/', bad: (s, p, source) => {
@@ -221,9 +225,9 @@ export function scanContent(filePath, content) {
   const lines = content.split('\n');
   for (const r of CONTENT_RULES) {
     const layers = Array.isArray(r.layer) ? r.layer : [r.layer];
-    if (!layers.some((l) => filePath.includes(l))) continue;
+    if (!layers.some((l) => matchesAuditLayer(filePath, l))) continue;
     const excludes = Array.isArray(r.exclude) ? r.exclude : (r.exclude ? [r.exclude] : []);
-    if (excludes.some((e) => filePath.includes(e))) continue;
+    if (excludes.some((e) => matchesAuditLayer(filePath, e))) continue;
     lines.forEach((line, i) => {
       if (r.re.test(line)) out.push({ rule: r.rule, file: filePath, line: i + 1, spec: line.trim() });
     });
@@ -235,7 +239,7 @@ export function scanViolations(filePath, content) {
   const out = [];
   const lines = content.split('\n');
   for (const r of RULES) {
-    if (!filePath.includes(r.layer)) continue;
+    if (!matchesAuditLayer(filePath, r.layer)) continue;
     if (r.exempt?.(filePath)) continue;
     lines.forEach((line, i) => {
       const m = line.match(IMPORT_RE);
@@ -275,7 +279,7 @@ export function scanAstViolations(filePath, content) {
     },
     AssignmentPattern(path) {
       const value = path.node.right;
-      if (filePath.includes('2_domains/') && value?.type === 'MemberExpression' && !value.computed &&
+      if (matchesAuditLayer(filePath, '2_domains/') && value?.type === 'MemberExpression' && !value.computed &&
           value.object?.type === 'Identifier' && value.object.name === 'Math' &&
           value.property?.type === 'Identifier' && value.property.name === 'random' &&
           !path.scope.getBinding('Math')) {
@@ -292,7 +296,7 @@ export function scanAstViolations(filePath, content) {
         && callee.property.name === 'require';
       if (isImport || isRequire || isModuleRequire) add(path.node, staticModuleSpecifier(args[0]));
 
-      if (filePath.includes('2_domains/')) {
+      if (matchesAuditLayer(filePath, '2_domains/')) {
         if (callee.type === 'MemberExpression' && !callee.computed &&
             callee.object.type === 'Identifier' && callee.object.name === 'Date' &&
             callee.property.type === 'Identifier' && callee.property.name === 'now' &&
@@ -315,11 +319,11 @@ export function scanAstViolations(filePath, content) {
         }
       }
 
-      if (filePath.includes('3_applications/') && callee.type === 'Identifier' &&
+      if (matchesAuditLayer(filePath, '3_applications/') && callee.type === 'Identifier' &&
           callee.name === 'fetch' && !path.scope.getBinding('fetch')) {
         out.push({ rule: 'apps-no-global-fetch', file: filePath, line: path.node.loc?.start?.line ?? 1, spec: 'global fetch()' });
       }
-      if (filePath.includes('4_api/') && callee.type === 'Identifier' &&
+      if (matchesAuditLayer(filePath, '4_api/') && callee.type === 'Identifier' &&
           callee.name === 'fetch' && !path.scope.getBinding('fetch')) {
         out.push({ rule: 'api-no-global-fetch', file: filePath, line: path.node.loc?.start?.line ?? 1, spec: 'global fetch()' });
       }
@@ -327,14 +331,14 @@ export function scanAstViolations(filePath, content) {
           callee.name === 'fetch' && !path.scope.getBinding('fetch')) {
         out.push({ rule: 'composition-no-global-fetch', file: filePath, line: path.node.loc?.start?.line ?? 1, spec: 'global fetch()' });
       }
-      if (filePath.includes('3_applications/') && callee.type === 'Identifier' &&
+      if (matchesAuditLayer(filePath, '3_applications/') && callee.type === 'Identifier' &&
           /^(setTimeout|clearTimeout|setInterval|clearInterval|setImmediate|clearImmediate)$/.test(callee.name) &&
           !path.scope.getBinding(callee.name)) {
         out.push({ rule: 'apps-no-global-timers', file: filePath, line: path.node.loc?.start?.line ?? 1, spec: `${callee.name}()` });
       }
     },
     NewExpression(path) {
-      if (filePath.includes('2_domains/') && path.node.callee.type === 'Identifier' &&
+      if (matchesAuditLayer(filePath, '2_domains/') && path.node.callee.type === 'Identifier' &&
           path.node.callee.name === 'Date' && path.node.arguments.length === 0 &&
           !path.scope.getBinding('Date')) {
         out.push({ rule: 'domains-no-ambient-clock', file: filePath, line: path.node.loc?.start?.line ?? 1, spec: 'new Date()' });
@@ -343,37 +347,37 @@ export function scanAstViolations(filePath, content) {
     MemberExpression(path) {
       if (path.node.object.type !== 'Identifier' || path.node.object.name !== 'process' ||
           path.scope.getBinding('process')) return;
-      const rule = filePath.includes('3_applications/')
+      const rule = matchesAuditLayer(filePath, '3_applications/')
         ? 'apps-no-global-process'
-        : filePath.includes('4_api/') ? 'api-no-global-process' : null;
+        : matchesAuditLayer(filePath, '4_api/') ? 'api-no-global-process' : null;
       if (rule) out.push({ rule, file: filePath, line: path.node.loc?.start?.line ?? 1, spec: 'global process' });
     },
     ReferencedIdentifier(path) {
-      if (filePath.includes('3_applications/') && path.node.name === 'eventBus') {
+      if (matchesAuditLayer(filePath, '3_applications/') && path.node.name === 'eventBus') {
         out.push({ rule: 'apps-no-generic-eventbus', file: filePath, line: path.node.loc?.start?.line ?? 1, spec: 'generic eventBus dependency' });
       }
-      if (filePath.includes('3_applications/') && path.node.name === 'configService') {
+      if (matchesAuditLayer(filePath, '3_applications/') && path.node.name === 'configService') {
         out.push({ rule: 'apps-no-config-service-access', file: filePath, line: path.node.loc?.start?.line ?? 1, spec: 'raw configService dependency' });
       }
       if (path.node.name !== 'fetch' || path.scope.getBinding('fetch')) return;
       if (path.parentPath.isCallExpression() && path.parentPath.node.callee === path.node) return;
-      const rule = filePath.includes('3_applications/')
+      const rule = matchesAuditLayer(filePath, '3_applications/')
         ? 'apps-no-global-fetch'
-        : filePath.includes('4_api/') ? 'api-no-global-fetch'
+        : matchesAuditLayer(filePath, '4_api/') ? 'api-no-global-fetch'
           : isCompositionSource(filePath) ? 'composition-no-global-fetch' : null;
       if (rule) out.push({ rule, file: filePath, line: path.node.loc?.start?.line ?? 1, spec: 'global fetch reference' });
     },
   });
 
   for (const r of RULES) {
-    if (!filePath.includes(r.layer) || r.exempt?.(filePath)) continue;
+    if (!matchesAuditLayer(filePath, r.layer) || r.exempt?.(filePath)) continue;
     for (const ref of references) {
       if (r.bad(ref.specifier, ref.resolved, filePath)) {
         out.push({ rule: r.rule, file: filePath, line: ref.line, spec: ref.specifier });
       }
     }
   }
-  if (filePath.includes('2_domains/') &&
+  if (matchesAuditLayer(filePath, '2_domains/') &&
       (filePath.includes('/ports/') || /\/I[A-Z][^/]*\.mjs$/.test(filePath))) {
     out.push({ rule: 'domains-no-application-ports', file: filePath, line: 1, spec: 'application-facing port declared in domain layer' });
   }
@@ -417,7 +421,14 @@ export function scanDomainHierarchyViolations(filePath, content) {
 }
 
 const PORT_PATH_RE = /\/3_applications\/.*\/ports\/[^/]+\.mjs$/;
-const ANY_PORT_PATH_RE = /\/ports\/[^/]+\.mjs$/;
+const ANY_PORT_PATH_RE = /\/ports\/[^/]+\.(?:mjs|js|cjs)$/;
+const isApplicationPort = (file) => PORT_PATH_RE.test(file) ||
+  Boolean(destinationServerPath(file)?.layer === 'application' && ANY_PORT_PATH_RE.test(file));
+const isIndexBarrel = (file, portsOnly = false) => {
+  if (file.endsWith(portsOnly ? '/ports/index.mjs' : '/index.mjs')) return true;
+  return Boolean(destinationServerPath(file) &&
+    (portsOnly ? /\/ports\/index\.(?:js|cjs)$/ : /\/index\.(?:js|cjs)$/).test(file));
+};
 
 function projectSpecifier(filePath, specifier) {
   const aliases = {
@@ -453,7 +464,7 @@ function portModuleMetadata(filePath, content) {
       specifier,
       importedNames,
     });
-    if (filePath.includes('/1_adapters/') && bindings.length) {
+    if (matchesAuditLayer(filePath, '1_adapters/') && bindings.length) {
       adapterPortBindings.push({
         target: projectSpecifier(filePath, specifier),
         line: node.loc?.start?.line ?? 1,
@@ -523,19 +534,19 @@ export function analyzePortGovernance(modules) {
     .map(({ file, content }) => portModuleMetadata(file, content));
   const portFiles = new Set(metadata
     .map(({ filePath }) => filePath)
-    .filter((filePath) => PORT_PATH_RE.test(filePath) && !filePath.endsWith('/ports/index.mjs')));
+    .filter((filePath) => isApplicationPort(filePath) && !isIndexBarrel(filePath, true)));
   const incoming = new Map([...portFiles].map((filePath) => [filePath, []]));
   const findings = [];
 
   for (const module of metadata) {
     if (ANY_PORT_PATH_RE.test(module.filePath) &&
-        !module.filePath.includes('/3_applications/') &&
-        !module.filePath.endsWith('/ports/index.mjs')) {
+        !matchesAuditLayer(module.filePath, '3_applications/') &&
+        !isIndexBarrel(module.filePath, true)) {
       findings.push({
         rule: 'ports-outside-applications',
         file: module.filePath,
         line: 1,
-        spec: 'D3 requires application-facing ports under 3_applications/*/ports/',
+        spec: 'D3 requires application-facing ports in the application layer ports directory',
       });
     }
   }
@@ -547,7 +558,7 @@ export function analyzePortGovernance(modules) {
     }
     for (const imported of module.adapterPortBindings) {
       if (!portFiles.has(imported.target)) continue;
-      if (module.filePath.endsWith('/index.mjs')) continue;
+      if (isIndexBarrel(module.filePath)) continue;
       const portModule = metadata.find(({ filePath }) => filePath === imported.target);
       const classBindings = imported.bindings.filter(({ imported: importedName }) =>
         /^I[A-Z]/.test(importedName) && portModule?.exportedClasses.has(importedName));
@@ -574,14 +585,14 @@ export function analyzePortGovernance(modules) {
   }
 
   for (const [portFile, importers] of incoming) {
-    const liveImporters = importers.filter(({ filePath }) => !filePath.endsWith('/index.mjs'));
-    const barrels = metadata.filter((module) => module.filePath.endsWith('/index.mjs') &&
+    const liveImporters = importers.filter(({ filePath }) => !isIndexBarrel(filePath));
+    const barrels = metadata.filter((module) => isIndexBarrel(module.filePath) &&
       module.reexports.some((reexport) => reexport.target === portFile));
     for (const barrel of barrels) {
       const exportRule = barrel.reexports.find((reexport) => reexport.target === portFile);
       const exportedNames = new Set(exportRule?.names.map(({ exported }) => exported).filter(Boolean));
       for (const consumer of metadata) {
-        if (consumer.filePath.endsWith('/index.mjs')) continue;
+        if (isIndexBarrel(consumer.filePath)) continue;
         for (const reference of consumer.references.filter(({ target }) => target === barrel.filePath)) {
           if (exportRule?.all || reference.importedNames.includes('*') ||
               reference.importedNames.some((name) => exportedNames.has(name))) {
@@ -603,24 +614,32 @@ export function analyzePortGovernance(modules) {
 }
 
 function walk(dir, acc = []) {
+  if (!existsSync(dir)) return acc;
   for (const e of readdirSync(dir)) {
     const p = join(dir, e);
     if (statSync(p).isDirectory()) walk(p, acc);
-    else if (p.endsWith('.mjs') && !isTest(p)) acc.push(p);
+    else if (isLayerSource(p)) acc.push(p);
   }
   return acc;
+}
+
+const SOURCE_ROOTS = ['backend/src', 'shared', ...DESTINATION_ROOTS];
+function isLayerSource(file) {
+  const destination = destinationServerPath(file);
+  return !isTest(file) && (destination ? /\.(mjs|js|cjs)$/.test(file) :
+    (file.startsWith('backend/src/') || file.startsWith('shared/') || file.startsWith('cli/')) && file.endsWith('.mjs'));
 }
 
 const isMain = process.argv[1] === fileURLToPath(import.meta.url);
 if (isMain) {
   const args = process.argv.slice(2);
   const staged = args.includes('--staged');
-  const indexFiles = staged ? listIndexFiles(['backend/src', 'shared', 'cli', 'scripts/audit-baseline.json']) : [];
-  // backend/src plus the trees that also address storage. Every other rule is
-  // scoped by its own `layer` filter, so only no-storage-paths sees these.
+  const indexFiles = staged ? listIndexFiles([...SOURCE_ROOTS, 'cli', 'scripts/audit-baseline.json']) : [];
+  // Destination server layers use the same rule selection as numbered backend
+  // layers. Shared libraries retain their existing storage-path rule scope.
   const files = staged
-    ? indexFiles.filter((file) => (file.startsWith('backend/src/') || file.startsWith('shared/')) && file.endsWith('.mjs') && !isTest(file))
-    : ['backend/src', 'shared'].flatMap((d) => walk(d));
+    ? indexFiles.filter((file) => !file.startsWith('cli/') && isLayerSource(file))
+    : SOURCE_ROOTS.flatMap((d) => walk(d));
   const portGraphFiles = [...files, ...(staged
     ? indexFiles.filter((file) => file.startsWith('cli/') && file.endsWith('.mjs') && !isTest(file))
     : (existsSync('cli') ? walk('cli') : []))];
@@ -662,7 +681,7 @@ if (isMain) {
   if (args.includes('--application-infrastructure-report')) {
     const violations = [...all, ...allContent]
       .filter((violation) => APPLICATION_INFRASTRUCTURE_RULES.includes(violation.rule))
-      .filter((violation) => violation.rule !== 'no-storage-paths' || violation.file.includes('3_applications/'));
+      .filter((violation) => violation.rule !== 'no-storage-paths' || matchesAuditLayer(violation.file, '3_applications/'));
     for (const violation of violations) {
       console.log(`${violation.rule}  ${violation.file}:${violation.line}  ${violation.spec}`);
     }

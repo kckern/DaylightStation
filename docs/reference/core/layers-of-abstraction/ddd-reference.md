@@ -68,6 +68,37 @@ Enforced by `npm run audit:layers` (`adapters-no-direct-fs`, `apps-no-fs`,
 `composition-no-fileio`, `composition-no-direct-runtime-io`) and by a
 pre-commit gate that rejects the import outright.
 
+Both static gates also traverse `modules/<owner>/server/` and
+`capabilities/<owner>/server/`, applying the same layer rules to `domain`,
+`application`, `adapters`, `api`, `rendering`, and `composition`. The staged
+commands read Git index bytes. Destination adapters and composition have no
+direct-filesystem exemption; only the existing system root is allowed.
+The filesystem gate also checks owner server entries such as `public.mjs`.
+Legacy waivers tied to physical paths (including API `utils/internalError` and
+admin storage paths) are not automatically granted at new owner paths. This
+stricter destination behavior is intentional pending explicit review of each
+exemption migration.
+Public entry graphs, browser tooling and build inclusion require separate
+certification before relocating product source.
+The Vitest regression gate also inventories `modules/` and `capabilities/`.
+`node scripts/gate-vitest.mjs --list` emits a sorted JSON array using the gate's
+actual ownership policy without launching tests or changing reports/baselines;
+`--list` takes precedence over `--update`. This inventory does not certify
+execution, resolver behavior, or build inclusion.
+The SCSS gate discovers imported stylesheet entries in `frontend/src` and
+owner `browser/` directories under `modules/` and `capabilities/`. It compiles
+entries once with their Sass partials, without evaluating JavaScript; server
+sources and symlinks are excluded. Existing cache exclusions remain; vendor
+exclusion applies only to destination browsers, preserving legacy frontend
+discovery. Missing roots
+are allowed; other directory-read failures are surfaced.
+The static ESM link gate also checks owner `server/` files in both destination
+roots, including public entries and `.mjs`/`.js`/`.cjs` files. Working-tree and
+staged modes retain root versus backend package-import alias scope; staged
+checks read indexed source and manifests. Destination browser, vendor/cache,
+and symlink entries are excluded. This checks existing local link contracts
+without evaluating source; native package/build certification remains separate.
+
 Using the gateway is necessary but not sufficient — `3_applications`, `4_api`
 and `5_composition` may not import FileIO *at all*. They must not touch storage
 even through it; a named adapter owns that mechanic and is injected. In

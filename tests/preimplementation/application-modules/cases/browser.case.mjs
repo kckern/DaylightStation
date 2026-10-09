@@ -2,7 +2,7 @@
 import { test, afterEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { emit, subscriptions } from '../drivers/browser-ports.mjs';
+import { emit, subscriptions, takeWarnings } from '../drivers/browser-ports.mjs';
 import { loadBrowserImplementation } from '../drivers/browser-target.mjs';
 const dom = new JSDOM('<!doctype html><html><body></body></html>', {
   url: 'https://audit.invalid/',
@@ -148,9 +148,10 @@ test('CASE-WIRE-PIANO-NOTES original hook preserves note dialect speaker hystere
   const view=render(React.createElement(Bridge));t.after(()=>view.unmount());assert.equal(sockets.length,1);const socket=sockets[0];
   assert.equal(socket.url,'ws://localhost:8770');assert.equal(state.sendSysex([240,247]),false);
   act(()=>{socket.readyState=1;socket.onopen();});assert.equal(state.link,'connected');assert.equal(state.unavailable,false);
-  act(()=>{socket.message({type:'note.on',note:60});socket.message({type:'note.off',note:60,velocity:99});
+  act(()=>{socket.message({type:'note.on',note:60,t:100});socket.message({type:'note.off',note:60,velocity:99,t:110});
     socket.message({topic:'midi',type:'note',data:{event:'note_on',note:61,velocity:90}});socket.onmessage({data:'invalid JSON'});});
-  assert.deepEqual(notes,[['note_on',60,0],['note_off',60,0]]);
+  // Current hook preserves msg.t as its fourth callback argument.
+  assert.deepEqual(notes,[['note_on',60,0,100],['note_off',60,0,110]]);
   act(()=>{socket.message({type:'status',speakerOk:false});socket.message({type:'status',speakerOk:false});});assert.equal(state.speakerConnected,true);
   act(()=>socket.message({type:'status',speakerOk:false}));assert.equal(state.speakerConnected,false);
   act(()=>socket.message({type:'status',speakerOk:true}));assert.equal(state.speakerConnected,true);
@@ -183,7 +184,7 @@ test('CASE-WIRE-PORTAL-HID-ACTION real dispatcher preserves focus navigation and
   const textarea=box.querySelector('textarea');textarea.focus();textarea.value='ab';textarea.setSelectionRange(1,1);
   dispatchPortalHidMessage({...msg,key:'Enter',code:'Enter'});assert.equal(textarea.value,'a\nb');
 });
-test('CASE-WIRE-PORTAL-VOLUME original hook steps on both actions regardless of panel flag and cleans up its socket',t=>{
+test('CASE-WIRE-PORTAL-VOLUME original hook steps only on key-down regardless of panel flag and cleans up its socket',t=>{
   const oldGlobal=Object.getOwnPropertyDescriptor(globalThis,'WebSocket'),oldWindow=Object.getOwnPropertyDescriptor(window,'WebSocket');
   const sockets=[],steps=[];
   class FakeSocket {constructor(url){this.url=url;this.closed=false;sockets.push(this);}close(){this.closed=true;}sendMessage(value){this.onmessage?.({data:JSON.stringify(value)});}}
@@ -198,9 +199,10 @@ test('CASE-WIRE-PORTAL-VOLUME original hook steps on both actions regardless of 
   socket.sendMessage({type:'key',key:'KEYCODE_VOLUME_UP',action:'down',interactive:false});
   socket.sendMessage({type:'key',key:'KEYCODE_VOLUME_UP',action:'up',interactive:false});
   socket.sendMessage({type:'key',key:'KEYCODE_MUTE',action:'down',interactive:true});
-  assert.deepEqual(steps,[0.1,0.1]);
+  assert.deepEqual(steps,[0.1]);
   view.rerender(tree(0.2));assert.equal(sockets.length,1);
-  socket.sendMessage({type:'key',key:'KEYCODE_VOLUME_DOWN',action:'up',interactive:true});assert.deepEqual(steps,[0.1,0.1,-0.2]);
+  socket.sendMessage({type:'key',key:'KEYCODE_VOLUME_DOWN',action:'up',interactive:true});assert.deepEqual(steps,[0.1]);
+  socket.sendMessage({type:'key',key:'KEYCODE_VOLUME_DOWN',action:'down',interactive:true});assert.deepEqual(steps,[0.1,-0.2]);
   view.unmount();assert.equal(socket.closed,true);assert.equal(socket.onmessage,null);assert.equal(socket.onclose,null);
 });
 test('CASE-GR-UI-BOOTSTRAP real kiosk loads the stable URL and flattened selections', async () => {
@@ -395,14 +397,17 @@ test('CASE-GR-APP-PARAMS-EDGE household resolver preserves duplicate order fallb
   assert.equal(calls.every(c=>c.path==='/api/v1/gratitude/bootstrap'&&c.method==='GET'&&c.body===null),true);
 });
 test('CASE-GR-FAMILY-ERROR rejected household bootstrap shows existing error surface without retrying or substituting members',async()=>{
-  responseMode='error';const recorded=[],original=console.error;console.error=(...args)=>recorded.push(args);
+  responseMode='error';takeWarnings();
   try{
     const view=render(React.createElement(FamilySelector));
     await waitFor(()=>assert.ok(view.container.querySelector('.family-selector-error')));
     assert.ok(view.container.textContent.includes('Failed to load household members.'));assert.equal(calls.length,1);
     assert.equal(calls[0].path,'/api/v1/gratitude/bootstrap');assert.equal(view.container.querySelector('.roulette-wheel'),null);
-    assert.equal(recorded.some(c=>c[0]==='FamilySelector: Failed to load members'),true);
-  }finally{console.error=original;}
+    assert.deepEqual(takeWarnings(),[
+      ['api.response.error',{path:'api/v1/gratitude/bootstrap',status:503,statusText:'Synthetic failure'}],
+      ['family-selector.load-failed',{error:'HTTP 503: Synthetic failure - Synthetic failure'}]
+    ]);
+  }finally{takeWarnings();}
 });
 test('CASE-GR-UI-UNDO server-confirmed selection ID is used to remove and return the option',async()=>{
   const view=await mount(),focus=view.container.querySelector('[tabindex="0"]');

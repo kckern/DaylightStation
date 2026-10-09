@@ -14,7 +14,7 @@ import { nowTs24 } from '#system/utils/index.mjs';
 export class AssignItemToUser {
   #messagingGateway;
   #conversationStateStore;
-  #gratitudeService;
+  #addSelections;
   #householdService;
   #websocketBroadcast;
   #logger;
@@ -23,7 +23,7 @@ export class AssignItemToUser {
    * @param {Object} config - Dependencies
    * @param {Object} config.messagingGateway - Messaging gateway for updating messages
    * @param {Object} config.conversationStateStore - State store for conversation state
-   * @param {Object} config.gratitudeService - Service for saving gratitude items
+   * @param {Function} config.addSelections - Gratitude batch-selection command
    * @param {Object} config.householdService - Service for household member lookup
    * @param {Function} [config.websocketBroadcast] - WebSocket broadcast function
    * @param {Object} [config.logger] - Logger instance
@@ -31,12 +31,12 @@ export class AssignItemToUser {
   constructor(config) {
     if (!config.messagingGateway) throw new Error('messagingGateway is required');
     if (!config.conversationStateStore) throw new Error('conversationStateStore is required');
-    if (!config.gratitudeService) throw new Error('gratitudeService is required');
+    if (typeof config.addSelections !== 'function') throw new Error('addSelections is required');
     if (!config.householdService) throw new Error('householdService is required');
 
     this.#messagingGateway = config.messagingGateway;
     this.#conversationStateStore = config.conversationStateStore;
-    this.#gratitudeService = config.gratitudeService;
+    this.#addSelections = config.addSelections;
     this.#householdService = config.householdService;
     this.#websocketBroadcast = config.websocketBroadcast;
     this.#logger = config.logger || console;
@@ -106,7 +106,7 @@ export class AssignItemToUser {
           ? new Date().toLocaleString('en-US', { timeZone: timezone })
           : nowTs24();
 
-        await this.#gratitudeService.addSelections(
+        await this.#addSelections(
           householdId,
           category || 'gratitude',
           username,

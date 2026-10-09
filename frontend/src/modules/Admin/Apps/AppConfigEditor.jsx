@@ -5,7 +5,7 @@ import { IconAlertCircle } from '@tabler/icons-react';
 import ConfigFormWrapper from '../shared/ConfigFormWrapper.jsx';
 import YamlEditor from '../shared/YamlEditor.jsx';
 import FitnessConfig from './FitnessConfig.jsx';
-import GratitudeConfig from './GratitudeConfig.jsx';
+import GratitudeConfig from '../../../../../modules/gratitude/browser/admin.mjs';
 import ShoppingConfig from './ShoppingConfig.jsx';
 import FinanceConfig from './FinanceConfig.jsx';
 import { capitalize } from '../utils/formatters.js';

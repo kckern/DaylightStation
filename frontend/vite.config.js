@@ -1,6 +1,9 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import { resolvePorts } from './vite.ports.mjs'
 
 // Read app port from system config (SSOT)
@@ -102,7 +105,12 @@ export default defineConfig(({ mode }) => {
       }
     },
     resolve: {
+      dedupe: ['react','react-dom'],
       alias: {
+        react: path.resolve(__dirname,'node_modules/react'),
+        'react-dom': path.resolve(__dirname,'node_modules/react-dom'),
+        '@mantine': path.resolve(__dirname,'node_modules/@mantine'),
+        'date-fns': path.dirname(createRequire(import.meta.url).resolve('date-fns/package.json')),
         '@': path.resolve(__dirname, 'src'),
         '@gaming': path.resolve(__dirname, 'src/modules/Gaming'),
         '@gaming-ui': path.resolve(__dirname, 'src/modules/Gaming/platform/ui'),

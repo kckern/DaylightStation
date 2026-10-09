@@ -26,6 +26,8 @@ const { default: react } = await import(path.join(frontendNodeModules, '@vitejs/
 const RUNNING_IN_WORKTREE = /[\\/]\.(claude[\\/]|claire[\\/])?worktrees[\\/]/.test(__dirname);
 
 export default {
+  // Numeric loopback avoids DNS during confined middleware-only test startup.
+  server: { host: '127.0.0.1' },
   // React plugin enables automatic JSX runtime so test files don't need `import React`.
   plugins: [react()],
   resolve: {

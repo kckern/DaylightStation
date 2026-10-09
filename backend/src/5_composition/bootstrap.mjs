@@ -230,11 +230,7 @@ import { CostIngestionService, CostBudgetService, CostReportingService } from '#
 import { YamlCostDatastore } from '#adapters/cost/YamlCostDatastore.mjs';
 import createCostRouter from '#api/v1/routers/cost.mjs';
 
-// Gratitude domain imports
-import { GratitudeService } from '#apps/gratitude/services/GratitudeService.mjs';
-import { YamlGratitudeDatastore } from '#adapters/persistence/yaml/YamlGratitudeDatastore.mjs';
-import { GratitudeHouseholdService } from '#apps/gratitude/services/GratitudeHouseholdService.mjs';
-import { createGratitudeRouter } from '#api/v1/routers/gratitude.mjs';
+
 
 // Nutrition domain imports (YamlFoodLogDatastore still used by createNutribotServices)
 import { YamlFoodLogDatastore } from '#adapters/persistence/yaml/YamlFoodLogDatastore.mjs';
@@ -1985,36 +1981,6 @@ export function createHardwareAdapters(config) {
 }
 
 // =============================================================================
-// Gratitude Domain Bootstrap
-// =============================================================================
-
-/**
- * Create gratitude domain services
- * @param {Object} config
- * @param {Object} [config.logger] - Logger instance
- * @returns {Object} Gratitude services
- */
-export function createGratitudeServices(config) {
-  const { logger = console } = config;
-
-  // Gratitude store (YAML persistence)
-  const gratitudeStore = new YamlGratitudeDatastore({
-    dataService,
-    logger
-  });
-
-  // Gratitude service
-  const gratitudeService = new GratitudeService({
-    store: gratitudeStore
-  });
-
-  return {
-    gratitudeStore,
-    gratitudeService
-  };
-}
-
-// =============================================================================
 // Messaging Domain Bootstrap
 // =============================================================================
 
@@ -2190,7 +2156,7 @@ export function createJournalistServices(config) {
  * @param {Object} config
  * @param {Object} config.telegramAdapter - TelegramAdapter for messaging
  * @param {Object} config.aiGateway - AI gateway for completions
- * @param {Object} config.gratitudeService - GratitudeService instance
+ * @param {Function} config.addSelections - Gratitude batch-selection command
  * @param {Object} config.configService - ConfigService for household lookup
  * @param {Object} [config.conversationStateStore] - State store for conversation flow
  * @param {Function} [config.websocketBroadcast] - WebSocket broadcast function
@@ -2201,7 +2167,7 @@ export function createHomebotServices(config) {
   const {
     telegramAdapter,
     aiGateway,
-    gratitudeService,
+    addSelections,
     configService,
     conversationStateStore,
     websocketBroadcast,
@@ -2219,7 +2185,7 @@ export function createHomebotServices(config) {
     messagingGateway: telegramAdapter,
     // Gratitude extraction is homebot's only AI consumer.
     aiGateway: scopedGateway(aiGateway, { feature: 'gratitude' }),
-    gratitudeService,
+    addSelections,
     conversationStateStore,
     householdRepository,
     websocketBroadcast,

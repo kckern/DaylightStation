@@ -8,6 +8,7 @@ const toolRoot = process.env.PRE_TOOLCHAIN_ROOT;
 const browser = process.env.PRE_PACK === 'browser';
 const frontendRequire = browser ? createRequire(path.join(toolRoot, 'frontend/package.json')) : null;
 const browserPorts = pathToFileURL(path.join(root, 'tests/preimplementation/application-modules/drivers/browser-ports.mjs')).href;
+const browserSource=local=>local?.startsWith(root+'/frontend/')||local?.startsWith(root+'/modules/gratitude/browser/')||local?.startsWith(root+'/capabilities/household-identity/browser/');
 const fakeBrowserSources = new Set(['frontend/src/services/WebSocketService.js', 'frontend/src/lib/logging/Logger.js', 'frontend/src/lib/logging/singleton.js']);
 if (!toolRoot || !process.env.PRE_RUN_ROOT) throw new Error('Explicit toolchain and isolated run root required');
 const forbidden = new Set(['backend/index.js', 'backend/src/app.mjs', 'backend/src/5_composition/bootstrap.mjs']);
@@ -76,8 +77,9 @@ export async function resolve(specifier, context, nextResolve) {
   if (builtinModules.includes(specifier) || specifier.startsWith('node:')) return nextResolve(specifier, context);
   const parent = context.parentURL?.startsWith('file:') ? fileURLToPath(context.parentURL) : '';
   if (parent.startsWith(root + '/')) {
-    const scope = parent.startsWith(root + '/backend/') ? 'backend' : parent.startsWith(root + '/frontend/') || browser && (specifier.startsWith('react') || specifier.startsWith('@testing-library/') || specifier.startsWith('@mantine/')) ? 'frontend' : '';
+    const scope = parent.startsWith(root + '/backend/') ? 'backend' : parent.startsWith(root + '/frontend/') || parent.startsWith(root+'/modules/gratitude/browser/') || parent.startsWith(root+'/capabilities/household-identity/browser/') || browser && (specifier.startsWith('react') || specifier.startsWith('@testing-library/') || specifier.startsWith('@mantine/')) ? 'frontend' : '';
     const target = createRequire(path.join(toolRoot, scope, 'package.json')).resolve(specifier);
+    if(process.env.PRE_TARGET==='candidate' && parent===path.join(root,'backend/src/0_system/libraries/gratitudeRuntime.mjs')) process.stderr.write(JSON.stringify({canonicalLibrary:specifier,resolved:target})+'\n');
     return {
       url: pathToFileURL(target).href,
       shortCircuit: true
@@ -87,7 +89,7 @@ export async function resolve(specifier, context, nextResolve) {
 }
 export async function load(url, context, nextLoad) {
   const local = url.startsWith('file:') ? fileURLToPath(url) : null;
-  if (browser && local?.startsWith(root + '/frontend/') && /\.(scss|css|svg)$/.test(local)) {
+  if (browser && browserSource(local) && /\.(scss|css|svg)$/.test(local)) {
     if (!fs.existsSync(local)) throw new Error('MISSING_BROWSER_ASSET');
     return {
       format: 'module',
@@ -95,7 +97,7 @@ export async function load(url, context, nextLoad) {
       shortCircuit: true
     };
   }
-  const jsx = browser && local?.startsWith(root + '/frontend/') && local.endsWith('.jsx');
+  const jsx = browser && browserSource(local) && local.endsWith('.jsx');
   let result = jsx ? {
     format: 'module',
     source: fs.readFileSync(local, 'utf8'),
@@ -115,19 +117,12 @@ export async function load(url, context, nextLoad) {
     };
   }
   if (jsx) {
-    const ts = frontendRequire('typescript');
+    const esbuild = frontendRequire('esbuild');
     result = {
       ...result,
-      source: ts.transpileModule(result.source, {
-        fileName: local,
-        compilerOptions: {
-          target: ts.ScriptTarget.ES2022,
-          module: ts.ModuleKind.ESNext,
-          jsx: ts.JsxEmit.ReactJSX,
-          allowJs: true,
-          verbatimModuleSyntax: true
-        }
-      }).outputText
+      source: esbuild.transformSync(result.source, {
+        sourcefile: local, loader: 'jsx', format: 'esm', target: 'es2022', jsx: 'automatic'
+      }).code
     };
   }
   return result;

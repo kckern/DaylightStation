@@ -1,0 +1,440 @@
+/**
+ * YamlGratitudeDatastore - YAML-based gratitude persistence
+ *
+ * Implements IGratitudeDatastore port for gratitude/hopes data storage.
+ * Data stored at: household[-{hid}]/gratitude/
+ *   - options.{category}.yml
+ *   - selections.{category}.yml
+ *   - discarded.{category}.yml
+ *   - snapshots/{timestamp}_{id}.yml
+ *
+ * @module adapters/persistence/yaml
+ */
+
+import path from 'path';
+import { moment } from '#system/libraries/gratitudeRuntime.mjs';
+import {
+  ensureDir,
+  dirExists,
+  listYamlFiles,
+  loadYamlSafe,
+  saveYaml
+} from '#system/utils/FileIO.mjs';
+import { IGratitudeDatastore } from '../../application/ports/IGratitudeDatastore.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { GratitudeItem } from '../../domain/entities/GratitudeItem.mjs';
+import { Selection } from '../../domain/entities/Selection.mjs';
+
+export class YamlGratitudeDatastore extends IGratitudeDatastore {
+  #dataService;
+  #logger;
+
+  /**
+   * @param {Object} config
+   * @param {Object} config.dataService - DataService instance for YAML I/O
+   * @param {Object} [config.logger] - Logger instance
+   */
+  constructor(config) {
+    super();
+    if (!config.dataService) {
+      throw new InfrastructureError('YamlGratitudeDatastore requires dataService', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'dataService'
+      });
+    }
+    this.#dataService = config.dataService;
+    this.#logger = config.logger || console;
+  }
+
+  // ===========================================================================
+  // Private Helpers
+  // ===========================================================================
+
+  /**
+   * Read array from household shared path
+   * @private
+   */
+  #readArray(householdId, key) {
+    // Append .yml explicitly — keys like "options.gratitude" have a dot that
+    // confuses DataService's ensureExtension (treats ".gratitude" as an extension)
+    const data = this.#dataService.household.read(`gratitude/${key}.yml`, householdId);
+    return Array.isArray(data) ? data : [];
+  }
+
+  /**
+   * Write array to household common path
+   * @private
+   */
+  #writeArray(householdId, key, arr) {
+    const data = Array.isArray(arr) ? arr : [];
+    this.#dataService.household.write(`gratitude/${key}.yml`, data, householdId);
+  }
+
+  // ===========================================================================
+  // Hydration / Dehydration (the datastore owns the storage format)
+  // ===========================================================================
+
+  /**
+   * Storage -> Domain
+   * @private
+   * @param {Object} raw
+   * @returns {GratitudeItem}
+   */
+  #hydrateItem(raw) {
+    return new GratitudeItem({ id: raw.id, text: raw.text });
+  }
+
+  /**
+   * Domain -> Storage (works for entities and pre-shaped plain objects)
+   * @private
+   * @param {GratitudeItem|Object} item
+   * @returns {Object}
+   */
+  #dehydrateItem(item) {
+    return { id: item.id, text: item.text };
+  }
+
+  /**
+   * Storage -> Domain
+   * @private
+   * @param {Object} raw
+   * @returns {Selection}
+   */
+  #hydrateSelection(raw) {
+    return new Selection({
+      id: raw.id,
+      userId: raw.userId,
+      item: { id: raw.item?.id, text: raw.item?.text },
+      datetime: raw.datetime,
+      printed: raw.printed
+    });
+  }
+
+  /**
+   * Domain -> Storage (the ONLY place the on-disk selection shape is defined)
+   * @private
+   * @param {Selection} selection
+   * @returns {Object}
+   */
+  #dehydrateSelection(selection) {
+    return {
+      id: selection.id,
+      userId: selection.userId,
+      item: this.#dehydrateItem(selection.item),
+      datetime: selection.datetime,
+      printed: selection.printed
+    };
+  }
+
+  /**
+   * Get snapshot directory path
+   * @private
+   */
+  #getSnapshotDir(householdId) {
+    // resolvePath adds .yml extension, so we strip it for directory paths
+    const resolvedPath = this.#dataService.household.resolvePath('gratitude/snapshots', householdId);
+    return resolvedPath.replace(/\.yml$/, '');
+  }
+
+  /**
+   * Ensure snapshot directory exists
+   * @private
+   */
+  #ensureSnapshotDir(householdId) {
+    const dir = this.#getSnapshotDir(householdId);
+    if (dir) ensureDir(dir);
+    return dir;
+  }
+
+  // ===========================================================================
+  // Options (available items queue)
+  // ===========================================================================
+
+  /**
+   * Get options for a category
+   * @param {string} householdId
+   * @param {string} category - 'gratitude' or 'hopes'
+   * @returns {Promise<GratitudeItem[]>}
+   */
+  async getOptions(householdId, category) {
+    return this.#readArray(householdId, `options.${category}`).map(r => this.#hydrateItem(r));
+  }
+
+  /**
+   * Set items for a full storage key (e.g. 'options.gratitude', 'discarded.hopes')
+   * @param {string} householdId
+   * @param {string} key - Full storage key including the category suffix
+   * @param {GratitudeItem[]} items
+   * @returns {Promise<void>}
+   */
+  async setOptions(householdId, key, items) {
+    this.#writeArray(householdId, key, (items || []).map(i => this.#dehydrateItem(i)));
+  }
+
+  /**
+   * Add an option
+   * @param {string} householdId
+   * @param {string} category
+   * @param {GratitudeItem} item
+   * @returns {Promise<void>}
+   */
+  async addOption(householdId, category, item) {
+    const options = this.#readArray(householdId, `options.${category}`);
+    options.unshift(this.#dehydrateItem(item));
+    this.#writeArray(householdId, `options.${category}`, options);
+  }
+
+  /**
+   * Remove an option by ID
+   * @param {string} householdId
+   * @param {string} category
+   * @param {string} optionId
+   * @returns {Promise<boolean>}
+   */
+  async removeOption(householdId, category, optionId) {
+    const options = this.#readArray(householdId, `options.${category}`);
+    const newOptions = options.filter(o => o.id !== optionId);
+    if (newOptions.length !== options.length) {
+      this.#writeArray(householdId, `options.${category}`, newOptions);
+      return true;
+    }
+    return false;
+  }
+
+  // ===========================================================================
+  // Selections
+  // ===========================================================================
+
+  /**
+   * Get selections for a category
+   * @param {string} householdId
+   * @param {string} category
+   * @returns {Promise<Selection[]>}
+   */
+  async getSelections(householdId, category) {
+    return this.#readArray(householdId, `selections.${category}`).map(r => this.#hydrateSelection(r));
+  }
+
+  /**
+   * Add a selection
+   * @param {string} householdId
+   * @param {string} category
+   * @param {Selection} selection
+   * @returns {Promise<void>}
+   */
+  async addSelection(householdId, category, selection) {
+    const selections = this.#readArray(householdId, `selections.${category}`);
+    selections.unshift(this.#dehydrateSelection(selection));
+    this.#writeArray(householdId, `selections.${category}`, selections);
+  }
+
+  /**
+   * Remove a selection by ID
+   * @param {string} householdId
+   * @param {string} category
+   * @param {string} selectionId
+   * @returns {Promise<Selection|null>}
+   */
+  async removeSelection(householdId, category, selectionId) {
+    const selections = this.#readArray(householdId, `selections.${category}`);
+    const index = selections.findIndex(s => s.id === selectionId);
+    if (index === -1) return null;
+
+    const [removed] = selections.splice(index, 1);
+    this.#writeArray(householdId, `selections.${category}`, selections);
+    return this.#hydrateSelection(removed);
+  }
+
+  /**
+   * Mark selections as printed
+   * @param {string} householdId
+   * @param {string} category
+   * @param {string[]} selectionIds
+   * @param {string} timestamp
+   * @returns {Promise<void>}
+   */
+  async markAsPrinted(householdId, category, selectionIds, timestamp) {
+    const selections = this.#readArray(householdId, `selections.${category}`);
+    let modified = false;
+
+    for (const selection of selections) {
+      if (selectionIds.includes(selection.id)) {
+        if (!Array.isArray(selection.printed)) {
+          selection.printed = [];
+        }
+        selection.printed.push(timestamp);
+        modified = true;
+      }
+    }
+
+    if (modified) {
+      this.#writeArray(householdId, `selections.${category}`, selections);
+    }
+  }
+
+  // ===========================================================================
+  // Discarded
+  // ===========================================================================
+
+  /**
+   * Get discarded items for a category
+   * @param {string} householdId
+   * @param {string} category
+   * @returns {Promise<GratitudeItem[]>}
+   */
+  async getDiscarded(householdId, category) {
+    return this.#readArray(householdId, `discarded.${category}`).map(r => this.#hydrateItem(r));
+  }
+
+  /**
+   * Add to discarded
+   * @param {string} householdId
+   * @param {string} category
+   * @param {GratitudeItem} item
+   * @returns {Promise<void>}
+   */
+  async addDiscarded(householdId, category, item) {
+    const discarded = this.#readArray(householdId, `discarded.${category}`);
+    // Avoid duplicates
+    if (!discarded.some(d => d.id === item.id)) {
+      discarded.unshift(this.#dehydrateItem(item));
+      this.#writeArray(householdId, `discarded.${category}`, discarded);
+    }
+  }
+
+  // ===========================================================================
+  // Snapshots
+  // ===========================================================================
+
+  /**
+   * Save a snapshot
+   * @param {string} householdId
+   * @param {Object} snapshot
+   * @returns {Promise<string>} Filename
+   */
+  async saveSnapshot(householdId, snapshot) {
+    const snapshotDir = this.#ensureSnapshotDir(householdId);
+    if (!snapshotDir) {
+      throw new InfrastructureError('Failed to resolve snapshot directory', {
+        code: 'PERSISTENCE_ERROR'
+      });
+    }
+
+    const stamp = moment().format('YYYYMMDD_HHmmss');
+    const baseName = `${stamp}_${snapshot.id}`;
+    const basePath = path.join(snapshotDir, baseName);
+
+    saveYaml(basePath, snapshot);
+    return baseName;
+  }
+
+  /**
+   * List snapshots
+   * @param {string} householdId
+   * @returns {Promise<Array>}
+   */
+  async listSnapshots(householdId) {
+    const snapshotDir = this.#getSnapshotDir(householdId);
+    if (!snapshotDir || !dirExists(snapshotDir)) {
+      return [];
+    }
+
+    const baseNames = listYamlFiles(snapshotDir);
+
+    const snapshots = baseNames.map(baseName => {
+      try {
+        const data = loadYamlSafe(path.join(snapshotDir, baseName)) || {};
+        return {
+          file: baseName,
+          id: data.id || baseName.split('_').slice(1).join('_'),
+          createdAt: data.createdAt || null,
+          name: baseName
+        };
+      } catch {
+        return {
+          file: baseName,
+          id: null,
+          createdAt: null,
+          name: baseName
+        };
+      }
+    });
+
+    // Sort newest first by filename timestamp
+    return snapshots.sort((a, b) => (a.name < b.name ? 1 : -1));
+  }
+
+  /**
+   * Load a snapshot
+   * @param {string} householdId
+   * @param {string} [snapshotId] - If not provided, loads latest
+   * @returns {Promise<Object|null>}
+   */
+  async loadSnapshot(householdId, snapshotId) {
+    const snapshotDir = this.#getSnapshotDir(householdId);
+    if (!snapshotDir || !dirExists(snapshotDir)) {
+      return null;
+    }
+
+    const baseNames = listYamlFiles(snapshotDir);
+    if (baseNames.length === 0) return null;
+
+    let baseName = null;
+    if (snapshotId) {
+      baseName = baseNames.find(b => b.includes(snapshotId));
+    }
+    // Default to latest (sorted by filename timestamp desc)
+    if (!baseName) {
+      baseName = baseNames.sort().reverse()[0];
+    }
+
+    try {
+      const snapshot = loadYamlSafe(path.join(snapshotDir, baseName));
+      if (snapshot) {
+        snapshot.file = baseName;
+      }
+      return snapshot || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Restore from a snapshot
+   * @param {string} householdId
+   * @param {Object} snapshot
+   * @returns {Promise<void>}
+   */
+  async restoreSnapshot(householdId, snapshot) {
+    // Restore options
+    if (snapshot.options?.gratitude) {
+      this.#writeArray(householdId, 'options.gratitude', snapshot.options.gratitude);
+    }
+    if (snapshot.options?.hopes) {
+      this.#writeArray(householdId, 'options.hopes', snapshot.options.hopes);
+    }
+
+    // Restore selections
+    if (snapshot.selections?.gratitude) {
+      this.#writeArray(householdId, 'selections.gratitude', snapshot.selections.gratitude);
+    }
+    if (snapshot.selections?.hopes) {
+      this.#writeArray(householdId, 'selections.hopes', snapshot.selections.hopes);
+    }
+
+    // Restore discarded
+    if (snapshot.discarded?.gratitude) {
+      this.#writeArray(householdId, 'discarded.gratitude', snapshot.discarded.gratitude);
+    }
+    if (snapshot.discarded?.hopes) {
+      this.#writeArray(householdId, 'discarded.hopes', snapshot.discarded.hopes);
+    }
+
+    this.#logger.info?.('gratitude.snapshot.restored', {
+      householdId,
+      snapshotId: snapshot.id
+    });
+  }
+}
+
+export default YamlGratitudeDatastore;

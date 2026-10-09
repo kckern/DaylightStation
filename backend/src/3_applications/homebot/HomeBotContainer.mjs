@@ -12,7 +12,7 @@ import { CancelGratitudeInput } from './usecases/CancelGratitudeInput.mjs';
 export class HomeBotContainer {
   #messagingGateway;
   #aiGateway;
-  #gratitudeService;
+  #addSelections;
   #conversationStateStore;
   #householdRepository;
   #websocketBroadcast;
@@ -28,7 +28,7 @@ export class HomeBotContainer {
    * @param {Object} config
    * @param {Object} config.messagingGateway - Messaging gateway for sending messages
    * @param {Object} config.aiGateway - AI gateway for chat completions
-   * @param {Object} config.gratitudeService - GratitudeService instance
+   * @param {Function} config.addSelections - Narrow Gratitude selection command
    * @param {Object} config.conversationStateStore - IConversationStateStore implementation
    * @param {Object} config.householdRepository - IHouseholdRepository implementation
    * @param {Function} [config.websocketBroadcast] - WebSocket broadcast function
@@ -37,7 +37,7 @@ export class HomeBotContainer {
   constructor(config) {
     this.#messagingGateway = config.messagingGateway;
     this.#aiGateway = config.aiGateway;
-    this.#gratitudeService = config.gratitudeService;
+    this.#addSelections = config.addSelections;
     this.#conversationStateStore = config.conversationStateStore;
     this.#householdRepository = config.householdRepository;
     this.#websocketBroadcast = config.websocketBroadcast;
@@ -61,7 +61,7 @@ export class HomeBotContainer {
     if (!this.#assignItemToUser) {
       this.#assignItemToUser = new AssignItemToUser({
         messagingGateway: this.#messagingGateway,
-        gratitudeService: this.#gratitudeService,
+        addSelections: this.#addSelections,
         conversationStateStore: this.#conversationStateStore,
         householdService: this.#householdRepository,
         websocketBroadcast: this.#websocketBroadcast,

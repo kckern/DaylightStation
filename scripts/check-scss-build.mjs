@@ -76,20 +76,43 @@ const aliasImporter = {
   },
 };
 
-function* walk(dir) {
+function* walk(dir, destination = false) {
   let entries;
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return;
+  } catch (error) {
+    if (error.code === 'ENOENT') return;
+    throw error;
   }
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (SKIP_DIRS.has(entry.name)) continue;
-      yield* walk(full);
+      if (SKIP_DIRS.has(entry.name) || (destination && entry.name === 'vendor')) continue;
+      yield* walk(full, destination);
     } else if (entry.isFile() && /\.(jsx|js|mjs)$/.test(entry.name)) {
       yield full;
+    }
+  }
+}
+
+function isDirectory(dir) {
+  try {
+    return fs.lstatSync(dir).isDirectory();
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+function* sourceRoots() {
+  yield SRC;
+  for (const name of ['modules', 'capabilities']) {
+    const root = path.join(ROOT, name);
+    if (!isDirectory(root)) continue;
+    for (const owner of fs.readdirSync(root, { withFileTypes: true })) {
+      if (!owner.isDirectory() || SKIP_DIRS.has(owner.name) || owner.name === 'vendor') continue;
+      const browser = path.join(root, owner.name, 'browser');
+      if (isDirectory(browser)) yield browser;
     }
   }
 }
@@ -99,7 +122,7 @@ function* walk(dir) {
 const IMPORT_RE = /import\s+['"](\.[^'"]+\.scss)['"]/g;
 function findEntrypoints() {
   const entries = new Set();
-  for (const file of walk(SRC)) {
+  for (const file of [...sourceRoots()].flatMap((root) => [...walk(root, root !== SRC)])) {
     const source = fs.readFileSync(file, 'utf8');
     for (const match of source.matchAll(IMPORT_RE)) {
       entries.add(path.normalize(path.join(path.dirname(file), match[1])));

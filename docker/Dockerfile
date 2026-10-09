@@ -68,6 +68,8 @@ RUN npm ci --include=dev --legacy-peer-deps \
 COPY --chown=node:node shared/ ./shared/
 COPY --chown=node:node backend/ ./backend/
 COPY --chown=node:node frontend/ ./frontend/
+COPY --chown=node:node modules/ ./modules/
+COPY --chown=node:node capabilities/ ./capabilities/
 COPY --chown=node:node cli/ ./cli/
 COPY --chown=node:node package*.json ./
 

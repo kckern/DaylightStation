@@ -6,10 +6,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from '@babel/parser';
 import traverseModule from '@babel/traverse';
+import { DESTINATION_ROOTS, isDestinationServerFile } from './audit-server-layout.mjs';
 
 const traverse = typeof traverseModule === 'function' ? traverseModule : traverseModule.default;
 const FS_MODULES = new Set(['fs', 'fs/promises', 'node:fs', 'node:fs/promises']);
-const SOURCE_ROOTS = ['backend/src/', 'backend/config/'];
+const SOURCE_ROOTS = ['backend/src/', 'backend/config/', ...DESTINATION_ROOTS];
 const RUNTIME_ENTRYPOINTS = new Set(['backend/index.js']);
 const ALLOWED_RUNTIME_ROOTS = ['backend/src/0_system/'];
 
@@ -19,7 +20,8 @@ function isTestFile(file) {
 }
 
 function isScannedRuntimeFile(file) {
-  const isRuntimeSource = SOURCE_ROOTS.some((root) => file.startsWith(root)) ||
+  const isRuntimeSource = ['backend/src/', 'backend/config/'].some((root) => file.startsWith(root)) ||
+    isDestinationServerFile(file) ||
     RUNTIME_ENTRYPOINTS.has(file);
   return isRuntimeSource && /\.(mjs|js|cjs)$/.test(file) &&
     !isTestFile(file) && !ALLOWED_RUNTIME_ROOTS.some((root) => file.startsWith(root));

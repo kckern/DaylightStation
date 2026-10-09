@@ -2,7 +2,7 @@
 /**
  * GratitudeFeedAdapter
  *
- * Reads gratitude selections from DataService and normalizes to FeedItem shape.
+ * Reads raw gratitude selection quotes through its injected capability and normalizes to FeedItem shape.
  *
  * @module adapters/feed/sources/GratitudeFeedAdapter
  */
@@ -10,14 +10,14 @@
 import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 export class GratitudeFeedAdapter extends IFeedSourceAdapter {
-  #dataService;
+  #readSelectionQuotes;
   #userService;
   #logger;
 
-  constructor({ dataService, userService, logger = console }) {
+  constructor({ readSelectionQuotes, userService, logger = console }) {
     super();
-    if (!dataService) throw new Error('GratitudeFeedAdapter requires dataService');
-    this.#dataService = dataService;
+    if (typeof readSelectionQuotes !== 'function') throw new Error('GratitudeFeedAdapter requires readSelectionQuotes');
+    this.#readSelectionQuotes = readSelectionQuotes;
     this.#userService = userService;
     this.#logger = logger;
   }
@@ -28,7 +28,7 @@ export class GratitudeFeedAdapter extends IFeedSourceAdapter {
   async fetchItems(query, _username) {
     try {
       // Must include .yml explicitly — dotted filename confuses DataService.ensureExtension()
-      const data = this.#dataService.household.read('gratitude/selections.gratitude.yml');
+      const data = this.#readSelectionQuotes();
       if (!data || !Array.isArray(data)) return [];
 
       const limit = Math.min(query.limit || 3, 3);

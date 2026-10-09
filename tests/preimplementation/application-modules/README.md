@@ -1,5 +1,11 @@
 # Isolated module-migration preparation tests
 
+Linux x86_64 has a working unprivileged Landlock + seccomp alternative for the
+fixed Gratitude, browser and selected stored-shape baselines. See [Linux runner](tooling/landlock-README.md). It runs
+fresh denial controls before the existing case pack, without a server, container
+or household data. The retained [container preparation](dedicated-runner/README.md)
+is superseded for these baselines and still requires separate operator provisioning.
+
 New characterization and tooling experiments live here. Existing application
 source and existing tests remain unchanged. Never run the household controller,
 default live harness or default Playwright configuration from this directory.
@@ -50,7 +56,7 @@ node tests/preimplementation/application-modules/tooling/run-discovery-roots.mjs
 node tests/preimplementation/application-modules/tooling/audit-packet.mjs
 ```
 
-These execution wrappers require macOS `sandbox-exec` and may need tool approval
+The historical wrappers below require macOS `sandbox-exec` and may need tool approval
 to establish the explicit OS sandbox. Do not run their child commands directly
 or bypass the sandbox when setup fails. Run `probe-sandbox-capability.mjs` first
 when execution availability is unknown. A `host-denied` result means no case

@@ -5,7 +5,7 @@ import { fetchSession, sendRuleCommand } from '@gaming/platform/api/sessionClien
 const ws = vi.hoisted(() => ({ handler: null }));
 vi.mock('@/hooks/useWebSocket.js', () => ({ useWebSocketSubscription: (_topic, handler) => { ws.handler = handler; } }));
 vi.mock('@gaming/platform/api/sessionClient.js', () => ({ fetchSession: vi.fn(), sendRuleCommand: vi.fn() }));
-vi.mock('@/modules/AppContainer/Apps/FamilySelector/FamilySelector.jsx', () => ({default: ({onComplete,onResult}) => <><button onClick={onResult}>Complete selection</button><button onClick={onComplete}>Complete wheel</button></>}));
+vi.mock('../../../../../../capabilities/household-identity/browser/FamilySelector.jsx', () => ({default: ({onComplete,onResult}) => <><button onClick={onResult}>Complete selection</button><button onClick={onComplete}>Complete wheel</button></>}));
 const seats = [{id:'a',name:'Alice', color:'#3273dc', members:[{id:'a',name:'Alice',avatar:'/alice.jpg'}]}];
 const state = { competition:false,phase:'challenge-ready',round:1,performer_id:'a',challenge:{prompt:'Rabbit',decoder:{image:'/rabbit.svg'}},clue_presentation:'image',challenge_index:0,turn_order:['a'] };
 const sound_cues={pack:'charades',volume:0.4,performer_selected:'performer-selected',clue_revealed:'clue-revealed',acting_started:'acting-started',time_up:'time-up',turn_finished:'turn-finished',handoff:'handoff',game_finished:'game-finished'};

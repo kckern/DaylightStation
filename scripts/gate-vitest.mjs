@@ -18,7 +18,8 @@
  * gate" note that work logged repeatedly: it was never about panels.
  *
  * Population (SSOT, computed here): every test.{js,jsx,mjs} file under
- * tests/unit, tests/isolated, backend/ and frontend/ that vitest owns,
+ * tests/unit, tests/isolated, backend/, frontend/, shared/, modules/ and
+ * capabilities/ that vitest owns,
  * excluding:
  *   - tests/unit/suite/       (jest — gated by `npm run test:unit`)
  *   - any node_modules/ path
@@ -63,7 +64,7 @@ const GATE_REPORT = path.join(ROOT, 'tests/output/results.gate-vitest.json');
 // listed it, and `backend/shared` is a symlink the walk deliberately refuses to
 // follow, so the tree was unreachable from both directions. A rung-7 opponent
 // that dropped every disc in the far right column shipped through that hole.
-const ROOTS = ['tests/unit', 'tests/isolated', 'backend', 'frontend', 'shared'];
+const ROOTS = ['tests/unit', 'tests/isolated', 'backend', 'frontend', 'shared', 'modules', 'capabilities'];
 const EXCLUDE = [/\/node_modules\//, /\/\.claude\//, /\/\.worktrees\//];
 
 /**
@@ -387,6 +388,12 @@ function writeBaseline(failed, report) {
 // ---- main ----
 const update = process.argv.includes('--update');
 const files = vitestPopulation();
+if (process.argv.includes('--list')) {
+  await new Promise((resolve, reject) => {
+    process.stdout.write(JSON.stringify(files) + '\n', (error) => error ? reject(error) : resolve());
+  });
+  process.exit(0);
+}
 console.log(`gate-vitest: ${files.length} vitest files in population`);
 const { report, failed } = runVitest(files);
 // SPELL OUT THE THREE NUMBERS. "28903/28971 pass" invites a reader to subtract

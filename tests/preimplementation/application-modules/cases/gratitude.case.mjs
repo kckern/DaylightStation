@@ -595,8 +595,12 @@ test('CASE-GR-ADMIN-DISK-ERRORS raw wins over parsed and rejected writes retain 
   assert.equal((await f.request('GET',document)).json().raw,raw);
 });
 test('CASE-GR-ADMIN-DISK-MODES in-place data writes retain mode while atomic editor replacement uses staging mode',async()=>{
-  const f=adminDiskFixture(); f.data.household.write('gratitude/config.yml',{before:true});
-  const target=path.join(f.directory,'household/gratitude/config.yml'); fs.chmodSync(target,0o600);
+  const f=adminDiskFixture();
+  const target=path.join(f.directory,'household/gratitude/config.yml');
+  // Create the restricted fixture mode without chmod, which Landlock cannot confine.
+  fs.mkdirSync(path.dirname(target),{recursive:true});
+  fs.closeSync(fs.openSync(target,'wx',0o600));
+  f.data.household.write('gratitude/config.yml',{before:true});
   f.data.household.write('gratitude/config.yml',{inplace:true});
   const before=fs.statSync(target); assert.equal(before.mode&0o777,0o600);
   assert.equal((await f.request('PUT','household/gratitude/config.yml',{parsed:{atomic:true}})).status,200);

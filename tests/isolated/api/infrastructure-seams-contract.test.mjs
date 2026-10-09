@@ -14,7 +14,7 @@ import { createAdminSchedulerRouter } from '#api/v1/routers/admin/scheduler.mjs'
 import { nutribotReportImgHandler } from '#api/v1/handlers/nutribot/reportImg.mjs';
 import { createMediaLessonRouter } from '#api/v1/routers/mediaLesson.mjs';
 import { createCameraRouter } from '#api/v1/routers/camera.mjs';
-import { createGratitudeRouter } from '#api/v1/routers/gratitude.mjs';
+import { createGratitudeRouter } from '../../../modules/gratitude/server/api/gratitude.mjs';
 import { SpeechSynthesis } from '#apps/tts/SpeechSynthesis.mjs';
 import { NotificationOperations } from '#apps/notification/NotificationOperations.mjs';
 import { JournalOperations } from '#apps/journaling/JournalOperations.mjs';
@@ -26,7 +26,8 @@ import { AdminNotificationOperations } from '#apps/admin/AdminNotificationOperat
 import { AdminImageService } from '#apps/admin/AdminImageService.mjs';
 import { SchedulerAdminService } from '#apps/admin/SchedulerAdminService.mjs';
 import { DailyReportImage } from '#apps/nutribot/DailyReportImage.mjs';
-import { LessonPositionReporter, CameraEvents, GratitudeEvents } from '#apps/events/RealtimePublications.mjs';
+import { LessonPositionReporter, CameraEvents } from '#apps/events/RealtimePublications.mjs';
+import { GratitudeEvents } from '../../../modules/gratitude/server/application/events/GratitudeEvents.mjs';
 import { CameraService } from '#apps/camera/CameraService.mjs';
 
 const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };

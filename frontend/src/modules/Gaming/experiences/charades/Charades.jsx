@@ -14,7 +14,7 @@ import Scoreboard from '@gaming-ui/Scoreboard.jsx';
 import SegmentedSecretText from '@gaming-ui/SegmentedSecretText.jsx';
 import Timer from '@gaming-ui/Timer.jsx';
 import ImageDecoderDisplay from '@gaming-ui/ImageDecoderDisplay.jsx';
-import FamilySelector from '@/modules/AppContainer/Apps/FamilySelector/FamilySelector.jsx';
+import FamilySelector from '../../../../../../capabilities/household-identity/browser/public.mjs';
 import getLogger from '@/lib/logging/Logger.js';
 import ShowHeader from '@gaming-ui/ShowHeader.jsx';
 import GameButton from '@gaming-ui/GameButton.jsx';

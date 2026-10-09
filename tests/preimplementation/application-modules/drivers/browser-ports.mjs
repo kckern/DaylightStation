@@ -1,10 +1,11 @@
 /** Synthetic logging and WebSocket transport only; product and context stay real. */
 const messages = new Set();
 const statuses = new Set();
+const warnings = [];
 const logger = {
   info() {},
   debug() {},
-  warn() {},
+  warn(...args) { warnings.push(args); },
   error() {},
   child() {
     return this;
@@ -36,3 +37,5 @@ export function subscriptions() {
     statuses: statuses.size
   };
 }
+
+export function takeWarnings() { return warnings.splice(0); }

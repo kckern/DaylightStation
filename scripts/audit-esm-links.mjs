@@ -13,8 +13,9 @@ import {
   realpathSync,
   readFileSync,
   readdirSync,
-  statSync,
+  lstatSync,
 } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { builtinModules } from 'node:module';
 import {
   dirname,
@@ -33,6 +34,8 @@ const traverse = typeof traverseModule === 'function'
   : traverseModule.default;
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SOURCE_ROOTS = ['backend/src', 'cli'];
+const DESTINATION_ROOTS = ['modules', 'capabilities'];
+const DESTINATION_SKIP = new Set(['node_modules', 'vendor', '.cache', '.vite', 'dist', 'build', 'coverage', '.git']);
 const SOURCE_EXTENSIONS = new Set(['.mjs', '.js', '.cjs']);
 const BUILTINS = new Set([...builtinModules, ...builtinModules.map((name) => `node:${name}`)]);
 
@@ -44,12 +47,43 @@ function parseModule(source, file) {
   });
 }
 
-function* walk(directory) {
+function* walk(directory, destination = false) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const file = join(directory, entry.name);
-    if (entry.isDirectory()) yield* walk(file);
+    if (entry.isDirectory()) {
+      if (destination && DESTINATION_SKIP.has(entry.name)) continue;
+      yield* walk(file, destination);
+    }
     else if (entry.isFile() && SOURCE_EXTENSIONS.has(extname(file))) yield file;
   }
+}
+
+function optionalDirectory(directory) {
+  try {
+    return lstatSync(directory).isDirectory();
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+function* destinationFiles() {
+  for (const name of DESTINATION_ROOTS) {
+    const root = join(PROJECT_ROOT, name);
+    if (!optionalDirectory(root)) continue;
+    for (const owner of readdirSync(root, { withFileTypes: true })) {
+      if (!owner.isDirectory() || DESTINATION_SKIP.has(owner.name)) continue;
+      const server = join(root, owner.name, 'server');
+      if (optionalDirectory(server)) yield* walk(server, true);
+    }
+  }
+}
+
+function isDestinationSource(file) {
+  const parts = file.split('/');
+  return DESTINATION_ROOTS.includes(parts[0]) && parts.length >= 4 && parts[2] === 'server'
+    && !parts.slice(1, -1).some((part) => DESTINATION_SKIP.has(part))
+    && SOURCE_EXTENSIONS.has(extname(file));
 }
 
 function importedName(specifier) {
@@ -277,9 +311,14 @@ function main() {
     }
   };
   const readStaged = (file) => indexSnapshot.get(indexPathFor(file)) ?? readIndexFile(file, PROJECT_ROOT);
+  const destinationSymlinks = staged ? new Set(execFileSync('git', [
+    'ls-files', '--stage', '-z', '--', ...DESTINATION_ROOTS,
+  ], { encoding: 'utf8' }).split('\0').filter((entry) => entry.startsWith('120000 '))
+    .map((entry) => entry.slice(entry.indexOf('\t') + 1))) : new Set();
   const files = staged
-    ? indexFiles.filter((file) => SOURCE_ROOTS.some((root) => file.startsWith(`${root}/`)) && SOURCE_EXTENSIONS.has(extname(file))).map((file) => join(PROJECT_ROOT, file))
-    : SOURCE_ROOTS.flatMap((root) => [...walk(join(PROJECT_ROOT, root))]);
+    ? indexFiles.filter((file) => (SOURCE_ROOTS.some((root) => file.startsWith(`${root}/`)) && SOURCE_EXTENSIONS.has(extname(file)))
+      || (isDestinationSource(file) && !destinationSymlinks.has(file))).map((file) => join(PROJECT_ROOT, file))
+    : [...SOURCE_ROOTS.flatMap((root) => [...walk(join(PROJECT_ROOT, root))]), ...destinationFiles()];
   const rootImports = staged ? JSON.parse(indexSnapshot.get('package.json')).imports ?? {} : undefined;
   const stagedBackendPackage = staged && indexSet.has('backend/package.json');
   const backendImports = stagedBackendPackage

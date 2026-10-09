@@ -12,7 +12,7 @@ import { FilesystemSessionTrashStore } from '#adapters/fitness/FilesystemSession
 import { FilesystemTimelapseArtifactStore } from '#adapters/fitness/FilesystemTimelapseArtifactStore.mjs';
 import { FilesystemVoiceMemoArtifactStore } from '#adapters/fitness/FilesystemVoiceMemoArtifactStore.mjs';
 import { FilesystemVoiceMemoDebugStore } from '#adapters/fitness/FilesystemVoiceMemoDebugStore.mjs';
-import { TemporaryImagePrintGateway } from '#adapters/hardware/thermal-printer/TemporaryImagePrintGateway.mjs';
+import { TemporaryImagePrintGateway } from '../../../../modules/gratitude/server/print-gateway.mjs';
 import { YamlRecapSnapshotStore } from '#adapters/persistence/yaml/YamlRecapSnapshotStore.mjs';
 import { YamlFitnessSchoolAttemptStore } from '#adapters/persistence/yaml/YamlFitnessSchoolAttemptStore.mjs';
 import { FitnessSchoolPublications } from '#adapters/eventbus/FitnessSchoolPublications.mjs';

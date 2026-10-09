@@ -63,7 +63,7 @@ describe('AssignItemToUser', () => {
     useCase = new AssignItemToUser({
       messagingGateway: mockMessagingGateway,
       conversationStateStore: mockStateStore,
-      gratitudeService: mockGratitudeService,
+      addSelections: (...args) => mockGratitudeService.addSelections(...args),
       householdService: mockHouseholdService,
       logger: mockLogger
     });
@@ -75,7 +75,7 @@ describe('AssignItemToUser', () => {
 
       expect(() => new AssignItemToUser({
         conversationStateStore: mockStateStore,
-        gratitudeService: mockGratitudeService,
+        addSelections: (...args) => mockGratitudeService.addSelections(...args),
         householdService: mockHouseholdService
       })).toThrow('messagingGateway is required');
     });
@@ -85,19 +85,19 @@ describe('AssignItemToUser', () => {
 
       expect(() => new AssignItemToUser({
         messagingGateway: mockMessagingGateway,
-        gratitudeService: mockGratitudeService,
+        addSelections: (...args) => mockGratitudeService.addSelections(...args),
         householdService: mockHouseholdService
       })).toThrow('conversationStateStore is required');
     });
 
-    it('should throw if gratitudeService is not provided', async () => {
+    it('should throw if addSelections is not provided', async () => {
       const { AssignItemToUser } = await import('#backend/src/3_applications/homebot/usecases/AssignItemToUser.mjs');
 
       expect(() => new AssignItemToUser({
         messagingGateway: mockMessagingGateway,
         conversationStateStore: mockStateStore,
         householdService: mockHouseholdService
-      })).toThrow('gratitudeService is required');
+      })).toThrow('addSelections is required');
     });
 
     it('should throw if householdService is not provided', async () => {
@@ -106,7 +106,7 @@ describe('AssignItemToUser', () => {
       expect(() => new AssignItemToUser({
         messagingGateway: mockMessagingGateway,
         conversationStateStore: mockStateStore,
-        gratitudeService: mockGratitudeService
+        addSelections: (...args) => mockGratitudeService.addSelections(...args)
       })).toThrow('householdService is required');
     });
   });

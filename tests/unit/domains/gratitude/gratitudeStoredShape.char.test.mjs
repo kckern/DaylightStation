@@ -8,8 +8,8 @@
 // as {} and fail loudly. This test must pass BEFORE and AFTER the refactor.
 import { describe, it, expect, beforeEach } from 'vitest';
 import yaml from 'js-yaml';
-import { YamlGratitudeDatastore } from '#adapters/persistence/yaml/YamlGratitudeDatastore.mjs';
-import { GratitudeService } from '#apps/gratitude/services/GratitudeService.mjs';
+import { YamlGratitudeDatastore } from '../../../../modules/gratitude/server/adapters/persistence/YamlGratitudeDatastore.mjs';
+import { GratitudeService } from '../../../../modules/gratitude/server/application/services/GratitudeService.mjs';
 
 const noopLogger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 const HH = 'default';

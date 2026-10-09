@@ -18,7 +18,7 @@ import { createFitnessPlayableModule } from './modules/fitnessApi.mjs';
 import { createApplicationScheduledJobs } from './modules/applicationScheduledJobs.mjs';
 import { createSchoolApiServices } from './modules/schoolApi.mjs';
 import { createLanguageStudyService } from './modules/schoolLanguage.mjs';
-import { GratitudePrintPresentationService } from '#apps/gratitude/services/GratitudePrintPresentationService.mjs';
+import { GratitudePrintPresentationService } from '../../../modules/gratitude/server/application/services/GratitudePrintPresentationService.mjs';
 import { ProviderFitnessContentCatalog } from '#adapters/fitness/ProviderFitnessContentCatalog.mjs';
 import { INSTALLED_STATE_GATES_POLICY } from './modules/installedStateGatesPolicy.mjs';
 import { YamlStateGatesPolicySource } from '#adapters/state-gates/index.mjs';

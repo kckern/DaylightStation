@@ -54,7 +54,6 @@ import {
   createFinanceServices,
   createEntropyServices,
   createHealthServices,
-  createGratitudeServices,
   createHomeAutomationAdapters,
   createPlaybackHubServices,
   createDeviceServices,
@@ -105,7 +104,7 @@ import { createSchoolSurfaces } from '#composition/modules/schoolSurfaces.mjs';
 import { createSchoolApiServices } from '#composition/modules/schoolApi.mjs';
 import { createLearningReflectionEvidenceId, createSchoolLearningLoop } from '#composition/modules/schoolLearning.mjs';
 import { emit } from '#apps/scan/ScanDispatcher.mjs';
-import { createGratitudeApiRouter } from '#composition/modules/gratitudeApi.mjs';
+import { createGratitudeServices, createGratitudeApiRouter } from '../../modules/gratitude/server/public.mjs';
 import { createEconomyApi } from '#composition/modules/economyApi.mjs';
 import { createJournalistApiRouter } from '#composition/modules/journalistApi.mjs';
 import { createHomebotApiRouter } from '#composition/modules/homebotApi.mjs';
@@ -1401,7 +1400,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Gratitude domain
   const gratitudeServices = createGratitudeServices({
-    userDataService,
+    dataService,
     logger: rootLogger.child({ module: 'gratitude' })
   });
 
@@ -1822,7 +1821,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       logger: rootLogger.child({ module: 'health-feed' }),
     });
     const gratitudeAdapter = new GratitudeFeedAdapter({
-      dataService,
+      readSelectionQuotes: gratitudeServices.readSelectionQuotes,
       userService,
       logger: rootLogger.child({ module: 'gratitude-feed' }),
     });
@@ -2788,8 +2787,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Gratitude domain router - gratitude card canvas renderer
   let createGratitudeCardCanvas = null;
   try {
-    const { createGratitudeCardRenderer } = await import('#rendering/gratitude/GratitudeCardRenderer.mjs');
-    const { GratitudePrintPresentationService } = await import('#apps/gratitude/services/GratitudePrintPresentationService.mjs');
+    const { createGratitudeCardRenderer } = await import('../../modules/gratitude/server/rendering.mjs');
+    const { GratitudePrintPresentationService } = await import('../../modules/gratitude/server/rendering.mjs');
     const householdId = configService.getDefaultHouseholdId();
     const presentation = new GratitudePrintPresentationService({
       gratitude: gratitudeServices.gratitudeService,
@@ -6138,7 +6137,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const homebotServices = createHomebotServices({
     telegramAdapter: homebotTelegramAdapter,
     aiGateway: homebotAiGateway,
-    gratitudeService: gratitudeServices.gratitudeService,
+    addSelections: gratitudeServices.addSelections,
     configService,
     conversationStateStore: homebotStateStore,
     websocketBroadcast: broadcastEvent,

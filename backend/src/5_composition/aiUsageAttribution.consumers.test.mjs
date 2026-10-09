@@ -83,7 +83,7 @@ describe('AI usage attribution — previously feature-less consumers', () => {
     const { homebotContainer } = createHomebotServices({
       telegramAdapter: {},
       aiGateway: adapter.scoped({ app: 'homebot' }),
-      gratitudeService: {},
+      addSelections: async () => [],
       configService: {},
       logger: quietLogger(),
     });
