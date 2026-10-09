@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import ExerciseRun, { CLICK_PREROLL_MS } from './ExerciseRun.jsx';
+import ExerciseRun, { CLICK_PREROLL_MS, RESOLVE_HOLD_MS } from './ExerciseRun.jsx';
 import { BUILT_IN_FLOOR } from '../Games/gateRepertoire.js';
 import { requirementForLevel } from '../Games/gateAsk.js';
 import { keysInstance } from '../Games/gateMaterial.js';
@@ -378,7 +378,8 @@ describe('ExerciseRun shared assessment wiring', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
     // The host gets the result rather than a click event, so it can read the
     // score without re-deriving it.
-    expect(props.onPassed).toHaveBeenCalledTimes(1);
+    // Told after the resolve hold, so the last note's verdict is seen first.
+    await waitFor(() => expect(props.onPassed).toHaveBeenCalledTimes(1));
     expect(props.onPassed.mock.calls[0][0]).toMatchObject({ status: 'completed', score: 1 });
   });
 
@@ -404,7 +405,7 @@ describe('ExerciseRun shared assessment wiring', () => {
     press(view, props, 62); // clean run -> score 1, passes
 
     expect(await screen.findByText('Passed')).toBeInTheDocument();
-    expect(props.onPassed).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(props.onPassed).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(h.record).toHaveBeenCalledTimes(1));
     const firstAttemptId = h.record.mock.calls[0][1].attempt_id;
 
@@ -424,7 +425,7 @@ describe('ExerciseRun shared assessment wiring', () => {
     await armFree(view, nextProps);
     press(view, nextProps, 62);
     expect(await screen.findAllByText('Passed')).toHaveLength(1);
-    expect(props.onPassed).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(props.onPassed).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(h.record).toHaveBeenCalledTimes(2));
     expect(h.record.mock.calls[1][1].attempt_id).not.toBe(firstAttemptId);
   });
@@ -615,7 +616,7 @@ describe('ExerciseRun shared assessment wiring', () => {
 
     expect(await screen.findByText('Passed')).toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
-    expect(props.onPassed).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(props.onPassed).toHaveBeenCalledTimes(1));
   });
 
   // ── The start model. The piano starts the attempt: nothing to read, nothing
@@ -1737,7 +1738,7 @@ describe('ExerciseRun piano-only completion', () => {
     const view = render(<ExerciseRun {...props} />);
     await screen.findByText('Play the first note to begin.');
     setHeld(view, props, [60]); setHeld(view, props, []); setHeld(view, props, [62]);
-    expect(onPassed).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onPassed).toHaveBeenCalledTimes(1));
     expect(onPassed).toHaveBeenCalledWith(expect.objectContaining({ assessmentId: expect.any(String) }));
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
     setHeld(view, props, []); setHeld(view, props, [64]);
@@ -1758,7 +1759,7 @@ describe('ExerciseRun piano-only completion', () => {
     expect(screen.getByText('Play the first note to begin.')).toBeInTheDocument();
     setHeld(view, props, []);
     for (const midi of [60, 62]) { setHeld(view, props, [midi]); setHeld(view, props, []); }
-    expect(onPassed).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onPassed).toHaveBeenCalledTimes(1));
   });
   it.each(['practice', 'challenge'])('retries %s without a host using release then a fresh piano press', async (intent) => {
     const props = { instance: subject(), score: null, intent, requirement: requirementForLevel(BUILT_IN_FLOOR) };
@@ -1775,6 +1776,90 @@ describe('ExerciseRun piano-only completion', () => {
     expect(screen.queryByText('Passed')).not.toBeInTheDocument();
     setHeld(view, props, []); setHeld(view, props, [60]); setHeld(view, props, []); setHeld(view, props, [62]);
     expect(screen.getByText('Passed')).toBeInTheDocument();
+  });
+});
+
+/**
+ * THE RESOLVE HOLD. `onPassed`/`onFailed` used to fire in the same commit that
+ * made the result judged, so the host swapped the card before the final note's
+ * verdict was ever painted. The resolved staff now holds for RESOLVE_HOLD_MS.
+ */
+describe('ExerciseRun resolve hold', () => {
+  beforeEach(() => { resetHarness(); vi.useFakeTimers({ shouldAdvanceTime: true }); });
+  afterEach(() => vi.useRealTimers());
+  const setHeld = (view, props, notes) => act(() => {
+    h.activeNotes = new Map(notes.map(midi => [midi, { velocity: 1 }]));
+    view.rerender(<ExerciseRun {...props} />);
+  });
+  const passed = async (extra = {}) => {
+    const onPassed = vi.fn();
+    const props = { instance: subject(), score: null, intent: 'challenge', requirement: requirementForLevel(BUILT_IN_FLOOR), onPassed, ...extra };
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+    setHeld(view, props, [60]); setHeld(view, props, []); setHeld(view, props, [62]);
+    return { view, props, onPassed };
+  };
+  const root = (view) => view.container.querySelector('.piano-exercise-run');
+
+  it('paints the verdict first, then tells the host once, after the hold', async () => {
+    const { view, onPassed } = await passed();
+    expect(screen.getByText('Passed')).toBeInTheDocument();
+    expect(root(view).classList.contains('is-resolve-held')).toBe(true);
+    expect(root(view).classList.contains('is-resolve-passed')).toBe(true);
+    expect(onPassed).not.toHaveBeenCalled();
+    expect(h.log.info).toHaveBeenCalledWith('piano.exercise-resolve-held', expect.objectContaining({ outcome: 'passed', holdMs: RESOLVE_HOLD_MS }));
+    expect(h.log.info).not.toHaveBeenCalledWith('piano.exercise-pass-taken', expect.anything());
+    act(() => vi.advanceTimersByTime(RESOLVE_HOLD_MS - 1));
+    expect(onPassed).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1));
+    expect(onPassed).toHaveBeenCalledTimes(1);
+    expect(h.log.info).toHaveBeenCalledWith('piano.exercise-pass-taken', expect.objectContaining({ via: 'automatic' }));
+    act(() => vi.advanceTimersByTime(5000));
+    expect(onPassed).toHaveBeenCalledTimes(1);
+  });
+
+  it('the swell settles part-way through the hold', async () => {
+    const { view } = await passed();
+    expect(root(view).classList.contains('is-resolve-settled')).toBe(false);
+    act(() => vi.advanceTimersByTime(400));
+    expect(root(view).classList.contains('is-resolve-settled')).toBe(true);
+  });
+
+  it('a failed attempt is reported once, after the hold', async () => {
+    const onFailed = vi.fn();
+    const onPassed = vi.fn();
+    const props = { instance: subject(), score: null, intent: 'challenge', requirement: withPassScore({ passScore: 0.8 }), onPassed, onFailed };
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+    for (const midi of [60, 61, 61, 61]) { setHeld(view, props, [midi]); setHeld(view, props, []); }
+    setHeld(view, props, [62]);
+    expect(onFailed).not.toHaveBeenCalled();
+    expect(root(view).classList.contains('is-resolve-failed')).toBe(true);
+    expect(h.log.info).toHaveBeenCalledWith('piano.exercise-resolve-held', expect.objectContaining({ outcome: 'failed', holdMs: RESOLVE_HOLD_MS }));
+    act(() => vi.advanceTimersByTime(RESOLVE_HOLD_MS));
+    expect(onFailed).toHaveBeenCalledTimes(1);
+    act(() => vi.advanceTimersByTime(5000));
+    expect(onFailed).toHaveBeenCalledTimes(1);
+    expect(onPassed).not.toHaveBeenCalled();
+  });
+
+  it('unmounting during the hold cancels the callback', async () => {
+    const { view, onPassed } = await passed();
+    view.unmount();
+    act(() => vi.advanceTimersByTime(RESOLVE_HOLD_MS * 3));
+    expect(onPassed).not.toHaveBeenCalled();
+  });
+
+  it('ignores notes during the hold: a key pressed then does not start another attempt', async () => {
+    const { view, props, onPassed } = await passed();
+    const before = h.log.info.mock.calls.length;
+    setHeld(view, props, [62, 64]); setHeld(view, props, []); setHeld(view, props, [60]);
+    expect(screen.getByText('Passed')).toBeInTheDocument();
+    expect(onPassed).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(RESOLVE_HOLD_MS));
+    expect(onPassed).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Passed')).toBeInTheDocument();
+    expect(h.log.info.mock.calls.slice(before).some(([name]) => name === 'piano.exercise-retry')).toBe(false);
   });
 });
 
@@ -1963,6 +2048,8 @@ describe('timed exercise clock and input boundary', () => {
     expect(screen.getByTestId('notation')).toHaveTextContent('3');
     expect(props.onPassed).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(1000));
+    expect(props.onPassed).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(RESOLVE_HOLD_MS));
     expect(props.onPassed).toHaveBeenCalledTimes(1);
     expect(h.metronome.mock.calls.at(-1)[0].enabled).toBe(false);
   });
