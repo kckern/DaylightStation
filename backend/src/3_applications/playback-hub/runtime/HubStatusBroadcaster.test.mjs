@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HubStatusBroadcaster } from './HubStatusBroadcaster.mjs';
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -16,7 +16,13 @@ function makeSleeper() {
 }
 
 describe('HubStatusBroadcaster outage reporting', () => {
+  afterEach(() => vi.useRealTimers());
+
   it('warns once for an outage, probes quietly, and reports recovery', async () => {
+    // The loop subtracts wall-clock elapsed time from the probe delay, so on a
+    // starved worker a 1ms stall turns sleep(20) into sleep(19). Freeze Date
+    // only; the real setTimeout still drives flush().
+    vi.useFakeTimers({ toFake: ['Date'] });
     const sleeper = makeSleeper();
     const gateway = {
       getStatus: vi.fn()
