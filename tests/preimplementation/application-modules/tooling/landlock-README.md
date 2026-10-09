@@ -148,3 +148,46 @@ green145-case receipt through PRE_BASELINE_EVIDENCE, compares the exact named
 original assertions, and separately requires the embedding assertion. Default
 contributor mode runs146 assertions without historical receipts. Failed harness-wiring attempts remain recorded;
 no product fixtures or assertion expectations were changed.
+
+
+Calculator native continuation (two fixed suites)
+
+`retained-ti86-native` runs only the five result-queue cases and six assessment
+source/codec cases in `configs/ti86-native-selected.mjs`. It does not expand the
+original 27-suite `retained-ti86` selection. The current UNRUN inventory excludes
+these two verified suites; historical receipts retain the original 19-suite gap.
+
+The native profile stages tracked artifact sources into scratch and uses a
+scratch-only `native-bin` PATH. It retains the existing TI-86 forks pool, 256 MiB
+Node heap, 4 GiB address-space ceiling, 180-second CPU/alarm limits, 190-second
+watchdog, and kernel denial controls. No system tool installation or extra
+filesystem/syscall grants are needed. A real assembler probe must emit
+`cd 34 12` for `call 1234h` before the original assertions run.
+
+The verified tool is [z80asm 1.8](https://download.savannah.gnu.org/releases/z80asm/z80asm-1.8.tar.gz),
+archive SHA-256 `67fba9940582cddfa70113235818fb52d81e5be3db483dfb0816acb330515f64`.
+Preparation uses the existing unprivileged compiler with explicit arguments:
+`gcc -O2 -Wall -Ignulib -DVERSION='"1.8"' z80asm.c expressions.c gnulib/getopt.c gnulib/getopt1.c -o <private-scratch>/bin/z80asm`.
+No downloaded build scripts or install target are executed. Record compiler,
+source-input, archive, and output hashes; the checked-in final verification
+record embeds the actual build and archive receipts from this run.
+
+Set `PRE_Z80ASM_BUILD_RECEIPT` to that local build receipt (its `binary` path must
+exist, its binary hash must match, and the adjacent `archive-verification.json`
+must carry the pinned archive hash). Baseline mode also requires
+`PRE_TI86_ORIGINAL_ROOT`: a private `git archive` snapshot of tracked source at
+`9f19f9f2f7b664f2c17e29ad2d96d0bb8d0c2b3d`, with a `tracked-files.json` array of its
+original repository-relative paths. Do not include ignored/private files.
+
+Invoke `node tests/preimplementation/application-modules/tooling/run-landlock.mjs retained-ti86-native`
+with `PRE_TOOLCHAIN_ROOT` set to the existing dependency checkout. First use
+`PRE_TARGET=baseline`. Then use `PRE_TARGET=candidate`, `PRE_BASELINE_EVIDENCE`
+pointing to that successful receipt, and `PRE_SELECTED_MOVES` pointing to the
+current ownership inventory's `resolvedMoves` object serialized as JSON.
+Both runs must have the same eleven ordered assertion names and the same
+verified assembler hash. The baseline/candidate receipts and tool provenance are
+pinned in `docs/_wip/plans/2026-10-09-application-modules-final-verification.json`.
+
+Seventeen other suites remain unrun. Authentic `gui/icons.yml`,
+`gui/design-system.yml`, and relay `config.example.yml` are missing; the assembler
+alone cannot supply them. No substitute GUI/configuration fixtures are generated.

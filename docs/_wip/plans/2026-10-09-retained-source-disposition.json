@@ -1,6 +1,6 @@
 {
   "schema": "daylight.retained-source-disposition/v1",
-  "status": "Ownership transitions structurally reconciled; 36 selected runtime groups and the production frontend artifact verified. Native calculator artifact acceptance remains incomplete.",
+  "status": "Ownership transitions structurally reconciled; 37 selected runtime groups and the production frontend artifact verified. Native calculator artifact acceptance remains incomplete.",
   "originalSnapshotFiles": 2049,
   "counts": {
     "retain": 1451,
@@ -26398,7 +26398,7 @@
   "limitations": [
     "Ownership decisions alone are not runtime proof; final selected compatibility evidence is recorded separately.",
     "All recorded ownership actions are structurally reconciled; selected final runtime populations preserve their exact baselines.",
-    "Nineteen native calculator suites remain unrun because required assembler/source/release inputs are unavailable."
+    "Seventeen native calculator suites remain unrun because required authentic source/release inputs are unavailable."
   ],
   "structuralReconciliation": {
     "files": 2049,

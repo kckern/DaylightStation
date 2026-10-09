@@ -97,11 +97,13 @@ export const retainedTi86Vitest=[
   "_extensions/ti86-app/tools/ti86-mame.test.mjs",
   "_extensions/ti86-app/tools/ti86-resource-contract.test.mjs"
 ];
+// Initial 19-suite gap is preserved in commit 646caba119 and historical receipts.
+// Two suites are verified separately by the fixed retained-ti86-native profile.
 export const retainedTi86Unrun=[
   {
     "file": "_extensions/ti86-app/tools/complete-install-contract.test.mjs",
     "status": "UNRUN",
-    "reason": "Required z80asm is absent; no install or assembler replacement",
+    "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
     "nativeBuilderInputs": [
       "_extensions/ti86-app/tools/build-qr-runtime.mjs",
       "_extensions/ti86-app/tools/build-result-queue-runtime.mjs",
@@ -113,7 +115,7 @@ export const retainedTi86Unrun=[
   {
     "file": "_extensions/ti86-app/tools/record-reader-probe.test.mjs",
     "status": "UNRUN",
-    "reason": "Required z80asm is absent; no install or assembler replacement",
+    "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
     "nativeBuilderInputs": [
       "_extensions/ti86-app/tools/build-record-reader-probe.mjs"
     ]
@@ -121,15 +123,7 @@ export const retainedTi86Unrun=[
   {
     "file": "_extensions/ti86-app/tools/runtime-adaptive-contract.test.mjs",
     "status": "UNRUN",
-    "reason": "Required z80asm is absent; no install or assembler replacement",
-    "nativeBuilderInputs": [
-      "_extensions/ti86-app/tools/build-standard-runtime.mjs"
-    ]
-  },
-  {
-    "file": "_extensions/ti86-app/tools/runtime-assessment-contract.test.mjs",
-    "status": "UNRUN",
-    "reason": "Required z80asm is absent; no install or assembler replacement",
+    "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
     "nativeBuilderInputs": [
       "_extensions/ti86-app/tools/build-standard-runtime.mjs"
     ]
@@ -137,7 +131,7 @@ export const retainedTi86Unrun=[
   {
     "file": "_extensions/ti86-app/tools/runtime-catalog-contract.test.mjs",
     "status": "UNRUN",
-    "reason": "Required z80asm is absent; no install or assembler replacement",
+    "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
     "nativeBuilderInputs": [
       "_extensions/ti86-app/tools/build-catalog-runtime.mjs"
     ]
@@ -145,7 +139,7 @@ export const retainedTi86Unrun=[
   {
     "file": "_extensions/ti86-app/tools/runtime-module.test.mjs",
     "status": "UNRUN",
-    "reason": "Required z80asm is absent; no install or assembler replacement",
+    "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
     "nativeBuilderInputs": [
       "_extensions/ti86-app/tools/build-catalog-runtime.mjs",
       "_extensions/ti86-app/tools/build-native-runtime.mjs",
@@ -162,7 +156,7 @@ export const retainedTi86Unrun=[
   {
     "file": "_extensions/ti86-app/tools/runtime-qr-contract.test.mjs",
     "status": "UNRUN",
-    "reason": "Required z80asm is absent; no install or assembler replacement",
+    "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
     "nativeBuilderInputs": [
       "_extensions/ti86-app/tools/build-qr-runtime.mjs"
     ]
@@ -170,23 +164,15 @@ export const retainedTi86Unrun=[
   {
     "file": "_extensions/ti86-app/tools/runtime-request-contract.test.mjs",
     "status": "UNRUN",
-    "reason": "Required z80asm is absent; no install or assembler replacement",
+    "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
     "nativeBuilderInputs": [
       "_extensions/ti86-app/tools/build-request-runtime.mjs"
     ]
   },
   {
-    "file": "_extensions/ti86-app/tools/runtime-result-queue-contract.test.mjs",
-    "status": "UNRUN",
-    "reason": "Required z80asm is absent; no install or assembler replacement",
-    "nativeBuilderInputs": [
-      "_extensions/ti86-app/tools/build-result-queue-runtime.mjs"
-    ]
-  },
-  {
     "file": "_extensions/ti86-app/tools/runtime-sync-contract.test.mjs",
     "status": "UNRUN",
-    "reason": "Required z80asm is absent; no install or assembler replacement",
+    "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
     "nativeBuilderInputs": [
       "_extensions/ti86-app/tools/build-sync-runtime.mjs"
     ]
@@ -194,7 +180,7 @@ export const retainedTi86Unrun=[
   {
     "file": "_extensions/ti86-app/tools/runtime-tutor-contract.test.mjs",
     "status": "UNRUN",
-    "reason": "Required z80asm is absent; no install or assembler replacement",
+    "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
     "nativeBuilderInputs": [
       "_extensions/ti86-app/tools/build-tutor-runtime.mjs"
     ]
@@ -202,7 +188,7 @@ export const retainedTi86Unrun=[
   {
     "file": "_extensions/ti86-app/tools/schoolcalc-shell.test.mjs",
     "status": "UNRUN",
-    "reason": "Required z80asm is absent; no install or assembler replacement",
+    "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
     "nativeBuilderInputs": [
       "_extensions/ti86-app/tools/build-schoolcalc-shell.mjs"
     ]
@@ -210,7 +196,7 @@ export const retainedTi86Unrun=[
   {
     "file": "_extensions/ti86-app/tools/ui-renderer-probe.test.mjs",
     "status": "UNRUN",
-    "reason": "Required z80asm is absent; no install or assembler replacement",
+    "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
     "nativeBuilderInputs": [
       "_extensions/ti86-app/tools/build-ui-renderer-probe.mjs"
     ]

@@ -472,14 +472,29 @@
         "controls": true,
         "protectedInputsUnchangedAtRun": true,
         "incomplete": false
+      },
+      {
+        "pack": "retained-ti86-native",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/retained-ti86-native-MdSZO5/receipt.json",
+        "receiptSha256": "cbb3f9b73ef1b0f5741cb8ae195d9a17d955cbdd7d53a2ca412d1bcd06252e60",
+        "baselineReceipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/retained-ti86-native-dNyV8B/receipt.json",
+        "baselineReceiptSha256": "03004f0c548f9c91d43d5060f78a2fa14ebc9340dfd37d6271ebc1e644de3623",
+        "originalPasses": 11,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
       }
     ],
     "pending": [],
-    "originalPasses": 6377,
+    "originalPasses": 6388,
     "additionalGuardPasses": 27,
     "additionalExistingCasePasses": 39,
     "knownFailures": 11,
-    "unrunNativeCalculatorSuites": 19,
+    "unrunNativeCalculatorSuites": 17,
     "wholeMilestoneComplete": false
   },
   "knownFailures": [
@@ -944,12 +959,271 @@
         "testCases": 3
       },
       "secondFailedHookReceipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/hook-TZagwD/receipt.json"
+    },
+    "calculatorNativeVerification": {
+      "files": [
+        {
+          "path": "tests/preimplementation/application-modules/tooling/run-landlock.mjs",
+          "beforeSha256": "bb8255871672bdf971b4d1170eda433bd66aef6bdc0350cf1fd594de9c9dc052",
+          "afterSha256": "07e80aa95b0b4bb862b2a74cd80e06c8c65eb270d8d00671623208b21a90cc2e"
+        },
+        {
+          "path": "tests/preimplementation/application-modules/configs/vitest.config.mjs",
+          "beforeSha256": "7b3e002a339056cded0f470eb3a3f068cbd8ec37856cfb9cbd4c9c3fe4b9c6f6",
+          "afterSha256": "0a09596c648b6f5129dd6f023add65c8b369dbbd7166ee6c61fb1429ca4b8758"
+        },
+        {
+          "path": "tests/preimplementation/application-modules/tooling/landlock-runner.c",
+          "beforeSha256": "1e572cc4f43e02e177348f809cb0da16260a5236cb9de2879630f4481d2e59fa",
+          "afterSha256": "a068533704cb96c6fac55443778e8af956e74ae5dba7287b78194af0f17ea372"
+        },
+        {
+          "path": "tests/preimplementation/application-modules/configs/ti86-native-selected.mjs",
+          "beforeSha256": null,
+          "afterSha256": "78da09807a5d7d47f2e23290a56f62b3506fcb917d439e9f8e87345fbc40a1de"
+        }
+      ],
+      "limits": {
+        "addressSpaceBytes": 4294967296,
+        "nodeHeapMiB": 256,
+        "cpuSeconds": 180,
+        "alarmSeconds": 180,
+        "watchdogSeconds": 190,
+        "fileBytes": 4194304,
+        "fileDescriptors": 128,
+        "pool": "forks",
+        "maxWorkers": 1,
+        "seccomp": "unchanged",
+        "landlockRights": "unchanged",
+        "outsideExecuteGrants": "none added"
+      },
+      "currentUnrunAccounting": 17,
+      "historicalReceiptsUnchanged": true
+    },
+    "calculatorReleaseFixtureUrl": {
+      "file": "modules/school/satellites/ti86-app/tools/lib/ti86-mame-provisioning.test.mjs",
+      "beforeSha256": "3286eb45f2ecc7ba830ff95f74f5b289b7d489e2162a6ac041db890344de63a5",
+      "afterSha256": "fda47a5b9e7c83335f8f4bbfbb55a971de46ff42786cad76520cefc46f5ca739",
+      "from": "\"../../../../../../_extensions/ti86-app/dist\"",
+      "to": "\"../../dist/\"",
+      "originalRelativeDirectoryRestored": true,
+      "resolvedProgramFixture": "file:///opt/Code/DaylightStation/.worktrees/application-modules/modules/school/satellites/ti86-app/dist/SCHLCALC.86p",
+      "assertionsUnchanged": true,
+      "runtimeStatus": "UNRUN: authentic release program unavailable",
+      "priorHookInterrupted": "hook-WD5I8R"
     }
   },
   "nativeCalculator": {
-    "runnableSuites": 27,
-    "passingCases": 110,
+    "runnableSuites": 29,
+    "passingCases": 121,
     "unrunSuites": [
+      {
+        "file": "_extensions/ti86-app/tools/complete-install-contract.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
+        "nativeBuilderInputs": [
+          "_extensions/ti86-app/tools/build-qr-runtime.mjs",
+          "_extensions/ti86-app/tools/build-result-queue-runtime.mjs",
+          "_extensions/ti86-app/tools/build-schoolcalc-shell.mjs",
+          "_extensions/ti86-app/tools/build-standard-runtime.mjs",
+          "_extensions/ti86-app/tools/build-sync-runtime.mjs"
+        ]
+      },
+      {
+        "file": "_extensions/ti86-app/tools/record-reader-probe.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
+        "nativeBuilderInputs": [
+          "_extensions/ti86-app/tools/build-record-reader-probe.mjs"
+        ]
+      },
+      {
+        "file": "_extensions/ti86-app/tools/runtime-adaptive-contract.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
+        "nativeBuilderInputs": [
+          "_extensions/ti86-app/tools/build-standard-runtime.mjs"
+        ]
+      },
+      {
+        "file": "_extensions/ti86-app/tools/runtime-catalog-contract.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
+        "nativeBuilderInputs": [
+          "_extensions/ti86-app/tools/build-catalog-runtime.mjs"
+        ]
+      },
+      {
+        "file": "_extensions/ti86-app/tools/runtime-module.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
+        "nativeBuilderInputs": [
+          "_extensions/ti86-app/tools/build-catalog-runtime.mjs",
+          "_extensions/ti86-app/tools/build-native-runtime.mjs",
+          "_extensions/ti86-app/tools/build-profile-runtime.mjs",
+          "_extensions/ti86-app/tools/build-qr-runtime.mjs",
+          "_extensions/ti86-app/tools/build-request-runtime.mjs",
+          "_extensions/ti86-app/tools/build-result-queue-runtime.mjs",
+          "_extensions/ti86-app/tools/build-schoolcalc-shell.mjs",
+          "_extensions/ti86-app/tools/build-standard-runtime.mjs",
+          "_extensions/ti86-app/tools/build-sync-runtime.mjs",
+          "_extensions/ti86-app/tools/build-tutor-runtime.mjs"
+        ]
+      },
+      {
+        "file": "_extensions/ti86-app/tools/runtime-qr-contract.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
+        "nativeBuilderInputs": [
+          "_extensions/ti86-app/tools/build-qr-runtime.mjs"
+        ]
+      },
+      {
+        "file": "_extensions/ti86-app/tools/runtime-request-contract.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
+        "nativeBuilderInputs": [
+          "_extensions/ti86-app/tools/build-request-runtime.mjs"
+        ]
+      },
+      {
+        "file": "_extensions/ti86-app/tools/runtime-sync-contract.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
+        "nativeBuilderInputs": [
+          "_extensions/ti86-app/tools/build-sync-runtime.mjs"
+        ]
+      },
+      {
+        "file": "_extensions/ti86-app/tools/runtime-tutor-contract.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
+        "nativeBuilderInputs": [
+          "_extensions/ti86-app/tools/build-tutor-runtime.mjs"
+        ]
+      },
+      {
+        "file": "_extensions/ti86-app/tools/schoolcalc-shell.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
+        "nativeBuilderInputs": [
+          "_extensions/ti86-app/tools/build-schoolcalc-shell.mjs"
+        ]
+      },
+      {
+        "file": "_extensions/ti86-app/tools/ui-renderer-probe.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
+        "nativeBuilderInputs": [
+          "_extensions/ti86-app/tools/build-ui-renderer-probe.mjs"
+        ]
+      },
+      {
+        "file": "_extensions/ti86-app/tools/foreground-listener-contract.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required source fixture or generated release artifact absent in actual checkout; no substitute fixtures generated",
+        "missingInputs": [
+          "_extensions/ticalc-relay/config.example.yml"
+        ],
+        "priorFailedReceipt": "retained-ti86-P6ByyF/receipt.json"
+      },
+      {
+        "file": "_extensions/ti86-app/tools/input-contract.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required source fixture or generated release artifact absent in actual checkout; no substitute fixtures generated",
+        "missingInputs": [
+          "_extensions/ti86-app/gui/screens.yml"
+        ],
+        "priorFailedReceipt": "retained-ti86-P6ByyF/receipt.json"
+      },
+      {
+        "file": "_extensions/ti86-app/tools/lib/schoolcalc-design-system.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required source fixture or generated release artifact absent in actual checkout; no substitute fixtures generated",
+        "missingInputs": [
+          "_extensions/ti86-app/gui/design-system.yml"
+        ],
+        "priorFailedReceipt": "retained-ti86-P6ByyF/receipt.json"
+      },
+      {
+        "file": "_extensions/ti86-app/tools/lib/schoolcalc-ui-assets.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required source fixture or generated release artifact absent in actual checkout; no substitute fixtures generated",
+        "missingInputs": [
+          "_extensions/ti86-app/gui/icons.yml"
+        ],
+        "priorFailedReceipt": "retained-ti86-P6ByyF/receipt.json"
+      },
+      {
+        "file": "_extensions/ti86-app/tools/lib/ti86-screen-text.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required source fixture or generated release artifact absent in actual checkout; no substitute fixtures generated",
+        "missingInputs": [
+          "_extensions/ti86-app/gui/icons.yml"
+        ],
+        "priorFailedReceipt": "retained-ti86-P6ByyF/receipt.json"
+      },
+      {
+        "file": "_extensions/ti86-app/tools/lib/ti86-mame-provisioning.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required source fixture or generated release artifact absent in actual checkout; no substitute fixtures generated",
+        "missingInputs": [
+          "_extensions/ti86-app/dist/SCHLCALC.86p",
+          "_extensions/ti86-app/dist/DSUSERS.86s",
+          "_extensions/ti86-app/dist/DSPROG.86s"
+        ],
+        "priorFailedReceipt": "retained-ti86-P6ByyF/receipt.json"
+      }
+    ],
+    "missingInputProvenance": {
+      "inputs": {
+        "_extensions/ticalc-relay/config.example.yml": {
+          "inOriginalTrackedTree": false,
+          "mappedTarget": null,
+          "originalPathExists": false,
+          "mappedTargetExists": false
+        },
+        "_extensions/ti86-app/gui/screens.yml": {
+          "inOriginalTrackedTree": false,
+          "mappedTarget": null,
+          "originalPathExists": false,
+          "mappedTargetExists": false
+        },
+        "_extensions/ti86-app/gui/design-system.yml": {
+          "inOriginalTrackedTree": false,
+          "mappedTarget": null,
+          "originalPathExists": false,
+          "mappedTargetExists": false
+        },
+        "_extensions/ti86-app/gui/icons.yml": {
+          "inOriginalTrackedTree": false,
+          "mappedTarget": null,
+          "originalPathExists": false,
+          "mappedTargetExists": false
+        },
+        "_extensions/ti86-app/dist/SCHLCALC.86p": {
+          "inOriginalTrackedTree": false,
+          "mappedTarget": null,
+          "originalPathExists": false,
+          "mappedTargetExists": false
+        },
+        "_extensions/ti86-app/dist/DSUSERS.86s": {
+          "inOriginalTrackedTree": false,
+          "mappedTarget": null,
+          "originalPathExists": false,
+          "mappedTargetExists": false
+        },
+        "_extensions/ti86-app/dist/DSPROG.86s": {
+          "inOriginalTrackedTree": false,
+          "mappedTarget": null,
+          "originalPathExists": false,
+          "mappedTargetExists": false
+        }
+      },
+      "scope": "read-only original Git tree and current mapped targets; no generated replacement artifacts"
+    },
+    "claim": "29 suites and 121 cases verified across the original and native continuation profiles. Full native release acceptance remains incomplete: 17 suites require absent authentic source or release inputs. The assembler was built in scratch; no system installation or substitute GUI/configuration fixtures.",
+    "historicalUnrunSuites": [
       {
         "file": "_extensions/ti86-app/tools/complete-install-contract.test.mjs",
         "status": "UNRUN",
@@ -1124,54 +1398,210 @@
         "priorFailedReceipt": "retained-ti86-P6ByyF/receipt.json"
       }
     ],
-    "missingInputProvenance": {
-      "inputs": {
-        "_extensions/ticalc-relay/config.example.yml": {
-          "inOriginalTrackedTree": false,
-          "mappedTarget": null,
-          "originalPathExists": false,
-          "mappedTargetExists": false
-        },
-        "_extensions/ti86-app/gui/screens.yml": {
-          "inOriginalTrackedTree": false,
-          "mappedTarget": null,
-          "originalPathExists": false,
-          "mappedTargetExists": false
-        },
-        "_extensions/ti86-app/gui/design-system.yml": {
-          "inOriginalTrackedTree": false,
-          "mappedTarget": null,
-          "originalPathExists": false,
-          "mappedTargetExists": false
-        },
-        "_extensions/ti86-app/gui/icons.yml": {
-          "inOriginalTrackedTree": false,
-          "mappedTarget": null,
-          "originalPathExists": false,
-          "mappedTargetExists": false
-        },
-        "_extensions/ti86-app/dist/SCHLCALC.86p": {
-          "inOriginalTrackedTree": false,
-          "mappedTarget": null,
-          "originalPathExists": false,
-          "mappedTargetExists": false
-        },
-        "_extensions/ti86-app/dist/DSUSERS.86s": {
-          "inOriginalTrackedTree": false,
-          "mappedTarget": null,
-          "originalPathExists": false,
-          "mappedTargetExists": false
-        },
-        "_extensions/ti86-app/dist/DSPROG.86s": {
-          "inOriginalTrackedTree": false,
-          "mappedTarget": null,
-          "originalPathExists": false,
-          "mappedTargetExists": false
-        }
+    "continuation": {
+      "verification": {
+        "baseline": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/retained-ti86-native-dNyV8B/receipt.json",
+        "candidate": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/retained-ti86-native-MdSZO5/receipt.json",
+        "baselineSha256": "03004f0c548f9c91d43d5060f78a2fa14ebc9340dfd37d6271ebc1e644de3623",
+        "candidateSha256": "cbb3f9b73ef1b0f5741cb8ae195d9a17d955cbdd7d53a2ca412d1bcd06252e60",
+        "passedNames": [
+          "SCLEARN assessment, flashcard, and offline-queue contract builds the same append-only learning-probe SCR1 mode-3 bytes as the backend codec",
+          "SCLEARN assessment, flashcard, and offline-queue contract builds the same packed ordered-choice SCR1 bytes as the backend codec",
+          "SCLEARN assessment, flashcard, and offline-queue contract enforces append-before-success and backup-first replacement in source",
+          "SCLEARN assessment, flashcard, and offline-queue contract keeps every assembly mutation offset aligned with canonical SCL1",
+          "SCLEARN assessment, flashcard, and offline-queue contract keeps normal prompts and their labelled answer choices together on the TI-86",
+          "SCLEARN assessment, flashcard, and offline-queue contract projects quiz prompts/choices and flashcard answers into the closed v2 paths",
+          "SCQUEUE response/progress transaction contract builds a closed, checksummed queue writer inside its hard execution ceiling",
+          "SCQUEUE response/progress transaction contract builds the exact timestamp-free SCR1 progress shape used by the adapter",
+          "SCQUEUE response/progress transaction contract clears pending state and advances sequence only after canonical DSQ verifies",
+          "SCQUEUE response/progress transaction contract persists adaptive telemetry and the completed quiz before the fixed SCQUEUE OS call",
+          "SCQUEUE response/progress transaction contract uses the shell-authenticated runtime boundary and accepts only its pending writer path"
+        ],
+        "exactParity": true,
+        "controls": true,
+        "protectedInputsUnchanged": true,
+        "originalCases": 11
       },
-      "scope": "read-only original Git tree and current mapped targets; no generated replacement artifacts"
-    },
-    "claim": "No native build certification; missing tool/source/release inputs were not synthesized or installed."
+      "toolBuild": {
+        "compiler": "/usr/bin/gcc",
+        "compilerSha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+        "arguments": [
+          "/usr/bin/gcc",
+          "-O2",
+          "-Wall",
+          "-Ignulib",
+          "-DVERSION=\"1.8\"",
+          "z80asm.c",
+          "expressions.c",
+          "gnulib/getopt.c",
+          "gnulib/getopt1.c",
+          "-o",
+          "/tmp/authentic-z80asm-5nbiyeh1/bin/z80asm"
+        ],
+        "cwd": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8",
+        "exitCode": 0,
+        "sourceInputs": [
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/.gitignore",
+            "sha256": "d318ae57f16deb3a6da522ef592b25cfaa2f8c18df2c50cc6ccebb8461f009b4"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/COPYING",
+            "sha256": "f33166d5586238ffebae71c83bc9dee4cb07abf25189fb970d6484d79128a309"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/ChangeLog",
+            "sha256": "b9b3ed99c07a75825d01db75af7158d665611307873536ffbb8b48c1da30ca2b"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/GPL3",
+            "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/INSTALL",
+            "sha256": "eb4f621a72b3dbe985283ac94c3a6b161a5924d81da382c13592ef255b18e462"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/Makefile",
+            "sha256": "4f7cbbf37d2a67a3e5e95113c0f20970cb1754f09e1e895ced47ff27725b49f6"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/TODO",
+            "sha256": "8ac7f89990387ffe5b988aeadd4ab063b3ad04a30cac5bc0d400096b6a083de1"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/VERSION",
+            "sha256": "d2e181481b9515797bc42f282b122d2529d24ea985125bd5c95ded5004e0c7c9"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/examples/Makefile",
+            "sha256": "8669791d4eba44cd87185d483ab924b14a0a89b0e4d7f3dde311d0ed66ba0eda"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/examples/hello.asm",
+            "sha256": "ffac57490471569c7e5836dfd34e49e2e7cb153537a411583ed3c2509ece318b"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/examples/macro.asm",
+            "sha256": "c69895ff33555579ac07c602b15ef8fd283061b1f5be7e74ffef342e8befc2c1"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/examples/seek.asm",
+            "sha256": "4685c433688ecc0cedda07e7b24f55caa34147f4f86c1ef1c7f6f1b42752cff7"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/expressions.c",
+            "sha256": "282ac444472b171217eb2851f45d77c7cf3ea82305b1b0db2ae8714cb45789d9"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/gnulib/getopt.c",
+            "sha256": "e9617160432d61f0cda2ee8383da173a7722362f5c323512778fee97ac34e653"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/gnulib/getopt.h",
+            "sha256": "12ada958497e3611ee8f8ead4b9be8e36f064d46763630fde913c23e5dbbf3d1"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/gnulib/getopt1.c",
+            "sha256": "ded4374d6cd592ad5a3e0ae10ba77ed9113a0432e3480e0f19b453dcf4855728"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/gnulib/gettext.h",
+            "sha256": "6ceab7cb95cbd1bf16f829429857abbfcbfbb849b1b560c4aaf52435ab4a174b"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/headers/msx-bios.asm",
+            "sha256": "741fc89c10694a7056ddbd46a8a0f5cc2e34689b7e95b40ea04b09fb1f7f2a42"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/headers/msx2+-bios.asm",
+            "sha256": "db631dffe82f885df999af61a55e3111cea4a62268076be65f05bbb37d1b1faf"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/headers/msx2-bios.asm",
+            "sha256": "73dce48b31aa2ac5da47020c014774b3213bf5f03feb5fde4b0e42f564cda2c1"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/headers/msx2-subrom.asm",
+            "sha256": "18433045f2163d743b9fccfd7fdd778d12ce23c3ef2544f0d4bf7fd7b3d6e3dc"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/headers/msxturbor-bios.asm",
+            "sha256": "c258501b6e311c8f818fcae3f9fd3ac229f43f897daf65d25335f38a010ad74c"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/tests/Makefile",
+            "sha256": "316309debf37a3395a95b1186fc538d40656047f51f3acafb893e3856a5c3431"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/tests/pass.asm",
+            "sha256": "3b646bbb73b80e724b2b192950947521c46d4e4d28e8d1c764175a2b5c21d060"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/tests/pass.correct-bin",
+            "sha256": "1c6b83aa7c16128cbc27c06ea4e48d52533005e70a8fbc60d720919d934edc60"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/tests/pass.correct-err",
+            "sha256": "6ea641e3f2582354ee9c215f1fdc3427ebd64db9c92ff2c43dfabbc1d7b017ab"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/z80asm.1",
+            "sha256": "5aa6ed88b062c9e31c7e9f29420de34475b41d0e8f2c81431a100664337f3e96"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/z80asm.c",
+            "sha256": "08e8f19fffad690696ed7c26048480a4755b0d574837ff33c72acbc886f26b7e"
+          },
+          {
+            "path": "/tmp/authentic-z80asm-5nbiyeh1/source/z80asm-1.8/z80asm.h",
+            "sha256": "7cdb0ab78360a39075e2472b9f7ff9b7174e76428ce5bb237786b3b34f44a961"
+          }
+        ],
+        "binary": "/tmp/authentic-z80asm-5nbiyeh1/bin/z80asm",
+        "binarySha256": "e40088b47340044245ac90350ec121aeafbb0bfb7ba64015ef75e63e35844617",
+        "downloadedBuildScriptsExecuted": false,
+        "installed": false,
+        "productExecution": false
+      },
+      "archive": {
+        "url": "https://download.savannah.gnu.org/releases/z80asm/z80asm-1.8.tar.gz",
+        "sha256": "67fba9940582cddfa70113235818fb52d81e5be3db483dfb0816acb330515f64",
+        "archive": "/tmp/authentic-z80asm-5nbiyeh1/z80asm-1.8.tar.gz",
+        "bytes": 57269,
+        "provenance": "Official Homebrew formula https://raw.githubusercontent.com/Homebrew/homebrew-core/HEAD/Formula/z/z80asm.rb references this NonGNU release and digest",
+        "compiled": false,
+        "installed": false,
+        "executed": false
+      },
+      "originalTree": {
+        "commit": "9f19f9f2f7b664f2c17e29ad2d96d0bb8d0c2b3d",
+        "root": "/tmp/authentic-z80asm-5nbiyeh1/original-tree",
+        "method": "git archive exact tracked original source directories; no ignored/private inputs",
+        "archiveBytes": 57272320
+      },
+      "limits": {
+        "addressSpaceBytes": 4294967296,
+        "nodeHeapMiB": 256,
+        "cpuSeconds": 180,
+        "alarmSeconds": 180,
+        "watchdogSeconds": 190,
+        "fileBytes": 4194304,
+        "fileDescriptors": 128,
+        "pool": "forks",
+        "maxWorkers": 1,
+        "seccomp": "unchanged",
+        "landlockRights": "unchanged",
+        "outsideExecuteGrants": "none added"
+      },
+      "productOrAssertionChanges": false,
+      "installed": false,
+      "missingAuthoritativeSources": [
+        "_extensions/ti86-app/gui/icons.yml",
+        "_extensions/ti86-app/gui/design-system.yml",
+        "_extensions/ticalc-relay/config.example.yml"
+      ]
+    }
   },
   "gitIntegration": {
     "preCutoverTag": "pre-application-modules-cutover-2026-10-08",
@@ -1181,7 +1611,19 @@
     "mappedUniqueDestinationsIndexed": 8795,
     "mainMergedIntoRefactor": true,
     "refactorMergedIntoMain": false,
-    "deployed": false
+    "deployed": false,
+    "sourceCheckpoint": {
+      "commit": "646caba119e1e06a5a6286a69e4c135bfcd4685e",
+      "tree": "faec25c5885f23f157f0c4979aa1dac5ffd6078e",
+      "clean": true,
+      "mainUnchanged": true,
+      "tagUnchanged": true,
+      "hookReceipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/hook-3mNpfD/receipt.json",
+      "hookReceiptSha256": "e04008efbb58913d780bdf815810dd2993cf64b0504dd8b4adca9d7a57f116fd",
+      "hookExit": 0,
+      "controls": true,
+      "protectedInputsUnchanged": true
+    }
   },
   "checkpointPolicy": {
     "hook": ".githooks/pre-commit",
@@ -1205,8 +1647,18 @@
       "baselinesIncreased": false
     },
     "nativeEsmLinks": {
-      "modules": 4417,
+      "modules": 4394,
       "exitCode": 0
+    },
+    "originalHook": {
+      "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/hook-3mNpfD/receipt.json",
+      "receiptSha256": "e04008efbb58913d780bdf815810dd2993cf64b0504dd8b4adca9d7a57f116fd",
+      "exitCode": 0,
+      "controls": true,
+      "protectedInputsUnchanged": true,
+      "parsedWorkingAndStaged": 11657,
+      "scssEntrypoints": 349,
+      "compositionCases": 15
     }
   }
 }

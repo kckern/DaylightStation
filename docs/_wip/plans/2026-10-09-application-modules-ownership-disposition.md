@@ -1,6 +1,6 @@
 # Application module ownership disposition
 
-Milestones 2 and 3 retain the full source census. This is the current ownership and migration record, **not cutover certification**. Milestone 2 is checkpointed at `9f19f9f2f7`; Milestone 3 is still in progress in the isolated `refactor/application-modules` worktree. No deployment or merge into main is represented here.
+Milestones 2 and 3 retain the full source census. This is the current ownership and migration record, **not cutover certification**. Milestone 2 is checkpointed at `9f19f9f2f7`; Milestone 3 has a source checkpoint at `646caba119` and remains in acceptance in the isolated `refactor/application-modules` worktree. No deployment or merge into main is represented here.
 
 This snapshot includes the final 447 frontend/shared/satellite moves, 138 CLI moves, configuration policy split, command-entry restorations, and three reviewed prototype retirements. All enumerated ownership transitions are structurally reconciled. Final selected runtime replay and the production frontend build are verified; native calculator artifact acceptance remains incomplete.
 
@@ -71,13 +71,13 @@ Additional tracked corrections:
 
 ## Final selected verification and remaining acceptance
 
-The [final verification record](2026-10-09-application-modules-final-verification.json) pins all 36 accepted final test-group receipts and their hashes. Independent comparison verifies 6,377 original passing case executions, 27 supplemental guards, and the exact same 11 failed executions as the baselines. Counts include overlapping groups; this is not a unique whole-repository test count or an all-tests-pass claim. The four Playback Hub and seven Producer failures retain their actual failed statuses, messages, and nonzero child exits.
+The [final verification record](2026-10-09-application-modules-final-verification.json) pins all 37 accepted final test-group receipts and their hashes. Independent comparison verifies 6,388 original passing case executions, 27 supplemental guards, and the exact same 11 failed executions as the baselines. Counts include overlapping groups; this is not a unique whole-repository test count or an all-tests-pass claim. The four Playback Hub and seven Producer failures retain their actual failed statuses, messages, and nonzero child exits.
 
 The production Vite build passed with 109 application-owned chunks, including the actual Player, screen host, Piano, and Gratitude modules. All recorded chunk files exist. Of 69 public assets, 68 copied assets were independently compared byte-for-byte; the remaining asset is generated. Native module identity and owner embedding checks are included in the selected runtime evidence.
 
-All 43 move maps resolve to present terminal files. Every one of the 8,795 unique mapped destinations is indexed, including reviewed files covered by ignore patterns. The full ownership audit checks private boundaries, dependency direction, and owner cycles. Layer ratchets are unchanged and native import-link checks pass. The local checkpoint itself is gated by the unchanged original staged/working pre-commit hook through the confined adapter; failure prevents the commit. No merge into main or deployment is represented here.
+All 43 move maps resolve to present terminal files. Every one of the 8,795 unique mapped destinations is indexed, including reviewed files covered by ignore patterns. The full ownership audit checks private boundaries, dependency direction, and owner cycles. Layer ratchets are unchanged and native import-link checks pass. The local source checkpoint `646caba119` passed the unchanged original staged/working pre-commit hook through the confined adapter, including 349 stylesheet builds and 15 composition assertions. No merge into main or deployment is represented here.
 
-The native calculator remains an explicit acceptance gap: 27 executable suites passed 110 cases, while 19 suites remain unrun. Thirteen require unavailable `z80asm`; six require absent GUI, configuration, or release inputs. The seven named input paths are absent from the original tracked tree as well as this checkout. No inputs, native artifacts, or passing results were invented. Milestone 3 is therefore not certified complete.
+The native calculator remains an explicit acceptance gap: 29 suites passed 121 cases, while 17 suites remain unrun. The authenticated scratch assembler closed the five-case result-queue suite; six assessment cases also preserve exact original parity. The remaining suites require absent authentic GUI, configuration, or release inputs. The seven named input paths are absent from the original tracked tree as well as this checkout. No source inputs or passing results were invented; the result-queue artifact was built by the authentic pinned assembler. Milestone 3 is therefore not certified complete.
 
 ## Retained ownership and final corrections
 

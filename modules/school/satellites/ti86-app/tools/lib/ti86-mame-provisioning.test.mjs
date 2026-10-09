@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createTi86MameReleaseInstallers, TI86_MAME_INSTALL_MARKER } from "./ti86-mame-provisioning.mjs";
 import { readTi86VariableFile } from "./ti86-program.mjs";
 
-const DIST = new URL("../../../../../../_extensions/ti86-app/dist", import.meta.url);
+const DIST = new URL("../../dist/", import.meta.url);
 
 describe('TI-86 MAME release provisioning', () => {
   it('preserves the exact program and String variable bytes from the release', () => {
