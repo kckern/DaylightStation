@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { CadenceCheck } from '#apps/agents/lifeplan-guide/assignments/CadenceCheck.mjs';
+import { CadenceCheck } from "../../../../modules/life/server/application/agents/lifeplan-guide/assignments/CadenceCheck.mjs";
 
 describe('CadenceCheck', () => {
   it('has correct static properties', () => {

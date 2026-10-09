@@ -1,7 +1,7 @@
 // tests/isolated/agents/conversation_history/mastra_adapter.test.mjs
 import { describe, it, expect, vi } from 'vitest';
-import { MastraAdapter } from '../../../../backend/src/1_adapters/agents/MastraAdapter.mjs';
-import { AgentExecutionPolicy } from '#apps/agents/framework/AgentExecutionPolicy.mjs';
+import { MastraAdapter } from "../../../../capabilities/agent-runtime/server/adapters/MastraAdapter.mjs";
+import { AgentExecutionPolicy } from "../../../../capabilities/agent-runtime/server/application/framework/AgentExecutionPolicy.mjs";
 
 const silentLogger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
 const createAdapter = (deps = {}) => new MastraAdapter({

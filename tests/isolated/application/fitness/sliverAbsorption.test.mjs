@@ -6,7 +6,7 @@ vi.mock('#system/utils/FileIO.mjs', () => ({
   dirExists: vi.fn(),
 }));
 
-const { absorbOverlappingSlivers: rawAbsorbOverlappingSlivers } = await import('#apps/fitness/sliverAbsorption.mjs');
+const { absorbOverlappingSlivers: rawAbsorbOverlappingSlivers } = await import("../../../../modules/fitness/server/application/sliverAbsorption.mjs");
 const { loadYamlSafe, listYamlFiles, dirExists } = await import('#system/utils/FileIO.mjs');
 
 const buildActivity = (overrides = {}) => ({

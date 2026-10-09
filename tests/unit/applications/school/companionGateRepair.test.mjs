@@ -19,11 +19,11 @@
  * (`companion_code_exhausted`) rather than inviting a sixth try.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { RecordCardScanOutcome } from '#apps/school/documents/RecordCardScanOutcome.mjs';
-import { CloseSessionOutcome } from '#apps/school/usecases/CloseSessionOutcome.mjs';
-import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
-import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
-import { COMPANION_GATE_ITEM_ID } from '#domains/school/companionCode.mjs';
+import { RecordCardScanOutcome } from "../../../../modules/school/server/application/documents/RecordCardScanOutcome.mjs";
+import { CloseSessionOutcome } from "../../../../modules/school/server/application/usecases/CloseSessionOutcome.mjs";
+import { CurriculumAccess } from "../../../../modules/school/server/application/CurriculumAccess.mjs";
+import { reduceSession } from "../../../../modules/school/server/domain/sessions/sessionEvents.mjs";
+import { COMPANION_GATE_ITEM_ID } from "../../../../modules/school/server/domain/companionCode.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeAssignmentStore,
   fakeClock, fakeGrownUps, seededRng, silentLogger,

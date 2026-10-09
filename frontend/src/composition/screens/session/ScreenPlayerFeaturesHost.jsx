@@ -13,8 +13,8 @@ import { registerTrackOwner, createTrackPreferenceStore } from "../../../../../c
 import { getPlayerSessionRegistry } from "../../../../../capabilities/playback/browser/sessions.mjs";
 import { isSlideshowItem } from '@shared-contracts/media/playerFeatures.mjs';
 import { musicBehindVerdict } from "../../../../../capabilities/playback/browser/contracts.mjs";
-import { Player as Player } from "../../../../../capabilities/playback/browser/public.mjs";
-import CameraOverlay from '../../../modules/CameraFeed/CameraOverlay.jsx';
+import { Player as Player } from "../../../../../modules/media/browser/playback.mjs";
+import CameraOverlay from "../../../../../modules/camera/browser/overlay.mjs";
 import { MusicBehindLayer } from "../../../../../capabilities/playback/browser/music-behind.mjs";
 import { requestRestore } from './ScreenSessionControlsHost.jsx';
 import getLogger from '../../../lib/logging/Logger.js';

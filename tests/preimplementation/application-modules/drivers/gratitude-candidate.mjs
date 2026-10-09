@@ -11,7 +11,7 @@ import { TemporaryImagePrintGateway } from '../../../../modules/gratitude/server
 import { createApiRouter } from '../../../../backend/src/4_api/v1/routers/api.mjs';
 import { errorHandlerMiddleware } from '../../../../backend/src/0_system/http/middleware/errorHandler.mjs';
 import { permissionGate } from '../../../../backend/src/4_api/middleware/permissionGate.mjs';
-import { GratitudeFeedAdapter as FeedAdapter } from '../../../../backend/src/1_adapters/feed/sources/GratitudeFeedAdapter.mjs';
+import { GratitudeFeedAdapter as FeedAdapter } from "../../../../modules/feed/server/adapters/sources/GratitudeFeedAdapter.mjs";
 import { DataService } from '../../../../backend/src/1_adapters/persistence/files/DataService.mjs';
 import { ConfigService } from '../../../../backend/src/0_system/config/ConfigService.mjs';
 import { YamlAdminConfigStore } from '../../../../backend/src/1_adapters/persistence/yaml/YamlAdminConfigStore.mjs';

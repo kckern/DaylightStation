@@ -4,8 +4,8 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import React from 'react';
 import { MantineProvider } from '@mantine/core';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
-import { Dashboard } from '#frontend/modules/Life/views/now/Dashboard.jsx';
-import { GoalsView } from '#frontend/modules/Life/views/plan/GoalsView.jsx';
+import { Dashboard } from "../../../../modules/life/browser/views/now/Dashboard.jsx";
+import { GoalsView } from "../../../../modules/life/browser/views/plan/GoalsView.jsx";
 
 /** Probe that exposes the current route so navigation clicks can be asserted. */
 const LocationProbe = () => {

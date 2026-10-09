@@ -1,6 +1,6 @@
 // tests/isolated/agents/framework/buildAgentMemory.test.mjs
 import { describe, it, expect, vi } from 'vitest';
-import { buildAgentMemory } from '../../../../backend/src/3_applications/agents/framework/buildAgentMemory.mjs';
+import { buildAgentMemory } from "../../../../capabilities/agent-runtime/server/application/framework/buildAgentMemory.mjs";
 
 const memoryFactory = { createMemory: vi.fn((options) => ({ options })) };
 const deps = (over = {}) => ({ dataPath: ':memory:', logger: { warn: vi.fn() }, memoryFactory, ...over });

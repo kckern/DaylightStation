@@ -5,7 +5,7 @@ import { render, act, cleanup } from '@testing-library/react';
 const { musicNext, musicPrev, musicToggle, musicSeek } = vi.hoisted(() => ({
   musicNext: vi.fn(), musicPrev: vi.fn(), musicToggle: vi.fn(), musicSeek: vi.fn(),
 }));
-vi.mock('../../../frontend/src/lib/Player/useBackgroundMusic.js', () => ({
+vi.mock("../../../modules/art/browser/music/useBackgroundMusic.js", () => ({
   useBackgroundMusic: () => ({ track: null, next: musicNext, prev: musicPrev, toggle: musicToggle, seek: musicSeek }),
 }));
 const apiCalls = [];

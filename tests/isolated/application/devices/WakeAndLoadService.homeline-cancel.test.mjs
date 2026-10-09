@@ -1,3 +1,4 @@
+import {contentRequiresCamera} from '../../../../backend/src/5_composition/policies/contentRequiresCamera.mjs';
 import { describe, expect, it, vi } from 'vitest';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
 
@@ -24,7 +25,7 @@ describe('WakeAndLoadService Home Line cancellation', () => {
       powerOn: vi.fn(async () => { cancelled = true; return { ok: true, verified: true }; }),
       prepareForContent: vi.fn(async () => ({ ok: true })), loadContent: vi.fn(async () => ({ ok: true })),
     };
-    const service = new WakeAndLoadService({ deviceService: { get: () => device },
+    const service = new WakeAndLoadService({ contentRequiresCamera, deviceService: { get: () => device },
       readinessPolicy: { isReady: vi.fn() }, broadcast, eventBus, logger, ...runtimePorts() });
     const result = await service.execute('tv', { open: 'videocall/tv' }, { isCancelled: () => cancelled });
     expect(result).toMatchObject({ ok: false, cancelled: true, failedStep: 'power' });
@@ -40,7 +41,7 @@ describe('WakeAndLoadService Home Line cancellation', () => {
       powerOn: vi.fn(async () => ({ ok: false, verifyFailed: true })),
       prepareForContent: vi.fn(), loadContent: vi.fn(), notifyService: null,
     };
-    const service = new WakeAndLoadService({ deviceService: { get: () => device },
+    const service = new WakeAndLoadService({ contentRequiresCamera, deviceService: { get: () => device },
       readinessPolicy: { isReady: vi.fn(async () => ({ ready: false, reason: 'off' })) }, broadcast, eventBus, logger, ...runtimePorts() });
     await service.execute('tv', { open: 'videocall/tv' }, { deferredRetry: false });
     await vi.advanceTimersByTimeAsync(46_000);
@@ -57,7 +58,7 @@ describe('WakeAndLoadService Home Line cancellation', () => {
       setVolume: vi.fn(), prepareForContent: vi.fn(async () => ({ ok: true, cameraAvailable: true })),
       loadContent: vi.fn(async () => ({ ok: true })),
     };
-    const service = new WakeAndLoadService({ deviceService: { get: () => device },
+    const service = new WakeAndLoadService({ contentRequiresCamera, deviceService: { get: () => device },
       readinessPolicy: { isReady: vi.fn() }, broadcast, eventBus, logger, ...runtimePorts() });
     await service.execute('tv', { open: 'videocall/tv' }, {
       dispatchId: 'dispatch-1', deferredRetry: false,

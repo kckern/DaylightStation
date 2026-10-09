@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ValueDriftCalculator } from '#domains/lifeplan/services/ValueDriftCalculator.mjs';
+import { ValueDriftCalculator } from "../../../../modules/life/server/domain/services/ValueDriftCalculator.mjs";
 
 const calc = new ValueDriftCalculator();
 const values = (ids) => ids.map((id, i) => ({ id, rank: i + 1 }));

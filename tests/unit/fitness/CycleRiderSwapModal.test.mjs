@@ -13,7 +13,7 @@ import { describe, it, expect, beforeAll } from '@jest/globals';
 let formatCooldownHint;
 
 beforeAll(async () => {
-  const mod = await import('#frontend/modules/Fitness/player/overlays/cycleSwapModalUtils.js');
+  const mod = await import("../../../modules/fitness/browser/player/overlays/cycleSwapModalUtils.js");
   formatCooldownHint = mod.formatCooldownHint;
 });
 

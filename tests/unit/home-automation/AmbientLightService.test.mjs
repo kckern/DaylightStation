@@ -1,4 +1,4 @@
-import { createAmbientLightService } from '../../../backend/src/3_applications/home-automation/AmbientLightService.mjs';
+import { createAmbientLightService } from "../../../modules/home/server/application/home-automation/AmbientLightService.mjs";
 
 const noopLogger = { warn: () => {}, error: () => {}, debug: () => {}, info: () => {} };
 const makeService = (over = {}) => {

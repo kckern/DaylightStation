@@ -27,7 +27,7 @@ vi.mock('#system/config/index.mjs', () => ({
 }));
 
 const { FitnessActivityEnrichmentService } = await import(
-  '#apps/fitness/FitnessActivityEnrichmentService.mjs'
+  "../../../../modules/fitness/server/application/FitnessActivityEnrichmentService.mjs"
 );
 const { loadYamlSafe, listYamlFiles, dirExists } = await import('#system/utils/FileIO.mjs');
 

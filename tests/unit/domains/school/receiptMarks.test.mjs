@@ -9,8 +9,8 @@
  * so the renderer has something honest to read in the first place.
  */
 import { describe, it, expect } from 'vitest';
-import { resultDocument } from '#domains/school/documents/receipts.mjs';
-import { validateDocument } from '#domains/school/documents/documentValidation.mjs';
+import { resultDocument } from "../../../../modules/school/server/domain/documents/receipts.mjs";
+import { validateDocument } from "../../../../modules/school/server/domain/documents/documentValidation.mjs";
 
 const valid = (doc) => {
   const { errors } = validateDocument(doc);

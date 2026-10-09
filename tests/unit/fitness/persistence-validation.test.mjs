@@ -29,7 +29,7 @@ jest.unstable_mockModule('#frontend/hooks/fitness/buildSessionSummary.js', () =>
 
 let PersistenceManager;
 beforeAll(async () => {
-  const mod = await import('#frontend/hooks/fitness/PersistenceManager.js');
+  const mod = await import("../../../modules/fitness/browser/hooks/fitness/PersistenceManager.js");
   PersistenceManager = mod.PersistenceManager;
 });
 

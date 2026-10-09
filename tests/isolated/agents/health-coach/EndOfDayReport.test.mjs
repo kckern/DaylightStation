@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
-import { EndOfDayReport } from '../../../../backend/src/3_applications/agents/health-coach/assignments/EndOfDayReport.mjs';
+import { EndOfDayReport } from "../../../../modules/health/server/application/agents/health-coach/assignments/EndOfDayReport.mjs";
 
 describe('EndOfDayReport', () => {
   it('has correct static properties', () => {

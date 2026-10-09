@@ -1,6 +1,6 @@
 // tests/unit/suite/api/admin/content.test.mjs
 import { describe, it, expect, jest } from '@jest/globals';
-import { createAdminContentRouter } from '#api/v1/routers/admin/content.mjs';
+import { createAdminContentRouter } from "../../../../../capabilities/content-catalog/server/api/admin/content.mjs";
 
 describe('Admin Content Router', () => {
   it('should create a router with required dependencies', () => {

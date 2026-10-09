@@ -2,8 +2,8 @@
 
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert';
-import { DailyDashboard } from '../../../../src/3_applications/agents/health-coach/assignments/DailyDashboard.mjs';
-import { WorkingMemoryState } from '../../../../src/3_applications/agents/framework/WorkingMemory.mjs';
+import { DailyDashboard } from "../../../../../modules/health/server/application/agents/health-coach/assignments/DailyDashboard.mjs";
+import { WorkingMemoryState } from "../../../../../capabilities/agent-runtime/server/application/framework/WorkingMemory.mjs";
 
 describe('DailyDashboard', () => {
   const validDashboard = {

@@ -1,6 +1,6 @@
 import express from 'express';
 import request from 'supertest';
-import { createFitnessRouter } from '#api/v1/routers/fitness.mjs';
+import { createFitnessRouter } from "../../../modules/fitness/server/api/fitness.mjs";
 
 const makeApp = () => {
   const store = new Map();

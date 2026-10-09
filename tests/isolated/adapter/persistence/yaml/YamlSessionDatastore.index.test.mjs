@@ -13,7 +13,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { YamlSessionDatastore } from '#adapters/persistence/yaml/YamlSessionDatastore.mjs';
+import { YamlSessionDatastore } from "../../../../../modules/fitness/server/adapters/persistence/YamlSessionDatastore.mjs";
 import { saveYaml } from '#system/utils/FileIO.mjs';
 
 describe('YamlSessionDatastore — findInRange index', () => {

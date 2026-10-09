@@ -1,6 +1,6 @@
 // tests/isolated/domain/content/services/ItemSelectionService.test.mjs
 import { describe, it, test, expect } from 'vitest';
-import { ItemSelectionService } from '#domains/content/services/ItemSelectionService.mjs';
+import { ItemSelectionService } from "../../../../../capabilities/content-catalog/server/domain/services/ItemSelectionService.mjs";
 
 describe('ItemSelectionService', () => {
   describe('getStrategy', () => {

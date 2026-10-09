@@ -13,10 +13,10 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import yaml from 'js-yaml';
-import { YamlVehicleRecordDatastore } from '#adapters/persistence/yaml/YamlVehicleRecordDatastore.mjs';
-import { LogFuel } from '#apps/automotive/usecases/LogFuel.mjs';
-import { LogServiceRecord } from '#apps/automotive/usecases/LogServiceRecord.mjs';
-import { GetVehicleOverview } from '#apps/automotive/usecases/GetVehicleOverview.mjs';
+import { YamlVehicleRecordDatastore } from "../../../../modules/auto/server/adapters/persistence/YamlVehicleRecordDatastore.mjs";
+import { LogFuel } from "../../../../modules/auto/server/application/usecases/LogFuel.mjs";
+import { LogServiceRecord } from "../../../../modules/auto/server/application/usecases/LogServiceRecord.mjs";
+import { GetVehicleOverview } from "../../../../modules/auto/server/application/usecases/GetVehicleOverview.mjs";
 
 const VEHICLE = 'test-vehicle';
 const silent = { debug() {}, info() {}, warn() {} };

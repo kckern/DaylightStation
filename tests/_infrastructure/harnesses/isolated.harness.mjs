@@ -6,7 +6,7 @@ import { spawn } from 'child_process';
 import {
   parseArgs,
   findTestFiles,
-  findColocatedTestFiles,
+  findBrowserColocatedTestFiles,
   runJest,
   printSummary,
   COLORS,
@@ -15,7 +15,6 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ISOLATED_DIR = path.resolve(__dirname, '../../isolated');
 const ROOT_DIR = path.resolve(__dirname, '../../..');
-const FRONTEND_SRC_DIR = path.resolve(ROOT_DIR, 'frontend/src');
 // Every directory under tests/isolated/ MUST appear in one of these lists.
 // A directory in neither is silently never run by `npm run test:isolated` —
 // which is exactly how tests/isolated/e2e/ (the School lifecycle proof) rotted
@@ -148,7 +147,7 @@ async function main() {
   // frontend/src/hooks/fitness/CycleStateMachine.test.js). These never lived
   // under tests/isolated/, so they need a separate walk.
   const colocatedFiles = runColocated
-    ? findColocatedTestFiles(FRONTEND_SRC_DIR, args)
+    ? findBrowserColocatedTestFiles(ROOT_DIR, args)
     : [];
   // ---- Re-route by what each file IMPORTS, not by which directory it sits in.
   //

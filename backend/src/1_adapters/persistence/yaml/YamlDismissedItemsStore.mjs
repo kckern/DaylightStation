@@ -10,7 +10,7 @@
  *
  * @module adapters/persistence/yaml
  */
-import { IDismissedItemsStore } from '#apps/feed/ports/IDismissedItemsStore.mjs';
+import { IDismissedItemsStore } from "../../../../../modules/feed/server/application/ports/IDismissedItemsStore.mjs";
 
 const DISMISSED_PATH = 'feed/dismissed';
 const MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days

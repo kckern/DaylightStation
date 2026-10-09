@@ -1,4 +1,4 @@
-import { FitnessUserHydrator } from '#apps/fitness/services/FitnessUserHydrator.mjs';
+import { FitnessUserHydrator } from "../../../modules/fitness/server/application/services/FitnessUserHydrator.mjs";
 
 const makeReader = (profile) => ({ getProfile: (u) => (u === 'user_2' ? profile : null) });
 

@@ -13,7 +13,7 @@ vi.mock('react', () => ({
 let resolveGovernanceDisplay;
 beforeAll(async () => {
   ({ resolveGovernanceDisplay } = await import(
-    '#frontend/modules/Fitness/hooks/useGovernanceDisplay.js'
+    "../../../../../modules/fitness/browser/hooks/useGovernanceDisplay.js"
   ));
 });
 

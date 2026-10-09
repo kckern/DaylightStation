@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { createBookRecord } from '#domains/books/BookRecord.mjs';
-import { YamlBookRepository } from './YamlBookRepository.mjs';
+import { createBookRecord } from "../../../../../capabilities/book-catalog/server/domain/BookRecord.mjs";
+import { YamlBookRepository } from "../../../../../capabilities/book-catalog/server/adapters/persistence/YamlBookRepository.mjs";
 
 const silent = { debug() {}, info() {}, warn() {}, error() {} };
 let root;

@@ -1,0 +1,1398 @@
+// frontend/src/modules/Media/shell/MediaShell.scss
+// Layout-only rules for the shell. Colors and radii come from Mantine CSS
+// variables (the mediaTheme dark ramp) — no second token system. App-specific
+// layout vars live on .media-app (MediaApp.scss).
+@use "../../../../frontend/src/styles/breakpoints" as *;
+
+// Ink color for text sitting ON the amber accent (buttons, chips). One token,
+// not four hardcoded hexes.
+$amber-ink: #1a1300;
+
+// One focus treatment for every interactive element in the shell (matches
+// Cast.scss's convention: 2px amber outline, offset 2).
+@mixin media-focus-ring {
+  &:focus-visible {
+    outline: 2px solid var(--mantine-color-amber-5);
+    outline-offset: 2px;
+  }
+}
+
+.media-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background: var(--mantine-color-dark-7);
+  color: var(--mantine-color-dark-0);
+
+  // Consistent keyboard-focus ring on every interactive element, including
+  // Mantine components (their default ring is replaced by the amber token).
+  :is(button, a, select, input, [role='button'], [tabindex='0']):focus-visible {
+    outline: 2px solid var(--mantine-color-amber-5);
+    outline-offset: 2px;
+  }
+
+  // Native form controls that remain (search scope select, any stray
+  // checkbox/radio) pick up the accent instead of browser blue.
+  input[type='checkbox'],
+  input[type='radio'],
+  select,
+  input[type='range'] {
+    accent-color: var(--mantine-color-amber-5);
+  }
+}
+
+// Collapsed technical detail inside friendly error alerts.
+.error-detail {
+  margin-top: var(--mantine-spacing-xs);
+  font-size: 12px;
+  color: var(--mantine-color-dark-1);
+
+  summary {
+    cursor: pointer;
+    color: var(--mantine-color-dark-1);
+    @include media-focus-ring;
+  }
+}
+
+// ---- Dock (top bar) -------------------------------------------------------
+// One left edge: the destination control starts at the content gutter (past
+// the rail on tablet+), the search field and the right-hand controls follow.
+// Every control is the same 44 px tall.
+.media-dock {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
+  // Large text (RELY.11a): the bar grows and wraps instead of clipping the
+  // house indicator or the search label to a few letters.
+  min-height: var(--media-dock-h);
+  flex-wrap: wrap;
+  row-gap: var(--mantine-spacing-xs);
+  padding: 6px var(--media-gutter);
+  background: var(--media-ink);
+  border-bottom: 1px solid var(--media-line);
+  flex-shrink: 0;
+
+  @include tablet-up {
+    flex-wrap: nowrap;
+    padding-left: calc(var(--media-rail-w) + var(--media-gutter));
+  }
+
+  .media-dock-search {
+    flex: 1;
+    min-width: 0;
+    max-width: 560px;
+  }
+
+  .media-dock-destination {
+    // Phone: the destination takes the first row beside the gear.
+    flex: 1 1 0;
+    min-width: 0;
+    @include tablet-up { flex: 0 1 auto; }
+  }
+
+  // The gear always rides the right edge (beside the house indicator when it shows).
+  @include tablet-up {
+    > .mantine-ActionIcon-root { margin-left: auto; }
+    > .media-house-indicator + .mantine-ActionIcon-root { margin-left: 0; }
+  }
+
+  .media-dock-cluster {
+    display: flex;
+    align-items: center;
+    gap: var(--mantine-spacing-xs);
+    margin-left: auto;
+  }
+}
+
+// The destination control: "Playing on" over the device name, then a chevron.
+// The only amber in the header is the name; the control is a plain 44 px
+// target with a hairline border, never a filled shape.
+.media-destination {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--media-control-line);
+  border-radius: var(--mantine-radius-sm);
+  color: var(--media-muted);
+  @include media-focus-ring;
+
+  &:hover { border-color: var(--media-muted); }
+
+  .media-destination-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.2;
+    text-align: left;
+  }
+
+  .media-destination-prefix {
+    font-size: 0.8125rem;
+    font-weight: 400;
+    color: var(--media-muted);
+  }
+
+  .media-destination-name {
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: var(--media-accent);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.media-destination-anchor {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.media-first-use {
+  background: var(--media-surface);
+  border-color: var(--media-line);
+
+  // Phone: the dock wraps to two rows (destination, then the search launcher), so a
+  // popover hanging under the destination would cover search until answered. It
+  // docks above the handle instead — an overlay that leaves the header, the
+  // launcher and the page reachable.
+  @include mobile-only {
+    position: fixed !important;
+    top: auto !important;
+    left: var(--media-gutter) !important;
+    right: var(--media-gutter) !important;
+    width: auto !important;
+    bottom: calc(var(--media-tabbar-h, 56px) + var(--media-mini-h, 60px) + env(safe-area-inset-bottom, 0px) + 8px) !important;
+  }
+}
+
+// House indicator: hidden at 0 (FleetIndicator), "N playing" with a small dot.
+// Shown at every width; on tablet+ it rides the right edge beside the gear.
+.media-house-indicator.mantine-Button-root {
+  min-height: 44px;
+  @include tablet-up { margin-left: auto; }
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--media-text);
+}
+
+.media-house-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--media-muted);
+
+  &--playing { background: var(--mantine-color-green-5); }
+}
+
+// ---- Body: nav rail + canvas ---------------------------------------------
+.media-shell-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.media-canvas {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  // One left edge: the fixed gutter on both sides, everything inside aligns to it.
+  padding: var(--mantine-spacing-md) var(--media-gutter);
+  -webkit-overflow-scrolling: touch;
+}
+
+// Bound content width on very wide viewports: lists become unreadable ribbons
+// past ~900px. (Now Playing and Detail carry their own tighter caps.)
+.browse-view,
+.fleet-view,
+.peek-panel {
+  max-width: 900px;
+  margin: 0;
+  width: 100%;
+}
+// Device cards are a grid, so the Devices view gets a wider cap than lists.
+.fleet-view { max-width: 1200px; }
+
+// The browse view's destination line sits on the content edge too.
+.browse-view .cast-destination-line { padding-left: 0; }
+
+// Home runs the full content width: rows share the left edge with the header.
+.home-view {
+  width: 100%;
+  min-width: 0;
+}
+
+// ---- Primary nav: rail (tablet+) / tab bar (mobile) ------------------------
+// Selected = text colour (+ a 3 px amber marker on the rail's left edge);
+// the others are muted. No filled shapes.
+.media-nav-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 48px;
+  min-width: 48px;
+  padding: 6px 8px;
+  border-radius: var(--mantine-radius-sm);
+  color: var(--media-muted);
+  font-size: 0.8125rem;
+  transition: color var(--ds-motion-fast) var(--ds-motion-easing);
+
+  &:hover { color: var(--media-text); }
+
+  &--active {
+    color: var(--media-text);
+    font-weight: 600;
+  }
+}
+
+// Devices tab badge: the fleet-active-count signal that used to live only in
+// the dock's FleetIndicator ("Devices 2/5"), which is desktop-only now that
+// mobile's dock is a launcher (Task 13). A small numeric badge on the icon
+// covers the same "something's actively playing" glance at every width.
+.media-nav-icon-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.media-nav-badge {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--mantine-color-amber-5);
+  color: #1a1300;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.media-nav-rail {
+  display: none;
+
+  @include tablet-up {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--mantine-spacing-xs);
+    width: var(--media-rail-w);
+    padding: var(--mantine-spacing-sm) 0;
+    background: var(--media-ink);
+    border-right: 1px solid var(--media-line);
+    flex-shrink: 0;
+
+    // 3 px amber marker on the selected destination's left edge.
+    .media-nav-item { border-radius: 0; }
+    .media-nav-item--active::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 6px;
+      bottom: 6px;
+      width: 3px;
+      background: var(--media-accent);
+    }
+  }
+}
+
+.media-tabbar {
+  display: flex;
+  justify-content: space-around;
+  align-items: stretch;
+  height: calc(var(--media-tabbar-h) + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: var(--media-ink);
+  border-top: 1px solid var(--media-line);
+  flex-shrink: 0;
+
+  .media-nav-item { flex: 1; border-radius: 0; }
+  .media-nav-item--active::before {
+    content: '';
+    position: absolute;
+    left: 20%;
+    right: 20%;
+    top: 0;
+    height: 3px;
+    background: var(--media-accent);
+  }
+
+  @include tablet-up { display: none; }
+}
+
+// ---- Dock: launcher (mobile) vs. persistent row (tablet+) -----------------
+// Mobile gets a launcher button + settings gear only — no room to contest
+// for a search input, scope chips, and an icon cluster in one row (see
+// Task 13 / spec D1-D2). Tablet+ keeps the persistent MediaContentSearch bar
+// and the fleet/cast cluster exactly as before; the launcher never shows
+// there (nothing wires it to anything at that width — SearchMode is a
+// mobile-only surface).
+.media-search-launcher {
+  display: none;
+}
+
+@include mobile-only {
+  .media-search-launcher {
+    display: flex;
+    align-items: center;
+    gap: var(--mantine-spacing-xs);
+    // Phone: the launcher is the dock's second row, full width; the gear
+    // (last child) rides the destination's row.
+    flex: 1 1 100%;
+    order: 3;
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 var(--mantine-spacing-sm);
+    background: var(--media-surface);
+    border: 1px solid var(--media-control-line);
+    border-radius: var(--mantine-radius-sm);
+    color: var(--media-muted);
+    font-size: 0.9375rem;
+    text-align: left;
+    @include media-focus-ring;
+
+    span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  // Hides MediaContentSearch's own root class directly — no wrapper div.
+  // A wrapper here would give `.media-search-bar` a non-flex parent inside
+  // `.media-dock`, orphaning the `flex: 1` it relies on for its tablet-up
+  // width (see Dock.jsx's comment; this regressed desktop 560px -> 205px
+  // before the fix).
+  //
+  // Both selectors are qualified with `.media-dock` on purpose. The dock
+  // styles these as NESTED rules (`.media-dock { .media-dock-cluster { … } }`,
+  // specificity 0,2,0), and a media query adds no specificity — so a bare
+  // `.media-dock-cluster { display: none }` here loses to it at every width
+  // and the fleet/cast cluster stayed visible on phones, squeezing the search
+  // launcher to ~62px and truncating it to "S…". That is the same inverted
+  // dock hierarchy this work exists to remove, so it has to out-specify.
+  .media-dock .media-search-bar,
+  .media-dock .media-dock-cluster {
+    display: none;
+  }
+  .media-dock > :last-child { order: 2; }
+}
+
+// ---- Mini player (bottom bar, all viewports) -------------------------------
+.mini-player {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
+  min-height: var(--media-mini-h);
+  padding: 6px var(--media-gutter);
+  // The handle bar is a raised surface (menus, popovers, the handle).
+  background: var(--media-surface);
+  border-top: 1px solid var(--media-line);
+  flex-shrink: 0;
+
+  // Now Playing has no nav tab; the mini player is its "you are here" light.
+  &--active {
+    border-top-color: var(--media-muted);
+  }
+
+  .mini-player-thumb {
+    width: 44px;
+    height: 44px;
+    object-fit: cover;
+    border-radius: var(--mantine-radius-sm);
+    flex-shrink: 0;
+  }
+
+  .mini-player-video-dock {
+    flex-shrink: 0;
+    width: var(--media-dock-video-w);
+    height: calc(var(--media-mini-h) - 12px);
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: var(--mantine-radius-sm);
+    overflow: hidden;
+    background: var(--mantine-color-dark-8);
+    cursor: pointer;
+    display: block;
+
+    &:hover { border-color: var(--media-text); }
+
+    .mini-player-video-dock-host {
+      width: 100%;
+      height: 100%;
+      // Clicks fall through to the wrapping button so the tile always promotes,
+      // even when the pointer is over the portaled <video>.
+      pointer-events: none;
+
+      // The poster sits behind the video until frames arrive (no black box).
+      &.mini-player-video-dock-host--poster {
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+      }
+
+      // The bridge portals its host node in here. Without an explicit size the
+      // host is height:auto, and the Player's absolutely positioned <video>
+      // collapses to 0px — the tile plays but shows nothing.
+      .media-player-host { width: 100%; height: 100%; }
+
+      video, iframe {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+    }
+  }
+
+  .mini-player-title {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--mantine-spacing-xs);
+    color: var(--media-text);
+    font-weight: 600;
+
+    &:hover .mini-player-title-text { text-decoration: underline; }
+
+    // What is there (art is beside it): the item, and in words what it is doing.
+    .mini-player-title-stack {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      line-height: 1.3;
+    }
+
+    .mini-player-title-text {
+      font-size: 0.9375rem;
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .mini-player-state {
+      font-size: 0.8125rem;
+      font-weight: 400;
+      color: var(--media-muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .mini-queue-count {
+      flex-shrink: 0;
+      font-size: 0.8125rem;
+      font-weight: 400;
+      color: var(--media-muted);
+    }
+  }
+
+  .mini-player-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--mantine-spacing-xs);
+    flex-shrink: 0;
+  }
+}
+
+// Phone: four 44 px controls leave a 390 px handle no room for its own title
+// (it measured 40 px wide). A narrower video dock and tighter gaps give the
+// title back about 100 px without hiding or shrinking any control.
+@media (max-width: 480px) {
+  .mini-player {
+    --media-dock-video-w: 64px;
+    gap: var(--mantine-spacing-xs);
+    padding-left: var(--mantine-spacing-xs);
+    padding-right: var(--mantine-spacing-xs);
+
+    .mini-player-controls { gap: 2px; }
+  }
+}
+
+// ---- Now Playing ------------------------------------------------------------
+.now-playing-view {
+  max-width: 760px;
+  // One left edge, like every other view.
+  margin: 0;
+  width: 100%;
+
+  .now-playing-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .now-playing-host {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: var(--mantine-color-dark-8);
+    border-radius: var(--mantine-radius-md);
+    overflow: hidden;
+
+    &:empty { display: none; }
+
+    .media-player-host { width: 100%; height: 100%; }
+    video, audio, iframe { width: 100%; height: 100%; }
+  }
+}
+
+.seek-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
+
+  .seek-slider { flex: 1; }
+  .seek-time { min-width: 44px; text-align: center; font-variant-numeric: tabular-nums; }
+}
+
+.transport-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-sm);
+
+  .transport-volume {
+    justify-content: center;
+    .volume-slider { width: min(240px, 60%); }
+  }
+}
+
+// ---- Queue ------------------------------------------------------------------
+.queue-panel {
+  .queue-toolbar {
+    padding: var(--mantine-spacing-xs) 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .queue-items {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .queue-item {
+    display: flex;
+    align-items: center;
+    gap: var(--mantine-spacing-xs);
+    min-height: 48px;
+    padding: 2px var(--mantine-spacing-xs);
+    border-radius: var(--mantine-radius-sm);
+
+    &:hover { background: var(--mantine-color-dark-5); }
+
+    &--current {
+      background: var(--mantine-color-dark-5);
+      .queue-item-title { color: var(--media-text); font-weight: 600; }
+    }
+
+    .queue-item-title {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      min-height: 44px;
+      background: none;
+      border: none;
+      color: var(--mantine-color-dark-0);
+      text-align: left;
+      cursor: pointer;
+      padding: 8px 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+
+      &:disabled { cursor: default; }
+
+      .queue-item-index { color: var(--mantine-color-dark-1); font-size: 12px; }
+    }
+  }
+
+  .queue-empty { padding: var(--mantine-spacing-md) 0; }
+}
+
+// ---- Search bar + dropdown ---------------------------------------------------
+.media-search-bar {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  max-width: 560px;
+
+  .media-search-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--mantine-spacing-xs);
+    min-width: 0;
+
+    .media-scope-chips {
+      flex: 0 0 auto;
+      min-width: 0;
+    }
+  }
+
+  // Base chip styling (.media-scope-chips / .media-scope-chip) is co-located
+  // in search/Search.scss with the ScopeChips component; this file only
+  // covers dock-row placement.
+  .scope-error { color: var(--mantine-color-red-5); display: inline-flex; }
+
+  .media-search-input-wrap { flex: 1 1 160px; min-width: 120px; }
+
+  // Laptop: the dock row has room the three controls were not given — the aim
+  // label read "Browser ac5…" and the scope chips were clipped mid-chip.
+  @media (min-width: 1100px) {
+    max-width: 920px;
+
+    .media-search-input-wrap { flex-basis: 260px; }
+  }
+}
+
+// The results dropdown is portaled to <body> and Mantine sizes it to the input,
+// which in the dock row is ~210px wide. A result row needs more: at that width
+// its badge and ⋮ actions sat past the right edge, and opening them scrolled
+// the whole list sideways, hiding every title. Mantine's shift keeps the wider
+// dropdown on screen; the phone uses the full-screen SearchMode instead.
+// Rows shrinking to the dropdown (instead of to the widest row) is fixed for
+// every consumer in ContentCombobox.scss; this only widens the dock's.
+.media-search-dropdown {
+  min-width: min(520px, calc(100vw - 32px));
+
+  // Source and state badges read in sentence case ("Plex"), never shouting capitals.
+  .mantine-Badge-root { text-transform: none; }
+}
+
+// Portrait/mobile note (spec D1-D2, Task 13): the old fix-in-place here was
+// an idle/focus width contest between the scope control, the search input,
+// and a 168px icon cluster on a ~336px row — culminating in a
+// `.media-dock:has(.media-search-bar:focus-within)` rule that hid the scope
+// control and the icon cluster the instant the field got focus, the one
+// moment scope mattered. That whole subtree (`.media-dock-desktop-search`,
+// which wraps MediaContentSearch/.media-search-bar) is now display:none on
+// mobile outright (see the Dock launcher rules above) — mobile search lives
+// in the full-screen SearchMode surface instead, where width is never
+// contested. No mobile-only override of `.media-search-bar` is needed
+// anymore; it only ever renders at tablet-up widths now.
+
+.media-search-overlay {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 300;
+  background: var(--mantine-color-dark-6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--mantine-radius-md);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  max-height: min(70dvh, 560px);
+  overflow-y: auto;
+  padding: var(--mantine-spacing-xs);
+
+  @include mobile-only {
+    position: fixed;
+    top: var(--media-dock-h);
+    left: 0;
+    right: 0;
+    border-radius: 0;
+    max-height: calc(100dvh - var(--media-dock-h) - var(--media-mini-h) - var(--media-tabbar-h));
+  }
+}
+
+// ---- Load errors: one quiet line + a normal secondary button -----------------
+.media-load-error {
+  // The message in a fixed column, so every "Try again" lands on one x.
+  display: grid;
+  grid-template-columns: minmax(0, 20rem) auto;
+  justify-content: start;
+  align-items: center;
+  gap: var(--mantine-spacing-sm) var(--mantine-spacing-md);
+  @include mobile-only { grid-template-columns: minmax(0, 1fr); justify-items: start; }
+  padding: var(--mantine-spacing-sm) 0;
+  color: var(--media-muted);
+  font-size: 0.9375rem;
+
+  &__retry { min-height: 44px; flex: 0 0 auto; width: auto; }
+}
+
+.search-state {
+  padding: var(--mantine-spacing-md);
+  color: var(--mantine-color-dark-1);
+  font-size: 14px;
+
+  &--error { display: flex; align-items: center; gap: var(--mantine-spacing-sm); }
+}
+
+.search-deeplink-suggestion {
+  padding: var(--mantine-spacing-xs) 0;
+  code { color: var(--media-muted); }
+}
+
+.search-deeplink-btn {
+  background: var(--mantine-color-amber-5);
+  color: $amber-ink;
+  border: none;
+  border-radius: var(--mantine-radius-sm);
+  padding: 8px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 36px;
+
+  &:hover { background: var(--mantine-color-amber-4); }
+}
+
+.search-source-errors {
+  display: flex;
+  gap: var(--mantine-spacing-sm);
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-md);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--mantine-color-amber-4);
+  font-size: 12px;
+}
+
+// ---- Result rows --------------------------------------------------------------
+.media-search-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.result-row {
+  display: flex;
+  align-items: center;
+  border-radius: var(--mantine-radius-sm);
+  &:hover { background: var(--mantine-color-dark-5); }
+  &--open { background: var(--mantine-color-dark-5); }
+
+  // Task 14 (spec D6): the tap target (thumb/title/subtitle) shares the row
+  // with the trailing ▶/⋯ verb (.media-result-actions below) — mirrors
+  // .browse-row/.browse-row-open/.browse-row-actions' flex:1 + actions-strip
+  // split further down this file.
+  .result-row-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--mantine-spacing-sm);
+    padding: 6px var(--mantine-spacing-xs);
+    min-height: 56px;
+    // The tap target is a real <button>: strip the UA's grey face.
+    background: none;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .media-result-thumb {
+    width: 44px;
+    height: 44px;
+    object-fit: cover;
+    border-radius: var(--mantine-radius-sm);
+    background: var(--mantine-color-dark-7);
+    flex-shrink: 0;
+
+    // No artwork: a quiet centred initial, never a letter stuck to the corner.
+    &--icon {
+      display: grid;
+      place-items: center;
+      color: var(--media-muted);
+      background: var(--media-surface);
+    }
+
+    &--placeholder {
+      display: grid;
+      place-items: center;
+      color: var(--media-muted);
+      font-weight: 600;
+      background: var(--media-surface);
+    }
+  }
+
+  .media-result-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+
+    .media-result-title {
+      background: none;
+      border: none;
+      padding: 0;
+      color: var(--mantine-color-dark-0);
+      font-weight: 600;
+      font-size: 0.9375rem;
+      text-align: left;
+      cursor: pointer;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .media-result-subtitle {
+      // The row's tap target is a <button>, whose UA `text-align: center`
+      // inherits down. .media-result-title overrides it; this didn't, so every
+      // result row on both surfaces rendered a left-aligned title above a
+      // centred subtitle (measured at 360px: title glyphs at x=12, subtitle
+      // glyphs at x=154.64).
+      text-align: left;
+      color: var(--media-muted);
+      font-size: 0.8125rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  .media-result-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .result-peek {
+    display: flex;
+    gap: var(--mantine-spacing-md);
+    padding: var(--mantine-spacing-sm) var(--mantine-spacing-md) var(--mantine-spacing-md);
+
+    .result-peek-thumb {
+      width: 96px;
+      height: 96px;
+      object-fit: cover;
+      border-radius: var(--mantine-radius-md);
+    }
+
+    .result-peek-meta {
+      font-size: 13px;
+      color: var(--mantine-color-dark-1);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+
+      .result-peek-title { font-weight: 600; color: var(--mantine-color-dark-0); }
+      code { color: var(--media-muted); font-size: 12px; }
+    }
+  }
+}
+
+.result-action {
+  background: var(--mantine-color-dark-5);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: var(--mantine-radius-sm);
+  color: var(--mantine-color-dark-0);
+  font-size: 12px;
+  padding: 7px 10px;
+  min-height: 34px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms ease;
+
+  &:hover { background: var(--mantine-color-dark-4); }
+
+  &--primary {
+    background: var(--mantine-color-amber-5);
+    border-color: transparent;
+    color: $amber-ink;
+    font-weight: 600;
+    &:hover { background: var(--mantine-color-amber-4); }
+  }
+
+  &.action-flash {
+    background: var(--mantine-color-amber-5);
+    color: $amber-ink;
+    transition: background 120ms ease;
+  }
+}
+
+// ---- Browse rows ---------------------------------------------------------------
+.browse-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  overflow-x: auto;
+  white-space: nowrap;
+
+  .browse-crumb {
+    background: none;
+    border: none;
+    color: var(--media-muted);
+    cursor: pointer;
+    font-size: 0.9375rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0 8px;
+    border-radius: var(--mantine-radius-sm);
+    transition: color var(--ds-motion-fast) var(--ds-motion-easing);
+    @include media-focus-ring;
+
+    &:hover { color: var(--media-text); text-decoration: underline; }
+
+    &--current {
+      color: var(--media-text);
+      font-weight: 600;
+      cursor: default;
+      &:hover { color: var(--media-text); text-decoration: none; }
+    }
+  }
+
+  .browse-crumb-sep { color: var(--mantine-color-dark-3); }
+  // The first crumb's text, not its padding, sits on the content edge.
+  .browse-crumb:first-child { margin-left: -8px; }
+}
+
+// Container dispatch header (Task 15, spec D6 addendum): a container tap
+// always browses (Task 14) — this pays that cost back so a browsed-into
+// album/show/playlist is one more tap from playing, not a dead end. Sits
+// directly under the breadcrumb, above the row list.
+.browse-dispatch-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  background: var(--media-surface);
+  border: 1px solid var(--media-line);
+  border-radius: var(--mantine-radius-md);
+}
+
+.browse-dispatch-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.browse-dispatch-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 44px;
+  background: transparent;
+  border: 1px solid var(--media-line);
+  border-radius: var(--mantine-radius-sm);
+  color: var(--media-text);
+  font: inherit;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color var(--ds-motion-fast) var(--ds-motion-easing);
+
+  &:hover { border-color: var(--media-muted); }
+  @include media-focus-ring;
+
+  &--primary {
+    background: var(--mantine-color-amber-5);
+    color: $amber-ink;
+    border-color: transparent;
+
+    &:hover { background: var(--mantine-color-amber-4); }
+  }
+}
+
+.browse-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.browse-row {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
+  min-height: 56px;
+  border-radius: var(--mantine-radius-sm);
+  padding: 0;
+
+  &:hover { background: var(--mantine-color-dark-5); }
+
+  .browse-row-open {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--mantine-spacing-sm);
+    background: none;
+    border: none;
+    color: var(--mantine-color-dark-0);
+    font-size: 14px;
+    text-align: left;
+    cursor: pointer;
+    padding: 14px 0;
+
+    .browse-row-title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  // Browse rows sit on the content edge (no inner padding).
+  .result-row-main { padding-left: 0; }
+
+  .browse-row-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+}
+
+// ---- Detail ---------------------------------------------------------------------
+.detail-view {
+  max-width: 680px;
+
+  .detail-poster { max-width: 280px; }
+}
+
+// ---- Fleet ----------------------------------------------------------------------
+.fleet-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--mantine-spacing-sm);
+
+  @include tablet-up { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  @include desktop-up { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+.fleet-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-sm);
+  padding: var(--mantine-spacing-md);
+  background: var(--mantine-color-dark-5);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--mantine-radius-md);
+  transition: border-color 120ms ease;
+
+  &:hover { border-color: rgba(255, 255, 255, 0.12); }
+
+  .fleet-card-head {
+    display: flex;
+    align-items: center;
+    gap: var(--mantine-spacing-xs);
+
+    .fleet-card-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      border: 1px solid transparent;
+      flex-shrink: 0;
+    }
+
+    .fleet-card-icon {
+      font-size: 20px;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+
+    .fleet-card-titles {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+
+      .fleet-card-name {
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .fleet-card-this-device,
+      .fleet-card-location {
+        font-size: 12px;
+        color: var(--mantine-color-dark-1);
+      }
+    }
+
+    .fleet-card-state {
+      color: var(--mantine-color-dark-1);
+      font-size: 12px;
+      margin-left: auto;
+      text-align: right;
+      flex-shrink: 0;
+    }
+  }
+
+  .fleet-card-item {
+    display: flex;
+    align-items: center;
+    gap: var(--mantine-spacing-sm);
+    min-height: 52px;
+    padding: var(--mantine-spacing-xs);
+    background: var(--mantine-color-dark-6);
+    border-radius: var(--mantine-radius-sm);
+
+    .fleet-card-thumb {
+      width: 44px;
+      height: 44px;
+      object-fit: cover;
+      border-radius: var(--mantine-radius-sm);
+      flex-shrink: 0;
+    }
+
+    .fleet-card-item-meta { flex: 1; min-width: 0; }
+
+    .fleet-card-hint { padding: 0 var(--mantine-spacing-xs); }
+  }
+}
+
+// ---- Peek (remote control) -------------------------------------------------
+.peek-panel {
+  // Location and status hug the device title instead of floating a full
+  // Stack gap away.
+  .peek-location { margin-top: calc(-1 * var(--mantine-spacing-sm)); }
+
+  .peek-status {
+    color: var(--mantine-color-dark-0);
+    font-weight: 600;
+  }
+
+  // Optimistic-overlay feedback: anything awaiting device confirmation dims.
+  [data-pending='true'] { opacity: 0.6; }
+}
+
+// ---- Cast picker + popover (NOTE: .dispatch-target-picker and the cast
+// portal render into document.body — these selectors are deliberately
+// unscoped so portaled instances stay styled) -----------------------------------
+.dispatch-target-picker {
+  min-width: 260px;
+  background: var(--mantine-color-dark-6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--mantine-radius-md);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  padding: var(--mantine-spacing-sm);
+  color: var(--mantine-color-dark-0);
+  font-size: 14px;
+
+  .picker-section { margin-bottom: var(--mantine-spacing-sm); }
+
+  .picker-section-label {
+    font-size: 12px;
+    color: var(--mantine-color-dark-1);
+    margin-bottom: 4px;
+    font-weight: 600;
+  }
+
+  .picker-device,
+  .picker-mode {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 0 6px;
+    border-radius: var(--mantine-radius-sm);
+    cursor: pointer;
+
+    &:hover { background: var(--mantine-color-dark-5); }
+  }
+
+  .picker-device--selected { background: var(--mantine-color-dark-5); }
+
+  .picker-device-location { color: var(--mantine-color-dark-2); font-size: 12px; margin-left: auto; }
+
+  .picker-empty { color: var(--mantine-color-dark-2); padding: 6px; }
+
+  .picker-submit {
+    width: 100%;
+    min-height: 40px;
+    background: var(--mantine-color-amber-5);
+    color: $amber-ink;
+    border: none;
+    border-radius: var(--mantine-radius-sm);
+    font-weight: 600;
+    cursor: pointer;
+
+    &:hover { background: var(--mantine-color-amber-4); }
+    &:disabled { background: var(--mantine-color-dark-4); color: var(--mantine-color-dark-2); cursor: default; }
+  }
+}
+
+// Inside Now Playing the picker is inline, not floating.
+.handoff-section .dispatch-target-picker {
+  box-shadow: none;
+  background: var(--mantine-color-dark-5);
+}
+
+.cast-popover {
+  .cast-popover-section { margin-bottom: var(--mantine-spacing-sm); }
+  .cast-popover-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+    cursor: pointer;
+    font-size: 14px;
+
+    &:hover { color: var(--media-text); }
+  }
+}
+
+// Portaled surfaces render into document.body (outside .media-shell), so the
+// native-control accent and focus ring are re-declared here.
+.cast-popover,
+.dispatch-target-picker {
+  input[type='checkbox'],
+  input[type='radio'] {
+    accent-color: var(--mantine-color-amber-5);
+    width: 16px;
+    height: 16px;
+  }
+
+  :is(button, input, [role='button'], [role='radio']) {
+    @include media-focus-ring;
+  }
+}
+
+// ---- Dispatch progress tray ----------------------------------------------------
+.dispatch-tray {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px var(--mantine-spacing-sm);
+  background: var(--mantine-color-dark-6);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+  font-size: 13px;
+
+  .dispatch-row {
+    display: flex;
+    align-items: center;
+    gap: var(--mantine-spacing-xs);
+    min-height: 32px;
+
+    .dispatch-row-device { font-weight: 600; }
+    .dispatch-row-content {
+      color: var(--mantine-color-dark-2);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 200px;
+    }
+    .dispatch-row-status { color: var(--mantine-color-dark-1); margin-left: auto; }
+
+    .dispatch-row-retry {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--mantine-color-dark-4);
+      border: none;
+      border-radius: var(--mantine-radius-sm);
+      color: var(--mantine-color-dark-0);
+      padding: 6px 10px;
+      cursor: pointer;
+
+      &:hover { background: var(--mantine-color-dark-3); }
+    }
+  }
+}
+
+// RELY.7a/AC4 — quiet note while the connection to the house is lost.
+.media-reconnecting {
+  padding: 4px var(--mantine-spacing-sm);
+  font-size: 12px;
+  color: var(--mantine-color-dark-1);
+  background: var(--mantine-color-dark-6);
+  text-align: center;
+}
+
+// Outcome notices (RELY.1a/PR-6) are an overlay, never page space (owner
+// rule): a zero-height anchor in the shell column between the canvas and
+// the mini player; the tray hangs upward from it over the canvas.
+.media-outcome-anchor {
+  position: relative;
+  height: 0;
+  flex-shrink: 0;
+  z-index: 150;
+
+  .cast-tray {
+    position: absolute;
+    bottom: 6px;
+    left: 0;
+    right: 0;
+    width: min(560px, calc(100% - 2 * var(--mantine-spacing-sm)));
+    margin-inline: auto;
+    padding: 0;
+    background: none;
+    border-top: none;
+    gap: 4px;
+    pointer-events: none;
+  }
+
+  .cast-tray-row {
+    pointer-events: none;
+    padding: 4px var(--mantine-spacing-xs);
+    background: var(--mantine-color-dark-6);
+    border: 1px solid var(--mantine-color-dark-4);
+    border-radius: var(--mantine-radius-md);
+    box-shadow: var(--mantine-shadow-md);
+  }
+
+  // Only the row's own controls take pointer input.
+  .cast-tray-actions,
+  .cast-tray-elsewhere {
+    pointer-events: auto;
+  }
+}
+
+// NF-A11Y-04: honour reduced motion for the shell and its portalled surfaces
+// (menus, dialogs, the search dropdown). Loaders keep spinning — a frozen
+// spinner reads as a hang.
+@media (prefers-reduced-motion: reduce) {
+  .media-shell,
+  .media-shell *,
+  .media-shell *::before,
+  .media-shell *::after,
+  .media-search-dropdown,
+  .media-search-dropdown *,
+  .media-player-host,
+  .media-player-host *,
+  .mantine-Menu-dropdown,
+  .mantine-Menu-dropdown *,
+  .mantine-Modal-root,
+  .mantine-Modal-root * {
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
+
+  // The hand-rolled spinners (send tray, "still searching") are loaders too.
+  .media-shell *:not(.mantine-Loader-root):not(.mantine-Loader-root *):not([role='progressbar']):not(.cast-tray-spinner):not(.search-still-searching-spinner),
+  .media-search-dropdown *:not(.mantine-Loader-root):not(.mantine-Loader-root *):not(.search-still-searching-spinner) {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+// A source that did not answer inside a search: its retry is a real 44 px target.
+.media-search-dropdown .stream-status-retry-btn,
+.media-shell .stream-status-retry-btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 var(--mantine-spacing-xs);
+}
+
+// RELY.13a/AC1 — the edge of a text field is a control boundary (>= 3:1). Mantine draws it from
+// --input-bd (dark-4 in the dark scheme); resting state only, so the focus ring keeps its own colour.
+html:has(.media-app) .mantine-Input-input:not(:focus):not([data-expanded="true"]):not([data-error]),
+.media-app .mantine-Input-input:not(:focus):not([data-expanded="true"]):not([data-error]) {
+  --input-bd: var(--media-control-line);
+}

@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
-import { createDoNowRouter } from '../../../../backend/src/4_api/v1/routers/donow.mjs';
+import request from '../../../preimplementation/application-modules/drivers/remaining-http-request.mjs';
+import { createDoNowRouter } from "../../../../modules/donow/server/api/donow.mjs";
 import { createApiRouter } from '../../../../backend/src/4_api/v1/routers/api.mjs';
-import { authenticate } from '#apps/trigger/guards/authenticate.mjs';
+import { authenticate } from "../../../../capabilities/device-dispatch/server/application/guards/authenticate.mjs";
 
 const silentLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 

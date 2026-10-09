@@ -1,10 +1,10 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { INITIAL_FEN, legalDestinations } from '@shared-gaming/rulesets/chess/engine.mjs';
-import { normalizeOpponentProfile, normalizeOpponentRoster } from '@shared-gaming/opponents/profile.mjs';
-import { fenToPosition } from '@shared-gaming/rulesets/chess/position.mjs';
+import { INITIAL_FEN, legalDestinations } from "../../../../capabilities/gaming/portable/rulesets/chess/engine.mjs";
+import { normalizeOpponentProfile, normalizeOpponentRoster } from "../../../../capabilities/gaming/portable/opponents/profile.mjs";
+import { fenToPosition } from "../../../../capabilities/gaming/portable/rulesets/chess/position.mjs";
 import getLogger from '../../../../frontend/src/lib/logging/Logger.js';
-import ChessBoard from '../../../../frontend/src/modules/Chess/ChessBoard.jsx';
-import { pieceSource } from '../../../../frontend/src/modules/Chess/pieceAssets.js';
+import ChessBoard from "../../../chess/browser/ChessBoard.jsx";
+import { pieceSource } from "../../../chess/browser/pieceAssets.js";
 import BoardGameFrame from '../game-platform/host/BoardGameFrame.jsx';
 import BoardGameOpening from '../game-platform/host/BoardGameOpening.jsx';
 import { GameRail, GameSlot, GameButton, GameStatusBar } from '../game-platform/chrome/index.js';
@@ -50,7 +50,7 @@ import {
 } from './takebackBudget.js';
 import { buildChessRailViewModel } from './chessRailViewModel.js';
 import { RoundStanding } from './RoundStanding.jsx';
-import { rimAxisClef, rimStaffExtent } from '../../../../frontend/src/modules/MusicNotation/renderers/RimStaffRenderer.jsx';
+import { rimAxisClef, rimStaffExtent } from "../../../../capabilities/music-notation/browser/renderers/RimStaffRenderer.jsx";
 import { useChessAddressingProgress } from './useChessAddressingProgress.js';
 import { useChessOpponentTurn } from './useChessOpponentTurn.js';
 import { useChessPersistenceLifecycle } from './useChessPersistenceLifecycle.js';

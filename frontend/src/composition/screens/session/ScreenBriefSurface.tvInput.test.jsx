@@ -5,7 +5,7 @@ import { getActionBus, resetActionBus } from '../../../../../capabilities/screen
 import { createScreenPlayerFeatures } from '../../../../../capabilities/screen-host/browser/session/screenPlayerFeatures.js';
 
 vi.mock('../../../../../capabilities/playback/browser/player/Player.jsx', () => ({ default: () => <div data-testid="clip-player" /> }));
-vi.mock('../../../modules/CameraFeed/CameraOverlay.jsx', () => ({ default: () => <div data-testid="camera" /> }));
+vi.mock("../../../../../modules/camera/browser/CameraOverlay.jsx", () => ({ default: () => <div data-testid="camera" /> }));
 
 import { ScreenBriefSurface } from './ScreenPlayerFeaturesHost.jsx';
 

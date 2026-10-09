@@ -1,4 +1,4 @@
-import { ILibraryMediaBootstrapGateway, normalizeBootstrapSpine, validBootstrapInput } from '#apps/proxy/ports/ILibraryMediaBootstrapGateway.mjs';
+import { ILibraryMediaBootstrapGateway, normalizeBootstrapSpine, validBootstrapInput } from "../../../../../../capabilities/content-catalog/server/application/proxy/ports/ILibraryMediaBootstrapGateway.mjs";
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const failure = code => Object.assign(new Error(code), { code });

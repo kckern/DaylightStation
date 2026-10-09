@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Goal } from '#domains/lifeplan/entities/Goal.mjs';
+import { Goal } from "../../../../modules/life/server/domain/entities/Goal.mjs";
 
 describe('Goal Entity', () => {
   describe('construction', () => {

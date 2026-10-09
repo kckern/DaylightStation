@@ -14,7 +14,7 @@ vi.mock('#system/utils/FileIO.mjs', () => ({
   getStats: vi.fn(() => ({ mtimeMs: 1 })),
 }));
 
-const { ListAdapter } = await import('#adapters/content/list/ListAdapter.mjs');
+const { ListAdapter } = await import("../../../../../capabilities/content-catalog/server/adapters/providers/list/ListAdapter.mjs");
 
 const poems = ['07', '59', '60'].map((n) => ({ id: `readalong:poetry/remedy/${n}`, title: `Poem ${n}` }));
 const progress = [

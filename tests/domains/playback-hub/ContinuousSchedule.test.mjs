@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { ContinuousSchedule } from '../../../backend/src/2_domains/playback-hub/value-objects/ContinuousSchedule.mjs';
-import { QueueRef } from '../../../backend/src/2_domains/playback-hub/value-objects/QueueRef.mjs';
+import { ContinuousSchedule } from "../../../modules/media/server/domain/playback-hub/value-objects/ContinuousSchedule.mjs";
+import { QueueRef } from "../../../modules/media/server/domain/playback-hub/value-objects/QueueRef.mjs";
 import { ValidationError } from '../../../backend/src/2_domains/core/errors/ValidationError.mjs';
 
 const aQueue = () => new QueueRef({ source: 'plex', id: '670208' });

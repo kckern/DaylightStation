@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ContentScroller from './ContentScroller.jsx';
 import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
-import { useCenterByWidest } from '../../../../../frontend/src/lib/Player/useCenterByWidest.js';
-import { getSingalongRenderer } from '../../../../../frontend/src/lib/contentRenderers.jsx';
+import { useCenterByWidest } from "../../player-support/useCenterByWidest.js";
+import { getSingalongRenderer } from "../../../../content-catalog/browser/providers/contentRenderers.jsx";
 
 /**
  * SingalongScroller

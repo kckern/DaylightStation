@@ -1,4 +1,4 @@
-import { IDynamicStreamGateway } from '#apps/proxy/ports/IDynamicStreamGateway.mjs';
+import { IDynamicStreamGateway } from "../../../../capabilities/content-catalog/server/application/proxy/ports/IDynamicStreamGateway.mjs";
 
 const HLS_CONTENT_TYPES = new Set([
   'application/vnd.apple.mpegurl',

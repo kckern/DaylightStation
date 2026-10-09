@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   selectContinuationBatch, isLibraryFallbackParent, AUTO_CONTINUE_ADDED_BY, RECENTLY_PLAYED_MS,
 } from './continuation.mjs';
-import { orderWatchedByRecency } from '../../../backend/src/2_domains/content/utils/recencyOrder.mjs';
+import { orderWatchedByRecency } from "../../../capabilities/content-catalog/server/domain/utils/recencyOrder.mjs";
 
 const NOW = Date.parse('2026-10-02T12:00:00Z');
 const daysAgo = (d) => new Date(NOW - d * 86400000).toISOString();

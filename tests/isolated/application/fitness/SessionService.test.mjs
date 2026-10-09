@@ -1,6 +1,6 @@
 // tests/isolated/domain/fitness/services/SessionService.test.mjs
 import { vi } from 'vitest';
-import { SessionService } from '#apps/fitness/services/SessionService.mjs';
+import { SessionService } from "../../../../modules/fitness/server/application/services/SessionService.mjs";
 
 describe('SessionService', () => {
   let service;

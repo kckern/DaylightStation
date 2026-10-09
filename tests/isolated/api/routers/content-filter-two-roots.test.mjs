@@ -5,9 +5,9 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import yaml from 'js-yaml';
-import { createContentFilterRouter } from '#backend/src/4_api/v1/routers/contentFilter.mjs';
-import { GetContentFilter } from '#apps/content-filter/usecases/GetContentFilter.mjs';
-import { FilesystemContentFilterRepository } from '#adapters/persistence/files/FilesystemContentFilterRepository.mjs';
+import { createContentFilterRouter } from "../../../../modules/media/server/api/contentFilter.mjs";
+import { GetContentFilter } from "../../../../modules/media/server/application/content-filter/usecases/GetContentFilter.mjs";
+import { FilesystemContentFilterRepository } from "../../../../modules/media/server/adapters/persistence/FilesystemContentFilterRepository.mjs";
 
 /**
  * Proves the content-filter router resolves TWO roots (task 9 of the

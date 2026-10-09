@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { contentRequiresCamera } from '#apps/devices/services/contentRequiresCamera.mjs';
+import { contentRequiresCamera } from "../../../../../src/5_composition/policies/contentRequiresCamera.mjs";
 
 describe('contentRequiresCamera', () => {
   it('returns false for play=plex:*', () => {

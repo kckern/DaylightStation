@@ -6,7 +6,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { ItemSelectionService } from '../../../../src/2_domains/content/services/ItemSelectionService.mjs';
+import { ItemSelectionService } from "../../../../../capabilities/content-catalog/server/domain/services/ItemSelectionService.mjs";
 
 describe('ItemSelectionService.STRATEGIES.rotation', () => {
   it('exposes rotation as a known strategy', () => {

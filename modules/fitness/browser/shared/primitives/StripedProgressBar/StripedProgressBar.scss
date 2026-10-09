@@ -1,0 +1,112 @@
+@import "../../styles/variables";
+
+.striped-progress-bar {
+  --stripe-speed: 2s;
+  --bar-height: 8px;
+
+  display: flex;
+  align-items: center;
+  gap: var(--app-spacing-sm);
+  width: 100%;
+
+  &__track {
+    flex: 1;
+    height: var(--bar-height);
+    background-color: var(--app-bg-tertiary);
+    border-radius: var(--app-radius-full);
+    overflow: hidden;
+  }
+
+  &__fill {
+    height: 100%;
+    border-radius: var(--app-radius-full);
+    transition: width var(--app-transition-normal);
+    position: relative;
+    overflow: hidden;
+
+    &::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: -30px;
+      right: -30px;
+    }
+  }
+
+  &__value {
+    font-size: var(--app-font-size-xs);
+    font-family: var(--app-font-mono);
+    color: var(--app-text-secondary);
+    min-width: 3ch;
+    text-align: right;
+  }
+
+  // Animation on pseudo-element using transform (GPU-accelerated)
+  &--animated &__fill::after {
+    animation-duration: var(--stripe-speed);
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+  }
+
+  &--left.striped-progress-bar--animated &__fill::after {
+    animation-name: stripe-left;
+  }
+
+  &--right.striped-progress-bar--animated &__fill::after {
+    animation-name: stripe-right;
+  }
+
+  // Color variants — gradient lives on the ::after pseudo
+  @mixin stripe-colors($color1, $color2) {
+    &::after {
+      background: repeating-linear-gradient(
+        45deg,
+        $color1,
+        $color1 10px,
+        $color2 10px,
+        $color2 20px
+      );
+    }
+  }
+
+  &--gray &__fill,
+  &--rest &__fill {
+    @include stripe-colors(rgba(#888888, 0.4), rgba(#888888, 0.2));
+  }
+
+  &--blue &__fill,
+  &--cool &__fill {
+    @include stripe-colors(rgba(#6ab8ff, 0.4), rgba(#6ab8ff, 0.2));
+  }
+
+  &--green &__fill,
+  &--active &__fill {
+    @include stripe-colors(rgba(#51cf66, 0.4), rgba(#51cf66, 0.2));
+  }
+
+  &--yellow &__fill,
+  &--warm &__fill {
+    @include stripe-colors(rgba(#ffd43b, 0.4), rgba(#ffd43b, 0.2));
+  }
+
+  &--orange &__fill,
+  &--hot &__fill {
+    @include stripe-colors(rgba(#ff922b, 0.4), rgba(#ff922b, 0.2));
+  }
+
+  &--red &__fill,
+  &--fire &__fill {
+    @include stripe-colors(rgba(#ff6b6b, 0.4), rgba(#ff6b6b, 0.2));
+  }
+}
+
+@keyframes stripe-left {
+  from { transform: translateX(0); }
+  to { transform: translateX(-28.284px); }
+}
+
+@keyframes stripe-right {
+  from { transform: translateX(0); }
+  to { transform: translateX(28.284px); }
+}

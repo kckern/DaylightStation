@@ -1,7 +1,7 @@
 import React, { useContext, useEffect, useMemo } from 'react';
 import { useCommandAckPublisher } from './useCommandAckPublisher.js';
 import { SessionSourceContext as SessionSourceContext } from "../../../playback/browser/sessions.mjs";
-import { createHandoffExecutor } from '../../../../frontend/src/lib/media/handoffExecutor.js';
+import { createHandoffExecutor } from "../../../playback/browser/media/handoffExecutor.js";
 
 /**
  * CommandAckPublisher — renderless component that mounts the

@@ -66,9 +66,9 @@
  */
 import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
-import { buildLoopCycle } from '@shared-music/loopScheduler.mjs';
-import { compileArrangement, nextJumpPoint } from '@shared-music/arrangementScheduler.mjs';
-import { metronomeEvents } from '@shared-music/percussion.mjs';
+import { buildLoopCycle } from "../../../../../capabilities/music-notation/portable/loopScheduler.mjs";
+import { compileArrangement, nextJumpPoint } from "../../../../../capabilities/music-notation/portable/arrangementScheduler.mjs";
+import { metronomeEvents } from "../../../../../capabilities/music-notation/portable/percussion.mjs";
 
 let _logger;
 function logger() {

@@ -2,10 +2,10 @@
 
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert';
-import { BaseAgent } from '../../../../src/3_applications/agents/framework/BaseAgent.mjs';
-import { ToolFactory } from '../../../../src/3_applications/agents/framework/ToolFactory.mjs';
-import { createTool } from '../../../../src/3_applications/agents/ports/ITool.mjs';
-import { WorkingMemoryState } from '../../../../src/3_applications/agents/framework/WorkingMemory.mjs';
+import { BaseAgent } from "../../../../../capabilities/agent-runtime/server/application/framework/BaseAgent.mjs";
+import { ToolFactory } from "../../../../../capabilities/agent-runtime/server/application/framework/ToolFactory.mjs";
+import { createTool } from "../../../../../capabilities/agent-runtime/server/application/ports/ITool.mjs";
+import { WorkingMemoryState } from "../../../../../capabilities/agent-runtime/server/application/framework/WorkingMemory.mjs";
 
 describe('BaseAgent', () => {
   let mockRuntime;

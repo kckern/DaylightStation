@@ -1,19 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { GoalState, GOAL_TRANSITIONS } from '#domains/lifeplan/value-objects/GoalState.mjs';
-import { BeliefState, BELIEF_TRANSITIONS } from '#domains/lifeplan/value-objects/BeliefState.mjs';
-import { AlignmentState } from '#domains/lifeplan/value-objects/AlignmentState.mjs';
-import { EvidenceType } from '#domains/lifeplan/value-objects/EvidenceType.mjs';
-import { CeremonyType } from '#domains/lifeplan/value-objects/CeremonyType.mjs';
-import { CadenceLevel } from '#domains/lifeplan/value-objects/CadenceLevel.mjs';
-import { DependencyType } from '#domains/lifeplan/value-objects/DependencyType.mjs';
-import { LifeEventType } from '#domains/lifeplan/value-objects/LifeEventType.mjs';
-import { LifeEventImpact } from '#domains/lifeplan/value-objects/LifeEventImpact.mjs';
-import { LifeEventDuration } from '#domains/lifeplan/value-objects/LifeEventDuration.mjs';
-import { AttributionBias } from '#domains/lifeplan/value-objects/AttributionBias.mjs';
-import { BiasStatus } from '#domains/lifeplan/value-objects/BiasStatus.mjs';
-import { BeliefOriginType } from '#domains/lifeplan/value-objects/BeliefOriginType.mjs';
-import { ShadowState } from '#domains/lifeplan/value-objects/ShadowState.mjs';
-import { NightmareProximity } from '#domains/lifeplan/value-objects/NightmareProximity.mjs';
+import { GoalState, GOAL_TRANSITIONS } from "../../../../modules/life/server/domain/value-objects/GoalState.mjs";
+import { BeliefState, BELIEF_TRANSITIONS } from "../../../../modules/life/server/domain/value-objects/BeliefState.mjs";
+import { AlignmentState } from "../../../../modules/life/server/domain/value-objects/AlignmentState.mjs";
+import { EvidenceType } from "../../../../modules/life/server/domain/value-objects/EvidenceType.mjs";
+import { CeremonyType } from "../../../../modules/life/server/domain/value-objects/CeremonyType.mjs";
+import { CadenceLevel } from "../../../../modules/life/server/domain/value-objects/CadenceLevel.mjs";
+import { DependencyType } from "../../../../modules/life/server/domain/value-objects/DependencyType.mjs";
+import { LifeEventType } from "../../../../modules/life/server/domain/value-objects/LifeEventType.mjs";
+import { LifeEventImpact } from "../../../../modules/life/server/domain/value-objects/LifeEventImpact.mjs";
+import { LifeEventDuration } from "../../../../modules/life/server/domain/value-objects/LifeEventDuration.mjs";
+import { AttributionBias } from "../../../../modules/life/server/domain/value-objects/AttributionBias.mjs";
+import { BiasStatus } from "../../../../modules/life/server/domain/value-objects/BiasStatus.mjs";
+import { BeliefOriginType } from "../../../../modules/life/server/domain/value-objects/BeliefOriginType.mjs";
+import { ShadowState } from "../../../../modules/life/server/domain/value-objects/ShadowState.mjs";
+import { NightmareProximity } from "../../../../modules/life/server/domain/value-objects/NightmareProximity.mjs";
 
 describe('GoalState', () => {
   it('defines all goal states', () => {

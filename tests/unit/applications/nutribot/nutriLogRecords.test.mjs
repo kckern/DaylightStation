@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createNutriLog } from '#apps/nutribot/nutriLogRecords.mjs';
+import { createNutriLog } from "../../../../modules/health/server/nutrition-records.mjs";
 
 describe('createNutriLog identifier compatibility', () => {
   it('replaces a caller log id and reuses a UUID-valued item id as its uuid', () => {

@@ -1,4 +1,4 @@
-import { isSameStudyDay } from "#domains/school/studyDay.mjs";
+import { isSameStudyDay } from "../../../../school/server/domain-study-day.mjs";
 import { playableUnitSettings } from '../PianoVideoPolicy.mjs';
 
 /** School's program id for a sequential piano VIDEO course. */

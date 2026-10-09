@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { PrintService } from '../../../../backend/src/3_applications/school/PrintService.mjs';
-import { PaperCertification } from '../../../../backend/src/1_adapters/school/paper/PaperCertification.mjs';
+import { PrintService } from "../../../../modules/school/server/application/PrintService.mjs";
+import { PaperCertification } from "../../../../modules/school/server/adapters/paper/PaperCertification.mjs";
 
 const T0 = Date.UTC(2026, 6, 22, 15, 0, 0);
 const logger = { info() {}, warn() {}, error() {} };

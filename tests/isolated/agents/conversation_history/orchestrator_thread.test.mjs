@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { BaseAgent } from '../../../../backend/src/3_applications/agents/framework/BaseAgent.mjs';
+import { BaseAgent } from "../../../../capabilities/agent-runtime/server/application/framework/BaseAgent.mjs";
 
 class StubAgent extends BaseAgent {
   static id = 'stub';

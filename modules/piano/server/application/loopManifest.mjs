@@ -4,8 +4,8 @@
 // assumed to be canonical C. Consumed by the /loop-manifest endpoint and,
 // downstream, by useLoopLibrary → libraryRanking (grid-based gate).
 
-import { musicXmlToNotes, readBrickMeta } from '#shared/music/musicXmlToNotes.mjs';
-import { harmonicTimeline } from '#shared/music/harmonicTimeline.mjs';
+import { musicXmlToNotes, readBrickMeta } from "../../../../capabilities/music-notation/portable/musicXmlToNotes.mjs";
+import { harmonicTimeline } from "../../../../capabilities/music-notation/portable/harmonicTimeline.mjs";
 
 const TYPE_FOLDERS = ['chords', 'basslines', 'melodies', 'ideas', 'percussion'];
 const SKIP_HARMONY = new Set(['groove', 'percussion']);

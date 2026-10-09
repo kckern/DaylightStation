@@ -13,38 +13,38 @@ import { WebSocketProvider } from './contexts/WebSocketContext.jsx';
 // Every route is its own chunk: a page downloads the app it shows, not all
 // of them (the single bundle had grown past 11 MB). A long-lived tab whose
 // chunk hashes rotate under it on a deploy is recovered by chunkReload.js.
-const loadHomeApp = () => import('./Apps/HomeApp.jsx');
+const loadHomeApp = () => import("../../modules/home/browser/kiosk.mjs");
 const HomeApp = React.lazy(loadHomeApp);
-const loadFinanceApp = () => import('./Apps/FinanceApp.jsx');
+const loadFinanceApp = () => import("../../modules/finance/browser/kiosk.mjs");
 const FinanceApp = React.lazy(loadFinanceApp);
-const loadHealthApp = () => import('./Apps/HealthApp.jsx');
+const loadHealthApp = () => import("../../modules/health/browser/kiosk.mjs");
 const HealthApp = React.lazy(loadHealthApp);
-const loadAutoApp = () => import('./Apps/AutoApp.jsx');
+const loadAutoApp = () => import("../../modules/auto/browser/kiosk.mjs");
 const AutoApp = React.lazy(loadAutoApp);
-const loadLifeApp = () => import('./Apps/LifeApp.jsx');
+const loadLifeApp = () => import("../../modules/life/browser/kiosk.mjs");
 const LifeApp = React.lazy(loadLifeApp);
-const loadFitnessApp = () => import('./Apps/FitnessApp.jsx');
+const loadFitnessApp = () => import("../../modules/fitness/browser/kiosk.mjs");
 const FitnessApp = React.lazy(loadFitnessApp);
-const loadFeedApp = () => import('./Apps/FeedApp.jsx');
+const loadFeedApp = () => import("../../modules/feed/browser/kiosk.mjs");
 const FeedApp = React.lazy(loadFeedApp);
 const loadAdminApp = () => import('./Apps/AdminApp.jsx');
 const AdminApp = React.lazy(loadAdminApp);
-const loadCallApp = () => import('./Apps/CallApp.jsx');
+const loadCallApp = () => import("../../modules/homeline/browser/kiosk.mjs");
 const CallApp = React.lazy(loadCallApp);
-const loadMediaApp = () => import('./Apps/MediaApp.jsx');
+const loadMediaApp = () => import("../../modules/media/browser/kiosk.mjs");
 const MediaApp = React.lazy(loadMediaApp);
-const loadLiveStreamApp = () => import('./Apps/LiveStreamApp.jsx');
+const loadLiveStreamApp = () => import("../../modules/livestream/browser/kiosk.mjs");
 const LiveStreamApp = React.lazy(loadLiveStreamApp);
 const loadPianoApp = () => import('../../modules/piano/browser/kiosk.mjs');
 const PianoApp = React.lazy(loadPianoApp);
 const loadAppContainer = () => import('./modules/AppContainer/AppContainer.jsx');
 const AppContainer = React.lazy(loadAppContainer);
 const Blank = React.lazy(() => import('./modules/Blank/Blank.jsx'));
-const FilterPoc = React.lazy(() => import('../../capabilities/playback/browser/debug.mjs'));
+const FilterPoc = React.lazy(() => import('../../modules/media/browser/debug.mjs'));
 const SetupWizard = React.lazy(() => import('./modules/Auth/SetupWizard.jsx'));
 const InviteAccept = React.lazy(() => import('./modules/Auth/InviteAccept.jsx'));
-const PartyGamesHost = React.lazy(() => import('./modules/Gaming/environments/party-games/surfaces/PartyGamesHost.jsx'));
-const PartyGamesVerifier = React.lazy(() => import('./modules/Gaming/environments/party-games/surfaces/PartyGamesVerifier.jsx'));
+const PartyGamesHost = React.lazy(() => import("../../modules/party-games/browser/host.mjs"));
+const PartyGamesVerifier = React.lazy(() => import("../../modules/party-games/browser/verifier.mjs"));
 const loadScreenRenderer = () => import('./composition/screens/index.js');
 const ScreenRenderer = React.lazy(() => loadScreenRenderer().then(module => ({ default: module.ScreenRenderer })));
 // Start this page's chunk NOW, not once SetupCheck's auth request has
@@ -60,7 +60,7 @@ const ROUTE_CHUNKS = [
 ROUTE_CHUNKS.find(([pattern]) => pattern.test(window.location.pathname))?.[1]().catch(() => { /* the route's own lazy import surfaces the failure (chunkReload.js) */ });
 // Lazy: the teacher console is a parent's phone surface — its module and
 // styles must not ride in the bundle every kiosk loads.
-const TeacherConsole = React.lazy(() => import('./modules/School/teacher/TeacherConsole.jsx'));
+const TeacherConsole = React.lazy(() => import("./composition/school/teacher.jsx"));
 const GamingApp = React.lazy(() => import('./Apps/GamingApp.jsx'));
 const GamePresentationHarness = React.lazy(() => import('./dev/GamePresentationHarness/GamePresentationHarness.jsx'));
 const DsGallery = React.lazy(() => import('./dev/DsGallery/DsGallery.jsx'));

@@ -12,7 +12,7 @@
  *
  * @module adapters/persistence/yaml/YamlObservedStateStore
  */
-import { canonicalizeNfcUid } from '#domains/trigger/nfcUid.mjs';
+import { canonicalizeNfcUid } from "../../../../../capabilities/device-dispatch/server/domain/nfcUid.mjs";
 
 export class YamlObservedStateStore {
   #loadFile; #saveFile; #path; #cache = null; #writeChain = Promise.resolve();

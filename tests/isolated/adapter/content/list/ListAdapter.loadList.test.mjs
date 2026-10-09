@@ -11,7 +11,7 @@ vi.mock('#system/utils/FileIO.mjs', () => ({
 }));
 
 const FileIO = await import('#system/utils/FileIO.mjs');
-const { ListAdapter } = await import('#adapters/content/list/ListAdapter.mjs');
+const { ListAdapter } = await import("../../../../../capabilities/content-catalog/server/adapters/providers/list/ListAdapter.mjs");
 
 describe('ListAdapter._loadList normalization', () => {
   beforeEach(() => {

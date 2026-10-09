@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { PianoGameBudgetService } from './PianoGameBudgetService.mjs';
-import { YamlPianoGameBudgetStore } from '../../../../backend/src/1_adapters/persistence/yaml/YamlPianoGameBudgetStore.mjs';
+import { YamlPianoGameBudgetStore } from "../adapters/persistence/YamlPianoGameBudgetStore.mjs";
 import { emptyDay } from '../domain/gameBudget.mjs';
 
 function makeStore() {

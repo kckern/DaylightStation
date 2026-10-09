@@ -19,10 +19,10 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import yaml from 'js-yaml';
-import { createAdminContentRouter } from '#api/v1/routers/admin/content.mjs';
-import { ListManagementService } from '#apps/content/services/ListManagementService.mjs';
-import { YamlListDatastore } from '#adapters/persistence/yaml/YamlListDatastore.mjs';
-import { ListConfigCodec } from '#adapters/content/list/ListConfigCodec.mjs';
+import { createAdminContentRouter } from "../../../../capabilities/content-catalog/server/api/admin/content.mjs";
+import { ListManagementService } from "../../../../capabilities/content-catalog/server/application/services/ListManagementService.mjs";
+import { YamlListDatastore } from "../../../../capabilities/content-catalog/server/adapters/persistence/YamlListDatastore.mjs";
+import { ListConfigCodec } from "../../../../capabilities/content-catalog/server/adapters/providers/list/ListConfigCodec.mjs";
 import { errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 
 // ---------------------------------------------------------------------------

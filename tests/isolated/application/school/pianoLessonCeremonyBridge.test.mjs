@@ -5,9 +5,9 @@
  * below matter at least as much as the positive one.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { PianoLessonCeremonyBridge } from '#apps/school/PianoLessonCeremonyBridge.mjs';
-import { EventBusSchoolRealtimeAdapter } from '#adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs';
-import { validateLearningEvidence } from '#domains/school/progress/index.mjs';
+import { PianoLessonCeremonyBridge } from "../../../../modules/school/server/application/PianoLessonCeremonyBridge.mjs";
+import { EventBusSchoolRealtimeAdapter } from "../../../../modules/school/server/adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs";
+import { validateLearningEvidence } from "../../../../modules/school/server/domain/progress/index.mjs";
 
 const COURSE = 'plex:675689';
 

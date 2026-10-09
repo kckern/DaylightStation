@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { gradeAnswer, givenShapeError } from '#domains/school/grading.mjs';
+import { gradeAnswer, givenShapeError } from "../../../../modules/school/server/domain/grading.mjs";
 
 const sa = { id: 'q', type: 'short_answer', prompt: 'Capital of OR?', answer: 'Salem', accept: ['salem city'] };
 const match = { id: 'm', type: 'matching', prompt: 'M', pairs: [{ left: 'WA', right: 'Olympia' }, { left: 'OR', right: 'Salem' }] };

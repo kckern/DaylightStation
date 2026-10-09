@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import { IFeedSourceAdapter, isFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { IFeedSourceAdapter, isFeedSourceAdapter, CONTENT_TYPES } from "../../../../modules/feed/server/application/ports/IFeedSourceAdapter.mjs";
 
 describe('IFeedSourceAdapter', () => {
   describe('CONTENT_TYPES', () => {

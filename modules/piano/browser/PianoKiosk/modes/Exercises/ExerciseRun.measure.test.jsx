@@ -71,7 +71,8 @@ import { keysInstance } from '../Games/gateMaterial.js';
 import fourBars from './__fixtures__/fourBars.musicxml?raw';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const FRONTEND = path.resolve(HERE, '../../../../../..');
+const ROOT = path.resolve(HERE, '../../../../../..');
+const FRONTEND = path.join(ROOT, 'frontend');
 const MAIN_FRONTEND = path.resolve(fs.realpathSync(path.join(FRONTEND, '../node_modules')), '../frontend');
 
 /** The kiosk's declared design canvas — the SM-T590's CSS viewport. */
@@ -502,7 +503,7 @@ async function buildBundle() {
 /**
  * Compile the collected sheets, in cascade order.
  *
- * `pianoTokens.scss` then `PianoApp.scss` first — the tokens module declares the
+ * Shared notation tokens, `pianoTokens.scss`, then `PianoApp.scss` first — these declare the
  * `--piano-*` tokens every other sheet reads (it moved out of the shell sheet),
  * and the shell owns `.piano-app` / `.piano-game-fullscreen`. `GameGate.scss` last,
  * because that is where it sits in the real bundle and its lateness is a known
@@ -515,8 +516,9 @@ async function buildBundle() {
 async function compileSheet(sheets) {
   const sass = await import('sass-embedded');
   const ordered = [
-    path.join(FRONTEND, 'src/modules/Piano/pianoTokens.scss'),
-    path.join(FRONTEND, 'src/Apps/PianoApp.scss'),
+    path.join(ROOT, 'capabilities/music-notation/browser/styles/tokens.scss'),
+    path.join(ROOT, 'modules/piano/browser/pianoTokens.scss'),
+    path.join(ROOT, 'modules/piano/browser/PianoApp.scss'),
     ...sheets,
     path.join(HERE, '../Games/GameGate.scss'),
   ];

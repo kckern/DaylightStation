@@ -6,8 +6,8 @@
 // so it never rides in the main bundle.
 import { useEffect } from 'react';
 import getLogger from '../../lib/logging/Logger.js';
-import SegmentedSecretText from '@gaming-ui/SegmentedSecretText.jsx';
-import { MASK_SEGMENT_COLORS, SIGNAL_SEGMENT_COLORS, segmentColorValue } from '@gaming-ui/segmentedSecretPalette.js';
+import SegmentedSecretText from "../../../../capabilities/gaming/browser/platform/ui/SegmentedSecretText.jsx";
+import { MASK_SEGMENT_COLORS, SIGNAL_SEGMENT_COLORS, segmentColorValue } from "../../../../capabilities/gaming/browser/platform/ui/segmentedSecretPalette.js";
 import './DecoderSwatches.scss';
 
 const SAMPLE = 'B8 SPHINX OF BLACK QUARTZ JUDGE MY VOW';

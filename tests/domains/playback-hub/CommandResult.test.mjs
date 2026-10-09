@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CommandResult } from '../../../backend/src/2_domains/playback-hub/value-objects/CommandResult.mjs';
+import { CommandResult } from "../../../modules/media/server/domain/playback-hub/value-objects/CommandResult.mjs";
 import { ValidationError } from '../../../backend/src/2_domains/core/errors/ValidationError.mjs';
 
 describe('CommandResult', () => {

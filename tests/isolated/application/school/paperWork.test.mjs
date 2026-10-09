@@ -8,14 +8,14 @@
  * disagreed with every real sheet — 0 out of 6, green tests.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { SubmitPaperWork } from '#apps/school/usecases/SubmitPaperWork.mjs';
-import { GradeSubmission } from '#apps/school/usecases/GradeSubmission.mjs';
-import { ResolveReviewItem } from '#apps/school/usecases/ResolveReviewItem.mjs';
-import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
+import { SubmitPaperWork } from "../../../../modules/school/server/application/usecases/SubmitPaperWork.mjs";
+import { GradeSubmission } from "../../../../modules/school/server/application/usecases/GradeSubmission.mjs";
+import { ResolveReviewItem } from "../../../../modules/school/server/application/usecases/ResolveReviewItem.mjs";
+import { CurriculumAccess } from "../../../../modules/school/server/application/CurriculumAccess.mjs";
 import { VirtualOmrReader } from '#adapters/hardware/omr/VirtualOmrReader.mjs';
-import { questionItemIds } from '#domains/school/documents/documentValidation.mjs';
-import { GuestForbiddenError } from '#domains/school/errors.mjs';
-import { COMPANION_GATE_ITEM_ID } from '#domains/school/companionCode.mjs';
+import { questionItemIds } from "../../../../modules/school/server/domain/documents/documentValidation.mjs";
+import { GuestForbiddenError } from "../../../../modules/school/server/domain/errors.mjs";
+import { COMPANION_GATE_ITEM_ID } from "../../../../modules/school/server/domain/companionCode.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakeFormMapStore, FakeReviewQueue,
   fakeClock, fakeGrownUps, silentLogger,
@@ -896,8 +896,8 @@ describe('GradeSubmission on a print-document unit', () => {
 
 describe('the result receipt counts what GradeSubmission marked', () => {
   it('says "3 of 6", not nulls, for a screen/paper-marked session', async () => {
-    const { CloseSessionOutcome } = await import('#apps/school/usecases/CloseSessionOutcome.mjs');
-    const { ReceiptPrinting } = await import('#apps/school/ReceiptPrinting.mjs');
+    const { CloseSessionOutcome } = await import("../../../../modules/school/server/application/usecases/CloseSessionOutcome.mjs");
+    const { ReceiptPrinting } = await import("../../../../capabilities/printing/server/receipt.mjs");
     const {
       FakeTokenRegistry, FakeAssignmentStore, FakeEconomy,
       FakeReceiptPrinter, FakeReceiptRenderer, seededRng,

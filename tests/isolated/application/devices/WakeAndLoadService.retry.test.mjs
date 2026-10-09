@@ -1,3 +1,4 @@
+import {contentRequiresCamera} from '../../../../backend/src/5_composition/policies/contentRequiresCamera.mjs';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
 import { testApplicationRuntime } from '../../../_lib/applicationRuntime.mjs';
@@ -29,7 +30,7 @@ function makeDevice(overrides = {}) {
 }
 
 function makeSvc({ device, readinessPolicy, haGateway } = {}) {
-  return new WakeAndLoadService({
+  return new WakeAndLoadService({ contentRequiresCamera,
     ...testApplicationRuntime(),
     deviceService: { get: vi.fn().mockReturnValue(device) },
     readinessPolicy,

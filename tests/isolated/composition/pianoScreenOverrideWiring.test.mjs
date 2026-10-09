@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { createPianoScreenPowerSync, _resetForTests as resetPsas } from '#composition/modules/pianoScreenPowerSync.mjs';
-import { createPianoMidiWake, _resetForTests as resetMidi } from '#composition/modules/pianoMidiWake.mjs';
+import { createPianoScreenPowerSync, _resetForTests as resetPsas } from '../../../modules/piano/server/composition/screen-power-sync.mjs';
+import { createPianoMidiWake, _resetForTests as resetMidi } from '../../../modules/piano/server/composition/midi-wake.mjs';
 import { getScreenOverrideService, _resetForTests as resetOverride } from '#composition/modules/screenOverride.mjs';
 
 afterEach(() => { resetPsas(); resetMidi(); resetOverride(); });
@@ -16,7 +16,7 @@ function configService(block) {
 describe('screen-override composition wiring', () => {
   it('the authority service factory injects the shared override (service constructed)', () => {
     const cfg = configService({ screen_power_sync: { enabled: true, device_id: 'yellow-room-tablet', piano_power_entity: 'binary_sensor.x' } });
-    const { pianoScreenAuthorityService } = createPianoScreenPowerSync({ haGateway, deviceService, configService: cfg, logger: { info() {}, warn() {} } });
+    const { pianoScreenAuthorityService } = createPianoScreenPowerSync({ getScreenOverrideService, haGateway, deviceService, configService: cfg, logger: { info() {}, warn() {} } });
     expect(pianoScreenAuthorityService).not.toBeNull();
     expect(getScreenOverrideService()).toBeTruthy();
   });
@@ -26,6 +26,7 @@ describe('screen-override composition wiring', () => {
     const bridge = { start() {}, stop() {}, suppressWakeUntil: async () => {} };
     const { pianoMidiWakeService } = createPianoMidiWake({
       deviceService,
+      getScreenOverrideService,
       configService: cfg,
       bridgeFactory: () => bridge,
       logger: { info() {}, warn() {} },

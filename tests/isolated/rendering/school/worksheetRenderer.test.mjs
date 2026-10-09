@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderBankWorksheet } from '../../../../backend/src/1_rendering/school/WorksheetRenderer.mjs';
+import { renderBankWorksheet } from "../../../../modules/school/server/rendering/WorksheetRenderer.mjs";
 
 const bank = {
   title: 'US State Capitals',

@@ -1,0 +1,3637 @@
+import { formatSessionId, ensureSeriesCapacity, deepClone } from "./types.js";
+import { DeviceManager } from "./DeviceManager.js";
+import { UserManager } from "./UserManager.js";
+import { GovernanceEngine } from "./GovernanceEngine.js";
+import { FitnessTreasureBox } from "./TreasureBox.js";
+import { VoiceMemoManager } from "./VoiceMemoManager.js";
+import { FitnessTimeline } from "./FitnessTimeline.js";
+import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
+import { getClientId } from "../../../../../frontend/src/lib/clientId.js";
+import { ZoneProfileStore } from "./ZoneProfileStore.js";
+import { EventJournal } from "./EventJournal.js";
+import { ActivityMonitor } from "../../domain/ActivityMonitor.js";
+import { SessionEntityRegistry } from "./SessionEntity.js";
+import { moveStintSeries } from "./stintTransfer.js";
+import { toLiveSeries } from "./liveSeriesKeys.js";
+import { DeviceEventRouter } from "./DeviceEventRouter.js";
+import { VibrationActivityTracker } from "./VibrationActivityTracker.js";
+import { PressureMatActivityTracker, PRESSURE_MAT_STARTUP_WINDOW_MS } from "./PressureMatActivityTracker.js";
+import { EndedDeviceHold } from "./EndedDeviceHold.js";
+import { findUnclosedMedia } from "./closeOpenMedia.js";
+import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
+import { heapSnapshotFields } from "../../../../../frontend/src/lib/perf/memoryProbe.js";
+
+// Phase 4: Extracted modules for decomposed session management
+import { SessionLifecycle } from "./SessionLifecycle.js";
+import { MetricsRecorder } from "./MetricsRecorder.js";
+import { ParticipantRoster } from "./ParticipantRoster.js";
+import { TimelineRecorder } from "./TimelineRecorder.js";
+import { PersistenceManager } from "./PersistenceManager.js";
+
+// Pre-timeline events older than this at session start are stale (see flush in ensureStarted).
+const PENDING_EVENT_MAX_AGE_MS = 60 * 1000;
+
+// -------------------- Timeout Configuration --------------------
+const FITNESS_TIMEOUTS = {
+  inactive: 60000,
+  remove: 1800000, // 30 minutes — keeps session alive during breaks
+  rpmZero: 1200,  // zero RPM ~1.2s after the last cadence broadcast (silence case)
+  transportStallMs: 1200, // MUST equal rpmZero: the stall check and the zero gate have to cross on the same prune tick, or a tick landing between them zeroes the meter and the hold then preserves that zero for the whole stall
+  emptySession: 60000, // 6A: Time (ms) with empty roster before auto-ending session
+  emptySessionTransportHold: 180000, // Max sensor-pipeline silence during which an empty roster is NOT counted as an empty room (link outage, not departure)
+  sessionEndCooldown: 600000, // 10 minutes — prevents duplicate sessions from leftover HR data
+  resumeContentWait: 6000 // Max time to wait for content to register before starting a fresh (un-merged) session
+};
+
+// Module-scope: survives FitnessSession instance destruction on screen navigation
+let _lastSessionEndTimestamp = 0;
+
+// Soft guardrail to prevent oversized payloads
+const MAX_SERIALIZED_SERIES_POINTS = 200000;
+
+const ZONE_SYMBOL_MAP = {
+  cool: 'c',
+  active: 'a',
+  warm: 'w',
+  hot: 'h'
+};
+
+/**
+ * Format a unix-ms timestamp into a human-readable string in a specific timezone.
+ *
+ * @param {number} unixMs
+ * @param {string} timezone
+ * @returns {string|null}
+ */
+
+/**
+ * Resolve the timezone used for persistence.
+ * @returns {string}
+ */
+
+/**
+ * Derive the numeric session id used in v2 payloads.
+ * @param {string|null} sessionId
+ * @returns {string|null}
+ */
+
+/**
+ * Derive YYYY-MM-DD from a numeric session id (YYYYMMDDHHmmss).
+ * @param {string|null} numericSessionId
+ * @returns {string|null}
+ */
+
+/**
+ * Convert roster + assignment snapshots into a keyed participant object.
+ * @param {Array<any>} roster
+ * @param {Array<any>} deviceAssignments
+ * @returns {Record<string, {display_name?: string, hr_device?: string, is_primary?: boolean, is_guest?: boolean, base_user?: string}>}
+ */
+
+/**
+ * Normalize numeric values for persistence.
+ * - Cumulative series (beats/rotations): round to 1 decimal to avoid float noise
+ * - HR/RPM/Power series: round to nearest integer
+ *
+ * @param {string} key
+ * @param {unknown} value
+ * @returns {number|null|unknown}
+ */
+const roundValue = (key, value) => {
+  if (value == null) return null;
+  if (typeof value !== 'number') return value;
+  if (!Number.isFinite(value)) return null;
+
+  const k = String(key || '').toLowerCase();
+
+  // Cumulative series
+  if (k.includes('beats') || k.includes('rotations')) {
+    return Math.round(value * 10) / 10;
+  }
+
+  // Integer metrics
+  if (k.includes('heart_rate') || k.includes(':hr') || k.includes('rpm') || k.includes('power')) {
+    return Math.round(value);
+  }
+
+  return value;
+};
+
+export const setFitnessTimeouts = ({ inactive, remove, rpmZero, transportStallMs, emptySession, sessionEndCooldown } = {}) => {
+  if (typeof inactive === 'number' && !Number.isNaN(inactive)) FITNESS_TIMEOUTS.inactive = inactive;
+  if (typeof remove === 'number' && !Number.isNaN(remove)) FITNESS_TIMEOUTS.remove = remove;
+  if (typeof rpmZero === 'number' && !Number.isNaN(rpmZero)) FITNESS_TIMEOUTS.rpmZero = rpmZero;
+  if (typeof transportStallMs === 'number' && !Number.isNaN(transportStallMs)) FITNESS_TIMEOUTS.transportStallMs = transportStallMs;
+  if (typeof emptySession === 'number' && !Number.isNaN(emptySession)) FITNESS_TIMEOUTS.emptySession = emptySession;
+  if (typeof sessionEndCooldown === 'number' && !Number.isNaN(sessionEndCooldown)) FITNESS_TIMEOUTS.sessionEndCooldown = sessionEndCooldown;
+};
+
+export const getFitnessTimeouts = () => ({ ...FITNESS_TIMEOUTS });
+
+/**
+ * Strip runtime/UI fields from roster entries before persistence.
+ * @param {unknown[]} roster
+ * @returns {Array<{name?: string, profileId?: string, hrDeviceId?: string, isPrimary?: boolean, isGuest?: boolean, baseUserName?: string|null}>}
+ */
+
+/**
+ * Normalize a content id to the canonical "source:localId" form. Bare
+ * numeric/string ids are prefixed with "plex:" (fitness app default).
+ * Already-prefixed ids pass through unchanged. Returns null for empty input.
+ * @param {string|number|null|undefined} id
+ * @returns {string|null}
+ */
+function normalizeContentId(id) {
+  if (id == null || id === '') return null;
+  const s = String(id);
+  return s.includes(':') ? s : `plex:${s}`;
+}
+
+/**
+ * A stored session window (`'YYYY-MM-DD HH:mm:ss.SSS'`) as epoch ms, or null.
+ *
+ * Wall-clock in the session's own timezone, which is the kiosk's, so local
+ * interpretation is the correct reading. The space is swapped for a `T` because
+ * the bare form is not part of the Date spec and is only parsed by grace.
+ */
+function parseSessionClock(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const ms = new Date(value.trim().replace(' ', 'T')).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+export class FitnessSession {
+  constructor(getTimeoutsFn = getFitnessTimeouts) {
+    this._getTimeouts = getTimeoutsFn;
+    this.sessionId = null;
+    this.startTime = null;
+    this.endTime = null;
+    this.lastActivityTime = null;
+    this.activeDeviceIds = new Set();
+    this._endedDeviceHold = new EndedDeviceHold();
+    this.eventLog = [];
+    this._saveTriggered = false;
+    this._finalized = false;
+    this._pendingResumePrompt = null;
+    this._onResumePrompt = null;
+    this._pendingContentId = null;
+    // Timestamp the resume check first found no content yet (mid-workout kiosk
+    // reload race). Used to bound how long we defer before starting fresh.
+    this._resumeDeferredSince = null;
+    // True while an async /resumable backend query is outstanding, so the
+    // pre-session buffer re-trigger can't fire overlapping checks.
+    this._resumeCheckInFlight = false;
+    this._liveSessionRole = null;
+
+    // Track users whose data was transferred to another identity (should be excluded from charts)
+    this._transferredUsers = new Set();
+    this._transferVersion = 0; // Incremented on each transfer to trigger re-renders
+    
+    // Sub-managers
+    this.deviceManager = new DeviceManager();
+    this.userManager = new UserManager();
+    this.governanceEngine = new GovernanceEngine(this);  // Pass session reference
+    this.voiceMemoManager = new VoiceMemoManager(this);
+    this.zoneProfileStore = new ZoneProfileStore();
+    this.eventJournal = new EventJournal();
+    this.treasureBox = null; // Instantiated on start
+    this._vibrationTrackers = new Map(); // equipmentId -> VibrationActivityTracker
+    this._pressureMatTrackers = new Map(); // equipmentId -> PressureMatActivityTracker
+    this._pressureMatEquipmentByHardwareId = new Map(); // relay mat id -> equipment id
+    this._sessionMetadata = {};
+    this._equipmentRider = new Map(); // equipmentId -> userId (current claimed rider; null/absent = unclaimed)
+    this._equipmentById = new Map(); // equipmentId -> equipment config entry (cycle challenge reverse lookup)
+    this._deviceHrSampleCount = new Map(); // deviceId -> count for startup discard
+
+    // Session Entity Registry - tracks participation segments per device assignment
+    // Each device assignment creates a new entity with fresh metrics (rings, start time)
+    // @see /docs/design/guest-switch-session-transition.md
+    this.entityRegistry = new SessionEntityRegistry();
+    
+    // Activity Monitor - single source of truth for participant status (Phase 2)
+    this.activityMonitor = new ActivityMonitor();
+    
+    // Phase 4: Extracted modules for cleaner separation of concerns
+    // These provide focused interfaces while FitnessSession maintains backward compatibility
+    this._lifecycle = new SessionLifecycle({
+      autosaveIntervalMs: 15000,
+      tickIntervalMs: 5000,
+      emptySessionTimeoutMs: FITNESS_TIMEOUTS.emptySession
+    });
+    this._metricsRecorder = new MetricsRecorder({ intervalMs: 5000 });
+    this._participantRoster = new ParticipantRoster();
+    
+    // Phase 5: TimelineRecorder - single responsibility for timeline tick recording
+    // Owns: device metrics collection, user metrics, cumulative tracking, dropout detection
+    this._timelineRecorder = new TimelineRecorder({ intervalMs: 5000 });
+    this._timelineRecorder.setLogCallback((eventName, data) => this._log(eventName, data));
+    
+    // Phase 5: PersistenceManager - single responsibility for session persistence
+    // Owns: validation, encoding, API calls
+    this._persistenceManager = new PersistenceManager();
+    this._persistenceManager.setLogCallback((eventName, data) => this._log(eventName, data));
+    this._persistenceManager.setSeriesLengthValidator((timebase, series) => 
+      FitnessTimeline.validateSeriesLengths(timebase, series)
+    );
+
+    // Kiosk mode gate: only kiosk clients create sessions.
+    // Non-kiosk browsers (e.g. laptop open in background) observe but don't auto-start.
+    this._kioskMode = false;
+
+    // Pre-session buffer to avoid ghost sessions from spurious single pings
+    this._preSessionBuffer = [];
+    this._lastStartupHeartRateAt = null;
+    this._bufferThresholdMet = false;
+    this._preSessionThreshold = 3; // Require N valid HR samples before starting
+    this._lastPreSessionLogAt = 0;
+    // Session-end cooldown uses module-scope _lastSessionEndTimestamp (survives remount)
+    this._lastCooldownLogAt = 0;
+    
+    // Configure lifecycle callbacks
+    this._lifecycle.setCallbacks({
+      onTick: (timestamp) => this._collectTimelineTick({ timestamp }),
+      onAutosave: () => this._autosave()
+    });
+    
+    this._userCollectionsCache = null;
+    this._deviceOwnershipCache = null;
+    this._guestCandidatesCache = null;
+    this._userZoneProfilesCache = null;
+    
+    // Device Event Router - central dispatcher for device data payloads
+    this._deviceRouter = new DeviceEventRouter();
+    this._deviceRouter.setDeviceManager(this.deviceManager);
+    this._deviceRouter.register('rider_select', (payload) => {
+      this.setEquipmentRider(payload.equipmentId, payload.userId);
+      return null; // no device object; claim state lives on the session
+    });
+
+    // Legacy: these are now managed by MetricsRecorder but kept for backward compatibility
+    // TODO: Remove after full migration to MetricsRecorder
+    this._cumulativeBeats = new Map();
+    this._cumulativeRotations = new Map();
+    
+    // Note: Dropout detection now uses ActivityMonitor.getPreviousTickActive() (Priority 6)
+    // The _lastTickActiveHR Set has been removed
+
+    // Timer state (legacy - now delegated to SessionLifecycle)
+    // Still needed because _collectTimelineTick/_maybeAutosave haven't been fully migrated
+    this._autosaveIntervalMs = 15000;
+    this._lastAutosaveAt = 0;
+    this._autosaveTimer = null;
+    this._tickTimer = null;
+    this._timerGeneration = 0;
+    this._lastTimerStartAt = 0;
+    this._tickIntervalMs = 5000;
+    this._pendingSnapshotRef = null;
+    this._chartDebugLogged = { noSeries: false };
+    this._ingestDebug = {
+      firstAntSeen: false,
+      lastAntLogTs: 0
+    };
+
+    // Tick rate telemetry (investigating tick rate anomaly - 2026-01-20)
+    this._tickTelemetry = {
+      ingestCalls: 0,
+      maybeTickCalls: 0,
+      actualTicks: 0,       // every recorded tick, whatever produced it
+      catchupTicks: 0,      // subset produced by the per-ingest catch-up loop
+      loopIterationsTotal: 0,
+      // Seed with `now`, not 0: a 0 here makes the FIRST call log immediately
+      // against a ~0-second window, dividing a tick or two by ~0.1s and
+      // reporting an absurd rate (~10/sec vs an expected 0.20/sec) that trips
+      // the HIGH_TICK_RATE anomaly on every fresh session.
+      lastLogAt: Date.now(),
+      logIntervalMs: 30000, // Log every 30 seconds
+      windowStart: Date.now()
+    };
+
+    // Ghost session detection - now also in SessionLifecycle but keeping for compatibility
+    this._emptyRosterStartTime = null;
+    this._lastKnownGoodRoster = null;
+    this._lastKnownGoodDeviceAssignments = null;
+    this._isEndingSession = false; // Re-entrancy guard for endSession()
+    this._sessionEndedCallbacks = [];
+
+    this.snapshot = {
+      participantRoster: [],
+      playQueue: [],
+      usersMeta: new Map(),
+      participantSeries: new Map(),
+      deviceSeries: new Map(),
+      mediaPlaylists: { video: [], music: [] },
+      zoneConfig: null
+    };
+
+    this.timebase = {
+      startAbsMs: null,
+      intervalMs: 5000,
+      intervalCount: 0
+    };
+    this._lastSampleIndex = -1;
+    this.timeline = null;
+    this._pendingEvents = [];
+
+    this.screenshots = {
+      captures: [],
+      intervalMs: null,
+      filenamePattern: null
+    };
+    this._telemetryTickInterval = 12;
+    this._lastTelemetrySnapshotTick = -1;
+  }
+
+  /**
+   * Synchronously sync ZoneProfileStore from current user state.
+   * The signature check inside syncFromUsers() already guards against redundant work.
+   *
+   * @param {Array<any>} allUsers
+   * @returns {boolean} True if sync produced changes
+   */
+  _syncZoneProfiles(allUsers) {
+    if (!this.zoneProfileStore) return false;
+    try {
+      const changed = this.zoneProfileStore.syncFromUsers(allUsers);
+      return changed;
+    } catch (err) {
+      getLogger().error('fitness.zone_profile_store.sync_failed', {
+        message: err?.message || String(err),
+        userCount: Array.isArray(allUsers) ? allUsers.length : null
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Get the device event router for external handler registration
+   * @returns {DeviceEventRouter}
+   */
+  getDeviceRouter() {
+    return this._deviceRouter;
+  }
+
+  /**
+   * Register a custom device handler
+   * @param {string} type - Payload type (e.g., 'ble_rower', 'ble_treadmill')
+   * @param {(payload: any, ctx: Object) => Object|null} handler
+   */
+  registerDeviceHandler(type, handler) {
+    this._deviceRouter.register(type, handler);
+  }
+
+  ingestData(payload) {
+    // HR propagation chain (SSoT note):
+    // 1. DeviceManager stores raw sensor value (device.heartRate)
+    // 2. UserManager copies from DeviceManager (user.currentData.heartRate)
+    // 3. ZoneProfileStore reads from UserManager (profile.heartRate)
+    // All three update synchronously in this call. If any path becomes async,
+    // the triple-storage must be collapsed to a single authoritative store.
+    if (!payload) return;
+
+    // Explicit End means the attached equipment is finished, even if its sensor
+    // keeps broadcasting. Apply this before routing or buffering so stale packets
+    // cannot recreate devices, participants, or a replacement session.
+    const deviceId = payload.deviceId ?? payload.id;
+    const now = Date.now();
+    this._endedDeviceHold.observeAbsence([], this._getTimeouts().remove, now);
+    if (!this._endedDeviceHold.filter(deviceId, now)) return;
+
+    // Route through DeviceEventRouter for all device types
+    const result = this._deviceRouter.route(payload);
+    
+    if (result.handled && result.device) {
+      this.recordDeviceActivity(result.device, { rawPayload: payload });
+      return result.device;
+    }
+    
+    // For unhandled payload types with deviceId, still try to record activity
+    if (!result.handled && payload.deviceId) {
+      this.recordDeviceActivity(payload, { rawPayload: payload });
+    }
+  }
+
+  setKioskMode(isKiosk) {
+    this._kioskMode = !!isKiosk;
+    // Governance is kiosk-bound: only the garage kiosk locks content off behind
+    // HR challenges. Off-kiosk (dev/test) the engine stays unlocked.
+    this.governanceEngine?.setGovernanceEnabled(!!isKiosk);
+  }
+
+  _log(type, payload = {}) {
+    this.eventLog.push({ ts: Date.now(), type, ...payload });
+    // MEMORY LEAK FIX: Use splice for in-place mutation instead of slice (new array)
+    if (this.eventLog.length > 500) {
+      this.eventLog.splice(0, this.eventLog.length - 500);
+    }
+  }
+
+  recordDeviceActivity(deviceData, { rawPayload = null } = {}) {
+    const now = Date.now();
+    this.lastActivityTime = now;
+    
+    // Register/Update device in manager
+    const device = this.deviceManager.registerDevice(deviceData);
+    if (device) {
+      this.activeDeviceIds.add(device.id);
+      
+      // 5A: Clear cumulative state for newly registered devices to prevent state leakage
+      if (device._isNew) {
+        this._cumulativeBeats.delete(device.id);
+        this._cumulativeRotations.delete(device.id);
+        this._log('device_first_seen', { deviceId: device.id, profile: deviceData.profile });
+      } else {
+        this._log('device_activity', { deviceId: device.id, profile: deviceData.profile });
+      }
+      // Clear the flag after processing
+      device._isNew = false;
+      
+      // Resolve user and update their stats
+      const user = this.userManager.resolveUserForDevice(device.id);
+      const resolvedSlug = user?.id || null;
+      if (user) {
+        // 5A: Check for device reassignment - clear cumulative state if occupant changed
+        const currentOccupant = resolvedSlug;
+        if (device.lastOccupantSlug && device.lastOccupantSlug !== currentOccupant) {
+          this._cumulativeBeats.delete(device.id);
+          this._cumulativeRotations.delete(device.id);
+          this._log('device_reassigned', { 
+            deviceId: device.id, 
+            from: device.lastOccupantSlug, 
+            to: currentOccupant 
+          });
+        }
+        device.lastOccupantSlug = currentOccupant;
+        
+        user.updateFromDevice(deviceData);
+
+        // Device startup discard: first 3 HR readings may be stale/cached from prior session
+        // NOTE: Sets a flag instead of returning early — the pre-session buffer check (below)
+        // must still run so the session can start. Only TreasureBox/ZoneProfileStore/governance
+        // are skipped during the discard window.
+        let startupDiscarded = false;
+        if (deviceData.type === 'heart_rate') {
+          const STARTUP_DISCARD_COUNT = 3;
+          const deviceKey = String(device.id);
+          const count = this._deviceHrSampleCount.get(deviceKey) || 0;
+          this._deviceHrSampleCount.set(deviceKey, count + 1);
+          if (count < STARTUP_DISCARD_COUNT) {
+            this._log('device_startup_discard', {
+              deviceId: deviceKey,
+              sampleIndex: count,
+              discardedHr: deviceData.heartRate,
+              reason: 'BLE monitors may send stale cached values on connect'
+            });
+            startupDiscarded = true;
+          }
+        }
+
+        // ORDER MATTERS — sync the zone store BEFORE feeding TreasureBox.
+        // Both blocks open on the same packet (the first one past the startup
+        // discard window), so whichever runs first defines which zone table
+        // scores that packet. With the box first, resolveZone found no profile
+        // and fell back to GLOBAL thresholds for a rider whose personal ones
+        // are higher — a spurious ring on the first interval (2026-09-01).
+        //
+        // Sync also feeds governance: getPresentParticipantIds() reads only
+        // DeviceManager/UserManager (no TreasureBox), user.updateFromDevice()
+        // has already run above, and notifyZoneChange only arms a 100ms
+        // debounce — so nothing here depends on the box having run.
+        if (!startupDiscarded && this.zoneProfileStore && deviceData.type === 'heart_rate') {
+          const allUsers = this.userManager.getAllUsers();
+          // Cheap presence query — avoids a full getRoster() rebuild per HR packet.
+          const presentIds = this._participantRoster?.getPresentParticipantIds();
+          const usersForZones = presentIds
+            ? allUsers.filter(u => presentIds.has(u.id))
+            : allUsers;
+          const changed = this._syncZoneProfiles(usersForZones);
+          // No cache invalidation to push here: TreasureBox polls the store's
+          // zone-config revision on read (ZoneProfileStore.getZoneConfigRevision).
+          if (changed && this.governanceEngine) {
+            this.governanceEngine.notifyZoneChange(resolvedSlug, {});
+          }
+        }
+
+        // Feed TreasureBox if HR - Phase 2: Use entity-based routing
+        if (!startupDiscarded && this.treasureBox && deviceData.type === 'heart_rate') {
+          // Check ledger for current occupant (guest may have taken over)
+          const ledgerEntry = this.userManager?.assignmentLedger?.get(device.id);
+          const currentOccupantId = ledgerEntry?.metadata?.profileId || ledgerEntry?.occupantId || user.id;
+          
+          // Try to route via entity first (Phase 2), fall back to current occupant
+          this.treasureBox.recordHeartRateForDevice(device.id, deviceData.heartRate, {
+            profileId: currentOccupantId,
+            fallbackUserId: currentOccupantId
+          });
+        }
+      }
+      const ledger = this.userManager?.assignmentLedger;
+      if (ledger) {
+        const ledgerEntry = ledger.get(device.id);
+        const userId = user?.id || null;
+        
+        // Auto-assign device to user if not already assigned (for simulator/auto-mapping)
+        if (!ledgerEntry && user && userId) {
+          getLogger().warn('fitness.auto_assign', { deviceId: device.id, userName: user.name, userId });
+          const stint = this.openStint({ deviceId: device.id, profileId: user.id, name: user.name });
+          this.userManager.assignGuest(device.id, user.name, {
+            name: user.name,
+            profileId: user.id,
+            source: user.source || 'auto',
+            occupantType: user.source === 'Guest' ? 'guest' : 'member',
+            ...(stint ? { entityId: stint.entityId } : {})
+          });
+          this._log('device_auto_assigned', { deviceId: device.id, userName: user.name, userId });
+        } else if (ledgerEntry) {
+          // Already assigned
+        } else if (deviceData.type === 'cadence' || device.type === 'cadence') {
+          // A cadence sensor is equipment, not a person. Riders claim equipment
+          // from the picker; the sensor is bound to the machine by the
+          // `cadence:` key in the household fitness config. So having no user
+          // here is the normal, correct state and not an anomaly — it was being
+          // reported as one 787 times in a single day for one bike's sensor,
+          // which is the kind of volume that buries the signal you need.
+        } else {
+          getLogger().sampled('fitness.auto_assign_skip', { deviceId: device.id, hasUser: !!user, hasUserId: !!userId, hasLedgerEntry: !!ledgerEntry }, { maxPerMinute: 6, aggregate: true });
+        }
+        
+        if (ledgerEntry) {
+          if (ledgerEntry.occupantSlug && resolvedSlug && ledgerEntry.occupantSlug !== resolvedSlug) {
+            this.eventJournal?.log('LEDGER_DEVICE_MISMATCH', {
+              deviceId: device.id,
+              ledgerSlug: ledgerEntry.occupantSlug,
+              resolvedSlug
+            }, { severity: 'warn' });
+          }
+          if (ledgerEntry.occupantSlug && !resolvedSlug) {
+            this.eventJournal?.log('LEDGER_DEVICE_MISSING_USER', {
+              deviceId: device.id,
+              ledgerSlug: ledgerEntry.occupantSlug
+            }, { severity: 'warn' });
+          }
+        }
+      }
+    }
+
+    // Use rawPayload for HR detection (deviceData is transformed Device object)
+    const bufferCheckPayload = rawPayload || deviceData;
+    const startedNow = this._maybeStartSessionFromBuffer(bufferCheckPayload, now);
+    if (!this.sessionId) return;
+    if (startedNow) this._log('session_started', { sessionId: this.sessionId, reason: 'buffer_threshold_met' });
+
+    // Tick telemetry: track ingest rate
+    this._tickTelemetry.ingestCalls++;
+
+    this._maybeTickTimeline(deviceData?.timestamp || now);
+  }
+
+  setParticipantRoster(roster = [], deviceAssignments = {}) {
+    this.userManager.setRoster(roster);
+    if (!deviceAssignments || typeof deviceAssignments !== 'object') return;
+
+    const assign = (deviceId, assignment) => {
+      if (!deviceId || !assignment) return;
+      const name = assignment?.occupantName
+        || assignment?.name
+        || assignment?.metadata?.name
+        || (typeof assignment === 'string' ? assignment : null);
+      const metadata = {
+        ...(assignment && typeof assignment === 'object' ? assignment : {}),
+        name,
+        zones: assignment?.zones || assignment?.metadata?.zones || null,
+        baseUserName: assignment?.baseUserName || assignment?.metadata?.baseUserName || assignment?.metadata?.base_user_name || null,
+        profileId: assignment?.profileId ?? assignment?.metadata?.profileId ?? assignment?.metadata?.profile_id ?? null
+      };
+      this.userManager.assignGuest(deviceId, name, metadata);
+    };
+
+    if (Array.isArray(deviceAssignments)) {
+      deviceAssignments.forEach((assignment) => {
+        if (!assignment) return;
+        const deviceId = assignment.deviceId
+          ?? assignment.device_id
+          ?? assignment.deviceID
+          ?? assignment.device_id_str;
+        assign(deviceId, assignment);
+      });
+      return;
+    }
+
+    if (deviceAssignments instanceof Map) {
+      deviceAssignments.forEach((assignment, deviceId) => assign(deviceId, assignment));
+      return;
+    }
+
+    Object.entries(deviceAssignments).forEach(([deviceId, assignment]) => assign(deviceId, assignment));
+  }
+
+  /**
+   * Create a stint record: one occupant on one strap from now (startTick) on.
+   *
+   * @param {Object} options
+   * @param {string} options.profileId - Occupant user id
+   * @param {string} options.name - Display name
+   * @param {string} options.deviceId - Heart rate device ID
+   * @param {number} [options.startTime] - Start timestamp (defaults to now)
+   * @param {number} [options.startTick] - Timeline tick the stint begins at
+   *   (defaults to the next tick to be recorded)
+   * @returns {import('./SessionEntity.js').SessionEntity}
+   */
+  createSessionEntity({ profileId, name, deviceId, startTime, startTick }) {
+    const now = startTime || Date.now();
+    const tick = Number.isFinite(startTick) ? startTick : (this.timeline?.timebase?.tickCount ?? 0);
+    const entity = this.entityRegistry.create({ profileId, name, deviceId, startTime: now, startTick: tick });
+    if (this.treasureBox && deviceId) {
+      this.treasureBox.setActiveEntity(deviceId, entity.entityId);
+    }
+    this.eventJournal?.log('ENTITY_CREATED', {
+      entityId: entity.entityId,
+      profileId,
+      name,
+      deviceId,
+      startTime: now,
+      startTick: tick
+    });
+    return entity;
+  }
+
+  /**
+   * Open the stint for a strap's current occupant. Idempotent for the same
+   * occupant; a different occupant closes the open stint as a handover.
+   * No-op before the session starts — ensureStarted opens stints then.
+   *
+   * @param {{ deviceId: string, profileId: string, name?: string }} options
+   * @returns {import('./SessionEntity.js').SessionEntity|null}
+   */
+  openStint({ deviceId, profileId, name } = {}) {
+    if (!this.sessionId || deviceId == null || !profileId) return null;
+    const open = this.entityRegistry.getByDevice(deviceId);
+    if (open && open.status === 'active') {
+      if (open.profileId === profileId) return open;
+      this.entityRegistry.endEntity(open.entityId, { status: 'superseded', reason: 'handover' });
+    }
+    return this.createSessionEntity({ profileId, name: name || profileId, deviceId: String(deviceId) });
+  }
+
+  /**
+   * Move a strap to a new occupant.
+   *  - correction: the open stint's data (from its startTick) moves to the new
+   *    person — timeline, rings, beats, activity — and the stint is relabelled
+   *    in place ("that was actually X").
+   *  - handover: nothing moves; the stint closes and a new one opens now.
+   *
+   * @param {string} deviceId
+   * @param {string} toUserId
+   * @param {{ mode?: 'correction'|'handover', name?: string }} [options]
+   * @returns {{ ok: boolean, mode?: string, reason?: string, stint: Object|null, ringsMoved?: number, beatsMoved?: number }}
+   */
+  reassignStint(deviceId, toUserId, { mode = 'handover', name } = {}) {
+    const key = String(deviceId);
+    const stint = this.entityRegistry.getByDevice(key);
+    if (!this.sessionId || !stint || stint.status !== 'active') {
+      return { ok: false, reason: 'no-open-stint', stint: this.openStint({ deviceId: key, profileId: toUserId, name }) };
+    }
+    const fromUserId = stint.profileId;
+    if (fromUserId === toUserId) return { ok: true, mode: 'noop', stint };
+
+    if (mode === 'correction') {
+      const moved = this._moveStintData(fromUserId, toUserId, stint.startTick);
+      this.entityRegistry.relabel(stint.entityId, { profileId: toUserId, name });
+      // The new occupant owns a live stint again — back on the chart.
+      this._transferredUsers?.delete(toUserId);
+      // Hide the previous name from the chart only if it no longer owns any stint.
+      if (this.entityRegistry.getByProfile(fromUserId).length === 0) {
+        this.markUserAsTransferred(fromUserId);
+      }
+      getLogger().info('fitness.stint.corrected', {
+        deviceId: key, fromUserId, toUserId, startTick: stint.startTick, ...moved
+      });
+      return { ok: true, mode, stint, ...moved };
+    }
+
+    this.entityRegistry.endEntity(stint.entityId, { status: 'superseded', reason: 'handover' });
+    const next = this.createSessionEntity({ profileId: toUserId, name: name || toUserId, deviceId: key });
+    getLogger().info('fitness.stint.handover', { deviceId: key, fromUserId, toUserId });
+    return { ok: true, mode: 'handover', stint: next };
+  }
+
+  /**
+   * Move everything one stint accumulated from one person to another: the
+   * timeline window, the ring and beat running totals (as deltas above the
+   * stint's base), and the activity periods. Nothing before startTick moves.
+   * @private
+   */
+  _moveStintData(fromUserId, toUserId, startTick) {
+    const start = Number.isFinite(startTick) ? startTick : 0;
+    const pruned = Number(this.timeline?.timebase?.prunedTickCount) || 0;
+    let bases = { rings_total: 0, heart_beats: 0 };
+    if (this.timeline?.series) {
+      ({ bases } = moveStintSeries(this.timeline.series, {
+        fromUserId, toUserId, startIndex: start - pruned
+      }));
+    }
+    const ringsMoved = this.treasureBox?.moveStint(fromUserId, toUserId, { baseRings: bases.rings_total }) ?? 0;
+    const beatsMoved = this._timelineRecorder?.moveStintBeats(fromUserId, toUserId, bases.heart_beats) ?? 0;
+    this.activityMonitor?.moveStintActivity(fromUserId, toUserId, start);
+    this.zoneProfileStore?.resetZoneState?.(toUserId);
+    return { ringsMoved, beatsMoved };
+  }
+
+  /**
+   * Get the active session entity for a device
+   * @param {string} deviceId
+   * @returns {import('./SessionEntity.js').SessionEntity|null}
+   */
+  getEntityForDevice(deviceId) {
+    return this.entityRegistry.getByDevice(deviceId);
+  }
+
+  /**
+   * End a session entity (mark as dropped/ended)
+   * @param {string} entityId
+   * @param {Object} options
+   * @param {'dropped' | 'ended' | 'transferred'} [options.status='dropped']
+   * @param {number} [options.timestamp]
+   * @param {string} [options.transferredTo]
+   * @param {string} [options.reason]
+   */
+  endSessionEntity(entityId, options = {}) {
+    const entity = this.entityRegistry.get(entityId);
+    if (!entity) return;
+    
+    this.entityRegistry.endEntity(entityId, options);
+    
+    // Log entity end
+    this.eventJournal?.log(options.status === 'transferred' ? 'ENTITY_TRANSFERRED' : 'ENTITY_DROPPED', {
+      entityId,
+      profileId: entity.profileId,
+      name: entity.name,
+      deviceId: entity.deviceId,
+      durationMs: entity.durationMs,
+      status: entity.status,
+      transferredTo: options.transferredTo || null
+    });
+  }
+
+  /**
+   * Close a session entity that has been superseded by a device reassignment
+   * (guest switch). Stamps `endTime`/`status` unconditionally, independent of
+   * whether the reassignment also triggers an entity-to-entity data transfer,
+   * so no entity is left `status: active, endTime: null` after its device
+   * moves to a new occupant. Idempotent — calling this on an already-closed
+   * entity is a harmless no-op (see SessionEntity#end's active-status guard).
+   *
+   * @see /docs/design/guest-switch-session-transition.md
+   * @param {string} entityId
+   * @param {Object} [options]
+   * @param {number} [options.endTime] - Close timestamp (defaults to now)
+   * @param {'transferred'|'superseded'|'dropped'|'ended'} [options.status='superseded']
+   */
+  closeEntity(entityId, { endTime, status = 'superseded' } = {}) {
+    if (!entityId) return;
+    this.endSessionEntity(entityId, {
+      status,
+      timestamp: Number.isFinite(endTime) ? endTime : Date.now(),
+      reason: 'reassigned'
+    });
+  }
+
+  /**
+   * Phase 3: Get all entities for a profile ID.
+   * A profile can have multiple entities (if they leave and rejoin, or use different devices).
+   * 
+   * @param {string} profileId - Profile ID to query
+   * @returns {Array<import('./SessionEntity.js').SessionEntity>}
+   */
+  getEntitiesForProfile(profileId) {
+    if (!profileId) return [];
+    return this.entityRegistry.getByProfile(profileId);
+  }
+
+  /**
+   * Ring total for a profile (TreasureBox is the per-user ring ledger).
+   *
+   * @param {string} profileId
+   * @returns {number}
+   */
+  getProfileRingsTotal(profileId) {
+    if (!profileId) return 0;
+    // Rings are accounted per user in TreasureBox; stints carry no totals.
+    return this.treasureBox?.perUser?.get(profileId)?.totalRings || 0;
+  }
+
+  /**
+   * Phase 3: Get aggregated timeline series for a profile.
+   * Combines entity series data for profile-level display.
+   * 
+   * @param {string} profileId - Profile ID
+   * @param {string} metric - Metric name (e.g., 'rings_total')
+   * @returns {number[]} Aggregated series
+   */
+  getProfileTimelineSeries(profileId, metric) {
+    if (!profileId || !metric || !this.timeline) return [];
+    
+    const entities = this.getEntitiesForProfile(profileId);
+    if (entities.length === 0) return [];
+    
+    // For a single entity, just return its series
+    if (entities.length === 1) {
+      const entity = entities[0];
+      return this.timeline.getEntitySeries(entity.entityId, metric);
+    }
+    
+    // For multiple entities, aggregate based on metric type
+    // For rings_total, sum across active entities at each tick
+    // Note: This is a simplified aggregation - more complex logic may be needed
+    const allSeries = entities
+      .filter(e => e.status !== 'transferred')
+      .map(e => this.timeline.getEntitySeries(e.entityId, metric));
+    
+    if (allSeries.length === 0) return [];
+    if (allSeries.length === 1) return allSeries[0];
+    
+    // Find max length
+    const maxLen = Math.max(...allSeries.map(s => s.length));
+    const aggregated = new Array(maxLen).fill(0);
+    
+    // Sum values at each tick (for rings_total) or use latest (for heart_rate)
+    for (let i = 0; i < maxLen; i++) {
+      for (const series of allSeries) {
+        const val = series[i];
+        if (Number.isFinite(val)) {
+          aggregated[i] += val;
+        }
+      }
+    }
+    
+    return aggregated;
+  }
+
+  setEquipmentCatalog(equipmentList = []) {
+    // Delegate to DeviceEventRouter for unified equipment lookups
+    this._deviceRouter.setEquipmentCatalog(equipmentList);
+    this.initVibrationTrackers(equipmentList);
+    this.initPressureMatTrackers(equipmentList);
+    this.seedConfiguredRiders(equipmentList);
+
+    // Build a minimal equipmentId -> entry lookup used by accessors such as
+    // getEquipmentCadence. The router already keeps cadence-id -> entry maps,
+    // but not the reverse (equipmentId -> cadence device id) that the cycle
+    // challenge needs.
+    this._equipmentById.clear();
+    if (Array.isArray(equipmentList)) {
+      equipmentList.forEach((entry) => {
+        if (!entry || entry.id == null) return;
+        this._equipmentById.set(String(entry.id).trim(), entry);
+      });
+    }
+  }
+
+  /**
+   * Get equipment catalog via the device router.
+   * @returns {Array} Equipment entries with id, cadence, eligible_users, etc.
+   */
+  getEquipmentCatalog() {
+    return this._deviceRouter?.getEquipmentCatalog?.() || [];
+  }
+
+  /**
+   * Initialize vibration activity trackers from equipment config.
+   * @param {Array} equipmentList - Equipment config array
+   */
+  initVibrationTrackers(equipmentList = []) {
+    this._vibrationTrackers.clear();
+    equipmentList.forEach(item => {
+      if (item?.sensor?.type === 'vibration' && item.id) {
+        const tracker = new VibrationActivityTracker(item.id, item.activity || {});
+        this._vibrationTrackers.set(String(item.id), tracker);
+        getLogger().debug('fitness.vibration_tracker.created', {
+          equipmentId: item.id,
+          config: item.activity || {}
+        });
+      }
+    });
+  }
+
+  /**
+   * Claim the riders that config already knows about.
+   *
+   * A `cadence_floor` (and a mat participation credit) needs to know WHOSE ride
+   * it is watching, and the only way to answer that was a physical selector
+   * press. Equipment with exactly one possible rider therefore sat permanently
+   * unclaimed: on 2026-09-07 the tricycle produced a full RPM series for
+   * twenty-four minutes while its governance rule stood down as `unclaimed` on
+   * every single tick.
+   *
+   * `rider:` on the equipment is that standing answer. It seeds the claim and
+   * nothing more — a selector press, an on-screen assignment, or the
+   * one-rider-one-machine guardrail all still move it, because a declared
+   * rider is a DEFAULT, not a lock. Re-seeding is therefore skipped for any
+   * equipment already claimed, or a config refresh mid-session would drag a
+   * rider back off the bike they had just moved to.
+   *
+   * @param {Array} equipmentList - Equipment config array
+   */
+  seedConfiguredRiders(equipmentList = []) {
+    if (!Array.isArray(equipmentList) || !this._equipmentRider) return;
+    equipmentList.forEach((entry) => {
+      const equipmentId = entry?.id == null ? null : String(entry.id).trim();
+      const rider = typeof entry?.rider === 'string' ? entry.rider.trim() : '';
+      if (!equipmentId || !rider) return;
+      if (this._equipmentRider.has(equipmentId)) return;
+      this._equipmentRider.set(equipmentId, rider);
+      getLogger().info('fitness.rider.seeded_from_config', { equipmentId, userId: rider });
+    });
+  }
+
+  /**
+   * Route a vibration event to the appropriate tracker.
+   * @param {string} equipmentId
+   * @param {Object} payload - { vibration, x_axis, y_axis, z_axis, timestamp }
+   */
+  ingestVibration(equipmentId, payload) {
+    if (!equipmentId || !payload) return;
+    const tracker = this._vibrationTrackers.get(String(equipmentId));
+    if (!tracker) return;
+    tracker.ingest(payload);
+  }
+
+  /**
+   * Get a vibration tracker by equipment ID.
+   * @param {string} equipmentId
+   * @returns {VibrationActivityTracker|null}
+   */
+  getVibrationTracker(equipmentId) {
+    return this._vibrationTrackers.get(String(equipmentId)) || null;
+  }
+
+  /** Reconcile by physical identity; a config refresh is not a new workout. */
+  initPressureMatTrackers(equipmentList = []) {
+    const existingByHardware = new Map([...this._pressureMatTrackers.values()].map(t => [t.matId, t]));
+    const configuredHardware = new Set();
+    equipmentList.forEach((item) => {
+      const matId = item?.pressure_mat || item?.pressureMat || item?.sensor?.pressure_mat;
+      const isPressureMat = item?.type === 'pressure_mat'
+        || item?.type === 'step_mat'
+        || item?.sensor?.type === 'pressure_mat';
+      if (!item?.id || !matId || !isPressureMat) return;
+      const equipmentId = String(item.id).trim();
+      const hardwareId = String(matId).trim();
+      if (!equipmentId || !hardwareId) return;
+      const collision = this._pressureMatTrackers.get(equipmentId);
+      if (configuredHardware.has(hardwareId) || (collision && collision.matId !== hardwareId && this.sessionId)) {
+        getLogger().warn('fitness.pressure_mat.config_conflict', { equipmentId, matId: hardwareId, sessionId: this.sessionId });
+        return;
+      }
+      configuredHardware.add(hardwareId);
+      const existing = existingByHardware.get(hardwareId);
+      const tracker = existing || new PressureMatActivityTracker(equipmentId, hardwareId, item.activity || {});
+      if (existing && existing.equipmentId !== equipmentId) {
+        const previousId = existing.equipmentId;
+        this._pressureMatTrackers.delete(previousId);
+        if (this._equipmentRider.has(previousId)) {
+          if (!this._equipmentRider.has(equipmentId)) this._equipmentRider.set(equipmentId, this._equipmentRider.get(previousId));
+          this._equipmentRider.delete(previousId);
+        }
+        this._renamePressureMatSeries(previousId, equipmentId);
+        tracker.equipmentId = equipmentId;
+        getLogger().info('fitness.pressure_mat.tracker_rebound', { previousId, equipmentId, matId: hardwareId, sessionId: this.sessionId });
+      }
+      tracker.configure(item.activity || {});
+      this._pressureMatTrackers.set(equipmentId, tracker);
+      if (!existing) getLogger().info('fitness.pressure_mat.tracker_created', { equipmentId, matId: hardwareId });
+    });
+    // Keep discovered/removed mats for the current session. Missing metadata
+    // must not erase physical totals or hide a card already used this workout.
+    this._pressureMatEquipmentByHardwareId.clear();
+    this._pressureMatTrackers.forEach((tracker, id) => this._pressureMatEquipmentByHardwareId.set(tracker.matId, id));
+    this._timelineRecorder?.setPressureMatTrackers?.(this._pressureMatTrackers);
+  }
+
+  _renamePressureMatSeries(previousId, equipmentId) {
+    const series = this.timeline?.series;
+    if (!series) return;
+    const prefix = `device:${previousId}:`;
+    Object.keys(series).filter(key => key.startsWith(prefix)).forEach(key => {
+      const nextKey = `device:${equipmentId}:${key.slice(prefix.length)}`;
+      const previous = series[key];
+      const next = series[nextKey];
+      series[nextKey] = next ? Array.from({ length: Math.max(previous.length, next.length) }, (_, i) => {
+        const value = previous[i];
+        return value == null ? (next[i] ?? null)
+          : next[i] == null ? value : Math.max(value, next[i]);
+      }) : previous;
+      delete series[key];
+    });
+  }
+
+  _restorePressureMats(sessionData) {
+    const saved = sessionData.metadata?.pressure_mats;
+    const series = this.timeline?.series || {};
+    const lastNumber = (values) => Array.isArray(values)
+      ? [...values].reverse().find(value => Number.isFinite(value) && value >= 0) ?? 0 : 0;
+    let records = saved?.version === 1 && Array.isArray(saved.mats) ? saved.mats : null;
+    if (!records) {
+      // Older sessions only have sampled totals. Restore physical counts;
+      // only a single mat permits unambiguous attribution of global user totals.
+      records = Object.keys(series).filter(key => /^device:[^:]+:steps_total$/.test(key)).map(key => {
+        const equipmentId = key.split(':')[1];
+        const tracker = this._pressureMatTrackers.get(equipmentId)
+          || [...this._pressureMatTrackers.values()].find(t => t.matId === equipmentId);
+        return { equipmentId, matId: tracker?.matId || equipmentId,
+          sessionSteps: lastNumber(series[key]),
+          sessionStomps: lastNumber(series[`device:${equipmentId}:stomps_total`]), users: {} };
+      });
+      if (records.length === 1) {
+        Object.keys(series).filter(key => /^user:[^:]+:steps_total$/.test(key)).forEach(key => {
+          const userId = key.split(':')[1];
+          records[0].users[userId] = { steps: lastNumber(series[key]), stomps: lastNumber(series[`user:${userId}:stomps_total`]) };
+        });
+      }
+    }
+    records.forEach(record => {
+      if (!record?.matId || !record?.equipmentId) return;
+      const matId = String(record.matId);
+      const equipmentId = this._pressureMatEquipmentByHardwareId.get(matId) || String(record.equipmentId);
+      let tracker = this._pressureMatTrackers.get(equipmentId);
+      if (tracker && tracker.matId !== matId) return;
+      if (!tracker) {
+        tracker = new PressureMatActivityTracker(equipmentId, matId);
+        this._pressureMatTrackers.set(equipmentId, tracker);
+        this._pressureMatEquipmentByHardwareId.set(matId, equipmentId);
+      }
+      tracker.restore(record, { preserveLive: true });
+      if (record.assignedUserId && !this._equipmentRider.has(equipmentId)) this._equipmentRider.set(equipmentId, String(record.assignedUserId));
+      if (equipmentId !== record.equipmentId) this._renamePressureMatSeries(record.equipmentId, equipmentId);
+      getLogger().info('fitness.pressure_mat.restored', { equipmentId, matId, sessionId: this.sessionId, steps: tracker.sessionSteps, stomps: tracker.sessionStomps });
+    });
+    this._timelineRecorder?.setPressureMatTrackers?.(this._pressureMatTrackers);
+  }
+
+  /** Route one normalized relay message into its configured or discovered session tracker. */
+  ingestPressureMat(reading, { timestamp = Date.now() } = {}) {
+    const matId = reading?.id != null ? String(reading.id) : null;
+    if (!matId) return null;
+    let equipmentId = this._pressureMatEquipmentByHardwareId.get(matId);
+    let tracker = equipmentId ? this._pressureMatTrackers.get(equipmentId) : null;
+
+    // The relay adapter has already validated and normalized this hardware
+    // event. Do not throw the event away merely because the independently
+    // loaded fitness equipment catalog is stale: that made a healthy mat
+    // invisible in the sidebar. A discovered mat uses its hardware id as the
+    // stable fallback equipment id; configured mats still use their friendly
+    // equipment id and activity settings from initPressureMatTrackers().
+    if (!tracker) {
+      equipmentId = matId;
+      tracker = new PressureMatActivityTracker(equipmentId, matId);
+      this._pressureMatTrackers.set(equipmentId, tracker);
+      this._pressureMatEquipmentByHardwareId.set(matId, equipmentId);
+      this._timelineRecorder?.setPressureMatTrackers?.(this._pressureMatTrackers);
+      getLogger().warn('fitness.pressure_mat.tracker_discovered', {
+        equipmentId,
+        matId,
+        reason: 'missing_equipment_config',
+      });
+    }
+    const assignedUserId = this.getEquipmentRider(equipmentId);
+    const before = tracker.snapshot(timestamp);
+    const snapshot = tracker.ingest(reading, {
+      timestamp,
+      assignedUserId,
+      countSession: Boolean(this.sessionId),
+      retainStartup: !this.sessionId && this._hasRecentStartupHeartRate(timestamp),
+    });
+    if (!before.engaged && snapshot.engaged) {
+      this.logEvent('activity_engaged', { type: 'pressure_mat', equipmentId, matId });
+    }
+    if (!before.seenThisSession && snapshot.seenThisSession) {
+      getLogger().info('fitness.pressure_mat.first_step', { equipmentId, matId, sessionId: this.sessionId, steps: snapshot.sessionSteps, stomps: snapshot.sessionStomps });
+    }
+    if (snapshot.sessionSteps > before.sessionSteps) this.lastActivityTime = timestamp;
+    return snapshot;
+  }
+
+  getPressureMatTracker(equipmentId) {
+    return this._pressureMatTrackers.get(String(equipmentId)) || null;
+  }
+
+  getPressureMatSnapshots(timestamp = Date.now()) {
+    const snapshots = {};
+    this._pressureMatTrackers.forEach((tracker, equipmentId) => {
+      snapshots[equipmentId] = tracker.snapshot(timestamp);
+    });
+    return snapshots;
+  }
+
+  disengagePressureMat(equipmentId, { reason = 'manual' } = {}) {
+    const tracker = this.getPressureMatTracker(equipmentId);
+    if (!tracker || !tracker.disengage()) return false;
+    this.logEvent('activity_disengaged', {
+      type: 'pressure_mat', equipmentId: String(equipmentId), matId: tracker.matId, reason,
+    });
+    return true;
+  }
+
+  /**
+   * Record the rider currently claiming a piece of equipment (physical selector
+   * button press). Sticky until reassigned or the session resets. Last write wins.
+   * @param {string} equipmentId
+   * @param {string} userId
+   */
+  setEquipmentRider(equipmentId, userId) {
+    if (!equipmentId) return;
+    if (!this._equipmentRider) return;
+    const prev = this._equipmentRider.get(String(equipmentId)) || null;
+    // Falsy userId unclaims the bike (on-screen unassign). Don't store the
+    // string "null" — delete the entry so getEquipmentRider returns null.
+    if (!userId) {
+      this._equipmentRider.delete(String(equipmentId));
+      getLogger().info('fitness.rider.unclaimed', { equipmentId: String(equipmentId), previousRider: prev });
+      return;
+    }
+    // Guardrail: a rider can be on at most one piece of equipment. Claiming a
+    // user moves them — drop any other equipment they currently occupy.
+    const uid = String(userId);
+    const eid = String(equipmentId);
+    this._equipmentRider.forEach((claimedUser, otherEquip) => {
+      if (otherEquip !== eid && String(claimedUser) === uid) {
+        this._equipmentRider.delete(otherEquip);
+        getLogger().info('fitness.rider.moved', { from: otherEquip, to: eid, userId: uid });
+      }
+    });
+    this._equipmentRider.set(eid, uid);
+    getLogger().info('fitness.rider.claimed', { equipmentId: eid, userId: uid, previousRider: prev });
+  }
+
+  /**
+   * Get the currently claimed rider for a piece of equipment.
+   * @param {string} equipmentId
+   * @returns {string|null}
+   */
+  getEquipmentRider(equipmentId) {
+    return this._equipmentRider?.get(String(equipmentId)) || null;
+  }
+
+  // Activity-neutral aliases for touchscreen assignment. Existing rider APIs
+  // remain the compatibility contract for physical cycle selectors.
+  setEquipmentUser(equipmentId, userId) {
+    return this.setEquipmentRider(equipmentId, userId);
+  }
+
+  getEquipmentUser(equipmentId) {
+    return this.getEquipmentRider(equipmentId);
+  }
+
+  /**
+   * Get the current cadence (RPM) reading for a piece of equipment.
+   *
+   * Resolves the equipment entry from the catalog, finds the ANT+ cadence
+   * device associated with it, and reads the latest sample from the
+   * DeviceManager. Staleness is guarded against FITNESS_TIMEOUTS.rpmZero —
+   * readings older than that window are treated as disconnected.
+   *
+   * Contract:
+   *   - unknown / missing equipmentId                     -> { rpm: 0, connected: false }
+   *   - equipment in catalog but no sample yet            -> { rpm: 0, connected: false }
+   *   - reading older than FITNESS_TIMEOUTS.rpmZero       -> { rpm: 0, connected: false }
+   *   - fresh reading                                      -> { rpm: <number>, connected: true, ts: <epoch ms> }
+   *
+   * The `ts` field is the sensor packet timestamp (lastSignificantActivity ||
+   * lastSeen), used by downstream freshness checks (e.g. CadenceFilter).
+   *
+   * @param {string|number} equipmentId
+   * @returns {{ rpm: number, connected: boolean, ts?: number }}
+   */
+  getEquipmentCadence(equipmentId) {
+    const disconnected = { rpm: 0, connected: false };
+    if (equipmentId == null) return disconnected;
+    const key = String(equipmentId).trim();
+    if (!key) return disconnected;
+
+    const equipment = this._equipmentById.get(key);
+    if (!equipment) return disconnected;
+
+    const cadenceRef = equipment.cadence;
+    if (cadenceRef == null) return disconnected;
+
+    // Equipment may carry MULTIPLE cadence sensors (e.g. a sensor on each wheel of a
+    // tricycle). Treat them as one unit: connected if ANY sensor is live, and the rpm
+    // is the fastest live sensor — any wheel turning means the equipment is moving.
+    const deviceIds = (Array.isArray(cadenceRef) ? cadenceRef : [cadenceRef])
+      .map((d) => String(d).trim()).filter(Boolean);
+    let best = null;
+    let stalled = null;
+    for (const id of deviceIds) {
+      const reading = this._readCadenceDevice(id);
+      if (reading.transportStalled && (!stalled || reading.rpm > stalled.rpm)) stalled = reading;
+      if (!reading.connected) continue;
+      if (!best || reading.rpm > best.rpm) best = reading;
+    }
+    // A live sensor on any wheel wins. Otherwise, if the pipeline is stalled,
+    // surface that (with the held rpm) rather than a bare "disconnected" — the
+    // two are different states and only one means the rider stopped.
+    return best || stalled || disconnected;
+  }
+
+  // Read a single cadence device's live reading (rpm + connected + ts), applying the
+  // same staleness rule as DeviceManager.pruneStaleDevices so readers see
+  // "disconnected" even between prune cycles.
+  _readCadenceDevice(cadenceDeviceId) {
+    const disconnected = { rpm: 0, connected: false };
+    if (!cadenceDeviceId) return disconnected;
+    const device = this.deviceManager?.getDevice(cadenceDeviceId);
+    if (!device) return disconnected;
+    const rpmRaw = device.cadence;
+    if (!Number.isFinite(rpmRaw)) return disconnected;
+    const { rpmZero, transportStallMs = 1200 } = this._getTimeouts();
+    const lastActivity = Number.isFinite(device.lastSignificantActivity)
+      ? device.lastSignificantActivity
+      : (Number.isFinite(device.lastSeen) ? device.lastSeen : null);
+    if (lastActivity == null) return disconnected;
+    // Pipeline stalled: NO device at all is delivering, so this device's silence
+    // says nothing about its rider. Report `connected: false` — every existing
+    // consumer then keeps the behaviour it already has for a dropped sensor,
+    // including CycleGame's bounded anti-cheat hold — but carry the held rpm and
+    // a `transportStalled` flag for the one reader that must tell a starved
+    // pipeline from a stopped rider (GovernanceEngine's cadence filter).
+    // Do NOT report connected:true here: CycleGame would treat it as fresh
+    // truth and accrue phantom race distance.
+    if (this.deviceManager?.isTransportStalled?.(transportStallMs)) {
+      return { rpm: rpmRaw, connected: false, transportStalled: true, ts: device.lastSeen ?? lastActivity };
+    }
+    if (Date.now() - lastActivity > rpmZero) return disconnected;
+    // Use lastSeen (advances on every packet, including 0 readings) so 0-RPM blips
+    // between rotations reach CadenceFilter's EMA.
+    return { rpm: rpmRaw, connected: true, ts: device.lastSeen ?? lastActivity };
+  }
+
+  /**
+   * Get all vibration tracker snapshots.
+   * @returns {Map<string, Object>}
+   */
+  getVibrationSnapshots() {
+    const snapshots = new Map();
+    this._vibrationTrackers.forEach((tracker, id) => {
+      snapshots.set(id, tracker.snapshot);
+    });
+    return snapshots;
+  }
+
+  _isValidPreSessionSample(payload) {
+    if (!payload) return false;
+    // Check profile from multiple possible locations
+    const profileRaw = payload.profile || payload.type || payload.data?.profile;
+    const profile = typeof profileRaw === 'string' ? profileRaw.trim().toLowerCase() : profileRaw;
+    const isHeartRate = profile === 'heart_rate' || profile === 'hr';
+    if (!isHeartRate) return false;
+    // Extract HR from raw ANT+ payload structure or device object
+    const hrValue = Number(
+      payload.data?.heartRate ??
+      payload.data?.heart_rate ??
+      payload.data?.ComputedHeartRate ??
+      payload.data?.computedHeartRate ??
+      payload.heartRate ??
+      payload.heart_rate ??
+      payload.currentHeartRate ??
+      0
+    );
+    const isValid = Number.isFinite(hrValue) && hrValue > 0;
+    if (!isValid && this._preSessionBuffer.length === 0) {
+      this._log('pre_session_sample_invalid', {
+        profile,
+        hrValue,
+        payloadKeys: Object.keys(payload || {}),
+        dataKeys: Object.keys(payload?.data || {}),
+        hasComputedHR: payload?.data?.ComputedHeartRate != null || payload?.data?.computedHeartRate != null,
+        hasRawHR: payload?.data?.heartRate != null || payload?.data?.heart_rate != null
+      });
+    }
+    return isValid;
+  }
+
+  _hasRecentStartupHeartRate(timestamp) {
+    return this._lastStartupHeartRateAt != null
+      && timestamp >= this._lastStartupHeartRateAt
+      && timestamp - this._lastStartupHeartRateAt <= PRESSURE_MAT_STARTUP_WINDOW_MS;
+  }
+
+  _maybeStartSessionFromBuffer(deviceData, timestamp) {
+    if (this.sessionId) return false;
+    // Cooldown: don't auto-start a new session within the cooldown window after the last one ended
+    const cooldownMs = FITNESS_TIMEOUTS.sessionEndCooldown;
+    if (_lastSessionEndTimestamp && (timestamp - _lastSessionEndTimestamp) < cooldownMs) {
+      if (!this._lastCooldownLogAt || (timestamp - this._lastCooldownLogAt) > 10000) {
+        this._lastCooldownLogAt = timestamp;
+        getLogger().debug('fitness.session.cooldown_active', {
+          elapsedMs: timestamp - _lastSessionEndTimestamp,
+          cooldownMs,
+          remainingMs: cooldownMs - (timestamp - _lastSessionEndTimestamp)
+        });
+      }
+      return false;
+    }
+    const eligible = this._isValidPreSessionSample(deviceData);
+    if (eligible) {
+      this._lastStartupHeartRateAt = timestamp;
+      this._preSessionBuffer.push({ ...deviceData, timestamp });
+    } else if (!eligible && this._preSessionBuffer.length === 0) {
+      // Log why sample was rejected (throttled to avoid spam)
+      if (!this._lastRejectionLogAt || (timestamp - this._lastRejectionLogAt) > 3000) {
+        this._lastRejectionLogAt = timestamp;
+        getLogger().debug('fitness.session.buffer.rejected', {
+          deviceId: deviceData?.deviceId || deviceData?.id,
+          profile: deviceData?.profile || deviceData?.type,
+          hasData: !!deviceData?.data,
+          dataKeys: deviceData?.data ? Object.keys(deviceData.data) : [],
+          hasComputedHR: deviceData?.data?.ComputedHeartRate != null,
+          hasHeartRate: deviceData?.heartRate != null || deviceData?.heart_rate != null
+        });
+      }
+    }
+    const count = this._preSessionBuffer.length;
+    const remaining = Math.max(0, (this._preSessionThreshold || 3) - count);
+    const shouldStart = count >= (this._preSessionThreshold || 3);
+
+    // Throttle logging to avoid spam while waiting for threshold
+    if (!shouldStart) {
+      if (timestamp - this._lastPreSessionLogAt > 5000) {
+        this._log('pre_session_buffer', {
+          eligible,
+          bufferedCount: count,
+          remaining,
+          threshold: this._preSessionThreshold || 3,
+          lastHr: deviceData?.heartRate
+            || deviceData?.heart_rate
+            || deviceData?.data?.heartRate
+            || deviceData?.data?.heart_rate
+            || deviceData?.data?.ComputedHeartRate
+            || null,
+          profile: deviceData?.profile || deviceData?.type || deviceData?.data?.profile || null
+        });
+        this._lastPreSessionLogAt = timestamp;
+      }
+      return false;
+    }
+
+    this._bufferThresholdMet = true;
+    getLogger().warn('fitness.session.buffer.threshold_met', {
+      bufferedCount: count,
+      threshold: this._preSessionThreshold || 3,
+      firstIds: this._preSessionBuffer.slice(0, 3).map((s) => s?.deviceId || s?.id || null)
+    });
+    // Check for resumable session before starting
+    this._startWithResumeCheck('buffer_threshold_met');
+    const started = !!this.sessionId;
+    this._bufferThresholdMet = false;
+    this._preSessionBuffer = [];
+    return started;
+  }
+
+  // Phase 4: Expose extracted module interfaces for direct access
+  // These provide focused, testable interfaces while maintaining backward compatibility
+  
+  /**
+   * Get the SessionLifecycle module
+   * @returns {SessionLifecycle}
+   */
+  get lifecycle() {
+    return this._lifecycle;
+  }
+
+  /**
+   * Get the MetricsRecorder module
+   * @returns {MetricsRecorder}
+   */
+  get metricsRecorder() {
+    return this._metricsRecorder;
+  }
+
+  /**
+   * Get the ParticipantRoster module
+   * @returns {ParticipantRoster}
+   */
+  get participantRoster() {
+    return this._participantRoster;
+  }
+
+  /**
+   * Get active participants (uses ParticipantRoster)
+   * @returns {import('./ParticipantRoster.js').RosterEntry[]}
+   */
+  getActiveParticipants() {
+    return this._participantRoster.getActive();
+  }
+
+  /**
+   * Canonical participant state for governance consumers.
+   * Delegates to ParticipantRoster.getActiveParticipantState().
+   */
+  getActiveParticipantState() {
+    return this._participantRoster?.getActiveParticipantState()
+      ?? { participants: [], zoneMap: {}, totalCount: 0 };
+  }
+
+  /**
+   * Get inactive participants (uses ParticipantRoster)
+   * @returns {import('./ParticipantRoster.js').RosterEntry[]}
+   */
+  getInactiveParticipants() {
+    return this._participantRoster.getInactive();
+  }
+
+  /**
+   * Get all participants with status (uses ParticipantRoster)
+   * @returns {import('./ParticipantRoster.js').RosterEntry[]}
+   */
+  getAllParticipantsWithStatus() {
+    return this._participantRoster.getAllWithStatus();
+  }
+
+  get roster() {
+    return this._participantRoster?.getRoster() ?? [];
+  }
+
+  /**
+   * Returns all unique participant slugs that have historical data in the session,
+   * including users who have left. Used for chart persistence across remounts.
+   * Fix 9 (bugbash 1B): Normalizes slugs to prevent whitespace-only entries.
+   * @returns {string[]} Array of participant slug IDs
+   */
+  getHistoricalParticipants() {
+    const participants = new Set();
+    
+    // Fix 9: Helper to validate and normalize slugs
+    // Also exclude transferred users (their data was moved to another identity)
+    const addIfValid = (slug) => {
+      if (typeof slug === 'string') {
+        const normalized = slug.trim();
+        if (normalized && !this._transferredUsers?.has(normalized)) {
+          participants.add(normalized);
+        }
+      }
+    };
+    
+    // Get from snapshot participantSeries (legacy storage)
+    if (this.snapshot?.participantSeries instanceof Map) {
+      this.snapshot.participantSeries.forEach((_, slug) => {
+        addIfValid(slug);
+      });
+    }
+    
+    // Get from timeline if available
+    if (this.timeline?.getAllParticipantIds) {
+      const timelineIds = this.timeline.getAllParticipantIds();
+      timelineIds.forEach((id) => {
+        addIfValid(id);
+      });
+    }
+    
+    // Get from usersMeta
+    if (this.snapshot?.usersMeta instanceof Map) {
+      this.snapshot.usersMeta.forEach((_, slug) => {
+        addIfValid(slug);
+      });
+    }
+    
+    return Array.from(participants);
+  }
+
+  /**
+   * Get the set of user IDs whose data was transferred to another identity.
+   * These users should be excluded from charts/UI as their data now belongs to someone else.
+   * @returns {Set<string>}
+   */
+  getTransferredUsers() {
+    return this._transferredUsers || new Set();
+  }
+
+  /**
+   * Mark a user as transferred (grace period substitution).
+   * Increments transferVersion to trigger re-renders in UI.
+   * @param {string} userId - ID of the user who was replaced
+   */
+  markUserAsTransferred(userId) {
+    if (!userId) return;
+    if (!this._transferredUsers) this._transferredUsers = new Set();
+    this._transferredUsers.add(userId);
+    this._transferVersion = (this._transferVersion || 0) + 1;
+    this._log('user_transferred', { userId, version: this._transferVersion });
+  }
+
+  /**
+   * Get the transfer version counter. Used to trigger re-renders when transfers happen.
+   * @returns {number}
+   */
+  getTransferVersion() {
+    return this._transferVersion || 0;
+  }
+
+  _resolveEquipmentId(device) {
+    if (!device) return null;
+    const explicit = device.equipmentId || device.equipment_id || device?.metadata?.equipmentId;
+    if (explicit) return String(explicit).trim();
+    const cadence = device.cadence ?? device.deviceCadence ?? device.id;
+    const cadenceKey = cadence == null ? null : String(cadence).trim();
+    if (cadenceKey && this._equipmentIdByCadence?.has(cadenceKey)) {
+      return this._equipmentIdByCadence.get(cadenceKey);
+    }
+    // Use device id directly if available, otherwise fall back to name
+    const name = device.name || device.label || null;
+    if (device.id) return String(device.id);
+    if (name) return String(name);
+    if (cadenceKey) return cadenceKey;
+    return null;
+  }
+
+  /**
+   * Check if there's a resumable session for the given content.
+   * @param {string} contentId - Media content ID
+   * @returns {Promise<{resumable: boolean, session?: Object, finalized?: boolean}>}
+   */
+  async _checkResumable(contentId) {
+    if (!contentId) return { resumable: false };
+    try {
+      const resp = await DaylightAPI(`api/v1/fitness/resumable?contentId=${encodeURIComponent(contentId)}`);
+      return resp || { resumable: false };
+    } catch (err) {
+      const message = err?.message || String(err);
+      const isHttpError = message.startsWith('HTTP ');
+      getLogger().warn('fitness.session.resumable_check_failed', {
+        contentId,
+        error: message,
+        kind: isHttpError ? 'http' : 'js'
+      });
+      return { resumable: false };
+    }
+  }
+
+  /**
+   * Hydrate session state from a previous session's data (for resume).
+   * @param {Object} sessionData - Full session data from the API
+   */
+  _hydrateFromSession(sessionData) {
+    const sessionId = sessionData.sessionId || sessionData.session?.id;
+    if (!sessionId) return false;
+
+    const now = Date.now();
+
+    // Set session identity
+    this.sessionTimestamp = String(sessionId).replace(/^fs_/, '');
+    this.sessionId = sessionId.startsWith('fs_') ? sessionId : `fs_${sessionId}`;
+    // A v3 record carries its window as `session.start`/`session.end` wall-clock
+    // strings; only PRE-v3 records get numeric startTime/endTime at the root
+    // (see dehydrateSessionRecord, which guards that assignment on !hasV3Session).
+    // Reading only the numeric field meant every v3 resume fell through to `now`
+    // and silently rebased the session to the reload moment: session
+    // 20260901154746 recorded a 20-minute window over a 94-minute workout and
+    // lost every tick before the reload, while its media events — which carry
+    // absolute timestamps — kept the real span and disagreed with the header.
+    const resumedStart = typeof sessionData.startTime === 'number'
+      ? sessionData.startTime
+      : parseSessionClock(sessionData.session?.start);
+    if (resumedStart == null) {
+      getLogger().warn('fitness.resume.window_unknown', {
+        sessionId,
+        message: 'no startTime or session.start on the resume payload; rebasing to now loses prior ticks',
+      });
+    }
+    this.startTime = resumedStart ?? now;
+    this.endTime = null;
+    this.lastActivityTime = now;
+
+    // Create timeline with original start time
+    this.timeline = new FitnessTimeline(this.startTime, this.timebase.intervalMs || 5000);
+
+    // Restore timeline series from the saved session
+    const savedTimeline = sessionData.timeline || {};
+    const savedSeries = savedTimeline.series || {};
+    const savedTickCount = savedTimeline.tick_count || savedTimeline.timebase?.tickCount || 0;
+
+    // Set tick count to match saved data
+    this.timeline.timebase.tickCount = savedTickCount;
+
+    // Restore series data under the LIVE keys the recorders write. The saved
+    // file uses compact on-disk keys; left as-is, the live keys would restart
+    // empty and overwrite the restored history at the next save.
+    const liveSeries = toLiveSeries(savedSeries, { vibrationIds: [...this._vibrationTrackers.keys()] });
+    for (const [key, values] of Object.entries(liveSeries)) {
+      this.timeline.series[key] = values;
+    }
+
+    // Restore events
+    const savedEvents = savedTimeline.events || sessionData.events || [];
+    if (Array.isArray(savedEvents)) {
+      this.timeline.events = [...savedEvents];
+    }
+
+    // Calculate gap and pad with nulls
+    const previousEndTime = typeof sessionData.endTime === 'number'
+      ? sessionData.endTime
+      : (parseSessionClock(sessionData.session?.end)
+        ?? this.startTime
+          + (sessionData.durationMs
+            || (Number(sessionData.session?.duration_seconds) || 0) * 1000));
+    const gapMs = Math.max(0, now - previousEndTime);
+    const intervalMs = this.timeline.timebase.intervalMs || 5000;
+    const gapTicks = Math.floor(gapMs / intervalMs);
+
+    if (gapTicks > 0) {
+      this.timeline.padWithNulls(gapTicks);
+    }
+
+    this._sessionMetadata = { ...(sessionData.metadata || {}) };
+    this._timelineRecorder?.setTimeline(this.timeline);
+    this._restorePressureMats(sessionData);
+
+    // Restore treasureBox
+    if (sessionData.treasureBox) {
+      if (!this.treasureBox) {
+        this.treasureBox = new FitnessTreasureBox(this);
+      }
+      this.treasureBox.restore(sessionData.treasureBox);
+    }
+
+    // Continue every rider's running totals from where the saved file left
+    // them, so ring and beat lines carry on instead of dropping to zero.
+    this._restoreRunningTotals(liveSeries);
+    // Restore the stints, so a correction after the reload still moves the
+    // whole stint and the saved participant list keeps everyone who rode.
+    this.entityRegistry.restore(sessionData.entities);
+
+    getLogger().info('fitness.session.resumed', {
+      sessionId: this.sessionId,
+      previousEndTime,
+      gapMs,
+      gapTicks,
+      restoredTickCount: savedTickCount,
+      restoredSeriesKeys: Object.keys(savedSeries).length
+    });
+
+    return true;
+  }
+
+  /**
+   * Seed TreasureBox ring totals and TimelineRecorder beat totals from the last
+   * value of each restored per-person cumulative series.
+   * @private
+   */
+  _restoreRunningTotals(liveSeries) {
+    const lastFinite = (arr) => {
+      for (let i = arr.length - 1; i >= 0; i -= 1) if (Number.isFinite(arr[i])) return arr[i];
+      return null;
+    };
+    for (const [key, values] of Object.entries(liveSeries || {})) {
+      const m = /^user:(.+):(rings_total|heart_beats)$/.exec(key);
+      if (!m) continue;
+      const last = lastFinite(values);
+      if (last == null) continue;
+      const [, userId, metric] = m;
+      if (metric === 'rings_total' && this.treasureBox) {
+        let acc = this.treasureBox.perUser.get(userId);
+        if (!acc) {
+          acc = this.treasureBox._createAccumulator(Date.now());
+          acc.profileId = userId;
+          this.treasureBox.perUser.set(userId, acc);
+        }
+        acc.totalRings = Math.max(acc.totalRings || 0, last);
+        this._timelineRecorder?.markRingsRecorded?.(userId);
+      } else if (metric === 'heart_beats' && this._timelineRecorder) {
+        this._timelineRecorder.seedCumulativeBeats(userId, last);
+      }
+    }
+  }
+
+  /**
+   * Start a session, checking for a resumable one first.
+   * Fire-and-forget — if a resumable session is found after the sync start,
+   * it will hydrate the session state asynchronously.
+   * @param {string} reason - Start reason
+   */
+  async _startWithResumeCheck(reason) {
+    const contentId = this._getCurrentContentId();
+    getLogger().info('fitness.session.resume_check.start', { reason, contentId });
+
+    if (!contentId) {
+      // Mid-workout kiosk reload race: the HR buffer hits threshold ~1s after
+      // load, but the play-queue head (and thus contentId) isn't registered for
+      // a few seconds. Starting fresh here permanently forks the session — the
+      // backend resumable query never runs, so two overlapping sessions are
+      // persisted instead of one resumed session (see 2026-06-22 incident).
+      // Defer and let the pre-session buffer re-trigger retry once content
+      // arrives, bounded by resumeContentWait so a genuinely content-less
+      // session still starts.
+      if (!this.sessionId) {
+        const now = Date.now();
+        if (this._resumeDeferredSince == null) this._resumeDeferredSince = now;
+        const waitedMs = now - this._resumeDeferredSince;
+        if (waitedMs < FITNESS_TIMEOUTS.resumeContentWait) {
+          getLogger().info('fitness.session.resume_check.deferred', { reason, waitedMs });
+          return;
+        }
+        getLogger().info('fitness.session.resume_check.no_content', { reason, waitedMs });
+        this._resumeDeferredSince = null;
+        await this._ensureLiveSessionStarted(reason);
+      }
+      return;
+    }
+
+    // Content is known — clear any pending defer and run the real check.
+    this._resumeDeferredSince = null;
+
+    // The backend query is async; the pre-session buffer can re-trip several
+    // times before it resolves. Guard against overlapping checks so we issue one
+    // /resumable query (and one start) rather than a burst.
+    if (this._resumeCheckInFlight) return;
+    this._resumeCheckInFlight = true;
+    try {
+      const result = await this._checkResumable(contentId);
+      getLogger().info('fitness.session.resume_check.result', {
+        contentId,
+        resumable: !!result.resumable,
+        finalized: !!result.finalized,
+        matchedSessionId: result.session?.sessionId || result.session?.session?.id || null
+      });
+
+      if (!result.resumable) {
+        if (!this.sessionId) await this._ensureLiveSessionStarted(reason);
+        return;
+      }
+
+      if (result.finalized) {
+        getLogger().info('fitness.session.resume_check.finalized_prompt', { contentId });
+        this._pendingResumePrompt = result.session;
+        this._notifyResumePromptNeeded(result.session);
+        return;
+      }
+
+      getLogger().info('fitness.session.resume_check.auto_resume', { contentId });
+      this.ensureStarted({ reason: 'resumed', force: true });
+      this._hydrateFromSession(result.session);
+    } finally {
+      this._resumeCheckInFlight = false;
+    }
+  }
+
+  async _ensureLiveSessionStarted(reason) {
+    try {
+      const claim = await DaylightAPI('api/v1/fitness/live-session/claim', { clientId: getClientId() }, 'POST');
+      if (claim?.role === 'waiting') {
+        this._log('live_session.waiting_for_writer', { reason });
+        return false;
+      }
+      if (claim?.sessionId) {
+        return this.ensureStarted({
+          reason,
+          force: true,
+          sessionId: claim.sessionId,
+          startTime: claim.startTime,
+          liveSessionRole: claim.role,
+        });
+      }
+    } catch (error) {
+      // A temporary authority outage must not make a workout impossible.
+      getLogger().warn('fitness.live_session.claim_failed', { message: error?.message || String(error) });
+    }
+    return this.ensureStarted({ reason, force: true });
+  }
+
+  /**
+   * Set a content-id hint that survives even before the session starts.
+   * The React layer should call this whenever the play queue head changes
+   * so that the resume check has something to work with at
+   * buffer-threshold time. (updateSnapshot returns early when sessionId is
+   * unset, leaving snapshot.mediaPlaylists empty before the session
+   * begins, so _getCurrentContentId would otherwise always return null.)
+   * @param {string|null} id
+   */
+  setPendingContentId(id) {
+    this._pendingContentId = id || null;
+  }
+
+  /**
+   * Get the current primary content ID from active media.
+   * Falls back to the pending content-id hint when the snapshot has no
+   * media yet (e.g. before the session starts). Bare local ids on
+   * play-queue items are normalized to "plex:<id>" before returning.
+   * @returns {string|null}
+   */
+  _getCurrentContentId() {
+    const playlist = this.snapshot?.mediaPlaylists?.video;
+    if (Array.isArray(playlist) && playlist.length > 0) {
+      const head = playlist[0];
+      const id = head?.contentId || head?.id;
+      const normalized = normalizeContentId(id);
+      if (normalized) return normalized;
+    }
+    return normalizeContentId(this._pendingContentId);
+  }
+
+  /**
+   * Notify listeners that a resume prompt is needed.
+   * @param {Object} sessionData - The resumable session data
+   */
+  _notifyResumePromptNeeded(sessionData) {
+    if (this._onResumePrompt) {
+      this._onResumePrompt(sessionData);
+    }
+  }
+
+  /**
+   * Register callback for resume prompt events.
+   * @param {Function} callback - Called with session data when resume prompt is needed
+   * @returns {Function} Unsubscribe function
+   */
+  onResumePrompt(callback) {
+    this._onResumePrompt = callback;
+    return () => { this._onResumePrompt = null; };
+  }
+
+  /**
+   * Accept resume — hydrate from the pending session.
+   */
+  acceptResume() {
+    if (!this._pendingResumePrompt) return false;
+    this.ensureStarted({ reason: 'resumed_after_prompt', force: true });
+    this._hydrateFromSession(this._pendingResumePrompt);
+    this._pendingResumePrompt = null;
+    return true;
+  }
+
+  /**
+   * Decline resume — start a fresh session.
+   */
+  declineResume() {
+    this._pendingResumePrompt = null;
+    this.ensureStarted({ reason: 'fresh_after_decline', force: true });
+    return true;
+  }
+
+  ensureStarted(options = {}) {
+    const { force = false, reason = 'unknown', sessionId: requestedSessionId = null, startTime: requestedStartTime = null, liveSessionRole = null } = options;
+    if (this.sessionId) return false;
+    if (!this._kioskMode && !force) {
+      this._log('ensure_started_blocked', { reason: 'not_kiosk', requestReason: reason });
+      return false;
+    }
+    if (!force && !this._bufferThresholdMet) {
+      this._log('ensure_started_blocked', { reason: 'pre_session_threshold_not_met', requestReason: reason });
+      return false;
+    }
+    const nowDate = new Date();
+    const now = Number.isFinite(Number(requestedStartTime)) ? Number(requestedStartTime) : nowDate.getTime();
+    this.sessionTimestamp = requestedSessionId ? String(requestedSessionId).replace(/^fs_/, '') : formatSessionId(nowDate);
+    this.sessionId = requestedSessionId || `fs_${this.sessionTimestamp}`;
+    this._liveSessionRole = liveSessionRole;
+    this.startTime = now;
+    this.lastActivityTime = now;
+    this.endTime = null;
+    
+    // DEBUG: Log session start with stack trace (throttled: first 5 only)
+    if ((this._debugStartCount = (this._debugStartCount || 0) + 1) <= 5) {
+      const stack = new Error().stack?.split('\n').slice(1, 6).map(s => s.trim()).join(' <- ');
+      console.error(`🟢 SESSION_START [${this._debugStartCount}/5]: ${this.sessionId}, reason="${reason}"`, { stack });
+    }
+
+    getLogger().warn('fitness.session.started', {
+      sessionId: this.sessionId,
+      reason,
+      timestamp: now
+    });
+    this.timebase.startAbsMs = now;
+    this.timebase.intervalCount = 0;
+    this.timebase.intervalMs = this.timebase.intervalMs || 5000;
+    this._lastSampleIndex = -1;
+    this.timeline = new FitnessTimeline(now, this.timebase.intervalMs);
+    this._tickIntervalMs = this.timeline.timebase.intervalMs;
+    this.timebase.intervalMs = this.timeline.timebase.intervalMs;
+    this.timebase.startAbsMs = this.timeline.timebase.startTime;
+    this._pendingSnapshotRef = null;
+
+    // Flush any events that were queued before the timeline was ready. The queue
+    // only bridges the seconds between the pre-session buffer filling and the
+    // timeline existing; anything older belongs to no session (e.g. the media-end of
+    // a video closed after the previous session ended) and is dropped, not grafted
+    // onto this one. Age is measured against the wall clock, not `now`, which is the
+    // ORIGINAL start time on a resume.
+    if (this._pendingEvents.length > 0) {
+      const cutoff = Date.now() - PENDING_EVENT_MAX_AGE_MS;
+      const fresh = this._pendingEvents.filter(evt => !(evt.timestamp < cutoff));
+      getLogger().info('fitness.session.flush_pending_events', {
+        sessionId: this.sessionId,
+        count: fresh.length,
+        droppedStale: this._pendingEvents.length - fresh.length,
+        droppedTypes: this._pendingEvents.filter(evt => evt.timestamp < cutoff).map(evt => evt.type)
+      });
+      for (const evt of fresh) {
+        this.timeline.logEvent(evt.type, evt.data, evt.timestamp);
+      }
+      this._pendingEvents = [];
+    }
+
+    // Reset ActivityMonitor for new session (Phase 2 - centralized activity tracking)
+    this.activityMonitor.reset(now);
+    this.activityMonitor.configure({
+      tickIntervalMs: this.timebase.intervalMs,
+      // Convert ms timeouts to tick counts
+      idleThresholdTicks: 2, // ~10 seconds at 5s intervals
+      removeThresholdTicks: Math.ceil((this._getTimeouts().remove || 180000) / this.timebase.intervalMs)
+    });
+    
+    // Phase 4: Configure extracted modules for new session
+    this._metricsRecorder.setInterval(this.timebase.intervalMs);
+    this._metricsRecorder.reset();
+    this._metricsRecorder.setLogCallback((type, data) => this._log(type, data));
+    
+    // Phase 5: Configure TimelineRecorder with dependencies
+    this._timelineRecorder.reset();
+    this._timelineRecorder.setInterval(this.timebase.intervalMs);
+    this._timelineRecorder.setTimeline(this.timeline);
+    this._timelineRecorder.configure({
+      deviceManager: this.deviceManager,
+      userManager: this.userManager,
+      treasureBox: this.treasureBox,
+      timeline: this.timeline,
+      activityMonitor: this.activityMonitor,
+      eventJournal: this.eventJournal,
+      resolveEquipmentId: (device) => this._resolveEquipmentId(device)
+    });
+    this._timelineRecorder.setVibrationTrackers(this._vibrationTrackers);
+    this._pressureMatTrackers.forEach((tracker) => {
+      const snapshot = tracker.beginSession(nowDate.getTime(), {
+        retainStartup: this._hasRecentStartupHeartRate(nowDate.getTime()),
+      });
+      if (snapshot.seenThisSession) {
+        getLogger().info('fitness.pressure_mat.startup_steps_retained', {
+          sessionId: this.sessionId, matId: tracker.matId,
+          steps: snapshot.sessionSteps, stomps: snapshot.sessionStomps,
+        });
+      }
+    });
+    this._lastStartupHeartRateAt = null;
+    this._timelineRecorder.setPressureMatTrackers?.(this._pressureMatTrackers);
+
+    this._participantRoster.reset();
+    this._participantRoster.configure({
+      deviceManager: this.deviceManager,
+      userManager: this.userManager,
+      treasureBox: this.treasureBox,
+      activityMonitor: this.activityMonitor,
+      timeline: this.timeline,
+      zoneProfileStore: this.zoneProfileStore
+    });
+    
+    // Reset snapshot structures
+    this.snapshot.participantSeries = new Map();
+    this.snapshot.deviceSeries = new Map();
+    this.snapshot.usersMeta = new Map();
+    this.snapshot.playQueue = [];
+    this.snapshot.mediaPlaylists = { video: [], music: [] };
+    this.snapshot.zoneConfig = null;
+    this.screenshots.captures = [];
+    
+    this._log('start', { sessionId: this.sessionId, reason });
+    
+    if (!this.treasureBox) {
+      this.treasureBox = new FitnessTreasureBox(this);
+      // Inject ActivityMonitor for activity-aware ring processing (Priority 2)
+      this.treasureBox.setActivityMonitor(this.activityMonitor);
+      // Wire ZoneProfileStore so TreasureBox uses committed (hysteresis) zones for display
+      if (this.zoneProfileStore) {
+        this.treasureBox.setZoneProfileStore(this.zoneProfileStore);
+      }
+
+      // BUGFIX: Configure TreasureBox with zones immediately after creation
+      // Previously, this was only done in FitnessContext React effect which
+      // could miss if TreasureBox was created after the effect ran
+      const baseZoneConfig = this.zoneProfileStore?.getBaseZoneConfig();
+      if (baseZoneConfig && baseZoneConfig.length > 0) {
+        this.treasureBox.configure({
+          zones: baseZoneConfig
+        });
+        this._log('treasurebox_zones_from_store', {
+          zoneCount: baseZoneConfig.length,
+          zoneIds: baseZoneConfig.map(z => z.id)
+        });
+      } else {
+        // DIAGNOSTIC: Log when no zones available at session start
+        this._log('treasurebox_no_zones_at_start', {
+          hasZoneProfileStore: !!this.zoneProfileStore,
+          baseZoneConfigLength: baseZoneConfig?.length ?? 0
+        }, 'warn');
+      }
+    }
+    
+    // Update ParticipantRoster with treasureBox reference after creation
+    this._participantRoster.configure({ treasureBox: this.treasureBox, zoneProfileStore: this.zoneProfileStore });
+    
+    // Update TimelineRecorder with treasureBox reference after creation
+    this._timelineRecorder.setTreasureBox(this.treasureBox);
+
+    // Every strap already assigned when the session starts gets a stint from
+    // tick 0 — members as well as guests — so each assignment is on record and
+    // a later correction knows where its window begins.
+    const ledgerAssignments = this.userManager?.assignmentLedger?.snapshot?.() || [];
+    for (const assignment of ledgerAssignments) {
+      if (!assignment?.deviceId) continue;
+      const profileId = assignment.occupantId || assignment.metadata?.profileId;
+      if (!profileId) continue;
+      const entity = this.createSessionEntity({
+        profileId,
+        name: assignment.occupantName || assignment.metadata?.name || profileId,
+        deviceId: assignment.deviceId,
+        startTime: now,
+        startTick: 0,
+      });
+      this.userManager.assignGuest(assignment.deviceId, assignment.occupantName, {
+        ...(assignment.metadata || {}),
+        profileId,
+        occupantType: assignment.occupantType || 'member',
+        entityId: entity.entityId,
+      });
+    }
+    
+    this._persistenceManager?.resetSession();
+    this._lastAutosaveAt = 0;
+    this._startAutosaveTimer();
+    this._startTickTimer();
+    this._cumulativeBeats = new Map();
+    this._cumulativeRotations = new Map();
+    this._emptyRosterStartTime = null; // 6A: Reset empty roster tracking on session start
+    this._lastKnownGoodRoster = null;
+    // Preserve active guest assignments across session start: re-seed the
+    // durability snapshot from the LIVE ledger instead of discarding it, so an
+    // assignment made before the strap broadcast survives (guest-UX audit #2).
+    // Falls back to null when there are no active assignments (clean new session).
+    const liveAssignmentsAtStart = this.userManager?.assignmentLedger?.snapshot?.() || [];
+    this._lastKnownGoodDeviceAssignments = liveAssignmentsAtStart.length > 0 ? liveAssignmentsAtStart : null;
+    this._collectTimelineTick({ timestamp: now });
+    return true;
+  }
+
+  updateSnapshot({
+    playQueue,
+    participantRoster,
+    zoneConfig
+  } = {}) {
+    if (!this.sessionId) return;
+
+    if (!this.timebase.startAbsMs) {
+      this.timebase.startAbsMs = this.startTime || Date.now();
+    }
+
+    const intervalMs = this.treasureBox?.ringTimeUnitMs || this.timebase.intervalMs || 5000;
+    this.timebase.intervalMs = intervalMs;
+    if (this.timeline) {
+      this.timeline.setIntervalMs(intervalMs);
+      this._tickIntervalMs = intervalMs;
+      this._startTickTimer();
+    }
+    const now = Date.now();
+    const elapsed = this.timebase.startAbsMs ? Math.max(0, now - this.timebase.startAbsMs) : 0;
+    const intervalIndex = intervalMs > 0 ? Math.floor(elapsed / intervalMs) : 0;
+
+    this._lastSampleIndex = Math.max(this._lastSampleIndex, intervalIndex);
+    if (intervalIndex + 1 > this.timebase.intervalCount) {
+      this.timebase.intervalCount = intervalIndex + 1;
+    }
+
+    // Sync roster
+    if (Array.isArray(participantRoster)) {
+      this.snapshot.participantRoster = participantRoster.map((entry) => ({ ...entry }));
+      this.userManager.setRoster(participantRoster);
+    }
+
+    if (zoneConfig) {
+      this.zoneProfileStore?.setBaseZoneConfig(zoneConfig);
+
+      // BUGFIX: Also configure TreasureBox with zones
+      // This ensures zones are set even if TreasureBox was created after initial config
+      if (this.treasureBox) {
+        this.treasureBox.configure({ zones: zoneConfig });
+        this._log('treasurebox_zones_from_snapshot', {
+          zoneCount: zoneConfig.length,
+          zoneIds: zoneConfig.map(z => z.id)
+        });
+      }
+    }
+
+    // Process Users (from UserManager)
+    const allUsers = this.userManager.getAllUsers();
+    allUsers.forEach(user => {
+        const userId = user.id;
+        this.snapshot.usersMeta.set(userId, {
+          name: user.name,
+          displayName: user.name, // Could resolve display label
+          age: user.age,
+          hrDeviceId: user.hrDeviceId,
+          cadenceDeviceId: user.cadenceDeviceId
+        });
+        
+        const hrValueRaw = Number.isFinite(user?.currentData?.heartRate)
+          ? user.currentData.heartRate
+          : Number.isFinite(user?.currentHeartRate)
+            ? user.currentHeartRate
+            : 0;
+        const hrValue = Math.max(0, Math.round(hrValueRaw || 0));
+        user.currentHeartRate = hrValue; // legacy compatibility
+
+        const series = this.snapshot.participantSeries.get(userId) || [];
+
+        // CRITICAL DEBUG: Check if intervalIndex is reasonable
+        if (intervalIndex > 100000) {
+          getLogger().error('🚨 CRITICAL: intervalIndex TOO LARGE', {
+            intervalIndex,
+            intervalMs,
+            elapsed,
+            startAbsMs: this.timebase.startAbsMs,
+            now,
+            userId
+          });
+          // Skip this user to prevent hang
+          return;
+        }
+
+        ensureSeriesCapacity(series, intervalIndex);
+        series[intervalIndex] = hrValue > 0 ? hrValue : null;
+        
+        // MEMORY LEAK FIX: Prune old data from participantSeries to prevent unbounded growth
+        // Keep at most 2000 points (~2.7 hours at 5-second intervals)
+        const MAX_SNAPSHOT_SERIES_LENGTH = 2000;
+        if (series.length > MAX_SNAPSHOT_SERIES_LENGTH) {
+          const removeCount = series.length - MAX_SNAPSHOT_SERIES_LENGTH;
+          series.splice(0, removeCount);
+        }
+        
+        this.snapshot.participantSeries.set(userId, series);
+      });
+
+    // Use device-present presence (getPresentParticipantIds) not getActive()
+    // (ActivityMonitor-verified). Same rationale as in recordDeviceActivity — prevents the
+    // timing gap where ZoneProfileStore is empty between ActivityMonitor ticks, desyncing
+    // governance from the roster. Cheap presence query — avoids a full getRoster() rebuild per packet.
+    const presentIds = this._participantRoster?.getPresentParticipantIds();
+    const usersForZones = presentIds
+      ? allUsers.filter(u => presentIds.has(u.id))
+      : allUsers;
+    this._syncZoneProfiles(usersForZones);
+
+    // Process Devices (from DeviceManager)
+    const allDevices = this.deviceManager.getAllDevices();
+    allDevices.forEach(device => {
+        const idStr = String(device.id);
+        let record = this.snapshot.deviceSeries.get(idStr);
+        if (!record) {
+            record = {
+                id: idStr,
+                type: 'unknown', // DeviceManager needs to store type/profile better or we infer it
+                label: device.name,
+                rpmSeries: [],
+                powerSeries: [],
+                speedSeries: [],
+                heartRateSeries: []
+            };
+            this.snapshot.deviceSeries.set(idStr, record);
+        }
+        // Note: DeviceManager generic Device class might not have specific fields like 'cadence' directly on root
+        // We might need to store rawData or specific fields in DeviceManager.
+        // For now, assuming DeviceManager stores these properties if updated via recordDeviceActivity
+        
+        // ... (Logic to populate series from device properties)
+    });
+    // ... (Rest of snapshot update logic: playQueue, mediaPlaylists, etc. - similar to original)
+    if (Array.isArray(playQueue)) {
+        this.snapshot.playQueue = deepClone(playQueue);
+        // ... map to mediaPlaylists
+    }
+    
+    if (zoneConfig) {
+      this.snapshot.zoneConfig = deepClone(zoneConfig);
+    }
+
+    this._maybeAutosave();
+    this._userCollectionsCache = this.userManager.getUserCollections();
+    this._deviceOwnershipCache = this.userManager.getDeviceOwnership();
+    this._guestCandidatesCache = this.userManager.getGuestCandidates();
+    this._userZoneProfilesCache = this.zoneProfileStore
+      ? this.zoneProfileStore.getProfileMap()
+      : this.userManager.getUserZoneProfiles();
+
+    // Run Governance Evaluation
+    // IMPORTANT: Break the feedback loop. 
+    // The UI (FitnessContext) passes participantRoster based on session.roster.
+    // If we use participantRoster exclusively, and it's stale/empty, the engine resets,
+    // which stops pulses, which stops UI updates, keeping the roster empty.
+    // SOLUTION: Merge the passed-in roster with our internal session.roster 
+    // to ensure we always use the most up-to-date local data available.
+    const sessionRoster = this.roster || [];
+    const uiRoster = Array.isArray(participantRoster) ? participantRoster : [];
+    
+    // Create a combined roster, prioritizing UI-provided entries if they match by ID/name
+    const effectiveRosterMap = new Map();
+    sessionRoster.forEach(entry => {
+        if (entry.name) effectiveRosterMap.set(entry.name.toLowerCase(), entry);
+    });
+    uiRoster.forEach(entry => {
+        if (entry.name) effectiveRosterMap.set(entry.name.toLowerCase(), entry);
+    });
+    const effectiveRoster = Array.from(effectiveRosterMap.values());
+
+    // Use userId/entityId as stable identifiers (no case issues)
+    const activeParticipants = effectiveRoster
+        .filter((entry) => {
+          const isActive = entry.isActive !== false;
+          const hrActive = !entry.hrInactive;
+          return isActive && hrActive && (entry.id || entry.profileId);
+        })
+        .map(entry => entry.id || entry.profileId);  // Use ID, not name!
+
+    // Build hrInactive list for display layer (governance-exempt but visible)
+    const hrInactiveUsers = effectiveRoster
+        .filter(entry => entry.hrInactive && (entry.id || entry.profileId))
+        .map(entry => entry.id || entry.profileId);
+
+    // Guests are eligible (challenge credit + rings) but never governed as
+    // subjects — flag them so the engine keeps them out of required/missing.
+    const guestIds = effectiveRoster
+        .filter(entry => entry.isGuest && (entry.id || entry.profileId))
+        .map(entry => entry.id || entry.profileId);
+
+    // Key by userId/entityId (stable, no case issues)
+    const userZoneMap = {};
+    effectiveRoster.forEach(entry => {
+        const userId = entry.id || entry.profileId;
+        const zoneId = entry.zoneId;
+        if (userId && zoneId) {
+            userZoneMap[userId] = typeof zoneId === 'string' ? zoneId.toLowerCase() : String(zoneId).toLowerCase();
+        }
+    });
+    
+    // We need zoneRankMap and zoneInfoMap from somewhere (likely computed from zoneConfig)
+    // For now, passing empty maps if not available, or we compute them here
+    const zoneRankMap = {};
+    const zoneInfoMap = {};
+    if (this.snapshot.zoneConfig) {
+        this.snapshot.zoneConfig.forEach((z, idx) => {
+            const zid = String(z.id || z.name).toLowerCase();
+            zoneRankMap[zid] = idx;
+            zoneInfoMap[zid] = z;
+        });
+    }
+
+    // Build equipmentCadenceMap: maps equipmentId -> { rpm, connected }
+    // so the governance engine can read live cadence for cycle challenges.
+    const equipmentCadenceMap = {};
+    this._equipmentById.forEach((entry, equipmentId) => {
+      if (entry && equipmentId) {
+        equipmentCadenceMap[equipmentId] = this.getEquipmentCadence(equipmentId);
+      }
+    });
+
+    // Build equipmentRiderMap: equipmentId -> claimed userId (or absent if unclaimed)
+    const equipmentRiderMap = {};
+    this._equipmentRider.forEach((userId, equipmentId) => {
+      if (userId) equipmentRiderMap[equipmentId] = userId;
+    });
+    const activityMetricMap = this.getPressureMatSnapshots();
+
+    this.governanceEngine.evaluate({
+        activeParticipants,
+        userZoneMap,
+        zoneRankMap,
+        zoneInfoMap,
+        totalCount: activeParticipants.length,
+        hrInactiveUsers,
+        guestIds,
+        equipmentCadenceMap,
+        equipmentRiderMap,
+        activityMetricMap
+    });
+  }
+
+  /**
+   * Configure the anonymous-device HR floors on the participant roster from
+   * household config (fitness.yml governance.anonymous_hr_floor /
+   * governance.anonymous_hr_hard_floor). No-ops for non-finite values, so the
+   * roster keeps its built-in defaults when the keys are absent.
+   */
+  configureRosterFloors({ floor, hardFloor } = {}) {
+    if (!this._participantRoster) return;
+    const cfg = {};
+    if (Number.isFinite(floor)) cfg.anonymousHrFloor = floor;
+    if (Number.isFinite(hardFloor)) cfg.anonymousHrHardFloor = hardFloor;
+    if (Object.keys(cfg).length > 0) this._participantRoster.configure(cfg);
+  }
+
+  /**
+   * Snapshot the current guest-assignment ledger immediately. Unlike the
+   * tick-driven high-water-mark (which only fires when the roster is non-empty),
+   * this captures an assignment the instant it is made — even before the strap
+   * broadcasts — so it can be restored after a re-init. See guest-UX audit #2.
+   */
+  captureAssignmentSnapshot() {
+    const snap = this.userManager?.assignmentLedger?.snapshot?.() || [];
+    if (snap.length > 0) this._lastKnownGoodDeviceAssignments = snap;
+    return snap;
+  }
+
+  /**
+   * Re-apply any captured assignments that are missing from the live ledger.
+   * Idempotent and non-destructive: an assignment still present (or replaced by
+   * a newer occupant) is left untouched. Called after a re-config rebuilds users.
+   */
+  restoreAssignmentSnapshot() {
+    const snap = this._lastKnownGoodDeviceAssignments || [];
+    const ledger = this.userManager?.assignmentLedger;
+    if (!snap.length || !ledger) return false;
+    let restoredAny = false;
+    for (const entry of snap) {
+      if (!entry?.deviceId) continue;
+      if (ledger.get(entry.deviceId)) continue; // present or replaced — don't clobber
+      this.userManager.assignGuest(entry.deviceId, entry.occupantName, entry.metadata || {});
+      restoredAny = true;
+    }
+    return restoredAny;
+  }
+
+  /**
+   * Collect timeline tick - DELEGATED to TimelineRecorder.
+   *
+   * Phase 5 refactoring: This method now delegates to TimelineRecorder
+   * which owns all timeline metric recording, cumulative tracking, and
+   * dropout detection logic.
+   * 
+   * @param {Object} params
+   * @param {number} [params.timestamp] - Tick timestamp
+   * @returns {Object|null} - Tick result from timeline
+   */
+  _collectTimelineTick({ timestamp } = {}) {
+    if (!this.timeline || !this.sessionId) return null;
+
+    // Tick telemetry: count EVERY recorded tick here, at the one point all tick
+    // sources funnel through. This used to be incremented only inside the
+    // per-ingest catch-up loop in _maybeTickTimeline, which runs zero iterations
+    // in steady state because the 5s wall-clock timer in _startTickTimer already
+    // produced the tick. Result: `actualTicks: 0` reported for 100 minutes
+    // straight while `tickCount` in the same payload advanced at exactly the
+    // expected 0.2/sec — a false alarm every 30s.
+    this._tickTelemetry.actualTicks++;
+
+    // Delegate to TimelineRecorder
+    const tickResult = this._timelineRecorder.recordTick({
+      timestamp,
+      sessionId: this.sessionId,
+      roster: this.roster
+    });
+
+    // Snapshot roster when non-empty (high-water-mark pattern)
+    const currentRoster = this.roster;
+    if (currentRoster.length > 0) {
+      this._lastKnownGoodRoster = currentRoster;
+      this._lastKnownGoodDeviceAssignments = this.userManager?.assignmentLedger?.snapshot?.() || [];
+    }
+
+    // Update FitnessSession state from timeline (for backward compatibility)
+    if (this.timeline?.timebase) {
+      this.timebase.intervalCount = this.timeline.timebase.tickCount;
+      this.timebase.intervalMs = this.timeline.timebase.intervalMs;
+      this.timebase.startAbsMs = this.timeline.timebase.startTime;
+      this.timebase.lastTickTimestamp = this.timeline.timebase.lastTickTimestamp;
+    }
+
+    // Sync cumulative trackers for backward compatibility
+    // TODO: Remove once all consumers use TimelineRecorder directly
+    this._cumulativeBeats = this._timelineRecorder.getAllCumulativeBeats();
+    this._cumulativeRotations = this._timelineRecorder.getAllCumulativeRotations();
+
+    // Telemetry logging
+    this._maybeLogTimelineTelemetry();
+
+    // Empty roster timeout check (6A)
+    this._checkEmptyRosterTimeout();
+
+    return tickResult;
+  }
+  
+  // NOTE: The following ~375 lines of inline _collectTimelineTick code were
+  // extracted to TimelineRecorder.js as part of Phase 5 refactoring.
+  // See: /docs/postmortem-entityid-migration-fitnessapp.md #13
+
+  /**
+   * DEBUG: Log timeline series for dropout detection debugging
+   * Logs to both console AND emits a debug event for backend visibility
+   */
+  _logTimelineDebug(tickIndex, activeHRSet) {
+    if (!this.timeline?.series) return;
+    
+    const userSeries = {};
+    const seriesKeys = Object.keys(this.timeline.series);
+    
+    // Find all user heart_rate series
+    seriesKeys.forEach(key => {
+      if (key.startsWith('user:') && key.endsWith(':heart_rate')) {
+        const slug = key.replace('user:', '').replace(':heart_rate', '');
+        const hrSeries = this.timeline.series[key] || [];
+        const beatsSeries = this.timeline.series[`user:${slug}:heart_beats`] || [];
+        // `coins_total` fallback — pre-rename sessions (see ringSeries.mjs).
+        const ringsSeries = this.timeline.series[`user:${slug}:rings_total`]
+          || this.timeline.series[`user:${slug}:coins_total`] || [];
+        
+        // Count nulls in heart_rate
+        const nullCount = hrSeries.filter(v => v === null).length;
+        const validCount = hrSeries.filter(v => v !== null && Number.isFinite(v) && v > 0).length;
+        
+        // Get last 10 values for inspection
+        const lastHR = hrSeries.slice(-10);
+        const lastBeats = beatsSeries.slice(-10).map(v => v?.toFixed?.(1) ?? v);
+        const lastRings = ringsSeries.slice(-10).map(v => v?.toFixed?.(1) ?? v);
+        
+        userSeries[slug] = {
+          hrLength: hrSeries.length,
+          nullCount,
+          validCount,
+          lastHR,
+          lastBeats,
+          lastRings, // Add rings_total for debugging
+          isActiveNow: activeHRSet.has(slug)
+        };
+      }
+    });
+    
+    const debugData = {
+      tick: tickIndex,
+      totalSeries: seriesKeys.length,
+      lastTickActiveHR: [...(this.activityMonitor?.getPreviousTickActive() || [])],
+      currentTickActiveHR: [...activeHRSet],
+      userSeries
+    };
+    
+    // Log to console
+ //   console.log(`[Timeline DEBUG] Tick ${tickIndex}`, debugData);
+    
+    // Also emit as event for backend visibility (will show in dev.log)
+    this._log('timeline-debug', debugData);
+  }
+
+  // ... (Rest of methods: updateActiveDevices, maybeEnd, _persistSession, autosave, voice memos, summary)
+  // I will include the essential ones for session lifecycle.
+
+  updateActiveDevices() {
+    const timeouts = this._getTimeouts();
+    const { remove } = timeouts;
+    const now = Date.now();
+    const stillActive = new Set();
+    
+    // Prune DeviceManager
+    this.deviceManager.pruneStaleDevices(timeouts);
+    
+    // Re-check active set
+    const allDevices = this.deviceManager.getAllDevices();
+    allDevices.forEach(d => {
+        if (now - d.lastSeen <= remove) {
+            stillActive.add(d.id);
+        }
+    });
+    this._endedDeviceHold.observeAbsence(stillActive, remove, now);
+    
+    this.activeDeviceIds = stillActive;
+    if (this.activeDeviceIds.size === 0) {
+      this.maybeEnd();
+    }
+  }
+
+  maybeEnd() {
+    if (!this.sessionId || this.endTime) return false;
+    const { remove } = this._getTimeouts();
+    const now = Date.now();
+    if (!this.lastActivityTime || (now - this.lastActivityTime) < remove) return false;
+    
+    return this.endSession('inactivity');
+  }
+
+  /**
+   * 6A: Explicitly end the session with a reason.
+   * Clears timers, flushes data, emits events, and resets state.
+   * @param {string} reason - Why the session is ending (e.g., 'empty_roster', 'inactivity', 'manual')
+   * @returns {boolean} - True if session was ended, false if no session was active
+   */
+  endSession(reason = 'unknown') {
+    if (!this.sessionId) return false;
+
+    // MEMORY LEAK FIX: Prevent recursive loop when _collectTimelineTick -> _checkEmptyRosterTimeout -> endSession
+    if (this._isEndingSession) {
+      console.warn('[FitnessSession] endSession() called recursively, skipping');
+      return false;
+    }
+    this._isEndingSession = true;
+
+    const now = Date.now();
+    this.endTime = now;
+
+    // Mark as finalized when user explicitly ends (not timeout/empty_roster)
+    this._finalized = (reason === 'manual' || reason === 'user_initiated');
+
+    // DEBUG: Capture stack trace to identify what's triggering early session ends (throttled: first 5 only)
+    const durationMs = this.endTime - this.startTime;
+    if ((this._debugEndCount = (this._debugEndCount || 0) + 1) <= 5) {
+      const stack = new Error().stack?.split('\n').slice(1, 6).map(s => s.trim()).join(' <- ');
+      console.error(`🛑 SESSION_END [${this._debugEndCount}/5]: ${this.sessionId} after ${durationMs}ms, reason="${reason}"`, { stack });
+    }
+
+    this._collectTimelineTick({ timestamp: now });
+    this._closeOpenMedia(now);
+    // Close every open stint so the saved segments carry real end times.
+    for (const stint of this.entityRegistry.getActive()) {
+      this.entityRegistry.endEntity(stint.entityId, { status: 'ended', timestamp: now, reason: 'session-end' });
+    }
+    this._log('end', {
+      sessionId: this.sessionId,
+      durationMs,
+      reason
+    });
+    // The eventLog above never leaves the browser; this is the only shipped
+    // record of WHY a session ended (inactivity / empty_roster / user_initiated).
+    getLogger().info('fitness.session.ended', {
+      sessionId: this.sessionId,
+      durationMs,
+      reason,
+      transportSilenceMs: this.deviceManager?.lastPacketAt ? now - this.deviceManager.lastPacketAt : null
+    });
+
+    let sessionData = null;
+    try {
+      if (this.treasureBox) {
+        this.treasureBox.stop();
+      }
+      sessionData = this.summary;
+      if (this.treasureBox) {
+        // MEMORY LEAK FIX: Clear accumulated timeline data on session end
+        // Must happen AFTER summary capture so rings/buckets are preserved
+        this.treasureBox.reset();
+      }
+    } catch(_){}
+    
+    if (sessionData) this._persistSession(sessionData, { force: true });
+
+    // Release session lock. Note: the final persist above is fire-and-forget,
+    // so there's a brief window where the lock is released while the API call
+    // is still in-flight. This is acceptable — the final persist uses force: true
+    // (bypasses lock check) and the window is sub-second.
+    if (this._persistenceManager && this.sessionId) {
+      this._persistenceManager.releaseLock(this.sessionId);
+    }
+
+    // The writer owns the household live-session lease. Release only after the
+    // final save settles so a new workout cannot claim the lease while this
+    // session's final snapshot is still on its way to the server.
+    if (this._liveSessionRole === 'writer') {
+      this.whenFinalPersistSettled().finally(() => {
+        DaylightAPI('api/v1/fitness/live-session', { clientId: getClientId() }, 'DELETE')
+          .catch((error) => getLogger().warn('fitness.live_session.release_failed', { message: error?.message || String(error) }));
+      });
+    }
+
+    // 6A: Notify listeners that session has ended
+    const endedSessionId = this.sessionId;
+    this._notifySessionEnded(endedSessionId, reason);
+
+    // A deliberate end is a clean split: don't arm the auto-start cooldown, so a
+    // genuinely new workout can begin immediately (still gated by the 3-sample
+    // pre-session buffer). Auto/inactivity/empty_roster ends keep the cooldown to
+    // suppress duplicate sessions from leftover HR.
+    const deliberateEnd = reason === 'manual' || reason === 'user_initiated' || reason === 'force_break';
+    if (deliberateEnd) this._endedDeviceHold.hold(this.activeDeviceIds, now);
+    _lastSessionEndTimestamp = deliberateEnd ? 0 : Date.now();
+    this.reset();
+    return true;
+  }
+
+  /**
+   * Emit media_end for any media_start events that lack a matching media_end.
+   * Called during endSession() so the last-playing video/music track gets closed.
+   */
+  _closeOpenMedia(now) {
+    if (!this.timeline?.events) return;
+
+    for (const contentId of findUnclosedMedia(this.timeline.events)) {
+      this.logEvent('media_end', { contentId, source: 'session_end' }, now);
+    }
+  }
+
+  /**
+   * Phase 3: Check if an entity is active (has user with active HR this tick).
+   * Used for determining whether to record entity rings_total.
+   *
+   * @param {string} entityId - Entity ID to check
+   * @param {Set<string>} activeHRSet - Set of user IDs with active HR this tick
+   * @param {Map<string, Object>} userMetricMap - Map of userId -> staged entry
+   * @returns {boolean}
+   */
+  _isEntityActive(entityId, activeHRSet, userMetricMap) {
+    if (!entityId) return false;
+    
+    // Check userMetricMap for any user with this entityId
+    for (const [userId, entry] of userMetricMap) {
+      if (entry?.entityId === entityId && activeHRSet.has(userId)) {
+        console.log('[FitnessSession] Entity is active:', { entityId, userId, hasActiveHR: true });
+        return true;
+      }
+    }
+    // Debug: log why entity wasn't found active
+    const entriesWithEntity = [...userMetricMap.entries()].filter(([_, e]) => e?.entityId);
+    const activeUsers = [...activeHRSet];
+    console.log('[FitnessSession] Entity NOT active:', { 
+      entityId, 
+      entriesWithEntity: entriesWithEntity.map(([u, e]) => ({ userId: u, entityId: e.entityId })),
+      activeUsers 
+    });
+    return false;
+  }
+
+  /**
+   * 6A: Register a callback to be notified when the session ends.
+   * @param {function} callback - Function called with (sessionId, reason)
+   * @returns {function} - Unsubscribe function
+   */
+  onSessionEnded(callback) {
+    if (typeof callback !== 'function') return () => {};
+    this._sessionEndedCallbacks.push(callback);
+    return () => {
+      const idx = this._sessionEndedCallbacks.indexOf(callback);
+      if (idx >= 0) this._sessionEndedCallbacks.splice(idx, 1);
+    };
+  }
+
+  _notifySessionEnded(sessionId, reason) {
+    this._sessionEndedCallbacks.forEach((cb) => {
+      try {
+        cb(sessionId, reason);
+      } catch (_) {
+        // Swallow errors in callbacks
+      }
+    });
+  }
+
+  /**
+   * 6A: Check if roster is empty and end session after timeout.
+   * Called from _collectTimelineTick after device pruning.
+   */
+  _checkEmptyRosterTimeout() {
+    const roster = this.roster;
+    const now = Date.now();
+    const { emptySession, transportStallMs = 1200, emptySessionTransportHold = 180000 } = this._getTimeouts();
+    
+    if (!roster || roster.length === 0) {
+      // A starved sensor pipeline is not an empty room. When NO device at all
+      // is delivering, every participant drops off the roster at once even
+      // though their straps are still broadcasting at the bridge (garage,
+      // 2026-10-02: a black-holed socket emptied the roster for 2m15s and ended
+      // the workout 4 minutes before the video did). Hold the clock while the
+      // link is silent, up to a cap so a dead bridge still lets the session end.
+      const lastPacketAt = this.deviceManager?.lastPacketAt || 0;
+      const silenceMs = lastPacketAt ? now - lastPacketAt : 0;
+      if (silenceMs > transportStallMs && silenceMs < emptySessionTransportHold) {
+        if (!this._emptyRosterHeldForStall) {
+          this._emptyRosterHeldForStall = true;
+          getLogger().warn('fitness.session.empty_roster_held_transport_stall', {
+            sessionId: this.sessionId, silenceMs, holdCapMs: emptySessionTransportHold
+          });
+        }
+        this._emptyRosterStartTime = null;
+        return;
+      }
+      if (this._emptyRosterHeldForStall) {
+        this._emptyRosterHeldForStall = false;
+        getLogger().info('fitness.session.empty_roster_hold_released', {
+          sessionId: this.sessionId, silenceMs, capped: silenceMs >= emptySessionTransportHold
+        });
+      }
+      // Roster is empty - start or check timer
+      if (!this._emptyRosterStartTime) {
+        this._emptyRosterStartTime = now;
+        this._log('empty_roster_detected', { sessionId: this.sessionId });
+      } else if (now - this._emptyRosterStartTime > emptySession) {
+        // Roster has been empty too long - end session
+        this._log('empty_roster_timeout', { 
+          sessionId: this.sessionId,
+          emptyDurationMs: now - this._emptyRosterStartTime
+        });
+        this.endSession('empty_roster');
+      }
+    } else {
+      this._emptyRosterHeldForStall = false;
+      // Roster has users - reset the empty timer
+      if (this._emptyRosterStartTime) {
+        this._log('roster_recovered', { sessionId: this.sessionId });
+      }
+      this._emptyRosterStartTime = null;
+    }
+  }
+
+  reset() {
+    this._lastStartupHeartRateAt = null;
+    this.sessionId = null;
+    this.startTime = null;
+    this.endTime = null;
+    this.lastActivityTime = null;
+    this.activeDeviceIds.clear();
+    this.eventLog = [];
+    if (this.treasureBox) {
+      try { this.treasureBox.stop(); } catch(_){}
+    }
+    this.treasureBox = null;
+    this._saveTriggered = false;
+    this.voiceMemoManager.reset();
+    if (this._participantRoster) this._participantRoster.reset();
+    this.userManager = new UserManager(); // Reset users? Or keep them? Usually reset for new session context.
+    this.deviceManager = new DeviceManager(); // Reset devices?
+    this.entityRegistry.reset(); // Clear session entities for new session
+    this._stopAutosaveTimer();
+    this._stopTickTimer(); // 6A: Also stop tick timer on reset
+    this._lastAutosaveAt = 0;
+    this._emptyRosterStartTime = null; // 6A: Reset empty roster tracking
+    this._emptyRosterHeldForStall = false;
+    this._isEndingSession = false; // Clear re-entrancy guard
+    // Note: Don't clear _sessionEndedCallbacks - they persist across sessions
+    this.governanceEngine.reset();
+    this._vibrationTrackers.forEach(t => t.reset());
+    this._pressureMatTrackers.forEach(t => t.reset());
+    this._sessionMetadata = {};
+    this._equipmentRider?.clear();
+    if (this.timeline) {
+      this.timeline.reset(Date.now(), this.timeline.timebase?.intervalMs || 5000);
+    }
+    this.timeline = null;
+    this._pendingEvents = [];
+    this.timebase = {
+      startAbsMs: null,
+      intervalMs: 5000,
+      intervalCount: 0
+    };
+    this._lastSampleIndex = -1;
+    this._pendingSnapshotRef = null;
+    this._lastTelemetrySnapshotTick = -1;
+    this._tickIntervalMs = 5000;
+    this._cumulativeBeats = new Map();
+    this._cumulativeRotations = new Map();
+    
+    // Phase 5: Reset TimelineRecorder
+    this._timelineRecorder?.reset();
+  }
+
+  /**
+   * MEMORY LEAK FIX: Complete teardown for unmount/navigation
+   * Unlike reset() which prepares for session reuse, destroy() nullifies all references for GC
+   */
+  destroy() {
+    // First do standard reset
+    this.reset();
+    
+    // Then clear persistent state that reset() intentionally preserves
+    this._sessionEndedCallbacks = [];
+    
+    // Nullify manager references
+    this._deviceRouter = null;
+    this._persistenceManager = null;
+    this._metricsRecorder = null;
+    this._timelineRecorder = null;
+    this._participantRoster = null;
+    this._lifecycle = null;
+
+    // Clear vibration trackers
+    this._vibrationTrackers.clear();
+    this._vibrationTrackers = null;
+
+    this._pressureMatTrackers.clear();
+    this._pressureMatTrackers = null;
+    this._pressureMatEquipmentByHardwareId.clear();
+    this._pressureMatEquipmentByHardwareId = null;
+
+    // Clear rider claims
+    this._equipmentRider?.clear();
+    this._equipmentRider = null;
+
+    // Clear zone profile store
+    this.zoneProfileStore?.clear();
+    this.zoneProfileStore = null;
+    
+    // Clear event journal
+    this.eventJournal = null;
+    
+    // Clear activity monitor
+    this.activityMonitor = null;
+  }
+
+  _encodeSeries(series = {}, _tickCount = null) {
+    const encodeValue = (key, value) => {
+      if (value == null) return null;
+      if (typeof value === 'number') {
+        return roundValue(key, value);
+      }
+      const normalized = typeof value === 'string' ? value.trim().toLowerCase() : value;
+      if (key.includes('zone')) {
+        if (typeof normalized === 'string') {
+          return ZONE_SYMBOL_MAP[normalized] || normalized;
+        }
+        return normalized;
+      }
+      return normalized;
+    };
+
+    const runLengthEncode = (key, arr) => {
+      const encoded = [];
+      for (let i = 0; i < arr.length; i += 1) {
+        const value = encodeValue(key, arr[i]);
+        const last = encoded[encoded.length - 1];
+
+        // Compact RLE:
+        // - bare value for count=1
+        // - [value, count] for repeats
+        if (Array.isArray(last) && last[0] === value) {
+          last[1] += 1;
+        } else if (last === value) {
+          encoded[encoded.length - 1] = [value, 2];
+        } else {
+          encoded.push(value);
+        }
+      }
+      return encoded;
+    };
+
+    const encodedSeries = {};
+    Object.entries(series).forEach(([key, arr]) => {
+      if (!Array.isArray(arr)) {
+        encodedSeries[key] = arr;
+        return;
+      }
+
+      // Empty-series filtering: do not persist all-null/empty series.
+      if (!arr.length || arr.every((v) => v == null)) {
+        return;
+      }
+
+      const rle = runLengthEncode(key, arr);
+      encodedSeries[key] = JSON.stringify(rle);
+    });
+    return { encodedSeries };
+  }
+
+  _validateSessionPayload(sessionData) {
+    if (!sessionData) return { ok: false, reason: 'missing-session' };
+    const { startTime } = sessionData;
+    if (!Number.isFinite(startTime)) return { ok: false, reason: 'invalid-startTime' };
+
+    let endTime = Number(sessionData.endTime);
+    if (!Number.isFinite(endTime)) {
+      endTime = Date.now();
+    }
+    if (endTime <= startTime) {
+      endTime = startTime + 1; // ensure forward progress
+    }
+    sessionData.endTime = endTime;
+    sessionData.durationMs = Math.max(0, endTime - startTime);
+
+    const roster = Array.isArray(sessionData.roster) ? sessionData.roster : [];
+    const series = sessionData.timeline?.series || {};
+    const tickCount = Number(sessionData.timeline?.timebase?.tickCount) || 0;
+    const hasUserSeries = Object.keys(series).some((key) => typeof key === 'string' && key.startsWith('user:'));
+    const deviceAssignments = Array.isArray(sessionData.deviceAssignments)
+      ? sessionData.deviceAssignments
+      : [];
+    if (hasUserSeries && roster.length === 0) {
+      return { ok: false, reason: 'roster-required' };
+    }
+    if (hasUserSeries && deviceAssignments.length === 0) {
+      // Log but don't block — BLE-only sessions (e.g. bike rides with Garmin watch)
+      // may never receive device assignments, and blocking persistence causes total
+      // data loss for video/voice memos (see 2026-03-17 incident).
+      getLogger().info('fitness.session.no_device_assignments', {
+        sessionId: sessionData.sessionId,
+        rosterLength: roster.length,
+      });
+    }
+
+    // 6A: Spam prevention - reject short, empty sessions
+    const hasVoiceMemos = Array.isArray(sessionData.voiceMemos) && sessionData.voiceMemos.length > 0;
+    const hasEvents = Array.isArray(sessionData.timeline?.events) && sessionData.timeline.events.length > 0;
+    
+    // If session is under 10 seconds and has no user data, voice memos, or events, it's spam.
+    if (sessionData.durationMs < 10000 && !hasUserSeries && !hasVoiceMemos && !hasEvents) {
+       // If roster is also empty, definitely spam.
+       // If roster has people but duration is < 1s (like the 1ms sessions), also spam.
+       if (roster.length === 0 || sessionData.durationMs < 1000) {
+         return { ok: false, reason: 'session-too-short-and-empty' };
+       }
+    }
+
+    // Deduplicate challenge events: keep only the LAST event per challengeId+type
+    // (challenge_end fires on every status change; we only want the final outcome)
+    if (Array.isArray(sessionData.timeline?.events)) {
+      const lastChallenge = new Map();
+      const nonChallengeEvents = [];
+      for (let i = 0; i < sessionData.timeline.events.length; i++) {
+        const evt = sessionData.timeline.events[i];
+        if (!evt || typeof evt !== 'object') continue;
+        const type = evt.type || evt.eventType || null;
+        if (!type) continue;
+        if (type.startsWith('challenge_')) {
+          const challengeId = evt.data?.challengeId
+            || evt.data?.challenge_id
+            || evt.data?.challenge
+            || evt.data?.challengeID
+            || null;
+          const key = `${type}|${challengeId || ''}`;
+          lastChallenge.set(key, { evt, index: i });
+        } else {
+          nonChallengeEvents.push({ evt, index: i });
+        }
+      }
+      // Merge back in original order (by index), keeping only last per challenge key
+      const merged = [...nonChallengeEvents, ...lastChallenge.values()]
+        .sort((a, b) => a.index - b.index)
+        .map(e => e.evt);
+      sessionData.timeline.events = merged;
+    }
+
+    // CRITICAL: Require minimum ticks to prevent useless 1-tick ghost sessions
+    if (tickCount < 3) {
+      return { ok: false, reason: 'insufficient-ticks', tickCount };
+    }
+
+    const { ok: lengthsOk, issues } = FitnessTimeline.validateSeriesLengths(sessionData.timeline?.timebase || {}, series);
+    if (!lengthsOk) {
+      return { ok: false, reason: 'series-tick-mismatch', issues };
+    }
+
+    let totalPoints = 0;
+    Object.values(series).forEach((entry) => {
+      if (Array.isArray(entry)) {
+        totalPoints += entry.length;
+      }
+    });
+    if (totalPoints > MAX_SERIALIZED_SERIES_POINTS) {
+      return { ok: false, reason: 'series-size-cap', totalPoints };
+    }
+
+    return { ok: true, endTime, durationMs: sessionData.durationMs };
+  }
+
+  /**
+   * Persist session data - DELEGATED to PersistenceManager.
+   * 
+   * Phase 5 refactoring: This method now delegates to PersistenceManager
+   * which owns all validation, encoding, and API persistence logic.
+   * 
+   * @param {Object} sessionData
+   * @param {Object} [options]
+   * @param {boolean} [options.force=false]
+   * @returns {boolean}
+   */
+  _persistSession(sessionData, { force = false } = {}) {
+    // Delegate to PersistenceManager
+    const result = this._persistenceManager.persistSession(sessionData, { force });
+
+    // Sync state for backward compatibility
+    this._lastAutosaveAt = this._persistenceManager.getLastSaveTime();
+    this._saveTriggered = this._persistenceManager.isSaveInProgress();
+
+    return result;
+  }
+
+  /**
+   * Promise that settles when the most recent session save completes.
+   * Used by the player to refresh the sessions list only after the save lands.
+   * @returns {Promise<void>}
+   */
+  whenFinalPersistSettled() {
+    return this._persistenceManager?.whenLastSaveSettled?.() || Promise.resolve();
+  }
+
+  // NOTE: ~140 lines of _persistSession implementation were extracted to
+  // PersistenceManager.js as part of Phase 5 refactoring.
+  // See: /docs/postmortem-entityid-migration-fitnessapp.md #13
+
+  _startTickTimer() {
+    const interval = this.timeline?.timebase.intervalMs || this._tickIntervalMs;
+    if (!(interval > 0)) return;
+
+    // Guard: don't restart if timer is already running
+    if (this._tickTimer) return;
+
+    this._stopTickTimer();
+    const gen = ++this._timerGeneration;
+
+    const now = Date.now();
+    this._lastTimerStartAt = now;
+    this._tickTimerStartedAt = now;
+    this._tickTimerTickCount = 0;
+    getLogger().sampled('fitness.tick_timer.started', {
+      sessionId: this.sessionId,
+      intervalMs: interval,
+      generation: gen
+    }, { maxPerMinute: 10 });
+
+    this._tickTimer = setInterval(() => {
+      // Generation check: stale timer from old session
+      if (this._timerGeneration !== gen) {
+        clearInterval(this._tickTimer);
+        this._tickTimer = null;
+        return;
+      }
+      this._tickTimerTickCount++;
+      try {
+        this._collectTimelineTick();
+        // 6A: Check for empty roster timeout after each tick
+        this._checkEmptyRosterTimeout();
+      } catch (err) {
+        // Log error instead of silent swallow - helps debug freeze issues
+        getLogger().error('fitness.tick_timer.error', {
+          sessionId: this.sessionId,
+          tick: this._tickTimerTickCount,
+          error: err?.message,
+          stack: err?.stack?.split('\n').slice(0, 3).join(' | ')
+        });
+      }
+
+      // TELEMETRY: Health check every 60 ticks (~5 min at 5s interval)
+      if (this._tickTimerTickCount % 60 === 0) {
+        this._logTickTimerHealth();
+      }
+    }, interval);
+  }
+
+  _stopTickTimer() {
+    ++this._timerGeneration; // Invalidate any in-flight timer
+    if (this._tickTimer) {
+      const tickCount = this._tickTimerTickCount || 0;
+      const ranForMs = Date.now() - (this._tickTimerStartedAt || Date.now());
+
+      // Only log meaningful timer stops (had ticks OR ran for >2s)
+      // Zero-tick short timers are just restarts with no work done
+      if (tickCount > 0 || ranForMs >= 2000) {
+        getLogger().info('fitness.tick_timer.stopped', {
+          sessionId: this.sessionId,
+          tickCount,
+          ranForMs,
+          generation: this._timerGeneration
+        });
+      }
+
+      clearInterval(this._tickTimer);
+      this._tickTimer = null;
+    }
+  }
+
+  /**
+   * TELEMETRY: Log health metrics for memory leak debugging.
+   * Called every 60 ticks (~5 min) during active session.
+   */
+  _logTickTimerHealth() {
+    const stats = this.getMemoryStats();
+    getLogger().sampled('fitness.tick_timer.health', {
+      sessionId: this.sessionId,
+      tickCount: this._tickTimerTickCount,
+      runningForMs: Date.now() - (this._tickTimerStartedAt || Date.now()),
+      lastSuccessfulSaveAt: this._persistenceManager?.lastSuccessfulSaveAt || 0,
+      ...stats
+    }, { maxPerMinute: 5 });
+
+    // Warn if session has been active >5 minutes with zero successful saves
+    const sessionAge = Date.now() - this.startTime;
+    const lastSave = this._persistenceManager?.lastSuccessfulSaveAt || 0;
+    if (sessionAge > 300000 && lastSave === 0) {
+      getLogger().warn('fitness.session.save_health_warning', {
+        sessionId: this.sessionId,
+        sessionAgeMs: sessionAge,
+        lastSuccessfulSaveAt: lastSave,
+        message: 'Session active >5min with zero successful saves'
+      });
+    }
+  }
+
+  /**
+   * TELEMETRY: Get memory/data structure stats for profiling.
+   * Can be called externally (e.g., from FitnessApp 30-second profiler).
+   * @returns {Object} Stats about internal data structure sizes
+   */
+  getMemoryStats() {
+    const timelineSeries = this.timeline?.series || {};
+    const seriesKeys = Object.keys(timelineSeries);
+    const totalSeriesPoints = seriesKeys.reduce((sum, key) => {
+      const arr = timelineSeries[key];
+      return sum + (Array.isArray(arr) ? arr.length : 0);
+    }, 0);
+
+    // Find max series length (potential unbounded growth indicator)
+    const maxSeriesLength = seriesKeys.reduce((max, key) => {
+      const arr = timelineSeries[key];
+      return Math.max(max, Array.isArray(arr) ? arr.length : 0);
+    }, 0);
+
+    // Snapshot series stats (separate from timeline - used for legacy compatibility)
+    let snapshotSeriesPoints = 0;
+    let maxSnapshotSeriesLength = 0;
+    if (this.snapshot?.participantSeries instanceof Map) {
+      for (const arr of this.snapshot.participantSeries.values()) {
+        if (Array.isArray(arr)) {
+          snapshotSeriesPoints += arr.length;
+          maxSnapshotSeriesLength = Math.max(maxSnapshotSeriesLength, arr.length);
+        }
+      }
+    }
+
+    // TreasureBox stats (if available)
+    const treasureBoxStats = this.treasureBox?.getMemoryStats?.() || {};
+
+    return {
+      // Session state
+      sessionActive: !!this.sessionId,
+      tickTimerRunning: !!this._tickTimer,
+
+      // Data structure sizes
+      rosterSize: this.roster?.length || 0,
+      deviceCount: this.deviceManager?.devices?.size || 0,
+      userCount: this.userManager?.users?.size || 0,
+      eventLogSize: this.eventLog?.length || 0,
+
+      // Timeline stats
+      seriesCount: seriesKeys.length,
+      totalSeriesPoints,
+      maxSeriesLength,
+      timelineTicks: this.timeline?.timebase?.tickCount || 0,
+
+      // Snapshot series stats (memory leak indicator)
+      snapshotSeriesPoints,
+      maxSnapshotSeriesLength,
+
+      // Cumulative trackers
+      cumulativeBeatsSize: this._cumulativeBeats?.size || 0,
+      cumulativeRotationsSize: this._cumulativeRotations?.size || 0,
+
+      // Entity tracking
+      entityCount: this.entityRegistry?.getAll?.()?.length || 0,
+
+      // TreasureBox (detailed stats)
+      treasureBoxUsers: this.treasureBox?.perUser?.size || 0,
+      treasureBoxCumulativeLen: treasureBoxStats.cumulativeTimelineLength || 0,
+      treasureBoxPerColorPoints: treasureBoxStats.perColorTotalPoints || 0,
+      
+      // VoiceMemo
+      voiceMemoCount: this.voiceMemoManager?.getMemos?.()?.length || 0,
+
+      // Heap where the browser provides it; heapSource says which browser API
+      // answered, or 'unavailable' (Firefox) so null is not read as zero.
+      ...heapSnapshotFields({ precision: 1 })
+    };
+  }
+
+  _maybeLogTimelineTelemetry() {
+    if (!this.timeline) return;
+    const tickCount = this.timeline.timebase?.tickCount ?? 0;
+    if (!(this._telemetryTickInterval > 0)) return;
+    if (this._lastTelemetrySnapshotTick >= 0) {
+      const delta = tickCount - this._lastTelemetrySnapshotTick;
+      if (delta < this._telemetryTickInterval) return;
+    }
+    this._lastTelemetrySnapshotTick = tickCount;
+    const seriesRef = this.timeline.series || {};
+    const seriesCount = Object.keys(seriesRef).length;
+    const totalPoints = Object.values(seriesRef).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
+    const eventCount = Array.isArray(this.timeline.events) ? this.timeline.events.length : 0;
+    this._log('timeline_telemetry', {
+      tickCount,
+      eventCount,
+      seriesCount,
+      totalPoints
+    });
+  }
+
+  _startAutosaveTimer() {
+    if (this._autosaveTimer) clearInterval(this._autosaveTimer);
+    if (!(this._autosaveIntervalMs > 0)) return;
+    this._autosaveTimer = setInterval(() => {
+      try {
+        this._maybeAutosave();
+      } catch (err) {
+        getLogger().error('fitness.session.autosave_error', {
+          sessionId: this.sessionId,
+          error: err?.message || String(err),
+          stack: err?.stack?.split('\n').slice(0, 3).join(' <- ')
+        });
+      }
+    }, this._autosaveIntervalMs);
+  }
+
+  _stopAutosaveTimer() {
+    if (this._autosaveTimer) {
+      clearInterval(this._autosaveTimer);
+      this._autosaveTimer = null;
+    }
+  }
+
+  _maybeAutosave(force = false) {
+    if (!this.sessionId) return;
+    if (!force) {
+      if (this._autosaveIntervalMs <= 0) return;
+      // Check PersistenceManager directly - don't use stale _saveTriggered
+      if (this._persistenceManager?.isSaveInProgress?.()) return;
+      const now = Date.now();
+      if (this._lastAutosaveAt && (now - this._lastAutosaveAt) < this._autosaveIntervalMs) return;
+    }
+    // DEBUG: Log autosave (throttled: first 3 only)
+    if ((this._debugAutosaveCount = (this._debugAutosaveCount || 0) + 1) <= 3) {
+      const elapsed = this.startTime ? Date.now() - this.startTime : 0;
+      console.error(`💾 AUTOSAVE [${this._debugAutosaveCount}/3]: ${this.sessionId} at ${elapsed}ms`);
+    }
+    getLogger().debug('fitness.session.autosave', { sessionId: this.sessionId, force });
+    this._maybeTickTimeline();
+    const snapshot = this.summary;
+    if (!snapshot) return;
+    const saved = this._persistSession(snapshot, { force });
+    if (!saved) {
+      this._log('autosave_skipped', { reason: 'persist-validation-failed' });
+    }
+  }
+
+  _maybeTickTimeline(targetTimestamp = Date.now()) {
+    if (!this.timeline || !this.sessionId) return;
+    const interval = this.timeline.timebase?.intervalMs || 0;
+    if (!(interval > 0)) return;
+    let lastTick = this.timeline.timebase?.lastTickTimestamp
+      ?? this.timeline.timebase?.startTime
+      ?? this.startTime
+      ?? targetTimestamp;
+    if (!Number.isFinite(lastTick)) {
+      lastTick = targetTimestamp;
+    }
+
+    // Tick telemetry: track call rate
+    this._tickTelemetry.maybeTickCalls++;
+
+    // Diagnostic capture for the catch-up storm (UI freeze, 2026-06-22). A
+    // single ingest should backfill at most ~1 interval; a large catch-up means
+    // lastTickTimestamp is lagging targetTimestamp persistently. Snapshot the
+    // exact inputs so the next occurrence reveals the timestamp arithmetic that
+    // log forensics could not (HR deviceData.timestamp is not otherwise logged).
+    const entryLastTick = lastTick;
+    const entryGapMs = targetTimestamp - lastTick;
+
+    const maxIterations = 1000;
+    let iterations = 0;
+    while ((targetTimestamp - lastTick) >= interval && iterations < maxIterations) {
+      const nextTickTimestamp = lastTick + interval;
+      this._collectTimelineTick({ timestamp: nextTickTimestamp });
+      lastTick = this.timeline.timebase?.lastTickTimestamp ?? nextTickTimestamp;
+      iterations += 1;
+      // NOTE: actualTicks is NOT incremented here — _collectTimelineTick counts
+      // it. Incrementing in both places would double-count catch-up ticks.
+      this._tickTelemetry.catchupTicks++;
+    }
+
+    // A catch-up of >3 intervals (>15s) from one ingest is pathological — surface
+    // the inputs (rate-limited) instead of silently manufacturing ticks.
+    if (iterations > 3) {
+      getLogger().sampled('fitness.tick_catchup.anomaly', {
+        sessionId: this.sessionId,
+        iterations,
+        entryGapMs,
+        intervalMs: interval,
+        targetTimestamp,
+        entryLastTick,
+        startTime: this.timeline.timebase?.startTime ?? null,
+        tickCount: this.timeline.timebase?.tickCount ?? null,
+        wallNow: Date.now()
+      }, { maxPerMinute: 6 });
+    }
+
+    // Track loop iterations (even if 0)
+    this._tickTelemetry.loopIterationsTotal += iterations;
+
+    // Periodic telemetry logging
+    this._maybeLogTickTelemetry(targetTimestamp);
+  }
+
+  _maybeLogTickTelemetry(now = Date.now()) {
+    const tel = this._tickTelemetry;
+    if ((now - tel.lastLogAt) < tel.logIntervalMs) return;
+
+    const windowMs = now - tel.windowStart;
+    const windowSec = windowMs / 1000;
+
+    // Calculate rates
+    const ingestRate = windowSec > 0 ? (tel.ingestCalls / windowSec).toFixed(1) : 0;
+    const maybeTickRate = windowSec > 0 ? (tel.maybeTickCalls / windowSec).toFixed(1) : 0;
+    const actualTickRate = windowSec > 0 ? (tel.actualTicks / windowSec).toFixed(2) : 0;
+    // avgLoopIterations measures the CATCH-UP loop only. In a healthy session
+    // it is legitimately 0.00 because the wall-clock timer does the ticking —
+    // catchupTicks below makes that reading interpretable instead of alarming.
+    const avgLoopIter = tel.maybeTickCalls > 0
+      ? (tel.loopIterationsTotal / tel.maybeTickCalls).toFixed(2)
+      : 0;
+
+    const tickCount = this.timeline?.timebase?.tickCount || 0;
+    const expectedTickRate = (1000 / (this.timeline?.timebase?.intervalMs || 5000)).toFixed(2);
+
+    const actual = parseFloat(actualTickRate);
+    const expected = parseFloat(expectedTickRate);
+    let anomaly = null;
+    if (actual > expected * 2) {
+      anomaly = 'HIGH_TICK_RATE';
+    } else if (this.isActive && tel.ingestCalls > 0 && actual < expected * 0.5) {
+      // Ticks stalled while data was still arriving — the timer died or the
+      // timebase is wedged. This is the reading worth waking someone for.
+      anomaly = 'LOW_TICK_RATE';
+    }
+
+    const payload = {
+      sessionId: this.sessionId,
+      windowSec: windowSec.toFixed(0),
+      ingestCalls: tel.ingestCalls,
+      ingestRate: `${ingestRate}/sec`,
+      maybeTickCalls: tel.maybeTickCalls,
+      maybeTickRate: `${maybeTickRate}/sec`,
+      actualTicks: tel.actualTicks,
+      actualTickRate: `${actualTickRate}/sec`,
+      expectedTickRate: `${expectedTickRate}/sec`,
+      catchupTicks: tel.catchupTicks,
+      avgLoopIterations: avgLoopIter,
+      tickCount,
+      anomaly
+    };
+
+    // Healthy windows are routine observability, not alarms. Emitting this at
+    // warn every 30s (100+ times a session) trained the operator to ignore the
+    // warn channel entirely — so warn is now reserved for a real anomaly.
+    if (anomaly) {
+      getLogger().warn('fitness.tick_telemetry', payload);
+    } else {
+      getLogger().sampled('fitness.tick_telemetry', payload, { maxPerMinute: 2, aggregate: true });
+    }
+
+    // Reset counters for next window
+    tel.ingestCalls = 0;
+    tel.maybeTickCalls = 0;
+    tel.actualTicks = 0;
+    tel.catchupTicks = 0;
+    tel.loopIterationsTotal = 0;
+    tel.windowStart = now;
+    tel.lastLogAt = now;
+  }
+
+  get isActive() {
+    return !!this.sessionId && !this.endTime;
+  }
+
+  get summary() {
+      // (Implement summary generation similar to original, aggregating from managers)
+      // For brevity, returning a stub that calls managers
+      if (!this.sessionId) return null;
+      const timelineSummary = this.timeline ? this.timeline.summary : null;
+      const startTime = this.startTime;
+      const tickBasedEndTime = (() => {
+        const start = timelineSummary?.timebase?.startTime;
+        const interval = timelineSummary?.timebase?.intervalMs;
+        const tickCount = timelineSummary?.timebase?.tickCount;
+        if (Number.isFinite(start) && Number.isFinite(interval) && Number.isFinite(tickCount) && tickCount > 0) {
+          return start + (tickCount * interval);
+        }
+        return null;
+      })();
+      const derivedEndTime = this.endTime
+        || timelineSummary?.timebase?.lastTickTimestamp
+        || tickBasedEndTime
+        || this.timebase?.lastTickTimestamp
+        || this.lastActivityTime
+        || Date.now();
+      // Fix: Do not mutate this.endTime during summary generation (autosave)
+      // this.endTime = derivedEndTime;
+      const durationMs = Number.isFinite(startTime) ? Math.max(0, derivedEndTime - startTime) : null;
+      const liveAssignments = this.userManager?.assignmentLedger?.snapshot?.() || [];
+      const deviceAssignments = liveAssignments.length > 0
+        ? liveAssignments
+        : (this._lastKnownGoodDeviceAssignments || []);
+      const entities = this.entityRegistry?.snapshot?.() || [];
+        return {
+          sessionId: this.sessionId,
+          startTime,
+          endTime: derivedEndTime,
+          durationMs,
+          finalized: this._finalized,
+          roster: this.roster.length > 0 ? this.roster : (this._lastKnownGoodRoster || []),
+          deviceAssignments,
+          entities,
+          metadata: {
+            ...this._sessionMetadata,
+            pressure_mats: { version: 1, mats: [...this._pressureMatTrackers.values()]
+              .filter(tracker => tracker.seenThisSession)
+              .map(tracker => ({ ...tracker.checkpoint(), assignedUserId: this.getEquipmentRider(tracker.equipmentId) })) },
+          },
+          voiceMemos: this.voiceMemoManager.summary,
+          treasureBox: this.treasureBox ? this.treasureBox.summary : null,
+          timeline: timelineSummary,
+          timebase: timelineSummary?.timebase || this.timebase,
+          events: timelineSummary?.events || []
+        };
+  }
+
+  logEvent(type, data = {}, timestamp) {
+    if (!type) return null;
+    if (!this.timeline) {
+      const ts = timestamp || Date.now();
+      const entry = { timestamp: ts, type, data: { ...data }, queued: true };
+      this._pendingEvents.push(entry);
+      getLogger().debug('fitness.session.logEvent_queued', {
+        type, sessionId: this.sessionId || null
+      });
+      return entry;
+    }
+    return this.timeline.logEvent(type, data, timestamp);
+  }
+
+  recordSnapshot(filename) {
+    if (!filename) return null;
+    this._pendingSnapshotRef = filename;
+    return filename;
+  }
+
+  // Voice Memo Delegation
+  addVoiceMemo(memo) {
+    const result = this.voiceMemoManager.addMemo(memo);
+    this._maybeAutosave();
+    return result;
+  }
+
+  removeVoiceMemo(memoId) {
+    this.voiceMemoManager.removeMemo(memoId);
+    this._maybeAutosave();
+  }
+
+  replaceVoiceMemo(memoId, memo) {
+    const result = this.voiceMemoManager.replaceMemo(memoId, memo);
+    this._maybeAutosave();
+    return result;
+  }
+
+  get userCollections() {
+    if (!this._userCollectionsCache) {
+      this._userCollectionsCache = this.userManager.getUserCollections();
+    }
+    return this._userCollectionsCache;
+  }
+
+  get deviceOwnership() {
+    if (!this._deviceOwnershipCache) {
+      this._deviceOwnershipCache = this.userManager.getDeviceOwnership();
+    }
+    return this._deviceOwnershipCache;
+  }
+
+  get guestCandidates() {
+    if (!this._guestCandidatesCache) {
+      this._guestCandidatesCache = this.userManager.getGuestCandidates();
+    }
+    return this._guestCandidatesCache;
+  }
+
+  get userZoneProfiles() {
+    if (!this._userZoneProfilesCache) {
+      this._userZoneProfilesCache = this.zoneProfileStore
+        ? this.zoneProfileStore.getProfileMap()
+        : this.userManager.getUserZoneProfiles();
+    }
+    return this._userZoneProfilesCache;
+  }
+
+  get zoneProfiles() {
+    return this.zoneProfileStore ? this.zoneProfileStore.getProfiles() : [];
+  }
+
+  getZoneProfile(identifier) {
+    return this.zoneProfileStore ? this.zoneProfileStore.getProfile(identifier) : null;
+  }
+
+  /**
+   * Robust participant profile lookup — the canonical interface for subsystems.
+   * Tries ZoneProfileStore first, then falls back to roster data.
+   * Returns null only when the participant truly cannot be resolved.
+   *
+   * @param {string} identifier - participant ID (userId / profileId)
+   * @returns {{ heartRate: number|null, zoneConfig: Array, currentZoneId: string|null, resolved: boolean }|null}
+   */
+  getParticipantProfile(identifier) {
+    if (!identifier) return null;
+
+    // Primary: ZoneProfileStore (authoritative for zone state + config)
+    const zoneProfile = this.zoneProfileStore?.getProfile(identifier) ?? null;
+    if (zoneProfile) {
+      return { ...zoneProfile, resolved: true };
+    }
+
+    // Fallback: ParticipantRoster (works whether or not roster is configured —
+    // findParticipant returns null when unconfigured)
+    const rosterEntry = this._participantRoster?.findParticipant(identifier) ?? null;
+    if (rosterEntry) {
+      this._log('participant_profile_roster_fallback', { identifier, hasHr: rosterEntry.heartRate != null });
+      return {
+        heartRate: rosterEntry.heartRate,
+        currentZoneId: rosterEntry.zoneId || null,
+        zoneConfig: this.zoneProfileStore?.getBaseZoneConfig() || [],
+        resolved: true,
+        _source: 'roster'
+      };
+    }
+
+    // Not resolvable
+    this._log('participant_profile_unresolved', { identifier });
+    return null;
+  }
+
+  cleanupOrphanGuests() {
+    const ledger = this.userManager?.assignmentLedger;
+    if (!ledger) {
+      return { removed: 0, devices: [] };
+    }
+    const snapshot = ledger.snapshot();
+    const removedDevices = [];
+
+    // DEBUG: Log cleanup attempt (throttled)
+    if ((this._debugCleanupCount = (this._debugCleanupCount || 0) + 1) <= 5) {
+      console.error(`🧹 CLEANUP_ORPHANS [${this._debugCleanupCount}/5]: checking ${snapshot.length} ledger entries`);
+    }
+
+    snapshot.forEach((entry) => {
+      if (!entry) return;
+      const slug = entry.occupantSlug || null;
+      const user = slug ? this.userManager.getUser(slug) : null;
+      const deviceMatches = user?.ownsHrDevice?.(entry.deviceId) ?? false;
+      if (!user || !deviceMatches) {
+        // DEBUG: Log each removal (always - these are critical)
+        console.error(`🗑️ LEDGER_REMOVE: device=${entry.deviceId}, slug=${slug}, reason=${!user ? 'user-missing' : 'device-mismatch'}`, {
+          hrDeviceIds: user?.hrDeviceIds ? [...user.hrDeviceIds] : null,
+          entryDeviceId: entry.deviceId,
+          hasUser: !!user
+        });
+        ledger.remove(entry.deviceId);
+        removedDevices.push(entry.deviceId);
+        this.eventJournal?.log('ORPHAN_GUEST_REMOVED', {
+          deviceId: entry.deviceId,
+          occupantSlug: entry.occupantSlug || null,
+          reason: !user ? 'user-missing' : 'device-mismatch'
+        }, { severity: 'warn' });
+      }
+    });
+    return { removed: removedDevices.length, devices: removedDevices };
+  }
+
+  reconcileAssignments() {
+    const ledger = this.userManager?.assignmentLedger;
+    const mismatches = [];
+    if (!ledger) {
+      return { mismatches };
+    }
+    const snapshot = ledger.snapshot();
+    snapshot.forEach((entry) => {
+      if (!entry) return;
+      const slug = entry.occupantSlug || null;
+      const user = slug ? this.userManager.getUser(slug) : null;
+      if (!user) {
+        mismatches.push({ type: 'missing-user', deviceId: entry.deviceId, occupantSlug: slug });
+        this.eventJournal?.log('LEDGER_RECONCILE_WARN', {
+          deviceId: entry.deviceId,
+          occupantSlug: slug,
+          issue: 'missing-user'
+        }, { severity: 'warn' });
+        return;
+      }
+      const ownsDevice = user?.ownsHrDevice?.(entry.deviceId) ?? false;
+      if (user?.hrDeviceIds?.size > 0 && !ownsDevice) {
+        mismatches.push({ type: 'device-mismatch', deviceId: entry.deviceId, occupantSlug: slug, hrDeviceIds: [...(user.hrDeviceIds || [])] });
+        this.eventJournal?.log('LEDGER_RECONCILE_WARN', {
+          deviceId: entry.deviceId,
+          occupantSlug: slug,
+          issue: 'device-mismatch',
+          boundDeviceId: [...(user.hrDeviceIds || [])]
+        }, { severity: 'warn' });
+      }
+      const device = this.deviceManager.getDevice(entry.deviceId);
+      if (!device) {
+        mismatches.push({ type: 'device-missing', deviceId: entry.deviceId, occupantSlug: slug });
+        this.eventJournal?.log('LEDGER_RECONCILE_WARN', {
+          deviceId: entry.deviceId,
+          occupantSlug: slug,
+          issue: 'device-missing'
+        }, { severity: 'warn' });
+      }
+    });
+    if (mismatches.length === 0) {
+      this.eventJournal?.log('LEDGER_RECONCILE_OK', { count: snapshot.length });
+    }
+    return { mismatches };
+  }
+
+  invalidateUserCaches() {
+    this._userCollectionsCache = null;
+    this._deviceOwnershipCache = null;
+    this._guestCandidatesCache = null;
+    this._userZoneProfilesCache = null;
+    this.zoneProfileStore?.clear();
+  }
+}

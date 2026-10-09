@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
-import { render } from '#rendering/eink/index.mjs';
-import { registerBuiltins } from '#rendering/eink/widgets/builtins.mjs';
-import * as registry from '#rendering/eink/widgets/registry.mjs';
+import { render } from "../../../../modules/screens/server/rendering/eink/index.mjs";
+import { registerBuiltins } from "../../../../modules/screens/server/rendering/eink/widgets/builtins.mjs";
+import * as registry from "../../../../modules/screens/server/rendering/eink/widgets/registry.mjs";
 
 // Real font files live in the repo so the canvas can register the base face.
 const FONT_DIR = path.resolve('backend/assets/fonts');

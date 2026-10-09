@@ -1,0 +1,10 @@
+{
+  "backend/src/4_api/v1/routers/display.mjs": "capabilities/content-catalog/server/api/display.mjs",
+  "backend/src/4_api/v1/routers/info.mjs": "capabilities/content-catalog/server/api/info.mjs",
+  "backend/src/4_api/v1/routers/queries.mjs": "capabilities/content-catalog/server/api/queries.mjs",
+  "backend/src/4_api/v1/routers/siblings.mjs": "capabilities/content-catalog/server/api/siblings.mjs",
+  "backend/src/4_api/v1/routers/queue.mjs": "capabilities/playback/server/api/queue.mjs",
+  "backend/src/4_api/v1/routers/queue.surround.test.mjs": "capabilities/playback/server/api/queue.surround.test.mjs",
+  "backend/src/4_api/v1/routers/local.mjs": "modules/media/server/api/local.mjs",
+  "backend/src/4_api/v1/routers/stream.mjs": "modules/media/server/api/stream.mjs"
+}

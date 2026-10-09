@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import GamingRuntime from '../../../../frontend/src/modules/Gaming/platform/runtime/GamingRuntime.jsx';
-import { GAMING_PRESENTERS } from '../../../../frontend/src/modules/Gaming/experiences/presenterRegistry.js';
+import GamingRuntime from "../../../../capabilities/gaming/browser/platform/runtime/GamingRuntime.jsx";
+import { GAMING_PRESENTERS } from "../../../../frontend/src/composition/gaming/presenterRegistry.js";
 import { createPianoChordProvider } from '../challenge/provider/createPianoChordProvider.jsx';
 import { usePianoMidi, usePianoMidiNotes } from '../PianoKiosk/PianoMidiContext.jsx';
 import { resolvePianoPlayerName } from '../game-platform/identity/playerName.js';

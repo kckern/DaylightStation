@@ -22,7 +22,7 @@ import useKaraokeKeys from './useKaraokeKeys.js';
 import { usePlayerSessionBinding } from "../../../../../../capabilities/playback/browser/sessions.mjs";
 
 // Player is heavy — code-split it so the menu/other modes don't pay for it.
-const Player = lazy(() => import('../../../../../../capabilities/playback/browser/public.mjs'));
+const Player = lazy(() => import("../../../../../media/browser/playback.mjs"));
 
 // How long the screen-awake hold outlives a song dropping out of "playing".
 // Matches the Courses player's window (Videos.jsx VIDEO_WAKE_GRACE_MS).

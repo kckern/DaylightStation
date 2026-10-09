@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
-import { canonicalizeNfcUid } from '#domains/trigger/nfcUid.mjs';
+import { canonicalizeNfcUid } from "../../../../capabilities/device-dispatch/server/domain/nfcUid.mjs";
 
 describe('canonicalizeNfcUid', () => {
   it('folds the two spellings of one physical card onto the same identity', () => {

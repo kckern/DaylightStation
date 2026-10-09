@@ -1,4 +1,4 @@
-import { ChordStaffRenderer } from '../../../../../frontend/src/modules/MusicNotation/renderers/ChordStaffRenderer.jsx';
+import { ChordStaffRenderer } from "../../../../../capabilities/music-notation/browser/renderers/ChordStaffRenderer.jsx";
 
 /**
  * ChordCard — chord-spelling card face:

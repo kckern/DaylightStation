@@ -10,7 +10,7 @@ jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
   })
 }));
 
-const { ParticipantRoster } = await import('#frontend/hooks/fitness/ParticipantRoster.js');
+const { ParticipantRoster } = await import("../../../modules/fitness/browser/hooks/fitness/ParticipantRoster.js");
 
 // ─── Minimal fakes (no real DeviceManager / UserManager pulled in) ──────────
 
@@ -241,8 +241,8 @@ describe('ParticipantRoster.getRoster — dual-device aggregation', () => {
 
 // ─── Integration: real UserManager + DeviceManager + ParticipantRoster ─────
 
-const { UserManager } = await import('#frontend/hooks/fitness/UserManager.js');
-const { DeviceManager } = await import('#frontend/hooks/fitness/DeviceManager.js');
+const { UserManager } = await import("../../../modules/fitness/browser/hooks/fitness/UserManager.js");
+const { DeviceManager } = await import("../../../modules/fitness/browser/hooks/fitness/DeviceManager.js");
 
 describe('ParticipantRoster — integration with real UserManager min-HR arbitration', () => {
   it('user_4 with 3 HR monitors → ONE entry, HR = minimum across devices', () => {

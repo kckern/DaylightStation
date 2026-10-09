@@ -107,7 +107,7 @@ vi.mock('../../usePianoPreferences.js', () => ({
   usePianoPreferences: () => ({ prefs: {}, loaded: true, getPref: (key, fallback) => fallback, setPref: vi.fn() }),
 }));
 
-vi.mock('../../../../../../frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.jsx', async () => {
+vi.mock("../../../../../../capabilities/music-notation/browser/renderers/MusicXmlRenderer.jsx", async () => {
   const { useEffect } = await import('react');
   return {
     MusicXmlRenderer: ({ onLayout, onReady, children }) => {

@@ -23,7 +23,7 @@ import { ScreenOverlayProvider, useScreenOverlay } from '../../../../../capabili
 // rendering: it claims the escape interceptor on mount and releases it on
 // unmount, exactly as the real one does (MenuStack.jsx) — which is what makes
 // the interceptor-ordering case below a real test rather than a mock artefact.
-vi.mock('../../../modules/Menu/MenuStack.jsx', async () => {
+vi.mock("../../../../../modules/media/browser/menu.mjs", async () => {
   const { useEffect } = await import('react');
   const { useScreenOverlay: useOverlay } = await import('../../../../../capabilities/screen-host/browser/overlays/ScreenOverlayProvider.jsx');
   const Mock = ({ rootMenu, owner = 'widget' }) => {
@@ -49,7 +49,7 @@ vi.mock('../../../lib/api.mjs', () => ({
 }));
 
 const { default: MenuWidget } = await import('./MenuWidget.jsx');
-const { MenuStack } = await import('../../../modules/Menu/MenuStack.jsx');
+const { MenuStack } = await import("../../../../../modules/media/browser/menu.mjs");
 
 /**
  * Drives the overlay slot from inside the provider, the way ScreenActionHandler

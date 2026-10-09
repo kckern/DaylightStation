@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PlexAdapter } from '#adapters/content/media/plex/PlexAdapter.mjs';
+import { PlexAdapter } from "../../../../capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs";
 
 // A 2810-title section costs Plex 7 s and 6.8 MB whole; one 50-title page with
 // X-Plex-Container-Start/Size costs ~0.1 s and reports totalSize. getListPage

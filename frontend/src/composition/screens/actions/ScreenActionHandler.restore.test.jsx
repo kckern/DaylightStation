@@ -10,7 +10,7 @@ import { ScreenActionHandler } from './ScreenActionHandler.jsx';
 import { SessionSourceProvider } from '../../../../../capabilities/playback/browser/sessions/SessionSourceContext.jsx';
 import { __resetPlayerQueueOpRegistryForTests } from '../../../../../capabilities/playback/browser/player/lib/queueOpRegistry.js';
 
-vi.mock('../../../modules/Menu/MenuStack.jsx', () => ({ default: () => <div data-testid="menu-stack" /> }));
+vi.mock("../../../../../modules/media/browser/menu.mjs", () => ({ default: () => <div data-testid="menu-stack" /> }));
 vi.mock('../../../../../capabilities/playback/browser/player/Player.jsx', () => ({
   default: React.forwardRef(function MockPlayer(_props, ref) { return <div ref={ref} data-testid="player">Player</div>; }),
 }));

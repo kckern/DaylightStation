@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { HealthArchiveIngestion } from '#apps/health/archive/HealthArchiveIngestion.mjs';
-import { FilesystemHealthArchiveMirror } from '#adapters/health/FilesystemHealthArchiveMirror.mjs';
+import { HealthArchiveIngestion } from "../../../../modules/health/server/application/health/archive/HealthArchiveIngestion.mjs";
+import { FilesystemHealthArchiveMirror } from "../../../../modules/health/server/adapters/health/FilesystemHealthArchiveMirror.mjs";
 import path from 'node:path';
 import crypto from 'node:crypto';
 

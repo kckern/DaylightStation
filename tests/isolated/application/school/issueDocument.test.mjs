@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { IssueDocument } from '#apps/school/usecases/IssueDocument.mjs';
-import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
-import { validateDocument } from '#domains/school/documents/documentValidation.mjs';
-import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
-import { DOCUMENT_SOURCE_SCHEMA } from '#domains/school/documents/documentSource.mjs';
-import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocument.mjs';
-import { RenderPrintDocument } from '#apps/school/documents/RenderPrintDocument.mjs';
-import { createPrintDocumentRendering } from '#rendering/school/documents/PrintDocumentRendering.mjs';
-import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
+import { IssueDocument } from "../../../../modules/school/server/application/usecases/IssueDocument.mjs";
+import { CurriculumAccess } from "../../../../modules/school/server/application/CurriculumAccess.mjs";
+import { validateDocument } from "../../../../modules/school/server/domain/documents/documentValidation.mjs";
+import { isSchoolToken } from "../../../../modules/school/server/domain/sessions/tokens.mjs";
+import { DOCUMENT_SOURCE_SCHEMA } from "../../../../modules/school/server/domain/documents/documentSource.mjs";
+import { PublishPrintDocument } from "../../../../modules/school/server/application/documents/PublishPrintDocument.mjs";
+import { RenderPrintDocument } from "../../../../modules/school/server/application/documents/RenderPrintDocument.mjs";
+import { createPrintDocumentRendering } from "../../../../modules/school/server/rendering/documents/PrintDocumentRendering.mjs";
+import { YamlAllocationStore } from "../../../../modules/school/server/adapters/documents/YamlAllocationStore.mjs";
 import { pdfText, requirePdftotext } from '#testlib/school/pdfText.mjs';
 import {
   FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeFormMapStore,

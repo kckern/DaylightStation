@@ -31,7 +31,7 @@
  * vocabulary, because a gate that cannot resolve its material must fail OPEN —
  * a child does not lose a game to an outage in the thing that measures them.
  */
-import { SCALE_DRILL_PROGRAM_ID } from '../../../../../../shared/music/learningPrograms.mjs';
+import { SCALE_DRILL_PROGRAM_ID } from "../../../../portable/music/learningPrograms.mjs";
 import { pianoLearningApi } from '../Exercises/pianoLearningApi.js';
 import { handsOf, rootsOf, scaleInstanceId } from './gateMaterial.js';
 

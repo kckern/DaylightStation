@@ -10,7 +10,7 @@
 // structurally cannot see it, because the ordering bug is in the wrapper.
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
-import { replayGame } from '@shared-gaming/rulesets/checkers/engine.mjs';
+import { replayGame } from "../../../../capabilities/gaming/portable/rulesets/checkers/engine.mjs";
 import MatchGateContext from '../PianoKiosk/modes/Games/MatchGateContext.js';
 
 const h = vi.hoisted(() => ({ reset: vi.fn(async () => {}), play: vi.fn() }));

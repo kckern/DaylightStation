@@ -20,7 +20,7 @@
 import { describe, it, expect } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useLoopCapture, DRUM_KEY_MAP } from './useLoopCapture.js';
-import { GM_DRUM } from '@shared-music/percussion.mjs';
+import { GM_DRUM } from "../../../../../capabilities/music-notation/portable/percussion.mjs";
 import { workspaceReducer, initialWorkspace, addLayer } from './workspaceReducer.js';
 
 const ANCHOR = 1000;

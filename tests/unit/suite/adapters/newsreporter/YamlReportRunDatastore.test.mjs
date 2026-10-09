@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
-import { YamlReportRunDatastore } from '#adapters/persistence/yaml/YamlReportRunDatastore.mjs';
-import { isReportRunHistory } from '#apps/newsreporter/ports/IReportRunHistory.mjs';
+import { YamlReportRunDatastore } from "../../../../../modules/newsreporter/server/adapters/persistence/YamlReportRunDatastore.mjs";
+import { isReportRunHistory } from "../../../../../modules/newsreporter/server/application/ports/IReportRunHistory.mjs";
 
 /**
  * Fake DataService capturing household.write calls (path, data, householdId).

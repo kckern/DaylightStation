@@ -2,7 +2,7 @@
 
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert';
-import { FitnessContentToolFactory } from '../../../../src/3_applications/agents/health-coach/tools/FitnessContentToolFactory.mjs';
+import { FitnessContentToolFactory } from "../../../../../modules/health/server/application/agents/health-coach/tools/FitnessContentToolFactory.mjs";
 
 describe('FitnessContentToolFactory', () => {
   let factory;

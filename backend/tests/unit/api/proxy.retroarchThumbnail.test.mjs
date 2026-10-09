@@ -7,11 +7,14 @@
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert';
 import express from 'express';
-import http from 'node:http';
+import { wireRequest } from '../../../../tests/preimplementation/application-modules/drivers/http-wire.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import nodePath from 'node:path';
 import { createProxyRouter } from '../../../src/4_api/v1/routers/proxy.mjs';
+import { RemoteThumbnailService } from "../../../../capabilities/content-catalog/server/application/proxy/RemoteThumbnailService.mjs";
+import { FilesystemProxyAssetCache } from '../../../src/1_adapters/proxy/FilesystemProxyAssetCache.mjs';
+import { XploreThumbnailSource } from '../../../src/1_adapters/proxy/XploreThumbnailSource.mjs';
 
 const PNG_BYTES = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, // PNG signature
@@ -30,35 +33,24 @@ function freshTmpDir() {
 function makeApp({ mediaBasePath, retroarchProxy, fetchImpl }) {
   global.fetch = fetchImpl;
   const app = express();
-  const router = createProxyRouter({
-    registry: { get: () => null },
-    mediaBasePath,
-    retroarchProxy,
-    logger: { info() {}, error() {}, warn() {}, debug() {} },
-  });
+  const logger = { info() {}, error() {}, warn() {}, debug() {} };
+  const remoteThumbnailService = retroarchProxy
+    ? new RemoteThumbnailService({
+      cache: new FilesystemProxyAssetCache({ mediaBasePath }),
+      source: new XploreThumbnailSource({ ...retroarchProxy, fetchFn: fetchImpl }),
+      delay: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+      retryDelayMs: retroarchProxy.retryDelayMs ?? 1500,
+      logger,
+    })
+    : null;
+  const router = createProxyRouter({ remoteThumbnailService, logger });
   app.use('/', router);
   return app;
 }
 
 async function getReq(app, path) {
-  return new Promise((resolve) => {
-    const server = http.createServer(app);
-    server.listen(0, () => {
-      const port = server.address().port;
-      http.get(`http://127.0.0.1:${port}${path}`, (res) => {
-        const chunks = [];
-        res.on('data', c => chunks.push(c));
-        res.on('end', () => {
-          server.close();
-          resolve({
-            status: res.statusCode,
-            headers: res.headers,
-            body: Buffer.concat(chunks),
-          });
-        });
-      });
-    });
-  });
+  const response = await wireRequest(app, 'GET', path);
+  return { status: response.status, headers: response.headers, body: response.bytes };
 }
 
 before(() => { savedFetch = global.fetch; });

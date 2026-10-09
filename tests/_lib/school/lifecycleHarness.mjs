@@ -61,17 +61,17 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 
-import { createSchoolLifecycle } from '#composition/modules/schoolLifecycle.mjs';
-import { createDonow } from '#composition/modules/donow.mjs';
-import { YamlSchoolDatastore } from '#adapters/persistence/yaml/YamlSchoolDatastore.mjs';
-import { YamlEconomyDatastore } from '#adapters/persistence/yaml/YamlEconomyDatastore.mjs';
-import { EconomyConfigProjection } from '#adapters/config/ApplicationConfigProjections.mjs';
-import { SchoolService } from '#apps/school/SchoolService.mjs';
-import { EconomyService } from '#apps/economy/EconomyService.mjs';
-import { createDocumentReceiptRenderer } from '#rendering/school/documents/DocumentReceiptRenderer.mjs';
-import { HmacSchoolStudyGrantIssuer } from '#adapters/school/actions/HmacSchoolStudyGrantIssuer.mjs';
-import { mintToken } from '#domains/school/sessions/tokens.mjs';
-import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
+import { createSchoolLifecycle } from "../../../modules/school/server/composition/schoolLifecycle.mjs";
+import { createDonow } from "../../../modules/donow/server/composition/donow.mjs";
+import { YamlSchoolDatastore } from "../../../modules/school/server/adapters/persistence/YamlSchoolDatastore.mjs";
+import { YamlEconomyDatastore } from "../../../modules/economy/server/adapters/persistence/YamlEconomyDatastore.mjs";
+import { EconomyConfigProjection } from '../../../modules/economy/server/adapters/config/EconomyConfigProjection.mjs';
+import { SchoolService } from "../../../modules/school/server/application/SchoolService.mjs";
+import { EconomyService } from "../../../modules/economy/server/application/EconomyService.mjs";
+import { createDocumentReceiptRenderer } from "../../../modules/school/server/rendering/documents/DocumentReceiptRenderer.mjs";
+import { HmacSchoolStudyGrantIssuer } from "../../../modules/school/server/adapters/actions/HmacSchoolStudyGrantIssuer.mjs";
+import { mintToken } from "../../../modules/school/server/domain/sessions/tokens.mjs";
+import { reduceSession } from "../../../modules/school/server/domain/sessions/sessionEvents.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..', '..');

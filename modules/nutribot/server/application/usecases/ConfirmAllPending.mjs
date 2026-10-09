@@ -1,0 +1,113 @@
+/**
+ * Confirm All Pending Use Case
+ * @module nutribot/usecases/ConfirmAllPending
+ *
+ * Confirms all pending food logs for a user.
+ */
+
+import { withoutQuarantined } from "../../../../health/server/nutrition-quarantine.mjs";
+
+/**
+ * Confirm all pending logs use case
+ */
+export class ConfirmAllPending {
+  #foodLogStore;
+  #nutriListStore;
+  #logger;
+  #generateDailyReport;
+  #agentOrchestrator;
+  #config;
+
+  constructor(deps) {
+    if (!deps.foodLogStore) throw new Error('foodLogStore is required');
+    if (!deps.nutriListStore) throw new Error('nutriListStore is required');
+
+    this.#foodLogStore = deps.foodLogStore;
+    this.#nutriListStore = deps.nutriListStore;
+    this.#generateDailyReport = deps.generateDailyReport;
+    this.#agentOrchestrator = deps.agentOrchestrator || null;
+    this.#config = deps.config;
+    this.#logger = deps.logger || console;
+  }
+
+  /**
+   * Execute the use case
+   * @param {Object} input
+   * @param {string} input.userId
+   * @param {string} input.conversationId
+   */
+  async execute(input) {
+    const { userId, conversationId } = input;
+
+    this.#logger.debug?.('confirmAllPending.start', { userId, conversationId });
+
+    try {
+      // 1. Get all pending logs
+      // A quarantined capture (calories unknown) is confirmed only by a person
+      // supplying its calories in Needs Review, never in bulk.
+      const pendingLogs = withoutQuarantined(await this.#foodLogStore.findPending(userId));
+
+      if (pendingLogs.length === 0) {
+        this.#logger.info?.('confirmAllPending.noPending', { userId });
+        return {
+          success: true,
+          confirmedCount: 0,
+        };
+      }
+
+      // 2. Accept each pending log
+      let confirmedCount = 0;
+      const now = new Date();
+      for (const log of pendingLogs) {
+        try {
+          const acceptedLog = log.accept(now);
+          await this.#foodLogStore.save(acceptedLog);
+
+          // Sync to nutrilist
+          if (this.#nutriListStore?.syncFromLog) {
+            await this.#nutriListStore.syncFromLog(acceptedLog);
+          }
+
+          confirmedCount++;
+        } catch (e) {
+          this.#logger.warn?.('confirmAllPending.logFailed', { logId: log.id, error: e.message });
+        }
+      }
+
+      this.#logger.info?.('confirmAllPending.complete', { userId, confirmedCount });
+
+      // Generate daily report image after all logs confirmed
+      if (this.#generateDailyReport?.execute) {
+        try {
+          const logDate = pendingLogs[0]?.meal?.date || pendingLogs[0]?.date;
+          await this.#generateDailyReport.execute({
+            userId,
+            conversationId,
+            date: logDate,
+            skipPendingCheck: true,
+          });
+        } catch (e) {
+          this.#logger.warn?.('confirmAll.generateReport.error', { error: e.message });
+        }
+      }
+
+      // Agent coaching commentary (fire-and-forget)
+      if (this.#agentOrchestrator) {
+        this.#agentOrchestrator.runAssignment('health-coach', 'end-of-day-report', {
+          userId,
+          context: { conversationId },
+        }).catch(e => this.#logger.warn?.('confirmAll.endOfDayReport.error', { error: e.message }));
+      }
+
+      return {
+        success: true,
+        confirmedCount,
+      };
+    } catch (error) {
+      this.#logger.error?.('confirmAllPending.error', { userId, error: error.message });
+      throw error;
+    }
+  }
+}
+
+export default ConfirmAllPending;

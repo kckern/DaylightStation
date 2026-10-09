@@ -1,3 +1,4 @@
+import {contentRequiresCamera} from '../../../../backend/src/5_composition/policies/contentRequiresCamera.mjs';
 // Regression: a play=<container> dispatch (e.g. play=plex:59493, a show) must
 // prewarm just as queue= does, so the receiver-outcome watchdog can match the
 // resolved child state. `WakeAndLoadService.watchdog.test.mjs` owns the
@@ -56,7 +57,7 @@ describe('WakeAndLoadService — playback watchdog on container dispatches', () 
       // play=plex:59493 (show container) resolves to first playable episode
       prewarm: vi.fn().mockResolvedValue({ status: 'ok', token: 't0k3n', contentId: 'plex:347695' }),
     };
-    svc = new WakeAndLoadService({
+    svc = new WakeAndLoadService({ contentRequiresCamera,
       ...testApplicationRuntime(),
       deviceService: { get: () => device },
       readinessPolicy: { isReady: vi.fn() },

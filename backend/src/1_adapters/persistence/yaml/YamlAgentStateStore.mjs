@@ -1,5 +1,5 @@
 import { loadYamlCached, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
-import { IAgentStateStore } from '#apps/agents/ports/IAgentStateStore.mjs';
+import { IAgentStateStore } from "../../../../../capabilities/agent-runtime/server/application/ports/IAgentStateStore.mjs";
 
 /** Per-owner durable dispatch and interaction records. Updates are synchronous
  * inside the process; no async callbacks may enter the read/modify/write section.

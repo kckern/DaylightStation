@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { FeedbackService } from '#apps/lifeplan/services/FeedbackService.mjs';
-import { RetroService } from '#apps/lifeplan/services/RetroService.mjs';
+import { FeedbackService } from "../../../../modules/life/server/application/services/FeedbackService.mjs";
+import { RetroService } from "../../../../modules/life/server/application/services/RetroService.mjs";
 
 describe('FeedbackService', () => {
   let service;

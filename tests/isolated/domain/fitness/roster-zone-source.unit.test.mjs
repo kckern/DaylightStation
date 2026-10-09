@@ -16,7 +16,7 @@ describe('ParticipantRoster zone source preference', () => {
   let ParticipantRoster;
 
   beforeEach(async () => {
-    const mod = await import('../../../../frontend/src/hooks/fitness/ParticipantRoster.js');
+    const mod = await import("../../../../modules/fitness/browser/hooks/fitness/ParticipantRoster.js");
     ParticipantRoster = mod.ParticipantRoster;
   });
 

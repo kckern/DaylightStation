@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { eligibleByRecency } from '../../../backend/src/2_domains/art/recencyWindow.mjs';
+import { eligibleByRecency } from "../../../modules/art/server/domain/recencyWindow.mjs";
 
 const pool = (...ids) => ids.map((id) => ({ id }));
 const ids = (arr) => arr.map((c) => c.id).sort();

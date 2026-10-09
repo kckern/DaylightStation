@@ -1,8 +1,8 @@
 // tests/unit/domains/nutrition/services/FoodLogService.test.mjs
 import { vi } from 'vitest';
-import { FoodLogService } from '#apps/nutribot/services/FoodLogService.mjs';
-import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
-import { createNutriLog } from '#apps/nutribot/nutriLogRecords.mjs';
+import { FoodLogService } from "../../../../../modules/health/server/application/nutrition/FoodLogService.mjs";
+import { NutriLog } from "../../../../../modules/health/server/domain/nutrition/entities/NutriLog.mjs";
+import { createNutriLog } from "../../../../../modules/health/server/nutrition-records.mjs";
 
 describe('FoodLogService', () => {
   let service;

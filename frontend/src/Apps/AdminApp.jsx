@@ -4,9 +4,9 @@ import { MantineProvider, createTheme } from '@mantine/core';
 import getLogger from '../lib/logging/Logger.js';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import AdminLayout from '../modules/Admin/AdminLayout.jsx';
-import ListsIndex from '../modules/Admin/ContentLists/ListsIndex.jsx';
-import ListsFolder from '../modules/Admin/ContentLists/ListsFolder.jsx';
-import { ArtLibrary } from '../modules/Admin/Art/index.js';
+import ListsIndex from "../../../capabilities/content-catalog/browser/admin-lists.mjs";
+import ListsFolder from "../../../capabilities/content-catalog/browser/admin-folder.mjs";
+import { ArtLibrary } from "../../../modules/art/browser/admin/index.js";
 import AppConfigEditor from '../modules/Admin/Apps/AppConfigEditor.jsx';
 import ConfigIndex from '../modules/Admin/Config/ConfigIndex.jsx';
 import ConfigFileEditor from '../modules/Admin/Config/ConfigFileEditor.jsx';
@@ -21,15 +21,15 @@ import FullyKioskConsole from '../modules/Admin/Household/FullyKioskConsole.jsx'
 import IntegrationsIndex from '../modules/Admin/System/IntegrationsIndex.jsx';
 import IntegrationDetail from '../modules/Admin/System/IntegrationDetail.jsx';
 import NotificationsIndex from '../modules/Admin/Notifications/NotificationsIndex.jsx';
-import AgentsIndex from '../modules/Admin/Agents/AgentsIndex.jsx';
-import AgentDetail from '../modules/Admin/Agents/AgentDetail.jsx';
-import GamesIndex from '../modules/Admin/Games/GamesIndex.jsx';
-import ConsoleDetail from '../modules/Admin/Games/ConsoleDetail.jsx';
-import PlaybackHubPage from '../modules/Admin/PlaybackHub/PlaybackHubPage.jsx';
-import SchoolVirtualConsole from '../modules/Admin/School/VirtualConsole.jsx';
-import SchoolReviewQueue from '../modules/Admin/School/ReviewQueue.jsx';
-import SchoolSessionHistory from '../modules/Admin/School/SessionHistory.jsx';
-import SchoolCurriculumPlanner from '../modules/Admin/School/CurriculumPlanner.jsx';
+import { AgentsIndex, AgentDetail } from "../../../capabilities/agent-runtime/browser/admin.mjs";
+import AgentDashboard from "../../../modules/health/browser/agent-dashboard.mjs";
+import GamesIndex from "../../../modules/party-games/browser/admin-games.mjs";
+import ConsoleDetail from "../../../modules/party-games/browser/admin-console.mjs";
+import PlaybackHubPage from "../../../modules/media/browser/admin/playback-hub/PlaybackHubPage.jsx";
+import SchoolVirtualConsole from "../../../modules/school/browser/admin-console.mjs";
+import SchoolReviewQueue from "../../../modules/school/browser/admin-review.mjs";
+import SchoolSessionHistory from "../../../modules/school/browser/admin-history.mjs";
+import SchoolCurriculumPlanner from "../../../modules/school/browser/admin-curriculum.mjs";
 import ComboboxTestPage from '../modules/Admin/TestHarness/ComboboxTestPage.jsx';
 import { Notifications } from '@mantine/notifications';
 import AuthGate from '../modules/Auth/AuthGate.jsx';
@@ -164,7 +164,7 @@ function AdminApp() {
 
               {/* Agents */}
               <Route path="agents" element={<AgentsIndex />} />
-              <Route path="agents/:agentId" element={<AgentDetail />} />
+              <Route path="agents/:agentId" element={<AgentDetail DashboardView={AgentDashboard} />} />
 
               {/* Playback Hub */}
               <Route path="playback-hub" element={<PlaybackHubPage />} />

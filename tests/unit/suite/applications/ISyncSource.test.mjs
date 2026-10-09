@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { ISyncSource, isSyncSource } from '#apps/content/ports/ISyncSource.mjs';
+import { ISyncSource, isSyncSource } from "../../../../capabilities/content-catalog/server/application/ports/ISyncSource.mjs";
 
 describe('ISyncSource', () => {
   it('throws on direct method calls', async () => {

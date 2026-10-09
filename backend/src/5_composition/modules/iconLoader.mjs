@@ -1,1 +1,1 @@
-export { createIconLoader } from '#adapters/school/documents/FilesystemIconLoader.mjs';
+export { createIconLoader } from "../../../../capabilities/printing/server/icon-loader.mjs";

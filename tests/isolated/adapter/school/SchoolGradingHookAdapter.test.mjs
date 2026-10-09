@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SchoolGradingHookAdapter } from '#adapters/school/SchoolGradingHookAdapter.mjs';
+import { SchoolGradingHookAdapter } from "../../../../modules/school/server/adapters/SchoolGradingHookAdapter.mjs";
 
 function makeAdapter({ script = 'script.school_graded', failWith = null } = {}) {
   const calls = [];

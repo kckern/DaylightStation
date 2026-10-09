@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
 import {
   generateCardId, CARD_ROWS, ROW_CHOICES, ROW_MAPPABLE_TYPES, ALLOCATION_STATUSES,
   planRows, rangesOverlap, checkCollision, supersedes, resolveAmbiguousCardId,
-} from '#domains/school/documents/allocation.mjs';
+} from "../../../../../modules/school/server/domain/documents/allocation.mjs";
 
 // A tiny deterministic rng stand-in for mulberry32: replays a fixed queue of
 // 0..1 values, then falls back to 0 forever (used to force the all-zero /

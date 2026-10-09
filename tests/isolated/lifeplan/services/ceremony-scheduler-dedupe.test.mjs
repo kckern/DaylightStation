@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CeremonyScheduler } from '#apps/lifeplan/services/CeremonyScheduler.mjs';
+import { CeremonyScheduler } from "../../../../modules/life/server/application/services/CeremonyScheduler.mjs";
 
 describe('CeremonyScheduler sets a dedupeKey on nudges', () => {
   it('includes ceremony:<type>:<periodId> in the sent intent', async () => {
@@ -13,7 +13,7 @@ describe('CeremonyScheduler sets a dedupeKey on nudges', () => {
     const scheduler = new CeremonyScheduler({
       notificationService, lifePlanStore, ceremonyRecordStore, cadenceService,
       timezone: 'America/Los_Angeles',
-      clock: { now: () => new Date(2026, 6, 17, 7, 0, 0), today: () => '2026-07-17' },
+      clock: { now: () => new Date('2026-07-17T07:00:00-07:00'), today: () => '2026-07-17' },
       logger: { info() {}, debug() {}, warn() {} },
     });
     // The public entry that sends nudges — confirmed real name by reading the file (checkAndNotify(username)).

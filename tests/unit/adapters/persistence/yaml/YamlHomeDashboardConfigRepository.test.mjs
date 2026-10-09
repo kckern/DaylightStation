@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { YamlHomeDashboardConfigRepository }
-  from '#adapters/persistence/yaml/YamlHomeDashboardConfigRepository.mjs';
+  from "../../../../../modules/home/server/adapters/persistence/YamlHomeDashboardConfigRepository.mjs";
 
 function makeRepo(returnValue) {
   const dataService = {

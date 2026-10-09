@@ -5,7 +5,7 @@ import {
   ALL_CONTENT_CATEGORIES,
   isValidContentCategory,
   getCategoryScore
-} from '#domains/content/value-objects/ContentCategory.mjs';
+} from "../../../../../capabilities/content-catalog/server/domain/value-objects/ContentCategory.mjs";
 
 describe('ContentCategory', () => {
   describe('ContentCategory enum', () => {

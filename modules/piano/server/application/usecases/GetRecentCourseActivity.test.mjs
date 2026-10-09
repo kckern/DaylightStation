@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GetRecentCourseActivity } from './GetRecentCourseActivity.mjs';
-import { PianoConfigProjection } from '../../../../../backend/src/1_adapters/config/ApplicationConfigProjections.mjs';
+import { PianoConfigProjection } from "../../adapters/PianoConfigProjection.mjs";
 
 let PIANO_CFG;
 const basePianoCfg = () => ({ videos: { collections: [

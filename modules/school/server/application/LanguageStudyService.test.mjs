@@ -1,0 +1,1345 @@
+/**
+ * LanguageStudyService tests against a fake datastore.
+ *
+ * The service owns pacing policy and the record contract; the ladder itself is
+ * tested in the domain. What matters here is that nothing derivable gets
+ * stored, that a guest cannot produce records, and that rollover cannot be
+ * rushed by a client.
+ */
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { LanguageStudyService } from "./LanguageStudyService.mjs";
+import { GuestForbiddenError } from "../domain/errors.mjs";
+import { EventBusSchoolRealtimeAdapter } from "../adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs";
+import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
+
+const CORPUS = {
+  id: 'test-korean',
+  label: 'Test Korean',
+  languages: { source: 'EN', target: 'KR' },
+  audio_base: 'apps/school/language/test-korean',
+  sentences: [
+    { seq: 1, text: { EN: "The weather's nice today.", KR: '오늘 날씨가 좋아요.' } },
+    { seq: 2, text: { EN: "I'm not rich.", KR: '저는 부자가 아니예요.' } },
+    { seq: 3, text: { EN: "This bag's heavy.", KR: '이 가방은 무거워요.' } },
+    { seq: 4, text: { EN: 'Please sit here.', KR: '여기 앉으세요.' } },
+  ],
+};
+
+const EQUIPPED = { microphone: true, textInput: ['EN', 'KR'] };
+
+class FakeDatastore {
+  constructor() {
+    this.corpora = new Map([['test-korean', CORPUS]]);
+    this.progress = new Map();
+    this.events = new Map();
+    this.recordings = new Map();
+    this.written = [];
+  }
+
+  #key(userId, corpusId) { return `${userId}::${corpusId}`; }
+
+  listCorpusIds() { return [...this.corpora.keys()]; }
+  readCorpus(id) { return this.corpora.get(id) ?? null; }
+
+  readProgress(u, c) { return this.progress.get(this.#key(u, c)) ?? null; }
+  writeProgress(u, c, p) { this.progress.set(this.#key(u, c), p); return p; }
+
+  appendEvent(u, c, e) {
+    const k = this.#key(u, c);
+    if (!this.events.has(k)) this.events.set(k, []);
+    this.events.get(k).push(e);
+    return e;
+  }
+
+  readAllEvents(u, c) { return this.events.get(this.#key(u, c)) ?? []; }
+
+  writeRecording(c, u, seq, lang, buffer, ext) {
+    const p = `${c}/${u}/${seq}-${lang}.${ext}`;
+    this.recordings.set(`${Number(seq)}-${lang}`, buffer);
+    this.written.push({ path: p, size: buffer.length });
+    return p;
+  }
+
+  listRecordingKeys() { return new Set(this.recordings.keys()); }
+  resolveAudioPath(c, seq, lang) { return `/media/${c}/${seq}-${lang}.mp3`; }
+  resolveRecordingPath(c, u, seq, lang, ext) { return `/media/${c}/rec/${u}/${seq}-${lang}.${ext}`; }
+}
+
+const AT = Date.parse('2026-07-21T10:00:00Z');
+
+function makeService(ds, now = AT, overrides = {}) {
+  return new LanguageStudyService({
+    datastore: ds,
+    now: () => (typeof now === 'function' ? now() : now),
+    timezone: 'UTC',
+    logger: { warn() {}, info() {}, debug() {} },
+    ...overrides,
+  });
+}
+
+function makeDue(ds, rung, seq = 1) {
+  const chain = ['repetition', 'dictation', 'recording', 'interpretation'];
+  const index = chain.indexOf(rung);
+  for (let i = 0; i < index; i += 1) {
+    ds.appendEvent('kckern', 'test-korean', {
+      at: new Date(AT - (index - i) * 86_400_000).toISOString(),
+      day: i + 1, seq, rung: chain[i], attributedTo: 'kckern',
+    });
+  }
+  ds.writeProgress('kckern', 'test-korean', {
+    corpus: 'test-korean', day: index + 1, daily_limit: 5, last_activity: null,
+  });
+}
+
+/**
+ * Work a day to the end, whatever it contains.
+ *
+ * A day is no longer just its credited entries: while the ladder is still
+ * filling up, `buildDayQueue` tops the day up with practice passes over its own
+ * new set (see dayQueue.mjs, "The cold start"). Anything asserting that a day is
+ * FINISHED has to finish all of it.
+ */
+function finishDay(svc, capabilities = EQUIPPED) {
+  for (let guard = 0; guard < 200; guard += 1) {
+    const { queue } = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities });
+    const next = queue.find((entry) => !entry.done);
+    if (!next) return;
+    const args = { userId: 'kckern', corpusId: 'test-korean', seq: next.seq, capabilities };
+    if (next.rung === 'recording') svc.saveRecording({ ...args, buffer: Buffer.from('audio') });
+    else if (next.rung === 'dictation' || next.rung === 'interpretation') {
+      svc.logAttempt({ ...args, rung: next.rung, given: 'x' });
+    } else svc.logAttempt({ ...args, rung: next.rung });
+  }
+  throw new Error('finishDay did not converge');
+}
+
+describe('courses', () => {
+  it('lists a valid corpus with its role binding', () => {
+    const svc = makeService(new FakeDatastore());
+    expect(svc.listCourses()).toEqual([
+      { id: 'test-korean', label: 'Test Korean', languages: { source: 'EN', target: 'KR' }, size: 4 },
+    ]);
+  });
+
+  it('omits an invalid corpus rather than serving a broken course', () => {
+    const ds = new FakeDatastore();
+    ds.corpora.set('broken', { id: 'broken', languages: { source: 'EN', target: 'EN' }, sentences: [] });
+    const svc = makeService(ds);
+    expect(svc.listCourses().map((c) => c.id)).toEqual(['test-korean']);
+  });
+});
+
+describe('guest preview', () => {
+  it('derives a fresh day without reading or writing learner evidence', () => {
+    const ds = new FakeDatastore();
+    ds.appendEvent('learner3', 'test-korean', {
+      at: new Date(AT).toISOString(), day: 9, seq: 1, rung: 'repetition', attributedTo: 'learner3',
+    });
+    ds.writeProgress('learner3', 'test-korean', {
+      corpus: 'test-korean', day: 9, daily_limit: 1, last_activity: new Date(AT).toISOString(),
+    });
+    const readProgress = vi.spyOn(ds, 'readProgress');
+    const readEvents = vi.spyOn(ds, 'readAllEvents');
+    const append = vi.spyOn(ds, 'appendEvent');
+    const write = vi.spyOn(ds, 'writeProgress');
+
+    const preview = makeService(ds).previewDay({ corpusId: 'test-korean', capabilities: EQUIPPED });
+
+    expect(preview).toMatchObject({ schema: 'school.sentence-ladder-guest-preview/v1', day: 1, dailyLimit: 5 });
+    expect(preview.queue.length).toBeGreaterThan(0);
+    expect(readProgress).not.toHaveBeenCalled();
+    expect(readEvents).not.toHaveBeenCalled();
+    expect(append).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+  });
+});
+
+describe('guest rule', () => {
+  it('refuses every operation without an identified learner', () => {
+    const svc = makeService(new FakeDatastore());
+    const calls = [
+      () => svc.getDay({ userId: null, corpusId: 'test-korean' }),
+      () => svc.logAttempt({ userId: null, corpusId: 'test-korean', seq: 1, rung: 'repetition' }),
+      () => svc.setPacing({ userId: null, corpusId: 'test-korean', dailyLimit: 5 }),
+      () => svc.rollDay({ userId: null, corpusId: 'test-korean' }),
+      () => svc.getHistory({ userId: null, corpusId: 'test-korean' }),
+    ];
+    for (const call of calls) expect(call).toThrow(GuestForbiddenError);
+  });
+});
+
+describe('getDay', () => {
+  let ds; let svc;
+  beforeEach(() => { ds = new FakeDatastore(); svc = makeService(ds); });
+
+  it('starts a new learner on day 1 with the default pacing', () => {
+    const day = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    expect(day.day).toBe(1);
+    expect(day.dailyLimit).toBe(5);
+    expect(day.summary.done).toBe(0);
+  });
+
+  it('resolves prompt roles to concrete languages so no component hardcodes them', () => {
+    const day = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    const first = day.queue[0];
+    expect(first.rung).toBe('repetition');
+    expect(first.prompt).toEqual([
+      { role: 'source', language: 'EN' },
+      { role: 'target', language: 'KR' },
+      { role: 'target', language: 'KR' },
+    ]);
+  });
+
+  it('carries the sentence text keyed by language code', () => {
+    const day = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    expect(day.queue[0].text).toEqual(CORPUS.sentences[0].text);
+  });
+
+  it('marks copy-mode dictation from the enrollment rather than a client choice', () => {
+    svc = makeService(ds, AT, {
+      readProgramEnrollment: () => ({
+        programId: 'sentence-ladder', corpusId: 'test-korean', lessonSize: 1,
+        rungs: ['dictation'], dictationMode: 'copy',
+      }),
+    });
+    const day = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    expect(day.enrollment).toMatchObject({ dictationMode: 'copy' });
+    expect(day.queue[0]).toMatchObject({ rung: 'dictation', copyPrompt: true });
+  });
+
+  it('reports the device-filtered chain', () => {
+    const day = svc.getDay({
+      userId: 'kckern', corpusId: 'test-korean',
+      capabilities: { microphone: false, textInput: ['EN'] },
+    });
+    expect(day.chain).toEqual(['repetition', 'interpretation']);
+  });
+
+  it('never writes a queue to storage — it is derived', () => {
+    svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    const stored = ds.readProgress('kckern', 'test-korean');
+    expect(stored).toBeNull();
+  });
+
+  it('404s an unknown corpus', () => {
+    expect(() => svc.getDay({ userId: 'kckern', corpusId: 'nope' })).toThrow(EntityNotFoundError);
+  });
+
+  // A dimmed rung on the child's card used to carry one hardcoded sentence,
+  // "Needs a microphone", whichever capability was actually absent. The live
+  // case was a tablet with a mic and an English-only keyboard: it blocked
+  // DICTATION, and told the child to go find a microphone. `requirementFor`
+  // has always known the difference; the payload just never carried it, so the
+  // client kept a second, wrong copy of the mapping. These two cases pin the
+  // distinction the card gets wrong when the map is missing.
+  const fullLadder = () => ({
+    readProgramEnrollment: () => ({
+      programId: 'sentence-ladder', corpusId: 'test-korean', lessonSize: 4,
+      rungs: ['repetition', 'dictation', 'recording', 'interpretation'],
+    }),
+  });
+
+  it('names the KEYBOARD a typed rung is short of, not the microphone it already has', () => {
+    svc = makeService(ds, AT, fullLadder());
+    const day = svc.getDay({
+      userId: 'kckern', corpusId: 'test-korean',
+      capabilities: { microphone: true, textInput: ['EN'] },
+    });
+    expect(day.missingCreditRungs).toEqual(['dictation']);
+    expect(day.missingCreditNeeds.dictation).toEqual({ anyOf: [{ kind: 'textInput', language: 'KR' }] });
+    // A rung this device CAN climb is not in the map at all.
+    expect(day.missingCreditNeeds).not.toHaveProperty('recording');
+  });
+
+  it('still names the microphone when the microphone is the thing missing', () => {
+    svc = makeService(ds, AT, fullLadder());
+    const day = svc.getDay({
+      userId: 'kckern', corpusId: 'test-korean',
+      capabilities: { microphone: false, textInput: ['EN', 'KR'] },
+    });
+    expect(day.missingCreditRungs).toEqual(['recording']);
+    expect(day.missingCreditNeeds.recording).toEqual({ anyOf: [{ kind: 'microphone' }] });
+  });
+
+  // The only case with TWO rungs blocked at once, which is the one way a
+  // `{rung: requirement}` map can mis-key — a map that always answers
+  // "microphone" passes every other test in this file.
+  //
+  // `missingCreditRungs` must stay a plain array of ids because
+  // SentenceLadderProgram reads it three ways: `.length` to decide the day is
+  // device-blocked, `.includes(rung)` to dim a rung as it draws the ladder, and
+  // `.map(...).join(' and ')` to name the missing modes in the closing banner.
+  // Turning it into objects breaks all three.
+  it('blocks BOTH unreachable rungs, names each one correctly, and keeps the array shape', () => {
+    svc = makeService(ds, AT, fullLadder());
+    const day = svc.getDay({
+      userId: 'kckern', corpusId: 'test-korean',
+      capabilities: { microphone: false, textInput: ['EN'] },
+    });
+    expect(day.missingCreditRungs).toEqual(['dictation', 'recording']);
+    expect(day.missingCreditNeeds).toEqual({
+      dictation: { anyOf: [{ kind: 'textInput', language: 'KR' }] },
+      recording: { anyOf: [{ kind: 'microphone' }] },
+    });
+  });
+
+  /**
+   * THE PANEL WITH A MICROPHONE AND NO KEYBOARD.
+   *
+   * Until interpretation accepted a spoken answer this device was told to go
+   * elsewhere for three of the four rungs. It can now translate out loud —
+   * but only where the server can actually transcribe, which is a deployment
+   * fact and reaches the service from composition, never from the request.
+   */
+  const micOnly = { microphone: true, textInput: [] };
+
+  it('offers interpretation to a keyboard-less panel where speech can be transcribed', () => {
+    svc = makeService(ds, AT, { ...fullLadder(), voiceAnswer: true });
+    const day = svc.getDay({
+      userId: 'test-learner', corpusId: 'test-korean', capabilities: micOnly,
+    });
+    expect(day.chain).toEqual(['repetition', 'recording', 'interpretation']);
+    expect(day.missingCreditRungs).toEqual(['dictation']);
+    expect(day.missingCreditNeeds).not.toHaveProperty('interpretation');
+  });
+
+  it('does NOT offer it where the household has no AI gateway', () => {
+    // The dead end the chain filter exists to prevent, reintroduced by the
+    // change meant to open the rung up: a rung with no way in and no way past.
+    svc = makeService(ds, AT, fullLadder());
+    const day = svc.getDay({
+      userId: 'test-learner', corpusId: 'test-korean', capabilities: micOnly,
+    });
+    expect(day.chain).toEqual(['repetition', 'recording']);
+    expect(day.missingCreditRungs).toEqual(['dictation', 'interpretation']);
+    expect(day.missingCreditNeeds.interpretation)
+      .toEqual({ anyOf: [{ kind: 'textInput', language: 'EN' }] });
+  });
+
+  it('names BOTH ways through a rung that is short of both', () => {
+    svc = makeService(ds, AT, { ...fullLadder(), voiceAnswer: true });
+    const day = svc.getDay({
+      userId: 'test-learner', corpusId: 'test-korean',
+      capabilities: { microphone: false, textInput: ['KR'] },
+    });
+    expect(day.missingCreditNeeds.interpretation).toEqual({
+      anyOf: [{ kind: 'textInput', language: 'EN' }, { kind: 'microphone' }],
+    });
+  });
+
+  it('marks the queue entry that accepts a spoken answer, and only that one', () => {
+    // The client must not keep its own list of which rungs may be spoken —
+    // that second copy is what this whole change exists to delete. Dictation
+    // is typing the target script: a spoken answer there is repetition.
+    svc = makeService(ds, AT, { ...fullLadder(), voiceAnswer: true });
+    const day = svc.getDay({
+      userId: 'test-learner', corpusId: 'test-korean',
+      capabilities: { microphone: true, textInput: ['EN', 'KR'] },
+    });
+    const byRung = Object.fromEntries(day.queue.map((e) => [e.rung, e.spokenAnswer]));
+    expect(byRung.interpretation).toBe(true);
+    expect(byRung.dictation).toBe(false);
+    expect(byRung.repetition).toBe(false);
+  });
+
+  it('marks nothing spoken where the server cannot transcribe', () => {
+    svc = makeService(ds, AT, fullLadder());
+    const day = svc.getDay({
+      userId: 'test-learner', corpusId: 'test-korean',
+      capabilities: { microphone: true, textInput: ['EN', 'KR'] },
+    });
+    expect(day.queue.every((e) => e.spokenAnswer === false)).toBe(true);
+  });
+});
+
+describe('logAttempt', () => {
+  let ds; let svc;
+  beforeEach(() => { ds = new FakeDatastore(); svc = makeService(ds); });
+
+  it('records a repetition with attribution and no response fields', () => {
+    const event = svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition' });
+    expect(event).toMatchObject({ seq: 1, rung: 'repetition', day: 1, attributedTo: 'kckern' });
+    expect(event.given).toBeUndefined();
+    expect(event.accuracy).toBeUndefined();
+  });
+
+  it('scores a dictation against the TARGET language', () => {
+    makeDue(ds, 'dictation');
+    const event = svc.logAttempt({
+      userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'dictation',
+      given: '오늘 날씨가 좋아요.',
+      capabilities: EQUIPPED,
+    });
+    expect(event.language).toBe('KR');
+    expect(event.expected).toBe('오늘 날씨가 좋아요.');
+    expect(event.accuracy).toBe(1);
+  });
+
+  it('scores an interpretation against the SOURCE language', () => {
+    makeDue(ds, 'interpretation');
+    const event = svc.logAttempt({
+      userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+      given: "The weather's nice today.",
+      capabilities: EQUIPPED,
+    });
+    expect(event.language).toBe('EN');
+    expect(event.accuracy).toBe(1);
+  });
+
+  it('records a wrong answer WITHOUT blocking graduation', () => {
+    makeDue(ds, 'dictation');
+    // Accuracy is informational. A wrong dictation still clears the rung.
+    svc.logAttempt({
+      userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'dictation', given: '전혀 다른 문장', capabilities: EQUIPPED,
+    });
+    const events = ds.readAllEvents('kckern', 'test-korean');
+    const event = events.at(-1);
+    expect(event.accuracy).toBeLessThan(0.5);
+    expect(event.rung).toBe('dictation');
+  });
+
+  it('rejects a text rung with no response', () => {
+    expect(() => svc.logAttempt({
+      userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'dictation', given: '   ',
+    })).toThrow(ValidationError);
+  });
+
+  it('rejects an unknown rung and an unknown sentence', () => {
+    expect(() => svc.logAttempt({
+      userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'nonsense',
+    })).toThrow(ValidationError);
+    expect(() => svc.logAttempt({
+      userId: 'kckern', corpusId: 'test-korean', seq: 999, rung: 'repetition',
+    })).toThrow(EntityNotFoundError);
+  });
+
+  /**
+   * A REVEAL IS NOT AN ATTEMPT. On interpretation the English text IS the
+   * answer, so showing it hands over the whole response — that is a skip, and
+   * the record has to say so. Without this the log would claim a child
+   * interpreted a sentence they only pressed a button on.
+   */
+  describe('a revealed answer', () => {
+    it('is recorded AS a reveal — no response, and no accuracy to mistake for one', () => {
+      makeDue(ds, 'interpretation');
+      const event = svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        revealed: true, capabilities: EQUIPPED,
+      });
+      expect(event.revealed).toBe(true);
+      // The learner produced nothing. An `accuracy` of any value would be a
+      // score for a sentence nobody answered, and 1.0 — which is what the
+      // expected text scored against itself would be — is the precise lie.
+      expect(event.given).toBeUndefined();
+      expect(event.accuracy).toBeUndefined();
+      // What was shown is still on the record, so the Review shelf can say so.
+      expect(event.expected).toBe("The weather's nice today.");
+      expect(event.language).toBe('EN');
+    });
+
+    it('will not carry a typed answer along with it', () => {
+      makeDue(ds, 'interpretation');
+      const event = svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        revealed: true, given: "The weather's nice today.", capabilities: EQUIPPED,
+      });
+      expect(event.given).toBeUndefined();
+      expect(event.accuracy).toBeUndefined();
+    });
+
+    it('needs no written response, where an ordinary attempt does', () => {
+      makeDue(ds, 'interpretation');
+      expect(() => svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        capabilities: EQUIPPED,
+      })).toThrow(ValidationError);
+    });
+
+    it('is refused on a rung with nothing written to reveal', () => {
+      expect(() => svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition',
+        revealed: true, capabilities: EQUIPPED,
+      })).toThrow(ValidationError);
+    });
+
+    it('still clears the rung — the sentence moves on, the record says how', () => {
+      makeDue(ds, 'interpretation');
+      svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        revealed: true, capabilities: EQUIPPED,
+      });
+      // Accuracy gates nothing in this program and neither does a reveal. What
+      // changes is what the evidence SAYS, not what it unlocks.
+      expect(() => svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        revealed: true, capabilities: EQUIPPED,
+      })).toThrow(/outstanding/);
+    });
+  });
+
+  /**
+   * HOW THE ANSWER WAS GIVEN. Interpretation can be answered by speaking: the
+   * learner says what the sentence means, the transcript lands in the field,
+   * and they read and edit it before submitting. The response is still TEXT —
+   * voice is an input method, not a different kind of answer — so the record
+   * changes by exactly one field, which is what lets a reader tell a spoken
+   * answer from a typed one without inventing a second kind of row.
+   */
+  describe('the answer method', () => {
+    it('is written down beside the answer it describes', () => {
+      makeDue(ds, 'interpretation');
+      const event = svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        given: "The weather's nice today.", method: 'spoken', capabilities: EQUIPPED,
+      });
+      expect(event.method).toBe('spoken');
+      // And it changes nothing else: a spoken answer is scored exactly as a
+      // typed one is, because it is the same answer.
+      expect(event.given).toBe("The weather's nice today.");
+      expect(event.accuracy).toBe(1);
+    });
+
+    it('stays absent when the client did not say, rather than being guessed at', () => {
+      makeDue(ds, 'interpretation');
+      const event = svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        given: 'something', capabilities: EQUIPPED,
+      });
+      expect(event.method).toBeUndefined();
+    });
+
+    it('refuses anything but the two methods that exist', () => {
+      makeDue(ds, 'interpretation');
+      expect(() => svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        given: 'something', method: 'telepathy', capabilities: EQUIPPED,
+      })).toThrow(ValidationError);
+    });
+
+    // A REVEALED SENTENCE HAS NO METHOD, because nobody answered it. The same
+    // rule that drops `given` and `accuracy` drops this.
+    it('is absent from a reveal, whatever the client sends', () => {
+      makeDue(ds, 'interpretation');
+      const event = svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        revealed: true, method: 'spoken', capabilities: EQUIPPED,
+      });
+      expect(event.revealed).toBe(true);
+      expect(event.method).toBeUndefined();
+    });
+
+    it('is absent from a rung with no written answer at all', () => {
+      const event = svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition',
+        method: 'typed', capabilities: EQUIPPED,
+      });
+      expect(event.method).toBeUndefined();
+    });
+  });
+
+  it('stamps last activity so rollover has something to measure from', () => {
+    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition' });
+    expect(ds.readProgress('kckern', 'test-korean').last_activity)
+      .toBe(new Date(AT).toISOString());
+  });
+
+  it('rejects out-of-queue, duplicate, and generic recording evidence', () => {
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 1 });
+    expect(() => svc.logAttempt({
+      userId: 'kckern', corpusId: 'test-korean', seq: 2, rung: 'repetition', capabilities: EQUIPPED,
+    })).toThrow(/outstanding/);
+    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition', capabilities: EQUIPPED });
+    expect(() => svc.logAttempt({
+      userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition', capabilities: EQUIPPED,
+    })).toThrow(/outstanding/);
+    expect(() => svc.logAttempt({
+      userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'recording', capabilities: EQUIPPED,
+    })).toThrow(/audio upload/);
+  });
+});
+
+describe('saveRecording', () => {
+  it('writes the file BEFORE logging, so a crash orphans a file not an event', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    makeDue(ds, 'recording', 2);
+    svc.saveRecording({
+      userId: 'kckern', corpusId: 'test-korean', seq: 2, buffer: Buffer.from('audio'), capabilities: EQUIPPED,
+    });
+    expect(ds.written).toHaveLength(1);
+    expect(ds.readAllEvents('kckern', 'test-korean').at(-1).rung).toBe('recording');
+  });
+
+  it('rejects an empty recording', () => {
+    const svc = makeService(new FakeDatastore());
+    expect(() => svc.saveRecording({
+      userId: 'kckern', corpusId: 'test-korean', seq: 2, buffer: Buffer.alloc(0),
+    })).toThrow(ValidationError);
+  });
+
+  it('does not write audio for a recording that is not currently due', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    makeDue(ds, 'recording', 2);
+    // A narrow day, so it is already full and seq 3 is not in it at ANY rung.
+    // On a wide-open day one the warm-up fill offers every admitted sentence at
+    // every rung, so "not due" has to mean a sentence the day never reached.
+    ds.writeProgress('kckern', 'test-korean', {
+      corpus: 'test-korean', day: 3, daily_limit: 1, last_activity: null,
+    });
+    expect(() => svc.saveRecording({
+      userId: 'kckern', corpusId: 'test-korean', seq: 3,
+      buffer: Buffer.from('audio'), capabilities: EQUIPPED,
+    })).toThrow(/outstanding/);
+    expect(ds.written).toEqual([]);
+  });
+});
+
+describe('School lifecycle completion emission', () => {
+  it('accepts all four due modes and emits canonical completion after the final step', () => {
+    const ds = new FakeDatastore();
+    const eventBus = { publish: vi.fn() };
+    const enrollment = {
+      programId: 'sentence-ladder', corpusId: 'test-korean', lessonSize: 4,
+      rungs: ['repetition', 'dictation', 'recording', 'interpretation'],
+    };
+    // The service takes a REALTIME GATEWAY, not a bus. This test used to pass a
+    // bare `eventBus`, which the constructor ignores — so its publish assertion
+    // could never fire and day-close went unverified. Wiring the real adapter
+    // keeps the assertion about the published topic and payload while actually
+    // reaching the service.
+    const svc = makeService(ds, AT, {
+      readProgramEnrollment: () => enrollment,
+      realtime: new EventBusSchoolRealtimeAdapter({ eventBus }),
+    });
+
+    ds.writeProgress('kckern', 'test-korean', {
+      corpus: 'test-korean', day: 4, daily_limit: 1, last_activity: null,
+    });
+    for (const event of [
+      { day: 3, seq: 1, rung: 'repetition' },
+      { day: 2, seq: 2, rung: 'repetition' },
+      { day: 3, seq: 2, rung: 'dictation', given: 'x', expected: 'x', accuracy: 1 },
+      { day: 1, seq: 3, rung: 'repetition' },
+      { day: 2, seq: 3, rung: 'dictation', given: 'x', expected: 'x', accuracy: 1 },
+      { day: 3, seq: 3, rung: 'recording' },
+    ]) {
+      ds.appendEvent('kckern', 'test-korean', {
+        ...event, at: new Date(AT - (4 - event.day) * 86_400_000).toISOString(), attributedTo: 'kckern',
+      });
+    }
+
+    const initial = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    expect(initial.queue.filter((entry) => !entry.done).map(({ seq, rung }) => ({ seq, rung }))).toEqual([
+      { seq: 4, rung: 'repetition' },
+      { seq: 1, rung: 'dictation' },
+      { seq: 2, rung: 'recording' },
+      { seq: 3, rung: 'interpretation' },
+    ]);
+
+    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 4, rung: 'repetition', capabilities: EQUIPPED });
+    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'dictation', given: '오늘 날씨가 좋아요.', capabilities: EQUIPPED });
+    svc.saveRecording({ userId: 'kckern', corpusId: 'test-korean', seq: 2, buffer: Buffer.from('audio'), capabilities: EQUIPPED });
+    expect(eventBus.publish).not.toHaveBeenCalled();
+    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 3, rung: 'interpretation', given: "This bag's heavy.", capabilities: EQUIPPED });
+
+    expect(eventBus.publish).toHaveBeenCalledTimes(1);
+    expect(eventBus.publish).toHaveBeenCalledWith('school.language.day-complete', {
+      learnerId: 'kckern', corpusId: 'test-korean', day: 4, programId: 'sentence-ladder',
+    });
+    expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' })).toMatchObject({
+      doneToday: true, progressLabel: 'Day 4', score: null,
+    });
+  });
+});
+
+/**
+ * The guard that hid the defect above for months.
+ *
+ * `#emitDayComplete` returned on a falsy guard and said nothing, so a bridge
+ * wired with the wrong constructor key looked exactly like a household with
+ * nobody enrolled. Nothing in the log store distinguished them; it took
+ * auditing a missing reward to notice the ceremony had never run once. A
+ * bridge that is wired wrong has to announce itself.
+ */
+describe('day-complete suppression is audible', () => {
+  const finish = (overrides) => {
+    const ds = new FakeDatastore();
+    const logger = { warn: vi.fn(), info: vi.fn(), debug: vi.fn() };
+    const svc = makeService(ds, AT, { logger, ...overrides });
+    finishDay(svc);
+    return { svc, ds, logger };
+  };
+  const suppressions = (logger) => logger.warn.mock.calls
+    .filter(([event]) => event === 'school.language.day-complete-suppressed');
+
+  it('warns once, naming the missing realtime port, and does not repeat', () => {
+    const { ds, logger } = finish({
+      readProgramEnrollment: () => ({
+        programId: 'sentence-ladder', corpusId: 'test-korean', lessonSize: 2,
+        rungs: ['repetition', 'dictation'],
+      }),
+      // realtime deliberately absent — this is app.mjs's defect in miniature.
+    });
+    expect(suppressions(logger)).toHaveLength(1);
+    expect(suppressions(logger)[0][1]).toMatchObject({ reason: 'no-realtime' });
+    // The guard sits ahead of the queue-complete check, so it ran on every one
+    // of these attempts. One line, not one per attempt.
+    expect(ds.readAllEvents('kckern', 'test-korean').length).toBeGreaterThan(1);
+  });
+
+  it('names the missing enrollment when that is the failing guard', () => {
+    const { logger } = finish({
+      realtime: new EventBusSchoolRealtimeAdapter({ eventBus: { publish: vi.fn() } }),
+    });
+    expect(suppressions(logger)).toHaveLength(1);
+    expect(suppressions(logger)[0][1]).toMatchObject({ reason: 'no-enrollment' });
+  });
+
+  it('says nothing when the bridge is wired and the learner is enrolled', () => {
+    const { logger } = finish({
+      readProgramEnrollment: () => ({
+        programId: 'sentence-ladder', corpusId: 'test-korean', lessonSize: 2,
+        rungs: ['repetition', 'dictation'],
+      }),
+      realtime: new EventBusSchoolRealtimeAdapter({ eventBus: { publish: vi.fn() } }),
+    });
+    expect(suppressions(logger)).toHaveLength(0);
+  });
+});
+
+describe('pacing', () => {
+  it('clamps to a sane range instead of trusting the client', () => {
+    const svc = makeService(new FakeDatastore());
+    expect(svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 9999 }).dailyLimit).toBe(100);
+    expect(svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 0 }).dailyLimit).toBe(1);
+    expect(svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 'abc' }).dailyLimit).toBe(5);
+  });
+
+  it('preserves the day when pacing changes', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    ds.writeProgress('kckern', 'test-korean', { corpus: 'test-korean', day: 7, daily_limit: 5, last_activity: null });
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 10 });
+    expect(ds.readProgress('kckern', 'test-korean').day).toBe(7);
+  });
+});
+
+describe('rollDay', () => {
+  it('refuses only before a step is taken — the next day would be this one again', () => {
+    const svc = makeService(new FakeDatastore());
+    const result = svc.rollDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    expect(result).toEqual({ rolled: false, day: 1, reason: 'not-started' });
+  });
+
+  it('moves on with work outstanding, and nothing outstanding is lost', () => {
+    // Refusing here walled two children for days on practice passes they could
+    // not finish (2026-09-14). The queue is derived, so rolling early loses
+    // nothing: unstarted sentences are still new, started ones still climb.
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 3 });
+    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition', capabilities: EQUIPPED });
+
+    expect(svc.rollDay({ userId: 'kckern', corpusId: 'test-korean' })).toEqual({ rolled: true, day: 2, reason: 'early' });
+    const day = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    const credited = day.queue.filter((e) => !e.practice).map((e) => `${e.rung}:${e.seq}`);
+    expect(credited).toEqual(expect.arrayContaining(['repetition:2', 'repetition:3', 'dictation:1']));
+  });
+
+  it('starts the next day early once today is finished — a finished day is never a wall', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 3 });
+    finishDay(svc);
+    const result = svc.rollDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    expect(result).toEqual({ rolled: true, day: 2, reason: 'ahead' });
+    expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED }).day).toBe(2);
+  });
+
+  it('a device that cannot climb a rung can still move on — the rung stays owed', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    makeDue(ds, 'dictation', 1);
+    const bare = { microphone: false, textInput: [] };
+    finishDay(svc, bare);
+
+    expect(svc.rollDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: bare }))
+      .toEqual({ rolled: true, day: 3, reason: 'early' });
+    const day = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    expect(day.queue.some((e) => e.rung === 'dictation' && e.seq === 1 && !e.practice && !e.done)).toBe(true);
+  });
+
+  it('opening the ladder on the next study day serves the next day, with no button', () => {
+    // The kiosk hid the roll button, so a finished day came back as
+    // "complete" the following afternoon and the child could go no further.
+    const ds = new FakeDatastore();
+    let clock = AT;
+    const svc = makeService(ds, () => clock);
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 3 });
+    finishDay(svc);
+    clock = Date.parse('2026-07-22T10:00:00Z');
+
+    const day = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    expect(day.day).toBe(2);
+    expect(day.summary.done).toBeLessThan(day.summary.total);
+    expect(ds.readProgress('kckern', 'test-korean').day).toBe(2);
+    // Opening it again is the same day, not another roll.
+    expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED }).day).toBe(2);
+  });
+
+  it('a device-limited open never rolls past the credited rungs it could not climb', () => {
+    // Credited work, not practice: day 2 owes seq 1 at dictation, which a bare
+    // panel cannot type. Opening tomorrow must not quietly skip it.
+    const ds = new FakeDatastore();
+    let clock = AT;
+    const svc = makeService(ds, () => clock);
+    makeDue(ds, 'dictation', 1);
+    const bare = { microphone: false, textInput: [] };
+    finishDay(svc, bare);
+    clock = Date.parse('2026-07-22T10:00:00Z');
+    expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: bare }).day).toBe(2);
+  });
+
+  it('a partial day — practice included — is continued the next study day, never skipped', () => {
+    // The household rule: a lesson left part-done picks up where it stopped.
+    const ds = new FakeDatastore();
+    let clock = AT;
+    const svc = makeService(ds, () => clock);
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 3 });
+    const first = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    for (const entry of first.queue.filter((e) => !e.practice)) {
+      svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: entry.seq, rung: entry.rung, capabilities: EQUIPPED });
+    }
+    const left = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    const outstanding = left.queue.filter((e) => !e.done).map((e) => `${e.rung}:${e.seq}`);
+    expect(outstanding.length).toBeGreaterThan(0);
+
+    clock = Date.parse('2026-07-22T10:00:00Z');
+    const next = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    expect(next.day).toBe(1);
+    expect(next.queue.filter((e) => !e.done).map((e) => `${e.rung}:${e.seq}`)).toEqual(outstanding);
+
+    // ...and asking for more is still never refused.
+    expect(svc.rollDay({ userId: 'kckern', corpusId: 'test-korean' })).toEqual({ rolled: true, day: 2, reason: 'early' });
+  });
+
+  it('repairs a progress record that has fallen behind its own log', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    for (const day of [1, 2, 3]) {
+      ds.appendEvent('kckern', 'test-korean', {
+        at: new Date(AT - (4 - day) * 3_600_000).toISOString(),
+        day, seq: day, rung: 'repetition', attributedTo: 'kckern',
+      });
+    }
+    ds.writeProgress('kckern', 'test-korean', { corpus: 'test-korean', day: 1, daily_limit: 5, last_activity: null });
+
+    // A status read sees the repaired day but writes nothing.
+    expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' }).progressLabel).toBe('Day 3');
+    expect(ds.readProgress('kckern', 'test-korean').day).toBe(1);
+
+    expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED }).day).toBe(3);
+    expect(ds.readProgress('kckern', 'test-korean')).toMatchObject({
+      day: 3, last_activity: new Date(AT - 3_600_000).toISOString(),
+    });
+  });
+
+  it('a missing or future last-activity stamp cannot hold a finished day', () => {
+    for (const stamp of [null, 'garbage', '2031-01-01T00:00:00Z']) {
+      const ds = new FakeDatastore();
+      let clock = AT;
+      const svc = makeService(ds, () => clock);
+      svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 3 });
+      finishDay(svc);
+      ds.writeProgress('kckern', 'test-korean', { ...ds.readProgress('kckern', 'test-korean'), last_activity: stamp });
+      clock = Date.parse('2026-07-22T10:00:00Z');
+      expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED }).day).toBe(2);
+    }
+  });
+
+  it('squares an enrolled learner\'s stored pace with the enrollment', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds, AT, {
+      readProgramEnrollment: () => ({
+        programId: 'sentence-ladder', corpusId: 'test-korean', lessonSize: 8,
+        rungs: ['repetition', 'dictation', 'recording', 'interpretation'],
+      }),
+    });
+    ds.writeProgress('kckern', 'test-korean', { corpus: 'test-korean', day: 1, daily_limit: 5, last_activity: null });
+    expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED }).dailyLimit).toBe(2);
+    expect(ds.readProgress('kckern', 'test-korean').daily_limit).toBe(2);
+  });
+
+  it('leaves a healthy record alone — reading never rewrites it', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    finishDay(svc);
+    const before = { ...ds.readProgress('kckern', 'test-korean') };
+    const writes = vi.spyOn(ds, 'writeProgress');
+    svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    expect(writes).not.toHaveBeenCalled();
+    expect(ds.readProgress('kckern', 'test-korean')).toEqual(before);
+  });
+
+  it('announces a finished day once — reading it back or rolling it never re-publishes', () => {
+    // Each re-publish closed the day again, and each close printed its receipt.
+    const ds = new FakeDatastore();
+    const eventBus = { publish: vi.fn() };
+    let clock = AT;
+    const svc = makeService(ds, () => clock, {
+      readProgramEnrollment: () => ({
+        programId: 'sentence-ladder', corpusId: 'test-korean', lessonSize: 2,
+        rungs: ['repetition', 'dictation'],
+      }),
+      realtime: new EventBusSchoolRealtimeAdapter({ eventBus }),
+    });
+    finishDay(svc);
+    expect(eventBus.publish).toHaveBeenCalledTimes(1);
+
+    for (let i = 0; i < 3; i += 1) svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    clock = Date.parse('2026-07-22T10:00:00Z');
+    svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    svc.rollDay({ userId: 'kckern', corpusId: 'test-korean' });
+    expect(eventBus.publish).toHaveBeenCalledTimes(1);
+  });
+
+  it('rolls once the boundary has passed', () => {
+    const ds = new FakeDatastore();
+    let clock = AT;
+    const svc = makeService(ds, () => clock);
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 3 });
+    finishDay(svc);
+    clock = Date.parse('2026-07-22T10:00:00Z');
+    const result = svc.rollDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    expect(result).toEqual({ rolled: true, day: 2, reason: 'earned' });
+  });
+
+  it('promotes yesterday\'s sentences after the roll', () => {
+    const ds = new FakeDatastore();
+    let clock = AT;
+    const svc = makeService(ds, () => clock);
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 1 });
+    finishDay(svc);
+    clock = Date.parse('2026-07-22T10:00:00Z');
+    svc.rollDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+
+    const day = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    expect(day.day).toBe(2);
+    // Seq 1 was PRACTISED at dictation, recording and interpretation on day one.
+    // None of that counts, so it is owed exactly one rung today.
+    const credited = day.queue.filter((e) => !e.practice && e.seq === 1);
+    expect(credited.map((e) => e.rung)).toEqual(['dictation']);
+  });
+});
+
+describe('day credit — self-healing', () => {
+  const enrolled = (ds, clock, eventBus) => makeService(ds, clock, {
+    readProgramEnrollment: () => ({
+      programId: 'sentence-ladder', corpusId: 'test-korean', lessonSize: 2,
+      rungs: ['repetition', 'dictation'],
+    }),
+    realtime: new EventBusSchoolRealtimeAdapter({ eventBus }),
+  });
+  const EQUIPPED_OPEN = { userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED };
+
+  it('re-announces a day finished today whose announcement was lost, and throttles the retry', () => {
+    const ds = new FakeDatastore();
+    let clock = AT;
+    const lost = { publish: vi.fn() };
+    finishDay(enrolled(ds, () => clock, lost));
+    expect(lost.publish).toHaveBeenCalledTimes(1);
+
+    // A restart: a fresh service over the same evidence, nothing remembered.
+    const bus = { publish: vi.fn() };
+    const svc = enrolled(ds, () => clock, bus);
+    svc.getDay(EQUIPPED_OPEN);
+    expect(bus.publish).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(bus.publish.mock.calls[0])).toContain('"day":1');
+
+    svc.getDay(EQUIPPED_OPEN);
+    expect(bus.publish).toHaveBeenCalledTimes(1);
+
+    // A close that failed is retried once the throttle has passed.
+    clock = AT + 11 * 60 * 1000;
+    svc.getDay(EQUIPPED_OPEN);
+    expect(bus.publish).toHaveBeenCalledTimes(2);
+  });
+
+  it('heals a day finished today even after another round was taken', () => {
+    const ds = new FakeDatastore();
+    const clock = AT;
+    finishDay(enrolled(ds, () => clock, { publish: vi.fn() }));
+    enrolled(ds, () => clock, { publish: vi.fn() }).rollDay({ userId: 'kckern', corpusId: 'test-korean' });
+
+    const bus = { publish: vi.fn() };
+    enrolled(ds, () => clock, bus).getDay(EQUIPPED_OPEN);
+    expect(bus.publish).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(bus.publish.mock.calls[0])).toContain('"day":1');
+  });
+
+  it('never re-announces a day finished on an earlier study day — that would credit the wrong date', () => {
+    const ds = new FakeDatastore();
+    let clock = AT;
+    finishDay(enrolled(ds, () => clock, { publish: vi.fn() }));
+    clock = Date.parse('2026-07-22T10:00:00Z');
+    const bus = { publish: vi.fn() };
+    enrolled(ds, () => clock, bus).getDay(EQUIPPED_OPEN);
+    expect(bus.publish).not.toHaveBeenCalled();
+  });
+
+  it('never announces a partial day', () => {
+    const ds = new FakeDatastore();
+    const bus = { publish: vi.fn() };
+    const svc = enrolled(ds, () => AT, bus);
+    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition', capabilities: EQUIPPED });
+    svc.getDay(EQUIPPED_OPEN);
+    expect(bus.publish).not.toHaveBeenCalled();
+  });
+});
+
+describe('history', () => {
+  it('folds the log by study day, newest first, with text attached', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition' });
+    ds.writeProgress('kckern', 'test-korean', { corpus: 'test-korean', day: 2, daily_limit: 5, last_activity: null });
+    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 2, rung: 'repetition' });
+
+    const history = svc.getHistory({ userId: 'kckern', corpusId: 'test-korean' });
+    expect(history.days.map((d) => d.day)).toEqual([2, 1]);
+    expect(history.days[1].items[0].text).toEqual(CORPUS.sentences[0].text);
+  });
+
+  it('only offers playback when the recording file actually exists', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    makeDue(ds, 'recording', 1);
+    svc.saveRecording({ userId: 'kckern', corpusId: 'test-korean', seq: 1, buffer: Buffer.from('a'), capabilities: EQUIPPED });
+    // An event whose file has since vanished stands as evidence but offers no audio.
+    ds.appendEvent('kckern', 'test-korean', {
+      at: new Date(AT).toISOString(), day: 3, seq: 3, rung: 'recording', attributedTo: 'kckern',
+    });
+
+    const items = svc.getHistory({ userId: 'kckern', corpusId: 'test-korean' }).days[0].items;
+    expect(items.find((i) => i.seq === 1).hasAudio).toBe(true);
+    expect(items.find((i) => i.seq === 3).hasAudio).toBe(false);
+  });
+});
+
+describe('todayStatus — an enrolled learner who has not started yet', () => {
+  // The chicken-and-egg found live on 2026-09-09: the two learners' Glossika
+  // progress was cleared, `todayStatus` skipped the corpus as "never touched",
+  // the agenda emitted no `language` section, and the board showed nothing —
+  // so nobody could ever be told to START. An enrolment names the corpus, and
+  // a named corpus with no history is day one, not nothing.
+  it('reports day one, obligated, with a real queue — never a skip', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    const status = svc.todayStatus({ userId: 'new-learner', corpusId: 'test-korean' });
+    expect(status).toMatchObject({ doneToday: false, progressLabel: 'Day 1', score: null });
+    expect(status.obligationProgress).toMatchObject({ completed: 0 });
+    expect(status.obligationProgress.total).toBeGreaterThan(0);
+    // Reading the status must not create progress — observation is free.
+    expect(ds.readProgress('new-learner', 'test-korean')).toBeNull();
+  });
+
+  it('still skips untouched corpora on the DISCOVERY path, where nothing named them', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    // No corpusId: iterating every corpus. An untouched one must not claim a
+    // day for a learner nobody enrolled in it.
+    expect(svc.todayStatus({ userId: 'new-learner' })).toMatchObject({ doneToday: false, progressLabel: null });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WHAT A CARD SAYS. `projectProgramEntry` reads `context` and `progress` off
+// `todayStatus` and feeds them to the breadcrumb, the unit line, the title, the
+// bars and the poster. Returning neither is why a Glossika agenda card printed
+// the word "Korean" three times over an empty poster panel: with no context,
+// `BuildAgenda` falls to the branch whose course fallback is the literal string
+// "Independent study".
+describe('todayStatus — the card projection', () => {
+  const UNITS = [
+    { from: 1, label: 'Fluency 1' },
+    { from: 3, label: 'Fluency 2' },
+  ];
+  const enrolled = (units = UNITS) => ({
+    readProgramEnrollment: () => ({
+      programId: 'sentence-ladder', corpusId: 'test-korean', lessonSize: 4,
+      rungs: ['repetition', 'dictation', 'recording', 'interpretation'],
+      ...(units ? { units } : {}),
+    }),
+  });
+
+  it('names three DIFFERENT things — the duplication that started this', () => {
+    const svc = makeService(new FakeDatastore(), AT, enrolled());
+    const { context } = svc.todayStatus({ userId: 'new-learner', corpusId: 'test-korean' });
+
+    expect(context.course.title).toBe('Test Korean');
+    expect(context.unit.title).toMatch(/^Fluency 1 · Day 1$/);
+    expect(context.lesson.title).toMatch(/sentences? today$/);
+    expect(new Set([context.course.title, context.unit.title, context.lesson.title]).size).toBe(3);
+  });
+
+  it('titles the card by the WORK, not by the day — a card is an offer', () => {
+    const svc = makeService(new FakeDatastore(), AT, enrolled());
+    const { context } = svc.todayStatus({ userId: 'new-learner', corpusId: 'test-korean' });
+    expect(context.lesson.title).not.toMatch(/Day/);
+  });
+
+  it('carries the corpus in the course id, so a second language brings its own poster', () => {
+    const svc = makeService(new FakeDatastore(), AT, enrolled());
+    const { context } = svc.todayStatus({ userId: 'new-learner', corpusId: 'test-korean' });
+    expect(context.course.id).toBe('program:sentence-ladder:test-korean');
+  });
+
+  it('says the day alone when the enrollment partitions nothing — never the word "Unit"', () => {
+    const svc = makeService(new FakeDatastore(), AT, enrolled(null));
+    const { context } = svc.todayStatus({ userId: 'new-learner', corpusId: 'test-korean' });
+    expect(context.unit.title).toBe('Day 1');
+    expect(context.unit.title).not.toMatch(/Unit/);
+  });
+
+  it('offers exactly one bar, and it is today s — never the lifetime figure', () => {
+    const svc = makeService(new FakeDatastore(), AT, enrolled());
+    const { progress } = svc.todayStatus({ userId: 'new-learner', corpusId: 'test-korean' });
+    expect(progress).toHaveLength(1);
+    expect(progress[0]).toMatchObject({ scope: 'unit', label: 'Today', completed: 0 });
+    expect(progress[0].total).toBeGreaterThan(0);
+  });
+
+  it('describes what the day actually asks for', () => {
+    const svc = makeService(new FakeDatastore(), AT, enrolled());
+    const { description } = svc.todayStatus({ userId: 'new-learner', corpusId: 'test-korean' });
+    expect(description).toMatch(/repetition/);
+  });
+
+  it('keeps the fields the agenda already depended on', () => {
+    const svc = makeService(new FakeDatastore(), AT, enrolled());
+    const status = svc.todayStatus({ userId: 'new-learner', corpusId: 'test-korean' });
+    expect(status).toMatchObject({ doneToday: false, progressLabel: 'Day 1', score: null });
+    expect(status.obligationProgress.total).toBeGreaterThan(0);
+  });
+
+  it('projects nothing for a learner with no corpus at all, rather than a half card', () => {
+    const svc = makeService(new FakeDatastore(), AT, { readProgramEnrollment: () => null });
+    const status = svc.todayStatus({ userId: 'nobody', corpusId: 'no-such-corpus' });
+    expect(status).toEqual({ doneToday: false, progressLabel: null, score: null });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE DISC THAT VANISHED. A child finished their ladder day and the assignment
+// disc did not turn green — it left the `AgendaStatusBoard` altogether. The
+// board draws PLAN ∪ EVIDENCE, and a served ladder has neither leg: `next`
+// goes null the moment the subject is served, and the ladder's evidence lives
+// in its own event log rather than in a School work session the board can see.
+// `servedWork` is the third leg, and the only one a program subject can offer
+// — `StoryTimeProgramLauncher` already carries the same identity for the same
+// reason ("Daily story time has no work session, so this is the durable
+// identity that keeps its completed disc on the board after `next`
+// disappears").
+describe('todayStatus — the served work a finished disc is drawn from', () => {
+  it('reports nothing served while the day is still open', () => {
+    const svc = makeService(new FakeDatastore());
+    const status = svc.todayStatus({ userId: 'test-learner', corpusId: 'test-korean' });
+    expect(status.doneToday).toBe(false);
+    // Empty, not absent: the section's tally reads the array either way, and a
+    // launcher that answers "nothing yet" is saying something a missing field
+    // cannot.
+    expect(status.servedWork).toEqual([]);
+  });
+
+  it('names the course once the day is cleared, so the board keeps its disc', () => {
+    const svc = makeService(new FakeDatastore());
+    finishDay(svc);
+    const status = svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' });
+    expect(status.doneToday).toBe(true);
+    expect(status.servedWork).toEqual([
+      { unitId: 'sentence-ladder:test-korean', title: 'Test Korean · Day 1' },
+    ]);
+  });
+
+  it('leaves the assignment anchor to the agenda — a launcher reports only the work', () => {
+    const svc = makeService(new FakeDatastore());
+    finishDay(svc);
+    const [work] = svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' }).servedWork;
+    // `planDailyAgenda` stamps `assignmentUnitId` from the owning program
+    // entry. A launcher that guessed its own would be guessing at the identity
+    // of an assignment it cannot see.
+    expect(work).not.toHaveProperty('assignmentUnitId');
+  });
+
+  it('still grades nothing — the ladder records accuracy, it never gates on it', () => {
+    const svc = makeService(new FakeDatastore());
+    finishDay(svc);
+    expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' }).score).toBeNull();
+  });
+});
+
+describe('todayStatus — a day finished today stays credited', () => {
+  function oneStep(svc) {
+    const { queue } = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    const next = queue.find((entry) => !entry.done);
+    const args = { userId: 'kckern', corpusId: 'test-korean', seq: next.seq, capabilities: EQUIPPED };
+    if (next.rung === 'recording') svc.saveRecording({ ...args, buffer: Buffer.from('audio') });
+    else if (next.rung === 'dictation' || next.rung === 'interpretation') svc.logAttempt({ ...args, rung: next.rung, given: 'x' });
+    else svc.logAttempt({ ...args, rung: next.rung });
+  }
+
+  it('through another round, and another — doing more never un-credits a child', () => {
+    const svc = makeService(new FakeDatastore());
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 1 });
+    finishDay(svc);
+    expect(svc.rollDay({ userId: 'kckern', corpusId: 'test-korean' })).toMatchObject({ rolled: true, day: 2, reason: 'ahead' });
+
+    const status = svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' });
+    expect(status).toMatchObject({ doneToday: true, progressLabel: 'Day 2' });
+    expect(status.servedWork).toEqual([{ unitId: 'sentence-ladder:test-korean', title: 'Test Korean · Day 1' }]);
+    expect(status.obligationProgress.completed).toBe(status.obligationProgress.total);
+
+    oneStep(svc);
+    expect(svc.rollDay({ userId: 'kckern', corpusId: 'test-korean' })).toMatchObject({ rolled: true, day: 3, reason: 'early' });
+    expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' }).doneToday).toBe(true);
+  });
+
+  it('a day finished yesterday is not today\'s credit', () => {
+    let clock = AT;
+    const svc = makeService(new FakeDatastore(), () => clock);
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 1 });
+    finishDay(svc);
+    clock = Date.parse('2026-07-22T10:00:00Z');
+    expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED }).day).toBe(2);
+    expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' }).doneToday).toBe(false);
+  });
+
+  it('stays reopenable once served, so the same code opens the ladder again', () => {
+    const svc = makeService(new FakeDatastore());
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 1 });
+    expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' }).reopenable).toBe(true);
+    finishDay(svc);
+    expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' })).toMatchObject({
+      doneToday: true, reopenable: true,
+    });
+  });
+
+  it('an unfinished day rolled early is not credit either', () => {
+    const svc = makeService(new FakeDatastore());
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 1 });
+    oneStep(svc);
+    expect(svc.rollDay({ userId: 'kckern', corpusId: 'test-korean' })).toMatchObject({ rolled: true, reason: 'early' });
+    expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' }).doneToday).toBe(false);
+  });
+});
+
+describe('day read observability', () => {
+  it('says what it served — day, size, chain, and what this device could not climb', () => {
+    const ds = new FakeDatastore();
+    const info = vi.fn();
+    const svc = makeService(ds, AT, { logger: { warn() {}, info, debug() {} } });
+
+    svc.getDay({
+      userId: 'kckern',
+      corpusId: 'test-korean',
+      capabilities: { microphone: false, textInput: [] },
+      runId: 'run-xyz',
+    });
+
+    const [event, data, opts] = info.mock.calls.find(([e]) => e === 'school.language.day-read');
+    expect(event).toBe('school.language.day-read');
+    expect(data).toMatchObject({ learnerId: 'kckern', corpus: 'test-korean', day: 1 });
+    expect(typeof data.queueSize).toBe('number');
+    expect(Array.isArray(data.chain)).toBe(true);
+    expect(Array.isArray(data.blockedRungs)).toBe(true);
+    // The chain is the DEVICE's chain: with no mic and no keyboard, the rungs
+    // that need them are absent, and the log is where a teacher finds out why
+    // the child was only asked to repeat. (`blockedRungs` is the enrolled
+    // learner's credit chain minus that — empty here, since an unenrolled
+    // learner has no credit chain to fall short of.)
+    expect(data.chain).not.toContain('recording');
+    expect(data.chain).not.toContain('dictation');
+    // The run id lands on context, not in the payload: that is the field the
+    // log store indexes as `context.runId`.
+    expect(opts).toEqual({ context: { runId: 'run-xyz' } });
+  });
+
+  it('never puts a learner sentence in the log payload', () => {
+    const ds = new FakeDatastore();
+    const info = vi.fn();
+    const svc = makeService(ds, AT, { logger: { warn() {}, info, debug() {} } });
+
+    svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+
+    const serialized = JSON.stringify(info.mock.calls);
+    expect(serialized).not.toContain('오늘 날씨가');
+    expect(serialized).not.toContain("The weather's nice");
+  });
+
+  it('logs without a run id rather than refusing to log', () => {
+    const ds = new FakeDatastore();
+    const info = vi.fn();
+    const svc = makeService(ds, AT, { logger: { warn() {}, info, debug() {} } });
+
+    svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+
+    const call = info.mock.calls.find(([e]) => e === 'school.language.day-read');
+    expect(call).toBeTruthy();
+    expect(call[2]).toBeUndefined();
+  });
+});
+
+
+describe('summarize — the agenda counts sentences, not steps', () => {
+  // Four sentences at four rungs is sixteen steps on day one (the cold-start
+  // top-up), and the agenda used to print that as "16 sentences today".
+  it('labels day one by its sentences and keeps steps in the detail', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition', capabilities: EQUIPPED });
+    const [course] = svc.summarize({ userId: 'kckern' });
+    expect(course.next.label).toBe('4 sentences today');
+    expect(course.next.detail).toMatch(/^4 new · 15 steps left — /);
+    expect(course.next.estimate).toEqual({ count: 15, unit: 'steps' });
+  });
+
+  it('keeps reveals out of the typing accuracy, and counts them where they show', () => {
+    const ds = new FakeDatastore();
+    makeDue(ds, 'interpretation');
+    const svc = makeService(ds);
+    svc.logAttempt({
+      userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+      revealed: true, capabilities: EQUIPPED,
+    });
+    const [course] = svc.summarize({ userId: 'kckern' });
+    // Nothing was scored, so there is no accuracy figure to inflate. A reveal
+    // that landed in this average at 1.0 would read as perfect comprehension
+    // of a sentence the learner never rendered.
+    expect(course.metrics.find((m) => m.id === 'accuracy')).toBeUndefined();
+    // But it is not invisible either — a grown-up reading the card has to be
+    // able to see how much of the work was handed over.
+    expect(course.metrics.find((m) => m.id === 'reveals')).toMatchObject({ value: 1 });
+  });
+
+  it('shows no reveal count for a learner who never asked for one', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition', capabilities: EQUIPPED });
+    const [course] = svc.summarize({ userId: 'kckern' });
+    expect(course.metrics.find((m) => m.id === 'reveals')).toBeUndefined();
+  });
+
+  it('splits sentences entering today from those back for review', () => {
+    const ds = new FakeDatastore();
+    makeDue(ds, 'dictation', 1);
+    const svc = makeService(ds);
+    const [course] = svc.summarize({ userId: 'kckern' });
+    const { queue } = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    const sentences = new Set(queue.filter((e) => !e.done).map((e) => e.seq)).size;
+    expect(course.next.label).toBe(`${sentences} sentences today`);
+    expect(course.next.detail).toMatch(/1 to review/);
+    expect(course.next.detail).not.toMatch(/\d+ sentences today/);
+  });
+});

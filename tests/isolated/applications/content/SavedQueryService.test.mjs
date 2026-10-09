@@ -1,6 +1,6 @@
 // tests/isolated/applications/content/SavedQueryService.test.mjs
 import { describe, it, expect, beforeEach } from 'vitest';
-import { SavedQueryService } from '#apps/content/SavedQueryService.mjs';
+import { SavedQueryService } from "../../../../capabilities/content-catalog/server/application/SavedQueryService.mjs";
 
 describe('SavedQueryService', () => {
   let service;

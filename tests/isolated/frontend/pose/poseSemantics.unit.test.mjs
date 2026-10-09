@@ -1,4 +1,4 @@
-import { extractSemanticPosition, createSemanticExtractor } from '../../../../frontend/src/modules/Fitness/lib/pose/poseSemantics.js';
+import { extractSemanticPosition, createSemanticExtractor } from "../../../../modules/fitness/browser/lib/pose/poseSemantics.js";
 
 /**
  * Build synthetic BlazePose keypoints (normalized 0-1 coords, y increases downward).

@@ -30,7 +30,7 @@ import {
 } from './draftReducer.js';
 import { STRUCTURE_TEMPLATES } from './structureTemplates.js';
 import { seedFor } from './materialGlyphModel.js';
-import { compileArrangement } from '@shared-music/arrangementScheduler.mjs';
+import { compileArrangement } from "../../../../../capabilities/music-notation/portable/arrangementScheduler.mjs";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 

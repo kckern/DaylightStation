@@ -8,8 +8,8 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import path from 'node:path';
-import { HealthArchiveScopeFactory as HealthArchiveScopeFactoryClass } from '#apps/health/archive/HealthArchiveScopeFactory.mjs';
-import { FilesystemHealthArchiveAddressPolicyFactory } from '#adapters/health/FilesystemHealthArchiveAddressPolicyFactory.mjs';
+import { HealthArchiveScopeFactory as HealthArchiveScopeFactoryClass } from "../../../../modules/health/server/application/health/archive/HealthArchiveScopeFactory.mjs";
+import { FilesystemHealthArchiveAddressPolicyFactory } from "../../../../modules/health/server/adapters/health/FilesystemHealthArchiveAddressPolicyFactory.mjs";
 
 const addressPolicyFactory = new FilesystemHealthArchiveAddressPolicyFactory();
 function HealthArchiveScopeFactory(options) {

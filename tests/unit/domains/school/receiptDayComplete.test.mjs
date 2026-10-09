@@ -9,7 +9,7 @@
  * homework that did not exist.
  */
 import { describe, it, expect } from 'vitest';
-import { resultDocument } from '#domains/school/documents/receipts.mjs';
+import { resultDocument } from "../../../../modules/school/server/domain/documents/receipts.mjs";
 
 const lines = (doc) => doc.blocks.map((b) => b.md ?? '').join('\n');
 

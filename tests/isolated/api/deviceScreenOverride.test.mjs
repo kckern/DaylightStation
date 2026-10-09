@@ -1,3 +1,4 @@
+import { createPianoScreenHoldPolicy } from "../../../modules/piano/server/application/screenHoldPolicy.mjs";
 import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
@@ -23,9 +24,7 @@ function makeApp({ device, screenOverrideService, pianoMidiWakeService, piano = 
       devices: { get: () => device },
       screenOverrides: screenOverrideService,
       midiWake: pianoMidiWakeService,
-      configuration: new ConfigDeviceConfiguration({
-        configService: { getHouseholdAppConfig: () => piano },
-      }),
+      holdPolicy: createPianoScreenHoldPolicy({ getPianoConfig: () => piano }),
       logger: { info() {}, warn() {}, error() {} },
     }),
   }));

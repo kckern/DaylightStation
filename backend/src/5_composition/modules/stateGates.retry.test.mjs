@@ -219,7 +219,7 @@ describe('State Gates lifecycle retries', () => {
       clock: { now: () => Date.now() }, logger: log,
       retryPolicy: { initialDelayMs: 1_000, multiplier: 2, maxDelayMs: 60_000, jitterRatio: 0 },
     });
-    const repositoryModule = await import('#adapters/state-gates/persistence/YamlStateGatesProjectionRepository.mjs');
+    const repositoryModule = await import("../../../../capabilities/state-gates/server/adapters/persistence/YamlStateGatesProjectionRepository.mjs");
     const originalLoad = repositoryModule.YamlStateGatesProjectionRepository.prototype.load;
     let armed = false;
     let loads = 0;

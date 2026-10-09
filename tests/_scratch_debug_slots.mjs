@@ -1,4 +1,4 @@
-import { normalizeListItem, extractContentId } from '#domains/content/utils/listItemInput.mjs';
+import { normalizeListItem, extractContentId } from "../capabilities/content-catalog/server/domain/utils/listItemInput.mjs";
 
 const items = [
   { input: 'media: sfx/intro', label: 'Intro' },

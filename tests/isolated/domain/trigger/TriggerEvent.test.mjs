@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { TriggerEvent } from '#domains/trigger/TriggerEvent.mjs';
+import { TriggerEvent } from "../../../../capabilities/device-dispatch/server/domain/TriggerEvent.mjs";
 
 describe('TriggerEvent', () => {
   it('preserves the raw value (no lowercasing) and defaults meta', () => {

@@ -10,7 +10,7 @@ import {
   PREFAB_INCOMPLETE_CODE, resolveEntry, resolvePrefabStack, resolvePrefabSong,
 } from './prefabHydrate.js';
 import { draftReducer, hydrate, toSchedulerInputs } from './draftReducer.js';
-import { compileArrangement } from '@shared-music/arrangementScheduler.mjs';
+import { compileArrangement } from "../../../../../capabilities/music-notation/portable/arrangementScheduler.mjs";
 
 // ── a tiny loop index: two harmonic entries (with timelines + notes-less) and
 // a groove (no timeline). Notes come from lib.loadNotes at runtime; the index

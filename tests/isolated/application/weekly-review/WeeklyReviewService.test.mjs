@@ -1,7 +1,9 @@
+import os from 'node:os';
+import path from 'node:path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import fs from 'node:fs';
-import { WeeklyReviewService } from '../../../../backend/src/3_applications/weekly-review/WeeklyReviewService.mjs';
-import { FilesystemWeeklyReviewStore } from '../../../../backend/src/1_adapters/persistence/files/FilesystemWeeklyReviewStore.mjs';
+import { WeeklyReviewService } from "../../../../modules/weekly-review/server/application/WeeklyReviewService.mjs";
+import { FilesystemWeeklyReviewStore } from "../../../../modules/weekly-review/server/adapters/persistence/FilesystemWeeklyReviewStore.mjs";
 
 describe('WeeklyReviewService', () => {
   let service;
@@ -39,12 +41,12 @@ describe('WeeklyReviewService', () => {
     mockLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
     service = new WeeklyReviewService({
-      dataPath: '/tmp/test-data',
-      mediaPath: '/tmp/test-media',
+      dataPath: path.join(os.tmpdir(),'test-data'),
+      mediaPath: path.join(os.tmpdir(),'test-media'),
     }, {
       reviewStore: new FilesystemWeeklyReviewStore({
-        householdDir: '/tmp/test-data/household',
-        mediaPath: '/tmp/test-media',
+        householdDir: path.join(os.tmpdir(),'test-data','household'),
+        mediaPath: path.join(os.tmpdir(),'test-media'),
         logger: mockLogger,
       }),
       runCommand: vi.fn(async () => ({})),

@@ -4,9 +4,9 @@ import { promises as fs } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import yaml from 'js-yaml';
-import { createAutomotiveRelay } from '#apps/hardware/automotiveRelay.mjs';
+import { createAutomotiveRelay } from "../../../../../modules/auto/server/application/ingress/automotiveRelay.mjs";
 import { YamlDayLogDatastore } from '#adapters/persistence/yaml/YamlDayLogDatastore.mjs';
-import { YamlAutomotiveTripStore } from '#adapters/hardware/automotive/YamlAutomotiveTripStore.mjs';
+import { YamlAutomotiveTripStore } from "../../../../../modules/auto/server/adapters/ingress/YamlAutomotiveTripStore.mjs";
 import { AutomotiveFirmwareGateway } from '#adapters/hardware/firmware/EventBusFirmwareRelayGateways.mjs';
 
 const logger = { debug() {}, info() {}, warn() {}, error() {} };

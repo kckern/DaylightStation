@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import ContentScroller from './ContentScroller.jsx';
 import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
-import { getReadalongRenderer } from '../../../../../frontend/src/lib/contentRenderers.jsx';
+import { getReadalongRenderer } from "../../../../content-catalog/browser/providers/contentRenderers.jsx";
 
 /**
  * ReadalongScroller

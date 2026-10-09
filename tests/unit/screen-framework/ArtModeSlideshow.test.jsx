@@ -3,7 +3,7 @@ import React from 'react';
 import { render, act, cleanup, fireEvent } from '@testing-library/react';
 
 // Favorites slideshow is music-less; the timer drives advances.
-vi.mock('../../../frontend/src/lib/Player/useBackgroundMusic.js', () => ({
+vi.mock("../../../modules/art/browser/music/useBackgroundMusic.js", () => ({
   useBackgroundMusic: () => ({ track: null, next: vi.fn(), prev: vi.fn() }),
 }));
 

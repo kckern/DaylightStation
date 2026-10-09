@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 
-import { ReadableItem } from '#domains/content/capabilities/Readable.mjs';
+import { ReadableItem } from "../../../../capabilities/content-catalog/server/domain/capabilities/Readable.mjs";
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
 describe('ReadableItem', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { StravaSyncHealth } from '#apps/fitness/StravaSyncHealth.mjs';
+import { StravaSyncHealth } from "../../../../modules/fitness/server/application/StravaSyncHealth.mjs";
 
 const HOUR = 3600_000;
 

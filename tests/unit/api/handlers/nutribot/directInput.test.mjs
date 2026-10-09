@@ -1,6 +1,6 @@
 // tests/unit/api/handlers/nutribot/directInput.test.mjs
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
-import { directUPCHandler } from '../../../../../backend/src/4_api/v1/handlers/nutribot/directInput.mjs';
+import { directUPCHandler } from "../../../../../modules/nutribot/server/api/handlers/directInput.mjs";
 
 describe('directUPCHandler', () => {
   let executeMock;

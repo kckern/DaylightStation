@@ -13,8 +13,8 @@
 // existing unit tests.
 
 import { describe, it, expect, jest } from '@jest/globals';
-import { FitnessConfigService } from '../../../backend/src/3_applications/fitness/FitnessConfigService.mjs';
-import { FitnessConfigProjection } from '../../../backend/src/1_adapters/config/ApplicationConfigProjections.mjs';
+import { FitnessConfigService } from "../../../modules/fitness/server/application/FitnessConfigService.mjs";
+import { FitnessConfigProjection } from "../../../modules/fitness/server/adapters/FitnessConfigProjection.mjs";
 
 function buildService(rawConfig) {
   const configService = {

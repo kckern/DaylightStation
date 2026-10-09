@@ -39,10 +39,10 @@ import yaml from 'js-yaml';
 // bounded context and still exercises every real adapter + the broadcaster
 // loop end-to-end. The full-bootstrap path is exercised by the Task 9.1
 // full-stack smoke test (Phase 9).
-import { HttpPlaybackHubAdapter } from '../../backend/src/1_adapters/playback-hub/HttpPlaybackHubAdapter.mjs';
-import { YamlHubConfigDatastore } from '../../backend/src/1_adapters/persistence/yaml/YamlHubConfigDatastore.mjs';
-import { PlaybackHubContainer } from '../../backend/src/3_applications/playback-hub/PlaybackHubContainer.mjs';
-import { createPlaybackHubRouter } from '../../backend/src/4_api/v1/routers/playbackHub.mjs';
+import { HttpPlaybackHubAdapter } from "../../modules/media/server/adapters/playback-hub/HttpPlaybackHubAdapter.mjs";
+import { YamlHubConfigDatastore } from '../../modules/media/server/adapters/playback-hub/YamlHubConfigDatastore.mjs';
+import { PlaybackHubContainer } from "../../modules/media/server/application/playback-hub/PlaybackHubContainer.mjs";
+import { createPlaybackHubRouter } from '../../modules/media/server/api/playbackHub.mjs';
 
 /**
  * Mirror of `createPlaybackHubServices` from bootstrap.mjs (kept in

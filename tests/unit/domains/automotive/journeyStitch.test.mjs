@@ -7,8 +7,8 @@
 // order), and sub-threshold garage shuffles are classified rather than deleted.
 
 import { describe, it, expect } from 'vitest';
-import { stitchJourneys } from '#domains/automotive/services/JourneyStitchService.mjs';
-import { GeoFix } from '#domains/automotive/value-objects/GeoFix.mjs';
+import { stitchJourneys } from "../../../../modules/auto/server/domain/services/JourneyStitchService.mjs";
+import { GeoFix } from "../../../../modules/auto/server/domain/value-objects/GeoFix.mjs";
 
 const at = (iso) => new Date(iso);
 

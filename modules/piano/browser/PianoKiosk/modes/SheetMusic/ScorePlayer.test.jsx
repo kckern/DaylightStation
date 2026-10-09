@@ -195,7 +195,7 @@ vi.mock('../../usePianoPreferences.js', async () => {
 
 // Stub the engraver: report a known layout (melody events + derived per-onset
 // steps), render the cursor / light-up children.
-vi.mock('../../../../../../frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.jsx', async () => {
+vi.mock("../../../../../../capabilities/music-notation/browser/renderers/MusicXmlRenderer.jsx", async () => {
   const { useEffect } = await import('react');
   return {
     MusicXmlRenderer: ({ onLayout, onReady, children, scale, transpose = 0 }) => {
@@ -625,7 +625,7 @@ describe('ScorePlayer — note-highlight ink (wave-2 A)', () => {
   it('MusicXmlRenderer.scss gives .piano-note-hit its own fixed dark brown, never the shared --nh-color ink (wave-2 A)', () => {
     // jsdom doesn't compute styles from the stylesheet, so assert the source
     // directly (same pattern as TransportButton.test.jsx's SCSS floor check).
-    const scss = readFileSync(fileURLToPath(new URL('../../../../../../frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.scss', import.meta.url)), 'utf8');
+    const scss = readFileSync(fileURLToPath(new URL("../../../../../../capabilities/music-notation/browser/renderers/MusicXmlRenderer.scss", import.meta.url)), 'utf8');
     // .piano-note-hit nests one level (its `path, rect, ...` sub-rule), so match
     // through that inner brace pair too, not just up to the first `}`.
     const hitBlock = scss.match(/\.piano-note-hit\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
@@ -636,7 +636,7 @@ describe('ScorePlayer — note-highlight ink (wave-2 A)', () => {
   });
 
   it('MusicXmlRenderer.scss never draws a pending notehead hollow — that reads as a half note', () => {
-    const scss = readFileSync(fileURLToPath(new URL('../../../../../../frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.scss', import.meta.url)), 'utf8');
+    const scss = readFileSync(fileURLToPath(new URL("../../../../../../capabilities/music-notation/browser/renderers/MusicXmlRenderer.scss", import.meta.url)), 'utf8');
     const block = scss.match(/\.piano-note-pending\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
     expect(block).toBeTruthy();
     // A hollow head means a half or whole note. An outlined quarter note is a
@@ -651,7 +651,7 @@ describe('ScorePlayer — note-highlight ink (wave-2 A)', () => {
   });
 
   it('the pending pulse breathes ink→brown and gains mass, never toward transparency', () => {
-    const scss = readFileSync(fileURLToPath(new URL('../../../../../../frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.scss', import.meta.url)), 'utf8');
+    const scss = readFileSync(fileURLToPath(new URL("../../../../../../capabilities/music-notation/browser/renderers/MusicXmlRenderer.scss", import.meta.url)), 'utf8');
     const frames = scss.match(/@keyframes piano-note-pending-pulse\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
     // Fading a notehead out says "this one is not it" (the ghost mark's job), the
     // exact opposite of "play this now". Both ends must be solid ink.
@@ -3786,7 +3786,7 @@ describe('ScorePlayer — staff dim (Task 8)', () => {
   it('MusicXmlRenderer.scss fades the staff group and keeps no mask rule', () => {
     // jsdom computes no stylesheet, so assert the source (same pattern as the
     // .piano-note-hit colour check above).
-    const scss = readFileSync(fileURLToPath(new URL('../../../../../../frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.scss', import.meta.url)), 'utf8');
+    const scss = readFileSync(fileURLToPath(new URL("../../../../../../capabilities/music-notation/browser/renderers/MusicXmlRenderer.scss", import.meta.url)), 'utf8');
     expect(scss).toMatch(/g\.staffline\.is-dimmed\s*\{[^}]*opacity/);
     expect(scss).not.toContain('.piano-score-staff-dim');
     expect(readFileSync(fileURLToPath(new URL('../../../PianoApp.scss', import.meta.url)), 'utf8')).not.toContain('.piano-score-staff-dim');

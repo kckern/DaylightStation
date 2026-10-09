@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { resolvePause, PAUSE_REASON } from '../../../../../frontend/src/lib/Player/gate/pauseArbiter.js';
+import { resolvePause, PAUSE_REASON } from "../../../../../capabilities/playback/browser/player-support/gate/pauseArbiter.js";
 
 // Characterizes the governance gate exactly as FitnessPlayer passes it. This suite
 // predates the N-ary arbiter and called a `governance:` alias slot; that alias is gone,

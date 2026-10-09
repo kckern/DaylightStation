@@ -1,6 +1,6 @@
 // tests/isolated/adapter/fitness/GarageFanAdapter.test.mjs
 import { vi } from 'vitest';
-import { GarageFanAdapter } from '#adapters/fitness/GarageFanAdapter.mjs';
+import { GarageFanAdapter } from "../../../../modules/fitness/server/adapters/GarageFanAdapter.mjs";
 
 const fanCfg = () => ({
   equipment: [

@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createMediaRouter } from '#backend/src/4_api/v1/routers/media.mjs';
+import { createMediaRouter } from "../../../../modules/media/server/api/media.mjs";
 import { MediaQueueEvents } from '#apps/events/RealtimePublications.mjs';
 
 /**

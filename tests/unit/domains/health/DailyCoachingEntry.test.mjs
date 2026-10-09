@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DailyCoachingEntry } from '../../../../backend/src/2_domains/health/entities/DailyCoachingEntry.mjs';
+import { DailyCoachingEntry } from "../../../../modules/health/server/domain/health/entities/DailyCoachingEntry.mjs";
 
 // Synthetic schemas used across tests. Keys + field names are illustrative
 // only; the entity is supposed to be generic over whatever the playbook

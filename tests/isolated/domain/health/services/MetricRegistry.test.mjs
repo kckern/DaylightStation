@@ -1,6 +1,6 @@
 // tests/isolated/domain/health/services/MetricRegistry.test.mjs
 import { describe, it, expect } from 'vitest';
-import { MetricRegistry } from '../../../../../backend/src/2_domains/health/services/MetricRegistry.mjs';
+import { MetricRegistry } from "../../../../../modules/health/server/domain/health/services/MetricRegistry.mjs";
 
 describe('MetricRegistry', () => {
   describe('weight metrics', () => {

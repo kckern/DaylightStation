@@ -1,3 +1,4 @@
+import {contentRequiresCamera} from '../../../../backend/src/5_composition/policies/contentRequiresCamera.mjs';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
 import { testApplicationRuntime } from '../../../_lib/applicationRuntime.mjs';
@@ -33,7 +34,7 @@ describe('WakeAndLoadService — prewarm permanent failure', () => {
         status: 'failed', reason: 'non-playable-type', permanent: true,
       }),
     };
-    svc = new WakeAndLoadService({
+    svc = new WakeAndLoadService({ contentRequiresCamera,
       ...testApplicationRuntime(),
       deviceService: { get: () => device },
       readinessPolicy: { isReady: vi.fn() },

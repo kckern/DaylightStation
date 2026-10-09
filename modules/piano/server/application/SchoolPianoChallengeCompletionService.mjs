@@ -7,7 +7,7 @@
  * launcher consumes this narrow record as alternate evidence for the matching
  * configured descriptor.
  */
-import { studyDayForInstant } from "#domains/school/studyDay.mjs";
+import { studyDayForInstant } from "../../../school/server/domain-study-day.mjs";
 import {
   InvalidInputError,
   MissingResourceError,

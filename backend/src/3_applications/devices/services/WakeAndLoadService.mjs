@@ -24,7 +24,6 @@ import { buildCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
 import { decodeItemAction } from '#shared-contracts/media/item-action.mjs';
 import { isLoadContentQueueOp } from '#shared-contracts/media/commands.mjs';
 import { resolveContentId } from '../ports/contentControlQuery.mjs';
-import { contentRequiresCamera } from './contentRequiresCamera.mjs';
 import { pushData, titleCaseId } from '#domains/notification/push/pushText.mjs';
 
 // Note: 'playback' is an optional trailing step emitted only by the playback
@@ -83,12 +82,15 @@ export class WakeAndLoadService {
   /** @type {Map<string, Promise<Object>>} In-flight wake-and-load per device */
   #inflight = new Map();
   #dispatchCorrelation = new Map();
+  #contentRequiresCamera;
 
   constructor(deps) {
     if (!deps.clock?.now || typeof deps.createDispatchId !== 'function'
       || !deps.scheduler?.wait || !deps.scheduler?.after || !deps.scheduler?.withDeadline) {
       throw new Error('WakeAndLoadService requires clock, createDispatchId, and scheduler');
     }
+    if(typeof deps.contentRequiresCamera!=='function')throw new Error('WakeAndLoadService requires installed contentRequiresCamera policy');
+    this.#contentRequiresCamera=deps.contentRequiresCamera;
     this.#deviceService = deps.deviceService;
     this.#readinessPolicy = deps.readinessPolicy;
     this.#broadcast = typeof deps.broadcast === 'function' ? deps.broadcast : () => {};
@@ -355,7 +357,7 @@ export class WakeAndLoadService {
     // --- Step 4: Prepare Content ---
     this.#emitProgress(topic, dispatchId, 'prepare', 'running');
     // Camera check (~4s on cold trigger) only matters for camera-using flows.
-    const skipCameraCheck = !contentRequiresCamera(contentQuery);
+    const skipCameraCheck = !this.#contentRequiresCamera(contentQuery);
     this.#logger.info?.('wake-and-load.prepare.start', { deviceId, dispatchId, skipCameraCheck });
 
     const prepResult = await device.prepareForContent({ skipCameraCheck });

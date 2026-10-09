@@ -1,7 +1,7 @@
 // tests/isolated/application/content/ContentQueryService.completedAt.test.mjs
 import { describe, test, expect, vi } from 'vitest';
-import { ContentQueryService } from '#apps/content/ContentQueryService.mjs';
-import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
+import { ContentQueryService } from "../../../../capabilities/content-catalog/server/application/ContentQueryService.mjs";
+import { RegistryContentCatalogGateway } from "../../../../capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
 
 describe('ContentQueryService.enrichWithWatchState propagates completedAt', () => {
   test('enriched item carries completedAt from stored progress', async () => {

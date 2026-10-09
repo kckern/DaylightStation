@@ -1,22 +1,22 @@
-import { CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
-import { FreshRSSSourceAdapter } from '#adapters/feed/sources/FreshRSSSourceAdapter.mjs';
-import { HeadlineFeedAdapter } from '#adapters/feed/sources/HeadlineFeedAdapter.mjs';
-import { GoogleNewsFeedAdapter } from '#adapters/feed/sources/GoogleNewsFeedAdapter.mjs';
-import { RedditFeedAdapter } from '#adapters/feed/sources/RedditFeedAdapter.mjs';
-import { ImmichFeedAdapter } from '#adapters/feed/sources/ImmichFeedAdapter.mjs';
-import { KomgaFeedAdapter } from '#adapters/feed/sources/KomgaFeedAdapter.mjs';
-import { ABSEbookFeedAdapter } from '#adapters/feed/sources/ABSEbookFeedAdapter.mjs';
-import { PlexFeedAdapter } from '#adapters/feed/sources/PlexFeedAdapter.mjs';
-import { YouTubeFeedAdapter } from '#adapters/feed/sources/YouTubeFeedAdapter.mjs';
-import { JournalFeedAdapter } from '#adapters/feed/sources/JournalFeedAdapter.mjs';
-import { GoodreadsFeedAdapter } from '#adapters/feed/sources/GoodreadsFeedAdapter.mjs';
-import { TodoistFeedAdapter } from '#adapters/feed/sources/TodoistFeedAdapter.mjs';
-import { WeatherFeedAdapter } from '#adapters/feed/sources/WeatherFeedAdapter.mjs';
-import { HealthFeedAdapter } from '#adapters/feed/sources/HealthFeedAdapter.mjs';
-import { StravaFeedAdapter } from '#adapters/feed/sources/StravaFeedAdapter.mjs';
-import { GratitudeFeedAdapter } from '#adapters/feed/sources/GratitudeFeedAdapter.mjs';
-import { EntropyFeedAdapter } from '#adapters/feed/sources/EntropyFeedAdapter.mjs';
-import { ReadalongFeedAdapter } from '#adapters/feed/sources/ReadalongFeedAdapter.mjs';
+import { CONTENT_TYPES } from "../../../../modules/feed/server/application/ports/IFeedSourceAdapter.mjs";
+import { FreshRSSSourceAdapter } from "../../../../modules/feed/server/adapters/sources/FreshRSSSourceAdapter.mjs";
+import { HeadlineFeedAdapter } from "../../../../modules/feed/server/adapters/sources/HeadlineFeedAdapter.mjs";
+import { GoogleNewsFeedAdapter } from "../../../../modules/feed/server/adapters/sources/GoogleNewsFeedAdapter.mjs";
+import { RedditFeedAdapter } from "../../../../modules/feed/server/adapters/sources/RedditFeedAdapter.mjs";
+import { ImmichFeedAdapter } from "../../../../modules/feed/server/adapters/sources/ImmichFeedAdapter.mjs";
+import { KomgaFeedAdapter } from "../../../../modules/feed/server/adapters/sources/KomgaFeedAdapter.mjs";
+import { ABSEbookFeedAdapter } from "../../../../modules/feed/server/adapters/sources/ABSEbookFeedAdapter.mjs";
+import { PlexFeedAdapter } from "../../../../modules/feed/server/adapters/sources/PlexFeedAdapter.mjs";
+import { YouTubeFeedAdapter } from "../../../../modules/feed/server/adapters/sources/YouTubeFeedAdapter.mjs";
+import { JournalFeedAdapter } from "../../../../modules/feed/server/adapters/sources/JournalFeedAdapter.mjs";
+import { GoodreadsFeedAdapter } from "../../../../modules/feed/server/adapters/sources/GoodreadsFeedAdapter.mjs";
+import { TodoistFeedAdapter } from "../../../../modules/feed/server/adapters/sources/TodoistFeedAdapter.mjs";
+import { WeatherFeedAdapter } from "../../../../modules/feed/server/adapters/sources/WeatherFeedAdapter.mjs";
+import { HealthFeedAdapter } from "../../../../modules/feed/server/adapters/sources/HealthFeedAdapter.mjs";
+import { StravaFeedAdapter } from "../../../../modules/feed/server/adapters/sources/StravaFeedAdapter.mjs";
+import { GratitudeFeedAdapter } from "../../../../modules/feed/server/adapters/sources/GratitudeFeedAdapter.mjs";
+import { EntropyFeedAdapter } from "../../../../modules/feed/server/adapters/sources/EntropyFeedAdapter.mjs";
+import { ReadalongFeedAdapter } from "../../../../modules/feed/server/adapters/sources/ReadalongFeedAdapter.mjs";
 
 const EXPECTED = [
   [FreshRSSSourceAdapter,   'freshrss',    [CONTENT_TYPES.FEEDS]],

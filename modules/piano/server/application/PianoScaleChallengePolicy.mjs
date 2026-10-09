@@ -1,4 +1,4 @@
-import { materializePianoScalePrompt } from '#shared/music/pianoScale.mjs';
+import { materializePianoScalePrompt } from "../../portable/music/pianoScale.mjs";
 
 const LEGACY_POLICY_VERSION = 'foundation-major-scales-v1';
 const ADAPTIVE_POLICY_VERSION = 'adaptive-piano-foundations-v1';

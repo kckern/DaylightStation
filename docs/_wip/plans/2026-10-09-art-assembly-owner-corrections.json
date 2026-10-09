@@ -1,0 +1,112 @@
+{
+  "status": "applied; candidate behavior verification pending",
+  "moves": {
+    "backend/src/1_adapters/persistence/files/FilesystemCanvasImageRepository.mjs": "modules/art/server/adapters/FilesystemCanvasImageRepository.mjs",
+    "tests/isolated/adapter/persistence/files/FilesystemCanvasImageRepository.test.mjs": "modules/art/tests/isolated/adapter/persistence/files/FilesystemCanvasImageRepository.test.mjs",
+    "backend/src/4_api/v1/routers/canvas.mjs": "modules/art/server/api/canvas.mjs",
+    "tests/isolated/api/routers/canvas.test.mjs": "modules/art/tests/isolated/api/routers/canvas.test.mjs"
+  },
+  "publicEntries": {
+    "modules/art/server/composition/installed-runtime.mjs": "composition",
+    "modules/art/server/composition/admin-runtime.mjs": "composition",
+    "modules/art/server/composition/canvas-runtime.mjs": "composition",
+    "modules/art/server/composition/screen-presets.mjs": "composition",
+    "modules/art/server/composition/canvas-providers.mjs": "composition",
+    "modules/art/server/api/admin/art.mjs": "api",
+    "modules/art/browser/admin/index.js": null,
+    "modules/art/server/adapters/artmodeConfig.mjs": "adapters",
+    "modules/art/server/api/canvas.mjs": "api",
+    "modules/art/server/api/art.mjs": "api"
+  },
+  "assembly": [
+    "Art content registration and preset API",
+    "Art admin service",
+    "Canvas image use case and HTTP router",
+    "Screen preset adapter assembly",
+    "Canvas content providers"
+  ],
+  "sourcePreservation": {
+    "status": "SCRATCH_ONLY",
+    "proofs": [
+      "Content construction, config reads, dynamic imports and registration sequence identical after enumerated import/result rebasing",
+      "Admin constructor graph identical",
+      "Canvas null gate and screen preset constructor expressions identical",
+      "Canvas provider registration and app binding order identical",
+      "Four relocated implementation/test bodies identical excluding import paths",
+      "All new composition identifiers lexically bound; relative static imports resolve"
+    ],
+    "files": 9,
+    "moves": 4,
+    "relativeImports": 14,
+    "runtime": "Pending; AST preservation is not runtime coverage"
+  },
+  "hostBindingProof": {
+    "status": "SCRATCH_ONLY",
+    "rows": [
+      {
+        "file": "backend/src/app.mjs",
+        "newUnboundIdentifiers": []
+      },
+      {
+        "file": "backend/src/5_composition/contentRegistry.mjs",
+        "newUnboundIdentifiers": []
+      }
+    ]
+  },
+  "applied": {
+    "status": "APPLIED",
+    "packetSha256": "32400979c23c8dbb1fac24133535a1f866346092a0cb125823d2eba024088409",
+    "moves": {
+      "backend/src/1_adapters/persistence/files/FilesystemCanvasImageRepository.mjs": "modules/art/server/adapters/FilesystemCanvasImageRepository.mjs",
+      "tests/isolated/adapter/persistence/files/FilesystemCanvasImageRepository.test.mjs": "modules/art/tests/isolated/adapter/persistence/files/FilesystemCanvasImageRepository.test.mjs",
+      "backend/src/4_api/v1/routers/canvas.mjs": "modules/art/server/api/canvas.mjs",
+      "tests/isolated/api/routers/canvas.test.mjs": "modules/art/tests/isolated/api/routers/canvas.test.mjs"
+    },
+    "writes": {
+      "modules/art/server/composition/installed-runtime.mjs": "2b69b7e279d0e23c85225aa9b16c9dfdecfa6df971f07224a3f2a164b0346569",
+      "modules/art/server/adapters/FilesystemCanvasImageRepository.mjs": "67cd3b545d61829ed9929522f84a39555d20732ea06574dc224525d85b835728",
+      "modules/art/tests/isolated/adapter/persistence/files/FilesystemCanvasImageRepository.test.mjs": "5aa044e05e04a65187ea427ec58c7c228622d937fe772a58f5c571dba917408c",
+      "modules/art/server/composition/admin-runtime.mjs": "c6ad93392d1cd0ae80ef4d350c5d114ebbf6b65660fb78f1664a4672c68e634e",
+      "modules/art/server/composition/canvas-runtime.mjs": "302023427682db8c161c10e99b1299f094ac0eecaeda28abd034e07b34e93456",
+      "modules/art/server/composition/screen-presets.mjs": "934e1385b9a3bfa78426733575f2a011b0736cc1ba1d08cdf6fcf18d82b683e1",
+      "modules/art/server/composition/canvas-providers.mjs": "bf787f8ab4ddffd117a63586f0548480e0ccc4bfe2683c8ffe030069ef416dfc",
+      "modules/art/server/api/canvas.mjs": "b5dd1778b90d61524d4752b475525b3ed4fc2104756aac6c60f40d2b65edb2c0",
+      "modules/art/tests/isolated/api/routers/canvas.test.mjs": "cdf5a03be9ff682868c8c3b25ab7cc45cebbe41da6579422ea59243b1cb51f72",
+      "modules/art/tests/composition/installed-runtime.test.mjs": "ca6c12e01c7d29a2e35fa9832121299b1192c46dcc1dddfda2a27444aae42b94",
+      "backend/src/app.mjs": "3af72844717850f646c2146d73779fda4cf48b9ab6ea10dfcf233895eba25c55",
+      "backend/src/5_composition/contentRegistry.mjs": "f27d38aca5f95d42b020090788c366c5d11024ce26bb29772a6abd2b683e1f68"
+    },
+    "runtime": "Pending confined candidate tests; no completion claim"
+  },
+  "canvasRepositoryBaseline": {
+    "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/art-canvas-Oz471S/receipt.json",
+    "sha256": "5eb0e01ac4aea63c6b32b0e97956563b221708adf64e7667d9adf8360f254262",
+    "passed": [
+      "FilesystemCanvasImageRepository rejects traversal and returns null for absence",
+      "FilesystemCanvasImageRepository returns an opaque image resource without leaking a path"
+    ]
+  },
+  "coverage": {
+    "existingRelocatedCanvasCases": 9,
+    "existingArtBaselineCases": 168,
+    "existingScreenBaselineCases": 15,
+    "limitation": "Existing cases do not establish complete host assembly coverage; extracted factory invocation and lazy Immich/registration branches need targeted runtime checks in confined runner.",
+    "required": [
+      "Replay original canvas 9 cases at final paths",
+      "Replay Art168 and screen15 after assembly",
+      "Exercise content runtime both with and without Immich and with absent register; verify config reads and source registration",
+      "Exercise canvas providers configured/unconfigured and HTTP client guard",
+      "Invoke admin/canvas/screen factories with private fixtures"
+    ]
+  },
+  "supplementalTestFile": [
+    "modules/art/tests/composition/installed-runtime.test.mjs"
+  ],
+  "coordinatedHostInjection": "School factory passed through Fitness runtime to original learner-directory constructor point; primary owns implementation and public policy",
+  "remaining": [
+    "Merge exact public entry keys into owner policy",
+    "Replay relevant compatibility cases and new assembly tests on final graph",
+    "Include move chain in final ownership census",
+    "Final whole-graph/build/hooks gates"
+  ]
+}

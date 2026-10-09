@@ -1,6 +1,6 @@
 // tests/unit/infrastructure/bootstrap.test.mjs
 import { createContentRegistry, createFeedServices } from '#composition/bootstrap.mjs';
-import { HeadlineStoryJudge } from '#apps/feed/services/HeadlineStoryJudge.mjs';
+import { HeadlineStoryJudge } from "../../../../modules/feed/server/application/services/HeadlineStoryJudge.mjs";
 
 describe('bootstrap', () => {
   describe('createContentRegistry', () => {

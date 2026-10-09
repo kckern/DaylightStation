@@ -5,7 +5,7 @@ import request from 'supertest';
 import { createPianoRouter } from './piano.mjs';
 import { withPianoRouterServices } from '../../../../tests/_lib/pianoRouterDeps.mjs';
 import { PianoContainer } from '../application/PianoContainer.mjs';
-import { PianoConfigProjection } from '../../../../backend/src/1_adapters/config/ApplicationConfigProjections.mjs';
+import { PianoConfigProjection } from "../adapters/PianoConfigProjection.mjs";
 
 /**
  * The roster answers "who is on this piano" — and, since 2026-09-02, "which of

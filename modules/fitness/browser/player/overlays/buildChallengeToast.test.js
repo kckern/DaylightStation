@@ -1,0 +1,234 @@
+import { describe, it, expect } from 'vitest';
+import { buildChallengeToast } from "./buildChallengeToast.js";
+
+describe('buildChallengeToast', () => {
+  it('builds a start toast with rider count and zone', () => {
+    const toast = buildChallengeToast('start', { zoneLabel: 'Active', requiredCount: 3 });
+    expect(toast).toEqual({
+      icon: '🏆',
+      title: 'Challenge started',
+      subtitle: 'Get 3 people to Active',
+      variant: 'info',
+    });
+  });
+
+  // The success toast leads with WHO and WHAT, not with the fact that something
+  // finished. With no contributor data there is no one to name, so it degrades
+  // to the old headline rather than inventing a subject.
+  it('falls back to the generic headline when nobody can be named', () => {
+    const toast = buildChallengeToast('end', { zoneLabel: 'Active', requiredCount: 3, actualCount: 3 });
+    expect(toast.title).toBe('Challenge complete!');
+    expect(toast.variant).toBe('success');
+  });
+
+  it('names the people and what they reached', () => {
+    const toast = buildChallengeToast(
+      'end',
+      { zoneLabel: 'Hot', requiredCount: 2, actualCount: 2, metUsers: ['a', 'b'] },
+      { resolveUserName: (id) => ({ a: 'Learner-Four', b: 'Learner-Three' }[id]) },
+    );
+    expect(toast.title).toBe('Learner-Four & Learner-Three reached Hot');
+  });
+
+  it('says how long it took, from the challenge clock', () => {
+    const toast = buildChallengeToast(
+      'end',
+      { zoneLabel: 'Hot', metUsers: ['a'], totalSeconds: 60, remainingSeconds: 15 },
+      { resolveUserName: () => 'Learner-Four' },
+    );
+    expect(toast.title).toBe('Learner-Four reached Hot');
+    expect(toast.subtitle).toBe('in 45s');
+  });
+
+  it('drops the count when the names already say it', () => {
+    // "2 of 2" beside "Learner-Four & Learner-Three" is the same fact twice.
+    const toast = buildChallengeToast(
+      'end',
+      { zoneLabel: 'Hot', requiredCount: 2, actualCount: 2, metUsers: ['a', 'b'] },
+      { resolveUserName: (id) => ({ a: 'Learner-Four', b: 'Learner-Three' }[id]) },
+    );
+    expect(toast.subtitle ?? '').not.toContain('of 2');
+  });
+
+  it('builds a cycling-specific start toast for cycle challenges', () => {
+    const toast = buildChallengeToast('start', { type: 'cycle', rider: { id: 'user_2', name: 'User_2' } });
+    expect(toast.title).toBe('Cycling challenge started');
+    expect(toast.variant).toBe('info');
+    expect(toast.subtitle).toBeUndefined();
+  });
+
+  it('uses singular "person" when requiredCount is 1', () => {
+    expect(buildChallengeToast('start', { zoneLabel: 'Hot', requiredCount: 1 }).subtitle)
+      .toBe('Get 1 person to Hot');
+    // The end toast now names the person instead of counting them.
+    expect(buildChallengeToast('end', { zoneLabel: 'Hot', metUsers: ['a'] },
+      { resolveUserName: () => 'Learner-Four' }).title).toBe('Learner-Four reached Hot');
+  });
+
+  it('falls back to selectionLabel when zoneLabel is absent', () => {
+    expect(buildChallengeToast('start', { selectionLabel: 'Sprint', requiredCount: 2 }).subtitle)
+      .toBe('Get 2 people to Sprint');
+  });
+
+  it('degrades to no subtitle when counts/zone are missing', () => {
+    const start = buildChallengeToast('start', {});
+    expect(start.title).toBe('Challenge started');
+    expect(start.subtitle).toBeUndefined();
+    const end = buildChallengeToast('end', {});
+    expect(end.title).toBe('Challenge complete!');
+    expect(end.subtitle).toBeUndefined();
+  });
+
+  it('omits the contributors key entirely when there is no contributor data', () => {
+    expect('contributors' in buildChallengeToast('end', { zoneLabel: 'Active', requiredCount: 1, actualCount: 1 })).toBe(false);
+    expect('contributors' in buildChallengeToast('start', { zoneLabel: 'Active', requiredCount: 1 })).toBe(false);
+  });
+
+  describe('contributors (§5B)', () => {
+    it('cycle success: the rider is the sole contributor, with avatar + name', () => {
+      const toast = buildChallengeToast('end', {
+        type: 'cycle',
+        rider: { id: 'user_2', name: 'User_2' },
+      });
+      expect(toast.variant).toBe('success');
+      expect(toast.contributors).toEqual([
+        { id: 'user_2', name: 'User_2', avatarUrl: '/api/v1/static/img/users/user_2' },
+      ]);
+    });
+
+    it('cycle success: resolves the rider name when the snapshot lacks one', () => {
+      const toast = buildChallengeToast(
+        'end',
+        { type: 'cycle', rider: { id: 'user_2' } },
+        { resolveUserName: (id) => (id === 'user_2' ? 'User_2' : null) }
+      );
+      expect(toast.contributors).toEqual([
+        { id: 'user_2', name: 'User_2', avatarUrl: '/api/v1/static/img/users/user_2' },
+      ]);
+    });
+
+    it('cycle success with no rider: no contributors key', () => {
+      const toast = buildChallengeToast('end', { type: 'cycle', rider: null });
+      expect('contributors' in toast).toBe(false);
+    });
+
+    it('HR success: every metUser is a contributor, names resolved', () => {
+      const toast = buildChallengeToast(
+        'end',
+        { zoneLabel: 'Active', requiredCount: 2, actualCount: 2, metUsers: ['user_2', 'user_5'] },
+        { resolveUserName: (id) => ({ user_2: 'User_2', user_5: 'User_5' }[id] || null) }
+      );
+      expect(toast.title).toBe('User_2 & User_5 reached Active');
+      expect(toast.contributors).toEqual([
+        { id: 'user_2', name: 'User_2', avatarUrl: '/api/v1/static/img/users/user_2' },
+        { id: 'user_5', name: 'User_5', avatarUrl: '/api/v1/static/img/users/user_5' },
+      ]);
+    });
+
+    it('falls back to the id when no name can be resolved', () => {
+      const toast = buildChallengeToast('end', { metUsers: ['device:29199'] });
+      expect(toast.contributors).toEqual([
+        { id: 'device:29199', name: 'device:29199', avatarUrl: '/api/v1/static/img/users/device:29199' },
+      ]);
+    });
+
+    it('start events never carry contributors', () => {
+      const toast = buildChallengeToast('start', { type: 'cycle', rider: { id: 'user_2', name: 'User_2' } });
+      expect('contributors' in toast).toBe(false);
+    });
+  });
+});
+
+describe('buildChallengeToast — zone pill (issue 3)', () => {
+  it('attaches a colored zone descriptor on HR success when a color resolves', () => {
+    const toast = buildChallengeToast(
+      'end',
+      { zoneLabel: 'Warm', zone: 'warm', requiredCount: 2, actualCount: 2 },
+      { resolveZoneColor: (id) => (id === 'warm' ? '#facc15' : null) }
+    );
+    expect(toast.zone).toEqual({ id: 'warm', label: 'Warm', color: '#facc15' });
+  });
+
+  it('attaches the zone descriptor on HR start too', () => {
+    const toast = buildChallengeToast(
+      'start',
+      { zoneLabel: 'Hot', zone: 'hot', requiredCount: 1 },
+      { resolveZoneColor: (id) => (id === 'hot' ? '#f97316' : null) }
+    );
+    expect(toast.zone).toEqual({ id: 'hot', label: 'Hot', color: '#f97316' });
+  });
+
+  it('resolves color by normalized label when the zone id is absent', () => {
+    const toast = buildChallengeToast(
+      'end',
+      { zoneLabel: 'Fire', requiredCount: 1, actualCount: 1 },
+      { resolveZoneColor: (key) => (key === 'fire' ? '#ef4444' : null) }
+    );
+    expect(toast.zone).toEqual({ id: 'fire', label: 'Fire', color: '#ef4444' });
+  });
+
+  it('omits the zone key for cycle challenges (no HR zone pill)', () => {
+    const toast = buildChallengeToast(
+      'end',
+      { type: 'cycle', rider: { id: 'user_2', name: 'User_2' } },
+      { resolveZoneColor: () => '#facc15' }
+    );
+    expect('zone' in toast).toBe(false);
+  });
+
+  it('omits the zone key when no color resolves (no uncolored pill)', () => {
+    expect('zone' in buildChallengeToast(
+      'end',
+      { zoneLabel: 'Warm', zone: 'warm', requiredCount: 1, actualCount: 1 }
+    )).toBe(false);
+    expect('zone' in buildChallengeToast(
+      'end',
+      { zoneLabel: 'Warm', zone: 'warm', requiredCount: 1, actualCount: 1 },
+      { resolveZoneColor: () => null }
+    )).toBe(false);
+  });
+});
+
+describe('buildChallengeToast — cycle success', () => {
+  it('uses a phase-count subtitle and the rider as contributor', () => {
+    const toast = buildChallengeToast('end', {
+      type: 'cycle',
+      rider: { id: 'user_2', name: 'User_2' },
+      totalPhases: 4
+    }, { resolveUserName: (id) => (id === 'user_2' ? 'User_2' : id) });
+    expect(toast.variant).toBe('success');
+    expect(toast.title).toBe('User_2 rode 4 phases');
+    expect(toast.contributors).toEqual([
+      { id: 'user_2', name: 'User_2', avatarUrl: '/api/v1/static/img/users/user_2' }
+    ]);
+  });
+
+  it('singular phase wording', () => {
+    const toast = buildChallengeToast('end', {
+      type: 'cycle', rider: { id: 'user_2', name: 'User_2' }, totalPhases: 1
+    });
+    expect(toast.title).toBe('User_2 rode 1 phase');
+  });
+});
+
+describe('buildChallengeToast — step and stomp', () => {
+  it('describes the physical target and timer at start', () => {
+    expect(buildChallengeToast('start', {
+      type: 'step', metric: 'steps', requiredCount: 40, totalSeconds: 60,
+    })).toEqual({
+      icon: '👟', title: '40 steps challenge', subtitle: '60 seconds', variant: 'info',
+    });
+  });
+
+  it('credits the completion-time assignee without changing the physical count', () => {
+    const toast = buildChallengeToast('end', {
+      type: 'step', metric: 'stomps', requiredCount: 8, actualCount: 8,
+      metUsers: ['user_2'], totalSeconds: 30, remainingSeconds: 5,
+    }, { resolveUserName: () => 'User_2' });
+    expect(toast.title).toBe('User_2 completed 8 stomps');
+    expect(toast.subtitle).toBe('in 25s');
+    expect(toast.contributors).toEqual([
+      { id: 'user_2', name: 'User_2', avatarUrl: '/api/v1/static/img/users/user_2' },
+    ]);
+  });
+});

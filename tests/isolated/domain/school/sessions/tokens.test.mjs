@@ -7,7 +7,7 @@ import {
   isSchoolToken,
   mintToken,
   resolveTokenState,
-} from '#domains/school/sessions/tokens.mjs';
+} from "../../../../../modules/school/server/domain/sessions/tokens.mjs";
 
 const AT = '2026-07-27T10:00:00.000Z';
 const SID = 'ses_abc123';

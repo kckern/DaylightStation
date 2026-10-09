@@ -1,4 +1,4 @@
-import { FlexAllocator } from '#apps/feed/services/FlexAllocator.mjs';
+import { FlexAllocator } from "../../../../modules/feed/server/application/services/FlexAllocator.mjs";
 
 describe('FlexAllocator', () => {
   describe('distribute', () => {

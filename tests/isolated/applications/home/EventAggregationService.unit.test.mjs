@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { EventAggregationService } from '#apps/home/EventAggregationService.mjs';
-import { DataServiceEventFeedRepository } from '#adapters/home/DataServiceEventFeedRepository.mjs';
+import { EventAggregationService } from "../../../../modules/home/server/application/EventAggregationService.mjs";
+import { DataServiceEventFeedRepository } from "../../../../modules/home/server/adapters/DataServiceEventFeedRepository.mjs";
 
 describe('EventAggregationService', () => {
   let service;

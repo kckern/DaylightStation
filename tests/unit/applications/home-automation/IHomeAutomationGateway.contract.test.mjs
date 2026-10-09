@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isHomeAutomationGateway,
   createNoOpGateway,
-} from '#apps/home-automation/ports/IHomeAutomationGateway.mjs';
+} from "../../../../capabilities/home-control/server/application/ports/IHomeAutomationGateway.mjs";
 
 describe('IHomeAutomationGateway contract', () => {
   it('recognises a gateway with getStates, getHistory, and listAllStates', () => {

@@ -4,7 +4,7 @@ import { render } from '@testing-library/react';
 
 // Controllable background-music track.
 let currentTrack = null;
-vi.mock('../../../frontend/src/lib/Player/useBackgroundMusic.js', () => ({
+vi.mock("../../../modules/art/browser/music/useBackgroundMusic.js", () => ({
   useBackgroundMusic: () => ({ track: currentTrack }),
 }));
 

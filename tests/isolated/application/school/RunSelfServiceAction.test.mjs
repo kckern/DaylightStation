@@ -22,10 +22,10 @@
  * the ones where a use case throws.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { RunSelfServiceAction } from '#apps/school/usecases/RunSelfServiceAction.mjs';
-import { ResolveAccessCode } from '#apps/school/usecases/ResolveAccessCode.mjs';
-import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
-import { mintToken } from '#domains/school/sessions/tokens.mjs';
+import { RunSelfServiceAction } from "../../../../modules/school/server/application/usecases/RunSelfServiceAction.mjs";
+import { ResolveAccessCode } from "../../../../modules/school/server/application/usecases/ResolveAccessCode.mjs";
+import { CurriculumAccess } from "../../../../modules/school/server/application/CurriculumAccess.mjs";
+import { mintToken } from "../../../../modules/school/server/domain/sessions/tokens.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakeAssignmentStore, FakeTokenRegistry,
   fakeClock, seededRng, sequentialIds, silentLogger,

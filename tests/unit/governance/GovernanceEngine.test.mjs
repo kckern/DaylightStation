@@ -20,7 +20,7 @@ jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
 }));
 
 // Import GovernanceEngine after mocking
-const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
+const { GovernanceEngine } = await import("../../../modules/fitness/browser/hooks/fitness/GovernanceEngine.js");
 
 describe('GovernanceEngine', () => {
   describe('configure()', () => {

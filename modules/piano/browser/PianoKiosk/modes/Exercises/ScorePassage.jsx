@@ -1,7 +1,7 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '../../../../../../frontend/src/lib/logging/Logger.js';
-import { MusicXmlRenderer } from '../../../../../../frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.jsx';
-import { parseMusicXml } from '../../../../../../frontend/src/modules/MusicNotation/parseMusicXml.js';
+import { MusicXmlRenderer } from "../../../../../../capabilities/music-notation/browser/renderers/MusicXmlRenderer.jsx";
+import { parseMusicXml } from "../../../../../../capabilities/music-notation/browser/parseMusicXml.js";
 import NoteHighlightLayer from '../SheetMusic/NoteHighlightLayer.jsx';
 import { compileScoreExpectation } from '../../../performance/assessmentAttempt.js';
 import { excerptMusicXml, selectMusicXmlParts } from './scorePassageXml.js';

@@ -5,7 +5,7 @@ jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
   getLogger: () => ({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), sampled: jest.fn() })
 }));
 
-const { FitnessSimulationController } = await import('#frontend/modules/Fitness/nav/FitnessSimulationController.js');
+const { FitnessSimulationController } = await import("../../../modules/fitness/browser/nav/FitnessSimulationController.js");
 
 describe('FitnessSimulationController cycling', () => {
   let controller, sentMessages, mockSession;

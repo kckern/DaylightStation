@@ -1,7 +1,7 @@
 // tests/isolated/adapters/agents/MastraAdapter.transcript.test.mjs
 import { describe, it, expect } from 'vitest';
-import { MastraAdapter } from '../../../../backend/src/1_adapters/agents/MastraAdapter.mjs';
-import { AgentExecutionPolicy } from '#apps/agents/framework/AgentExecutionPolicy.mjs';
+import { MastraAdapter } from "../../../../capabilities/agent-runtime/server/adapters/MastraAdapter.mjs";
+import { AgentExecutionPolicy } from "../../../../capabilities/agent-runtime/server/application/framework/AgentExecutionPolicy.mjs";
 
 function createRuntime(deps = {}) {
   return new MastraAdapter({
@@ -13,7 +13,7 @@ function createRuntime(deps = {}) {
     }),
   });
 }
-import { AgentTranscriptFileStore } from '../../../../backend/src/1_adapters/agents/AgentTranscriptFileStore.mjs';
+import { AgentTranscriptFileStore } from "../../../../capabilities/agent-runtime/server/adapters/AgentTranscriptFileStore.mjs";
 import { promises as fsp } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -276,7 +276,7 @@ describe('MastraAdapter userId schema-strip + auto-inject', () => {
 
   it('schema-strip: stripUserIdFromSchema removes userId from properties + required', async () => {
     // Import the canonical helper from UserIdInjector (single source of truth).
-    const { stripUserIdFromSchema } = await import('../../../../backend/src/3_applications/agents/framework/decorators/UserIdInjector.mjs');
+    const { stripUserIdFromSchema } = await import("../../../../capabilities/agent-runtime/server/application/framework/decorators/UserIdInjector.mjs");
     const schema = {
       type: 'object',
       properties: {
@@ -295,7 +295,7 @@ describe('MastraAdapter userId schema-strip + auto-inject', () => {
   });
 
   it('schema-strip: handles missing required + missing properties gracefully', async () => {
-    const { stripUserIdFromSchema } = await import('../../../../backend/src/3_applications/agents/framework/decorators/UserIdInjector.mjs');
+    const { stripUserIdFromSchema } = await import("../../../../capabilities/agent-runtime/server/application/framework/decorators/UserIdInjector.mjs");
     expect(stripUserIdFromSchema(null)).toBe(null);
     expect(stripUserIdFromSchema({ type: 'object' })).toEqual({ type: 'object' });
     expect(stripUserIdFromSchema({ type: 'object', properties: {} })).toEqual({

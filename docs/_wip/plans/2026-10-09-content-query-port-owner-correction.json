@@ -1,0 +1,15 @@
+{
+  "status": "applied; selected candidate verification pending",
+  "moves": {
+    "modules/feed/server/application/ports/IContentQueryPort.mjs": "capabilities/content-catalog/server/application/ports/IContentQueryPort.mjs"
+  },
+  "reason": "The generic catalog search port has no Feed policy. ContentQueryService was its only runtime consumer; relocating the same class removes the neutral catalog dependency on the Feed application. Feed source adapters mention the contract in documentation only.",
+  "runtimeConsumersUpdated": [
+    "capabilities/content-catalog/server/application/ContentQueryService.mjs"
+  ],
+  "portSha256": "9562bfb538488b509ba0a8fd96d23f0a1c6d89aaf0737165d1e7688d99e5f63d",
+  "portByteIdentical": true,
+  "consumerChange": "one import literal only",
+  "publicEntry": "not needed; only consumer is internal to content-catalog",
+  "candidateRuntime": "pending"
+}

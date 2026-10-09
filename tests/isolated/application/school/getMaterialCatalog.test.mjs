@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { GetMaterialCatalog } from '#apps/school/GetMaterialCatalog.mjs';
+import { GetMaterialCatalog } from "../../../../modules/school/server/application/GetMaterialCatalog.mjs";
 import { NodeAsyncScheduler } from '#adapters/scheduling/NodeAsyncScheduler.mjs';
 
 let logger, errors, warns;

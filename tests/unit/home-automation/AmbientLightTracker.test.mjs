@@ -1,4 +1,4 @@
-import { AmbientLightTracker } from '../../../backend/src/2_domains/home-automation/AmbientLightTracker.mjs';
+import { AmbientLightTracker } from "../../../modules/home/server/domain/home-automation/AmbientLightTracker.mjs";
 
 describe('AmbientLightTracker', () => {
   it('tracks max across entities and reports changes', () => {

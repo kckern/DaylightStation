@@ -1,16 +1,16 @@
 import express from 'express';
-import { createAdminContentRouter } from './content.mjs';
+import { createAdminContentRouter } from "../../../../../../capabilities/content-catalog/server/api/admin/content.mjs";
 import { createAdminConfigRouter } from './config.mjs';
 import { createAdminImagesRouter } from './images.mjs';
 import { createEventBusRouter } from './eventbus.mjs';
-import { createAdminMediaRouter } from './media.mjs';
+import { createAdminMediaRouter } from "../../../../../../modules/media/server/api/admin/media.mjs";
 import { createAdminSchedulerRouter } from './scheduler.mjs';
 import { createAdminHouseholdRouter } from './household.mjs';
 import { createAdminIntegrationsRouter } from './integrations.mjs';
 import { createAdminAppsRouter } from './apps.mjs';
-import { createAdminArtRouter } from './art.mjs';
+import { createAdminArtRouter } from "../../../../../../modules/art/server/api/admin/art.mjs";
 import { createAdminNotificationsRouter } from './notifications.mjs';
-import { createAdminStateGatesRouter } from './state-gates.mjs';
+import { createAdminStateGatesRouter } from "../../../../../../capabilities/state-gates/server/api/admin/state-gates.mjs";
 import { createAdminDeviceRemoteRouter } from './device-remote.mjs';
 
 /**
@@ -168,16 +168,16 @@ export function createAdminRouter(config) {
   return router;
 }
 
-export { createAdminContentRouter } from './content.mjs';
+export { createAdminContentRouter } from "../../../../../../capabilities/content-catalog/server/api/admin/content.mjs";
 export { createAdminConfigRouter } from './config.mjs';
 export { createAdminImagesRouter } from './images.mjs';
-export { createAdminMediaRouter } from './media.mjs';
+export { createAdminMediaRouter } from "../../../../../../modules/media/server/api/admin/media.mjs";
 export { createEventBusRouter } from './eventbus.mjs';
 export { createAdminSchedulerRouter } from './scheduler.mjs';
 export { createAdminHouseholdRouter } from './household.mjs';
 export { createAdminIntegrationsRouter } from './integrations.mjs';
 export { createAdminAppsRouter } from './apps.mjs';
-export { createAdminArtRouter } from './art.mjs';
+export { createAdminArtRouter } from "../../../../../../modules/art/server/api/admin/art.mjs";
 export { createAdminNotificationsRouter } from './notifications.mjs';
-export { createAdminStateGatesRouter } from './state-gates.mjs';
+export { createAdminStateGatesRouter } from "../../../../../../capabilities/state-gates/server/api/admin/state-gates.mjs";
 export { createAdminDeviceRemoteRouter } from './device-remote.mjs';

@@ -1,5 +1,5 @@
-import { createSchoolRouter } from '#api/v1/routers/school.mjs';
-import { createSchoolApiServices } from '#composition/modules/schoolApi.mjs';
+import { createSchoolRouter } from "../../../modules/school/server/api/school.mjs";
+import { createSchoolApiServices } from "../../../modules/school/server/composition/schoolApi.mjs";
 
 /** Test composition mirroring the production School API service boundaries. */
 export function schoolRouterTestOptions(legacy = {}) {

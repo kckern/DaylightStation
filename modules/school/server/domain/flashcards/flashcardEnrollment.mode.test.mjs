@@ -1,0 +1,77 @@
+import { describe, expect, it, vi } from 'vitest';
+import { validateFlashcardEnrollment, isCardLadderPolicy, canonicalizeProgramPolicy } from "./index.mjs";
+import { createSchoolProgramEnrollmentValidators } from "../../application/SchoolProgramEnrollmentValidators.mjs";
+import { SetAssignments } from "../../application/usecases/SetAssignments.mjs";
+
+const DECK = 'language/korean/week-01-classroom';
+
+describe('flashcard enrollment policy.mode', () => {
+  it('defaults to fsrs and keeps existing FSRS policies unchanged', () => {
+    const { errors, enrollment } = validateFlashcardEnrollment({ programId: 'flashcards', deckId: 'biology/cells', policy: { minimumReviews: 2 } });
+    expect(errors).toEqual([]);
+    expect(enrollment.policy).toEqual({ mode: 'fsrs', minimumReviews: 2 });
+  });
+  it('accepts card-ladder inside policy', () => {
+    const { errors, enrollment } = validateFlashcardEnrollment({ programId: 'flashcards', deckId: DECK, policy: { mode: 'card-ladder' } });
+    expect(errors).toEqual([]);
+    expect(enrollment).toEqual({ programId: 'flashcards', corpusId: DECK, deckId: DECK, policy: { mode: 'card-ladder' } });
+  });
+  it('rejects an unknown mode and FSRS-only keys under card-ladder', () => {
+    expect(validateFlashcardEnrollment({ programId: 'flashcards', deckId: DECK, policy: { mode: 'leitner' } }).errors)
+      .toContain('policy.mode must be fsrs or card-ladder');
+    const { errors } = validateFlashcardEnrollment({ programId: 'flashcards', deckId: DECK, policy: { mode: 'card-ladder', newCardLimit: 5, masteryPercent: 80, minimumReviews: 3 } });
+    expect(errors).toEqual([
+      'policy.newCardLimit is not used by card-ladder',
+      'policy.masteryPercent is not used by card-ladder',
+      'policy.minimumReviews is not used by card-ladder',
+    ]);
+  });
+  it('keeps an optional display title', () => {
+    const { enrollment } = validateFlashcardEnrollment({ programId: 'flashcards', deckId: DECK, title: '  Korean words ', policy: { mode: 'card-ladder' } });
+    expect(enrollment.title).toBe('Korean words');
+    expect(validateFlashcardEnrollment({ programId: 'flashcards', deckId: DECK, title: 7 }).errors).toContain('title must be a non-empty string when present');
+  });
+  it('policy.mode survives validate → SetAssignments → reload', async () => {
+    const stored = [];
+    const assignments = { put: vi.fn(async (record) => { stored.push(structuredClone(record)); return record; }), get: vi.fn(async () => stored.at(-1) ?? null) };
+    const programValidators = createSchoolProgramEnrollmentValidators({ flashcardStudyService: { getDeck: async () => ({ id: DECK }) } });
+    const useCase = new SetAssignments({
+      assignments, grownUps: { assert: vi.fn() }, programValidators,
+      clock: () => new Date('2026-09-22T12:00:00.000Z'), logger: { info: vi.fn(), warn: vi.fn() },
+    });
+    const raw = { programId: 'flashcards', deckId: DECK, title: 'Korean words', policy: { mode: 'card-ladder' }, schedule: { daysOfWeek: [1, 2, 3, 4, 5] } };
+    await useCase.execute({ learnerId: 'learner-1', assignedBy: 'parent', programs: [raw] });
+    const reloaded = (await assignments.get('learner-1')).programs[0];
+    expect(reloaded).toMatchObject({ policy: { mode: 'card-ladder' }, title: 'Korean words', schedule: { daysOfWeek: [1, 2, 3, 4, 5] } });
+    // A grown-up saving again (the round trip that used to delete top-level keys) keeps it.
+    await useCase.execute({ learnerId: 'learner-1', assignedBy: 'parent', programs: [reloaded] });
+    expect((await assignments.get('learner-1')).programs[0].policy.mode).toBe('card-ladder');
+  });
+});
+
+describe('the pre-rename word-ladder mode', () => {
+  it('validates as card-ladder, so a grown-up save writes the canonical value', () => {
+    const { errors, enrollment } = validateFlashcardEnrollment({ programId: 'flashcards', deckId: DECK, policy: { mode: 'word-ladder' } });
+    expect(errors).toEqual([]);
+    expect(enrollment.policy).toEqual({ mode: 'card-ladder' });
+    expect(validateFlashcardEnrollment({ programId: 'flashcards', deckId: DECK, policy: { mode: 'word-ladder', newCardLimit: 3 } }).errors)
+      .toEqual(['policy.newCardLimit is not used by card-ladder']);
+  });
+  it('isCardLadderPolicy and canonicalizeProgramPolicy accept either name', () => {
+    expect(isCardLadderPolicy({ mode: 'word-ladder' })).toBe(true);
+    expect(isCardLadderPolicy({ mode: 'card-ladder' })).toBe(true);
+    expect(isCardLadderPolicy({ mode: 'fsrs' })).toBe(false);
+    expect(isCardLadderPolicy(undefined)).toBe(false);
+    const row = { programId: 'flashcards', deckId: DECK, policy: { mode: 'word-ladder', schedule: 1 } };
+    expect(canonicalizeProgramPolicy(row)).toEqual({ ...row, policy: { mode: 'card-ladder', schedule: 1 } });
+    expect(row.policy.mode).toBe('word-ladder');
+    const fsrs = { programId: 'flashcards', policy: { mode: 'fsrs' } };
+    expect(canonicalizeProgramPolicy(fsrs)).toBe(fsrs);
+  });
+});
+
+it('preserves a linked assessment unit and language subject in card-ladder enrollment', () => {
+ const result = validateFlashcardEnrollment({ programId:'flashcards', deckId:DECK, subject:'language', linkedUnitId:'korean-3-2.lesson-01', policy:{mode:'card-ladder'} });
+ expect(result.enrollment).toMatchObject({ linkedUnitId:'korean-3-2.lesson-01', subject:'language' });
+ expect(validateFlashcardEnrollment({programId:'flashcards',deckId:DECK,linkedUnitId:'bad unit',policy:{mode:'card-ladder'}}).errors.join(' ')).toMatch(/linkedUnitId/);
+});

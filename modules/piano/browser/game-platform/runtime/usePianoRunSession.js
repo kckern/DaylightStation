@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { createEphemeralLocalAuthority } from '../../../../../frontend/src/modules/Gaming/platform/authority/createEphemeralLocalAuthority.js';
+import { createEphemeralLocalAuthority } from "../../../../../capabilities/gaming/browser/platform/authority/createEphemeralLocalAuthority.js";
 import { pianoRunRuleModule } from './pianoRunRuleModule.js';
 
 const ACTOR_ID = 'local-player';

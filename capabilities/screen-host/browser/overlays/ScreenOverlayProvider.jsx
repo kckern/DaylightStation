@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { getActionBus } from '../input/ActionBus.js';
 import TouchChrome from './TouchChrome.jsx';
-import { useHasMenuNavigationContext, useMenuNavigationContext } from '../../../../frontend/src/context/useMenuNavigationContext.js';
+import { useHasMenuNavigationContext, useMenuNavigationContext } from "../navigation/useMenuNavigationContext.js";
 import { BROWSE_NAV_TYPES } from '../screenActivity.js';
 import getLogger from '../../../../frontend/src/lib/logging/Logger.js';
 import './ScreenOverlayProvider.css';

@@ -6,8 +6,8 @@
 // path down to the mutation (spreads) or by cloning the whole score for
 // larger structural edits.
 import { makeNote, makeRest } from './note.js';
-import { DIVISIONS, decomposeDuration, noteDivisions } from '../../../../../../../frontend/src/modules/MusicNotation/duration.js';
-import { serializeMusicXml } from '../../../../../../../frontend/src/modules/MusicNotation/serializeMusicXml.js';
+import { DIVISIONS, decomposeDuration, noteDivisions } from "../../../../../../../capabilities/music-notation/browser/duration.js";
+import { serializeMusicXml } from "../../../../../../../capabilities/music-notation/browser/serializeMusicXml.js";
 
 /** Deep clone a score for structural edits. structuredClone handles the plain
  *  data shapes we use (no functions/DOM). */

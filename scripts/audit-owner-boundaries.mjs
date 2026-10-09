@@ -19,7 +19,8 @@ const SKIP = new Set(['node_modules', '.git', '.claude', '.claire', '.worktrees'
 // Each entry is explicitly reviewed. No filename wildcard or public-directory
 // exemption: add only the actual independent facets an owner publishes.
 const ownerOf = (file) => /^(modules|capabilities)\/([^/]+)\//.exec(file)?.slice(1).join('/') ?? null;
-const isTest = (file) => /\.(?:test|spec|case)\.(?:mjs|js|cjs|jsx)$/.test(file);
+const isTestHelper = (file) => /^tests\/(_lib|_fixtures|_infrastructure)\//.test(file);
+const isTest = (file) => isTestHelper(file) || /\.(?:test|spec|case)\.(?:mjs|js|cjs|jsx)$/.test(file);
 const isSource = (file) => ROOTS.includes(file.split('/')[0]) && EXTENSIONS.has(extname(file))
   && !file.split('/').slice(0, -1).some((part) => SKIP.has(part));
 
@@ -44,6 +45,39 @@ export function browserAliasesFromConfig(source, projectRoot) {
   return aliases;
 }
 
+/** Strongly connected owners are cyclic even when each imported leaf is public. */
+export function ownerCycleFindings(edges) {
+  const graph = new Map();
+  for (const edge of edges) {
+    if (!graph.has(edge.from)) graph.set(edge.from, new Set());
+    if (!graph.has(edge.to)) graph.set(edge.to, new Set());
+    graph.get(edge.from).add(edge.to);
+  }
+  let next = 0;
+  const indices = new Map(), low = new Map(), stack = [], active = new Set(), components = [];
+  function visit(owner) {
+    indices.set(owner, next); low.set(owner, next++); stack.push(owner); active.add(owner);
+    for (const dependency of [...graph.get(owner)].sort()) {
+      if (!indices.has(dependency)) { visit(dependency); low.set(owner, Math.min(low.get(owner), low.get(dependency))); }
+      else if (active.has(dependency)) low.set(owner, Math.min(low.get(owner), indices.get(dependency)));
+    }
+    if (low.get(owner) !== indices.get(owner)) return;
+    const component = [];
+    let member;
+    do { member = stack.pop(); active.delete(member); component.push(member); } while (member !== owner);
+    if (component.length > 1) components.push(component.sort());
+  }
+  for (const owner of [...graph.keys()].sort()) if (!indices.has(owner)) visit(owner);
+  return components.sort((a, b) => a[0].localeCompare(b[0])).map((owners) => {
+    const members = new Set(owners);
+    const cycleEdges = edges.filter(edge => members.has(edge.from) && members.has(edge.to))
+      .sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.target.localeCompare(b.target));
+    const first = cycleEdges[0];
+    return { file: first.file, line: first.line, specifier: owners.join(', '), target: 'owner graph',
+      reason: 'owner dependency cycle: ' + owners.join(', '), cycleOwners: owners, cycleEdges };
+  });
+}
+
 export function auditOwnerBoundaries(files, {
   projectRoot = ROOT, imports, backendImports,
   readFile = (file) => readFileSync(file, 'utf8'),
@@ -58,7 +92,7 @@ export function auditOwnerBoundaries(files, {
     catch (error) { if (error.code !== 'ENOENT') throw error; }
     browserAliases = browserAliasesFromConfig(config, projectRoot);
   }
-  const findings = [];
+  const findings = [], ownerEdges = [];
   for (const file of files) {
     const source = relative(projectRoot, file).split('\\').join('/');
     if (isTest(source)) continue;
@@ -79,14 +113,21 @@ export function auditOwnerBoundaries(files, {
       }
       const target = relative(projectRoot, resolved.file).split('\\').join('/');
       const to = ownerOf(target);
+      if (from && to && from !== to) ownerEdges.push({ from, to, file: source, line: node.loc?.start.line ?? 1, specifier, target });
+      if (isTestHelper(target)) {
+        findings.push({ file: source, line: node.loc?.start.line ?? 1, specifier, target, reason: 'production source cannot import a test helper' });
+        return;
+      }
       if (from === 'capabilities/screen-host' && target.startsWith('frontend/src/composition/')) {
         findings.push({ file: source, line: node.loc?.start.line ?? 1, specifier, target,
           reason: 'screen-host cannot depend on installed composition' });
         return;
       }
       if (!to || from === to) return;
-      const reason = from === 'capabilities/screen-host' && to.startsWith('modules/')
-        ? 'screen-host cannot depend on installed products'
+      const reason = from?.startsWith('capabilities/') && to.startsWith('modules/')
+        ? from === 'capabilities/screen-host'
+          ? 'screen-host cannot depend on installed products'
+          : 'capability cannot depend on application modules, including public entries'
         : !publicEntries.has(target) ? 'cross-owner import targets a private implementation' : null;
       if (reason) findings.push({ file: source, line: node.loc?.start.line ?? 1, specifier, target, reason });
     }
@@ -104,7 +145,7 @@ export function auditOwnerBoundaries(files, {
       },
     });
   }
-  return findings;
+  return [...findings, ...ownerCycleFindings(ownerEdges)];
 }
 
 function* walk(directory) {
@@ -137,8 +178,15 @@ function main() {
       sourceInventory: new Set(all.map((file) => join(ROOT, file))) };
   } else files = ROOTS.flatMap((root) => [...walk(join(ROOT, root))]);
   const findings = auditOwnerBoundaries(files, options);
-  for (const f of findings) console.error(`${f.file}:${f.line} ${f.specifier} -> ${f.target} — ${f.reason}`);
-  if (findings.length) { console.error(`Owner boundary gate FAILED — ${findings.length} private owner edge(s).`); process.exitCode = 1; }
+  for (const f of findings) {
+    console.error(`${f.file}:${f.line} ${f.specifier} -> ${f.target} — ${f.reason}`);
+    for (const edge of f.cycleEdges ?? []) console.error(`  ${edge.from} -> ${edge.to}: ${edge.file}:${edge.line} ${edge.specifier} -> ${edge.target}`);
+  }
+  if (findings.length) {
+    const cycles = findings.filter(f => f.cycleOwners).length;
+    console.error(`Owner boundary gate FAILED — ${findings.length - cycles} private owner edge(s)${cycles ? ', ' + cycles + ' owner cycle(s)' : ''}.`);
+    process.exitCode = 1;
+  }
   else console.log(`Owner boundary gate OK — ${files.length} ${staged ? 'staged ' : ''}source files inspected without evaluation.`);
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();

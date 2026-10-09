@@ -13,7 +13,7 @@ import {
   resolveDisplayName,
   resolveAllDisplayNames,
   getPriorityChain,
-} from '../../../../frontend/src/hooks/fitness/DisplayNameResolver.js';
+} from "../../../../modules/fitness/browser/hooks/fitness/DisplayNameResolver.js";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TEST DATA FACTORIES

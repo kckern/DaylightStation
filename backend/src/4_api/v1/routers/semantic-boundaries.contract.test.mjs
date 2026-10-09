@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createLocalRouter } from './local.mjs';
-import { createDisplayRouter } from './display.mjs';
-import { createInfoRouter } from './info.mjs';
-import { createFeedRouter } from './feed.mjs';
-import { createArtRouter } from './art.mjs';
+import { createLocalRouter } from "../../../../../modules/media/server/api/local.mjs";
+import { createDisplayRouter } from "../../../../../capabilities/content-catalog/server/api/display.mjs";
+import { createInfoRouter } from "../../../../../capabilities/content-catalog/server/api/info.mjs";
+import { createFeedRouter } from "../../../../../modules/feed/server/api/feed.mjs";
+import { createArtRouter } from "../../../../../modules/art/server/api/art.mjs";
 
 const mounted = (path, router, { json = false } = {}) => {
   const app = express();

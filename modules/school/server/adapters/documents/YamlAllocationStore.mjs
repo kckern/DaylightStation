@@ -1,0 +1,1078 @@
+/**
+ * YAML persistence for OMR allocation records (spec §5.4), mirroring
+ * `YamlPrintDocumentRepository`'s directory-root convention (same `directory`
+ * as documents/cards/forms) and `YamlRemediationSessionRepository`'s
+ * write-chain + injected-`io` conventions.
+ *
+ *   <directory>/cards/<cardId>.yml           (one file per PHYSICAL CARD,
+ *                                              holding that card's full
+ *                                              records array, oldest first)
+ *
+ * Persisted record shape (spec §5.4):
+ *   { recordId, cardId, rowRange: {start, end}, documentId, rev, seed,
+ *     variant, learnerId?, renderedAt, status, rowItems? }
+ *
+ * `rowItems` (F4 review fix — "bank-select scan integrity vs mutable external
+ * banks"): `[{row, itemId, itemType}]`, the row→item mapping `planRows`
+ * actually resolved AT RENDER TIME, straight off `RenderPrintDocument`'s own
+ * `#allocateCard` (which already computes it to derive `rowRange` in the
+ * first place — this is a pure passthrough, never re-derived here). A
+ * bank-select block's selection formula (`resolveBankSelect`,
+ * `RenderPrintDocument.mjs`) depends on `bank.items.length` — if an external
+ * bank file gains or loses an item AFTER a card is printed, re-deriving the
+ * mapping at scan time (`ResolveCardScan`'s whole reuse-the-render-seam
+ * design) would silently resolve a DIFFERENT item than what is physically
+ * printed on the card. `rowItems` is the durable record of what was actually
+ * printed, so a scan can detect that drift instead of grading against a
+ * mapping the paper doesn't carry. Optional: absent on any record allocated
+ * before this field existed — `ResolveCardScan` keeps trusting pure
+ * re-derivation for those, exactly as it always has.
+ *
+ * `recordId` is deterministic — `<documentId>@<rev>:v<variant>:<start>-<end>`
+ * — so the same render context always names the same record.
+ *
+ * The domain (`2_domains/school/documents/allocation.mjs`) is pure and
+ * speaks a FLAT record shape (`{cardId, startRow, endRow, documentId,
+ * learnerId?, status}`) for `checkCollision`/`supersedes`, and a nested
+ * `{start,end}` shape for `rangesOverlap`. This store is the boundary that
+ * adapts between the domain's shapes and the persisted `rowRange` shape.
+ *
+ * SUPERSEDE SCOPE (Task 1 report's flagged judgment call): `supersedes` is
+ * called with only THIS CARD's own records, so a reprint only ever
+ * supersedes a prior record on the SAME card. A reprint issued against a
+ * DIFFERENT card (e.g. the original card was lost) leaves the original
+ * card's record `live` forever — it simply strands as an uncollected
+ * allocation until someone explicitly `release`s that card. This is simpler
+ * and safe: the alternative (a cross-card supersede) would let a record on
+ * card A silently go stale because of an action taken against card B, with
+ * no way for someone holding card A to discover why a scan of it no longer
+ * resolves.
+ *
+ * COLLISION vs SUPERSEDE ordering: a candidate allocation first checks
+ * whether it supersedes a prior live `(documentId, learnerId)` record on
+ * this card; if so, that prior record is EXCLUDED from the collision check
+ * (a same-range reprint must not collide with the very record it replaces).
+ * Only then is the remaining live-record set checked for a row-range
+ * collision (spec §5.4's "regardless of learner" rule).
+ */
+import path from 'node:path';
+import { loadYamlFromPath, readDirectory, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
+import { DomainInvariantError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
+import {
+  generateCardId, checkCollision, supersedes, rangesOverlap, ALLOCATION_STATUSES,
+} from "../../domain/documents/allocation.mjs";
+import {
+  ANSWER_SHEET_IDENTICON_VERSION, mintDistinctCardId,
+} from "../../domain/documents/answerSheetIdentity.mjs";
+
+const CARD_ID_RE = /^\d{7}$/;
+const MAX_CARD_ID_ATTEMPTS = 20;
+/** Legal `updateStatus`/`allocate`-supersede targets — always FROM `live` (spec §5.4). */
+const TERMINAL_STATUSES = new Set(['satisfied', 'released', 'superseded']);
+
+export class YamlAllocationStore {
+  #directory; #rng; #now; #io; #timeZone; #logger; #writeChain = Promise.resolve();
+
+  constructor({
+    directory, rng = Math.random, now = () => new Date().toISOString(), io = {}, timeZone = 'UTC', logger = null,
+  } = {}) {
+    if (typeof directory !== 'string' || directory.trim().length === 0) {
+      throw new Error('YamlAllocationStore requires a non-empty directory');
+    }
+    this.#directory = directory;
+    this.#rng = rng;
+    this.#now = now;
+    this.#timeZone = timeZone;
+    this.#logger = logger;
+    this.#io = {
+      load: io.load ?? loadYamlFromPath,
+      save: io.save ?? saveYamlToPathAtomic,
+      list: io.list ?? listAllocationCardIds,
+    };
+  }
+
+  /**
+   * @param {{cardId?: string, request: {documentId:string, rev:string,
+   *   seed:number, variant?:number, learnerId?:string, rowRange:{start:number,end:number},
+   *   rowItems?: Array<{row:number, itemId:string, itemType:string}>}}} args
+   * @returns {Promise<object>} the persisted record
+   */
+  async allocate({ cardId, request } = {}) {
+    assertRequest(request);
+    if (cardId !== undefined) assertCardId(cardId);
+    return this.#enqueue(async () => {
+      let resolvedCardId = cardId;
+      let existing;
+      if (resolvedCardId !== undefined) {
+        existing = this.#load(resolvedCardId);
+      } else {
+        ({ resolvedCardId, existing } = this.#generateFreshCardId());
+      }
+
+      const priorLive = supersedes(existing, {
+        documentId: request.documentId, learnerId: request.learnerId ?? null,
+      });
+      const recordId = buildRecordId(request);
+
+      // Identical render context re-requested (same documentId/rev/variant/rowRange as
+      // the prior live record for this learner) names the SAME recordId — not a new
+      // allocation to append, just the identical artifact reprinted. Mirrors
+      // `IFormMapStore`'s "reprint reuses the artifact id -> resolves to the identical
+      // record" idempotency: return the existing live record unchanged rather than
+      // writing a second entry that would collide on recordId.
+      if (priorLive && priorLive.recordId === recordId) {
+        return structuredClone(priorLive);
+      }
+      // A recordId collision against an existing record that is NOT the
+      // supersede target: when that record is `satisfied` and the request is
+      // the byte-identical render context (same seed/learner/row mapping),
+      // this is a REPRINT OF A TAKEN QUIZ — the teacher pulling the sheet or
+      // its answer key back up to grade — and must return the record
+      // unchanged, exactly like the live-reprint shortcut above. (Before this
+      // branch existed, scanning a card poisoned its own print URL: the
+      // satisfied record's id clashed here and every re-render 500'd.)
+      // Anything else — a released/superseded record, or a same-id request
+      // whose context actually differs — is refused rather than allowed to
+      // create an ambiguous duplicate.
+      const idClash = existing.find((record) => record.recordId === recordId);
+      if (idClash) {
+        if (idClash.status === 'satisfied') {
+          if (isIdenticalReprint(idClash, request)) return structuredClone(idClash);
+          throw new DomainInvariantError(
+            `allocation recordId "${recordId}" exists satisfied on card ${resolvedCardId} but the request `
+              + `is not an identical reprint (${reprintMismatchReason(idClash, request)})`,
+            { code: 'ALLOCATION_RECORD_ID_CONFLICT', details: { cardId: resolvedCardId, recordId } },
+          );
+        }
+        throw new DomainInvariantError(
+          `allocation recordId "${recordId}" already exists on card ${resolvedCardId} with status `
+            + `"${idClash.status}" (not the record being superseded)`,
+          { code: 'ALLOCATION_RECORD_ID_CONFLICT', details: { cardId: resolvedCardId, recordId } },
+        );
+      }
+
+      const collisionPool = priorLive
+        ? existing.filter((record) => record.recordId !== priorLive.recordId)
+        : existing;
+      const collisions = checkCollision(toFlatRecords(collisionPool), {
+        cardId: resolvedCardId, startRow: request.rowRange.start, endRow: request.rowRange.end,
+      });
+      if (collisions.length > 0) {
+        throw new DomainInvariantError(
+          `allocation rows ${request.rowRange.start}-${request.rowRange.end} collide with `
+            + `${collisions.length} live record(s) on card ${resolvedCardId}`,
+          {
+            code: 'ALLOCATION_COLLISION',
+            details: { cardId: resolvedCardId, collidingRecordIds: collisions.map((record) => record.recordId) },
+          },
+        );
+      }
+
+      const record = {
+        recordId,
+        cardId: resolvedCardId,
+        rowRange: { start: request.rowRange.start, end: request.rowRange.end },
+        documentId: request.documentId,
+        rev: request.rev,
+        seed: request.seed,
+        variant: request.variant ?? 0,
+        ...(request.learnerId != null ? { learnerId: request.learnerId } : {}),
+        ...(request.sessionId != null ? { sessionId: request.sessionId } : {}),
+        ...(request.assessmentItemIds ? { assessmentItemIds: [...request.assessmentItemIds] } : {}),
+        ...(Array.isArray(request.rowItems) ? { rowItems: request.rowItems } : {}),
+        // Optional immutable lesson ownership for a composed worksheet. It
+        // is deliberately stored with the allocation, not inferred from a
+        // mutable course/agenda later, so an old OMR card always resolves to
+        // the lesson sessions that were actually printed on it.
+        ...(Array.isArray(request.sections) ? { sections: request.sections } : {}),
+        renderedAt: this.#now(),
+        generation: request.generation ?? cardMetadata(existing).generation ?? 1,
+        predecessorCardId: request.predecessorCardId ?? cardMetadata(existing).predecessorCardId ?? null,
+        // NOTE: `cardOrigin` (see `allocateNext`'s `markDelivered` gate) is
+        // deliberately NOT set on this path -- `allocate` is an explicit-cardId
+        // call site (reprints, admin recovery, tests), not the monotonic
+        // rollover/reuse chain, so it has no "which decision produced this
+        // row" to record. A record built here reads `cardOrigin: undefined`,
+        // which `isRolloverDelivery` (used by `markDelivered` and
+        // `confirmHistoricalDelivery`) treats as a LEGACY record and falls
+        // back to inferring rollover from a truthy `predecessorCardId` --
+        // NOT a fail-closed no-op. That fallback is required, not incidental:
+        // `confirmHistoricalDelivery` exists specifically to backfill
+        // deliveries whose allocation predates the delivery fields, and its
+        // only caller (`RecoverMisattributedWorksheet`) shapes records via
+        // this exact `allocate()` path, which never stamps `cardOrigin`. If
+        // this path is ever wired into the rollover chain with an explicit,
+        // non-legacy caller, it should stamp its own `cardOrigin` so the
+        // strict signal (not the coarser legacy inference) governs it.
+        identiconVersion: request.identiconVersion ?? cardMetadata(existing).identiconVersion
+          ?? ANSWER_SHEET_IDENTICON_VERSION,
+        deliveryState: request.deliveryState ?? 'pending',
+        deliveredAt: request.deliveredAt ?? null,
+        cardCapacity: request.cardCapacity ?? cardMetadata(existing).cardCapacity ?? 50,
+        status: 'live',
+      };
+
+      const updated = existing.map((prior) => (
+        priorLive && prior.recordId === priorLive.recordId ? { ...prior, status: 'superseded' } : prior
+      ));
+      updated.push(record);
+      this.#save(resolvedCardId, updated);
+      return structuredClone(record);
+    });
+  }
+
+  /**
+   * Atomically chooses the learner's current monotonic answer sheet and
+   * reserves a whole worksheet on it. `request` is expressed at rows 1..N;
+   * this operation shifts its row-bearing fields to the selected tail while
+   * it still owns the store's single mutation queue.
+   */
+  async allocateNext({ request, policy = {} } = {}) {
+    assertRequest(request);
+    if (request.rowRange.start !== 1) {
+      throw new Error('YamlAllocationStore.allocateNext request must be planned from row 1');
+    }
+    const learnerId = request.learnerId;
+    if (typeof learnerId !== 'string' || !learnerId.trim()) {
+      throw new Error('YamlAllocationStore.allocateNext requires request.learnerId');
+    }
+    const capacity = policy.capacity ?? 50;
+    const reuse = policy.reuse ?? 'until_full';
+    if (!Number.isInteger(capacity) || capacity < 1 || capacity > 50) {
+      throw new Error('YamlAllocationStore.allocateNext capacity must be 1..50');
+    }
+    if (!['never', 'after_scan', 'school_day', 'until_full'].includes(reuse)) {
+      throw new Error(`YamlAllocationStore.allocateNext: unknown reuse policy "${reuse}"`);
+    }
+    const rowsNeeded = request.rowRange.end;
+    if (rowsNeeded > capacity) {
+      throw new DomainInvariantError(
+        `worksheet requires ${rowsNeeded} rows but answer sheets hold ${capacity}`,
+        { code: 'ALLOCATION_WORKSHEET_TOO_LARGE', details: { rowsNeeded, capacity } },
+      );
+    }
+
+    return this.#enqueue(async () => {
+      const cardIds = [...this.#io.list(path.join(this.#directory, 'cards'))];
+      const cards = cardIds.map((cardId) => ({ cardId, records: this.#load(cardId) }));
+      const learnerCards = cards.filter(({ records }) => !cardRetired(records)
+        && records.some((record) => (
+          record.learnerId === learnerId && record.deliveryState !== 'cancelled'
+        )));
+      const head = monotonicHead(learnerCards);
+
+      // A racing duplicate issue of the same immutable render context must
+      // converge on the already-reserved record rather than consume a second
+      // row window.
+      const duplicate = cards.flatMap(({ records }) => records).find((record) => (
+        record.status === 'live'
+        && record.learnerId === learnerId
+        && record.documentId === request.documentId
+        && record.rev === request.rev
+        && record.seed === request.seed
+        && record.variant === (request.variant ?? 0)
+      ));
+      if (duplicate) return { record: structuredClone(duplicate), firstUse: false, duplicate: true };
+
+      const headLearnerRecords = head?.records.filter((record) => (
+        record.learnerId === learnerId && record.deliveryState !== 'cancelled'
+      )) ?? [];
+      const policyAllowsReuse = reuse === 'until_full'
+        || (reuse === 'after_scan'
+          && !headLearnerRecords.some((record) => record.status === 'live'))
+        || (reuse === 'school_day'
+          && headLearnerRecords.some((record) => (
+            localDateKey(record.renderedAt, this.#timeZone)
+              === localDateKey(this.#now(), this.#timeZone)
+          )));
+      const canReuse = policyAllowsReuse && head && !cardHasIssuedSuccessor(head)
+        && head.occupiedThrough + rowsNeeded <= capacity;
+      let cardId;
+      let existing;
+      let startRow;
+      let generation;
+      let predecessorCardId = null;
+      let firstUse = false;
+
+      if (canReuse) {
+        ({ cardId, records: existing } = head);
+        startRow = head.occupiedThrough + 1;
+        generation = Math.max(1, head.generation);
+        predecessorCardId = cardMetadata(existing).predecessorCardId ?? null;
+      } else {
+        predecessorCardId = head?.cardId ?? null;
+        const activeCardIds = cards
+          .filter(({ records }) => records.some((record) => (
+            record.status === 'live' && record.deliveryState !== 'cancelled'
+          )))
+          .map(({ cardId: activeCardId }) => activeCardId);
+        cardId = mintDistinctCardId({
+          rng: this.#rng,
+          predecessorCardId,
+          activeCardIds,
+          usedCardIds: cardIds,
+        });
+        existing = [];
+        startRow = 1;
+        generation = (head?.generation ?? 0) + 1;
+        firstUse = true;
+      }
+
+      const shifted = shiftRequestRows(request, startRow - 1);
+      const record = allocationRecord({
+        cardId,
+        request: shifted,
+        renderedAt: this.#now(),
+        generation,
+        predecessorCardId,
+        // WHICH DECISION PRODUCED THIS ROW, recorded when it is made.
+        // `predecessorCardId` cannot answer this: the reuse branch inherits it
+        // from the card's first record, so a truthy value means "this card was
+        // once rolled over to", not "this delivery is that rollover".
+        cardOrigin: firstUse ? (predecessorCardId ? 'rollover' : 'first') : 'reuse',
+        identiconVersion: ANSWER_SHEET_IDENTICON_VERSION,
+        cardCapacity: capacity,
+      });
+      // A retry of the SAME render context after a cancelled-before-delivery
+      // failure lands on the same rows and therefore the same recordId. Every
+      // id-keyed method on this store (`markDelivered`, `updateStatus`, ...)
+      // takes the first record with that id, so appending would leave the
+      // dead record shadowing the live one. Re-arm it in place instead: the
+      // record keeps its position (and any `rowQuarantines` metadata a first
+      // record carries) and comes back `live`/`pending` for this delivery.
+      const rearmIndex = existing.findIndex((entry) => (
+        entry.recordId === record.recordId && entry.deliveryState === 'cancelled'
+      ));
+      if (rearmIndex >= 0) existing[rearmIndex] = { ...existing[rearmIndex], ...record };
+      else existing.push(record);
+      this.#save(cardId, existing);
+      if (firstUse) {
+        this.#logger?.info?.('school.answer-sheet.rollover', {
+          learnerId,
+          predecessorCardId,
+          successorCardId: cardId,
+          generation,
+          predecessorOccupiedThrough: head?.occupiedThrough ?? 0,
+          skippedTail: head && head.occupiedThrough < capacity
+            ? { start: head.occupiedThrough + 1, end: capacity }
+            : null,
+          rows: record.rowRange,
+        });
+      }
+      return { record: structuredClone(record), firstUse, duplicate: false };
+    });
+  }
+
+  /** Confirm that a pending reservation really reached physical paper. */
+  async markDelivered({ cardId, recordId, at = this.#now() } = {}) {
+    assertCardId(cardId);
+    return this.#enqueue(async () => {
+      const records = this.#load(cardId);
+      const record = records.find((entry) => entry.recordId === recordId);
+      if (!record) throw new EntityNotFoundError('AllocationRecord', recordId, { details: { cardId } });
+      if (record.deliveryState === 'delivered') return structuredClone(record);
+      if (record.status !== 'live' || record.deliveryState === 'cancelled') {
+        throw new DomainInvariantError(`cannot deliver ${record.status}/${record.deliveryState} allocation ${recordId}`, {
+          code: 'ALLOCATION_DELIVERY_ILLEGAL_TRANSITION',
+        });
+      }
+      const delivered = { ...record, deliveryState: 'delivered', deliveredAt: at };
+      this.#save(cardId, records.map((entry) => (entry.recordId === recordId ? delivered : entry)));
+
+      // The predecessor's unused tail becomes permanently unavailable only
+      // once the successor is actually delivered, not while a render or print
+      // job can still roll back.
+      //
+      // ONLY A GENUINE ROLLOVER retires the predecessor's tail. This used to
+      // test `delivered.predecessorCardId`, which every reuse on the card also
+      // carries — so each ordinary delivery re-stamped the predecessor and
+      // re-logged the rollover, forever. It also made card history untrustworthy
+      // after the fact: fields written days later read as contemporaneous.
+      // See `isRolloverDelivery` for the legacy (no-`cardOrigin`) fallback.
+      if (isRolloverDelivery(delivered)) {
+        const predecessor = this.#load(delivered.predecessorCardId);
+        if (predecessor.length) {
+          const occupiedThrough = Math.max(...predecessor.map((entry) => entry.rowRange.end));
+          this.#save(delivered.predecessorCardId, predecessor.map((entry) => ({
+            ...entry,
+            successorCardId: cardId,
+            tailSkipped: occupiedThrough < (delivered.cardCapacity ?? 50)
+              ? { start: occupiedThrough + 1, end: delivered.cardCapacity ?? 50 }
+              : null,
+          })));
+        }
+        this.#logger?.info?.('school.answer-sheet.rollover-delivered', {
+          learnerId: delivered.learnerId,
+          predecessorCardId: delivered.predecessorCardId,
+          successorCardId: cardId,
+          generation: delivered.generation,
+        });
+      }
+      return structuredClone(delivered);
+    });
+  }
+
+  /**
+   * Backfill a printer-confirmed historical delivery whose allocation predates
+   * the delivery fields. Unlike `markDelivered`, this deliberately permits a
+   * settled/released record: its authority is the immutable confirmed `issued`
+   * event supplied by the recovery caller, not the allocation's current state.
+   */
+  async confirmHistoricalDelivery({
+    cardId, recordId, deliveredAt, confirmedBy, at = this.#now(),
+  } = {}) {
+    assertCardId(cardId);
+    if (typeof recordId !== 'string' || !recordId.trim()) {
+      throw new Error('confirmHistoricalDelivery requires recordId');
+    }
+    if (typeof deliveredAt !== 'string' || !deliveredAt.trim()) {
+      throw new Error('confirmHistoricalDelivery requires deliveredAt');
+    }
+    if (typeof confirmedBy !== 'string' || !confirmedBy.trim()) {
+      throw new Error('confirmHistoricalDelivery requires confirmedBy');
+    }
+    return this.#enqueue(async () => {
+      const records = this.#load(cardId);
+      const record = records.find((entry) => entry.recordId === recordId);
+      if (!record) throw new EntityNotFoundError('AllocationRecord', recordId, { details: { cardId } });
+      if (record.deliveryState === 'cancelled') {
+        throw new DomainInvariantError(`cannot confirm cancelled allocation ${recordId} as delivered`, {
+          code: 'ALLOCATION_DELIVERY_ILLEGAL_TRANSITION',
+        });
+      }
+      if (record.deliveryState === 'delivered') return structuredClone(record);
+      const delivered = {
+        ...record,
+        deliveryState: 'delivered',
+        deliveredAt: deliveredAt.trim(),
+        deliveryBackfilledAt: at,
+        deliveryConfirmedBy: confirmedBy.trim(),
+        cardCapacity: record.cardCapacity ?? 50,
+      };
+      this.#save(cardId, records.map((entry) => (entry.recordId === recordId ? delivered : entry)));
+      // Same guard as `markDelivered`, same reason: a backfilled reuse
+      // delivery also carries a truthy `predecessorCardId` (inherited, not
+      // its own rollover), and without `cardOrigin === 'rollover'` this
+      // recovery path recurs the identical lineage-corruption bug. This path
+      // exists specifically to backfill records that PREDATE delivery
+      // fields -- exactly the records most likely to have no `cardOrigin`
+      // at all -- so `isRolloverDelivery`'s legacy fallback (infer rollover
+      // from a truthy `predecessorCardId` when `cardOrigin` is absent) is
+      // load-bearing here, not incidental.
+      if (isRolloverDelivery(delivered)) {
+        const predecessor = this.#load(delivered.predecessorCardId);
+        if (predecessor.length) {
+          const occupiedThrough = Math.max(...predecessor.map((entry) => entry.rowRange.end));
+          this.#save(delivered.predecessorCardId, predecessor.map((entry) => ({
+            ...entry,
+            successorCardId: cardId,
+            tailSkipped: occupiedThrough < (delivered.cardCapacity ?? 50)
+              ? { start: occupiedThrough + 1, end: delivered.cardCapacity ?? 50 }
+              : null,
+          })));
+        }
+      }
+      this.#logger?.info?.('school.answer-sheet.delivery-backfilled', {
+        cardId, recordId, learnerId: delivered.learnerId,
+        deliveredAt: delivered.deliveredAt, confirmedBy: delivered.deliveryConfirmedBy,
+      });
+      return structuredClone(delivered);
+    });
+  }
+
+  /** Delivered live records for the identity preflight gate. */
+  async findDeliveredLiveByLearner(learnerId) {
+    if (typeof learnerId !== 'string' || !learnerId.trim()) return [];
+    const out = [];
+    for (const cardId of this.#io.list(path.join(this.#directory, 'cards'))) {
+      const records = this.#load(cardId);
+      if (cardRetired(records)) continue;
+      for (const record of records) {
+        if (record.learnerId === learnerId && record.status === 'live'
+            && record.deliveryState === 'delivered') out.push(structuredClone(record));
+      }
+    }
+    return out;
+  }
+
+  async quarantineRows({ cardId, rows, heldScanId, reason, reviewerId, at = this.#now() } = {}) {
+    assertCardId(cardId);
+    assertRowRange(rows, 'rows');
+    if (typeof heldScanId !== 'string' || !heldScanId) throw new Error('quarantineRows requires heldScanId');
+    return this.#enqueue(async () => {
+      const records = this.#load(cardId);
+      if (!records.length) throw new EntityNotFoundError('AnswerCard', cardId);
+      const quarantines = records[0].rowQuarantines ?? [];
+      const quarantineId = `${heldScanId}:${rows.start}-${rows.end}`;
+      const existing = quarantines.find((entry) => entry.quarantineId === quarantineId);
+      if (existing) return structuredClone(existing);
+      const quarantine = {
+        quarantineId, rows: { ...rows }, heldScanId, reason, reviewerId, at, clearances: [],
+      };
+      const [first, ...rest] = records;
+      this.#save(cardId, [{ ...first, rowQuarantines: [...quarantines, quarantine] }, ...rest]);
+      return structuredClone(quarantine);
+    });
+  }
+
+  async clearQuarantine({ cardId, quarantineId, reviewerId, method, at = this.#now() } = {}) {
+    assertCardId(cardId);
+    if (!['verified-erased', 'source-superseded-clean-reprint'].includes(method)) {
+      throw new Error('clearQuarantine method must be verified-erased|source-superseded-clean-reprint');
+    }
+    return this.#enqueue(async () => {
+      const records = this.#load(cardId);
+      const quarantines = records[0]?.rowQuarantines ?? [];
+      const target = quarantines.find((entry) => entry.quarantineId === quarantineId);
+      if (!target) throw new EntityNotFoundError('AnswerCardQuarantine', quarantineId);
+      const prior = target.clearances?.find((entry) => entry.method === method && entry.reviewerId === reviewerId);
+      if (prior) return structuredClone(prior);
+      const clearance = { method, reviewerId, at };
+      const updated = quarantines.map((entry) => (entry.quarantineId === quarantineId
+        ? { ...entry, clearances: [...(entry.clearances ?? []), clearance] }
+        : entry));
+      const [first, ...rest] = records;
+      this.#save(cardId, [{ ...first, rowQuarantines: updated }, ...rest]);
+      return structuredClone(clearance);
+    });
+  }
+
+  /** @returns {Promise<object[]>} this card's full records array (all statuses), oldest first. */
+  async findByCard(cardId) {
+    assertCardId(cardId);
+    return structuredClone(this.#load(cardId));
+  }
+
+  /**
+   * Physical-card usage. Historical rows are intentionally never reclaimed:
+   * a satisfied/released/superseded allocation still has bubbles on paper.
+   */
+  async describeCard(cardId, { capacity = 50, expectedLearnerId = null } = {}) {
+    assertCardId(cardId);
+    if (!Number.isInteger(capacity) || capacity < 1 || capacity > 50) {
+      throw new Error('YamlAllocationStore.describeCard capacity must be 1..50');
+    }
+    const allocations = this.#load(cardId);
+    const occupiedThrough = cardOccupiedThrough(allocations);
+    const learnerIds = [...new Set(allocations.map((record) => record.learnerId).filter(Boolean))];
+    const mappedLearnerId = learnerIds.length === 1 ? learnerIds[0] : null;
+    const statusCounts = Object.fromEntries(ALLOCATION_STATUSES.map((status) => [
+      status, allocations.filter((record) => record.status === status).length,
+    ]));
+    const warnings = [];
+    if (learnerIds.length > 1) warnings.push('This Student No. has allocations mapped to more than one learner.');
+    if (expectedLearnerId && mappedLearnerId && mappedLearnerId !== expectedLearnerId) {
+      warnings.push(`This Student No. is mapped to ${mappedLearnerId}, not ${expectedLearnerId}.`);
+    }
+    return {
+      schema: 'school.answer-sheet/v1', cardId, studentNumber: cardId, capacity,
+      usedRows: Math.min(capacity, occupiedThrough), remainingContiguousSlots: Math.max(0, capacity - occupiedThrough),
+      nextRow: occupiedThrough < capacity ? occupiedThrough + 1 : null,
+      mappedLearnerId, learnerIds, statusCounts, warnings, allocations: structuredClone(allocations),
+    };
+  }
+
+  /**
+   * Every record for `documentId` across ALL cards — the sheet-identity lookup
+   * behind "reuse this document's existing sheet" (the print route's automatic
+   * omr mode). A linear scan of the allocations directory: card counts are
+   * household-scale, and a missing directory simply means no cards yet.
+   */
+  async findByDocument(documentId) {
+    const out = [];
+    for (const cardId of this.#io.list(path.join(this.#directory, 'cards'))) {
+      for (const record of this.#load(cardId)) {
+        if (record.documentId === documentId) out.push(structuredClone(record));
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Finds the learner's most recently used settled physical card with enough
+   * untouched rows for another worksheet. Rows are never reclaimed: marks
+   * remain on paper even after an allocation is satisfied or superseded.
+   */
+  async findReusableCard({ learnerId, rowsNeeded, capacity = 50, reuse = 'after_scan' } = {}) {
+    if (typeof learnerId !== 'string' || !learnerId.trim()) {
+      throw new Error('YamlAllocationStore.findReusableCard requires learnerId');
+    }
+    if (!Number.isInteger(rowsNeeded) || rowsNeeded < 1) {
+      throw new Error('YamlAllocationStore.findReusableCard requires rowsNeeded >= 1');
+    }
+    if (!Number.isInteger(capacity) || capacity < 1) {
+      throw new Error('YamlAllocationStore.findReusableCard requires capacity >= 1');
+    }
+    if (!['never', 'after_scan', 'school_day', 'until_full'].includes(reuse)) {
+      throw new Error(`YamlAllocationStore.findReusableCard: unknown reuse policy "${reuse}"`);
+    }
+    if (reuse === 'never') return null;
+
+    const candidates = [];
+    for (const cardId of this.#io.list(path.join(this.#directory, 'cards'))) {
+      const records = this.#load(cardId);
+      if (cardRetired(records)) continue;
+      const learnerRecords = records.filter((record) => record.learnerId === learnerId);
+      if (learnerRecords.length === 0) continue;
+      // Conservative mode preserves the original behavior. Shared-card modes
+      // may append non-overlapping live allocations for this same learner.
+      if (reuse === 'after_scan' && learnerRecords.some((record) => record.status === 'live')) continue;
+      if (reuse === 'school_day') {
+        const today = localDateKey(this.#now(), this.#timeZone);
+        if (!learnerRecords.some((record) => localDateKey(record.renderedAt, this.#timeZone) === today)) continue;
+      }
+      // A Student No. must never be shared between learners.
+      if (records.some((record) => record.learnerId != null && record.learnerId !== learnerId)) continue;
+      const occupiedThrough = Math.max(...records.map((record) => record.rowRange.end));
+      const startRow = occupiedThrough + 1;
+      if (startRow + rowsNeeded - 1 > capacity) continue;
+      const lastUsedAt = learnerRecords.reduce((latest, record) => (
+        record.renderedAt > latest ? record.renderedAt : latest
+      ), '');
+      candidates.push({ cardId, startRow, lastUsedAt });
+    }
+    candidates.sort((a, b) => b.lastUsedAt.localeCompare(a.lastUsedAt) || b.cardId.localeCompare(a.cardId));
+    return candidates.length ? { cardId: candidates[0].cardId, startRow: candidates[0].startRow } : null;
+  }
+
+  /**
+   * Retires every live allocation on a lost physical answer sheet. Settled
+   * evidence remains settled; history is never deleted. Replacement metadata
+   * makes the lineage inspectable from either card.
+   */
+  async markCardLost({ cardId, replacementCardId, reportedBy, at = this.#now() } = {}) {
+    assertCardId(cardId);
+    assertCardId(replacementCardId);
+    if (cardId === replacementCardId) throw new Error('replacementCardId must differ from lost cardId');
+    if (typeof reportedBy !== 'string' || !reportedBy.trim()) throw new Error('markCardLost requires reportedBy');
+    return this.#enqueue(async () => {
+      const records = this.#load(cardId);
+      const changed = [];
+      const updated = records.map((record) => {
+        if (record.status !== 'live') return record;
+        const next = {
+          ...record,
+          status: 'superseded',
+          supersededReason: 'answer-sheet-lost',
+          replacementCardId,
+          supersededAt: at,
+          supersededBy: reportedBy,
+        };
+        changed.push(next);
+        return next;
+      });
+      if (changed.length > 0) this.#save(cardId, updated);
+      return structuredClone(changed);
+    });
+  }
+
+  async markRecordLost({ cardId, recordId, replacementCardId, replacementRecordId, reportedBy, at = this.#now() } = {}) {
+    assertCardId(cardId);
+    assertCardId(replacementCardId);
+    if (cardId === replacementCardId) throw new Error('replacementCardId must differ from lost cardId');
+    if (typeof reportedBy !== 'string' || !reportedBy.trim()) throw new Error('markRecordLost requires reportedBy');
+    return this.#enqueue(async () => {
+      const records = this.#load(cardId);
+      const record = records.find((entry) => entry.recordId === recordId);
+      if (!record) throw new EntityNotFoundError('AllocationRecord', recordId, { details: { cardId } });
+      if (record.status !== 'live') {
+        throw new DomainInvariantError(`cannot replace ${record.status} allocation ${recordId} as lost`, {
+          code: 'ALLOCATION_ILLEGAL_TRANSITION',
+        });
+      }
+      const replacement = {
+        ...record,
+        status: 'superseded',
+        supersededReason: 'answer-sheet-lost',
+        replacementCardId,
+        replacementRecordId,
+        supersededAt: at,
+        supersededBy: reportedBy,
+      };
+      this.#save(cardId, records.map((entry) => (entry.recordId === recordId ? replacement : entry)));
+      return structuredClone(replacement);
+    });
+  }
+
+  /** Every card id with any records in the store — the near-miss pool for mis-bubbled-card diagnostics. */
+  async listCardIds() {
+    return [...this.#io.list(path.join(this.#directory, 'cards'))];
+  }
+
+  /**
+   * @param {{cardId:string, recordId:string, status:string}} args
+   * @returns {Promise<object>} the updated record
+   */
+  async updateStatus({ cardId, recordId, status }) {
+    assertCardId(cardId);
+    if (!ALLOCATION_STATUSES.includes(status)) {
+      throw new Error(`YamlAllocationStore.updateStatus: unknown status "${status}"`);
+    }
+    return this.#enqueue(async () => {
+      const records = this.#load(cardId);
+      const record = records.find((entry) => entry.recordId === recordId);
+      if (!record) throw new EntityNotFoundError('AllocationRecord', recordId, { details: { cardId } });
+      if (record.status !== 'live' || !TERMINAL_STATUSES.has(status)) {
+        throw new DomainInvariantError(
+          `illegal allocation status transition ${record.status} -> ${status} for record ${recordId}`,
+          { code: 'ALLOCATION_ILLEGAL_TRANSITION' },
+        );
+      }
+      const updated = records.map((entry) => (entry.recordId === recordId ? { ...entry, status } : entry));
+      this.#save(cardId, updated);
+      return structuredClone(updated.find((entry) => entry.recordId === recordId));
+    });
+  }
+
+  /**
+   * Releases all `live` records overlapping `rows`, or every `live` record
+   * when `rows` is omitted (spec §5.4 "explicit CLI/admin release").
+   * @param {{cardId:string, rows?: {start:number, end:number}}} args
+   * @returns {Promise<object[]>} the records that were released (empty when none were live)
+   */
+  async release({ cardId, rows } = {}) {
+    assertCardId(cardId);
+    if (rows !== undefined) assertRowRange(rows, 'rows');
+    return this.#enqueue(async () => {
+      const records = this.#load(cardId);
+      const releasedIds = new Set();
+      const updated = records.map((record) => {
+        if (record.status !== 'live') return record;
+        if (rows && !rangesOverlap(record.rowRange, rows)) return record;
+        releasedIds.add(record.recordId);
+        return {
+          ...record,
+          status: 'released',
+          ...(record.deliveryState === 'pending' ? { deliveryState: 'cancelled' } : {}),
+        };
+      });
+      if (releasedIds.size > 0) this.#save(cardId, updated);
+      return structuredClone(updated.filter((record) => releasedIds.has(record.recordId)));
+    });
+  }
+
+  /** Permanently remove a no-longer-physical card from reuse and scan resolution. */
+  async retireCard({ cardId, reason, retiredBy, at = this.#now() } = {}) {
+    assertCardId(cardId);
+    if (typeof reason !== 'string' || !reason.trim()) throw new Error('retireCard requires reason');
+    if (typeof retiredBy !== 'string' || !retiredBy.trim()) throw new Error('retireCard requires retiredBy');
+    return this.#enqueue(async () => {
+      const records = this.#load(cardId);
+      if (!records.length) throw new EntityNotFoundError('AnswerCard', cardId);
+      if (records.some((record) => record.status === 'live')) {
+        throw new DomainInvariantError(`cannot retire answer card ${cardId} while it has live allocations`, {
+          code: 'ALLOCATION_CARD_STILL_LIVE',
+        });
+      }
+      if (cardRetired(records)) return structuredClone(records);
+      const retired = records.map((record) => ({
+        ...record,
+        cardRetiredAt: at,
+        cardRetiredReason: reason.trim(),
+        cardRetiredBy: retiredBy.trim(),
+      }));
+      this.#save(cardId, retired);
+      this.#logger?.info?.('school.answer-sheet.retired', {
+        cardId, learnerIds: [...new Set(retired.map((record) => record.learnerId).filter(Boolean))],
+        retiredBy: retiredBy.trim(), reason: reason.trim(),
+      });
+      return structuredClone(retired);
+    });
+  }
+
+  /** Draws random cardIds (domain `generateCardId`) until one has no records in the store yet. */
+  #generateFreshCardId() {
+    for (let attempt = 0; attempt < MAX_CARD_ID_ATTEMPTS; attempt += 1) {
+      const candidate = generateCardId(this.#rng);
+      const existing = this.#load(candidate);
+      if (existing.length === 0) return { resolvedCardId: candidate, existing };
+    }
+    throw new DomainInvariantError(
+      `could not allocate a fresh card id after ${MAX_CARD_ID_ATTEMPTS} attempts (all collided with an existing card)`,
+      { code: 'ALLOCATION_CARD_ID_EXHAUSTED' },
+    );
+  }
+
+  /** Serializes all mutations (allocate/updateStatus/release) through one queue, per card-file write. */
+  #enqueue(task) {
+    const operation = this.#writeChain.then(task);
+    this.#writeChain = operation.catch(() => {});
+    return operation;
+  }
+
+  #path(cardId) { return path.join(this.#directory, 'cards', `${cardId}.yml`); }
+
+  #load(cardId) {
+    const raw = this.#io.load(this.#path(cardId));
+    return Array.isArray(raw) ? structuredClone(raw) : [];
+  }
+
+  #save(cardId, records) {
+    this.#io.save(this.#path(cardId), records, { noRefs: true });
+  }
+}
+
+/** Card ids present in the cards dir; a missing dir is simply "no cards yet". */
+function listAllocationCardIds(dir) {
+  try {
+    return readDirectory(dir).filter((name) => name.endsWith('.yml')).map((name) => name.slice(0, -4));
+  } catch (err) {
+    if (err.code === 'ENOENT') return [];
+    throw err;
+  }
+}
+
+function localDateKey(value, timeZone) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(date);
+  } catch {
+    return date.toISOString().slice(0, 10);
+  }
+}
+
+function cardMetadata(records) {
+  const first = records?.[0] ?? {};
+  return {
+    generation: Number.isInteger(first.generation) ? first.generation : null,
+    predecessorCardId: first.predecessorCardId ?? null,
+    identiconVersion: first.identiconVersion ?? null,
+    cardCapacity: Number.isInteger(first.cardCapacity) ? first.cardCapacity : null,
+  };
+}
+
+function cardRetired(records) {
+  return records.some((record) => typeof record.cardRetiredAt === 'string' && record.cardRetiredAt.length > 0);
+}
+
+function monotonicHead(cards) {
+  if (!cards.length) return null;
+  const enriched = cards.map(({ cardId, records }) => {
+    const learnerRecords = records.filter((record) => record.deliveryState !== 'cancelled');
+    const generation = Math.max(0, ...learnerRecords.map((record) => (
+      Number.isInteger(record.generation) ? record.generation : 0
+    )));
+    const occupiedThrough = cardOccupiedThrough(records);
+    const lastUsedAt = learnerRecords.reduce((latest, record) => (
+      String(record.renderedAt ?? '') > latest ? String(record.renderedAt) : latest
+    ), '');
+    return { cardId, records, generation, occupiedThrough, lastUsedAt };
+  });
+  enriched.sort((left, right) => (
+    right.generation - left.generation
+      || right.lastUsedAt.localeCompare(left.lastUsedAt)
+      || right.cardId.localeCompare(left.cardId)
+  ));
+  return enriched[0];
+}
+
+/**
+ * The highest row anything on this card could have put graphite on.
+ *
+ * A record whose delivery was CANCELLED never reached paper — the issue path
+ * allocates before it renders, and a render or print failure orphans the
+ * record (`IssueDocument#orphanAllocation` → `release`) with its rows still
+ * blank on the physical card. Counting those rows as occupied is what
+ * burned two ranges of a child's card on 2026-09-15 and then rolled it over:
+ * three retries of one doomed render walked 22-27, 43-48 and a successor
+ * card without a single bubble ever being printed. A released/superseded/
+ * satisfied record that WAS delivered keeps its rows forever — those bubbles
+ * are on paper (spec §5: never reclaim a range that reached the learner).
+ */
+function cardOccupiedThrough(records) {
+  const allocated = Math.max(0, ...records
+    .filter((record) => record.deliveryState !== 'cancelled')
+    .map((record) => record.rowRange?.end ?? 0));
+  const quarantined = Math.max(0, ...(records[0]?.rowQuarantines ?? [])
+    .filter((entry) => !(entry.clearances?.length > 0))
+    .map((entry) => entry.rows?.end ?? 0));
+  return Math.max(allocated, quarantined);
+}
+
+function cardHasIssuedSuccessor(card) {
+  return card.records.some((record) => typeof record.successorCardId === 'string');
+}
+
+/**
+ * Whether a just-delivered record is a GENUINE rollover -- the delivery that
+ * should retire its predecessor's tail -- used by both `markDelivered` and
+ * `confirmHistoricalDelivery`.
+ *
+ * `cardOrigin` is the authoritative signal when present: only `'rollover'`
+ * qualifies, never `'reuse'` or `'first'` (a reuse also carries a truthy
+ * `predecessorCardId`, inherited from the card's first record, which is why
+ * `predecessorCardId` alone can't answer this for `cardOrigin`-bearing
+ * records).
+ *
+ * A record with NO `cardOrigin` at all is a LEGACY record -- either
+ * persisted before this field existed, or produced by `allocate()`'s
+ * explicit-cardId path (reprints, admin recovery, historical-backfill
+ * recovery), which still doesn't stamp it. For those, `cardOrigin` cannot be
+ * consulted, so this falls back to the pre-`cardOrigin` inference: a truthy
+ * `predecessorCardId` means rollover. That inference is coarser -- it can't
+ * distinguish "this delivery IS the rollover" from "this card was ONCE
+ * rolled over to" -- but it is strictly better than treating every legacy
+ * record as never a rollover, which silently drops predecessor-lineage
+ * writeback for every allocation that predates `cardOrigin`.
+ */
+function isRolloverDelivery(delivered) {
+  if (!delivered.predecessorCardId) return false;
+  if (delivered.cardOrigin === undefined) return true;
+  return delivered.cardOrigin === 'rollover';
+}
+
+function shiftRequestRows(request, offset) {
+  const shiftRange = (range) => ({ start: range.start + offset, end: range.end + offset });
+  return {
+    ...request,
+    rowRange: shiftRange(request.rowRange),
+    ...(Array.isArray(request.rowItems) ? {
+      rowItems: request.rowItems.map((entry) => ({ ...entry, row: entry.row + offset })),
+    } : {}),
+    ...(Array.isArray(request.sections) ? {
+      sections: request.sections.map((section) => ({ ...section, rowRange: shiftRange(section.rowRange) })),
+    } : {}),
+  };
+}
+
+function allocationRecord({
+  cardId, request, renderedAt, generation, predecessorCardId, cardOrigin, identiconVersion, cardCapacity,
+}) {
+  return {
+    recordId: buildRecordId(request),
+    cardId,
+    rowRange: { ...request.rowRange },
+    documentId: request.documentId,
+    rev: request.rev,
+    seed: request.seed,
+    variant: request.variant ?? 0,
+    learnerId: request.learnerId,
+    ...(request.sessionId != null ? { sessionId: request.sessionId } : {}),
+    ...(request.assessmentItemIds ? { assessmentItemIds: [...request.assessmentItemIds] } : {}),
+    ...(Array.isArray(request.rowItems) ? { rowItems: structuredClone(request.rowItems) } : {}),
+    ...(Array.isArray(request.sections) ? { sections: structuredClone(request.sections) } : {}),
+    renderedAt,
+    generation,
+    predecessorCardId,
+    // WHICH DECISION PRODUCED THIS RECORD ('first' | 'rollover' | 'reuse'),
+    // persisted so `markDelivered` can gate predecessor lineage writes on the
+    // decision as it was actually made, not re-infer it later from
+    // `predecessorCardId` (which every reuse on a once-rolled-over card also
+    // carries).
+    cardOrigin,
+    identiconVersion,
+    cardCapacity,
+    deliveryState: 'pending',
+    deliveredAt: null,
+    status: 'live',
+  };
+}
+
+/** `<documentId>@<rev>:v<variant>:<start>-<end>` (spec §5.4 / task brief). */
+function buildRecordId({ documentId, rev, variant, rowRange }) {
+  return `${documentId}@${rev}:v${variant ?? 0}:${rowRange.start}-${rowRange.end}`;
+}
+
+/**
+ * Whether a request whose recordId matched a satisfied record really IS that
+ * record's render context. recordId already pins documentId/rev/variant/
+ * rowRange; the fields it does NOT carry — seed, learner, and the printed
+ * row→item mapping — must agree too, or the "reprint" would put different
+ * questions (or a different child's identity) under the same card rows.
+ * A missing rowItems on either side is a legacy record — accepted, exactly
+ * as `ResolveCardScan` trusts re-derivation for those.
+ */
+function isIdenticalReprint(record, request) {
+  if (record.seed !== request.seed) return false;
+  if ((record.learnerId ?? null) !== (request.learnerId ?? null)) return false;
+  if (Array.isArray(record.rowItems) && Array.isArray(request.rowItems)) {
+    if (record.rowItems.length !== request.rowItems.length) return false;
+    return record.rowItems.every((entry, index) => {
+      const other = request.rowItems[index];
+      return entry.row === other.row && entry.itemId === other.itemId && entry.itemType === other.itemType;
+    });
+  }
+  return true;
+}
+
+/**
+ * The first `isIdenticalReprint` check that failed, in the SAME order —
+ * for the `ALLOCATION_RECORD_ID_CONFLICT` message, so a teacher (or the
+ * dev debugging their bug report) sees WHICH field actually differs
+ * instead of a bare "not an identical reprint".
+ */
+function reprintMismatchReason(record, request) {
+  if (record.seed !== request.seed) return 'seed differs';
+  if ((record.learnerId ?? null) !== (request.learnerId ?? null)) return 'learner differs';
+  return 'row mapping differs';
+}
+
+/** Adapts persisted `rowRange:{start,end}` records to the domain's flat `startRow`/`endRow` shape. */
+function toFlatRecords(records) {
+  return records.map((record) => ({
+    ...record, startRow: record.rowRange.start, endRow: record.rowRange.end,
+  }));
+}
+
+function assertCardId(cardId) {
+  if (!CARD_ID_RE.test(cardId || '')) {
+    throw new Error(`YamlAllocationStore: cardId must be a 7-digit string, got ${JSON.stringify(cardId)}`);
+  }
+}
+
+function assertRowRange(rowRange, label) {
+  if (!rowRange || !Number.isInteger(rowRange.start) || !Number.isInteger(rowRange.end)
+      || rowRange.start > rowRange.end) {
+    throw new Error(`YamlAllocationStore: ${label} must be {start, end} integers with start <= end`);
+  }
+}
+
+function assertRequest(request) {
+  if (!request || typeof request !== 'object') throw new Error('YamlAllocationStore.allocate requires a request');
+  if (typeof request.documentId !== 'string' || request.documentId.trim().length === 0) {
+    throw new Error('YamlAllocationStore.allocate request requires documentId');
+  }
+  if (typeof request.rev !== 'string' || request.rev.trim().length === 0) {
+    throw new Error('YamlAllocationStore.allocate request requires rev');
+  }
+  if (!Number.isInteger(request.seed)) {
+    throw new Error('YamlAllocationStore.allocate request requires an integer seed');
+  }
+  if (request.variant !== undefined && (!Number.isInteger(request.variant) || request.variant < 0)) {
+    throw new Error('YamlAllocationStore.allocate request variant must be a non-negative integer');
+  }
+  if (request.sessionId !== undefined && request.sessionId !== null
+      && (typeof request.sessionId !== 'string' || request.sessionId.trim().length === 0)) {
+    throw new Error('YamlAllocationStore.allocate request sessionId must be a non-empty string when given');
+  }
+  assertRowRange(request.rowRange, 'request.rowRange');
+  if (request.rowItems !== undefined) {
+    const valid = Array.isArray(request.rowItems) && request.rowItems.every((entry) => (
+      entry && Number.isInteger(entry.row) && typeof entry.itemId === 'string' && typeof entry.itemType === 'string'
+    ));
+    if (!valid) {
+      throw new Error(
+        'YamlAllocationStore.allocate request.rowItems must be an array of '
+          + '{row:integer, itemId:string, itemType:string}',
+      );
+    }
+  }
+  if (request.sections !== undefined) {
+    const valid = Array.isArray(request.sections) && request.sections.every((section) => (
+      section && typeof section.id === 'string' && section.id.trim()
+      && section.rowRange && Number.isInteger(section.rowRange.start) && Number.isInteger(section.rowRange.end)
+      && section.rowRange.start <= section.rowRange.end
+      && section.rowRange.start >= request.rowRange.start && section.rowRange.end <= request.rowRange.end
+      && (section.sessionId === undefined || typeof section.sessionId === 'string')
+      && (section.lessonId === undefined || typeof section.lessonId === 'string')
+    ));
+    if (!valid) {
+      throw new Error('YamlAllocationStore.allocate request.sections must be section ids with in-range rowRange values');
+    }
+  }
+}
+
+export default YamlAllocationStore;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseMidiNotes } from '#domains/pianoaudio/midiNotes.mjs';
+import { parseMidiNotes } from "../../../../modules/piano/server/domain/pianoaudio/midiNotes.mjs";
 
 // format-0 SMF, 480 PPQ, tempo 500000 (120 BPM → 0.5s/quarter, 480 ticks/quarter):
 //   note C4(60) vel64  on@0    off@480  → start 0.0s, dur 0.5s

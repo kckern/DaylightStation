@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { applyMove, legalMoves, replayGame } from '@shared-gaming/rulesets/checkers/engine.mjs';
-import { chooseMove, CHECKERS_OPPONENTS } from '@shared-gaming/rulesets/checkers/opponent.mjs';
-import { checkersCommentary } from '@shared-gaming/rulesets/checkers/commentary.mjs';
+import { applyMove, legalMoves, replayGame } from "../../../../capabilities/gaming/portable/rulesets/checkers/engine.mjs";
+import { chooseMove } from "../../../../capabilities/gaming/portable/rulesets/checkers/opponent.mjs";
+import { CHECKERS_OPPONENTS } from "../../portable/game-opponents/checkers.mjs";
+import { checkersCommentary } from "../../../../capabilities/gaming/portable/rulesets/checkers/commentary.mjs";
 import BoardGameFrame from '../game-platform/host/BoardGameFrame.jsx';
 import BoardGameResult from '../game-platform/host/BoardGameResult.jsx';
 import BoardGameOpening from '../game-platform/host/BoardGameOpening.jsx';

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
-import { stableHash } from '../../shared/gaming/kernel/canonical.mjs';
+import { stableHash } from "../../capabilities/gaming/portable/kernel/canonical.mjs";
 
 const clone = (value) => structuredClone(value);
 const PARTY_INPUTS = ['keyboard', 'gamepad', 'pointer', 'remote'];

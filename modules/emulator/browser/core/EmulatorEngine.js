@@ -1,0 +1,597 @@
+/**
+ * EmulatorEngine — thin wrapper around the running EmulatorJS instance.
+ *
+ * All methods delegate through the stored `EJS_emulator` instance using the
+ * verified EmulatorJS API. The engine itself holds no game state; it just
+ * brokers boot/readiness and forwards calls so the pure surface is unit-testable
+ * against a fake instance.
+ */
+
+import { loadEmulatorJS, resetEmulatorJSLoader } from "./loadEmulatorJS.js";
+import getLogger from '@/lib/logging/Logger.js';
+
+let _log;
+const moduleLog = () => (_log ??= getLogger().child({ component: 'emulator-engine' }));
+
+const FRAME_INTERVAL_MS = 16;
+const WAIT_FRAMES_CAP_MS = 3000;
+
+function clamp01(v) {
+  if (typeof v !== 'number' || Number.isNaN(v)) return 0;
+  return Math.max(0, Math.min(1, v));
+}
+
+/**
+ * @param {object} [opts]
+ * @param {Function} [opts.load=loadEmulatorJS] - injectable loader (for tests).
+ * @param {Window} [opts.win=window]
+ * @returns engine object
+ */
+export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logger } = {}) {
+  // Inherit the console's child logger (carries the per-play correlation id) when
+  // provided, so engine events join the same play session in the logs.
+  const _engineLog = logger ? logger.child({ component: 'emulator-engine' }) : null;
+  const log = () => _engineLog || moduleLog();
+  let instance = null;
+  let ready = false;
+  let bootPromise = null;
+  // Our own picture-shader presets, as handed to boot(). Kept so applyShader
+  // can find a preset's binary textures — see the note there.
+  let shaderTable = {};
+
+  /**
+   * Boot the emulator. Idempotent: a second call returns the same readiness
+   * promise rather than re-loading the single-instance library.
+   */
+  /**
+   * Read the Web Audio context state from the running EmulatorJS instance.
+   * EmulatorJS owns the AudioContext at Module.AL.currentCtx.ctx — we probe it
+   * defensively since the path varies across EJS builds.
+   * Returns 'running' | 'suspended' | 'closed' | null (not available).
+   */
+  function getAudioContextState() {
+    if (!ready || !instance) return null;
+    try {
+      const AL = instance?.gameManager?.Module?.AL;
+      if (!AL) return null;
+      // Verified against the vendored EJS 4.2.3 build in a real browser: the live
+      // state lives at AL.contexts[<id>].audioCtx.state. The old
+      // `AL.currentCtx.ctx.state` path does NOT exist here — it returned null in
+      // 24/24 production sessions, reporting a permanent false "unavailable" that
+      // would have masked a genuine audio failure. Several shapes are tried
+      // because this path has moved between EJS builds.
+      const fromCtx = (c) => c?.audioCtx?.state ?? c?.ctx?.state ?? null;
+      const current = fromCtx(AL.currentCtx);
+      if (current) return current;
+      const contexts = AL.contexts ? Object.values(AL.contexts) : [];
+      for (const c of contexts) {
+        const state = fromCtx(c);
+        if (state) return state;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function boot({ mount, romUrl, pathtodata, core = 'gb', controls, volume, shaders } = {}) {
+    if (bootPromise) return bootPromise;
+
+    shaderTable = shaders || {};
+    log().info('boot.start', { core, customShaders: Object.keys(shaderTable) });
+    bootPromise = load({ player: mount, core, romUrl, pathtodata, controls, volume, shaders, win })
+      .then((emu) => {
+        instance = emu;
+        ready = true;
+        const audioCtxState = getAudioContextState();
+        log().info('boot.ready', { core, audioContext: audioCtxState });
+        return instance;
+      })
+      .catch((err) => {
+        bootPromise = null; // allow a retry after a hard failure
+        log().error('boot.failed', { error: err?.message });
+        throw err;
+      });
+
+    return bootPromise;
+  }
+
+  function isReady() {
+    return ready;
+  }
+
+  /**
+   * Read back the shader preset the core is actually running.
+   *
+   * `enableShader` writes the `.glslp` into the core's own filesystem, so the
+   * file's presence there — not the fact that the call returned — is the proof
+   * the setting took. Read-back is required at the settle barrier; see
+   * bootSettle.js for why a call that "succeeded" is not evidence.
+   *
+   * @returns {string|null} preset text, or null when no shader is active
+   */
+  function getAppliedShader() {
+    if (!ready || !instance) return null;
+    try {
+      const text = instance.Module?.FS?.readFile('/shader/shader.glslp', { encoding: 'utf8' });
+      return text && text.length ? text : null;
+    } catch {
+      // ENOENT is the normal "no shader" answer, not a failure.
+      return null;
+    }
+  }
+
+  /**
+   * Select one of EmulatorJS's built-in shaders, applied INSIDE the core's own
+   * GL pipeline.
+   *
+   * This is the only workable place for a picture shader over an emulator. The
+   * core's canvas is created with `preserveDrawingBuffer: false`, so its drawing
+   * buffer is cleared the moment the frame is presented: an outside renderer
+   * that samples it with texImage2D reads back transparent black, whatever it
+   * does with the result. (Measured 2026-09-12 — a readback of the live canvas
+   * returns a single colour, `0,0,0,0`, while the picture is plainly on screen.)
+   *
+   * The shader name is a key into `EJS_SHADERS`, e.g. 'crt-geom.glslp', or one
+   * of our own presets registered through boot({ shaders }) — the Game Boys'
+   * Harlequin dot matrix. The built-ins are embedded in the vendored bundle;
+   * ours are bundled with the frontend. An unknown name makes EmulatorJS turn
+   * shading off rather than throw, which is the right failure: an unfiltered
+   * picture, never a black one.
+   *
+   * A preset's `binaries` (PNG textures) are written into the core's `/shader`
+   * directory here, as raw bytes, before `enableShader` runs. EmulatorJS's own
+   * resource path can't carry them: it atob()s a base64 value into a string and
+   * FS.writeFile UTF-8-encodes strings, corrupting every byte >= 0x80.
+   *
+   * @param {string|null} name
+   * @returns {boolean} whether the call reached the instance
+   */
+  function applyShader(name) {
+    if (!ready || !instance || !name) return false;
+    if (typeof instance.enableShader !== 'function') {
+      log().warn('shader.unsupported', { name, reason: 'no-enableShader' });
+      return false;
+    }
+    const known = !!instance.config?.shaders?.[name];
+    const binaries = shaderTable[name]?.binaries;
+    if (binaries && Object.keys(binaries).length) {
+      const FS = instance.Module?.FS;
+      if (typeof FS?.writeFile === 'function') {
+        try { FS.mkdir?.('/shader'); } catch { /* already there */ }
+        for (const [file, bytes] of Object.entries(binaries)) {
+          try {
+            FS.writeFile(`/shader/${file}`, bytes);
+          } catch (err) {
+            log().warn('shader.binary-write-failed', { name, file, error: err?.message });
+          }
+        }
+      } else {
+        log().warn('shader.binaries-unwritable', { name, files: Object.keys(binaries) });
+      }
+    }
+    try {
+      instance.enableShader(name);
+      log().info('shader.applied', { name, known });
+      return true;
+    } catch (err) {
+      log().warn('shader.failed', { name, error: err?.message });
+      return false;
+    }
+  }
+
+  /**
+   * Confirm the game actually RENDERED, not just that the boot promise resolved.
+   * Polls the frame counter until it advances. Resolves `true` on a confirmed
+   * frame, `false` on timeout (→ `boot.no-frames`, a real "booted but blank"
+   * signal the caller turns into an error/retry state). Cores without a frame
+   * counter can't be confirmed; we treat that as inconclusive-OK to avoid false
+   * negatives, and say so in the event.
+   */
+  function confirmFirstFrame({ timeoutMs = WAIT_FRAMES_CAP_MS, core = null } = {}) {
+    if (!ready) {
+      log().warn('boot.no-frames', { core, reason: 'not-ready' });
+      return Promise.resolve(false);
+    }
+    const start = readFrameNum();
+    if (start === null) {
+      log().info('boot.first-frame', { core, frames: null, confirmed: false });
+      return Promise.resolve(true);
+    }
+    const startTime = Date.now();
+    return new Promise((resolve) => {
+      const tick = win.requestAnimationFrame
+        ? (cb) => win.requestAnimationFrame(cb)
+        : (cb) => setTimeout(cb, FRAME_INTERVAL_MS);
+      const poll = () => {
+        const current = readFrameNum();
+        if (current !== null && current > start) {
+          log().info('boot.first-frame', { core, frames: current });
+          resolve(true);
+          return;
+        }
+        if (Date.now() - startTime >= timeoutMs) {
+          log().warn('boot.no-frames', { core, lastFrame: current });
+          resolve(false);
+          return;
+        }
+        tick(poll);
+      };
+      tick(poll);
+    });
+  }
+
+  function pause() {
+    if (!ready) return;
+    instance.pause();
+    log().debug('pause', {});
+  }
+
+  function resume() {
+    if (!ready) return;
+    instance.play();
+    log().debug('resume', {});
+  }
+
+  function setVolume(v) {
+    if (!ready) return;
+    const clamped = clamp01(v);
+    instance.setVolume(clamped);
+    log().debug('set-volume', { volume: clamped, audioContext: getAudioContextState() });
+  }
+
+  /** Fresh HEAPU8 each call — the WASM heap can be reallocated. */
+  function getHeap() {
+    if (!ready) return null;
+    return instance.gameManager.Module.HEAPU8;
+  }
+
+  function setCheat(i, enabled, code) {
+    if (!ready) return;
+    instance.gameManager.functions.setCheat(i, enabled, code);
+  }
+
+  function resetCheat() {
+    if (!ready) return;
+    instance.gameManager.functions.resetCheat();
+  }
+
+  function getFrameNum() {
+    if (!ready) return null;
+    return instance.gameManager.functions.getFrameNum();
+  }
+
+  function readFrameNum() {
+    try {
+      const fn = instance?.gameManager?.functions?.getFrameNum;
+      return typeof fn === 'function' ? fn.call(instance.gameManager.functions) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Resolve once the frame counter has advanced by >= n since the call.
+   * Polls every ~16ms. If getFrameNum is unavailable, falls back to a
+   * time-based delay (~n*16ms). Total wait is capped at ~3s.
+   */
+  function waitFrames(n = 70) {
+    return new Promise((resolve) => {
+      const tick = win.requestAnimationFrame
+        ? (cb) => win.requestAnimationFrame(cb)
+        : (cb) => setTimeout(cb, FRAME_INTERVAL_MS);
+
+      const start = readFrameNum();
+      const startTime = Date.now();
+
+      // No frame counter -> time-based fallback.
+      if (start === null) {
+        setTimeout(resolve, n * FRAME_INTERVAL_MS);
+        return;
+      }
+
+      const poll = () => {
+        const elapsed = Date.now() - startTime;
+        const current = readFrameNum();
+        const advanced = current !== null && current - start >= n;
+        if (advanced || elapsed >= WAIT_FRAMES_CAP_MS) {
+          resolve();
+          return;
+        }
+        tick(poll);
+      };
+      tick(poll);
+    });
+  }
+
+  // ── Save / resume ─────────────────────────────────────────────────────────
+  // Verified against the vendored EmulatorJS gameManager API:
+  //   getState() → Uint8Array (save-state)         loadState(Uint8Array)
+  //   getSaveFile() → Uint8Array (.srm; flushes SRAM first)   getSaveFilePath()
+  //   loadSaveFiles() (reads SRM from FS)           restart()
+  // These are how we snapshot/restore the single per-user resume point.
+
+  /** Capture a save-state snapshot (Uint8Array) or null if unavailable. */
+  function captureState() {
+    if (!ready) return null;
+    try {
+      return instance.gameManager.getState();
+    } catch (err) {
+      log().warn('capture-state.failed', { error: err?.message });
+      return null;
+    }
+  }
+
+  /** Restore a save-state snapshot (Uint8Array). Returns success. */
+  function loadState(data) {
+    if (!ready || !data) return false;
+    try {
+      instance.gameManager.loadState(toU8(data));
+      return true;
+    } catch (err) {
+      log().warn('load-state.failed', { error: err?.message });
+      return false;
+    }
+  }
+
+  /** Capture the battery save (.srm) bytes (Uint8Array) or null. */
+  function captureSave() {
+    if (!ready) return null;
+    try {
+      return instance.gameManager.getSaveFile(); // flushes SRAM → FS, then reads
+    } catch (err) {
+      log().warn('capture-save.failed', { error: err?.message });
+      return null;
+    }
+  }
+
+  /** Inject a battery save (.srm): write to the FS path, then load it. */
+  function loadSave(data) {
+    if (!ready || !data) return false;
+    try {
+      const gm = instance.gameManager;
+      const path = gm.getSaveFilePath();
+      gm.FS.writeFile(path, toU8(data));
+      gm.loadSaveFiles();
+      return true;
+    } catch (err) {
+      log().warn('load-save.failed', { error: err?.message });
+      return false;
+    }
+  }
+
+  /** Restart the ROM from power-on (used by the reset / start-over hotspot). */
+  function restart() {
+    if (!ready) return false;
+    try {
+      instance.gameManager.restart();
+      return true;
+    } catch (err) {
+      log().warn('restart.failed', { error: err?.message });
+      return false;
+    }
+  }
+
+  // saveMode-aware resume helpers so callers don't branch on mode themselves.
+  function captureResume(saveMode) {
+    if (saveMode === 'battery') return captureSave();
+    if (saveMode === 'state') return captureState();
+    return null;
+  }
+  function loadResume(saveMode, data) {
+    if (saveMode === 'battery') return loadSave(data);
+    if (saveMode === 'state') return loadState(data);
+    return false;
+  }
+
+  function toU8(data) {
+    if (data instanceof Uint8Array) return data;
+    if (data instanceof ArrayBuffer) return new Uint8Array(data);
+    if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    return new Uint8Array(data);
+  }
+
+  /**
+   * Tap the core's input funnel for diagnostics. EmulatorJS routes EVERY input
+   * it consumes (keyboard + gamepad, after mapping) through
+   * `gameManager.functions.simulateInput(player, index, value)`. Wrapping it lets
+   * the chrome show — and the logs record — what the emulation *actually*
+   * received, as distinct from what the browser's Gamepad API merely reported.
+   * That gap is the "input reaches the page but not the game" failure.
+   *
+   * The wrapper calls `cb` (guarded — a diagnostic must never break input) then
+   * delegates to the original. Returns an untap function that restores the
+   * original; a no-op if the core isn't ready or doesn't expose simulateInput
+   * (older/broken builds), in which case the ejs channel simply never lights.
+   *
+   * @param {(player:number, index:number, value:number) => void} cb
+   * @returns {() => void} untap
+   */
+  function tapInput(cb) {
+    if (!ready || !instance || typeof cb !== 'function') return () => {};
+    let fns;
+    try { fns = instance.gameManager?.functions; } catch { fns = null; }
+    const fnsRef = fns;
+    if (!fnsRef || typeof fnsRef.simulateInput !== 'function') {
+      log().warn('input-tap.unavailable', {});
+      return () => {};
+    }
+    // Never stack wrappers (StrictMode double-invoke / re-tap): restore first.
+    const orig = fnsRef.simulateInput.__origSimulateInput || fnsRef.simulateInput;
+    const wrapped = function tappedSimulateInput(player, index, value) {
+      try { cb(player, index, value); } catch { /* diagnostic: swallow */ }
+      return orig.call(this, player, index, value);
+    };
+    wrapped.__origSimulateInput = orig;
+    fnsRef.simulateInput = wrapped;
+    log().info('input-tap.attached', {});
+    return () => {
+      try {
+        if (fnsRef.simulateInput === wrapped) fnsRef.simulateInput = orig;
+      } catch { /* best-effort restore */ }
+    };
+  }
+
+  /**
+   * True when EmulatorJS has finished its start chain.
+   *
+   * This is the settle barrier (see bootSettle.js): EJS sets `started = true` only
+   * after it has re-asserted its own volume and built the control-settings menu
+   * that creates `gamepadSelection`. Configuring before this point is what let the
+   * 2026-08-15 volume and gamepad bugs happen. EJS's own gamepadEvent guards on
+   * the same flag.
+   */
+  function isStarted() {
+    if (!instance) return false;
+    try { return instance.started === true; } catch { return false; }
+  }
+
+  /** True when EJS reports the emulation paused (frozen-detection needs this). */
+  function isPaused() {
+    if (!ready || !instance) return false;
+    try { return instance.paused === true; } catch { return false; }
+  }
+
+  /** EJS's live volume, for verifying our level actually stuck after its start chain. */
+  function getEjsVolume() {
+    if (!ready || !instance) return null;
+    try { return typeof instance.volume === 'number' ? instance.volume : null; } catch { return null; }
+  }
+
+  /**
+   * Snapshot of the pad→player slot mapping. Diagnostic only: attaching this to a
+   * detected input gap names the root cause instantly, instead of requiring the
+   * minified bundle to be disassembled by hand.
+   */
+  function getGamepadSelection() {
+    if (!instance) return null;
+    try {
+      return Array.isArray(instance.gamepadSelection) ? [...instance.gamepadSelection] : null;
+    } catch { return null; }
+  }
+
+  /** The live EJS instance, for boot-time contract assertion. Never mutate it here. */
+  function getInstance() {
+    return instance;
+  }
+
+  /**
+   * Claim a player slot for every already-connected gamepad.
+   *
+   * WHY THIS EXISTS (EmulatorJS 4.2.3 bug): `gamepadEvent` routes input by
+   * looking the pad up in `gamepadSelection` and bails on a miss:
+   *   const e = this.gamepadSelection.indexOf(pad.id+"_"+pad.index);
+   *   if (e < 0) return;
+   * That array is only filled by the GamepadHandler `"connected"` listener. But
+   * the handler polls SYNCHRONOUSLY from its own constructor
+   * (`...this.timeout=null,this.loop()`), while the listener is registered on
+   * the NEXT statement (`this.gamepad=new GamepadHandler, this.gamepad.on(...)`)
+   * — and `dispatchEvent` is a no-op when no listener is bound. So a pad that is
+   * ALREADY connected when the emulator boots has its one and only "connected"
+   * event dispatched into an empty listener map and silently dropped. It never
+   * fires again (the pad never disconnects), so every button and axis is
+   * discarded for the life of that instance.
+   *
+   * Each game launch mints a fresh instance, so this must run on EVERY boot —
+   * not once per page. Power-cycling the pad after boot is the manual
+   * equivalent; this removes the need.
+   *
+   * Idempotent and defensive: a pad already claimed is left alone, and a build
+   * without `gamepadSelection` (control-settings menu never built) is a no-op
+   * rather than a throw. Returns the number of pads newly claimed.
+   *
+   * @returns {number} pads newly assigned to a player slot
+   */
+  function claimGamepads() {
+    if (!ready || !instance) return 0;
+    let claimed = 0;
+    try {
+      const selection = instance.gamepadSelection;
+      const pads = instance.gamepad?.gamepads;
+      if (!Array.isArray(selection) || !Array.isArray(pads)) {
+        log().warn('gamepad-claim.unavailable', {
+          hasSelection: Array.isArray(selection),
+          padCount: Array.isArray(pads) ? pads.length : null,
+        });
+        return 0;
+      }
+      for (const pad of pads) {
+        if (!pad) continue;
+        const key = `${pad.id}_${pad.index}`;
+        if (selection.includes(key)) continue;
+        const slot = selection.indexOf('');
+        if (slot < 0) {
+          log().warn('gamepad-claim.no-free-slot', { id: pad.id, slots: selection.length });
+          continue;
+        }
+        selection[slot] = key;
+        claimed += 1;
+        log().info('gamepad-claim.assigned', { id: pad.id, slot });
+      }
+      if (claimed > 0) {
+        try { instance.updateGamepadLabels?.(); } catch { /* cosmetic only */ }
+      }
+    } catch (err) {
+      log().warn('gamepad-claim.failed', { error: err?.message });
+      return claimed;
+    }
+    return claimed;
+  }
+
+  /**
+   * Best-effort teardown. EmulatorJS does not cleanly support re-init within a
+   * single page; a full re-boot may require a page reload. That's acceptable —
+   * this just releases what it can so a reload starts clean.
+   */
+  function destroy() {
+    try {
+      if (ready && instance?.pause) instance.pause();
+    } catch (err) {
+      log().warn('destroy.pause-failed', { error: err?.message });
+    }
+    try {
+      // Full single-instance teardown: removes the loader script AND resets the
+      // module-level load memo, so the NEXT game boots clean instead of being
+      // handed this game's stale instance.
+      resetEmulatorJSLoader(win);
+    } catch (err) {
+      log().warn('destroy.loader-reset-failed', { error: err?.message });
+    }
+    instance = null;
+    ready = false;
+    bootPromise = null;
+    log().info('destroy', {});
+  }
+
+  return {
+    boot,
+    isReady,
+    applyShader,
+    getAppliedShader,
+    confirmFirstFrame,
+    pause,
+    resume,
+    setVolume,
+    getAudioContextState,
+    getHeap,
+    setCheat,
+    resetCheat,
+    getFrameNum,
+    waitFrames,
+    captureState,
+    loadState,
+    captureSave,
+    loadSave,
+    captureResume,
+    loadResume,
+    restart,
+    tapInput,
+    claimGamepads,
+    isStarted,
+    isPaused,
+    getEjsVolume,
+    getGamepadSelection,
+    getInstance,
+    destroy,
+  };
+}

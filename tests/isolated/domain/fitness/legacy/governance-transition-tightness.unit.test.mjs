@@ -13,7 +13,7 @@ vi.mock('#frontend/lib/logging/Logger.js', () => ({
 
 let GovernanceEngine;
 beforeAll(async () => {
-  ({ GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js'));
+  ({ GovernanceEngine } = await import("../../../../../modules/fitness/browser/hooks/fitness/GovernanceEngine.js"));
 });
 
 const ZONE_RANK_MAP = { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 };

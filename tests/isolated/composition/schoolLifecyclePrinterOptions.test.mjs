@@ -38,7 +38,7 @@ vi.mock('#adapters/hardware/laser-printer/LaserPrinterAdapter.mjs', () => ({
   },
 }));
 
-const { createSchoolLifecycle } = await import('#composition/modules/schoolLifecycle.mjs');
+const { createSchoolLifecycle } = await import("../../../modules/school/server/composition/schoolLifecycle.mjs");
 
 const silent = {
   info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, child: () => silent,

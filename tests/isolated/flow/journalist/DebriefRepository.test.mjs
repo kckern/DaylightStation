@@ -10,7 +10,7 @@ describe('DebriefRepository — headline persistence', () => {
 
   beforeEach(async () => {
     dataPath = mkdtempSync(path.join(tmpdir(), 'debrief-repo-test-'));
-    const module = await import('#backend/src/1_adapters/journalist/DebriefRepository.mjs');
+    const module = await import("../../../../modules/journalist/server/adapters/DebriefRepository.mjs");
     DebriefRepository = module.DebriefRepository;
   });
 

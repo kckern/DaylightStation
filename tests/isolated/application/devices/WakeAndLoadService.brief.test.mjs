@@ -1,3 +1,4 @@
+import {contentRequiresCamera} from '../../../../backend/src/5_composition/policies/contentRequiresCamera.mjs';
 // RQ-PLAY-11 Show briefly: a screen acks a brief play with appliedAs:'brief'
 // and shows it OVER its programme, so its current item never changes. The
 // watchdog confirms on the published brief instead of timing out at 90 s, and
@@ -38,7 +39,7 @@ describe('WakeAndLoadService — Show briefly', () => {
       prepareForContent: vi.fn().mockResolvedValue({ ok: true, coldRestart: false, cameraAvailable: true }),
       loadContent: vi.fn().mockResolvedValue({ ok: true }),
     };
-    svc = new WakeAndLoadService({
+    svc = new WakeAndLoadService({ contentRequiresCamera,
       ...testApplicationRuntime(),
       deviceService: { get: () => device },
       readinessPolicy: { isReady: vi.fn().mockResolvedValue({ ready: true }) },
@@ -89,7 +90,7 @@ describe('WakeAndLoadService — Show briefly', () => {
       }),
     };
     const loadContent = vi.fn().mockResolvedValue({ ok: true });
-    const cold = new WakeAndLoadService({
+    const cold = new WakeAndLoadService({ contentRequiresCamera,
       ...testApplicationRuntime(),
       deviceService: { get: () => ({
         id: 'tv', screenPath: '/screen/tv', defaultVolume: null, hasCapability: () => false,
@@ -121,7 +122,7 @@ describe('WakeAndLoadService — Show briefly', () => {
       getTopicSubscriberCount: vi.fn().mockReturnValue(0),
       waitForMessage: vi.fn(() => new Promise(() => {})),
     };
-    const cold = new WakeAndLoadService({
+    const cold = new WakeAndLoadService({ contentRequiresCamera,
       ...testApplicationRuntime(),
       deviceService: { get: () => ({
         id: 'tv', screenPath: '/screen/tv', defaultVolume: null, hasCapability: () => false,
@@ -142,7 +143,7 @@ describe('WakeAndLoadService — Show briefly', () => {
     expect(broadcast.mock.calls.some(([m]) => m.type === 'command')).toBe(false);
   });
 
-  const coldService = ({ liveness, eventBus }) => new WakeAndLoadService({
+  const coldService = ({ liveness, eventBus }) => new WakeAndLoadService({ contentRequiresCamera,
     ...testApplicationRuntime(),
     deviceService: { get: () => ({
       id: 'tv', screenPath: '/screen/tv', defaultVolume: null, hasCapability: () => false,

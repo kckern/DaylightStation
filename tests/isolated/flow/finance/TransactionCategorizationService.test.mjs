@@ -3,8 +3,8 @@
  */
 
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { TransactionCategorizationService } from '#backend/src/3_applications/finance/TransactionCategorizationService.mjs';
-import { TransactionCategoryJudge } from '#backend/src/3_applications/finance/TransactionCategoryJudge.mjs';
+import { TransactionCategorizationService } from "../../../../modules/finance/server/application/TransactionCategorizationService.mjs";
+import { TransactionCategoryJudge } from "../../../../modules/finance/server/application/TransactionCategoryJudge.mjs";
 
 describe('TransactionCategorizationService', () => {
   let service;

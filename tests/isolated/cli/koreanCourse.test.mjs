@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
-import { assembleKoreanCourse } from '../../../cli/lib/korean-course.mjs';
+import { assembleKoreanCourse } from "../../../modules/school/cli/lib/korean-course.mjs";
 import fs from 'node:fs';
 import yaml from 'js-yaml';
 const fixture = new URL('../../_fixtures/school/korean-3-2/', import.meta.url);

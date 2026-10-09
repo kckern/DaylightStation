@@ -2,10 +2,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { YamlObservationStore } from '#adapters/persistence/yaml/YamlObservationStore.mjs';
-import { createObservationService } from '#apps/nutrition/ObservationService.mjs';
-import { ApplyScanToComposition } from '#apps/nutribot/usecases/ApplyScanToComposition.mjs';
-import { nutriscanRefusalNotice } from '#apps/nutribot/lib/routeNutribotScan.mjs';
+import { YamlObservationStore } from "../../../../modules/health/server/adapters/persistence/yaml/YamlObservationStore.mjs";
+import { createObservationService } from "../../../../modules/health/server/application/nutrition/ObservationService.mjs";
+import { ApplyScanToComposition } from "../../../../modules/health/server/application/nutrition/usecases/ApplyScanToComposition.mjs";
+import { nutriscanRefusalNotice } from "../../../../modules/nutribot/server/application/lib/routeNutribotScan.mjs";
 
 /**
  * Lets one test hand the use case a parse result the grammar cannot currently
@@ -16,7 +16,7 @@ import { nutriscanRefusalNotice } from '#apps/nutribot/lib/routeNutribotScan.mjs
  * over a real observation ledger on a temp directory.
  */
 const forcedParse = vi.hoisted(() => ({ value: undefined }));
-vi.mock('#domains/nutrition/index.mjs', async (importOriginal) => {
+vi.mock("../../../../modules/health/server/domain/nutrition/index.mjs", async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,

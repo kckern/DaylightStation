@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { resolvePlaceholders, toCalendarDate } from '#apps/newsreporter/placeholders.mjs';
+import { resolvePlaceholders, toCalendarDate } from "../../../../../modules/newsreporter/server/application/placeholders.mjs";
 
 const ctx = { referenceDate: new Date('2026-06-21T06:50:00Z'), timezone: 'America/Denver' };
 

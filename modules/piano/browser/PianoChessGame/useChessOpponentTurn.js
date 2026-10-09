@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { chooseMove } from '@shared-gaming/rulesets/chess/opponent.mjs';
-import { LADDER_SIZE } from '@shared-gaming/rulesets/chess/ladder.mjs';
-import { fallbackCommentary } from '@shared-gaming/rulesets/chess/commentary.mjs';
-import { describeGame, legalMoves } from '@shared-gaming/rulesets/chess/engine.mjs';
+import { chooseMove } from "../../../../capabilities/gaming/portable/rulesets/chess/opponent.mjs";
+import { LADDER_SIZE } from "../../../chess/portable/ladder.mjs";
+import { fallbackCommentary } from "../../../../capabilities/gaming/portable/rulesets/chess/commentary.mjs";
+import { describeGame, legalMoves } from "../../../../capabilities/gaming/portable/rulesets/chess/engine.mjs";
 import { thinkTimeFor, useOpponentReply } from '../game-platform/opponent/opponentPacing.js';
 import { useOpponentDialogue } from '../game-platform/opponent/useOpponentDialogue.js';
 import { commitMove } from './chessGameState.js';

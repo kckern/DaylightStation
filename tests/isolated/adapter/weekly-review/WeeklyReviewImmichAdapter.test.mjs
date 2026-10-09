@@ -1,6 +1,6 @@
 // tests/isolated/adapter/weekly-review/WeeklyReviewImmichAdapter.test.mjs
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { WeeklyReviewImmichAdapter } from '../../../../backend/src/1_adapters/weekly-review/WeeklyReviewImmichAdapter.mjs';
+import { WeeklyReviewImmichAdapter } from "../../../../modules/weekly-review/server/adapters/WeeklyReviewImmichAdapter.mjs";
 
 describe('WeeklyReviewImmichAdapter', () => {
   let adapter;

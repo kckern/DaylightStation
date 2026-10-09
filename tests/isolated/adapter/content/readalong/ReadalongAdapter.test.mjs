@@ -15,7 +15,7 @@ vi.mock('#system/utils/FileIO.mjs', () => ({
 }));
 
 // Mock domains/content index for ItemSelectionService
-vi.mock('#domains/content/index.mjs', () => ({
+vi.mock("../../../../../capabilities/content-catalog/server/domain/services/ItemSelectionService.mjs", () => ({
   ItemSelectionService: {
     select: vi.fn(() => []),
     applySort: vi.fn((items) => items),
@@ -24,7 +24,7 @@ vi.mock('#domains/content/index.mjs', () => ({
 }));
 
 const { loadYamlByPrefix, loadContainedYaml, findMediaFileByPrefix, listDirs, listYamlFiles } = await import('#system/utils/FileIO.mjs');
-const { ReadalongAdapter } = await import('#adapters/content/readalong/ReadalongAdapter.mjs');
+const { ReadalongAdapter } = await import("../../../../../capabilities/content-catalog/server/adapters/providers/readalong/ReadalongAdapter.mjs");
 
 describe('ReadalongAdapter', () => {
   let adapter;

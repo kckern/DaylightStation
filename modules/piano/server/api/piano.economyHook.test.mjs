@@ -5,15 +5,16 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import os from 'node:os';
 import express from 'express';
-import request from 'supertest';
-import { YamlUserVideoProgressStore as UserVideoProgressStore } from '../../../../backend/src/1_adapters/persistence/yaml/YamlUserVideoProgressStore.mjs';
-import { createPlayRouter } from '../../../../backend/src/4_api/v1/routers/play.mjs';
-import { RecordPlaybackProgress } from '../../../../backend/src/3_applications/content/usecases/RecordPlaybackProgress.mjs';
-import { RegistryContentCatalogGateway } from '../../../../backend/src/1_adapters/content/RegistryContentCatalogGateway.mjs';
+import request from '../../../../tests/preimplementation/application-modules/drivers/remaining-http-request.mjs';
+import { YamlUserVideoProgressStore as UserVideoProgressStore } from '../adapters/YamlUserVideoProgressStore.mjs';
+import { createPlayRouter } from "../../../../capabilities/playback/server/api/play.mjs";
+import { RecordPlaybackProgress } from "../../../../capabilities/playback/server/application/usecases/RecordPlaybackProgress.mjs";
+import { RegistryContentCatalogGateway } from "../../../../capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
 
 const USER = 'test-user';
-const USER_DIR = '/tmp/piano-econhook-test-user';
+const USER_DIR = path.join(os.tmpdir(), 'piano-econhook-test-user');
 const PROGRESS = path.join(USER_DIR, 'apps', 'piano', 'video-progress.yml');
 
 // Threshold here MUST match what the store reads (completion_threshold_percent).

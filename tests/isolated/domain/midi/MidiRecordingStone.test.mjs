@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import {
   archiveRelPathForStone,
   parseMidiRecordingStone,
-} from '#adapters/jamcorder/MidiRecordingStoneCodec.mjs';
+} from '#domains/midi/MidiRecordingStoneCodec.mjs';
 
 const FIXTURE = readFileSync(new URL('../../../fixtures/jamcorder/Jmx-A00005-Jan-02-2026.mid', import.meta.url));
 

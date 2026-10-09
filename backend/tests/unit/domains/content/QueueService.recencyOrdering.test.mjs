@@ -6,7 +6,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { QueueService } from '../../../../src/2_domains/content/services/QueueService.mjs';
+import { QueueService } from "../../../../../capabilities/content-catalog/server/domain/services/QueueService.mjs";
 
 // Fake IMediaProgressMemory returning canned progress for a single source.
 function fakeMemory(progressByContentId) {

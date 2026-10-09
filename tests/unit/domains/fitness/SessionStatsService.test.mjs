@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeParticipantStats } from '#domains/fitness/services/SessionStatsService.mjs';
+import { computeParticipantStats } from "../../../../modules/fitness/server/domain/services/SessionStatsService.mjs";
 
 describe('computeParticipantStats', () => {
   it('computes peak HR', () => {

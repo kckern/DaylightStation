@@ -61,9 +61,9 @@ import { useKeepScreenAwake } from '../../usePianoScreensaverHooks.js';
 import PianoEmpty from '../../PianoEmpty.jsx';
 import { SkeletonList } from '../../Skeleton.jsx';
 import { useLoopLibrary } from '../../useLoopLibrary.js';
-import { roleOf } from '@shared-music/layerMatch.mjs';
+import { roleOf } from "../../../../../../capabilities/music-notation/portable/layerMatch.mjs";
 import { detectChords } from '../../../theory/theoryEngine.js';
-import { romanAnalysis, bestTonic } from '@shared-music/romanAnalysis.mjs';
+import { romanAnalysis, bestTonic } from "../../../../../../capabilities/music-notation/portable/romanAnalysis.mjs";
 import {
   workspaceReducer, initialWorkspace, toTransportLayers, takeToSource,
   addLayer, removeLayer, toggleMute, toggleSolo, setGain, setVoice,

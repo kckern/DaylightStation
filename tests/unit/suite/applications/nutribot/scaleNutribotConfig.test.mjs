@@ -1,12 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
-import {
-  normalizeScaleNutribotConfig,
-  densityForLevel,
-  buildDensityKeyboard,
-  buildContainerKeyboard,
-  densityPromptText,
-  densityHelpText,
-} from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
+import { normalizeScaleNutribotConfig, densityForLevel } from '../../../../../modules/health/server/scale-config.mjs';
+import { buildDensityKeyboard, buildContainerKeyboard, densityPromptText, densityHelpText } from '../../../../../backend/src/3_applications/nutribot/lib/scalePrompts.mjs';
 
 describe('scaleNutribotConfig', () => {
   it('supplies defaults when the nutribot block is absent', () => {

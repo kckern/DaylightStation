@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createAcceptancePlaybackRead } from '../../_lib/media-redesign-playback-read.mjs';
-import { createPlayRouter } from '../../../backend/src/4_api/v1/routers/play.mjs';
+import { createPlayRouter } from "../../../capabilities/playback/server/api/play.mjs";
 
 function setup(fetchImpl = vi.fn(async () => ({ ok: true, json: async () => ({
   id: 'plex:55854', mediaType: 'dash_video', duration: 6982, resume_position: 183,

@@ -126,3 +126,58 @@ test('neutral screen host cannot consume frontend installed composition', (t) =>
   f.put('capabilities/screen-host/browser/installed.mjs', 'export const host = 1;');
   green(f.run());
 });
+
+test('retained fixture helpers may use private owners while production cannot import helpers', (t) => {
+  const f = fixture(t);
+  for (const family of ['_lib', '_fixtures', '_infrastructure']) {
+    f.put(`tests/${family}/owner-fixture.mjs`, "import '../../modules/piano/server/Private.mjs';");
+    f.put('backend/src/consumer.mjs', `import '../../tests/${family}/owner-fixture.mjs';`);
+    const bad = f.run();
+    assert.equal(bad.status, 1, bad.stdout + bad.stderr);
+    assert.match(bad.stderr, /production source cannot import a test helper/);
+    f.put('backend/src/consumer.mjs', 'export const neutral = 1;');
+    green(f.run());
+  }
+});
+
+
+test('production capabilities cannot consume public product entries; test whitebox remains allowed', (t) => {
+  const f = fixture(t);
+  const consumer = 'capabilities/playback/browser/installed.mjs';
+  f.put(consumer, "import '../../../modules/piano/browser/widget.mjs'; export * from '../../../modules/piano/browser/widget.mjs'; import('../../../modules/piano/browser/widget.mjs');");
+  f.put('capabilities/playback/browser/installed.test.mjs', "import '../../../modules/piano/browser/Private.jsx';");
+  f.stage();
+  for (const staged of [false, true]) {
+    const bad = f.run(staged);
+    assert.equal(bad.status, 1, bad.stdout + bad.stderr);
+    assert.match(bad.stderr, /3 private owner edge/);
+    assert.match(bad.stderr, /capability cannot depend on application modules, including public entries/);
+    assert.ok(!bad.stderr.includes('installed.test.mjs'));
+  }
+  f.put(consumer, 'export const neutral = 1;');
+  green(f.run());
+  f.stage(consumer);
+  green(f.run(true));
+});
+
+
+test('public product entries cannot hide owner cycles; diagnostics include every cyclic edge', (t) => {
+  const f = fixture(t);
+  f.put('modules/fitness/browser/kiosk.mjs', "export const value = 1; import '../../../modules/piano/browser/widget.mjs';");
+  f.put('modules/piano/browser/cycle.mjs', "import '../../../modules/fitness/browser/kiosk.mjs';");
+  f.put('modules/piano/browser/cycle.test.mjs', "import '../../../modules/fitness/browser/kiosk.mjs';");
+  f.stage();
+  for (const staged of [false, true]) {
+    const bad = f.run(staged);
+    assert.equal(bad.status, 1, bad.stdout + bad.stderr);
+    assert.match(bad.stderr, /0 private owner edge\(s\), 1 owner cycle\(s\)/);
+    assert.match(bad.stderr, /owner dependency cycle: modules\/fitness, modules\/piano/);
+    assert.match(bad.stderr, /modules\/fitness -> modules\/piano: modules\/fitness\/browser\/kiosk.mjs:1/);
+    assert.match(bad.stderr, /modules\/piano -> modules\/fitness: modules\/piano\/browser\/cycle.mjs:1/);
+    assert.ok(!bad.stderr.includes('cycle.test.mjs'));
+  }
+  f.put('modules/piano/browser/cycle.mjs', 'export const value = 1;');
+  green(f.run());
+  f.stage('modules/piano/browser/cycle.mjs');
+  green(f.run(true));
+});

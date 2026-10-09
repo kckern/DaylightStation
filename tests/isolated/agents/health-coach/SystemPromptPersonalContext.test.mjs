@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { HealthCoachAgent } from '../../../../backend/src/3_applications/agents/health-coach/HealthCoachAgent.mjs';
-import { dashboardPrompt as staticSystemPrompt } from '../../../../backend/src/3_applications/agents/health-coach/prompts/dashboard.mjs';
+import { HealthCoachAgent } from "../../../../modules/health/server/application/agents/health-coach/HealthCoachAgent.mjs";
+import { dashboardPrompt as staticSystemPrompt } from "../../../../modules/health/server/application/agents/health-coach/prompts/dashboard.mjs";
 
 // ---------------------------------------------------------------------------
 // Test doubles

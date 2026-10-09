@@ -3,7 +3,7 @@ import { act, render } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ScreenAutoplay } from './ScreenRenderer.jsx';
 const hooks=vi.hoisted(()=>({push:vi.fn()}));
-vi.mock('../../context/useMenuNavigationContext.js',()=>({useMenuNavigationContext:()=>({push:hooks.push})}));
+vi.mock("../../../../capabilities/screen-host/browser/menu-navigation.mjs",()=>({useMenuNavigationContext:()=>({push:hooks.push})}));
 vi.mock('./widgets/builtins.js',()=>({registerBuiltinWidgets:()=>{}}));
 vi.mock('../../lib/fkb.js',async importOriginal=>({...await importOriginal(),bindBackButton:()=>{},enableGlobalKeyCapture:()=>{}}));
 afterEach(()=>vi.useRealTimers());

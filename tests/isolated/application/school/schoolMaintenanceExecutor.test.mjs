@@ -5,7 +5,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   SchoolMaintenanceExecutor, SCHOOL_STALE_SWEEP_JOB,
-} from '#apps/school/SchoolMaintenanceExecutor.mjs';
+} from "../../../../modules/school/server/application/SchoolMaintenanceExecutor.mjs";
 
 const silent = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 const sweeper = (result = { swept: [], skipped: [] }) => ({ sweepUntouched: vi.fn(async () => result) });

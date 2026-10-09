@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { STRUCTURE_TEMPLATES } from './structureTemplates.js';
 import { draftReducer, applyTemplate, toSchedulerInputs } from './draftReducer.js';
-import { compileArrangement } from '@shared-music/arrangementScheduler.mjs';
+import { compileArrangement } from "../../../../../capabilities/music-notation/portable/arrangementScheduler.mjs";
 
 describe('STRUCTURE_TEMPLATES catalog', () => {
   it('ships the five templates with unique ids', () => {

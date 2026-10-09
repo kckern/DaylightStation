@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveProgressConflict } from '#domains/content/services/resolveProgressConflict.mjs';
+import { resolveProgressConflict } from "../../../../capabilities/playback/server/domain/services/resolveProgressConflict.mjs";
 
 describe('resolveProgressConflict', () => {
 

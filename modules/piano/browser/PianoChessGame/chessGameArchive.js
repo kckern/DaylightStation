@@ -1,4 +1,4 @@
-import { INITIAL_FEN } from '@shared-gaming/rulesets/chess/engine.mjs';
+import { INITIAL_FEN } from "../../../../capabilities/gaming/portable/rulesets/chess/engine.mjs";
 
 /**
  * The full account of a game, for the household history.

@@ -2,15 +2,15 @@ import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createAuthRouter } from './auth.mjs';
-import { createCalendarRouter } from './calendar.mjs';
+import { createCalendarRouter } from "../../../../../modules/calendar/server/api/calendar.mjs";
 import { createEntropyRouter } from './entropy.mjs';
 import { createHarvestRouter } from './harvest.mjs';
-import { createLifelogRouter } from './lifelog.mjs';
-import { createMediaRouter } from './media.mjs';
-import { createHomeDashboardRouter } from './home-dashboard.mjs';
-import { createJournalistRouter } from './journalist.mjs';
-import { createNutribotRouter } from './nutribot.mjs';
-import { CalendarReadContext } from '#apps/calendar/CalendarReadContext.mjs';
+import { createLifelogRouter } from "../../../../../capabilities/lifelog/server/api/lifelog.mjs";
+import { createMediaRouter } from "../../../../../modules/media/server/api/media.mjs";
+import { createHomeDashboardRouter } from "../../../../../modules/home/server/api/home-dashboard.mjs";
+import { createJournalistRouter } from "../../../../../modules/journalist/server/api/journalist.mjs";
+import { createNutribotRouter } from "../../../../../modules/nutribot/server/api/routers/nutribot.mjs";
+import { CalendarReadContext } from "../../../../../modules/calendar/server/application/CalendarReadContext.mjs";
 
 const logger = { info() {}, warn() {}, error() {}, debug() {} };
 function mount(path, router, { json = true } = {}) {

@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { YamlSessionDatastore } from '#adapters/persistence/yaml/YamlSessionDatastore.mjs';
+import { YamlSessionDatastore } from "../../../../../modules/fitness/server/adapters/persistence/YamlSessionDatastore.mjs";
 import { saveYaml, loadYamlSafe } from '#system/utils/FileIO.mjs';
 
 const DATE = '2026-07-20';

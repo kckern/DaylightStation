@@ -20,7 +20,7 @@
 // Inversions are first-class: any root is tried, so C-E-G-Bb voiced E-G-Bb-C is
 // still "C 7" (spelled "C 7 / E"), never a different chord.
 
-import { spellNoteName, spellChord, accidentalGlyph, rootQualityOf } from '../../../../frontend/src/modules/MusicNotation/model/spelling.js';
+import { spellNoteName, spellChord, accidentalGlyph, rootQualityOf } from "../../../../capabilities/music-notation/browser/model/spelling.js";
 
 const mod12 = (n) => ((n % 12) + 12) % 12;
 const PERFECT_FIFTH = 7; // the one chord tone allowed to be absent in a real voicing

@@ -1,3 +1,4 @@
+import {contentRequiresCamera} from '../../../../backend/src/5_composition/policies/contentRequiresCamera.mjs';
 import { vi } from 'vitest';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
 import { EventBusDeviceTransportGateway } from '#adapters/devices/EventBusDeviceTransportGateway.mjs';
@@ -59,7 +60,7 @@ describe('WakeAndLoadService playback watchdog', () => {
       config: { shuffle: false, repeat: 'off', shader: null, volume: 50, playbackRate: 1 },
       meta: { ownerId: 'screen-owner', updatedAt: new Date().toISOString(), playbackOwner: { ownerInstanceId: 'player-1', playbackRevision: 2, queueRevision: 3, contentId: 'plex:old', queueItemId: 'old' } },
     };
-    const svc = new WakeAndLoadService({
+    const svc = new WakeAndLoadService({ contentRequiresCamera,
       ...testApplicationRuntime(), deviceService: { get: () => makeDevice() },
       readinessPolicy: { isReady: async () => ({ ready: true }) }, broadcast, eventBus,
       screenGateway: new EventBusDeviceTransportGateway({ eventBus, broadcastEvent: broadcast }),
@@ -101,7 +102,7 @@ describe('WakeAndLoadService playback watchdog', () => {
       config: { shuffle: false, repeat: 'off', shader: null, volume: 50, playbackRate: 1 },
       meta: { ownerId: 'screen-owner', updatedAt: new Date().toISOString(), playbackOwner: { ownerInstanceId: 'player-add', playbackRevision: 7, queueRevision: 8, contentId: 'plex:old', queueItemId: 'old' } },
     };
-    const svc = new WakeAndLoadService({
+    const svc = new WakeAndLoadService({ contentRequiresCamera,
       ...testApplicationRuntime(), deviceService: { get: () => makeDevice() },
       readinessPolicy: { isReady: async () => ({ ready: true }) }, broadcast, eventBus,
       screenGateway: new EventBusDeviceTransportGateway({ eventBus, broadcastEvent: broadcast }),
@@ -144,7 +145,7 @@ describe('WakeAndLoadService playback watchdog', () => {
       prepareForContent: async () => ({ ok: true, coldRestart: true, cameraAvailable: true }),
       loadContent: vi.fn().mockResolvedValue({ ok: true, verified: true }),
     });
-    const svc = new WakeAndLoadService({
+    const svc = new WakeAndLoadService({ contentRequiresCamera,
       ...testApplicationRuntime(), deviceService: { get: () => device },
       readinessPolicy: { isReady: async () => ({ ready: true }) }, broadcast, eventBus,
       screenGateway: new EventBusDeviceTransportGateway({ eventBus, broadcastEvent: broadcast }),
@@ -189,7 +190,7 @@ describe('WakeAndLoadService playback watchdog', () => {
     });
     const runtime = testApplicationRuntime();
     runtime.scheduler.wait = vi.fn().mockResolvedValue(undefined);
-    const svc = new WakeAndLoadService({
+    const svc = new WakeAndLoadService({ contentRequiresCamera,
       ...runtime, deviceService: { get: () => device },
       readinessPolicy: { isReady: async () => ({ ready: true }) }, broadcast, eventBus,
       screenGateway: new EventBusDeviceTransportGateway({ eventBus, broadcastEvent: broadcast }),
@@ -219,7 +220,7 @@ describe('WakeAndLoadService playback watchdog', () => {
     const broadcast = vi.fn();
     const eventBus = makeEventBus();
     const device = makeDevice();
-    const svc = new WakeAndLoadService({
+    const svc = new WakeAndLoadService({ contentRequiresCamera,
       ...testApplicationRuntime(),
       deviceService: { get: () => device },
       readinessPolicy: { isReady: async () => ({ ready: true }) },
@@ -257,7 +258,7 @@ describe('WakeAndLoadService playback watchdog', () => {
     const broadcast = vi.fn();
     const eventBus = makeEventBus();
     const device = makeDevice();
-    const svc = new WakeAndLoadService({
+    const svc = new WakeAndLoadService({ contentRequiresCamera,
       ...testApplicationRuntime(),
       deviceService: { get: () => device },
       readinessPolicy: { isReady: async () => ({ ready: true }) },
@@ -306,7 +307,7 @@ describe('WakeAndLoadService playback watchdog', () => {
         contentId: 'plex:12345'
       })
     };
-    const svc = new WakeAndLoadService({
+    const svc = new WakeAndLoadService({ contentRequiresCamera,
       ...testApplicationRuntime(),
       deviceService: { get: () => device },
       readinessPolicy: { isReady: async () => ({ ready: true }) },
@@ -342,7 +343,7 @@ describe('WakeAndLoadService playback watchdog', () => {
     const broadcast = vi.fn();
     const eventBus = makeEventBus();
     const device = makeDevice();
-    const svc = new WakeAndLoadService({
+    const svc = new WakeAndLoadService({ contentRequiresCamera,
       ...testApplicationRuntime(),
       deviceService: { get: () => device },
       readinessPolicy: { isReady: async () => ({ ready: true }) },
@@ -378,7 +379,7 @@ describe('WakeAndLoadService playback watchdog', () => {
     const device = makeDevice();
     const subscribeSpy = vi.spyOn(eventBus, 'subscribe');
 
-    const svc = new WakeAndLoadService({
+    const svc = new WakeAndLoadService({ contentRequiresCamera,
       ...testApplicationRuntime(),
       deviceService: { get: () => device },
       readinessPolicy: { isReady: async () => ({ ready: true }) },
@@ -403,7 +404,7 @@ describe('WakeAndLoadService playback watchdog', () => {
     const eventBus = makeEventBus();
     const subscribeSpy = vi.spyOn(eventBus, 'subscribe');
     const device = makeDevice();
-    const svc = new WakeAndLoadService({
+    const svc = new WakeAndLoadService({ contentRequiresCamera,
       ...testApplicationRuntime(),
       deviceService: { get: () => device },
       readinessPolicy: { isReady: async () => ({ ready: true }) },
@@ -433,7 +434,7 @@ describe('WakeAndLoadService playback watchdog', () => {
     const broadcast = vi.fn();
     const eventBus = makeEventBus();
     const device = makeDevice();
-    const svc = new WakeAndLoadService({
+    const svc = new WakeAndLoadService({ contentRequiresCamera,
       ...testApplicationRuntime(),
       deviceService: { get: () => device },
       readinessPolicy: { isReady: async () => ({ ready: true }) },
@@ -461,7 +462,7 @@ describe('WakeAndLoadService playback watchdog', () => {
     const eventBus = makeEventBus();
     const broadcast = vi.fn();
     const device = makeDevice();
-    const svc = new WakeAndLoadService({
+    const svc = new WakeAndLoadService({ contentRequiresCamera,
       ...testApplicationRuntime(),
       deviceService: { get: () => device },
       readinessPolicy: { isReady: async () => ({ ready: true }) },

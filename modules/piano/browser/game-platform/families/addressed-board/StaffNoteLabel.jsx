@@ -1,5 +1,5 @@
-import { SvgStaffRenderer } from '../../../../../../frontend/src/modules/MusicNotation/renderers/SvgStaffRenderer.jsx';
-import { RimClef, RimStaffRenderer } from '../../../../../../frontend/src/modules/MusicNotation/renderers/RimStaffRenderer.jsx';
+import { SvgStaffRenderer } from "../../../../../../capabilities/music-notation/browser/renderers/SvgStaffRenderer.jsx";
+import { RimClef, RimStaffRenderer } from "../../../../../../capabilities/music-notation/browser/renderers/RimStaffRenderer.jsx";
 import './StaffNoteLabel.scss';
 
 /**

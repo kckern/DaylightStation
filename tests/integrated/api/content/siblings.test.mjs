@@ -3,11 +3,11 @@ import express from 'express';
 import request from 'supertest';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createSiblingsRouter } from '#backend/src/4_api/v1/routers/siblings.mjs';
-import { SiblingsService } from '#apps/content/services/SiblingsService.mjs';
-import { ContentSourceRegistry } from '#adapters/content/ContentSourceRegistry.mjs';
+import { createSiblingsRouter } from "../../../../capabilities/content-catalog/server/api/siblings.mjs";
+import { SiblingsService } from "../../../../capabilities/content-catalog/server/application/services/SiblingsService.mjs";
+import { ContentSourceRegistry } from "../../../../capabilities/content-catalog/server/adapters/ContentSourceRegistry.mjs";
 import { FileAdapter } from '#adapters/content/media/files/FileAdapter.mjs';
-import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
+import { RegistryContentCatalogGateway } from "../../../../capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesPath = path.resolve(__dirname, '../../_fixtures/media');

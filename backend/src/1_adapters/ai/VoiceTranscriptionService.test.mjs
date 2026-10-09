@@ -15,7 +15,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { VoiceTranscriptionService } from './VoiceTranscriptionService.mjs';
-import { fitnessTranscriptionProfile } from './transcriptionProfiles/fitness.mjs';
+import { fitnessTranscriptionProfile } from "../../../../modules/fitness/server/adapters/ai/transcriptionProfiles/fitness.mjs";
 import { languageTranscriptionProfile } from './transcriptionProfiles/language.mjs';
 
 function makeAdapter({ transcript = 'the weather are nice today', clean = 'the weather are nice today' } = {}) {

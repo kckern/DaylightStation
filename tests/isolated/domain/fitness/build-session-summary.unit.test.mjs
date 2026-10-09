@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildSessionSummary } from '#frontend/hooks/fitness/buildSessionSummary.js';
+import { buildSessionSummary } from "../../../../modules/fitness/browser/hooks/fitness/buildSessionSummary.js";
 
 describe('buildSessionSummary', () => {
   // ---------- helpers ----------

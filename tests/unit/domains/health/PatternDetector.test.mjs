@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { PatternDetector } from '#domains/health/services/PatternDetector.mjs';
+import { PatternDetector } from "../../../../modules/health/server/domain/health/services/PatternDetector.mjs";
 
 // ----------------------------------------------------------------------------
 // PatternDetector tests — primitive-driven detector (F1-A refactor).

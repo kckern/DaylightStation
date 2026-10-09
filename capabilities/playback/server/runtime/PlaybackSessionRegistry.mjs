@@ -17,7 +17,7 @@
  * persisting would only resurrect sessions for content nobody is watching.
  */
 
-import { PlaybackSession } from "#domains/media/entities/PlaybackSession.mjs";
+import { PlaybackSession } from "../domain/entities/PlaybackSession.mjs";
 
 export class PlaybackSessionRegistry {
   /** @type {Map<string, PlaybackSession>} surfaceId -> session */

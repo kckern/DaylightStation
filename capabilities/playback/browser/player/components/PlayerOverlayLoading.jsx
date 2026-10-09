@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 import spinner from '../../../../../frontend/src/assets/icons/spinner.svg';
 import pause from '../../../../../frontend/src/assets/icons/pause.svg';
 import { playbackLog } from '../lib/playbackLogger.js';
-import { subscribeSkipCard, isSkipCardPaused } from '../../../../../frontend/src/lib/Player/skipCardState.js';
+import { getLoadingPresentation } from '../../presentation.mjs';
 
 /**
  * Loading / resilience overlay shown while media is buffering, stalling, or waiting to start.
@@ -57,6 +57,7 @@ export function PlayerOverlayLoading({
   // Suppress the buffering spinner during a deliberate content-filter skip-card
   // pause (we pause to buffer behind the card; that's not a stall). Subscribed
   // FIRST so this hook is always called regardless of the early returns below.
+  const { subscribeLoadingSuppression: subscribeSkipCard, getLoadingSuppression: isSkipCardPaused } = getLoadingPresentation();
   const skipCardPaused = useSyncExternalStore(subscribeSkipCard, isSkipCardPaused, isSkipCardPaused);
 
   // Render whenever the user needs recovery feedback. During a true stall, show

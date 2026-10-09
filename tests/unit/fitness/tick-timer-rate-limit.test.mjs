@@ -24,7 +24,7 @@ jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
 // extract the prototype methods.
 let FitnessSession;
 beforeAll(async () => {
-  const mod = await import('#frontend/hooks/fitness/FitnessSession.js');
+  const mod = await import("../../../modules/fitness/browser/hooks/fitness/FitnessSession.js");
   FitnessSession = mod.FitnessSession;
 });
 

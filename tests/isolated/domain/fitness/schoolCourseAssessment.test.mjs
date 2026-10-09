@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateSchoolFitnessAttempt } from '#domains/fitness/schoolCourseAssessment.mjs';
-import { defaultFitnessSuccessPolicy } from '#domains/school/fitnessCourse.mjs';
+import { evaluateSchoolFitnessAttempt } from "../../../../modules/fitness/server/domain/schoolCourseAssessment.mjs";
+import { defaultFitnessSuccessPolicy } from "../../../../modules/school/server/domain/fitnessCourse.mjs";
 
 describe('Fitness assessment for School attempts', () => {
   it('passes the minimal policy only when video and trustworthy HR coverage both pass', () => {

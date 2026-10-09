@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ToggleDashboardEntity } from '#apps/home-automation/usecases/ToggleDashboardEntity.mjs';
+import { ToggleDashboardEntity } from "../../../../modules/home/server/application/home-automation/usecases/ToggleDashboardEntity.mjs";
 import { AuthorizationError } from '#system/utils/errors/index.mjs';
 
 const config = {

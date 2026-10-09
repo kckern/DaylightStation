@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { bootstrapLifeplan } from '#composition/modules/lifeplan.mjs';
+import { bootstrapLifeplan } from "../../../modules/life/server/composition.mjs";
 
 const createdDirs = [];
 

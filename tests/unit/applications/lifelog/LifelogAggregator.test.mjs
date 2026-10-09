@@ -6,37 +6,48 @@
  */
 
 import { jest } from '@jest/globals';
-import { LifelogAggregator } from '#apps/lifelog/LifelogAggregator.mjs';
-import { HarvestedLifelogSourceRegistry } from '#adapters/lifelog/HarvestedLifelogSourceRegistry.mjs';
-import { initConfigService, resetConfigService, configService } from '#system/config/index.mjs';
-import { userDataService } from '#adapters/persistence/files/UserDataService.mjs';
-import { getDataPath } from '../../../_lib/configHelper.mjs';
+import { LifelogAggregator } from "../../../../capabilities/lifelog/server/application/LifelogAggregator.mjs";
+import { HarvestedLifelogSourceRegistry } from "../../../../capabilities/lifelog/server/adapters/HarvestedLifelogSourceRegistry.mjs";
+import { DataService } from '#adapters/persistence/files/DataService.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import moment from 'moment-timezone';
 
-// Get data dir from config helper (SSOT)
-const DATA_DIR = getDataPath();
+let DATA_DIR;
+let dataService;
 
 describe('LifelogAggregator', () => {
   let username;
 
   beforeAll(async () => {
-    // Initialize config service with real data directory
-    resetConfigService();
-    await initConfigService(DATA_DIR);
-
-    // Get head of household from config (default user)
+    DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'lifelog-aggregator-'));
+    const configService = {
+      getDataDir: () => DATA_DIR,
+      getHeadOfHousehold: () => 'fixture-user',
+    };
     username = configService.getHeadOfHousehold();
-    console.log(`Testing with username: ${username}`);
+    dataService = new DataService({ configService });
+    const yesterday = moment().subtract(1, 'day').format('YYYY-MM-DD');
+    if (!dataService.user.write('lifelog/weight', { [yesterday]: { lbs: 150 } }, username)) {
+      throw new Error('Synthetic lifelog fixture could not be written');
+    }
+    const registry = new HarvestedLifelogSourceRegistry({ dataService });
+    const entries = await registry.readDay(username, yesterday);
+    if (!entries.some(entry => entry.source === 'weight' && entry.data.lbs === 150 && entry.summary)) {
+      throw new Error('Synthetic lifelog fixture did not traverse the real data and extractor adapters');
+    }
   });
 
   afterAll(() => {
-    resetConfigService();
+    if (DATA_DIR) fs.rmSync(DATA_DIR, { recursive: true, force: true });
   });
 
   describe('with userDataService integration', () => {
     it('should load lifelog data when userLoadFile is provided', async () => {
       // Create userLoadFile function wrapping userDataService
       const userLoadFile = (user, filename) => {
-        return userDataService.getLifelogData(user, filename);
+        return dataService.user.read('lifelog/' + filename, user);
       };
 
       const aggregator = new LifelogAggregator({
@@ -104,7 +115,7 @@ describe('LifelogAggregator', () => {
   describe('JournalistContainer integration', () => {
     it('should work when userDataService is injected into container', async () => {
       // Dynamically import to avoid circular dependency issues
-      const { JournalistContainer } = await import('#apps/journalist/JournalistContainer.mjs');
+      const { JournalistContainer } = await import("../../../../modules/journalist/server/application/JournalistContainer.mjs");
 
       // Minimal config for container
       const config = {
@@ -117,7 +128,7 @@ describe('LifelogAggregator', () => {
       const container = new JournalistContainer(config, {
         lifelogAggregator: new LifelogAggregator({
           sourceRegistry: new HarvestedLifelogSourceRegistry({
-            userLoadFile: (user, filename) => userDataService.getLifelogData(user, filename),
+            userLoadFile: (user, filename) => dataService.user.read('lifelog/' + filename, user),
           }),
         }),
         logger: console,
@@ -139,7 +150,7 @@ describe('LifelogAggregator', () => {
     });
 
     it('should reject a missing semantic lifelog aggregator', async () => {
-      const { JournalistContainer } = await import('#apps/journalist/JournalistContainer.mjs');
+      const { JournalistContainer } = await import("../../../../modules/journalist/server/application/JournalistContainer.mjs");
 
       const config = {
         username,

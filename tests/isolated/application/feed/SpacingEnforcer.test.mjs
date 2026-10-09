@@ -1,5 +1,5 @@
 // tests/isolated/application/feed/SpacingEnforcer.test.mjs
-import { SpacingEnforcer } from '#apps/feed/services/SpacingEnforcer.mjs';
+import { SpacingEnforcer } from "../../../../modules/feed/server/application/services/SpacingEnforcer.mjs";
 
 const item = (source, subsource = null, id = null) => ({
   id: id || `${source}:${subsource || 'x'}:${Math.random()}`,

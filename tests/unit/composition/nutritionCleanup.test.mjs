@@ -3,7 +3,7 @@ import { it, expect, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createNutritionCleanup } from '#composition/modules/nutritionCleanup.mjs';
+import { createNutritionCleanup } from "../../../modules/health/server/composition/nutritionCleanup.mjs";
 
 it('composes a paused, preview-only cleanup service without Telegram or a backend server', async () => {
   const root = await mkdtemp(join(tmpdir(), 'cleanup-composition-'));

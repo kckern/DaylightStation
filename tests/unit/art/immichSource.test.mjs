@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createImmichSource, combinations } from '../../../backend/src/1_adapters/content/art/sources/immichSource.mjs';
+import { createImmichSource, combinations } from "../../../modules/art/server/adapters/sources/immichSource.mjs";
 
 const asset = (over = {}) => ({
   id: over.id || 'a1',

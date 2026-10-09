@@ -12,7 +12,7 @@
  * move is refused, and both children are told.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { ReassignSession } from '#apps/school/usecases/ReassignSession.mjs';
+import { ReassignSession } from "../../../../modules/school/server/application/usecases/ReassignSession.mjs";
 import { FakeSessionRepository } from '../../../_lib/school/lifecycleFakes.mjs';
 
 const NOW = new Date('2026-08-26T18:00:00.000Z');

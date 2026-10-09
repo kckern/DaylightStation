@@ -7,8 +7,8 @@
 // view). The play/queue props double as the item-metadata hint until the
 // player resolves real metadata.
 import React, { useRef } from 'react';
-import { Player as Player } from "../../../../../capabilities/playback/browser/public.mjs";
-import SurroundHost from '../../../modules/Surround/SurroundHost.jsx';
+import { Player as Player } from "../../../../../modules/media/browser/playback.mjs";
+import SurroundHost from "../../../../../modules/media/browser/surround-host.mjs";
 import { usePlayerSessionBinding } from "../../../../../capabilities/playback/browser/sessions.mjs";
 
 export function ScreenPlayer(props) {

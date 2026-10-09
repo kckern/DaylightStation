@@ -30,7 +30,7 @@ export class BaseInputRouter {
   /**
    * Route an IInputEvent to the appropriate handler.
    * @param {import('./telegram/IInputEvent.mjs').IInputEvent} event
-   * @param {import('../3_applications/nutribot/ports/IResponseContext.mjs').IResponseContext} [responseContext] - Bound response context for DDD-compliant messaging
+   * @param {import('#apps/common/ports/IResponseContext.mjs').IResponseContext} [responseContext] - Bound response context for DDD-compliant messaging
    * @returns {Promise<any>}
    */
   async route(event, responseContext = null) {
@@ -74,7 +74,7 @@ export class BaseInputRouter {
   /**
    * Handle text input event
    * @param {import('./telegram/IInputEvent.mjs').IInputEvent} event
-   * @param {import('../3_applications/nutribot/ports/IResponseContext.mjs').IResponseContext} [responseContext]
+   * @param {import('#apps/common/ports/IResponseContext.mjs').IResponseContext} [responseContext]
    * @returns {Promise<any>}
    */
   async handleText(event, responseContext) {
@@ -85,7 +85,7 @@ export class BaseInputRouter {
   /**
    * Handle voice input event
    * @param {import('./telegram/IInputEvent.mjs').IInputEvent} event
-   * @param {import('../3_applications/nutribot/ports/IResponseContext.mjs').IResponseContext} [responseContext]
+   * @param {import('#apps/common/ports/IResponseContext.mjs').IResponseContext} [responseContext]
    * @returns {Promise<any>}
    */
   async handleVoice(event, responseContext) {
@@ -96,7 +96,7 @@ export class BaseInputRouter {
   /**
    * Handle image input event
    * @param {import('./telegram/IInputEvent.mjs').IInputEvent} event
-   * @param {import('../3_applications/nutribot/ports/IResponseContext.mjs').IResponseContext} [responseContext]
+   * @param {import('#apps/common/ports/IResponseContext.mjs').IResponseContext} [responseContext]
    * @returns {Promise<any>}
    */
   async handleImage(event, responseContext) {
@@ -107,7 +107,7 @@ export class BaseInputRouter {
   /**
    * Handle callback (button press) event
    * @param {import('./telegram/IInputEvent.mjs').IInputEvent} event
-   * @param {import('../3_applications/nutribot/ports/IResponseContext.mjs').IResponseContext} [responseContext]
+   * @param {import('#apps/common/ports/IResponseContext.mjs').IResponseContext} [responseContext]
    * @returns {Promise<any>}
    */
   async handleCallback(event, responseContext) {
@@ -118,7 +118,7 @@ export class BaseInputRouter {
   /**
    * Handle command event
    * @param {import('./telegram/IInputEvent.mjs').IInputEvent} event
-   * @param {import('../3_applications/nutribot/ports/IResponseContext.mjs').IResponseContext} [responseContext]
+   * @param {import('#apps/common/ports/IResponseContext.mjs').IResponseContext} [responseContext]
    * @returns {Promise<any>}
    */
   async handleCommand(event, responseContext) {
@@ -129,7 +129,7 @@ export class BaseInputRouter {
   /**
    * Handle UPC/barcode event
    * @param {import('./telegram/IInputEvent.mjs').IInputEvent} event
-   * @param {import('../3_applications/nutribot/ports/IResponseContext.mjs').IResponseContext} [responseContext]
+   * @param {import('#apps/common/ports/IResponseContext.mjs').IResponseContext} [responseContext]
    * @returns {Promise<any>}
    */
   async handleUpc(event, responseContext) {

@@ -1,6 +1,6 @@
 // tests/isolated/adapter/feed/FreshRSSSourceAdapter.test.mjs
 import { vi } from 'vitest';
-import { FreshRSSSourceAdapter } from '#adapters/feed/sources/FreshRSSSourceAdapter.mjs';
+import { FreshRSSSourceAdapter } from "../../../../modules/feed/server/adapters/sources/FreshRSSSourceAdapter.mjs";
 
 describe('FreshRSSSourceAdapter', () => {
   let adapter;

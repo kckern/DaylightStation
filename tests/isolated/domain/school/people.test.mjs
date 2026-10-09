@@ -9,7 +9,7 @@
  * profile with no birthyear are both children as far as authority goes.
  */
 import { describe, it, expect } from 'vitest';
-import { isAdult, ADULT_AGE } from '#domains/school/people.mjs';
+import { isAdult, ADULT_AGE } from "../../../../modules/school/server/domain/people.mjs";
 
 const NOW = Date.UTC(2026, 6, 27); // 2026-07-27
 const ROSTER = [

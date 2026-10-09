@@ -43,7 +43,7 @@ vi.mock('../../../../frontend/src/lib/api.mjs', () => ({
   DaylightAPI: vi.fn(async () => ({})),
   DaylightAPIText: vi.fn(async () => '<score-partwise/>'),
 }));
-vi.mock('../../../../frontend/src/modules/MusicNotation/parseMusicXml.js', () => ({ parseMusicXml: () => ({}) }));
+vi.mock("../../../../capabilities/music-notation/browser/parseMusicXml.js", () => ({ parseMusicXml: () => ({}) }));
 vi.mock('./heroChart.js', async (importOriginal) => ({
   ...(await importOriginal()),
   buildHeroChart: () => ({

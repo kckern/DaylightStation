@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { NewsReporterService } from '#apps/newsreporter/NewsReporterService.mjs';
+import { NewsReporterService } from "../../../../../modules/newsreporter/server/application/NewsReporterService.mjs";
 import { EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
 /* ---------- fakes ---------- */

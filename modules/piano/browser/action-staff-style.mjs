@@ -1,2 +1,2 @@
 /** Exact independent style surface; preserves consumer import closure. */
-import "./components/ActionStaff.scss";
+import '../../../capabilities/music-notation/browser/action-style.mjs';

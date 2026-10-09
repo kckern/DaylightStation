@@ -1,4 +1,4 @@
-import { FILES, RANKS, isSquare } from '@shared-gaming/rulesets/chess/index.mjs';
+import { FILES, RANKS, isSquare } from "../../../../capabilities/gaming/portable/rulesets/chess/index.mjs";
 
 /**
  * Addressing squares by READING instead of by spelling.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
+import { lessonProgressRows } from "../../../../modules/school/server/domain/lessonProgress.mjs";
 
 describe('lessonProgressRows display labels', () => {
   it('uses authored compact course and module labels instead of generic or id labels', () => {

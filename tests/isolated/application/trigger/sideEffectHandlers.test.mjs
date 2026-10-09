@@ -3,7 +3,7 @@ import {
   sideEffectHandlers,
   dispatchSideEffect,
   UnknownSideEffectError,
-} from '../../../../backend/src/3_applications/trigger/sideEffectHandlers.mjs';
+} from "../../../../capabilities/device-dispatch/server/application/sideEffectHandlers.mjs";
 
 describe('sideEffectHandlers', () => {
   it('tv-off calls tvControlAdapter.turnOff with the location', async () => {

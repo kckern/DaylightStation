@@ -11,7 +11,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { GetPlayableUnits } from '../../../../modules/piano/server/application/usecases/GetPlayableUnits.mjs';
-import { PianoConfigProjection } from '../../../../backend/src/1_adapters/config/ApplicationConfigProjections.mjs';
+import { PianoConfigProjection } from "../../../../modules/piano/server/adapters/PianoConfigProjection.mjs";
 
 const noop = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
 

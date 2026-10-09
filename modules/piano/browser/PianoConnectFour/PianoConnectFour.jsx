@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { chooseColumn, CONNECT_FOUR_OPPONENTS } from '@shared-gaming/rulesets/connect-four/opponent.mjs';
-import { playColumn, replayGame } from '@shared-gaming/rulesets/connect-four/engine.mjs';
-import { connectFourCommentary } from '@shared-gaming/rulesets/connect-four/commentary.mjs';
+import { chooseColumn } from "../../../../capabilities/gaming/portable/rulesets/connect-four/opponent.mjs";
+import { CONNECT_FOUR_OPPONENTS } from "../../portable/game-opponents/connect-four.mjs";
+import { playColumn, replayGame } from "../../../../capabilities/gaming/portable/rulesets/connect-four/engine.mjs";
+import { connectFourCommentary } from "../../../../capabilities/gaming/portable/rulesets/connect-four/commentary.mjs";
 import BoardGameFrame from '../game-platform/host/BoardGameFrame.jsx';
 import BoardGameResult from '../game-platform/host/BoardGameResult.jsx';
 import BoardGameOpening from '../game-platform/host/BoardGameOpening.jsx';

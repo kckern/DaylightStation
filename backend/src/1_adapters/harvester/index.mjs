@@ -44,6 +44,4 @@ export { BuxferHarvester } from './finance/BuxferHarvester.mjs';
 export { WeatherHarvester } from './other/WeatherHarvester.mjs';
 export { InfinityHarvester, createInfinityHarvesters } from './other/InfinityHarvester.mjs';
 export { JamCorderHarvester } from './other/JamCorderHarvester.mjs';
-export { PianoMp3Harvester } from './other/PianoMp3Harvester.mjs';
-export { PianoImageHarvester } from './other/PianoImageHarvester.mjs';
 // Note: YouTube (media download) and Budget (already in finance domain) don't fit IHarvester pattern

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { rollUpHistory } from '#domains/health/services/HistoryAggregator.mjs';
+import { rollUpHistory } from "../../../../modules/health/server/domain/health/services/HistoryAggregator.mjs";
 
 const entry = (date) => ({ date, workouts: [], sessions: [] });
 

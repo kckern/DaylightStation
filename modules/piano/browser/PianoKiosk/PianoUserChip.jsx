@@ -5,7 +5,7 @@ import ProfilePicker from '../../../../frontend/src/lib/identity/ProfilePicker.j
 import { usePianoPlayback } from './usePianoPlayback.js';
 import { usePianoScreenOff } from './usePianoScreenOff.js';
 import { GUEST_PROFILE } from './pianoUser.js';
-import LockIcon from '../../../../frontend/src/modules/Fitness/player/overlays/LockIcon.jsx';
+import LockIcon from "../../../fitness/browser/lock-indicator.mjs";
 
 /**
  * Current-player chip for the chrome. Shows who's playing; tap to open the

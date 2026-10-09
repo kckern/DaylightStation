@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   HubFleetBridge,
   mapLaneToSnapshot,
-} from '../../../backend/src/3_applications/playback-hub/runtime/HubFleetBridge.mjs';
-import { EventBusHubFleetRealtimeAdapter } from '../../../backend/src/1_adapters/playback-hub/EventBusHubFleetRealtimeAdapter.mjs';
-import { SlotStatus } from '../../../backend/src/2_domains/playback-hub/value-objects/SlotStatus.mjs';
+} from "../../../modules/media/server/application/playback-hub/runtime/HubFleetBridge.mjs";
+import { EventBusHubFleetRealtimeAdapter } from "../../../modules/media/server/adapters/playback-hub/EventBusHubFleetRealtimeAdapter.mjs";
+import { SlotStatus } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotStatus.mjs";
 const statusFromFixture = value => new SlotStatus({ ...value, position: value.slot ?? value.position });
 import {
   validateDeviceStateBroadcast,

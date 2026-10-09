@@ -4,7 +4,7 @@ import {
   LEGACY_FIELDS,
   LEGACY_TO_CANONICAL,
   validateCanonicalSchema
-} from '#adapters/persistence/yaml/mediaProgressSchema.mjs';
+} from "../../../../../../../capabilities/playback/server/adapters/persistence/mediaProgressSchema.mjs";
 
 describe('mediaProgressSchema', () => {
   describe('CANONICAL_FIELDS', () => {

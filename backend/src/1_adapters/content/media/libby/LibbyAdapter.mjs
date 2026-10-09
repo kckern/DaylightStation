@@ -1,5 +1,5 @@
-import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
-import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
+import { ListableItem } from "../../../../../../capabilities/content-catalog/server/items.mjs";
+import { PlayableItem } from "../../../../../../capabilities/content-catalog/server/items.mjs";
 
 function parseId(value) {
   const localId = String(value || '').replace(/^libby:/, '');

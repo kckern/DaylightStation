@@ -28,7 +28,7 @@
  *
  * @module domains/barcode/BarcodePayload
  */
-import { ContentExpression } from '#domains/content/ContentExpression.mjs';
+import { ContentExpression } from "../../../../capabilities/content-catalog/server/domain/ContentExpression.mjs";
 
 export class BarcodePayload {
   #type;

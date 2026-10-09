@@ -1,7 +1,7 @@
 // wetGlyphGeometry.js — staff-position math + spacing constants shared by
 // wetGlyphs.jsx's WetNoteGlyph and its callers (EditorSurface, PendingLayer),
 // split out so Fast Refresh can hot-reload the glyph component on its own.
-import { MIDDLE_LINE, STEM_LEN_UNITS, STEM_MIN_UNITS, stemDirectionFor, stemLengthUnits } from '../../../../../../frontend/src/modules/MusicNotation/model/stems.js';
+import { MIDDLE_LINE, STEM_LEN_UNITS, STEM_MIN_UNITS, stemDirectionFor, stemLengthUnits } from "../../../../../../capabilities/music-notation/browser/model/stems.js";
 
 export { MIDDLE_LINE, STEM_LEN_UNITS, STEM_MIN_UNITS, stemDirectionFor, stemLengthUnits };
 

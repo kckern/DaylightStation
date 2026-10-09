@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BankChallengePolicy } from '../../../modules/piano/server/application/BankChallengePolicy.mjs';
-import { generateScaleAbc, midiToAbc } from '../../../frontend/src/modules/MusicNotation/renderers/abc.js';
+import { generateScaleAbc, midiToAbc } from "../../../capabilities/music-notation/browser/renderers/abc.js";
 import {
   createAssessmentAttempt,
   observeAssessment,

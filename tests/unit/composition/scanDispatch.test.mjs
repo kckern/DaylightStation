@@ -14,8 +14,8 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createScanDispatch, SCAN_ROUTE_FALLBACK, errText } from '#composition/modules/scanDispatch.mjs';
-import { swallowNotice } from '#apps/nutribot/lib/routeNutribotScan.mjs';
-import { ApplyScanToComposition } from '#apps/nutribot/usecases/ApplyScanToComposition.mjs';
+import { swallowNotice } from "../../../modules/nutribot/server/application/lib/routeNutribotScan.mjs";
+import { ApplyScanToComposition } from "../../../modules/health/server/application/nutrition/usecases/ApplyScanToComposition.mjs";
 
 const makeLogger = () => ({
   debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(),

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseSources } from '#adapters/trigger/parsers/sourcesParser.mjs';
+import { parseSources } from "../../../../../capabilities/device-dispatch/server/adapters/parsers/sourcesParser.mjs";
 
 describe('parseSources barcode', () => {
   it('collects a barcode slice', () => {

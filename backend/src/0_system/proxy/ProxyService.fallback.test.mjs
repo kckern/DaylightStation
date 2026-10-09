@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import http from 'http';
+import http, { request as memoryRequest } from '../../../../tests/preimplementation/application-modules/drivers/proxy-memory-transport.mjs';
 import express from 'express';
 import { ProxyService } from './ProxyService.mjs';
 
@@ -70,7 +70,7 @@ describe('ProxyService upstream fallback path', () => {
   });
 
   async function mount(adapter) {
-    const service = new ProxyService({ logger: { debug() {}, warn() {}, error() {} } });
+    const service = new ProxyService({ request: memoryRequest, logger: { debug() {}, warn() {}, error() {} } });
     service.register(adapter);
     const app = express();
     app.use('/proxy', service.createMiddleware('upstream'));

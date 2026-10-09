@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { PlanToolFactory } from '#apps/agents/lifeplan-guide/tools/PlanToolFactory.mjs';
+import { PlanToolFactory } from "../../../modules/life/server/application/agents/lifeplan-guide/tools/PlanToolFactory.mjs";
 
 describe('PlanToolFactory write tools', () => {
   it('exposes create_goal/add_value/add_belief/set_purpose backed by PlanAuthoringService', async () => {

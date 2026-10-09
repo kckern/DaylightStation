@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { CoachingCommentaryService } from '../../../backend/src/3_applications/coaching/CoachingCommentaryService.mjs';
+import { CoachingCommentaryService } from "../../../modules/health/server/application/coaching/CoachingCommentaryService.mjs";
 
 describe('CoachingCommentaryService', () => {
   function makeMockAgent(response) {

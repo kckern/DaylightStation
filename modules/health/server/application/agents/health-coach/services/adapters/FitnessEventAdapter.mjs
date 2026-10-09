@@ -1,0 +1,242 @@
+// backend/src/3_applications/agents/health-coach/services/adapters/FitnessEventAdapter.mjs
+
+import { EventAdapter } from "../EventAdapter.mjs";
+import {
+  computeHrStats, pickPrimaryHrSeries, normalizeKind, resolvePeriod, toIso,
+} from "../EventQueryService.mjs";
+import { serializeSession } from "../../../../../../../fitness/server/application-session-records.mjs";
+
+export class FitnessEventAdapter extends EventAdapter {
+  #sessionService;
+  #householdId;
+  #now;
+
+  constructor({ sessionService, householdId, now = () => new Date() }) {
+    super();
+    if (!sessionService) throw new Error('FitnessEventAdapter: sessionService required');
+    this.#sessionService = sessionService;
+    this.#householdId = householdId;
+    this.#now = now;
+  }
+
+  async list({ period, filter, limit }, { baseline = null } = {}) {
+    const { from, to } = resolvePeriod(period, this.#now);
+    const sessions = await this.#sessionService.listSessionsInRange(from, to, this.#householdId);
+    let events = sessions.map(s => this.#sessionToEvent(s));
+    if (filter?.type) events = events.filter(e => e.domain_extras.type === filter.type);
+    if (filter?.kind) events = events.filter(e => e.domain_extras.kind_canonical === filter.kind);
+    if (limit) events = events.slice(0, limit);
+
+    // Eager hydration for narrow questions: when result set is small, fold the
+    // full Session detail (populated metadata + computed HR stats) into each row
+    // so the agent can describe events in one response — no get_event_detail
+    // follow-up needed. Wide queries skip hydration to avoid N×getSession.
+    if (events.length > 0 && events.length <= 3) {
+      events = await Promise.all(events.map(e => this.#hydrate(e)));
+    }
+
+    if (baseline) events = events.map(e => this.#annotateBaseline(e, baseline));
+
+    return { events, meta: { kind: 'workout', period, n: events.length } };
+  }
+
+  async detail(id) {
+    if (!id) throw new Error('FitnessEventAdapter: id required');
+    const idStr = String(id);
+    let session = null;
+
+    if (/^\d{14}$/.test(idStr) && typeof this.#sessionService.getSession === 'function') {
+      session = await this.#sessionService.getSession(idStr, this.#householdId).catch(() => null);
+    }
+    if (!session && typeof this.#sessionService.listSessionsInRange === 'function') {
+      const today = this.#now();
+      const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+      const fromDate = new Date(todayUtc);
+      fromDate.setUTCDate(fromDate.getUTCDate() - 60);
+      const all = await this.#sessionService.listSessionsInRange(
+        fromDate.toISOString().slice(0, 10),
+        todayUtc.toISOString().slice(0, 10),
+        this.#householdId,
+      ).catch(() => []);
+      session = all.find(s =>
+        String(s.sessionId) === idStr ||
+        (s.strava && String(s.strava.id) === idStr)
+      ) ?? null;
+    }
+    if (!session) return { error: `event not found for id=${id}` };
+
+    const baseEvent = this.#sessionToEvent(session);
+    const series = pickPrimaryHrSeries(session.timeline?.series);
+    const hr_stats = computeHrStats(series);
+    return {
+      ...baseEvent,
+      scalars: { ...baseEvent.scalars, hr_stats },
+      // Pass-through full domain object
+      session_full: serializeSession(session),
+      timeline: session.timeline ?? null,
+      strava: session.strava ?? null,
+      strava_notes: session.strava_notes ?? null,
+      treasureBox: session.treasureBox ?? null,
+      snapshots: session.snapshots ?? null,
+      entities: session.entities ?? null,
+      summary_block: session.summary ?? null,
+      // Coach-friendly structured summaries
+      voice_memos: this.#extractVoiceMemos(session),
+      snapshot_refs: this.#extractSnapshotRefs(session),
+      treasure_stats: this.#extractTreasureStats(session),
+      strava_summary: this.#extractStravaSummary(session),
+      participant_summary: this.#extractParticipantSummary(session),
+    };
+  }
+
+  async summary({ period }) {
+    const { from, to } = resolvePeriod(period, this.#now);
+    const sessions = await this.#sessionService.listSessionsInRange(from, to, this.#householdId);
+    const by_kind = {};
+    let total_min = 0;
+    for (const s of sessions) {
+      const k = normalizeKind(s.strava?.type);
+      by_kind[k] = (by_kind[k] || 0) + 1;
+      if (s.durationMs) total_min += Math.round(s.durationMs / 60000);
+    }
+    return { n: sessions.length, by_kind, total_min };
+  }
+
+  // ── Internals ──────────────────────────────────────────────────────────────
+
+  #sessionToEvent(s) {
+    const iso = toIso(s.startTime);
+    const type = s.strava?.type ?? 'Workout';
+    const dur = s.durationMs ? Math.round(s.durationMs / 60000) : null;
+    return {
+      kind: 'workout',
+      id: s.sessionId?.toString?.() ?? String(s.sessionId),
+      timestamp: iso,
+      date: iso ? iso.slice(0, 10) : null,
+      label: `${dur ?? '?'} min ${type}`,
+      scalars: {
+        duration_min: dur,
+        kcal: s.metadata?.kcal ?? null,
+        hr_avg: s.metadata?.hr_avg ?? null,
+        hr_max: s.metadata?.hr_max ?? null,
+        distance_mi: s.metadata?.distance_mi ?? null,
+      },
+      domain_extras: {
+        strava_id: s.strava?.id ?? null,
+        type: s.strava?.type ?? null,
+        kind_canonical: normalizeKind(s.strava?.type),
+        name: s.strava?.name ?? null,
+        source: s.strava ? 'strava' : 'local',
+      },
+    };
+  }
+
+  async #hydrate(event) {
+    if (typeof this.#sessionService.getSession !== 'function') return event;
+    let full;
+    try {
+      full = await this.#sessionService.getSession(event.id, this.#householdId);
+    } catch {
+      return event;
+    }
+    if (!full) return event;
+    const series = pickPrimaryHrSeries(full.timeline?.series);
+    const hr_stats = computeHrStats(series);
+    return {
+      ...event,
+      scalars: {
+        ...event.scalars,
+        kcal:        full.metadata?.kcal        ?? event.scalars.kcal,
+        hr_avg:      full.metadata?.hr_avg      ?? hr_stats.mean ?? event.scalars.hr_avg,
+        hr_max:      full.metadata?.hr_max      ?? hr_stats.max  ?? event.scalars.hr_max,
+        distance_mi: full.metadata?.distance_mi ?? event.scalars.distance_mi,
+        hr_stats,
+      },
+    };
+  }
+
+  #annotateBaseline(event, baseline) {
+    const kind = event.domain_extras?.kind_canonical;
+    // Only run / strength have baselines in PersonalBaselineService output.
+    const b = (kind === 'run' && baseline?.run) || (kind === 'strength' && baseline?.strength) || null;
+    if (!b) return event;
+
+    const compare = (typical, actual) => {
+      if (typical == null || actual == null || !Number.isFinite(typical) || !Number.isFinite(actual)) return null;
+      const delta = Math.round((actual - typical) * 10) / 10;
+      const delta_pct = typical !== 0 ? Math.round(((actual - typical) / typical) * 1000) / 10 : null;
+      return { typical, delta, delta_pct };
+    };
+
+    const vs = {};
+    const dm = compare(b.median_duration_min, event.scalars?.duration_min); if (dm) vs.duration_min = dm;
+    const ha = compare(b.median_hr_avg,        event.scalars?.hr_avg);       if (ha) vs.hr_avg = ha;
+    const hx = compare(b.median_hr_max,        event.scalars?.hr_max);       if (hx) vs.hr_max = hx;
+    const di = compare(b.median_distance_mi,   event.scalars?.distance_mi);  if (di) vs.distance_mi = di;
+    if (Object.keys(vs).length === 0) return event;
+    return { ...event, vs_baseline: vs };
+  }
+
+  #extractVoiceMemos(session) {
+    const memos = session.summary?.voiceMemos ?? [];
+    if (!Array.isArray(memos)) return [];
+    return memos.map(m => ({
+      timestamp: m?.timestamp ?? null,
+      transcript: m?.transcript ?? null,
+    }));
+  }
+
+  #extractSnapshotRefs(session) {
+    const media = session.summary?.media ?? [];
+    if (!Array.isArray(media)) return [];
+    return media.map(m => ({
+      timestamp: m?.timestamp ?? null,
+      ref: m?.ref ?? m?.imageRef ?? m?.imageUrl ?? null,
+    }));
+  }
+
+  #extractTreasureStats(session) {
+    if (!session.treasureBox) return null;
+    return {
+      total_rings: session.treasureBox.totalRings ?? 0,
+      buckets: session.treasureBox.buckets ?? null,
+    };
+  }
+
+  #extractStravaSummary(session) {
+    const s = session.strava;
+    if (!s) return null;
+    return {
+      activity_id:      s.activityId ?? s.id ?? null,
+      name:             s.name ?? null,
+      type:             s.type ?? null,
+      distance_m:       s.distance ?? null,
+      elevation_gain_m: s.totalElevationGain ?? null,
+      avg_heartrate:    s.avgHeartrate ?? null,
+      max_heartrate:    s.maxHeartrate ?? null,
+      map_polyline:     s.map?.polyline ?? s.map?.summary_polyline ?? null,
+      start_latlng:     s.map?.startLatLng ?? s.start_latlng ?? null,
+      description:      s.description ?? null,
+    };
+  }
+
+  #extractParticipantSummary(session) {
+    const participants = session.summary?.participants;
+    if (!participants || typeof participants !== 'object') return null;
+    // Pick the first participant (single-user sessions); for multi-user sessions
+    // pick the longest entry (heuristic: most data → primary participant).
+    const entries = Object.entries(participants);
+    if (entries.length === 0) return null;
+    const [, p] = entries[0];
+    if (!p || typeof p !== 'object') return null;
+    return {
+      hr_avg: p.hr_avg ?? null,
+      hr_max: p.hr_max ?? null,
+      hr_min: p.hr_min ?? null,
+      zone_minutes: p.zone_minutes ?? null,
+      rings: p.rings ?? null,
+    };
+  }
+}
+
+export default FitnessEventAdapter;

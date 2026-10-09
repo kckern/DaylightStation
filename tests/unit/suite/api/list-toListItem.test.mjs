@@ -1,6 +1,6 @@
 // tests/unit/suite/api/list-toListItem.test.mjs
 import { describe, it, expect } from 'vitest';
-import { toListItem } from '#api/v1/routers/list.mjs';
+import { toListItem } from "../../../../capabilities/content-catalog/server/api/list.mjs";
 
 describe('toListItem', () => {
   it('emits launch action for items with actions.launch', () => {

@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import createLogRouter from '#api/v1/routers/life/log.mjs';
-import { LifeApiOperations } from '#apps/lifeplan/LifeApiOperations.mjs';
+import createLogRouter from "../../../../modules/life/server/api/life/log.mjs";
+import { LifeApiOperations } from "../../../../modules/life/server/application/LifeApiOperations.mjs";
 
 describe('Life Log API Router', () => {
   let app;

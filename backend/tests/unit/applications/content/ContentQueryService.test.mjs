@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { ContentQueryService } from '../../../../src/3_applications/content/ContentQueryService.mjs';
+import { ContentQueryService } from "../../../../../capabilities/content-catalog/server/application/ContentQueryService.mjs";
+import { RegistryContentCatalogGateway } from "../../../../../capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
 
 const silentLogger = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
 
@@ -19,7 +20,7 @@ function makeServiceWith(items) {
     get: (name) => (name === 'fake' ? fakeAdapter : null),
     resolveSource: () => [fakeAdapter],
   };
-  return new ContentQueryService({ registry, logger: silentLogger });
+  return new ContentQueryService({ contentCatalog: new RegistryContentCatalogGateway({ registry }), logger: silentLogger });
 }
 
 const ITEMS = [
@@ -79,7 +80,7 @@ describe('ContentQueryService — includeMediaTypes', () => {
       { id: 'fake:2', source: 'fake', title: 'untyped' },
     ];
     const cqs = makeServiceWith(items);
-    const r = await cqs.search({ text: 'a', includeMediaTypes: ['track'] });
+    const r = await cqs.search({ text: '', includeMediaTypes: ['track'] });
     assert.strictEqual(r.items.length, 1);
     assert.strictEqual(r.items[0].id, 'fake:1');
   });
@@ -126,7 +127,7 @@ describe('ContentQueryService — rank.factors', () => {
     ];
     const cqs = makeServiceWith(items);
     const r = await cqs.search({
-      text: 'a',
+      text: '',
       rank: { factors: [{ field: 'metadata.userRating', weight: 1, normalize: 'div:10' }] },
     });
     // Both have score 0 — should keep original order

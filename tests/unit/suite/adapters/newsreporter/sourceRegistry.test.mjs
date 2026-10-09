@@ -1,10 +1,10 @@
 import { describe, it, expect } from '@jest/globals';
-import { createSourceRegistry } from '#adapters/newsreporter/sources/sourceRegistry.mjs';
-import { createSinkRegistry } from '#apps/newsreporter/sinks/sinkRegistry.mjs';
-import { HttpSourceAdapter } from '#adapters/newsreporter/sources/HttpSourceAdapter.mjs';
-import { PrinterSink } from '#apps/newsreporter/sinks/PrinterSink.mjs';
-import { isSource } from '#apps/newsreporter/ports/ISource.mjs';
-import { isSink } from '#apps/newsreporter/ports/ISink.mjs';
+import { createSourceRegistry } from "../../../../../modules/newsreporter/server/adapters/sources/sourceRegistry.mjs";
+import { createSinkRegistry } from "../../../../../modules/newsreporter/server/application/sinks/sinkRegistry.mjs";
+import { HttpSourceAdapter } from "../../../../../modules/newsreporter/server/adapters/sources/HttpSourceAdapter.mjs";
+import { PrinterSink } from "../../../../../modules/newsreporter/server/application/sinks/PrinterSink.mjs";
+import { isSource } from "../../../../../modules/newsreporter/server/application/ports/ISource.mjs";
+import { isSink } from "../../../../../modules/newsreporter/server/application/ports/ISink.mjs";
 
 const fakeHttpClient = { get: async () => ({ status: 200, ok: true, data: [] }) };
 const nullLogger = { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} };

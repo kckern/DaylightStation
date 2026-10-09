@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectPattern } from '../../../backend/src/3_applications/coaching/patterns.mjs';
+import { detectPattern } from "../../../modules/health/server/application/coaching/patterns.mjs";
 
 describe('detectPattern', () => {
   const goals = { calories_min: 1200, calories_max: 1600, protein: 120 };

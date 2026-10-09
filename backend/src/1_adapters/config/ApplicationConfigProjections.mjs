@@ -1,18 +1,6 @@
-export class FitnessConfigProjection {
-  constructor({ configService }) { this.configService = configService; }
-  resolveHouseholdId(hid) { return hid || this.configService.getDefaultHouseholdId(); }
-  raw(hid) { return this.configService.getHouseholdAppConfig(this.resolveHouseholdId(hid), 'fitness') || null; }
-  publicConfig(hid) { return this.raw(hid); }
-  missingConfigHint(hid) {
-    const householdId = this.resolveHouseholdId(hid);
-    return `household[-${householdId}]/fitness/config.yml (or legacy household[-${householdId}]/config/fitness.yml)`;
-  }
-}
 
-export class PartyGamesConfigProjection {
-  constructor({ configService }) { this.configService = configService; }
-  raw() { return this.configService.getHouseholdAppConfig(null, 'party-games') || null; }
-}
+
+
 
 export class EntropyConfigProjection {
   constructor({ configService }) { this.configService = configService; }
@@ -25,34 +13,12 @@ export class EntropyConfigProjection {
   }
 }
 
-export class AgentConfigProjection {
-  constructor({ configService }) { this.configService = configService; }
-  settings(agentId) {
-    let raw = null; try { raw = this.configService?.getAppConfig?.('agents') ?? null; } catch {}
-    return { defaults: raw?.default || {}, override: raw?.overrides?.[agentId] || {} };
-  }
-}
 
-export class PianoConfigProjection {
-  constructor({ configService }) { this.configService = configService; }
-  raw() { return this.configService.getHouseholdAppConfig(null, 'piano') || {}; }
-  roster() { return (this.configService.getHouseholdUsers?.() || []).map(String); }
-  profile(userId) { return this.configService.getUserProfile(String(userId)) || null; }
-  isKnownUser(userId) { return !!this.profile(userId); }
-  timezone() { return this.configService.getTimezone?.() ?? null; }
-}
 
-export class NewsReporterConfigProjection {
-  constructor({ configService, defaultTimezone = 'America/Denver' }) { this.configService = configService; this.defaultTimezone = defaultTimezone; }
-  reporter(id) { return (this.configService.getHouseholdAppConfig(null, 'newsreporter') || {})[id] || null; }
-  timezone() { return this.configService.getHouseholdTimezone?.() ?? this.configService.getTimezone?.() ?? this.defaultTimezone; }
-}
 
-export class EconomyConfigProjection {
-  constructor({ configService }) { this.configService = configService; }
-  policy() { return this.configService.getHouseholdAppConfig?.(null, 'economy') || {}; }
-  hasUser(userId) { return !!this.configService.getUserProfile?.(userId); }
-}
+
+
+
 
 /** Normalizes household/device configuration into composition-ready topology. */
 export class HouseholdConfigProjection {

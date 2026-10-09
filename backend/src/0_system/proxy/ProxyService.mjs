@@ -24,14 +24,17 @@ import { sendPlaceholderSvg } from './placeholders.mjs';
 export class ProxyService {
   #adapters = new Map();
   #logger;
+  #request;
   #errorReplacedListeners = [];
 
   /**
    * @param {Object} [options]
    * @param {Object} [options.logger] - Logger instance
+   * @param {Function} [options.request] - Optional upstream request port; defaults to the native protocol property call
    */
   constructor(options = {}) {
     this.#logger = options.logger || console;
+    this.#request = options.request ?? ((protocol, requestOptions, onResponse) => protocol.request(requestOptions, onResponse));
   }
 
   /**
@@ -172,7 +175,7 @@ export class ProxyService {
       };
       res.once('close', onClientClose);
 
-      const proxyReq = protocol.request(options, (proxyRes) => {
+      const proxyReq = this.#request(protocol, options, (proxyRes) => {
         const statusCode = proxyRes.statusCode;
         // Stop watching the client once the upstream body is fully delivered.
         proxyRes.once('end', () => res.removeListener('close', onClientClose));
@@ -373,7 +376,7 @@ export class ProxyService {
     };
 
     return new Promise((resolve) => {
-      const proxyReq = protocol.request({
+      const proxyReq = this.#request(protocol, {
         hostname: targetUrl.hostname,
         port: targetUrl.port || (targetUrl.protocol === 'https:' ? 443 : 80),
         path: targetUrl.pathname + targetUrl.search,

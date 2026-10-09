@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { deriveLogDate } from '#apps/nutribot/lib/deriveLogDate.mjs';
+import { deriveLogDate } from "../../../modules/nutribot/server/application/lib/deriveLogDate.mjs";
 
 describe('deriveLogDate', () => {
   it('returns meal.date when present', () => {

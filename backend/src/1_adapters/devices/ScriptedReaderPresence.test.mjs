@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { ScriptedReaderPresence } from './ScriptedReaderPresence.mjs';
+import { ScriptedReaderPresence } from "../../../../capabilities/device-dispatch/server/adapters/ScriptedReaderPresence.mjs";
 
 const quiet = { warn() {} };
 let called;

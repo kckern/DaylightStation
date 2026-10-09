@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { shouldSendExerciseReaction, toReactionActivity } from '../../../backend/src/3_applications/fitness/webhookCoachingPolicy.mjs';
+import { shouldSendExerciseReaction, toReactionActivity } from "../../../modules/fitness/server/application/webhookCoachingPolicy.mjs";
 
 describe('exercise reaction policy (fetched Strava activity)', () => {
   const now = new Date('2026-09-24T18:00:00Z'); // 11am PDT

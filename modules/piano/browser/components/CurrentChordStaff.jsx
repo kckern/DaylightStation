@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChordStaffRenderer } from '../../../../frontend/src/modules/MusicNotation/renderers/ChordStaffRenderer.jsx';
+import { ChordStaffRenderer } from "../../../../capabilities/music-notation/browser/renderers/ChordStaffRenderer.jsx";
 import {
   emptyFlow, pushOnsets, clearIfIdle, flowColumns, flowDurations,
-} from '../../../../frontend/src/modules/MusicNotation/model/noteFlow.js';
+} from "../../../../capabilities/music-notation/browser/model/noteFlow.js";
 import { identifyChord } from '../theory/chordNaming.js';
 import { useDetectedKey } from './useDetectedKey.js';
 import './CurrentChordStaff.scss';

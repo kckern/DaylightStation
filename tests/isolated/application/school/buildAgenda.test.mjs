@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { BuildAgenda } from '#apps/school/usecases/BuildAgenda.mjs';
-import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
-import { validateDocument } from '#domains/school/documents/documentValidation.mjs';
-import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
-import { studyDayWindow } from '#domains/school/studyDay.mjs';
-import { BOOK_LOG_PROGRAM_ID } from '#domains/school/bookLog.mjs';
+import { BuildAgenda } from "../../../../modules/school/server/application/usecases/BuildAgenda.mjs";
+import { CurriculumAccess } from "../../../../modules/school/server/application/CurriculumAccess.mjs";
+import { validateDocument } from "../../../../modules/school/server/domain/documents/documentValidation.mjs";
+import { isSchoolToken } from "../../../../modules/school/server/domain/sessions/tokens.mjs";
+import { studyDayWindow } from "../../../../modules/school/server/domain/studyDay.mjs";
+import { BOOK_LOG_PROGRAM_ID } from "../../../../modules/school/server/domain/bookLog.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeAssignmentStore, FakeReviewQueue,
   fakeClock, seededRng, sequentialIds, silentLogger,

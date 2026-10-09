@@ -39,7 +39,7 @@ import { PianoPicker } from './PianoKiosk/PianoPicker.jsx';
 import { useRenderWatchdog } from './PianoKiosk/useRenderWatchdog.js';
 import { useJankRebootPrompt } from './PianoKiosk/useJankRebootPrompt.js';
 import RebootPromptModal from './PianoKiosk/RebootPromptModal.jsx';
-import { applyPianoBodyTheme } from '../../../frontend/src/Apps/pianoBodyTheme.js';
+import { applyPianoBodyTheme } from "./pianoBodyTheme.js";
 import { Videos } from './PianoKiosk/modes/Videos/Videos.jsx';
 import { Music } from './PianoKiosk/modes/Music/Music.jsx';
 import { SheetMusic } from './PianoKiosk/modes/SheetMusic/SheetMusic.jsx';
@@ -62,7 +62,7 @@ import { useAutoMidiHistory } from './PianoKiosk/useAutoMidiHistory.js';
 import ProfilePicker from '../../../frontend/src/lib/identity/ProfilePicker.jsx';
 import { ShutdownBlackout, useShutdownLock } from '../../../frontend/src/hooks/useShutdownLock.js';
 // Shared piano tokens first, so the shell's own sheet cascades over them.
-import './pianoTokens.scss';
+import './tokens-style.mjs';
 import './components/PianoModePlaceholder.scss';
 import './PianoApp.scss';
 

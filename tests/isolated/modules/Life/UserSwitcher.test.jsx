@@ -4,8 +4,8 @@ import { render, screen, waitFor, renderHook, act } from '@testing-library/react
 import React from 'react';
 import { MantineProvider } from '@mantine/core';
 import { MemoryRouter } from 'react-router-dom';
-import { useLifeUser } from '#frontend/modules/Life/hooks/useLifeUser.js';
-import LifeApp from '#frontend/Apps/LifeApp.jsx';
+import { useLifeUser } from "../../../../modules/life/browser/hooks/useLifeUser.js";
+import LifeApp from "../../../../modules/life/browser/LifeApp.jsx";
 
 // LifeApp renders useAppNotifications (05fc6b606), which subscribes to the
 // shared WS client via useWebSocketSubscription. There is no real WebSocket

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
+import { MediaProgress } from "../../../../capabilities/content-catalog/server/domain/entities/MediaProgress.mjs";
 
 describe('MediaProgress bookmark', () => {
   it('stores bookmark when provided', () => {

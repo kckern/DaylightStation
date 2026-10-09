@@ -1,6 +1,6 @@
 import {
   applyMove, createGame, describeGame, fenToPosition, legalDestinations, playMove, undoMove,
-} from '@shared-gaming/rulesets/chess/index.mjs';
+} from "../../../../capabilities/gaming/portable/rulesets/chess/index.mjs";
 import {
   DEFAULT_CHORD_SCHEME, findChordCollisions, shuffleChordScheme, squareToChord, validateChordScheme,
 } from './chordAddress.js';

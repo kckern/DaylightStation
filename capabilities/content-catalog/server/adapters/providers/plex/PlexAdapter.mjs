@@ -1,0 +1,3075 @@
+// backend/src/2_adapters/content/media/plex/PlexAdapter.mjs
+import { ListableItem } from "../../../domain/capabilities/Listable.mjs";
+import { PlayableItem } from "../../../domain/capabilities/Playable.mjs";
+import { ContentCategory } from "../../../domain/value-objects/ContentCategory.mjs";
+import { PlexClient } from "./PlexClient.mjs";
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { resolveTranscodeCaps, buildClientProfileExtra, canDirectPlayH264, canDirectStreamVideo, needsAudioDownmix } from "./transcodeProfile.mjs";
+
+/**
+ * Characters that may appear unescaped in a Plex session identifier.
+ *
+ * The identifiers are pasted into query strings by hand (see
+ * `_buildTranscodeUrl`, which joins `X-Plex-Client-Identifier=${...}` with
+ * `&`), so anything with meaning in a URL has to go. `#` is the dangerous one:
+ * the frontend's session value has carried it since 2026-08-16
+ * (`${singlePlayerKey}#${playerInstanceId}`), and a `#` in a hand-built URL
+ * truncates it at that point, taking every later parameter with it.
+ */
+const PLEX_SESSION_UNSAFE = /[^A-Za-z0-9._~:-]+/g;
+
+/** Keep identifiers short enough that no upstream truncates them for us. */
+const PLEX_SESSION_MAX_LENGTH = 96;
+// Per-part track-selection lock: the decision (and the fresh-selection read)
+// must settle well inside the lock's safety expiry so restore always runs first.
+const TRACK_LOCK_EXPIRY_MS = 60_000;
+const TRACK_DECISION_DEADLINE_MS = 45_000;
+const TRACK_REFRESH_DEADLINE_MS = 10_000;
+
+/** FNV-1a, 32-bit, hex. Used only to keep sanitising injective — not a hash of anything secret. */
+function fnv1aHex(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i += 1) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, '0');
+}
+
+/**
+ * Make a client-supplied session value safe to interpolate into a Plex URL.
+ *
+ * The value is OPAQUE. Its shape has already changed once (it was
+ * `<guid>-r<nonce>`, it is now `${singlePlayerKey}#${playerInstanceId}`) and
+ * nothing here parses it — Plex constrains the character set, so we sanitise
+ * rather than restructure.
+ *
+ * Replacement is lossy, and lossy is dangerous here: if two different sessions
+ * could sanitise to one identifier, two independent streams would arrive at
+ * Plex under one identity, which is a milder version of the failure this whole
+ * change exists to remove. So whenever anything is replaced or truncated, a
+ * digest of the ORIGINAL is appended, which makes the mapping injective again.
+ *
+ * @param {unknown} raw
+ * @returns {string|null} null means "no usable session was supplied" — the
+ *   caller then mints a random identifier per request.
+ */
+/**
+ * The identity every backend-initiated (sessionless) Plex stream request uses.
+ *
+ * Plex records one `devices` row per distinct X-Plex-Client-Identifier and never
+ * prunes them. This used to be `api-${random}` per request, so cron harvests,
+ * previews and queue resolves each added a permanent row: 81,001 rows by
+ * 2026-09-16, 73,994 of them `api-*`. Plex's periodic per-device statistics pass
+ * then held a write transaction ~25s out of every ~55s grinding through them,
+ * and every request that opens a streaming session blocked behind it — a child's
+ * book took 24.7s to start, a piano lesson 14.7s.
+ *
+ * Stability is safe because isolation does not live here: `sessionIdentifier`
+ * stays unique per request (see `_generateSessionIds`), which is what Plex uses
+ * to separate concurrent streams.
+ */
+export const API_CLIENT_IDENTIFIER = 'api-daylight-station';
+
+export function sanitizePlexSessionId(raw) {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  const replaced = trimmed.replace(PLEX_SESSION_UNSAFE, '-');
+  if (replaced === trimmed && replaced.length <= PLEX_SESSION_MAX_LENGTH) return replaced;
+
+  const digest = fnv1aHex(trimmed);
+  const head = replaced.slice(0, PLEX_SESSION_MAX_LENGTH - (digest.length + 2));
+  return `${head}-x${digest}`;
+}
+
+/**
+ * Which of a Plex item's art fields to display.
+ *
+ * A playlist carries BOTH: `thumb` when someone has uploaded a poster for it,
+ * and `composite` — the auto-generated 2x2 mosaic of its first few items —
+ * always, custom poster or not. So preferring `composite` makes every uploaded
+ * playlist poster unreachable, which is how the "STRETCH / MOBILITY" art on
+ * playlist 672606 stayed hidden behind a mosaic of unrelated show covers (26 of
+ * 63 playlists on this server have custom art). Prefer the deliberate choice.
+ *
+ * Non-playlist items have no `composite`, so this is a no-op for them.
+ *
+ * A few playlists advertise a `thumb` whose image file is gone upstream; those
+ * 404s are recovered back to the composite by `PlexProxyAdapter.getFallbackPath`
+ * at serve time, which is the only layer that learns an asset is missing.
+ *
+ * @param {Object} item - Raw Plex metadata entry
+ * @returns {string|null} Plex-relative art path, or null when the item has none
+ */
+export function plexArtPath(item) {
+  return item?.thumb || item?.composite || null;
+}
+
+/**
+ * When Plex added an item, as ISO — Plex sends `addedAt` in epoch seconds
+ * (number or numeric string), or nothing. Absent/unparseable → null.
+ * @param {Object} item - Plex metadata
+ * @returns {string|null}
+ */
+export function plexAddedAt(item) {
+  const raw = item?.addedAt;
+  const seconds = typeof raw === 'number' ? raw : (typeof raw === 'string' && /^\d+$/.test(raw) ? Number(raw) : NaN);
+  return Number.isFinite(seconds) && seconds > 0 ? new Date(seconds * 1000).toISOString() : null;
+}
+
+// Recently added: which collection a new item is offered as (episodes and
+// seasons → their show, tracks → their album), so a new season reads as one
+// "Bluey", not twelve episodes.
+function recentlyAddedCollection(item) {
+  if (item.type === 'episode' && item.grandparentRatingKey) {
+    return { key: item.grandparentRatingKey, type: 'show', title: item.grandparentTitle, thumb: item.grandparentThumb || item.parentThumb || item.thumb };
+  }
+  if (item.type === 'season' && item.parentRatingKey) {
+    return { key: item.parentRatingKey, type: 'show', title: item.parentTitle, thumb: item.parentThumb || item.thumb };
+  }
+  if (item.type === 'track' && item.parentRatingKey) {
+    return { key: item.parentRatingKey, type: 'album', title: item.parentTitle, thumb: item.parentThumb || item.thumb };
+  }
+  return { key: item.ratingKey, type: item.type, title: item.title, thumb: plexArtPath(item) };
+}
+
+/**
+ * Plex content source adapter.
+ * Implements IContentSource interface for accessing Plex Media Server content.
+ */
+const PART_MISS_TTL_MS = 30_000;
+
+export class PlexAdapter {
+  #httpClient;
+  // part id -> rating key for every part URL this adapter hands out. Plex has
+  // no part->item lookup, and the proxy only sees `/library/parts/{id}/...`
+  // when Plex refuses a file, so this is how a refused part finds the item to
+  // heal (ratingKeyForPart). Bounded; oldest entries fall off.
+  #partIndex = new Map();
+  // Parts Plex had no answer for (partId -> time asked), so a stuck file does
+  // not turn every proxy refusal into three library queries.
+  #partMisses = new Map();
+  // Plex's transcode session uuid (TranscodeSession.key) -> rating key. Segments
+  // of a refused transcode arrive at `/video/:/transcode/universal/session/<uuid>/...`
+  // with PLEX's uuid, not the X-Plex-Session-Identifier we mint, so it is learned
+  // lazily from GET /status/sessions on a refusal (resolveRatingKeyForPath).
+  #sessionIndex = new Map();
+  // uuids /status/sessions could not place (uuid -> time asked).
+  #sessionMisses = new Map();
+  // partId -> tail of the chain of track-selection mints on that part. The
+  // part's selection is per Plex account, so two mints must not interleave
+  // their read-previous / select / decision / restore (RQ-STEER-14).
+  #partTrackLocks = new Map();
+  // rating key -> progress storage path (`plex/{librarySectionID}_{name}`).
+  // An item's library section never changes, and every watch-state enrich
+  // asked Plex for it again — one serialized metadata call per show per
+  // request, a dozen-plus per /fitness/suggestions. Only successful lookups
+  // are kept; the 'plex' fallback on an error is not. Bounded; oldest drop.
+  #storagePathCache = new Map();
+  #curriculumEnrichment;
+
+  /**
+   * @param {Object} config
+   * @param {string} config.host - Plex server URL (e.g., http://10.0.0.10:32400)
+   * @param {string} [config.token] - Plex auth token
+   * @param {string} [config.protocol] - Streaming protocol (default: 'hls')
+   * @param {string} [config.platform] - Client platform (default: 'Chrome')
+   * @param {string} [config.proxyPath] - Proxy path for media URLs (default: '/api/v1/proxy/plex')
+   * @param {Object} [config.mediaProgressMemory] - WatchStore instance for viewing history persistence
+   * @param {Object} deps
+   * @param {import('#system/services/HttpClient.mjs').HttpClient} deps.httpClient
+   */
+  constructor(config, deps = {}) {
+    if (!config.host) {
+      throw new InfrastructureError('PlexAdapter requires host', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'host'
+      });
+    }
+    if (!deps.httpClient) {
+      throw new InfrastructureError('PlexAdapter requires httpClient', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'httpClient'
+      });
+    }
+    this.#curriculumEnrichment = deps.curriculumEnrichment || null;
+    this.#httpClient = deps.httpClient;
+    this.client = new PlexClient(config, { httpClient: deps.httpClient, logger: config.logger || deps.logger });
+    this.host = config.host.replace(/\/$/, '');
+    this.token = config.token || '';
+    this.protocol = config.protocol || 'hls';
+    this.platform = config.platform || 'Chrome';
+    this.proxyPath = config.proxyPath || '/api/v1/proxy/plex';
+    this.mediaProgressMemory = config.mediaProgressMemory || null;
+    this.mediaKeyResolver = config.mediaKeyResolver || null;
+    this.logger = config.logger || deps.logger || console;
+  }
+
+  /**
+   * Extract labels from Plex Label array, normalizing to lowercase strings
+   * @param {Array} labelArray - Plex Label array (can be strings or {tag: string} objects)
+   * @returns {string[]} - Normalized lowercase label strings
+   * @private
+   */
+  _extractLabels(labelArray) {
+    if (!Array.isArray(labelArray)) return [];
+    const labels = [];
+    for (const label of labelArray) {
+      if (typeof label === 'string') labels.push(label.toLowerCase());
+      else if (label?.tag) labels.push(label.tag.toLowerCase());
+    }
+    return labels;
+  }
+
+  /**
+   * Map Plex type to ContentCategory
+   * @param {string} type - Plex item type
+   * @returns {string} ContentCategory value
+   */
+  #mapTypeToCategory(type) {
+    const mapping = {
+      'playlist': ContentCategory.CURATED,
+      'collection': ContentCategory.CURATED,
+      'artist': ContentCategory.CREATOR,
+      'show': ContentCategory.SERIES,
+      'movie': ContentCategory.WORK,
+      'album': ContentCategory.CONTAINER,
+      'season': ContentCategory.CONTAINER,
+      'episode': ContentCategory.EPISODE,
+      'track': ContentCategory.TRACK,
+      'clip': ContentCategory.MEDIA,
+      'photo': ContentCategory.MEDIA
+    };
+    return mapping[type] || ContentCategory.MEDIA;
+  }
+
+  /**
+   * Source identifier for this adapter
+   * @returns {string}
+   */
+  get source() {
+    return 'plex';
+  }
+
+  /**
+   * URL prefixes this adapter handles
+   * @returns {Array<{prefix: string}>}
+   */
+  get prefixes() {
+    return [{ prefix: 'plex' }];
+  }
+
+  
+
+
+  /**
+   * Derive capabilities for a Plex item.
+   * Domain knowledge: Plex knows which of its types are queueable, playable, etc.
+   *
+   * @param {Object} item - The item to analyze
+   * @returns {string[]} Array of capability strings
+   */
+  getCapabilities(item) {
+    const capabilities = [];
+    const itemType = item.metadata?.type || item.type;
+
+    // playable: has media URL
+    if (item.mediaUrl) {
+      capabilities.push('playable');
+    }
+
+    // displayable: has visual representation
+    if (item.thumbnail || item.imageUrl) {
+      capabilities.push('displayable');
+    }
+
+    // listable: is a container with children
+    const isListable = item.items || item.itemType === 'container';
+    if (isListable) {
+      capabilities.push('listable');
+    }
+
+    // queueable: Plex containers that resolve to playable items
+    // Domain knowledge: these Plex types have playable children
+    if (isListable) {
+      const queueableTypes = ['artist', 'show', 'season', 'album', 'collection', 'playlist'];
+      if (queueableTypes.includes(itemType)) {
+        capabilities.push('queueable');
+      }
+    }
+
+    return capabilities;
+  }
+
+  /**
+   * Get raw Plex metadata for a rating key
+   * @param {string} ratingKey - Plex rating key
+   * @returns {Promise<Object|null>} Raw Plex metadata
+   */
+  async getMetadata(ratingKey) {
+    try {
+      const metadata = await this.client.getMetadata(ratingKey);
+      return metadata || null;
+    } catch (err) {
+      this.logger.error?.('plex.getMetadata.exception', {
+        error: err.message,
+        stack: err.stack,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Get the Plex labels (tags applied via Plex's label system) for a rating key.
+   * @param {string} ratingKey - Plex rating key
+   * @returns {Promise<string[]>} Array of label tag strings (empty if none / on error)
+   */
+  async getLabels(ratingKey) {
+    try {
+      const response = await this.client.getMetadata(ratingKey);
+      const labels = response?.MediaContainer?.Metadata?.[0]?.Label ?? [];
+      return labels.map(l => l?.tag).filter(Boolean);
+    } catch (err) {
+      this.logger.warn?.('plex.getLabels.exception', { ratingKey, error: err.message });
+      return [];
+    }
+  }
+
+  /**
+   * Get the labels of a Plex item's ancestors (parent album / grandparent
+   * artist for tracks; parent artist for albums; etc.). Knows the Plex
+   * item shape so consumers don't need to.
+   *
+   * @param {Object} item - resolved playable item from this adapter
+   * @returns {Promise<string[]>} flat array of ancestor label tags
+   */
+  async getAncestorLabels(item) {
+    if (!item) return [];
+    const keys = [
+      item.parentRatingKey ?? item.metadata?.parentRatingKey,
+      item.grandparentRatingKey ?? item.metadata?.grandparentRatingKey,
+    ].filter(Boolean);
+    const labelLists = await Promise.all(keys.map(k => this.getLabels(k)));
+    return labelLists.flat();
+  }
+
+  /**
+   * Get the set of item ratingKeys that are members of a Plex playlist.
+   * Used by the concierge's media policy gate for per-satellite playlist
+   * membership whitelisting. Plex playlists contain tracks (or videos),
+   * so the returned set matches at the leaf level.
+   *
+   * @param {string} playlistId - Plex playlist ratingKey
+   * @returns {Promise<Set<string>>} set of member item ratingKeys
+   */
+  async getPlaylistItemIds(playlistId) {
+    try {
+      const response = await this.client.request(`/playlists/${playlistId}/items`);
+      const items = response?.MediaContainer?.Metadata ?? [];
+      return new Set(items.map(i => String(i?.ratingKey)).filter(k => k && k !== 'undefined'));
+    } catch (err) {
+      this.logger.warn?.('plex.getPlaylistItemIds.exception', { playlistId, error: err.message });
+      return new Set();
+    }
+  }
+
+  /**
+   * Get thumbnail URLs from a Plex rating key
+   * Migrated from: plex.mjs:432-438
+   * @param {string} ratingKey - Plex rating key
+   * @returns {Promise<string[]>} Array of thumbnail URLs [thumb, parentThumb, grandparentThumb]
+   */
+  async loadImgFromKey(ratingKey) {
+    try {
+      const metadata = await this.client.getMetadata(ratingKey);
+      const item = metadata?.MediaContainer?.Metadata?.[0];
+      if (!item) return ['', '', ''];
+
+      const primaryThumb = plexArtPath(item);
+      const { parentThumb, grandparentThumb } = item;
+      // Legacy returns empty string "" for missing thumbs
+      return [primaryThumb, parentThumb, grandparentThumb].map(
+        t => t ? `${this.proxyPath}${t}` : ''
+      );
+    } catch (err) {
+      this.logger.error?.('plex.loadImgFromKey.exception', {
+        error: err.message,
+        stack: err.stack,
+      });
+      return ['', '', ''];
+    }
+  }
+
+  /**
+   * Get the primary thumbnail URL for an item
+   * Art-field precedence lives in `plexArtPath` — see it for the playlist case.
+   * @param {string} ratingKey - Plex rating key
+   * @returns {Promise<string|null>} Thumbnail URL or null
+   */
+  async getThumbnail(ratingKey) {
+    try {
+      const metadata = await this.client.getMetadata(ratingKey);
+      const item = metadata?.MediaContainer?.Metadata?.[0];
+      if (!item) return null;
+
+      const thumbPath = plexArtPath(item);
+      return thumbPath ? `${this.proxyPath}${thumbPath}` : null;
+    } catch (err) {
+      this.logger.error?.('plex.getThumbnail.exception', {
+        error: err.message,
+        stack: err.stack,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Summarize a container (e.g. a music playlist) from one metadata call:
+   * artwork plus track count and total length.
+   * @param {string} ratingKey - Plex rating key
+   * @returns {Promise<{thumb: string|null, trackCount: number|null, durationSeconds: number|null}|null>}
+   */
+  async getPlaylistSummary(ratingKey) {
+    try {
+      const metadata = await this.client.getMetadata(ratingKey);
+      const item = metadata?.MediaContainer?.Metadata?.[0];
+      if (!item) return null;
+
+      const thumbPath = plexArtPath(item);
+      const trackCount = Number(item.leafCount);
+      const durationMs = Number(item.duration);
+      return {
+        thumb: thumbPath ? `${this.proxyPath}${thumbPath}` : null,
+        trackCount: Number.isFinite(trackCount) && trackCount > 0 ? trackCount : null,
+        durationSeconds: Number.isFinite(durationMs) && durationMs > 0 ? Math.round(durationMs / 1000) : null,
+      };
+    } catch (err) {
+      this.logger.error?.('plex.getPlaylistSummary.exception', { error: err.message });
+      return null;
+    }
+  }
+
+  /**
+   * Get a single item by ID
+   * @param {string} id - Compound ID (plex:660440) or local ID
+   * @param {Object} [opts] - Options
+   * @param {Map} [opts.showLabelCache] - Cache for show labels to avoid redundant API calls in batch operations
+   * @returns {Promise<PlayableItem|ListableItem|null>}
+   */
+  async getItem(id, opts = {}) {
+    try {
+      // Strip source prefix if present
+      const localId = id.replace(/^plex:/, '');
+
+      // If ID is a numeric rating key, fetch metadata directly
+      if (/^\d+$/.test(localId)) {
+        const data = await this.client.getMetadata(localId);
+        const item = data.MediaContainer?.Metadata?.[0];
+        if (!item) return null;
+
+        // For episodes, also fetch show-level labels (governance labels are typically on the show)
+        let showLabels = [];
+        if (item.type === 'episode' && item.grandparentRatingKey) {
+          const showKey = item.grandparentRatingKey;
+          const cache = opts.showLabelCache;
+
+          // Check cache first if provided
+          if (cache && cache.has(showKey)) {
+            showLabels = cache.get(showKey);
+          } else {
+            try {
+              const showData = await this.client.getMetadata(showKey);
+              const show = showData?.MediaContainer?.Metadata?.[0];
+              showLabels = this._extractLabels(show?.Label);
+              // Store in cache if provided
+              if (cache) {
+                cache.set(showKey, showLabels);
+              }
+            } catch (err) {
+              // Debug log but don't fail - episode can still play without show labels
+              if (process.env.NODE_ENV !== 'production') {
+                this.logger.debug?.('plex.show-labels.fetch-failed', { error: err.message });
+              }
+              // Cache the empty result to avoid retrying failed fetches
+              if (cache) {
+                cache.set(showKey, []);
+              }
+            }
+          }
+        }
+
+        return this._toPlayableItem(item, { showLabels });
+      }
+
+      // Otherwise treat as container path. Ask for the header only (a zero-size
+      // window): title and totalSize arrive in ~0.1 s, where the whole
+      // container — every title in a library section — took seconds.
+      const separator = localId.includes('?') ? '&' : '?';
+      const data = await this.client.getContainer(
+        `/${localId}${separator}X-Plex-Container-Start=0&X-Plex-Container-Size=0`,
+      );
+      const container = data.MediaContainer;
+      if (!container) return null;
+      const reportedTotal = Number(container.totalSize);
+
+      return new ListableItem({
+        id: `plex:${localId}`,
+        source: 'plex',
+        localId,
+        title: container.title1 || container.title || localId,
+        itemType: 'container',
+        childCount: container.totalSize != null && Number.isInteger(reportedTotal) ? reportedTotal : (container.size || 0),
+        thumbnail: container.thumb ? `${this.proxyPath}${container.thumb}` : null,
+        metadata: {
+          category: ContentCategory.CONTAINER
+        }
+      });
+    } catch (err) {
+      return null;
+    }
+  }
+
+  /**
+   * Get list of items in a container
+   * @param {string|Object} input - Container path/rating key (string) or query object
+   * @param {string} [input.from] - Container path when input is object
+   * @param {string} [input['plex.libraryName']] - Filter playlists by library name
+   * @returns {Promise<ListableItem[]>}
+   */
+  async getList(input) {
+    try {
+      // Normalize input - support both string ID and query object
+      const localId = typeof input === 'string'
+        ? input?.replace(/^plex:/, '') || ''
+        : (input?.from?.replace(/^plex:/, '') || '');
+      const query = typeof input === 'object' ? input : {};
+
+      // Extract adapter-specific filter params
+      const libraryNameFilter = query['plex.libraryName'];
+
+      // Section-type aliases: browse entrypoints like plex:audio / plex:video
+      // resolve to the library sections of matching type. Plex section types:
+      // artist (music), movie, show, photo.
+      const SECTION_TYPE_ALIASES = {
+        audio: ['artist'],
+        music: ['artist'],
+        video: ['movie', 'show'],
+        photo: ['photo']
+      };
+
+      // Determine the correct path based on item type
+      let path;
+      let sectionTypeFilter = null;
+      if (!localId) {
+        // Empty - list all library sections
+        path = '/library/sections';
+      } else if (SECTION_TYPE_ALIASES[localId]) {
+        // Alias - list library sections of the matching type
+        path = '/library/sections';
+        sectionTypeFilter = SECTION_TYPE_ALIASES[localId];
+      } else if (/^\d+$/.test(localId)) {
+        // Numeric ID - need to check type first
+        const metaData = await this.client.getMetadata(localId);
+        const meta = metaData?.MediaContainer?.Metadata?.[0];
+        const type = meta?.type;
+
+        // Use appropriate path based on type
+        if (type === 'collection') {
+          path = `/library/collections/${localId}/items`;
+        } else if (type === 'playlist') {
+          path = `/playlists/${localId}/items`;
+        } else {
+          // Default: get children (works for shows, seasons, albums, etc.)
+          path = `/library/metadata/${localId}/children`;
+        }
+      } else if (localId === 'playlist:' || localId === 'playlists') {
+        // List all playlists
+        path = '/playlists/all';
+      } else {
+        // Path-based (e.g., library/sections/1/all)
+        path = `/${localId}`;
+      }
+
+      const data = await this.client.getContainer(path);
+      const container = data.MediaContainer;
+      if (!container) return [];
+
+      // Library sections need dedicated mapping: their Directory entries have
+      // no ratingKey (the generic converters would emit id "plex:undefined")
+      // and their drill-down path is /library/sections/{key}/all, not
+      // /library/metadata/{key}/children.
+      if (path === '/library/sections') {
+        let sections = container.Directory || [];
+        if (sectionTypeFilter) {
+          sections = sections.filter(section => sectionTypeFilter.includes(section.type));
+        }
+        return sections.map(section => this._toLibrarySectionItem(section));
+      }
+
+      let items = container.Metadata || container.Directory || [];
+
+      // Apply library name filter for playlists
+      if (libraryNameFilter && (localId === 'playlist:' || localId === 'playlists' || localId.startsWith('playlists'))) {
+        items = this._filterPlaylistsByLibraryName(items, libraryNameFilter);
+      }
+
+      return this._toContainerItems(items);
+    } catch (err) {
+      this.logger.error?.('plex.getList.exception', {
+        error: err.message,
+        stack: err.stack,
+      });
+      return [];
+    }
+  }
+
+  /**
+   * One window of a path-style container (e.g. library/sections/6/all), using
+   * Plex's own paging. A whole 2810-title section costs Plex ~7 s and 6.8 MB;
+   * one 50-title page ~0.1 s, with the true count in `totalSize`.
+   *
+   * Only path-style ids page. Numeric ids (shows, seasons, playlists,
+   * collections), the section root, aliases and the playlists root return null
+   * so the caller falls back to getList and keeps whole-container semantics —
+   * the list router wraps playlists/seasons from the whole container.
+   * @param {string} input - Container id (plex: prefix optional)
+   * @param {{ skip: number, take: number }} page
+   * @returns {Promise<{ items: ListableItem[], total: number }|null>}
+   */
+  async getListPage(input, { skip, take }) {
+    const localId = typeof input === 'string' ? input.replace(/^plex:/, '') : '';
+    const isPathContainer = localId.includes('/') && !/^\d+$/.test(localId) && !localId.startsWith('playlists');
+    if (!isPathContainer || !Number.isInteger(skip) || !Number.isInteger(take) || skip < 0 || take < 1) return null;
+    try {
+      const separator = localId.includes('?') ? '&' : '?';
+      const data = await this.client.getContainer(
+        `/${localId}${separator}X-Plex-Container-Start=${skip}&X-Plex-Container-Size=${take}`,
+      );
+      const container = data?.MediaContainer;
+      if (!container) return null;
+      const items = this._toContainerItems(container.Metadata || container.Directory || []);
+      const reported = Number(container.totalSize);
+      const total = container.totalSize != null && Number.isInteger(reported) ? reported : skip + items.length;
+      return { items, total };
+    } catch (err) {
+      this.logger.warn?.('plex.getListPage.failed', { error: err.message, code: err.code ?? null });
+      return null;
+    }
+  }
+
+  /**
+   * Playable types (episodes, tracks, movies, clips) get the full conversion —
+   * duration, episode number and other playback metadata; the rest are listable.
+   * @private
+   */
+  _toContainerItems(items) {
+    const playableTypes = ['episode', 'track', 'movie', 'clip'];
+    return items.map(item => (playableTypes.includes(item.type)
+      ? this._toPlayableItem(item)
+      : this._toListableItem(item)));
+  }
+
+  /**
+   * Filter playlists by library name with fallback matching
+   * @param {Object[]} playlists - Raw Plex playlist metadata
+   * @param {string} targetName - Library name to match
+   * @returns {Object[]} Filtered playlists
+   * @private
+   */
+  _filterPlaylistsByLibraryName(playlists, targetName) {
+    const target = targetName.toLowerCase();
+
+    // For "music" library, use playlistType as the primary filter
+    // (playlists don't have librarySectionTitle, but playlistType indicates content type)
+    if (target === 'music') {
+      const audioPlaylists = playlists.filter(p => p.playlistType === 'audio');
+      return audioPlaylists;
+    }
+
+    // For "video" library, use video playlistType
+    if (target === 'video' || target === 'movies' || target === 'tv') {
+      const videoPlaylists = playlists.filter(p => p.playlistType === 'video');
+      return videoPlaylists;
+    }
+
+    // For other library names, try librarySectionTitle matching (fallback)
+    let filtered = playlists.filter(p =>
+      p.librarySectionTitle?.toLowerCase() === target
+    );
+
+    if (filtered.length === 0) {
+      filtered = playlists.filter(p =>
+        p.librarySectionTitle?.toLowerCase().includes(target)
+      );
+    }
+
+    return filtered;
+  }
+
+  /**
+   * Resolve a container to its playable items (recursive)
+   * @param {string} id - Container path or rating key
+   * @returns {Promise<PlayableItem[]>}
+   */
+  async resolvePlayables(id) {
+    // Create a cache for show labels to avoid N+1 queries when processing
+    // multiple episodes from the same show
+    const showLabelCache = new Map();
+    return this._resolvePlayablesWithCache(id, showLabelCache);
+  }
+
+  /**
+   * Internal recursive resolver with cache support
+   * @param {string} id - Container path or rating key
+   * @param {Map} showLabelCache - Cache for show labels
+   * @returns {Promise<PlayableItem[]>}
+   * @private
+   */
+  async _resolvePlayablesWithCache(id, showLabelCache) {
+    try {
+      // Strip source prefix if present
+      const localId = id?.replace(/^plex:/, '') || '';
+
+      // If ID is a numeric rating key, check if directly playable or a container
+      if (/^\d+$/.test(localId)) {
+        const item = await this.getItem(localId, { showLabelCache });
+        if (item?.mediaUrl) {
+          // Directly playable (movie, episode, track)
+          return [item];
+        }
+        // It's a container - get its children and collect playables
+        const children = await this.getList(localId);
+        return this._collectPlayables(children, showLabelCache);
+      }
+
+      // Otherwise get list and collect playables
+      const list = await this.getList(localId);
+      return this._collectPlayables(list, showLabelCache);
+    } catch (err) {
+      return [];
+    }
+  }
+
+  /**
+   * Collect playable items from a list, reusing already-resolved PlayableItems
+   * from getList() instead of re-fetching each one via getItem().
+   * Containers are resolved in parallel via getList() (skipping getItem()).
+   * @param {Array} items - Items from getList()
+   * @param {Map} showLabelCache
+   * @returns {Promise<PlayableItem[]>}
+   * @private
+   */
+  async _collectPlayables(items, showLabelCache) {
+    const playables = [];
+    const containerPromises = [];
+
+    for (const item of items) {
+      if (item.mediaUrl) {
+        // Already a fully-resolved PlayableItem from getList()
+        playables.push(item);
+      } else if (item.itemType === 'container') {
+        // Skip getItem() — we already know it's a container.
+        // Go directly to getList() and resolve children in parallel.
+        const childId = item.id.replace('plex:', '');
+        containerPromises.push(
+          this.getList(childId)
+            .then(children => this._collectPlayables(children, showLabelCache))
+            .catch(() => [])
+        );
+      }
+    }
+
+    if (containerPromises.length > 0) {
+      const nestedResults = await Promise.all(containerPromises);
+      for (const nested of nestedResults) {
+        playables.push(...nested);
+      }
+    }
+
+    return playables;
+  }
+
+  /**
+   * Resolve the curriculum-index merge for a raw Plex item, if its show is indexed.
+   * Returns { title?, piano } or null. Episodes join on (parentIndex,index); seasons
+   * on (index); resolved to a show via grandparentRatingKey / parentRatingKey.
+   * @private
+   */
+  #curriculumMerge(item) {
+    const showKey = item.type === 'episode' ? item.grandparentRatingKey
+      : item.type === 'season' ? item.parentRatingKey : null;
+    if (!showKey) return null;
+    if (!this.#curriculumEnrichment) return null;
+    const {getCurriculumIndex,mergeEpisode,mergeSeason}=this.#curriculumEnrichment;
+    const index = getCurriculumIndex(showKey);
+    if (!index) return null;
+    if (item.type === 'episode') return mergeEpisode(index, { season: item.parentIndex, episode: item.index });
+    if (item.type === 'season') return mergeSeason(index, item.index);
+    return null;
+  }
+
+  /**
+   * Convert a /library/sections Directory entry to a ListableItem.
+   * Sections have no ratingKey — their identity is the section key, and the
+   * browsable container lives at /library/sections/{key}/all (a numeric
+   * localId would be misinterpreted as a metadata ratingKey by getList()).
+   * @param {Object} section - Plex library section Directory entry
+   * @returns {ListableItem}
+   * @private
+   */
+  _toLibrarySectionItem(section) {
+    const localId = `library/sections/${section.key}/all`;
+    const thumbPath = section.composite || section.thumb || section.art;
+    return new ListableItem({
+      id: `plex:${localId}`,
+      source: 'plex',
+      localId,
+      title: section.title || `[Library ${section.key}]`,
+      itemType: 'container',
+      childCount: 0,
+      thumbnail: thumbPath ? `${this.proxyPath}${thumbPath}` : null,
+      metadata: {
+        // Section type (movie | show | artist | photo) — same field UIs
+        // already read for icons/grouping.
+        type: section.type,
+        category: ContentCategory.CONTAINER,
+        sectionId: section.key,
+        librarySectionTitle: section.title || null,
+        sourceType: 'librarySection'
+      }
+    });
+  }
+
+  /**
+   * Convert Plex metadata to ListableItem
+   * @param {Object} item - Plex metadata object
+   * @returns {ListableItem}
+   * @private
+   */
+  _toListableItem(item) {
+    const isContainer = ['show', 'season', 'artist', 'album'].includes(item.type) ||
+                       !!item.key?.includes('/children');
+    const id = item.ratingKey || item.key?.replace(/^\//, '').replace(/\/children$/, '');
+
+    // Use proxy URL for thumbnails (not direct Plex URL)
+    const thumbPath = plexArtPath(item);
+    const thumbnail = thumbPath ? `${this.proxyPath}${thumbPath}` : null;
+
+    // Build metadata with hierarchy info
+    const metadata = {
+      type: item.type,
+      category: this.#mapTypeToCategory(item.type),
+      year: item.year,
+      // Rating fields for sorting in FitnessMenu
+      rating: item.userRating ?? item.rating ?? item.audienceRating ?? null,
+      userRating: item.userRating ?? null,
+      librarySectionTitle: item.librarySectionTitle || null,
+      childCount: item.leafCount || item.childCount || 0,
+      addedAt: plexAddedAt(item)
+    };
+
+    // Add parent info based on type
+    if (item.type === 'season') {
+      metadata.parentTitle = item.parentTitle;
+      metadata.parentType = 'show';
+      metadata.parentRatingKey = item.parentRatingKey;
+    } else if (item.type === 'album') {
+      metadata.parentTitle = item.parentTitle;
+      metadata.parentType = 'artist';
+      metadata.parentRatingKey = item.parentRatingKey;
+    } else if (['show', 'artist', 'movie', 'collection'].includes(item.type)) {
+      // Top-level items: use collection for movies if available, else library
+      if (item.type === 'movie' && Array.isArray(item.Collection) && item.Collection.length > 0) {
+        const firstCollection = item.Collection[0];
+        metadata.parentTitle = typeof firstCollection === 'string' ? firstCollection : firstCollection?.tag;
+        metadata.parentType = 'collection';
+      } else {
+        metadata.parentTitle = item.librarySectionTitle || null;
+        metadata.parentType = 'library';
+      }
+    }
+
+    const merged = this.#curriculumMerge(item);
+    if (merged?.piano) metadata.piano = merged.piano;
+    return new ListableItem({
+      id: `plex:${id}`,
+      source: 'plex',
+      localId: String(id),
+      title: merged?.title || item.title || item.titleSort || `[${item.type || 'Untitled'}]`,
+      itemType: isContainer ? 'container' : 'leaf',
+      childCount: item.leafCount || item.childCount || 0,
+      thumbnail,
+      metadata
+    });
+  }
+
+  /**
+   * Convert Plex metadata to PlayableItem (or ListableItem for containers)
+   * @param {Object} item - Plex metadata object
+   * @param {Object} [opts] - Options
+   * @param {string[]} [opts.showLabels] - Pre-fetched show-level labels for episodes
+   * @returns {PlayableItem|ListableItem}
+   * @private
+   */
+  _toPlayableItem(item, opts = {}) {
+    // Every `/library/parts/...` URL this adapter builds (here, and in the
+    // queue/list builders that call this) must be mappable back to its item.
+    for (const media of item.Media || []) {
+      for (const part of media?.Part || []) this.#rememberPart(part?.key, item.ratingKey);
+    }
+    const isVideo = ['movie', 'episode', 'clip'].includes(item.type);
+    const isAudio = ['track'].includes(item.type);
+
+    // Non-playable types return as containers (shows, seasons, albums, etc.)
+    if (!isVideo && !isAudio) {
+      // Build metadata with hierarchy info
+      const containerMetadata = {
+        type: item.type,
+        category: this.#mapTypeToCategory(item.type),
+        year: item.year,
+        studio: item.studio,
+        summary: item.summary,
+        librarySectionID: item.librarySectionID || null,
+        librarySectionTitle: item.librarySectionTitle || null,
+        childCount: item.leafCount || item.childCount || 0,
+        addedAt: plexAddedAt(item)
+      };
+
+      // Add parent info for containers
+      // Seasons have shows as parents, albums have artists as parents
+      if (item.type === 'season') {
+        containerMetadata.parentTitle = item.parentTitle; // Show title
+        containerMetadata.parentType = 'show';
+        containerMetadata.parentRatingKey = item.parentRatingKey;
+      } else if (item.type === 'album') {
+        containerMetadata.parentTitle = item.parentTitle; // Artist name
+        containerMetadata.parentType = 'artist';
+        containerMetadata.parentRatingKey = item.parentRatingKey;
+      } else if (['show', 'artist', 'collection'].includes(item.type)) {
+        // Top-level containers use library as parent
+        containerMetadata.parentTitle = item.librarySectionTitle || null;
+        containerMetadata.parentType = 'library';
+      }
+
+      const mergedC = this.#curriculumMerge(item);
+      if (mergedC?.piano) containerMetadata.piano = mergedC.piano;
+      return new ListableItem({
+        id: `plex:${item.ratingKey}`,
+        source: 'plex',
+        localId: String(item.ratingKey),
+        title: mergedC?.title || item.title || item.titleSort || `[${item.type || 'Untitled'}]`,
+        itemType: 'container',
+        childCount: item.leafCount || 0,
+        thumbnail: plexArtPath(item) ? `${this.proxyPath}${plexArtPath(item)}` : null,
+        metadata: containerMetadata
+      });
+    }
+
+    // Extract labels from item
+    const itemLabels = this._extractLabels(item.Label);
+
+    // Merge with show-level labels if provided (for episodes)
+    let allLabels = itemLabels;
+    if (opts.showLabels && Array.isArray(opts.showLabels)) {
+      allLabels = [...new Set([...itemLabels, ...opts.showLabels])];
+    }
+
+    // Build extended metadata for episodes/tracks
+    // These fields are flattened to top level by the router for legacy compatibility
+    const metadata = {
+      type: item.type,
+      category: this.#mapTypeToCategory(item.type),
+      year: item.year,
+      grandparentTitle: item.grandparentTitle,
+      librarySectionID: item.librarySectionID || null,
+      librarySectionTitle: item.librarySectionTitle || null,
+      // Rating fields (prefer user's personal rating, fall back to global/audience).
+      // Surfaced to the API via toListItem → item.rating / item.userRating, used
+      // e.g. by playlist virtual-season sort in FitnessShow.
+      rating: item.userRating ?? item.rating ?? item.audienceRating ?? null,
+      userRating: item.userRating ?? null,
+      // Episode-specific properties for FitnessShow compatibility
+      plex: item.ratingKey,
+      key: item.ratingKey,
+      label: item.title,
+      summary: item.summary || null,
+      tagline: item.tagline || null,
+      studio: item.studio || null,
+      thumbId: item.Media?.[0]?.Part?.[0]?.id ?? parseInt(item.ratingKey, 10),
+      // Media info from Plex (for audio direct stream)
+      Media: item.Media,
+      // Labels for governance (merged item + show labels for episodes)
+      labels: allLabels.length > 0 ? allLabels : null,
+      addedAt: plexAddedAt(item)
+    };
+
+    // Plex view count — how many times the item has been fully watched.
+    // Used by sequential-show gate logic so replaying an earlier episode
+    // doesn't reset the lock point.
+    if (item.viewCount != null) {
+      metadata.viewCount = item.viewCount;
+    }
+
+    // Add episode-specific fields (TV shows) - using canonical relative hierarchy names
+    if (item.type === 'episode') {
+      // Grandparent (show) info
+      metadata.grandparentTitle = item.grandparentTitle;
+      metadata.grandparentType = 'show';
+      if (item.grandparentRatingKey) {
+        metadata.grandparentId = item.grandparentRatingKey;
+      }
+      // Parent (season) info
+      metadata.parentTitle = item.parentTitle;
+      metadata.parentType = 'season';
+      if (item.parentRatingKey) {
+        metadata.parentId = item.parentRatingKey;
+      }
+      if (item.parentIndex !== undefined && item.parentIndex !== null) {
+        metadata.parentIndex = parseInt(item.parentIndex);
+      }
+      // Parent thumbnail (season cover image)
+      if (item.parentThumb) {
+        metadata.parentThumb = `${this.proxyPath}${item.parentThumb}`;
+      }
+      // Item position
+      if (item.index !== undefined && item.index !== null) {
+        metadata.itemIndex = parseInt(item.index);
+      }
+    }
+
+    // Add music-specific fields
+    if (item.type === 'track') {
+      // Plex track hierarchy: grandparentTitle = the parent artist entity (the album
+      // artist), originalTitle = the per-track performer override (set on compilations
+      // where each track's performer differs from the album artist). The displayed
+      // "artist" should therefore prefer the track-level performer, falling back to the
+      // album artist; albumArtist is the grandparent. (Prior code had these inverted,
+      // so compilation tracks showed the label/album-artist instead of the performer.)
+      metadata.artist = item.originalTitle || item.grandparentTitle;
+      metadata.albumArtist = item.grandparentTitle;
+      metadata.album = item.parentTitle;
+      if (item.parentRatingKey) {
+        metadata.albumId = item.parentRatingKey;
+      }
+      if (item.grandparentRatingKey) {
+        metadata.artistId = item.grandparentRatingKey;
+      }
+    }
+
+    // Add best-effort parent for top-level items (show, movie, artist, collection)
+    // These don't have a parentTitle from Plex, so use library or collection as parent
+    const topLevelTypes = ['show', 'movie', 'artist', 'collection'];
+    if (topLevelTypes.includes(item.type)) {
+      // For movies, try to use first collection as parent if available
+      if (item.type === 'movie' && Array.isArray(item.Collection) && item.Collection.length > 0) {
+        const firstCollection = item.Collection[0];
+        metadata.parentTitle = typeof firstCollection === 'string' ? firstCollection : firstCollection?.tag;
+        metadata.parentType = 'collection';
+      } else {
+        // Fall back to library name as parent
+        metadata.parentTitle = item.librarySectionTitle || null;
+        metadata.parentType = 'library';
+      }
+    }
+
+    const mergedE = this.#curriculumMerge(item);
+    if (mergedE?.piano) metadata.piano = mergedE.piano;
+
+    // Use proxy URL for thumbnails with fallback chain (episode -> season -> show)
+    const thumbPath = item.thumb || item.parentThumb || item.grandparentThumb;
+    const thumbnail = thumbPath ? `${this.proxyPath}${thumbPath}` : null;
+
+    // Describe the actual transport before the Player selects its decoder.
+    // A qualified original MP4 goes straight to native video; an HLS
+    // descriptor must never receive a raw-file redirect after loading.
+    const partKey = item.Media?.[0]?.Part?.[0]?.key;
+    const directPart = isVideo && canDirectPlayH264(item)
+      && typeof partKey === 'string' && partKey.startsWith('/') && !partKey.startsWith('//')
+      ? partKey : null;
+    return new PlayableItem({
+      id: `plex:${item.ratingKey}`,
+      source: 'plex',
+      localId: String(item.ratingKey),
+      title: mergedE?.title || item.title || item.titleSort || `[${item.type || 'Untitled'}]`,
+      mediaType: directPart ? 'video' : this._determineMediaType(item.type),
+      mediaUrl: directPart ? `${this.proxyPath}${directPart}` : `/api/v1/proxy/plex/stream/${item.ratingKey}`,
+      duration: item.duration ? Math.floor(item.duration / 1000) : null,
+      resumable: isVideo,
+      resumePosition: item.viewOffset ? Math.floor(item.viewOffset / 1000) : null,
+      thumbnail,
+      metadata
+    });
+  }
+
+  /**
+   * Get storage path for progress persistence
+   * @param {string} id - Item ID
+   * @returns {Promise<string>}
+   */
+  async getStoragePath(id) {
+    // Strip plex: prefix if present
+    const localId = String(id).replace(/^plex:/, '');
+    const cached = this.#storagePathCache.get(localId);
+    if (cached) return cached;
+
+    try {
+      const item = await this.getItem(`plex:${localId}`);
+      if (item?.metadata?.librarySectionID) {
+        const libraryId = item.metadata.librarySectionID;
+        const libraryName = (item.metadata.librarySectionTitle || 'media')
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '');
+        const storagePath = `plex/${libraryId}_${libraryName}`;
+        if (this.#storagePathCache.size >= 5000) {
+          this.#storagePathCache.delete(this.#storagePathCache.keys().next().value);
+        }
+        this.#storagePathCache.set(localId, storagePath);
+        return storagePath;
+      }
+    } catch (e) {
+      // Fall back to generic plex path on error
+    }
+    return 'plex';
+  }
+
+  // ===========================================================================
+  // STREAMING & TRANSCODE METHODS
+  // ===========================================================================
+
+  // NOTE: `_generateSessionIds` used to be defined HERE as well as further down
+  // in this same class body, with the same name and a near-identical body. A
+  // duplicate method definition is not an error in JavaScript — the later one
+  // simply replaces the earlier — so this copy had never executed, while
+  // reading the file gave every impression that it did. It is the exact
+  // function the 2026-08-16 transcode storm turned on, so a reader landing on
+  // the dead copy would have drawn conclusions from code that never ran. The
+  // surviving definition is in the STREAMING URL GENERATION section below.
+
+  /**
+   * Get container metadata bundled with its children
+   * @param {string} id - Compound ID
+   * @returns {Promise<{container: Object, children: Array}|null>}
+   */
+  async getContainerWithChildren(id) {
+    const [container, children] = await Promise.all([
+      this.getContainerInfo(id),
+      this.getList(id)
+    ]);
+
+    if (!container) return null;
+
+    return {
+      container,
+      children: children || []
+    };
+  }
+
+  /**
+   * Get extended container metadata for FitnessShow info panel
+   * Returns raw Plex metadata including summary, labels, studio, etc.
+   * @param {string} id - Container ID (show, collection, etc.)
+   * @returns {Promise<Object|null>}
+   */
+  async getContainerInfo(id) {
+    try {
+      // Strip all plex: prefixes (handles plex:plex:123 case from frontend)
+      let localId = id || '';
+      while (localId.startsWith('plex:')) {
+        localId = localId.slice(5);
+      }
+      if (!localId || !/^\d+$/.test(localId)) return null;
+
+      const data = await this.client.getMetadata(localId);
+      const item = data.MediaContainer?.Metadata?.[0];
+      if (!item) return null;
+
+      // Extract labels from Plex Label objects only (not Collection or Genre)
+      // Legacy: item['labels'] = item.Label? item.Label.map(x => x['tag'].toLowerCase()) : [];
+      const labels = this._extractLabels(item.Label);
+
+      // Extract collections from Collection array
+      const collections = [];
+      if (Array.isArray(item.Collection)) {
+        for (const col of item.Collection) {
+          if (typeof col === 'string') collections.push(col);
+          else if (col?.tag) collections.push(col.tag);
+        }
+      }
+
+      return {
+        key: localId,
+        title: item.title,
+        image: plexArtPath(item) ? `${this.proxyPath}${plexArtPath(item)}` : null,
+        summary: item.summary || null,
+        tagline: item.tagline || null,
+        year: item.year || null,
+        studio: item.studio || null,
+        type: item.type || null,
+        contentType: item.type || null,
+        labels,
+        collections,
+        // Additional fields that might be useful
+        duration: item.duration ? Math.floor(item.duration / 1000) : null,
+        ratingKey: item.ratingKey,
+        childCount: item.leafCount || item.childCount || 0,
+        // Rating fields for season-as-show tile sorting (FitnessMenu).
+        // Matches the convention in _toListableItem (line 509) and
+        // _toPlayableItem (line 623): `rating` is the best-available value
+        // with userRating winning. `userRating` is also exposed separately
+        // so consumers can distinguish a user-starred rating from a fallback.
+        rating: item.userRating ?? item.rating ?? item.audienceRating ?? null,
+        userRating: item.userRating ?? null,
+        // Parent linkage for season label inheritance (season -> show)
+        parentRatingKey: item.parentRatingKey ?? null,
+        parentTitle: item.parentTitle ?? null
+      };
+    } catch (err) {
+      this.logger.error?.('plex.getContainerInfo.exception', {
+        error: err.message,
+        stack: err.stack,
+      });
+      return null;
+    }
+  }
+
+  // ===========================================================================
+  // SMART EPISODE SELECTION
+  // ===========================================================================
+
+  /**
+   * Load viewing history from mediaProgressMemory (async)
+   * @param {string} [storagePath='plex'] - Storage path to load from
+   * @returns {Promise<Object>} History object mapping bare plex keys to watch state
+   */
+  async _loadViewingHistoryAsync(storagePath = 'plex') {
+    if (!this.mediaProgressMemory) {
+      return {};
+    }
+
+    try {
+      const states = await this.mediaProgressMemory.listProgress(storagePath);
+      const history = {};
+      for (const state of states) {
+        // Use resolver to parse compound key, or strip prefix as fallback
+        let bareKey;
+        if (this.mediaKeyResolver) {
+          const { id } = this.mediaKeyResolver.parse(state.contentId);
+          bareKey = id;
+        } else {
+          bareKey = state.contentId.replace(/^plex:/, '');
+        }
+        history[bareKey] = {
+          playhead: state.playhead || 0,
+          duration: state.duration || 0,
+          percent: state.percent || 0,
+          lastPlayed: state.lastPlayed || null
+        };
+      }
+      return history;
+    } catch (e) {
+      this.logger.error?.('plex.history.load-failed', {
+        error: e.message,
+        stack: e.stack,
+      });
+      return {};
+    }
+  }
+
+  /**
+   * Clear watch status for given keys
+   * Note: This is currently a no-op. Clearing should be done through mediaProgressMemory.delete()
+   * @param {string[]} keys - Plex keys to clear
+   * @private
+   */
+  _clearWatchedItems(keys) {
+    // No-op: clearing watch status should be handled through mediaProgressMemory directly
+    // This method is kept for API compatibility with _selectEpisodeByPriority
+  }
+
+  /**
+   * Check if an item is considered watched (>90% or <60 seconds remaining)
+   * @param {Object} item - Item with percent and seconds
+   * @param {number} [threshold=90] - Percent threshold for watched
+   * @returns {boolean}
+   * @private
+   */
+  _isWatched(item, threshold = 90) {
+    const { percent = 0, seconds = 0 } = item || {};
+    if (percent >= threshold) return true;
+    // Check seconds remaining
+    if (seconds > 0 && percent > 0) {
+      const duration = seconds / (percent / 100);
+      const remaining = duration - seconds;
+      if (remaining <= 60) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Categorize items by watch status
+   * @param {string[]} keys - Array of plex keys
+   * @param {Object} log - Viewing history log
+   * @returns {{watched: string[], inProgress: string[], unwatched: string[]}}
+   * @private
+   */
+  _categorizeByWatchStatus(keys, log) {
+    const watched = [];
+    const inProgress = [];
+    const unwatched = [];
+
+    for (const key of keys) {
+      const entry = log[key];
+      const playhead = entry?.playhead ?? 0;
+      const duration = entry?.duration ?? 0;
+      const percent = entry?.percent ?? (duration > 0 ? (playhead / duration) * 100 : 0);
+
+      if (this._isWatched({ percent, seconds: playhead })) {
+        watched.push(key);
+      } else if (percent > 0) {
+        inProgress.push(key);
+      } else {
+        unwatched.push(key);
+      }
+    }
+
+    return { watched, inProgress, unwatched };
+  }
+
+  /**
+   * Select an episode by priority: unwatched > in-progress > restart watched
+   * @param {string[]} unwatched - Unwatched keys
+   * @param {string[]} inProgress - In-progress keys
+   * @param {string[]} watched - Watched keys
+   * @param {Object} log - Viewing history log
+   * @param {boolean} [shuffle=false] - Whether to shuffle within category
+   * @returns {[string|null, number, number]} [key, seconds, percent]
+   * @private
+   */
+  _selectEpisodeByPriority(unwatched, inProgress, watched, log, shuffle = false) {
+    // Priority 1: First unwatched
+    if (unwatched.length > 0) {
+      const selected = shuffle ? unwatched[Math.floor(Math.random() * unwatched.length)] : unwatched[0];
+      return [selected, 0, 0];
+    }
+
+    // Priority 2: First in-progress
+    if (inProgress.length > 0) {
+      const selected = shuffle ? inProgress[Math.floor(Math.random() * inProgress.length)] : inProgress[0];
+      const entry = log[selected] || {};
+      return [selected, entry.playhead ?? 0, entry.percent ?? 0];
+    }
+
+    // Priority 3: Restart from first watched (clear watch status)
+    if (watched.length > 0) {
+      this._clearWatchedItems(watched);
+      const selected = watched[0];
+      return [selected, 0, 0];
+    }
+
+    return [null, 0, 0];
+  }
+
+  /**
+   * Select which key to play from a list of keys
+   * Uses viewing history to pick unwatched > in-progress > restart
+   *
+   * @param {string[]|Object[]} keys - Array of plex keys or items with .plex property
+   * @param {boolean} [shuffle=false] - Whether to shuffle within category
+   * @param {string} [storagePath='plex'] - Storage path for history lookup
+   * @returns {Promise<[string|null, number, number]>} [key, seconds, percent]
+   */
+  async selectKeyToPlay(keys, shuffle = false, storagePath = 'plex') {
+    // Normalize keys array
+    keys = Array.isArray(keys) ? keys : [];
+    if (keys.length > 0 && keys[0]?.plex) {
+      keys = keys.map(x => x.plex || x.ratingKey || x);
+    }
+    if (keys.length === 0) return [null, 0, 0];
+
+    // Load viewing history
+    const log = await this._loadViewingHistoryAsync(storagePath);
+
+    // Categorize by watch status
+    const { watched, inProgress, unwatched } = this._categorizeByWatchStatus(keys, log);
+
+    // Select by priority
+    return this._selectEpisodeByPriority(unwatched, inProgress, watched, log, shuffle);
+  }
+
+  /**
+   * Load a single playable item from a container key with smart selection
+   * Drills down containers until finding a playable item
+   *
+   * @param {string} key - Container or item key
+   * @param {Object} [opts] - Options
+   * @param {boolean} [opts.shuffle] - Whether to shuffle selection
+   * @param {string} [opts.storagePath='plex'] - Storage path for history lookup
+   * @returns {Promise<Object|null>} Playable item with media URL and resume info
+   */
+  async loadPlayableItemFromKey(key, opts = {}) {
+    const { shuffle = false, storagePath = 'plex' } = opts;
+
+    // Strip plex: prefix if present
+    key = key?.replace(/^plex:/, '') || '';
+    if (!key) return null;
+
+    // Get item metadata
+    const item = await this.getItem(key);
+    if (!item) return null;
+
+    // If directly playable, return it
+    if (item.mediaUrl && ['movie', 'episode', 'track'].includes(item.metadata?.type)) {
+      const log = await this._loadViewingHistoryAsync(storagePath);
+      const entry = log[key] || {};
+      return {
+        ...item,
+        listkey: key,
+        percent: entry.percent ?? 0,
+        seconds: entry.playhead ?? 0
+      };
+    }
+
+    // Otherwise it's a container - get children and select
+    const list = await this.getList(key);
+    if (!list.length) return null;
+
+    // Get plex keys from list
+    const keys = list.map(i => i.id.replace('plex:', ''));
+
+    // Use smart selection
+    const [selectedKey, seconds, percent] = await this.selectKeyToPlay(keys, shuffle, storagePath);
+    if (!selectedKey) return null;
+
+    // Recursively load the selected item (may need to drill down further)
+    const selectedItem = await this.loadPlayableItemFromKey(selectedKey, opts);
+    if (selectedItem) {
+      selectedItem.listkey = key;
+      selectedItem.listType = item.metadata?.type;
+    }
+
+    return selectedItem;
+  }
+
+  /**
+   * Load a queue of playable items from a container
+   * @param {string} key - Container key
+   * @param {Object} [opts] - Options
+   * @param {boolean} [opts.shuffle] - Whether to shuffle the queue
+   * @param {string} [opts.storagePath='plex'] - Storage path for history lookup
+   * @returns {Promise<Object[]>} Array of playable items
+   */
+  async loadPlayableQueueFromKey(key, opts = {}) {
+    const { shuffle = false, storagePath = 'plex' } = opts;
+
+    // Resolve to playable items
+    const playables = await this.resolvePlayables(key);
+    if (!playables.length) return [];
+
+    // Add viewing history to each item
+    const log = await this._loadViewingHistoryAsync(storagePath);
+    const queue = playables.map(item => {
+      const itemKey = item.id.replace('plex:', '');
+      const entry = log[itemKey] || {};
+      return {
+        ...item,
+        percent: entry.percent ?? 0,
+        seconds: entry.playhead ?? 0
+      };
+    });
+
+    // Shuffle if requested
+    if (shuffle) {
+      for (let i = queue.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [queue[i], queue[j]] = [queue[j], queue[i]];
+      }
+    }
+
+    return queue;
+  }
+
+  /**
+   * Load a single item from a watchlist with priority selection
+   * Priority: in_progress > urgent (skipAfter within 8 days) > normal
+   *
+   * @param {Object} watchlistData - Watchlist configuration object
+   *   Keys are plex rating keys, values are:
+   *   - watched: boolean - Skip if true
+   *   - hold: boolean - Skip if true
+   *   - skipAfter: string - Date after which to skip (ISO format)
+   *   - waitUntil: string - Date until which to wait (ISO format)
+   *   - program: string - Group identifier for selecting within program
+   *   - index: number - Episode index within program
+   *   - uid: string - Unique identifier for the item
+   * @param {string} [storagePath='plex'] - Storage path for history lookup
+   * @returns {Promise<[string|null, number, string|null]>} [plexKey, seekSeconds, uid]
+   */
+  async loadSingleFromWatchlist(watchlistData, storagePath = 'plex') {
+    if (!watchlistData || typeof watchlistData !== 'object') {
+      return [null, 0, null];
+    }
+
+    const log = await this._loadViewingHistoryAsync(storagePath);
+    const now = new Date();
+    const twoDaysFromNow = new Date(now);
+    twoDaysFromNow.setDate(twoDaysFromNow.getDate() + 2);
+    const eightDaysFromNow = new Date(now);
+    eightDaysFromNow.setDate(eightDaysFromNow.getDate() + 8);
+
+    // Categorize by priority
+    const candidates = {
+      in_progress: {},
+      urgent: {},
+      normal: {}
+    };
+
+    for (const [plexKey, item] of Object.entries(watchlistData)) {
+      // Skip conditions
+      if (item.watched) continue;
+      if (item.hold) continue;
+
+      // Check skipAfter date
+      if (item.skipAfter) {
+        const skipAfter = new Date(item.skipAfter);
+        if (skipAfter <= now) continue;
+      }
+
+      // Check waitUntil date
+      if (item.waitUntil) {
+        const waitUntil = new Date(item.waitUntil);
+        if (waitUntil >= twoDaysFromNow) continue;
+      }
+
+      // Check watch status from history
+      const entry = log[plexKey];
+      const playhead = entry?.playhead ?? 0;
+      const duration = entry?.duration ?? 0;
+      const percent = entry?.percent ?? (duration > 0 ? (playhead / duration) * 100 : 0);
+
+      if (this._isWatched({ percent, seconds: playhead })) continue;
+
+      // Determine priority
+      let priority = 'normal';
+      if (percent > 0) {
+        priority = 'in_progress';
+      } else if (item.skipAfter) {
+        const skipAfter = new Date(item.skipAfter);
+        if (skipAfter <= eightDaysFromNow) {
+          priority = 'urgent';
+        }
+      }
+
+      // Group by program
+      const program = item.program || 'default';
+      const index = item.index || 0;
+      if (!candidates[priority][program]) {
+        candidates[priority][program] = {};
+      }
+      candidates[priority][program][index] = [plexKey, item.uid, playhead];
+    }
+
+    // Select by priority
+    let chosen = null;
+    if (Object.keys(candidates.in_progress).length > 0) {
+      chosen = candidates.in_progress;
+    } else if (Object.keys(candidates.urgent).length > 0) {
+      chosen = candidates.urgent;
+    } else if (Object.keys(candidates.normal).length > 0) {
+      chosen = candidates.normal;
+    }
+
+    if (!chosen || Object.keys(chosen).length === 0) {
+      return [null, 0, null];
+    }
+
+    // Shuffle programs and pick one
+    const programs = Object.values(chosen);
+    const shuffledPrograms = [...programs].sort(() => Math.random() - 0.5);
+    const selectedProgram = shuffledPrograms[0];
+
+    // Sort by index and get first item
+    const sortedIndices = Object.keys(selectedProgram).sort((a, b) => parseInt(a) - parseInt(b));
+    const [selectedKey, uid, playhead] = selectedProgram[sortedIndices[0]];
+
+    // Only seek if playhead is significant (> 90 seconds would restart)
+    const seekTo = playhead > 90 ? 0 : playhead;
+
+    return [selectedKey, seekTo, uid];
+  }
+
+  // ===========================================================================
+  // STREAMING URL GENERATION
+  // ===========================================================================
+
+  /**
+   * What client identifier will this adapter present to Plex for `session`?
+   *
+   * Callers outside the adapter (the play response, so the frontend can log the
+   * same key Plex logs) need the answer without triggering a stream request.
+   *
+   * @param {string|null|undefined} session - the caller's opaque client session
+   * @returns {string|null} the identifier Plex will see, or null when the
+   *   caller supplied no usable session — in which case every request mints a
+   *   fresh random identifier and Plex counts each retry as a new client.
+   */
+  resolveClientIdentifier(session) {
+    return sanitizePlexSessionId(session);
+  }
+
+  /**
+   * Generate unique session identifiers for Plex streaming.
+   *
+   * @param {string} [session] - Optional client session from frontend. Opaque:
+   *   the frontend's scheme has changed before and will again, so nothing here
+   *   parses it — it is only made safe for the URLs it ends up in.
+   * @param {string|null} [variant] - Suffix distinguishing a second stream the
+   *   same client opens for the same item (today: the audio path). Applied
+   *   AFTER sanitising, so the identifier stays derivable from the session
+   *   alone plus a known suffix.
+   * @returns {{clientIdentifier: string, sessionIdentifier: string, sessionUUID: string}}
+   * @private
+   */
+  _generateSessionIds(session = null, variant = null) {
+    // Generate a unique UUID for this request
+    const sessionUUID = Math.random().toString(36).substring(2, 15) +
+      Math.random().toString(36).substring(2, 15);
+
+    const base = sanitizePlexSessionId(session);
+    const clientSession = base && variant ? `${base}-${variant}` : base;
+
+    // clientIdentifier: Use frontend-provided session for multi-player isolation.
+    // That mattered on 2026-08-16: nothing in the backend read `?session=`, so
+    // one tablet retrying looked like 495 separate clients.
+    //
+    // Sessionless (backend-initiated) requests share ONE stable identity rather
+    // than minting `api-${sessionUUID}` per request. The per-request form made a
+    // permanent Plex `devices` row every time and was the direct cause of the
+    // 2026-09-16 statistics-lock stalls — see API_CLIENT_IDENTIFIER. Uniqueness
+    // that actually matters lives in `sessionIdentifier`, below.
+    const clientIdentifier = clientSession || API_CLIENT_IDENTIFIER;
+
+    // sessionIdentifier: Always unique per request. If we have a stable client session,
+    // append the UUID so Plex can track it's from the same client but a new segment request.
+    const sessionIdentifier = clientSession ? `${clientSession}-${sessionUUID}` : sessionUUID;
+
+    return { clientIdentifier, sessionIdentifier, sessionUUID };
+  }
+
+  /**
+   * Determine media type from Plex item type
+   * @param {string} type - Plex item type (movie, episode, track, etc.)
+   * @returns {string} Media type (hls_video, dash_video, audio, or original type)
+   * @private
+   */
+  _determineMediaType(type) {
+    const videoTypes = ['movie', 'episode', 'clip', 'short', 'trailer', 'season', 'show'];
+    const audioTypes = ['track', 'album', 'artist'];
+    if (videoTypes.includes(type)) return this.protocol === 'hls' ? 'hls_video' : 'dash_video';
+    if (audioTypes.includes(type)) return 'audio';
+    return type;
+  }
+
+  /**
+   * Request a transcode decision from Plex before streaming video.
+   * This authorizes the session and determines whether direct play or transcode is needed.
+   *
+   * SESSION IDENTIFIER ARCHITECTURE:
+   * - clientIdentifier: Identifies the "device" or player instance. Stays stable across
+   *   seeks/reloads. Used by Plex to track which client is playing.
+   * - sessionIdentifier: Unique per transcode request/segment fetch.
+   *
+   * @param {string} key - The Plex rating key for the media item
+   * @param {Object} [opts] - Options for the decision request
+   * @param {string} [opts.session] - Client session ID from frontend
+   * @param {number} [opts.maxVideoBitrate] - Maximum video bitrate in kbps
+   * @param {string} [opts.maxResolution] - Maximum resolution (e.g., "1080p", "720p")
+   * @param {number} [opts.startOffset] - Start offset in seconds
+   * @returns {Promise<Object>} Decision result with session identifiers and stream info
+   */
+  async requestTranscodeDecision(key, opts = {}) {
+    const {
+      maxVideoBitrate = null,
+      maxResolution = null,
+      session = null,
+      startOffset = 0,
+      allowDirectPlay = false,
+      allowDirectStream = allowDirectPlay,
+      downmixAudio = false,
+      burnSubtitles = false,
+      deadline = undefined
+    } = opts;
+
+    const { clientIdentifier, sessionIdentifier } = this._generateSessionIds(session);
+
+    // Build decision endpoint URL with URLSearchParams for proper encoding
+    const params = new URLSearchParams();
+    params.append('path', `/library/metadata/${key}`);
+    params.append('protocol', this.protocol);
+    params.append('X-Plex-Client-Identifier', clientIdentifier);
+    params.append('X-Plex-Session-Identifier', sessionIdentifier);
+    params.append('X-Plex-Platform', this.platform);
+    // Cap the transcode so software libx264 stays ahead of realtime (June 8 fix).
+    const caps = resolveTranscodeCaps({ maxVideoBitrate, maxResolution });
+    // Mirror the codec advertisement used by _buildTranscodeUrl so Plex makes
+    // a consistent decision (H.264/HEVC only — never AV1/VP9, which Chromium's
+    // MSE demuxer cannot append; see _buildTranscodeUrl comment).
+    //
+    // Caps also disqualify direct playback/copy. Preserve eligible original
+    // MP4 playback and non-DASH copy; cap only a forced-transcode decision.
+    // DASH fallback URLs independently enforce their bounded transcode caps.
+    const allowUnencodedVideo = allowDirectPlay || allowDirectStream;
+    params.append(
+      'X-Plex-Client-Profile-Extra',
+      buildClientProfileExtra({ maxFrameRate: allowUnencodedVideo ? null : caps.maxFrameRate, downmixAudio, protocol: this.protocol })
+    );
+    params.append('autoAdjustQuality', '1');
+    // directPlay/directStream default to 0 (forced transcode). Only an already
+    // h264/aac/mp4 source (canDirectPlayH264 gate) is allowed to direct-play —
+    // everything else stays on the transcode path so AV1/VP9 sources cannot be
+    // direct-streamed unchanged (CHUNK_DEMUXER_ERROR_APPEND_FAILED → perpetual
+    // t=0 stall). Forcing transcode routes them through the advertised
+    // h264/hevc targets.
+    params.append('directPlay', allowDirectPlay ? '1' : '0');
+    params.append('directStream', allowDirectStream ? '1' : '0');
+    params.append('subtitleSize', '100');
+    // Only a mint that selected a subtitle burns it (RQ-STEER-14).
+    if (burnSubtitles) params.append('subtitles', 'burn');
+    params.append('audioBoost', '100');
+    params.append('fastSeek', '1');
+    // HLS must parse segment zero to establish the true source timestamp
+    // origin. The client retains/applies its saved position after metadata.
+    if (this.protocol !== 'hls' && startOffset > 0) {
+      params.append('offset', String(Math.floor(startOffset)));
+    }
+    params.append('X-Plex-Token', this.token);
+
+    // Bitrate/resolution caps also gate stream-copy eligibility (same trap as
+    // the frame-rate limitation above) — only send them when the video will be
+    // re-encoded (i.e. NOT direct-streaming the h264/hevc track).
+    if (!allowUnencodedVideo) {
+      params.append('maxVideoBitrate', String(caps.maxVideoBitrate));
+      params.append('maxVideoResolution', String(caps.maxResolution));
+    }
+
+    const decisionUrl = `/video/:/transcode/universal/decision?${params.toString()}`;
+
+    try {
+      const response = await this.client.request(decisionUrl, deadline != null ? { deadline } : {});
+
+      // Parse decision response
+      const container = response?.MediaContainer;
+      if (!container) {
+        throw new InfrastructureError('Invalid decision response: missing MediaContainer', {
+        code: 'INVALID_RESPONSE',
+        service: 'Plex'
+      });
+      }
+
+      // Extract decision codes
+      const generalDecisionCode = parseInt(container.generalDecisionCode, 10) || 0;
+      const generalDecisionText = container.generalDecisionText || '';
+      const transcodeDecisionCode = parseInt(container.transcodeDecisionCode, 10) || 0;
+      const transcodeDecisionText = container.transcodeDecisionText || '';
+
+      // Extract direct stream path if available (for direct play)
+      let directStreamPath = null;
+      let directStreamContainer = null;
+      const video = Array.isArray(container.Video) ? container.Video[0] : container.Video;
+      if (video?.Media) {
+        const media = Array.isArray(video.Media) ? video.Media[0] : video.Media;
+        if (media?.Part) {
+          const part = Array.isArray(media.Part) ? media.Part[0] : media.Part;
+          directStreamPath = part?.key || null;
+          directStreamContainer = media?.container || null;
+        }
+      }
+
+      return {
+        success: true,
+        sessionIdentifier,
+        clientIdentifier,
+        decision: {
+          generalDecisionCode,
+          generalDecisionText,
+          transcodeDecisionCode,
+          transcodeDecisionText,
+          directStreamPath,
+          directStreamContainer,
+          canDirectPlay: generalDecisionCode === 2000,
+          canTranscode: transcodeDecisionCode === 1000 || generalDecisionCode !== 2000
+        }
+      };
+    } catch (error) {
+      this.logger.error?.('plex.requestTranscodeDecision.exception', {
+        error: error.message,
+        stack: error.stack,
+      });
+      return {
+        success: false,
+        error: error.message,
+        sessionIdentifier,
+        clientIdentifier
+      };
+    }
+  }
+
+  /**
+   * Build a transcode URL for video streaming
+   * @param {string} key - Plex rating key
+   * @param {string} clientIdentifier - Client identifier
+   * @param {string} sessionIdentifier - Session identifier
+   * @param {number} [maxVideoBitrate] - Max video bitrate
+   * @param {string} [maxResolution] - Max resolution
+   * @returns {string} Transcode URL
+   * @private
+   */
+  _buildTranscodeUrl(key, clientIdentifier, sessionIdentifier, maxVideoBitrate = null, maxResolution = null, startOffset = 0, allowDirectStream = false, downmixAudio = false, { burnSubtitles = false } = {}) {
+    const mediaBufferSize = 5242880 * 20; // 100MB buffer for better streaming
+    // Cap the transcode so software libx264 stays ahead of realtime (June 8 fix).
+    const caps = resolveTranscodeCaps({ maxVideoBitrate, maxResolution });
+    const baseParams = [
+      `path=%2Flibrary%2Fmetadata%2F${key}`,
+      `protocol=${this.protocol}`,
+      `X-Plex-Client-Identifier=${clientIdentifier}`,
+      `X-Plex-Session-Identifier=${sessionIdentifier}`,
+      `X-Plex-Platform=${this.platform}`,
+      'autoAdjustQuality=1',
+      // The start request must enforce the same policy as its decision.
+      // Bitrate/frame-rate ceilings alone can still admit stream-copy.
+      'directPlay=0',
+      `directStream=${allowDirectStream ? '1' : '0'}`,
+      'fastSeek=1',
+      `mediaBufferSize=${mediaBufferSize}`,
+      // Advertise only H.264/HEVC as transcode targets. We deliberately do NOT
+      // advertise AV1/VP9: although browsers decode them natively for direct
+      // <video> playback, this pipeline feeds dash.js via MSE, and Chromium's
+      // demuxer rejects AV1/VP9 fMP4 segments with
+      // "CHUNK_DEMUXER_ERROR_APPEND_FAILED: Video stream codec vp9 doesn't
+      // match SourceBuffer codecs." Advertising them makes Plex emit segments
+      // the SourceBuffer can't append, stalling playback at t=0 forever.
+      //
+      // Encoder caps (30fps limitation, 8 Mbit bitrate, 1080p) only ride on
+      // forced-transcode sources. Plex evaluates them for stream-COPY
+      // eligibility too, so sending them for an h264/aac/mp4 source turns a
+      // free remux into a software re-encode that falls behind realtime and
+      // stalls every client at the same timestamp (2026-06-10 Daytona
+      // incident — the source was 60fps, the 30fps limitation forced libx264).
+      // A remux has no encoder, so the caps protect nothing on that path.
+      `X-Plex-Client-Profile-Extra=${encodeURIComponent(buildClientProfileExtra({ maxFrameRate: allowDirectStream ? null : caps.maxFrameRate, downmixAudio, protocol: this.protocol }))}`
+    ];
+
+    if (this.protocol !== 'hls' && startOffset > 0) {
+      baseParams.push(`offset=${Math.floor(startOffset)}`);
+    }
+    if (burnSubtitles) baseParams.push('subtitles=burn');
+    if (!allowDirectStream) {
+      baseParams.push(`maxVideoBitrate=${encodeURIComponent(caps.maxVideoBitrate)}`);
+      baseParams.push(`maxVideoResolution=${encodeURIComponent(caps.maxResolution)}`);
+    }
+
+    const extension = this.protocol === 'hls' ? 'm3u8' : 'mpd';
+    return `${this.proxyPath}/video/:/transcode/universal/start.${extension}?${baseParams.join('&')}`;
+  }
+
+  /**
+   * Generate a streaming URL for a playable domain entity.
+   *
+   * The application layer should pass a {@link PlayableItem} obtained from
+   * `resolvePlayables` / `getItem`. This adapter extracts the Plex-specific
+   * details (rating key, raw Media metadata, type) from the entity itself
+   * rather than asking callers to know Plex internals.
+   *
+   * For HTTP routes that only have a rating-key string (e.g. /plex/stream/:id),
+   * use {@link getMediaUrl} which fetches the item first.
+   *
+   * For video: uses the decision API to authorize the session, then returns
+   * either a direct stream URL or a transcode URL.
+   * For audio: returns a direct stream URL using the entity's stored Media[].
+   *
+   * @param {import('#domains/content/capabilities/Playable.mjs').PlayableItem} playableItem
+   * @param {Object} [opts]
+   * @param {number} [opts.maxVideoBitrate]
+   * @param {string} [opts.maxResolution]
+   * @param {string} [opts.maxVideoResolution]
+   * @param {string} [opts.session]
+   * @param {number} [opts.startOffset]
+   * @returns {Promise<{ url: string|null, reason?: 'metadata-missing'|'non-playable-type'|'audio-key-missing'|'transient' }>}
+   */
+  /**
+   * The rating key whose media URL contained this part, if this adapter
+   * minted one since startup.
+   * @param {string|number} partId
+   * @returns {string|null}
+   */
+  ratingKeyForPart(partId) {
+    return this.#partIndex.get(String(partId)) ?? null;
+  }
+
+  /** The rating key behind a Plex transcode session uuid, if already resolved. */
+  ratingKeyForSession(sessionUuid) {
+    return this.#sessionIndex.get(String(sessionUuid)) ?? null;
+  }
+
+  /**
+   * Resolve a Plex transcode session uuid to its item: `GET /status/sessions`
+   * lists `Metadata[].TranscodeSession.key` (the uuid in the segment path) next
+   * to the item's `ratingKey`. Read-only. Hits are cached; a miss is cached for
+   * PART_MISS_TTL_MS (30s) so a dead session does not turn every refused segment
+   * into a Plex query.
+   * @param {string} sessionUuid
+   * @returns {Promise<string|null>}
+   */
+  async resolveRatingKeyForSession(sessionUuid) {
+    const uuid = String(sessionUuid ?? '');
+    if (!uuid) return null;
+    const known = this.ratingKeyForSession(uuid);
+    if (known) return known;
+    const missAt = this.#sessionMisses.get(uuid);
+    if (missAt !== undefined && Date.now() - missAt < PART_MISS_TTL_MS) return null;
+    try {
+      const data = await this.client.request('/status/sessions', { deadline: 10_000 });
+      const rows = data?.MediaContainer?.Metadata ?? [];
+      let found = null;
+      for (const row of Array.isArray(rows) ? rows : []) {
+        const key = String(row?.TranscodeSession?.key ?? '').split('/').filter(Boolean).pop();
+        if (!key || !row?.ratingKey) continue;
+        // Cache every transcode we see, not just the one asked about.
+        this.#sessionIndex.delete(key);
+        this.#sessionIndex.set(key, String(row.ratingKey));
+        if (key === uuid) found = String(row.ratingKey);
+      }
+      while (this.#sessionIndex.size > 2000) this.#sessionIndex.delete(this.#sessionIndex.keys().next().value);
+      if (found) {
+        this.logger.info?.('media.source.heal.session-resolved', { sessionUuid: uuid, ratingKey: found });
+        return found;
+      }
+    } catch (error) {
+      this.logger.warn?.('media.source.heal.session-resolve-failed', { sessionUuid: uuid, error: error.message });
+    }
+    this.#sessionMisses.set(uuid, Date.now());
+    if (this.#sessionMisses.size > 500) this.#sessionMisses.delete(this.#sessionMisses.keys().next().value);
+    return null;
+  }
+
+  /**
+   * Which item does this part belong to? The index first (every builder fills
+   * it), then Plex itself: `GET /library/all?type=<t>&media.part.id=<id>` —
+   * note `media.part.id`; a bare `part.id=` is silently ignored and returns the
+   * whole library. Positive answers are cached in the (bounded) index.
+   * @param {string|number} partId
+   * @returns {Promise<string|null>}
+   */
+  async resolveRatingKeyForPart(partId) {
+    const id = String(partId ?? '');
+    if (!/^\d+$/.test(id)) return null;
+    const known = this.ratingKeyForPart(id);
+    if (known) return known;
+    const missAt = this.#partMisses.get(id);
+    if (missAt !== undefined && Date.now() - missAt < PART_MISS_TTL_MS) return null;
+    for (const [type, via] of [[4, 'type-4'], [1, 'type-1'], [10, 'type-10']]) {
+      try {
+        const data = await this.client.request(`/library/all?type=${type}&media.part.id=${id}`, { deadline: 10_000 });
+        const ratingKey = data?.MediaContainer?.Metadata?.[0]?.ratingKey;
+        if (ratingKey) {
+          this.#partIndex.delete(id);
+          this.#partIndex.set(id, String(ratingKey));
+          if (this.#partIndex.size > 5000) this.#partIndex.delete(this.#partIndex.keys().next().value);
+          this.logger.info?.('media.source.heal.part-resolved', { partId: id, ratingKey: String(ratingKey), via });
+          return String(ratingKey);
+        }
+      } catch (error) {
+        this.logger.warn?.('media.source.heal.part-resolve-failed', { partId: id, via, error: error.message });
+      }
+    }
+    this.#partMisses.set(id, Date.now());
+    if (this.#partMisses.size > 500) this.#partMisses.delete(this.#partMisses.keys().next().value);
+    return null;
+  }
+
+  /**
+   * The item behind a proxied path Plex refused: a direct-play part
+   * (`/library/parts/<id>/...`) or a transcode segment of one of Plex's sessions
+   * (`/video/:/transcode/universal/session/<plex-uuid>/...`, resolved via /status/sessions).
+   * @param {string} path
+   * @returns {Promise<string|null>}
+   */
+  async resolveRatingKeyForPath(path) {
+    const pathname = String(path || '').split('?')[0];
+    const partId = /\/library\/parts\/(\d+)\//.exec(pathname)?.[1];
+    if (partId) return this.resolveRatingKeyForPart(partId);
+    const sessionId = /\/transcode\/universal\/session\/([^/]+)\//.exec(pathname)?.[1];
+    return sessionId ? this.resolveRatingKeyForSession(decodeURIComponent(sessionId)) : null;
+  }
+
+  #rememberPart(partPath, ratingKey) {
+    const match = /\/library\/parts\/(\d+)\//.exec(String(partPath || ''));
+    if (!match || !ratingKey) return;
+    this.#partIndex.delete(match[1]);
+    this.#partIndex.set(match[1], String(ratingKey));
+    if (this.#partIndex.size > 5000) this.#partIndex.delete(this.#partIndex.keys().next().value);
+  }
+
+  async loadMediaUrl(playableItem, opts = {}) {
+    let ratingKey;
+    try {
+      if (!playableItem) {
+        this.logger.warn?.('plex.loadMediaUrl.metadataMissing', { reason: 'null-entity' });
+        return { url: null, reason: 'metadata-missing' };
+      }
+
+      ratingKey = playableItem.localId;
+      const plexType = playableItem.metadata?.type;
+
+      if (!ratingKey) {
+        this.logger.warn?.('plex.loadMediaUrl.metadataMissing', { id: playableItem.id });
+        return { url: null, reason: 'metadata-missing' };
+      }
+
+      if (!['movie', 'episode', 'track', 'clip'].includes(plexType)) {
+        this.logger.warn?.('plex.loadMediaUrl.nonPlayableType', { ratingKey, type: plexType });
+        return { url: null, reason: 'non-playable-type' };
+      }
+
+      const mediaType = this._determineMediaType(plexType);
+      const {
+        maxVideoBitrate = null,
+        maxResolution = null,
+        maxVideoResolution = null,
+        session = null,
+        startOffset = 0,
+        tracks = null
+      } = opts;
+      const resolvedMaxResolution = maxResolution ?? maxVideoResolution;
+
+      if (mediaType === 'audio') {
+        // The audio stream is a second, independent stream the same client can
+        // hold open alongside the video one, so it gets its own identifier.
+        // Passing 'audio' as a variant (rather than pre-concatenating it onto
+        // the raw session) keeps the result derivable: it is exactly
+        // `resolveClientIdentifier(session)` plus `-audio`.
+        const { clientIdentifier, sessionIdentifier } = this._generateSessionIds(session, 'audio');
+
+        const mediaKey = playableItem.metadata?.Media?.[0]?.Part?.[0]?.key;
+        if (!mediaKey) {
+          this.logger.warn?.('plex.loadMediaUrl.audioMediaKeyMissing', { ratingKey });
+          return { url: null, reason: 'audio-key-missing' };
+        }
+
+        const separator = mediaKey.includes('?') ? '&' : '?';
+        this.#rememberPart(mediaKey, ratingKey);
+        return {
+          url: `${this.proxyPath}${mediaKey}${separator}X-Plex-Client-Identifier=${clientIdentifier}&X-Plex-Session-Identifier=${sessionIdentifier}`
+        };
+      }
+
+      // Subtitles and audio language (RQ-STEER-14): only when the mint asked.
+      const selection = tracks ? await this._applyTrackSelection(playableItem, tracks) : null;
+      const burnSubtitles = !!selection?.subtitleStreamId && selection.subtitleStreamId !== '0';
+      // A chosen track needs Plex's transcoder: a direct-played file carries
+      // every track and the browser cannot pick among them; a burned subtitle
+      // needs the picture re-encoded.
+      const allowDirectPlay = !selection && canDirectPlayH264(playableItem.metadata)
+        && (this.protocol !== 'hls' || playableItem.mediaType === 'video');
+      // Plex's copied DASH fragments can have source-GOP timestamps that do
+      // not match its fixed-duration MPD (Arrival: advertised90s, actual154s).
+      // Re-encoding gives DASH a seek-correct segment timeline. Keep original
+      // MP4 direct play and non-DASH copy, where that faulty MPD is not used.
+      const allowDirectStream = this.protocol !== 'dash' && !burnSubtitles
+        && (allowDirectPlay || canDirectStreamVideo(playableItem.metadata));
+      if (this.protocol === 'dash') this.logger.info?.('plex.loadMediaUrl.dash-timeline-policy', {
+        ratingKey, allowDirectPlay, allowDirectStream, fallback: 'bounded-transcode'
+      });
+      if (this.protocol === 'hls') this.logger.info?.('plex.loadMediaUrl.hls-timeline-policy', {
+        ratingKey, allowDirectPlay, allowDirectStream, timeline: 'parsed-media-timestamps',
+        requestedStartOffset: startOffset, sourceStartOffset: 0
+      });
+      // Multichannel AAC with no standard layout cannot be appended by Chromium;
+      // re-encode that audio track to stereo (independent of video policy).
+      const downmixAudio = needsAudioDownmix(playableItem.metadata);
+      if (downmixAudio) this.logger.info?.('plex.loadMediaUrl.audio-downmix', { ratingKey });
+      // Video: use decision API to authorize session
+      let decisionResult;
+      try {
+        decisionResult = await this.requestTranscodeDecision(ratingKey, {
+          maxVideoBitrate,
+          maxResolution: resolvedMaxResolution,
+          session,
+          startOffset,
+          allowDirectPlay,
+          allowDirectStream,
+          downmixAudio,
+          burnSubtitles,
+          // A mint holding the household's track selection must settle (and
+          // restore) before the lock's safety expiry can release it.
+          ...(selection ? { deadline: TRACK_DECISION_DEADLINE_MS } : {})
+        });
+      } finally {
+        // The part's selection is per Plex ACCOUNT. The decision binds the
+        // chosen streams to this session (verified against the live server),
+        // so the account's previous selection goes straight back — before
+        // any other screen or Plex app can start on it.
+        await selection?.restore?.();
+      }
+
+      if (!decisionResult.success) {
+        this.logger.warn?.('plex.loadMediaUrl.decisionFailed', {
+          ratingKey,
+          reason: decisionResult.error || 'unknown'
+        });
+        const { sessionIdentifier, clientIdentifier } = decisionResult;
+        return {
+          url: this._buildTranscodeUrl(
+            ratingKey,
+            clientIdentifier,
+            sessionIdentifier,
+            maxVideoBitrate,
+            resolvedMaxResolution,
+            startOffset,
+            allowDirectStream,
+            downmixAudio,
+            { burnSubtitles }
+          )
+        };
+      }
+
+      const { sessionIdentifier, clientIdentifier, decision } = decisionResult;
+
+      if (allowDirectPlay && decision.canDirectPlay && decision.directStreamPath) {
+        const directPath = decision.directStreamPath;
+        const separator = directPath.includes('?') ? '&' : '?';
+        this.#rememberPart(directPath, ratingKey);
+        return {
+          url: `${this.proxyPath}${directPath}${separator}X-Plex-Client-Identifier=${clientIdentifier}&X-Plex-Session-Identifier=${sessionIdentifier}`
+        };
+      }
+
+      return {
+        url: this._buildTranscodeUrl(
+          ratingKey,
+          clientIdentifier,
+          sessionIdentifier,
+          maxVideoBitrate,
+          resolvedMaxResolution,
+          startOffset,
+          allowDirectStream,
+          downmixAudio,
+          { burnSubtitles }
+        )
+      };
+    } catch (error) {
+      this.logger.error?.('plex.loadMediaUrl.exception', {
+        ratingKey,
+        error: error.message,
+        stack: error.stack
+      });
+      return { url: null, reason: 'transient' };
+    }
+  }
+
+  /**
+   * Select the requested audio/subtitle streams on the item's part before a
+   * mint (RQ-STEER-14). Only the item's own stream ids are accepted; a
+   * subtitle id of '0' turns subtitles off. Returns the applied selection,
+   * or null when nothing was (or could be) applied — the mint then plays
+   * Plex's current choice without burning anything.
+   * @param {Object} playableItem
+   * @param {{ audioStreamId?: string, subtitleStreamId?: string }} tracks
+   */
+  async _applyTrackSelection(playableItem, tracks) {
+    const ratingKey = playableItem?.localId ?? null;
+    const part = playableItem?.metadata?.Media?.[0]?.Part?.[0];
+    const streams = Array.isArray(part?.Stream) ? part.Stream : [];
+    const has = (id, type) => streams.some((s) => String(s.id) === String(id) && s.streamType === type);
+    const audioStreamId = tracks?.audioStreamId != null ? String(tracks.audioStreamId) : null;
+    const subtitleStreamId = tracks?.subtitleStreamId != null ? String(tracks.subtitleStreamId) : null;
+    const audioOk = audioStreamId == null || has(audioStreamId, 2);
+    const subtitleOk = subtitleStreamId == null || subtitleStreamId === '0' || has(subtitleStreamId, 3);
+    if (!part?.id || !audioOk || !subtitleOk || (audioStreamId == null && subtitleStreamId == null)) {
+      this.logger.warn?.('plex.loadMediaUrl.tracks-rejected', {
+        ratingKey, audioStreamId, subtitleStreamId, hasPart: !!part?.id, audioOk, subtitleOk,
+      });
+      return null;
+    }
+    const selection = {
+      ...(audioStreamId != null ? { audioStreamId } : {}),
+      ...(subtitleStreamId != null ? { subtitleStreamId } : {}),
+    };
+    // Serialise per part: wait for any mint already holding its selection.
+    const priorTail = this.#partTrackLocks.get(part.id);
+    let release;
+    const mine = new Promise((resolve) => { release = resolve; });
+    const tail = (priorTail ?? Promise.resolve()).then(() => mine);
+    this.#partTrackLocks.set(part.id, tail);
+    // Safety: a mint that throws between select and restore must not wedge the
+    // part. The timer starts once THIS mint holds the lock (below), not at
+    // queue time, so a deep queue cannot expire a holder early.
+    let expiry = null;
+    const releaseLock = () => {
+      if (expiry) clearTimeout(expiry);
+      release();
+      if (this.#partTrackLocks.get(part.id) === tail) this.#partTrackLocks.delete(part.id);
+    };
+    let activeStreams = streams;
+    if (priorTail) await priorTail;
+    expiry = setTimeout(() => releaseLock(), TRACK_LOCK_EXPIRY_MS);
+    expiry.unref?.();
+    if (priorTail) {
+      // The item we were handed may predate the previous mint's borrow:
+      // read the household's selection fresh.
+      try {
+        const fresh = await this.client.getMetadata(ratingKey, { deadline: TRACK_REFRESH_DEADLINE_MS });
+        const freshStreams = fresh?.MediaContainer?.Metadata?.[0]?.Media?.[0]?.Part?.[0]?.Stream;
+        if (Array.isArray(freshStreams) && freshStreams.length) activeStreams = freshStreams;
+      } catch (error) {
+        this.logger.warn?.('plex.loadMediaUrl.tracks-refresh-failed', { ratingKey, partId: part.id, error: error?.message });
+      }
+    }
+    // What the account has selected now, to put back (subtitles: none -> '0').
+    const previous = {};
+    if (audioStreamId != null) {
+      const audio = activeStreams.filter((s) => s.streamType === 2);
+      const cur = audio.find((s) => s.selected) ?? audio.find((s) => s.default) ?? null;
+      if (cur) previous.audioStreamId = String(cur.id);
+      else this.logger.warn?.('plex.loadMediaUrl.tracks-restore-skipped', {
+        ratingKey, partId: part.id, reason: 'no-selected-or-default-audio', audioStreamId,
+      });
+    }
+    if (subtitleStreamId != null) {
+      const cur = activeStreams.find((s) => s.streamType === 3 && s.selected);
+      previous.subtitleStreamId = cur ? String(cur.id) : '0';
+    }
+    try {
+      await this.client.selectPartStreams(part.id, selection);
+      this.logger.info?.('plex.loadMediaUrl.tracks-selected', { ratingKey, partId: part.id, ...selection });
+      let restored = false;
+      selection.restore = async () => {
+        if (restored) return;
+        restored = true;
+        if (Object.keys(previous).length === 0) { releaseLock(); return; }
+        try {
+          await this.client.selectPartStreams(part.id, previous);
+          this.logger.info?.('plex.loadMediaUrl.tracks-restored', { ratingKey, partId: part.id, ...previous });
+        } catch (error) {
+          this.logger.warn?.('plex.loadMediaUrl.tracks-restore-failed', {
+            ratingKey, partId: part.id, ...previous, status: error?.response?.status ?? error?.status ?? null, error: error?.message,
+          });
+        } finally {
+          releaseLock();
+        }
+      };
+      return selection;
+    } catch (error) {
+      releaseLock();
+      this.logger.warn?.('plex.loadMediaUrl.tracks-select-failed', {
+        ratingKey, partId: part.id, ...selection,
+        status: error?.response?.status ?? error?.status ?? null, error: error?.message,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Convenience for HTTP routes / id-only callers: fetch the item, then
+   * delegate to {@link loadMediaUrl}. Application services that already
+   * hold a PlayableItem should call loadMediaUrl directly instead.
+   *
+   * @param {string} id - Plex rating key (with or without `plex:` prefix)
+   * @param {Object} [opts] - Same shape as loadMediaUrl opts
+   * @returns {Promise<{ url: string|null, reason?: string }>}
+   */
+  async getMediaUrl(id, opts = {}) {
+    const ratingKey = String(id).replace(/^plex:/, '');
+    try {
+      // Bypass getItem() — it swallows errors as null which would mask
+      // network failures as metadata-missing (a permanent reason). Calling
+      // getMetadata directly lets transient errors propagate to our catch.
+      const data = await this.client.getMetadata(ratingKey);
+      const item = data?.MediaContainer?.Metadata?.[0];
+      if (!item) {
+        this.logger.warn?.('plex.loadMediaUrl.metadataMissing', { ratingKey });
+        return { url: null, reason: 'metadata-missing' };
+      }
+      // _toPlayableItem returns a ListableItem for non-playable types;
+      // loadMediaUrl will surface that as 'non-playable-type'.
+      const playableItem = this._toPlayableItem(item);
+      return await this.loadMediaUrl(playableItem, opts);
+    } catch (error) {
+      this.logger.error?.('plex.loadMediaUrl.exception', {
+        ratingKey,
+        error: error.message,
+        stack: error.stack
+      });
+      return { url: null, reason: 'transient' };
+    }
+  }
+
+  // ===========================================================================
+  // IMediaSearchable INTERFACE IMPLEMENTATION
+  // ===========================================================================
+
+  /**
+   * Search for media items matching query
+   * Implements IMediaSearchable.search()
+   *
+   * @param {Object} query - MediaSearchQuery
+   * @param {string} [query.text] - Free text search (title, description)
+   * @param {'image'|'video'|'audio'} [query.mediaType] - Filter by type
+   * @param {string[]} [query.tags] - Filter by Plex labels
+   * @param {number} [query.ratingMin] - Minimum rating (1-5)
+   * @param {number} [query.take] - Limit results
+   * @param {number} [query.skip] - Offset for pagination
+   * @returns {Promise<{items: Array, total: number}>}
+   */
+  async search(query) {
+    try {
+      // Validate that we have a text query (Plex requires search text)
+      if (!query.text) {
+        return { items: [], total: 0 };
+      }
+
+      const tier = query.tier || 1;
+
+      // Build Plex search options
+      const rawLibraryId = query.libraryId || query['plex.libraryId'] || undefined;
+      const libraryIds = rawLibraryId ? String(rawLibraryId).split(',').map(s => s.trim()) : [undefined];
+
+      // Execute hub search + playlist search in parallel
+      const [allResults, playlists] = await Promise.all([
+        Promise.all(
+          libraryIds.map(libId =>
+            this.client.hubSearch(query.text, { limit: query.take || 50, libraryId: libId })
+          )
+        ),
+        this._searchPlaylists(query.text),
+      ]);
+      let items = allResults.flatMap(r => r.results || []);
+
+      // Plex hub search leaks results from other libraries even with sectionId.
+      // Post-filter to only include items from the requested libraries.
+      if (rawLibraryId) {
+        const allowedIds = new Set(libraryIds);
+        items = items.filter(item => item.librarySectionID && allowedIds.has(String(item.librarySectionID)));
+      }
+
+      // Filter by mediaType if specified
+      // Include both leaf types and their container types so that
+      // tier 1 (which shows containers) and tier 2 (which shows leaves) both work.
+      if (query.mediaType) {
+        const typeMap = {
+          'video': ['movie', 'show', 'episode', 'clip', 'season'],
+          'audio': ['artist', 'album', 'track'],
+          'image': [] // Plex doesn't have images
+        };
+        const allowedTypes = typeMap[query.mediaType] || [];
+        if (allowedTypes.length > 0) {
+          items = items.filter(item => allowedTypes.includes(item.type));
+        }
+      }
+
+      // Apply skip offset
+      if (query.skip && query.skip > 0) {
+        items = items.slice(query.skip);
+      }
+
+      // ── Tier 1 (fast): hubSearch + playlists, top-level types, no hydration ──
+      if (tier === 1) {
+        // Default surface is drill-down containers (artist/album/show/movie/
+        // collection) plus music tracks — searching by song name must return
+        // the song itself, not just its album. Callers that need a different
+        // surface (e.g. episodes too, or containers only) pass
+        // `tier1AllowedTypes` to override.
+        // NOTE: `episode` surfaces episodes for EVERY tier-1 caller (admin content
+        // search, Media search, etc.), not just Media — an exact-title episode was
+        // previously unfindable because it was filtered out here (RC1, 2026-07-16).
+        const TIER1_DEFAULT_TYPES = ['show', 'movie', 'artist', 'album', 'collection', 'track', 'episode'];
+        const topLevelTypes = Array.isArray(query.tier1AllowedTypes) && query.tier1AllowedTypes.length > 0
+          ? query.tier1AllowedTypes
+          : TIER1_DEFAULT_TYPES;
+        const filtered = items.filter(item => topLevelTypes.includes(item.type));
+        const converted = filtered.map(item => {
+          if (item.type === 'track') return this._hubResultToTrackItem(item);
+          if (item.type === 'episode') return this._hubResultToEpisodeItem(item);
+          return this._hubResultToListableItem(item);
+        });
+
+        // Playlists first — they're curated content the user actively wants
+        const combined = [...playlists, ...converted];
+        return { items: combined, total: combined.length };
+      }
+
+      // ── Tier 2 (full): playlists, collections, hydration ──
+      const [matchingPlaylists, matchingCollections] = await Promise.all([
+        this._searchPlaylists(query.text),
+        this._searchCollections(query.text)
+      ]);
+
+      // Convert to PlayableItem/ListableItem
+      const showLabelCache = new Map();
+      const convertedItems = await Promise.all(
+        items.map(async (item) => {
+          // For playable types, get full metadata
+          if (['movie', 'episode', 'track', 'clip'].includes(item.type)) {
+            const fullItem = await this.getItem(item.ratingKey, { showLabelCache });
+            if (fullItem) {
+              // Filter by rating if specified
+              if (query.ratingMin) {
+                const rating = fullItem.metadata?.rating || fullItem.metadata?.userRating;
+                // Plex ratings are 0-10, normalize to 1-5
+                const normalizedRating = rating ? (rating / 2) : 0;
+                if (normalizedRating < query.ratingMin) return null;
+              }
+
+              // Filter by tags/labels if specified
+              if (query.tags?.length > 0) {
+                const itemLabels = fullItem.metadata?.labels || [];
+                const hasMatchingLabel = query.tags.some(tag =>
+                  itemLabels.includes(tag.toLowerCase())
+                );
+                if (!hasMatchingLabel) return null;
+              }
+
+              return fullItem;
+            }
+          }
+
+          // For containers (shows, albums, artists), fetch full metadata to get thumbnails
+          if (['show', 'album', 'artist', 'season'].includes(item.type)) {
+            const fullItem = await this.getItem(item.ratingKey);
+            if (fullItem) return fullItem;
+          }
+
+          // Fallback to basic conversion
+          return this._toListableItem(item);
+        })
+      );
+
+      // Filter out nulls and combine with playlists/collections
+      const filteredItems = [
+        ...matchingPlaylists,
+        ...matchingCollections,
+        ...convertedItems.filter(Boolean)
+      ];
+
+      return {
+        items: filteredItems,
+        total: filteredItems.length
+      };
+    } catch (err) {
+      this.logger.error?.('plex.search.exception', {
+        error: err.message,
+        stack: err.stack,
+      });
+      return { items: [], total: 0 };
+    }
+  }
+
+  /**
+   * Convert a hubSearch result to a ListableItem without hydration (no extra API calls).
+   * Used by tier 1 fast-path search to avoid per-item getMetadata() calls.
+   * @param {Object} item - Raw hubSearch result with ratingKey, title, type, thumb, etc.
+   * @returns {ListableItem}
+   * @private
+   */
+  _hubResultToListableItem(item) {
+    const thumbPath = plexArtPath(item);
+    const thumbnail = thumbPath ? `${this.proxyPath}${thumbPath}` : null;
+    const isContainer = ['show', 'artist', 'album', 'collection', 'season'].includes(item.type);
+
+    return new ListableItem({
+      id: `plex:${item.ratingKey}`,
+      source: 'plex',
+      localId: String(item.ratingKey),
+      title: item.title || `[${item.type || 'Untitled'}]`,
+      itemType: isContainer ? 'container' : 'leaf',
+      childCount: item.leafCount || item.childCount || 0,
+      thumbnail,
+      metadata: {
+        type: item.type,
+        category: this.#mapTypeToCategory(item.type),
+        year: item.year || null,
+        librarySectionTitle: item.librarySectionTitle || null,
+        childCount: item.leafCount || item.childCount || 0
+      }
+    });
+  }
+
+  /**
+   * Convert a hubSearch track result to a PlayableItem without hydration.
+   * Carries album/artist/library context in metadata so UIs can disambiguate
+   * music tracks from audiobook tracks (librarySectionTitle) and label the
+   * result ("Hey Jude — The Beatles, Hey Jude").
+   * PlexClient.hubSearch flattens parentTitle → parent (album) and
+   * grandparentTitle → grandparent (artist).
+   * @param {Object} item - Raw hubSearch result of type 'track'
+   * @returns {PlayableItem}
+   * @private
+   */
+  _hubResultToTrackItem(item) {
+    const thumbPath = item.thumb || item.parentThumb || item.grandparentThumb;
+    return new PlayableItem({
+      id: `plex:${item.ratingKey}`,
+      source: 'plex',
+      localId: String(item.ratingKey),
+      title: item.title || '[Untitled]',
+      mediaType: 'audio',
+      mediaUrl: `/api/v1/proxy/plex/stream/${item.ratingKey}`,
+      resumable: false,
+      thumbnail: thumbPath ? `${this.proxyPath}${thumbPath}` : null,
+      metadata: {
+        type: 'track',
+        category: this.#mapTypeToCategory('track'),
+        year: item.year || null,
+        librarySectionTitle: item.librarySectionTitle || null,
+        // Album / artist context (canonical music fields + relative hierarchy)
+        album: item.parent || null,
+        parentTitle: item.parent || null,
+        artist: item.grandparent || null,
+        albumArtist: item.grandparent || null,
+        grandparentTitle: item.grandparent || null
+      }
+    });
+  }
+
+  /**
+   * Convert a hubSearch episode result to a PlayableItem without hydration.
+   * Mirrors _hubResultToTrackItem: keeps tier 1 fast (no getItem call) while
+   * carrying show/season context so the UI can disambiguate the episode.
+   * PlexClient.hubSearch flattens parentTitle → parent (season) and
+   * grandparentTitle → grandparent (show).
+   * @param {Object} item - Raw hubSearch result of type 'episode'
+   * @returns {PlayableItem}
+   * @private
+   */
+  _hubResultToEpisodeItem(item) {
+    const thumbPath = item.thumb || item.grandparentThumb || item.parentThumb;
+    return new PlayableItem({
+      id: `plex:${item.ratingKey}`,
+      source: 'plex',
+      localId: String(item.ratingKey),
+      title: item.title || '[Untitled]',
+      mediaType: 'video',
+      mediaUrl: `/api/v1/proxy/plex/stream/${item.ratingKey}`,
+      resumable: true,
+      thumbnail: thumbPath ? `${this.proxyPath}${thumbPath}` : null,
+      metadata: {
+        type: 'episode',
+        category: this.#mapTypeToCategory('episode'),
+        year: item.year || null,
+        librarySectionTitle: item.librarySectionTitle || null,
+        parentTitle: item.parent || null,
+        grandparentTitle: item.grandparent || null,
+      },
+    });
+  }
+
+  /**
+   * Search playlists by title
+   * @param {string} searchText - Text to search for
+   * @returns {Promise<ListableItem[]>}
+   * @private
+   */
+  async _searchPlaylists(searchText) {
+    try {
+      const searchLower = searchText.toLowerCase();
+      const data = await this.client.getContainer('/playlists/all');
+      const playlists = data.MediaContainer?.Metadata || [];
+
+      return playlists
+        .filter(p => p.title?.toLowerCase().includes(searchLower))
+        .map(p => new ListableItem({
+          id: `plex:${p.ratingKey}`,
+          source: 'plex',
+          title: p.title,
+          itemType: 'container',
+          childCount: p.leafCount || 0,
+          thumbnail: plexArtPath(p) ? `${this.proxyPath}${plexArtPath(p)}` : null,
+          metadata: {
+            type: 'playlist',
+            category: this.#mapTypeToCategory('playlist'),
+            playlistType: p.playlistType,
+            childCount: p.leafCount || 0,
+            smart: p.smart || false
+          }
+        }));
+    } catch (err) {
+      this.logger.error?.('plex.searchPlaylists.exception', {
+        error: err.message,
+        stack: err.stack,
+      });
+      return [];
+    }
+  }
+
+  /**
+   * Search collections by title
+   * @param {string} searchText - Text to search for
+   * @returns {Promise<ListableItem[]>}
+   * @private
+   */
+  async _searchCollections(searchText) {
+    try {
+      const searchLower = searchText.toLowerCase();
+
+      // Get all library sections to search collections
+      const sectionsData = await this.client.getContainer('/library/sections');
+      const sections = sectionsData.MediaContainer?.Directory || [];
+
+      const allCollections = [];
+
+      await Promise.all(sections.map(async (section) => {
+        try {
+          const collectionsData = await this.client.getContainer(
+            `/library/sections/${section.key}/collections`
+          );
+          const collections = collectionsData.MediaContainer?.Metadata || [];
+
+          const matching = collections
+            .filter(c => c.title?.toLowerCase().includes(searchLower))
+            .map(c => new ListableItem({
+              id: `plex:${c.ratingKey}`,
+              source: 'plex',
+              title: c.title,
+              itemType: 'container',
+              childCount: c.childCount || 0,
+              thumbnail: c.thumb ? `${this.proxyPath}${c.thumb}` : null,
+              metadata: {
+                type: 'collection',
+                category: this.#mapTypeToCategory('collection'),
+                librarySectionTitle: section.title,
+                childCount: c.childCount || 0
+              }
+            }));
+
+          allCollections.push(...matching);
+        } catch {
+          // Skip sections without collections
+        }
+      }));
+
+      return allCollections;
+    } catch (err) {
+      this.logger.error?.('plex.searchCollections.exception', {
+        error: err.message,
+        stack: err.stack,
+      });
+      return [];
+    }
+  }
+
+  /**
+   * Get available search capabilities for this adapter.
+   * Returns structured capability info for query orchestration.
+   * @returns {{canonical: string[], specific: string[]}}
+   */
+  getSearchCapabilities() {
+    return {
+      canonical: ['text', 'mediaType', 'tags'],
+      specific: ['ratingMin', 'actor', 'director', 'year']
+    };
+  }
+
+  /**
+   * Get canonical → adapter-specific query key mappings.
+   * Used by ContentQueryService to translate queries.
+   * @returns {Object}
+   */
+  getQueryMappings() {
+    return {
+      person: null, // Plex uses actor/director specifically, not generic person
+      creator: 'director',
+      time: 'year'
+    };
+  }
+
+  /**
+   * Get container alias → internal path mappings.
+   * @returns {Object}
+   */
+  getContainerAliases() {
+    return {
+      playlists: 'playlist:',
+      collections: 'collection:',
+      artists: 'artist:',
+      albums: 'album:'
+    };
+  }
+
+  /**
+   * Get list of root containers for browsing.
+   * @returns {string[]}
+   */
+  getRootContainers() {
+    return ['playlists', 'collections'];
+  }
+
+  // ===========================================================================
+  // LABEL-BASED QUERIES
+  // ===========================================================================
+
+  /**
+   * Get all items from library sections that match specified labels.
+   * Uses Plex's label filter API for efficient querying.
+   *
+   * @param {string[]} labels - Labels to match (case-insensitive)
+   * @param {Object} [opts] - Options
+   * @param {string[]} [opts.types] - Content types to search (default: ['show', 'movie'])
+   * @param {number} [opts.limit] - Max items to return (default: 100)
+   * @returns {Promise<Array>} Items with matching labels
+   */
+  /**
+   * What the library gained since `since` (RQ-FIND-16 "New"), newest first,
+   * one entry per collection: episodes and seasons are offered as their show,
+   * tracks as their album. Each entry: { id, type, title, thumbnail, addedAt,
+   * latestId, latestTitle } (latest = the newest item added to it).
+   * A Plex failure is logged and answers [].
+   * @param {{since: string, limit?: number, scan?: number}} opts
+   * @returns {Promise<Object[]>}
+   */
+  async getRecentlyAdded({ since, limit = 20, scan = 200 } = {}) {
+    const sinceMs = Date.parse(since);
+    let metadata = [];
+    try {
+      const response = await this.client.request(`/library/recentlyAdded?X-Plex-Container-Start=0&X-Plex-Container-Size=${scan}`);
+      metadata = response?.MediaContainer?.Metadata ?? [];
+    } catch (error) {
+      this.logger.warn?.('plex.recently_added.failed', { error: error.message });
+      return [];
+    }
+    const byKey = new Map();
+    for (const item of metadata) {
+      const addedAt = plexAddedAt(item);
+      if (!addedAt || (Number.isFinite(sinceMs) && Date.parse(addedAt) < sinceMs)) continue;
+      const collection = recentlyAddedCollection(item);
+      if (!collection.key) continue;
+      const prev = byKey.get(collection.key);
+      if (prev && Date.parse(prev.addedAt) >= Date.parse(addedAt)) continue;
+      byKey.set(collection.key, {
+        id: `plex:${collection.key}`,
+        type: collection.type ?? null,
+        title: collection.title ?? item.title ?? null,
+        thumbnail: collection.thumb ? `${this.proxyPath}${collection.thumb}` : null,
+        addedAt,
+        latestId: `plex:${item.ratingKey}`,
+        latestTitle: item.title ?? null,
+      });
+    }
+    return [...byKey.values()]
+      .sort((a, b) => Date.parse(b.addedAt) - Date.parse(a.addedAt))
+      .slice(0, limit);
+  }
+
+  async getItemsByLabel(labels, opts = {}) {
+    const {
+      types = ['show', 'movie'],
+      limit = 100
+    } = opts;
+
+    if (!Array.isArray(labels) || labels.length === 0) {
+      return [];
+    }
+
+    try {
+      // Get all library sections
+      const sectionsData = await this.client.getLibrarySections();
+      const sections = sectionsData?.MediaContainer?.Directory || [];
+
+      const matchingItems = [];
+
+      for (const section of sections) {
+        // Filter by section type matching requested content types
+        const sectionType = section.type;
+        const typeMatch =
+          (sectionType === 'show' && types.includes('show')) ||
+          (sectionType === 'movie' && types.includes('movie'));
+
+        if (!typeMatch) continue;
+
+        // For each label, use Plex's label filter API
+        for (const labelName of labels) {
+          if (matchingItems.length >= limit) break;
+
+          // Plex's label filter endpoint - URL encode the label name
+          const path = `/library/sections/${section.key}/all?label=${encodeURIComponent(labelName)}`;
+          const sectionData = await this.client.getContainer(path);
+          const items = sectionData?.MediaContainer?.Metadata || [];
+
+          for (const item of items) {
+            // Check if we already have this item (avoid duplicates from multiple labels)
+            if (matchingItems.some(m => m.localId === String(item.ratingKey))) {
+              continue;
+            }
+
+            // Get full metadata to retrieve labels
+            const fullMeta = await this.client.getMetadata(item.ratingKey);
+            const fullItem = fullMeta?.MediaContainer?.Metadata?.[0];
+            const itemLabels = this._extractLabels(fullItem?.Label || item.Label);
+
+            matchingItems.push({
+              id: `plex:${item.ratingKey}`,
+              source: 'plex',
+              localId: String(item.ratingKey),
+              title: item.title,
+              type: item.type,
+              year: item.year || null,
+              thumbnail: item.thumb ? `${this.proxyPath}${item.thumb}` : null,
+              labels: itemLabels,
+              matchedLabels: [labelName.toLowerCase()],
+              childCount: item.leafCount || item.childCount || 0,
+              librarySectionTitle: item.librarySectionTitle || section.title
+            });
+
+            if (matchingItems.length >= limit) break;
+          }
+        }
+
+        if (matchingItems.length >= limit) break;
+      }
+
+      return matchingItems;
+    } catch (err) {
+      this.logger.error?.('plex.getItemsByLabel.exception', {
+        error: err.message,
+        stack: err.stack,
+      });
+      return [];
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sibling resolution (ISiblingsCapable)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Find the smallest Plex collection that an item belongs to.
+   * Uses raw metadata (not getItem) to access the Collection array.
+   *
+   * @param {string} localId - Plex rating key
+   * @param {string|number} librarySectionID - Library section ID
+   * @returns {Promise<{ratingKey: string, title: string, childCount: number}|null>}
+   * @private
+   */
+  async _findSmallestCollection(localId, librarySectionID) {
+    try {
+      // Get raw metadata to access Collection tags (getItem strips this)
+      const rawMeta = await this.client.getMetadata(localId);
+      const meta = rawMeta?.MediaContainer?.Metadata?.[0];
+      if (!meta || !Array.isArray(meta.Collection) || meta.Collection.length === 0) {
+        return null;
+      }
+
+      // Extract collection tag names
+      const tagNames = meta.Collection.map(col =>
+        typeof col === 'string' ? col : col?.tag
+      ).filter(Boolean);
+
+      if (tagNames.length === 0) return null;
+
+      // Fetch all collections in this library section (single API call)
+      const collectionsData = await this.client.getContainer(
+        `/library/sections/${librarySectionID}/collections`
+      );
+      const allCollections = collectionsData?.MediaContainer?.Metadata || [];
+
+      // Match collection names (case-insensitive) and find the smallest
+      const tagNamesLower = tagNames.map(t => t.toLowerCase());
+      let smallest = null;
+
+      for (const col of allCollections) {
+        if (!col.title || !col.ratingKey) continue;
+        if (!tagNamesLower.includes(col.title.toLowerCase())) continue;
+
+        const childCount = col.childCount || col.leafCount || 0;
+        if (!smallest || childCount < smallest.childCount) {
+          smallest = {
+            ratingKey: String(col.ratingKey),
+            title: col.title,
+            childCount
+          };
+        }
+      }
+
+      return smallest;
+    } catch (err) {
+      this.logger.error?.('plex.findSmallestCollection.exception', {
+        error: err.message,
+        stack: err.stack,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Resolve siblings for Plex items using Plex's own metadata hierarchy.
+   * Episodes → season siblings, tracks → album siblings, seasons → show's seasons, etc.
+   * For library-level items (movies, shows), prefers the smallest collection as sibling group.
+   *
+   * @param {string} compoundId - e.g., "plex:12345" or "12345"
+   * @returns {Promise<{parent: Object|null, items: Array}|null>}
+   */
+  async resolveSiblings(compoundId) {
+    const localId = compoundId.replace(/^plex:/, '');
+    const item = await this.getItem(localId);
+    if (!item) return null;
+
+    // Plex metadata provides parent chain — use it directly
+    const parentKey = item.metadata?.parentRatingKey
+      || item.metadata?.parentId
+      || item.metadata?.albumId
+      || item.metadata?.artistId
+      || null;
+    const libraryId = item.metadata?.librarySectionID || null;
+    const libraryTitle = item.metadata?.librarySectionTitle || null;
+
+    let parent = null;
+    let listId = null;
+    let parentItem = null;
+
+    if (parentKey) {
+      // Has a direct parent (episode→season, track→album, season→show)
+      parentItem = await this.getItem(String(parentKey));
+      parent = parentItem ? {
+        id: parentItem.id || `plex:${parentKey}`,
+        title: parentItem.title || 'Parent',
+        source: 'plex',
+        thumbnail: parentItem.thumbnail || null,
+        parentId: parentItem.metadata?.parentRatingKey || null,
+        libraryId
+      } : null;
+      listId = String(parentKey);
+    } else if (libraryId) {
+      // Top-level items — try collection first, then fall back to library
+      const collection = await this._findSmallestCollection(localId, libraryId);
+      if (collection) {
+        parent = {
+          id: `plex:${collection.ratingKey}`,
+          title: collection.title,
+          source: 'plex',
+          thumbnail: null,
+          parentId: null,
+          libraryId
+        };
+        listId = String(collection.ratingKey);
+      } else {
+        // No collection — fall back to full library listing
+        listId = `library/sections/${libraryId}/all`;
+        parent = {
+          id: `library:${libraryId}`,
+          title: libraryTitle || 'Library',
+          source: 'plex',
+          thumbnail: null,
+          parentId: null,
+          libraryId
+        };
+      }
+    }
+
+    // Build the root-first ancestor chain for breadcrumb navigation, capped at
+    // the show's smallest collection (else library). Reuses the already-fetched
+    // immediate parent to avoid a redundant getItem.
+    const ancestors = await this._buildAncestorChain(item, localId, {
+      libraryId,
+      libraryTitle,
+      parentKey,
+      parentItem
+    });
+
+    if (!listId) {
+      return { parent, items: [], ...(ancestors.length && { ancestors }) };
+    }
+
+    const listItems = await this.getList(listId);
+    const items = Array.isArray(listItems) ? listItems : (listItems?.children || []);
+
+    return { parent, items, ...(ancestors.length && { ancestors }) };
+  }
+
+  /**
+   * Build the root-first ancestor chain (breadcrumb crumbs) for an item, capped
+   * at the show's smallest containing collection (else the library). Never climbs
+   * above that cap. Missing links are skipped (no ghost crumbs).
+   *
+   * Chain shapes: episode → [collection?, show, season]; season → [collection?, show];
+   * top-level show/movie → [collection-or-library?].
+   *
+   * @param {Object} item - The resolved item (from getItem)
+   * @param {string} localId - Item's Plex rating key
+   * @param {Object} ctx - { libraryId, libraryTitle, parentKey, parentItem }
+   * @returns {Promise<Array<{id:string,title:string,source:string,localId:string,type:string|null}>>}
+   * @private
+   */
+  async _buildAncestorChain(item, localId, ctx = {}) {
+    const { libraryId = null, libraryTitle = null, parentKey = null, parentItem = null } = ctx;
+    const meta = item.metadata || {};
+    const grandparentKey = meta.grandparentRatingKey || meta.grandparentId || null;
+
+    // Mid-chain rating keys below the cap (root-first), and the "show" whose
+    // siblings define the cap level.
+    let midKeys;
+    let showKey;
+    if (grandparentKey && parentKey) {
+      midKeys = [grandparentKey, parentKey]; // [show, season]
+      showKey = grandparentKey;
+    } else if (parentKey) {
+      midKeys = [parentKey]; // [show] (for a season)
+      showKey = parentKey;
+    } else {
+      midKeys = []; // top-level item is itself the show
+      showKey = localId;
+    }
+
+    const crumbs = [];
+
+    // Cap crumb: show's smallest collection, else the library.
+    if (libraryId) {
+      const collection = await this._findSmallestCollection(String(showKey), libraryId);
+      if (collection && collection.title) {
+        crumbs.push({
+          id: `plex:${collection.ratingKey}`,
+          title: collection.title,
+          source: 'plex',
+          localId: String(collection.ratingKey),
+          type: 'collection'
+        });
+      } else if (libraryTitle) {
+        crumbs.push({
+          id: `library:${libraryId}`,
+          title: libraryTitle,
+          source: 'plex',
+          localId: String(libraryId),
+          type: 'library'
+        });
+      }
+    }
+
+    // Mid crumbs (show, season, ...) fetched via getItem, reusing the immediate parent.
+    for (const key of midKeys) {
+      const fetched = (parentItem && String(key) === String(parentKey))
+        ? parentItem
+        : await this.getItem(String(key));
+      if (fetched && fetched.title) {
+        crumbs.push({
+          id: fetched.id || `plex:${key}`,
+          title: fetched.title,
+          source: 'plex',
+          localId: String(key),
+          type: fetched.metadata?.type || null
+        });
+      }
+    }
+
+    // Hygiene: drop ghost crumbs (missing id/title) and dedupe by id, preserving order.
+    const seen = new Set();
+    const clean = [];
+    for (const c of crumbs) {
+      if (!c || !c.id || !c.title || seen.has(c.id)) continue;
+      seen.add(c.id);
+      clean.push(c);
+    }
+    return clean;
+  }
+}
+
+export default PlexAdapter;

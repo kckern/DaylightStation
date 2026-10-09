@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 
-import { createPlaybackHubRouter, statusForError } from '../../../../backend/src/4_api/v1/routers/playbackHub.mjs';
+import { createPlaybackHubRouter, statusForError } from '../../../../modules/media/server/api/playbackHub.mjs';
 import { ValidationError } from '../../../../backend/src/2_domains/core/errors/ValidationError.mjs';
 import { DomainInvariantError } from '../../../../backend/src/2_domains/core/errors/DomainInvariantError.mjs';
 import { EntityNotFoundError } from '../../../../backend/src/2_domains/core/errors/EntityNotFoundError.mjs';

@@ -1,6 +1,6 @@
 // tests/isolated/contract/feed/IHeadlineStore.test.mjs
 import { describe, test, expect } from 'vitest';
-import { IHeadlineStore } from '#apps/feed/ports/IHeadlineStore.mjs';
+import { IHeadlineStore } from "../../../../modules/feed/server/application/ports/IHeadlineStore.mjs";
 
 describe('IHeadlineStore contract', () => {
   test('all methods throw "Not implemented"', async () => {

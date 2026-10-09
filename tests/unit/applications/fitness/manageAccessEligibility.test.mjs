@@ -14,8 +14,8 @@
 // These are SECURITY-load-bearing rules; the expectations are transcribed from
 // the pre-refactor router behavior so a regression flips a test.
 import { describe, it, expect, vi } from 'vitest';
-import { resolveEligibleUsernames } from '#apps/fitness/manageAccessPolicy.mjs';
-import { ManageAccess } from '#apps/fitness/usecases/ManageAccess.mjs';
+import { resolveEligibleUsernames } from "../../../../modules/fitness/server/application/manageAccessPolicy.mjs";
+import { ManageAccess } from "../../../../modules/fitness/server/application/usecases/ManageAccess.mjs";
 
 const silent = { info() {}, warn() {}, error() {}, debug() {} };
 

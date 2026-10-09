@@ -58,9 +58,9 @@
  */
 import { useState, useRef, useCallback, useEffect } from 'react';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
-import { loopToEvents, layerLengthMs } from '@shared-music/loopScheduler.mjs';
-import { metronomeEvents } from '@shared-music/percussion.mjs';
-import { roleOf } from '@shared-music/layerMatch.mjs';
+import { loopToEvents, layerLengthMs } from "../../../../../capabilities/music-notation/portable/loopScheduler.mjs";
+import { metronomeEvents } from "../../../../../capabilities/music-notation/portable/percussion.mjs";
+import { roleOf } from "../../../../../capabilities/music-notation/portable/layerMatch.mjs";
 import { entryIdentity } from './libraryRanking.js';
 import { transposeToTargetKey } from './keyModel.js';
 

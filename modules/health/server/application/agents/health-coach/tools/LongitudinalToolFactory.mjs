@@ -1,0 +1,627 @@
+// backend/src/3_applications/agents/health-coach/tools/LongitudinalToolFactory.mjs
+//
+// Period vocabulary and notes-file tools for the health-coach agent.
+//
+// After Task 13 retirement, this factory exposes two tools:
+//   - query_named_period (F-103.4): resolves a labeled period from the user's
+//     playbook and returns aggregated data for its [from, to] range.
+//   - read_notes_file (F-102): reads notes/*.md and scans/*.yml from the
+//     archive with optional markdown section extraction and per-execution
+//     caching.
+//
+// The bulk historical query tools (query_historical_weight/nutrition/workouts,
+// find_similar_period, query_historical_reconciliation/coaching,
+// query_nutrition_density) were retired in Task 13 — their surface is fully
+// covered by query_health + compute + playbook recipes. The private executor
+// helpers (makeQueryWeightExecutor, etc.) are retained here because
+// query_named_period internally delegates to them.
+
+import { ToolFactory } from "../../../../../../../capabilities/agent-runtime/server/application/framework/ToolFactory.mjs";
+import { createTool } from "../../../../../../../capabilities/agent-runtime/server/application/ports/ITool.mjs";
+import { HealthArchiveScope } from "../../../health/archive/HealthArchiveScope.mjs";
+
+const AGGREGATIONS = ['daily', 'weekly_avg', 'monthly_avg', 'quarterly_avg', 'yearly_avg'];
+
+// Subtrees this tool is allowed to read from. The HealthArchiveScope whitelist
+// also covers playbook/, strava/, garmin/, etc. — but read_notes_file's
+// CONTRACT is narrower: only notes/ and scans/. The scope is defense-in-depth
+// against path-traversal; this constant is the tool's surface contract.
+const READ_NOTES_PREFIXES = ['notes/', 'scans/'];
+
+/**
+ * Hard-validate userId at every tool boundary. Tools that accept user-supplied
+ * filenames (read_notes_file) additionally call
+ * `HealthArchiveScope.assertReadable(absPath, userId)` before any disk access.
+ * See backend/src/3_applications/health/archive/HealthArchiveScope.mjs for the
+ * F-106 whitelist.
+ *
+ * Errors are caught by each tool's outer try/catch and surfaced as
+ * `{ ..., error: '...' }` results so the agent gets a structured rejection.
+ */
+function guardUserId(userId) {
+  HealthArchiveScope.assertValidUserId(userId);
+}
+
+export class LongitudinalToolFactory extends ToolFactory {
+  static domain = 'health';
+
+  createTools() {
+    const {
+      healthStore,
+      healthService,
+      personalContextLoader,
+      notesArchive,
+    } = this.deps;
+
+    // Shared executors used internally by query_named_period to aggregate
+    // weight, nutrition, and workout data for a resolved period range.
+    const queryWeight = makeQueryWeightExecutor(healthStore);
+    const queryNutrition = makeQueryNutritionExecutor(healthStore);
+    const queryWorkouts = makeQueryWorkoutsExecutor(healthService);
+
+    // Per-execution cache for read_notes_file. Closure-scoped so it lives
+    // exactly as long as the returned tool set — fresh on every createTools()
+    // call, which matches the agent's execution scope.
+    const readNotesCache = new Map();
+    const readNotesFile = makeReadNotesFileExecutor({
+      notesArchive, cache: readNotesCache,
+    });
+
+    return [
+      createTool({
+        name: 'query_named_period',
+        description:
+          'Look up a named period from the user\'s personal playbook ' +
+          '(e.g. "fixture-cut-2024", "rebound-2025") and return aggregated ' +
+          'weight (weekly_avg), full nutrition days, and full workout list ' +
+          'for the period\'s [from, to] range. Use this when the user (or ' +
+          'an upstream prompt) refers to a labeled time window — it saves ' +
+          'the model from having to remember the dates.',
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string', description: 'User identifier' },
+            name: {
+              type: 'string',
+              description: 'Period name as defined under playbook.named_periods',
+            },
+          },
+          required: ['userId', 'name'],
+        },
+        execute: async ({ userId, name }) => {
+          try {
+            guardUserId(userId);
+            if (!personalContextLoader || typeof personalContextLoader.loadPlaybook !== 'function') {
+              return { name, error: 'personalContextLoader dependency missing' };
+            }
+
+            const playbook = await personalContextLoader.loadPlaybook(userId);
+            const period = playbook?.named_periods?.[name];
+            if (!period) {
+              return { name, error: 'Period not found' };
+            }
+
+            const from = formatDate(period.from);
+            const to = formatDate(period.to);
+            if (!from || !to) {
+              return { name, error: 'Period has invalid from/to bounds' };
+            }
+
+            const description = typeof period.description === 'string'
+              ? period.description.trim()
+              : '';
+
+            // Run the three underlying queries against the period bounds.
+            const [weight, nutrition, workoutsResult] = await Promise.all([
+              queryWeight({ userId, from, to, aggregation: 'weekly_avg' }),
+              queryNutrition({ userId, from, to }),
+              queryWorkouts({ userId, from, to }),
+            ]);
+
+            return {
+              name,
+              from,
+              to,
+              description,
+              weight,
+              nutrition,
+              workouts: workoutsResult.workouts || [],
+            };
+          } catch (err) {
+            return { name, error: err.message };
+          }
+        },
+      }),
+
+      createTool({
+        name: 'read_notes_file',
+        description:
+          'Read a markdown note (notes/*.md) or YAML scan (scans/*.yml) from ' +
+          'the user\'s health archive. The `filename` param MUST start with ' +
+          '`notes/` or `scans/` — these are the only subtrees this tool can ' +
+          'access. Optionally pass a `section` to extract only the content ' +
+          'under that markdown heading (h1-h6); content runs until the next ' +
+          'heading at the same or higher level. Results are cached per ' +
+          'agent execution.',
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string', description: 'User identifier' },
+            filename: {
+              type: 'string',
+              description:
+                'Relative path under the health archive, MUST be prefixed with ' +
+                '`notes/` or `scans/`. Examples: `notes/strength-plateau.md`, ' +
+                '`scans/2024-01-15-dexa.yml`.',
+            },
+            section: {
+              type: 'string',
+              description:
+                'Optional markdown heading anchor. When set, only the content ' +
+                'under that heading (until the next heading at the same or ' +
+                'higher level) is returned. Case-insensitive trim match against ' +
+                'the heading text.',
+            },
+          },
+          required: ['userId', 'filename'],
+        },
+        execute: readNotesFile,
+      }),
+    ];
+  }
+}
+
+export default LongitudinalToolFactory;
+
+// ---------- shared executors ----------
+
+/**
+ * Build the query_historical_weight executor. Extracted so query_named_period
+ * can run the same logic against pre-computed period bounds without
+ * duplicating the aggregation code path.
+ */
+function makeQueryWeightExecutor(healthStore) {
+  return async function queryWeight({ userId, from, to, aggregation = 'daily' }) {
+    try {
+      guardUserId(userId);
+      if (!AGGREGATIONS.includes(aggregation)) {
+        return { aggregation, rows: [], error: `Unknown aggregation: ${aggregation}` };
+      }
+
+      const weightData = await healthStore.loadWeightData(userId);
+      const dates = Object.keys(weightData || {})
+        .filter(d => d >= from && d <= to)
+        .sort();
+
+      if (!dates.length) return { aggregation, rows: [] };
+
+      // Normalize each day to a canonical row.
+      const dailyRows = dates.map(d => {
+        const entry = weightData[d] || {};
+        return {
+          date: d,
+          lbs: entry.lbs_adjusted_average || entry.lbs || null,
+          fatPercent: entry.fat_percent_average || entry.fat_percent || null,
+          source: entry.source || 'consumer-bia',
+        };
+      });
+
+      if (aggregation === 'daily') {
+        return {
+          aggregation,
+          rows: dailyRows.map(r => ({
+            date: r.date,
+            lbs: r.lbs,
+            fatPercent: r.fatPercent,
+            count: 1,
+            source: r.source,
+          })),
+        };
+      }
+
+      const bucketKey =
+        aggregation === 'weekly_avg' ? isoWeek :
+        aggregation === 'monthly_avg' ? isoMonth :
+        aggregation === 'quarterly_avg' ? quarter :
+        isoYear; // 'yearly_avg'
+
+      const buckets = new Map();
+      for (const row of dailyRows) {
+        const key = bucketKey(row.date);
+        if (!buckets.has(key)) {
+          buckets.set(key, { period: key, lbs: [], fatPercent: [], sources: new Set() });
+        }
+        const b = buckets.get(key);
+        if (row.lbs != null) b.lbs.push(row.lbs);
+        if (row.fatPercent != null) b.fatPercent.push(row.fatPercent);
+        if (row.source) b.sources.add(row.source);
+      }
+
+      const rows = [...buckets.values()]
+        .sort((a, b) => a.period.localeCompare(b.period))
+        .map(b => ({
+          period: b.period,
+          lbs: avg(b.lbs),
+          fatPercent: avg(b.fatPercent),
+          count: Math.max(b.lbs.length, b.fatPercent.length),
+          source: b.sources.size === 1 ? [...b.sources][0] : [...b.sources].join(','),
+        }));
+
+      return { aggregation, rows };
+    } catch (err) {
+      return { aggregation, rows: [], error: err.message };
+    }
+  };
+}
+
+/**
+ * Build the query_historical_nutrition executor. Extracted for reuse from
+ * the named-period wrapper.
+ */
+function makeQueryNutritionExecutor(healthStore) {
+  return async function queryNutrition({ userId, from, to, fields = null, filter = {} }) {
+    try {
+      guardUserId(userId);
+      const nutritionData = await healthStore.loadNutritionData(userId);
+      const dates = Object.keys(nutritionData || {})
+        .filter(d => d >= from && d <= to)
+        .sort();
+
+      if (!dates.length) return { days: [] };
+
+      // 14-day redaction window for implied_intake / tracking_accuracy.
+      // Use UTC to align with our YYYY-MM-DD date keys, which are UTC dates.
+      const MATURITY_DAYS = 14;
+      const now = new Date();
+      const todayUtc = new Date(Date.UTC(
+        now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(),
+      ));
+      const maturityCutoff = new Date(todayUtc);
+      maturityCutoff.setUTCDate(maturityCutoff.getUTCDate() - MATURITY_DAYS);
+
+      const proteinMin = filter && typeof filter.protein_min === 'number'
+        ? filter.protein_min : null;
+      const taggedWith = filter && typeof filter.tagged_with === 'string'
+        ? filter.tagged_with : null;
+      const containsFood = filter && typeof filter.contains_food === 'string'
+        ? filter.contains_food.toLowerCase() : null;
+
+      const days = [];
+      for (const date of dates) {
+        const entry = nutritionData[date] || {};
+
+        // ---- filtering ----
+        if (proteinMin != null && (entry.protein ?? 0) < proteinMin) continue;
+        if (taggedWith != null) {
+          const tags = Array.isArray(entry.tags) ? entry.tags : [];
+          if (!tags.includes(taggedWith)) continue;
+        }
+        if (containsFood != null) {
+          const foods = Array.isArray(entry.food_items) ? entry.food_items : [];
+          const match = foods.some(f =>
+            typeof f?.name === 'string' && f.name.toLowerCase().includes(containsFood),
+          );
+          if (!match) continue;
+        }
+
+        // ---- canonical day shape ----
+        const day = {
+          date,
+          calories: entry.calories ?? null,
+          protein: entry.protein ?? null,
+          carbs: entry.carbs ?? null,
+          fat: entry.fat ?? null,
+        };
+        if (entry.fiber !== undefined) day.fiber = entry.fiber;
+        if (entry.sugar !== undefined) day.sugar = entry.sugar;
+        if (entry.food_items !== undefined) day.food_items = entry.food_items;
+        if (entry.tags !== undefined) day.tags = entry.tags;
+        if (entry.implied_intake !== undefined) day.implied_intake = entry.implied_intake;
+        if (entry.tracking_accuracy !== undefined) day.tracking_accuracy = entry.tracking_accuracy;
+
+        // ---- redaction (recent days < 14 days old) ----
+        const dateObj = new Date(date + 'T00:00:00Z');
+        const isMature = dateObj <= maturityCutoff;
+        if (!isMature) {
+          delete day.implied_intake;
+          delete day.tracking_accuracy;
+        }
+
+        // ---- projection ----
+        if (Array.isArray(fields) && fields.length) {
+          const projected = { date: day.date };
+          for (const key of fields) {
+            if (key === 'date') continue;
+            if (key in day) projected[key] = day[key];
+          }
+          days.push(projected);
+        } else {
+          days.push(day);
+        }
+      }
+
+      return { days };
+    } catch (err) {
+      return { days: [], error: err.message };
+    }
+  };
+}
+
+/**
+ * Build the query_historical_workouts executor. Extracted for reuse from
+ * the named-period wrapper.
+ */
+function makeQueryWorkoutsExecutor(healthService) {
+  return async function queryWorkouts({ userId, from, to, type = null, name_contains = null, aggregation = null }) {
+    try {
+      guardUserId(userId);
+      const healthData = await healthService.getHealthForRange(userId, from, to);
+
+      const needle = typeof name_contains === 'string' && name_contains.length
+        ? name_contains.toLowerCase() : null;
+
+      const workouts = [];
+      for (const [date, metric] of Object.entries(healthData || {})) {
+        for (const w of (metric?.workouts || [])) {
+          if (type != null && w.type !== type) continue;
+          if (needle != null) {
+            const label = (w.title || w.name || '').toLowerCase();
+            if (!label.includes(needle)) continue;
+          }
+          workouts.push({
+            date,
+            title: w.title || w.name,
+            type: w.type,
+            duration: w.duration,
+            calories: w.calories,
+            avgHr: w.avgHr,
+          });
+        }
+      }
+      workouts.sort((a, b) => a.date.localeCompare(b.date));
+
+      // Optional rollup
+      if (aggregation) {
+        const validAggregations = ['weekly_count', 'monthly_count', 'yearly_count'];
+        if (!validAggregations.includes(aggregation)) {
+          return { aggregation, rows: [], error: `Unknown aggregation: ${aggregation}` };
+        }
+        const bucketKey = aggregation === 'weekly_count' ? isoWeek :
+                          aggregation === 'monthly_count' ? isoMonth :
+                          isoYear;
+        const buckets = new Map();
+        for (const w of workouts) {
+          const key = bucketKey(w.date);
+          if (!buckets.has(key)) buckets.set(key, { period: key, count: 0, totalDurationMin: 0 });
+          const b = buckets.get(key);
+          b.count++;
+          if (typeof w.duration === 'number' && Number.isFinite(w.duration)) {
+            b.totalDurationMin += w.duration;
+          }
+        }
+        const rows = [...buckets.values()].sort((a, b) => a.period.localeCompare(b.period));
+        return { aggregation, rows };
+      }
+
+      return { workouts };
+    } catch (err) {
+      return { workouts: [], error: err.message };
+    }
+  };
+}
+
+/**
+ * Build the read_notes_file executor (F-102). Reads markdown notes and YAML
+ * scans from the user's health archive with per-execution caching, scope
+ * enforcement (HealthArchiveScope F-106), and optional markdown section
+ * extraction.
+ *
+ * Cache key: `${userId}:${filename}:${section || ''}`. Section extraction is
+ * computed against the cached raw file content, so two calls with the same
+ * filename but different sections incur a single disk read.
+ *
+ * F4-A: prefers `archiveScopeFactory.forUser(userId)` (per-user scope).
+ * Falls back to a directly-injected `archiveScope` for callers that haven't
+ * migrated to the factory pattern yet (notably older tests).
+ *
+ * @param {object} opts
+ * @param {{assertReadable: Function}} [opts.archiveScope] F-106 instance
+ *   (legacy direct injection)
+ * @param {{forUser: Function}} [opts.archiveScopeFactory] Per-user factory
+ *   (F4-A — preferred)
+ * @param {{readFile: Function}} opts.fs injected file-reader adapter
+ * @param {string} opts.dataRoot absolute data root path
+ * @param {Map} opts.cache closure-scoped per-execution cache
+ * @returns {Function} the tool executor
+ */
+function makeReadNotesFileExecutor({ notesArchive, cache }) {
+  return async function readNotesFile({ userId, filename, section = null }) {
+    try {
+      // 1) userId format
+      HealthArchiveScope.assertValidUserId(userId);
+
+      // 2) Validate filename. validatePathSegment rejects ..-traversal, NULs,
+      //    absolute paths, and unsafe characters BEFORE we ever touch disk
+      //    or the archive scope.
+      if (typeof filename !== 'string' || !filename.length) {
+        return { filename, error: 'filename must be a non-empty string' };
+      }
+      const normalizedFilename = HealthArchiveScope.validatePathSegment(filename);
+
+      // 3) Tool-contract: only notes/ and scans/. Even though the F-106
+      //    scope permits more (playbook/, strava/, ...), this tool is
+      //    deliberately scoped narrower — those other surfaces have their
+      //    own dedicated tools.
+      const hasAllowedPrefix = READ_NOTES_PREFIXES.some(
+        (p) => normalizedFilename.startsWith(p),
+      );
+      if (!hasAllowedPrefix) {
+        return {
+          filename,
+          error: `filename must start with notes/ or scans/ (got: ${filename})`,
+        };
+      }
+
+      // 4) The archive adapter owns per-user scope resolution and storage layout.
+      if (!notesArchive || typeof notesArchive.read !== 'function') {
+        return { filename, error: 'read_notes_file: file-reader dependency missing' };
+      }
+
+      // 7) Cache check.
+      const cacheKey = `${userId}:${normalizedFilename}:${section || ''}`;
+      if (cache.has(cacheKey)) {
+        return cache.get(cacheKey);
+      }
+
+      // Also cache the raw file content under a base key so
+      // (filename, sectionA) and (filename, sectionB) don't double-read.
+      const rawKey = `${userId}:${normalizedFilename}:`;
+      let raw;
+      if (cache.has(rawKey)) {
+        raw = cache.get(rawKey).content;
+      } else {
+        raw = await notesArchive.read(userId, normalizedFilename);
+        const rawResult = { filename: normalizedFilename, content: raw };
+        cache.set(rawKey, rawResult);
+        if (!section) {
+          // The rawKey IS the cacheKey when no section is requested.
+          return rawResult;
+        }
+      }
+
+      // 8) Section extraction (markdown only).
+      if (section) {
+        const isMarkdown = normalizedFilename.endsWith('.md');
+        if (!isMarkdown) {
+          const result = { filename: normalizedFilename, section, error: 'section extraction only supported on .md files' };
+          cache.set(cacheKey, result);
+          return result;
+        }
+        const extracted = extractMarkdownSection(raw, section);
+        if (extracted == null) {
+          const result = { filename: normalizedFilename, section, error: 'section not found' };
+          cache.set(cacheKey, result);
+          return result;
+        }
+        const result = { filename: normalizedFilename, section, content: extracted };
+        cache.set(cacheKey, result);
+        return result;
+      }
+
+      // No section: return the raw content (already cached above).
+      const result = { filename: normalizedFilename, content: raw };
+      cache.set(cacheKey, result);
+      return result;
+    } catch (err) {
+      return { filename, error: err.message };
+    }
+  };
+}
+
+/**
+ * Extract content under a markdown section heading. Returns the lines under
+ * the matching heading until either (a) a heading at the same or higher level
+ * (lower `#` count) or (b) end of file. Returns `null` if no matching heading
+ * is found. Section match is case-insensitive trim against the heading text.
+ *
+ * @param {string} content full file content
+ * @param {string} section heading text to match
+ * @returns {string|null}
+ */
+function extractMarkdownSection(content, section) {
+  const target = String(section).trim().toLowerCase();
+  const lines = content.split('\n');
+
+  let inSection = false;
+  let sectionLevel = 0;
+  const collected = [];
+
+  for (const line of lines) {
+    const headingMatch = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const text = headingMatch[2].trim().toLowerCase();
+      if (!inSection) {
+        if (text === target) {
+          inSection = true;
+          sectionLevel = level;
+        }
+        continue;
+      }
+      // We're inside the target section. A heading at the same or higher
+      // level (smaller-or-equal `#` count) terminates the section.
+      if (level <= sectionLevel) {
+        break;
+      }
+      // Otherwise it's a nested subsection — keep it.
+      collected.push(line);
+      continue;
+    }
+    if (inSection) collected.push(line);
+  }
+
+  if (!inSection) return null;
+  return collected.join('\n');
+}
+
+// ---------- helpers ----------
+
+/**
+ * Normalize a YAML-derived date value (string or Date) to YYYY-MM-DD.
+ * Returns null for falsy/invalid input.
+ */
+function formatDate(value) {
+  if (!value) return null;
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    return value.toISOString().slice(0, 10);
+  }
+  return String(value);
+}
+
+function avg(arr) {
+  if (!arr.length) return null;
+  const sum = arr.reduce((s, n) => s + n, 0);
+  return sum / arr.length;
+}
+
+function isoMonth(dateStr) {
+  // 'YYYY-MM-DD' → 'YYYY-MM'
+  return dateStr.slice(0, 7);
+}
+
+function quarter(dateStr) {
+  // 'YYYY-MM-DD' → 'YYYY-Qn'  (Q1 = Jan-Mar, Q2 = Apr-Jun, ...)
+  const year = dateStr.slice(0, 4);
+  const month = parseInt(dateStr.slice(5, 7), 10);
+  const q = Math.ceil(month / 3);
+  return `${year}-Q${q}`;
+}
+
+function isoYear(dateStr) {
+  // 'YYYY-MM-DD' → 'YYYY'
+  return dateStr.slice(0, 4);
+}
+
+/**
+ * ISO 8601 week. Returns 'YYYY-Www' where YYYY is the ISO week-numbering
+ * year (which can differ from the calendar year for early-Jan / late-Dec
+ * dates) and ww is the zero-padded ISO week number (01-53).
+ */
+function isoWeek(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  // Use UTC to avoid TZ drift.
+  const date = new Date(Date.UTC(y, m - 1, d));
+  // Per ISO 8601, week starts Monday. JavaScript getUTCDay(): Sun=0..Sat=6.
+  // Shift so Monday=1..Sunday=7.
+  const dayOfWeek = date.getUTCDay() || 7;
+  // Move to the Thursday of this week (ISO weeks are anchored on Thursday).
+  date.setUTCDate(date.getUTCDate() + 4 - dayOfWeek);
+  const isoYear = date.getUTCFullYear();
+  // Jan 4th is always in ISO week 1.
+  const yearStart = new Date(Date.UTC(isoYear, 0, 4));
+  const yearStartDow = yearStart.getUTCDay() || 7;
+  yearStart.setUTCDate(yearStart.getUTCDate() + 4 - yearStartDow);
+  const weekNum = Math.ceil(((date - yearStart) / 86400000 + 1) / 7);
+  return `${isoYear}-W${String(weekNum).padStart(2, '0')}`;
+}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { detectKey } from '../../../../frontend/src/modules/MusicNotation/model/keySignature.js';
+import { detectKey } from "../../../../capabilities/music-notation/browser/model/keySignature.js";
 
 // Shared rolling key detection for the piano theory triptych.
 //

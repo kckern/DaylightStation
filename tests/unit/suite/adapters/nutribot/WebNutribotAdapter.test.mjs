@@ -1,6 +1,6 @@
 // tests/unit/suite/adapters/nutribot/WebNutribotAdapter.test.mjs
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
-import { WebNutribotAdapter } from '#adapters/nutribot/WebNutribotAdapter.mjs';
+import { WebNutribotAdapter } from "../../../../../modules/nutribot/server/adapters/WebNutribotAdapter.mjs";
 
 describe('WebNutribotAdapter', () => {
   let inputRouter;

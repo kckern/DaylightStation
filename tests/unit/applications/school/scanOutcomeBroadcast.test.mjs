@@ -10,7 +10,7 @@
 // Reuses the SAME `omr` topic the relay already broadcasts sheets on (per
 // the brief), so the frontend needs no new transport to subscribe.
 import { describe, it, expect, vi } from 'vitest';
-import { createSchoolPrintScanConsumer } from '#composition/modules/schoolPrintScanConsumer.mjs';
+import { createSchoolPrintScanConsumer } from "../../../../modules/school/server/composition/schoolPrintScanConsumer.mjs";
 
 // Same calibration fixture the sibling composition tests use — decodes to
 // testId '0123456' with a handful of answered rows. This file never asserts

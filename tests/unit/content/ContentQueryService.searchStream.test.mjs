@@ -1,6 +1,8 @@
 // tests/unit/content/ContentQueryService.searchStream.test.mjs
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
-import { ContentQueryService } from '#apps/content/ContentQueryService.mjs';
+import { ContentQueryService } from "../../../capabilities/content-catalog/server/application/ContentQueryService.mjs";
+import { RegistryContentCatalogGateway } from "../../../capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
+import { NodePromiseDeadline } from '#adapters/scheduling/NodePromiseDeadline.mjs';
 
 describe('ContentQueryService.searchStream', () => {
   let service;
@@ -13,7 +15,7 @@ describe('ContentQueryService.searchStream', () => {
       {
         source: 'plex',
         search: jest.fn().mockImplementation(() =>
-          new Promise(resolve => setTimeout(() => resolve({ items: [{ id: 'plex:1', title: 'Plex Result' }] }), 50))
+          new Promise(resolve => setTimeout(() => resolve({ items: [{ id: 'plex:1', title: 'Plex test Result' }] }), 50))
         ),
         getSearchCapabilities: () => ({ canonical: ['text'], specific: [] }),
         getQueryMappings: () => ({})
@@ -21,7 +23,7 @@ describe('ContentQueryService.searchStream', () => {
       {
         source: 'immich',
         search: jest.fn().mockImplementation(() =>
-          new Promise(resolve => setTimeout(() => resolve({ items: [{ id: 'immich:1', title: 'Immich Result' }] }), 100))
+          new Promise(resolve => setTimeout(() => resolve({ items: [{ id: 'immich:1', title: 'Immich test Result' }] }), 100))
         ),
         getSearchCapabilities: () => ({ canonical: ['text'], specific: [] }),
         getQueryMappings: () => ({})
@@ -33,7 +35,7 @@ describe('ContentQueryService.searchStream', () => {
       get: jest.fn().mockImplementation(source => mockAdapters.find(a => a.source === source))
     };
 
-    service = new ContentQueryService({ registry: mockRegistry });
+    service = new ContentQueryService({ deadline: new NodePromiseDeadline(), contentCatalog: new RegistryContentCatalogGateway({ registry: mockRegistry }) });
   });
 
   it('yields pending event first with all sources', async () => {
@@ -104,7 +106,7 @@ describe('ContentQueryService.searchStream', () => {
       resolveSource: () => [good, bad],
       get: (s) => [good, bad].find(a => a.source === s),
     };
-    const svc = new ContentQueryService({ registry });
+    const svc = new ContentQueryService({ deadline: new NodePromiseDeadline(), contentCatalog: new RegistryContentCatalogGateway({ registry }) });
     const events = [];
     for await (const e of svc.searchStream({ text: 'aa' })) events.push(e);
     expect(events.some(e => e.event === 'source_error' && e.source === 'abs')).toBe(true);
@@ -119,7 +121,7 @@ describe('ContentQueryService.searchStream', () => {
       getQueryMappings: () => ({}),
     };
     const registry = { resolveSource: () => [hung], get: () => hung };
-    const svc = new ContentQueryService({ registry, adapterTimeoutMs: 50 });
+    const svc = new ContentQueryService({ deadline: new NodePromiseDeadline(), contentCatalog: new RegistryContentCatalogGateway({ registry }), adapterTimeoutMs: 50 });
     const events = [];
     for await (const e of svc.searchStream({ text: 'aa' })) events.push(e);
     expect(events.some(e => e.event === 'source_error' && /timeout/.test(e.error))).toBe(true);
@@ -140,7 +142,7 @@ describe('ContentQueryService.searchStream', () => {
       getQueryMappings: () => ({}),
     };
     const registry = { resolveSource: () => [adapter], get: () => adapter };
-    const svc = new ContentQueryService({ registry });
+    const svc = new ContentQueryService({ deadline: new NodePromiseDeadline(), contentCatalog: new RegistryContentCatalogGateway({ registry }) });
 
     const events = [];
     for await (const e of svc.searchStream({ text: 'hey jude' })) events.push(e);
@@ -173,7 +175,7 @@ describe('ContentQueryService.searchStream', () => {
       getQueryMappings: () => ({}),
     };
     const registry = { resolveSource: () => [adapter], get: () => adapter };
-    const svc = new ContentQueryService({ registry });
+    const svc = new ContentQueryService({ deadline: new NodePromiseDeadline(), contentCatalog: new RegistryContentCatalogGateway({ registry }) });
 
     const events = [];
     for await (const e of svc.searchStream({ text: 'test' })) events.push(e);
@@ -188,7 +190,7 @@ describe('ContentQueryService.searchStream', () => {
     const makeAdapter = (source, delayMs) => ({
       source,
       search: () => new Promise(resolve =>
-        setTimeout(() => resolve({ items: [{ id: `${source}:1`, title: 'Slow Result' }] }), delayMs)
+        setTimeout(() => resolve({ items: [{ id: `${source}:1`, title: 'Slow aa Result' }] }), delayMs)
       ),
       getSearchCapabilities: () => ({ canonical: ['text'], specific: [] }),
       getQueryMappings: () => ({}),
@@ -200,8 +202,8 @@ describe('ContentQueryService.searchStream', () => {
       resolveSource: () => [abs, plex],
       get: (s) => [abs, plex].find(a => a.source === s),
     };
-    const svc = new ContentQueryService({
-      registry,
+    const svc = new ContentQueryService({ deadline: new NodePromiseDeadline(),
+      contentCatalog: new RegistryContentCatalogGateway({ registry }),
       adapterTimeoutMs: 50,
       sourceTimeoutsMs: { abs: 500 },
     });
@@ -226,7 +228,7 @@ describe('ContentQueryService.searchStream', () => {
       getQueryMappings: () => ({}),
     };
     const registry = { resolveSource: () => [hungLookup], get: () => hungLookup };
-    const svc = new ContentQueryService({ registry, adapterTimeoutMs: 50, logger: { info: () => {}, warn: () => {}, debug: () => {} } });
+    const svc = new ContentQueryService({ deadline: new NodePromiseDeadline(), contentCatalog: new RegistryContentCatalogGateway({ registry }), adapterTimeoutMs: 50, logger: { info: () => {}, warn: () => {}, debug: () => {} } });
     const result = await svc.search({ text: 'plex:123' });       // ID-like → triggers #lookupById
     expect(result.warnings?.some(w => /timeout/i.test(w.error))).toBe(true);
   }, 5000);

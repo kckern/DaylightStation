@@ -1,15 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { Dependency } from '#domains/lifeplan/entities/Dependency.mjs';
-import { LifeEvent } from '#domains/lifeplan/entities/LifeEvent.mjs';
-import { AntiGoal } from '#domains/lifeplan/entities/AntiGoal.mjs';
-import { Milestone } from '#domains/lifeplan/entities/Milestone.mjs';
-import { BeliefOrigin } from '#domains/lifeplan/entities/BeliefOrigin.mjs';
-import { Shadow } from '#domains/lifeplan/entities/Shadow.mjs';
-import { Ceremony } from '#domains/lifeplan/entities/Ceremony.mjs';
-import { CeremonyRecord } from '#domains/lifeplan/entities/CeremonyRecord.mjs';
-import { Cycle } from '#domains/lifeplan/entities/Cycle.mjs';
-import { FeedbackEntry } from '#domains/lifeplan/entities/FeedbackEntry.mjs';
-import { LifePlan } from '#domains/lifeplan/entities/LifePlan.mjs';
+import { Dependency } from "../../../../modules/life/server/domain/entities/Dependency.mjs";
+import { LifeEvent } from "../../../../modules/life/server/domain/entities/LifeEvent.mjs";
+import { AntiGoal } from "../../../../modules/life/server/domain/entities/AntiGoal.mjs";
+import { Milestone } from "../../../../modules/life/server/domain/entities/Milestone.mjs";
+import { BeliefOrigin } from "../../../../modules/life/server/domain/entities/BeliefOrigin.mjs";
+import { Shadow } from "../../../../modules/life/server/domain/entities/Shadow.mjs";
+import { Ceremony } from "../../../../modules/life/server/domain/entities/Ceremony.mjs";
+import { CeremonyRecord } from "../../../../modules/life/server/domain/entities/CeremonyRecord.mjs";
+import { Cycle } from "../../../../modules/life/server/domain/entities/Cycle.mjs";
+import { FeedbackEntry } from "../../../../modules/life/server/domain/entities/FeedbackEntry.mjs";
+import { LifePlan } from "../../../../modules/life/server/domain/entities/LifePlan.mjs";
 
 describe('Dependency', () => {
   it('creates a prerequisite dependency', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { HaApprovalNotifier } from '#adapters/home-automation/donow/HaApprovalNotifier.mjs';
+import { HaApprovalNotifier } from "../../../../modules/donow/server/adapters/HaApprovalNotifier.mjs";
 import { findPushTextDefects } from '#domains/notification/push/pushText.mjs';
 
 // Article-free, lowercase — the real shape a surface adapter's `label()` now

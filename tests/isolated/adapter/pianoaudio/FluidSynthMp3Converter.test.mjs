@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { FluidSynthMp3Converter } from '#adapters/pianoaudio/FluidSynthMp3Converter.mjs';
+import { FluidSynthMp3Converter } from "../../../../modules/piano/server/adapters/pianoaudio/FluidSynthMp3Converter.mjs";
 
 const silent = { info() {}, warn() {}, error() {}, debug() {} };
 let root, sourceDir, destDir, scratchDir, midiPath, mp3Path;

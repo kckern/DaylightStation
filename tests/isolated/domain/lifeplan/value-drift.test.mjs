@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { Value } from '#domains/lifeplan/entities/Value.mjs';
-import { ValueDriftCalculator } from '#domains/lifeplan/services/ValueDriftCalculator.mjs';
+import { Value } from "../../../../modules/life/server/domain/entities/Value.mjs";
+import { ValueDriftCalculator } from "../../../../modules/life/server/domain/services/ValueDriftCalculator.mjs";
 
 describe('Value Entity', () => {
   describe('construction', () => {

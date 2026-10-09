@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
-import { resolveDanceLightingConfig } from '#adapters/fitness/danceLightingConfig.mjs';
+import { resolveDanceLightingConfig } from "../../../../modules/fitness/server/adapters/danceLightingConfig.mjs";
 
 describe('resolveDanceLightingConfig', () => {
   it('applies all defaults when dance_party is absent', () => {

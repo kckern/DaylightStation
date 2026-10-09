@@ -1,0 +1,104 @@
+/**
+ * FluidSynthMp3Converter — renders one MIDI to a normalized MP3:
+ *   fluidsynth (MIDI → scratch WAV) → ffmpeg loudnorm (WAV → <mp3>.tmp) → rename.
+ * The scratch WAV is always cleaned up; a crash mid-ffmpeg never leaves a partial
+ * final mp3 (we write .tmp then rename). The subprocess call is an injectable
+ * seam (`execFile`) so the argv and file flow are unit-testable without binaries.
+ *
+ * Layer: ADAPTER (1_adapters/pianoaudio).
+ * @module adapters/pianoaudio/FluidSynthMp3Converter
+ */
+import path from 'node:path';
+import { promisify } from 'node:util';
+import { execFile as _execFile } from 'node:child_process';
+import { IMidiConverter } from "../../application/pianoaudio/ports/IMidiConverter.mjs";
+import { mirrorRelForMidiRel } from "../../domain/pianoaudio/pianoAudioPaths.mjs";
+import { deleteFile, ensureDir, fileExists, getStats, renameFile } from '#system/utils/FileIO.mjs';
+
+const execFileAsync = promisify(_execFile);
+const LOUDNORM = 'loudnorm=I=-16:TP=-1.5:LRA=11';
+const MIN_TIMEOUT_MS = 60_000;
+const MAX_TIMEOUT_MS = 600_000;
+// ffmpeg's budget comes from the WAV's DURATION, not the generic size rule:
+// fluidsynth writes 44.1 kHz 16-bit stereo, so a 3-hour take is ~1.9 GB and
+// the size rule always hit the 10-minute cap — and loudnorm runs at ~15x, so
+// a 3h take needs ~12 min. On 2026-10-01 every multi-hour July take was killed
+// at 10:00 and retried (and killed) on each run. Budget for >=5x, up to 2 h.
+const WAV_BYTES_PER_SEC = 44_100 * 2 * 2;
+const FFMPEG_MIN_SPEED = 5;
+const FFMPEG_MAX_TIMEOUT_MS = 7_200_000;
+
+export class FluidSynthMp3Converter extends IMidiConverter {
+  #soundfontPath; #sourceDir; #destDir; #scratchDir; #logger; #execFile; #counter = 0;
+
+  constructor({ soundfontPath, sourceDir, destDir, scratchDir = '/tmp/pianoaudio', logger = console, execFile = execFileAsync }) {
+    super();
+    if (!soundfontPath) throw new Error('FluidSynthMp3Converter requires soundfontPath');
+    if (!sourceDir || !destDir) throw new Error('FluidSynthMp3Converter requires sourceDir and destDir');
+    this.#soundfontPath = soundfontPath;
+    this.#sourceDir = sourceDir;
+    this.#destDir = destDir;
+    this.#scratchDir = scratchDir;
+    this.#logger = logger;
+    this.#execFile = execFile;
+  }
+
+  async convertRecording({ recordingId } = {}) {
+    const midiPath = this.#resolve(this.#sourceDir, recordingId);
+    const mp3Path = this.#resolve(this.#destDir, mirrorRelForMidiRel(recordingId, 'mp3'));
+    if (!midiPath || !mp3Path) throw new Error('Invalid MIDI recording id');
+    if (fileExists(mp3Path)) return; // already rendered — resumable skip
+
+    ensureDir(this.#scratchDir);
+    ensureDir(path.dirname(mp3Path));
+
+    const base = path.basename(mp3Path, '.mp3').replace(/[^\w.-]/g, '_');
+    const wavPath = path.join(this.#scratchDir, `${base}.${process.pid}.${this.#counter++}.wav`);
+    const tmpMp3 = `${mp3Path}.tmp`;
+
+    try {
+      await this.#execFile(
+        'fluidsynth',
+        ['-ni', '-F', wavPath, '-r', '44100', this.#soundfontPath, midiPath],
+        { timeout: this.#timeoutFor(midiPath) },
+      );
+      await this.#execFile(
+        'ffmpeg',
+        // -f mp3 is REQUIRED: the output path ends in `.tmp` (for atomic rename),
+        // so ffmpeg cannot infer the muxer from the extension and must be told.
+        ['-i', wavPath, '-af', LOUDNORM, '-codec:a', 'libmp3lame', '-qscale:a', '2', '-f', 'mp3', tmpMp3, '-y'],
+        { timeout: this.#ffmpegTimeoutFor(wavPath) },
+      );
+      renameFile(tmpMp3, mp3Path);
+    } finally {
+      this.#safeUnlink(wavPath);
+      this.#safeUnlink(tmpMp3); // no-op if the rename already consumed it
+    }
+  }
+
+  #resolve(root, relativeId) {
+    const resolved = path.resolve(root, relativeId || '');
+    const base = path.resolve(root);
+    return resolved === base || resolved.startsWith(`${base}${path.sep}`) ? resolved : null;
+  }
+
+  /** Timeout scales with input size: 60s base + 1s per 4KB, capped at 600s. */
+  #timeoutFor(filePath) {
+    let size = 0;
+    try { size = getStats(filePath).size; } catch { /* keep 0 */ }
+    return Math.min(MAX_TIMEOUT_MS, MIN_TIMEOUT_MS + Math.floor(size / 4096) * 1000);
+  }
+
+  #ffmpegTimeoutFor(wavPath) {
+    let size = 0;
+    try { size = getStats(wavPath).size; } catch { /* keep 0 */ }
+    const audioSeconds = size / WAV_BYTES_PER_SEC;
+    return Math.min(FFMPEG_MAX_TIMEOUT_MS, MIN_TIMEOUT_MS + Math.ceil(audioSeconds / FFMPEG_MIN_SPEED) * 1000);
+  }
+
+  #safeUnlink(p) {
+    deleteFile(p); // already gone
+  }
+}
+
+export default FluidSynthMp3Converter;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isProgressCommittable } from '#domains/content/services/isProgressCommittable.mjs';
+import { isProgressCommittable } from "../../../../capabilities/playback/server/domain/services/isProgressCommittable.mjs";
 
 describe('isProgressCommittable', () => {
 

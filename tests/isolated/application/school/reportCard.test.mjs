@@ -6,11 +6,11 @@
  * rather than on internal calls.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { GetReportCard } from '#apps/school/usecases/GetReportCard.mjs';
-import { CloseAcademicPeriod } from '#apps/school/usecases/CloseAcademicPeriod.mjs';
-import { GetTeacherToday } from '#apps/school/usecases/GetTeacherToday.mjs';
-import { GrownUpGate } from '#apps/school/GrownUpGate.mjs';
-import { COURSE_GRADE_POLICY } from '#domains/school/progress/courseGrade.mjs';
+import { GetReportCard } from "../../../../modules/school/server/application/usecases/GetReportCard.mjs";
+import { CloseAcademicPeriod } from "../../../../modules/school/server/application/usecases/CloseAcademicPeriod.mjs";
+import { GetTeacherToday } from "../../../../modules/school/server/application/usecases/GetTeacherToday.mjs";
+import { GrownUpGate } from "../../../../modules/school/server/application/GrownUpGate.mjs";
+import { COURSE_GRADE_POLICY } from "../../../../modules/school/server/domain/progress/courseGrade.mjs";
 import { DomainInvariantError } from '#domains/core/errors/index.mjs';
 
 const silent = { info() {}, warn() {}, error() {}, debug() {} };

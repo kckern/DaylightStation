@@ -9,9 +9,9 @@ import React, {
   import moment from "moment";
   import "../styles/ContentScroller.scss";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
-import paperBackground from "../../../../../frontend/src/assets/backgrounds/paper.jpg";
-import { useMediaKeyboardHandler } from '../../../../../frontend/src/lib/Player/useMediaKeyboardHandler.js';
-import { useDynamicDimensions } from '../../../../../frontend/src/lib/Player/useDynamicDimensions.js';
+import paperBackground from "../assets/paper.jpg";
+import { useMediaKeyboardHandler } from "../../player-support/useMediaKeyboardHandler.js";
+import { useDynamicDimensions } from "../../player-support/useDynamicDimensions.js";
 import { useMediaReporter } from '../hooks/useMediaReporter.js';
 import { useEndOfContentWatchdog } from '../hooks/useEndOfContentWatchdog.js';
 import { useScreenVolume } from '../../../../../frontend/src/lib/volume/ScreenVolumeContext.js';

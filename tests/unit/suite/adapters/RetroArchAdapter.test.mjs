@@ -1,6 +1,6 @@
 // tests/unit/suite/adapters/RetroArchAdapter.test.mjs
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
-import { RetroArchAdapter } from '#adapters/content/retroarch/RetroArchAdapter.mjs';
+import { RetroArchAdapter } from "../../../../capabilities/content-catalog/server/adapters/providers/retroarch/RetroArchAdapter.mjs";
 
 // Minimal fixture data matching catalog.yml + config.yml shapes
 const mockConfig = {

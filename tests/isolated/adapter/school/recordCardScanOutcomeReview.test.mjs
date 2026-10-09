@@ -6,8 +6,8 @@
 // reach the caller, which is the only way the grading hook can name WHICH
 // row stopped the session.
 import { describe, it, expect, vi } from 'vitest';
-import { RecordCardScanOutcome } from '#apps/school/documents/RecordCardScanOutcome.mjs';
-import { createEvent } from '#domains/school/sessions/sessionEvents.mjs';
+import { RecordCardScanOutcome } from "../../../../modules/school/server/application/documents/RecordCardScanOutcome.mjs";
+import { createEvent } from "../../../../modules/school/server/domain/sessions/sessionEvents.mjs";
 
 const quietLogger = {
   info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(),

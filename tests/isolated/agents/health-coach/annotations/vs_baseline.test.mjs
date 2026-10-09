@@ -1,8 +1,8 @@
 // tests/isolated/agents/health-coach/annotations/vs_baseline.test.mjs
 import { describe, it, expect, vi } from 'vitest';
-import { FitnessEventAdapter } from '../../../../../backend/src/3_applications/agents/health-coach/services/adapters/FitnessEventAdapter.mjs';
-import { WeightEventAdapter } from '../../../../../backend/src/3_applications/agents/health-coach/services/adapters/WeightEventAdapter.mjs';
-import { EventQueryService } from '../../../../../backend/src/3_applications/agents/health-coach/services/EventQueryService.mjs';
+import { FitnessEventAdapter } from "../../../../../modules/health/server/application/agents/health-coach/services/adapters/FitnessEventAdapter.mjs";
+import { WeightEventAdapter } from "../../../../../modules/health/server/application/agents/health-coach/services/adapters/WeightEventAdapter.mjs";
+import { EventQueryService } from "../../../../../modules/health/server/application/agents/health-coach/services/EventQueryService.mjs";
 
 describe('FitnessEventAdapter — vs_baseline annotations', () => {
   it('attaches vs_baseline to run rows when run baseline supplied', async () => {

@@ -1,0 +1,530 @@
+// backend/src/1_adapters/feed/WebContentAdapter.mjs
+/**
+ * WebContentAdapter
+ *
+ * Adapter for fetching and parsing external web content:
+ * - Favicon / subreddit icon resolution
+ * - HTML article content extraction
+ *
+ * All external HTTP calls and HTML parsing live here.
+ * The application layer consumes clean domain-relevant results.
+ *
+ * @module adapters/feed/WebContentAdapter
+ */
+
+import { extract } from '@extractus/article-extractor';
+import { HttpClient } from '#system/services/HttpClient.mjs';
+import { assertPublicHttpUrl, safeFetch } from "./feedUrlGuard.mjs";
+import { sanitizeFeedHtml } from "./htmlSanitizer.mjs";
+
+const ICON_TTL = 5 * 60 * 1000; // 5 minutes
+const MAX_ICON_CACHE = 200;
+const READABLE_TIMEOUT = 8000;
+const MAX_WORDS = 500;
+const USER_AGENT = 'Mozilla/5.0 (compatible; DaylightStation/1.0)';
+
+/**
+ * Read a page's preview image from its `<head>` meta tags.
+ *
+ * A regex over the raw HTML, deliberately: the headline harvest needs one
+ * attribute, and building a DOM to get it was the most expensive thing the
+ * backend did all hour. On 2026-10-02 the article extractor's linkedom parse
+ * held the event loop ~90% busy for over a minute at :25 past every hour,
+ * stalling the school Portal and every other client.
+ *
+ * Handles either attribute order (`property` before or after `content`),
+ * `og:image`, `og:image:url` and `twitter:image`, and decodes `&amp;`.
+ *
+ * @param {string} html
+ * @returns {string|null}
+ */
+export function extractOgImageFromHtml(html) {
+  if (typeof html !== 'string' || !html) return null;
+  // Meta tags live in <head>; never scan a whole article body for them.
+  const headEnd = html.search(/<\/head\s*>/i);
+  const head = headEnd > 0 ? html.slice(0, headEnd) : html.slice(0, 200_000);
+  const KEYS = ['og:image', 'og:image:url', 'og:image:secure_url', 'twitter:image', 'twitter:image:src'];
+  const found = new Map();
+  for (const tag of head.match(/<meta\b[^>]*>/gi) || []) {
+    const key = tag.match(/\b(?:property|name)\s*=\s*["']([^"']+)["']/i)?.[1]?.toLowerCase();
+    if (!key || !KEYS.includes(key) || found.has(key)) continue;
+    const content = tag.match(/\bcontent\s*=\s*["']([^"']*)["']/i)?.[1]?.trim();
+    if (content) found.set(key, content.replace(/&amp;/g, '&'));
+  }
+  for (const key of KEYS) if (found.has(key)) return found.get(key);
+  return null;
+}
+
+const PLACEHOLDER_SVG = Buffer.from(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 225" fill="none">' +
+  '<rect width="400" height="225" fill="#1a1b1e"/>' +
+  '<circle cx="200" cy="100" r="18" stroke="#5c636a" stroke-width="3" fill="none"/>' +
+  '<path d="M192 100l6-8 4 5 3-2 7 9h-24z" fill="#5c636a"/>' +
+  '<circle cx="208" cy="94" r="3" fill="#5c636a"/>' +
+  '</svg>'
+);
+
+export class WebContentAdapter {
+  #iconCache = new Map();
+  #logger;
+  #httpClient;
+
+  /**
+   * @param {Object} [deps]
+   * @param {Object} [deps.logger]
+   * @param {import('#system/services/HttpClient.mjs').HttpClient} [deps.httpClient]
+   */
+  constructor({ logger = console, httpClient } = {}) {
+    this.#logger = logger;
+    this.#httpClient = httpClient || new HttpClient({ logger });
+  }
+
+  // ===========================================================================
+  // Icon resolution
+  // ===========================================================================
+
+  /**
+   * Resolve a source icon (favicon or subreddit icon) for the given URL.
+   *
+   * @param {string} url - The source URL to resolve an icon for
+   * @returns {Promise<{ data: Buffer, contentType: string } | null>}
+   */
+  async resolveIcon(url) {
+    const cached = this.#iconCache.get(url);
+    if (cached && Date.now() - cached.time < ICON_TTL) {
+      this.#logger.debug?.('webcontent.icon.cacheHit', { url });
+      return { data: cached.data, contentType: cached.contentType };
+    }
+
+    try {
+      const start = Date.now();
+      const iconUrl = await this.#resolveIconUrl(url);
+      const iconRes = await safeFetch(iconUrl, {
+        responseType: 'buffer',
+        timeoutMs: 5000,
+        maxBytes: 2 * 1024 * 1024,
+        headers: { 'User-Agent': USER_AGENT },
+      });
+      if (!iconRes.ok) return null;
+
+      const buffer = iconRes.data;
+      const contentType = iconRes.headers['content-type'] || 'image/png';
+
+      this.#iconCache.set(url, { data: buffer, contentType, time: Date.now() });
+      this.#evictStaleIcons();
+
+      this.#logger.debug?.('webcontent.icon.resolved', {
+        url,
+        contentType,
+        size: buffer.length,
+        durationMs: Date.now() - start,
+      });
+
+      return { data: buffer, contentType };
+    } catch (err) {
+      this.#logger.warn?.('webcontent.icon.error', { url, error: err.message });
+      return null;
+    }
+  }
+
+  /**
+   * Determine the icon URL for a source.
+   * Reddit subreddits: fetch community_icon from about.json
+   * YouTube channels: fetch channel avatar from og:image
+   * Everything else: Google favicon API
+   */
+  async #resolveIconUrl(url) {
+    if (url.includes('reddit.com/r/')) {
+      const sub = url.match(/\/r\/(\w+)/)?.[1];
+      if (sub) {
+        try {
+          const aboutRes = await this.#httpClient.requestRaw('GET', `https://www.reddit.com/r/${sub}/about.json`, {
+            headers: { 'User-Agent': USER_AGENT, 'Accept': 'application/json' },
+          });
+          if (aboutRes.ok) {
+            const about = aboutRes.data || {};
+            const icon = about.data?.community_icon?.split('?')?.[0] || about.data?.icon_img || null;
+            if (icon) return icon;
+          }
+        } catch {
+          // fall through to Google favicon
+        }
+      }
+    }
+
+    // YouTube channel: fetch og:image (channel avatar) from channel page
+    const ytMatch = url.match(/youtube\.com\/channel\/(UC[a-zA-Z0-9_-]+)/);
+    if (ytMatch) {
+      try {
+        const pageRes = await this.#httpClient.requestRaw('GET', `https://www.youtube.com/channel/${ytMatch[1]}`, {
+          headers: { 'User-Agent': USER_AGENT },
+          responseType: 'text',
+          timeout: 5000,
+        });
+        if (pageRes.ok) {
+          const html = pageRes.data;
+          const ogImage = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)?.[1];
+          if (ogImage) return ogImage;
+        }
+      } catch {
+        // fall through to Google favicon
+      }
+    }
+
+    return `https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=${encodeURIComponent(url)}&size=32`;
+  }
+
+  /**
+   * Return the client-facing icon URL for a feed, without fetching anything.
+   * Vendor-specific feeds (YouTube, Reddit) route through the icon proxy;
+   * everything else uses the Google favicon CDN directly.
+   *
+   * @param {string} feedUrl - The RSS feed URL
+   * @param {string} [articleUrl] - A representative article URL (fallback for hostname)
+   * @returns {string|null}
+   */
+  resolveIconPath(feedUrl, articleUrl) {
+    if (!feedUrl) return null;
+
+    // YouTube: channel feed → proxy for channel avatar
+    const ytMatch = feedUrl.match(/youtube\.com\/feeds\/videos\.xml\?channel_id=(UC[a-zA-Z0-9_-]+)/);
+    if (ytMatch) {
+      const channelUrl = `https://www.youtube.com/channel/${ytMatch[1]}`;
+      return `/api/v1/feed/icon?url=${encodeURIComponent(channelUrl)}`;
+    }
+
+    // Reddit: subreddit feed → proxy for community icon
+    if (feedUrl.includes('reddit.com/r/')) {
+      return `/api/v1/feed/icon?url=${encodeURIComponent(feedUrl)}`;
+    }
+
+    // Generic: Google favicon from article hostname (or feed origin)
+    try {
+      const hostname = new URL(articleUrl || feedUrl).hostname;
+      return `https://www.google.com/s2/favicons?sz=16&domain=${hostname}`;
+    } catch {
+      return null;
+    }
+  }
+
+  #evictStaleIcons() {
+    if (this.#iconCache.size > MAX_ICON_CACHE) {
+      const now = Date.now();
+      for (const [key, val] of this.#iconCache) {
+        if (now - val.time > ICON_TTL) this.#iconCache.delete(key);
+      }
+    }
+  }
+
+  // ===========================================================================
+  // Image proxy (with SVG placeholder fallback)
+  // ===========================================================================
+
+  /**
+   * Fetch an image by URL and return its bytes.
+   * On any failure (network error, non-200), returns an SVG placeholder
+   * so the frontend always gets a renderable response.
+   *
+   * @param {string} url
+   * @returns {Promise<{ data: Buffer, contentType: string }>}
+   */
+  async proxyImage(url) {
+    try {
+      const start = Date.now();
+      const res = await safeFetch(url, {
+        responseType: 'buffer',
+        timeoutMs: READABLE_TIMEOUT,
+        maxBytes: 10 * 1024 * 1024,
+        headers: { 'User-Agent': USER_AGENT },
+      });
+      if (!res.ok) {
+        this.#logger.debug?.('webcontent.image.fallback', { url, status: res.status, durationMs: Date.now() - start });
+        return { data: PLACEHOLDER_SVG, contentType: 'image/svg+xml' };
+      }
+
+      const contentType = res.headers['content-type'] || 'image/png';
+      const buffer = res.data;
+      this.#logger.debug?.('webcontent.image.proxied', {
+        url,
+        contentType,
+        size: buffer.length,
+        durationMs: Date.now() - start,
+      });
+      return { data: buffer, contentType };
+    } catch (err) {
+      this.#logger.warn?.('webcontent.proxyImage.error', { url, error: err.message });
+      return { data: PLACEHOLDER_SVG, contentType: 'image/svg+xml' };
+    }
+  }
+
+  // ===========================================================================
+  // Readable content extraction
+  // ===========================================================================
+
+  /**
+   * Fetch a page and read only its preview image.
+   *
+   * The headline harvest's whole question is "does this story have a
+   * picture" — it never shows the article body — so it must not pay for
+   * readable extraction. See {@link extractOgImageFromHtml}.
+   *
+   * @param {string} url
+   * @returns {Promise<{ ogImage: string|null }>}
+   * @throws {Error} If the upstream page cannot be fetched
+   */
+  async extractOgImage(url) {
+    const start = Date.now();
+    const pageRes = await safeFetch(url, {
+      responseType: 'text',
+      timeoutMs: READABLE_TIMEOUT,
+      maxBytes: 3 * 1024 * 1024,
+      headers: { 'User-Agent': USER_AGENT, 'Accept': 'text/html' },
+    });
+    if (!pageRes.ok) {
+      this.#logger.debug?.('webcontent.og-image.upstream-error', { url, status: pageRes.status, durationMs: Date.now() - start });
+      const err = new Error(`Upstream returned ${pageRes.status}`);
+      err.upstreamStatus = pageRes.status;
+      throw err;
+    }
+    const ogImage = extractOgImageFromHtml(pageRes.data);
+    this.#logger.debug?.('webcontent.og-image.extracted', { url, hasOgImage: !!ogImage, durationMs: Date.now() - start });
+    return { ogImage };
+  }
+
+  /**
+   * Fetch a web page and extract its readable content.
+   *
+   * @param {string} url - The article URL to extract content from
+   * @returns {Promise<{ title: string|null, content: string, wordCount: number, ogImage: string|null }>}
+   * @throws {Error} If the upstream page cannot be fetched
+   */
+  async extractReadableContent(url) {
+    const start = Date.now();
+
+    // SSRF guard: reject non-public targets up front. Throws out of the
+    // function; the router catches and returns 502.
+    await assertPublicHttpUrl(url);
+
+    // Try article-extractor library first (better quality extraction).
+    // The extractor does its own fetch, so bound it with an explicit timeout.
+    try {
+      const article = await Promise.race([
+        extract(url),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('extract timeout')), READABLE_TIMEOUT)),
+      ]);
+      if (article?.content) {
+        const cleaned = this.#cleanExtractedHtml(article.content, article.title);
+        const textOnly = cleaned.replace(/<[^>]*>/g, '').trim();
+        const wordCount = textOnly.split(/\s+/).filter(Boolean).length;
+        const content = wordCount > MAX_WORDS
+          ? WebContentAdapter.#truncateHtml(cleaned, MAX_WORDS)
+          : cleaned;
+
+        this.#logger.debug?.('webcontent.readable.extracted', {
+          url, wordCount, hasOgImage: !!article.image,
+          method: 'article-extractor', durationMs: Date.now() - start,
+        });
+
+        return { title: article.title || null, content, wordCount, ogImage: article.image || null, ogDescription: article.description || null };
+      }
+    } catch (err) {
+      this.#logger.debug?.('webcontent.readable.extractor-failed', {
+        url, error: err.message, durationMs: Date.now() - start,
+      });
+    }
+
+    // Fallback: manual fetch + regex parser
+    const pageRes = await safeFetch(url, {
+      responseType: 'text',
+      timeoutMs: READABLE_TIMEOUT,
+      maxBytes: 3 * 1024 * 1024,
+      headers: { 'User-Agent': USER_AGENT, 'Accept': 'text/html' },
+    });
+
+    if (!pageRes.ok) {
+      this.#logger.warn?.('webcontent.readable.upstream-error', { url, status: pageRes.status, durationMs: Date.now() - start });
+      const err = new Error(`Upstream returned ${pageRes.status}`);
+      err.upstreamStatus = pageRes.status;
+      throw err;
+    }
+
+    const html = pageRes.data;
+    const result = this.#parseHtml(html);
+    this.#logger.debug?.('webcontent.readable.extracted', {
+      url, wordCount: result.wordCount, hasOgImage: !!result.ogImage,
+      method: 'regex-fallback', durationMs: Date.now() - start,
+    });
+    return result;
+  }
+
+  /**
+   * Sanitize HTML returned by article-extractor for safe rendering.
+   * Strips attributes, whitelists tags, decodes entities.
+   */
+  #cleanExtractedHtml(html, title) {
+    if (!html) return '';
+
+    // Strip leading heading that duplicates the title
+    if (title) {
+      const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      html = html.replace(new RegExp(`^\\s*<h[1-3][^>]*>\\s*${escaped}\\s*</h[1-3]>`, 'i'), '');
+    }
+
+    html = html.replace(/<(\/?)\s*h1[\s>]/gi, '<$1h2>');
+    html = html.replace(/<(br|hr)\s*\/?>/gi, '<$1>');
+
+    // Decode HTML entities FIRST, so any encoded markup (e.g. &lt;script&gt;)
+    // becomes real tags and is then caught by the attribute-strip, tag
+    // allowlist, and the final DOMPurify gate below — rather than being
+    // reconstructed into live markup after filtering.
+    html = html
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
+
+    html = html.replace(/<(\/?\w+)\s+[^>]*>/gi, '<$1>');
+
+    const ALLOWED_TAG = /^(?:p|br|h[2-4]|b|strong|em|i|u|ul|ol|li|blockquote|hr)$/i;
+    html = html.replace(/<(\/?)([\w]+)>/gi, (full, _slash, tag) =>
+      ALLOWED_TAG.test(tag) ? full : ''
+    );
+
+    html = html
+      .replace(/<p>\s*<\/p>/gi, '')
+      .replace(/(<br>){3,}/gi, '<br><br>')
+      .replace(/\s*\n\s*/g, ' ')
+      .trim();
+
+    // Authoritative final gate: DOMPurify with the strict feed allowlist.
+    return sanitizeFeedHtml(html);
+  }
+
+  /**
+   * Parse HTML into readable content, preserving minimal formatting tags.
+   */
+  #parseHtml(html) {
+    const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.trim()
+      ?.replace(/&amp;/g, '&')?.replace(/&lt;/g, '<')?.replace(/&gt;/g, '>') || null;
+
+    const ogImage = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)?.[1] || null;
+    const ogDescription = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i)?.[1]
+      || html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i)?.[1]
+      || null;
+
+    let bodyHtml = html.match(/<article[^>]*>([\s\S]*?)<\/article>/i)?.[1]
+      || html.match(/<main[^>]*>([\s\S]*?)<\/main>/i)?.[1]
+      || html.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1]
+      || '';
+
+    bodyHtml = bodyHtml
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<nav[\s\S]*?<\/nav>/gi, '')
+      .replace(/<header[\s\S]*?<\/header>/gi, '')
+      .replace(/<footer[\s\S]*?<\/footer>/gi, '')
+      .replace(/<aside[\s\S]*?<\/aside>/gi, '');
+
+    // Strip leading heading that duplicates the page title
+    if (title) {
+      const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      bodyHtml = bodyHtml.replace(new RegExp(`^\\s*<h[1-3][^>]*>\\s*${escaped}\\s*</h[1-3]>`, 'i'), '');
+    }
+
+    // Normalize h1 → h2 (article title already shown separately)
+    bodyHtml = bodyHtml.replace(/<(\/?)h1[\s>]/gi, '<$1h2>');
+
+    // Normalize self-closing void elements
+    bodyHtml = bodyHtml.replace(/<(br|hr)\s*\/?>/gi, '<$1>');
+
+    // Decode HTML entities FIRST, so any encoded markup (e.g. &lt;script&gt;)
+    // becomes real tags and is then caught by the attribute-strip, tag
+    // allowlist, and the final DOMPurify gate below — rather than being
+    // reconstructed into live markup after filtering.
+    bodyHtml = bodyHtml
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
+
+    // Strip all attributes from remaining tags
+    bodyHtml = bodyHtml.replace(/<(\/?\w+)\s+[^>]*>/gi, '<$1>');
+
+    // Remove non-whitelisted tags (keep inner text content)
+    const ALLOWED_TAG = /^(?:p|br|h[2-4]|b|strong|em|i|u|ul|ol|li|blockquote|hr)$/i;
+    bodyHtml = bodyHtml.replace(/<(\/?)(\w+)>/gi, (full, _slash, tag) =>
+      ALLOWED_TAG.test(tag) ? full : ''
+    );
+
+    // Clean up whitespace
+    bodyHtml = bodyHtml
+      .replace(/<p>\s*<\/p>/gi, '')
+      .replace(/(<br>){3,}/gi, '<br><br>')
+      .replace(/\s*\n\s*/g, ' ')
+      .trim();
+
+    // Authoritative final gate: DOMPurify with the strict feed allowlist.
+    // Applied before truncation/word-count so downstream only sees safe HTML.
+    bodyHtml = sanitizeFeedHtml(bodyHtml);
+
+    // Word count from text-only version
+    const textOnly = bodyHtml.replace(/<[^>]*>/g, '').trim();
+    const wordCount = textOnly.split(/\s+/).filter(Boolean).length;
+
+    const content = wordCount > MAX_WORDS
+      ? WebContentAdapter.#truncateHtml(bodyHtml, MAX_WORDS)
+      : bodyHtml;
+
+    return { title, content, wordCount, ogImage, ogDescription };
+  }
+
+  /**
+   * Truncate HTML to a max word count, closing any open tags.
+   */
+  static #truncateHtml(html, maxWords) {
+    let words = 0;
+    let inTag = false;
+    let inWord = false;
+    let cutPos = html.length;
+
+    for (let i = 0; i < html.length; i++) {
+      if (html[i] === '<') { inTag = true; inWord = false; continue; }
+      if (html[i] === '>') { inTag = false; continue; }
+      if (inTag) continue;
+
+      const isSpace = /\s/.test(html[i]);
+      if (!isSpace && !inWord) {
+        words++;
+        if (words > maxWords) { cutPos = i; break; }
+        inWord = true;
+      } else if (isSpace) {
+        inWord = false;
+      }
+    }
+
+    let truncated = html.slice(0, cutPos).replace(/\s+$/, '') + '\u2026';
+
+    // Close any open tags in reverse order
+    const openTags = [];
+    for (const m of truncated.matchAll(/<(\/?)([\w]+)>/g)) {
+      const [, slash, tag] = m;
+      const lower = tag.toLowerCase();
+      if (lower === 'br' || lower === 'hr') continue;
+      if (slash) {
+        const idx = openTags.lastIndexOf(lower);
+        if (idx !== -1) openTags.splice(idx, 1);
+      } else {
+        openTags.push(lower);
+      }
+    }
+    for (let i = openTags.length - 1; i >= 0; i--) {
+      truncated += `</${openTags[i]}>`;
+    }
+
+    return truncated;
+  }
+}

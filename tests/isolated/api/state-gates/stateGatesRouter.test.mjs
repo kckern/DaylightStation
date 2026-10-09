@@ -1,7 +1,7 @@
 import express from 'express';
-import request from 'supertest';
+import request from '../../../preimplementation/application-modules/drivers/remaining-http-request.mjs';
 import { describe, expect, it, vi } from 'vitest';
-import { createEntitlementsRouter, createStateGatesRouter } from '#api/v1/routers/state-gates.mjs';
+import { createEntitlementsRouter, createStateGatesRouter } from "../../../../capabilities/state-gates/server/api/state-gates.mjs";
 
 function appWith(operations) {
   const app = express();

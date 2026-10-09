@@ -1,9 +1,9 @@
 // tests/isolated/application/feed/HeadlineService.test.mjs
 import { vi } from 'vitest';
-import { HeadlineService } from '#apps/feed/services/HeadlineService.mjs';
-import { SOURCE_BLOCKED_IMAGE_URLS } from '#adapters/feed/RssHeadlineHarvester.mjs';
-import { GOOGLE_NEWS_BLOCKED_IMAGE_PATTERNS } from '#adapters/feed/sources/GoogleNewsFeedAdapter.mjs';
-import { DataServiceFeedConfigRepository } from '#adapters/feed/DataServiceFeedConfigRepository.mjs';
+import { HeadlineService } from "../../../../modules/feed/server/application/services/HeadlineService.mjs";
+import { SOURCE_BLOCKED_IMAGE_URLS } from "../../../../modules/feed/server/adapters/RssHeadlineHarvester.mjs";
+import { GOOGLE_NEWS_BLOCKED_IMAGE_PATTERNS } from "../../../../modules/feed/server/adapters/sources/GoogleNewsFeedAdapter.mjs";
+import { DataServiceFeedConfigRepository } from "../../../../modules/feed/server/adapters/DataServiceFeedConfigRepository.mjs";
 
 // Injected as values by the composition root in prod; tests do the same.
 const blockedImageConfig = {

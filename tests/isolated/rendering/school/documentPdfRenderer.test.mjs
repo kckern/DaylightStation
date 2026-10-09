@@ -6,11 +6,11 @@
  * grades against, answer-key separation, and byte-for-byte determinism.
  */
 import { describe, it, expect } from 'vitest';
-import { createDocumentPdfRenderer } from '#rendering/school/documents/DocumentPdfRenderer.mjs';
-import { documentPdfTheme as theme } from '#rendering/school/documents/documentPdfTheme.mjs';
-import { createWorkbookTheme } from '#rendering/school/documents/workbookTheme.mjs';
-import { texToSvg } from '#rendering/school/documents/mathSvg.mjs';
-import { UnsupportedBlockError, MissingChoicesError, UnresolvedAssetError } from '#rendering/school/documents/measure.mjs';
+import { createDocumentPdfRenderer } from "../../../../modules/school/server/rendering/documents/DocumentPdfRenderer.mjs";
+import { documentPdfTheme as theme } from "../../../../modules/school/server/rendering/documents/documentPdfTheme.mjs";
+import { createWorkbookTheme } from "../../../../modules/school/server/rendering/documents/workbookTheme.mjs";
+import { texToSvg } from "../../../../modules/school/server/rendering/documents/mathSvg.mjs";
+import { UnsupportedBlockError, MissingChoicesError, UnresolvedAssetError } from "../../../../modules/school/server/rendering/documents/measure.mjs";
 import { VirtualOmrReader } from '#adapters/hardware/omr/VirtualOmrReader.mjs';
 import { pdfText } from '#testlib/school/pdfText.mjs';
 

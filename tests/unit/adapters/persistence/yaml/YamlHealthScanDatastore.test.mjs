@@ -10,10 +10,10 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 
 import { YamlHealthScanDatastore }
-  from '#adapters/persistence/yaml/YamlHealthScanDatastore.mjs';
+  from "../../../../../modules/health/server/adapters/persistence/yaml/YamlHealthScanDatastore.mjs";
 import { IHealthScanDatastore }
-  from '#apps/health/ports/IHealthScanDatastore.mjs';
-import { HealthScan } from '#domains/health/entities/HealthScan.mjs';
+  from "../../../../../modules/health/server/application/health/ports/IHealthScanDatastore.mjs";
+import { HealthScan } from "../../../../../modules/health/server/domain/health/entities/HealthScan.mjs";
 
 const USER_ID = 'test-user';
 

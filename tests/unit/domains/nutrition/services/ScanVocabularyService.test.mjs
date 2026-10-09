@@ -7,7 +7,7 @@ import {
   CONTROL_VERBS,
   RESET_CODE,
   MAX_DENSITY_CODE,
-} from '#domains/nutrition';
+} from "../../../../../modules/health/server/domain/nutrition/index.mjs";
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /**

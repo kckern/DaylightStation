@@ -1,7 +1,7 @@
 // tests/isolated/assembly/content/ContentIdResolver.test.mjs
 import { describe, it, test, expect, beforeEach } from 'vitest';
-import { ContentIdResolver } from '#apps/content/ContentIdResolver.mjs';
-import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
+import { ContentIdResolver } from "../../../../capabilities/content-catalog/server/application/ContentIdResolver.mjs";
+import { RegistryContentCatalogGateway } from "../../../../capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
 
 const catalogFor = (registry) => new RegistryContentCatalogGateway({ registry });
 

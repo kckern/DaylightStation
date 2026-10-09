@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computePianoRollLayout } from '#domains/pianoaudio/pianoRollLayout.mjs';
+import { computePianoRollLayout } from "../../../../modules/piano/server/domain/pianoaudio/pianoRollLayout.mjs";
 
 // Helper: a dense synthetic session of `count` quarter-second notes over `T` sec.
 function synthNotes(T, count, loPitch = 48, hiPitch = 84) {

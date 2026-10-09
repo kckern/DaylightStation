@@ -1,0 +1,328 @@
+@use "./feedMixins.scss" as *;
+
+// =========================================================================
+// Feed app chrome + design tokens.
+// Every Feed stylesheet consumes these custom properties — no raw hex
+// values belong in the surface stylesheets.
+// =========================================================================
+
+.feed-app {
+  // Surfaces (darkest → lightest)
+  --feed-canvas: #0f1113;
+  --feed-surface-1: #17191c;
+  --feed-surface-2: #1e2125;
+  --feed-surface-3: #262a2f;
+
+  // Borders
+  --feed-border: rgba(255, 255, 255, 0.08);
+  --feed-border-strong: rgba(255, 255, 255, 0.16);
+
+  // Text (primary → muted)
+  --feed-text-1: #f1f3f5;
+  --feed-text-2: #a9b1b9;
+  --feed-text-3: #71787f;
+
+  // Accent — one blue family
+  --feed-accent: #4dabf7;
+  --feed-accent-strong: #74c0fc;
+  --feed-accent-bg: rgba(77, 171, 247, 0.16);
+
+  // Semantic
+  --feed-danger-bg: #3a2325;
+  --feed-danger-border: #7f3b3f;
+  --feed-danger-text: #ffc9c9;
+  --feed-warning-bg: #3a3220;
+  --feed-warning-border: #8a6d1a;
+  --feed-warning-text: #ffe8a1;
+
+  // Geometry
+  --feed-radius-sm: 4px;
+  --feed-radius-md: 8px;
+  --feed-radius-lg: 12px;
+  --feed-control: 36px;
+
+  // Type
+  --feed-font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --feed-font-condensed: 'Roboto Condensed', 'Arial Narrow', system-ui, sans-serif;
+
+  // Reading surface (article body card) — overridden per reading theme below.
+  --feed-reading-surface: #17191c;
+  --feed-reading-ink: #e9ecef;
+  --feed-reading-link: #74c0fc;
+
+  height: 100vh;
+  height: 100dvh; // dynamic viewport unit avoids mobile chrome/keyboard clipping (F-24)
+  display: flex;
+  flex-direction: column;
+  background: var(--feed-canvas);
+  color: var(--feed-text-1);
+  font-family: var(--feed-font-ui);
+  overflow: hidden;
+}
+
+.feed-tabs {
+  display: flex;
+  gap: 0;
+  background: var(--feed-surface-1);
+  border-bottom: 1px solid var(--feed-border);
+  padding: 0 1rem;
+  align-items: center;
+  min-width: 0;
+
+  a {
+    padding: 0.75rem 1.5rem;
+    color: var(--feed-text-3);
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 0.9rem;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+
+    &:hover {
+      color: var(--feed-text-2);
+    }
+
+    &.active {
+      color: var(--feed-text-1);
+      border-bottom-color: var(--feed-accent);
+    }
+  }
+}
+
+.feed-tabs__spacer { flex: 1; }
+
+.feed-tabs__icon { white-space: nowrap; }
+
+.feed-edition-picker select,
+.feed-density-toggle,
+.feed-reading-settings summary {
+  min-height: var(--feed-control);
+  border: 1px solid var(--feed-border-strong);
+  border-radius: var(--feed-radius-sm);
+  background: var(--feed-surface-2);
+  color: var(--feed-text-1);
+  padding: 0.35rem 0.6rem;
+}
+
+.feed-tab-badge {
+  display: inline-flex;
+  min-width: 1.25rem;
+  min-height: 1.25rem;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.35rem;
+  border-radius: 999px;
+  background: var(--feed-accent-bg);
+  color: var(--feed-accent-strong);
+  padding: 0 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.feed-sync-status {
+  min-height: var(--feed-control);
+  border: 1px solid var(--feed-warning-border);
+  border-radius: 999px;
+  background: var(--feed-warning-bg);
+  color: var(--feed-warning-text);
+  padding: 0.3rem 0.65rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.feed-density-toggle { margin-left: 0.4rem; cursor: pointer; }
+
+.feed-reading-settings {
+  position: relative;
+  margin-left: 0.4rem;
+
+  summary {
+    min-width: 40px;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    list-style: none;
+    font-family: Georgia, serif;
+    font-weight: 700;
+  }
+
+  summary::-webkit-details-marker { display: none; }
+}
+
+.feed-reading-settings__panel {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  width: min(18rem, calc(100vw - 1rem));
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--feed-border-strong);
+  border-radius: var(--feed-radius-lg);
+  background: var(--feed-surface-2);
+  box-shadow: 0 0.8rem 2rem rgba(0, 0, 0, 0.4);
+  color: var(--feed-text-1);
+
+  label { display: grid; gap: 0.3rem; font-size: 0.82rem; }
+  select { min-height: 40px; border: 1px solid var(--feed-border-strong); border-radius: var(--feed-radius-sm); background: var(--feed-surface-3); color: inherit; padding: 0.35rem; }
+}
+
+.feed-data-controls {
+  display: grid;
+  gap: 0.35rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--feed-border);
+  font-size: 0.82rem;
+
+  > div { display: flex; gap: 0.5rem; }
+  button { flex: 1; min-height: 40px; border: 1px solid var(--feed-border-strong); border-radius: var(--feed-radius-sm); background: var(--feed-surface-3); color: inherit; cursor: pointer; }
+  button:disabled { opacity: 0.55; cursor: wait; }
+  small { color: var(--feed-text-2); line-height: 1.35; }
+}
+
+.feed-source-preferences {
+  display: grid;
+  gap: 0.35rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--feed-border);
+  font-size: 0.82rem;
+
+  > div { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+  button { min-height: 34px; border: 1px solid var(--feed-border-strong); border-radius: var(--feed-radius-sm); background: var(--feed-surface-3); color: inherit; cursor: pointer; }
+}
+
+.feed-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.feed-toast-undo {
+  border: 0;
+  background: transparent;
+  color: var(--feed-accent-strong);
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+// Compact persistent switcher shown while scrolling — keeps Reader/Headlines
+// reachable without dominating the immersive scroll view. (F-12)
+.feed-tabs--compact {
+  padding: 0 0.5rem;
+  background: rgba(23, 25, 28, 0.92);
+
+  a {
+    padding: 0.4rem 0.9rem;
+    font-size: 0.78rem;
+  }
+}
+
+.feed-content {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  &::-webkit-scrollbar { display: none; }
+  scrollbar-width: none;
+}
+
+.feed-app[data-density="comfortable"] { --feed-row-height: 48px; --feed-ui-size: 0.95rem; }
+.feed-app[data-density="compact"] { --feed-row-height: 36px; --feed-ui-size: 0.82rem; }
+
+// Reading themes drive the article body card only — the shell stays dark.
+.feed-app[data-reading-theme="sepia"] {
+  --feed-reading-surface: #f3ead7;
+  --feed-reading-ink: #30291e;
+  --feed-reading-link: #0b5cad;
+}
+
+.feed-app[data-reading-theme="light"] {
+  --feed-reading-surface: #ffffff;
+  --feed-reading-ink: #1f2328;
+  --feed-reading-link: #0b5cad;
+}
+
+.feed-app :is(.article-expanded, .detail-article) {
+  background: var(--feed-reading-surface);
+  color: var(--feed-reading-ink);
+}
+
+.feed-app :is(.article-expanded, .detail-article) :is(.article-content, h1, h2, h3, h4, strong, b) { color: inherit; }
+.feed-app :is(.article-expanded, .detail-article) a { color: var(--feed-reading-link); }
+
+@media (max-width: 600px) {
+  .feed-tabs,
+  .feed-tabs--compact {
+    padding: 0 0.35rem;
+    gap: 0;
+
+    a { padding: 0.7rem 0.55rem; font-size: 0.78rem; }
+  }
+
+  .feed-density-toggle { display: none; }
+  .feed-reading-settings { margin-left: 0; }
+  .feed-sync-status { width: 36px; padding: 0; justify-content: center; }
+  .feed-sync-status__label { display: none; }
+  .feed-edition-picker { position: absolute; top: 3.25rem; right: 0.5rem; z-index: 5; }
+}
+
+@media (min-width: 1600px) and (pointer: coarse) {
+  .feed-tabs a { min-height: 56px; display: inline-flex; align-items: center; font-size: 1.05rem; }
+  .feed-density-toggle,
+  .feed-reading-settings summary,
+  .feed-sync-status,
+  .feed-edition-picker select { min-height: 48px; font-size: 1rem; }
+}
+
+.feed-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 50vh;
+  color: var(--feed-text-3);
+  font-size: 1.2rem;
+}
+
+.feed-error {
+  width: min(34rem, calc(100% - 2rem));
+  margin: clamp(2rem, 10vh, 7rem) auto;
+  padding: 1.5rem;
+  border: 1px solid var(--feed-border-strong);
+  border-radius: var(--feed-radius-lg);
+  background: var(--feed-surface-1);
+  color: var(--feed-text-1);
+  text-align: center;
+
+  h1 { margin: 0 0 0.5rem; font-size: 1.35rem; }
+  p { margin: 0 0 1.25rem; color: var(--feed-text-2); line-height: 1.5; }
+}
+
+.feed-error__actions {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+
+  button { @include feed-chip; min-height: 44px; }
+}
+
+// Respect the user's reduced-motion preference across the whole Feed app:
+// skeleton shimmers, slide/opacity dismiss animations, sheet transitions,
+// and scroll-behavior are all neutralized. (F-14, F-24)
+@media (prefers-reduced-motion: reduce) {
+  .feed-app,
+  .feed-app * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

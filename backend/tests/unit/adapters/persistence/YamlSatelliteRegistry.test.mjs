@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { YamlSatelliteRegistry } from '../../../../src/1_adapters/persistence/yaml/YamlSatelliteRegistry.mjs';
+import { YamlSatelliteRegistry } from "../../../../../modules/concierge/server/adapters/persistence/YamlSatelliteRegistry.mjs";
 
 function makeFakeConfigService(yaml, secrets = {}) {
   return {

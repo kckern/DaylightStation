@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import getLogger from '../../../../frontend/src/lib/logging/Logger.js';
-import { musicXmlToNotes } from '@shared-music/musicXmlToNotes.mjs';
-import { queryLoops, facets } from '@shared-music/loopQuery.mjs';
-import { rankLayerCandidates } from '@shared-music/layerMatch.mjs';
+import { musicXmlToNotes } from "../../../../capabilities/music-notation/portable/musicXmlToNotes.mjs";
+import { queryLoops, facets } from "../../../../capabilities/music-notation/portable/loopQuery.mjs";
+import { rankLayerCandidates } from "../../../../capabilities/music-notation/portable/layerMatch.mjs";
 
 /**
  * useLoopLibrary — loads the backend loop-manifest (one fetch, cached for the

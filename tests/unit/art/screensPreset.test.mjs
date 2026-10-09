@@ -1,10 +1,12 @@
+import { FilesystemArtScreenPresetRepository } from '../../../modules/art/server/adapters/FilesystemArtScreenPresetRepository.mjs';
+import { createArtScreenPresetEnricher } from '../../../modules/art/server/application/screenPresetEnricher.mjs';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
 import { createScreensRouter } from '../../../backend/src/4_api/v1/routers/screens.mjs';
-import { ScreensQueryService } from '#apps/screens/ScreensQueryService.mjs';
-import { FilesystemScreensRepository } from '#adapters/persistence/files/FilesystemScreensRepository.mjs';
+import { ScreensQueryService } from "../../../capabilities/screen-host/server/application/ScreensQueryService.mjs";
+import { FilesystemScreensRepository } from "../../../capabilities/screen-host/server/adapters/persistence/FilesystemScreensRepository.mjs";
 
 let dataPath;
 const logger = { debug() {}, info() {}, warn() {}, error() {} };
@@ -30,7 +32,17 @@ const call = async (id) => {
     householdDir: path.join(dataPath, 'household'),
     logger,
   });
-  const screensQueryService = new ScreensQueryService({ screensRepository, logger });
+  const screensQueryService = new ScreensQueryService({
+    screensRepository,
+    logger,
+    expandScreensaverPreset: createArtScreenPresetEnricher({
+      repository: new FilesystemArtScreenPresetRepository({
+        householdDir: path.join(dataPath, 'household'),
+        logger,
+      }),
+      logger,
+    }),
+  });
   await getHandler(createScreensRouter({
     screensQueryService,
     logger,

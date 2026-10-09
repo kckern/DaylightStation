@@ -4,9 +4,9 @@ import { render, screen, waitFor, fireEvent, within } from '@testing-library/rea
 import React from 'react';
 import { MantineProvider } from '@mantine/core';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
-import { GoalsView } from '#frontend/modules/Life/views/plan/GoalsView.jsx';
-import { ValuesView } from '#frontend/modules/Life/views/plan/ValuesView.jsx';
-import { BeliefsView } from '#frontend/modules/Life/views/plan/BeliefsView.jsx';
+import { GoalsView } from "../../../../modules/life/browser/views/plan/GoalsView.jsx";
+import { ValuesView } from "../../../../modules/life/browser/views/plan/ValuesView.jsx";
+import { BeliefsView } from "../../../../modules/life/browser/views/plan/BeliefsView.jsx";
 
 const renderAt = (element, initial = '/life/plan') => render(
   <MantineProvider>

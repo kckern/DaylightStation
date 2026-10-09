@@ -1,3 +1,4 @@
+import {contentRequiresCamera} from '../../../../backend/src/5_composition/policies/contentRequiresCamera.mjs';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
 import { EventBusDeviceTransportGateway } from '#adapters/devices/EventBusDeviceTransportGateway.mjs';
@@ -36,7 +37,7 @@ describe('WakeAndLoadService — end-behavior propagation', () => {
       subscribe: vi.fn().mockReturnValue(() => {}),
     };
     device = makeDevice();
-    svc = new WakeAndLoadService({
+    svc = new WakeAndLoadService({ contentRequiresCamera,
       ...testApplicationRuntime(),
       deviceService: { get: vi.fn().mockReturnValue(device) },
       readinessPolicy: { isReady: vi.fn().mockResolvedValue({ ready: true }) },

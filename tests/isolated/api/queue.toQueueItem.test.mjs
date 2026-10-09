@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toQueueItem } from '../../../backend/src/4_api/v1/routers/queue.mjs';
+import { toQueueItem } from "../../../capabilities/playback/server/api/queue.mjs";
 
 describe('toQueueItem', () => {
   it('passes through titlecard payload', () => {

@@ -1,5 +1,5 @@
 // tests/unit/suite/fitness/suggestions/ResumeStrategy.test.mjs
-import { ResumeStrategy } from '../../../../../backend/src/3_applications/fitness/suggestions/ResumeStrategy.mjs';
+import { ResumeStrategy } from "../../../../../modules/fitness/server/application/suggestions/ResumeStrategy.mjs";
 
 function makeSession(showId, showTitle, contentId, episodeTitle, date) {
   return {

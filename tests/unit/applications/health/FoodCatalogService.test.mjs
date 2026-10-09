@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { FoodCatalogService } from '#apps/health/FoodCatalogService.mjs';
-import { FoodCatalogEntry } from '#domains/health/entities/FoodCatalogEntry.mjs';
+import { FoodCatalogService } from "../../../../modules/health/server/application/health/FoodCatalogService.mjs";
+import { FoodCatalogEntry } from "../../../../modules/health/server/domain/health/entities/FoodCatalogEntry.mjs";
 
 describe('FoodCatalogService quick-add', () => {
   it('persists the item and catalog usage with the same current date', async () => {

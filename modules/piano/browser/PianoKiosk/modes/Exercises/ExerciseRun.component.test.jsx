@@ -113,7 +113,7 @@ vi.mock('./KeysAsk.jsx', () => ({
 // The renderer is doubled; `sequenceStaffViewBox` is NOT — the run uses it to
 // size the staff's box, and a stubbed ratio would let a real sizing mistake
 // through while the test kept measuring the stub's.
-vi.mock('../../../../../../frontend/src/modules/MusicNotation/renderers/SvgSequenceStaff.jsx', async (importOriginal) => ({
+vi.mock("../../../../../../capabilities/music-notation/browser/renderers/SvgSequenceStaff.jsx", async (importOriginal) => ({
   ...(await importOriginal()),
   SvgSequenceStaff: (props) => (
     <div

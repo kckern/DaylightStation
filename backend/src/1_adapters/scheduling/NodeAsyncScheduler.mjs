@@ -1,4 +1,4 @@
-import { IAsyncScheduler } from '#apps/school/ports/IAsyncScheduler.mjs';
+import { IAsyncScheduler } from '#apps/common/ports/IAsyncScheduler.mjs';
 
 /** Node runtime implementation of School's scheduling capability. */
 export class NodeAsyncScheduler extends IAsyncScheduler {

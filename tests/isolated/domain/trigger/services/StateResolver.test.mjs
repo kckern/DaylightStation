@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { StateResolver } from '#domains/trigger/services/StateResolver.mjs';
+import { StateResolver } from "../../../../../capabilities/device-dispatch/server/domain/services/StateResolver.mjs";
 
 const baseRegistry = {
   locations: {

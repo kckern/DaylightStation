@@ -1,8 +1,10 @@
+import path from 'node:path';
+import { tmpdir } from 'node:os';
 import express from 'express';
-import request from 'supertest';
+import request from '../../preimplementation/application-modules/drivers/content-api-request.mjs';
 import { describe, expect, it, vi } from 'vitest';
-import { createContentRegistry } from '#composition/bootstrap.mjs';
-import { createApiRouters } from '#composition/modules/contentApi.mjs';
+import { createContentRegistry } from '#composition/contentRegistry.mjs';
+import { createApiRouters } from "../../../backend/src/5_composition/modules/contentApi.mjs";
 import { LibbyStreamLeaseService } from '#adapters/content/media/libby/LibbyStreamLeaseService.mjs';
 
 describe('Libby browser playback flow', () => {
@@ -36,7 +38,7 @@ describe('Libby browser playback flow', () => {
       registry,
       mediaProgressMemory: { findProgress: async () => null },
       menuMemoryRepository: { load: () => ({}), save: () => undefined },
-      dataPath: '/tmp/libby-flow-data', mediaBasePath: '/tmp/libby-flow-media',
+      dataPath: path.join(tmpdir(), 'libby-flow-data'), mediaBasePath: path.join(tmpdir(), 'libby-flow-media'),
       configService, libbyStreamService,
       logger: { child() { return this; }, debug: vi.fn(), warn: vi.fn(), info: vi.fn() },
     });

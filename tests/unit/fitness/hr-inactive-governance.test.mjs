@@ -11,7 +11,7 @@ jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
   })
 }));
 
-const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
+const { GovernanceEngine } = await import("../../../modules/fitness/browser/hooks/fitness/GovernanceEngine.js");
 
 const ZONE_CONFIG = [
   { id: 'cool', name: 'Cool', color: '#3399ff' },

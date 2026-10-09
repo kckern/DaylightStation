@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { HubStatusBroadcaster } from '../../../backend/src/3_applications/playback-hub/runtime/HubStatusBroadcaster.mjs';
-import { FakeHubGateway } from '../../../backend/src/3_applications/playback-hub/test/FakeHubGateway.mjs';
-import { SlotStatus } from '../../../backend/src/2_domains/playback-hub/value-objects/SlotStatus.mjs';
+import { HubStatusBroadcaster } from "../../../modules/media/server/application/playback-hub/runtime/HubStatusBroadcaster.mjs";
+import { FakeHubGateway } from "../../../modules/media/server/application/playback-hub/test/FakeHubGateway.mjs";
+import { SlotStatus } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotStatus.mjs";
 const statusFromFixture = value => new SlotStatus({ ...value, position: value.slot ?? value.position });
 
 /**

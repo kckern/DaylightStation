@@ -16,18 +16,18 @@
  */
 import { useLayoutEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ClefGlyph } from '@/modules/MusicNotation/renderers/staffGlyphs.jsx';
+import { ClefGlyph } from "../../../../capabilities/music-notation/browser/renderers/staffGlyphs.jsx";
 import BoardGameFrame from '../../../../modules/piano/browser/game-platform/host/BoardGameFrame.jsx';
 import { GameRail, GameSlot, GameStatusBar } from '../../../../modules/piano/browser/game-platform/chrome/index.js';
-import ChessBoard from '@/modules/Chess/ChessBoard.jsx';
+import ChessBoard from "../../../../modules/chess/browser/ChessBoard.jsx";
 import AddressRail from '../../../../modules/piano/browser/game-platform/families/addressed-board/AddressRail.jsx';
 import { StaffClefLabel, StaffNoteLabel } from '../../../../modules/piano/browser/game-platform/families/addressed-board/StaffNoteLabel.jsx';
 import { BOARD_LAYOUTS } from '../../../../modules/piano/browser/game-platform/families/addressed-board/contracts.js';
 import { PianoFullscreenProvider } from '../../../../modules/piano/browser/PianoKiosk/PianoFullscreenContext.jsx';
-import { rimAxisClef, rimStaffExtent } from '@/modules/MusicNotation/renderers/RimStaffRenderer.jsx';
+import { rimAxisClef, rimStaffExtent } from "../../../../capabilities/music-notation/browser/renderers/RimStaffRenderer.jsx";
 import ChordNamePanel from '../../../../modules/piano/browser/components/ChordNamePanel.jsx';
 import CurrentChordStaff from '../../../../modules/piano/browser/components/CurrentChordStaff.jsx';
-import '../../../../modules/piano/browser/components/ActionStaff.scss';
+import "../../../../capabilities/music-notation/browser/styles/ActionStaff.scss";
 import '../../../../modules/piano/browser/PianoChessGame/PianoChessGame.scss';
 import '../../../../modules/piano/browser/PianoCheckers/PianoCheckers.scss';
 import '../../../../modules/piano/browser/PianoConnectFour/PianoConnectFour.scss';

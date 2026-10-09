@@ -1,0 +1,1070 @@
+// backend/src/2_adapters/nutribot/NutribotInputRouter.mjs
+
+import { BaseInputRouter } from '#apps/common/input/BaseInputRouter.mjs';
+import { decodeCallback, CallbackActions } from "../lib/callback.mjs";
+import { stampUnsettled } from "../../../../health/server/nutrition-records.mjs";
+import { NutribotScaleRefusal } from "../ports/NutribotScaleRefusal.mjs";
+import { MealTimes } from "../../../../health/server/nutrition-values.mjs";
+import { UPC_REJECTED } from "../usecases/LogFoodFromUPC.mjs";
+
+/**
+ * Nutribot Input Router
+ *
+ * Routes IInputEvents to Nutribot use cases.
+ * Transforms platform-agnostic events to use case input shapes.
+ */
+/** Voice retries currently being processed, by `${conversationId}:${messageId}`. */
+// How long an open text flow (a revision, a scale "describe it") owns what is
+// said next. Without a bound, a revision whose own reply failed stayed open and
+// swallowed the next meal: on 2026-09-25 a dinner voice note, 31 hours after
+// Revise was tapped on the previous day's lunch, replaced that lunch.
+export const OPEN_FLOW_TTL_MS = 30 * 60 * 1000;
+const TEXT_FLOWS = ['revision', 'scale_describe'];
+
+const voiceRetriesInFlight = new Set();
+
+// Meal words for /fast and /reopen, mapped to the day's meal buckets.
+const MEAL_WORDS = Object.freeze({
+  breakfast: { id: 'morning', label: 'Breakfast' },
+  lunch: { id: 'afternoon', label: 'Lunch' },
+  dinner: { id: 'evening', label: 'Dinner' },
+  snacks: { id: 'night', label: 'Snacks' },
+  snack: { id: 'night', label: 'Snacks' },
+});
+
+export class NutribotInputRouter extends BaseInputRouter {
+  #userResolver;
+  #userIdentityService;
+  #aiGatewayAvailable;
+  #cleanupProvider;
+  #flowTtlMs;
+  #now;
+
+  /**
+   * @param {import('../../3_applications/nutribot/NutribotContainer.mjs').NutribotContainer} container
+   * @param {Object} [options]
+   * @param {import('../identity/ConfigUserResolver.mjs').ConfigUserResolver} [options.userResolver] - For resolving platform users to system usernames
+   * @param {import('../../2_domains/messaging/services/UserIdentityService.mjs').UserIdentityService} [options.userIdentityService] - Domain identity service (preferred)
+   * @param {Object} [options.logger]
+   */
+  constructor(container, options = {}) {
+    super(container, options);
+    this.#userIdentityService = options.userIdentityService || null;
+    this.#userResolver = options.userResolver;
+    this.#aiGatewayAvailable = options.aiGatewayAvailable !== false;
+    this.#cleanupProvider = options.cleanupProvider;
+    this.#flowTtlMs = options.flowTtlMs ?? OPEN_FLOW_TTL_MS;
+    this.#now = options.now ?? (() => Date.now());
+  }
+
+  async route(event, responseContext = null) {
+    if (event.platform === 'telegram') {
+      const handled = await this.#cleanupProvider?.()?.handleTelegram(this.#resolveUserId(event), event, responseContext);
+      if (handled) return { ok: true, handled: true };
+    }
+    return super.route(event, responseContext);
+  }
+
+  // ==================== Auto-commit seam ====================
+
+  reviewPending(input) { return this.container.getFoodLogReview().execute(input); }
+  //
+  // Captures are counted provisionally through FoodLogReview. UPC and scale
+  // capture use that boundary directly; text/image are committed here. Only
+  // after the ledger commit do we ask the sole receipt publisher to refresh.
+
+  /**
+   * Run a capture use case through the auto-commit seam.
+   * @private
+   * @param {Object} event
+   * @param {Object|null} responseContext
+   * @param {Object} opts
+   * @param {string} opts.source - capture kind, for logs
+   * @param {boolean} opts.commit - run the accept path (false for multi-step flows)
+   * @param {(responseContext: Object|null) => Promise<any>} run
+   */
+  async #capture(event, responseContext, { source, commit }, run) {
+    const result = await run(responseContext);
+    const logId = result?.nutrilogUuid || null;
+
+    if (!logId && result?.committed) return { ok: true, result, committed: true, items: result.items || [], mealTime: result.bucket || event.payload.bucket, moved: false };
+
+    if (!logId) {
+      this.logger.debug?.('nutribot.capture.noLog', { source, conversationId: event.conversationId });
+      return { ok: true, result, committed: false, logId: null, items: [], mealTime: null, moved: false };
+    }
+
+    const userId = this.#resolveUserId(event);
+    const items = await this.#stampUnsettled(userId, logId, source);
+    if (result.committed) return { ok: true, result, committed: true, logId, items, mealTime: result.mealTime, moved: false };
+    const { mealTime, moved } = await this.#resolveMealTime({
+      userId,
+      logId,
+      source,
+      bucket: event.payload?.bucket || null,
+      parsedMealTime: result?.mealTime ?? null,
+      parsedMealTimeExplicit: result?.mealTimeExplicit === true,
+    });
+
+    if (!commit) {
+      this.logger.debug?.('nutribot.capture.stampedOnly', { source, logId, itemCount: items.length });
+      return { ok: true, result, committed: false, logId, items, mealTime, moved };
+    }
+
+    const committed = await this.#commitCapture({
+      userId,
+      conversationId: event.conversationId,
+      logId,
+      responseContext,
+      source,
+    });
+
+    if (committed) await this.container.getReceiptPublisher?.()?.refresh(userId, logId);
+
+    return { ok: true, result, committed, logId, items, mealTime, moved };
+  }
+
+  /**
+   * Meal-time precedence — the ONE place this decision is made.
+   *
+   * Precedence: explicit-in-utterance/caption > bucket param > clock (the
+   * clock default is already baked into the log's meal.time by the use case
+   * that created it, via `getMealTimeFromHour` — untouched here means "keep
+   * the clock default", which is what preserves backward compatibility for
+   * every caller that never sends a `bucket`: Telegram, the coach, the scale).
+   *
+   * `moved` reports the ONLY case worth surfacing to the UI: the user asked
+   * for one bucket (by launching the capture from it) but named a DIFFERENT
+   * meal out loud, and that named meal won. Overriding a clock default with a
+   * bucket, or matching the requested bucket, is not a "move" — it's just the
+   * capture landing where it was asked to.
+   *
+   * @private
+   * @param {Object} opts
+   * @param {string} opts.userId
+   * @param {string} opts.logId
+   * @param {string} opts.source - capture kind, for logs
+   * @param {string|null} opts.bucket - validated bucket id from the request, or null
+   * @param {string|null} opts.parsedMealTime - the meal time the AI parse reported
+   * @param {boolean} opts.parsedMealTimeExplicit - true only when the AI parse says the
+   *   user named/implied a meal explicitly
+   * @returns {Promise<{ mealTime: string|null, moved: boolean }>}
+   */
+  async #resolveMealTime({ userId, logId, source, bucket, parsedMealTime, parsedMealTimeExplicit }) {
+    let store = null;
+    try {
+      store = this.container.getFoodLogStore?.();
+    } catch {
+      store = null;
+    }
+    if (!store?.findByUuid || !store?.save) return { mealTime: null, moved: false };
+
+    let log;
+    try {
+      log = await store.findByUuid(logId, userId);
+    } catch (e) {
+      this.logger.warn?.('nutribot.capture.mealTime.fetchFailed', { source, logId, error: e.message });
+      return { mealTime: null, moved: false };
+    }
+    if (!log) return { mealTime: null, moved: false };
+
+    const currentMealTime = log.meal?.time || null;
+    const validBucket = MealTimes.includes(bucket) ? bucket : null;
+    const explicit = parsedMealTimeExplicit === true && MealTimes.includes(parsedMealTime);
+
+    const resolvedMealTime = explicit ? parsedMealTime : (validBucket || currentMealTime);
+    const moved = explicit && !!validBucket && parsedMealTime !== validBucket;
+
+    if (resolvedMealTime && resolvedMealTime !== currentMealTime) {
+      try {
+        const mealDate = log.meal?.date;
+        await store.save(log.updateDate(mealDate, resolvedMealTime, new Date()));
+      } catch (e) {
+        this.logger.warn?.('nutribot.capture.mealTime.saveFailed', { source, logId, error: e.message });
+        return { mealTime: currentMealTime, moved: false };
+      }
+    }
+
+    if (moved) {
+      this.logger.info?.('nutribot.capture.mealMoved', {
+        source, logId, requestedBucket: validBucket, resolvedMealTime,
+      });
+    } else if (explicit && resolvedMealTime !== currentMealTime) {
+      // No requested-bucket conflict to report as "moved" (no bucket was sent,
+      // or the explicit meal happened to match it) — but the entry still
+      // deviated from the clock default because a meal was named explicitly.
+      // Distinct event name (not just a `moved` field) so a log query for
+      // "did the explicit-meal signal ever fire" doesn't have to also filter
+      // on a boolean that's false by construction here.
+      this.logger.info?.('nutribot.capture.mealTimeExplicitApplied', {
+        source, logId, requestedBucket: validBucket, resolvedMealTime, clockDefault: currentMealTime,
+      });
+    }
+
+    return { mealTime: resolvedMealTime, moved };
+  }
+
+  /**
+   * Stamp `settled: false` on every item of a freshly parsed log.
+   * Written verbatim — never `?? false` — because an ABSENT `settled` key is
+   * the migration signal for legacy rows.
+   * @private
+   * @returns {Promise<Object[]>} the stamped item records
+   */
+  async #stampUnsettled(userId, logId, source) {
+    let store = null;
+    try {
+      store = this.container.getFoodLogStore?.();
+    } catch {
+      store = null;
+    }
+    // Delegated, not duplicated: the scale commit path (`ObservationService`) has to
+    // produce an entry indistinguishable from a capture, so the stamp has exactly one
+    // implementation and both callers reach it. Log events are unchanged.
+    return await stampUnsettled({ foodLogStore: store, userId, logId, source, logger: this.logger });
+  }
+
+  /**
+   * Run the accept path on a freshly captured log.
+   * `messageId` is deliberately omitted: the capture message has already been
+   * sent (with Undo/Edit), and AcceptFoodLog would otherwise strip its buttons.
+   * @private
+   * @returns {Promise<boolean>}
+   */
+  async #commitCapture({ userId, conversationId, logId, responseContext, source }) {
+    try {
+      const useCase = this.container.getAcceptFoodLog();
+      // autoReport:false — with the pending gate retired `findPending` is always
+      // empty, so the accept path's auto-report would fire a full daily report
+      // (rendered image + coaching kick, after a 300ms pause) inline in EVERY
+      // capture request. Manual Accept paths keep the report.
+      const accepted = await useCase.execute({
+        userId, conversationId, logUuid: logId, responseContext, autoReport: false, provisional: true,
+      });
+      if (accepted?.success === false) {
+        this.logger.warn?.('nutribot.capture.commitRefused', { source, logId, error: accepted.error });
+        return false;
+      }
+      this.logger.info?.('nutribot.capture.committed', {
+        source,
+        conversationId,
+        logId,
+        itemCount: accepted?.itemCount ?? null,
+      });
+      await this.#notifyMealCoaching(userId, logId, source);
+      return true;
+    } catch (e) {
+      this.logger.error?.('nutribot.capture.commitFailed', { source, logId, error: e.message });
+      return false;
+    }
+  }
+
+  // ==================== Event Handlers ====================
+
+  async handleText(event, responseContext) {
+    const conversationStateStore = event.platform === 'web' ? null : this.container.getConversationStateStore?.();
+
+    if (!conversationStateStore) {
+      this.logger.debug?.('nutribot.handleText.noStateStore');
+    }
+
+    if (conversationStateStore) {
+      try {
+        const state = await this.#liveFlowState(conversationStateStore, event.conversationId);
+        const pendingLogUuid = state?.flowState?.pendingLogUuid;
+
+        this.logger.debug?.('nutribot.handleText.stateCheck', {
+          conversationId: event.conversationId,
+          hasState: !!state,
+          activeFlow: state?.activeFlow || null,
+          hasPendingLogUuid: !!pendingLogUuid,
+        });
+
+        if (state?.activeFlow === 'revision' && pendingLogUuid) {
+          this.logger.info?.('nutribot.handleText.revisionRouted', {
+            conversationId: event.conversationId,
+            pendingLogUuid,
+            text: event.payload.text?.substring(0, 50),
+          });
+          const useCase = this.container.getProcessRevisionInput();
+          const result = await useCase.execute({
+            userId: this.#resolveUserId(event),
+            conversationId: event.conversationId,
+            logUuid: pendingLogUuid,
+            text: event.payload.text,
+            messageId: event.messageId,
+            responseContext,
+          });
+          return { ok: true, result };
+        }
+
+        if (state?.activeFlow === 'scale_describe' && pendingLogUuid) {
+          if (!this.#aiGatewayAvailable) {
+            return this.#aiUnavailable(event, responseContext, 'Food analysis is temporarily unavailable. Please try again shortly.');
+          }
+          this.logger.info?.('nutribot.handleText.scaleDescribeRouted', {
+            conversationId: event.conversationId,
+            pendingLogUuid,
+          });
+          const useCase = this.container.getLogScaleFoodFromText();
+          const result = await this.#executeScale(() => useCase.execute({
+            userId: this.#resolveUserId(event),
+            conversationId: event.conversationId,
+            logUuid: pendingLogUuid,
+            text: event.payload.text,
+            messageId: event.messageId,
+            responseContext,
+          }));
+          return { ok: true, result };
+        }
+      } catch (e) {
+        this.logger.warn?.('nutribot.handleText.stateCheck.error', {
+          conversationId: event.conversationId,
+          error: e.message,
+        });
+        // A failed revision is not a fresh food capture. Falling through here
+        // would turn a conflict or AI outage into duplicate consumption.
+        throw e;
+      }
+    }
+
+    // Default: log new food
+    if (!this.#aiGatewayAvailable) {
+      return this.#aiUnavailable(event, responseContext, 'Food analysis is temporarily unavailable. Please try again shortly.');
+    }
+    const useCase = this.container.getLogFoodFromText();
+    return await this.#capture(event, responseContext, { source: 'text', commit: true }, (rc) =>
+      useCase.execute({
+        userId: this.#resolveUserId(event),
+        conversationId: event.conversationId,
+        text: event.payload.text,
+        messageId: event.messageId,
+        // The day the person is LOOKING AT becomes the parse's "today", so a
+        // relative phrase ("this morning") resolves against that day. A date
+        // the utterance names still wins — same precedence as the meal.
+        asOfDate: event.payload.date || null,
+        interpretText: event.payload.interpretText,
+        responseContext: rc,
+      }));
+  }
+
+  async handleImage(event, responseContext) {
+    if (!this.#aiGatewayAvailable) {
+      return this.#aiUnavailable(event, responseContext, 'Image nutrition analysis is temporarily unavailable. Please describe the food instead.');
+    }
+    const useCase = this.container.getLogFoodFromImage();
+    return await this.#capture(event, responseContext, { source: 'image', commit: true }, (rc) =>
+      useCase.execute({
+        userId: this.#resolveUserId(event),
+        conversationId: event.conversationId,
+        imageData: {
+          fileId: event.payload.fileId,
+          // Web path: a data URL set by WebNutribotAdapter. LogFoodFromImage only
+          // consults `url` when `fileId` is falsy, so Telegram's fileId-driven
+          // resolution is unaffected.
+          url: event.payload.imageUrl,
+          caption: event.payload.text,
+        },
+        messageId: event.messageId,
+        date: event.payload.date || null,
+        responseContext: rc,
+      }));
+  }
+
+  async handleVoice(event, responseContext) {
+    if (!this.#aiGatewayAvailable) {
+      return this.#aiUnavailable(event, responseContext, 'Voice nutrition analysis is temporarily unavailable. Please describe the food instead.');
+    }
+    const useCase = this.container.getLogFoodFromVoice();
+    // A Telegram voice file stays fetchable by id, so a failed transcription
+    // can be retried from a button without re-recording.
+    const retryable = event.platform === 'telegram' && typeof event.payload.fileId === 'string';
+    const input = (rc) => ({
+      userId: this.#resolveUserId(event),
+      conversationId: event.conversationId,
+      voiceData: {
+        fileId: event.payload.fileId,
+        // Set only on the web path, where the bytes were written to the
+        // user's store before this call. It is what lets a failed
+        // transcription say "your recording is saved" truthfully.
+        audioRef: event.payload.fileId?.audioRef || null,
+      },
+      messageId: event.messageId,
+      asOfDate: event.payload.date || null,
+      interpretText: event.payload.interpretText,
+      responseContext: rc,
+      offerRetry: retryable,
+    });
+
+    // An open flow (a revision, a scale "describe it") owns what is said next,
+    // spoken or typed. Voice used to bypass it and log a NEW meal, so a spoken
+    // revision never reached the log it was revising.
+    const flow = await this.#openTextFlow(event);
+    if (flow) {
+      this.logger.info?.('nutribot.handleVoice.flowRouted', { conversationId: event.conversationId, flow });
+      const result = await useCase.execute({ ...input(responseContext),
+        routeTranscript: (text) => this.handleText({ ...event, type: 'text', payload: { ...event.payload, text } }, responseContext) });
+      await this.#rememberVoiceRetry(event, result);
+      return result?.ok !== undefined ? result : { ok: true, result };
+    }
+
+    const captured = await this.#capture(event, responseContext, { source: 'voice', commit: true }, (rc) => useCase.execute(input(rc)));
+    await this.#rememberVoiceRetry(event, captured?.result);
+    return captured;
+  }
+
+  /** The open text flow for this conversation ('revision' | 'scale_describe'), or null. */
+  async #openTextFlow(event) {
+    if (event.platform === 'web') return null;
+    try {
+      const store = this.container.getConversationStateStore?.();
+      const state = store ? await this.#liveFlowState(store, event.conversationId) : null;
+      return TEXT_FLOWS.includes(state?.activeFlow) && state?.flowState?.pendingLogUuid ? state.activeFlow : null;
+    } catch (e) {
+      this.logger.warn?.('nutribot.handleVoice.stateCheck.error', { conversationId: event.conversationId, error: e.message });
+      return null;
+    }
+  }
+
+  /**
+   * The conversation's root state, with an open text flow closed once it is
+   * older than the TTL. The age comes from `flowState.openedAt`, stamped when
+   * the flow opens; a flow without one predates the stamp and is closed too.
+   * Closing writes an empty root (sessions, e.g. a pending voice retry, stay).
+   */
+  async #liveFlowState(store, conversationId) {
+    const state = await store.get(conversationId);
+    if (!TEXT_FLOWS.includes(state?.activeFlow)) return state;
+    const openedAt = Date.parse(state.flowState?.openedAt ?? '');
+    const ageMs = Number.isFinite(openedAt) ? this.#now() - openedAt : null;
+    if (ageMs !== null && ageMs <= this.#flowTtlMs) return state;
+    this.logger.info?.('nutribot.flow.expired', {
+      conversationId, flow: state.activeFlow, pendingLogUuid: state.flowState?.pendingLogUuid ?? null, ageMs,
+    });
+    await store.set(conversationId, { conversationId, activeFlow: null, flowState: {} });
+    return null;
+  }
+
+  /**
+   * After a failed transcription that offered 🔄 Retry, remember the voice file
+   * under that message's own session — never the root flow, so an open
+   * revision survives the failure and the retry lands in it.
+   */
+  async #rememberVoiceRetry(event, result) {
+    if (result?.code !== 'TRANSCRIBE_FAILED' || !result.retryMessageId) return;
+    try {
+      await this.container.getConversationStateStore?.()?.set(event.conversationId,
+        { voiceRetry: { fileId: event.payload.fileId, voiceMessageId: event.messageId ?? null, at: new Date().toISOString() } },
+        String(result.retryMessageId));
+    } catch (e) {
+      this.logger.warn?.('nutribot.voiceRetry.saveFailed', { conversationId: event.conversationId, error: e.message });
+    }
+  }
+
+  async handleUpc(event, responseContext) {
+    const useCase = this.container.getLogFoodFromUPC();
+    // The UPC use case owns capture for hardware and interactive transports.
+    try {
+      return await this.#capture(event, responseContext, { source: 'barcode', commit: false }, (rc) =>
+        useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          upc: event.payload.text,
+          messageId: event.messageId,
+          operationId: event.payload.operationId || event.operationId,
+          bucket: event.payload.bucket || null,
+          date: event.payload.date || null,
+          responseContext: rc,
+        }));
+    } catch (error) {
+      // A malformed code (bad check digit, an ISBN, a glued read that did not
+      // collapse) is a refusal, not a failure: one short line to the person
+      // (Telegram shows it; the web capture context carries it to Health).
+      if (error?.code !== UPC_REJECTED) throw error;
+      const reason = error.context?.reason ?? null;
+      this.logger.info?.('nutribot.upc.rejected', { conversationId: event.conversationId, reason });
+      try { await responseContext?.sendMessage?.(error.message, {}); } catch (sendError) {
+        this.logger.warn?.('nutribot.upc.rejected.replyFailed', { error: sendError.message });
+      }
+      return { ok: false, code: UPC_REJECTED, rejected: reason, message: error.message };
+    }
+  }
+
+  #aiUnavailable(event, responseContext, message) {
+    this.logger.warn?.('nutribot.ai.unavailable', {
+      conversationId: event.conversationId,
+      type: event.type,
+    });
+    return Promise.resolve(responseContext?.sendMessage?.(message))
+      .then(() => ({ ok: false, code: 'AI_UNAVAILABLE', error: message }));
+  }
+
+  async handleCallback(event, responseContext) {
+    const decoded = decodeCallback(event.payload.callbackData);
+
+    // Support both new format (a key) and legacy format (cmd key with short codes)
+    let action = decoded.a || decoded.cmd;
+
+    // Map legacy short codes to action constants
+    const legacyActionMap = {
+      a: CallbackActions.ACCEPT_LOG,
+      r: CallbackActions.REVISE_ITEM,
+      x: CallbackActions.REJECT_LOG,
+      ir: CallbackActions.RETRY_IMAGE,
+      vr: CallbackActions.RETRY_VOICE,
+      rs: CallbackActions.RESTORE_LOG,
+    };
+    if (legacyActionMap[action]) {
+      action = legacyActionMap[action];
+    }
+
+    // Note: Callback acknowledgement is handled by createBotWebhookHandler
+
+    switch (action) {
+      case CallbackActions.ACCEPT_LOG: {
+        const useCase = this.container.getAcceptFoodLog();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          logUuid: decoded.id,
+          messageId: event.messageId,
+          responseContext,
+          // App confirmation completes independently; optional surface reports
+          // are regenerated from the committed ledger by the sync worker.
+          autoReport: event.platform !== 'web',
+        });
+      }
+      case CallbackActions.REJECT_LOG: {
+        const useCase = this.container.getDiscardFoodLog();
+        const userId = this.#resolveUserId(event);
+        const result = await useCase.execute({
+          userId,
+          conversationId: event.conversationId,
+          logUuid: decoded.id,
+          messageId: event.messageId,
+          responseContext,
+        });
+        // Undo changes today's totals: the pending (or standing) post-meal
+        // message is re-armed so it reflects what is actually left.
+        await this.#notifyMealCoaching(userId, decoded.id, 'undo');
+        return result;
+      }
+      case CallbackActions.REVISE_ITEM: {
+        const useCase = this.container.getReviseFoodLog();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          logUuid: decoded.logId || decoded.id,
+          entryId: decoded.entryId || decoded.itemId,
+          messageId: event.messageId,
+          responseContext,
+        });
+      }
+      case 'p': {
+        // Portion selection (from UPC flow)
+        const useCase = this.container.getSelectUPCPortion();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          logUuid: decoded.id,
+          portionFactor: decoded.f,
+          messageId: event.messageId,
+          responseContext,
+        });
+      }
+      case 'st': {
+        // Scale tare — decoded.c absent = show the container picker; present = subtract it
+        const useCase = this.container.getSelectScaleContainer();
+        return await this.#executeScale(() => useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          logUuid: decoded.id,
+          containerId: decoded.c,
+          messageId: event.messageId,
+          responseContext,
+        }));
+      }
+      case 'sd': {
+        // Scale density — resolve calories from tapped level
+        const useCase = this.container.getSelectScaleDensity();
+        return await this.#executeScale(() => useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          logUuid: decoded.id,
+          level: decoded.l,
+          messageId: event.messageId,
+          responseContext,
+        }));
+      }
+      case 'sh': {
+        // Scale help — toggle the density legend in place (h:1 show, h:0 back)
+        const useCase = this.container.getShowScaleDensityHelp();
+        return await this.#executeScale(() => useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          logUuid: decoded.id,
+          showHelp: decoded.h === 1 || decoded.h === '1',
+          messageId: event.messageId,
+          responseContext,
+        }));
+      }
+      case 'ra': {
+        // Report Adjust - start adjustment flow
+        const useCase = this.container.getStartAdjustmentFlow();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          responseContext,
+        });
+      }
+      case CallbackActions.RETRY_IMAGE: {
+        if (!this.#aiGatewayAvailable) {
+          return this.#aiUnavailable(event, responseContext, 'Image nutrition analysis is temporarily unavailable. Please describe the food instead.');
+        }
+        const useCase = this.container.getRetryImageDetection();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          responseContext,
+        });
+      }
+      case CallbackActions.RETRY_VOICE: {
+        // A double tap must not transcribe (and log) the same recording twice.
+        const key = `${event.conversationId}:${event.messageId}`;
+        if (voiceRetriesInFlight.has(key)) return { ok: true, handled: true, duplicate: true };
+        voiceRetriesInFlight.add(key);
+        try {
+          const store = this.container.getConversationStateStore?.();
+          const session = await store?.get(event.conversationId, String(event.messageId));
+          const retry = session?.voiceRetry;
+          if (!retry?.fileId) {
+            await responseContext?.sendMessage?.('🚫 This retry is no longer available. Please send the voice message again.', {});
+            return { ok: false, code: 'RETRY_STALE' };
+          }
+          // One retry per button: consume it before the attempt, then clear the
+          // failure message away — the attempt brings its own status line.
+          await store.delete?.(event.conversationId, String(event.messageId));
+          try { await responseContext?.deleteMessage?.(event.messageId); }
+          catch (e) { this.logger.debug?.('nutribot.voiceRetry.deleteFailed', { error: e.message }); }
+          this.logger.info?.('nutribot.voiceRetry.dispatch', { conversationId: event.conversationId });
+          // The ORIGINAL voice note's id travels on, so a successful retry tidies it too.
+          return await this.handleVoice({ ...event, type: 'voice', messageId: retry.voiceMessageId ?? null,
+            payload: { ...event.payload, fileId: retry.fileId } }, responseContext);
+        } finally {
+          voiceRetriesInFlight.delete(key);
+        }
+      }
+      case CallbackActions.RESTORE_LOG: {
+        const userId = this.#resolveUserId(event);
+        let result;
+        try {
+          result = await this.container.getRestoreFoodLog().execute({
+            userId, conversationId: event.conversationId, logUuid: decoded.id, responseContext,
+          });
+        } catch (error) {
+          // 409: part of the entry changed or is gone. Say so; never go silent.
+          this.logger.warn?.('nutribot.restore.failed', { logUuid: decoded.id, status: error.status ?? null, error: error.message });
+          await responseContext?.sendMessage?.("⚠️ I couldn't restore that entry — part of it changed or is no longer available. You can log it again.", {});
+          return { ok: false, code: 'RESTORE_FAILED' };
+        }
+        if (result.restored > 0) await this.#notifyMealCoaching(userId, decoded.id, 'restore');
+        return result;
+      }
+      case 'rx': {
+        // Report Accept/Close - just remove the buttons
+        if (responseContext?.updateMessage) {
+          try {
+            await responseContext.updateMessage(event.messageId, { choices: [] });
+          } catch (e) {
+            this.logger.warn?.('nutribot.callback.rx.updateFailed', { error: e.message });
+          }
+        }
+        return { ok: true, handled: true };
+      }
+
+      // ==================== Adjustment Flow Callbacks ====================
+
+      case 'i': {
+        // Select item for adjustment
+        const useCase = this.container.getSelectItemForAdjustment();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          entryId: decoded.id,
+          responseContext,
+        });
+      }
+
+      case 'dt': {
+        // Select date for adjustment
+        const useCase = this.container.getSelectDateForAdjustment();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          daysAgo: decoded.d,
+          offset: decoded.o || 0,
+          responseContext,
+        });
+      }
+
+      case 'pg': {
+        // Pagination (same as dt but with offset)
+        const useCase = this.container.getSelectDateForAdjustment();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          daysAgo: decoded.d,
+          offset: decoded.o || 0,
+          responseContext,
+        });
+      }
+
+      case 'bd': {
+        // Back to date selection
+        const useCase = this.container.getShowDateSelection();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          responseContext,
+        });
+      }
+
+      case 'bi': {
+        // Back to items - reload current date's items
+        const useCase = this.container.getSelectDateForAdjustment();
+        // Get current date from state or default to 0 (today)
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          daysAgo: decoded.d ?? 0,
+          offset: 0,
+          responseContext,
+        });
+      }
+
+      case 'f': {
+        // Apply portion adjustment (fraction)
+        const useCase = this.container.getApplyPortionAdjustment();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          entryId: decoded.id,
+          factor: decoded.f,
+          responseContext,
+        });
+      }
+
+      case 'd': {
+        // Delete list item
+        const useCase = this.container.getDeleteListItem();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          entryId: decoded.id,
+          responseContext,
+        });
+      }
+
+      case 'm': {
+        // Move item to different date (start move flow - show date picker)
+        const useCase = this.container.getMoveItemToDate();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          entryId: decoded.id,
+          // No newDate - will show date picker
+          responseContext,
+        });
+      }
+
+      case 'md': {
+        // Move to date (date selected - execute move)
+        const useCase = this.container.getMoveItemToDate();
+        const daysAgo = decoded.d || 0;
+        const newDate = this.#getDateFromDaysAgo(daysAgo);
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          entryId: decoded.id,
+          newDate,
+          responseContext,
+        });
+      }
+
+      case 'dn': {
+        // Done - regenerate report chart to reflect any adjustments
+        try {
+          const useCase = this.container.getGenerateDailyReport();
+          return await useCase.execute({
+            userId: this.#resolveUserId(event),
+            conversationId: event.conversationId,
+            messageId: event.messageId,
+            skipPendingCheck: true,
+            responseContext,
+          });
+        } catch (e) {
+          this.logger.warn?.('nutribot.callback.dn.regenFailed', { error: e.message });
+          // Fallback: just remove buttons if regen fails
+          if (responseContext?.updateMessage) {
+            try {
+              await responseContext.updateMessage(event.messageId, { choices: [] });
+            } catch (updateErr) {
+              this.logger.warn?.('nutribot.callback.dn.updateFailed', { error: updateErr.message });
+            }
+          }
+          return { ok: true, handled: true };
+        }
+      }
+
+      case 'cr': {
+        // Cancel revision - clear state and restore original buttons
+        const conversationStateStore = this.container.getConversationStateStore?.();
+        if (conversationStateStore) {
+          try {
+            await conversationStateStore.clear(event.conversationId);
+          } catch (e) {
+            this.logger.debug?.('nutribot.callback.cr.clearState.failed', { error: e.message });
+          }
+        }
+
+        await this.container.getReceiptPublisher?.()?.interaction(this.#resolveUserId(event), decoded.id, null);
+        return { ok: true, handled: true };
+      }
+
+      default:
+        this.logger.warn?.('nutribot.callback.unknown', { action, decoded });
+        return { ok: true, handled: false };
+    }
+  }
+
+  async handleCommand(event, responseContext) {
+    const command = event.payload.command;
+
+    switch (command) {
+      case 'help': {
+        const useCase = this.container.getHandleHelpCommand();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          responseContext,
+        });
+      }
+      case 'review': {
+        const useCase = this.container.getHandleReviewCommand();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          responseContext,
+        });
+      }
+      case 'report': {
+        const useCase = this.container.getGenerateDailyReport();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          autoAcceptPending: true,
+          responseContext,
+        });
+      }
+      case 'coach': {
+        const orchestrator = this.container.getAgentOrchestrator?.();
+        if (!orchestrator) {
+          if (responseContext?.sendMessage) {
+            await responseContext.sendMessage('Coaching not available.', {});
+          }
+          return { ok: true, handled: false };
+        }
+        const result = await orchestrator.runAssignment('health-coach', 'note-review', {
+          userId: this.#resolveUserId(event),
+          context: { forceSpeak: true, conversationId: event.conversationId },
+        });
+        return { ok: true, result };
+      }
+      case 'done':
+      case 'fast':
+      case 'reopen': {
+        const healthStore = this.container.getHealthStore?.();
+        if (!healthStore) {
+          if (responseContext?.sendMessage) {
+            await responseContext.sendMessage('Health store not available.', {});
+          }
+          return { ok: true, handled: false };
+        }
+        const userId = this.#resolveUserId(event);
+        // /fast and /reopen also take a meal (`/fast breakfast yesterday`);
+        // /done is for the whole day only.
+        const args = this.#commandArgs(userId, event.payload?.text, { allowMeal: command !== 'done' });
+        if (!args) {
+          if (responseContext?.sendMessage) {
+            const meal = command === 'done' ? '' : ` Add a meal to mark just that meal: /${command} breakfast, /${command} lunch yesterday.`;
+            await responseContext.sendMessage(`Use /${command}, /${command} yesterday, or /${command} YYYY-MM-DD.${meal}`, {});
+          }
+          return { ok: true, handled: false };
+        }
+        const { date, meal } = args;
+        if (meal) {
+          const fasted = command === 'fast';
+          await healthStore.setMealFast(userId, date, meal.id, fasted);
+          this.logger.info?.('nutribot.command.meal-fast', { userId, date, meal: meal.id, fasted });
+          if (responseContext?.sendMessage) {
+            await responseContext.sendMessage(fasted
+              ? `Marked ${meal.label} on ${date} as skipped. Coaching won't ask about it. (/reopen ${meal.word} ${date} to undo.)`
+              : `Unmarked ${meal.label} on ${date}.`, {});
+          }
+          return { ok: true, handled: true };
+        }
+        if (command === 'reopen') {
+          await healthStore.clearDayStatus(userId, date);
+          this.logger.info?.('nutribot.command.day-status', { userId, date, status: null });
+          if (responseContext?.sendMessage) {
+            await responseContext.sendMessage(`Reopened ${date}. Coaching will judge it by its logged total again.`, {});
+          }
+          return { ok: true, handled: true };
+        }
+        const status = command === 'fast' ? 'fasting' : 'done';
+        await healthStore.markDayStatus(userId, date, status);
+        this.logger.info?.('nutribot.command.day-status', { userId, date, status });
+        if (responseContext?.sendMessage) {
+          const what = status === 'fasting' ? `Marked ${date} as a fast.` : `Marked ${date} as done.`;
+          await responseContext.sendMessage(`${what} Coaching will treat that day's totals as final. (/reopen ${date} to undo.)`, {});
+        }
+        return { ok: true, handled: true };
+      }
+      default:
+        this.logger.warn?.('nutribot.command.unknown', { command });
+        return { ok: true, handled: false };
+    }
+  }
+
+  async #executeScale(execute) {
+    try {
+      return await execute();
+    } catch (error) {
+      if (!String(error?.code || '').startsWith('NUTRIBOT_SCALE_')) throw error;
+      this.logger.warn?.('nutribot.scale.refused', { code: error.code, error: error.message });
+      return new NutribotScaleRefusal({ code: error.code, message: error.message });
+    }
+  }
+
+  // ==================== Helpers ====================
+
+  /**
+   * Tell the post-meal coaching trigger the log changed. Carries the log's meal
+   * date so a back-dated capture or an undo of yesterday's entry never arms a
+   * message about today. Never throws — coaching is not part of the capture.
+   */
+  async #notifyMealCoaching(userId, logId, source) {
+    const trigger = this.container.getMealCoachingTrigger?.();
+    if (!trigger) return;
+    try {
+      const log = await this.container.getFoodLogStore?.()?.findByUuid?.(logId, userId);
+      trigger.notify({ userId, date: log?.meal?.date || null, source });
+    } catch (e) {
+      this.logger.warn?.('nutribot.capture.coachingTriggerFailed', { source, logId, error: e.message });
+    }
+  }
+
+  /**
+   * Date argument of /done, /fast, /reopen: empty = today, `yesterday`, or an
+   * explicit YYYY-MM-DD not in the future. Null when unparseable.
+   */
+  #commandDate(userId, arg) {
+    const text = String(arg || '').trim().toLowerCase();
+    const today = this.#localDate(userId, 0);
+    if (!text || text === 'today') return today;
+    if (text === 'yesterday') return this.#localDate(userId, 1);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text) && !Number.isNaN(Date.parse(`${text}T12:00:00Z`)) && text <= today) return text;
+    return null;
+  }
+
+  /**
+   * Arguments of /done, /fast, /reopen: an optional meal word and an optional
+   * date, in either order. Null when a word is neither (or a meal is given
+   * where only a day makes sense).
+   * @returns {{date: string, meal: {id, label, word}|null}|null}
+   */
+  #commandArgs(userId, arg, { allowMeal }) {
+    const words = String(arg || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+    let meal = null;
+    const rest = [];
+    for (const word of words) {
+      const found = MEAL_WORDS[word];
+      if (found && !meal) meal = { ...found, word };
+      else rest.push(word);
+    }
+    if (meal && !allowMeal) return null;
+    if (rest.length > 1) return null;
+    const date = this.#commandDate(userId, rest[0] || '');
+    return date ? { date, meal } : null;
+  }
+
+  /** The user's local calendar date, `daysAgo` days back (YYYY-MM-DD). */
+  #localDate(userId, daysAgo = 0) {
+    const tz = this.container.getConfig?.()?.getUserTimezone?.(userId) || 'America/Los_Angeles';
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: tz });
+    const d = new Date(`${today}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - daysAgo);
+    return d.toISOString().slice(0, 10);
+  }
+
+  /**
+   * Resolve user ID from platform identity
+   * Uses UserResolver to map platform+platformUserId to system username
+   * Falls back to conversationId if resolution fails
+   * @private
+   * @param {import('../telegram/IInputEvent.mjs').IInputEvent} event
+   * @returns {string}
+   */
+  #resolveUserId(event) {
+    // Direct userId (web adapter provides the resolved username directly)
+    if (event.userId && !event.userId.includes(':')) {
+      return event.userId;
+    }
+
+    // Prefer domain identity service
+    if (this.#userIdentityService && event.platform && event.platformUserId) {
+      const username = this.#userIdentityService.resolveUsername(event.platform, event.platformUserId);
+      if (username) {
+        this.logger.debug?.('nutribot.resolveUserId.resolved', { username, platformUserId: event.platformUserId });
+        return username;
+      }
+      this.logger.warn?.('nutribot.identity.notFound', {
+        platform: event.platform,
+        platformUserId: event.platformUserId,
+      });
+    }
+
+    // Fallback to legacy UserResolver
+    if (this.#userResolver && event.platform && event.platformUserId) {
+      const username = this.#userResolver.resolveUser(event.platform, event.platformUserId);
+      if (username) return username;
+    }
+
+    // Fallback to conversationId for backwards compatibility
+    return event.conversationId;
+  }
+
+  /**
+   * Get date string from days ago
+   * @private
+   */
+  #getDateFromDaysAgo(daysAgo) {
+    const date = new Date();
+    date.setDate(date.getDate() - daysAgo);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+}
+
+export default NutribotInputRouter;

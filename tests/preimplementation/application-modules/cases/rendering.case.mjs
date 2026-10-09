@@ -12,7 +12,7 @@ import {initCanvas} from '../../../../backend/src/1_rendering/lib/CanvasFactory.
 import { createGratitudeCardRenderer } from '../../../../modules/gratitude/server/rendering/GratitudeCardRenderer.mjs';
 import { gratitudeCardTheme } from '../../../../modules/gratitude/server/rendering/gratitudeCardTheme.mjs';
 import { GratitudePrintPresentationService } from '../../../../modules/gratitude/server/application/services/GratitudePrintPresentationService.mjs';
-import { AssignItemToUser } from '../../../../backend/src/3_applications/homebot/usecases/AssignItemToUser.mjs';
+import { AssignItemToUser } from "../../../../modules/homebot/server/application/usecases/AssignItemToUser.mjs";
 import { fixture, householdA, stamp, logger } from '../drivers/gratitude.mjs';
 const model = {
   gratitude: [{

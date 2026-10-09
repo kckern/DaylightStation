@@ -12,14 +12,14 @@
  * mirroring `RecordCardScanOutcome.test.mjs`'s own fixture style.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocument.mjs';
-import { RenderPrintDocument } from '#apps/school/documents/RenderPrintDocument.mjs';
-import { createPrintDocumentRendering } from '#rendering/school/documents/PrintDocumentRendering.mjs';
-import { ResolveCardScan } from '#apps/school/documents/ResolveCardScan.mjs';
-import { RecordCardScanOutcome } from '#apps/school/documents/RecordCardScanOutcome.mjs';
-import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
-import { DOCUMENT_SOURCE_SCHEMA } from '#domains/school/documents/documentSource.mjs';
-import { createEvent } from '#domains/school/sessions/sessionEvents.mjs';
+import { PublishPrintDocument } from "../../../../modules/school/server/application/documents/PublishPrintDocument.mjs";
+import { RenderPrintDocument } from "../../../../modules/school/server/application/documents/RenderPrintDocument.mjs";
+import { createPrintDocumentRendering } from "../../../../modules/school/server/rendering/documents/PrintDocumentRendering.mjs";
+import { ResolveCardScan } from "../../../../modules/school/server/application/documents/ResolveCardScan.mjs";
+import { RecordCardScanOutcome } from "../../../../modules/school/server/application/documents/RecordCardScanOutcome.mjs";
+import { YamlAllocationStore } from "../../../../modules/school/server/adapters/documents/YamlAllocationStore.mjs";
+import { DOCUMENT_SOURCE_SCHEMA } from "../../../../modules/school/server/domain/documents/documentSource.mjs";
+import { createEvent } from "../../../../modules/school/server/domain/sessions/sessionEvents.mjs";
 
 const richText = (md) => ({ type: 'rich_text', md });
 

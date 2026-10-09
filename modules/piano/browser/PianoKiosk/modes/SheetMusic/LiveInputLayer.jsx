@@ -1,6 +1,6 @@
 import { usePianoMidiNotes } from '../../PianoMidiContext.jsx';
 import { WetNoteGlyph } from '../Composer/wetGlyphs.jsx';
-import { spellMidi } from '../../../../../../frontend/src/modules/MusicNotation/model/spellMidi.js';
+import { spellMidi } from "../../../../../../capabilities/music-notation/browser/model/spellMidi.js";
 import { inputKind, writtenMidisAtStep } from './inputKind.js';
 import { expectedMidisAtStep } from './activeParts.js';
 

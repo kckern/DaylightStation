@@ -15,11 +15,8 @@
   // --- dark / charcoal theme (the app's identity — charcoal surfaces, light text) ---
   --piano-bg: #16161b;          // charcoal page background
   --piano-fg: #f1f1f4;          // primary light text
-  --piano-surface: #1f1f26;     // cards / tiles / bars
-  --piano-surface-2: #2a2a33;   // nested / hover / pressed
   --piano-border: #34343f;      // hairlines
   --piano-muted: #9a9aa6;       // secondary text (light muted on charcoal — AA)
-  --piano-accent: #2ec46f;      // accent fill (buttons, progress)
   --piano-accent-ink: #07210f;  // text/icon on an accent fill
   --piano-accent-text: #5fe39a; // accent used AS text on a charcoal surface (AA)
   --piano-danger: #e05a4f;      // record / delete / disconnected
@@ -27,23 +24,17 @@
   --piano-warn-2: #e8743a;      // mark B
 
   // --- type scale ---
-  --t-cap: 0.85rem;
   --t-body: 1rem;
   --t-h: 1.25rem;
   --t-title: 1.6rem;
   --t-display: 2.2rem;
 
   // --- radius scale ---
-  --r-sm: 8px;    // thumbnails, small chips, score pages
-  --r-md: 12px;   // cards, tiles, bars, buttons
   --r-lg: 16px;   // hero tiles, album art
   --r-pill: 999px;
 
   // --- spacing scale (4px ramp; the missing sibling of the type/radius scales) ---
   --sp-1: 4px;
-  --sp-2: 8px;
-  --sp-3: 12px;
-  --sp-4: 16px;
   --sp-5: 24px;
   --sp-6: 32px;
   --sp-7: 48px;

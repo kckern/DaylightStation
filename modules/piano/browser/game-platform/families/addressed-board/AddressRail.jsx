@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import StaffNoteLabel from './StaffNoteLabel.jsx';
-import { rimStaffExtent } from '../../../../../../frontend/src/modules/MusicNotation/renderers/RimStaffRenderer.jsx';
+import { rimStaffExtent } from "../../../../../../capabilities/music-notation/browser/renderers/RimStaffRenderer.jsx";
 import './AddressRail.scss';
 
 /**

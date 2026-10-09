@@ -1,16 +1,16 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { PlaybackHubContainer } from '../../../backend/src/3_applications/playback-hub/PlaybackHubContainer.mjs';
-import { FakeHubGateway } from '../../../backend/src/3_applications/playback-hub/test/FakeHubGateway.mjs';
-import { FakeHubConfigRepository } from '../../../backend/src/3_applications/playback-hub/test/FakeHubConfigRepository.mjs';
-import { GetHubStatus } from '../../../backend/src/3_applications/playback-hub/usecases/GetHubStatus.mjs';
-import { GetHubConfig } from '../../../backend/src/3_applications/playback-hub/usecases/GetHubConfig.mjs';
-import { SendHubCommand } from '../../../backend/src/3_applications/playback-hub/usecases/SendHubCommand.mjs';
-import { UpdateDeviceConfig } from '../../../backend/src/3_applications/playback-hub/usecases/UpdateDeviceConfig.mjs';
-import { SaveScheduledFire } from '../../../backend/src/3_applications/playback-hub/usecases/SaveScheduledFire.mjs';
-import { DeleteScheduledFire } from '../../../backend/src/3_applications/playback-hub/usecases/DeleteScheduledFire.mjs';
-import { VerifyAudioFlowing } from '../../../backend/src/3_applications/playback-hub/usecases/VerifyAudioFlowing.mjs';
-import { HubStatusBroadcaster } from '../../../backend/src/3_applications/playback-hub/runtime/HubStatusBroadcaster.mjs';
-import { SlotStatus } from '../../../backend/src/2_domains/playback-hub/value-objects/SlotStatus.mjs';
+import { PlaybackHubContainer } from "../../../modules/media/server/application/playback-hub/PlaybackHubContainer.mjs";
+import { FakeHubGateway } from "../../../modules/media/server/application/playback-hub/test/FakeHubGateway.mjs";
+import { FakeHubConfigRepository } from "../../../modules/media/server/application/playback-hub/test/FakeHubConfigRepository.mjs";
+import { GetHubStatus } from "../../../modules/media/server/application/playback-hub/usecases/GetHubStatus.mjs";
+import { GetHubConfig } from "../../../modules/media/server/application/playback-hub/usecases/GetHubConfig.mjs";
+import { SendHubCommand } from "../../../modules/media/server/application/playback-hub/usecases/SendHubCommand.mjs";
+import { UpdateDeviceConfig } from "../../../modules/media/server/application/playback-hub/usecases/UpdateDeviceConfig.mjs";
+import { SaveScheduledFire } from "../../../modules/media/server/application/playback-hub/usecases/SaveScheduledFire.mjs";
+import { DeleteScheduledFire } from "../../../modules/media/server/application/playback-hub/usecases/DeleteScheduledFire.mjs";
+import { VerifyAudioFlowing } from "../../../modules/media/server/application/playback-hub/usecases/VerifyAudioFlowing.mjs";
+import { HubStatusBroadcaster } from "../../../modules/media/server/application/playback-hub/runtime/HubStatusBroadcaster.mjs";
+import { SlotStatus } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotStatus.mjs";
 const statusFromFixture = value => new SlotStatus({ ...value, position: value.slot ?? value.position });
 
 class StubEventPublisher {
@@ -36,7 +36,8 @@ describe('PlaybackHubContainer', () => {
 
   it('constructs cleanly with all dependencies', () => {
     const container = new PlaybackHubContainer({
-      gateway, configRepository, eventPublisher
+      gateway, configRepository, eventPublisher,
+      broadcasterOptions: { sleepFn }
     });
     expect(container.getHubStatus).toBeInstanceOf(GetHubStatus);
     expect(container.getHubConfig).toBeInstanceOf(GetHubConfig);
@@ -49,7 +50,8 @@ describe('PlaybackHubContainer', () => {
 
   it('returns the same use-case instance on repeat access (memoization)', () => {
     const container = new PlaybackHubContainer({
-      gateway, configRepository, eventPublisher
+      gateway, configRepository, eventPublisher,
+      broadcasterOptions: { sleepFn }
     });
     expect(container.getHubStatus).toBe(container.getHubStatus);
     expect(container.broadcaster).toBe(container.broadcaster);

@@ -1,4 +1,4 @@
-import { ICatalogListSource } from '#apps/catalog/ports/ICatalogListSource.mjs';
+import { ICatalogListSource } from "../../../../capabilities/content-catalog/server/application/catalog/ports/ICatalogListSource.mjs";
 
 export class HttpCatalogListSource extends ICatalogListSource {
   #baseUrl; #fetch;

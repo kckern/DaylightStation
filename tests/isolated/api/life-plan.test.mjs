@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import createPlanRouter from '#api/v1/routers/life/plan.mjs';
-import { LifePlan } from '#domains/lifeplan/entities/LifePlan.mjs';
-import { GoalStateService } from '#domains/lifeplan/services/GoalStateService.mjs';
-import { BeliefEvaluator } from '#domains/lifeplan/services/BeliefEvaluator.mjs';
-import { CadenceService } from '#domains/lifeplan/services/CadenceService.mjs';
-import { presentBelief, presentGoal, presentLifePlan } from '#apps/lifeplan/presenters/lifePlanPresenter.mjs';
-import { LifePlanOperations } from '#apps/lifeplan/LifePlanOperations.mjs';
+import createPlanRouter from "../../../modules/life/server/api/life/plan.mjs";
+import { LifePlan } from "../../../modules/life/server/domain/entities/LifePlan.mjs";
+import { GoalStateService } from "../../../modules/life/server/domain/services/GoalStateService.mjs";
+import { BeliefEvaluator } from "../../../modules/life/server/domain/services/BeliefEvaluator.mjs";
+import { CadenceService } from "../../../modules/life/server/domain/services/CadenceService.mjs";
+import { presentBelief, presentGoal, presentLifePlan } from "../../../modules/life/server/application/presenters/lifePlanPresenter.mjs";
+import { LifePlanOperations } from "../../../modules/life/server/application/LifePlanOperations.mjs";
 
 describe('Life Plan API Router', () => {
   let app;

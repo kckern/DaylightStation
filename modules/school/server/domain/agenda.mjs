@@ -1,0 +1,624 @@
+/**
+ * Daily agenda sectioning (pure domain). No I/O, no clock reads — `now` is
+ * injected and stamped nowhere here; it is only ever compared against.
+ *
+ * `planLearnerWork` (./planner.mjs) answers "what is there to do?" as a flat
+ * list. This module answers the parent-facing question: "what does today's
+ * agenda LOOK like, subject by subject?" It groups the flat plan into the
+ * nine curriculum shelves (plus a catch-all `other`), decides per subject
+ * whether today's obligation is already served, what the single next thing
+ * to hand a child is, and rolls up progress/grade for display.
+ *
+ * Two things it deliberately does NOT do:
+ *   - It never reads `passing` off a unit (program units don't carry one —
+ *     see Task 2's normalisation — and curriculum passing is the grading
+ *     domain's business, not the agenda's).
+ *   - It never re-derives session state; it trusts the derived facts handed
+ *     in (`{ unitId, state, terminal, outcome, gradedPercent, updatedAt }`).
+ */
+import { SUBJECT_IDS } from "./curriculum/unitValidation.mjs";
+import { isSameStudyDay, studyDayForInstant } from "./studyDay.mjs";
+import { scheduleVerdict } from "./schoolCalendar.mjs";
+
+const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
+
+/**
+ * Latest (by `outcome.at ?? updatedAt`) session per unitId, restricted to
+ * sessions that actually carry a `gradedPercent` — an ungraded session
+ * (e.g. still open) contributes no evidence.
+ */
+function latestGradedPerUnit(sessions) {
+  const byUnit = new Map();
+  sessions.forEach((s) => {
+    if (!s || !isNonEmptyString(s.unitId) || s.gradedPercent == null) return;
+    const stampMs = Date.parse(s.outcome?.at ?? s.updatedAt ?? '');
+    const held = byUnit.get(s.unitId);
+    if (!held || stampMs >= held.stampMs) byUnit.set(s.unitId, { stampMs, gradedPercent: s.gradedPercent });
+  });
+  return byUnit;
+}
+
+/**
+ * Progress label for one subject's entry list.
+ *   - No curriculum (non-program) entries: defer to the first program
+ *     status's own `progressLabel` (or null — the launcher owns this text).
+ *   - Every curriculum entry shares the SAME non-null courseId (a single
+ *     sequential course, no standalone entries mixed in):
+ *     `Unit {min(passed+1,total)} of {total}`, or `Course complete` once
+ *     every entry is `completed`.
+ *   - Otherwise (multiple courses, a standalone-only set, or a course mixed
+ *     with standalone entries): `{passed} of {total} done`.
+ */
+function progressLabelFor(list, statuses) {
+  const curriculum = list.filter((e) => !e.program);
+  if (!curriculum.length) {
+    return statuses.find((status) => !status.error && status.progressLabel != null)?.progressLabel ?? null;
+  }
+  const total = curriculum.length;
+  const passed = curriculum.filter((e) => e.status === 'completed').length;
+  const courseIds = new Set(curriculum.map((e) => e.courseId).filter(isNonEmptyString));
+  const singleCourse = courseIds.size === 1 && curriculum.every((e) => isNonEmptyString(e.courseId));
+  if (singleCourse) {
+    if (passed >= total) return 'Course complete';
+    return `Unit ${Math.min(passed + 1, total)} of ${total}`;
+  }
+  return `${passed} of ${total} done`;
+}
+
+/**
+ * Structured progress rows for the printed card — `[{ label, completed, total }]`,
+ * course-level first, then the unit inside it.
+ *
+ * Program launchers have been BUILDING these all along (see
+ * `PianoCourseProgramLauncher#progress`) and nothing on the agenda path ever
+ * read them: the card got `progressLabel`, a pre-formatted string, and printed
+ * that. For the piano course that string is `34/366 · next: <title>` — a raw
+ * tally a child does not act on, ending in a verbatim repeat of the card's own
+ * title. The result receipt already proves the better answer for the same data:
+ * a bar with a position marker. This is what feeds it.
+ *
+ * Curriculum (non-program) rows require enrollment and work metadata this
+ * pure sectioning function does not receive. `BuildAgenda` enriches those
+ * sections from the canonical plan after this function returns.
+ */
+function progressRowsFor(statuses) {
+  const rows = statuses.find((status) => !status.error && Array.isArray(status.progress))?.progress;
+  return Array.isArray(rows)
+    ? rows.filter((row) => row && Number.isInteger(row.total) && row.total > 0)
+    : [];
+}
+
+/**
+ * Blended grade: mean of the latest graded% for each ATTEMPTED curriculum
+ * unit (unattempted units are simply absent, never a zero) plus each
+ * non-error program's `score`. Null when there is no evidence at all.
+ *
+ * A PROGRAM `score` IS ALREADY A PERCENT, on the same 0–100 scale as
+ * `gradedPercent` — which is the only reason the two can be averaged together
+ * at all. Every producer agrees: the piano launcher computes
+ * `(completed / total) * 100`, the flashcard launcher passes the same mastery
+ * figure it prints as "N% mastered", and PianoLessonCeremonyBridge reads the
+ * field straight into a `percent`. This function used to scale it a second
+ * time, which is how an arts section came back with `gradePercent: 1000`.
+ */
+function gradeFor(list, latestBySessionUnit, statuses) {
+  const values = [];
+  list.filter((e) => !e.program).forEach((e) => {
+    const graded = latestBySessionUnit.get(e.unitId);
+    if (graded) values.push(graded.gradedPercent);
+  });
+  statuses.forEach((s) => {
+    if (!s.error && typeof s.score === 'number') values.push(s.score);
+  });
+  if (!values.length) return null;
+  const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
+  return Math.round(mean);
+}
+
+// --- blocked-work provenance -------------------------------------------------
+// A lock is two different situations wearing one name. "Finish Unit One first"
+// when Unit One is sitting there waiting is an ordinary sequence and excuses
+// the day; the same sentence pointing at something NOTHING can reach is a
+// broken curriculum, and a broken curriculum must never read as a day served.
+// The planner (planner.mjs `blockerFor`) reports only the NEAREST unpassed
+// predecessor, which may itself be locked behind something else, so the chain
+// has to be walked to a fixpoint before either verdict is safe.
+
+/** Work a child can pick up right now. */
+const ACTIONABLE_STATUSES = new Set(['available', 'in_progress']);
+
+/**
+ * The reasons that describe the SYSTEM being broken rather than the child
+ * being legitimately off the hook. These fault the day (`indeterminate` in
+ * completion.mjs) instead of excusing it, because a day that could not be
+ * judged is not a day that was finished — and the piano-kiosk games hang off
+ * that verdict.
+ */
+const FAULT_REASONS = new Set(['program_unavailable', 'blocked_unreachable']);
+
+/**
+ * Work held by the calendar or by a grown-up rather than by a broken
+ * curriculum. A date arrives on its own and a grown-up can be asked, so
+ * neither is a fault — and the excuse ladder below already has truthful names
+ * for those days (`opens_later`, `awaiting_grown_up`).
+ *
+ * The exception is the planner's `not_scheduled` marker: a dated unit whose
+ * module carries no window at all is not waiting for a date, it is waiting for
+ * a date that will never exist.
+ */
+const isTimeHeld = (entry) => (entry.status === 'upcoming' || entry.status === 'dormant')
+  && !(entry.timingReasons ?? []).includes('not_scheduled');
+
+/**
+ * Walk one locked entry's blocker chain to a fixpoint.
+ *
+ * @returns {boolean} true when the chain ends at something the child (or the
+ *   calendar, or a grown-up) can actually get to. False when it dead-ends: a
+ *   blocker absent from the plan, a lock that names no remedy at all, a
+ *   never-scheduled dated unit, a blocker already passed (a contradiction the
+ *   planner cannot produce, so evidence the data is wrong), or a cycle.
+ */
+function blockerChainIsReachable(start, entryByUnit) {
+  const visited = new Set();
+  let cursor = start;
+  while (cursor) {
+    if (visited.has(cursor.unitId)) {
+      // A malformed curriculum must not hang the planner.
+      return false;
+    }
+    visited.add(cursor.unitId);
+    const blockerId = cursor.remedy?.unitId ?? null;
+    if (!isNonEmptyString(blockerId)) return false;
+    const blocker = entryByUnit.get(blockerId);
+    if (!blocker) return false;
+    if (ACTIONABLE_STATUSES.has(blocker.status) || isTimeHeld(blocker)) return true;
+    if (blocker.status !== 'locked') return false;
+    cursor = blocker;
+  }
+  return false;
+}
+
+const timingScope = (entry) => entry?.courseId ? `course:${entry.courseId}` : `unit:${entry?.unitId ?? ''}`;
+/** True when the schedule's own `except` spans (not its weekdays) rule the day out; `also` still wins. */
+const programExceptedOn = (day, schedule) => {
+  if (!schedule || typeof schedule !== 'object' || schedule.except == null) return false;
+  const { daysOfWeek: _weekdays, ...dated } = schedule;
+  return !scheduleVerdict(day, dated).schoolDay;
+};
+
+const byEntryPriority = (left, right) => (left.timingPriority ?? 3) - (right.timingPriority ?? 3)
+  || (left.timingRank ?? 0) - (right.timingRank ?? 0);
+const focusBudget = (entry) => entry?.timingState === 'urgent'
+  ? (entry.timing?.agenda?.urgentBlocks ?? 1)
+  : 1;
+const focusExtras = (entry) => entry?.timingState === 'urgent'
+  ? Math.max(0, (entry.timing?.agenda?.urgentBlocks ?? 1) - (entry.timing?.agenda?.normalBlocks ?? 1))
+  : 0;
+
+/** Stable status-map key for one configured program instance. Programs with
+ * no instance retain their historical bare id so existing launchers and
+ * hand-authored units remain compatible. */
+export function programStatusKey(entry) {
+  const program = entry?.program ?? '';
+  const instance = entry?.programInstance;
+  return instance ? `${program}::${instance}` : program;
+}
+
+/** Structured lookup; object keys remain a read-only compatibility input. */
+export function programStatusFor(programStatuses, entry) {
+  if (Array.isArray(programStatuses)) {
+    return programStatuses.find((row) => row?.programId === entry?.program
+      && (row?.programInstance ?? null) === (entry?.programInstance ?? null))?.status ?? null;
+  }
+  return programStatuses?.[programStatusKey(entry)] ?? null;
+}
+
+/**
+ * @param {object} args
+ * @param {object} args.plan              `planLearnerWork()` result — reads `.entries`
+ * @param {Array}  [args.sessions]        derived session facts — same shape the planner consumes,
+ *                                         plus `gradedPercent: number|null`
+ * @param {object} [args.programStatuses] `{ [programStatusKey]: { doneToday, terminal?, progressLabel, score, obligationProgress? } | { error: true } }`
+ * @param {string} args.now               ISO string — compared against, never stamped
+ * @param {string|null} [args.timezone]   IANA zone, or null
+ * @param {number} [args.boundaryHour]    study-day rollover hour (default 4am)
+ * @param {object|null} [args.householdSchedule] the household's own calendar
+ *   (`school.yml → calendar`, in `validateSchedule`'s shape). A day it names
+ *   as off is off for EVERY section, whatever each course's own schedule says
+ *   — a family vacation is not something a syllabus gets a vote on. Applied
+ *   here, inside the agenda, so the paper a child is handed and the term grid
+ *   drawn months later can never disagree about it.
+ * @returns {{ sections: object[] }}
+ */
+export function planDailyAgenda({
+  plan, sessions = [], programStatuses = {}, now, timezone = null, boundaryHour = 4,
+  householdSchedule = null,
+} = {}) {
+  const nowMs = Date.parse(now ?? '');
+  const today = studyDayForInstant(nowMs, { timezone, boundaryHour });
+  const householdOff = householdSchedule != null && !scheduleVerdict(today, householdSchedule).schoolDay;
+  const entries = (plan?.entries ?? []).filter((e) => e && typeof e === 'object');
+  const order = [...SUBJECT_IDS, 'other'];
+
+  const bySubject = new Map();
+  entries.forEach((e) => {
+    const key = order.includes(e.subject) ? e.subject : 'other';
+    if (!bySubject.has(key)) bySubject.set(key, []);
+    bySubject.get(key).push(e);
+  });
+
+  // One warning per unit per build. The agenda is rebuilt on every page load,
+  // so this cannot dedupe across builds — it only stops one unit reported by
+  // two entries from being reported twice in the same answer.
+  const latestBySessionUnit = latestGradedPerUnit(sessions);
+  const passedToday = sessions
+    .filter((s) => s?.outcome?.result === 'passed'
+      && isSameStudyDay(Date.parse(s.outcome?.at ?? s.updatedAt ?? ''), nowMs, { timezone, boundaryHour }));
+  const passedTodayIds = new Set(passedToday.map((s) => s.unitId));
+  const entryByUnit = new Map(entries.map((entry) => [entry.unitId, entry]));
+  const passedTodayByScope = new Map();
+  passedToday.forEach((session) => {
+    const entry = entryByUnit.get(session.unitId);
+    if (!entry) return;
+    const key = timingScope(entry);
+    passedTodayByScope.set(key, (passedTodayByScope.get(key) ?? 0) + 1);
+  });
+
+  const sections = order.filter((subject) => bySubject.has(subject)).map((subject, subjectPosition) => {
+    // A program enrollment whose own `except` span covers today does not exist
+    // today: it is neither offered, nor owed, nor able to fault the section.
+    // That span is how an enrollment is dated — a program retired mid-term
+    // keeps its entry (and every earlier day's credit) with `except: {from:
+    // <switchover>, to: 2099-12-31}`, and its successor is excepted up to the
+    // switchover. Reading the span only for the "no school today" excuse let a
+    // retired sentence ladder keep winning the Language slot and keep being
+    // owed, so the card ladder that replaced it never printed (2026-09-24).
+    //
+    // Only programs, and only `except`: a weekday a program does not meet is
+    // still a day it may be offered, and curriculum dates belong to the
+    // planner's timing. When EVERY entry is excepted (a vacation written into
+    // each enrollment) the section keeps them all, so the ladder below still
+    // runs and the `noSchoolToday` override excuses the day as before.
+    const all = bySubject.get(subject);
+    const live = all.filter((e) => !(e.program && programExceptedOn(today, e.schedule)));
+    const list = live.length ? live : all;
+    const programs = list.filter((e) => e.program);
+    const statuses = programs
+      .map((entry) => programStatusFor(programStatuses, entry))
+      .filter(Boolean);
+    const programUnavailable = statuses.some((s) => s.error === true);
+    const programDone = statuses.some((s) => !s.error && s.doneToday === true);
+    // Only entries belonging to an UNAVAILABLE program are excluded from
+    // candidacy — not the whole section. Gating the whole section on the
+    // subject-level `programUnavailable` flag (the old behaviour) blanked a
+    // live curriculum sibling whenever ANY program in the subject errored,
+    // and was order-dependent besides (whichever entry won priority).
+    const unavailableProgramKeys = new Set(
+      programs.filter((e) => programStatusFor(programStatuses, e)?.error === true).map(programStatusKey),
+    );
+    // A once-only program owns completion evidence outside a School work
+    // session. Once its launcher says the instance is terminal, it must leave
+    // future agendas rather than being offered again every study day.
+    const terminalProgramKeys = new Set(
+      programs.filter((e) => e.cadence === 'once' && programStatusFor(programStatuses, e)?.terminal === true)
+        .map(programStatusKey),
+    );
+    // A program that keeps no history cannot say what happened on a replayed
+    // day (`collectProgramStatuses` → `UNKNOWABLE_STATUS`). It is neither
+    // offered, nor owed, nor a fault: it simply has no vote. The section then
+    // reads on whatever evidence it DOES have, and a section left with nothing
+    // else required is `excused: no_history` — which the term ladder keeps
+    // grey, never blue.
+    const unknowableProgramKeys = new Set(
+      programs.filter((e) => programStatusFor(programStatuses, e)?.unknowable === true)
+        .map(programStatusKey),
+    );
+    // A WEEKLY program already done earlier this Monday→Sunday week
+    // (`collectProgramStatuses` folds the week into `status.weekly`). Not
+    // offered again, not owed again, not a fault; the day it was done reads
+    // `served` through `doneToday` like any other program, and the rest of
+    // the week reads `excused: weekly_satisfied`.
+    const weeklySatisfiedKeys = new Set(
+      programs.filter((e) => e.cadence === 'weekly'
+        && programStatusFor(programStatuses, e)?.weekly?.satisfiedBefore === true
+        && programStatusFor(programStatuses, e)?.doneToday !== true)
+        .map(programStatusKey),
+    );
+    const eligible = list.filter((e) => !(e.program && (
+      unavailableProgramKeys.has(programStatusKey(e)) || terminalProgramKeys.has(programStatusKey(e))
+      || unknowableProgramKeys.has(programStatusKey(e)) || weeklySatisfiedKeys.has(programStatusKey(e))
+    )));
+    const subjectPassedToday = list.some((e) => passedTodayIds.has(e.unitId));
+    const curriculumCandidate = [
+      ...eligible.filter((e) => !e.program && e.status === 'in_progress'),
+      ...eligible.filter((e) => !e.program && e.status === 'available'),
+    ].sort(byEntryPriority)[0] ?? null;
+    const candidatePasses = curriculumCandidate
+      ? (passedTodayByScope.get(timingScope(curriculumCandidate)) ?? 0)
+      : 0;
+    const isFocus = Boolean(curriculumCandidate && focusExtras(curriculumCandidate) > 0);
+    // A normal subject is served after one pass. An urgent focus course can
+    // offer its next newly-unlocked lesson until its declared daily budget is
+    // reached; an in-progress retry is always resumable regardless.
+    const curriculumServedForOffers = subjectPassedToday
+      && !(isFocus && candidatePasses < focusBudget(curriculumCandidate));
+
+    // Curriculum and programs are independent tracks even when they share a
+    // subject. Completing an English lesson suppresses the next English lesson
+    // for today, but not User_4's reading shelf; logging reading suppresses that
+    // shelf, but not an unfinished English lesson.
+    const offerEligible = eligible.filter((entry) => (
+      entry.program
+        ? programStatusFor(programStatuses, entry)?.doneToday !== true
+        : !curriculumServedForOffers
+    ));
+    const candidate = [
+      ...offerEligible.filter((e) => e.status === 'in_progress'),
+      ...offerEligible.filter((e) => e.status === 'available'),
+    ].sort(byEntryPriority)[0] ?? null;
+    const servedToday = (subjectPassedToday || programDone) && !candidate && !programUnavailable;
+
+    const candidateStatus = candidate?.program ? programStatusFor(programStatuses, candidate) : null;
+    const next = !servedToday && candidate
+      ? (candidate.program
+        ? { ...candidate, obligationProgress: candidateStatus?.obligationProgress ?? null }
+        : candidate)
+      : null;
+
+    const lockedRemedy = (!servedToday && !next && list.some((e) => e.status === 'locked'))
+      ? (list.find((e) => e.status === 'locked')?.lockReason ?? null)
+      : null;
+    const timingHeld = !servedToday && !next
+      ? (list.find((e) => e.status === 'upcoming' || e.status === 'dormant') ?? null)
+      : null;
+    const timingNotice = timingHeld?.status === 'upcoming'
+      ? `Starts ${timingHeld.timing?.availability?.opensOn ?? 'later'}`
+      : timingHeld?.status === 'dormant'
+        ? 'Ask a grown-up to continue or reschedule this work.'
+        : null;
+
+    // --- obligation (student-completion-state-machine design, 2026-08-23) --
+    // A section is OBLIGATED only if it holds actionable, non-elective work
+    // with a same-day claim on the child; everything else is EXCUSED. Rule 1
+    // deliberately ignores the focus multi-block term above (a focus subject
+    // partway through its extra blocks is still "served" for completion
+    // purposes) and counts only non-elective passes (an elective pass must
+    // never excuse a required entry sharing its subject).
+    //
+    // EXCUSED is not the same as FAULTED. Excused means the child is
+    // legitimately off the hook and the day may still complete; faulted means
+    // the day could not be judged at all. Two reasons fault: a required
+    // program that will not answer, and work blocked by something nothing can
+    // reach (see `blockerChainIsReachable` above).
+    const nonElectiveList = list.filter((e) => !e.elective);
+    // The obligation reads its own eligibility, not the offer track's. An
+    // elective pass suppresses the next OFFER in its subject, but it must
+    // never hide the required entry from this ladder — hiding it turned
+    // `obligated` into `excused: caught_up`, which is how an elective came to
+    // excuse untouched required work (regression, 2026-09-06).
+    const nonElectivePassedToday = nonElectiveList.some((e) => passedTodayIds.has(e.unitId));
+    const obligationEligible = eligible.filter((entry) => (
+      entry.program
+        ? programStatusFor(programStatuses, entry)?.doneToday !== true
+        : !nonElectivePassedToday
+    ));
+    const actionable = obligationEligible.filter((e) => !e.elective && (e.status === 'in_progress' || e.status === 'available'));
+    const nonElectiveProgramDone = nonElectiveList.some((e) => (
+      e.program && programStatusFor(programStatuses, e)?.error !== true
+      && programStatusFor(programStatuses, e)?.doneToday === true
+    ));
+    const requiredPrograms = nonElectiveList.filter((e) => e.program
+      && !terminalProgramKeys.has(programStatusKey(e)) && !unknowableProgramKeys.has(programStatusKey(e))
+      && !weeklySatisfiedKeys.has(programStatusKey(e)));
+    const hasRequiredCurriculum = nonElectiveList.some((e) => !e.program);
+    const curriculumObligationServed = !hasRequiredCurriculum || nonElectivePassedToday;
+    const programObligationsServed = requiredPrograms.length === 0 || requiredPrograms.every((entry) => {
+      const status = programStatusFor(programStatuses, entry);
+      return status?.error !== true && status?.doneToday === true;
+    });
+    const obligationServed = (nonElectivePassedToday || nonElectiveProgramDone)
+      && curriculumObligationServed && programObligationsServed;
+    const unavailableRequiredProgram = nonElectiveList.some((entry) => (
+      entry.program && unavailableProgramKeys.has(programStatusKey(entry))
+    ));
+    // Every entry is asked, including electives — an elective's schedule never
+    // changes a verdict, but a typo in one is still a typo, and this is the
+    // only place anything looks at it.
+    const verdicts = list.map((e) => ({ entry: e, ...scheduleVerdict(today, e.schedule ?? null) }));
+    // Today is not a school day for this section only when EVERY piece of
+    // required work in it says so. An entry with no schedule is a school day
+    // (the verdict fails open), so one unscheduled course sitting beside a
+    // weekday-only one keeps the section obligated rather than borrowing its
+    // vacation.
+    const requiredVerdicts = verdicts.filter(({ entry: e }) => !e.elective);
+    const noSchoolToday = householdOff
+      || (requiredVerdicts.length > 0 && requiredVerdicts.every((v) => !v.schoolDay));
+    const isBacklog = (e) => e.timing?.mode === 'catch_up' || e.timingState === 'catch_up';
+    const hasNonElective = (pred) => nonElectiveList.some(pred);
+    let obligation;
+    if (unavailableRequiredProgram) {
+      obligation = { state: 'faulted', reason: 'program_unavailable' };
+    } else if (obligationServed) {
+      obligation = { state: 'served', reason: null };
+    } else if (actionable.length === 0) {
+      let reason;
+      if (nonElectiveList.length === 0) reason = 'elective_only';
+      else if (nonElectiveList.every((e) => e.program && unknowableProgramKeys.has(programStatusKey(e)))) reason = 'no_history';
+      else if (hasNonElective((e) => e.program && weeklySatisfiedKeys.has(programStatusKey(e)))
+        && nonElectiveList.every((e) => e.program && (weeklySatisfiedKeys.has(programStatusKey(e))
+          || unknowableProgramKeys.has(programStatusKey(e)) || terminalProgramKeys.has(programStatusKey(e))))) reason = 'weekly_satisfied';
+      else if (hasNonElective((e) => e.program && unavailableProgramKeys.has(programStatusKey(e)))) reason = 'program_unavailable';
+      else if (hasNonElective((e) => e.status === 'locked')) {
+        // The split the 2026-08-25 unlock incident demanded: being blocked by a
+        // sibling the child can still get to excuses the day, being blocked by
+        // something nothing can reach is a fault. Only one locked entry needs a
+        // live chain for the subject to have somewhere to go.
+        const lockedNonElective = nonElectiveList.filter((e) => e.status === 'locked');
+        const reachable = lockedNonElective
+          .some((e) => blockerChainIsReachable(e, entryByUnit));
+        reason = reachable ? 'blocked_no_offer' : 'blocked_unreachable';
+      } else if (hasNonElective((e) => e.status === 'dormant')) reason = 'awaiting_grown_up';
+      else if (hasNonElective((e) => e.status === 'upcoming')) reason = 'opens_later';
+      else reason = 'caught_up';
+      obligation = FAULT_REASONS.has(reason)
+        ? { state: 'faulted', reason }
+        : { state: 'excused', reason };
+    } else if (actionable.every(isBacklog)) {
+      obligation = { state: 'excused', reason: 'optional_backlog' };
+    } else if (actionable.every((e) => e.timingState === 'available' && e.timing?.target?.dueOn)) {
+      obligation = { state: 'excused', reason: 'not_due_yet' };
+    } else {
+      obligation = { state: 'obligated', reason: null };
+    }
+    // A non-school day excuses what is LEFT, applied as an override on top of
+    // the ladder rather than as a rung inside it, for two reasons.
+    //
+    // It never un-serves what was already done: a child who reads on a
+    // Saturday has read, and downgrading that to "excused" would erase work
+    // they actually did.
+    //
+    // And the ladder above still RUNS. Short-circuiting it would have taken
+    // the `blocked-unreachable` warn — the detection mechanism for the
+    // 2026-08-25 unlock incident — off the air two days in seven plus every
+    // vacation. A broken unlock chain is still broken on a Saturday; only the
+    // verdict softens, not the diagnostic.
+    //
+    // The household calendar names itself: a vacation the family declared and
+    // a weekday a course does not meet are both "off", but the term grid
+    // colours only the first as a day the house took off.
+    if (!obligationServed && noSchoolToday) {
+      obligation = { state: 'excused', reason: householdOff ? 'household_calendar' : 'not_a_school_day' };
+    }
+
+    // WHERE A SERVED SUBJECT STILL OPENS. A program that is a place rather
+    // than a task (the reading shelf, a flashcard deck) declares `reopenable`:
+    // today's requirement is met, but extra rounds are always allowed. Chosen
+    // HERE, from `list` — the entries the section actually runs on today — so
+    // a program retired by its schedule's `except` span can never be the one
+    // reopened. Scanning `plan.entries` instead sent a learner's re-typed flashcard
+    // code to the sentence ladder they had been moved off (2026-09-25). The
+    // program the child actually finished today wins; otherwise the first.
+    const reopenable = servedToday
+      ? programs.filter((entry) => {
+        const status = programStatusFor(programStatuses, entry);
+        return status && status.error !== true && status.reopenable === true;
+      })
+      : [];
+    const reopenEntry = reopenable.find((entry) => programStatusFor(programStatuses, entry)?.doneToday === true)
+      ?? reopenable[0] ?? null;
+
+    return {
+      subject,
+      servedToday,
+      next,
+      reopenUnitId: reopenEntry?.unitId ?? null,
+      // Is the thing being OFFERED a lesson from a day that has already passed?
+      // The schedule deliberately keeps moving when a day is missed rather than
+      // waiting, so catching up is normal and expected — but on paper a backlog
+      // lesson is otherwise indistinguishable from today's own work, and a child
+      // cannot tell "you are backfilling Monday" from "this is today's". Stated
+      // as one flag rather than left for a presenter to infer from `timing`
+      // internals, and derived with the SAME `isBacklog` the obligation rules
+      // above use so the paper and the policy can never disagree about what
+      // counts as backlog.
+      catchUp: !!(next && isBacklog(next)),
+      lockedRemedy,
+      timingNotice,
+      progressLabel: progressLabelFor(list, statuses),
+      progressRows: progressRowsFor(statuses),
+      gradePercent: gradeFor(list, latestBySessionUnit, statuses),
+      // WHAT WAS ACTUALLY DONE, not merely that something was. `servedToday`
+      // is a boolean, and a boolean is all the paper could ever say: "SCRIPTURE
+      // — done today" named the shelf and withheld the lesson. These are the
+      // entries this subject passed on this study day, so the agenda's
+      // finished-work tally can name the work. A program subject (piano) owns
+      // its completion outside a work session, so its work cannot come from
+      // `list` — it comes from the program's own status, which knows exactly
+      // which lesson it credited today. Without that second source a served
+      // program subject named nothing at all, and a presenter had only the
+      // pre-formatted `progressLabel` to fall back on. Every row also names its
+      // assignment anchor: curriculum owns itself, while a program launcher can
+      // report several actual lessons owned by one synthetic program entry.
+      servedWork: [
+        ...list
+          .filter((entry) => passedTodayIds.has(entry.unitId))
+          .map((entry) => ({
+            unitId: entry.unitId,
+            assignmentUnitId: entry.unitId,
+            title: entry.title ?? null,
+          })),
+        ...programs.flatMap((entry) => {
+          const status = programStatusFor(programStatuses, entry);
+          if (status?.error || !Array.isArray(status?.servedWork)) return [];
+          return status.servedWork
+            .filter((work) => work && typeof work === 'object')
+            .map((work) => ({ ...work, assignmentUnitId: entry.unitId }));
+        }),
+      ],
+      programUnavailable,
+      // The week-level obligations this section carries, for the term grid's
+      // 8th row: one row per weekly program entry, judged for THIS day.
+      weekly: list.filter((e) => e.program && e.cadence === 'weekly').map((e) => {
+        const status = programStatusFor(programStatuses, e);
+        const state = status?.doneToday === true ? 'served'
+          : (status?.weekly?.satisfiedBefore === true ? 'satisfied' : 'open');
+        return { unitId: e.unitId, subject, state, servedOn: status?.weekly?.servedOn ?? null };
+      }),
+      focus: next && isFocus ? {
+        blocksCompleted: candidatePasses,
+        blockBudget: focusBudget(next),
+        extraBlocks: focusExtras(next),
+      } : null,
+      suppressed: null,
+      obligation,
+      _subjectPosition: subjectPosition,
+      // Internal, like _subjectPosition: the focus pass below needs to know
+      // which sections are off today. Deleted before the sections are
+      // returned — nothing outside this function reads it yet.
+      _notASchoolDay: noSchoolToday,
+    };
+  });
+
+  // Urgent focus entries reserve extra blocks by deferring only lower-ranked
+  // flexible subject offers. The agenda remains in its normal subject order;
+  // this is capacity allocation, not a child-facing priority sort.
+  const focusSections = sections.filter((section) => section.next && focusExtras(section.next) > 0)
+    .sort((left, right) => byEntryPriority(left.next, right.next) || left._subjectPosition - right._subjectPosition);
+  focusSections.forEach((focus) => {
+    let remaining = focusExtras(focus.next);
+    while (remaining > 0) {
+      const candidate = sections
+        .filter((section) => section !== focus && section.next && !section.suppressed
+          // A section that is not in session today cannot be displaced: there
+          // is nothing to hold back, spending a scarce extra block on it wastes
+          // the block, and the rewrite below would relabel a course that was
+          // never open as "held back for focus work".
+          && !section._notASchoolDay
+          && section.next.status !== 'in_progress' && section.next.timing?.flexibility === 'flexible')
+        .sort((left, right) => byEntryPriority(right.next, left.next) || right._subjectPosition - left._subjectPosition)[0];
+      if (!candidate) break;
+      candidate.suppressed = {
+        bySubject: focus.subject,
+        byUnitId: focus.next.unitId,
+        reasons: focus.next.timingReasons ?? ['urgent_focus'],
+      };
+      candidate.next = null;
+      // Rule 1 outranks rule 2: a section that already served its non-elective
+      // obligation stays `served` even when its extra-block offer is
+      // displaced for printing purposes.
+      if (candidate.obligation.state !== 'served') {
+        candidate.obligation = { state: 'excused', reason: 'suppressed_by_focus' };
+      }
+      remaining -= 1;
+    }
+  });
+
+  sections.forEach((section) => {
+    delete section._subjectPosition;
+    delete section._notASchoolDay;
+  });
+
+  return { sections };
+}
+
+export default planDailyAgenda;

@@ -1,9 +1,10 @@
+import {contentRequiresCamera} from '../../../../backend/src/5_composition/policies/contentRequiresCamera.mjs';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
 import { EventBusDeviceTransportGateway } from '#adapters/devices/EventBusDeviceTransportGateway.mjs';
 import { WebSocketContentAdapter } from '#adapters/devices/WebSocketContentAdapter.mjs';
 import { DeviceContentDispatchService } from '#apps/devices/services/DeviceContentDispatchService.mjs';
-import { buildDispatchUrl } from '../../../../frontend/src/modules/Media/cast/dispatchUrl.js';
+import { buildDispatchUrl } from "../../../../modules/media/browser/cast/dispatchUrl.js";
 import { AUTOPLAY_ACTIONS, autoplayToAction, parseAutoplayParams } from '../../../../frontend/src/lib/parseAutoplayParams.js';
 import { testApplicationRuntime } from '../../../_lib/applicationRuntime.mjs';
 
@@ -46,7 +47,7 @@ describe('WakeAndLoadService op pass-through', () => {
       subscribe: vi.fn().mockReturnValue(() => {}),
     };
     device = makeDevice();
-    svc = new WakeAndLoadService({
+    svc = new WakeAndLoadService({ contentRequiresCamera,
       ...testApplicationRuntime(),
       deviceService: { get: vi.fn().mockReturnValue(device) },
       readinessPolicy: { isReady: vi.fn().mockResolvedValue({ ready: true }) },
@@ -99,7 +100,7 @@ describe('WakeAndLoadService op pass-through', () => {
       ));
       return adapter.load(path, query);
     }) });
-    const directSvc = new WakeAndLoadService({
+    const directSvc = new WakeAndLoadService({ contentRequiresCamera,
       ...testApplicationRuntime(),
       deviceService: { get: vi.fn().mockReturnValue(adapterDevice) },
       readinessPolicy: { isReady: vi.fn().mockResolvedValue({ ready: true }) },
@@ -190,7 +191,7 @@ describe('WakeAndLoadService — WS-first liveness gate', () => {
     };
     livenessService = { isFresh: vi.fn() };
     device = makeDevice();
-    svc = new WakeAndLoadService({
+    svc = new WakeAndLoadService({ contentRequiresCamera,
       ...testApplicationRuntime(),
       deviceService: { get: () => device },
         readinessPolicy: { isReady: vi.fn().mockResolvedValue({ ready: true }) },

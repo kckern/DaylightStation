@@ -4,7 +4,7 @@ import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { YamlScreenRegistryDatastore } from '#adapters/persistence/yaml/YamlScreenRegistryDatastore.mjs';
+import { YamlScreenRegistryDatastore } from "../../../../modules/media/server/adapters/persistence/YamlScreenRegistryDatastore.mjs";
 
 describe('YamlScreenRegistryDatastore', () => {
   let dir;

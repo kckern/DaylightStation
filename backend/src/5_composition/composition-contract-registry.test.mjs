@@ -10,20 +10,20 @@
  * edge (filesystem, network, or messaging transport).
  */
 import { describe, expect, it, vi } from 'vitest';
-import { createNutribotServices } from './bootstrap.mjs';
-import { createFeedRouter } from '#api/v1/routers/feed.mjs';
-import { createArtRouter } from '#api/v1/routers/art.mjs';
+import { createNutribotServices } from '../../../modules/nutribot/server/composition/runtime.mjs';
+import { createFeedRouter } from "../../../modules/feed/server/api/feed.mjs";
+import { createArtRouter } from "../../../modules/art/server/api/art.mjs";
 import { createStateGatesModule } from './modules/stateGates.mjs';
-import { createFitnessPlayableModule } from './modules/fitnessApi.mjs';
+import { createFitnessPlayableModule } from "../../../modules/fitness/server/composition/fitnessApi.mjs";
 import { createApplicationScheduledJobs } from './modules/applicationScheduledJobs.mjs';
-import { createSchoolApiServices } from './modules/schoolApi.mjs';
-import { createLanguageStudyService } from './modules/schoolLanguage.mjs';
+import { createSchoolApiServices } from "../../../modules/school/server/composition/schoolApi.mjs";
+import { createLanguageStudyService } from "../../../modules/school/server/composition/schoolLanguage.mjs";
 import { GratitudePrintPresentationService } from '../../../modules/gratitude/server/application/services/GratitudePrintPresentationService.mjs';
-import { ProviderFitnessContentCatalog } from '#adapters/fitness/ProviderFitnessContentCatalog.mjs';
+import { ProviderFitnessContentCatalog } from "../../../modules/fitness/server/adapters/ProviderFitnessContentCatalog.mjs";
 import { INSTALLED_STATE_GATES_POLICY } from './modules/installedStateGatesPolicy.mjs';
-import { YamlStateGatesPolicySource } from '#adapters/state-gates/index.mjs';
-import { createLibbyRuntime } from './modules/libby.mjs';
-import { createMediaHouseModule } from './modules/mediaHouse.mjs';
+import { YamlStateGatesPolicySource } from "../../../capabilities/state-gates/server/adapters/index.mjs";
+import { createLibbyRuntime } from "../../../capabilities/content-catalog/server/composition/libby.mjs";
+import { createMediaHouseModule } from "../../../modules/media/server/composition/mediaHouse.mjs";
 import { runWithRequestContext } from '#system/runtime/requestContext.mjs';
 import { LibbyStreamGateway } from '#adapters/content/media/libby/LibbyStreamGateway.mjs';
 import { WebSocketEventBus } from '#adapters/eventbus/WebSocketEventBus.mjs';
@@ -452,7 +452,7 @@ const contracts = [
       const runtime = createLibbyRuntime({ dataPath: '/fixture', username: 'reader', fetch: vi.fn() });
       expect(runtime.streamGateway).toBeInstanceOf(LibbyStreamGateway);
       expect(runtime.streamService).toEqual(expect.any(Object));
-      const applicationSource = fs.readFileSync(new URL('../3_applications/proxy/LibraryMediaStreamService.mjs', import.meta.url), 'utf8');
+      const applicationSource = fs.readFileSync(new URL("../../../capabilities/content-catalog/server/application/proxy/LibraryMediaStreamService.mjs", import.meta.url), 'utf8');
       expect(applicationSource).not.toMatch(/\bfetch\b|new URL|listen\.libbyapp|overdrive\.com|redirect:\s*['"]manual/);
       runtime.leases.dispose();
     },

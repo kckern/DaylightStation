@@ -1,0 +1,167 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createIdleSessionSnapshot } from '@shared-contracts/media/shapes.mjs';
+import { createSessionStore } from "./sessionStore.js";
+import { attachPersistence, attachLogging, attachSlowStartWatchdog } from "./attachments.js";
+import mediaLog from "../logging/mediaLog.js";
+
+vi.mock("../logging/mediaLog.js", () => {
+  const stub = new Proxy({}, { get: (t, k) => (t[k] ??= vi.fn()) });
+  return { default: stub, mediaLog: stub };
+});
+
+function makeStore() {
+  return createSessionStore(createIdleSessionSnapshot({ sessionId: 's1', ownerId: 'c1' }));
+}
+
+beforeEach(() => vi.useFakeTimers());
+afterEach(() => vi.useRealTimers());
+
+describe('attachPersistence', () => {
+  it('writes immediately on the first transition (leading edge)', () => {
+    const store = makeStore();
+    const write = vi.fn(() => ({ ok: true }));
+    attachPersistence(store, { write, nowFn: () => Date.now() });
+    store.dispatch({ type: 'SET_CONFIG', patch: { volume: 70 } });
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write.mock.calls[0][1]).toEqual({ wasPlayingOnUnload: false });
+  });
+
+  it('throttles to ≤1 write per window, trailing write captures the latest state', () => {
+    const store = makeStore();
+    const write = vi.fn(() => ({ ok: true }));
+    attachPersistence(store, { write });
+    store.dispatch({ type: 'SET_CONFIG', patch: { volume: 10 } }); // leading write
+    store.dispatch({ type: 'SET_CONFIG', patch: { volume: 20 } }); // within window
+    store.dispatch({ type: 'SET_CONFIG', patch: { volume: 30 } }); // within window
+    expect(write).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(600);
+    expect(write).toHaveBeenCalledTimes(2);
+    expect(write.mock.calls[1][0].config.volume).toBe(30); // trailing = latest
+  });
+
+  it('flags wasPlayingOnUnload while playing', () => {
+    const store = makeStore();
+    const write = vi.fn(() => ({ ok: true }));
+    attachPersistence(store, { write });
+    store.dispatch({ type: 'LOAD_ITEM', item: { contentId: 'p:1', format: 'video' } });
+    vi.advanceTimersByTime(600);
+    store.dispatch({ type: 'PLAYER_STATE', playerState: 'playing' });
+    vi.advanceTimersByTime(600);
+    const lastCall = write.mock.calls[write.mock.calls.length - 1];
+    expect(lastCall[1]).toEqual({ wasPlayingOnUnload: true });
+  });
+
+  it('pagehide flushes a pending trailing write so a reload restores the latest state (duration)', () => {
+    const store = makeStore();
+    const write = vi.fn(() => ({ ok: true }));
+    attachPersistence(store, { write });
+    store.dispatch({ type: 'SET_CONFIG', patch: { volume: 10 } }); // leading write
+    store.dispatch({ type: 'SET_CONFIG', patch: { volume: 20 } }); // pending trailing
+    expect(write).toHaveBeenCalledTimes(1);
+    window.dispatchEvent(new Event('pagehide'));
+    expect(write).toHaveBeenCalledTimes(2);
+    expect(write.mock.calls[1][0].config.volume).toBe(20);
+    vi.advanceTimersByTime(1000);
+    expect(write).toHaveBeenCalledTimes(2); // trailing timer cancelled, no double write
+  });
+
+  it('detach cancels the trailing write', () => {
+    const store = makeStore();
+    const write = vi.fn(() => ({ ok: true }));
+    const detach = attachPersistence(store, { write });
+    store.dispatch({ type: 'SET_CONFIG', patch: { volume: 10 } });
+    store.dispatch({ type: 'SET_CONFIG', patch: { volume: 20 } });
+    detach();
+    vi.advanceTimersByTime(1000);
+    expect(write).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('attachLogging', () => {
+  it('emits sessionStateChange on state transitions only', () => {
+    const store = makeStore();
+    attachLogging(store);
+    store.dispatch({ type: 'LOAD_ITEM', item: { contentId: 'p:1', format: 'video' } });
+    expect(mediaLog.sessionStateChange).toHaveBeenCalledWith(expect.objectContaining({
+      prevState: 'idle', nextState: 'loading',
+    }));
+    mediaLog.sessionStateChange.mockClear();
+    store.dispatch({ type: 'SET_CONFIG', patch: { volume: 5 } });
+    expect(mediaLog.sessionStateChange).not.toHaveBeenCalled();
+  });
+
+  it('emits playbackStarted on transition into playing', () => {
+    const store = makeStore();
+    attachLogging(store);
+    store.dispatch({ type: 'LOAD_ITEM', item: { contentId: 'p:1', format: 'video' } });
+    store.dispatch({ type: 'PLAYER_STATE', playerState: 'playing' });
+    expect(mediaLog.playbackStarted).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 's1', contentId: 'p:1',
+    }));
+  });
+});
+
+describe('attachSlowStartWatchdog', () => {
+  // The mediaLog stub is a module-level Proxy shared by every test in this
+  // file — reset it so "was not called" means "not called by THIS test".
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  const loadItem = (store) => store.dispatch({
+    type: 'LOAD_ITEM',
+    item: { contentId: 'plex:665667', title: 'Spooky, Stinky Subsidies' },
+  });
+
+  it('a load stuck past the threshold stops claiming to be starting', () => {
+    const store = makeStore();
+    attachSlowStartWatchdog(store);
+    loadItem(store);
+    expect(store.getSnapshot().state).toBe('loading');
+
+    vi.advanceTimersByTime(14_999);
+    expect(store.getSnapshot().state).toBe('loading');
+
+    vi.advanceTimersByTime(2);
+    expect(store.getSnapshot().state).toBe('stalled');
+    expect(mediaLog.playbackStalled).toHaveBeenCalledWith(
+      expect.objectContaining({ phase: 'startup', contentId: 'plex:665667' })
+    );
+  });
+
+  it('does NOT advance — a slow server must not skip the episode', () => {
+    const store = makeStore();
+    attachSlowStartWatchdog(store);
+    loadItem(store);
+    vi.advanceTimersByTime(20_000);
+    expect(store.getSnapshot().currentItem?.contentId).toBe('plex:665667');
+    expect(mediaLog.playbackStallAutoAdvanced).not.toHaveBeenCalled();
+  });
+
+  it('playback starting in time cancels the watchdog', () => {
+    const store = makeStore();
+    attachSlowStartWatchdog(store);
+    loadItem(store);
+    store.dispatch({ type: 'PLAYER_STATE', playerState: 'playing' });
+    vi.advanceTimersByTime(60_000);
+    expect(store.getSnapshot().state).toBe('playing');
+    expect(mediaLog.playbackStalled).not.toHaveBeenCalled();
+  });
+
+  it('re-arms for each new load', () => {
+    const store = makeStore();
+    attachSlowStartWatchdog(store);
+    loadItem(store);
+    store.dispatch({ type: 'PLAYER_STATE', playerState: 'playing' });
+    store.dispatch({ type: 'LOAD_ITEM', item: { contentId: 'plex:665668', title: 'Wrestling with Socialism' } });
+    vi.advanceTimersByTime(15_001);
+    expect(store.getSnapshot().state).toBe('stalled');
+  });
+
+  it('detaching stops the pending timer', () => {
+    const store = makeStore();
+    const detach = attachSlowStartWatchdog(store);
+    loadItem(store);
+    detach();
+    vi.advanceTimersByTime(60_000);
+    expect(store.getSnapshot().state).toBe('loading');
+  });
+});

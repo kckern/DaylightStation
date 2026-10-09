@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { HomeAssistantAdapter } from '#adapters/home-automation/homeassistant/HomeAssistantAdapter.mjs';
+import { HomeAssistantAdapter } from "../../../../capabilities/home-control/server/adapters/homeassistant/HomeAssistantAdapter.mjs";
 
 const sinceIso = '2026-04-20T00:00:00.000Z';
 

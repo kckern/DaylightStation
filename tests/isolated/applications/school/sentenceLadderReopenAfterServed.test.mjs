@@ -9,9 +9,9 @@
  * asserts the typed-code path honours it with the ladder's own planned entry.
  */
 import { describe, it, expect } from 'vitest';
-import { ResolveAccessCode } from '#apps/school/usecases/ResolveAccessCode.mjs';
-import { appendAssignedProgramEntries } from '#apps/school/assignedProgramPlan.mjs';
-import { mintToken } from '#domains/school/sessions/tokens.mjs';
+import { ResolveAccessCode } from "../../../../modules/school/server/application/usecases/ResolveAccessCode.mjs";
+import { appendAssignedProgramEntries } from "../../../../modules/school/server/application/assignedProgramPlan.mjs";
+import { mintToken } from "../../../../modules/school/server/domain/sessions/tokens.mjs";
 
 const LEARNER_ID = 'kid1';
 const CORPUS_ID = 'glossika-korean';

@@ -1,4 +1,4 @@
-import { IPlaybackStreamGateway } from '#apps/proxy/ports/IPlaybackStreamGateway.mjs';
+import { IPlaybackStreamGateway } from "../../../../capabilities/content-catalog/server/application/proxy/ports/IPlaybackStreamGateway.mjs";
 
 /** Registry-backed playback URL gateway with existing mint telemetry. */
 export class RegistryPlaybackStreamGateway extends IPlaybackStreamGateway {

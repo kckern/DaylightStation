@@ -2,9 +2,9 @@
 import { vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createPlayRouter } from '#backend/src/4_api/v1/routers/play.mjs';
-import { PlaybackReadService } from '#apps/content/services/PlaybackReadService.mjs';
-import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
+import { createPlayRouter } from "../../../../capabilities/playback/server/api/play.mjs";
+import { PlaybackReadService } from "../../../../capabilities/playback/server/application/services/PlaybackReadService.mjs";
+import { RegistryContentCatalogGateway } from "../../../../capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
 
 describe('Play API Router', () => {
   let app;

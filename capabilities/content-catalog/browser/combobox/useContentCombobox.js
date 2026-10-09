@@ -1,0 +1,985 @@
+// useContentCombobox.js — the side-effect layer around the pure combobox
+// machine (comboboxMachine.js). Owns every fetch, debounce timer, and cache
+// interaction; the machine owns every state transition. Behavior is ported
+// from the two prior implementations (ContentSearchCombobox.jsx standalone,
+// ListsItemRow.jsx inline) — including the audit fixes:
+//   S1 — DRILL_LOADED/WENT_UP carry their own pagination, so a drilled level
+//        can never inherit the siblings window (structural, via the machine).
+//   S5 — doBatchSearch lists `searchParams` in its deps, so a prop change
+//        reaches the batch fallback URL (the standalone had a stale closure).
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useDebouncedCallback } from '@mantine/hooks';
+import { useStreamingSearch } from "../../../../frontend/src/hooks/useStreamingSearch.js";
+import { getChildLogger } from "../../../../frontend/src/lib/logging/singleton.js";
+import { isContentIdLike, parseSourcePrefix, isDirectSourceIdQuery } from "../lib/contentSearchLogic.js";
+import { getCacheEntry, setCacheEntry } from "../lib/siblingsCache.js";
+import { reducer, initialState, closeDecision, decideCommit, isContainer, Modes, RENDER_CAP } from "./comboboxMachine.js";
+import { sanitizeBreadcrumbs } from "../lib/breadcrumbs.js";
+import { notifyWarning } from "./notify.js";
+import { loadKnownSources, isKnownSource } from "../lib/knownSources.js";
+
+const SEARCH_STREAM_ENDPOINT = '/api/v1/content/query/search/stream';
+const SEARCH_BATCH_ENDPOINT = '/api/v1/content/query/search';
+// The non-SSE batch fallback caps results; the SSE stream does not. Only the
+// batch path can truncate, so the "showing first N" affordance (audit S6) is
+// gated on it hitting this cap.
+const BATCH_TAKE = 20;
+const SEARCH_DEBOUNCE_MS = 300;
+const PAGE_SIZE = 21;
+const TITLE_CACHE_MAX = 500;
+
+// Identity of a search run: the query text AND the scope params it ran under.
+// Every once-per-search guard in this hook keys on this pair rather than on
+// the text alone, so re-running the same words under a different scope chip
+// counts as a new search (see the settle/recovery effects below). The unit
+// separator can't occur in either half, so the pair can never collide.
+const searchKey = (text, params) => `${text}\u001f${params ?? ''}`;
+
+/** Check if the browser supports Server-Sent Events. */
+function supportsSSE() {
+  return typeof EventSource !== 'undefined';
+}
+
+function normalizeListSource(source) {
+  return source === 'list' ? 'menu' : source;
+}
+
+/** Split `source:localId`, tolerating the legacy `source: localId` spacing. */
+function splitContentId(contentId) {
+  if (typeof contentId !== 'string') return null;
+  const colonIndex = contentId.indexOf(':');
+  if (colonIndex === -1) return null;
+  return {
+    source: normalizeListSource(contentId.slice(0, colonIndex).trim()),
+    localId: contentId.slice(colonIndex + 1).trim(),
+  };
+}
+
+const normalizeValue = (v) => v?.replace(/:\s+/g, ':');
+
+// F13: `word:` / `word-word:` followed by only optional whitespace — a source
+// prefix whose term is empty. Distinct from parseSourcePrefix (which returns
+// null both here AND for plain no-colon text), so we detect it explicitly.
+const isBareSourcePrefix = (t) => typeof t === 'string' && /^[\w-]+:\s*$/.test(t);
+
+// Process-lifetime cache of contentId -> human title so the resolved-title
+// line renders instantly for items we've already seen. Exported for tests.
+export const titleCache = new Map();
+
+function rememberTitle(contentId, title) {
+  if (!contentId || !title) return;
+  if (titleCache.size > TITLE_CACHE_MAX) titleCache.clear();
+  titleCache.set(contentId, title);
+}
+
+// Map a raw /siblings API item into the shared cache shape (same mapping as
+// ListsItemRow's doFetchSiblings, plus `id` so machine items are uniform).
+function toBrowseItem(item) {
+  return {
+    id: item.id,
+    value: item.id,
+    title: item.title,
+    source: item.source,
+    type: item.type || item.itemType,
+    thumbnail: item.thumbnail,
+    grandparent: item.grandparentTitle,
+    parent: item.parentTitle,
+    library: item.libraryTitle,
+    itemCount: item.childCount ?? null,
+    itemIndex: item.itemIndex ?? null,
+    number: item.number ?? null,
+    isContainer: item.isContainer || item.itemType === 'container',
+  };
+}
+
+// Cache entries written by ListsItemRow's preloader key items on `value`.
+const ensureId = (item) => (item.id != null ? item : { ...item, id: item.value });
+
+function parentToCrumb(parent, fallbackSource) {
+  return {
+    id: parent.id,
+    title: parent.title,
+    source: parent.source || fallbackSource,
+    localId: parent.id?.split(':').slice(1).join(':'),
+  };
+}
+
+// Map a siblings-API ancestor Crumb ({id,title,source,localId,type}) to the
+// hook's crumb shape used by goUp/goToCrumb (source + localId drive the /list
+// fetch). Ancestors already carry localId/type, so preserve them rather than
+// re-deriving; fall back to id-splitting only if localId is absent.
+function ancestorToCrumb(crumb, fallbackSource) {
+  return {
+    id: crumb.id,
+    title: crumb.title,
+    source: crumb.source || fallbackSource,
+    localId: crumb.localId ?? crumb.id?.split(':').slice(1).join(':'),
+    type: crumb.type ?? null,
+  };
+}
+
+/**
+ * Fetch siblings of a content id and shape the result for the shared
+ * siblingsCache ({browseItems, currentParent, pagination, referenceIndex}).
+ */
+async function fetchSiblingsData(contentId) {
+  const parsed = splitContentId(contentId);
+  if (!parsed) return null;
+  const { source, localId } = parsed;
+  const response = await fetch(`/api/v1/siblings/${source}/${encodeURIComponent(localId)}`);
+  if (!response.ok) throw new Error(`Browse failed: ${response.status}`);
+  const data = await response.json();
+  return {
+    browseItems: (data.items || []).map(toBrowseItem),
+    // Keyed on `data.parent` truthy for parity with ListsItemRow's
+    // doFetchSiblings — the cache is shared with legacy code until Task 13.
+    currentParent: data.parent
+      ? {
+          id: data.parent.id,
+          title: data.parent.title,
+          source: data.parent.source || source,
+          thumbnail: data.parent.thumbnail,
+          parentKey: data.parent.parentId ?? null,
+          libraryId: data.parent.libraryId ?? null,
+        }
+      : null,
+    pagination: data.pagination || null,
+    referenceIndex: data.referenceIndex ?? -1,
+    // Root-first ancestor chain for the breadcrumb trail (optional; adapters
+    // that can't build one omit it → the single-parent crumb fallback applies).
+    ancestors: Array.isArray(data.ancestors) ? data.ancestors : null,
+  };
+}
+
+/**
+ * useContentCombobox — reducer wiring + transports for the unified content
+ * combobox. The component (Task 10) renders `state` and calls these handlers.
+ *
+ * @param {object} args
+ * @param {string} args.value - committed content id ('' when unset)
+ * @param {(id: string, item?: object) => void} args.onChange
+ * @param {string} [args.searchParams] - extra query params for search endpoints
+ * @param {string} [args.fallbackSearchParams] - catalog-wide params to widen to when a
+ *   search scoped by `searchParams` settles empty (D5: a search silently scoped to a
+ *   narrow library — e.g. Music>Ambient — must not present as "nothing exists"). Optional
+ *   and a no-op when omitted/nullish or equal to `searchParams` — non-Media consumers
+ *   (Admin, PlaybackHub) that never pass it see no change in behavior.
+ * @param {boolean} [args.appResults] - merge app-registry matches ahead of content results
+ * @param {string} [args.logApp] - which app owns these log events. The combobox is
+ *   shared, so without this every host's search funnel files itself under 'admin'
+ *   and is invisible to an `app:<host>` log query (2026-08-12 session review).
+ * @param {string} [args.scopeKey] - the caller's current search scope, stamped onto
+ *   `search.dispatch`/`search.settled`/`search.fallback_to_all` payloads. One of the
+ *   documented observability gaps from the 2026-08-21 incident: a search settling
+ *   empty carried no record of which scope it ran against. Optional; omitted by
+ *   callers (Admin, PlaybackHub) that have no scope concept — logs then carry
+ *   `scopeKey: null`, no behavior change.
+ * @param {string} [args.scopeLabel] - human label for `scopeKey` (e.g. "Ambient"),
+ *   included alongside it in `search.fallback_to_all` for log readability. Optional.
+ */
+export function useContentCombobox({
+  value, onChange, searchParams = '', fallbackSearchParams, scopeKey, scopeLabel,
+  appResults = false, selectContainers = false, allowFreeform = true, logApp = 'admin', retainQueryOnEscape = false,
+  retainPlayableSelection = false,
+}) {
+  const log = useMemo(() => getChildLogger({ component: 'useContentCombobox', app: logApp, sessionLog: true }), [logApp]);
+  const [state, dispatch] = useReducer(reducer, value ?? '', initialState);
+
+  // Latest-value refs so async continuations never read a stale closure.
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  // Monotonic token invalidating in-flight browse loads when the user types,
+  // the dropdown closes, or the committed value changes — a late response must
+  // not yank the machine back into BROWSE over newer intent.
+  const browseTokenRef = useRef(0);
+  // Which committed value the live browse pagination belongs to. Only a
+  // siblings load (BROWSE_LOADED) sets it — drilled/parent levels own their
+  // own pagination, and paginate() must never fetch /siblings for those.
+  // Structural guard: it does not rely on /list responses happening to carry
+  // no pagination today.
+  const paginationOwnerRef = useRef(null);
+  const invalidateBrowseLoads = () => {
+    browseTokenRef.current += 1;
+    paginationOwnerRef.current = null;
+  };
+
+  // Warm the valid-prefix set so a literal commit can tell a pasted-but-valid
+  // id from an invented source. Cached module-wide, so this is one request per
+  // page regardless of how many comboboxes mount.
+  useEffect(() => { loadKnownSources(); }, []);
+
+  // ── 1. Reducer wiring: VALUE_CHANGED on prop change (skip initial render) ──
+  const prevValueRef = useRef(value);
+  useEffect(() => {
+    if (prevValueRef.current === value) return;
+    const prevValue = prevValueRef.current;
+    prevValueRef.current = value;
+    invalidateBrowseLoads();
+    if (!value && prevValue) log.info('value.cleared', { prevValue });
+    else log.debug('props.value_changed', { value, prevValue });
+    dispatch({ type: 'VALUE_CHANGED', value: value ?? '' });
+  }, [value, log]);
+
+  // ── 2. Search transport: SSE stream with batch fallback ──
+  const {
+    state: streamState,
+    results: streamResults,
+    pending: pendingSources,
+    isSearching: streamSearching,
+    error: streamError,
+    sourceErrors,
+    search: streamSearch,
+    retry: retryStream,
+    cancel: cancelStream = () => {},
+  } = useStreamingSearch(SEARCH_STREAM_ENDPOINT, searchParams);
+
+  const [batchResults, setBatchResults] = useState([]);
+  const [batchLoading, setBatchLoading] = useState(false);
+  // `cancelStream()` deliberately drops the previous request synchronously,
+  // before its 300ms replacement debounce opens. Keep that visible intent
+  // distinct from transport activity: otherwise both consumers briefly claim
+  // a completed empty search during that hand-off.
+  const [debouncePending, setDebouncePending] = useState(false);
+  // Pre-cap count of the results last dispatched to the machine (which caps at
+  // RENDER_CAP). Lets the UI surface a "showing first N" hint on ANY transport
+  // — the SSE stream is uncapped and can blow past the cap, unlike the batch
+  // fallback which the server already limits to BATCH_TAKE.
+  const [rawResultCount, setRawResultCount] = useState(0);
+  const queryRef = useRef(''); // last dispatched search text (for app-result merge)
+  // The `searchParams` value the last USER-initiated dispatch ran under (a
+  // keystroke or a scope change — NOT the D5 widening, which deliberately
+  // overrides the params for one request without changing the active scope).
+  // Two things need it: (a) the settle/recovery effects must ignore a settle
+  // that belongs to the PREVIOUS scope, which is otherwise indistinguishable
+  // from a real one because the transports are idle and the box text is
+  // unchanged the instant a chip is tapped; (b) the one-shot guards below key
+  // on it, so a scope change re-arms them.
+  const dispatchedParamsRef = useRef(searchParams);
+  // D5: true once the current query text has widened from `searchParams` to
+  // `fallbackSearchParams` after a clean empty settle. Reset on every new
+  // INPUT (handleInput) and on every scope change so a stale flag never
+  // survives onto a different query or a different scope.
+  const [fellBackToAll, setFellBackToAll] = useState(false);
+
+  // S5 fix: `searchParams` MUST be in the deps — the standalone version
+  // omitted it, so prop changes never reached the batch URL (stale closure).
+  // `overrideParams` mirrors useStreamingSearch's `search(query, overrideExtraQuery)` —
+  // the D5 fallback effect uses it to re-run the same text with wider params without
+  // waiting for the `searchParams` prop itself to change.
+  const doBatchSearch = useCallback(async (text, overrideParams) => {
+    if (!text || text.length < 2) {
+      log.debug('batch_search.skip', { text, reason: 'too_short' });
+      setBatchResults([]);
+      return;
+    }
+    const effectiveParams = overrideParams !== undefined ? overrideParams : searchParams;
+    log.info('batch_search.start', { text, params: effectiveParams || null });
+    setBatchLoading(true);
+    try {
+      const response = await fetch(
+        `${SEARCH_BATCH_ENDPOINT}?text=${encodeURIComponent(text)}&take=${BATCH_TAKE}${effectiveParams ? '&' + effectiveParams : ''}`
+      );
+      if (!response.ok) throw new Error('Search failed');
+      const data = await response.json();
+      log.info('batch_search.done', { text, resultCount: (data.items || []).length });
+      setBatchResults(data.items || []);
+    } catch (err) {
+      log.error('batch_search.error', { text, error: err.message });
+      setBatchResults([]);
+    } finally {
+      setBatchLoading(false);
+    }
+  }, [searchParams, log]);
+
+  const debouncedSearch = useDebouncedCallback((text) => {
+    const mode = supportsSSE() ? 'sse' : 'batch';
+    // F13: a bare source prefix ("singalong:") has an empty term. Sending the
+    // literal to the backend triggers a full-text search for the string
+    // "singalong:" across all sources (junk). Route it as an empty query —
+    // same as clearing the box. Scoped "source:term" is left untouched.
+    const q = isBareSourcePrefix(text) ? '' : text;
+    setDebouncePending(false);
+    log.info('search.dispatch', { text: q, mode, scopeKey: scopeKey ?? null });
+    queryRef.current = q;
+    // Stamp the scope this dispatch runs under. `searchParams` is read fresh
+    // here (Mantine's useDebouncedCallback holds the callback in a ref, so
+    // this closure is never stale) — the whole point is that a scope change
+    // followed by a re-dispatch must be observable to the settle/recovery
+    // effects below.
+    dispatchedParamsRef.current = searchParams;
+    if (supportsSSE()) streamSearch(q);
+    else doBatchSearch(q);
+  }, SEARCH_DEBOUNCE_MS);
+
+  const handleInput = useCallback((text) => {
+    // The debounced transport cannot be the boundary of intent ownership: a
+    // previous stream must be retired before its late callback can land under
+    // the newly visible text.
+    cancelStream();
+    invalidateBrowseLoads();
+    setFellBackToAll(false); // new text invalidates any prior D5 fallback flag
+    setDebouncePending(!isBareSourcePrefix(text) && text.trim().length >= 2);
+    dispatch({ type: 'INPUT', text });
+    debouncedSearch(text);
+  }, [cancelStream, debouncedSearch]);
+
+  // Scope chips change `searchParams`, and nothing re-ran the search: the chip
+  // lit up (aria-pressed) directly above a result list that was still whatever
+  // the previous scope returned, so the user believed a filter had applied
+  // that never did. Re-dispatch the CURRENT box text whenever the active scope
+  // changes.
+  //
+  // It goes through the SAME debounced dispatch the keystroke path uses rather
+  // than calling streamSearch directly, which buys two things: one dispatch
+  // site (so `search.dispatch`, queryRef and dispatchedParamsRef can never
+  // diverge between the two entry points), and free coalescing — a chip tapped
+  // on top of a still-pending keystroke just restarts the shared timer instead
+  // of racing a second request against it.
+  //
+  // Guarded on a ref rather than "did this effect run": the initial mount must
+  // not dispatch (nothing has been typed yet, and handleInput owns the first
+  // search), and a re-render that merely re-creates the callback must not
+  // re-fire.
+  const prevSearchParamsRef = useRef(searchParams);
+  useEffect(() => {
+    if (prevSearchParamsRef.current === searchParams) return;
+    prevSearchParamsRef.current = searchParams;
+    const text = stateRef.current.search ?? '';
+    // Nothing meaningful in the box (closed, cleared, too short, or a bare
+    // `source:` prefix) — there is no search to re-run.
+    if (isBareSourcePrefix(text) || text.trim().length < 2) return;
+    // Scope changed now; the scoped replacement still debounces, but the old
+    // scope must stop owning callbacks immediately.
+    cancelStream();
+    setFellBackToAll(false); // a different scope invalidates the previous widening
+    setDebouncePending(true);
+    log.info('search.rerun_for_scope', { textLength: text.length, scopeKey: scopeKey ?? null });
+    debouncedSearch(text);
+  }, [searchParams, scopeKey, cancelStream, debouncedSearch, log]);
+
+  // F14: while searching, a `source:term` query scopes the backend search to
+  // that one source. Surface the scope so the UI can show a removable chip.
+  // Only meaningful while editing/searching (search != null). But a DIRECT id
+  // entry (plex:455704, canvas:fhe/elisha.jpeg) is not a within-source search —
+  // suppress the chip so obvious id entry isn't framed as "searching within X".
+  const activeScope = state.search != null && !isDirectSourceIdQuery(state.search, state.results)
+    ? (parseSourcePrefix(state.search)?.source ?? null)
+    : null;
+  // Drop the source prefix, rewriting the box to the bare term and re-running
+  // the now-unscoped search.
+  const clearScope = useCallback(() => {
+    const parsed = parseSourcePrefix(stateRef.current.search);
+    if (parsed) handleInput(parsed.term);
+  }, [handleInput]);
+
+  // Dispatch RESULTS whenever stream/batch results change, merging
+  // app-registry matches ahead of content results when enabled.
+  const rawResults = supportsSSE() ? streamResults : batchResults;
+  useEffect(() => {
+    let cancelled = false;
+    const finish = (items) => {
+      if (cancelled) return;
+      setRawResultCount(items.length); // pre-cap length (machine slices to RENDER_CAP)
+      dispatch({ type: 'RESULTS', items });
+    };
+    const query = queryRef.current;
+    if (!appResults || !query || query.length < 2) {
+      finish(rawResults);
+      return undefined;
+    }
+    (async () => {
+      try {
+        const { searchApps, APP_REGISTRY } = await import("../../../../frontend/src/lib/appRegistry.js");
+        const appMatches = searchApps(query).map((app) => ({
+          id: `app:${app.id}`,
+          title: app.label,
+          source: 'app',
+          type: 'app',
+          thumbnail: APP_REGISTRY[app.id]?.icon || null,
+          isApp: true,
+          appId: app.id,
+          hasParam: !!app.param,
+          param: app.param,
+        }));
+        finish([...appMatches, ...rawResults]);
+      } catch (err) {
+        log.warn('app_results.error', { query, error: err.message });
+        finish(rawResults);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [rawResults, appResults, log]);
+
+  // Cancel any pending debounced dispatch and clear transport results — a
+  // timer surviving close would repopulate results while closed.
+  const cancelPendingSearch = useCallback(() => {
+    queryRef.current = '';
+    setDebouncePending(false);
+    debouncedSearch('');
+    if (supportsSSE()) streamSearch(''); // hook clears results/pending for short queries
+    else setBatchResults([]);
+  }, [debouncedSearch, streamSearch]);
+
+  // ── 3. Siblings browse (cache-aware) ──
+  const applyBrowseData = useCallback((contentId, data) => {
+    if (!data) return;
+    const items = (data.browseItems || []).map(ensureId);
+    const fallbackSource = splitContentId(contentId)?.source;
+    // Prefer the full root-first ancestor chain (climbable + clickable trail);
+    // sanitize drops any ghost/dupe/junk crumbs. Fall back to the single parent
+    // crumb when the response carries no ancestors (no regression).
+    const breadcrumbs = (Array.isArray(data.ancestors) && data.ancestors.length > 0)
+      ? sanitizeBreadcrumbs(data.ancestors.map((c) => ancestorToCrumb(c, fallbackSource)))
+      : data.currentParent
+        ? [parentToCrumb(data.currentParent, fallbackSource)]
+        : [];
+    const normalizedVal = normalizeValue(contentId);
+    const foundIndex = (data.referenceIndex != null && data.referenceIndex >= 0)
+      ? data.referenceIndex
+      : items.findIndex((i) => i.id === normalizedVal);
+    // Genuine-miss path: when the committed value isn't in the loaded window,
+    // highlight nothing (idx -1) rather than a phantom row 0. The absence is
+    // surfaced instead by the orientation header in ContentCombobox.
+    const referenceIndex = foundIndex >= 0 ? foundIndex : -1;
+    paginationOwnerRef.current = data.pagination ? contentId : null;
+    dispatch({
+      type: 'BROWSE_LOADED',
+      items,
+      breadcrumbs,
+      pagination: data.pagination ?? null,
+      referenceIndex,
+    });
+  }, []);
+
+  const openWithSiblings = useCallback(async () => {
+    invalidateBrowseLoads();
+    dispatch({ type: 'OPEN' });
+    const contentId = stateRef.current.value;
+    if (!contentId || !splitContentId(contentId)) {
+      log.debug('load_siblings.skip', { contentId, reason: contentId ? 'no_colon' : 'no_value' });
+      return;
+    }
+    const token = browseTokenRef.current;
+    const stillWanted = () => browseTokenRef.current === token;
+
+    const cached = getCacheEntry(contentId);
+    if (cached?.status === 'loaded' && cached.data) {
+      log.debug('load_siblings.cache_hit', { contentId, count: cached.data.browseItems?.length ?? 0 });
+      applyBrowseData(contentId, cached.data);
+      return;
+    }
+    if (cached?.status === 'pending' && cached.promise) {
+      log.debug('load_siblings.cache_pending', { contentId });
+      dispatch({ type: 'BROWSE_LOADING' });
+      try {
+        const data = await cached.promise;
+        if (stillWanted()) applyBrowseData(contentId, data);
+      } catch (err) {
+        log.error('load_siblings.error', { contentId, from: 'cache_pending', error: err.message });
+        if (stillWanted()) dispatch({ type: 'BROWSE_LOADING', loading: false });
+      }
+      return;
+    }
+
+    // Cache miss — fetch and populate the shared cache.
+    log.info('load_siblings.start', { contentId });
+    dispatch({ type: 'BROWSE_LOADING' });
+    const promise = fetchSiblingsData(contentId);
+    setCacheEntry(contentId, { status: 'pending', data: null, promise });
+    try {
+      const data = await promise;
+      setCacheEntry(contentId, { status: 'loaded', data, promise: null });
+      log.info('load_siblings.done', {
+        contentId,
+        itemCount: data?.browseItems?.length ?? 0,
+        hasParent: !!data?.currentParent,
+        pagination: data?.pagination ?? null,
+      });
+      if (stillWanted()) applyBrowseData(contentId, data);
+    } catch (err) {
+      setCacheEntry(contentId, { status: 'error', data: null, promise: null });
+      log.error('load_siblings.error', { contentId, error: err.message });
+      if (stillWanted()) dispatch({ type: 'BROWSE_LOADING', loading: false });
+    }
+  }, [applyBrowseData, log]);
+
+  // ── 4. Drill / up ──
+  const drill = useCallback(async (item) => {
+    const source = normalizeListSource(item.source || item.id?.split(':')[0]);
+    const localId = item.localId
+      ?? (item.id?.includes(':') ? item.id.split(':').slice(1).join(':') : item.id);
+    // Bump the token so any overlapping browse response (siblings, another
+    // drill, pagination) started earlier cannot interleave with this one.
+    const token = ++browseTokenRef.current;
+    paginationOwnerRef.current = null; // the drilled level owns its pagination
+    log.info('browse_container.start', {
+      contentId: item.id, title: item.title, source, localId,
+      prevBreadcrumbDepth: stateRef.current.browse.breadcrumbs.length,
+    });
+    dispatch({ type: 'BROWSE_LOADING' });
+    try {
+      const response = await fetch(`/api/v1/list/${source}/${encodeURIComponent(localId)}/expand`);
+      if (!response.ok) throw new Error(`Browse failed: ${response.status}`);
+      const data = await response.json();
+      const crumb = { id: item.id, title: item.title, source, localId };
+      log.info('browse_container.done', { source, localId, itemCount: (data.items || []).length });
+      if (browseTokenRef.current !== token) return;
+      dispatch({
+        type: 'DRILL_LOADED',
+        crumb,
+        items: (data.items || []).map(ensureId),
+        pagination: data.pagination ?? null, // S1: drilled level owns its pagination
+      });
+    } catch (err) {
+      log.error('browse_container.error', { contentId: item.id, source, localId, error: err.message });
+      if (browseTokenRef.current === token) dispatch({ type: 'BROWSE_LOADING', loading: false });
+    }
+  }, [log]);
+
+  const goUp = useCallback(async () => {
+    const { breadcrumbs } = stateRef.current.browse;
+    log.info('go_back.start', { breadcrumbDepth: breadcrumbs.length });
+    if (breadcrumbs.length <= 1) {
+      // At the siblings root — dismiss to DISPLAY keeping the committed value.
+      // OPEN seeded `search` with the committed id, so an INPUT here would turn
+      // Back into a keyword search of the raw id string (F8). CLOSE resets to
+      // initialState(value): DISPLAY mode, search=null, value preserved.
+      log.info('go_back.dismiss_from_root', { reason: 'at_root_or_single_crumb' });
+      invalidateBrowseLoads(); // a late browse response must not yank us back
+      dispatch({ type: 'CLOSE' });
+      cancelPendingSearch(); // clear any debounced search timer/results
+      return;
+    }
+    const nextBreadcrumbs = breadcrumbs.slice(0, -1);
+    const popped = breadcrumbs[breadcrumbs.length - 1];
+    const parent = nextBreadcrumbs[nextBreadcrumbs.length - 1];
+    const token = ++browseTokenRef.current; // invalidate overlapping browse responses
+    paginationOwnerRef.current = null; // the parent level owns its pagination
+    log.info('go_back.to_parent', {
+      parentId: parent.id, parentTitle: parent.title, newDepth: nextBreadcrumbs.length,
+    });
+    dispatch({ type: 'BROWSE_LOADING' });
+    try {
+      const response = await fetch(`/api/v1/list/${parent.source}/${encodeURIComponent(parent.localId)}/expand`);
+      if (!response.ok) throw new Error(`Browse failed: ${response.status}`);
+      const data = await response.json();
+      const items = (data.items || []).map(ensureId);
+      const referenceIndex = items.findIndex((i) => i.id === popped.id);
+      log.info('go_back.done', { parentId: parent.id, itemCount: items.length });
+      if (browseTokenRef.current !== token) return;
+      dispatch({
+        type: 'WENT_UP',
+        items,
+        breadcrumbs: nextBreadcrumbs,
+        pagination: data.pagination ?? null, // S1: parent level owns its pagination
+        referenceIndex: referenceIndex >= 0 ? referenceIndex : 0,
+      });
+    } catch (err) {
+      log.error('go_back.error', { parentId: parent.id, error: err.message });
+      if (browseTokenRef.current === token) dispatch({ type: 'BROWSE_LOADING', loading: false });
+    }
+  }, [cancelPendingSearch, log]);
+
+  // Jump directly to an ancestor crumb: list its children, truncate the trail
+  // to 0..index inclusive, and highlight the child we came from. Follows goUp's
+  // token-guard / paginationOwner pattern exactly, and reuses the WENT_UP
+  // transition (it already sets items + breadcrumbs + referenceIndex — an
+  // arbitrary truncation, not just a single pop).
+  const goToCrumb = useCallback(async (index) => {
+    const { breadcrumbs } = stateRef.current.browse;
+    // Out of range, or clicking the LAST (current) crumb → nothing to do.
+    if (index < 0 || index >= breadcrumbs.length - 1) {
+      log.debug('go_to_crumb.skip', { index, depth: breadcrumbs.length });
+      return;
+    }
+    const target = breadcrumbs[index];
+    const childCrumb = breadcrumbs[index + 1]; // the crumb below — the child we came from
+    const nextBreadcrumbs = breadcrumbs.slice(0, index + 1);
+    const token = ++browseTokenRef.current; // invalidate overlapping browse responses
+    paginationOwnerRef.current = null; // the jumped-to level owns its pagination
+    log.info('go_to_crumb.start', {
+      index, targetId: target.id, targetTitle: target.title, newDepth: nextBreadcrumbs.length,
+    });
+    dispatch({ type: 'BROWSE_LOADING' });
+    try {
+      const response = await fetch(`/api/v1/list/${target.source}/${encodeURIComponent(target.localId)}/expand`);
+      if (!response.ok) throw new Error(`Browse failed: ${response.status}`);
+      const data = await response.json();
+      const items = (data.items || []).map(ensureId);
+      const referenceIndex = childCrumb ? items.findIndex((i) => i.id === childCrumb.id) : -1;
+      log.info('go_to_crumb.done', { index, targetId: target.id, itemCount: items.length });
+      if (browseTokenRef.current !== token) return;
+      dispatch({
+        type: 'WENT_UP',
+        items,
+        breadcrumbs: nextBreadcrumbs,
+        pagination: data.pagination ?? null, // the jumped-to level owns its pagination
+        referenceIndex: referenceIndex >= 0 ? referenceIndex : 0,
+      });
+    } catch (err) {
+      log.error('go_to_crumb.error', { index, targetId: target.id, error: err.message });
+      if (browseTokenRef.current === token) dispatch({ type: 'BROWSE_LOADING', loading: false });
+    }
+  }, [log]);
+
+  // ── 5. Pagination (in-flight guarded; the machine owns items/window math) ──
+  // Returns true only when a PAGINATED event was actually dispatched, so the
+  // component can arm/disarm its scroll-suppression guard accurately.
+  const paginationInFlightRef = useRef(false);
+  const paginate = useCallback(async (direction) => {
+    const current = stateRef.current;
+    const pagination = current.browse.pagination;
+    const contentId = current.value;
+    if (!contentId || !pagination || paginationInFlightRef.current) return false;
+    // Structural guard: only the siblings level paginates against /siblings.
+    // After a drill/up, the visible pagination belongs to that level's /list
+    // response — fetching value's siblings for it would corrupt the window.
+    if (paginationOwnerRef.current !== contentId) {
+      log.debug('load_more_siblings.skip', { direction, reason: 'not_siblings_level' });
+      return false;
+    }
+    const parsed = splitContentId(contentId);
+    if (!parsed) return false;
+
+    let offset;
+    let limit;
+    if (direction === 'after') {
+      if (!pagination.hasAfter) return false;
+      offset = pagination.offset + pagination.window;
+      limit = PAGE_SIZE;
+    } else {
+      if (!pagination.hasBefore) return false;
+      offset = Math.max(0, pagination.offset - PAGE_SIZE);
+      limit = Math.min(PAGE_SIZE, pagination.offset);
+      if (limit <= 0) return false;
+    }
+
+    log.info('load_more_siblings', { direction, offset, limit, ...parsed });
+    paginationInFlightRef.current = true;
+    const token = ++browseTokenRef.current; // invalidate overlapping browse responses
+    paginationOwnerRef.current = contentId; // still the siblings level
+    try {
+      const response = await fetch(
+        `/api/v1/siblings/${parsed.source}/${encodeURIComponent(parsed.localId)}?offset=${offset}&limit=${limit}`
+      );
+      if (!response.ok) return false;
+      const data = await response.json();
+      if (browseTokenRef.current !== token) return false;
+      dispatch({ type: 'PAGINATED', direction, items: (data.items || []).map(toBrowseItem) });
+      return true;
+    } catch (err) {
+      log.error('load_more_siblings.error', { direction, error: err.message });
+      return false;
+    } finally {
+      paginationInFlightRef.current = false;
+    }
+  }, [log]);
+
+  // ── Lifecycle: close-commit policy + selection ──
+  const handleClose = useCallback((reason) => {
+    const current = stateRef.current;
+    const decision = closeDecision({ search: current.search, value: current.value, allowFreeform }, reason);
+    if (decision.action === 'commit') {
+      log.info('freeform.commit_on_close', { freeformValue: decision.value, prevValue: current.value, reason });
+      onChangeRef.current?.(decision.value);
+    } else if (decision.action === 'revert' && current.search && current.search !== current.value) {
+      log.info('freeform.revert_on_close', { discarded: current.search, kept: current.value, reason });
+    }
+    invalidateBrowseLoads();
+    dispatch({ type: 'CLOSE', reason, retainSearch: reason === 'escape' && retainQueryOnEscape ? current.search : null });
+    cancelPendingSearch();
+  }, [cancelPendingSearch, log, allowFreeform, retainQueryOnEscape]);
+
+  const select = useCallback((item) => {
+    log.info('item_select', { contentId: item.id, title: item.title, prevValue: stateRef.current.value });
+    rememberTitle(item.id, item.title);
+    onChangeRef.current?.(item.id, item);
+    if (retainPlayableSelection && !isContainer(item)) return;
+    handleClose('select'); // closeDecision('select') → no double-commit
+  }, [handleClose, log, retainPlayableSelection]);
+
+  // ── Commit executor: run the pure decision and perform its side effect ──
+  // `searchSettled` distinguishes "still loading/debouncing" from "settled, no
+  // match" for the Enter path. True only once the transport has finished for
+  // the CURRENT editing text: queryRef.current is set inside debouncedSearch,
+  // so right after handleInput it is stale → searchSettled stays false until the
+  // debounce fires AND the transport returns (streamSearching/batchLoading clear).
+  const searchSettled = !streamSearching && !batchLoading && !streamError
+    && queryRef.current === (state.search ?? '')
+    && (state.search ?? '').trim().length >= 2;
+  // Mirror into a ref so `commit` reads the latest value without re-creating on
+  // every settle transition (avoids a stale-closure read in event handlers).
+  const searchSettledRef = useRef(searchSettled);
+  searchSettledRef.current = searchSettled;
+
+  // Every once-per-search guard below keys on the PAIR (query text, active
+  // scope params), never on the text alone. Keying on text alone made a scope
+  // change invisible to them: re-running "bluey" under a different chip is a
+  // genuinely new search that must be able to log its own settle, spend its
+  // own source-error retry, and widen on its own — but each of those was
+  // already "used up" by the first scope's run of the same text.
+  // (`searchKey` lives at module scope, near the top of this file.)
+
+  // A settle only belongs to the CURRENT scope once a dispatch has actually
+  // run under it. Between a chip tap and the re-dispatch firing, the
+  // transports are idle and the box text is unchanged, so `searchSettled` is
+  // still true while the visible results belong to the OLD scope — acting on
+  // that settle would log a bogus settle and could widen a scope that never
+  // ran. (The D5 widening deliberately does not update dispatchedParamsRef:
+  // its request overrides the params for one call without changing the active
+  // scope, so its own settle stays on the same key and the guards stay armed.)
+  const settleBelongsToScope = dispatchedParamsRef.current === searchParams;
+
+  // Observability: the 2026-08-21 incident (phone search settled empty for a
+  // title that existed) was undiagnosable because nothing recorded what a
+  // search settled WITH. Log each settle transition once, with result counts
+  // and any per-source stream errors.
+  //
+  // sourceErrors arrives from useStreamingSearch as an array of
+  // {source, error} objects (not an object keyed by source name) — adapted
+  // from the brief's object-shaped assumption accordingly.
+  const settleLoggedForRef = useRef(null);
+  useEffect(() => {
+    if (!searchSettled || !settleBelongsToScope) return;
+    const text = queryRef.current;
+    const key = searchKey(text, searchParams);
+    if (settleLoggedForRef.current === key) return;
+    settleLoggedForRef.current = key;
+    const erroredSources = (sourceErrors || []).map((e) => e.source);
+    log.info('search.settled', {
+      textLength: text.length,
+      resultCount: stateRef.current.results.length,
+      rawResultCount,
+      sourceErrors: erroredSources,
+      scopeKey: scopeKey ?? null,
+    });
+    for (const { source, error } of sourceErrors || []) {
+      log.warn('search.source_error', { source, error: String(error?.message ?? error) });
+    }
+  }, [searchSettled, settleBelongsToScope, sourceErrors, rawResultCount, searchParams, scopeKey, log]);
+
+  // ── Empty-settle recovery ladder (Task 5 retry + Task 11 / D5 widening) ──
+  //
+  // These two recoveries used to be separate effects, and the widening one
+  // opened with `if (sourceErrors.length > 0) return;` — a VETO, not an
+  // ordering. With a genuinely down source (Plex, in the 2026-08-21 incident)
+  // that meant: scoped search settles empty → retried once → errors again →
+  // and then nothing, ever. No results and no explanation, which is both
+  // halves of the original incident at once.
+  //
+  // They are now ONE effect running one rung per empty settle, so "retry
+  // first, widen second" is expressed as a sequence the user actually
+  // traverses instead of a condition that can strand them:
+  //
+  //   rung 1 — a source errored: re-run the SAME text under the SAME scope
+  //            once. Transient adapter failures are the common case and a
+  //            successful retry means the widening never needs to happen.
+  //   rung 2 — still empty (the retry is spent, or nothing errored at all):
+  //            widen to `fallbackSearchParams` and set `fellBackToAll` so the
+  //            surface can say so.
+  //
+  // Each rung fires at most once per (query text + scope), so a source that is
+  // genuinely down cannot retry-loop and the widened search cannot re-widen.
+  // The rungs are re-armed by a new query text OR a scope change — both are
+  // new searches and both deserve the full ladder. Ordering is guaranteed by
+  // the single early `return` after rung 1: the retry's own settle is a later
+  // render, so rung 2 can never fire in the same pass that started the retry.
+  const recoveryRef = useRef({ key: null, retried: false, widened: false });
+  useEffect(() => {
+    if (!searchSettled || !settleBelongsToScope) return;
+    const text = queryRef.current;
+    const key = searchKey(text, searchParams);
+    if (recoveryRef.current.key !== key) {
+      recoveryRef.current = { key, retried: false, widened: false };
+    }
+    const recovery = recoveryRef.current;
+    if (rawResults.length > 0 || rawResultCount > 0 || stateRef.current.results.length > 0) return; // not empty — nothing to recover from
+
+    // Rung 1: same text, same scope, one more time.
+    const erroredSources = (sourceErrors || []).map((e) => e.source);
+    if (erroredSources.length > 0 && !recovery.retried) {
+      recovery.retried = true;
+      log.info('search.retry_after_source_error', { textLength: text.length, sourceErrors: erroredSources });
+      if (supportsSSE()) erroredSources.forEach((source) => retryStream(source));
+      else doBatchSearch(text);
+      return;
+    }
+
+    // Rung 2: widen. Skipped entirely for callers that never opted in
+    // (fallbackSearchParams nullish — Admin/PlaybackHub) and when the search
+    // is already catalog-wide (searchParams === fallbackSearchParams), which
+    // would otherwise loop the identical search forever.
+    if (fallbackSearchParams == null) return;
+    if (searchParams === fallbackSearchParams) return;
+    if (recovery.widened) return;
+    recovery.widened = true;
+    setFellBackToAll(true);
+    log.info('search.fallback_to_all', {
+      textLength: text.length,
+      searchParams: searchParams || null,
+      fallbackSearchParams: fallbackSearchParams || null,
+      scopeKey: scopeKey ?? null,
+      scopeLabel: scopeLabel ?? null,
+    });
+    if (supportsSSE()) streamSearch(text, fallbackSearchParams, { preserveFailures: true });
+    else doBatchSearch(text, fallbackSearchParams);
+  }, [
+    searchSettled, settleBelongsToScope, sourceErrors, rawResults, rawResultCount, searchParams, fallbackSearchParams,
+    scopeKey, scopeLabel, streamSearch, retryStream, doBatchSearch, log,
+  ]);
+
+  const commit = useCallback((reason) => {
+    const s = stateRef.current;
+    const decision = decideCommit({
+      reason, search: s.search, value: s.value, results: s.results,
+      highlightIdx: s.highlight.idx, userNavigated: s.highlight.userNavigated,
+      selectContainers, searchSettled: searchSettledRef.current, isContainer,
+      allowFreeform,
+    });
+    switch (decision.action) {
+      case 'select': select(decision.item); break;   // existing helper: onChange(id,item)+close
+      case 'drill':  drill(decision.item); break;     // stays OPEN, do not close
+      case 'open':   break;                           // keep dropdown open, commit nothing
+      case 'literal': {
+        // A hand-typed id with an invented prefix used to be saved with the
+        // same reassuring "saved as raw id" toast as a valid one, so a typo'd
+        // source was indistinguishable from a good paste until something else
+        // 404'd later. Name the problem at the moment of saving.
+        const literalSource = parseSourcePrefix(decision.value)?.source ?? null;
+        const known = literalSource ? isKnownSource(literalSource) : null;
+        log.info('commit.literal_fallback', {
+          value: decision.value, prevValue: s.value, source: literalSource, knownSource: known,
+        });
+        onChangeRef.current?.(decision.value);
+        if (known === false) {
+          notifyWarning({
+            title: `Unknown source “${literalSource}”`,
+            message: `Saved, but nothing can resolve “${literalSource}:”. Check the prefix — this row will not load.`,
+          });
+        } else {
+          notifyWarning({
+            title: 'Saved as raw id',
+            message: `Saved “${decision.value}” as a raw content id`,
+          });
+        }
+        invalidateBrowseLoads(); dispatch({ type: 'CLOSE' }); cancelPendingSearch();
+        break;
+      }
+      case 'revert':
+      case 'dismiss':
+        log.info(`commit.${decision.action}`, { discarded: s.search, kept: s.value, reason });
+        invalidateBrowseLoads(); dispatch({ type: 'CLOSE', retainSearch: reason === 'escape' && retainQueryOnEscape ? s.search : null }); cancelPendingSearch();
+        break;
+      case 'none':
+      default:
+        dispatch({ type: 'CLOSE' }); cancelPendingSearch();
+        break;
+    }
+    return decision;
+  }, [selectContainers, select, drill, cancelPendingSearch, log, allowFreeform, retainQueryOnEscape]);
+
+  // ── 6. Title resolution for the committed value ──
+  const [resolvedTitle, setResolvedTitle] = useState(() => (
+    isContentIdLike(value) && titleCache.has(value) ? titleCache.get(value) : null
+  ));
+  useEffect(() => {
+    if (!isContentIdLike(value)) {
+      setResolvedTitle(null);
+      return undefined;
+    }
+    if (titleCache.has(value)) {
+      setResolvedTitle(titleCache.get(value));
+      return undefined;
+    }
+    setResolvedTitle(null);
+    const parsed = splitContentId(value);
+    if (!parsed) return undefined;
+    let cancelled = false;
+    fetch(`/api/v1/info/${parsed.source}/${encodeURIComponent(parsed.localId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((info) => {
+        if (cancelled || !info?.title) return;
+        rememberTitle(value, info.title);
+        setResolvedTitle(info.title);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [value]);
+
+  const normalizedStreamState = streamState ?? {
+    query: queryRef.current,
+    scope: searchParams,
+    sources: Object.fromEntries([
+      ...pendingSources.map((source) => [source, 'pending']),
+      ...sourceErrors.map(({ source }) => [source, 'failed']),
+    ]),
+    results: streamResults,
+    phase: streamSearching ? (streamResults.length > 0 ? 'partial' : 'loading')
+      : sourceErrors.length > 0 ? 'partial' : 'complete',
+    failedSources: sourceErrors.map(({ source }) => source),
+  };
+  const searchState = supportsSSE()
+    ? {
+        ...normalizedStreamState,
+        query: state.search ?? '',
+        scope: searchParams,
+        results: state.results,
+        phase: debouncePending ? 'loading' : normalizedStreamState.phase,
+      }
+    : {
+        query: state.search ?? '',
+        scope: searchParams,
+        sources: batchLoading ? { batch: 'pending' } : { batch: streamError ? 'failed' : 'complete' },
+        results: state.results,
+        phase: debouncePending || batchLoading
+          ? 'loading'
+          : streamError ? 'failed' : (state.search ?? '').trim().length < 2 ? 'idle' : 'complete',
+        failedSources: streamError ? ['batch'] : [],
+      };
+
+  return {
+    state,
+    searchState,
+    dispatch,
+    // input/search
+    handleInput,
+    activeScope,
+    clearScope,
+    // browse
+    openWithSiblings,
+    drill,
+    goUp,
+    goToCrumb,
+    paginate,
+    // lifecycle
+    handleClose,
+    select,
+    commit,
+    // meta
+    searchSettled,
+    resolvedTitle,
+    isSearching: streamSearching || batchLoading || debouncePending,
+    pendingSources,
+    sourceErrors,
+    streamError,
+    retrySource: retryStream,
+    // D5: true once this query text has widened from `searchParams` to
+    // `fallbackSearchParams` after a clean empty settle. Surfaces use this to
+    // render "Nothing in ‹scope› — showing N results from everywhere."
+    fellBackToAll,
+    // Flag truncation so the UI can offer a "refine your search" affordance
+    // (audit S6 / F6). Two independent caps can bite: the machine caps every
+    // transport's results at RENDER_CAP (the SSE stream is otherwise uncapped
+    // and can stream hundreds), and the batch fallback the server limits to
+    // BATCH_TAKE. Report whichever the raw (pre-cap) count crossed.
+    truncatedAt: rawResultCount > RENDER_CAP
+      ? RENDER_CAP
+      : (!supportsSSE() && batchResults.length >= BATCH_TAKE) ? BATCH_TAKE : null,
+  };
+}
+
+export { Modes };
+export default useContentCombobox;

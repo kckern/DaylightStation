@@ -7,7 +7,7 @@ vi.mock('#system/utils/FileIO.mjs', () => ({
   saveYaml: vi.fn(),
 }));
 
-const { ActivityReconciliationService } = await import('#apps/fitness/ActivityReconciliationService.mjs');
+const { ActivityReconciliationService } = await import("../../../../modules/fitness/server/application/ActivityReconciliationService.mjs");
 const { loadYamlSafe, listYamlFiles, dirExists, saveYaml } = await import('#system/utils/FileIO.mjs');
 
 const historyRepository = (remove = vi.fn(() => true)) => ({

@@ -20,8 +20,8 @@ jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
 }));
 
 // Import User after mocking
-const { User } = await import('#frontend/hooks/fitness/UserManager.js');
-const { UserManager } = await import('#frontend/hooks/fitness/UserManager.js');
+const { User } = await import("../../../modules/fitness/browser/hooks/fitness/UserManager.js");
+const { UserManager } = await import("../../../modules/fitness/browser/hooks/fitness/UserManager.js");
 
 // Zone config: cool (min:60), active (min:100), warm (min:130)
 const TEST_ZONES = [

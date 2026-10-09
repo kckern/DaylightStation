@@ -18,8 +18,8 @@
  * played it, you mis-copied the letters") are different instructions.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { CloseSessionOutcome } from '#apps/school/usecases/CloseSessionOutcome.mjs';
-import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
+import { CloseSessionOutcome } from "../../../../modules/school/server/application/usecases/CloseSessionOutcome.mjs";
+import { CurriculumAccess } from "../../../../modules/school/server/application/CurriculumAccess.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeAssignmentStore,
   fakeClock, fakeGrownUps, seededRng, silentLogger,

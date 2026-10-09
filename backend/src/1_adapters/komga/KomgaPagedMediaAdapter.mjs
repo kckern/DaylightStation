@@ -1,6 +1,6 @@
 // backend/src/1_adapters/komga/KomgaPagedMediaAdapter.mjs
 
-import { IPagedMediaGateway } from '#apps/agents/paged-media-toc/ports/IPagedMediaGateway.mjs';
+import { IPagedMediaGateway } from "../../../../modules/media/server/application/agents/paged-media-toc/ports/IPagedMediaGateway.mjs";
 import { HttpClient } from '#system/services/HttpClient.mjs';
 
 /**

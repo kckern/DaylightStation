@@ -8,8 +8,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createHealthRouter } from '#api/v1/routers/health.mjs';
-import { HealthOperations } from '#apps/health/HealthOperations.mjs';
+import { createHealthRouter } from "../../../../modules/health/server/api/routers/health.mjs";
+import { HealthOperations } from "../../../../modules/health/server/application/health/HealthOperations.mjs";
 
 function buildApp({ personalContextLoader, configService } = {}) {
   const app = express();

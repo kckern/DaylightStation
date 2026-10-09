@@ -1,6 +1,6 @@
 // tests/unit/content/capabilities/Listable.test.mjs
 import { describe, test, expect } from 'vitest';
-import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
+import { ListableItem } from "../../../../../capabilities/content-catalog/server/domain/capabilities/Listable.mjs";
 
 describe('Listable capability', () => {
   test('creates listable item with itemType', () => {

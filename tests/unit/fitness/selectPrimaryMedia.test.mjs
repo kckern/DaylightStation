@@ -1,4 +1,4 @@
-import { selectPrimaryMedia } from '../../../frontend/src/hooks/fitness/selectPrimaryMedia.js';
+import { selectPrimaryMedia } from "../../../modules/fitness/browser/hooks/fitness/selectPrimaryMedia.js";
 
 // ─── Test data factories ───
 

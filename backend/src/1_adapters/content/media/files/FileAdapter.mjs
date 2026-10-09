@@ -2,9 +2,9 @@
 import path from 'path';
 import crypto from 'crypto';
 import { parseFile } from 'music-metadata';
-import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
-import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
-import { ItemSelectionService } from '#domains/content/index.mjs';
+import { ListableItem } from "../../../../../../capabilities/content-catalog/server/items.mjs";
+import { PlayableItem } from "../../../../../../capabilities/content-catalog/server/items.mjs";
+import { ItemSelectionService } from "../../../../../../capabilities/content-catalog/server/domain/services/ItemSelectionService.mjs";
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import {
   fileExists,
@@ -66,7 +66,7 @@ const MAX_COVER_SIZE = 10 * 1024 * 1024; // 10MB
  * Implements IContentSource for accessing media files on the local filesystem.
  * Supports watch state integration via MediaProgressMemory for resume position tracking.
  */
-import { IContentSource } from '#apps/content/ports/IContentSource.mjs';
+import { IContentSource } from "../../../../../../capabilities/content-catalog/server/application/ports/IContentSource.mjs";
 
 export class FileAdapter extends IContentSource {
   /**

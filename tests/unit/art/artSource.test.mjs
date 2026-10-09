@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
-import { createArtSource } from '../../../backend/src/1_adapters/content/art/sources/artSource.mjs';
+import { createArtSource } from "../../../modules/art/server/adapters/sources/artSource.mjs";
 
 let base;
 const write = async (rel, content) => {

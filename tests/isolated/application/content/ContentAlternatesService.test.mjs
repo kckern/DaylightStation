@@ -12,10 +12,10 @@ import { describe, test, expect, beforeEach } from 'vitest';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { FileAdapter } from '#adapters/content/media/files/FileAdapter.mjs';
-import { FilesystemCanvasAdapter } from '#adapters/content/canvas/filesystem/FilesystemCanvasAdapter.mjs';
-import { ContentSourceRegistry } from '#adapters/content/ContentSourceRegistry.mjs';
-import { ContentAlternatesService } from '#apps/content/ContentAlternatesService.mjs';
-import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
+import { FilesystemCanvasAdapter } from "../../../../modules/art/server/adapters/canvas/filesystem/FilesystemCanvasAdapter.mjs";
+import { ContentSourceRegistry } from "../../../../capabilities/content-catalog/server/adapters/ContentSourceRegistry.mjs";
+import { ContentAlternatesService } from "../../../../capabilities/content-catalog/server/application/ContentAlternatesService.mjs";
+import { RegistryContentCatalogGateway } from "../../../../capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const mediaPath = path.resolve(__dirname, '../../../_fixtures/media');

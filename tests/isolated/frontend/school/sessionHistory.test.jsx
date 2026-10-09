@@ -10,13 +10,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import SessionHistory from '#frontend/modules/Admin/School/SessionHistory.jsx';
+import SessionHistory from "../../../../modules/school/browser/admin/SessionHistory.jsx";
 
 const rosterMock = vi.fn();
 const learnerSessionsMock = vi.fn();
 const sessionEventsMock = vi.fn();
 
-vi.mock('#frontend/modules/Admin/School/schoolAdminApi.js', () => ({
+vi.mock("../../../../modules/school/browser/admin/schoolAdminApi.js", () => ({
   schoolAdminApi: {
     roster: (...a) => rosterMock(...a),
     learnerSessions: (...a) => learnerSessionsMock(...a),

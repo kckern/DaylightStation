@@ -1,5 +1,5 @@
 import { CurrentChordStaff } from './CurrentChordStaff.jsx';
-import '../pianoTokens.scss';
+import '../tokens-style.mjs';
 import './StudioTopPane.scss';
 
 /**

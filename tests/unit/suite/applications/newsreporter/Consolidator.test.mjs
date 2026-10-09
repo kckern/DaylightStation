@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { Consolidator } from '#apps/newsreporter/Consolidator.mjs';
+import { Consolidator } from "../../../../../modules/newsreporter/server/application/Consolidator.mjs";
 
 const fakeRuntime = (outputs) => {
   let i = 0;

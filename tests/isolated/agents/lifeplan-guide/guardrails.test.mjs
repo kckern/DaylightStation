@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { systemPrompt } from '#apps/agents/lifeplan-guide/prompts/system.mjs';
+import { systemPrompt } from "../../../../modules/life/server/application/agents/lifeplan-guide/prompts/system.mjs";
 
 describe('LifeplanGuide Guardrails', () => {
   it('system prompt defines scope boundaries', () => {

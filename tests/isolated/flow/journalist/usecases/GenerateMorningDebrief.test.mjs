@@ -19,7 +19,7 @@ describe('GenerateMorningDebrief — HOOK parsing', () => {
     mockLogger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
     const module = await import(
-      '#backend/src/3_applications/journalist/usecases/GenerateMorningDebrief.mjs'
+      "../../../../../modules/journalist/server/application/usecases/GenerateMorningDebrief.mjs"
     );
     GenerateMorningDebrief = module.GenerateMorningDebrief;
   });

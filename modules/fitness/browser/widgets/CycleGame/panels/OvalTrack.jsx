@@ -1,0 +1,184 @@
+import React, { useEffect, useRef } from 'react';
+import PropTypes from 'prop-types';
+import { LINE_COLORS } from "../../../lib/cycleGame/lineColors.js";
+import { formatClock } from "../../../lib/cycleGame/cycleGameLobby.js";
+import { createTickLerp } from "../../../lib/cycleGame/motionClock.js";
+import { ovalPoint } from "../../../lib/cycleGame/ovalTrackModel.js";
+import "./OvalTrack.scss";
+
+// Oval geometry radii (SVG user units) — the track ellipse the markers ride on.
+const RX = 100;
+const RY = 50;
+
+/**
+ * Top-down velodrome oval. Each rider's marker sits at `progress` (0→1+) around
+ * the loop — the caller decides what one loop means: when laps are enabled it's a
+ * LAP track (one full revolution = one lap, progress wraps 1→0 across the top tick
+ * each lap, via `ovalProgressFor`); when laps are off it's a "whole-race track"
+ * (one loop = the entire race, a finisher parking at the start/finish tick, a fast
+ * time-racer wrapping past their circuit target). Synthwave HUD panel; lane-colored
+ * markers glide on the shared linear motion clock (imperative transform writes).
+ */
+export default function OvalTrack({ riderIds, riders, progress = {}, lapLabel = null, lapLengthM = 0, elapsedS = 0 }) {
+  // Compact two-row lap strip under the oval (one column per rider): the previous
+  // (last completed) lap as a fixed split, and the current lap counting up live.
+  // Shown whenever laps are enabled — before the first crossing "Last" reads "—"
+  // and "Now" counts up from the race start.
+  const lapsOn = Number.isFinite(lapLengthM) && lapLengthM > 0;
+  const splitsOf = (id) => riders[id]?.lapSplits || [];
+  const prevLap = (id) => { const s = splitsOf(id); return s.length ? s[s.length - 1] - (s[s.length - 2] || 0) : null; };
+  const curLap = (id) => { const s = splitsOf(id); return Math.max(0, elapsedS - (s[s.length - 1] || 0)); };
+
+  // ── Motion clock: glide each marker between 1 Hz progress ticks ─────────────
+  // The engine reports lap progress once per second; without interpolation the
+  // markers would jump around the oval. React renders the CURRENT-tick position (so a
+  // no-rAF env shows the exact datum); the shared linear clock only ADJUSTS them from
+  // the previous tick toward the current — imperatively, with no CSS transition (the
+  // old 0.9s transform transition was one of the five desynced motion clocks, and it
+  // also spun a lap-wrapping marker the long way around).
+  const markerEls = useRef({});
+  const clockRef = useRef(null);
+  if (!clockRef.current) clockRef.current = createTickLerp({ intervalMs: 1000 });
+  const motionRef = useRef({});          // { id: { prev, cur } } progress (0..1+)
+  const prevProgRef = useRef({});        // last tick's progress per rider
+
+  // Shortest-path fraction blend on the circle so a lap wrap (0.98 → 0.02) glides
+  // FORWARD across the start line, not backward around the whole oval.
+  const blendProgress = (prev, cur, f) => {
+    let delta = cur - prev;
+    if (delta > 0.5) delta -= 1;
+    if (delta < -0.5) delta += 1;
+    return prev + delta * f;
+  };
+
+  useEffect(() => {
+    const clock = clockRef.current;
+    const unsub = clock.subscribe((f) => {
+      const m = motionRef.current;
+      Object.keys(m).forEach((id) => {
+        const el = markerEls.current[id];
+        if (!el) return;
+        const p = blendProgress(m[id].prev, m[id].cur, f);
+        const pt = ovalPoint(p, RX, RY);
+        el.style.transform = `translate(${pt.x}px, ${pt.y}px)`;
+      });
+    });
+    return () => { unsub(); clock.stop(); };
+  }, []);
+
+  // Signature of the current progress tuple — re-arm the clock only when it changes.
+  const progressKey = riderIds.map((id) => `${id}:${progress[id] || 0}`).join('|');
+  useEffect(() => {
+    const next = {};
+    riderIds.forEach((id) => {
+      const cur = progress[id] || 0;
+      const prev = Number.isFinite(prevProgRef.current[id]) ? prevProgRef.current[id] : cur;
+      next[id] = { prev, cur };
+    });
+    motionRef.current = next;
+    const snapshot = {};
+    riderIds.forEach((id) => { snapshot[id] = progress[id] || 0; });
+    prevProgRef.current = snapshot;
+    clockRef.current.onTick(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progressKey]);
+
+  return (
+    <div className="cg-oval-track" data-testid="oval-track">
+      <svg
+        className="cg-oval-track__svg"
+        viewBox="-130 -80 260 160"
+        role="img"
+        aria-label="Velodrome oval track"
+        preserveAspectRatio="xMidYMid meet"
+      >
+        {/* Outer track ellipse — neon-rimmed lane the avatars ride on. */}
+        <ellipse className="cg-oval-track__lane" cx="0" cy="0" rx={RX} ry={RY} />
+        {/* Faint inner ellipse for depth (the infield). */}
+        <ellipse className="cg-oval-track__infield" cx="0" cy="0" rx={RX - 22} ry={RY - 14} />
+        {/* Start/finish tick at the top of the oval. */}
+        <line className="cg-oval-track__startline" x1="0" y1={-RY - 8} x2="0" y2={-RY + 8} />
+
+        {/* Current lap number, centered in the infield (inside the SVG so it can't
+            drift onto the track when the panel resizes around the strip below). */}
+        {lapLabel ? (
+          <text className="cg-oval-track__lap-label" data-testid="oval-lap-label"
+            x="0" y="0" textAnchor="middle" dominantBaseline="central">{lapLabel}</text>
+        ) : null}
+
+        {riderIds.map((id, idx) => {
+          const color = LINE_COLORS[idx % LINE_COLORS.length];
+          const p = ovalPoint(progress[id] || 0, RX, RY);
+          const isGhost = !!riders[id]?.isGhost;
+          return (
+            <g
+              key={`oval-marker-${id}`}
+              ref={(el) => { markerEls.current[id] = el; }}
+              className={`cg-oval-track__marker${isGhost ? ' cg-oval-track__marker--ghost' : ''}`}
+              data-testid="oval-marker"
+              // CSS transform PROPERTY (not the SVG attribute) so the shared motion
+              // clock can rewrite it imperatively each frame. px == user units for a
+              // translate, so the ellipse coordinates carry over unchanged. React
+              // renders the current-tick point; the clock glides it between ticks.
+              style={{ transform: `translate(${p.x}px, ${p.y}px)` }}
+            >
+              {/* No in-dot initial letter (audit UX §7 / T11): a 9px marker dot
+                  can't earn even the relaxed 1rem recap-surface floor without a
+                  redesign, and the lap strip below already carries a lane dot +
+                  full rider name — removed rather than shrunk further. */}
+              <circle
+                className="cg-oval-track__dot"
+                r="9"
+                fill={color}
+                stroke={color}
+                strokeDasharray={isGhost ? '3 3' : undefined}
+              />
+            </g>
+          );
+        })}
+      </svg>
+      {lapsOn ? (
+        <table className="cg-oval-track__laps" data-testid="oval-lap-strip">
+          <thead>
+            <tr>
+              <th className="cg-oval-track__laps-corner" aria-hidden="true" />
+              {riderIds.map((id, idx) => (
+                <th key={id} className="cg-oval-track__laps-rider" data-testid="oval-lap-rider">
+                  <span className="cg-oval-track__laps-dot" style={{ background: LINE_COLORS[idx % LINE_COLORS.length] }} />
+                  <span className="cg-oval-track__laps-name">{riders[id]?.displayName || id}</span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="cg-oval-track__laps-row" data-testid="oval-lap-prev">
+              <th scope="row" className="cg-oval-track__laps-label">Last</th>
+              {riderIds.map((id) => {
+                const d = prevLap(id);
+                return <td key={id} className="cg-oval-track__laps-cell">{d == null ? '—' : formatClock(d)}</td>;
+              })}
+            </tr>
+            <tr className="cg-oval-track__laps-row cg-oval-track__laps-row--current" data-testid="oval-lap-cur">
+              <th scope="row" className="cg-oval-track__laps-label">Now</th>
+              {riderIds.map((id) => (
+                <td key={id} className="cg-oval-track__laps-cell cg-oval-track__laps-cell--current">
+                  {formatClock(curLap(id))}
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      ) : null}
+    </div>
+  );
+}
+
+OvalTrack.propTypes = {
+  riderIds: PropTypes.array.isRequired,
+  riders: PropTypes.object.isRequired,
+  riderLive: PropTypes.object,
+  progress: PropTypes.object,
+  lapLabel: PropTypes.string,
+  lapLengthM: PropTypes.number,
+  elapsedS: PropTypes.number
+};

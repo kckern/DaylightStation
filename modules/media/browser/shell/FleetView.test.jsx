@@ -1,0 +1,190 @@
+// frontend/src/modules/Media/shell/FleetView.test.jsx
+// Fleet card "Play…" affordance: the button sits next to Remote, toggles the
+// inline FleetPlayPicker open/closed, and the picker's onClose collapses it.
+// Existing card testids (fleet-card-*, fleet-peek-*, fleet-state-*) stay put.
+import React from 'react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { MantineProvider } from '@mantine/core';
+
+const fleet = { devices: [], entries: {} };
+const getController = vi.fn();
+const moveHere = vi.fn(async () => ({ ok: true }));
+vi.mock("../household/useMoveHere.js", () => ({ useMoveHere: () => moveHere }));
+
+vi.mock("../fleet/useFleetContext.js", () => ({
+  useFleetContext: () => ({ devices: fleet.devices, loading: false, error: null, store: {}, connected: fleet.connected }),
+}));
+vi.mock("../fleet/useDevice.js", () => ({
+  useDevice: (deviceId) => ({
+    device: fleet.devices.find((d) => d.id === deviceId) ?? null,
+    entry: fleet.entries[deviceId] ?? null,
+  }),
+}));
+vi.mock("./NavProvider.jsx", () => ({
+  useNav: () => ({ push: vi.fn() }),
+}));
+vi.mock("../peek/useTakeOver.js", () => ({
+  useTakeOver: () => vi.fn(),
+}));
+vi.mock("../peek/usePeek.js", () => ({ usePeek: () => ({ getController }) }));
+// House-wide signals and actions have their own tests (FleetView.house.test.jsx).
+vi.mock("../house/useHouseSignals.js", () => ({
+  useStartStatuses: () => new Map(), useStartedByAll: () => new Map(), useStartedBy: () => null,
+}));
+vi.mock("../house/HouseQuietControls.jsx", () => ({ HouseQuietBar: () => null }));
+// The picker's own behavior is covered in fleet/FleetPlayPicker.test.jsx —
+// here it's a marker with a close hook.
+vi.mock("../fleet/FleetPlayPicker.jsx", () => ({
+  FleetPlayPicker: ({ deviceId, onClose }) => (
+    <div data-testid={`mock-play-picker-${deviceId}`}>
+      <button data-testid={`mock-play-picker-close-${deviceId}`} onClick={onClose}>close</button>
+    </div>
+  ),
+}));
+
+import { FleetView } from "./FleetView.jsx";
+
+function renderFleet() {
+  return render(
+    <MantineProvider>
+      <FleetView />
+    </MantineProvider>,
+  );
+}
+
+beforeEach(() => {
+  fleet.devices = [
+    { id: 'livingroom-tv', name: 'Living Room TV', type: 'shield-tv' },
+    { id: 'office-tv', name: 'Office TV', type: 'linux-pc' },
+  ];
+  fleet.entries = {};
+  fleet.connected = true;
+  getController.mockReset();
+  moveHere.mockClear();
+});
+
+describe('FleetView Play… affordance', () => {
+  it('identifies the browser session that owns this Fleet view as This device', () => {
+    fleet.devices = [{ id: 'browser:browser-a', name: 'Browser A', type: 'browser', isLocal: true }];
+    fleet.entries = {
+      'browser:browser-a': {
+        snapshot: { state: 'playing', currentItem: { title: 'Arrival', contentId: 'plex:55854' } },
+      },
+    };
+
+    renderFleet();
+
+    expect(screen.getByTestId('fleet-card-browser:browser-a')).toHaveTextContent('Browser A');
+    expect(screen.getByTestId('fleet-this-device-browser:browser-a')).toHaveTextContent('This device');
+  });
+
+  it('HOUSE.2a/AC4: Move here on an active row hands that screen\'s playback to this device', () => {
+    fleet.entries = { 'livingroom-tv': { snapshot: {
+      state: 'playing', currentItem: { title: 'Bluey', contentId: 'plex:9' },
+      meta: { playbackOwner: { ownerInstanceId: 'o1', playbackRevision: 2 } },
+    } } };
+    renderFleet();
+    const button = screen.getByTestId('fleet-takeover-livingroom-tv');
+    expect(button).toBeEnabled();
+    expect(button).toHaveTextContent('Move here');
+    expect(screen.queryByTestId('fleet-takeover-unavailable-livingroom-tv')).toBeNull();
+    fireEvent.click(button);
+    expect(moveHere).toHaveBeenCalledWith('livingroom-tv', { contentId: 'plex:9', title: 'Bluey' });
+  });
+
+  it('says why Move here is unavailable when the screen carries no playback-owner identity', () => {
+    fleet.entries = { 'livingroom-tv': { snapshot: { state: 'playing', currentItem: { title: 'Bluey' } } } };
+    renderFleet();
+    expect(screen.getByTestId('fleet-takeover-livingroom-tv')).toBeDisabled();
+    expect(screen.getByTestId('fleet-takeover-unavailable-livingroom-tv')).toHaveTextContent(/can't be moved here/i);
+  });
+
+  it('does not offer Move here on this device\'s own row', () => {
+    fleet.devices = [{ id: 'browser:browser-a', name: 'Browser A', type: 'browser', isLocal: true }];
+    fleet.entries = { 'browser:browser-a': { snapshot: { state: 'playing', currentItem: { title: 'Arrival' }, meta: { playbackOwner: { ownerInstanceId: 'o', playbackRevision: 1 } } } } };
+    renderFleet();
+    expect(screen.queryByTestId('fleet-takeover-browser:browser-a')).toBeNull();
+  });
+
+  it('renders a Play… button on every card alongside the existing actions', () => {
+    renderFleet();
+    for (const id of ['livingroom-tv', 'office-tv']) {
+      expect(screen.getByTestId(`fleet-card-${id}`)).toBeInTheDocument();
+      expect(screen.getByTestId(`fleet-peek-${id}`)).toBeInTheDocument();
+      expect(screen.getByTestId(`fleet-state-${id}`)).toBeInTheDocument();
+      expect(screen.getByTestId(`fleet-play-${id}`)).toHaveTextContent('Play…');
+    }
+  });
+
+  it('opens the inline picker for THAT card on tap, and toggles it closed on a second tap', () => {
+    renderFleet();
+    expect(screen.queryByTestId('mock-play-picker-livingroom-tv')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('fleet-play-livingroom-tv'));
+    expect(screen.getByTestId('mock-play-picker-livingroom-tv')).toBeInTheDocument();
+    expect(screen.queryByTestId('mock-play-picker-office-tv')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('fleet-play-livingroom-tv'));
+    expect(screen.queryByTestId('mock-play-picker-livingroom-tv')).toBeNull();
+  });
+
+  it('collapses the panel when the picker asks to close', () => {
+    renderFleet();
+    fireEvent.click(screen.getByTestId('fleet-play-office-tv'));
+    expect(screen.getByTestId('mock-play-picker-office-tv')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('mock-play-picker-close-office-tv'));
+    expect(screen.queryByTestId('mock-play-picker-office-tv')).toBeNull();
+  });
+
+  it('marks the toggle so the picker can ignore its pointerdowns (clean toggle, no flicker)', () => {
+    renderFleet();
+    expect(screen.getByTestId('fleet-play-livingroom-tv'))
+      .toHaveAttribute('data-play-toggle', 'livingroom-tv');
+  });
+
+  it('offers inline Pause and Stop which route to that browser controller', () => {
+    const pause = vi.fn();
+    const stop = vi.fn();
+    getController.mockReturnValue({ transport: { pause, stop } });
+    fleet.devices = [{ id: 'browser:wall', name: 'Kitchen tablet', type: 'browser' }];
+    fleet.entries = { 'browser:wall': { snapshot: { state: 'playing', currentItem: { title: 'Arrival' } } } };
+    renderFleet();
+
+    fireEvent.click(screen.getByTestId('fleet-pause-browser:wall'));
+    fireEvent.click(screen.getByTestId('fleet-stop-browser:wall'));
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows house-disconnected and per-screen uncertainty copy', () => {
+    fleet.connected = false;
+    fleet.devices = [{ id: 'browser:wall', name: 'Kitchen tablet', type: 'browser', state: 'uncertain' }];
+    fleet.entries = {
+      'browser:wall': { isStale: true, lastSeenAt: '2026-09-22T12:00:00.000Z', snapshot: { state: 'paused' } },
+    };
+    renderFleet();
+    expect(screen.getByTestId('fleet-connection-warning')).toHaveTextContent('lost touch');
+    expect(screen.getByTestId('fleet-state-browser:wall')).toHaveTextContent('Uncertain');
+    expect(screen.getByTestId('fleet-uncertain-browser:wall')).toHaveTextContent('may not be confirmed');
+    expect(screen.getByTestId('fleet-card-browser:wall')).toHaveTextContent('Last heard');
+  });
+
+  it('labels a physical screen by its merged fleet state, so a silent TV reads Uncertain, not Playing', () => {
+    // mergeCanonicalFleetState turns two minutes of silence into
+    // `device.state: 'uncertain'` (and sorts it there); the card must read
+    // the same merged state rather than re-deriving it from the raw snapshot.
+    fleet.devices = [{ id: 'livingroom-tv', name: 'Living Room TV', type: 'shield-tv', state: 'uncertain' }];
+    fleet.entries = { 'livingroom-tv': { snapshot: { state: 'playing', currentItem: { title: 'Bluey' } } } };
+    renderFleet();
+    expect(screen.getByTestId('fleet-state-livingroom-tv')).toHaveTextContent('Uncertain');
+  });
+
+  it('still labels an offline physical screen Offline over its merged state', () => {
+    fleet.devices = [{ id: 'livingroom-tv', name: 'Living Room TV', type: 'shield-tv', state: 'off' }];
+    fleet.entries = { 'livingroom-tv': { offline: true, snapshot: { state: 'playing' } } };
+    renderFleet();
+    expect(screen.getByTestId('fleet-state-livingroom-tv')).not.toHaveTextContent('Playing');
+  });
+});

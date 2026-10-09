@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTriggerRegistry } from '#adapters/trigger/parsers/buildTriggerRegistry.mjs';
+import { buildTriggerRegistry } from "../../../../../capabilities/device-dispatch/server/adapters/parsers/buildTriggerRegistry.mjs";
 
 describe('buildTriggerRegistry v2', () => {
   it('assembles nfc/state/tags/responses/endpoints from new blobs', () => {

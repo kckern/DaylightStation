@@ -44,7 +44,7 @@ import { OPPONENT_DELAY_MS } from './PianoChessGame.jsx';
 import { DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
 import { GESTURE_SETTLE_MS } from './useSettledGesture.js';
 import { fetchLadder } from './chessApi.js';
-import { DEFAULT_LADDER_POLICY } from '@shared-gaming/rulesets/chess/ladder.mjs';
+import { DEFAULT_LADDER_POLICY } from "../../../chess/portable/ladder.mjs";
 
 const holdNotes = (notes) => mockUsePianoMidiNotes.mockReturnValue({
   activeNotes: new Map(notes.map((n) => [n, { velocity: 80 }])),

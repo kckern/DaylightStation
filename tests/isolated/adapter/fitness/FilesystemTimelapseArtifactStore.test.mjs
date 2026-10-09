@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { FilesystemTimelapseArtifactStore } from '#adapters/fitness/FilesystemTimelapseArtifactStore.mjs';
-import { ITimelapseArtifactStore } from '#apps/fitness/ports/ITimelapseArtifactStore.mjs';
+import { FilesystemTimelapseArtifactStore } from "../../../../modules/fitness/server/adapters/FilesystemTimelapseArtifactStore.mjs";
+import { ITimelapseArtifactStore } from "../../../../modules/fitness/server/application/ports/ITimelapseArtifactStore.mjs";
 
 const roots = [];
 afterEach(() => {

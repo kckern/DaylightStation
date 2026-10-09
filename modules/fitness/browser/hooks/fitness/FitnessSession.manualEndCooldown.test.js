@@ -1,0 +1,81 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: vi.fn().mockResolvedValue({}) }));
+
+const { FitnessSession } = await import("./FitnessSession.js");
+
+// Build a valid HR sample the pre-session buffer accepts.
+const hrSample = (deviceId, hr) => ({
+  deviceId, type: 'heart_rate', profile: 'heart_rate', heartRate: hr,
+  data: { heartRate: hr }, timestamp: Date.now()
+});
+
+// Push enough valid HR samples to cross the 3-sample threshold and start a
+// session. Content is seeded so the resume check runs immediately instead of
+// deferring (the content-race deferral is covered separately in
+// FitnessSession.resumeContentRace.test.js); we flush the async resume check
+// (DaylightAPI mocked → not resumable → fresh start).
+// Starting is asynchronous and the chain has grown — the resume check and the
+// live-session claim are each an awaited round trip. Counting microtask flushes
+// meant the count silently went stale every time a hop was added, so wait on the
+// CONDITION (a session id exists) with a bounded number of turns instead.
+async function flushUntil(predicate, turns = 50) {
+  for (let i = 0; i < turns; i++) {
+    if (predicate()) return true;
+    await Promise.resolve();
+  }
+  return predicate();
+}
+
+async function startSession(session, deviceId = '1001') {
+  session.setKioskMode(true);
+  session.setPendingContentId('plex:demo');
+  for (let i = 0; i < 4; i++) session.ingestData(hrSample(deviceId, 120));
+  await flushUntil(() => session.sessionId != null);
+  return session.sessionId;
+}
+
+describe('FitnessSession deliberate-end cooldown bypass', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+  });
+
+  it('does not restart from the same device after a user_initiated end', async () => {
+    const session = new FitnessSession();
+    const firstId = await startSession(session, '1001');
+    expect(firstId).toBeTruthy();
+
+    session.endSession('user_initiated');
+    expect(session.sessionId).toBeNull();
+
+    const secondId = await startSession(session, '1001');
+    expect(secondId).toBeNull();
+  });
+
+  it('allows a different device to start immediately after a user_initiated end', async () => {
+    const session = new FitnessSession();
+    expect(await startSession(session, '1001')).toBeTruthy();
+    session.endSession('user_initiated');
+
+    const secondId = await startSession(session, '1002');
+    expect(secondId).toBeTruthy();
+
+    // The ended strap is still broadcasting, but must remain invisible even
+    // after the replacement workout has begun on another device.
+    session.ingestData(hrSample('1001', 125));
+    expect(session.deviceManager.getAllDevices().map((device) => String(device.id))).not.toContain('1001');
+  });
+
+  it('STILL arms the cooldown after an inactivity/empty_roster end', async () => {
+    const session = new FitnessSession();
+    await startSession(session);
+    session.endSession('empty_roster');
+    expect(session.sessionId).toBeNull();
+
+    // Cooldown active → genuine HR within the window must NOT start a session.
+    // (The cooldown short-circuits before the resume check, so this stays null.)
+    const secondId = await startSession(session, '1002');
+    expect(secondId).toBeNull();
+  });
+});

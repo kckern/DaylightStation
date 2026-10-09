@@ -1,3 +1,57 @@
+import {createPianoBoardGameDayRuntime} from '../../modules/piano/server/composition/board-game-day.mjs';
+import {createInstalledPrintableSheets} from '#composition/modules/printableSheets.mjs';
+import {createInstalledWeeklyMeasures} from '#composition/modules/weeklyMeasures.mjs';
+import { createArtContentRuntime } from '../../modules/art/server/composition/installed-runtime.mjs';
+import { createArtAdminService } from '../../modules/art/server/composition/admin-runtime.mjs';
+import { createCanvasImageUseCase } from '../../modules/art/server/composition/canvas-runtime.mjs';
+import { createArtScreenPresets } from '../../modules/art/server/composition/screen-presets.mjs';
+import { createSchoolLearnerDirectory } from '../../modules/school/server/composition/learner-directory.mjs';
+import { getScreenOverrideService } from '#composition/modules/screenOverride.mjs';
+import { configureLifelogArchive } from "../../modules/lifelog/server/composition/archive.mjs";
+import { createLifelogWeightService } from "../../modules/health/server/composition/lifelog-weight.mjs";
+import { registerFeedHeadlineHarvester } from "../../modules/feed/server/composition/harvester.mjs";
+import { installAutomotiveRelay } from "../../modules/auto/server/composition/ingress.mjs";
+import {createEconomyEarningsRuntime} from "../../modules/economy/server/composition/earnings.mjs";
+import {studyDayFor,isInWindow} from "../../modules/school/server/study-calendar.mjs";
+import {createChessRuntime} from "../../modules/chess/server/composition/runtime.mjs";
+import {createEmulatorRuntime} from "../../modules/emulator/server/composition/runtime.mjs";
+import { createHomeEvents } from "../../modules/home/server/composition/events.mjs";
+import { startHomeAmbient } from "../../modules/home/server/composition/ambient.mjs";
+import { registerCameraJobs } from "../../modules/camera/server/composition/jobs.mjs";
+import { installWeeklyReview } from "../../modules/weekly-review/server/composition.mjs";
+import { installLivestream } from "../../modules/livestream/server/composition.mjs";
+import { installFeedApi } from "../../modules/feed/server/composition/http-runtime.mjs";
+import { createNutribotReportRenderer } from "../../modules/nutribot/server/composition/report-renderer.mjs";
+import { createPartyGamesCatalogRuntime, createPartyGamesSessionRuntime, createPartyGamesHttpRuntime } from "../../modules/party-games/server/composition/installed-runtime.mjs";
+import { registerLifeplanMaintenance } from "../../modules/life/server/maintenance.mjs";
+import {createMediaPlayLedger} from "../../modules/media/server/composition/play-ledger.mjs";
+import {createMediaJobsRuntime} from "../../modules/media/server/composition/jobs-runtime.mjs";
+import {createMediaMemoryValidator} from "../../modules/media/server/composition/memory-validation.mjs";
+import { createMediaApiRuntime } from "../../modules/media/server/composition/api-runtime.mjs";
+import { createHomelineLease } from "../../modules/homeline/server/composition.mjs";
+import { createAmbientScheduler } from "../../modules/screens/server/ambient-runtime.mjs";
+import { createNutribotDestinationResolver } from "../../modules/nutribot/server/composition/destinations.mjs";
+import { createHealthMentionsApi, createHealthScanRuntime, createHealthNutritionLookup, startHealthScaleObservation, registerHealthMaintenance } from "../../modules/health/server/composition/app-runtime.mjs";
+import { createHealthServices } from "../../modules/health/server/composition/runtime.mjs";
+import { createNutribotServices } from "../../modules/nutribot/server/composition/runtime.mjs";
+import { YamlUserProfileDatastore } from '#adapters/persistence/yaml/YamlUserProfileDatastore.mjs';
+import { EventBusEventInputSource } from '#adapters/scan/EventBusEventInputSource.mjs';
+import { createSchoolReadingRuntime, registerSchoolReadingAction } from "../../modules/school/server/reading-runtime.mjs";
+import { createFitnessIdentityRuntime } from "../../modules/fitness/server/identity-runtime.mjs";
+import { registerFitnessPoseRuntime } from "../../modules/fitness/server/pose-runtime.mjs";
+import { registerSchoolAssessmentIngress } from "../../modules/school/server/assessment-ingress.mjs";
+import { createBooksApiRouter } from "../../capabilities/book-catalog/server/composition/booksApi.mjs";
+import { createLanguageTranscriptionService } from "#composition/bootstrap.mjs";
+import { YamlUserVideoProgressStore as SchoolUserVideoProgressStore } from "../../modules/piano/server/adapters/YamlUserVideoProgressStore.mjs";
+import { createFitnessServices } from "#composition/bootstrap.mjs";
+import { createSchoolLearningRuntime } from "../../modules/school/server/learning-runtime.mjs";
+import { createSchoolCatalogRuntime } from "../../modules/school/server/catalog-runtime.mjs";
+import { createSchoolLanguageRuntime } from "../../modules/school/server/language-runtime.mjs";
+import { createSchoolLessonHookRuntime } from "../../modules/school/server/lesson-hook-runtime.mjs";
+import { createSchoolLifecycleRuntime } from "../../modules/school/server/lifecycle-runtime.mjs";
+import { createFitnessServicesRuntime } from "../../modules/fitness/server/services-runtime.mjs";
+import { createFitnessReceiptRuntime } from "../../modules/fitness/server/receipt-runtime.mjs";
+import { createFitnessApiRuntime } from "../../modules/fitness/server/api-runtime.mjs";
 import {createPianoModule} from "../../modules/piano/server/composition.mjs";
 /**
  * DDD App Factory
@@ -13,138 +67,100 @@ import cors from 'cors';
 import axios from 'axios';
 import crypto from 'node:crypto';
 import path, { join } from 'path';
-import { renderSessionResultPng } from '#rendering/school/documents/SessionResultRenderer.mjs';
-import { YamlSessionResultArtifactStore } from '#adapters/persistence/yaml/YamlSessionResultArtifactStore.mjs';
-import { PartyGamesConfigProjection, PianoConfigProjection } from '#adapters/config/ApplicationConfigProjections.mjs';
+
+
+import { PianoConfigProjection } from "../../modules/piano/server/adapters/PianoConfigProjection.mjs";
 import { publicResourceUrl } from '#api/v1/presenters/publicResourceRefs.mjs';
 
 // Infrastructure imports
-import { ConfigValidationError, configService } from './0_system/config/index.mjs';
+import { configService } from "./0_system/config/index.mjs";
 import { dataService, userService } from '#composition/runtimePersistence.mjs';
 import { ConfigUserResolver as UserResolver } from '#adapters/identity/ConfigUserResolver.mjs';
-import { UserIdentityService } from './2_domains/messaging/services/UserIdentityService.mjs';
-import { TelegramIdentityAdapter } from './1_adapters/messaging/TelegramIdentityAdapter.mjs';
-import { HttpClient } from './0_system/services/HttpClient.mjs';
-import { PlexSessionAdapter } from '#adapters/content/media/plex/PlexSessionAdapter.mjs';
+import { UserIdentityService } from "./2_domains/messaging/services/UserIdentityService.mjs";
+import { TelegramIdentityAdapter } from "./1_adapters/messaging/TelegramIdentityAdapter.mjs";
+import { HttpClient } from "./0_system/services/HttpClient.mjs";
+import { PlexSessionAdapter } from "../../capabilities/playback/server/adapters/plex/PlexSessionAdapter.mjs";
 import { PlaybackSessionRegistry } from "../../capabilities/playback/server/public.mjs";
 import { ReportPlaybackSession } from "../../capabilities/playback/server/public.mjs";
 import { createPlexSurfaceIdentityResolver } from '#composition/modules/plexSurfaceIdentity.mjs';
 import { createSpotDevicePolicy } from '#composition/modules/spotDevicePolicy.mjs';
-import { createConfiguredLibbyRuntime } from '#composition/modules/libby.mjs';
+import { createConfiguredLibbyRuntime } from "../../capabilities/content-catalog/server/composition/libby.mjs";
 
 // Logging system
-import { getDispatcher } from './0_system/logging/dispatcher.mjs';
-import { createLogger } from './0_system/logging/logger.mjs';
+import { getDispatcher } from "./0_system/logging/dispatcher.mjs";
+import { createLogger } from "./0_system/logging/logger.mjs";
 import { ingestFrontendLogs } from '#adapters/logging/FrontendLogIngestion.mjs';
 import { registerClientIngress } from '#composition/modules/clientIngress.mjs';
-import { loadLoggingConfig, resolveLoggerLevel } from './0_system/logging/config.mjs';
+import { loadLoggingConfig, resolveLoggerLevel } from "./0_system/logging/config.mjs";
 
 // Bootstrap functions
-import {
-  // Integration system (config-driven adapter loading)
-  initializeIntegrations,
-  loadHouseholdIntegrations,
-  loadSystemBots,
-  getMessagingAdapter,
-  // Content domain
-  createContentRegistry,
-  createMediaProgressMemory,
-  createFitnessServices,
-  createLanguageTranscriptionService,
-  createFeedServices,
-  createFinanceServices,
-  createEntropyServices,
-  createHealthServices,
-  createHomeAutomationAdapters,
-  createPlaybackHubServices,
-  createDeviceServices,
-  createWakeAndLoadService,
-  createDispatchIdempotencyService,
-  createTranscodePrewarmService,
-  createHardwareAdapters,
-  createProxyService,
-  createMessagingServices,
-  createJournalistServices,
-  createHomebotServices,
-  createNutribotServices,
-  createLifelogServices,
-  createEventBus,
-  createDeviceLivenessService,
-  broadcastEvent,
-  createHarvesterServices,
-  createNewsReporterServices,
-  createAgentsServices,
-  createConciergeServices,
-  createCostServices,
-  createMediaServices
-} from '#composition/bootstrap.mjs';
+import { initializeIntegrations, loadHouseholdIntegrations, loadSystemBots, getMessagingAdapter, createContentRegistry, createMediaProgressMemory, createFeedServices, createFinanceServices, createEntropyServices, createHomeAutomationAdapters, createPlaybackHubServices, createDeviceServices, createWakeAndLoadService, createDispatchIdempotencyService, createTranscodePrewarmService, createHardwareAdapters, createProxyService, createMessagingServices, createJournalistServices, createHomebotServices, createLifelogServices, createEventBus, createDeviceLivenessService, broadcastEvent, createHarvesterServices, createNewsReporterServices, createAgentsServices, createConciergeServices, createCostServices, createMediaServices } from "#composition/bootstrap.mjs";
 
-import { bootstrapLifeplan } from '#composition/modules/lifeplan.mjs';
+import { bootstrapLifeplan } from "../../modules/life/server/composition.mjs";
 import { bootstrapNotifications } from '#composition/modules/notifications.mjs';
 import { createPlaybackStallDetector } from '#composition/modules/playbackStall.mjs';
-import { createHubFleetBridge } from '#composition/modules/hubFleetBridge.mjs';
-import { createPlexHubSessions } from '#composition/modules/plexHubSessions.mjs';
-import { createArcadeGameSessionTracking } from '#composition/modules/arcadeGameSessions.mjs';
-import { createArcadeGameSessionsRouter } from './4_api/v1/routers/arcadeGameSessions.mjs';
-import { createApiRouters } from '#composition/modules/contentApi.mjs';
-import { createFitnessApiRouter, createFitnessPlayableModule } from '#composition/modules/fitnessApi.mjs';
-import { createBooksApiRouter, createBooksModule } from '#composition/modules/booksApi.mjs';
-import { createFinanceApiRouter } from '#composition/modules/financeApi.mjs';
+import { createHubFleetBridge } from "../../modules/media/server/composition/hubFleetBridge.mjs";
+import { createPlexHubSessions } from "../../modules/media/server/composition/plexHubSessions.mjs";
+import { createArcadeGameSessionTracking } from "../../modules/arcade/server/composition/arcadeGameSessions.mjs";
+import { createArcadeGameSessionsRouter } from "../../modules/arcade/server/api/arcadeGameSessions.mjs";
+import { createApiRouters } from "./5_composition/modules/contentApi.mjs";
+import { createFitnessPlayableModule } from "../../modules/fitness/server/composition-fitness-api.mjs";
+import { createBooksModule } from "../../capabilities/book-catalog/server/composition/booksApi.mjs";
+import { createFinanceApiRouter } from "../../modules/finance/server/composition/financeApi.mjs";
 import { createCostApiRouter } from '#composition/modules/costApi.mjs';
-import { createHomeAutomationApiRouter, createHomeDashboardApiRouter } from '#composition/modules/homeApi.mjs';
+import { createHomeAutomationApiRouter, createHomeDashboardApiRouter } from "../../modules/home/server/composition/homeApi.mjs";
 import { createDeviceApiRouter } from '#composition/modules/deviceApi.mjs';
 import { createDeviceStartStatusService } from '#composition/modules/deviceStartStatus.mjs';
-import { createTriggerApiRouter } from '#composition/modules/triggerApi.mjs';
-import { declaredEntryActions } from '#domains/school/reachability.mjs';
-import { reportUnreachableSchoolPrograms } from '#composition/modules/schoolReachability.mjs';
-import { createLearnerActions } from '#apps/trigger/learnerActions.mjs';
+import { createTriggerApiRouter } from "../../capabilities/device-dispatch/server/composition/triggerApi.mjs";
+import { declaredEntryActions } from "../../modules/school/server/domain-reachability.mjs";
+import { reportUnreachableSchoolPrograms } from "../../modules/school/server/composition-school-reachability.mjs";
+import { createLearnerActions } from "../../capabilities/device-dispatch/server/application/learnerActions.mjs";
 import { createScanDispatch, errText } from '#composition/modules/scanDispatch.mjs';
-import { createSchoolCalc } from '#composition/modules/schoolCalc.mjs';
-import { createSchoolCatalog } from '#composition/modules/schoolCatalog.mjs';
-import { createSchoolSurfaces } from '#composition/modules/schoolSurfaces.mjs';
-import { createSchoolApiServices } from '#composition/modules/schoolApi.mjs';
-import { createLearningReflectionEvidenceId, createSchoolLearningLoop } from '#composition/modules/schoolLearning.mjs';
+
+
+
+
+
 import { emit } from '#apps/scan/ScanDispatcher.mjs';
-import { createGratitudeServices, createGratitudeApiRouter } from '../../modules/gratitude/server/public.mjs';
-import { createEconomyApi } from '#composition/modules/economyApi.mjs';
-import { createJournalistApiRouter } from '#composition/modules/journalistApi.mjs';
-import { createHomebotApiRouter } from '#composition/modules/homebotApi.mjs';
-import { createNutribotApiRouter } from '#composition/modules/nutribotApi.mjs';
-import { createHealthApiRouter, createHealthDashboardApiRouter, createTemplateCurationJob, createCatalogAuditService } from '#composition/modules/healthApi.mjs';
+import { createGratitudeServices, createGratitudeApiRouter } from "../../modules/gratitude/server/public.mjs";
+import { createEconomyApi } from "../../modules/economy/server/composition/economyApi.mjs";
+import { createJournalistApiRouter } from "../../modules/journalist/server/api-runtime.mjs";
+import { createHomebotApiRouter } from "../../modules/homebot/server/api-runtime.mjs";
+import { createNutribotApiRouter } from "../../modules/nutribot/server/composition/nutribotApi.mjs";
+import { createHealthApiRouter, createHealthDashboardApiRouter } from "../../modules/health/server/composition/healthApi.mjs";
 import { createEntropyApiRouter } from '#composition/modules/entropyApi.mjs';
-import { createLifelogApiRouter } from '#composition/modules/lifelogApi.mjs';
+import { createLifelogApiRouter } from "../../capabilities/lifelog/server/composition/lifelogApi.mjs";
 import { createStaticApiRouter } from '#composition/modules/staticApi.mjs';
-import { equipmentImageMap } from '#apps/fitness/equipmentImages.mjs';
-import { createCalendarApiRouter } from '#composition/modules/calendarApi.mjs';
+import { equipmentImageMap } from "../../modules/fitness/server/application-equipment-images.mjs";
+import { createCalendarApiRouter } from "../../modules/calendar/server/composition/calendarApi.mjs";
 import { createScreenPresenceService } from '#composition/modules/screenPresence.mjs';
-import { createPianoScreenPowerSync } from '#composition/modules/pianoScreenPowerSync.mjs';
-import { createPianoMidiWake } from '#composition/modules/pianoMidiWake.mjs';
-import { createPianoBridgeSupervisor } from '#composition/modules/pianoBridgeSupervisor.mjs';
+import { createPianoScreenPowerSync } from '../../modules/piano/server/composition/screen-power-sync.mjs';
+import { createPianoMidiWake } from "../../modules/piano/server/composition/midi-wake.mjs";
+import { createPianoBridgeSupervisor } from "../../modules/piano/server/composition/bridge-supervisor.mjs";
 import { createStateGatesModule } from '#composition/modules/stateGates.mjs';
 import { KioskFrictionTracker } from '#apps/devices/services/KioskFrictionTracker.mjs';
 
 // AI router import
-import { createAIRouter } from './4_api/v1/routers/ai.mjs';
+import { createAIRouter } from "./4_api/v1/routers/ai.mjs";
 import { withStateGatesAuthenticationConfiguration } from '#apps/auth/defaultAuthenticationConfiguration.mjs';
 
 // Health mentions router (CoachChat autocomplete)
-import { createHealthMentionsRouter } from './4_api/v1/routers/health-mentions.mjs';
+
 
 // Native-wire agent HTTP mounter
-import { mountAgentHttp } from './4_api/v1/agents/mountAgentHttp.mjs';
-import { satelliteBearerAuth } from './4_api/v1/agents/middlewares/satelliteBearerAuth.mjs';
+import { mountAgentHttp } from "../../capabilities/agent-runtime/server/api/mountAgentHttp.mjs";
+import { satelliteBearerAuth } from "../../capabilities/agent-runtime/server/api/middlewares/satelliteBearerAuth.mjs";
 
 // Agent memory CRUD router (mounted once at /api/v1/agents)
-import { createAgentMemoryRouter } from './4_api/v1/agents/createAgentMemoryRouter.mjs';
+import { createAgentMemoryRouter } from "../../capabilities/agent-runtime/server/api/createAgentMemoryRouter.mjs";
 // Agent listing + assignments router (Phase 3 T5)
-import { createAgentMetaRouter } from './4_api/v1/agents/createAgentMetaRouter.mjs';
+import { createAgentMetaRouter } from "../../capabilities/agent-runtime/server/api/createAgentMetaRouter.mjs";
 
 // Feed harvester adapter for scheduler integration
-import { HeadlineHarvesterAdapter } from './1_adapters/feed/HeadlineHarvesterAdapter.mjs';
 
 // UPC Gateway for barcode lookups
-import { UPCGateway } from '#adapters/nutribot/UPCGateway.mjs';
-import { YamlFitnessHistoryRepository } from '#adapters/fitness/YamlFitnessHistoryRepository.mjs';
+
+
 import { ConfigQueryService } from '#apps/config/ConfigQueryService.mjs';
 import { ConfigApiYamlSource } from '#adapters/config/ConfigApiYamlSource.mjs';
 
@@ -159,13 +175,13 @@ import { WakeScreenForBroadcast } from '#apps/devices/services/WakeScreenForBroa
 import { EventBusDeviceTransportGateway } from '#adapters/devices/EventBusDeviceTransportGateway.mjs';
 
 // HTTP middleware
-import { errorHandlerMiddleware, requestLoggerMiddleware, aiOriginMiddleware, withRequestContext } from './0_system/http/middleware/index.mjs';
-import { runWithOrigin } from './0_system/runtime/aiContext.mjs';
+import { errorHandlerMiddleware, requestLoggerMiddleware, aiOriginMiddleware, withRequestContext } from "./0_system/http/middleware/index.mjs";
+import { runWithOrigin } from "./0_system/runtime/aiContext.mjs";
 import { scopedGateway } from '#apps/common/ports/IAIGateway.mjs';
 import { createDevProxy } from '#api/v1/middleware/createDevProxy.mjs';
 import { DevRequestForwarder } from '#adapters/http/DevRequestForwarder.mjs';
-import { createEventBusRouter } from './4_api/v1/routers/admin/eventbus.mjs';
-import { createAdminRouter } from './4_api/v1/routers/admin/index.mjs';
+import { createEventBusRouter } from "./4_api/v1/routers/admin/eventbus.mjs";
+import { createAdminRouter } from "./4_api/v1/routers/admin/index.mjs";
 // Admin app-services (constructed HERE at the composition root and injected into
 // the admin router; keeps 4_api/**/admin/* free of #apps imports).
 import { HouseholdAdminService } from '#apps/admin/HouseholdAdminService.mjs';
@@ -173,129 +189,120 @@ import { YamlConfigFileService } from '#apps/admin/YamlConfigFileService.mjs';
 import { AppsConfigService } from '#apps/admin/AppsConfigService.mjs';
 import { SchedulerAdminService } from '#apps/admin/SchedulerAdminService.mjs';
 import { IntegrationsQueryService } from '#apps/admin/IntegrationsQueryService.mjs';
-import { AdminArtService } from '#apps/admin/AdminArtService.mjs';
+
 import { AdminImageService } from '#apps/admin/AdminImageService.mjs';
 import { AdminNotificationOperations } from '#apps/admin/AdminNotificationOperations.mjs';
 import { DeviceRemoteAdministrationService } from '#apps/admin/DeviceRemoteAdministrationService.mjs';
-import { ListManagementService } from '#apps/content/services/ListManagementService.mjs';
+import { ListManagementService } from "../../capabilities/content-catalog/server/application/services/ListManagementService.mjs";
 import { HouseholdContextService } from '#apps/common/context/HouseholdContextService.mjs';
-import { YamlListDatastore } from '#adapters/persistence/yaml/YamlListDatastore.mjs';
-import { ListConfigCodec } from '#adapters/content/list/ListConfigCodec.mjs';
-import { FilesystemArtAdminRepository } from '#adapters/persistence/files/FilesystemArtAdminRepository.mjs';
+import { YamlListDatastore } from "../../capabilities/content-catalog/server/adapters/persistence/YamlListDatastore.mjs";
+import { ListConfigCodec } from "../../capabilities/content-catalog/server/adapters/providers/list/ListConfigCodec.mjs";
+
 import { AdminImageFileStore } from '#adapters/admin/AdminImageFileStore.mjs';
 import { FetchAdminImageSource } from '#adapters/admin/FetchAdminImageSource.mjs';
 import { FullyKioskRemoteAdministrationAdapter } from '#adapters/devices/FullyKioskRemoteAdministrationAdapter.mjs';
-import { createMediaRouter } from './4_api/v1/routers/media.mjs';
-import { MediaSurfaceConfigService } from '#apps/media/MediaSurfaceConfigService.mjs';
-import { MediaQueue } from '#domains/media/entities/MediaQueue.mjs';
-import { CameraEvents, LessonPositionReporter, MediaQueueEvents } from '#apps/events/RealtimePublications.mjs';
-import { createLivestreamRouter } from './4_api/v1/routers/livestream.mjs';
-import { createCameraRouter } from './4_api/v1/routers/camera.mjs';
-import { createPrinterRouter } from './4_api/v1/routers/printer.mjs';
+import { CameraEvents, LessonPositionReporter } from "#apps/events/RealtimePublications.mjs";
+
+import { createCameraRouter } from "../../modules/camera/server/api/camera.mjs";
+import { createPrinterRouter } from "./4_api/v1/routers/printer.mjs";
 
 // Homeline call state tracking
-import { setCallLeaseAuthority } from '#apps/homeline/CallStateService.mjs';
-import { CallLeaseService } from '#apps/homeline/CallLeaseService.mjs';
-import { createHomelineRouter } from '#api/v1/routers/homeline.mjs';
-import { SecureHomelineIdentityIssuer } from '#adapters/homeline/SecureHomelineIdentityIssuer.mjs';
+import { setCallLeaseAuthority } from "../../modules/homeline/server/call-state.mjs";
+
+import { createHomelineRouter } from "../../modules/homeline/server/api.mjs";
+
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
 import { NodeAsyncScheduler } from '#adapters/scheduling/NodeAsyncScheduler.mjs';
 import { SchedulerTimestampCodec } from '#adapters/scheduling/SchedulerTimestampCodec.mjs';
-import { HealthMentionSuggestions } from '#apps/health/HealthMentionSuggestions.mjs';
+
 import { PrinterControlService } from '#apps/printer/PrinterControlService.mjs';
 import { readPrintOutcome } from '#domains/core/utils/printOutcome.mjs';
-import { HomeAssistantAmbientSensorGateway } from '#adapters/home-automation/HomeAssistantAmbientSensorGateway.mjs';
-import { EventBusAmbientLightPublications } from '#adapters/home-automation/EventBusAmbientLightPublications.mjs';
+
+
 
 // Pose frame logging
-import { createPoseLogHandler } from '#adapters/fitness/PoseLogHandler.mjs';
+
 
 // Fitness application services (shared between fitness router and agents router)
-import { initUnlockService } from '#apps/fitness/unlockService.mjs';
-import { initManageService } from '#apps/fitness/manageService.mjs';
-import { EventBusBiometricGateway } from '#adapters/fitness/EventBusBiometricGateway.mjs';
-import { FitnessEmergencyPublications } from '#adapters/eventbus/FitnessEmergencyPublications.mjs';
-import { FitnessIdentityChannel } from '#adapters/eventbus/FitnessIdentityChannel.mjs';
-import { createFoodScaleRelay } from '#apps/hardware/foodScaleRelay.mjs';
+
+
+
+
+
+import { createFoodScaleRelay } from "../../modules/health/server/scale-relay.mjs";
 import { createOmrRelay } from '#apps/hardware/omrRelay.mjs';
 import { createOmrReaderLiveness } from '#adapters/hardware/omrReaderLiveness.mjs';
 import { createPressureMatRelay } from '#apps/hardware/pressureMatRelay.mjs';
 import { PressureMatOperations } from '#apps/hardware/PressureMatOperations.mjs';
 import { PressureMatAdapter } from '#adapters/hardware/pressure-mat/index.mjs';
 import { createPressureMatRouter } from '#api/v1/routers/pressureMat.mjs';
-import { createAutomotiveRelay } from '#apps/hardware/automotiveRelay.mjs';
-import { createAutomotiveApi } from '#composition/modules/automotiveApi.mjs';
-import { createQuizScanRecorder } from '#apps/quizzes/quizScanRecorder.mjs';
-import { EventBusEventInputSource } from '#adapters/scan/EventBusEventInputSource.mjs';
-import { YamlDecodedQuizScanStore } from '#adapters/persistence/yaml/YamlDecodedQuizScanStore.mjs';
-import { createObservationService } from '#apps/nutrition/ScaleObservationService.mjs';
-import { YamlObservationStore } from '#adapters/persistence/yaml/YamlObservationStore.mjs';
-import { ApplyScanToComposition } from '#apps/nutribot/usecases/ApplyScanToComposition.mjs';
-import { validateScanConfig } from '#apps/nutribot/lib/validateScanConfig.mjs';
-import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
+import { createAutomotiveApi } from "../../modules/auto/server/composition/automotiveApi.mjs";
+
+
+
+
+
+
+
+import { normalizeScaleNutribotConfig } from "../../modules/health/server/scale-config.mjs";
 import { createBarcodeRelay } from '#apps/hardware/barcodeRelay.mjs';
 import { createRelayWatchdog } from '#apps/hardware/relayWatchdog.mjs';
 import {
-  AutomotiveFirmwareGateway,
   BarcodeFirmwareGateway,
   FoodScaleFirmwareGateway,
   OmrFirmwareGateway,
   RelayWatchdogFirmwareGateway,
 } from '#adapters/hardware/firmware/EventBusFirmwareRelayGateways.mjs';
-import { YamlAutomotiveTripStore } from '#adapters/hardware/automotive/YamlAutomotiveTripStore.mjs';
-import { createFingerprintProfileWriter } from '#apps/fitness/fingerprintProfileWriter.mjs';
-import { YamlUserProfileDatastore } from '#adapters/persistence/yaml/YamlUserProfileDatastore.mjs';
+
+
 import { YamlMenuMemoryRepository } from '#adapters/persistence/yaml/YamlMenuMemoryRepository.mjs';
-import { YamlEmergencyLockDatastore } from '#adapters/persistence/yaml/YamlEmergencyLockDatastore.mjs';
-import { TriggerEmergencyLockdown } from '#apps/fitness/usecases/TriggerEmergencyLockdown.mjs';
-import { ReleaseEmergencyLockdown } from '#apps/fitness/usecases/ReleaseEmergencyLockdown.mjs';
-import { GetLockdownState } from '#apps/fitness/usecases/GetLockdownState.mjs';
-import { createIdentityRelay } from '#apps/fitness/identityRelay.mjs';
+
+
+
+
+
 // Workout persistence (Build authors, Run performs) + the corpus index it validates against
-import { YamlWorkoutRepository } from '#adapters/fitness/YamlWorkoutRepository.mjs';
-import { YamlExerciseLibraryRepository } from '#adapters/reference/exercise-library/index.mjs';
-import { SaveWorkout } from '#apps/fitness/usecases/SaveWorkout.mjs';
+
+import { YamlExerciseLibraryRepository } from "../../capabilities/exercise-catalog/server/adapters/index.mjs";
+
 
 // Scheduling domain + orchestrator
 import { SchedulerService } from '#domains/scheduling/services/SchedulerService.mjs';
 import { SchedulerOrchestrator } from '#apps/scheduling/SchedulerOrchestrator.mjs';
 import { ScreenContentTracker } from '#apps/devices/services/ScreenContentTracker.mjs';
-import { AmbientSchedulerService } from '#apps/ambient/AmbientSchedulerService.mjs';
-import { YamlAmbientStateStore } from '#adapters/ambient/YamlAmbientStateStore.mjs';
-import { normalizeWindows } from '#domains/ambient/normalizeWindows.mjs';
-import { loadArtmodeConfig } from '#adapters/content/art/artmodeConfig.mjs';
+
+
+import { normalizeWindows } from "../../modules/screens/server/windows.mjs";
+import { loadArtmodeConfig } from "../../modules/art/server/adapters/artmodeConfig.mjs";
 import { YamlJobDatastore } from '#adapters/scheduling/YamlJobDatastore.mjs';
 import { YamlStateDatastore } from '#adapters/scheduling/YamlStateDatastore.mjs';
 import { CompositeJobDatastore } from '#adapters/scheduling/CompositeJobDatastore.mjs';
-import { ArchiveConfigSource } from '#adapters/content/ArchiveConfigSource.mjs';
-import { DataServiceArchiveAccess } from '#adapters/content/archive/DataServiceArchiveAccess.mjs';
-import { MediaMemoryValidatorService } from '#apps/content/services/MediaMemoryValidatorService.mjs';
-import { YamlMediaMemoryValidationStore } from '#adapters/persistence/yaml/YamlMediaMemoryValidationStore.mjs';
-import { PlexMemoryValidationGateway } from '#adapters/content/media/plex/PlexMemoryValidationGateway.mjs';
 import { createApplicationScheduledJobs } from '#composition/modules/applicationScheduledJobs.mjs';
-import { Scheduler } from './0_system/scheduling/Scheduler.mjs';
-import { createSchedulingRouter } from './4_api/v1/routers/scheduling.mjs';
+import { Scheduler } from "./0_system/scheduling/Scheduler.mjs";
+import { createSchedulingRouter } from "./4_api/v1/routers/scheduling.mjs";
 
 // NewsReporter domain — scheduled, LLM-generated reports
-import { createNewsReporterRouter } from './4_api/v1/routers/newsreporter.mjs';
+import { createNewsReporterRouter } from "../../modules/newsreporter/server/api.mjs";
 
 // Canvas domain
-import { createCanvasRouter } from './4_api/v1/routers/canvas.mjs';
-import { GetCanvasImage } from '#apps/canvas/usecases/GetCanvasImage.mjs';
-import { FilesystemCanvasImageRepository } from '#adapters/persistence/files/FilesystemCanvasImageRepository.mjs';
+import { createCanvasRouter } from '../../modules/art/server/api/canvas.mjs';
+
+
 
 // Screens domain
-import { createScreensRouter } from './4_api/v1/routers/screens.mjs';
-import { ScreensQueryService } from '#apps/screens/ScreensQueryService.mjs';
-import { FilesystemScreensRepository } from '#adapters/persistence/files/FilesystemScreensRepository.mjs';
+import { createScreensRouter } from "./4_api/v1/routers/screens.mjs";
+import { ScreensQueryService } from "../../capabilities/screen-host/server/application/ScreensQueryService.mjs";
+import { FilesystemScreensRepository } from "../../capabilities/screen-host/server/adapters/persistence/FilesystemScreensRepository.mjs";
+
+
 import { ScreenAddressResolver } from '#adapters/devices/ScreenAddressResolver.mjs';
-import { FilesystemWeeklyReviewStore } from '#adapters/persistence/files/FilesystemWeeklyReviewStore.mjs';
-import { NodeCommandRunner } from '#adapters/process/NodeCommandRunner.mjs';
+
+
 
 // Auth system
 import { AuthService } from '#apps/auth/AuthService.mjs';
 import { AuthPublicContextService } from '#apps/auth/AuthPublicContextService.mjs';
-import { ContentAccessService } from '#apps/content/ContentAccessService.mjs';
+import { ContentAccessService } from "../../capabilities/content-catalog/server/application/ContentAccessService.mjs";
 import { DataServiceAuthAccountRepository } from '#adapters/auth/DataServiceAuthAccountRepository.mjs';
 import { NodeAuthenticationPrimitives } from '#adapters/auth/NodeAuthenticationPrimitives.mjs';
 import { networkTrustResolver } from '#api/middleware/networkTrustResolver.mjs';
@@ -309,90 +316,81 @@ import { deviceResolver } from '#api/middleware/deviceResolver.mjs';
 import { YamlConversationStateDatastore } from '#adapters/messaging/YamlConversationStateDatastore.mjs';
 
 // Media jobs (fresh video downloads)
-import { MediaJobExecutor } from './3_applications/media/MediaJobExecutor.mjs';
-import { MediaDownloadService } from './3_applications/media/services/MediaDownloadService.mjs';
-import { createFreshVideoJobHandler } from './3_applications/media/FreshVideoJobHandler.mjs';
-import { createCameraLedgerJobHandler } from './3_applications/camera/cameraLedgerJobHandler.mjs';
-import { createCameraArchiveJobHandler } from './3_applications/camera/cameraArchiveJobHandler.mjs';
-import { YtDlpAdapter } from '#adapters/media/YtDlpAdapter.mjs';
+
+
 
 // Content composition use case
-import { ComposePresentationUseCase } from './3_applications/content/usecases/ComposePresentationUseCase.mjs';
+import { ComposePresentationUseCase } from "../../capabilities/playback/server/application/usecases/ComposePresentationUseCase.mjs";
 
 // Barcode scanner pipeline — ingress now routes through the unified trigger
 // pipeline (TriggerDispatchService); BarcodeScanService is retired from the
 // boot path here (kept in-tree for Plan 4 to delete) and no longer constructed.
 import { KNOWN_COMMANDS, resolveCommand } from '#domains/barcode/BarcodeCommandMap.mjs';
-import { ContentDispatcher } from '#apps/trigger/ContentDispatcher.mjs';
+import { ContentDispatcher } from "../../capabilities/device-dispatch/server/application/ContentDispatcher.mjs";
 
 // Weekly Review domain
-import { WeeklyReviewImmichAdapter } from './1_adapters/weekly-review/WeeklyReviewImmichAdapter.mjs';
-import { WeeklyReviewCalendarAdapter } from './1_adapters/weekly-review/WeeklyReviewCalendarAdapter.mjs';
-import { WeeklyReviewService } from './3_applications/weekly-review/WeeklyReviewService.mjs';
-import { createWeeklyReviewRouter } from './4_api/v1/routers/weekly-review.mjs';
+
+
+
+
 
 // Harvest domain (data collection)
-import { createHarvestRouter } from './4_api/v1/routers/harvest.mjs';
+import { createHarvestRouter } from "./4_api/v1/routers/harvest.mjs";
 
 // FileIO utilities for image saving
 // API versioning
-import { createApiRouter } from './4_api/v1/routers/api.mjs';
-import { createArtRouter } from './4_api/v1/routers/art.mjs';
-import { YamlPianoGameBudgetStore } from '#adapters/persistence/yaml/YamlPianoGameBudgetStore.mjs';
-import { YamlPianoBoardGameDayStore } from '#adapters/persistence/yaml/YamlPianoBoardGameDayStore.mjs';
-import { PianoBoardGameDayService } from '#apps/piano-games/PianoBoardGameDayService.mjs';
-import { YamlComposerSongStore as ComposerSongStore } from '#adapters/persistence/yaml/YamlComposerSongStore.mjs';
-import { createFeedbackRouter } from './4_api/v1/routers/feedback.mjs';
-import { createGamingRouter } from './4_api/v1/routers/gaming.mjs';
-import { createPresentationRouter } from './4_api/v1/routers/presentation.mjs';
-import { YamlGamingDefinitionStore } from './1_adapters/persistence/yaml/gaming/YamlGamingDefinitionStore.mjs';
-import { YamlGamingAssetCatalog } from './1_adapters/persistence/yaml/gaming/YamlGamingAssetCatalog.mjs';
-import { YamlPresentationCatalog } from './1_adapters/persistence/yaml/presentation/YamlPresentationCatalog.mjs';
-import { YamlGamingExperienceManifestStore } from '#adapters/persistence/yaml/gaming/YamlGamingExperienceManifestStore.mjs';
-import { createWikipediaRouter } from './4_api/v1/routers/wikipedia.mjs';
-import { createChessRouter } from './4_api/v1/routers/chess.mjs';
-import { buildChessArchiveFilename } from '#adapters/persistence/chess/ChessRecordNames.mjs';
-import { createStockfishEngine } from './1_adapters/chess/StockfishEngineAdapter.mjs';
-import { createStockfishAnalyst } from './1_adapters/chess/StockfishAnalysisAdapter.mjs';
-import { chessArchiveDayDir } from '#shared/gaming/rulesets/chess/archivePaths.mjs';
-import { mergeLadderConfig } from '#shared/gaming/rulesets/chess/ladder.mjs';
-import { createChessConfigService } from './3_applications/chess/ChessConfigService.mjs';
-import { createChessLadderService } from './3_applications/chess/ChessLadderService.mjs';
-import { projectHeadToHead, rivalryOpponentId } from '#apps/piano-games/GameRivalryMemoryService.mjs';
-import { createPianoGamesModule } from '#composition/modules/pianoGames.mjs';
-import { WikipediaAdapter } from './1_adapters/reference/WikipediaAdapter.mjs';
+import { createApiRouter } from "./4_api/v1/routers/api.mjs";
+
+import { createFeedbackRouter } from "./4_api/v1/routers/feedback.mjs";
+
+import { createPresentationRouter } from "./4_api/v1/routers/presentation.mjs";
+
+
+import { YamlPresentationCatalog } from "./1_adapters/persistence/yaml/presentation/YamlPresentationCatalog.mjs";
+
+import { createWikipediaRouter } from "./4_api/v1/routers/wikipedia.mjs";
+
+
+
+
+
+
+
+
+import { projectHeadToHead, rivalryOpponentId } from "../../modules/piano/server/game-rivalry.mjs";
+import { createPianoGamesModule } from "../../modules/piano/server/composition/pianoGames.mjs";
+import { WikipediaAdapter } from "./1_adapters/reference/WikipediaAdapter.mjs";
 import { WikipediaService } from '#apps/reference/WikipediaService.mjs';
-import { PartyGamesCatalog } from './3_applications/gaming/usecases/PartyGamesCatalog.mjs';
-import { buzzersToSelectors, makeBuzzerSelectHandler } from './3_applications/gaming/effects/partyGamesBuzzerInput.mjs';
-import { createGamingApiModule } from './5_composition/modules/gamingApi.mjs';
-import { createSchoolRouter } from './4_api/v1/routers/school.mjs';
-import { SchoolService } from './3_applications/school/SchoolService.mjs';
-import { YamlSchoolDatastore } from './1_adapters/persistence/yaml/YamlSchoolDatastore.mjs';
-import { effectiveAttempts } from '#domains/school/attempt.mjs';
-import { studyDayForInstant } from '#domains/school/studyDay.mjs';
-import { studentDisplayName } from '#composition/modules/studentNames.mjs';
-import { createSentenceLadderRouter } from './4_api/v1/routers/sentenceLadder.mjs';
-import { createLanguageStudyService } from './5_composition/modules/schoolLanguage.mjs';
-import { YamlLanguageStudyDatastore } from './1_adapters/persistence/yaml/YamlLanguageStudyDatastore.mjs';
-import { YamlAssignmentStore } from './1_adapters/persistence/yaml/YamlAssignmentStore.mjs';
-import { HmacSchoolStudyGrantIssuer } from './1_adapters/school/actions/HmacSchoolStudyGrantIssuer.mjs';
-import { HmacSchoolReelGrantIssuer } from './1_adapters/school/actions/HmacSchoolReelGrantIssuer.mjs';
-import { HmacSchoolCubeGrantIssuer } from './1_adapters/school/actions/HmacSchoolCubeGrantIssuer.mjs';
-import { HmacSchoolBookGrantIssuer } from './1_adapters/school/actions/HmacSchoolBookGrantIssuer.mjs';
-import { HmacSchoolLaunchPreviewTokenIssuer } from './1_adapters/school/actions/HmacSchoolLaunchPreviewTokenIssuer.mjs';
-import { KociembaCubeRecoverySolver } from './1_adapters/school/rubiksCube/KociembaCubeRecoverySolver.mjs';
-import { FilesystemLanguageReelRepository } from './1_adapters/school/FilesystemLanguageReelRepository.mjs';
-import { FilesystemRubiksCubeProgressRepository } from './1_adapters/school/FilesystemRubiksCubeProgressRepository.mjs';
-import { LanguageReelService } from './3_applications/school/LanguageReelService.mjs';
-import { createLanguageReelsRouter } from './4_api/v1/routers/languageReels.mjs';
-import { RubiksCubeCourseService } from './3_applications/school/rubiksCube/RubiksCubeCourseService.mjs';
-import { RubiksPacketPlanner } from './3_applications/school/rubiksCube/RubiksPacketPlanner.mjs';
-import { YamlDocumentFileStore } from './1_adapters/school/YamlDocumentFileStore.mjs';
-import { RUBIKS_CUBE_COURSE_ID, RUBIKS_CUBE_REVISION } from './3_applications/school/rubiksCube/courseCatalog.mjs';
-import { createRubiksCubeRouter } from './4_api/v1/routers/rubiksCube.mjs';
-import { PrepareBookScan } from '#apps/school/usecases/PrepareBookScan.mjs';
-import { BookEntryPolicy } from '#apps/school/BookEntryPolicy.mjs';
-import { OpenBookShelfAtPanel } from '#apps/school/usecases/OpenBookShelfAtPanel.mjs';
+
+import { buzzersToSelectors, makeBuzzerSelectHandler } from "../../modules/party-games/server/application/effects/partyGamesBuzzerInput.mjs";
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 /**
  * How long a shelf opened by tapping a face at the panel stays open. Long
@@ -403,85 +401,85 @@ import { OpenBookShelfAtPanel } from '#apps/school/usecases/OpenBookShelfAtPanel
  * cap (see `OpenBookShelfAtPanel`).
  */
 const PANEL_BOOK_GRANT_TTL_MS = 20 * 60_000;
-import { createSchoolBookScansRouter } from '#api/v1/routers/schoolBookScans.mjs';
-import { resolveBookScanTarget } from '#composition/modules/schoolBookScans.mjs';
-import { createSchoolBooksRouter } from './4_api/v1/routers/schoolBooks.mjs';
-import { GetSchoolReport } from './3_applications/school/GetSchoolReport.mjs';
-import { GetLearningProgress } from './3_applications/school/GetLearningProgress.mjs';
-import { GetInstructionalInsights } from './3_applications/school/GetInstructionalInsights.mjs';
-import { RecordLearningReflection } from './3_applications/school/RecordLearningReflection.mjs';
-import { OpenCatalogLearningSession } from './3_applications/school/OpenCatalogLearningSession.mjs';
-import { OfferCatalogQuizRemediation } from './3_applications/school/remediation/OfferCatalogQuizRemediation.mjs';
-import { IssueSchoolContinuationCode } from './3_applications/school/IssueSchoolContinuationCode.mjs';
-import { AssessmentReviewFollowUpSource } from './3_applications/school/AssessmentReviewFollowUpSource.mjs';
-import {
-  ConfiguredAcademicPeriodSource,
-  ConfiguredLearningExpectationSource,
-  ConfiguredSchoolLearningDirectory,
-  CurriculumExpectationSource,
-  YamlConceptRegistry,
-  YamlLearningEvidenceRepository,
-  YamlSchoolAttemptEvidenceSource,
-} from './1_adapters/school/progress/index.mjs';
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import { shortId } from '#system/utils/id.mjs';
-import { PresenceStore } from './1_adapters/devices/PresenceStore.mjs';
-import { resolveGate, ROLE_SEVERITY } from './2_domains/school/accessGate.mjs';
-import { GetMaterialCatalog } from './3_applications/school/GetMaterialCatalog.mjs';
-import { GetMaterialUnits, buildBankIndex } from './3_applications/school/GetMaterialUnits.mjs';
-import { GetMaterialProgressSummary } from './3_applications/school/GetMaterialProgressSummary.mjs';
-import { MediaAlbumSource } from './3_applications/school/sources/MediaAlbumSource.mjs';
-import { MediaSeriesSource } from './3_applications/school/sources/MediaSeriesSource.mjs';
-import { MediaLabelSource } from './3_applications/school/sources/MediaLabelSource.mjs';
-import { PlexSchoolMediaCatalog } from './1_adapters/school/media/plex/PlexSchoolMediaCatalog.mjs';
-import { GeneratedBankSource } from '#adapters/school/generated-content/GeneratedBankSource.mjs';
-import { GetLearnerRecord } from '#apps/school/usecases/GetLearnerRecord.mjs';
-import { RegradeBankAttempts } from '#apps/school/usecases/RegradeBankAttempts.mjs';
-import { AdjustSessionGrade, RetractSessionGradeAdjustment } from '#apps/school/usecases/AdjustSessionGrade.mjs';
-import { GetTeacherSession, GetLearnerTimeline } from '#apps/school/usecases/GetTeacherSession.mjs';
-import { PreviewTeacherLessonMaterial } from '#apps/school/usecases/PreviewTeacherLessonMaterial.mjs';
-import { TeacherCapabilitySessions } from '#apps/school/TeacherCapabilitySessions.mjs';
-import { YamlUserVideoProgressStore as SchoolUserVideoProgressStore } from '#adapters/persistence/yaml/YamlUserVideoProgressStore.mjs';
-import { PrintService } from './3_applications/school/PrintService.mjs';
-import { renderBankWorksheet } from './1_rendering/school/WorksheetRenderer.mjs';
-import { createArtifactPostviewRenderer, renderPdfFirstPagePng } from '#rendering/school/documents/ArtifactPostviewRenderer.mjs';
-import { createContentFilterRouter } from './4_api/v1/routers/contentFilter.mjs';
-import { FeedbackService } from './3_applications/common/feedback/FeedbackService.mjs';
-import { NotificationConfigService } from './3_applications/notification/NotificationConfigService.mjs';
+import { PresenceStore } from "./1_adapters/devices/PresenceStore.mjs";
+import { ROLE_SEVERITY } from "../../modules/school/server/domain-access-gate.mjs";
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import { createContentFilterRuntime } from "../../modules/media/server/composition/content-filter.mjs";
+import { FeedbackService } from "./3_applications/common/feedback/FeedbackService.mjs";
+import { NotificationConfigService } from "./3_applications/notification/NotificationConfigService.mjs";
 import { YamlNotificationConfigRepository } from '#adapters/notification/YamlNotificationConfigRepository.mjs';
-import { createArtAdapter } from './1_adapters/content/art/ArtAdapter.mjs';
-import { createConfigRouter } from './4_api/v1/routers/config.mjs';
-import { createItemRouter } from './4_api/v1/routers/item.mjs';
-import { createEmulatorRouter } from './4_api/v1/routers/emulator.mjs';
-import { loadEmulatorConfig } from './3_applications/emulator/loadEmulatorConfig.mjs';
-import { createAmbientLightService } from './3_applications/home-automation/AmbientLightService.mjs';
-import { startAmbientZones } from './3_applications/home-automation/ambientZones.mjs';
-import { projectAmbientZones } from '#adapters/home-automation/ConfiguredAmbientZones.mjs';
+
+import { createConfigRouter } from "./4_api/v1/routers/config.mjs";
+import { createItemRouter } from "./4_api/v1/routers/item.mjs";
+
+
+
+
+
 import { BuildMetadataSource } from '#adapters/runtime/BuildMetadataSource.mjs';
-import { ReadalongRuntimePaths } from '#adapters/content/ReadalongRuntimePaths.mjs';
-import { ContentPrefixConfigSource } from '#adapters/content/ContentPrefixConfigSource.mjs';
-import { YamlFeedQueryRepository } from '#adapters/feed/YamlFeedQueryRepository.mjs';
+import { ReadalongRuntimePaths } from "../../capabilities/playback/server/adapters/ReadalongRuntimePaths.mjs";
+import { ContentPrefixConfigSource } from "../../capabilities/content-catalog/server/adapters/ContentPrefixConfigSource.mjs";
+
 import { HarvesterImageStore } from '#adapters/harvester/HarvesterImageStore.mjs';
-import { YamlSchoolScreenConfigSource } from '#adapters/school/YamlSchoolScreenConfigSource.mjs';
+
 import { FilesystemAssetProbe } from '#adapters/runtime/FilesystemAssetProbe.mjs';
-import { FilesystemWorksheetPdfReader } from '#adapters/school/documents/FilesystemWorksheetPdfReader.mjs';
+
 import { HouseholdYamlDocumentStore } from '#adapters/persistence/yaml/HouseholdYamlDocumentStore.mjs';
 import { FilesystemYamlDirectoryCatalog } from '#adapters/persistence/files/FilesystemYamlDirectoryCatalog.mjs';
-import { FilesystemEmulatorAssetRepository } from '#adapters/emulator/FilesystemEmulatorAssetRepository.mjs';
-import { FilesystemEmulatorConfigRepository } from '#adapters/emulator/FilesystemEmulatorConfigRepository.mjs';
-import { FilesystemEmulatorSaveRepository } from '#adapters/emulator/FilesystemEmulatorSaveRepository.mjs';
-import { EmulatorResourceService } from '#apps/emulator/EmulatorResourceService.mjs';
-import { EmulatorLibraryService } from '#apps/emulator/EmulatorLibraryService.mjs';
-import { buildCatalog, resolveGameRules } from '#apps/emulator/EmulatorCatalog.mjs';
-import { GamingMediaService } from '#apps/gaming/GamingMediaService.mjs';
-import { FilesystemGamingMediaRepository } from '#adapters/gaming/FilesystemGamingMediaRepository.mjs';
-import { ReolinkClient, makeSource, parseTriggerBits } from '#adapters/camera/ReolinkRecordingAdapter.mjs';
-import { createHaDetectionSource } from '#adapters/camera/HaDetectionSource.mjs';
-import { ArchiveEncoder } from '#adapters/camera/ArchiveEncoder.mjs';
-import { ArchiveManifestStore } from '#adapters/camera/ArchiveManifestStore.mjs';
-import { getCurriculumIndex, mergeSeason } from '#adapters/content/media/plex/CurriculumIndex.mjs';
-import { ContentExpression } from '#domains/content/ContentExpression.mjs';
-import { resolveFormat } from '#domains/content/utils/resolveFormat.mjs';
-import * as schoolErrors from '#domains/school/errors.mjs';
+
+
+
+
+
+
+
+
+
+
+
+
+import { ContentExpression } from "../../capabilities/content-catalog/server/domain/ContentExpression.mjs";
+
+
 import { YamlDayLogDatastore } from '#adapters/persistence/yaml/YamlDayLogDatastore.mjs';
 import { YamlConfigFileStore } from '#adapters/persistence/yaml/YamlConfigFileStore.mjs';
 import { YamlAdminConfigStore } from '#adapters/persistence/yaml/YamlAdminConfigStore.mjs';
@@ -922,17 +920,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // to the same topic and double-processes each card: the relay keeps the raw
   // byte-faithful manifest, this writes the meaningful version (7-digit test ID
   // + answers for 50 questions) to household/apps/quizzes/<reader-id>/.
-  const decodedQuizRoot = omrReadersConfig?.quizzes?.dir
-    ? path.join(dataDir, ...String(omrReadersConfig.quizzes.dir).replace(/^\/+/, '').split('/'))
-    : configService.getHouseholdPath('school/records/assessments/omr', householdId);
-  createQuizScanRecorder({
-    scanSource: new EventBusEventInputSource({ eventBus, topics: ['omr'] }),
-    decodedScanStore: new YamlDecodedQuizScanStore({
-      decodedRoot: decodedQuizRoot,
-      rawHistoryRoot: relayHistoryRoot(omrReadersConfig, 'hardware/omr/log'),
-    }),
-    logger: rootLogger.child({ module: 'quiz-scan' }),
-  });
+  await registerSchoolAssessmentIngress({ omrReadersConfig, dataDir, configService, householdId, EventBusEventInputSource, eventBus, relayHistoryRoot, rootLogger });
 
   // Automotive relay — ingests the in-car Freematics device's trip/snapshot
   // stream (source: 'obd-relay') whenever the car is on home WiFi and
@@ -941,21 +929,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const vehiclesRelayConfig = configService.getHouseholdAppConfig(householdId, 'vehicles')
     || configService.reloadHouseholdAppConfig?.(householdId, 'vehicles')
     || {};
-  createAutomotiveRelay({
-    relayGateway: new AutomotiveFirmwareGateway({
-      eventBus,
-      config: vehiclesRelayConfig,
-      timezone: configService.getHouseholdTimezone(householdId),
-    }),
-    tripStore: new YamlAutomotiveTripStore({
-      root: relayHistoryRoot(vehiclesRelayConfig, 'automotive/log'),
-    }),
-    dayLog: relayDayLog(vehiclesRelayConfig, 'automotive/log', 'automotive'),
-    // Threaded, not read from a config singleton inside the relay — day keys and
-    // trip filenames must follow the household's zone, not UTC or DEFAULT_TIMEZONE.
-    timezone: configService.getHouseholdTimezone(householdId),
-    logger: rootLogger.child({ module: 'obd-relay' }),
-  });
+  installAutomotiveRelay({ eventBus, vehiclesRelayConfig, configService, householdId, relayHistoryRoot, relayDayLog, rootLogger });
 
   // Content barcode input (now produced by the shared food-scale/content-barcode
   // ESP32, source: 'barcode-relay') is wired
@@ -968,23 +942,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // `fitness.unlock.request` broadcasts reach the garage client and inbound
   // `fitness.unlock.result` replies settle the pending request (Task 2.3).
   // Task 2.4's HTTP endpoint imports requestUnlock from this module.
-  const biometricGateway = new EventBusBiometricGateway({ eventBus });
-  initUnlockService({
-    biometricGateway,
-  });
-
-  // Fingerprint manager — enroll/delete relay over the same garage WS, plus the
-  // browser progress rebroadcast. Auth reuses the unlock service above.
-  initManageService({
-    biometricGateway,
-  });
-  // Persistence adapter (1_adapters) → application writer (3_applications): the
-  // writer never touches the filesystem itself, satisfying the DDD layering.
-  const userProfileDatastore = new YamlUserProfileDatastore({ configService });
-  const fingerprintProfileWriter = createFingerprintProfileWriter({
-    datastore: userProfileDatastore,
-    profileCache: { refresh: (username) => configService.reloadUserProfile(username) },
-  });
+  const { fingerprintProfileWriter } = await createFitnessIdentityRuntime({ eventBus, YamlUserProfileDatastore, configService });
 
   // EventBus admin router (requires eventBus to be created first)
   app.use('/admin/ws', createEventBusRouter({ eventBus, logger: rootLogger }));
@@ -1031,10 +989,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Progress sync — bidirectional progress sync for remote media servers
   let progressSyncService = null;
   if (audiobookshelfConfig) {
-    const { AudiobookshelfClient } = await import('./1_adapters/content/readable/audiobookshelf/AudiobookshelfClient.mjs');
-    const { ABSProgressAdapter } = await import('./1_adapters/content/readable/audiobookshelf/ABSProgressAdapter.mjs');
-    const { ProgressWriteRuntime } = await import('./1_adapters/content/ProgressWriteRuntime.mjs');
-    const { ProgressSyncService } = await import('./3_applications/content/services/ProgressSyncService.mjs');
+    const { AudiobookshelfClient } = await import("../../capabilities/content-catalog/server/adapters/providers/readable/audiobookshelf/AudiobookshelfClient.mjs");
+    const { ABSProgressAdapter } = await import("../../capabilities/playback/server/adapters/audiobookshelf/ABSProgressAdapter.mjs");
+    const { ProgressWriteRuntime } = await import("#system/scheduling/ProgressWriteRuntime.mjs");
+    const { ProgressSyncService } = await import("../../capabilities/playback/server/application/services/ProgressSyncService.mjs");
     const absClient = new AudiobookshelfClient(audiobookshelfConfig, { httpClient: axios });
     const remoteProgressProvider = new ABSProgressAdapter(absClient);
     progressSyncService = new ProgressSyncService({
@@ -1165,32 +1123,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     })
     : null;
 
-  // Per-screen play ledger — one row per playback start per screen, fed by
-  // play/log (RecordPlaybackProgress) and read by the household media memory.
-  // Day files under history/media-plays, 90-day retention.
-  // See docs/reference/media/media-app-technical.md §2.4.
-  let playLedger = null;
-  // Who asked for a load (a routine, another screen) → the screen's next
-  // ledger start. Written by the device router's load recorder (mediaHouse).
-  const { LoadOriginHints } = await import('./3_applications/media/LoadOriginHints.mjs');
-  const loadOriginHints = new LoadOriginHints();
-  {
-    const { PlayLedgerRecorder } = await import('./3_applications/media/PlayLedgerRecorder.mjs');
-    const { YamlPlayLedgerDatastore } = await import('./1_adapters/persistence/yaml/YamlPlayLedgerDatastore.mjs');
-    const { PLAY_LEDGER_RETENTION_DAYS } = await import('./2_domains/media/playLedger.mjs');
-    const { nowTs24 } = await import('./0_system/utils/index.mjs');
-    const playLedgerLogger = rootLogger.child({ module: 'play-ledger' });
-    playLedger = new PlayLedgerRecorder({
-      store: new YamlPlayLedgerDatastore({
-        root: configService.getHouseholdPath('history/media-plays', householdId),
-        retentionDays: PLAY_LEDGER_RETENTION_DAYS,
-        today: () => nowTs24().slice(0, 10),
-        logger: playLedgerLogger,
-      }),
-      originHints: loadOriginHints,
-      logger: playLedgerLogger,
-    });
-  }
+  const {playLedger,loadOriginHints}=await createMediaPlayLedger({configService,householdId,rootLogger});
 
   const { routers: contentRouters, services: contentServices } = createApiRouters({
     registry: contentRegistry,
@@ -1297,20 +1230,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Entropy domain - use DataService for user-specific data (replaces legacy io.mjs)
   const userLoadFile = (username, service) => dataService.user.read(`lifelog/${service}`, username);
   const userLoadCurrent = (username, service) => dataService.user.read(`current/${service}`, username);
-  const ArchiveServiceModule = await import('./3_applications/content/services/ArchiveService.mjs');
-  const ArchiveService = ArchiveServiceModule.default;
-  const archiveConfigSource = new ArchiveConfigSource({ configDirectory: configService.getConfigDir() });
-  const archiveAccess = new DataServiceArchiveAccess({
-    dataService,
-    dataDir: configService.getDataDir(),
-  });
-  ArchiveServiceModule.configureArchiveService({
-    loadArchiveConfig: archiveConfigSource.read,
-    userLoadFile: archiveAccess.read.bind(archiveAccess),
-    userSaveFile: archiveAccess.write.bind(archiveAccess),
-    listArchiveYears: archiveAccess.listYears.bind(archiveAccess),
-    logger: rootLogger.child({ module: 'archive' }),
-  });
+  const { ArchiveService, loadArchiveConfig } = await configureLifelogArchive({ dataService, configService, rootLogger });
   const entropyServices = createEntropyServices({
     io: { userLoadFile, userLoadCurrent },
     archiveService: ArchiveService,
@@ -1394,21 +1314,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Fitness domain
-  const loadFitnessConfig = (hid) => {
-    const targetHouseholdId = hid || configService.getDefaultHouseholdId();
-    return configService.getHouseholdAppConfig(targetHouseholdId, 'fitness');
-  };
-
-  const fitnessServices = createFitnessServices({
-    configService,
-    mediaRoot: mediaBasePath,
-    defaultHouseholdId: householdId,
-    // Config-driven HA adapter (use .has() to avoid NoOp)
-    haGateway: householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null,
-    loadFitnessConfig,
-    openaiAdapter: scopedGateway(sharedAiGateway, { app: 'fitness' }),
-    logger: rootLogger.child({ module: 'fitness' })
-  });
+  const { loadFitnessConfig, fitnessServices } = await createFitnessServicesRuntime({ configService, createFitnessServices, mediaBasePath, householdId, get householdAdapters() { return householdAdapters; }, scopedGateway, get sharedAiGateway() { return sharedAiGateway; }, rootLogger });
 
   // Media domain
   const mediaServices = createMediaServices({
@@ -1469,9 +1375,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Pose frame logging — streams raw keypoints to JSONL files
-  const poseLogHandler = createPoseLogHandler(configService, rootLogger.child({ module: 'pose-log' }));
-  eventBus.onClientMessage(poseLogHandler);
-  eventBus.onClientDisconnection(poseLogHandler.onDisconnect);
+  await registerFitnessPoseRuntime({ configService, rootLogger, eventBus });
 
   // ==========================================================================
   // Create API v1 Routers
@@ -1541,7 +1445,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   rootLogger.info('content.routers.created', { keys: ['item', 'content', 'proxy', 'list', 'siblings', 'queue', 'play', 'localContent', 'local', 'stream'] });
 
   // Info router (action-based metadata)
-  const { createInfoRouter } = await import('./4_api/v1/routers/info.mjs');
+  const { createInfoRouter } = await import("../../capabilities/content-catalog/server/api/info.mjs");
   // Both metadata and display routes need the same application service.  Passing
   // only the old constructor inputs to info left contentAccessService undefined
   // and made Plex enrichment fail before it could fetch metadata.
@@ -1555,163 +1459,20 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Display router (action-based images)
-  const { createDisplayRouter } = await import('./4_api/v1/routers/display.mjs');
+  const { createDisplayRouter } = await import("../../capabilities/content-catalog/server/api/display.mjs");
   v1Routers.display = createDisplayRouter({
     contentAccessService,
     logger: rootLogger.child({ module: 'display-api' })
   });
 
-  // Household media memory — recent across screens, carry on with per-screen
-  // spots, favourites, removal, watched marks (Media app P1). Reads progress
-  // from the same media memory play/log writes; lists live beside the
-  // household media queue. See docs/reference/media/media-app-technical.md §2.4.
-  let householdMediaMemory = null;
-  {
-    const { HouseholdMediaMemoryService } = await import('./3_applications/media/HouseholdMediaMemoryService.mjs');
-    const { LivenessNowPlayingReader } = await import('./3_applications/media/LivenessNowPlayingReader.mjs');
-    const { CompositeNowPlayingReader } = await import('./3_applications/media/CompositeNowPlayingReader.mjs');
-    const { YamlHouseholdMediaListsDatastore } = await import('./1_adapters/persistence/yaml/YamlHouseholdMediaListsDatastore.mjs');
-    const { nowTs24 } = await import('./0_system/utils/index.mjs');
-    const { ProgressWriteRuntime } = await import('./1_adapters/content/ProgressWriteRuntime.mjs');
-    householdMediaMemory = new HouseholdMediaMemoryService({
-      progressMemory: mediaProgressMemory,
-      listsStore: new YamlHouseholdMediaListsDatastore({ configService }),
-      contentCatalog: contentServices.contentCatalog,
-      markContentWatched: contentServices.markContentWatched,
-      // Fleet device-state first, then play/log sessions — the only live view
-      // of browsers and kiosks.
-      nowPlaying: new CompositeNowPlayingReader([
-        ...(deviceLivenessService ? [new LivenessNowPlayingReader({ livenessService: deviceLivenessService })] : []),
-        ...(playLedger ? [{ list: () => playLedger.nowPlaying({ nowEpoch: Date.now() }) }] : []),
-      ]),
-      nowTimestamp: nowTs24,
-      runtime: new ProgressWriteRuntime(),
-      playLedger,
-      logger: rootLogger.child({ module: 'household-media-memory' }),
-    });
-  }
-
-  // Media queue management
-  v1Routers.media = createMediaRouter({
-    mediaQueueService: mediaServices.mediaQueueService,
-    mediaSurfaceConfig: new MediaSurfaceConfigService({
-      loadAppConfig: (householdId, app) => configService.getHouseholdAppConfig(householdId, app),
-    }),
-    contentIdResolver: contentServices.contentIdResolver,
-    mediaQueueEvents: new MediaQueueEvents({ publish: (topic, payload) => eventBus.broadcast(topic, payload) }),
-    createMediaQueue: (props) => new MediaQueue(props),
-    householdMediaMemory,
-    logger: rootLogger.child({ module: 'media-api' }),
+  const { householdMediaMemory, mediaHouse } = await createMediaApiRuntime({
+    configService, mediaProgressMemory, contentServices, deviceLivenessService, playLedger, rootLogger, v1Routers, mediaServices, eventBus, loadOriginHints, contentRegistry, notificationStack, contentProxyService
   });
-
-  // Household screens, routines, how playback started, played earlier and
-  // suggestions — mounted on the media router (/api/v1/media/screens, ...).
-  // See docs/reference/media/media-app-technical.md §2.5–2.9.
-  const mediaHouse = await (async () => {
-    const { createMediaHouseModule } = await import('./5_composition/modules/mediaHouse.mjs');
-    return createMediaHouseModule({
-      configService,
-      eventBus,
-      livenessService: deviceLivenessService,
-      playLedger,
-      progressMemory: mediaProgressMemory,
-      originHints: loadOriginHints,
-      householdMediaMemory,
-      plexAdapter: contentRegistry?.get?.('plex') ?? null,
-      nowLocal: (await import('./0_system/utils/index.mjs')).nowTs24,
-      logger: rootLogger,
-    });
-  })();
-  v1Routers.media.use(mediaHouse.router);
-
-  // Media source healing — when Plex refuses a file (the NAS zeroing modes,
-  // 2026-09-28), the Player asks here, waits, and resumes. system config
-  // media-source-heal.yml holds the host SSH target and the Plex→host path map
-  // (not media.yml: that one is infrastructure and getAppConfig never serves it).
-  // See docs/reference/player/media-source-healing.md.
-  {
-    const { createMediaSourceRouter } = await import('./4_api/v1/routers/mediaSource.mjs');
-    const { MediaSourceHealer } = await import('./3_applications/media/MediaSourceHealer.mjs');
-    const { createProxyRefusalHandler } = await import('./3_applications/media/proxyRefusalTrigger.mjs');
-    const { PlexSourceProbe } = await import('./1_adapters/content/media/plex/PlexSourceProbe.mjs');
-    const { SshMediaHostHealer } = await import('./1_adapters/media/SshMediaHostHealer.mjs');
-    const plexClient = contentRegistry?.get?.('plex')?.client ?? null;
-    const sourceHealConfig = configService.getAppConfig('media-source-heal') || {};
-    const healLogger = rootLogger.child({ module: 'media-source-heal' });
-    // Key/known_hosts paths in the YAML are relative to the app root (the
-    // data dir's parent), but the backend runs with cwd = backend/, so ssh
-    // resolved them against the wrong directory and every host heal failed
-    // with "Identity file ... not accessible". Resolve them here.
-    const appRoot = path.dirname(configService.getDataDir());
-    const resolveFromAppRoot = (p) => (p && !path.isAbsolute(p) ? path.resolve(appRoot, p) : p);
-    const hostConfig = { ...(sourceHealConfig.host || {}) };
-    for (const key of ['privateKey', 'private_key', 'knownHostsPath', 'known_hosts_path']) {
-      if (hostConfig[key]) hostConfig[key] = resolveFromAppRoot(hostConfig[key]);
-    }
-    const hostHealer = new SshMediaHostHealer(hostConfig, { logger: healLogger });
-    const mediaSourceHealer = plexClient
-      ? new MediaSourceHealer({
-        sourceProbe: new PlexSourceProbe({ client: plexClient }),
-        hostHealer: hostHealer.isConfigured() ? hostHealer : null,
-        notifier: notificationStack?.notificationService ?? null,
-        logger: healLogger,
-        config: sourceHealConfig.timing || {},
-      })
-      : null;
-    healLogger.info('media.source.heal.configured', {
-      plex: Boolean(plexClient), hostHealer: hostHealer.isConfigured(),
-    });
-    v1Routers['media-source'] = createMediaSourceRouter({ mediaSourceHealer, logger: healLogger });
-
-    // Heal from the server side too. Only the video Player asks
-    // /media-source/check; menu music and other audio just skip a refused
-    // track, so a ghosted file stayed unreadable for 4h+ on 2026-10-01
-    // (garage menu music, Children's Music). When the proxy turns a part 404
-    // into 503 source-unreadable, map the part back to its item and run the
-    // same check (in-flight dedupe + host-heal cooldown live in the healer).
-    const plexAdapter = contentRegistry?.get?.('plex') ?? null;
-    if (mediaSourceHealer && typeof plexAdapter?.resolveRatingKeyForPath === 'function') {
-      contentProxyService.onErrorReplaced(createProxyRefusalHandler({
-        healer: mediaSourceHealer,
-        resolveRatingKey: (refusedPath) => plexAdapter.resolveRatingKeyForPath(refusedPath),
-        logger: healLogger,
-      }));
-    }
-  }
 
   // Livestream engine — concrete adapters composed here, injected as factories
-  const { ChannelManager } = await import('./3_applications/livestream/ChannelManager.mjs');
-  const { FFmpegStreamAdapter } = await import('./1_adapters/livestream/FFmpegStreamAdapter.mjs');
-  const { SourceFeeder } = await import('./1_adapters/livestream/SourceFeeder.mjs');
-  const { StreamChannelRuntimeAdapter } = await import('./1_adapters/livestream/StreamChannelRuntimeAdapter.mjs');
-  const programsBasePath = configService.getHouseholdPath('livestream/programs');
-  const livestreamConfigFiles = new YamlConfigFileStore({ logger: rootLogger.child({ module: 'livestream-config' }) });
-  const channelManager = new ChannelManager({
-    broadcastEvent: (topic, payload) => eventBus.broadcast(topic, payload),
-    createChannelRuntime: (opts) => new StreamChannelRuntimeAdapter({
-      ...opts,
-      createEncoder: (encoderOpts) => new FFmpegStreamAdapter(encoderOpts),
-      createFeeder: (feederOpts) => new SourceFeeder({
-        ...feederOpts,
-        resolveMediaAsset: (asset) => path.isAbsolute(asset) ? asset : path.join(mediaBasePath, asset),
-      }),
-    }),
-    loadProgram: (programPath) => livestreamConfigFiles.readYaml(
-      path.isAbsolute(programPath) ? programPath : path.join(programsBasePath, programPath),
-    ),
-    clock: () => Date.now(),
-    random: Math.random,
-    scheduler: new NodeApplicationScheduler(),
-    logger: rootLogger.child({ module: 'livestream' }),
-  });
-
-  v1Routers.livestream = createLivestreamRouter({
-    channelManager,
-    logger: rootLogger.child({ module: 'livestream-api' }),
-  });
-
+  await installLivestream({ configService, rootLogger, eventBus, mediaBasePath, v1Routers });
   // Lazy proxy for webNutribotAdapter — filled after nutribot services are created below
-  const { createWebNutribotProxy } = await import('#composition/modules/webNutribotProxy.mjs');
+  const { createWebNutribotProxy } = await import("../../modules/nutribot/server/composition/webNutribotProxy.mjs");
   const webNutribotAdapterProxy = createWebNutribotProxy();
 
   let nutritionCleanup = null;
@@ -1745,16 +1506,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // mention service and late-bind only that optional capability; replacing the
   // router used to duplicate the same stale dependency bag twice.
   let healthAnalyticsService = null;
-  const healthMentionSuggestions = new HealthMentionSuggestions({
-    analytics: {
-      listPeriods: (input) => healthAnalyticsService?.listPeriods?.(input) ?? { periods: [] },
-    },
-    healthData: healthServices.healthStore,
-    aggregateHealth: healthServices.healthService,
-  });
-  v1Routers.healthMentions = createHealthMentionsRouter({
-    mentionSuggestions: healthMentionSuggestions,
-  });
+  v1Routers.healthMentions = createHealthMentionsApi({ healthServices, getHealthAnalyticsService: () => healthAnalyticsService });
 
   // Finance domain router
   v1Routers.finance = createFinanceApiRouter({
@@ -1764,300 +1516,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Feed domain router (FreshRSS reader + headline harvesting + boonscrolling)
-  if (feedServices) {
-    const { FeedAssemblyService } = await import('./3_applications/feed/services/FeedAssemblyService.mjs');
-    const { FeedContentService } = await import('./3_applications/feed/services/FeedContentService.mjs');
-    const { WebContentAdapter } = await import('./1_adapters/feed/WebContentAdapter.mjs');
-    const { createFeedRouter } = await import('./4_api/v1/routers/feed.mjs');
-    const { RedditFeedAdapter } = await import('./1_adapters/feed/sources/RedditFeedAdapter.mjs');
-    const { WeatherFeedAdapter } = await import('./1_adapters/feed/sources/WeatherFeedAdapter.mjs');
-    const { HealthFeedAdapter } = await import('./1_adapters/feed/sources/HealthFeedAdapter.mjs');
-    const { GratitudeFeedAdapter } = await import('./1_adapters/feed/sources/GratitudeFeedAdapter.mjs');
-    const { StravaFeedAdapter } = await import('./1_adapters/feed/sources/StravaFeedAdapter.mjs');
-    const { TodoistFeedAdapter } = await import('./1_adapters/feed/sources/TodoistFeedAdapter.mjs');
-    const { ImmichFeedAdapter } = await import('./1_adapters/feed/sources/ImmichFeedAdapter.mjs');
-    const { PlexFeedAdapter } = await import('./1_adapters/feed/sources/PlexFeedAdapter.mjs');
-    const { JournalFeedAdapter } = await import('./1_adapters/feed/sources/JournalFeedAdapter.mjs');
-    const { YouTubeFeedAdapter } = await import('./1_adapters/feed/sources/YouTubeFeedAdapter.mjs');
-    const { YouTubeAdapter } = await import('./1_adapters/content/media/youtube/YouTubeAdapter.mjs');
-    const { GoogleNewsFeedAdapter } = await import('./1_adapters/feed/sources/GoogleNewsFeedAdapter.mjs');
-    const { KomgaFeedAdapter } = await import('./1_adapters/feed/sources/KomgaFeedAdapter.mjs');
-    const { KomgaClient } = await import('./1_adapters/content/readable/komga/KomgaClient.mjs');
-    const { ReadalongFeedAdapter } = await import('./1_adapters/feed/sources/ReadalongFeedAdapter.mjs');
-    const { GoodreadsFeedAdapter } = await import('./1_adapters/feed/sources/GoodreadsFeedAdapter.mjs');
-    const { ABSEbookFeedAdapter } = await import('./1_adapters/feed/sources/ABSEbookFeedAdapter.mjs');
-
-    // Load query configs at bootstrap time (moves fs access out of application layer)
-    // content/lists is a top-level tree, sibling to household/ — NOT household-scoped.
-    const feedQueries = new YamlFeedQueryRepository({ dataService, configService, logger: rootLogger });
-    const queryConfigs = feedQueries.loadHouseholdQueries();
-    const loadUserQueries = (username) => feedQueries.loadUserQueries(username);
-
-    // Feed source adapters (extracted from FeedAssemblyService)
-    // Shared system HttpClient for all raw-HTTP feed adapters (P1.9).
-    const feedHttpClient = new HttpClient({ logger: rootLogger.child({ module: 'feed-http' }) });
-    const redditAdapter = new RedditFeedAdapter({
-      dataService,
-      httpClient: feedHttpClient,
-      logger: rootLogger.child({ module: 'reddit-feed' }),
-    });
-    const weatherAdapter = new WeatherFeedAdapter({
-      dataService,
-      logger: rootLogger.child({ module: 'weather-feed' }),
-    });
-    const healthAdapter = new HealthFeedAdapter({
-      loadLifelog: userLoadFile,
-      logger: rootLogger.child({ module: 'health-feed' }),
-    });
-    const gratitudeAdapter = new GratitudeFeedAdapter({
-      readSelectionQuotes: gratitudeServices.readSelectionQuotes,
-      userService,
-      logger: rootLogger.child({ module: 'gratitude-feed' }),
-    });
-    const stravaAdapter = new StravaFeedAdapter({
-      loadLifelog: userLoadFile,
-      logger: rootLogger.child({ module: 'strava-feed' }),
-    });
-    const todoistAdapter = new TodoistFeedAdapter({
-      loadCurrentTasks: (username) => userLoadCurrent(username, 'todoist'),
-      logger: rootLogger.child({ module: 'todoist-feed' }),
-    });
-    const immichConfig = configService.getAdapterConfig('immich');
-    const plexConfig = configService.getAdapterConfig('plex');
-    const immichAdapter = contentServices?.contentQueryService ? new ImmichFeedAdapter({
-      contentQueryPort: contentServices.contentQueryService,
-      contentRegistry: contentRegistry || null,
-      webUrl: immichConfig?.webUrl || null,
-      logger: rootLogger.child({ module: 'immich-feed' }),
-    }) : null;
-    const journalAdapter = new JournalFeedAdapter({
-      loadLifelog: userLoadFile,
-      logger: rootLogger.child({ module: 'journal-feed' }),
-    });
-    const plexAdapter = new PlexFeedAdapter({
-      contentRegistry: contentRegistry || null,
-      contentQueryPort: contentServices?.contentQueryService || null,
-      webUrl: mediaLibConfig?.webUrl || mediaLibConfig?.host || null,
-      plexHost: mediaLibConfig?.host || null,
-      plexToken: mediaLibConfig?.token || null,
-      logger: rootLogger.child({ module: 'plex-feed' }),
-    });
-    const googleAuth = dataService.system.read('auth/google');
-    const pipedHost = configService.resolveServiceUrl('piped');
-    const youtubeContentAdapter = pipedHost ? new YouTubeAdapter({
-      host: pipedHost,
-      httpClient: feedHttpClient,
-      logger: rootLogger.child({ module: 'youtube-adapter' }),
-    }) : null;
-    const youtubeAdapter = googleAuth?.api_key ? new YouTubeFeedAdapter({
-      apiKey: googleAuth.api_key,
-      youtubeAdapter: youtubeContentAdapter,
-      httpClient: feedHttpClient,
-      logger: rootLogger.child({ module: 'youtube-feed' }),
-    }) : null;
-    const googleNewsAdapter = new GoogleNewsFeedAdapter({
-      httpClient: feedHttpClient,
-      logger: rootLogger.child({ module: 'googlenews-feed' }),
-    });
-    const komgaAuth = configService.getHouseholdAuth('komga');
-    const komgaHost = configService.resolveServiceUrl('komga');
-    const komgaFeedAdapter = komgaAuth?.token && komgaHost ? new KomgaFeedAdapter({
-      client: new KomgaClient(
-        { host: komgaHost, apiKey: komgaAuth.token },
-        { httpClient: axios, logger: rootLogger.child({ module: 'komga-feed-client' }) }
-      ),
-      apiKey: komgaAuth.token,
-      webUrl: configService.resolveServiceWebUrl('komga'),
-      dataService,
-      httpClient: feedHttpClient,
-      logger: rootLogger.child({ module: 'komga-feed' }),
-    }) : null;
-
-    const readalongContentAdapter = contentRegistry?.get('readalong') || null;
-    const readalongFeedAdapter = readalongContentAdapter ? new ReadalongFeedAdapter({
-      readalongAdapter: readalongContentAdapter,
-      logger: rootLogger.child({ module: 'readalong-feed' }),
-    }) : null;
-
-    const goodreadsFeedAdapter = new GoodreadsFeedAdapter({
-      loadLifelog: userLoadFile,
-      httpClient: feedHttpClient,
-      logger: rootLogger.child({ module: 'goodreads-feed' }),
-    });
-
-    const { AudiobookshelfClient } = await import('./1_adapters/content/readable/audiobookshelf/AudiobookshelfClient.mjs');
-    const absEbookFeedAdapter = audiobookshelfConfig ? new ABSEbookFeedAdapter({
-      absClient: new AudiobookshelfClient(audiobookshelfConfig, { httpClient: axios }),
-      token: audiobookshelfConfig.token,
-      mediaDir: mediaBasePath,
-      webUrl: configService.resolveServiceWebUrl('audiobookshelf'),
-      httpClient: feedHttpClient,
-      logger: rootLogger.child({ module: 'abs-ebooks-feed' }),
-    }) : null;
-
-    // Start daily prefetch timer for abs-ebooks chapter cache
-    if (absEbookFeedAdapter) {
-      const allQueries = [...queryConfigs, ...loadUserQueries('user_1')];
-      absEbookFeedAdapter.startPrefetchTimer(allQueries);
-    }
-
-    const { ScrollConfigLoader } = await import('./3_applications/feed/services/ScrollConfigLoader.mjs');
-    const { DataServiceFeedConfigRepository } = await import('./1_adapters/feed/DataServiceFeedConfigRepository.mjs');
-    const { SpacingEnforcer } = await import('./3_applications/feed/services/SpacingEnforcer.mjs');
-    const { TierAssemblyService } = await import('./3_applications/feed/services/TierAssemblyService.mjs');
-    const { SourceResolver } = await import('./3_applications/feed/services/SourceResolver.mjs');
-    const { FeedCacheService } = await import('./3_applications/feed/services/FeedCacheService.mjs');
-    const { YamlFeedCacheRepository } = await import('./1_adapters/feed/YamlFeedCacheRepository.mjs');
-
-    const scrollConfigLoader = new ScrollConfigLoader({
-      configRepository: new DataServiceFeedConfigRepository({ dataService }),
-    });
-    const spacingEnforcer = new SpacingEnforcer();
-    const feedCacheService = new FeedCacheService({
-      cacheRepository: new YamlFeedCacheRepository({ dataService }),
-      scheduler: new NodeApplicationScheduler(),
-      logger: rootLogger.child({ module: 'feed-cache' }),
-    });
-
-    const webContentAdapter = new WebContentAdapter({
-      httpClient: feedHttpClient,
-      logger: rootLogger.child({ module: 'web-content' }),
-    });
-    const feedContentService = new FeedContentService({
-      webContentGateway: webContentAdapter,
-      logger: rootLogger.child({ module: 'feed-content' }),
-    });
-    const { YamlSelectionTrackingStore } = await import('./1_adapters/persistence/yaml/YamlSelectionTrackingStore.mjs');
-    const selectionTrackingStore = new YamlSelectionTrackingStore({ dataService, logger: rootLogger.child({ module: 'selection-tracking' }) });
-    const { YamlDismissedItemsStore } = await import('./1_adapters/persistence/yaml/YamlDismissedItemsStore.mjs');
-    const dismissedItemsStore = new YamlDismissedItemsStore({ dataService, logger: rootLogger.child({ module: 'feed-dismissed' }) });
-
-    const { FeedPoolManager } = await import('./3_applications/feed/services/FeedPoolManager.mjs');
-    const { FreshRSSSourceAdapter } = await import('./1_adapters/feed/sources/FreshRSSSourceAdapter.mjs');
-    const { HeadlineFeedAdapter } = await import('./1_adapters/feed/sources/HeadlineFeedAdapter.mjs');
-    const { EntropyFeedAdapter } = await import('./1_adapters/feed/sources/EntropyFeedAdapter.mjs');
-
-    const freshRSSFeedAdapter = new FreshRSSSourceAdapter({
-      freshRSSAdapter: feedServices.freshRSSAdapter,
-      configService,
-      logger: rootLogger.child({ module: 'freshrss-feed' }),
-    });
-    const headlineFeedAdapter = new HeadlineFeedAdapter({
-      headlineService: feedServices.headlineService,
-      logger: rootLogger.child({ module: 'headline-feed' }),
-    });
-    const entropyFeedAdapter = new EntropyFeedAdapter({
-      entropyService: entropyServices?.entropyService || null,
-      logger: rootLogger.child({ module: 'entropy-feed' }),
-    });
-
-    const feedSourceAdapters = [redditAdapter, weatherAdapter, healthAdapter, gratitudeAdapter, stravaAdapter, todoistAdapter, immichAdapter, plexAdapter, journalAdapter, youtubeAdapter, googleNewsAdapter, komgaFeedAdapter, readalongFeedAdapter, goodreadsFeedAdapter, freshRSSFeedAdapter, headlineFeedAdapter, entropyFeedAdapter, absEbookFeedAdapter].filter(Boolean);
-
-    const sourceResolver = new SourceResolver(feedSourceAdapters);
-
-    const { ContentPluginRegistry } = await import('./3_applications/feed/services/ContentPluginRegistry.mjs');
-    const { YouTubeContentPlugin } = await import('./1_adapters/feed/plugins/youtube.mjs');
-    const contentPluginRegistry = new ContentPluginRegistry([
-      new YouTubeContentPlugin({ logger: rootLogger.child({ module: 'youtube-plugin' }) }),
-    ]);
-
-    const tierAssemblyService = new TierAssemblyService({
-      spacingEnforcer,
-      sourceResolver,
-      logger: rootLogger.child({ module: 'tier-assembly' }),
-    });
-
-    const feedPoolManager = new FeedPoolManager({
-      sourceAdapters: feedSourceAdapters,
-      feedCacheService,
-      queryConfigs,
-      loadUserQueries,
-      dismissedItemsStore,
-      scheduler: new NodeApplicationScheduler(),
-      logger: rootLogger.child({ module: 'feed-pool' }),
-    });
-
-    const { FeedFilterResolver } = await import('./3_applications/feed/services/FeedFilterResolver.mjs');
-    const { FeedPrincipalResolver } = await import('./3_applications/feed/services/FeedPrincipalResolver.mjs');
-    const { FeedReaderService } = await import('./3_applications/feed/services/FeedReaderService.mjs');
-    const { FeedReaderTimelineService } = await import('./3_applications/feed/services/FeedReaderTimelineService.mjs');
-    const { FeedScrollSessionService } = await import('./3_applications/feed/services/FeedScrollSessionService.mjs');
-    const { FeedSessionPersistenceService } = await import('./3_applications/feed/services/FeedSessionPersistenceService.mjs');
-    const feedFilterResolver = new FeedFilterResolver({
-      sourceTypes: feedSourceAdapters.map(a => a.sourceType),
-      queryNames: queryConfigs.map(q => q._filename?.replace('.yml', '')).filter(Boolean),
-      aliases: {},
-    });
-
-    const feedAssemblyService = new FeedAssemblyService({
-      feedPoolManager,
-      sourceAdapters: feedSourceAdapters,
-      sourceResolver,
-      scrollConfigLoader,
-      tierAssemblyService,
-      feedContentService,
-      selectionTrackingStore,
-      feedFilterResolver,
-      spacingEnforcer,
-      contentPluginRegistry,
-      logger: rootLogger.child({ module: 'feed-assembly' }),
-    });
-    const { YamlFeedItemStateStore } = await import('./1_adapters/persistence/yaml/YamlFeedItemStateStore.mjs');
-    const { JsonlFeedHistoryStore } = await import('./1_adapters/persistence/feed/JsonlFeedHistoryStore.mjs');
-    const { YamlFeedSessionStore } = await import('./1_adapters/persistence/yaml/YamlFeedSessionStore.mjs');
-    const { FeedStateService } = await import('./3_applications/feed/services/FeedStateService.mjs');
-    const feedItemStateStore = new YamlFeedItemStateStore({
-      dataService,
-      logger: rootLogger.child({ module: 'feed-item-state-store' }),
-    });
-    const feedHistoryStore = new JsonlFeedHistoryStore({
-      dataService,
-      logger: rootLogger.child({ module: 'feed-history-store' }),
-    });
-    const feedSessionStore = new YamlFeedSessionStore({ dataService });
-    const feedStateService = new FeedStateService({
-      store: feedItemStateStore,
-      historyStore: feedHistoryStore,
-      sourceAdapters: feedSourceAdapters,
-      legacyDismissedStore: dismissedItemsStore,
-      clock: { now: () => Date.now() },
-      createId: crypto.randomUUID,
-      scheduler: new NodeApplicationScheduler(),
-      logger: rootLogger.child({ module: 'feed-state' }),
-    });
-    const feedReaderService = new FeedReaderService({
-      readerGateway: feedServices.freshRSSAdapter,
-      sourceAdapters: feedSourceAdapters,
-      dismissedItemsStore,
-      contentPluginRegistry,
-      logger: rootLogger.child({ module: 'feed-reader' }),
-    });
-    const feedPrincipalResolver = new FeedPrincipalResolver({
-      defaultUsername: () => configService.getHeadOfHousehold?.(),
-    });
-    const feedReaderTimelineService = new FeedReaderTimelineService({
-      reader: feedReaderService,
-      content: feedContentService,
-      state: feedStateService,
-    });
-    const feedScrollSessionService = new FeedScrollSessionService({
-      assembly: feedAssemblyService,
-      state: feedStateService,
-      persistence: new FeedSessionPersistenceService({ store: feedSessionStore }),
-      createId: crypto.randomUUID,
-    });
-    v1Routers.feed = createFeedRouter({
-      feedReaderService,
-      headlineService: feedServices.headlineService,
-      feedAssemblyService,
-      feedContentService,
-      feedStateService,
-      feedPrincipalResolver,
-      feedReaderTimelineService,
-      feedScrollSessionService,
-      logger: rootLogger.child({ module: 'feed' }),
-    });
-  }
+  if (feedServices) {  await installFeedApi({ configService, dataService, userService, rootLogger, userLoadFile, gratitudeServices, userLoadCurrent, contentServices, contentRegistry, mediaLibConfig, audiobookshelfConfig, mediaBasePath, feedServices, entropyServices, v1Routers });
+}
 
   // Cost domain router
   v1Routers.cost = createCostApiRouter({
@@ -2105,18 +1565,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Register headline harvester so scheduler can run feed-headlines job
-  try {
-    harvesterServices.harvesterService.register(new HeadlineHarvesterAdapter({
-      headlineService: feedServices.headlineService,
-      logger: rootLogger.child({ module: 'feed-headline-harvester' }),
-    }));
-  } catch (err) {
-    rootLogger.warn?.('feed-headline-harvester.register.failed', { error: err.message });
-  }
+  registerFeedHeadlineHarvester({ harvesterServices, feedServices, rootLogger });
 
   // Create harvest router using HarvesterService
-  const { DefaultPrincipalResolver } = await import('./3_applications/common/context/DefaultPrincipalResolver.mjs');
-  const { NodePromiseDeadline } = await import('./1_adapters/scheduling/NodePromiseDeadline.mjs');
+  const { DefaultPrincipalResolver } = await import("./3_applications/common/context/DefaultPrincipalResolver.mjs");
+  const { NodePromiseDeadline } = await import("./1_adapters/scheduling/NodePromiseDeadline.mjs");
   v1Routers.harvest = createHarvestRouter({
     harvesterService: harvesterServices.harvesterService,
     principalResolver: new DefaultPrincipalResolver({
@@ -2139,6 +1592,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Lifelog domain router
   v1Routers.lifelog = createLifelogApiRouter({
+    weightService: createLifelogWeightService({ dataService, configService }),
     lifelogServices,
     dataService,
     configService,
@@ -2158,64 +1612,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'static-api' })
   });
 
-  // Art collections + optional Immich source for ArtMode.
-  const artConfig = configService.getHouseholdAppConfig(null, 'art') || {};
-  let artImmichSource = null;
-  if (immichConfig) {
-    const { ImmichClient } = await import('#adapters/content/gallery/immich/ImmichClient.mjs');
-    const { createImmichSource } = await import('./1_adapters/content/art/sources/immichSource.mjs');
-    const artImmichClient = new ImmichClient(immichConfig, { httpClient: axios });
-    const fetchImageBytes = async (assetId) => {
-      const r = await axios.get(
-        `${immichConfig.host.replace(/\/$/, '')}/api/assets/${assetId}/thumbnail?size=preview`,
-        { headers: { 'x-api-key': immichConfig.apiKey }, responseType: 'arraybuffer' }
-      );
-      return Buffer.from(r.data);
-    };
-    artImmichSource = createImmichSource({
-      client: artImmichClient,
-      fetchImageBytes,
-      proxyPath: '/api/v1/proxy/immich',
-      logger: rootLogger.child({ module: 'art-immich' }),
-    });
-  }
-  const artAdapter = createArtAdapter({
-    imgBasePath,
-    householdDir: configService.getHouseholdPath(''),
-    collections: artConfig.collections || {},
-    immichSource: artImmichSource,
-    logger: rootLogger.child({ module: 'art-adapter' })
-  });
-  // Register a thin `art` content source so /display/art:<preset> resolves to a
-  // representative thumbnail (menu cards for art presets). The screensaver
-  // adapter itself isn't a full IContentSource — the wrapper delegates the
-  // thumbnail path and stubs the unused list/playable interface.
-  if (contentRegistry?.register) {
-    const { createArtContentSource } = await import('./1_adapters/content/art/ArtContentSource.mjs');
-    contentRegistry.register(
-      createArtContentSource({ artAdapter, logger: rootLogger.child({ module: 'art-content' }) }),
-      { category: 'art' }
-    );
-  }
-  const { ArtPresetService } = await import('#apps/content/ArtPresetService.mjs');
-  const { FilesystemArtPresetCatalog } = await import('#adapters/content/art/FilesystemArtPresetCatalog.mjs');
-  v1Routers.art = createArtRouter({
-    artService: new ArtPresetService({
-      catalog: new FilesystemArtPresetCatalog({
-        householdDir: configService.getHouseholdPath(''),
-        logger: rootLogger.child({ module: 'art-catalog' }),
-      }),
-      artSource: artAdapter,
-    }),
-    logger: rootLogger.child({ module: 'art-api' })
-  });
+  const { artAdapter, artRouter } = await createArtContentRuntime({ configService, immichConfig, axios, imgBasePath, rootLogger, contentRegistry });
+  v1Routers.art = artRouter;
 
   // App-wide voice-feedback capture + inbox. Background-transcribes via the shared
   // OpenAI gateway (null-safe: items still save when transcription isn't configured).
   // The notification service is what finally gives the inbox a reader: until now
   // arrival triggered nothing but a log line, so a recorded complaint sat in a
   // YAML file until somebody thought to go looking.
-  const { FilesystemFeedbackRepository } = await import('./1_adapters/feedback/FilesystemFeedbackRepository.mjs');
+  const { FilesystemFeedbackRepository } = await import("./1_adapters/feedback/FilesystemFeedbackRepository.mjs");
   v1Routers.feedback = createFeedbackRouter({
     feedbackService: new FeedbackService({
       feedbackRepository: new FilesystemFeedbackRepository({
@@ -2230,114 +1635,26 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'feedback-api' }),
   });
 
-  const gamingDefinitionStore = new YamlGamingDefinitionStore({
-    definitionsDir: configService.getHouseholdPath('gaming/games'),
-    archiveDir: configService.getHouseholdPath('gaming/definitions'),
-    contentGamesDir: join(contentPath, 'games'),
-    logger: rootLogger.child({ module: 'gaming-definitions' }),
-  });
-  const gamingManifestStore = new YamlGamingExperienceManifestStore({
-    manifestsDir: configService.getHouseholdPath('gaming/manifests'),
-  });
-  const partyGamesCatalog = new PartyGamesCatalog({
-    configProjection: new PartyGamesConfigProjection({ configService }),
-    userService,
-    definitionStore: gamingDefinitionStore,
-    manifestStore: gamingManifestStore,
-    resourcePresenter: publicResourceUrl,
-    logger: rootLogger.child({ module: 'party-games' }),
-  });
-  const partyGamesProfile = partyGamesCatalog.getConfig();
-  const partyGamesPrinterAdapter = partyGamesProfile.printing.host ? new LaserPrinterAdapter({
-    host: partyGamesProfile.printing.host,
-    port: partyGamesProfile.printing.port,
-    logger: rootLogger.child({ module: 'gaming-print' }),
-  }) : null;
-  const partyGamesPrinter = partyGamesPrinterAdapter ? {
-    print: (pdf, { sessionId }) => partyGamesPrinterAdapter.printPdf(pdf, { jobName: `Party Games host packet — ${sessionId}`, user: 'party-games', copies: 1 }),
-  } : null;
+  const { gamingDefinitionStore, gamingManifestStore, partyGamesCatalog, partyGamesProfile, partyGamesPrinter } = createPartyGamesCatalogRuntime({ contentPath, rootLogger });
 
-  // One Gaming authority serves every experience.
-  const gamingModule = createGamingApiModule({
-    definitionStore: gamingDefinitionStore,
-    manifestStore: gamingManifestStore,
-    snapshotsDir: configService.getHouseholdPath('gaming/snapshots'),
-    journalsDir: configService.getHouseholdPath('gaming/journals'),
-    effectsDir: configService.getHouseholdPath('gaming/effects'),
-    drawingCheckpointsDir: configService.getHouseholdPath('gaming/drawing-checkpoints'),
-    historyDir: configService.getHouseholdPath('gaming/history'),
-    partyGamesCatalog,
-    aiGateway: partyGamesProfile.ai.commentary || partyGamesProfile.ai.advisory_judgment ? scopedGateway(sharedAiGateway, { app: 'gaming' }) : null,
-    aiConfig: partyGamesProfile.ai,
-    printer: partyGamesPrinter,
-    broadcastEvent,
-    logger: rootLogger.child({ module: 'gaming-runtime' }),
-    autoPrint: partyGamesProfile.printing.auto_print_once_per_session,
-  });
-  const gamingAssetCatalog = new YamlGamingAssetCatalog({
-    catalogsDir: join(mediaBasePath, 'games/_common/catalog'),
-    assetRoot: join(mediaBasePath, 'games/_common'),
-  });
+  const { gamingModule, gamingAssetCatalog } = createPartyGamesSessionRuntime({ gamingDefinitionStore, gamingManifestStore, partyGamesCatalog, partyGamesProfile, sharedAiGateway, partyGamesPrinter, rootLogger, mediaBasePath });
+
   const presentationCatalog = new YamlPresentationCatalog({
     catalogsDir: join(mediaBasePath, 'games/_common/catalog'),
     assetRoot: join(mediaBasePath, 'games/_common'),
   });
-  const gamingRouter = createGamingRouter({
-    gamingApplication: gamingModule.gamingApplication,
-    gamingDiagnostics: gamingModule.gamingDiagnostics,
-    gamingMediaService: new GamingMediaService({ repository: new FilesystemGamingMediaRepository({
-      assetCatalog: gamingAssetCatalog,
-      partyMediaRoot: join(mediaBasePath, 'games', 'party-games'),
-      contentGamesDir: join(contentPath, 'games'),
-      imageArchiveDir: configService.getHouseholdPath('gaming/definitions/images'),
-    }) }),
-    broadcastEvent,
-    logger: rootLogger.child({ module: 'gaming-api' }),
-  });
+  const { gamingRouter } = createPartyGamesHttpRuntime({ gamingModule, gamingAssetCatalog, mediaBasePath, contentPath, rootLogger });
+
   v1Routers.gaming = gamingRouter;
-  const { GetPublicPresentationCatalog } = await import('./3_applications/presentation/GetPublicPresentationCatalog.mjs');
+  const { GetPublicPresentationCatalog } = await import("./3_applications/presentation/GetPublicPresentationCatalog.mjs");
   v1Routers.presentation = createPresentationRouter({
     catalog: presentationCatalog,
     getPublicCatalog: new GetPublicPresentationCatalog({ catalog: presentationCatalog }),
     logger: rootLogger.child({ module: 'presentation-api' }),
   });
 
-  // Chess: server-side Stockfish behind a worker thread + household/user config layers.
-  const chessEngine = createStockfishEngine({ logger: rootLogger.child({ module: 'chess-engine' }) });
-  // A SECOND engine, never handicapped, for hints and analysis. Separate from
-  // the opponent because the bottom ladder rungs are no longer Stockfish at all
-  // — asking the opponent engine for the best move would now return a
-  // beginner's guess — and because the two want different UCI conversations:
-  // one throttled bestmove out versus a scored search.
-  const chessAnalyst = createStockfishAnalyst({
-    depth: 14,
-    logger: rootLogger.child({ module: 'chess-analyst' }),
-  });
-  server?.once?.('close', () => { chessEngine.dispose(); chessAnalyst.dispose(); });
-  const chessConfigService = createChessConfigService({
-    readHouseholdConfig: () => configService.getHouseholdAppConfig(null, 'chess'),
-    readUserConfig: (userId) => dataService.user.read('apps/chess/config', userId) || {},
-    writeUserConfig: (userId, data) => dataService.user.write('apps/chess/config', data, userId),
-    logger: rootLogger.child({ module: 'chess-config' }),
-  });
-  const readChessLadderConfig = async (userId) => mergeLadderConfig(
-    configService.getHouseholdAppConfig(null, 'chess') || {},
-    userId ? (dataService.user.read('apps/chess/config', userId) || {}) : {},
-  );
-  const chessLadderService = createChessLadderService({
-    readConfig: readChessLadderConfig,
-    readProgress: (userId) => dataService.user.read('apps/chess/ladder', userId) || null,
-    writeProgress: (userId, progress) => dataService.user.write('apps/chess/ladder', progress, userId),
-    logger: rootLogger.child({ module: 'chess-ladder' }),
-  });
-  const pianoBoardGameDayStore = new YamlPianoBoardGameDayStore({
-    historyRoot: configService.getHouseholdPath('history/piano-board-game-days', householdId),
-  });
-  const pianoBoardGameDayService = new PianoBoardGameDayService({
-    store: pianoBoardGameDayStore,
-    timezone: configService.getTimezone?.() || null,
-    logger: rootLogger.child({ component: 'piano-board-game-day' }),
-  });
+  const chessRuntime = createChessRuntime({configService,dataService,rootLogger,server});
+  const pianoBoardGameDayService = createPianoBoardGameDayRuntime({configService,householdId,rootLogger});
   // The native Chess router retains its compatibility endpoints, but their
   // dialogue and rivalry work is delegated to the shared board-game services
   // created immediately below. The closures are invoked only after startup,
@@ -2364,32 +1681,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       });
     },
   };
-  const pianoChessRouter = createChessRouter({
-    engine: chessEngine,
-    analyst: chessAnalyst,
-    configService: chessConfigService,
-    // The household archive: one file per game, under the day it was played,
-    // named for the player. Household rather than per-user because it is the
-    // instrument's history — the basis for comparing progress across the
-    // children who share this piano, and the corpus the engine reads back when
-    // asked where a game went wrong.
-    archiveStore: {
-      save: (record, userSegment) => {
-        const day = /^\d{4}-\d{2}-\d{2}$/.test(record.played_on || '')
-          ? record.played_on
-          : new Date().toISOString().slice(0, 10);
-        return dataService.household.write(
-          `${chessArchiveDayDir(day)}/${buildChessArchiveFilename(record, userSegment)}`,
-          { ...record, archived_at: new Date().toISOString() },
-        );
-      },
-    },
-    ladderService: chessLadderService,
-    commentaryService: sharedChessCommentary,
-    rivalryMemory: sharedChessRivalry,
-    boardGameDayService: pianoBoardGameDayService,
-    logger: rootLogger.child({ module: 'chess-api' }),
-  });
+  const pianoChessRouter = chessRuntime.createRouter({pianoBoardGameDayService,sharedChessCommentary,sharedChessRivalry});
 
   pianoGamesModule = createPianoGamesModule({
     dataService,
@@ -2422,71 +1714,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Content-filter cascade (EDL + profile + override) for the Player's
   // useContentFilter hook. Curated policy from data/household/content-filter/,
   // machine-fetched EDLs from media/content-filter/.
-  const { FilesystemContentFilterRepository } = await import('./1_adapters/persistence/files/FilesystemContentFilterRepository.mjs');
-  const { GetContentFilter } = await import('./3_applications/content-filter/usecases/GetContentFilter.mjs');
-  v1Routers['content-filter'] = createContentFilterRouter({
-    getContentFilter: new GetContentFilter({
-      contentFilterRepository: new FilesystemContentFilterRepository({
-        householdDir: configService.getHouseholdPath(''),
-        mediaDir: configService.getMediaDir(),
-      }),
-    }),
-    logger: rootLogger.child({ module: 'content-filter-api' }),
-  });
+  v1Routers['content-filter'] = await createContentFilterRuntime({configService,rootLogger});
 
-  // Emulator console (games on the media mount). Addresses media by safe
-  // (system, gameId) slugs and resolves the real (messy) on-disk filenames
-  // server-side; also serves the vendored EmulatorJS engine bundle.
-  {
-    const emulationDir = path.join(configService.getMediaDir(), 'emulation');
-    const engineDir = path.join(emulationDir, '_engine');
-    const emuLogger = rootLogger.child({ module: 'emulator-api' });
-    const configRepository = new FilesystemEmulatorConfigRepository({ emulationDir });
-    const loadConfig = () => loadEmulatorConfig({ emulationDir, configRepository, logger: emuLogger });
-    const emulatorResources = new EmulatorResourceService({
-      assetRepository: new FilesystemEmulatorAssetRepository({ emulationDir, engineDir, loadCatalog: loadConfig }),
-      saveRepository: new FilesystemEmulatorSaveRepository({ emulationDir }),
-      loadConfig,
-      resolveGameRules,
-    });
-    const emulatorLibrary = new EmulatorLibraryService({ loadConfig, buildCatalog, resolveGameRules, logger: emuLogger });
-    v1Routers.emulator = createEmulatorRouter({
-      logger: emuLogger,
-      emulatorResources,
-      emulatorLibrary,
-      // Broadcasts the bt.pair.request bus topic the garage fitness bridge
-      // listens for (puts the box into controller-pairing mode without SSH).
-      // eventBus is already constructed (above) and in scope here.
-      publishBtPair: (payload) => eventBus.broadcast('bt.pair.request', { topic: 'bt.pair.request', ...payload }),
-    });
-  }
+  v1Routers.emulator = createEmulatorRuntime({configService,rootLogger,eventBus});
 
   // Eink router — renders panels for hardware e-paper displays (Seeed reTerminal).
-  const { EinkPanelService } = await import('./3_applications/eink/EinkPanelService.mjs');
-  const { createEinkRouter } = await import('./4_api/v1/routers/eink.mjs');
-  const { DataServiceEinkPanelStore } = await import('./1_adapters/eink/DataServiceEinkPanelStore.mjs');
-  const { HttpEinkDataSourceGateway } = await import('./1_adapters/eink/HttpEinkDataSourceGateway.mjs');
-  const { Sha1ContentFingerprint } = await import('./1_adapters/eink/Sha1ContentFingerprint.mjs');
-  const { createEinkPanelRenderer } = await import('./1_rendering/eink/EinkPanelRenderer.mjs');
-  const { loadImage: decodeEinkImage } = await import('#rendering/canvas/index.mjs');
-  // Self-fetch base for panel data sources comes from household config, never a
-  // literal — same source the MediaBundle uses (see bootstrap.mjs). Internal
-  // host (e.g. http://daylight-station:3111) so the round-trip stays on-LAN.
-  const einkDevices = configService.getHouseholdDevices(householdId) || {};
-  const einkPanelService = new EinkPanelService({
-    panelStore: new DataServiceEinkPanelStore({ dataService }),
-    dataSourceGateway: new HttpEinkDataSourceGateway({
-      baseUrl: einkDevices.daylightHostInternal || einkDevices.daylightHost,
-      decodeImage: decodeEinkImage,
-    }),
-    panelRenderer: createEinkPanelRenderer({ fontDir: configService.getPath('font') || `${mediaBasePath}/fonts` }),
-    fingerprint: new Sha1ContentFingerprint(),
-    logger: rootLogger.child({ module: 'eink' }),
-  });
-  v1Routers.eink = createEinkRouter({
-    einkPanelService,
-    logger: rootLogger.child({ module: 'eink-api' }),
-  });
+  const { createEinkModule } = await import("../../modules/screens/server/display-runtime.mjs");
+  v1Routers.eink = await createEinkModule({ configService, householdId, dataService, mediaBasePath, rootLogger });
 
   // Config router - serves configuration to frontend
   const configApiYamlSource = new ConfigApiYamlSource({
@@ -2776,8 +2010,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Gratitude domain router - gratitude card canvas renderer
   let createGratitudeCardCanvas = null;
   try {
-    const { createGratitudeCardRenderer } = await import('../../modules/gratitude/server/rendering.mjs');
-    const { GratitudePrintPresentationService } = await import('../../modules/gratitude/server/print-presentation.mjs');
+    const { createGratitudeCardRenderer } = await import("../../modules/gratitude/server/rendering.mjs");
+    const { GratitudePrintPresentationService } = await import("../../modules/gratitude/server/print-presentation.mjs");
     const householdId = configService.getDefaultHouseholdId();
     const presentation = new GratitudePrintPresentationService({
       gratitude: gratitudeServices.gratitudeService,
@@ -2831,7 +2065,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { createQRCodeRenderer } = await import('#rendering/qrcode/QRCodeRenderer.mjs');
   const { createGenerateQRCode } = await import('#apps/qrcode/GenerateQRCode.mjs');
   const { QRCodeAssetAdapter } = await import('#adapters/qrcode/QRCodeAssetAdapter.mjs');
-  const { createQRCodeRouter } = await import('./4_api/v1/routers/qrcode.mjs');
+  const { createQRCodeRouter } = await import("./4_api/v1/routers/qrcode.mjs");
   const qrcodeRenderer = createQRCodeRenderer({ mediaPath: mediaBasePath });
   // Resolve default barcode target screen from devices config
   const _qrDeviceConfig = configService.getHouseholdDevices(householdId) || {};
@@ -2865,10 +2099,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Catalog PDF router
-  const { createGenerateCatalog } = await import('#apps/catalog/GenerateCatalog.mjs');
+  const { createGenerateCatalog } = await import("../../capabilities/content-catalog/server/application/catalog/GenerateCatalog.mjs");
   const { HttpCatalogListSource } = await import('#adapters/catalog/HttpCatalogListSource.mjs');
-  const { renderCatalogPdf } = await import('#rendering/catalog/renderCatalogPdf.mjs');
-  const { createCatalogRouter } = await import('./4_api/v1/routers/catalog.mjs');
+  const { renderCatalogPdf } = await import("../../capabilities/content-catalog/server/rendering/catalog/renderCatalogPdf.mjs");
+  const { createCatalogRouter } = await import("../../capabilities/content-catalog/server/api/catalog.mjs");
   v1Routers.catalog = createCatalogRouter({
     generateCatalog: createGenerateCatalog({
       createContentExpression: (value) => new ContentExpression(value),
@@ -2885,74 +2119,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // devices (the nutrition fridge sheet is the first). Providers are injected
   // rather than imported by the service, which is what keeps the printed codes
   // and the parsing grammar from drifting: both come from ScanVocabularyService.
-  const { createSheetService } = await import('#apps/sheets/SheetService.mjs');
-  const { PrintableSheetOperations } = await import('#apps/sheets/PrintableSheetOperations.mjs');
-  const { createCellRenderers } = await import('#rendering/pdf/cellRenderers.mjs');
-  const { layout: layoutSheet } = await import('#rendering/pdf/SheetLayout.mjs');
-  const { renderSheetPdf } = await import('#rendering/pdf/QRSheetRenderer.mjs');
-  const { createNutritionProviders } = await import('#composition/modules/sheetProviders.mjs');
-  const { createIconLoader } = await import('#composition/modules/iconLoader.mjs');
-  const { createSheetsRouter } = await import('./4_api/v1/routers/sheets.mjs');
-
-  const sheetCellKinds = createCellRenderers();
-  const sheetsLogger = rootLogger.child({ module: 'sheets' });
-  const sheetService = createSheetService({
-    getConfig: () => configService.getHouseholdAppConfig(householdId, 'sheets') || {},
-    providers: createNutritionProviders({
-      // Read per build, not once: the sheet must reflect the scale config as it
-      // stands when somebody asks for a printout.
-      getScaleConfig: () => normalizeScaleNutribotConfig(
-        configService.getHouseholdAppConfig(householdId, 'scales') || {},
-      ),
-      loadIcon: createIconLoader({
-        dir: configService.getHouseholdPath('nutrition/icons'),
-        logger: sheetsLogger,
-      }),
-    }),
-    cellKinds: sheetCellKinds,
-    layoutSheet,
-    logger: sheetsLogger,
-  });
-  v1Routers.sheets = createSheetsRouter({
-    printableSheets: new PrintableSheetOperations({
-      sheets: sheetService,
-      cellKinds: sheetCellKinds,
-      renderPdf: renderSheetPdf,
-      logger: sheetsLogger,
-    }),
-    logger: sheetsLogger,
-  });
+  v1Routers.sheets = await createInstalledPrintableSheets({configService,householdId,rootLogger});
 
   // Nutribot report renderer (canvas-based PNG generation)
-  let nutribotReportRenderer = null;
-  try {
-    const { NutriReportRenderer } = await import('#rendering/nutribot/NutriReportRenderer.mjs');
-    nutribotReportRenderer = new NutriReportRenderer({
-      logger: rootLogger.child({ module: 'nutribot-renderer' }),
-      fontDir: configService.getPath('font'),
-      iconDir: configService.getPath('icons') + '/food',
-    });
-    rootLogger.info?.('nutribot.renderer.initialized');
-  } catch (e) {
-    rootLogger.warn?.('nutribot.renderer.import_failed', { error: e.message });
-  }
+  const nutribotReportRenderer = await createNutribotReportRenderer({ configService, rootLogger });
 
   // Fitness receipt renderer (canvas-based PNG generation)
-  let createFitnessReceiptCanvas = null;
-  try {
-    const { createFitnessReceiptRenderer } = await import('#rendering/fitness/FitnessReceiptRenderer.mjs');
-    const renderer = createFitnessReceiptRenderer({
-      getSessionData: async (sessionId) => {
-        const session = await fitnessServices.sessionService.getSession(sessionId, householdId, { decodeTimeline: false });
-        return session ? session.toJSON() : null;
-      },
-      resolveDisplayName: (slug) => userService.resolveDisplayName(slug),
-      fontDir: configService.getPath('font') || `${mediaBasePath}/fonts`
-    });
-    createFitnessReceiptCanvas = renderer.createCanvas;
-  } catch (e) {
-    rootLogger.warn?.('fitness.receipt.import_failed', { error: e.message });
-  }
+  const { createFitnessReceiptCanvas } = await createFitnessReceiptRuntime({ fitnessServices, householdId, userService, configService, mediaBasePath, rootLogger });
 
   // One playable authority is shared by Fitness, Piano, School, and Agents.
   // It owns the ProviderFitnessContentCatalog boundary and its caches.
@@ -2971,7 +2144,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // container into the thin router. fitnessPlayableService provides Plex
   // enrichment for the /courses/:id/playable + /courses/progress endpoints.
   const { router: pianoRouter, pianoStudioDatastore, composerSongStore, pianoContainer, pianoGameBudgetService, pianoChallengeProfileService, schoolPianoChallengeCompletionService, schoolTeacherConfig, schoolTeacherGate } = await createPianoModule({
-    configService, userService, rootLogger, contentRegistry, householdId, contentPath, fitnessPlayableService, contentServices, getCurriculumIndex, mergeSeason, eventBus, shortId, pianoBoardGameDayService, ComposerSongStore, YamlAssignmentStore, PianoConfigProjection, YamlPianoGameBudgetStore,
+    configService, userService, rootLogger, contentRegistry, householdId, contentPath, fitnessPlayableService, contentServices, eventBus, shortId, pianoBoardGameDayService, PianoConfigProjection,
     schoolLearnerDirectory: { listLearners: () => schoolLearnerDirectory.listLearners() },
   });
   v1Routers.piano = pianoRouter;
@@ -2979,118 +2152,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // School (portal homeschool): banks from data/content/school/{subject}/quizzes/, per-user
   // append-only attempt log under data/users/{id}/apps/school/attempts/, plus
   // the materials framework (catalog + per-unit progress/quiz gates).
-  const schoolDatastore = new YamlSchoolDatastore({ configService });
-  const schoolFullConfig = configService.getHouseholdAppConfig(null, 'school') || {};
-  const schoolSessionResultArtifacts = new YamlSessionResultArtifactStore({ configService });
-  const schoolLearnerDirectory = new ConfiguredSchoolLearningDirectory({
-    userService,
-    config: schoolFullConfig,
-    householdId,
-    logger: rootLogger.child({ module: 'school-learners' }),
-  });
-  // Periods: config→data promotion (teacher-console W3-1). The stored source
-  // serves the boot-validated config until the first teacher edit writes
-  // school/plans/periods.yml; every downstream consumer (report cards, the
-  // /periods route, agendas) inherits the same instance.
-  const { YamlAcademicPeriodStore } = await import('#adapters/persistence/yaml/YamlAcademicPeriodStore.mjs');
-  const schoolAcademicPeriods = new YamlAcademicPeriodStore({
-    configService,
-    fallback: new ConfiguredAcademicPeriodSource({ config: schoolFullConfig }),
-    logger: rootLogger.child({ module: 'school-periods' }),
-  });
-  // The console write predicate for SchoolService's own teacher writes
-  // (quiz-request dismissal). Built through the same factory the lifecycle
-  // composition uses — one copy of the accessor text, no drift.
-  // Wave-3 planning domains: stores + gated writes (teacher-console W3-1..4).
-  const { SetAcademicPeriods } = await import('#apps/school/usecases/SetAcademicPeriods.mjs');
-  const { SetPassOverride } = await import('#apps/school/usecases/SetPassOverride.mjs');
-  const { YamlMilestoneStore } = await import('#adapters/persistence/yaml/YamlMilestoneStore.mjs');
-  const { SetMilestones } = await import('#apps/school/usecases/SetMilestones.mjs');
-  const { GetMilestoneStatuses } = await import('#apps/school/usecases/GetMilestoneStatuses.mjs');
-  const { YamlEnrichmentLog } = await import('#adapters/persistence/yaml/YamlEnrichmentLog.mjs');
-  const { RecordEnrichment } = await import('#apps/school/usecases/RecordEnrichment.mjs');
-  const schoolMilestoneStore = new YamlMilestoneStore({ configService, logger: rootLogger.child({ module: 'school-milestones' }) });
-  const schoolEnrichmentLog = new YamlEnrichmentLog({ configService, logger: rootLogger.child({ module: 'school-enrichment' }) });
-  // Mid-quiz resumability (Task 17): per-user users/{id}/apps/school/sittings.yml.
-  const { YamlSittingStore } = await import('#adapters/persistence/yaml/YamlSittingStore.mjs');
-  const schoolSittingStore = new YamlSittingStore({ configService, logger: rootLogger.child({ module: 'school-sittings' }) });
-  const schoolService = new SchoolService({
-    datastore: schoolDatastore,
-    userService,
-    sittings: schoolSittingStore,
-    teacherGate: schoolTeacherGate,
-    // Thunk: the notes store is constructed later in this function; dismissal
-    // notes resolve it at call time.
-    teacherNotesRef: () => schoolTeacherNotes,
-    learnerDirectory: schoolLearnerDirectory,
-    logger: rootLogger.child({ module: 'school' }),
-    bankSources: [new GeneratedBankSource({
-      dataDir: path.join(contentPath, 'school', 'generated-banks'),
-      logger: rootLogger.child({ module: 'school-generated-banks' })
-    })]
-  });
-  const schoolLearningEvidence = new YamlLearningEvidenceRepository({ configService });
-  const schoolEvidenceSources = [
-    new YamlSchoolAttemptEvidenceSource({ datastore: schoolDatastore }),
-    schoolLearningEvidence,
-  ];
-  const schoolLearningLoop = createSchoolLearningLoop({
-    configService,
-    householdId,
-    aiGateway: scopedGateway(sharedAiGateway, { app: 'school' }),
-    logger: rootLogger.child({ module: 'school-remediation' }),
-    evidenceRepository: schoolLearningEvidence,
-    learnerDirectory: schoolLearnerDirectory,
-  });
-  // One configured-expectations instance shared by every consumer (Task 11):
-  // constructed once, validated once, rather than re-parsing school.yml's
-  // `progress.expectations` per use case.
-  const schoolConfiguredExpectationSource = new ConfiguredLearningExpectationSource({ config: schoolFullConfig });
-  // The curriculum accessor (`schoolLifecycle.stores.curriculum`) does not
-  // exist yet at this point in composition — `schoolLifecycle` wires up
-  // several hundred lines below, and `schoolCalc`'s composition (just below
-  // this block) already depends on THIS EXACT `getLearningProgress` instance,
-  // so construction can't simply be deferred until after the lifecycle block.
-  // This thin forwarding source lets `getLearningProgress` be built now while
-  // still picking up the real curriculum-derived outline the moment
-  // `schoolLifecycle` finishes wiring: `schoolLifecycle` is a `let` reassigned
-  // later in this same function, and a closure over it observes that
-  // reassignment by the time an actual request runs `listExpectations`. An
-  // unwired lifecycle (or no `stores.curriculum`) makes this emit nothing —
-  // GetLearningProgress and curriculumHistory behave exactly as before Task 11.
-  const schoolCurriculumExpectationSource = {
-    async listExpectations(query) {
-      const curriculum = schoolLifecycle.stores?.curriculum;
-      return curriculum ? new CurriculumExpectationSource({ curriculum }).listExpectations(query) : [];
-    },
-  };
-  const getLearningProgress = new GetLearningProgress({
-    evidenceSources: schoolEvidenceSources,
-    cohortDirectory: schoolLearnerDirectory,
-    academicPeriods: schoolAcademicPeriods,
-    followUpSources: [new AssessmentReviewFollowUpSource({
-      thresholdPercent: schoolFullConfig.progress?.reviewThresholdPercent ?? 80,
-    }), schoolLearningLoop.followUps],
-    // Configured pacing dates win a same-target collision over the
-    // curriculum-derived outline (Task 11 merge rule) — order matters here.
-    expectationSources: [schoolConfiguredExpectationSource, schoolCurriculumExpectationSource],
-    logger: rootLogger.child({ module: 'school-progress' }),
-  });
-  const getInstructionalInsights = new GetInstructionalInsights({
-    evidenceSources: schoolEvidenceSources,
-    cohortDirectory: schoolLearnerDirectory,
-    expectationSource: schoolConfiguredExpectationSource,
-    policy: {
-      accuracyThresholdPercent: schoolFullConfig.progress?.instructionalInsights?.accuracyThresholdPercent ?? 70,
-      minimumResponses: schoolFullConfig.progress?.instructionalInsights?.minimumResponses ?? 2,
-    },
-    logger: rootLogger.child({ module: 'school-instructional-insights' }),
-  });
-  const recordLearningReflection = new RecordLearningReflection({
-    evidenceRepository: schoolLearningEvidence,
-    learnerDirectory: schoolLearnerDirectory,
-    evidenceIdFactory: createLearningReflectionEvidenceId,
-  });
+  const { schoolDatastore, schoolFullConfig, schoolSessionResultArtifacts, schoolLearnerDirectory, schoolAcademicPeriods, schoolMilestoneStore, schoolEnrichmentLog, schoolService, schoolLearningEvidence, schoolLearningLoop, getLearningProgress, getInstructionalInsights, recordLearningReflection } = await createSchoolLearningRuntime({ configService, userService, householdId, rootLogger, schoolTeacherGate, get schoolTeacherNotes() { return schoolTeacherNotes; }, contentPath, scopedGateway, get sharedAiGateway() { return sharedAiGateway; }, get schoolLifecycle() { return schoolLifecycle; }, });
   // The shared exercise-reference corpus (~1,296 exercises, 38 muscle essays, 29
   // equipment records). TWO products read it: Fitness (browse/build/run, plus
   // SaveWorkout's existence check) and School (the anatomy shelf, which projects
@@ -3105,305 +2167,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // The authored Catalog is a School capability shared by web, print, and
   // calculator surfaces. It is composed before—and independently of—the
   // optional SchoolCalc device product.
-  const schoolCatalog = createSchoolCatalog({
-    configService,
-    householdId,
-    learnerDirectory: schoolLearnerDirectory,
-    exerciseLibrary,
-    logger: rootLogger.child({ module: 'school-catalog' }),
-  });
-  const { YamlFlashcardProgressStore } = await import('#adapters/persistence/yaml/YamlFlashcardProgressStore.mjs');
-  const { SchoolFlashcardAssetRepository } = await import('#adapters/school/catalog/SchoolFlashcardAssetRepository.mjs');
-  const { TsFsrsFlashcardScheduler } = await import('#adapters/school/flashcards/TsFsrsFlashcardScheduler.mjs');
-  const { FlashcardStudyService } = await import('#apps/school/FlashcardStudyService.mjs');
-  const { FlashcardSchedulerPolicyResolver } = await import('#apps/school/FlashcardSchedulerPolicyResolver.mjs');
-  const { ConfigFlashcardSchedulerPolicySource } = await import('#adapters/school/flashcards/ConfigFlashcardSchedulerPolicySource.mjs');
-  const flashcardAssignments = new YamlAssignmentStore({ configService, logger: rootLogger.child({ module: 'school-flashcard-assignments' }) });
-  const flashcardStudy = schoolCatalog.content
-    ? new FlashcardStudyService({
-      progressStore: new YamlFlashcardProgressStore({ configService, logger: rootLogger.child({ module: 'school-flashcards' }) }),
-      decks: schoolCatalog.content,
-      assignments: flashcardAssignments,
-      grader: schoolService,
-      scheduler: new TsFsrsFlashcardScheduler(),
-      policyResolver: new FlashcardSchedulerPolicyResolver({
-        policySource: new ConfigFlashcardSchedulerPolicySource({ configService }),
-        assignments: flashcardAssignments,
-        catalog: schoolCatalog.query,
-      }),
-      teacherGate: schoolTeacherGate,
-      timezone: configService.getTimezone?.() || null,
-      now: Date.now,
-      id: shortId,
-    })
-    : null;
-  // `media:` ids (generated word packages) resolve under <mediaDir>/school.
-  const schoolMediaRoot = path.join(configService.getMediaDir(), 'school');
-  const flashcardAssets = new SchoolFlashcardAssetRepository({
-    rootDir: schoolFullConfig.flashcards?.assets?.dir ?? path.join(dataDir, 'content', 'assets'),
-    mediaRootDir: schoolMediaRoot,
-  });
-  // Card ladder v3 (mastery redesign rev 4). Two services over one engine:
-  // live on the real store, and test mode (`/card-ladder/test`) on in-memory
-  // shadow copies that can never reach disk (spec §8).
-  const { CardLadderSittingService } = await import('#apps/school/CardLadderSittingService.mjs');
-  const { CardLadderTypedJudge } = await import('#apps/school/CardLadderTypedJudge.mjs');
-  const { YamlCardLadderStore } = await import('#adapters/school/cardLadder/YamlCardLadderStore.mjs');
-  const { YamlJudgementCache, MemoryJudgementCache } = await import('#adapters/school/cardLadder/YamlJudgementCache.mjs');
-  const { ShadowCardLadderStores } = await import('#adapters/school/cardLadder/ShadowCardLadderStores.mjs');
-  const { FilesystemCardLadderRecordings } = await import('#adapters/school/cardLadder/FilesystemCardLadderRecordings.mjs');
-  const { DiscardingRecordings } = await import('#adapters/school/cardLadder/DiscardingRecordings.mjs');
-  const { YamlLexiconRepository } = await import('#adapters/school/catalog/YamlLexiconRepository.mjs');
-  const { resolveSettings, seedScenario, cardLadderConfigOf } = await import('#domains/school/cardLadder/index.mjs');
-  const cardLadderLogger = rootLogger.child({ module: 'school-card-ladder' });
-  // `card_ladder` in school.yml; the pre-rename `word_ladder` key is read when it is absent.
-  const cardLadderConfig = cardLadderConfigOf(schoolFullConfig);
-  const cardLadderSettings = () => resolveSettings(cardLadderConfig);
-  const cardLadderStore = new YamlCardLadderStore({ configService, logger: cardLadderLogger });
-  const cardLadderLexicons = new YamlLexiconRepository({ mediaRoot: schoolMediaRoot });
-  const cardLadderJudgeFor = (cache) => new CardLadderTypedJudge({
-    aiGateway: scopedGateway(sharedAiGateway, { app: 'school', feature: 'card-ladder' }),
-    decisionGateway: scopedGateway(decisionGateway, { app: 'school', feature: 'card-ladder' }),
-    cache, model: cardLadderConfig.judge?.model ?? null,
-    passScore: cardLadderSettings().typing.passScore, logger: cardLadderLogger,
-  });
-  const cardLadderShared = {
-    decks: schoolCatalog.content, lexicons: cardLadderLexicons, assignments: flashcardAssignments,
-    attempts: schoolDatastore, assets: flashcardAssets, teacherGate: schoolTeacherGate,
-    settings: cardLadderSettings, bounds: cardLadderConfig.bounds ?? null, timezone: configService.getTimezone?.() || null, now: Date.now,
-    logger: cardLadderLogger,
-  };
-  // One cache for the live judge and the grown-up re-grade that overwrites it (spec §6).
-  // `runtime/card-ladder`; a package's judgements still under the pre-rename
-  // `runtime/word-ladder` are copied over on first use (never moved).
-  const cardLadderJudgementCache = new YamlJudgementCache({
-    rootDir: path.join(dataDir, 'household', 'school', 'runtime', 'card-ladder'),
-    legacyRootDir: path.join(dataDir, 'household', 'school', 'runtime', 'word-ladder'),
-  });
-  const cardLadderStudy = schoolCatalog.content ? new CardLadderSittingService({
-    ...cardLadderShared, mode: 'live', judgementCache: cardLadderJudgementCache,
-    stores: {
-      open: () => ({ store: cardLadderStore, token: 'live' }),
-      forToken: (token) => { if (token !== 'live') throw new Error('unknown sitting'); return cardLadderStore; },
-      // The start card's read (`intro`): the real store's read-only view, which
-      // never writes — not even the one-time move of a pre-rename package.
-      peek: () => cardLadderStore.readOnlyView(),
-    },
-    judge: cardLadderJudgeFor(cardLadderJudgementCache),
-    // Spoken takes, kept for grown-ups: {package}/{learner}/{day}/{word}-{n}.{ext}.
-    // (The pre-rename `recordings/word-ladder` is copied over per learner on first use.)
-    recordings: new FilesystemCardLadderRecordings({
-      rootDir: path.join(schoolMediaRoot, 'recordings', 'card-ladder'),
-      legacyRootDir: path.join(schoolMediaRoot, 'recordings', 'word-ladder'),
-    }),
-  }) : null;
-  const cardLadderShadows = new ShadowCardLadderStores({ real: cardLadderStore });
-  // Test mode never writes attempts or takes, and cannot fold (no teacher gate).
-  const cardLadderTest = schoolCatalog.content ? new CardLadderSittingService({
-    ...cardLadderShared, mode: 'test', attempts: null, teacherGate: null, recordings: new DiscardingRecordings(),
-    stores: {
-      open: (userId, pkg, day, { scenario = null, deck = null } = {}) => {
-        const token = cardLadderShadows.create(userId, pkg, day,
-          (snap) => seedScenario(scenario ?? 'today', snap, { deckWords: deck?.words ?? [], day }));
-        return { store: cardLadderShadows.forToken(token), token };
-      },
-      forToken: (token) => cardLadderShadows.forToken(token),
-      // The start card reads what Start would open on — seeded, never kept.
-      peek: (userId, pkg, day, { scenario = null, deck = null } = {}) => cardLadderShadows.peek(userId, pkg, day,
-        (snap) => seedScenario(scenario ?? 'today', snap, { deckWords: deck?.words ?? [], day })),
-    },
-    // Reads through to the live cache (a grown-up's re-grade applies here too); writes stay in memory.
-    judge: cardLadderJudgeFor(new MemoryJudgementCache({ fallback: cardLadderJudgementCache })),
-  }) : null;
-  // The tuning pass (spec §7): on the REAL store only, the tuner agent only
-  // when `card_ladder.tuner.model` is set, a concern pushed to the teachers.
-  // Ticks every 15 min wherever the agent scheduler runs; the service itself
-  // waits for the study day to end.
-  let cardLadderTuning = null;
-  if (schoolCatalog.content) {
-    try {
-      const { createCardLadderTuning } = await import('#composition/modules/cardLadderTuning.mjs');
-      const { agentSchedulerEnabled } = await import('#composition/policies/agentSchedulerEnabled.mjs');
-      const { isContainerRuntime } = await import('#system/runtime/runtimeEnvironment.mjs');
-      const tuningNames = studentDisplayName(configService);
-      cardLadderTuning = createCardLadderTuning({
-        store: cardLadderStore, assignments: flashcardAssignments, decks: schoolCatalog.content, lexicons: cardLadderLexicons,
-        settings: cardLadderSettings, bounds: cardLadderConfig.bounds ?? null, teacherGate: schoolTeacherGate,
-        timezone: configService.getTimezone?.() || null, now: Date.now,
-        model: cardLadderConfig.tuner?.model ?? null, mediaDir: configService.getMediaDir(), usageRecorder: agentUsageRecorder,
-        notificationService: notificationStack?.notificationService ?? null,
-        teachers: () => (configService.getHouseholdAppConfig(null, 'school') || {}).teachers ?? [],
-        learnerName: (id) => tuningNames(id),
-        logger: cardLadderLogger, server,
-        scheduled: enableScheduler && agentSchedulerEnabled({
-          nodeEnv: process.env.NODE_ENV, enableCron: process.env.ENABLE_CRON, isContainer: isContainerRuntime(),
-        }),
-      });
-    } catch (error) {
-      cardLadderLogger.error('school.card-ladder.tuning-unavailable', { error: error.message });
-    }
-  }
-  const openCatalogLearningSession = schoolCatalog.query
-    ? new OpenCatalogLearningSession({ catalog: schoolCatalog.query, grader: schoolService })
-    : null;
-  const offerCatalogQuizRemediation = schoolCatalog.query
-    ? new OfferCatalogQuizRemediation({
-      catalog: schoolCatalog.query,
-      grader: schoolService,
-      remediationOffers: schoolLearningLoop.offers,
-    })
-    : null;
-  // Six-digit codes have to remain valid after ordinary roster edits.  Their
-  // explicitly configured slots are therefore a School-wide publication
-  // policy, never a device-discovered or array-order-derived implementation
-  // detail.
-  const continuationSlots = schoolFullConfig.schoolcalc?.continuation?.learner_slots;
-  let issueContinuationCode = null;
-  try {
-    issueContinuationCode = new IssueSchoolContinuationCode({
-      learners: schoolLearnerDirectory, learnerSlots: continuationSlots,
-    });
-  } catch (error) {
-    rootLogger.child({ module: 'school-continuation' }).warn?.('school.continuation.unwired', { error: error.message });
-  }
-
-  // Surface certification (spec §4.2/§7.1/§9): the registry of static
-  // surface profiles + per-family certification ports, and a per-request
-  // certification facade for `/api/v1/school/certification` and
-  // `/api/v1/school/surfaces/profile`. Inert (both null) whenever the shared
-  // School Catalog itself is not wired — certification has nothing to
-  // certify without it.
-  const schoolSurfaces = await createSchoolSurfaces({
-    schoolCatalog,
-    // Profiles live under `household/school/surfaces` — render policy, not
-    // curriculum, so deliberately NOT under the catalog's contentRoot.
-    dataDir: configService.getDataDir(),
-    logger: rootLogger.child({ module: 'school-surfaces' }),
-  });
-  // Screen-config lookup for surface-profile resolution, reusing the same
-  // `data/household/screens/<id>.yml` mount `screens.mjs` serves —
-  // `loadYamlFromPath` returns null on a missing/unparsable file rather than
-  // throwing, which is exactly the "no config" case the resolver treats as a
-  // 404 (fail closed, never a synthesized default).
-  const getSchoolScreenConfig = new YamlSchoolScreenConfigSource({ householdDirectory: householdDir }).get;
-  // Optional calculator-native School product. The composition module is the
-  // only place that joins calculator-family adapters, SchoolCalc application
-  // use cases, persistence, relay credentials, and the thin HTTP router.
-  const schoolCalcLogger = rootLogger.child({ module: 'schoolcalc' });
-  let schoolCalc = {
-    wired: false, reason: 'not attempted', container: null, router: null, resultImporter: null,
-  };
-  try {
-    schoolCalc = createSchoolCalc({
-      configService,
-      schoolService,
-      learnerDirectory: schoolLearnerDirectory,
-      learningProgress: getLearningProgress,
-      remediationOffers: schoolLearningLoop.offers,
-      remediationTutor: schoolLearningLoop.tutor,
-      probeEvidenceRepository: schoolLearningEvidence,
-      schoolCatalog,
-      householdId,
-      logger: schoolCalcLogger,
-    });
-  } catch (err) {
-    // SchoolCalc is explicitly opt-in. A bad calculator content mount or relay
-    // credential disables that surface without taking down the rest of School.
-    schoolCalcLogger.error('schoolcalc.wiring-failed', { error: err.message });
-  }
-  // Dumb playhead/percent/duration store only (spec §6) — School never reads
-  // its threshold/engaged/completedAt fields, unlike Piano's own instance.
-  const schoolMaterialProgressStore = new SchoolUserVideoProgressStore({
-    configService,
-    app: 'school',
-    filename: 'material-progress',
-    logger: rootLogger.child({ module: 'school-materials' })
-  });
-
-  const schoolMaterialsConfig = configService.getHouseholdAppConfig(null, 'school')?.materials || null;
-  let getMaterialCatalog = null;
-  let getMaterialUnits = null;
-  let getMaterialProgressSummary = null;
-  if (schoolMaterialsConfig) {
-    // School sees one neutral media catalog. Provider metadata translation is
-    // isolated here in the adapter and can later be swapped for Jellyfin.
-    const schoolMediaCatalog = new PlexSchoolMediaCatalog({
-      plexAdapter: contentRegistry?.get('plex') || null
-    });
-    const mediaAlbumSource = new MediaAlbumSource({ mediaCatalog: schoolMediaCatalog, logger: rootLogger.child({ module: 'school-materials' }) });
-    const mediaSeriesSource = new MediaSeriesSource({ mediaCatalog: schoolMediaCatalog });
-    const schoolMaterialSources = {
-      'media-album': mediaAlbumSource,
-      'media-series': mediaSeriesSource,
-      'media-label': new MediaLabelSource({
-        mediaCatalog: schoolMediaCatalog,
-        videoSource: mediaSeriesSource,
-        audioSource: mediaAlbumSource
-      })
-    };
-    getMaterialCatalog = new GetMaterialCatalog({
-      sources: schoolMaterialSources,
-      config: schoolMaterialsConfig,
-      scheduler: new NodeAsyncScheduler(),
-      logger: rootLogger.child({ module: 'school-materials' })
-    });
-    // Pre-warm the catalog in the background at boot so the first subject-open
-    // after a (cache-clearing) redeploy hits a warm cache instead of paying the
-    // full Plex fan-out. Fire-and-forget — never blocks startup, and a failure
-    // just means the first real request rebuilds it.
-    getMaterialCatalog.execute()
-      .then((c) => rootLogger.child({ module: 'school-materials' }).info?.('school.materials.prewarmed', { count: c?.materials?.length ?? 0 }))
-      .catch((err) => rootLogger.child({ module: 'school-materials' }).warn?.('school.materials.prewarm-failed', { error: err.message }));
-    // Pre-warm the bank summaries too (the 4600-file scan), ASYNC so it never
-    // blocks boot/the event loop, and keep them warm on a background interval so
-    // a home load / gating lookup always hits the cache instead of a cold scan.
-    // `elapsedMs` is the point of this log, not `count`. This scan blocked the
-    // event loop ~7.8s every 4 minutes until 2026-09-02 (O(N^2) sync YAML in
-    // readAllBankRaws), which is what made the fitness wall read 0 RPM on a
-    // schedule. The count cannot show that; the duration can, and it is the
-    // only direct check that the fix is still holding.
-    // See docs/_wip/bugs/2026-09-02-fitness-rpm-false-zeros-pause-video-during-cycle-challenge.md
-    const warmSchoolBanks = () => {
-      const startedAt = Date.now();
-      return schoolService.warmBanks({ force: true })
-        .then((list) => rootLogger.child({ module: 'school-materials' }).info?.('school.banks.prewarmed', {
-          count: list.length, elapsedMs: Date.now() - startedAt,
-        }))
-        .catch((err) => rootLogger.child({ module: 'school-materials' }).warn?.('school.banks.prewarm-failed', {
-          error: err.message, elapsedMs: Date.now() - startedAt,
-        }));
-    };
-    warmSchoolBanks();
-    setInterval(warmSchoolBanks, 4 * 60 * 1000).unref(); // force a refresh before the 5-min TTL lapses, so requests always hit a warm cache
-    // Rebuilt from schoolService.listBanks() (cheap YAML-directory read, no
-    // cache of its own) on every lookup rather than once at boot, so a newly
-    // authored gating bank takes effect without a restart — matching
-    // listBanks()'s own no-cache behaviour.
-    // `opts.trackParents` (Map<trackId, unitId>, from the material fetch)
-    // rolls chapter-level bank backlinks up to the unit they gate (Blocker 2).
-    const schoolMaterialBankIndex = { byUnit: (unitId, opts) => buildBankIndex(schoolService.listBanks(), opts).byUnit(unitId) };
-    // Disk snapshot of the compiled material index: seeds the units cache at
-    // boot so a redeploy serves in ~0.5s from day-old data (refreshed in the
-    // background) instead of re-paying the serialized Plex sweep cold.
-    const { YamlMaterialSnapshotStore } = await import('#adapters/persistence/yaml/YamlMaterialSnapshotStore.mjs');
-    getMaterialUnits = new GetMaterialUnits({
-      catalog: getMaterialCatalog,
-      sources: schoolMaterialSources,
-      config: schoolMaterialsConfig,
-      progressStore: schoolMaterialProgressStore,
-      bankIndex: schoolMaterialBankIndex,
-      attemptsReader: { read: (userId) => effectiveAttempts(schoolDatastore.readAllAttempts(userId)) },
-      scheduler: new NodeAsyncScheduler(),
-      logger: rootLogger.child({ module: 'school-materials' }),
-      snapshot: new YamlMaterialSnapshotStore({ configService, logger: rootLogger.child({ module: 'school-materials' }) })
-    });
-    getMaterialProgressSummary = new GetMaterialProgressSummary({
-      catalog: getMaterialCatalog,
-      getMaterialUnits,
-      progressStore: schoolMaterialProgressStore,
-      logger: rootLogger.child({ module: 'school-materials' })
-    });
-  }
+  const { schoolCatalog, flashcardStudy, flashcardAssets, cardLadderConfig, cardLadderStudy, cardLadderTest, cardLadderTuning, openCatalogLearningSession, offerCatalogQuizRemediation, issueContinuationCode, schoolSurfaces, getSchoolScreenConfig, schoolCalc, schoolMaterialProgressStore, getMaterialCatalog, getMaterialUnits, getMaterialProgressSummary } = await createSchoolCatalogRuntime({ configService, householdId, schoolLearnerDirectory, exerciseLibrary, rootLogger, schoolService, schoolTeacherGate, schoolFullConfig, dataDir, scopedGateway, get sharedAiGateway() { return sharedAiGateway; }, get decisionGateway() { return decisionGateway; }, schoolDatastore, agentUsageRecorder, notificationStack, server, enableScheduler, schoolLearningLoop, householdDir, getLearningProgress, schoolLearningEvidence, SchoolUserVideoProgressStore, contentRegistry, NodeAsyncScheduler });
 
   // Sentence Ladder mounts under School at /api/v1/school/sentence-ladder.
   // /language remains a deprecated compatibility alias. Corpora live in
@@ -3439,107 +2203,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // so a gate misfiring at 8pm would otherwise need a container restart to
   // relieve — the worst possible recovery story for a control that will
   // sometimes be wrong. `gate.force: open|closed|auto` is the parent's lever.
-  const readGateConfig = () => configService.getHouseholdAppConfig(null, 'school')?.gate || null;
-  const languageAssignments = new YamlAssignmentStore({ configService, logger: rootLogger });
-  let schoolStudyGrants = null;
-  let schoolReelGrants = null;
-  let schoolCubeGrants = null;
-  let schoolBookGrants = null;
-  let schoolBookPanelGrants = null;
-  let schoolLaunchPreviewTokens = null;
-  try {
-    schoolStudyGrants = new HmacSchoolStudyGrantIssuer({ key: jwtSecret });
-  } catch (error) {
-    rootLogger.error('school.sentence-ladder.study-grants-unavailable', { error: error.message });
-  }
-  try { schoolReelGrants = new HmacSchoolReelGrantIssuer({ key: jwtSecret }); } catch (error) {
-    rootLogger.error('school.language-reels.grants-unavailable', { error: error.message });
-  }
-  try { schoolCubeGrants = new HmacSchoolCubeGrantIssuer({ key: jwtSecret }); } catch (error) {
-    rootLogger.error('school.rubiks-cube.grants-unavailable', { error: error.message });
-  }
-  try { schoolBookGrants = new HmacSchoolBookGrantIssuer({ key: jwtSecret }); } catch (error) {
-    rootLogger.error('school.books.grants-unavailable', { error: error.message });
-  }
-  // The panel door's own issuer. Same key context and same `verify`, so the
-  // shelf routes are untouched — only the clock differs. The default eight
-  // hours is priced for a printed code capped at twelve uses; a face tap on a
-  // shared wall panel proves nothing like that much, so it buys minutes.
-  try {
-    schoolBookPanelGrants = new HmacSchoolBookGrantIssuer({ key: jwtSecret, ttlMs: PANEL_BOOK_GRANT_TTL_MS });
-  } catch (error) {
-    rootLogger.error('school.books.panel-grants-unavailable', { error: error.message });
-  }
-  try { schoolLaunchPreviewTokens = new HmacSchoolLaunchPreviewTokenIssuer({ key: jwtSecret }); } catch (error) {
-    rootLogger.error('school.launch-preview.tokens-unavailable', { error: error.message });
-  }
-  const schoolDocumentFileStore = new YamlDocumentFileStore();
-  const languageReelService = new LanguageReelService({
-    repository: new FilesystemLanguageReelRepository({
-      configService,
-      store: schoolDocumentFileStore,
-    }),
-    idFactory: crypto.randomUUID,
-  });
-  const rubiksRecoverySolver = new KociembaCubeRecoverySolver();
-  const rubiksCubeService = new RubiksCubeCourseService({
-    repository: new FilesystemRubiksCubeProgressRepository({
-      configService,
-      store: schoolDocumentFileStore,
-      courseId: RUBIKS_CUBE_COURSE_ID,
-    }),
-    recoverySolver: rubiksRecoverySolver,
-    packetPlanner: new RubiksPacketPlanner({
-      solver: rubiksRecoverySolver,
-      idFactory: crypto.randomUUID,
-    }),
-    idFactory: crypto.randomUUID,
-  });
-  // A SPOKEN ANSWER to the interpretation rung. Null without an AI gateway,
-  // and that is a supported configuration rather than a fault: the day then
-  // says `voiceAnswer: false`, the interpretation rung needs a keyboard after
-  // all, and typing is still the way through. The LANGUAGE profile, never the
-  // fitness one — that profile's cleanup pass repairs what it misheard, which
-  // pointed at a learner's translation would tidy a wrong answer into a right
-  // one.
-  //
-  // Built ONCE, here, because two things must agree about it: the service
-  // (which decides whether a keyboard-less panel is offered interpretation at
-  // all) and the router (which serves the transcribe route and tells the
-  // client whether to draw a microphone). Two constructions could differ.
-  const languageTranscription = createLanguageTranscriptionService({
-    openaiAdapter: scopedGateway(sharedAiGateway, { app: 'school', feature: 'language' }),
-    logger: rootLogger.child({ module: 'school-language-transcription' }),
-  });
-  const languageStudyService = createLanguageStudyService({
-    datastore: new YamlLanguageStudyDatastore({ configService }),
-    languageTranscription,
-    // Meaning score on interpretation answers (SentenceMeaningJudge). Null
-    // gateway → no field, rows unchanged. `language.meaning_judge.enabled:
-    // false` in the school config turns it off where a gateway exists.
-    decisionGateway: scopedGateway(decisionGateway, { app: 'school', feature: 'language' }),
-    meaningJudgeConfig: schoolFullConfig.language?.meaning_judge ?? null,
-    readProgramEnrollment: (learnerId, corpusId) => languageAssignments.readProgramEnrollment(learnerId, corpusId),
-    // Through the factory, so the bus is adapted to School's realtime port
-    // rather than handed over raw under an option name the service does not
-    // have. `new SentenceLadderService({ eventBus })` looked right here and
-    // published nothing for months.
-    eventBus,
-    timezone: configService.getTimezone?.() || null,
-    readGate: () => {
-      const cfg = readGateConfig();
-      if (cfg?.force === 'open') return { level: 'open', reason: 'forced-open', missing: [], stale: false };
-      if (cfg?.force === 'closed') return { level: 'disabled', reason: 'forced-closed', missing: [], stale: false };
-      return resolveGate({
-        presence: presenceStore.get(cfg?.device_id || 'portal'),
-        now: Date.now(),
-        required: cfg?.devices || [],
-        // `??` not `||`: an explicit ttl_ms of 0 must mean 0, not the default.
-        ttlMs: cfg?.ttl_ms ?? undefined,
-      });
-    },
-    logger: rootLogger.child({ module: 'school-language' })
-  });
+  const { schoolStudyGrants, schoolReelGrants, schoolCubeGrants, schoolBookGrants, schoolBookPanelGrants, schoolLaunchPreviewTokens, languageReelService, rubiksCubeService, languageTranscription, languageStudyService } = await createSchoolLanguageRuntime({ configService, rootLogger, jwtSecret, PANEL_BOOK_GRANT_TTL_MS, createLanguageTranscriptionService, scopedGateway, get sharedAiGateway() { return sharedAiGateway; }, get decisionGateway() { return decisionGateway; }, schoolFullConfig, eventBus, presenceStore });
   // School lifecycle (+ its report/print-service/router mounting) moved
   // further down this function (Task 13) — it now depends on the real,
   // household-level DoNow service, which itself depends on seams
@@ -3548,256 +2212,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // physical console" below, right after `donow` is constructed.
 
   // Strava webhook enrichment (provider-agnostic webhook, Strava adapter)
-  let providerWebhookAdapters = {};
-  let stravaEnrichmentService = null;
-  let stravaReconciliationService = null;
-  let stravaSyncHealth = null;
-  try {
-    const stravaClientId = configService.getSystemAuth?.('strava', 'client_id');
-    if (!stravaClientId) {
-      rootLogger.info?.('strava.enrichment.skipped', { reason: 'no strava client_id in system auth' });
-    } else {
-      const { StravaClientAdapter } = await import('./1_adapters/fitness/StravaClientAdapter.mjs');
-      const { StravaWebhookAdapter } = await import('./1_adapters/strava/StravaWebhookAdapter.mjs');
-      const { StravaWebhookJobStore } = await import('./1_adapters/strava/StravaWebhookJobStore.mjs');
-      const { StravaActivityAccessGateway } = await import('./1_adapters/fitness/StravaActivityAccessGateway.mjs');
-      const { FitnessActivityEnrichmentService } = await import('./3_applications/fitness/FitnessActivityEnrichmentService.mjs');
-      const { shouldSendExerciseReaction, toReactionActivity } = await import('./3_applications/fitness/webhookCoachingPolicy.mjs');
-      const { ActivityReconciliationService } = await import('./3_applications/fitness/ActivityReconciliationService.mjs');
-      const { buildSelectionConfig } = await import('#domains/fitness/services/selectPrimaryMedia.mjs');
-
-      const stravaClient = new StravaClientAdapter({
-        httpClient: axios,
-        configService,
-        logger: rootLogger.child({ module: 'strava-client' }),
-      });
-
-      // Resolve fitness config at the composition root and inject pre-resolved
-      // values into the use cases (they stay provider-/config-agnostic).
-      const stravaPlexConfig = configService.getAppConfig('fitness')?.plex || {};
-      const stravaSelectionConfig = buildSelectionConfig(stravaPlexConfig);
-      const stravaLookbackDays = stravaPlexConfig.reconciliation_lookback_days ?? 10;
-      const stravaTimezone = configService.getTimezone?.() || 'America/Los_Angeles';
-
-      const stravaVerifyToken = configService.getSystemAuth?.('strava', 'verify_token') || '';
-      const stravaWebhookAdapter = new StravaWebhookAdapter({
-        verifyToken: stravaVerifyToken,
-        logger: rootLogger.child({ module: 'strava-webhook' }),
-      });
-
-      const jobStore = new StravaWebhookJobStore({
-        basePath: path.join(configService.getMediaDir(), 'archives', 'strava-webhooks'),
-        logger: rootLogger.child({ module: 'strava-jobs' }),
-      });
-      const fitnessHistoryRepository = new YamlFitnessHistoryRepository({
-        root: configService.getHouseholdPath('fitness/log'),
-        logger: rootLogger.child({ module: 'fitness-history' }),
-      });
-      const stravaActivityAccess = new StravaActivityAccessGateway({
-        client: stravaClient,
-        configService,
-      });
-      const stravaRetryScheduler = new NodeApplicationScheduler();
-
-      // Sync health: every stage reports success; a separate 15-min task
-      // (below, "fitness:strava-sync-health") pushes when one goes stale.
-      const { StravaSyncHealth } = await import('./3_applications/fitness/StravaSyncHealth.mjs');
-      const { YamlSyncHealthStore } = await import('./1_adapters/fitness/YamlSyncHealthStore.mjs');
-      const stravaHealthHaGateway = householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null;
-      const stravaHealthLogger = rootLogger.child({ module: 'strava-sync-health' });
-      stravaSyncHealth = new StravaSyncHealth({
-        store: new YamlSyncHealthStore({ path: configService.getHouseholdPath('fitness/sync-health') }),
-        sendPush: async ({ title, message, data }) => {
-          const recipient = configService.getHeadOfHousehold?.();
-          const notifyService = recipient
-            ? userService.getProfile(recipient)?.identities?.homeassistant?.notify_service
-            : null;
-          if (!stravaHealthHaGateway || !notifyService) {
-            stravaHealthLogger.warn?.('strava.sync_health.no_push_target', { recipient: recipient || null });
-            return;
-          }
-          await stravaHealthHaGateway.callService('notify', notifyService, { title, message, data });
-        },
-        hasWebhookJob: (activityId) => !!jobStore.findById(activityId),
-        timezone: stravaTimezone,
-        logger: stravaHealthLogger,
-      });
-      harvesterServices.harvesterService.onResult(({ serviceId, result, error }) => {
-        if (serviceId !== 'strava') return;
-        stravaSyncHealth.recordHarvest({
-          ok: !error && result?.status === 'success',
-          error: error?.message || result?.reason || result?.error || null,
-          activities: result?.activities || [],
-        });
-      });
-
-      stravaReconciliationService = new ActivityReconciliationService({
-        activityGateway: stravaClient,
-        lookbackDays: stravaLookbackDays,
-        selectionConfig: stravaSelectionConfig,
-        timezone: stravaTimezone,
-        historyRepository: fitnessHistoryRepository,
-        pause: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
-        ensureAccess: () => stravaActivityAccess.ensure(configService.getHeadOfHousehold?.() || 'user_1'),
-        health: stravaSyncHealth,
-        logger: rootLogger.child({ module: 'strava-reconciliation' }),
-      });
-
-      stravaEnrichmentService = new FitnessActivityEnrichmentService({
-        activityGateway: stravaClient,
-        jobStore,
-        userContext: {
-          defaultUserId: () => configService.getHeadOfHousehold?.() || 'user_1',
-          timezone: () => configService.getTimezone?.() || 'America/Los_Angeles',
-        },
-        ensureActivityAccess: (username) => stravaActivityAccess.ensure(username),
-        scheduleRetry: (task, milliseconds) => stravaRetryScheduler.after(milliseconds, task),
-        selectionConfig: stravaSelectionConfig,
-        resolveDisplayName: (slug) => userService.resolveDisplayName(slug),
-        historyRepository: fitnessHistoryRepository,
-        reconciliationService: stravaReconciliationService,
-        // Exercise reaction: the webhook event has no calories, so the policy is
-        // judged on the fetched activity. Coaching is built later — resolve lazily.
-        onActivityFetched: async (activity) => {
-          const coaching = v1Routers.agents?.coaching;
-          const orchestrator = v1Routers.agents?.coachingOrchestrator;
-          // Not wired yet: resolve false so the job is left unstamped and retried.
-          if (!orchestrator || !coaching) {
-            rootLogger.warn?.('strava.exercise_reaction.coaching_unavailable', { activityId: activity?.id });
-            return false;
-          }
-          const reactionCfg = coaching.config?.exercise_reaction || {};
-          if (!coaching.conversationId || reactionCfg.enabled === false) return true;
-          const eligible = shouldSendExerciseReaction(activity, {
-            now: new Date(),
-            timezone: coaching.timezone,
-            ...(Number.isFinite(Number(reactionCfg.min_calories)) ? { minCalories: Number(reactionCfg.min_calories) } : {}),
-          });
-          rootLogger.info?.('strava.exercise_reaction.evaluated', { activityId: activity?.id, calories: activity?.calories ?? null, eligible });
-          if (!eligible) return true;
-          await orchestrator.sendExerciseReaction({
-            userId: coaching.userId, conversationId: coaching.conversationId, activity: toReactionActivity(activity),
-          });
-          return true;
-        },
-        logger: rootLogger.child({ module: 'strava-enrichment' }),
-      });
-
-      providerWebhookAdapters = { strava: stravaWebhookAdapter };
-
-      // Pending-job recovery runs after the agents are wired (below), so a
-      // workout synced during a restart is judged for an exercise reaction
-      // against a live coach rather than silently skipped.
-
-      rootLogger.info?.('strava.enrichment.initialized', {
-        adapters: Object.keys(providerWebhookAdapters),
-      });
-    }
-  } catch (err) {
-    rootLogger.error?.('strava.enrichment.init_failed', { error: err?.message, stack: err?.stack });
-  }
-
-  // Health check: warn if Strava creds are configured but no adapters registered
-  if (configService.getSystemAuth?.('strava', 'client_id') && Object.keys(providerWebhookAdapters).length === 0) {
-    rootLogger.error?.('strava.enrichment.health_check_failed', {
-      reason: 'Strava credentials configured but no webhook adapters registered — enrichment is dead',
-    });
-  }
-
-  // Emergency lockdown: backend-driven detection keeps an `emergency` fingerprint
-  // scan armed; an admin match shuts down the garage (HA script) after the
-  // browser ceremony. State persists server-side so it survives reboot.
-  const emergencyLogger = rootLogger.child({ module: 'fitness-emergency' });
-  const emergencyHaGateway = householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null;
-  const emergencyLockRepo = new YamlEmergencyLockDatastore({ configService });
-  const emergencyPublications = new FitnessEmergencyPublications({ eventBus });
-  const emergencyConfig = loadFitnessConfig(householdId)?.emergency || {};
-  const triggerEmergencyLockdown = emergencyHaGateway ? new TriggerEmergencyLockdown({
-    repo: emergencyLockRepo,
-    haGateway: emergencyHaGateway,
-    publications: emergencyPublications,
-    pause: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
-    scriptId: emergencyConfig.ha_script || 'garage_deactivate',
-    defaultDurationSec: Number(emergencyConfig.duration_sec) || 1800,
-    logger: emergencyLogger
-  }) : null;
-  const releaseEmergencyLockdown = new ReleaseEmergencyLockdown({
-    repo: emergencyLockRepo,
-    publications: emergencyPublications,
-    logger: emergencyLogger,
-  });
-  const getLockdownState = new GetLockdownState({ repo: emergencyLockRepo });
-  // Passive identity relay: enriches the garage's dumb `biometric.scan` events into
-  // `fitness.identity.detected` and stamps a short-lived pending-detection that the
-  // /emergency/{commit,abort,release} endpoints consume. No reader loop, no contention.
-  const identityRelay = createIdentityRelay({
-    identityChannel: new FitnessIdentityChannel({ eventBus }),
-    userService,
-    loadFitnessConfig: () => loadFitnessConfig(householdId) || {},
-    getLockdownState,
-    triggerEmergencyLockdown,
-    commitScheduler: {
-      schedule: (delayMs, task) => setTimeout(task, delayMs),
-      cancel: (handle) => clearTimeout(handle),
-    },
-    serverCommitDelayMs: Number(emergencyConfig?.abuse?.server_commit_delay_ms) > 0
-      ? Number(emergencyConfig.abuse.server_commit_delay_ms)
-      : undefined,
-    logger: emergencyLogger,
-  });
-
-  // Workout persistence: household-scoped files under apps/fitness/workouts/, plus the
-  // SaveWorkout use case that guards them. SaveWorkout is the only place holding BOTH an
-  // authored plan and the corpus index, so it is the only place that can refuse a workout
-  // referencing an exercise that does not exist — which otherwise fails at Run time, in
-  // front of someone mid-session. The library reads the manifest `exercise-library build`
-  // writes offline; a missing manifest degrades to an empty corpus, so saves fail loudly
-  // instead of persisting plans nothing can run.
-  // NOTE: `exerciseLibrary` itself is constructed far earlier (just above
-  // createSchoolCatalog), because School's anatomy shelf projects the same corpus
-  // and must share this one instance — it parses a ~2.8 MB manifest and holds the
-  // whole corpus in memory.
-  const workoutRepository = new YamlWorkoutRepository({
-    configService,
-    logger: rootLogger.child({ module: 'fitness-workouts' })
-  });
-  const saveWorkout = new SaveWorkout({
-    workoutRepository,
-    exerciseLibrary,
-    logger: rootLogger.child({ module: 'fitness-workouts' })
-  });
-
   let fitnessStateGatesProducer = null;
-
-  // Fitness domain router
-  // Note: contentRegistry passed for /show endpoint - playlist thumbnail enrichment is household-specific
-  v1Routers.fitness = createFitnessApiRouter({
-    fitnessServices,
-    userService,
-    userDataService,
-    configService,
-    fitnessConfig: loadFitnessConfig(householdId),
-    contentRegistry,
-    contentQueryService: contentServices.contentQueryService,
-    createReceiptCanvas: createFitnessReceiptCanvas,
-    printerRegistry: hardwareAdapters.printerRegistry,
-    providerWebhookAdapters,
-    enrichmentService: stravaEnrichmentService,
-    stravaSyncHealth,
-    fingerprintProfileWriter,
-    triggerEmergencyLockdown,
-    releaseEmergencyLockdown,
-    getLockdownState,
-    identityRelay,
-    garageHumanActivityGateway: emergencyHaGateway,
-    eventBus,
-    workoutRepository,
-    saveWorkout,
-    exerciseLibrary,
-    fitnessPlayableModule,
-    onSessionsChanged: (change) => fitnessStateGatesProducer?.requestReconcile(change),
-    logger: rootLogger.child({ module: 'fitness-api' })
-  });
+  const { stravaEnrichmentService, stravaReconciliationService, stravaSyncHealth } = await createFitnessApiRuntime({ createSchoolLearnerDirectory, get fitnessStateGatesProducer() { return fitnessStateGatesProducer; }, configService, rootLogger, axios, NodeApplicationScheduler, get householdAdapters() { return householdAdapters; }, userService, harvesterServices, v1Routers, eventBus, loadFitnessConfig, householdId, exerciseLibrary, fitnessServices, userDataService, contentRegistry, contentServices, get createFitnessReceiptCanvas() { return createFitnessReceiptCanvas; }, hardwareAdapters, fingerprintProfileWriter, fitnessPlayableModule });
 
   // Home automation domain
   const kioskConfig = configService.getAppConfig('kiosk') || {};
@@ -3830,23 +2246,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // ambient.yml lives under the household config dir → read via the household apps map.
   // Each zone (room) broadcasts its lux on its own topic; the screen config picks the
   // topic + curve for that room. See ambientZones.mjs.
-  const ambientConfig = configService.getHouseholdAppConfig(null, 'ambient') || {};
-  const ambientZones = projectAmbientZones(ambientConfig);
-  const runningAmbientZones = startAmbientZones({
-    zones: ambientZones,
-    ambientGatewayFactory: () => new HomeAssistantAmbientSensorGateway({
-      haGateway: homeAutomationAdapters.haGateway,
-      logger: rootLogger.child({ module: 'ambient-light-source' }),
-    }),
-    publicationsFactory: (zone) => new EventBusAmbientLightPublications({
-      eventBus,
-      channel: zone.topic,
-    }),
-    clock: { now: () => Date.now() },
-    logger: rootLogger.child({ module: 'ambient-light' }),
-  });
-  server?.once?.('close', () => runningAmbientZones.forEach((service) => service.stop()));
-
+  await startHomeAmbient({ configService, homeAutomationAdapters, rootLogger, eventBus, server });
   // Import FileIO functions for state persistence (replaces legacy io.mjs)
   // Reuse householdDir from earlier (line 157)
   const householdYamlDocuments = new HouseholdYamlDocumentStore({ householdDirectory: householdDir });
@@ -3858,15 +2258,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const yamlDirectoryCatalog = new FilesystemYamlDirectoryCatalog({ root: householdDir });
   const listDir = (relativePath) => yamlDirectoryCatalog.list(relativePath);
 
-  const { EventAggregationService } = await import('./3_applications/home/EventAggregationService.mjs');
-  const { DataServiceEventFeedRepository } = await import('./1_adapters/home/DataServiceEventFeedRepository.mjs');
-  const eventAggregationService = new EventAggregationService({
-    eventRepository: new DataServiceEventFeedRepository({
-      dataService,
-      defaultUser: () => configService.getHeadOfHousehold?.(),
-    }),
-    logger: rootLogger.child({ module: 'event-aggregation' }),
-  });
+  const eventAggregationService = await createHomeEvents({ configService, dataService, rootLogger });
 
   v1Routers.home = createHomeAutomationApiRouter({
     adapters: homeAutomationAdapters,
@@ -3987,6 +2379,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Not a two-writer conflict with screen-presence: that device is not
   // presence-managed, and presence actuates HA input_booleans, not the backlight.
   createPianoScreenPowerSync({
+    getScreenOverrideService,
     haGateway: homeAutomationAdapters.haGateway,
     deviceService: deviceServices.deviceService,
     configService,
@@ -4001,6 +2394,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // PianoScreenAuthorityService — no two-writer conflict (that service force-OFFs
   // only when the piano is off, i.e. when there is no MIDI to wake on).
   const { pianoMidiWakeService } = createPianoMidiWake({
+    getScreenOverrideService,
     deviceService: deviceServices.deviceService,
     configService,
     householdId,
@@ -4067,14 +2461,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'wake-and-load' })
   });
 
-  callLeaseService = new CallLeaseService({
-    deviceService: deviceServices.deviceService,
-    wakeAndLoadService,
-    logger: rootLogger.child({ module: 'homeline-lease' }),
-    clock: { now: () => Date.now() },
-    scheduler: new NodeApplicationScheduler(),
-    identityIssuer: new SecureHomelineIdentityIssuer(),
-  });
+  callLeaseService = createHomelineLease({ deviceService: deviceServices.deviceService, wakeAndLoadService, logger: rootLogger.child({ module: 'homeline-lease' }), clock: { now: () => Date.now() }, scheduler: new NodeApplicationScheduler() });
   setCallLeaseAuthority(callLeaseService);
 
   // ==========================================================================
@@ -4092,7 +2479,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // variable and needs it in scope before this point runs; this is a
   // reassignment, not a re-declaration.
   try {
-    const { createDonow } = await import('#composition/modules/donow.mjs');
+    const { createDonow } = await import("../../modules/donow/server/composition/donow.mjs");
     donowModule = await createDonow({
       configService,
       householdId,
@@ -4141,23 +2528,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // hook's wiring below for why a home-automation failure must never take the
   // rest of School down with it.
   // The one learner-name resolver every school/piano push producer below uses.
-  const learnerDisplayName = studentDisplayName(configService);
-  let pianoLessonHook = null;
-  if (homeAutomationAdapters.haGateway) {
-    try {
-      const { SchoolGradingHookAdapter } = await import('#adapters/school/SchoolGradingHookAdapter.mjs');
-      pianoLessonHook = new SchoolGradingHookAdapter({
-        gateway: homeAutomationAdapters.haGateway,
-        configKey: 'piano_lesson_hook',
-        loadSchoolConfig: () => configService.getHouseholdAppConfig(null, 'school') || {},
-        resolveStudent: learnerDisplayName,
-        logger: rootLogger.child({ module: 'school-piano-lesson-hook' }),
-      });
-    } catch (err) {
-      pianoLessonHook = null;
-      schoolLifecycleLogger.warn('school.piano_lesson_hook.wiring-failed', { error: err.message });
-    }
-  }
+  const { learnerDisplayName, pianoLessonHook } = await createSchoolLessonHookRuntime({ configService, homeAutomationAdapters, rootLogger, schoolLifecycleLogger });
   /**
    * Wake a room's screen for a widget that is ALREADY MOUNTED on it: power the
    * display on, bring the kiosk forward, and stop there.
@@ -4181,829 +2552,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // one repository and one resolver.
   const books = createBooksModule({ configService, logger: rootLogger });
 
-  try {
-    const { createSchoolLifecycle } = await import('#composition/modules/schoolLifecycle.mjs');
-    schoolLifecycle = await createSchoolLifecycle({
-      // Deliberately a THUNK: the trigger API that owns the parsed sources is
-      // composed further down this file, so there is no value to read yet. It
-      // resolves per projection, which also means a reloaded trigger config is
-      // picked up without restarting School.
-      declaredEntryActions: () => declaredEntryActions(nfcLocationsForReachability()),
-      configService,
-      householdId,
-      schoolService,
-      // The term grid's term is one of the household's academic periods —
-      // the same instance the report cards and `/periods` read.
-      academicPeriods: schoolAcademicPeriods,
-      attemptDatastore: schoolDatastore,
-      economyService: economyApi.economyService,
-      userService,
-      eventBus,
-      thermalPrinterRegistry: printerRegistry,
-      // §8's real playback target: School builds a `ScreenPlaybackAdapter`
-      // around this rather than waking a TV itself.
-      //
-      // NOT `wakeAndLoadService`. That service ends in a content load, and on
-      // the living-room Shield a content load is an unconditional FKB
-      // `loadURL` — a page load, which drops the very WebSocket the lesson is
-      // about to be announced on. `wakeScreenForBroadcast` is the reading
-      // path's seam and is shared with it verbatim, one room, one way to wake
-      // a screen that a mounted widget is about to be told something on.
-      wakeScreen: wakeScreenForBroadcast,
-      startReadingSession: (args) => startReadingSession?.(args) ?? { status: 'reading_session_failed', message: 'Story time is still starting up.' },
-      languageStudyService,
-      studyGrants: schoolStudyGrants,
-      languageReelService,
-      languageReelGrants: schoolReelGrants,
-      launchPreviewTokens: schoolLaunchPreviewTokens,
-      // Piano's own use case, so School's piano-course program reads exactly
-      // what the kiosk reads (progress, sequential gating, co-progress lock)
-      // instead of a second implementation that could disagree with it.
-      pianoPlayableUnits: pianoContainer?.getPlayableUnits?.() ?? null,
-      schoolPianoChallengeCompletionService,
-      fitnessPlayableService,
-      fitnessSchoolCourseService: v1Routers.fitness?.fitnessSchoolCourseService ?? null,
-      learningEvidenceRepository: schoolLearningEvidence,
-      // Same adapter class the grading hook uses, pointed at its own
-      // `school.yml` block. Guarded on the HA gateway exactly as the grading
-      // hook is: no Home Assistant means the Portal banner still fires and
-      // only the chime is absent.
-      pianoLessonHook,
-      flashcardStudyService: flashcardStudy,
-      cardLadderStudyService: cardLadderStudy,
-      rubiksCubeService,
-      rubiksCubeGrants: schoolCubeGrants,
-      // The reading shelf (book-log program): grants for the panel's /act
-      // target, the Books domain's resolver and repository for the shelf.
-      bookGrants: schoolBookGrants,
-      resolveBook: books.resolveBook,
-      bookRepository: books.bookRepository,
-      // Shelf and teacher views render covers from OUR address, never the
-      // provider's — see `4_api/v1/routers/books.mjs#bookCoverPath`.
-      bookCoverUrlFor: books.coverUrlFor,
-      donow: donowModule?.service ?? null,
-      donowSurfaces: donowModule?.surfaces ?? null,
-      donowDatastore: donowModule?.datastore ?? null,
-      tokenRegistry: schoolCalc.tokenRegistry ?? null,
-      schoolCalcActionResolver: schoolCalc.actionResolver ?? null,
-      schoolCalcStudies: schoolCalc.wired ? schoolCalc.studySessions : null,
-      // Same instance Task 3's router reads — a rejected panel code is the
-      // first real friction signal source (see the `kioskFrictionTracker`
-      // construction above, alongside `kioskFrictionStateGatesPrincipal`).
-      kioskFrictionTracker,
-      logger: schoolLifecycleLogger
-    });
-  } catch (err) {
-    // A console that cannot be built must not stop the house from booting: the
-    // rest of School (banks, materials, language) is untouched by its absence.
-    schoolLifecycleLogger.error('school.lifecycle.wiring-failed', { error: err.message });
-  }
-  let schoolStateGatesProducer = null;
-  const bookScanTarget = resolveBookScanTarget({ configService, householdId, getScreenConfig: getSchoolScreenConfig });
-  const bookScans = schoolLifecycle.bookLogLauncher && schoolLifecycle.realtime ? new PrepareBookScan({
-    mintId: () => crypto.randomBytes(32).toString('base64url'),
-    resolveBook: books.resolveBook,
-    roster: () => schoolLearnerDirectory.listLearners(),
-    issueLaunchTarget: args => schoolLifecycle.bookLogLauncher.issueLaunchTarget(args),
-    wake: args => wakeScreenForBroadcast({ ...args, prepareOnly: bookScanTarget?.prepareOnly === true }),
-    notifications: schoolLifecycle.realtime,
-    target: bookScanTarget,
-    logger: schoolLifecycleLogger,
-  }) : null;
-  // The second door: a learner tapped on the panel, no code and no barcode.
-  // It needs no realtime — nothing is broadcast and nothing waits.
-  const openBookShelfAtPanel = schoolLifecycle.bookLogLauncher && schoolBookPanelGrants && bookScanTarget
-    ? new OpenBookShelfAtPanel({
-      roster: () => schoolLearnerDirectory.listLearners(),
-      issueLaunchTarget: ({ userId }) => ({
-        kind: 'program',
-        program: schoolLifecycle.bookLogLauncher.id,
-        learnerId: userId,
-        bookGrant: schoolBookPanelGrants.issue({ learnerId: userId }),
-      }),
-      target: bookScanTarget,
-      logger: schoolLifecycleLogger,
-    })
-    : null;
-  // A missing door is invisible on the panel — the icon simply is not drawn —
-  // so say which piece was absent rather than leaving it to be rediscovered.
-  if (!openBookShelfAtPanel) {
-    schoolLifecycleLogger.warn('school.book-shelf.panel-door-unavailable', {
-      launcher: Boolean(schoolLifecycle.bookLogLauncher),
-      grants: Boolean(schoolBookPanelGrants),
-      target: Boolean(bookScanTarget),
-    });
-  }
-
-  if (schoolLifecycle.wired && schoolLifecycle.realtime && schoolLifecycle.getLearnerDayCompletion) {
-    try {
-      const { SchoolStateGatesProducer } = await import('#apps/school/SchoolStateGatesProducer.mjs');
-      schoolStateGatesProducer = new SchoolStateGatesProducer({
-        realtime: schoolLifecycle.realtime,
-        getLearnerDayCompletion: schoolLifecycle.getLearnerDayCompletion,
-        learners: () => schoolLearnerDirectory.listLearners(),
-        publishAssertion: (assertion) => stateGatesModule.ingress.observe(
-          householdId, schoolStateGatesPrincipal, assertion,
-        ),
-        retractAssertion: (command) => stateGatesModule.ingress.retract(
-          householdId, schoolStateGatesPrincipal, command,
-        ),
-        timezone: configService.getHouseholdTimezone?.(householdId) || 'UTC',
-        scheduler: stateGatesProducerScheduler,
-        logger: rootLogger.child({ module: 'state-gates-school-producer' }),
-      });
-      await schoolStateGatesProducer.start();
-    } catch (err) {
-      schoolStateGatesProducer?.stop();
-      schoolStateGatesProducer = null;
-      schoolLifecycleLogger.error('school.state-gates-producer.wiring-failed', { error: err.message });
-    }
-  }
-  const teacherCapabilitySessions = new TeacherCapabilitySessions({
-    teacherGate: schoolTeacherGate,
-    tokenFactory: () => crypto.randomBytes(32).toString('base64url'),
-  });
-  schoolTeacherGate.bindCapabilitySessions(teacherCapabilitySessions);
-  if (typeof schoolLifecycle.teacherGate?.bindCapabilitySessions === 'function'
-      && schoolLifecycle.teacherGate !== schoolTeacherGate) {
-    schoolLifecycle.teacherGate.bindCapabilitySessions(teacherCapabilitySessions);
-  }
-
-  // Print-document scan-back (Task 7, spec §9): ResolveCardScan joins the
-  // SAME decoded-scan stream createQuizScanRecorder (wired much earlier,
-  // above) already persists — see schoolPrintScanConsumer.mjs's own header.
-  // Reuses schoolLifecycle's OWN allocationStore/printDocuments repository
-  // instances (not fresh ones) so a live scan resolves against exactly what
-  // IssueDocument's tracked-quiz path just wrote — two YamlAllocationStore
-  // instances pointed at the same directory would each serialize their OWN
-  // writes but not against each other, a real read-modify-write race this
-  // avoids by construction. Wired only once the lifecycle itself is (no
-  // lifecycle, no allocationStore/repository to resolve against either).
-  if (schoolLifecycle.wired && schoolLifecycle.stores?.allocationStore && schoolLifecycle.stores?.printDocuments) {
-    try {
-      const { createSchoolPrintScanConsumer } = await import('#composition/modules/schoolPrintScanConsumer.mjs');
-      const resolveCardScan = schoolLifecycle.useCases?.resolveCardScan;
-      if (!resolveCardScan) throw new Error('school lifecycle did not expose resolveCardScan');
-      // B1 (review wave): graded scans become durable evidence — per-learner
-      // attempt records through the SAME datastore the on-screen quiz engine
-      // writes, plus the session bridge (submitted → graded) for cards whose
-      // allocation record carries its issuing session.
-      const { RecordCardScanOutcome } = await import('#apps/school/documents/RecordCardScanOutcome.mjs');
-      const recordCardScanOutcome = new RecordCardScanOutcome({
-        datastore: schoolDatastore,
-        sessions: schoolLifecycle.stores.sessions ?? null,
-        reviewQueue: schoolLifecycle.stores.reviewQueue ?? null,
-        resultArtifacts: schoolSessionResultArtifacts,
-        renderMachineResult: renderSessionResultPng,
-        logger: rootLogger.child({ module: 'school-print-scan-record' }),
-      });
-      schoolLifecycle.useCases?.reviewHeldCardScan?.bindOutcomeRecorder(recordCardScanOutcome);
-      // Grading hook (Task 4, spec §grading-hook): fires one HA script per
-      // terminal scan outcome. Guarded on `homeAutomationAdapters.haGateway`
-      // the SAME way `homeApi.mjs`'s `callHomeAssistantService` is — a
-      // household with no Home Assistant configured gets `gradingHook: null`
-      // and boots exactly as it did before this task existed.
-      //
-      // Own try/catch, deliberately separate from the outer one wrapping this
-      // whole block (final review Fix 2): the outer catch's job is "the print
-      // scan-back consumer failed to wire, skip it" — but this construction
-      // used to run BEFORE `createSchoolPrintScanConsumer` inside that SAME
-      // outer try, so a broken import or constructor here (home automation's
-      // problem) would trip the outer catch and take the entire scan-back
-      // consumer down with it: no scan resolves, nothing is recorded, for the
-      // whole process lifetime. Home automation must never be able to do
-      // that, so a failure here degrades to `gradingHook: null` and the
-      // consumer below is still created.
-      let gradingHook = null;
-      if (homeAutomationAdapters.haGateway) {
-        try {
-          const { SchoolGradingHookAdapter } = await import('#adapters/school/SchoolGradingHookAdapter.mjs');
-          gradingHook = new SchoolGradingHookAdapter({
-            gateway: homeAutomationAdapters.haGateway,
-            // Same accessor/call shape `getPrintTeacherPin` above uses for this
-            // same `school.yml` — the household-id arg is accepted for the
-            // adapter's contract but this module always resolves against `null`.
-            loadSchoolConfig: () => configService.getHouseholdAppConfig(null, 'school') || {},
-            resolveStudent: learnerDisplayName,
-            logger: rootLogger.child({ module: 'school-grading-hook' }),
-          });
-        } catch (err) {
-          gradingHook = null;
-          schoolLifecycleLogger.warn('school.grading_hook.wiring-failed', { error: err.message });
-        }
-      }
-      createSchoolPrintScanConsumer({
-        eventBus,
-        config: omrReadersConfig,
-        resolveCardScan,
-        recordCardScanOutcome,
-        closeSessionOutcome: schoolLifecycle.useCases?.closeSessionOutcome ?? null,
-        gradingHook,
-        // Every non-graded feed prints a notice slip through the same
-        // thermal printer the result receipts use (2026-09-15).
-        receipts: schoolLifecycle.receipts ?? null,
-        printDocuments: schoolLifecycle.stores.printDocuments,
-        // Phone-copy labels (2026-09-22 push redesign): course short titles
-        // from the catalog, display names, and today's study day so late
-        // work can say which day it was for.
-        curriculum: schoolLifecycle.stores.curriculum ?? null,
-        studentName: learnerDisplayName,
-        // Same zone school's study days use (schoolLifecycle's `timezone`, fed
-        // to CloseSessionOutcome and the piano bridge), so on-time work near
-        // the 4 AM boundary never reads as late.
-        today: () => studyDayForInstant(Date.now(), { timezone: configService.getTimezone?.() || null }),
-        // Bounds the label lookups (default 2s) so a hung catalog/name read can
-        // never withhold the hook and, with it, the room siren.
-        scheduler: new NodeAsyncScheduler(),
-        logger: rootLogger.child({ module: 'school-print-scan' }),
-      });
-    } catch (err) {
-      schoolLifecycleLogger.error('school.print.scan-consumer-wiring-failed', { error: err.message });
-    }
-  }
-
-  const getSchoolReport = new GetSchoolReport({
-    // The lifecycle reporter is filtered out by GetSchoolReport itself when it
-    // is null, so an unwired console simply does not appear on the board.
-    reporters: [schoolService, languageStudyService, schoolLifecycle.reporter],
-    userService,
-    cohortDirectory: schoolLearnerDirectory,
-    logger: rootLogger.child({ module: 'school-report' })
-  });
-
-  // Concept registry (Task 10, R8) — household concept labels for the report
-  // card's `concepts` facet (`data/content/school/concepts.yml`). Its own
-  // narrow try/catch, independent of the report-card gate below: a
-  // missing file degrades to an empty registry inside the adapter itself
-  // (never throws), but a PRESENT, malformed one does throw at construction
-  // — and that must disable only concept LABELING, never the report card
-  // (or the rest of School) entirely. `GetReportCard` already falls back to
-  // the raw conceptId as its own label whenever `conceptRegistry` is null.
-  let schoolConceptRegistry = null;
-  try {
-    schoolConceptRegistry = new YamlConceptRegistry({ dataDir });
-  } catch (err) {
-    schoolLifecycleLogger.error('school.concept-registry.wiring-failed', { error: err.message });
-  }
-
-  // Report cards, period close, teacher digest (Task 6, spec R5b). Needs the
-  // lifecycle's shared curriculum/sessions/assignments stores AND the SAME
-  // grown-up gate every other parent-only write already asserts through
-  // (`schoolLifecycle.grownUps`) — tolerant of an unwired lifecycle exactly
-  // like the print-scan consumer above: no sessions store, no report cards,
-  // rather than a half-built feature reaching for a store that isn't there.
-  let getReportCard = null;
-  let closeAcademicPeriod = null;
-  let getTeacherToday = null;
-  if (schoolLifecycle.wired && schoolLifecycle.stores?.sessions && schoolLifecycle.stores?.assignments
-      && schoolLifecycle.stores?.curriculum && schoolLifecycle.grownUps) {
-    try {
-      const { GetReportCard } = await import('#apps/school/usecases/GetReportCard.mjs');
-      const { CloseAcademicPeriod } = await import('#apps/school/usecases/CloseAcademicPeriod.mjs');
-      const { GetTeacherToday } = await import('#apps/school/usecases/GetTeacherToday.mjs');
-      getReportCard = new GetReportCard({
-        curriculum: schoolLifecycle.stores.curriculum,
-        assignments: schoolLifecycle.stores.assignments,
-        sessions: schoolLifecycle.stores.sessions,
-        datastore: schoolDatastore,
-        academicPeriods: schoolAcademicPeriods,
-        getMaterialProgressSummary,
-        getLearningProgress,
-        reviewQueue: schoolLifecycle.stores.reviewQueue ?? null,
-        conceptRegistry: schoolConceptRegistry,
-        logger: rootLogger.child({ module: 'school-report-card' })
-      });
-      closeAcademicPeriod = new CloseAcademicPeriod({
-        teacherGate: schoolLifecycle.teacherGate ?? null,
-        getReportCard,
-        datastore: schoolDatastore,
-        grownUps: schoolLifecycle.grownUps,
-        logger: rootLogger.child({ module: 'school-report-card' })
-      });
-      getTeacherToday = new GetTeacherToday({
-        learnerDirectory: schoolLearnerDirectory,
-        datastore: schoolDatastore,
-        sessions: schoolLifecycle.stores.sessions,
-        reviewQueue: schoolLifecycle.stores.reviewQueue ?? null,
-        evidenceRepository: schoolLearningEvidence ?? null,
-        curriculum: schoolLifecycle.stores.curriculum,
-        bookLog: schoolLifecycle.stores.bookLog ?? null,
-        // Physical-education credit on the day board. The same session
-        // summaries the weekly ring measure reads, so the disc and the ring
-        // chip can never disagree about a workout.
-        fitnessSessions: {
-          listSessionsInRange: (from, to) => fitnessServices.sessionService
-            .listSessionsInRange(from, to, householdId),
-        },
-        timezone: configService.getTimezone?.() || null,
-        logger: rootLogger.child({ module: 'school-teacher-today' })
-      });
-    } catch (err) {
-      schoolLifecycleLogger.error('school.report-card.wiring-failed', { error: err.message });
-    }
-  }
-
-  // Printable report card (Task 7, spec R5b adequacy MUST 2) — a bespoke
-  // pdfkit renderer under `1_rendering/school/reportcard/`, sharing the
-  // `documents/` theme's fonts but none of the block-pipeline machinery.
-  // Unlike the three use cases just above, this has no lifecycle store
-  // dependency at all — constructed unconditionally, so `format=pdf` works
-  // on any wired report-card route regardless of the (independent) lifecycle
-  // gate those routes' own use cases are behind.
-  let renderReportCardPdf = null;
-  try {
-    const { createReportCardPdfRenderer } = await import('#rendering/school/reportcard/ReportCardRenderer.mjs');
-    renderReportCardPdf = createReportCardPdfRenderer();
-  } catch (err) {
-    schoolLifecycleLogger.error('school.report-card.pdf-wiring-failed', { error: err.message });
-  }
-
-  // Printing (worksheets → kitchen laser printer). Wired only when the school
-  // config declares a `printer` host — no printer, no print feature (the
-  // router serves inert). The printer host defaults to the `kitchen-printer`
-  // device entry so config need only opt in.
-  let schoolPrintService = null;
-  const printerHost = schoolFullConfig.printing?.host
-    || configService.getDeviceConfig?.('kitchen-printer')?.host
-    || null;
-  if (printerHost && (schoolFullConfig.printables?.length || schoolFullConfig.printing)) {
-    const laserPrinter = new LaserPrinterAdapter({
-      host: printerHost,
-      port: schoolFullConfig.printing?.port || 631,
-      path: schoolFullConfig.printing?.path || '/ipp/print',
-      // Double-sided by default; `school.yml` printing.duplex/.binding override.
-      duplex: schoolFullConfig.printing?.duplex ?? true,
-      binding: schoolFullConfig.printing?.binding || 'LONGEDGE',
-      // Renders at most this many pages of a document. Distinct from
-      // `maxPagesPerJob`, which REFUSES an oversized job — this one TRIMS, so a
-      // supervised hardware test can ask for exactly one page and still get a
-      // real print rather than a refusal. Unset in normal operation.
-      renderPageLimit: schoolFullConfig.printing?.renderPageLimit ?? null,
-      logger: rootLogger.child({ module: 'school-print' })
-    });
-    // Paper-certification gate (Task 15, spec §9/§11): a `bank` printable is
-    // offered only if AT LEAST ONE paper surface profile can render it —
-    // built straight from the surfaces registry's family:'paper' ports/
-    // profiles rather than through GetSurfaceCertification, which certifies
-    // whole lessons, not standalone banks. `schoolSurfaces.registry` is null
-    // whenever the School Catalog itself is not wired; no paper profile
-    // authored yields the same `null` — PrintService then falls back to its
-    // legacy, ungated `listPrintables()` byte-for-byte.
-    const paperProfiles = schoolSurfaces.registry
-      ? schoolSurfaces.registry.list().filter((profile) => profile.family === 'paper')
-      : [];
-    const paperCertifyBank = paperProfiles.length
-      ? (bank) => {
-        const results = paperProfiles.map((profile) => schoolSurfaces.registry.portFor(profile).certifyBank(bank, profile));
-        if (results.some((r) => r.verdict === 'render')) return { verdict: 'render', reasons: [] };
-        return { verdict: 'incompatible', reasons: results.flatMap((r) => r.reasons || []) };
-      }
-      : null;
-    schoolPrintService = new PrintService({
-      config: schoolFullConfig,
-      datastore: schoolDatastore,
-      printerAdapter: laserPrinter,
-      worksheetRenderer: { renderBankWorksheet },
-      // getBank throws on miss; PrintService wants null-on-miss.
-      bankReader: { getBank: (id) => { try { return schoolService.getBank(id); } catch { return null; } } },
-      pdfReader: new FilesystemWorksheetPdfReader({ rootDir: path.join(configService.getDataDir(), 'household', 'content', 'worksheets') }),
-      userService,
-      paperCertifyBank,
-      teacherGate: schoolLifecycle.teacherGate ?? null,
-      logger: rootLogger.child({ module: 'school-print' })
-    });
-    rootLogger.child({ module: 'school-print' }).info?.('school.print.ready', { host: printerHost, printables: schoolFullConfig.printables?.length || 0, paperCertified: paperProfiles.length > 0 });
-  }
-
-  // Teacher console picker (teacher-console spec §4.7.1): config-declared
-  // `teachers:` ids resolved against the LIVE roster per request — never a
-  // boot-time snapshot, and only {id, name} ever leaves. Deliberately NOT
-  // lifecycle-gated: the teachers read works on any install.
-  const { GetTeachers } = await import('#apps/school/usecases/GetTeachers.mjs');
-  const getTeachers = new GetTeachers({
-    teachers: () => (configService.getHouseholdAppConfig(null, 'school') || {}).teachers,
-    roster: () => userService.getHouseholdRoster(householdId) ?? [],
-    logger: rootLogger.child({ module: 'school-teachers' }),
-  });
-
-  // Wave-5 repair stores + gated writes (spec D1/D2/D3).
-  const { YamlAttestationLog } = await import('#adapters/persistence/yaml/YamlAttestationLog.mjs');
-  const { YamlTeacherNotes } = await import('#adapters/persistence/yaml/YamlTeacherNotes.mjs');
-  const { RecordAttestation } = await import('#apps/school/usecases/RecordAttestation.mjs');
-  const { ManageEarnRules } = await import('#apps/school/usecases/ManageEarnRules.mjs');
-  const { RecordTeacherNote } = await import('#apps/school/usecases/RecordTeacherNote.mjs');
-  const { ReassignEvidence } = await import('#apps/school/usecases/ReassignEvidence.mjs');
-  const { YamlReassignmentLog } = await import('#adapters/persistence/yaml/YamlReassignmentLog.mjs');
-  const schoolAttestations = new YamlAttestationLog({ configService, logger: rootLogger.child({ module: 'school-attestations' }) });
-  const schoolTeacherNotes = new YamlTeacherNotes({ configService, logger: rootLogger.child({ module: 'school-teacher-notes' }) });
-  const recordAttestation = new RecordAttestation({ log: schoolAttestations, teacherGate: schoolTeacherGate, notes: schoolTeacherNotes });
-  const recordTeacherNote = new RecordTeacherNote({ notes: schoolTeacherNotes, teacherGate: schoolTeacherGate, logger: rootLogger.child({ module: 'school-planning' }) });
-  // The grown-up's reading verbs (teacher reading admin design §3). Wired
-  // only where the shelf itself is: without a book log there is nothing to
-  // correct, and every route answers an honest 404 rather than half-working.
-  // `bookLogLauncher` comes from the lifecycle module by name so the window a
-  // re-dated day is judged against is the same one the agenda counts with.
-  const teacherReadingUseCases = schoolLifecycle.stores?.bookLog && schoolTeacherGate
-    ? await (async () => {
-      const [
-        { GetLearnerReadings }, { UpdateReading }, { AddReadingEntry }, { UpdateReadingEntry },
-        { DeleteReadingEntry }, { AddReadingForLearner }, { MoveReading }, { DeleteReading },
-        { UndoReadingRevision },
-      ] = await Promise.all([
-        import('#apps/school/usecases/teacher/GetLearnerReadings.mjs'),
-        import('#apps/school/usecases/teacher/UpdateReading.mjs'),
-        import('#apps/school/usecases/teacher/AddReadingEntry.mjs'),
-        import('#apps/school/usecases/teacher/UpdateReadingEntry.mjs'),
-        import('#apps/school/usecases/teacher/DeleteReadingEntry.mjs'),
-        import('#apps/school/usecases/teacher/AddReadingForLearner.mjs'),
-        import('#apps/school/usecases/teacher/MoveReading.mjs'),
-        import('#apps/school/usecases/teacher/DeleteReading.mjs'),
-        import('#apps/school/usecases/teacher/UndoReadingRevision.mjs'),
-      ]);
-      const shared = {
-        bookLog: schoolLifecycle.stores.bookLog,
-        teacherGate: schoolTeacherGate,
-        recordTeacherNote,
-        bookRepository: schoolLifecycle.stores?.bookRepository ?? null,
-        bookLogLauncher: schoolLifecycle.bookLogLauncher ?? null,
-        // One cover address for both surfaces: what the grown-up sees in the
-        // console is byte-for-byte what the child sees on the panel.
-        coverUrlFor: books.coverUrlFor,
-        logger: rootLogger.child({ module: 'school-teacher-reading' }),
-      };
-      return {
-        getLearnerReadings: new GetLearnerReadings(shared),
-        updateReading: new UpdateReading(shared),
-        addReadingEntry: new AddReadingEntry(shared),
-        updateReadingEntry: new UpdateReadingEntry(shared),
-        deleteReadingEntry: new DeleteReadingEntry(shared),
-        addReadingForLearner: new AddReadingForLearner(shared),
-        moveReading: new MoveReading(shared),
-        deleteReading: new DeleteReading(shared),
-        undoReadingRevision: new UndoReadingRevision(shared),
-      };
-    })()
-    : {};
-
-  // Task 12 (debt M5): reassignments write their own audit trail — a
-  // best-effort append that never blocks or unwinds the move itself.
-  const schoolReassignmentLog = new YamlReassignmentLog({ configService, logger: rootLogger.child({ module: 'school-reassignments' }) });
-  const reassignEvidence = new ReassignEvidence({
-    datastore: schoolDatastore, teacherGate: schoolTeacherGate, notes: schoolTeacherNotes,
-    auditLog: schoolReassignmentLog, logger: rootLogger.child({ module: 'school-reassignments' }),
-  });
-  // Its session-level twin (plan 4.1) — the repair for work with no machine
-  // attempts to move. Shares the ONE audit-log instance above deliberately: a
-  // second `YamlReassignmentLog` would race that instance's append chain.
-  // Null when the lifecycle is unwired (no sessions repo, nothing to move),
-  // which 404s the route rather than half-answering it.
-  const { ReassignSession } = await import('#apps/school/usecases/ReassignSession.mjs');
-  const schoolSessionsRepo = schoolLifecycle.stores?.sessions ?? null;
-  const reassignSession = schoolSessionsRepo
-    ? new ReassignSession({
-      sessions: schoolSessionsRepo, teacherGate: schoolTeacherGate, notes: schoolTeacherNotes,
-      auditLog: schoolReassignmentLog, logger: rootLogger.child({ module: 'school-reassignments' }),
-    })
-    : null;
-  const { RetractTeacherRecord } = await import('#apps/school/usecases/RetractTeacherRecord.mjs');
-  const retractTeacherRecord = new RetractTeacherRecord({
-    stores: { enrichment: schoolEnrichmentLog, attestation: schoolAttestations, note: schoolTeacherNotes },
-    teacherGate: schoolTeacherGate,
-    notes: schoolTeacherNotes,
-    logger: rootLogger.child({ module: 'school-planning' }),
-  });
-  const { GetTranscript } = await import('#apps/school/usecases/GetTranscript.mjs');
-  const getTranscript = new GetTranscript({ reportCardsStore: schoolDatastore });
-  const { createTranscriptPdfRenderer } = await import('#rendering/school/reports/TranscriptRenderer.mjs');
-  const { createSyllabusPdfRenderer } = await import('#rendering/school/reports/SyllabusRenderer.mjs');
-  // Wave-3 gated planning writes — constructed HERE because they borrow the
-  // lifecycle's pass-override store and sessions repo (both null-safe when
-  // the lifecycle is unwired).
-  const setAcademicPeriods = new SetAcademicPeriods({
-    store: schoolAcademicPeriods,
-    teacherGate: schoolTeacherGate,
-    logger: rootLogger.child({ module: 'school-planning' }),
-    // Frozen-card guard (admin advocacy #15): the roster-wide set of periodIds
-    // holding a FROZEN card — removing/renaming one of those ids is refused.
-    frozenPeriodIds: async () => {
-      const roster = userService.getHouseholdRoster?.() ?? [];
-      const ids = [];
-      for (const member of roster) {
-        try {
-          (schoolDatastore.listReportCards(member.id) ?? []).forEach((r) => { if (r?.periodId) ids.push(r.periodId); });
-        } catch { /* one unreadable shard must not lock period edits */ }
-      }
-      return ids;
-    },
-  });
-  const setPassOverride = schoolLifecycle.passOverrides
-    ? new SetPassOverride({ store: schoolLifecycle.passOverrides, teacherGate: schoolTeacherGate, logger: rootLogger.child({ module: 'school-planning' }) })
-    : null;
-  const setMilestones = new SetMilestones({ store: schoolMilestoneStore, teacherGate: schoolTeacherGate, logger: rootLogger.child({ module: 'school-planning' }) });
-  const milestoneStatuses = new GetMilestoneStatuses({
-    store: schoolMilestoneStore, sessions: schoolLifecycle.stores?.sessions ?? null,
-    attestations: schoolAttestations,
-    timezone: configService.getTimezone?.() || null,
-  });
-  const recordEnrichment = new RecordEnrichment({ log: schoolEnrichmentLog, teacherGate: schoolTeacherGate, logger: rootLogger.child({ module: 'school-planning' }) });
-  // Wave-4 records: the progress-report read model + the two renderers.
-  let getProgressReport = null;
-  if (getReportCard) {
-    const { GetProgressReport } = await import('#apps/school/usecases/GetProgressReport.mjs');
-    getProgressReport = new GetProgressReport({
-      getReportCard,
-      milestoneStatuses,
-      enrichmentLog: schoolEnrichmentLog,
-      timezone: configService.getTimezone?.() || null,
-    });
-  }
-  const { offsetMinutesFor: schoolOffsetMinutesFor } = await import('#domains/school/studyDay.mjs');
-  const { createProgressReportPdfRenderer } = await import('#rendering/school/reports/ProgressReportRenderer.mjs');
-  const { createCertificatePdfRenderer } = await import('#rendering/school/reports/CertificateRenderer.mjs');
-
-  v1Routers.school = createSchoolRouter(createSchoolApiServices({
-    schoolErrors,
-    schoolService,
-    flashcardStudy,
-    cardLadderStudy,
-    cardLadderTest,
-    cardLadderTuning: cardLadderTuning?.service ?? null,
-    cardLadderStageScreen: cardLadderConfig.stage?.screen ?? null,
-    flashcardAssets,
-    getMaterialCatalog,
-    getMaterialUnits,
-    getMaterialProgressSummary,
-    materialProgressStore: schoolMaterialProgressStore,
-    getSchoolReport,
-    getLearningProgress,
-    getInstructionalInsights,
-    learningCatalog: schoolCatalog.query,
-    issueContinuationCode,
-    openCatalogLearningSession,
-    recordLearningReflection,
-    recordLearningProbeInteraction: schoolLearningLoop.probeInteractions,
-    remediationTutor: schoolLearningLoop.tutor,
-    offerCatalogQuizRemediation,
-    learnerDirectory: schoolLearnerDirectory,
-    printService: schoolPrintService,
-    academicPeriodStore: schoolAcademicPeriods,
-    schoolDatastore,
-    regradeBankAttempts: schoolTeacherGate ? new RegradeBankAttempts({
-      datastore: schoolDatastore,
-      bankReader: schoolService,
-      teacherGate: schoolTeacherGate,
-      learnerDirectory: schoolLearnerDirectory,
-      sessions: schoolLifecycle.stores?.sessions ?? null,
-      worksheetInstances: schoolLifecycle.stores?.worksheetInstances ?? null,
-      // A systematic bank correction must update the session's effective
-      // grade through the same append-only, reward-aware path as a one-off
-      // teacher adjustment. That path also creates the corrected receipt
-      // artifact; regrading attempts alone must never pretend history changed.
-      sessionCorrection: schoolLifecycle.stores?.sessions ? async (args) => new AdjustSessionGrade({
-        realtime: schoolLifecycle.realtime,
-        sessions: schoolLifecycle.stores.sessions,
-        teacherGate: schoolTeacherGate,
-        passOverrides: schoolLifecycle.passOverrides ?? null,
-        worksheetInstances: schoolLifecycle.stores.worksheetInstances ?? null,
-        reviewQueue: schoolLifecycle.stores.reviewQueue ?? null,
-        curriculum: schoolLifecycle.stores.curriculum ?? null,
-        economy: economyApi.economyService,
-        economyEnabled: schoolFullConfig.lifecycle?.economy?.enabled === true,
-        receiptIssuer: schoolLifecycle.useCases?.issueCorrectedResultReceipt ?? null,
-        logger: rootLogger.child({ module: 'school-systematic-regrade' }),
-      }).execute(args) : null,
-      logger: rootLogger.child({ module: 'school-regrade' }),
-    }) : null,
-    getTeacherSession: schoolLifecycle.stores?.sessions
-      ? new GetTeacherSession({
-        sessions: schoolLifecycle.stores.sessions,
-        curriculum: schoolLifecycle.stores.curriculum ?? null,
-        issuedArtifacts: schoolLifecycle.stores.issuedArtifacts ?? null,
-        reviewQueue: schoolLifecycle.stores.reviewQueue ?? null,
-        allocationStore: schoolLifecycle.stores.allocationStore ?? null,
-        worksheetInstances: schoolLifecycle.stores.worksheetInstances ?? null,
-        curriculumExceptions: schoolLifecycle.stores.curriculumExceptionStore ?? null,
-        printDocuments: schoolLifecycle.stores.printDocuments ?? null,
-      }) : null,
-    launchPreviewTokens: schoolLaunchPreviewTokens,
-    // Built inside the lifecycle module, where the companion code store and the
-    // household id live — never re-constructed here over a second store
-    // instance, which would be a second way to describe one file.
-    getCompanionFinishCode: schoolLifecycle.useCases?.getCompanionFinishCode ?? null,
-    previewTeacherLessonMaterial: schoolLifecycle.stores?.curriculum && schoolLifecycle.stores?.printDocuments && schoolLifecycle.renderPrintDocument
-      ? new PreviewTeacherLessonMaterial({
-        curriculum: schoolLifecycle.stores.curriculum,
-        printDocuments: schoolLifecycle.stores.printDocuments,
-        renderPrintDocument: schoolLifecycle.renderPrintDocument,
-      }) : null,
-    getLearnerTimeline: schoolLifecycle.stores?.sessions
-      ? new GetLearnerTimeline({ sessions: schoolLifecycle.stores.sessions, curriculum: schoolLifecycle.stores.curriculum ?? null }) : null,
-    // The very instance the child's shelf panel reads through (built in the
-    // lifecycle module, over the one book log). Null in a composition without
-    // the Books deps, which the teacher route answers as an honest 404.
-    getBookShelf: schoolLifecycle.useCases?.getBookShelf ?? null,
-    // The teacher's reading workspace (design §3, §5). Built over the SAME
-    // book log the child's panel writes through and the SAME notes path every
-    // other teacher verb delivers on — there is no shadow teacher copy of a
-    // child's shelf, and no second way to reach a child's feed.
-    ...teacherReadingUseCases,
-    adjustSessionGrade: schoolLifecycle.stores?.sessions && schoolTeacherGate
-      ? new AdjustSessionGrade({
-        realtime: schoolLifecycle.realtime,
-        sessions: schoolLifecycle.stores.sessions,
-        teacherGate: schoolTeacherGate,
-        passOverrides: schoolLifecycle.passOverrides ?? null,
-        worksheetInstances: schoolLifecycle.stores.worksheetInstances ?? null,
-        reviewQueue: schoolLifecycle.stores.reviewQueue ?? null,
-        curriculum: schoolLifecycle.stores.curriculum ?? null,
-        economy: economyApi.economyService,
-        economyEnabled: schoolFullConfig.lifecycle?.economy?.enabled === true,
-        receiptIssuer: schoolLifecycle.useCases?.issueCorrectedResultReceipt ?? null,
-        logger: rootLogger.child({ module: 'school-grade-adjustment' }),
-      }) : null,
-    retractSessionGradeAdjustment: schoolLifecycle.stores?.sessions && schoolTeacherGate
-      ? new RetractSessionGradeAdjustment({
-        realtime: schoolLifecycle.realtime,
-        sessions: schoolLifecycle.stores.sessions,
-        teacherGate: schoolTeacherGate,
-        curriculum: schoolLifecycle.stores.curriculum ?? null,
-        economy: economyApi.economyService,
-        economyEnabled: schoolFullConfig.lifecycle?.economy?.enabled === true,
-        receiptIssuer: schoolLifecycle.useCases?.issueCorrectedResultReceipt ?? null,
-        logger: rootLogger.child({ module: 'school-grade-adjustment' }),
-      }) : null,
-    invalidateSessionEvidence: schoolLifecycle.useCases?.invalidateSessionEvidence ?? null,
-    issuedArtifactStore: schoolLifecycle.stores?.issuedArtifacts ?? null,
-    renderIssuedArtifact: schoolLifecycle.renderIssuedArtifact ?? null,
-    teacherAgendaDispatch: schoolLifecycle.useCases?.teacherAgendaDispatch ?? null,
-    reprintIssuedArtifact: schoolLifecycle.useCases?.reprintIssuedArtifact ?? null,
-    reprintResultReceiptArtifact: schoolLifecycle.useCases?.reprintResultReceiptArtifact ?? null,
-    manageCurriculumException: schoolLifecycle.useCases?.manageCurriculumException ?? null,
-    manageProgramDayBypass: schoolLifecycle.useCases?.manageProgramDayBypass ?? null,
-    // What school work pays: the economy's earn rules, edited from the
-    // teacher console behind the TeacherGate (reads: /api/v1/earnings).
-    manageEarnRules: new ManageEarnRules({
-      teacherGate: schoolTeacherGate,
-      earnRules: economyApi.earnRulesService,
-      learnerIds: async () => (await schoolLearnerDirectory.listLearners()).map((l) => l.id ?? l.learnerId).filter(Boolean),
-      logger: rootLogger.child({ module: 'school-earn-rules' }),
-    }),
-    teacherCapabilitySessions,
-    teacherGate: schoolTeacherGate,
-    // Read per request, never snapshotted — clearing the PIN in school.yml
-    // takes effect on the next config reload rather than the next restart.
-    teacherPinRequired: () => {
-      const pin = schoolTeacherConfig.pin();
-      return typeof pin === 'string' && pin.length > 0;
-    },
-    openRemediation: schoolLifecycle.useCases?.openRemediation ?? null,
-    closeSessionOutcome: schoolLifecycle.useCases?.closeSessionOutcome ?? null,
-    renderArtifactPostview: createArtifactPostviewRenderer(),
-    renderWorksheetThumbnail: renderPdfFirstPagePng,
-    milestoneStore: schoolMilestoneStore,
-    assignmentsStore: schoolLifecycle.stores?.assignments ?? null,
-    getLearnerRecord: new GetLearnerRecord({
-      teacherNotes: schoolTeacherNotes,
-      reviewQueue: schoolLifecycle.stores?.reviewQueue ?? null,
-      attestations: schoolAttestations,
-      enrichment: schoolEnrichmentLog,
-      quizRequests: () => schoolService.listQuizRequests(),
-      printRequests: (learnerId) => schoolPrintService?.listRequestsFor?.(learnerId) ?? [],
-      logger: rootLogger.child({ module: 'school-learner-record' }),
-    }),
-    schoolCalcRouter: schoolCalc.router,
-    surfaceCertification: schoolSurfaces.certification,
-    surfaceRegistry: schoolSurfaces.registry,
-    getScreenConfig: getSchoolScreenConfig,
-    // The SAME render pipeline + repository the tracked-quiz path uses (spec
-    // §9 shared-instance rule) — GET /print/:id renders through the identical
-    // allocation store, so a freshCard render here is a real card allocation.
-    renderPrintDocument: schoolLifecycle.renderPrintDocument ?? null,
-    printDocumentsRepo: schoolLifecycle.stores?.printDocuments ?? null,
-    printAllocationStore: schoolLifecycle.stores?.allocationStore ?? null,
-    // Teacher-key gate: answer keys deny until `print.teacherPin` is set in
-    // the household school config and matched via `?pin=`.
-    getPrintTeacherPin: () => {
-      const schoolConfig = configService.getHouseholdAppConfig(null, 'school') || {};
-      return schoolConfig.print?.teacherPin != null ? String(schoolConfig.print.teacherPin) : null;
-    },
-    // Report cards, period close, teacher digest (Task 6, spec R5b).
-    getReportCard,
-    closeAcademicPeriod,
-    getTeacherToday,
-    getTeachers,
-    setAcademicPeriods,
-    passOverrideStore: schoolLifecycle.passOverrides ?? null,
-    setPassOverride,
-    milestoneStatuses,
-    setMilestones,
-    enrichmentLog: schoolEnrichmentLog,
-    recordEnrichment,
-    getProgressReport,
-    renderProgressReportPdf: createProgressReportPdfRenderer(),
-    renderCertificatePdf: createCertificatePdfRenderer(),
-    getHouseholdOffsetMinutes: (nowMs) => schoolOffsetMinutesFor(configService.getTimezone?.() || null, nowMs),
-    attestationLog: schoolAttestations,
-    recordAttestation,
-    teacherNotesStore: schoolTeacherNotes,
-    recordTeacherNote,
-    reassignEvidence,
-    reassignSession,
-    reassignmentLog: schoolReassignmentLog,
-    attemptsStore: schoolDatastore,
-    retractTeacherRecord,
-    getTranscript,
-    renderTranscriptPdf: createTranscriptPdfRenderer(),
-    renderSyllabusPdf: createSyllabusPdfRenderer(),
-    curriculumForSyllabus: schoolLifecycle.stores?.curriculum ?? null,
-    // Frozen-record reads work off `schoolDatastore` alone (no lifecycle
-    // stores needed), so this is wired unconditionally.
-    reportCardsStore: schoolDatastore,
-    // Printable report card PDF (Task 7) — also wired unconditionally.
-    renderReportCardPdf,
-    // Feedback delivery + kid-visible standing (Task 9, spec R7 / adequacy
-    // SHOULD 9) — the SAME review-queue store and academic-period source
-    // `getReportCard` already reads above, reused rather than rebuilt.
-    reviewQueue: schoolLifecycle.stores?.reviewQueue ?? null,
-    academicPeriods: schoolAcademicPeriods,
-    logger: rootLogger.child({ module: 'school-api' })
-  }));
-
-  const { LanguageAudioResource } = await import('#apps/school/LanguageAudioResource.mjs');
-  const { FilesystemLanguageAudioRepository } = await import('#adapters/media/FilesystemLanguageAudioRepository.mjs');
-  const languageAudioResource = new LanguageAudioResource({
-    languageAudioRepository: new FilesystemLanguageAudioRepository({
-      mediaDir: mediaBasePath,
-      userExists: (userId) => Boolean(configService.getUserProfile(userId)),
-    }),
-    languageStudyService,
-    // school.yml `sentence_ladder.cues.{role}: file` — files under media/school/_ux/.
-    cues: configService.getHouseholdAppConfig(null, 'school')?.sentence_ladder?.cues || {},
-  });
-  const sentenceLadderRouter = createSentenceLadderRouter({ schoolErrors,
-    languageStudyService,
-    languageAudioResource,
-    // The same instance the study service was given above — see there.
-    languageTranscription,
-    studyGrants: schoolStudyGrants,
-    logger: rootLogger.child({ module: 'school-language-api' })
-  });
-  v1Routers.school.use('/sentence-ladder', sentenceLadderRouter);
-  // Compatibility alias for deployed clients and bookmarks. No removal in
-  // this migration; legacy traffic is logged by the shared router.
-  v1Routers.school.use('/language', sentenceLadderRouter);
-  v1Routers.school.use('/language-reels', createLanguageReelsRouter({
-    service: languageReelService, grants: schoolReelGrants,
-    logger: rootLogger.child({ module: 'school-language-reels-api' }),
-  }));
-  v1Routers.school.use('/rubiks-cube', createRubiksCubeRouter({
-    service: rubiksCubeService, grants: schoolCubeGrants, revision: RUBIKS_CUBE_REVISION,
-    logger: rootLogger.child({ module: 'school-rubiks-cube-api' }),
-  }));
-  // Household-wide book resolution (`/api/v1/books/resolve`). `v1Routers` is
-  // keyed by path segment, so a top-level router is a property, not a `.use`.
-  v1Routers.books = createBooksApiRouter({
-    resolveBook: books.resolveBook,
-    resolveBookCover: books.resolveBookCover,
-    logger: rootLogger.child({ module: 'books-api' }),
-  });
-  // The School reading shelf. Needs the lifecycle's shelf use cases (absent in
-  // a composition without the Books domain deps) and a grant issuer.
-  if (schoolLifecycle.wired && schoolBookGrants && schoolLifecycle.useCases?.getBookShelf) {
-    if (bookScans) v1Routers.school.use('/book-scans', createSchoolBookScansRouter({ bookScans, openAtPanel: openBookShelfAtPanel }));
-    v1Routers.school.use('/books', createSchoolBooksRouter({
-      grants: schoolBookGrants,
-      getBookShelf: schoolLifecycle.useCases.getBookShelf,
-      openBookShelfItem: schoolLifecycle.useCases.openBookShelfItem,
-      recordBookProgress: schoolLifecycle.useCases.recordBookProgress,
-      onBookLogChanged: (payload) => eventBus.broadcast('school', payload),
-      // school.yml `books.manualEntry: false` makes the child's add door
-      // scan-only; see BookEntryPolicy for why.
-      entryPolicy: new BookEntryPolicy({
-        manualEntryAllowed: () => configService.getHouseholdAppConfig(null, 'school')?.books?.manualEntry !== false,
-        scanned: (args) => bookScans?.hasScanned(args) ?? false,
-        logger: rootLogger.child({ module: 'school-books-api' }),
-      }),
-      logger: rootLogger.child({ module: 'school-books-api' }),
-    }));
-  }
-
-  if (schoolLifecycle.router) {
-    v1Routers.school.use('/lifecycle', schoolLifecycle.router);
-  }
-  // Only when the doubles were actually constructed (school.yml
-  // `virtualDevices: true`). A production deployment never mounts a surface that
-  // can knock a printer offline.
-  if (schoolLifecycle.devicesRouter) {
-    v1Routers.school.use('/devices', schoolLifecycle.devicesRouter);
-  }
-  // The school-room wall panel's keypad. Built inside the same
-  // `lifecycle.enabled` gate as everything else above, so a locked panel
-  // configured against a disabled lifecycle 404s here rather than answering
-  // half a card.
-  if (schoolLifecycle.selfServiceRouter) {
-    v1Routers.school.use('/self-service', schoolLifecycle.selfServiceRouter);
-  }
+  const { schoolStateGatesProducer, bookScans, schoolPrintService, schoolTeacherNotes } = await createSchoolLifecycleRuntime({ nfcLocationsForReachability, configService, householdId, schoolService, schoolAcademicPeriods, schoolDatastore, economyApi, userService, eventBus, printerRegistry, wakeScreenForBroadcast, get startReadingSession() { return startReadingSession; }, languageStudyService, get schoolStudyGrants() { return schoolStudyGrants; }, languageReelService, get schoolReelGrants() { return schoolReelGrants; }, get schoolLaunchPreviewTokens() { return schoolLaunchPreviewTokens; }, pianoContainer, schoolPianoChallengeCompletionService, fitnessPlayableService, v1Routers, schoolLearningEvidence, get pianoLessonHook() { return pianoLessonHook; }, flashcardStudy, cardLadderStudy, rubiksCubeService, get schoolCubeGrants() { return schoolCubeGrants; }, get schoolBookGrants() { return schoolBookGrants; }, books, get donowModule() { return donowModule; }, get schoolCalc() { return schoolCalc; }, kioskFrictionTracker, schoolLifecycleLogger, getSchoolScreenConfig, get schoolLifecycle() { return schoolLifecycle; }, set schoolLifecycle(value) { schoolLifecycle = value; }, schoolLearnerDirectory, get schoolBookPanelGrants() { return schoolBookPanelGrants; }, stateGatesModule, schoolStateGatesPrincipal, stateGatesProducerScheduler, rootLogger, schoolTeacherGate, schoolSessionResultArtifacts, homeAutomationAdapters, learnerDisplayName, omrReadersConfig, NodeAsyncScheduler, dataDir, get getMaterialProgressSummary() { return getMaterialProgressSummary; }, getLearningProgress, fitnessServices, schoolFullConfig, LaserPrinterAdapter, schoolSurfaces, schoolEnrichmentLog, schoolMilestoneStore, cardLadderTest, get cardLadderTuning() { return cardLadderTuning; }, cardLadderConfig, flashcardAssets, get getMaterialCatalog() { return getMaterialCatalog; }, get getMaterialUnits() { return getMaterialUnits; }, schoolMaterialProgressStore, getInstructionalInsights, schoolCatalog, get issueContinuationCode() { return issueContinuationCode; }, openCatalogLearningSession, recordLearningReflection, schoolLearningLoop, offerCatalogQuizRemediation, schoolTeacherConfig, mediaBasePath, languageTranscription, createBooksApiRouter });
 
   // Shared dispatch-level idempotency cache for multi-step HTTP dispatches
   // (e.g. POST /api/v1/device/:id/load?mode=adopt).
@@ -5049,61 +2598,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // survives a restart, is visible on the day it happened, and can be re-paired to an
   // entry after the fact. It is what the scale observation service recomputes the
   // in-progress composition from on every read.
-  const observationStore = new YamlObservationStore({
-    dataService,
-    logger: rootLogger.child({ module: 'observation-store' }),
-  });
-
-  // LATE-BOUND composition surface. `ApplyScanToComposition` has to exist HERE (the scan
-  // router takes it), while the observation service cannot be built until the nutribot
-  // container, the head of household and the bot id have all resolved, much further down
-  // this function. The scan use case therefore holds this delegating surface and resolves
-  // on every call — long after startup, never captured.
-  //
-  // ONE surface, shared by the scale signals (which write weights) and the fridge-sheet
-  // scan handler (which writes density/tare). Two of them would mean a scanned density
-  // never meets its weight, the entry never completes, and nothing anywhere reports an
-  // error.
-  //
-  // `available()` is the honest half. The service only exists once the head of household
-  // and the bot id resolve; until then there is nowhere to record a scan. A surface that
-  // quietly swallowed the write would still let the scan use case answer `ok: true` with a
-  // resolved level and label, so the fridge sheet would ACKNOWLEDGE a scan that went
-  // nowhere — the exact silent failure the ⚠️ ack exists to prevent. Saying "unavailable"
-  // instead turns it into a visible refusal, and keeps the station booting.
   let observationService = null;
-  const scaleCompositionSurface = {
-    available: () => observationService !== null,
-    setWeight: (...args) => observationService?.setWeight(...args),
-    setDensity: (...args) => observationService?.setDensity(...args),
-    setContainer: (...args) => observationService?.setContainer(...args),
-    endPlacement: (...args) => observationService?.endPlacement(...args),
-    clear: (...args) => observationService?.clear(...args),
-    undo: (...args) => observationService?.undo(...args),
-    read: (...args) => observationService?.read(...args) ?? null,
-  };
-
-  const scanVocabConfig = normalizeScaleNutribotConfig(
-    configService.getHouseholdAppConfig(householdId, 'scales') || {},
-    { logger: rootLogger.child({ module: 'nutriscan' }) },
-  );
-
-  // Fail SOFT, not fatal. A malformed nutriscan table must not keep the whole
-  // station from booting — media, fitness and the rest have nothing to do with
-  // it. Disable nutriscan, log loudly, let UPC scanning carry on.
-  let applyScanToComposition = null;
-  try {
-    validateScanConfig(scanVocabConfig);
-    applyScanToComposition = new ApplyScanToComposition({
-      store: scaleCompositionSurface,
-      config: scanVocabConfig,
-      logger: rootLogger.child({ module: 'nutriscan' }),
-    });
-  } catch (err) {
-    rootLogger.error('nutriscan.config.invalid', {
-      error: err.message, code: err.code, hint: 'fix the nutribot block in scales.yml',
-    });
-  }
+  const { observationStore, applyScanToComposition } = createHealthScanRuntime({ rootLogger, householdId, getObservationService: () => observationService });
 
   // ==========================================================================
   // Living-room reading sessions.
@@ -5149,105 +2645,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     return { ...profile, id: String(id), name: profile.display_name || profile.username || String(id) };
   };
 
-  let readingSessions = null;
-  let readingSessionInterceptor = null;
-  if (schoolLifecycle.wired && schoolLifecycle.storyTimeLauncher) {
-    const readingLogger = rootLogger.child({ module: 'school-reading' });
-    const { ReadingSessionService } = await import('#apps/school/ReadingSessionService.mjs');
-    const { ReadingApiService } = await import('#apps/school/ReadingApiService.mjs');
-    const { ReadingSessionInterceptor } = await import('#apps/school/readingSessionInterceptor.mjs');
-    const { RecordStoryRead } = await import('#apps/school/usecases/RecordStoryRead.mjs');
-    const { createReadingRouter } = await import('#api/v1/routers/reading.mjs');
-
-    const { makeReadingTimeoutHandler } = await import('#composition/modules/learnerCardActions.mjs');
-    const { YamlReadingSessionTimelineStore } = await import('#adapters/persistence/yaml/YamlReadingSessionTimelineStore.mjs');
-    const { YamlReadingSessionStore } = await import('#adapters/persistence/yaml/YamlReadingSessionStore.mjs');
-    const { EventBusSchoolRealtimeAdapter } = await import('#adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs');
-    const readingTimeline = new YamlReadingSessionTimelineStore({ configService, logger: readingLogger });
-    // The open sessions themselves, so a deploy does not erase the living room.
-    // See IReadingSessionStore: a redeploy four minutes into a 9m40s read-along
-    // left a child finishing his book into a server that had forgotten him.
-    const readingSessionStore = new YamlReadingSessionStore({ configService, logger: readingLogger });
-    // One gateway for the whole reading ceremony. Passing the raw event bus
-    // here stopped working when the application layer moved to the School
-    // realtime port: JavaScript ignored the unknown `eventBus` option, leaving
-    // activation and book-selection broadcasts as silent no-ops.
-    const readingRealtime = new EventBusSchoolRealtimeAdapter({ eventBus });
-
-    readingSessions = new ReadingSessionService({
-      realtime: readingRealtime,
-      logger: readingLogger,
-      // Delivery recovery and idle teardown are both scheduler-owned. Without
-      // this adapter an ACK wait never reaches its deadline, so the first lost
-      // cold-wake broadcast strands the intent forever instead of replaying it.
-      scheduler: new NodeAsyncScheduler(),
-      observationStore: readingTimeline,
-      sessionStore: readingSessionStore,
-      // D6 — the session owns teardown, and this is it. The location's own
-      // `end: tv-off` is suppressed while a session is open (D8), so nothing
-      // else will ever turn this TV off: an abandoned prompt would leave the
-      // living room lit all night and the next card tap would land in a
-      // session belonging to a child who left.
-      onTimeout: makeReadingTimeoutHandler({
-        locations: nfcLocationsForReachability, tv: homeAutomationAdapters.tvAdapter, logger: readingLogger,
-      }),
-    });
-    // Sessions come BACK before the first request is served: a card tapped
-    // during boot must not open a second session for a room that already has
-    // one.
-    await readingSessions.hydrate();
-    readingSessions.start();
-    server?.once?.('close', () => readingSessions.stop());
-
-    readingSessionInterceptor = new ReadingSessionInterceptor({
-      sessions: readingSessions,
-      storyTime: schoolLifecycle.storyTimeLauncher,
-      realtime: readingRealtime,
-      // ONLY the reopen path uses this, and it is the same seam the
-      // learner-card handler wakes with — one room, one way to wake a screen a
-      // mounted widget is about to be told something on. A reopened session is
-      // the one claim that can be racing this reader's own `end: tv-off`
-      // teardown, and a claimed book never reaches `wake-and-load`, so without
-      // it the launch card comes back on a TV the sweep just powered off.
-      wakeScreen: wakeScreenForBroadcast,
-      logger: readingLogger,
-    });
-
-    const readingService = new ReadingApiService({
-      recordStoryRead: new RecordStoryRead({
-        readingLog: schoolLifecycle.stores.readingLog,
-        // A FUNCTION, not a timezone, and deliberately so: this is the ONE
-        // place the household's 4am study-day boundary is applied, and a
-        // second independently-configured source of the shard key would drift
-        // from the launcher's own "how many today" without erroring.
-        studyDay: () => schoolLifecycle.storyTimeLauncher.studyDay(),
-        realtime: readingRealtime,
-        logger: readingLogger,
-      }),
-      sessions: readingSessions,
-      storyTime: schoolLifecycle.storyTimeLauncher,
-      readingLog: schoolLifecycle.stores.readingLog,
-      // Optional: without it the prompt falls back to the learner id, which is
-      // a worse greeting and not a broken one.
-      resolveLearner: resolveLearnerProfile,
-      // Days the whole house is off, in the same shape a syllabus schedule
-      // takes. Only the household declares Christmas — a course's own `except`
-      // excuses a subject, which is a different statement and a different
-      // square on the wall.
-      // Validated once, by the lifecycle, off the same block the agenda and
-      // the term grid plan against — not a second, independent read of the raw
-      // config that could reach a different verdict about the same day.
-      householdCalendar: schoolLifecycle.householdSchedule ?? null,
-      logger: readingLogger,
-      observationStore: readingTimeline,
-    });
-    v1Routers.school.use('/reading', createReadingRouter({ readingService }));
-  } else {
-    rootLogger.warn('school.reading.unwired', {
-      reason: schoolLifecycle.wired ? 'no story-time launcher' : 'school lifecycle not wired',
-    });
-  }
-
+const { readingSessions, readingSessionInterceptor } = await createSchoolReadingRuntime({ schoolLifecycle, rootLogger, configService, eventBus, NodeAsyncScheduler, nfcLocationsForReachability, homeAutomationAdapters, server, wakeScreenForBroadcast, resolveLearnerProfile, v1Routers });
   // ==========================================================================
   // Gated media lessons on the living-room TV — the screen's four HTTP calls.
   //
@@ -5272,9 +2670,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       && schoolLifecycle.useCases?.recordMediaCompletion) {
     try {
       const lessonLogger = rootLogger.child({ module: 'school-lesson' });
-      const { ReadLessonSnapshot } = await import('#apps/school/usecases/ReadLessonSnapshot.mjs');
-      const { RecordCheckpointAnswer } = await import('#apps/school/usecases/RecordCheckpointAnswer.mjs');
-      const { createMediaLessonRouter } = await import('#api/v1/routers/mediaLesson.mjs');
+      const { ReadLessonSnapshot } = await import("../../modules/school/server/application-usecases-read-lesson-snapshot.mjs");
+      const { RecordCheckpointAnswer } = await import("../../modules/school/server/application-usecases-record-checkpoint-answer.mjs");
+      const { createMediaLessonRouter } = await import("../../modules/school/server/api-media-lesson.mjs");
 
       v1Routers.school.use('/lesson', createMediaLessonRouter({
         readLessonSnapshot: new ReadLessonSnapshot({
@@ -5323,7 +2721,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // its contract — the retryable `print_failed`, and the `agenda-suppressed`
     // acknowledgement that is a cooldown tap's only feedback — is testable
     // without booting the app.
-    const { makePrintAgendaHandler } = await import('#composition/modules/learnerCardActions.mjs');
+    const { makePrintAgendaHandler } = await import("../../modules/school/server/composition-learner-card-actions.mjs");
     learnerActions.register('print-agenda', makePrintAgendaHandler({
       resolvePersonalCard: schoolLifecycle.useCases.resolvePersonalCard,
       eventBus,
@@ -5339,49 +2737,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // that was the only learner action wired. It is registered now, and only
   // when the sessions store it needs actually exists: the refusal it replaces
   // is still the right answer for a household with no story-time launcher.
-  if (readingSessions) {
-    const { makeReadingSessionHandler } = await import('#composition/modules/learnerCardActions.mjs');
-    const { NotifyReadingSessionFailure } = await import('#apps/school/workflows/NotifyReadingSessionFailure.mjs');
-    const notifyReadingSessionFailure = new NotifyReadingSessionFailure({
-      notificationTargetForDevice: (id) => deviceServices.deviceService.get(id)?.notifyService ?? null,
-      notifier: homeAutomationAdapters.haGateway?.callService ? homeAutomationAdapters.haGateway : null,
-      studentName: learnerDisplayName,
-      deviceLabel: (id) => deviceServices.deviceService.get(id)?.name ?? null,
-    });
-    const readingSessionHandler = makeReadingSessionHandler({
-      sessions: readingSessions,
-      // D2 — the one question that can refuse a tap: is unrelated content
-      // already up on this reader's TV? The SAME tracker the presence
-      // publisher feeds, so "is something playing" has one answer in the house.
-      isPlaying: (target) => (target ? screenContentTracker.isPlaying(target) === true : false),
-      // Power on and bring the kiosk forward. NOT a content load and NOT a
-      // `clearContent()`: the reading widget is already mounted on that
-      // screen, and reloading the page would drop the very WebSocket that
-      // carried the `session-open` this tap just produced. Now shared with
-      // the media-lesson dispatch, which needs it for the same reason — see
-      // `wakeScreenForBroadcast` above.
-      wakeScreen: wakeScreenForBroadcast,
-      // An ADOPTED story is a pick minted at card time, so it needs the same
-      // study day the interceptor stamps on a book-time pick — from the same
-      // launcher, so the two can never disagree about which day a read counts.
-      studyDay: () => schoolLifecycle.storyTimeLauncher?.studyDay?.() ?? null,
-      // The one story-time failure push. With no HA gateway `notifier` is
-      // null and the use case sends nothing, as the inline copy it replaced did.
-      alertAdult: (args) => notifyReadingSessionFailure.execute(args),
-      eventBus,
-      logger: rootLogger.child({ module: 'trigger-learner' }),
-    });
-    learnerActions.register('reading-session', readingSessionHandler);
-    startReadingSession = ({ learnerId, origin = 'portal' } = {}) => {
-      const locations = Object.entries(nfcLocationsForReachability() || {})
-        .filter(([, cfg]) => cfg?.learner_action === 'reading-session');
-      if (locations.length !== 1) {
-        return { status: 'reading_session_failed', message: 'Story time needs one configured reading room.' };
-      }
-      const [location, cfg] = locations[0];
-      return readingSessionHandler({ learnerId, location, target: cfg?.target ?? cfg?.device ?? null, origin });
-    };
-  }
+  ({ startReadingSession } = await registerSchoolReadingAction({ readingSessions, deviceServices, homeAutomationAdapters, learnerDisplayName, screenContentTracker, wakeScreenForBroadcast, schoolLifecycle, eventBus, rootLogger, learnerActions, nfcLocationsForReachability }));
 
   // Trigger dispatch (NFC modality source: apps/nfc/config.yml; barcode modality
   // shares this same dispatch core — see the barcode-relay wiring just below).
@@ -5491,75 +2847,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // provider in v1; the seam exists so a second measure is a new file rather
   // than a refactor of this one. Read-only: it mints nothing and writes
   // nothing, it only sums what fitness already recorded.
-  const { MeasureRegistry } = await import('#apps/measures/MeasureRegistry.mjs');
-  const { createFitnessRingsProvider } = await import('#apps/measures/fitnessRingsProvider.mjs');
-  const { createMeasuresRouter } = await import('#api/v1/routers/measures.mjs');
-  const { GetWeeklyMeasures } = await import('#apps/measures/GetWeeklyMeasures.mjs');
-  const measuresTimezone = configService.getHouseholdTimezone?.(householdId) || 'UTC';
-  const fitnessRings = createFitnessRingsProvider({
-    timezone: measuresTimezone,
-    sessions: {
-      // The provider asks in study days; SessionService speaks the same
-      // YYYY-MM-DD range, so no translation layer is needed.
-      listSessions: ({ from, to }) => fitnessServices.sessionService
-        .listSessionsInRange(from, to, householdId),
-    },
-  });
-  const measureRegistry = new MeasureRegistry().register(fitnessRings);
-  const weeklyMeasures = new GetWeeklyMeasures({
-    registry: measureRegistry,
-    learners: async () => schoolLearnerDirectory.listLearners(),
-    timezone: measuresTimezone,
-    logger: rootLogger.child({ module: 'measures' }),
-  });
-  v1Routers.measures = createMeasuresRouter({
-    weeklyMeasures,
-  });
+  const {router: measuresRouter,fitnessRings,weeklyMeasures,measuresTimezone} = await createInstalledWeeklyMeasures({configService,householdId,fitnessServices,schoolLearnerDirectory,rootLogger,studyDayFor,isInWindow});
+  v1Routers.measures = measuresRouter;
 
   // Weekly earnings preview — what each learner's week is worth in silver
   // under the household earn rules. Read-only (no ledger writes); evidence
   // through ports School and Fitness implement. Reads at /api/v1/earnings;
   // the teacher console's rate edits go through the school router's gate.
-  {
-    const { EarningsPreviewService } = await import('#apps/economy/EarningsPreviewService.mjs');
-    const { SchoolEarningEvidence } = await import('#apps/school/SchoolEarningEvidence.mjs');
-    const { createEarningsRouter } = await import('#api/v1/routers/earnings.mjs');
-    const termVerdicts = schoolLifecycle?.termVerdicts ?? null;
-    const learnerSessions = schoolLifecycle?.listLearnerSessions ?? null;
-    const curriculum = schoolLifecycle?.stores?.curriculum ?? null;
-    const unavailableSchool = {
-      schoolWeek: async () => { throw new Error('school term verdicts are not wired'); },
-    };
-    const earningsPreview = new EarningsPreviewService({
-      rules: economyApi.earnRulesService,
-      schoolEvidence: termVerdicts && learnerSessions
-        ? new SchoolEarningEvidence({
-          termVerdicts,
-          sessions: learnerSessions,
-          unitInfo: curriculum?.getUnitSummary
-            ? async (unitId) => {
-              const unit = await curriculum.getUnitSummary(unitId);
-              return unit ? { subject: unit.subject ?? null, courseId: unit.courseId ?? null } : null;
-            }
-            : null,
-          logger: rootLogger.child({ module: 'school-earning-evidence' }),
-        })
-        : unavailableSchool,
-      // The same provider the board's weekly ring figure uses.
-      ringEvidence: fitnessRings,
-      learners: async () => schoolLearnerDirectory.listLearners(),
-      clock: () => new Date(),
-      timezone: measuresTimezone,
-      logger: rootLogger.child({ module: 'economy-earnings' }),
-    });
-    v1Routers.earnings = createEarningsRouter({
-      earningsPreview,
-      earnRules: economyApi.earnRulesService,
-      logger: rootLogger.child({ module: 'economy-earnings-api' }),
-    });
-  }
+  v1Routers.earnings = await createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger});
   try {
-    const { WeeklyMeasuresStateGatesProducer } = await import('#apps/measures/WeeklyMeasuresStateGatesProducer.mjs');
+    const { WeeklyMeasuresStateGatesProducer } = await import("../../modules/fitness/server/application/measures/WeeklyMeasuresStateGatesProducer.mjs");
     fitnessStateGatesProducer = new WeeklyMeasuresStateGatesProducer({
       weeklyMeasures,
       publishAssertion: (assertion) => stateGatesModule.ingress.observe(
@@ -5625,7 +2922,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   //
   // Wired here (rather than in the earlier "Barcode ingress" block) because it
   // needs triggerDispatchService, which createTriggerApiRouter() just returned.
-  const { TelegramNutribotIdentity } = await import('#adapters/nutribot/TelegramNutribotIdentity.mjs');
+  const { TelegramNutribotIdentity } = await import("../../modules/nutribot/server/adapters/TelegramNutribotIdentity.mjs");
   const scanDispatch = createScanDispatch({
     schoolLifecycle,
     book: bookScans,
@@ -5696,7 +2993,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'camera-api' }),
   });
 
-  const { createPrewarmRouter } = await import('./4_api/v1/routers/prewarm.mjs');
+  const { createPrewarmRouter } = await import("./4_api/v1/routers/prewarm.mjs");
   v1Routers.prewarm = createPrewarmRouter({
     prewarmService,
     logger: rootLogger.child({ module: 'prewarm-api' })
@@ -5797,16 +3094,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // built from the same NutriBot token) — that is the bug this replaced.
   notificationTelegram.adapter = null;
 
-  const upcHttpClient = new HttpClient({ logger: rootLogger.child({ module: 'upc-http' }) });
-  const nxConfig = nutribotConfig.integrations?.nutritionix;
-  const upcGateway = new UPCGateway({
-    httpClient: upcHttpClient,
-    nutritionix: nxConfig?.app_id ? {
-      appId: nxConfig.app_id,
-      appKey: configService.getSystemAuth('food', 'nutritionix_api_key'),
-    } : null,
-    logger: rootLogger.child({ module: 'upc-gateway' }),
-  });
+  const upcGateway = createHealthNutritionLookup({ rootLogger, nutribotConfig });
 
   // Create conversation state store for nutribot (persists lastReportMessageId for cleanup)
   // Per-user storage: users/{username}/conversations/nutribot/
@@ -5847,45 +3135,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'nutribot' })
   });
 
-  // Scale → Nutribot: settled kitchen-scale weights become density-logged food entries,
-  // posted to the household head. Target chat resolved from head identity.
-  try {
-    const scaleHeadUser = configService.getHeadOfHousehold();
-    const scaleHeadPlatformId = scaleHeadUser
-      ? userIdentityService.resolvePlatformId('telegram', scaleHeadUser)
-      : null;
-    const scaleBotId = systemBots.nutribot?.telegram?.bot_id || '';
-    if (scaleHeadUser) {
-      observationService = createObservationService({
-        // The composition root owns the transport. The application layer describes a
-        // SCALE-SIGNAL SOURCE, not a generic event bus — which is also why the old bridge
-        // had to live in the adapter layer to subscribe at all.
-        scaleGateway: {
-          subscribe: (listener) => {
-            const unsubscribe = eventBus.subscribe('food-scale', listener);
-            return () => { try { unsubscribe?.(); } catch { /* noop */ } };
-          },
-        },
-        observationStore,
-        nutribotContainer: nutribotServices.nutribotContainer,
-        // For the Phase-1 `settled: false` stamp, and for resolving the committed ITEM's
-        // uuid — which is what an observation's `pairedEntryUuid` points at.
-        foodLogStore: nutribotServices.nutribotContainer.getFoodLogStore?.() || null,
-        userId: scaleHeadUser,
-        conversationId: scaleHeadPlatformId && scaleBotId ? `telegram:b${scaleBotId}_c${scaleHeadPlatformId}` : `device:${scaleHeadUser}`,
-        scaleConfig: nutribotServices.scaleConfig,
-        timezone: configService.getHouseholdTimezone?.(householdId),
-        clock: () => new Date(),
-        scheduler: { setTimeout, clearTimeout },
-        commitQuietMs: (nutribotServices.scaleConfig?.commitQuietSec ?? 25) * 1000,
-        logger: rootLogger.child({ module: 'observation-service' }),
-      });
-    } else {
-      rootLogger.warn?.('observation.service.skipped', { hasPlatformId: !!scaleHeadPlatformId, hasBotId: !!scaleBotId });
-    }
-  } catch (e) {
-    rootLogger.warn?.('observation.service.wireFailed', { error: e.message });
-  }
+  startHealthScaleObservation({ userIdentityService, systemBots, eventBus, observationStore, nutribotServices, householdId, rootLogger, setObservationService: (service) => { observationService = service; } });
 
   const nutribotApiResult = createNutribotApiRouter({
     cleanupProvider: () => nutritionCleanup,
@@ -5905,8 +3155,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   webNutribotAdapterProxy._delegate = nutribotApiResult.webNutribotAdapter;
 
   try {
-    const { startNutritionSurfaceSync } = await import('#composition/modules/nutritionSurfaceSync.mjs');
-    const receiptSync = startNutritionSurfaceSync({ configService, userIdentityService, dataService, nutribotServices,
+    const { startNutritionSurfaceSync } = await import("../../modules/health/server/composition/nutritionSurfaceSync.mjs");
+    const receiptSync = startNutritionSurfaceSync({ configService, createDestinationFor: () => createNutribotDestinationResolver({ configService, userIdentityService }), dataService, nutribotServices,
       logger: rootLogger.child({ module: 'nutrition-surface-sync' }), server });
     nutritionReceiptPublisher = receiptSync.publisher || null;
   } catch (error) {
@@ -6029,8 +3279,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   try {
-    const { createNutritionCleanup } = await import('#composition/modules/nutritionCleanup.mjs');
-    nutritionCleanup = createNutritionCleanup({ configService, userIdentityService, dataService, nutribotServices, upcGateway,
+    const { createNutritionCleanup } = await import("../../modules/health/server/composition/nutritionCleanup.mjs");
+    nutritionCleanup = createNutritionCleanup({ configService, createDestinationFor: () => createNutribotDestinationResolver({ configService, userIdentityService, optional: true }), dataService, nutribotServices, upcGateway,
       decisionGateway: scopedGateway(decisionGateway, { app: 'health' }),
       agentOrchestrator: agentsServices.agentOrchestrator, usageRecorder: agentUsageRecorder,
       logger: rootLogger.child({ module: 'nutrition-cleanup' }), server,
@@ -6204,7 +3454,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   if (agentsServices.scheduler) {
     agentsServices.scheduler.registerTask('school:content-manifest', '50 3 * * *', async () => {
       try {
-        const { ContentTreeManifest } = await import('#adapters/school/content/ContentTreeManifest.mjs');
+        const { ContentTreeManifest } = await import("../../modules/school/server/adapters-content-content-tree-manifest.mjs");
         new ContentTreeManifest({
           contentDir: path.join(contentPath, 'school'),
           manifestFile: configService.getRuntimeCachePath('school/content-manifest.yml'),
@@ -6222,7 +3472,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   if (agentsServices.scheduler && schoolDatastore) {
     agentsServices.scheduler.registerTask('school:retention-sweep', '30 3 * * *', async () => {
       try {
-        const { SchoolRetentionSweep } = await import('#apps/school/SchoolRetentionSweep.mjs');
+        const { SchoolRetentionSweep } = await import("../../modules/school/server/application-school-retention-sweep.mjs");
         const sweep = new SchoolRetentionSweep({
           datastore: schoolDatastore,
           schoolService,
@@ -6235,107 +3485,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
   }
 
-  // Weekly meal-template curation (PRD F6.2): mines the last 90 days for
-  // repeated combos and files them as PROPOSALS. It creates no template — the
-  // person approves or dismisses each one in the picker, and a dismissal is
-  // remembered forever. Safe to re-run: every proposal is keyed by its core
-  // set and an already-known key is skipped, so a double tick is a no-op.
-  // Sunday 04:10 — after the nightly archive rotation, before anyone is up.
-  //
-  // Composed inside a guard, and NOT allowed to be fatal: a wiring error in a
-  // nutrition convenience must not take media, fitness and school down at boot
-  // (the same posture as the unwired-scale decision). It fails loudly in the
-  // log and the weekly task simply never registers.
-  let templateCuration = null;
-  try {
-    templateCuration = createTemplateCurationJob({
-      healthServices,
-      logger: rootLogger.child({ module: 'health-template-curation' }),
-    });
-  } catch (err) {
-    rootLogger.error('health.templates.curation.compose_failed', { error: err.message });
-  }
-  if (agentsServices.scheduler && templateCuration) {
-    agentsServices.scheduler.registerTask('health:template-curation', '10 4 * * 0', async () => {
-      const username = configService.getHeadOfHousehold?.() || configService.getDefaultUsername?.();
-      if (!username) {
-        rootLogger.warn('health.templates.curation.no_user', {});
-        return;
-      }
-      try {
-        await templateCuration.run(username);
-      } catch (err) {
-        rootLogger.warn('health.templates.curation.failed', { error: err.message });
-      }
-    });
-  }
+  registerHealthMaintenance({ healthServices, rootLogger, scheduler: agentsServices.scheduler });
 
-  // Weekly food-catalog drift audit (catalog-density fix, step 5). It READS:
-  // it compares each catalog entry's derived serving against that food's own
-  // logged history and logs what disagrees. It writes no nutrition and files
-  // no proposal on its own — the report is recomputed on demand at
-  // GET /api/v1/health/nutrition/catalog/audit, where a person approves or
-  // dismisses each row. Sunday 04:10, beside the template curation, for the
-  // same reason: after the nightly archive rotation, before anyone is up.
-  //
-  // Composed inside a guard and NOT allowed to be fatal, the same posture as
-  // the curation job above: a wiring error in a nutrition convenience must not
-  // take media, fitness and school down at boot.
-  let catalogAudit = null;
-  try {
-    catalogAudit = createCatalogAuditService({
-      healthServices,
-      logger: rootLogger.child({ module: 'health-catalog-audit' }),
-    });
-  } catch (err) {
-    rootLogger.error('health.catalog.audit.compose_failed', { error: err.message });
-  }
-  if (agentsServices.scheduler && catalogAudit) {
-    agentsServices.scheduler.registerTask('health:catalog-audit', '10 4 * * 0', async () => {
-      const username = configService.getHeadOfHousehold?.() || configService.getDefaultUsername?.();
-      if (!username) {
-        rootLogger.warn('health.catalog.audit.no_user', {});
-        return;
-      }
-      try {
-        const report = await catalogAudit.report(username);
-        rootLogger.info('health.catalog.audit.weekly', {
-          username,
-          scanned: report.scanned,
-          considered: report.considered,
-          flagged: report.entries.length,
-          names: report.entries.slice(0, 20).map((e) => e.name),
-        });
-      } catch (err) {
-        rootLogger.warn('health.catalog.audit.failed', { error: err.message });
-      }
-    });
-  }
-
-  if (agentsServices.scheduler) {
-    agentsServices.scheduler.registerTask('lifeplan:ceremony-check', '0 * * * *', async () => {
-      const lifePlanStore = lifeplanResult.container.getLifePlanStore();
-      for (const username of lifePlanStore.listUsernames()) {
-        await lifeplanResult.ceremonyScheduler.checkAndNotify(username);
-      }
-    });
-  }
-
-  // Nightly drift/allocation snapshot per user with a plan — the dashboard's
-  // drift gauge and the weekly retro read these snapshots. Also flushes any
-  // stale pre-fix snapshots that carried a false 'reconsidering' status.
-  if (agentsServices.scheduler) {
-    agentsServices.scheduler.registerTask('lifeplan:drift-refresh', '0 2 * * *', async () => {
-      const lifePlanStore = lifeplanResult.container.getLifePlanStore();
-      for (const username of lifePlanStore.listUsernames()) {
-        try {
-          await lifeplanResult.services.driftService.computeAndSave(username);
-        } catch (err) {
-          rootLogger.warn('lifeplan.drift.refresh_failed', { username, error: err.message });
-        }
-      }
-    });
-  }
+  registerLifeplanMaintenance({ agentsServices, lifeplanResult, rootLogger });
 
   // Fitness recap sweep — safety net that recaps sessions ended via the common
   // paths (inactivity, closed tab, crash) that never fire a per-event trigger,
@@ -6400,8 +3552,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }
 
   // Memory CRUD router — mounted once for all agents (Phase 3 T4)
-  const { AgentMemoryAdministrationService } = await import('#apps/agents/AgentMemoryAdministrationService.mjs');
-  const { WorkingMemoryState } = await import('#apps/agents/framework/WorkingMemory.mjs');
+  const { AgentMemoryAdministrationService } = await import("../../capabilities/agent-runtime/server/application/AgentMemoryAdministrationService.mjs");
+  const { WorkingMemoryState } = await import("../../capabilities/agent-runtime/server/application/framework/WorkingMemory.mjs");
   v1Routers.agentMemory = createAgentMemoryRouter({
     memoryAdministration: new AgentMemoryAdministrationService({
       orchestrator: agentsServices.orchestrator,
@@ -6530,57 +3682,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
 
-  // Media job executor (YouTube downloads, etc.)
-  const mediaExecutor = new MediaJobExecutor({
-    logger: rootLogger.child({ module: 'media-executor' })
-  });
-
-  // Register fresh video download handler (only if mediaBasePath is configured)
-  let mediaDownloadService = null;
-  if (mediaBasePath) {
-    const mediaPath = join(mediaBasePath, 'video', 'news');
-    const { NewsMediaStore } = await import('#adapters/content/media/NewsMediaStore.mjs');
-    const newsMediaStore = new NewsMediaStore({ mediaRoot: mediaBasePath });
-
-    const videoSourceGateway = new YtDlpAdapter({
-      downloadRoot: mediaPath,
-      logger: rootLogger.child({ module: 'ytdlp' })
-    });
-
-    mediaDownloadService = new MediaDownloadService({
-      videoSourceGateway,
-      newsMediaStore,
-      downloadThumbnail: (url, provider) => videoSourceGateway.downloadThumbnail(url, provider),
-      logger: rootLogger.child({ module: 'media-download' })
-    });
-
-    const { FilesystemFreshVideoMediaStore } = await import('#adapters/persistence/files/FilesystemFreshVideoMediaStore.mjs');
-    const freshVideoMediaStore = new FilesystemFreshVideoMediaStore({
-      mediaRoot: mediaPath,
-      logger: rootLogger.child({ module: 'freshvideo-store' }),
-    });
-    const freshVideoSourceCatalog = {
-      list: () => (loadFile('media/sources') || []).map((source) => ({
-        provider: source.shortcode,
-        sourceRef: {
-          platform: source.src || 'youtube',
-          collectionType: String(source.type || 'playlist').toLowerCase(),
-          locator: source.playlist,
-        },
-      })),
-    };
-    mediaExecutor.register('freshvideo', createFreshVideoJobHandler({
-      videoSourceGateway,
-      sourceCatalog: freshVideoSourceCatalog,
-      mediaStore: freshVideoMediaStore,
-      lockOwnerId: process.pid,
-      logger: rootLogger.child({ module: 'freshvideo' })
-    }));
-  } else {
-    rootLogger.warn?.('freshvideo.disabled', {
-      reason: 'mediaBasePath not configured - video downloads disabled'
-    });
-  }
+  const {mediaExecutor,mediaDownloadService}=await createMediaJobsRuntime({rootLogger,mediaBasePath,loadFile});
 
   // Camera detection ledger (Pipeline C). Registered unconditionally: it needs
   // no media path and no NAS — only the Reolink search API — so it should keep
@@ -6588,46 +3690,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // perishable half of the camera archive (see cameraLedgerJobHandler).
   // D1: bootstrap owns which concrete camera adapters are used; the handlers
   // receive them through one semantic runtime gateway.
-  const { ConfiguredCameraJobRuntimeGateway } = await import('#composition/modules/ConfiguredCameraJobRuntimeGateway.mjs');
-  const { CameraLedgerStore } = await import('#adapters/camera/CameraLedgerStore.mjs');
-  const { FilesystemCameraArchiveArtifacts } = await import('#adapters/camera/FilesystemCameraArchiveArtifacts.mjs');
-  const { FilesystemContactSheetArtifacts } = await import('#adapters/camera/FilesystemContactSheetArtifacts.mjs');
-  const cameraRuntimeGateway = new ConfiguredCameraJobRuntimeGateway({
-    configService,
-    haGateway: householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null,
-    factories: {
-      createReolinkClient: (options) => new ReolinkClient(options),
-      makeSource,
-      createDetectionSource: (options) => createHaDetectionSource(options),
-      decodeTriggerBits: parseTriggerBits,
-      createEncoder: (options) => new ArchiveEncoder(options),
-      createManifestStore: (options) => new ArchiveManifestStore(options),
-      createArchiveArtifacts: (options) => new FilesystemCameraArchiveArtifacts(options),
-      createSheetArtifacts: () => new FilesystemContactSheetArtifacts(),
-    },
-  });
-  const cameraLedgerStore = new CameraLedgerStore({
-    resolveDestinations: () => configService
-      .getHouseholdAppConfig(householdId, 'camera-archive')?.storage?.ledgerPaths || [],
-  });
-  mediaExecutor.register('camera-ledger', createCameraLedgerJobHandler({
-    runtimeGateway: cameraRuntimeGateway,
-    ledgerStore: cameraLedgerStore,
-    householdId,
-    logger: rootLogger.child({ module: 'camera-ledger' })
-  }));
-
-  // Camera archive (Pipeline A) — scored session selection under a hard budget
-  // cap, plus day/night timelapses. Scheduled AFTER camera-ledger so the day's
-  // detections exist to select against; without them selection degrades to
-  // duration and bitrate density alone.
-  mediaExecutor.register('camera-archive', createCameraArchiveJobHandler({
-    runtimeGateway: cameraRuntimeGateway,
-    ledgerStore: cameraLedgerStore,
-    householdId,
-    logger: rootLogger.child({ module: 'camera-archive' })
-  }));
-
+  await registerCameraJobs({ configService, householdAdapters, householdId, mediaExecutor, rootLogger });
   const schedulerService = new SchedulerService({
     timezone: 'America/Los_Angeles'
   });
@@ -6659,28 +3722,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // lifecycle itself is (an install without it has no sessions to sweep).
   let schoolMaintenanceExecutor = null;
   if (schoolLifecycle.wired && schoolLifecycle.useCases?.markSessionAbandoned) {
-    const { SchoolMaintenanceExecutor } = await import('#apps/school/SchoolMaintenanceExecutor.mjs');
+    const { SchoolMaintenanceExecutor } = await import("../../modules/school/server/application-school-maintenance-executor.mjs");
     schoolMaintenanceExecutor = new SchoolMaintenanceExecutor({
       markSessionAbandoned: schoolLifecycle.useCases.markSessionAbandoned,
       logger: rootLogger.child({ module: 'school-maintenance' }),
     });
   }
 
-  const plexValidationAdapter = contentRegistry?.get('plex') || null;
-  const mediaMemoryValidator = plexValidationAdapter?.client
-    ? new MediaMemoryValidatorService({
-      plexClient: new PlexMemoryValidationGateway({ client: plexValidationAdapter.client }),
-      watchStateStore: new YamlMediaMemoryValidationStore({
-        basePath: path.join(mediaMemoryPath, 'plex'),
-      }),
-      random: Math.random,
-    })
-    : null;
+  const mediaMemoryValidator=createMediaMemoryValidator({contentRegistry,mediaMemoryPath});
   const applicationJobExecutor = createApplicationScheduledJobs({
     financeHarvestService: financeServices.harvestService,
     healthService: healthServices.healthService,
     archiveService: ArchiveService,
-    loadArchiveConfig: archiveConfigSource.read,
+    loadArchiveConfig,
     foodLogStore: nutribotServices.foodLogStore,
     nutriListStore: nutribotServices.nutriListStore,
     mediaMemoryValidator,
@@ -6723,22 +3777,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // the `schedule:` block in artmode.yml; "is a video playing" comes from the
   // ScreenContentTracker. Shares the scheduler enable gate.
   const ambientDataDir = configService.getDataDir();
-  const ambientScheduler = new AmbientSchedulerService({
-    loadSchedule: async () => normalizeWindows(
+  const ambientScheduler = createAmbientScheduler({ loadSchedule: async () => normalizeWindows(
       (await loadArtmodeConfig(configService.getHouseholdPath(''), rootLogger)).schedule,
       { defaultDevice: 'livingroom-tv' },
-    ),
-    tracker: screenContentTracker,
-    wakeAndLoadService,
-    deviceService: deviceServices.deviceService,
-    stateStore: new YamlAmbientStateStore({
-      dataDir: ambientDataDir,
-      logger: rootLogger.child({ module: 'ambient-state' }),
-    }),
-    scheduler: new NodeApplicationScheduler(),
-    timeZone: 'America/Los_Angeles',
-    logger: rootLogger.child({ module: 'ambient-scheduler' }),
-  });
+    ), tracker: screenContentTracker, wakeAndLoadService, deviceService: deviceServices.deviceService, dataDir: ambientDataDir, createScheduler: () => new NodeApplicationScheduler(), loggerFor: module => rootLogger.child({ module }) });
   if (enableScheduler) {
     ambientScheduler.start();
   }
@@ -6761,20 +3803,20 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const canvasBasePath = app.get('canvasBasePath');
   v1Routers.canvas = createCanvasRouter({
     canvasService: null,
-    getCanvasImage: canvasBasePath
-      ? new GetCanvasImage({ repository: new FilesystemCanvasImageRepository({ rootDir: canvasBasePath }) })
-      : null,
+    getCanvasImage: createCanvasImageUseCase(canvasBasePath),
   });
 
   // Screens router for screen configurations
   const screensLogger = rootLogger.child({ module: 'screens-api' });
+  const screensHouseholdDir = configService.getHouseholdPath('');
   v1Routers.screens = createScreensRouter({
     screensQueryService: new ScreensQueryService({
       screensRepository: new FilesystemScreensRepository({
-        householdDir: configService.getHouseholdPath(''),
+        householdDir: screensHouseholdDir,
         logger: screensLogger,
       }),
       logger: screensLogger,
+      expandScreensaverPreset: createArtScreenPresets({ screensHouseholdDir, screensLogger }),
     }),
     logger: screensLogger,
   });
@@ -6856,14 +3898,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     }),
     logger: adminApiLogger.child?.({ submodule: 'content' }) || adminApiLogger,
   });
-  const adminArtService = new AdminArtService({
-    repository: new FilesystemArtAdminRepository({
-      mediaPath: mediaBasePath || imgBasePath,
-      householdDir: configService.getHouseholdPath(''),
-      logger: adminApiLogger,
-    }),
-    logger: adminApiLogger.child?.({ submodule: 'art' }) || adminApiLogger,
-  });
+  const adminArtService = createArtAdminService({ mediaBasePath, imgBasePath, configService, adminApiLogger });
   const adminImageService = new AdminImageService({
     store: new AdminImageFileStore({ mediaPath: mediaBasePath || imgBasePath }),
     source: new FetchAdminImageSource(),
@@ -6896,7 +3931,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Test infrastructure router (dev/test only)
-  const { createTestRouter } = await import('./4_api/v1/routers/test.mjs');
+  const { createTestRouter } = await import("./4_api/v1/routers/test.mjs");
   // Shutoff-valve test controls target the live registered Plex proxy instance
   // (per-instance state, no module-level singleton). Null when Plex isn't configured.
   const plexProxyAdapter = contentProxyService.getAdapter('plex');
@@ -6914,10 +3949,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Launch & Sync routers
-  const { createLaunchRouter } = await import('./4_api/v1/routers/launch.mjs');
-  const { createSyncRouter } = await import('./4_api/v1/routers/sync.mjs');
-  const { LaunchService } = await import('#apps/content/services/LaunchService.mjs');
-  const { SyncService } = await import('#apps/content/services/SyncService.mjs');
+  const { createLaunchRouter } = await import("./4_api/v1/routers/launch.mjs");
+  const { createSyncRouter } = await import("./4_api/v1/routers/sync.mjs");
+  const { LaunchService } = await import("../../capabilities/device-dispatch/server/application/LaunchService.mjs");
+  const { SyncService } = await import("../../capabilities/content-catalog/server/application/services/SyncService.mjs");
   const { AdbLauncher } = await import('#adapters/devices/AdbLauncher.mjs');
 
   const adbLauncher = new AdbLauncher({
@@ -6946,7 +3981,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const fileServer = Object.values(deviceConfigs).find(d => d.file_server)?.file_server;
   const xploreBaseUrl = fileServer ? `http://${fileServer.host}:${fileServer.port}` : null;
   if (retroarchConfig?.consoles && xploreBaseUrl) {
-    const { RetroArchSyncAdapter } = await import('#adapters/content/retroarch/RetroArchSyncAdapter.mjs');
+    const { RetroArchSyncAdapter } = await import("../../capabilities/content-catalog/server/adapters/providers/retroarch/RetroArchSyncAdapter.mjs");
     const retroarchSyncAdapter = new RetroArchSyncAdapter({
       xploreBaseUrl,
       sourceConfig: retroarchConfig.source || {},
@@ -6967,75 +4002,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // === Weekly Review ===
-  if (immichConfig) {
-    const { ImmichClient } = await import('#adapters/content/gallery/immich/ImmichClient.mjs');
-    const wrImmichClient = new ImmichClient(immichConfig, { httpClient: axios });
-    const weeklyReviewAi = scopedGateway(sharedAiGateway, { app: 'weekly-review' });
-    const weeklyReviewImmichAdapter = new WeeklyReviewImmichAdapter(
-      { priorityPeople: [], proxyPath: '/api/v1/proxy/immich' },
-      { client: wrImmichClient, logger: rootLogger.child({ module: 'weekly-review-immich' }) }
-    );
-
-    const weeklyReviewCalendarAdapter = new WeeklyReviewCalendarAdapter(
-      { householdId, defaultUser: configService.getHeadOfHousehold?.() || 'user_1' },
-      { userDataService, logger: rootLogger.child({ module: 'weekly-review-calendar' }) }
-    );
-
-    // Weather history store for weekly review (reads daily snapshots)
-    const { YamlWeatherDatastore } = await import('#adapters/persistence/yaml/YamlWeatherDatastore.mjs');
-    const wrWeatherStore = new YamlWeatherDatastore({
-      dataService,
-      configService,
-      logger: rootLogger.child({ module: 'weekly-review-weather' }),
-    });
-
-    const weeklyReviewHouseholdDir = configService.getHouseholdPath('', householdId);
-    const weeklyReviewCommandRunner = new NodeCommandRunner();
-    const weeklyReviewService = new WeeklyReviewService(
-      {
-        dataPath: dataBasePath,
-        householdDir: weeklyReviewHouseholdDir,
-        mediaPath: mediaBasePath,
-        householdId,
-        timezone: configService.getTimezone?.() || 'UTC',
-      },
-      {
-        immichAdapter: weeklyReviewImmichAdapter,
-        calendarData: weeklyReviewCalendarAdapter,
-        sessionService: fitnessServices?.sessionService || null,
-        weatherStore: wrWeatherStore,
-        transcriptionService: weeklyReviewAi ? {
-          transcribe: async (buffer, opts) => {
-            const raw = await weeklyReviewAi.transcribe(buffer, {
-              filename: 'weekly-review.webm',
-              contentType: opts.mimeType,
-              prompt: opts.prompt,
-            });
-            const clean = await weeklyReviewAi.chat(
-              [
-                { role: 'system', content: 'Clean up this family conversation transcript. Fix spelling, grammar, and punctuation. Preserve the natural conversational tone. Do not add or remove content.' },
-                { role: 'user', content: raw },
-              ],
-              { temperature: 0.2, maxTokens: 4000 }
-            );
-            return { transcriptRaw: raw, transcriptClean: clean };
-          },
-        } : null,
-        reviewStore: new FilesystemWeeklyReviewStore({
-          householdDir: weeklyReviewHouseholdDir,
-          mediaPath: mediaBasePath,
-          logger: rootLogger.child({ module: 'weekly-review-store' }),
-        }),
-        runCommand: weeklyReviewCommandRunner.run,
-        logger: rootLogger.child({ module: 'weekly-review' }),
-      }
-    );
-
-    v1Routers['weekly-review'] = createWeeklyReviewRouter({
-      weeklyReviewService,
-      logger: rootLogger.child({ module: 'weekly-review-api' }),
-    });
-  }
+  if (immichConfig) {  await installWeeklyReview({ configService, dataService, immichConfig, sharedAiGateway, rootLogger, householdId, userDataService, dataBasePath, mediaBasePath, fitnessServices, v1Routers });
+}
 
   // ==========================================================================
   // Mount API v1 Router

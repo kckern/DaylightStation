@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '../../../../../tests/preimplementation/application-modules/drivers/remaining-http-request.mjs';
 import { createProxyRouter } from './proxy.mjs';
 import { RegistryPlaybackStreamGateway } from '../../../1_adapters/proxy/RegistryPlaybackStreamGateway.mjs';
 

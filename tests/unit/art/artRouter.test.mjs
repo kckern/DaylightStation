@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createArtRouter } from '../../../backend/src/4_api/v1/routers/art.mjs';
+import { createArtRouter } from "../../../modules/art/server/api/art.mjs";
 
 // Find the GET /featured handler in an express router and return it.
 function featuredHandler(router) {

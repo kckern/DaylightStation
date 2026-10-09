@@ -28,14 +28,14 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import yaml from 'js-yaml';
 
-import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
-import { createNutritionProviders } from '#composition/modules/sheetProviders.mjs';
+import { normalizeScaleNutribotConfig } from '../modules/health/server/scale-config.mjs';
+import { createNutritionProviders } from '../modules/health/server/nutrition-sheets.mjs';
 import { createIconLoader } from '#composition/modules/iconLoader.mjs';
 import { createCellRenderers } from '#rendering/pdf/cellRenderers.mjs';
-import { createSheetService } from '#apps/sheets/SheetService.mjs';
-import { renderSheetPdf } from '#rendering/pdf/QRSheetRenderer.mjs';
-import { layout as layoutSheet } from '#rendering/pdf/SheetLayout.mjs';
-import { parseScan } from '#domains/nutrition/services/ScanVocabularyService.mjs';
+import { createSheetService } from "../capabilities/printable-sheets/server/application/SheetService.mjs";
+import { renderSheetPdf } from "../capabilities/printable-sheets/server/rendering/QRSheetRenderer.mjs";
+import { layout as layoutSheet } from "../capabilities/printable-sheets/server/rendering/SheetLayout.mjs";
+import { parseScan } from "../modules/health/server/nutrition-scan.mjs";
 
 // ---- args ------------------------------------------------------------------
 // Single left-to-right pass. An earlier version inferred the positional by

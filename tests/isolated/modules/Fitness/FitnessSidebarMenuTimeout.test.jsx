@@ -2,7 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, cleanup } from '@testing-library/react';
 
-vi.mock('@/context/FitnessContext.jsx', () => ({
+vi.mock("../../../../modules/fitness/browser/context/FitnessContext.jsx", () => ({
   useFitnessContext: () => ({
     deviceAssignments: [],
     getDeviceAssignment: () => null,
@@ -19,7 +19,7 @@ vi.mock('@/lib/api.mjs', () => ({
 }));
 
 vi.mock(
-  '#frontend/modules/Fitness/player/panels/TouchVolumeButtons.jsx',
+  "../../../../capabilities/playback/browser/volume/TouchVolumeButtons.jsx",
   () => ({
     TouchVolumeButtons: ({ onSelect }) => (
       <button type="button" data-testid="touch-volume-stub" onClick={() => onSelect?.(3)}>
@@ -32,7 +32,7 @@ vi.mock(
   })
 );
 
-import FitnessSidebarMenu from '#frontend/modules/Fitness/player/panels/FitnessSidebarMenu.jsx';
+import FitnessSidebarMenu from "../../../../modules/fitness/browser/player/panels/FitnessSidebarMenu.jsx";
 
 describe('FitnessSidebarMenu — idle close timer', () => {
   beforeEach(() => { vi.useFakeTimers(); });

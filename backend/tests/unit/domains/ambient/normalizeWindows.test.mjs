@@ -1,5 +1,5 @@
 // backend/tests/unit/domains/ambient/normalizeWindows.test.mjs
-import { normalizeWindows } from '#domains/ambient/normalizeWindows.mjs';
+import { normalizeWindows } from "../../../../../modules/screens/server/domain/ambient/normalizeWindows.mjs";
 
 describe('normalizeWindows', () => {
   it('normalizes a valid window with default device', () => {

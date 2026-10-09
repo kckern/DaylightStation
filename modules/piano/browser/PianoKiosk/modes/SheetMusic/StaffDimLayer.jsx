@@ -1,5 +1,5 @@
 import { useLayoutEffect } from 'react';
-import { staffGroups } from '../../../../../../frontend/src/modules/MusicNotation/renderers/osmdRender.js';
+import { staffGroups } from "../../../../../../capabilities/music-notation/browser/renderers/osmdRender.js";
 
 const DIM = 'is-dimmed';
 

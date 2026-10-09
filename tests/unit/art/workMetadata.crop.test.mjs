@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import yaml from 'js-yaml';
 import { isValidCrop, mergeWorkMetadata }
-  from '../../../backend/src/1_adapters/content/art/workMetadata.mjs';
+  from "../../../modules/art/server/adapters/workMetadata.mjs";
 
 describe('isValidCrop', () => {
   it('accepts a valid band and the not-croppable flag', () => {

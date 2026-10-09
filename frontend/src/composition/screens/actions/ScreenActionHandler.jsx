@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useScreenAction } from "../../../../../capabilities/screen-host/browser/input.mjs";
 import { useScreenOverlay } from "../../../../../capabilities/screen-host/browser/overlays.mjs";
-import { useHasMenuNavigationContext, useMenuNavigationContext } from '../../../context/useMenuNavigationContext.js';
+import { useHasMenuNavigationContext, useMenuNavigationContext } from "../../../../../capabilities/screen-host/browser/menu-navigation.mjs";
 import { usePip } from "../../../../../capabilities/screen-host/browser/pip.mjs";
 import { DaylightAPI } from '../../../lib/api.mjs';
-import MenuStack from '../../../modules/Menu/MenuStack.jsx';
+import MenuStack from "../../../../../modules/media/browser/menu.mjs";
 import { ScreenPlayer as Player } from '../publishers/ScreenPlayer.jsx';
 import { getPlayerQueueOpRegistry } from "../../../../../capabilities/playback/browser/contracts.mjs";
 import { usePlayerSessionBinding } from "../../../../../capabilities/playback/browser/sessions.mjs";

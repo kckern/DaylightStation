@@ -14,7 +14,7 @@ vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUse
 // EditorSurface pulls in the OSMD renderer + MIDI context; stub both so the mode
 // mounts in happy-dom without engraving.
 vi.mock('../../PianoMidiContext.jsx', () => ({ usePianoMidi: () => ({ subscribe: () => () => {} }) }));
-vi.mock('../../../../../../frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.jsx', () => ({
+vi.mock("../../../../../../capabilities/music-notation/browser/renderers/MusicXmlRenderer.jsx", () => ({
   MusicXmlRenderer: ({ children }) => <div data-testid="renderer">{children}</div>,
 }));
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { GetMaterialProgressSummary } from '#apps/school/GetMaterialProgressSummary.mjs';
+import { GetMaterialProgressSummary } from "../../../../modules/school/server/application/GetMaterialProgressSummary.mjs";
 
 const materials = [
   { id: 'plex:v1', title: 'Bill Nye', subject: 'science', category: 'course' },

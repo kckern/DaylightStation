@@ -8,9 +8,9 @@ jest.unstable_mockModule('music-metadata', () => ({ parseFile: jest.fn() }));
 import express from 'express';
 import request from 'supertest';
 import path from 'path';
-import { YamlMediaProgressMemory } from '#adapters/persistence/yaml/YamlMediaProgressMemory.mjs';
-import { ContentSourceRegistry } from '#adapters/content/ContentSourceRegistry.mjs';
-import { ScriptureResolver } from '#adapters/content/readalong/resolvers/scripture.mjs';
+import { YamlMediaProgressMemory } from "../../../../capabilities/playback/server/adapters/persistence/YamlMediaProgressMemory.mjs";
+import { ContentSourceRegistry } from "../../../../capabilities/content-catalog/server/adapters/ContentSourceRegistry.mjs";
+import { ScriptureResolver } from "../../../../capabilities/content-catalog/server/adapters/providers/readalong/resolvers/scripture.mjs";
 
 const fixturesPath = path.resolve(process.cwd(), 'tests/_fixtures');
 
@@ -19,8 +19,8 @@ describe('Content Domain Integration', () => {
   let registry;
 
   beforeAll(async () => {
-    const { createApiRouters } = await import('#composition/modules/contentApi.mjs');
-    const { LocalContentAdapter } = await import('#adapters/content/local-content/LocalContentAdapter.mjs');
+    const { createApiRouters } = await import("../../../../backend/src/5_composition/modules/contentApi.mjs");
+    const { LocalContentAdapter } = await import("../../../../capabilities/content-catalog/server/adapters/providers/local-content/LocalContentAdapter.mjs");
     const mediaProgressMemory = new YamlMediaProgressMemory({
       basePath: path.join(fixturesPath, 'watch-state')
     });

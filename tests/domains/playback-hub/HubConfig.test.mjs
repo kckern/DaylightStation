@@ -1,16 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { HubConfig } from '../../../backend/src/2_domains/playback-hub/entities/HubConfig.mjs';
-import { HubDevice } from '../../../backend/src/2_domains/playback-hub/entities/HubDevice.mjs';
-import { ScheduledFire } from '../../../backend/src/2_domains/playback-hub/entities/ScheduledFire.mjs';
-import { SlotPosition } from '../../../backend/src/2_domains/playback-hub/value-objects/SlotPosition.mjs';
-import { SlotColor } from '../../../backend/src/2_domains/playback-hub/value-objects/SlotColor.mjs';
-import { SlotClass } from '../../../backend/src/2_domains/playback-hub/value-objects/SlotClass.mjs';
-import { VolumeBounds } from '../../../backend/src/2_domains/playback-hub/value-objects/VolumeBounds.mjs';
-import { DayPattern } from '../../../backend/src/2_domains/playback-hub/value-objects/DayPattern.mjs';
-import { QueueRef } from '../../../backend/src/2_domains/playback-hub/value-objects/QueueRef.mjs';
+import { HubConfig } from "../../../modules/media/server/domain/playback-hub/entities/HubConfig.mjs";
+import { HubDevice } from "../../../modules/media/server/domain/playback-hub/entities/HubDevice.mjs";
+import { ScheduledFire } from "../../../modules/media/server/domain/playback-hub/entities/ScheduledFire.mjs";
+import { SlotPosition } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotPosition.mjs";
+import { SlotColor } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotColor.mjs";
+import { SlotClass } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotClass.mjs";
+import { VolumeBounds } from "../../../modules/media/server/domain/playback-hub/value-objects/VolumeBounds.mjs";
+import { DayPattern } from "../../../modules/media/server/domain/playback-hub/value-objects/DayPattern.mjs";
+import { QueueRef } from "../../../modules/media/server/domain/playback-hub/value-objects/QueueRef.mjs";
 import { ValidationError } from '../../../backend/src/2_domains/core/errors/ValidationError.mjs';
 import { DomainInvariantError } from '../../../backend/src/2_domains/core/errors/DomainInvariantError.mjs';
-import { serializeHubConfig } from '../../../backend/src/1_adapters/persistence/yaml/YamlHubConfigDatastore.mjs';
+import { serializeHubConfig } from '../../../modules/media/server/adapters/playback-hub/YamlHubConfigDatastore.mjs';
 import { EntityNotFoundError } from '../../../backend/src/2_domains/core/errors/EntityNotFoundError.mjs';
 
 const makeDevice = ({

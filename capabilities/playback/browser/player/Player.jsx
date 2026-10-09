@@ -7,7 +7,7 @@ import { AudioLayer } from './components/AudioLayer.jsx';
 import { AmbientLayer } from './components/AmbientLayer.jsx';
 import { PlayerOverlayLoading } from './components/PlayerOverlayLoading.jsx';
 import { holdsAfterGaveUp } from './lib/sourceAvailability.js';
-import { useSourceWaitSkipKeys, playerIsHitTarget } from '../../../../frontend/src/lib/Player/useSourceWaitSkipKeys.js';
+import { useSourceWaitSkipKeys, playerIsHitTarget } from "../player-support/useSourceWaitSkipKeys.js";
 import { PlayerOverlayPaused } from './components/PlayerOverlayPaused.jsx';
 import { PlayerOverlayStateDebug } from './components/PlayerOverlayStateDebug.jsx';
 import { PlayerOverlayAutoplayBlocked } from './components/PlayerOverlayAutoplayBlocked.jsx';
@@ -36,11 +36,11 @@ import { getTrackOwner, hasTrackOwners, subscribeTrackOwners } from './lib/track
 import { trackEngineFor } from './lib/engineTracks.js';
 import { applyRememberedTracks, trackStateFor, checkSelection, rememberSelection } from './lib/playerTracks.js';
 import { usePlayerConfig } from './hooks/usePlayerConfig.js';
-import { REVIEW_ACTIVE } from '../../../../frontend/src/lib/Player/reviewParams.js';
+import { REVIEW_ACTIVE } from "../player-support/reviewParams.js";
 import { DaylightAPI } from '../../../../frontend/src/lib/api.mjs';
-import { seekToLiveEdge } from '../../../../frontend/src/lib/media/liveEdge.js';
+import { seekToLiveEdge } from "../media/liveEdge.js";
 import { problemClearedByPlaying } from './lib/lastProblem.js';
-import { getActionBus } from "../../../screen-host/browser/input.mjs";
+import { getActionBus } from "../../../../frontend/src/lib/input/ActionBus.js";
 import {
   preparePlaybackOwnerAdoption,
   samePlaybackOwnerIdentity,

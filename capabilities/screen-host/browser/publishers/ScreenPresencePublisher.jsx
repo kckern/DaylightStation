@@ -1,4 +1,4 @@
-import { useMenuNavigationContext } from '../../../../frontend/src/context/useMenuNavigationContext.js';
+import { useMenuNavigationContext } from "../navigation/useMenuNavigationContext.js";
 import { useScreenOverlay } from '../overlays/ScreenOverlayProvider.jsx';
 import { useScreenScene } from '../providers/useScreenScene.js';
 import { isContentActive } from '../screenActivity.js';

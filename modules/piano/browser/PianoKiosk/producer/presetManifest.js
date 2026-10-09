@@ -11,7 +11,7 @@
  * asserts every resolved file exists on disk.
  */
 
-import { GM_DRUM } from '../../../../../shared/music/percussion.mjs';
+import { GM_DRUM } from "../../../../../capabilities/music-notation/portable/percussion.mjs";
 
 /**
  * Starter GM program set: acoustic grand (0), e-piano 1 (4), nylon guitar

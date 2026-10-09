@@ -1,6 +1,6 @@
 // tests/isolated/agents/health-coach/event_query/hr_stats.test.mjs
 import { describe, it, expect } from 'vitest';
-import { computeHrStats } from '../../../../../backend/src/3_applications/agents/health-coach/services/EventQueryService.mjs';
+import { computeHrStats } from "../../../../../modules/health/server/application/agents/health-coach/services/EventQueryService.mjs";
 
 describe('computeHrStats', () => {
   it('returns null fields for empty/missing series', () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { identifyChord } from './chordNaming.js';
-import { midiToVexKey } from '../../../../frontend/src/modules/MusicNotation/renderers/chordStaff.js';
+import { midiToVexKey } from "../../../../capabilities/music-notation/browser/renderers/chordStaff.js";
 
 // MIDI helpers: C4 = 60. pitch class = midi % 12.
 const C4 = 60, D4 = 62, E4 = 64, F4 = 65, G4 = 67, A4 = 69, B4 = 71;

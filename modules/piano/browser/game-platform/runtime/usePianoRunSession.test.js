@@ -16,7 +16,7 @@ const authority = vi.hoisted(() => {
   return { create, dispatch, reset: () => { nextId = 0; create.mockClear(); dispatch.mockClear(); } };
 });
 
-vi.mock('../../../../../frontend/src/modules/Gaming/platform/authority/createEphemeralLocalAuthority.js', () => ({
+vi.mock("../../../../../capabilities/gaming/browser/platform/authority/createEphemeralLocalAuthority.js", () => ({
   createEphemeralLocalAuthority: () => authority,
 }));
 

@@ -3,7 +3,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import Ajv from 'ajv';
-import { dashboardSchema } from '../../../../src/3_applications/agents/health-coach/schemas/dashboard.mjs';
+import { dashboardSchema } from "../../../../../modules/health/server/application/agents/health-coach/schemas/dashboard.mjs";
 
 const ajv = new Ajv({ allErrors: true });
 

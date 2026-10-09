@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildContextualLaunchCard,
   CONTEXTUAL_LAUNCH_CARD_SCHEMA,
-} from '#domains/school/selfService/contextualLaunchCard.mjs';
+} from "../../../../../modules/school/server/domain/selfService/contextualLaunchCard.mjs";
 
 const base = (resolution) => buildContextualLaunchCard({
   resolution,

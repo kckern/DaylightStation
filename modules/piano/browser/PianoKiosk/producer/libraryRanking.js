@@ -22,9 +22,9 @@
  * measured ~10ms against the real index shape); search and facet filtering
  * happen downstream on the already-built set, never per keystroke.
  */
-import { makeStackableGate } from '@shared-music/consonance.mjs';
-import { makeMelodyFitScorer } from '@shared-music/melodyFit.mjs';
-import { rankLayerCandidates } from '@shared-music/layerMatch.mjs';
+import { makeStackableGate } from "../../../../../capabilities/music-notation/portable/consonance.mjs";
+import { makeMelodyFitScorer } from "../../../../../capabilities/music-notation/portable/melodyFit.mjs";
+import { rankLayerCandidates } from "../../../../../capabilities/music-notation/portable/layerMatch.mjs";
 
 /** Same identity rule as layerMatch: path is canonical, slug the fallback. */
 export const entryIdentity = (e) => e?.path || e?.slug;

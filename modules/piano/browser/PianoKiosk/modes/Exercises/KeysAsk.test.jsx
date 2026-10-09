@@ -22,7 +22,7 @@ vi.mock('../../../components/PianoKeyboard.jsx', () => ({
 // what it is checking is where a notehead lands on the page. `h.realStaff`
 // swaps the double for the actual component for that test alone.
 const h = vi.hoisted(() => ({ realStaff: false }));
-vi.mock('../../../../../../frontend/src/modules/MusicNotation/renderers/SvgSequenceStaff.jsx', async (importOriginal) => {
+vi.mock("../../../../../../capabilities/music-notation/browser/renderers/SvgSequenceStaff.jsx", async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,

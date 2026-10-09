@@ -1,6 +1,6 @@
-import { Item } from '#domains/content/entities/Item.mjs';
-import { YouTubeVideoId } from '#domains/content/value-objects/YouTubeVideoId.mjs';
-import { encodeStreamUrl } from '../../stream/streamUrlCodec.mjs';
+import { Item } from "../../../../../../capabilities/content-catalog/server/items.mjs";
+import { YouTubeVideoId } from "../../../../../../capabilities/content-catalog/server/domain/value-objects/YouTubeVideoId.mjs";
+import { encodeStreamUrl } from "../../../../../../capabilities/playback/server/domain/streamUrlCodec.mjs";
 
 /**
  * `youtube:<videoId>` content source — an anti-corruption layer that turns a

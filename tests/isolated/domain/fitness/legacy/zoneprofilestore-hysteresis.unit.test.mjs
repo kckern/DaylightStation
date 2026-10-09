@@ -13,7 +13,7 @@ vi.mock('#frontend/lib/logging/Logger.js', () => ({
 
 let ZoneProfileStore;
 beforeAll(async () => {
-  ({ ZoneProfileStore } = await import('#frontend/hooks/fitness/ZoneProfileStore.js'));
+  ({ ZoneProfileStore } = await import("../../../../../modules/fitness/browser/hooks/fitness/ZoneProfileStore.js"));
 });
 
 const ZONE_CONFIG = [

@@ -15,8 +15,8 @@
  * them would keep passing after the adapter renamed one.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { GetPianoLessonGate } from '#apps/school/usecases/GetPianoLessonGate.mjs';
-import { EventBusSchoolRealtimeAdapter } from '#adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs';
+import { GetPianoLessonGate } from "../../../../modules/school/server/application/usecases/GetPianoLessonGate.mjs";
+import { EventBusSchoolRealtimeAdapter } from "../../../../modules/school/server/adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs";
 
 const COURSE = 'plex:695598';
 const PROGRAM = 'piano-course';

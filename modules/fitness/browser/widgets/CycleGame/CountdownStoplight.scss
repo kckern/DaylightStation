@@ -1,0 +1,117 @@
+@use "./cgTokens" as cg;
+
+.countdown-stoplight {
+  // cg-backdrop sets position:relative — include it FIRST so the absolute,
+  // full-height overlay positioning below wins (otherwise it collapses to content
+  // height and the backdrop leaves black bands above/below).
+  @include cg.cg-backdrop;
+  position: absolute; inset: 0; z-index: 50;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 28px;
+  // Reserve room at the bottom for the on-board rider strip so the centered
+  // stoplight group lifts clear of it (it used to overlap the avatars).
+  padding-bottom: 220px;
+  background-color: rgba(6, 7, 10, 0.86);
+
+  &__eyebrow {
+    @include cg.cg-eyebrow;
+    font-size: 1.1rem; // was 1rem — 10-foot floor (audit UX §7)
+    animation: cg-fade-up 0.4s ease both;
+  }
+  &.is-go &__eyebrow { color: cg.$cg-success; letter-spacing: 0.4em; }
+
+  // Big number sits inside a pulsing accent ring.
+  &__stage {
+    position: relative;
+    width: 240px; height: 240px;
+    display: flex; align-items: center; justify-content: center;
+
+    // Decorative speed-line streaks behind the number.
+    &::before {
+      content: '';
+      position: absolute; inset: -40% -60%;
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.18;
+      background: repeating-linear-gradient(
+        -18deg,
+        transparent 0,
+        transparent 22px,
+        rgba(33, 230, 255, 0.55) 22px,
+        rgba(33, 230, 255, 0.55) 24px
+      );
+      mask-image: radial-gradient(60% 60% at 50% 50%, #000 0%, transparent 78%);
+    }
+  }
+
+  &__ring {
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    // Legacy indigo (#7aa2ff) purged — the waiting ring now rides the same
+    // telemetry cyan as the rest of the countdown chrome (audit UX §6.2).
+    border: 3px solid rgba(cg.$cg-cyan, 0.25);
+    box-shadow: inset 0 0 60px rgba(cg.$cg-cyan, 0.12), 0 0 50px rgba(0, 0, 0, 0.6);
+    animation: cg-ring-pulse 1s ease-in-out infinite;
+  }
+  &.is-go &__ring {
+    border-color: rgba(cg.$cg-success, 0.7);
+    box-shadow: inset 0 0 80px rgba(cg.$cg-success, 0.25), 0 0 70px rgba(cg.$cg-success, 0.4);
+    animation: cg-ring-burst 0.5s ease-out forwards;
+  }
+
+  &__number {
+    position: relative; z-index: 1;
+    @include cg.cg-numeral(cg.$cg-magenta);
+    font-size: 9rem;
+    line-height: 1;
+    color: cg.$cg-text;
+    text-shadow:
+      0 0 28px rgba(255, 45, 149, 0.7),
+      0 6px 30px rgba(0, 0, 0, 0.7);
+    // Punch in on every value change (keyed remount).
+    animation: cg-count-punch 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  }
+  &.is-go &__number {
+    font-size: 7rem; letter-spacing: 0.04em;
+    color: cg.$cg-success;
+    text-shadow:
+      0 0 56px rgba(cg.$cg-success, 0.85),
+      0 0 28px rgba(cg.$cg-success, 0.6);
+    animation: cg-go-pop 0.5s cubic-bezier(0.2, 1.5, 0.4, 1) both;
+  }
+
+  &__lamps { display: flex; gap: 16px; }
+  &__lamp {
+    width: 40px; height: 40px; border-radius: 50%;
+    background: #15171c;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    opacity: 0.4;
+    transition: opacity 0.15s, box-shadow 0.15s, transform 0.15s;
+  }
+  &__lamp.is-on { transform: scale(1.12); }
+  &__lamp--red.is-on    { background: cg.$cg-danger; opacity: 1; box-shadow: 0 0 18px cg.$cg-danger, 0 0 36px rgba(cg.$cg-danger, 0.7); }
+  &__lamp--yellow.is-on { background: cg.$cg-warn; opacity: 1; box-shadow: 0 0 18px cg.$cg-warn, 0 0 36px rgba(cg.$cg-warn, 0.7); }
+  &__lamp--green.is-on  { background: cg.$cg-success; opacity: 1; box-shadow: 0 0 18px cg.$cg-success, 0 0 36px rgba(cg.$cg-success, 0.7); }
+}
+
+@keyframes cg-count-punch {
+  0%   { opacity: 0; transform: scale(1.6); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes cg-go-pop {
+  0%   { opacity: 0; transform: scale(0.4); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes cg-ring-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50%      { transform: scale(1.06); opacity: 1; }
+}
+@keyframes cg-ring-burst {
+  0%   { transform: scale(1); }
+  100% { transform: scale(1.18); opacity: 0; }
+}
+@keyframes cg-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

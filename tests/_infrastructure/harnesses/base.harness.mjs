@@ -134,3 +134,22 @@ export function printSummary(label, files, args) {
   if (args.pattern) console.log(`  Pattern: ${args.pattern}`);
   console.log(`${COLORS.cyan}═══════════════════════════════════════════════════${COLORS.reset}\n`);
 }
+
+/** Browser ownership changes physical paths, not the frontend test population. */
+export function findBrowserColocatedTestFiles(projectRoot, args) {
+  const files = findColocatedTestFiles(path.join(projectRoot, 'frontend/src'), args);
+  for (const kind of ['modules', 'capabilities']) {
+    const ownerRoot = path.join(projectRoot, kind);
+    if (!fs.existsSync(ownerRoot) || !fs.lstatSync(ownerRoot).isDirectory()) continue;
+    for (const owner of fs.readdirSync(ownerRoot, { withFileTypes: true })) {
+      if (!owner.isDirectory()) continue;
+      const browser = path.join(ownerRoot, owner.name, 'browser');
+      if (!fs.existsSync(browser) || !fs.lstatSync(browser).isDirectory()) continue;
+      files.push(...findColocatedTestFiles(browser, args).filter(file => fs.lstatSync(file).isFile()));
+    }
+  }
+  // This original frontend boundary oracle moved into the dedicated test tree.
+  const boundary = path.join(projectRoot, 'tests/unit/architecture/gaming-boundaries.test.js');
+  if (fs.existsSync(boundary) && fs.lstatSync(boundary).isFile() && (!args.pattern || boundary.includes(args.pattern))) files.push(boundary);
+  return [...new Set(files)].sort();
+}

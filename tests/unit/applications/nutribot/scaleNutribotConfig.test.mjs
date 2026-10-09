@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  normalizeScaleNutribotConfig,
-  DEFAULT_DENSITY_LEVELS,
-  MIN_COMMIT_QUIET_SEC,
-} from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
+import { normalizeScaleNutribotConfig, DEFAULT_DENSITY_LEVELS, MIN_COMMIT_QUIET_SEC } from '../../../../modules/health/server/scale-config.mjs';
 
 describe('normalizeScaleNutribotConfig — density macros', () => {
   it('carries macros and per_100g through to the normalized level', () => {

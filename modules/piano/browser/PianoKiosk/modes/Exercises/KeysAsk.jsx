@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import { resolveBoardRange } from '../../../noteUtils.js';
-import { SvgSequenceStaff } from '../../../../../../frontend/src/modules/MusicNotation/renderers/SvgSequenceStaff.jsx';
+import { SvgSequenceStaff } from "../../../../../../capabilities/music-notation/browser/renderers/SvgSequenceStaff.jsx";
 import { clefForAsk } from './runPresentation.js';
 import './Exercises.scss';
 

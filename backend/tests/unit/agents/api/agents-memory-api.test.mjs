@@ -1,6 +1,6 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert';
-import { WorkingMemoryState } from '../../../../src/3_applications/agents/framework/WorkingMemory.mjs';
+import { WorkingMemoryState } from "../../../../../capabilities/agent-runtime/server/application/framework/WorkingMemory.mjs";
 
 describe('Agents Memory API (unit)', () => {
   let mockWorkingMemory;

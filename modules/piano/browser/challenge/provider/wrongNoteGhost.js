@@ -9,8 +9,8 @@
 //
 // Nothing here touches the DOM. The layer measures; this module decides.
 
-import { spellMidi } from '../../../../../frontend/src/modules/MusicNotation/model/spellMidi.js';
-import { KEY_SIGNATURES } from '../../../../../frontend/src/modules/MusicNotation/model/keySignature.js';
+import { spellMidi } from "../../../../../capabilities/music-notation/browser/model/spellMidi.js";
+import { KEY_SIGNATURES } from "../../../../../capabilities/music-notation/browser/model/keySignature.js";
 
 // Only the two clefs WetNoteGlyph can place a pitch on (it knows a treble and a
 // bass bottom line, nothing else). An alto or percussion staff returns null and

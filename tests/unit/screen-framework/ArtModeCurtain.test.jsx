@@ -4,7 +4,7 @@ import { render, act, cleanup, fireEvent } from '@testing-library/react';
 
 // Controllable background-music track (track-advance drives the curtain swap).
 let currentTrack = null;
-vi.mock('../../../frontend/src/lib/Player/useBackgroundMusic.js', () => ({
+vi.mock("../../../modules/art/browser/music/useBackgroundMusic.js", () => ({
   useBackgroundMusic: () => ({ track: currentTrack, next: vi.fn(), prev: vi.fn() }),
 }));
 

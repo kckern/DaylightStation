@@ -33,7 +33,7 @@ vi.mock('../../PianoMidiContext.jsx', () => ({
   }),
 }));
 
-vi.mock('../../../../../../frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.jsx', () => ({
+vi.mock("../../../../../../capabilities/music-notation/browser/renderers/MusicXmlRenderer.jsx", () => ({
   MusicXmlRenderer: ({ onLayout, children }) => {
     useEffect(() => { onLayout?.({ steps: [], staves: [], width: 800, height: 400 }); }, [onLayout]);
     return <div data-testid="renderer">{children}</div>;

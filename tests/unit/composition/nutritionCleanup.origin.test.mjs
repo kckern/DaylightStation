@@ -3,10 +3,10 @@ import { it, expect, vi, afterEach } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createNutritionCleanup } from '#composition/modules/nutritionCleanup.mjs';
-import { NutritionCleanup } from '#apps/nutrition/NutritionCleanup.mjs';
-import { ArtworkRemediation } from '#apps/nutrition/ArtworkRemediation.mjs';
-import { CleanupQuestionSurface } from '#apps/nutrition/CleanupQuestionSurface.mjs';
+import { createNutritionCleanup } from "../../../modules/health/server/composition/nutritionCleanup.mjs";
+import { NutritionCleanup } from "../../../modules/health/server/application/nutrition/NutritionCleanup.mjs";
+import { ArtworkRemediation } from "../../../modules/health/server/application/nutrition/ArtworkRemediation.mjs";
+import { CleanupQuestionSurface } from "../../../modules/health/server/application/nutrition/CleanupQuestionSurface.mjs";
 import { currentOrigin } from '#system/runtime/aiContext.mjs';
 
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });

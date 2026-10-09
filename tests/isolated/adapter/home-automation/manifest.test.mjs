@@ -1,5 +1,5 @@
 // tests/unit/suite/adapters/home-automation/homeassistant/manifest.test.mjs
-import manifest from '#adapters/home-automation/homeassistant/manifest.mjs';
+import manifest from "../../../../capabilities/home-control/server/adapters/homeassistant/manifest.mjs";
 
 describe('Home Assistant Manifest', () => {
   test('has required fields', () => {

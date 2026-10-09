@@ -9,7 +9,7 @@
 // dropped link would pass silently.
 import { describe, expect, it } from 'vitest';
 import { instanceToAbc, handForPitch } from './exerciseAbc.js';
-import { midiToAbc } from '../../../../../../frontend/src/modules/MusicNotation/renderers/abc.js';
+import { midiToAbc } from "../../../../../../capabilities/music-notation/browser/renderers/abc.js";
 
 const base = {
   key: 'C',

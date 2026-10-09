@@ -2,7 +2,7 @@
 
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert';
-import { AgentOrchestrator } from '../../../src/3_applications/agents/AgentOrchestrator.mjs';
+import { AgentOrchestrator } from "../../../../capabilities/agent-runtime/server/application/AgentOrchestrator.mjs";
 
 describe('AgentOrchestrator', () => {
   let mockAgentRuntime;

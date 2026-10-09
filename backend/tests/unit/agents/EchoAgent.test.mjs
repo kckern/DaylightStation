@@ -2,8 +2,8 @@
 
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert';
-import { EchoAgent } from '../../../src/3_applications/agents/echo/EchoAgent.mjs';
-import { BaseAgent } from '../../../src/3_applications/agents/framework/BaseAgent.mjs';
+import { EchoAgent } from "../../../../capabilities/agent-runtime/server/application/echo/EchoAgent.mjs";
+import { BaseAgent } from "../../../../capabilities/agent-runtime/server/application/framework/BaseAgent.mjs";
 
 describe('EchoAgent', () => {
   let mockAgentRuntime;

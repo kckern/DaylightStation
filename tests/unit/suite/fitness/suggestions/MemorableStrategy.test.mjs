@@ -1,5 +1,5 @@
 // tests/unit/suite/fitness/suggestions/MemorableStrategy.test.mjs
-import { MemorableStrategy, SufferScoreRanker } from '../../../../../backend/src/3_applications/fitness/suggestions/MemorableStrategy.mjs';
+import { MemorableStrategy, SufferScoreRanker } from "../../../../../modules/fitness/server/application/suggestions/MemorableStrategy.mjs";
 
 function makeSession(contentId, showId, showTitle, title, date, sufferScore) {
   return {

@@ -21,12 +21,12 @@
  * or a spent code would render as an outage with a Retry button.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { ResolveAccessCode } from '#apps/school/usecases/ResolveAccessCode.mjs';
-import { RunSelfServiceAction } from '#apps/school/usecases/RunSelfServiceAction.mjs';
-import { mintToken, isAccessCodeSpent } from '#domains/school/sessions/tokens.mjs';
-import { DEFAULT_ACCESS_CODE_MAX_USES } from '#domains/school/sessions/accessCode.mjs';
-import { BOOK_LOG_PROGRAM_ID, BOOK_LOG_SHELF_UNIT_ID } from '#domains/school/bookLog.mjs';
-import { appendAssignedProgramEntries } from '#apps/school/assignedProgramPlan.mjs';
+import { ResolveAccessCode } from "../../../../modules/school/server/application/usecases/ResolveAccessCode.mjs";
+import { RunSelfServiceAction } from "../../../../modules/school/server/application/usecases/RunSelfServiceAction.mjs";
+import { mintToken, isAccessCodeSpent } from "../../../../modules/school/server/domain/sessions/tokens.mjs";
+import { DEFAULT_ACCESS_CODE_MAX_USES } from "../../../../modules/school/server/domain/sessions/accessCode.mjs";
+import { BOOK_LOG_PROGRAM_ID, BOOK_LOG_SHELF_UNIT_ID } from "../../../../modules/school/server/domain/bookLog.mjs";
+import { appendAssignedProgramEntries } from "../../../../modules/school/server/application/assignedProgramPlan.mjs";
 import { createTokenBucket } from '#system/utils/tokenBucket.mjs';
 
 const LEARNER_ID = 'kid1';
@@ -228,7 +228,7 @@ describe('access-code use cap — what it does NOT cap', () => {
     // Deliberately not folded into `isAccessCodeLive`: a spent-but-unexpired
     // code must stay in the mint's collision set while its paper is still in a
     // child's hand, or the same six digits could be handed to another learner.
-    const { isAccessCodeLive } = await import('#domains/school/sessions/tokens.mjs');
+    const { isAccessCodeLive } = await import("../../../../modules/school/server/domain/sessions/tokens.mjs");
     const spent = { ...codeRecord(), useCount: DEFAULT_ACCESS_CODE_MAX_USES };
     expect(isAccessCodeSpent(spent)).toBe(true);
     expect(isAccessCodeLive(spent, { now: NOW_ISO })).toBe(true);

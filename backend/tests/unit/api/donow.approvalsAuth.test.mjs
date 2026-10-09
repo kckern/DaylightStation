@@ -6,9 +6,9 @@
  * logs and in notification URLs.
  */
 import express from 'express';
-import request from 'supertest';
-import { createDoNowRouter } from '#api/v1/routers/donow.mjs';
-import { authenticate } from '#apps/trigger/guards/authenticate.mjs';
+import request from '../../../../tests/preimplementation/application-modules/drivers/remaining-http-request.mjs';
+import { createDoNowRouter } from "../../../../modules/donow/server/api/donow.mjs";
+import { authenticate } from "../../../../capabilities/device-dispatch/server/application/guards/authenticate.mjs";
 
 const approvals = {
   listPending: async () => [],

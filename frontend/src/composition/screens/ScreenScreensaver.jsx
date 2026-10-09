@@ -2,7 +2,7 @@
 import { useEffect, useRef } from 'react';
 import { useScreenOverlay } from "../../../../capabilities/screen-host/browser/overlays.mjs";
 import { getWidgetRegistry } from "../../../../capabilities/screen-host/browser/public.mjs";
-import { useMenuNavigationContext } from '../../context/useMenuNavigationContext.js';
+import { useMenuNavigationContext } from "../../../../capabilities/screen-host/browser/menu-navigation.mjs";
 import getLogger from '../../lib/logging/Logger.js';
 import { BROWSE_NAV_TYPES } from "../../../../capabilities/screen-host/browser/lifecycle.mjs";
 import { hasInitialScreenAction } from './screenAppPath.js';

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { YamlTriggerConfigRepository } from '#adapters/trigger/YamlTriggerConfigRepository.mjs';
+import { YamlTriggerConfigRepository } from "../../../../capabilities/device-dispatch/server/adapters/YamlTriggerConfigRepository.mjs";
 
 /**
  * `unsorted.yml` is the inbox the curated files are curated OUT OF, not a peer

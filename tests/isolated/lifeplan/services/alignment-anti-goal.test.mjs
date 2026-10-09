@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { AlignmentService } from '#apps/lifeplan/services/AlignmentService.mjs';
+import { AlignmentService } from "../../../../modules/life/server/application/services/AlignmentService.mjs";
 
 function svcWithPlan(plan) {
   const clock = { today: () => '2026-07-17', now: () => new Date('2026-07-17T12:00:00Z') };

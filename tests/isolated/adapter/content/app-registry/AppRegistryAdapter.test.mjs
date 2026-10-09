@@ -13,7 +13,7 @@ describe('AppRegistryAdapter', () => {
   let adapter;
 
   beforeEach(async () => {
-    const mod = await import('#adapters/content/app-registry/AppRegistryAdapter.mjs');
+    const mod = await import("../../../../../capabilities/content-catalog/server/adapters/providers/app-registry/AppRegistryAdapter.mjs");
     const AppRegistryAdapter = mod.AppRegistryAdapter;
     adapter = new AppRegistryAdapter({ apps: MOCK_APPS });
   });

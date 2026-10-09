@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { dispatchResponse, UnknownResponseKindError } from '#apps/trigger/responseHandlers.mjs';
-import { Response } from '#domains/trigger/Response.mjs';
+import { dispatchResponse, UnknownResponseKindError } from "../../../../capabilities/device-dispatch/server/application/responseHandlers.mjs";
+import { Response } from "../../../../capabilities/device-dispatch/server/domain/Response.mjs";
 
 const deps = () => ({
   wakeAndLoadService: { execute: vi.fn().mockResolvedValue({ ok: true }) },

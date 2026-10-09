@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toListItem } from '#api/v1/routers/list.mjs';
+import { toListItem } from "../../../capabilities/content-catalog/server/api/list.mjs";
 
 describe('toListItem piano passthrough', () => {
   it('surfaces metadata.piano to the top level, preserving the styles array', () => {

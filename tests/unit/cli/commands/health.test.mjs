@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
 import { Writable } from 'node:stream';
-import health from '../../../../cli/commands/health.mjs';
+import health from "../../../../modules/health/cli/commands/health.mjs";
 
 function makeBuffers() {
   const stdoutChunks = [];

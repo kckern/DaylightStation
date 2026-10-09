@@ -3,12 +3,12 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import yaml from 'js-yaml';
-import { YamlAssignmentStore } from '#adapters/persistence/yaml/YamlAssignmentStore.mjs';
-import { YamlFormMapStore } from '#adapters/persistence/yaml/YamlFormMapStore.mjs';
-import { YamlReviewQueue } from '#adapters/persistence/yaml/YamlReviewQueue.mjs';
-import { IAssignmentStore } from '#apps/school/ports/IAssignmentStore.mjs';
-import { IFormMapStore } from '#apps/school/ports/IFormMapStore.mjs';
-import { IReviewQueue } from '#apps/school/ports/IReviewQueue.mjs';
+import { YamlAssignmentStore } from "../../../../modules/school/server/adapters/persistence/YamlAssignmentStore.mjs";
+import { YamlFormMapStore } from "../../../../modules/school/server/adapters/persistence/YamlFormMapStore.mjs";
+import { YamlReviewQueue } from "../../../../modules/school/server/adapters/persistence/YamlReviewQueue.mjs";
+import { IAssignmentStore } from "../../../../modules/school/server/application/ports/IAssignmentStore.mjs";
+import { IFormMapStore } from "../../../../modules/school/server/application/ports/IFormMapStore.mjs";
+import { IReviewQueue } from "../../../../modules/school/server/application/ports/IReviewQueue.mjs";
 
 const AT = '2026-07-27T10:00:00.000Z';
 

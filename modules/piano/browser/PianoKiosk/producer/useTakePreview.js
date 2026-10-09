@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { loopToEvents } from '@shared-music/loopScheduler.mjs';
+import { loopToEvents } from "../../../../../capabilities/music-notation/portable/loopScheduler.mjs";
 import { transposeToTargetKey } from './keyModel.js';
 import { PEEK_CHANNEL, PEEK_DRUM_CHANNEL } from './usePeek.js';
 

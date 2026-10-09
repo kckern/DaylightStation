@@ -5,7 +5,7 @@ import {
   getFileStats,
   writeBinaryAsync,
 } from '#system/utils/FileIO.mjs';
-import { IProxyAssetCache } from '#apps/proxy/ports/IProxyAssetCache.mjs';
+import { IProxyAssetCache } from "../../../../capabilities/content-catalog/server/application/proxy/ports/IProxyAssetCache.mjs";
 
 function resource(filePath, mimeType) {
   const stat = getFileStats(filePath);

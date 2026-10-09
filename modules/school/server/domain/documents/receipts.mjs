@@ -1,0 +1,1053 @@
+/**
+ * The three receipts the physical console prints (spec §6.2, §9). Pure: no I/O,
+ * no clock, no renderer — every builder returns a DOCUMENT in the same typed-block
+ * form as a curriculum worksheet (`./documentValidation.mjs`), and the receipt
+ * renderer turns it into paper.
+ *
+ * They live in the domain because their content is policy, not presentation:
+ * WHICH actions a child is offered, and the rule that a scan never ends without
+ * a next move. Fonts, cut points and column widths are the renderer's business.
+ *
+ * The governing rule, from §6.2: **a scan never succeeds silently**. Every path
+ * through the resolver — success, expiry, an unknown ticket, a printer that
+ * refused the job — ends at one of these three builders, which is why
+ * `noticeDocument` exists at all. An explanation slip is a feature.
+ *
+ * A `scan_action` block's `action` field carries the OPAQUE TOKEN VALUE
+ * (`sch:…`); the renderer encodes it as the barcode/QR payload and prints
+ * `label` beside it. Nothing else about the action is on the paper — that is the
+ * whole point of the token model.
+ */
+
+import { SCHOOL_ACCESS_CODE_DIGITS } from "../sessions/accessCode.mjs";
+import { BOOK_LOG_PROGRAM_ID, DEFAULT_BOOK_LOG_SUBJECT, bookLogContext } from "../bookLog.mjs";
+
+const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
+
+/**
+ * Document ids must match `^[a-z0-9][a-z0-9-]*$`, and a learner id or unit id is
+ * not obliged to. Slugging keeps a receipt's identity derived from its subject
+ * (so the same agenda regenerates under the same id) without letting an id shape
+ * from somewhere else fail document validation.
+ */
+export function slugify(value, fallback = 'x') {
+  const slug = String(value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return /^[a-z0-9]/.test(slug) ? slug : fallback;
+}
+
+const text = (md) => ({ type: 'rich_text', md });
+
+/**
+ * Shared agenda/result lesson card: one QR, one hierarchy, no repeated token
+ * text — and, as of Slice H, its own panel-code pairing baked in, so a
+ * caller cannot push the QR and forget the second push (Learner-Three's receipt,
+ * 2026-08-22: a `scan_action` with nothing typeable beneath it).
+ *
+ * Returns an ARRAY (the QR block, then whatever `codeAbsenceBlocks` decides
+ * belongs beside it) so the only legal way to put one of these on paper is
+ * `blocks.push(...lessonAction(...))` — there is no second call for a caller
+ * to remember, and therefore no way to separate the two.
+ */
+function lessonAction({
+  token, eyebrow, title, description = null, icon = null, meta = null, taxonomy = null,
+  rail = null, progress = null, unit = null, accessCode,
+} = {}) {
+  const block = {
+    type: 'scan_action', action: token, label: title,
+    presentation: 'lesson', hideCode: true,
+    // Omitted when empty, exactly like every other optional field below.
+    // Spreading it unconditionally put a literal `eyebrow: null` on the block,
+    // and the validator's guard is `!== undefined` — so "no eyebrow" read as
+    // "present but not a string" and made EVERY lesson card on EVERY agenda
+    // fail validateDocument(). Invisible for months because the three suites
+    // that caught it are Jest targets full of vitest imports and never loaded.
+    ...(isNonEmptyString(eyebrow) ? { eyebrow } : {}),
+    ...(isNonEmptyString(rail) ? { rail } : {}),
+    ...(isNonEmptyString(unit) ? { unit } : {}),
+    ...(Array.isArray(progress) && progress.length ? { progress } : {}),
+    ...(isNonEmptyString(description) ? { description } : {}),
+    ...(isNonEmptyString(icon) ? { icon } : {}),
+    ...(isNonEmptyString(meta) ? { meta } : {}),
+    ...(taxonomy ? { taxonomy } : {}),
+    ...panelCodeField(accessCode),
+  };
+  return [block, ...codeAbsenceBlocks(accessCode)];
+}
+
+/** Derived from the code itself, never restated — see `accessCode.mjs`. */
+const PANEL_CODE = new RegExp(`^\\d{${SCHOOL_ACCESS_CODE_DIGITS}}$`);
+
+/**
+ * The panel access code that goes with a lesson card (self-service), as a
+ * FIELD ON THE BLOCK.
+ *
+ * UNDER THE QR, AND NOWHERE ELSE. This used to be two loose `rich_text`
+ * blocks pushed after the card — "PANEL CODE 928521" and "Type it on the
+ * school screen." — which put a bare number adrift BELOW the box instead of
+ * beneath the QR it aliases. On a printed card that reads as a stray number
+ * with no referent: a child cannot tell which offer it belongs to, and on a
+ * multi-offer agenda they genuinely cannot. Carrying it on the block instead
+ * lets the renderer draw it in the one place it means something — directly
+ * under its own QR, inside the card (`DocumentReceiptRenderer`'s
+ * `panelCode`/`codeLines`).
+ *
+ * One agenda can carry TWO six-digit codes for two different machines: the
+ * SchoolCalc study code (`001 234`, "Enter on calculator.") and this one.
+ * They stay distinguishable by POSITION now rather than by a label — this
+ * one sits under a QR, which is the thing that identifies it.
+ *
+ * A malformed code prints nothing at all. Digits a child cannot type are worse
+ * than no code (they ask a grown-up), and a receipt builder must not throw the
+ * agenda away over a decoration.
+ */
+function panelCodeField(code) {
+  if (typeof code !== 'string' || !PANEL_CODE.test(code)) return {};
+  return { panelCode: code };
+}
+
+/**
+ * The one thing that still needs its own block: saying a code is ABSENT.
+ *
+ * Called from exactly two places — `lessonAction` and `plainScanAction`,
+ * below. A present code is now a field on the block (`panelCodeField`), drawn
+ * under its QR; only the "there is no typable way in" case needs words, and
+ * words need a block.
+ *
+ * `accessCode` is deliberately TRI-STATE:
+ *   - `undefined` (the argument omitted): this action makes no claim about
+ *     a code at all. Nothing is printed. This is every receipt built before
+ *     self-service existed, byte-identical.
+ *   - a six-digit string: the alias, carried on the block and drawn under
+ *     its QR. Nothing is added beside the card.
+ *   - `null` (or any non-empty value `panelCodeField` rejects as malformed):
+ *     a code was EXPECTED — self-service is in play for this token, or the
+ *     caller checked and none could be minted (a token class that can never
+ *     carry one, a collision, self-service off) — and none exists. Printed
+ *     as an explicit line rather than a silent gap, because a missing code
+ *     has to be visible to be actionable.
+ */
+function codeAbsenceBlocks(accessCode) {
+  if (accessCode === undefined) return [];
+  if (Object.keys(panelCodeField(accessCode)).length) return [];
+  return [text('Scanning is the only way in.')];
+}
+
+/**
+ * The plain-QR counterpart to `lessonAction` — no lesson-card chrome
+ * (eyebrow/description/meta), just the bare `scan_action` block a
+ * non-lesson offer prints today, but wired through the SAME panel-code
+ * contract.
+ *
+ * This closes the second half of the gap `lessonAction` closed for the
+ * lesson presentation: `resultDocument`'s non-lesson branch and
+ * `noticeDocument` used to push `{type:'scan_action', ...}` directly, with
+ * no pairing call at all — structurally the same defect, one branch over
+ * (a real receipt, 2026-08-23: a QR under "Scan to print the next
+ * worksheet" with nothing typeable beneath it, on the branch Slice H didn't
+ * touch). Every caller in this module that wants a bare scannable token now
+ * goes through this function instead of constructing the block itself, so
+ * the panel-code contract has exactly two callers and a third unpaired push
+ * would have to bypass both of them on purpose.
+ *
+ * `accessCode` is the same tri-state as `lessonAction`'s: omit it and the
+ * action makes no claim (byte-identical to every receipt printed before
+ * this existed) — no caller passes one today, but the contract is generic
+ * so one can start to without a third code path appearing.
+ */
+function plainScanAction(token, label, accessCode) {
+  return [
+    { type: 'scan_action', action: token, label, ...panelCodeField(accessCode) },
+    ...codeAbsenceBlocks(accessCode),
+  ];
+}
+
+/**
+ * The agenda's bulk "print all sheets" card — the THIRD and last designated
+ * construction site for a `scan_action` block.
+ *
+ * It was written inline when bulk print landed, which is how the structural
+ * guard below started failing: the bulk port was authored before the guard
+ * existed on this branch and merged after it, so neither side was wrong and
+ * the merged result bypassed a helper anyway. It pairs its own code correctly
+ * — that was never the defect — but "pairs correctly today" is exactly what
+ * the guard refuses to take on trust.
+ *
+ * It is a separate helper rather than a `plainScanAction` option because its
+ * code contract is genuinely different: the caller only ever builds this block
+ * when it already holds a WELL-FORMED code, so there is deliberately no
+ * `codeAbsenceBlocks` fallback here. No code means no card at all — a bad
+ * bulk code is worse than no bulk button.
+ */
+function bulkPrintAction({ token, label, subjects, accessCode }) {
+  return {
+    type: 'scan_action',
+    action: token,
+    presentation: 'bulk_print',
+    label,
+    hideCode: true,
+    subjects,
+    ...panelCodeField(accessCode),
+  };
+}
+
+/** The other in-progress books the card is willing to name. Two fits the column. */
+const ALSO_READING_LIMIT = 2;
+
+/**
+ * Past this many characters the description already fills the narrow column
+ * beside the QR, and the "also reading" tail is the row that pushes the card
+ * off the bottom of a short tape. It is the first thing dropped.
+ */
+const DESCRIPTION_ROOM = 120;
+
+/** `200` → `3h 20m`, `45` → `45m`. Minutes-mode books carry no page number. */
+function spokenMinutes(minutes) {
+  if (!Number.isFinite(minutes) || minutes <= 0) return null;
+  const whole = Math.round(minutes);
+  const hours = Math.floor(whole / 60);
+  const rest = whole % 60;
+  if (!hours) return `${rest}m`;
+  return rest ? `${hours}h ${rest}m` : `${hours}h`;
+}
+
+/** `['Frindle', 'The Hobbit']` → `Also reading: Frindle and The Hobbit.` */
+function alsoReadingSentence(titles) {
+  const named = (Array.isArray(titles) ? titles : []).filter(isNonEmptyString).slice(0, ALSO_READING_LIMIT);
+  if (!named.length) return null;
+  const list = named.length === 1 ? named[0] : `${named.slice(0, -1).join(', ')} and ${named[named.length - 1]}`;
+  return `Also reading: ${list}.`;
+}
+
+/**
+ * What a reading card SAYS, by state. One table, so the five outcomes cannot
+ * drift apart one branch at a time.
+ *
+ * `set-aside` is a real thing a child chose, not an absence — telling them to
+ * start a book when they have one on the shelf they put down is a lie about
+ * their own log. `unreadable` is likewise not `empty`: a shelf that could not
+ * be read prints no counts and no bars rather than a zero (a damaged year of
+ * evidence must never print as "you have read nothing").
+ *
+ * The second sentence takes the mode's own noun — page, minutes, check-in —
+ * because "save tonight's page" is not something a minutes-mode reader can do.
+ */
+function readingCopy(feature) {
+  const state = isNonEmptyString(feature?.state) ? feature.state : 'unreadable';
+  // `book` is null unless the record HAS a title (the launcher's contract), so
+  // this is the only question the headline has to ask.
+  const title = isNonEmptyString(feature?.book?.title) ? feature.book.title.trim() : null;
+  const author = (Array.isArray(feature?.book?.authors) ? feature.book.authors : [])
+    .find(isNonEmptyString)?.trim() ?? null;
+
+  if (state === 'unreadable') {
+    return { label: 'Reading log', unit: 'Books', description: 'Open your shelf on the panel.', meta: 'OPEN ON THE PANEL' };
+  }
+  if (state === 'empty') {
+    return {
+      label: 'Start a book',
+      unit: 'Books',
+      description: 'Type the number off the back of any book to put it on your shelf.',
+      meta: 'ADD A BOOK ON THE PANEL',
+    };
+  }
+  if (state === 'finished') {
+    return {
+      label: title ?? 'Reading log',
+      unit: author ?? 'Books',
+      description: 'You finished it. Add the next one: type the number off the back.',
+      meta: 'ADD A BOOK ON THE PANEL',
+    };
+  }
+  if (state === 'set-aside') {
+    return {
+      label: title ?? 'Reading log',
+      unit: author ?? 'Books',
+      description: 'Set aside. Pick it back up, or start something new.',
+      meta: 'ADD A BOOK ON THE PANEL',
+    };
+  }
+
+  // `reading` — where they are, then what to do about it tonight.
+  const page = Number.isFinite(feature?.page) ? Math.round(feature.page) : null;
+  const pageCount = Number.isInteger(feature?.pageCount) && feature.pageCount > 0 ? feature.pageCount : null;
+  const minutes = spokenMinutes(feature?.minutes);
+  const days = Number.isInteger(feature?.daysRead) && feature.daysRead > 0 ? feature.daysRead : null;
+  let where = null;
+  let noun = 'reading';
+  if (page !== null) {
+    where = pageCount ? `Page ${page} of ${pageCount}` : `Page ${page}`;
+    if (Number.isFinite(feature?.percent) && feature.percent >= 75) where += ' — nearly there';
+    noun = 'page';
+  } else if (minutes) {
+    where = `${minutes} so far`;
+    noun = 'minutes';
+  } else if (days) {
+    where = `Read on ${days} ${days === 1 ? 'day' : 'days'}`;
+    noun = 'check-in';
+  }
+  const move = `Save tonight's ${noun}, or say you finished it.`;
+  return {
+    label: title ?? 'Reading log',
+    unit: author ?? 'Books',
+    description: where ? `${where}. ${move}` : move,
+    meta: 'UPDATE ON THE PANEL',
+  };
+}
+
+/**
+ * The reading-log card — the FOURTH and last designated construction site, and
+ * as of the 2026-09-06 card-parity change a LESSON card like every other thing
+ * a child is asked to do that day. It was built from the notice shape (a label,
+ * a QR, six digits) and wore it for months beside cards carrying a subject
+ * glyph, a breadcrumb, a title and bars.
+ *
+ * A card of its own rather than a code on the English lesson's, because it is
+ * not that lesson and does not follow it: the reading log is open every day, to
+ * every learner, whether or not they are enrolled in anything and whether or
+ * not English is finished. Riding on the lesson card would make it vanish on
+ * exactly the days the lesson is done — the days a child most wants to record
+ * the book they finished with it. (What changed is the presentation, not that
+ * reasoning.)
+ *
+ * ## THE TAXONOMY IS FOUR STRINGS, AND A SECOND RENDERER READS THEM
+ *
+ * `blocks.mjs` rejects a `scan_action` whose taxonomy lacks a non-empty
+ * `subject`, `course`, `unit` AND `lesson`, and one rejected block fails
+ * `validateDocument` for the WHOLE agenda — bit for bit the failure the
+ * `lessonAction` docblock above memorializes. They are not filler either:
+ * `DocumentEscPosRenderer` prints `Course · / Unit · / Lesson ·` FROM THE
+ * TAXONOMY and never reads `unit`, `rail` or `progress`, and it is live — the
+ * operator transcript is harvested from it, and it is the only renderer when
+ * the canvas one fails to build. So all four have to read as prose.
+ *
+ * The course name comes from `bookLogContext()`, the one authority for how the
+ * shelf names itself, so the printed card and the panel cannot disagree.
+ *
+ * Same well-formed-code contract as `bulkPrintAction`, for the same reason: the
+ * caller only builds this when it already holds a good code, so there is no
+ * `codeAbsenceBlocks` fallback. No code means no card — a Reading card a child
+ * cannot type into is worse than none.
+ *
+ * @param {object} args
+ * @param {string} args.token       the reading token
+ * @param {string} args.accessCode  its six-digit panel alias
+ * @param {object|null} args.feature `BookLogProgramLauncher.featuredBook()`'s
+ *   answer, or null when it could not be had — null prints the `unreadable`
+ *   card, never no card and never "start a book".
+ * @param {string} args.subject     the subject the shelf sits under
+ */
+function readingLogAction({ token, accessCode, feature = null, subject = DEFAULT_BOOK_LOG_SUBJECT }) {
+  const subjectId = isNonEmptyString(subject) ? subject.trim() : DEFAULT_BOOK_LOG_SUBJECT;
+  const subjectTitle = subjectId[0].toUpperCase() + subjectId.slice(1);
+  const copy = readingCopy(feature);
+  const state = isNonEmptyString(feature?.state) ? feature.state : 'unreadable';
+
+  const tail = state === 'unreadable' ? null : alsoReadingSentence(feature?.alsoReading);
+  const description = tail && copy.description.length <= DESCRIPTION_ROOM
+    ? `${copy.description} ${tail}`
+    : copy.description;
+
+  // The book bar only when there is a percentage to draw. `usableProgressRows`
+  // drops any row without an integer total anyway, so a book whose length
+  // nobody knows degrades to the obligation bar alone rather than to a
+  // divide-by-zero wearing a label.
+  const bookRow = state !== 'unreadable' && Number.isFinite(feature?.percent)
+    ? [{ label: copy.label, completed: feature.page ?? null, total: feature.pageCount ?? null }]
+    : [];
+  // The obligation bar comes from the caller — it is measured against an
+  // enrollment this pure builder never sees.
+  const obligationRows = state === 'unreadable' || !Array.isArray(feature?.progressRows)
+    ? []
+    : feature.progressRows;
+  const progress = [...bookRow, ...obligationRows]
+    .filter((row) => row && Number.isInteger(row.total) && row.total > 0);
+
+  return lessonAction({
+    token,
+    // No eyebrow, for the same reason no subject card has one: the breadcrumb
+    // below it already says where this sits.
+    eyebrow: null,
+    // A STATEMENT, NEVER A GATE. A subject card leaves the page when it is
+    // served; this one cannot, because the shelf never closes — a met
+    // obligation prints the same card wearing a rail and a working code.
+    rail: feature?.obligationMet === true ? 'Done' : null,
+    unit: copy.unit,
+    title: copy.label,
+    description,
+    // The SUBJECT the shelf sits under, not a hardcoded `english`: an
+    // enrollment may place it anywhere, and the gutter glyph is drawn from this.
+    icon: subjectId,
+    meta: copy.meta,
+    progress,
+    taxonomy: {
+      subject: subjectTitle,
+      course: bookLogContext().course.title,
+      unit: copy.unit,
+      lesson: isNonEmptyString(feature?.book?.title) ? feature.book.title.trim() : 'Reading log',
+    },
+    accessCode,
+  });
+}
+
+/**
+ * The printed time, as a person says it: `Mon 27 Jul, 9:05 am`.
+ *
+ * A raw ISO timestamp on a child's paper is machine notation, and the agenda
+ * printed one. The pieces come from `Intl` (the only way to place an instant in
+ * a named zone without a tz database of our own) but are ASSEMBLED here, in a
+ * fixed order, from `hourCycle: 'h23'` — so the wording does not drift with the
+ * host's ICU build the way a locale-formatted string would.
+ *
+ * Returns null rather than "Invalid Date" for anything unparseable or a zone
+ * this platform does not know: an unreadable time is worth omitting, and it is
+ * certainly not worth losing the rest of the agenda over.
+ *
+ * @param {string} iso        ISO-8601 instant (injected — nothing here reads a clock)
+ * @param {string} [timeZone] IANA zone the household reads its paper in
+ * @returns {string|null}
+ */
+export function formatPrintedAt(iso, timeZone = 'UTC') {
+  if (!isNonEmptyString(iso)) return null;
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return null;
+  let parts;
+  try {
+    parts = new Intl.DateTimeFormat('en-US', {
+      timeZone, weekday: 'short', day: 'numeric', month: 'short',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(new Date(ms));
+  } catch {
+    return null;
+  }
+  const part = (type) => parts.find((p) => p.type === type)?.value ?? '';
+  const hour24 = Number(part('hour'));
+  if (!Number.isInteger(hour24)) return null;
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  const period = hour24 < 12 ? 'am' : 'pm';
+  return `${part('weekday')} ${part('day')} ${part('month')}, ${hour12}:${part('minute')} ${period}`;
+}
+
+/**
+ * Receipts are single-column, receipt-target, and carry no randomness at all, so
+ * seed 0 is not a placeholder — regeneration is byte-identical by construction.
+ *
+ * `title`, when given, is the STANDARD HEADER: renderers print it as an
+ * inverted banner (black band, light text) across the top of the tape. Agendas
+ * and result slips use one; notices open with their own `# …` headline block.
+ */
+const receipt = (id, blocks, { title = null } = {}) => ({
+  id, seed: 0, variant: 0, target: ['receipt'], blocks,
+  ...(isNonEmptyString(title) ? { title } : {}),
+});
+
+/**
+ * Resolved-review-item notes as printable lines: `Note: <note> (<ref>)`,
+ * newest first, capped, each line truncated so a long grown-up sentence
+ * cannot blow out the receipt's width (spec R7). Shared by CloseSessionOutcome
+ * (this session's own notes) and BuildAgenda (a learner's recent notes) so
+ * both receipts format a note identically.
+ *
+ * `<ref>` is the printed question number when the item carries one — a
+ * child matches the note back to the sheet in their hand — and the bare
+ * itemId otherwise.
+ *
+ * READS `item.note` ONLY (Slice H, 2026-08-22). A review item also carries
+ * `internalNote` — the record-only twin, for a sign-off explanation or a
+ * machine-generated audit rationale (Slice B's eraser-leniency rows,
+ * `RecordCardScanOutcome.mjs`) — and this function has no parameter that
+ * could reach it. That is deliberate: the boundary between "for the record"
+ * and "for the reader" has to survive whatever gets written into
+ * `internalNote` in the future without anyone here remembering to keep it
+ * out. See `IReviewQueue.mjs`'s `ReviewItem` typedef for the full split.
+ *
+ * @param {Array<{note?: string|null, questionNumber?: number|null,
+ *   itemId?: string, gradedAt?: string|null}>} items
+ * @param {object} [opts]
+ * @param {number} [opts.limit=3]
+ * @param {number} [opts.maxChars=120]
+ * @returns {string[]}
+ */
+export function reviewNoteLines(items, { limit = 3, maxChars = 120 } = {}) {
+  return (Array.isArray(items) ? items : [])
+    .filter((item) => item && typeof item.note === 'string' && item.note.trim())
+    .slice()
+    .sort((a, b) => String(b.gradedAt ?? '').localeCompare(String(a.gradedAt ?? '')))
+    .slice(0, limit)
+    .map((item) => {
+      const ref = item.questionNumber ?? item.itemId ?? null;
+      const line = ref === null ? `Note: ${item.note.trim()}` : `Note: ${item.note.trim()} (${ref})`;
+      return line.length > maxChars ? line.slice(0, maxChars) : line;
+    });
+}
+
+/**
+ * What a sheet blocked by its finish-code row says to the child (Task 10).
+ *
+ * The heading alone reads TRY AGAIN, which on this sheet is close to a lie:
+ * every question was right, and sending the child back over the questions is
+ * the one thing that must not happen. So the receipt names the rule that
+ * actually failed, and says so before it says anything else.
+ *
+ * TWO WORDINGS, BECAUSE THEY ARE TWO DIFFERENT MISTAKES. A blank row is a
+ * child who never played the companion — the instruction is "go and do it,
+ * then come back". A wrong code is a child who DID play it and mis-copied the
+ * letters — telling them to go and listen again would waste twenty minutes on
+ * a problem that lives on the paper in their hand. Both end at the same
+ * place, re-scanning THIS sheet, because their answers are already good and
+ * nothing about the worksheet needs redoing.
+ *
+ * A THIRD, AND IT IS THE ONE THAT DOES NOT SAY "SCAN THIS AGAIN" (Task 11).
+ * `exhausted` means every bubble in the row is filled and the code is still
+ * wrong. Marks cannot be erased, so there is nothing left to add and this sheet
+ * can never clear — telling that child to check the letters and re-scan would
+ * send them round a loop with no exit. It asks for a new sheet instead, which
+ * is why it is also the one gate failure that prints a retry ticket.
+ *
+ * @param {{status: 'blank'|'wrong'|'exhausted', label?: string, reading?: string|null}|null} gate
+ * @returns {string[]} zero lines for an ungated sheet or a plain score failure
+ */
+function companionGateLines(gate) {
+  const status = gate?.status;
+  if (status !== 'blank' && status !== 'wrong' && status !== 'exhausted') return [];
+  const label = isNonEmptyString(gate.label) ? gate.label.trim() : 'Read Along';
+  const what = isNonEmptyString(gate.reading) ? `${label} (${gate.reading.trim()})` : label;
+  const instruction = {
+    blank: `The ${label} row was left empty. Finish ${what}, write the code it gives you in the first row, then scan this sheet again.`,
+    wrong: `The code in the ${label} row was not the right one. Check the letters on your finish card, fix that row, then scan this sheet again.`,
+    exhausted: `Every letter in the ${label} row is filled in, so this sheet cannot be fixed. Ask a grown-up for a new sheet and try the code once more on that one.`,
+  }[status];
+  return ['Your answers were good enough to pass.', instruction];
+}
+
+/** Appends the "Notes for you" section, informational only — no scan_action. */
+function appendNoteLines(blocks, noteLines) {
+  if (!noteLines.length) return;
+  blocks.push(text('## NOTES FOR YOU'));
+  noteLines.forEach((line) => blocks.push(text(line)));
+}
+
+/**
+ * The agenda: what this learner can do right now, one subject section at a
+ * time (spec §6.2 v2 — sectioned by subject rather than a flat list of unit
+ * entries).
+ *
+ * A locked or unavailable section still prints. Hiding it would leave a child
+ * wondering where the rest of the subject went; printing it WITH its remedy
+ * (or the "not answering" line) is what turns a stall into an instruction —
+ * `planDailyAgenda` guarantees a remedy exists whenever a section is locked.
+ *
+ * @param {object} args
+ * @param {string} args.learnerId
+ * @param {string} [args.learnerName]
+ * @param {string} args.generatedAt   ISO time (injected — nothing here reads a clock)
+ * @param {string} [args.timeZone]    IANA zone the printed time is stated in
+ * @param {Array<{
+ *   subject: string,
+ *   servedToday?: boolean,
+ *   next?: { title?: string, unitId?: string, token?: string, actionLabel?: string },
+ *   lockedRemedy?: string,
+ *   timingNotice?: string,
+ *   focus?: {blockBudget?: number},
+ *   suppressed?: {bySubject?: string},
+ *   progressLabel?: string,
+ *   gradePercent?: number,
+ *   programUnavailable?: boolean,
+ * }>} args.sections   `planDailyAgenda` sections, one per subject
+ * @param {Record<string, string>} [args.tokensBySubject] subject -> opaque scan token, for that section's `next`
+ * @param {Record<string, string>} [args.accessCodesByToken] TOKEN -> six-digit
+ *   panel code aliasing that token (self-service). Keyed by token, not
+ *   subject (Slice H, 2026-08-22) — a subject key could only ever alias ONE
+ *   offer, so two tokened offers sharing a subject would silently fight over
+ *   a single code. Absent, or missing an entry for a given token, that
+ *   token's card carries no code claim at all and prints exactly as it did
+ *   before the feature existed.
+ * @param {string[]} [args.notes] pre-formatted "Notes for you" lines (spec R7,
+ *   `reviewNoteLines`) — informational only, printed with no `scan_action`,
+ *   so a grown-up's feedback reaches the child without pretending to be a
+ *   thing to scan.
+ * @param {string} [args.bulkToken] opaque scan token that prints every offered
+ *   subject's sheet in one job (self-service, bulk-print access code). Absent,
+ *   the receipt is byte-identical to one built before the feature existed.
+ * @param {string} [args.bulkAccessCode] six-digit panel code aliasing
+ *   `bulkToken`, formatted the same way as a per-token `accessCodesByToken`
+ *   entry — see `panelCodeBlocks`.
+ * @param {string} [args.readingToken] opaque scan token for the reading log,
+ *   minted for EVERY learner rather than only the enrolled ones — an
+ *   enrollment carries the obligation, not the access. Absent, no Reading card
+ *   prints and the receipt is byte-identical to one built before the feature.
+ * @param {string} [args.readingAccessCode] six-digit panel code aliasing
+ *   `readingToken`. A malformed one prints no card at all, like the bulk code.
+ * @param {{state: 'reading'|'finished'|'set-aside'|'empty'|'unreadable',
+ *   book: {title: string, authors: string[]}|null, page?: number|null,
+ *   percent?: number|null, pageCount?: number|null, minutes?: number|null,
+ *   daysRead?: number, alsoReading?: string[], obligationMet?: boolean,
+ *   progressRows?: Array<{label: string, completed: number, total: number}>
+ * }|null} [args.readingFeature] what the reading card headlines —
+ *   `BookLogProgramLauncher.featuredBook()`'s answer. ABSENT OR NULL IS NOT NO
+ *   CARD: it prints the `unreadable` shape, because a shelf that could not be
+ *   read is not an empty one and must never print as a zero. `obligationMet`
+ *   and `progressRows` are the caller's — an obligation is measured against an
+ *   enrollment this pure builder never sees.
+ * @param {string} [args.readingSubject] the subject the shelf sits under, for
+ *   the gutter glyph and the breadcrumb. An enrollment may place it anywhere,
+ *   so this is never hardcoded to English.
+ * @param {string} [args.footer]
+ * @returns {object} a document ready for `validateDocument`
+ */
+export function agendaDocument({
+  learnerId, learnerName = null, generatedAt = null, timeZone = 'UTC',
+  sections = [], tokensBySubject = {}, accessCodesByToken = {},
+  reopenCards = [],
+  bulkToken = null, bulkAccessCode = null, bulkSubjects = null,
+  readingToken = null, readingAccessCode = null,
+  readingFeature = null, readingSubject = DEFAULT_BOOK_LOG_SUBJECT,
+  footer = null, notes = [],
+} = {}) {
+  // The learner's name is the document TITLE, not a text block: the renderers
+  // give a title the standard-header treatment (inverted banner), which a
+  // markdown heading in the block stream cannot ask for.
+  // A raw id in the masthead is an accidental insult ("NOBODY", design
+  // audit): no resolvable display name means we GREET, we don't echo.
+  const title = learnerName || 'Hello!';
+  const blocks = [];
+  // The printed time goes at the FOOT of the sheet (centred), not the head.
+  // It answers "is this still today's?" — a question asked when picking a
+  // stray receipt up later, not when reading the top of a fresh one. At the
+  // top it was the first thing between the child's name and their work.
+  const printedAt = formatPrintedAt(generatedAt, timeZone);
+
+  const noteLines = (Array.isArray(notes) ? notes : []).filter(isNonEmptyString);
+  const offered = (Array.isArray(sections) ? sections : []).filter((s) => s && typeof s === 'object');
+  if (!offered.length) {
+    blocks.push(text('Nothing is assigned right now. Ask a grown-up what to do next.'));
+    appendNoteLines(blocks, noteLines);
+    // The footer belongs here too. This early return used to skip it, so the
+    // ONE sheet whose date matters most — a "nothing assigned" slip found
+    // loose on a table — was the one that never said when it was printed.
+    // Same placement as the offered path below.
+    if (printedAt) blocks.push({ ...text(printedAt), align: 'center' });
+    return receipt(`agenda-${slugify(learnerId, 'learner')}`, blocks, { title });
+  }
+
+  // FINISHED SUBJECTS ARE A TALLY, NOT HEADLINES.
+  //
+  // Each one used to print as its own section heading — `## CIVILIZATION —
+  // done today` — at the same weight as the work still to do, and above it,
+  // because sections print in subject order. A child looking for their next
+  // move read two dead lines first, each one an all-caps subject welded to a
+  // lowercase phrase by an em dash, and the phrase repeated verbatim on every
+  // one of them. Collected here instead and emitted as a single strip at the
+  // foot of the sheet, where a tally belongs.
+  const doneSubjects = [];
+  // The subjects that actually emit a scannable lesson card. The bulk-print
+  // card below lists these, not every entry in `offered` — `offered` also
+  // carries the subjects already served today (a tally, not a card) and the
+  // ones a focus day suppressed, and naming those on a "print all sheets"
+  // card promises paper that scan would never produce.
+  const cardSubjects = [];
+  // ONE READING CARD, NEVER TWO (2026-09-06 card-parity plan, Task 8).
+  //
+  // On a day the obligation is unmet, an enrolled learner's shelf is already
+  // the subject's `next` (`agenda.mjs` picks one candidate per subject and the
+  // shelf can win) and is drawn by the loop below as a full lesson card. The
+  // standalone push at the foot of this function is otherwise unconditional, so
+  // on exactly those days the page got two reading cards.
+  //
+  // The SECTION card is the one that survives: it carries the obligation the
+  // standalone card only describes. What matters is whether a card was actually
+  // EMITTED, not merely that a book-log section exists — a shelf section with no
+  // minted token falls to the plain heading branch and draws nothing, and then
+  // the standalone card is the only reading card the page would ever get.
+  let shelfPrintedAsSection = false;
+  offered.forEach((section) => {
+    // A focus day deliberately removes flexible work from the CHILD'S paper;
+    // the parent preview retains the suppression reason.
+    if (section.suppressed) return;
+    const suffix = section.focus
+      ? ` — Focus today · up to ${section.focus.blockBudget} lessons`
+      : (isNonEmptyString(section.progressLabel) ? ` — ${section.progressLabel}` : '');
+    // Already served today: nothing more to offer for this subject.
+    if (section.servedToday) {
+      const subject = String(section.subject || '').trim() || 'work';
+      const done = (Array.isArray(section.servedWork) ? section.servedWork : [])
+        .map((work) => (isNonEmptyString(work?.title) ? work.title.trim() : null))
+        .filter(Boolean);
+      doneSubjects.push({
+        subject,
+        // The subject id doubles as its shelf-icon id everywhere else on the
+        // sheet; the renderer degrades to no icon for one with no file.
+        icon: subject,
+        titles: done,
+        ...(Number.isFinite(section.gradePercent) ? { percent: Math.round(section.gradePercent) } : {}),
+      });
+      return;
+    }
+
+    if (section.programUnavailable) {
+      blocks.push(text(`## ${String(section.subject || '').toUpperCase()}${suffix}`));
+      blocks.push(text('Not answering right now — try it on the Portal.'));
+      return;
+    }
+
+    if (isNonEmptyString(section.lockedRemedy)) {
+      blocks.push(text(`## ${String(section.subject || '').toUpperCase()}${suffix}`));
+      blocks.push(text(section.lockedRemedy));
+      return;
+    }
+
+    if (isNonEmptyString(section.timingNotice)) {
+      blocks.push(text(`## ${String(section.subject || '').toUpperCase()}${suffix}`));
+      blocks.push(text(section.timingNotice));
+      return;
+    }
+
+    const next = section.next;
+    if (!next || typeof next !== 'object') return;
+    const nextTitle = next.title || next.unitId;
+    const label = isNonEmptyString(next.actionLabel) ? `${nextTitle} — ${next.actionLabel}` : nextTitle;
+    if (next.schoolcalcHandoff?.eligible) {
+      blocks.push(text(`## ${String(section.subject || '').toUpperCase()}${suffix}`));
+      blocks.push(text(nextTitle));
+      if (isNonEmptyString(next.schoolcalcHandoff.displayCode)) {
+        blocks.push(text(next.schoolcalcHandoff.displayCode));
+        blocks.push(text('Enter on calculator.'));
+      } else {
+        blocks.push(text('Calculator eligible — code issued when printed.'));
+      }
+      return;
+    }
+    const token = tokensBySubject?.[section.subject];
+    if (isNonEmptyString(token)) {
+      cardSubjects.push(section.subject);
+      if (next.program === BOOK_LOG_PROGRAM_ID) shelfPrintedAsSection = true;
+      blocks.push(...lessonAction({
+        token,
+        // NO EYEBROW. It used to read `Today · <subject>`, which the renderer
+        // truncates at the first `·` — so it printed the single word "TODAY" on
+        // every card. Every card on this page is today's (the page IS the day),
+        // so that line restated the masthead and nothing else.
+        //
+        // Replacing it with the bare subject was no better: the taxonomy
+        // breadcrumb directly beneath already reads "Arts › Hoffman Academy
+        // Piano › Unit 3", with the subject's own SVG in the gutter. That
+        // breadcrumb is the meaningful line — it says where in the curriculum
+        // this lesson sits — and an eyebrow above it repeating the first word
+        // is duplication that costs a row and pushes the title down.
+        eyebrow: null,
+        // Catch-up work is offered exactly like today's; only this says which
+        // is which. See `agenda.mjs`'s `catchUp`.
+        rail: section.catchUp ? 'Catch-up' : null,
+        // The unit is pulled OUT of the breadcrumb and set directly above the
+        // lesson title, where it reads as that lesson's parent rather than as
+        // the tail of a course path. The breadcrumb keeps subject > course and
+        // fits one line; the renderer marks this line with its own glyph.
+        unit: next.taxonomy?.unit ?? null,
+        title: nextTitle,
+        description: next.description,
+        icon: section.subject,
+        // The footer instruction names what THIS card actually asks for.
+        // `actionLabel` is the one place that decides that wording
+        // (`offerSession.nextMove`) and it is composition-aware: a media unit
+        // plays a video, a bank unit is answered on the screen, a stalled one
+        // starts over, a program unit names WHERE it lives ("on the Portal").
+        // Hardcoding "SCAN TO PRINT" told a child to print a film. It is
+        // printed as-is rather than under a "SCAN TO …" stem because a
+        // location hint does not read as a verb phrase; the scan-corner glyph
+        // beside it is what says "scan" (print-documents.md, "Agenda and
+        // result-receipt language").
+        // The action label ALONE. The progress label used to ride here too, and
+        // for a program course that is `34/366 · next: <title>` — a raw tally
+        // the child does not act on, ending in a verbatim repeat of the card's
+        // own title two rows above. Progress now goes to `progress` below as a
+        // bar, which is what the result receipt already does with the same data.
+        // A grade percentage is likewise not a thing to do; it belongs to the
+        // result receipt, which is where a child sees it.
+        meta: isNonEmptyString(next.actionLabel)
+          ? next.actionLabel.toUpperCase()
+          : 'SCAN TO PRINT',
+        progress: section.progressRows,
+        taxonomy: next.taxonomy,
+        // Keyed by TOKEN (Slice H): whatever this specific card's own code
+        // is, if any. Absent from the map (self-service off, or nothing
+        // minted for this token) means the argument stays `undefined` —
+        // `lessonAction` prints exactly what it always has.
+        accessCode: accessCodesByToken?.[token],
+      }));
+    } else {
+      blocks.push(text(`## ${String(section.subject || '').toUpperCase()}${suffix}`));
+      blocks.push(text(label));
+    }
+  });
+
+  // Whether anything is still open decides the wording of the done tally
+  // below: with work left it is a footnote to the page above it; with nothing
+  // left it is the whole answer.
+  //
+  // THE VERDICT IS THE CURRICULUM'S, AND ONLY THE CURRICULUM'S. It is captured
+  // here — after the section loop, before anything else is pushed — rather than
+  // read off `blocks.length` further down, because the two cards that follow
+  // are unconditional-ish decoration: the bulk card only exists when there IS
+  // work, and the reading card (2026-09-06 card-parity plan, Task 7) prints on
+  // every agenda in every state — as the standalone card below, or, when the
+  // shelf was this subject's own `next`, as one of the section cards above.
+  // Counting either would make "All done today" unreachable forever, and
+  // nothing would say so.
+  const curriculumBlocks = blocks.length;
+  const nothingLeft = curriculumBlocks === 0;
+
+  // One extra card at the end, printing every offered subject in one job: an
+  // alias for "scan each lesson card in turn," not a fourth kind of session.
+  // Same malformed-code-prints-nothing rule as a per-subject panel code
+  // (`panelCodeField`) — a bad code is worse than no code.
+  //
+  // The code rides ON the block, not in a loose block after it. That is the
+  // per-subject contract too since Slice H: a separate `rich_text` of digits
+  // drew adrift BELOW the card on the canvas renderer, with nothing saying
+  // which card it belonged to. `hideCode` still suppresses the raw TOKEN
+  // under the QR — the six digits are the only thing a child should read.
+  // Before the bulk card, so "print all sheets" stays the last action on the
+  // page. Unconditional on enrollment by design — see `readingLogAction`.
+  //
+  // `shelfPrintedAsSection` is the whole of Task 8's rule: the loop above
+  // already drew this child's shelf as a lesson card today, so this one would
+  // be its second. Only the PUSH is conditional — the token is minted outside
+  // this document entirely (`BuildAgenda`), and deliberately so: that mint runs
+  // even for a subject already served today, which is exactly when a child
+  // wants to log the book they just finished.
+  // DONE, AND STILL OPEN. A served subject whose program allows extra rounds
+  // (a flashcard deck) keeps a card and a code, railed "Done" like the reading
+  // shelf's met obligation. Pushed AFTER `curriculumBlocks` for the same reason
+  // as the reading card: going again is an invitation, not owed work, so it
+  // must not turn "All done today" into "Done today". Without it a finished
+  // subject left the child a tally line and no way back in (2026-09-25).
+  for (const card of Array.isArray(reopenCards) ? reopenCards : []) {
+    if (!card || !isNonEmptyString(card.token)) continue;
+    blocks.push(...lessonAction({
+      token: card.token,
+      eyebrow: null,
+      rail: 'Done',
+      unit: card.taxonomy?.unit ?? card.unit ?? null,
+      title: card.title,
+      description: 'Done for today. Want another round? You can go again.',
+      icon: card.subject,
+      meta: isNonEmptyString(card.actionLabel) ? card.actionLabel.toUpperCase() : null,
+      progress: card.progress,
+      taxonomy: card.taxonomy ?? null,
+      accessCode: card.accessCode ?? undefined,
+    }));
+  }
+
+  if (!shelfPrintedAsSection
+    && isNonEmptyString(readingToken)
+    && typeof readingAccessCode === 'string' && PANEL_CODE.test(readingAccessCode)) {
+    blocks.push(...readingLogAction({
+      token: readingToken,
+      accessCode: readingAccessCode,
+      feature: readingFeature,
+      subject: readingSubject,
+    }));
+  }
+
+  if (isNonEmptyString(bulkToken) && typeof bulkAccessCode === 'string' && PANEL_CODE.test(bulkAccessCode)) {
+    blocks.push(bulkPrintAction({
+      token: bulkToken,
+      label: 'Print all sheets',
+      subjects: Array.isArray(bulkSubjects) ? bulkSubjects : cardSubjects,
+      accessCode: bulkAccessCode,
+    }));
+  }
+
+  if (doneSubjects.length) {
+    blocks.push({
+      type: 'done_summary',
+      label: nothingLeft ? 'All done today' : 'Done today',
+      entries: doneSubjects,
+    });
+  }
+
+  appendNoteLines(blocks, noteLines);
+  const hasCalculator = offered.some((section) => section.next?.schoolcalcHandoff?.eligible);
+  if (footer || hasCalculator) blocks.push(text(footer || 'Enter the calculator code to start.'));
+  // The printed time is not part of the day's work — it answers "is this still
+  // today's?", asked when a stray sheet turns up later. A rule above it says
+  // so: everything over the line is the child's day, the line under it is the
+  // sheet's own metadata.
+  if (printedAt) blocks.push({ ...text(printedAt), align: 'center', rule: 'above' });
+  return receipt(`agenda-${slugify(learnerId, 'learner')}`, blocks, { title });
+}
+
+/**
+ * The result receipt: score, what to revisit, and every action that closes the
+ * session out.
+ *
+ * @param {object} args
+ * @param {string} args.sessionId
+ * @param {string} args.unitTitle
+ * @param {'passed'|'needs_remediation'} args.result
+ * @param {number} [args.percent]
+ * @param {string[]} [args.objectives] objectives to revisit (printed only on a fail)
+ * @param {Array<{token?: string, label: string, presentation?: 'lesson',
+ *   accessCode?: string|null}>} [args.actions] every tokened action's
+ *   `accessCode` is threaded through the panel-code contract — via `lessonAction`
+ *   when `presentation: 'lesson'`, via `plainScanAction` otherwise (2026-08-23:
+ *   the plain branch used to push a bare `scan_action` with no pairing at
+ *   all, the same defect Slice H closed for the lesson branch). A six-digit
+ *   string prints the panel code beside the QR, `null` prints an explicit
+ *   "Scanning is the only way in." rather than a silent gap, and omitting
+ *   the field entirely makes no claim either way. The caller that mints the
+ *   token (`CloseSessionOutcome`) is the one place that knows which of the
+ *   three applies.
+ * @param {{amount: number}|null} [args.reward] coins actually awarded
+ * @param {string|null} [args.unlockedTitle] the unit this pass opened up
+ * @param {string[]} [args.notes] pre-formatted "Notes for you" lines (spec R7,
+ *   `reviewNoteLines`) — a grown-up's written feedback on this session's
+ *   review items, reaching the child on the SAME receipt as the score.
+ * @param {boolean[]} [args.marks] per-question correctness, ONE entry per
+ *   question in printed order (`questionStart`-relative). When present and
+ *   `marks.length === totalCount`, the renderer marks box N from
+ *   `marks[N - questionStart]` instead of filling boxes left-to-right by
+ *   `correctCount` — the positional fill claims "the LAST wrong questions
+ *   were wrong", which is only true when the misses happen to be at the end
+ *   (regression: a child's paper missed question 7 of 12; the receipt's
+ *   numbered boxes blamed 11 and 12). Omitted when the caller has no
+ *   per-question evidence — the renderer falls back to the positional fill
+ *   rather than mis-index a partial array.
+ * @param {{status: 'blank'|'wrong', label?: string, reading?: string|null}|null}
+ *   [args.companionGate] set ONLY when the finish-code row — not the score —
+ *   is what stopped this sheet passing (`companionVetoStatus`, Task 10). See
+ *   `companionGateLines` for why this earns two lines of its own.
+ * @returns {object}
+ */
+export function resultDocument({
+  sessionId, unitTitle, result, percent = null, passingPercent = null, objectives = [],
+  correctCount = null, totalCount = null, questionStart = null, progress = null,
+  marks = null,
+  subjectIcon = null,
+  taxonomy = null,
+  learnerName = null, date = null, time = null, studentNo = null, hints = [],
+  actions = [], reward = null, rewardSkipReason = null, unlockedTitle = null, notes = [],
+  dayComplete = false, companionGate = null,
+} = {}) {
+  const passed = result === 'passed';
+  const blocks = [{
+    type: 'result_summary',
+    headline: passed ? 'PASSED' : 'TRY AGAIN',
+    title: unitTitle || 'Your work',
+    ...(typeof percent === 'number' && Number.isFinite(percent) ? { percent } : {}),
+    ...(typeof passingPercent === 'number' && Number.isFinite(passingPercent) ? { passingPercent } : {}),
+    ...(Number.isInteger(correctCount) ? { correctCount } : {}),
+    ...(Number.isInteger(totalCount) ? { totalCount } : {}),
+    ...(Number.isInteger(questionStart) ? { questionStart } : {}),
+    ...(Array.isArray(marks) && marks.length ? { marks } : {}),
+    ...(progress ? { progress } : {}),
+    ...(isNonEmptyString(subjectIcon) ? { icon: subjectIcon } : {}),
+    ...(isNonEmptyString(learnerName) ? { learnerName } : {}),
+    ...(isNonEmptyString(date) ? { date } : {}),
+    ...(isNonEmptyString(time) ? { time } : {}),
+    ...(isNonEmptyString(studentNo) ? { studentNo } : {}),
+    ...(taxonomy ? { taxonomy } : {}),
+    // HINTS FOLLOW THE MISSES, NOT THE VERDICT. These used to be gated on
+    // `!passed`, so a child who got 9 of 10 was shown a box marking question
+    // 15 wrong and then told nothing whatsoever about it — the sheet named
+    // the miss and withheld the only line that said what to go read. Passing
+    // is not a reason to withhold that; it only changes the urgency, which is
+    // what the heading carries.
+    ...(Array.isArray(hints) && hints.some(isNonEmptyString)
+      ? {
+        reviewHints: hints.filter(isNonEmptyString),
+        // A pass is not a retry. "Before you retry" would be a false
+        // instruction on a sheet whose next action is the NEXT lesson.
+        reviewHeading: passed ? 'WORTH A SECOND LOOK' : 'REVIEW BEFORE YOU RETRY',
+      }
+      : {}),
+  }];
+  // THE RULE THAT ACTUALLY FAILED, FIRST (Task 10). A gate veto means the
+  // answers were good enough and the finish-code row was not — so this goes
+  // straight under the score, ahead of the review hints, which are about
+  // questions this child did not get wrong. Nothing prints for an ungated
+  // sheet, or for one that failed on its score.
+  if (!passed) companionGateLines(companionGate).forEach((line) => blocks.push(text(line)));
+  if (!passed && !(Array.isArray(hints) && hints.some(isNonEmptyString))
+      && Array.isArray(objectives) && objectives.length) {
+    blocks.push(text('## REVIEW BEFORE YOU RETRY'));
+    objectives.filter(isNonEmptyString).forEach((o) => blocks.push(text(`- ${o}`)));
+  }
+  appendNoteLines(blocks, (Array.isArray(notes) ? notes : []).filter(isNonEmptyString));
+  if (passed && reward && Number.isFinite(reward.amount) && reward.amount > 0) {
+    blocks.push(text(`You earned ${reward.amount} ${reward.amount === 1 ? 'coin' : 'coins'}.`));
+  }
+  // Held coins are NAMED, never silent (student-advocacy A5): a pass whose
+  // payout waits on a grown-up says so where the coins line would be.
+  if (passed && rewardSkipReason === 'awaiting_signoff') {
+    blocks.push(text('Coins: waiting for a grown-up\'s OK.'));
+  }
+  (Array.isArray(actions) ? actions : []).forEach((action) => {
+    if (!action || !isNonEmptyString(action.label)) return;
+    if (isNonEmptyString(action.token) && action.presentation === 'lesson') {
+      blocks.push(...lessonAction({
+        token: action.token, eyebrow: action.eyebrow ?? 'Next up',
+        title: action.title ?? unlockedTitle ?? action.label, description: action.description,
+        icon: action.icon,
+        meta: action.meta ?? (passed ? 'Scan to print the next worksheet' : 'Scan to print your retry'),
+        taxonomy: action.taxonomy,
+        accessCode: action.accessCode,
+      }));
+    } else if (isNonEmptyString(action.token)) {
+      blocks.push(...plainScanAction(action.token, action.label, action.accessCode));
+    } else blocks.push(text(action.label));
+  });
+
+  // The invariant §9 exists to protect: nobody is left holding paper with
+  // nothing to do next.
+  //
+  // "Nothing to do next" has two very different meanings, and telling them
+  // apart is the whole point of `dayComplete`. When there is more work, this
+  // line sends the child back to the card. When the day is genuinely finished
+  // the same line is actively wrong — it sends a child who is DONE off to scan
+  // for homework that is not there (2026-08-26: a learner finished his last
+  // lesson, the receipt printed, and the only thing on it was an instruction
+  // to go find more). A finished day gets said out loud instead.
+  if (!blocks.some((b) => b.type === 'scan_action')) {
+    blocks.push(text(dayComplete
+      ? 'That was the last one — you are done for the day!'
+      : 'Scan your card to see what is next.'));
+  }
+  // Keep the session-derived id for persistence and diagnostics, but never
+  // expose it as the renderer's fallback heading on a child's receipt.
+  const learner = isNonEmptyString(learnerName) ? learnerName.trim() : null;
+  return receipt(`result-${slugify(sessionId, 'session')}`, blocks, {
+    title: learner ? `${learner}’s Result` : 'Worksheet Result',
+  });
+}
+
+/**
+ * The explanation slip: an unknown ticket, an expired one, a printer that would
+ * not take the job. It is the reason a scan can never dead-end.
+ *
+ * @param {object} args
+ * @param {string} args.id       distinguishes one slip from another; slugged
+ * @param {string} args.headline
+ * @param {string[]} [args.lines]
+ * @param {Array<{token?: string, label: string, accessCode?: string|null}>}
+ *   [args.actions] a tokened action goes through `plainScanAction`, so
+ *   `accessCode` follows the same tri-state as `resultDocument`'s: omitted
+ *   makes no claim (every notice printed today — no caller here mints one
+ *   yet), a six-digit string pairs the panel code, `null` prints "Scanning
+ *   is the only way in." instead of a silent gap.
+ * @returns {object}
+ */
+export function noticeDocument({ id = 'notice', headline = 'Hmm', lines = [], actions = [] } = {}) {
+  const blocks = [text(`# ${headline}`)];
+  (Array.isArray(lines) ? lines : []).filter(isNonEmptyString).forEach((line) => blocks.push(text(line)));
+  (Array.isArray(actions) ? actions : []).forEach((action) => {
+    if (!action || !isNonEmptyString(action.label)) return;
+    if (isNonEmptyString(action.token)) {
+      blocks.push(...plainScanAction(action.token, action.label, action.accessCode));
+    } else blocks.push(text(action.label));
+  });
+  if (blocks.length === 1) blocks.push(text('Scan your card to see what is next.'));
+  return receipt(`notice-${slugify(id, 'slip')}`, blocks);
+}

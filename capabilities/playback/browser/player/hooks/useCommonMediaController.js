@@ -16,7 +16,7 @@ import {
 } from '../lib/playbackToggleSource.js';
 import { pauseForensics } from '../lib/pauseForensics.js';
 import { shouldReassertRate } from '../lib/rateDrift.js';
-import { useMediaKeyboardHandler } from '../../../../../frontend/src/lib/Player/useMediaKeyboardHandler.js';
+import { useMediaKeyboardHandler } from "../../player-support/useMediaKeyboardHandler.js";
 import { useScreenVolume } from '../../../../../frontend/src/lib/volume/ScreenVolumeContext.js';
 import { useIsAuxiliaryPlayer } from '../lib/auxiliaryPlayerContext.js';
 import { getLogger } from '../../../../../frontend/src/lib/logging/Logger.js';

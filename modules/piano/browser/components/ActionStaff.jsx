@@ -1,4 +1,4 @@
-import { SvgStaffRenderer } from '../../../../frontend/src/modules/MusicNotation/renderers/SvgStaffRenderer.jsx';
+import { SvgStaffRenderer } from "../../../../capabilities/music-notation/browser/renderers/SvgStaffRenderer.jsx";
 import {
   IconCaretLeftFilled,
   IconCaretRightFilled,
@@ -9,7 +9,7 @@ import {
   IconReplace,
   IconCrosshair,
 } from '@tabler/icons-react';
-import './ActionStaff.scss';
+import "../../../../capabilities/music-notation/browser/action-style.mjs";
 
 // Staff rendering (clef/notehead/stem/ledger math) now lives in the shared
 // MusicNotation framework's SvgStaffRenderer; ActionStaff keeps the action-icon

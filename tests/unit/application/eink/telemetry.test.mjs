@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { EinkPanelService } from '#apps/eink/EinkPanelService.mjs';
-import { DataServiceEinkPanelStore } from '#adapters/eink/DataServiceEinkPanelStore.mjs';
-import { Sha1ContentFingerprint } from '#adapters/eink/Sha1ContentFingerprint.mjs';
+import { EinkPanelService } from "../../../../modules/screens/server/application/eink/EinkPanelService.mjs";
+import { DataServiceEinkPanelStore } from "../../../../modules/screens/server/adapters/eink/DataServiceEinkPanelStore.mjs";
+import { Sha1ContentFingerprint } from "../../../../modules/screens/server/adapters/eink/Sha1ContentFingerprint.mjs";
 
 const PANEL_RENDERER = { version: 'test', render: async () => Buffer.from('png') };
 

@@ -19,12 +19,12 @@
 // break: one letter (illegal as a `multi_select`, legal as a finish code),
 // three letters, and all five.
 import { describe, it, expect } from 'vitest';
-import { createDocumentPdfRenderer } from '#rendering/school/documents/DocumentPdfRenderer.mjs';
-import { createWorkbookTheme } from '#rendering/school/documents/workbookTheme.mjs';
-import { texToSvg } from '#rendering/school/documents/mathSvg.mjs';
+import { createDocumentPdfRenderer } from "../../../../modules/school/server/rendering/documents/DocumentPdfRenderer.mjs";
+import { createWorkbookTheme } from "../../../../modules/school/server/rendering/documents/workbookTheme.mjs";
+import { texToSvg } from "../../../../modules/school/server/rendering/documents/mathSvg.mjs";
 import { VirtualOmrReader } from '#adapters/hardware/omr/VirtualOmrReader.mjs';
-import { decodeOmrSheet } from '#domains/school/documents/omrForm.mjs';
-import { CODE_LETTERS, COMPANION_GATE_ITEM_ID } from '#domains/school/companionCode.mjs';
+import { decodeOmrSheet } from "../../../../modules/school/server/domain/documents/omrForm.mjs";
+import { CODE_LETTERS, COMPANION_GATE_ITEM_ID } from "../../../../modules/school/server/domain/companionCode.mjs";
 
 // The workbook theme, because that is what `RenderPrintDocument` renders every
 // issued worksheet with — and it is the only theme carrying the `caption`

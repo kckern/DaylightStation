@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   COURSE_GRADE_POLICY,
   courseGradeFromSessions,
-} from '#domains/school/progress/courseGrade.mjs';
+} from "../../../../../modules/school/server/domain/progress/courseGrade.mjs";
 
 function row(overrides = {}) {
   return {

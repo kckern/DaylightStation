@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { Satellite } from '../../../../src/2_domains/concierge/Satellite.mjs';
+import { Satellite } from "../../../../../modules/concierge/server/domain/Satellite.mjs";
 
 describe('Satellite', () => {
   const valid = {

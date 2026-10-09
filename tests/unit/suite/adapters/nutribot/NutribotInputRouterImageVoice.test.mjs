@@ -5,7 +5,7 @@
 // unchanged. These assert the router's own wiring only — WebNutribotAdapter's
 // encoding/decoding is covered separately.
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
-import { NutribotInputRouter } from '#apps/nutribot/services/NutribotInputRouter.mjs';
+import { NutribotInputRouter } from "../../../../../modules/nutribot/server/application/services/NutribotInputRouter.mjs";
 
 function makeContainer(spies) {
   return {

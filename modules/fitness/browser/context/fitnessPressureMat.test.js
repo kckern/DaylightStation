@@ -1,0 +1,47 @@
+import { describe, expect, it } from 'vitest';
+import { normalizePressureMatMessage, pressureMatFitnessEvent } from "./fitnessPressureMat.js";
+
+describe('fitness pressure mat', () => {
+  it('retains unknown occupancy and recovery diagnostics without emitting a physical release', () => {
+    const reading = normalizePressureMatMessage({ topic: 'pressure-mat', id: 'mat1', type: 'reading',
+      firmwareBuild: 'mat-recovery-abc', bootCount: 25, detectionState: 'rearmed',
+      rearmCount: 1, occupancyKnown: false, occupied: false, steps: 84, stomps: 46 });
+    expect(reading).toMatchObject({ firmwareBuild: 'mat-recovery-abc', bootCount: 25,
+      detectionState: 'rearmed', rearmCount: 1, occupancyKnown: false, steps: 84, stomps: 46 });
+    expect(pressureMatFitnessEvent(reading)).toBeNull();
+  });
+
+  it('does not invent a zero boot identity when optional diagnostics are missing', () => {
+    const reading = normalizePressureMatMessage({ topic: 'pressure-mat', id: 'mat1', type: 'presence', event: 'pressed', bootCount: null });
+    expect(reading.bootCount).toBeNull();
+    expect(reading.deviceTs).toBeNull();
+  });
+
+  it('normalizes a live step count and analog diagnostics', () => {
+    expect(normalizePressureMatMessage({
+      topic: 'pressure-mat', id: 'mat1', type: 'presence', event: 'pressed',
+      occupied: true, steps: 12, stomps: 3, voltage: 2.1, restVoltage: 2.7,
+      deltaV: .6, gradientVps: -1.2, peakDeltaV: .9, peakGradientVps: 2.1,
+      pressDurationMs: 640, classifiedStomp: true, protocolVersion: 2,
+      deviceTs: 1234, bootCount: 4, lastReset: 'POWERON',
+    })).toMatchObject({
+      id: 'mat1', event: 'pressed', steps: 12, stomps: 3, occupied: true,
+      restVoltage: 2.7, peakDeltaV: .9, peakGradientVps: 2.1,
+      pressDurationMs: 640, classifiedStomp: true, protocolVersion: 2,
+      deviceTs: 1234, bootCount: 4, lastReset: 'POWERON',
+    });
+  });
+
+  it('keeps step and stomp events distinct', () => {
+    const step = { id: 'mat1', type: 'presence', event: 'pressed', steps: 4, stomps: 0 };
+    const stomp = { ...step, event: 'stomped', stomps: 1 };
+    expect(pressureMatFitnessEvent(step).type).toBe('pressure-mat:step');
+    expect(pressureMatFitnessEvent(stomp).type).toBe('pressure-mat:stomp');
+    expect(pressureMatFitnessEvent(stomp).payload.steps).toBe(4);
+  });
+
+  it('rejects unrelated or malformed messages', () => {
+    expect(normalizePressureMatMessage({ topic: 'fitness', id: 'mat1', type: 'presence', event: 'pressed' })).toBeNull();
+    expect(normalizePressureMatMessage({ topic: 'pressure-mat', id: 'mat1', type: 'presence', event: 'maybe' })).toBeNull();
+  });
+});

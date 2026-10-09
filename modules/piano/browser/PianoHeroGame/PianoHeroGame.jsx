@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { DaylightAPIText } from '../../../../frontend/src/lib/api.mjs';
 import { getChildLogger } from '../../../../frontend/src/lib/logging/singleton.js';
-import { parseMusicXml } from '../../../../frontend/src/modules/MusicNotation/parseMusicXml.js';
+import { parseMusicXml } from "../../../../capabilities/music-notation/browser/parseMusicXml.js";
 import { getNoteHue, getNotePosition, getNoteWidth, computeKeyboardRange } from '../noteUtils.js';
 import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
 import { usePianoKioskConfigOptional } from '../PianoKiosk/PianoConfig.jsx';

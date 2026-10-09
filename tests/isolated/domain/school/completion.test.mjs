@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveDayCompletion } from '#domains/school/completion.mjs';
+import { resolveDayCompletion } from "../../../../modules/school/server/domain/completion.mjs";
 
 const served = (subject) => ({ subject, obligation: { state: 'served', reason: null } });
 const obligated = (subject) => ({ subject, obligation: { state: 'obligated', reason: null } });

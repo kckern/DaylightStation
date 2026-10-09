@@ -2,9 +2,9 @@
 import { vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createLocalContentRouter } from '#backend/src/4_api/v1/routers/localContent.mjs';
-import { LegacyLocalContentService } from '#apps/content/LegacyLocalContentService.mjs';
-import { LegacyLocalContentRepository } from '#adapters/content/LegacyLocalContentRepository.mjs';
+import { createLocalContentRouter } from "../../../../capabilities/content-catalog/server/api/localContent.mjs";
+import { LegacyLocalContentService } from "../../../../capabilities/content-catalog/server/application/LegacyLocalContentService.mjs";
+import { LegacyLocalContentRepository } from "../../../../capabilities/content-catalog/server/adapters/LegacyLocalContentRepository.mjs";
 
 const routerForRegistry = (registry) => createLocalContentRouter({
   localContentService: new LegacyLocalContentService({

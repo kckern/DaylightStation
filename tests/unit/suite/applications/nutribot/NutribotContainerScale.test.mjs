@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
-import { NutribotContainer } from '#apps/nutribot/NutribotContainer.mjs';
-import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
+import { NutribotContainer } from "../../../../../modules/nutribot/server/application/NutribotContainer.mjs";
+import { normalizeScaleNutribotConfig } from '../../../../../modules/health/server/scale-config.mjs';
 
 describe('NutribotContainer scale use cases', () => {
   const container = new NutribotContainer(

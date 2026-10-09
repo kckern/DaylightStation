@@ -1,5 +1,5 @@
 import { shuffle, buildNotePool } from '../noteUtils.js';
-import { spellNoteName, rootQualityOf } from '../../../../frontend/src/modules/MusicNotation/model/spelling.js';
+import { spellNoteName, rootQualityOf } from "../../../../capabilities/music-notation/browser/model/spelling.js";
 import { recognizeHeldSet as classifyHeldNotes } from '../input/recognition.js';
 
 /**

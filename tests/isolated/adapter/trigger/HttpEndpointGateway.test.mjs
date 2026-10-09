@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { HttpEndpointGateway } from '#adapters/trigger/HttpEndpointGateway.mjs';
+import { HttpEndpointGateway } from "../../../../capabilities/device-dispatch/server/adapters/HttpEndpointGateway.mjs";
 
 describe('HttpEndpointGateway', () => {
   const endpoints = { bedtime: { method: 'POST', url: 'http://x/api', headers: { 'X-A': '1' } } };

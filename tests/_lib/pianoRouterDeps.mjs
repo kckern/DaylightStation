@@ -3,7 +3,7 @@ import * as producerRecords from '../../modules/piano/server/application/produce
 import { createPianoApiServices } from '../../modules/piano/server/application/PianoApiServices.mjs';
 import { PianoContainer } from '../../modules/piano/server/application/PianoContainer.mjs';
 import { YamlPianoStudioDatastore } from '../../modules/piano/server/adapters/YamlPianoStudioDatastore.mjs';
-import { PianoConfigProjection } from '#adapters/config/ApplicationConfigProjections.mjs';
+import { PianoConfigProjection } from "../../modules/piano/server/adapters/PianoConfigProjection.mjs";
 import { EventBusPianoCompletionPublisher } from '../../modules/piano/server/adapters/EventBusPianoCompletionPublisher.mjs';
 
 export function withPianoRouterServices(config = {}) {

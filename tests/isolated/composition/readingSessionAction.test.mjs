@@ -16,9 +16,9 @@
  * somebody's homework.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { ReadingSessionService as ProductionReadingSessionService } from '#apps/school/ReadingSessionService.mjs';
-import { EventBusSchoolRealtimeAdapter } from '#adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs';
-import { makeReadingSessionHandler, makeReadingTimeoutHandler } from '#composition/modules/learnerCardActions.mjs';
+import { ReadingSessionService as ProductionReadingSessionService } from "../../../modules/school/server/application/ReadingSessionService.mjs";
+import { EventBusSchoolRealtimeAdapter } from "../../../modules/school/server/adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs";
+import { makeReadingSessionHandler, makeReadingTimeoutHandler } from "../../../modules/school/server/composition/learnerCardActions.mjs";
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
 const TEST_SCHEDULER = { withDeadline: (work) => work, every: () => () => {}, wait: async () => {} };

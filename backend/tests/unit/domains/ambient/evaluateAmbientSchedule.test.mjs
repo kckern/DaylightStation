@@ -1,5 +1,5 @@
 // backend/tests/unit/domains/ambient/evaluateAmbientSchedule.test.mjs
-import { evaluateAmbientSchedule } from '#domains/ambient/evaluateAmbientSchedule.mjs';
+import { evaluateAmbientSchedule } from "../../../../../modules/screens/server/domain/ambient/evaluateAmbientSchedule.mjs";
 
 const WIN = {
   key: 'am', name: 'am', days: [1], startMin: 420, endMin: 540,

@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { YamlCurriculumDatastore } from './YamlCurriculumDatastore.mjs';
-import { YamlSchoolDatastore } from './YamlSchoolDatastore.mjs';
-import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
+import { YamlCurriculumDatastore } from "../../../../../modules/school/server/adapters/persistence/YamlCurriculumDatastore.mjs";
+import { YamlSchoolDatastore } from "../../../../../modules/school/server/adapters/persistence/YamlSchoolDatastore.mjs";
+import { CurriculumAccess } from "../../../../../modules/school/server/application/CurriculumAccess.mjs";
 
 const roots = [];
 

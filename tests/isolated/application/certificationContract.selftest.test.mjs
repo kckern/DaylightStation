@@ -1,6 +1,6 @@
 import { runCertificationPortContract } from '../../_lib/school/certificationContract.mjs';
 import { deriveModuleDemands, capabilityReasons, moduleVerdict, rollUpLesson }
-  from '../../../backend/src/2_domains/school/surfaces/index.mjs';
+  from "../../../modules/school/server/domain/surfaces/index.mjs";
 
 const fakePort = () => ({
   certify(bundle, profile) {

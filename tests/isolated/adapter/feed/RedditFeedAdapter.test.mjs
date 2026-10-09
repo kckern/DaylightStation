@@ -1,6 +1,6 @@
 // tests/isolated/adapter/feed/RedditFeedAdapter.test.mjs
 import { vi } from 'vitest';
-import { RedditFeedAdapter } from '#adapters/feed/sources/RedditFeedAdapter.mjs';
+import { RedditFeedAdapter } from "../../../../modules/feed/server/adapters/sources/RedditFeedAdapter.mjs";
 
 describe('RedditFeedAdapter — preview dimensions', () => {
   let adapter;

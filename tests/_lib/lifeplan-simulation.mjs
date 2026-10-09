@@ -5,13 +5,13 @@
  * of life plan state over multiple cycles.
  */
 
-import { LifePlan } from '#domains/lifeplan/entities/LifePlan.mjs';
-import { GoalStateService } from '#domains/lifeplan/services/GoalStateService.mjs';
-import { BeliefEvaluator } from '#domains/lifeplan/services/BeliefEvaluator.mjs';
-import { BeliefCascadeProcessor } from '#domains/lifeplan/services/BeliefCascadeProcessor.mjs';
-import { CadenceService } from '#domains/lifeplan/services/CadenceService.mjs';
-import { DependencyResolver } from '#domains/lifeplan/services/DependencyResolver.mjs';
-import { ValueDriftCalculator } from '#domains/lifeplan/services/ValueDriftCalculator.mjs';
+import { LifePlan } from "../../modules/life/server/domain/entities/LifePlan.mjs";
+import { GoalStateService } from "../../modules/life/server/domain/services/GoalStateService.mjs";
+import { BeliefEvaluator } from "../../modules/life/server/domain/services/BeliefEvaluator.mjs";
+import { BeliefCascadeProcessor } from "../../modules/life/server/domain/services/BeliefCascadeProcessor.mjs";
+import { CadenceService } from "../../modules/life/server/domain/services/CadenceService.mjs";
+import { DependencyResolver } from "../../modules/life/server/domain/services/DependencyResolver.mjs";
+import { ValueDriftCalculator } from "../../modules/life/server/domain/services/ValueDriftCalculator.mjs";
 
 export class LifeplanSimulation {
   #plan;

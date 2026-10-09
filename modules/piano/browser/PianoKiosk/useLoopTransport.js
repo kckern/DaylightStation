@@ -1,6 +1,6 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import getLogger from '../../../../frontend/src/lib/logging/Logger.js';
-import { buildLoopCycle } from '@shared-music/loopScheduler.mjs';
+import { buildLoopCycle } from "../../../../capabilities/music-notation/portable/loopScheduler.mjs";
 
 /**
  * useLoopTransport — looping multitrack playback for the loop library.

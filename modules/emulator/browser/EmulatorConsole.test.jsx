@@ -1,0 +1,651 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import React from 'react';
+import { render, act } from '@testing-library/react';
+import { EmulatorConsole } from "./EmulatorConsole.jsx";
+import { computeScreenBox } from "./screenBoxGeometry.js";
+
+/**
+ * Build a set of injectable fake factories and capture the objects/args they
+ * were called with so the tests can drive governance + the animation handler.
+ */
+function makeFactories() {
+  const captured = {};
+
+  const engine = {
+    setVolume: vi.fn(),
+    pause: vi.fn(),
+    resume: vi.fn(),
+    boot: vi.fn(() => Promise.resolve()),
+    confirmFirstFrame: vi.fn(() => Promise.resolve(true)),
+    captureResume: vi.fn(() => new Uint8Array([1, 2, 3])),
+    loadResume: vi.fn(() => true),
+    destroy: vi.fn(),
+    captureState: vi.fn(() => new Uint8Array([9, 9])),
+    captureSave: vi.fn(() => new Uint8Array([7])),
+    loadState: vi.fn(() => true),
+    loadSave: vi.fn(() => true),
+    isReady: vi.fn(() => true),
+  };
+
+  const mixer = {
+    playMusic: vi.fn(),
+    stopMusic: vi.fn(),
+    playCue: vi.fn(),
+    setBusVolume: vi.fn(),
+    muteBus: vi.fn(),
+  };
+
+  const session = {
+    start: vi.fn(() => Promise.resolve({ wramBase: 0xc000 })),
+    stop: vi.fn(),
+    destroy: vi.fn(),
+    runActions: vi.fn(),
+    getGameState: vi.fn(() => ({})),
+  };
+
+  const createEngine = vi.fn(() => engine);
+  const createMixer = vi.fn((opts) => {
+    captured.mixerOpts = opts;
+    return mixer;
+  });
+  const createSession = vi.fn((opts) => {
+    captured.sessionOpts = opts;
+    return session;
+  });
+  const createClip = vi.fn(() => ({
+    play: vi.fn(),
+    stop: vi.fn(),
+    setVolume: vi.fn(),
+    onEnded: vi.fn(),
+  }));
+
+  return {
+    captured,
+    engine,
+    mixer,
+    session,
+    factories: { createEngine, createMixer, createSession, createClip },
+  };
+}
+
+/**
+ * A controllable governance gate matching the documented shape.
+ */
+function makeGate(initialStatus = { state: 'playing' }) {
+  let status = initialStatus;
+  let cb = null;
+  return {
+    mode: 'governed',
+    isPlayable: () => status.state === 'playing' || status.state === 'warning',
+    getStatus: () => status,
+    onChange: (fn) => {
+      cb = fn;
+      return () => {
+        cb = null;
+      };
+    },
+    // test driver
+    _set(next) {
+      status = next;
+      if (cb) cb(status);
+    },
+    _hasSub: () => cb != null,
+  };
+}
+
+const baseGame = {
+  id: 'example-quest',
+  system: 'gb',
+  romUrl: '/rom.gb',
+  states: {},
+  bindings: [],
+  chrome: 'gameboy',
+  shader: 'lcd',
+  // Controller panel is config-gated via the merged bezel presentation block
+  // (origin's model); tests exercise it by enabling onscreen_controls there.
+  presentation: { onscreen_controls: true },
+};
+
+const baseEngineConfig = { pathtodata: '/data', core: 'gb' };
+
+function renderConsole(overrides = {}) {
+  const { factories, captured, engine, mixer, session } = makeFactories();
+  const gate = overrides.gate || makeGate();
+  const props = {
+    game: baseGame,
+    engineConfig: baseEngineConfig,
+    governanceGate: gate,
+    identity: { getActivePlayerId: () => 'p1' },
+    factories,
+    ...overrides.props,
+  };
+  const result = render(<EmulatorConsole {...props} />);
+  return { ...result, factories, captured, engine, mixer, session, gate };
+}
+
+describe('computeScreenBox', () => {
+  const cut = { left: 0, top: 0, width: 320, height: 288 };
+  it('locks to integer multiples of 160×144 for GB', () => {
+    const box = computeScreenBox({ cut, dpr: 1, native: { width: 160, height: 144 } });
+    expect(box.scale).toBe(2);
+    expect(box.width).toBe(320);
+    expect(box.height).toBe(288);
+  });
+  it('locks to integer multiples of 240×160 for GBA', () => {
+    const box = computeScreenBox({ cut: { left: 0, top: 0, width: 480, height: 320 }, dpr: 1, native: { width: 240, height: 160 } });
+    expect(box.scale).toBe(2);
+    expect(box.width).toBe(480);
+    expect(box.height).toBe(320);
+  });
+  it('letterboxes GBA inside a GB-shaped cutout (centered)', () => {
+    const box = computeScreenBox({ cut, dpr: 1, native: { width: 240, height: 160 } });
+    expect(box.scale).toBe(1);
+    expect(box.width).toBe(240);
+    expect(box.height).toBe(160);
+    expect(box.left).toBe(40);
+    expect(box.top).toBe(64);
+  });
+  it('fill mode takes the whole cutout instead of locking to a whole multiple', () => {
+    // The Genesis aperture. Integer locking leaves a quarter of it empty:
+    // 320x224 fits 3x (960x672) because 4x overflows. A console with no pixel
+    // grid to align to should not pay that.
+    const hole = { left: 365, top: 110, width: 1190, height: 892 };
+    const locked = computeScreenBox({ cut: hole, dpr: 1, native: { width: 320, height: 224 } });
+    expect([locked.width, locked.height]).toEqual([960, 672]);
+
+    const filled = computeScreenBox({ cut: hole, dpr: 1, native: { width: 320, height: 224 }, scaling: 'fill' });
+    expect([filled.width, filled.height]).toEqual([1190, 892]);
+    expect([filled.left, filled.top]).toEqual([365, 110]);
+  });
+
+  it('fill mode keeps the CUTOUT aspect, not the framebuffer aspect', () => {
+    // A Mega Drive drew 320x224 (1.4286) across a 4:3 television: its pixels
+    // were never square. Filling a 4:3 cutout is what reproduces that, so the
+    // box must not come back at the framebuffer's own ratio.
+    const filled = computeScreenBox({
+      cut: { left: 365, top: 110, width: 1190, height: 892 },
+      dpr: 1, native: { width: 320, height: 224 }, scaling: 'fill',
+    });
+    expect(filled.width / filled.height).toBeCloseTo(4 / 3, 2);
+    expect(filled.width / filled.height).not.toBeCloseTo(320 / 224, 2);
+  });
+
+  it('fill mode snaps to whole device pixels at a fractional DPR', () => {
+    const filled = computeScreenBox({
+      cut: { left: 365.4, top: 110.7, width: 1190.3, height: 892.6 },
+      dpr: 1.5, native: { width: 320, height: 224 }, scaling: 'fill',
+    });
+    for (const v of [filled.left, filled.top, filled.width, filled.height]) {
+      expect(Math.abs(v * 1.5 - Math.round(v * 1.5))).toBeLessThan(1e-9);
+    }
+  });
+
+  it('defaults to integer locking, so the Game Boy is untouched', () => {
+    const box = computeScreenBox({ cut, dpr: 1, native: { width: 160, height: 144 } });
+    expect(box.scale).toBe(2);
+    expect([box.width, box.height]).toEqual([320, 288]);
+  });
+
+  it('falls back to 160×144 when native is absent', () => {
+    const box = computeScreenBox({ cut, dpr: 1, native: undefined });
+    expect(box.scale).toBe(2);
+  });
+});
+
+describe('EmulatorConsole', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('renders the mount div and starts a session exactly once with that mount', async () => {
+    const { container, factories, session } = renderConsole();
+    // flush the async start() effect
+    await act(async () => {});
+
+    const mount = container.querySelector('.emulator-mount');
+    expect(mount).toBeTruthy();
+
+    expect(factories.createSession).toHaveBeenCalledTimes(1);
+    expect(session.start).toHaveBeenCalledTimes(1);
+    expect(session.start).toHaveBeenCalledWith({ mount });
+  });
+
+  it('wires the mixer with engine.setVolume as setGameVolume', async () => {
+    const { captured, engine } = renderConsole();
+    await act(async () => {});
+    expect(captured.mixerOpts.setGameVolume).toBe(engine.setVolume);
+    expect(typeof captured.mixerOpts.createClip).toBe('function');
+  });
+
+  it('shows no overlay while playing', async () => {
+    const { container } = renderConsole();
+    await act(async () => {});
+    expect(container.querySelector('.emulator-console').getAttribute('data-state')).toBe('playing');
+    expect(container.querySelector('.emulator-governance-overlay')).toBeNull();
+  });
+
+  it('reflects warning status with grace countdown', async () => {
+    const gate = makeGate();
+    const { container } = renderConsole({ gate });
+    await act(async () => {});
+
+    act(() => gate._set({ state: 'warning', graceMsLeft: 4200 }));
+
+    const root = container.querySelector('.emulator-console');
+    expect(root.getAttribute('data-state')).toBe('warning');
+    const overlay = container.querySelector('.emulator-governance-overlay');
+    expect(overlay).toBeTruthy();
+    expect(overlay.className).toContain('overlay-warning');
+    expect(overlay.textContent).toContain('Keep moving!');
+    expect(overlay.textContent).toContain('5s'); // ceil(4200/1000)
+  });
+
+  it('reflects paused status', async () => {
+    const gate = makeGate();
+    const { container } = renderConsole({ gate });
+    await act(async () => {});
+    act(() => gate._set({ state: 'paused' }));
+    const overlay = container.querySelector('.emulator-governance-overlay');
+    expect(overlay.className).toContain('overlay-paused');
+    expect(overlay.textContent).toContain('Paused');
+  });
+
+  it('reflects depleted status', async () => {
+    const gate = makeGate();
+    const { container } = renderConsole({ gate });
+    await act(async () => {});
+    act(() => gate._set({ state: 'depleted' }));
+    const overlay = container.querySelector('.emulator-governance-overlay');
+    expect(overlay.className).toContain('overlay-depleted');
+    expect(overlay.textContent).toContain('earn more');
+  });
+
+  it('refreshes status on the polling interval (credit countdown)', async () => {
+    let status = { state: 'playing' };
+    const gate = {
+      mode: 'governed',
+      isPlayable: () => true,
+      getStatus: () => status,
+      onChange: () => () => {},
+    };
+    const { container } = renderConsole({ gate });
+    await act(async () => {});
+    // change status WITHOUT firing onChange — only the interval should catch it
+    status = { state: 'paused' };
+    act(() => vi.advanceTimersByTime(600));
+    expect(container.querySelector('.emulator-console').getAttribute('data-state')).toBe('paused');
+  });
+
+  it('reports confirmed play only after a frame and follows governance pauses', async () => {
+    const onArcadeGameSessionStateChange = vi.fn();
+    const gate = makeGate();
+    renderConsole({ gate, props: { onArcadeGameSessionStateChange } });
+    expect(onArcadeGameSessionStateChange).not.toHaveBeenCalledWith('playing');
+    await act(async () => {});
+    expect(onArcadeGameSessionStateChange).toHaveBeenLastCalledWith('playing');
+
+    act(() => gate._set({ state: 'paused' }));
+    expect(onArcadeGameSessionStateChange).toHaveBeenLastCalledWith('paused');
+    act(() => gate._set({ state: 'playing' }));
+    expect(onArcadeGameSessionStateChange).toHaveBeenLastCalledWith('playing');
+  });
+
+  it('the merged animation handler adds a transient class that clears', async () => {
+    const { container, captured } = renderConsole();
+    await act(async () => {});
+
+    const handlers = captured.sessionOpts.actionHandlers;
+    expect(typeof handlers.animation).toBe('function');
+
+    act(() => handlers.animation('red-pulse'));
+    const shader = container.querySelector('.emulator-shader');
+    expect(shader.className).toContain('emu-anim-red-pulse');
+
+    act(() => vi.advanceTimersByTime(1100));
+    expect(container.querySelector('.emulator-shader').className).not.toContain('emu-anim-red-pulse');
+  });
+
+  it('merged handlers preserve host-provided actionHandlers', async () => {
+    const haScene = vi.fn();
+    const { captured } = renderConsole({ props: { actionHandlers: { haScene } } });
+    await act(async () => {});
+    expect(captured.sessionOpts.actionHandlers.haScene).toBe(haScene);
+    expect(typeof captured.sessionOpts.actionHandlers.animation).toBe('function');
+  });
+
+  it('cleans up on unmount: destroys session, clears interval and unsub', async () => {
+    const gate = makeGate();
+    const { unmount, session } = renderConsole({ gate });
+    await act(async () => {});
+    expect(gate._hasSub()).toBe(true);
+
+    act(() => unmount());
+
+    expect(session.destroy).toHaveBeenCalledTimes(1);
+    expect(gate._hasSub()).toBe(false);
+    // no pending timers should fire into a torn-down tree
+    expect(() => act(() => vi.advanceTimersByTime(2000))).not.toThrow();
+  });
+
+  describe('observability: boot failure is visible + recoverable', () => {
+    it('booted-but-blank (no first frame) trips the error overlay with Retry', async () => {
+      const h = renderConsole();
+      h.engine.confirmFirstFrame.mockResolvedValue(false);
+      await act(async () => {});
+      expect(h.container.querySelector('.emulator-error-overlay')).toBeTruthy();
+      expect(h.container.querySelector('.emulator-error-retry')).toBeTruthy();
+    });
+
+    it('Retry clears the error and re-boots the session', async () => {
+      const h = renderConsole();
+      h.engine.confirmFirstFrame.mockResolvedValue(false);
+      await act(async () => {});
+      expect(h.session.start).toHaveBeenCalledTimes(1);
+      expect(h.container.querySelector('.emulator-error-overlay')).toBeTruthy();
+
+      // Next boot renders fine.
+      h.engine.confirmFirstFrame.mockResolvedValue(true);
+      act(() => h.container.querySelector('.emulator-error-retry').click());
+      await act(async () => {});
+
+      expect(h.session.start).toHaveBeenCalledTimes(2);
+      expect(h.container.querySelector('.emulator-error-overlay')).toBeNull();
+    });
+
+    it('a healthy boot shows no error overlay', async () => {
+      const h = renderConsole();
+      await act(async () => {});
+      expect(h.container.querySelector('.emulator-error-overlay')).toBeNull();
+    });
+  });
+
+  describe('observability: persist-on-exit is never a silent catch', () => {
+    it('persists captured object on unmount through the discriminated saveResume', async () => {
+      const saveResume = vi.fn(() => Promise.resolve({ status: 'error', httpStatus: 503 }));
+      const persistence = {
+        persist: true, saveMode: 'state', userId: 'p1',
+        saveResume,
+        loadResume: vi.fn(() => Promise.resolve({ status: 'absent' })),
+        clearResume: vi.fn(),
+      };
+      const { unmount, engine } = renderConsole({ props: { persistence } });
+      await act(async () => {});
+      act(() => unmount());
+      await act(async () => {});
+      // New path: captureState is called (saveMode 'state'), NOT captureResume.
+      expect(engine.captureState).toHaveBeenCalled();
+      expect(saveResume).toHaveBeenCalledTimes(1);
+      // saveResume now receives a captured object { state } instead of raw bytes.
+      const captured = saveResume.mock.calls[0][0];
+      expect(captured).toHaveProperty('state');
+      // The failed-save result is handled (logged warn), not thrown/swallowed.
+      expect(saveResume.mock.results[0].value).resolves.toEqual({ status: 'error', httpStatus: 503 });
+    });
+  });
+
+  describe('bezel hotspots + overlays', () => {
+    const presentation = {
+      hotspots: [
+        { id: 'speaker', action: 'volume', label: 'Volume', region: { x: 79, y: 64, width: 12, height: 22 } },
+        { id: 'logo', action: 'exit', region: { x: 20, y: 88, width: 32, height: 5 } },
+        { id: 'battery_led', do: { toast: 'Credit' }, region: { x: 19, y: 31, width: 2, height: 4 } },
+      ],
+      overlays: [
+        { id: 'hr', source: 'fitness.heart_rate', format: 'bpm', region: { x: 15, y: 43, width: 12, height: 16 } },
+        { id: 'badges', source: 'state.badges', format: 'badge_meter', region: { x: 71, y: 33, width: 12, height: 10 } },
+      ],
+    };
+    const gameWithPresentation = { ...baseGame, presentation };
+
+    it('renders hotspot buttons from presentation and steps volume on click', async () => {
+      const { container, mixer } = renderConsole({ props: { game: gameWithPresentation } });
+      await act(async () => {});
+      const speaker = container.querySelector('[data-hotspot-id="speaker"]');
+      expect(speaker).toBeTruthy();
+      act(() => speaker.click());
+      expect(mixer.setBusVolume).toHaveBeenLastCalledWith('game', 0.75);
+    });
+
+    it('routes an exit hotspot to onExit', async () => {
+      const onExit = vi.fn();
+      const { container } = renderConsole({ props: { game: gameWithPresentation, onExit } });
+      await act(async () => {});
+      act(() => container.querySelector('[data-hotspot-id="logo"]').click());
+      expect(onExit).toHaveBeenCalledTimes(1);
+    });
+
+    it('dispatches a do: hotspot through session.runActions', async () => {
+      const { container, session } = renderConsole({ props: { game: gameWithPresentation } });
+      await act(async () => {});
+      act(() => container.querySelector('[data-hotspot-id="battery_led"]').click());
+      expect(session.runActions).toHaveBeenCalledWith({ toast: 'Credit' }, { hotspot: 'battery_led' });
+    });
+
+    it('renders overlays and shows injected overlayData values', async () => {
+      const { container } = renderConsole({
+        props: { game: gameWithPresentation, overlayData: { 'fitness.heart_rate': 142 } },
+      });
+      await act(async () => {});
+      const hr = container.querySelector('[data-overlay-id="hr"]');
+      expect(hr).toBeTruthy();
+      expect(hr.textContent).toContain('142');
+      expect(hr.textContent).toContain('BPM');
+    });
+
+    it('renders game-state-driven overlays from session.getGameState()', async () => {
+      const { container, session } = renderConsole({ props: { game: gameWithPresentation } });
+      session.getGameState.mockReturnValue({ badges: 5 });
+      await act(async () => {});
+      act(() => vi.advanceTimersByTime(600)); // status/state poll
+      const badges = container.querySelector('[data-overlay-id="badges"]');
+      expect(badges.textContent).toContain('5');
+    });
+
+    it('renders no hotspot/overlay layers when presentation is absent', async () => {
+      const { container } = renderConsole();
+      await act(async () => {});
+      expect(container.querySelector('.emu-hotspot-layer')).toBeNull();
+      expect(container.querySelector('.emu-overlay-layer')).toBeNull();
+    });
+  });
+
+  describe('controller panel', () => {
+    const noPads = () => [];
+    const onePad = () => [{ index: 0, id: 'Xbox', connected: true, buttons: [], axes: [] }];
+
+    it('does NOT nag: stays collapsed on mount even when no gamepads are connected', async () => {
+      const { container } = renderConsole({ props: { getGamepads: noPads } });
+      await act(async () => {});
+      expect(container.querySelector('.emulator-controller-panel')).toBeNull();
+      expect(container.querySelector('.emulator-controller-toggle')).toBeTruthy();
+    });
+
+    it('starts collapsed when a gamepad is already connected', async () => {
+      const { container } = renderConsole({ props: { getGamepads: onePad } });
+      await act(async () => {});
+      expect(container.querySelector('.emulator-controller-panel')).toBeNull();
+      expect(container.querySelector('.emulator-controller-toggle')).toBeTruthy();
+    });
+
+    it('the toggle shows/hides the panel', async () => {
+      const { container } = renderConsole({ props: { getGamepads: onePad } });
+      await act(async () => {});
+      const toggle = container.querySelector('.emulator-controller-toggle');
+      expect(container.querySelector('.emulator-controller-panel')).toBeNull();
+      act(() => toggle.click());
+      expect(container.querySelector('.emulator-controller-panel')).toBeTruthy();
+      act(() => toggle.click());
+      expect(container.querySelector('.emulator-controller-panel')).toBeNull();
+    });
+
+    it('clicking Pair calls the injected fetch with the right URL/body and flips local pairing to scanning', async () => {
+      const fetchSpy = vi.fn(() => Promise.resolve({ ok: true, status: 202 }));
+      const { container } = renderConsole({
+        props: { getGamepads: noPads, fetchImpl: () => fetchSpy },
+      });
+      await act(async () => {});
+
+      // Panel no longer auto-opens; open it via the toggle first.
+      act(() => container.querySelector('.emulator-controller-toggle').click());
+
+      const button = container.querySelector('.ccs-pair-button');
+      expect(button).toBeTruthy();
+      await act(async () => {
+        button.click();
+      });
+
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const [url, opts] = fetchSpy.mock.calls[0];
+      expect(url).toBe('/api/v1/emulator/bt/pair');
+      expect(opts.method).toBe('POST');
+      expect(opts.headers['Content-Type']).toBe('application/json');
+      expect(JSON.parse(opts.body)).toEqual({ durationMs: 30000 });
+
+      // Local pairing flipped to scanning → button disabled + scanning label.
+      const scanning = container.querySelector('.ccs-pair-button');
+      expect(scanning.disabled).toBe(true);
+      expect(scanning.textContent).toContain('Scanning for controllers');
+
+      // After the window elapses, local pairing flips to done.
+      await act(async () => {
+        vi.advanceTimersByTime(30000);
+      });
+      expect(container.querySelector('.ccs-pair-button').textContent).toContain('Done');
+    });
+
+    it('sets error local pairing when the fetch rejects', async () => {
+      const fetchSpy = vi.fn(() => Promise.reject(new Error('bridge offline')));
+      const { container } = renderConsole({
+        props: { getGamepads: noPads, fetchImpl: () => fetchSpy },
+      });
+      await act(async () => {});
+      act(() => container.querySelector('.emulator-controller-toggle').click());
+      await act(async () => {
+        container.querySelector('.ccs-pair-button').click();
+      });
+      const button = container.querySelector('.ccs-pair-button');
+      expect(button.textContent).toContain('Pairing failed — bridge offline');
+      expect(button.disabled).toBe(false);
+    });
+
+    it('host pairing prop overrides console-managed local pairing', async () => {
+      const fetchSpy = vi.fn(() => Promise.resolve({ ok: true, status: 202 }));
+      const { container } = renderConsole({
+        props: {
+          getGamepads: noPads,
+          fetchImpl: () => fetchSpy,
+          pairing: { phase: 'scanning', durationMs: 30000 },
+        },
+      });
+      await act(async () => {});
+      act(() => container.querySelector('.emulator-controller-toggle').click());
+      // Host says scanning even though no local pair was triggered.
+      const button = container.querySelector('.ccs-pair-button');
+      expect(button.disabled).toBe(true);
+      expect(button.textContent).toContain('Scanning for controllers');
+    });
+
+    it('host onPairController override is called instead of the internal fetch', async () => {
+      const fetchSpy = vi.fn(() => Promise.resolve({ ok: true, status: 202 }));
+      const onPairController = vi.fn();
+      const { container } = renderConsole({
+        props: { getGamepads: noPads, fetchImpl: () => fetchSpy, onPairController },
+      });
+      await act(async () => {});
+      act(() => container.querySelector('.emulator-controller-toggle').click());
+      await act(async () => {
+        container.querySelector('.ccs-pair-button').click();
+      });
+      expect(onPairController).toHaveBeenCalledTimes(1);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('autosave', () => {
+  it('persists captured state on the configured interval for a save-enabled session', async () => {
+    vi.useFakeTimers();
+    const { factories } = makeFactories();
+    const saveResume = vi.fn(() => Promise.resolve({ status: 'ok' }));
+    const persistence = {
+      saveMode: 'battery', persist: true, userId: 'user_5',
+      loadResume: () => Promise.resolve({ status: 'absent' }),
+      saveResume,
+      clearResume: () => Promise.resolve({ status: 'ok' }),
+    };
+    await act(async () => {
+      render(
+        <EmulatorConsole
+          game={baseGame}
+          engineConfig={{ core: 'gb', controls: {} }}
+          governanceGate={makeGate()}
+          identity={{ getActivePlayerId: () => 'user_5' }}
+          persistence={persistence}
+          autosaveSeconds={15}
+          factories={factories}
+        />,
+      );
+      await Promise.resolve(); // let session.start() settle
+    });
+    await act(async () => { vi.advanceTimersByTime(15000); await Promise.resolve(); });
+    expect(saveResume).toHaveBeenCalled();
+    const captured = saveResume.mock.calls[0][0];
+    expect(captured).toHaveProperty('state');
+    expect(captured).toHaveProperty('battery'); // battery captures both
+    vi.useRealTimers();
+  });
+});
+
+describe('EmulatorConsole picture shader vs canvas grid', () => {
+  it('draws our canvas grid when the manifest asks for dotmatrix and no core shader', () => {
+    const { container } = renderConsole({ props: { game: { ...baseGame, shader: 'dotmatrix' } } });
+    const root = container.querySelector('.emulator-console');
+    expect(root.dataset.shader).toBe('dotmatrix');
+    expect(root.dataset.pictureShader).toBe('none');
+    expect(container.querySelector('.emulator-shader-grid')).not.toBeNull();
+    expect(container.querySelector('.emulator-shader.shader-dotmatrix')).not.toBeNull();
+  });
+
+  it('stands the canvas grid and CSS wash down when a core shader (ejs_shader) is declared', () => {
+    // The manifest keeps `shader: dotmatrix` beside ejs_shader on purpose — a
+    // frontend that does not know the preset falls back to the grid. This one
+    // does know it, so the grid must not double up with Harlequin's.
+    const game = {
+      ...baseGame,
+      shader: 'dotmatrix',
+      presentation: { ...baseGame.presentation, ejs_shader: 'gameboy-harlequin.glslp' },
+    };
+    const { container } = renderConsole({ props: { game } });
+    const root = container.querySelector('.emulator-console');
+    expect(root.dataset.shader).toBe('none');
+    expect(root.dataset.pictureShader).toBe('gameboy-harlequin.glslp');
+    expect(container.querySelector('.emulator-shader-grid')).toBeNull();
+    expect(container.querySelector('.emulator-shader.shader-none')).not.toBeNull();
+  });
+
+  it('applies the core shader again AFTER the first frame (a start-time apply renders black)', async () => {
+    const game = {
+      ...baseGame,
+      presentation: { ...baseGame.presentation, ejs_shader: 'gameboy-harlequin.glslp' },
+    };
+    const h = renderConsole({ props: { game } });
+    h.engine.applyShader = vi.fn(() => true);
+    h.engine.getAppliedShader = vi.fn(() => 'shaders = 5');
+    await act(async () => {});
+    expect(h.engine.confirmFirstFrame).toHaveBeenCalled();
+    const firstFrameAt = h.engine.confirmFirstFrame.mock.invocationCallOrder[0];
+    const applies = h.engine.applyShader.mock.invocationCallOrder;
+    expect(applies.some((at) => at > firstFrameAt)).toBe(true);
+    expect(h.engine.applyShader).toHaveBeenLastCalledWith('gameboy-harlequin.glslp');
+  });
+
+  it('does not touch the core shader after the first frame when none is declared', async () => {
+    const h = renderConsole();
+    h.engine.applyShader = vi.fn(() => true);
+    await act(async () => {});
+    expect(h.engine.applyShader).not.toHaveBeenCalled();
+  });
+});

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   SATISFACTION_THRESHOLD, mergeRanges, coveredSeconds, coverageFraction, isSatisfied,
-} from '#domains/school/companionCoverage.mjs';
+} from "../../../../modules/school/server/domain/companionCoverage.mjs";
 
 describe('mergeRanges', () => {
   it('sorts, merges overlaps, and joins ranges that touch', () => {

@@ -1,9 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import usePlayerController from './usePlayerController.js';
 import { getLogger } from '../../../../frontend/src/lib/logging/Logger.js';
-import { createMediaGate } from '../../../../frontend/src/lib/Player/gate/mediaGate.js';
-import { resolvePause } from '../../../../frontend/src/lib/Player/gate/pauseArbiter.js';
-import { GATE_ID } from '../../../../frontend/src/lib/Player/gate/gateIds.js';
+import { createMediaGate } from "../player-support/gate/mediaGate.js";
+import { resolvePause } from "../player-support/gate/pauseArbiter.js";
+import { GATE_ID } from "../player-support/gate/gateIds.js";
 
 const Player = lazy(() => import('../public.mjs'));
 const THROTTLE_MS = 10000;

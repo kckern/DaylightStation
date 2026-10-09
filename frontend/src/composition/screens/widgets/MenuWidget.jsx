@@ -1,8 +1,8 @@
 // frontend/src/screen-framework/widgets/MenuWidget.jsx
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
-import { MenuStack } from '../../../modules/Menu/MenuStack.jsx';
-import { MenuSkeleton } from '../../../modules/Menu/MenuSkeleton.jsx';
+import { MenuStack } from "../../../../../modules/media/browser/menu.mjs";
+import { MenuSkeleton } from "../../../../../modules/media/browser/menu-skeleton.mjs";
 import { getChildLogger } from '../../../lib/logging/singleton.js';
 import { usePlayerSessionBinding } from "../../../../../capabilities/playback/browser/sessions.mjs";
 import { useScreenOverlay } from "../../../../../capabilities/screen-host/browser/overlays.mjs";

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { Quality } from '#domains/lifeplan/entities/Quality.mjs';
-import { Rule } from '#domains/lifeplan/entities/Rule.mjs';
-import { Purpose } from '#domains/lifeplan/entities/Purpose.mjs';
+import { Quality } from "../../../../modules/life/server/domain/entities/Quality.mjs";
+import { Rule } from "../../../../modules/life/server/domain/entities/Rule.mjs";
+import { Purpose } from "../../../../modules/life/server/domain/entities/Purpose.mjs";
 
 describe('Quality Entity', () => {
   describe('construction', () => {

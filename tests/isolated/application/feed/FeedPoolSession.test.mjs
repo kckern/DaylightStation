@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { FeedPoolManager } from '#apps/feed/services/FeedPoolManager.mjs';
+import { FeedPoolManager } from "../../../../modules/feed/server/application/services/FeedPoolManager.mjs";
 
 const TEST_SCHEDULER = { withDeadline: (work) => work };
 

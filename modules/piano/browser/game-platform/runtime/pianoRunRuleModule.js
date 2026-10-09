@@ -1,4 +1,4 @@
-import { defineRuleModule } from '@shared-gaming/kernel/index.mjs';
+import { defineRuleModule } from "../../../../../capabilities/gaming/portable/kernel/index.mjs";
 
 const safePhaseList = (value) => Array.isArray(value) && value.length > 0
   && value.every((phase) => typeof phase === 'string' && phase.length > 0);

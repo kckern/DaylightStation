@@ -5,7 +5,7 @@ import {
   getFileStats,
   readBinaryFromPathAsync,
 } from '#system/utils/FileIO.mjs';
-import { IProxyMediaRepository } from '#apps/proxy/ports/IProxyMediaRepository.mjs';
+import { IProxyMediaRepository } from "../../../../capabilities/content-catalog/server/application/proxy/ports/IProxyMediaRepository.mjs";
 
 const LOCAL_MIME_TYPES = Object.freeze({
   '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.mp4': 'video/mp4',

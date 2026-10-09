@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { authenticate } from '#apps/trigger/guards/authenticate.mjs';
+import { authenticate } from "../../../../../capabilities/device-dispatch/server/application/guards/authenticate.mjs";
 
 describe('authenticate', () => {
   it('passes when no token is configured', () => {

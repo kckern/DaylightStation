@@ -1,4 +1,4 @@
-import { createItemActionOwner } from '../../../modules/Media/actions/itemActionOwner.js';
+import { createItemActionOwner } from "../../../../../modules/media/browser/item-actions.mjs";
 
 export function createScreenItemActions({ source, targetId }) {
   if (!source?.capture || !source?.applyQueue) {

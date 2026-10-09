@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Response } from '#domains/trigger/Response.mjs';
+import { Response } from "../../../../capabilities/device-dispatch/server/domain/Response.mjs";
 
 describe('Response.script', () => {
   it('builds a script response', () => {

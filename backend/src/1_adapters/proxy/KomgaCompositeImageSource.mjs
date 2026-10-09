@@ -1,4 +1,4 @@
-import { ICompositeImageSource } from '#apps/proxy/ports/ICompositeImageSource.mjs';
+import { ICompositeImageSource } from "../../../../capabilities/content-catalog/server/application/proxy/ports/ICompositeImageSource.mjs";
 
 /** Remote source for the cover/current/next images in one composite hero. */
 export class KomgaCompositeImageSource extends ICompositeImageSource {

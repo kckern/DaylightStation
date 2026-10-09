@@ -1,3 +1,4 @@
+import {contentRequiresCamera} from '../../../../backend/src/5_composition/policies/contentRequiresCamera.mjs';
 // RQ-PLAY-10: a screen in Add only acks a dispatched play-now with
 // appliedAs:'add'. The dispatch result must say so, and the receiver-outcome
 // watchdog must look for a queue append — not for the item becoming current
@@ -40,7 +41,7 @@ describe('WakeAndLoadService — Add only receivers', () => {
       prepareForContent: vi.fn().mockResolvedValue({ ok: true, coldRestart: false, cameraAvailable: true }),
       loadContent: vi.fn().mockResolvedValue({ ok: true }),
     };
-    svc = new WakeAndLoadService({
+    svc = new WakeAndLoadService({ contentRequiresCamera,
       ...testApplicationRuntime(),
       deviceService: { get: () => device },
       readinessPolicy: { isReady: vi.fn().mockResolvedValue({ ready: true }) },
@@ -90,7 +91,7 @@ describe('WakeAndLoadService — dispatch origin (B5)', () => {
       prepareForContent: vi.fn().mockResolvedValue({ ok: true, coldRestart: false, cameraAvailable: true }),
       loadContent: vi.fn().mockResolvedValue({ ok: true }),
     };
-    const svc = new WakeAndLoadService({
+    const svc = new WakeAndLoadService({ contentRequiresCamera,
       ...testApplicationRuntime(), deviceService: { get: () => device },
       readinessPolicy: { isReady: vi.fn().mockResolvedValue({ ready: true }) },
       broadcast, eventBus, commandHandlerLivenessService: { isFresh: () => true },

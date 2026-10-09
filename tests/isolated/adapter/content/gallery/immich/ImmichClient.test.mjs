@@ -1,5 +1,5 @@
 import { vi, describe, test, expect, beforeEach } from 'vitest';
-import { ImmichClient } from '#adapters/content/gallery/immich/ImmichClient.mjs';
+import { ImmichClient } from "../../../../../../capabilities/content-catalog/server/adapters/providers/gallery/immich/ImmichClient.mjs";
 
 describe('ImmichClient', () => {
   const mockHttpClient = {

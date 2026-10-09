@@ -3,7 +3,7 @@ import usePianoList from '../../usePianoList.js';
 import PianoEmpty from '../../PianoEmpty.jsx';
 import { balancedColumns } from '../../tileGridLayout.js';
 import { SkeletonPoster } from '../../Skeleton.jsx';
-import { prefetchOsmd } from '../../../../../../frontend/src/modules/MusicNotation/renderers/osmdRender.js';
+import { prefetchOsmd } from "../../../../../../capabilities/music-notation/browser/renderers/osmdRender.js";
 import { prettyTitle } from './scoreTitle.js';
 import ScorePlate from './ScorePlate.jsx';
 import '../../../components/PianoCourseTabs.scss';

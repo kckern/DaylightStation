@@ -1,5 +1,5 @@
 // tests/unit/suite/health/LongitudinalAggregationService.test.mjs
-import { LongitudinalAggregationService } from '../../../../backend/src/3_applications/health/LongitudinalAggregationService.mjs';
+import { LongitudinalAggregationService } from "../../../../modules/health/server/application/health/LongitudinalAggregationService.mjs";
 
 function makeDateStr(daysAgo) {
   const d = new Date();

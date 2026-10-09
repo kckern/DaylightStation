@@ -1,5 +1,5 @@
-import { materializeById, parseInstanceId, searchBank } from '#shared/music/exerciseBank.mjs';
-import { normalizeRequirement } from '#shared/music/learningPrograms.mjs';
+import { materializeById, parseInstanceId, searchBank } from "../../portable/music/exerciseBank.mjs";
+import { normalizeRequirement } from "../../portable/music/learningPrograms.mjs";
 
 /**
  * Challenge selection from the exercise bank.

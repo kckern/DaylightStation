@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
-import { DanceLightingController } from '#adapters/fitness/DanceLightingController.mjs';
+import { DanceLightingController } from "../../../../modules/fitness/server/adapters/DanceLightingController.mjs";
 
 const cfg = (over = {}) => ({ dance_party: { lighting: {
   color_strips: ['light.strip1', 'light.strip2'],

@@ -8,7 +8,7 @@ import { createPianoRouter } from '../../../modules/piano/server/api/piano.mjs';
 import { withPianoRouterServices } from '../../_lib/pianoRouterDeps.mjs';
 import { YamlPianoStudioDatastore } from '../../../modules/piano/server/adapters/YamlPianoStudioDatastore.mjs';
 import { PianoContainer } from '../../../modules/piano/server/application/PianoContainer.mjs';
-import { PianoConfigProjection } from '../../../backend/src/1_adapters/config/ApplicationConfigProjections.mjs';
+import { PianoConfigProjection } from "../../../modules/piano/server/adapters/PianoConfigProjection.mjs";
 
 // NOTE: piano studio takes moved from a per-piano-device layout
 // (`/piano/:pianoId/studio`) to a per-user layout (`/piano/users/:userId/studio`)

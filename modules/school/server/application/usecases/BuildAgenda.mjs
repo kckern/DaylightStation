@@ -1,0 +1,1061 @@
+/**
+ * BuildAgenda — turn a learner's plan into a piece of paper they can scan
+ * (spec §6.3, v2 sectioned agenda).
+ *
+ * This is where the console stops being a database and becomes an object in a
+ * child's hand. It reads the assignment, asks the planner what there is to
+ * do, sections that flat plan by subject (`planDailyAgenda`), makes sure the
+ * one thing each subject offers has a work session behind it, mints ONE
+ * opaque token per SUBJECT (not per unit), and returns an agenda document.
+ *
+ * Three rules it exists to hold:
+ *
+ *   1. **Re-scanning the card never creates a second session.** An open
+ *      session for a unit is REUSED; only a unit with none gets a fresh one.
+ *   2. **The planner creates the work session before any work is issued**
+ *      (§6.3). Selecting is therefore a state transition, not a creation.
+ *   3. **A subject's ticket is sessionless.** `subject_next` names a learner
+ *      and a subject, never a unit or a session — a child scans one code per
+ *      subject and the resolver (Task 11) works out what "next" means at scan
+ *      time, which is what lets the same ticket survive a session advancing
+ *      underneath it.
+ *
+ * Program entries (a unit whose content IS a whole external program) never
+ * get a work session here — there is nothing for this console to track, and
+ * "starting" one just means sending the child to the Portal.
+ *
+ * Token expiry: the subject ticket carries a conservative TTL rather than
+ * being revoked when the next agenda prints, for the same reason the old
+ * per-unit tokens did — a token a child is already holding should keep
+ * meaning something.
+ */
+import { PlanProjection } from "../PlanProjection.mjs";
+import { mintToken } from "../../domain/sessions/tokens.mjs";
+import { mintAccessCode } from "../../domain/sessions/accessCode.mjs";
+import { agendaDocument, noticeDocument, reviewNoteLines } from "../../domain/documents/receipts.mjs";
+import { studyDayIndex, offsetMinutesFor, studyDayWindow, studyDayWindowForDate, studyDayForInstant } from "../../domain/studyDay.mjs";
+import { shortId } from '#system/utils/id.mjs';
+import { ensureSession, nextMove } from "./offerSession.mjs";
+import { courseDisplay, moduleDisplay } from "../../domain/curriculum/display.mjs";
+import { curriculumPosterRef } from '#apps/common/resources/publicResourceRefs.mjs';
+import { lessonProgressRowsFromPlan } from "../../domain/lessonProgress.mjs";
+import { BOOK_LOG_PROGRAM_ID, DEFAULT_BOOK_LOG_SUBJECT } from "../../domain/bookLog.mjs";
+import { programStatusFor } from "../../domain/agenda.mjs";
+import { projectProgramEntry } from "../assignedProgramPlan.mjs";
+import { DEFAULT_ACCESS_CODE_MAX_USES } from "../../domain/sessions/accessCode.mjs";
+
+const DEFAULT_SUBJECT_TOKEN_TTL_HOURS = 168;
+const HOUR_MS = 3_600_000;
+// Study-day boundary agenda.mjs's own `planDailyAgenda` uses when BuildAgenda
+// calls it without one (its own default) — kept in step so "yesterday's
+// note" and "served today" roll over on the exact same instant.
+const BOUNDARY_HOUR = 4;
+
+/**
+ * How many times a printed reading code may be typed before it is spent.
+ *
+ * FAR LOOSER THAN A LESSON'S, AND STILL NOT ABSENT. A subject code is spent
+ * after three (`DEFAULT_ACCESS_CODE_MAX_USES`) because a lesson is done once. A
+ * log is not a task: "I finished another one" is a thing a child may honestly
+ * do several times in a day, and a cap near three would break the very feature
+ * this code exists for. Attribution, not frequency, is still the real question
+ * on the shelf, and the shelf answers it with the learner chip at the top.
+ *
+ * But an uncapped code is worth unlimited opens to whoever picks the slip up
+ * off the counter — `accessCode.mjs` records one code typed THIRTEEN times in
+ * five hours. Twelve sits above any real day of logging and under that, so it
+ * bounds the abuse without bounding the honest use.
+ *
+ * A spent code answers `USED_UP`, a sentence the panel already understands.
+ * This is deliberately the ONLY new bound: the two expiry clocks are argued in
+ * `tokens.mjs` ("Do not 'align' them.") and stay exactly as they are.
+ */
+const READING_CODE_MAX_USES = 12;
+
+/**
+ * Stand-ins that let `previewOnly` render a real-shaped lesson card — QR box and
+ * code panel included — without minting anything.
+ *
+ * The token is INERT BY CONSTRUCTION: it is not in the `sch:` scheme the scan
+ * resolver accepts, so scanning a preview QR cannot match a live ticket even
+ * accidentally. The code keeps a real code's digit shape — it has to, or the
+ * panel it sits in measures differently from the printed one and the preview
+ * stops being representative — and is safe because codes RESOLVE BY LOOKUP in
+ * the registry: one that was never minted simply matches nothing.
+ */
+const PREVIEW_TOKEN = 'preview:not-a-ticket';
+const PREVIEW_BULK_TOKEN = 'preview:not-a-bulk-ticket';
+const PREVIEW_READING_TOKEN = 'preview:not-a-reading-ticket';
+const PREVIEW_ACCESS_CODE = '000000';
+
+
+export class BuildAgenda {
+  // `curriculum`, `assignments`, `attestations` and `curriculumExceptions` are
+  // NOT held: every read this use case makes of them now happens inside
+  // `PlanProjection`. Keeping a second handle would be an invitation to
+  // re-assemble the plan here, which is the defect this class was extracted to
+  // end.
+  #sessions; #tokens; #launchers; #timezone; #teacherNotes;
+  #clock; #rng; #newSessionId; #ttlMs; #logger; #reviewQueue; #schoolCalcStudies; #schoolCalcMode;
+  #selfService; #languageReelService; #previewOnly; #planProjection; #accessCodeMaxUses;
+
+  /**
+   * @param {object} deps
+   * @param {import('../CurriculumAccess.mjs').CurriculumAccess} deps.curriculum
+   * @param {import('../ports/IAssignmentStore.mjs').IAssignmentStore} deps.assignments
+   * @param {import('../ports/IWorkSessionRepository.mjs').IWorkSessionRepository} deps.sessions
+   * @param {import('../ports/ITokenRegistry.mjs').ITokenRegistry} deps.tokens
+   * @param {Map<string, import('../ports/IProgramLauncher.mjs').IProgramLauncher>} [deps.launchers]
+   *   program id -> launcher. Consulted read-only (`status`) for every
+   *   DISTINCT program instance among the plan's entries.
+   * @param {string|null} [deps.timezone] - IANA zone the study-day boundary
+   *   and the printed time are both read against
+   * @param {() => Date} [deps.clock]
+   * @param {() => number} [deps.rng] - injected so a test can mint predictable tokens
+   * @param {() => string} [deps.newSessionId]
+   * @param {number} [deps.subjectTokenTtlHours]
+   * @param {{enabled?: boolean}|null} [deps.selfService] - `school.yml`'s
+   *   `selfService` block, passed through by composition. With `enabled: true`
+   *   every subject ticket also gets a six-digit panel code, printed beside the
+   *   lesson so a child can start their own work at the school-room panel.
+   *   Anything else — absent, `false`, a typo — and this use case behaves
+   *   exactly as it did before the feature existed: no code minted, no key on
+   *   the record, no line on the paper. Requires a token registry that can
+   *   report its live codes (`liveAccessCodes`).
+   * @param {import('../ports/IReviewQueue.mjs').IReviewQueue} [deps.reviewQueue] - read
+   *   for the "Notes for you" section (spec R7): a grown-up's resolved-item
+   *   notes for this learner, from the current or previous study day.
+   *   Optional — absent, the agenda simply carries no notes section.
+   * @param {object} [deps.logger]
+   */
+  constructor({
+    curriculum, assignments, sessions, tokens, launchers = new Map(),
+    timezone = null, clock = () => new Date(), rng = Math.random,
+    newSessionId = () => `ses_${shortId(8)}`,
+    subjectTokenTtlHours = DEFAULT_SUBJECT_TOKEN_TTL_HOURS, reviewQueue = null,
+    // Repair-wave sources (spec D2/D3), both optional: attestations feed the
+    // planner's gate-unlock; teacher notes join the "Notes for you" window.
+    attestations = null, teacherNotes = null,
+    schoolCalcStudies = null, schoolCalcMode = 'off',
+    selfService = null, curriculumExceptions = null, languageReelService = null,
+    // A planning preview may render the same agenda without manufacturing a
+    // plausible-looking scan ticket.  It is deliberately distinct from
+    // `selfService`: even when self-service is enabled for real paper, a
+    // preview has no actionable QR or digit code at all.
+    previewOnly = false,
+    // The ONE assembler for plan + sections. Injected so every surface in a
+    // composition can share a single instance (and so a test can prove they
+    // agree); defaulted so no caller is obliged to build one, and none of them
+    // can quietly go back to hand-assembling the inputs.
+    planProjection = null,
+    logger = console,
+  } = {}) {
+    if (!curriculum || !assignments || !sessions || !tokens) {
+      throw new Error('BuildAgenda requires curriculum, assignments, sessions and tokens');
+    }
+    this.#sessions = sessions;
+    this.#tokens = tokens;
+    this.#launchers = launchers;
+    this.#timezone = timezone;
+    this.#clock = clock;
+    this.#rng = rng;
+    this.#newSessionId = newSessionId;
+    this.#ttlMs = subjectTokenTtlHours * HOUR_MS;
+    this.#reviewQueue = reviewQueue;
+    this.#logger = logger;
+    this.#teacherNotes = teacherNotes;
+    if (!['off', 'issue', 'preview'].includes(schoolCalcMode)) {
+      throw new Error('BuildAgenda schoolCalcMode must be off, issue, or preview');
+    }
+    this.#schoolCalcStudies = schoolCalcStudies;
+    this.#schoolCalcMode = schoolCalcMode;
+    this.#languageReelService = languageReelService;
+    this.#previewOnly = previewOnly === true;
+    // One switch, read once: `selfService.enabled !== true` is today's agenda,
+    // byte for byte — no code minted, no key on the record, no line on the paper.
+    this.#selfService = selfService?.enabled === true;
+    // How many opens one printed code is worth. Read from the same
+    // `school.yml` block that switches the feature on, so a household can tune
+    // it; an absent or nonsensical value falls back to the domain's default
+    // rather than to "unlimited", because a typo must not quietly remove the
+    // limit it was trying to change.
+    const configuredMaxUses = selfService?.codeMaxUses;
+    this.#accessCodeMaxUses = Number.isInteger(configuredMaxUses) && configuredMaxUses > 0
+      ? configuredMaxUses
+      : DEFAULT_ACCESS_CODE_MAX_USES;
+    // A code is only unique if something can say whether it is already taken.
+    // Refuse at CONSTRUCTION rather than letting the first agenda of the day
+    // discover it: `mintAccessCode` has no default `taken`, and a registry
+    // that cannot answer would leave the within-agenda set as the only guard —
+    // which never sees yesterday's still-live codes.
+    if (this.#selfService && typeof tokens.liveAccessCodes !== 'function') {
+      throw new Error('BuildAgenda: selfService requires a token registry with liveAccessCodes');
+    }
+    this.#planProjection = planProjection ?? new PlanProjection({
+      curriculum, assignments, sessions, attestations, curriculumExceptions,
+      launchers, timezone, clock,
+      planErrorEvent: 'school.agenda.plan-errors',
+      launcherFailedEvent: 'school.agenda.launcher-failed',
+      logger,
+    });
+  }
+
+  /**
+   * @param {object} args
+   * @param {string} args.learnerId
+   * @param {string} [args.learnerName] - what the child is called on the paper
+   * @returns {Promise<{ learnerId: string|null, plan: object|null, sections: object[],
+   *                     offers: Array<{subject: string, unitId: string, sessionId: string|null,
+   *                     token: string, tokenClass: 'subject_next', label: string}>,
+   *                     createdSessions: string[], document: object }>}
+   */
+  async execute({ learnerId, learnerName = null, studyDay = null } = {}) {
+    if (typeof learnerId !== 'string' || !learnerId.trim()) {
+      // No identity means no session and no records (§ guest path). The child
+      // still gets paper — an explanation is the whole point of the slip.
+      return {
+        learnerId: null,
+        plan: null,
+        sections: [],
+        offers: [],
+        createdSessions: [],
+        document: noticeDocument({
+          id: 'no-learner',
+          headline: 'Whose card is this?',
+          lines: ['We could not tell who scanned. Ask a grown-up to set up your card.'],
+        }),
+      };
+    }
+
+    // A dry-run caller may ask what a particular *study day* would offer.
+    // Choose the midpoint of that day rather than treating YYYY-MM-DD as UTC:
+    // the planner and printed heading must agree with the household's 4am
+    // study-day boundary, including DST. Normal issuance never passes this
+    // argument and continues to use the live clock.
+    const window = studyDay == null ? null : studyDayWindowForDate(studyDay, {
+      timezone: this.#timezone, boundaryHour: BOUNDARY_HOUR,
+    });
+    if (studyDay != null && !window) {
+      throw new ValidationError('studyDay must be a real date in YYYY-MM-DD form');
+    }
+    const now = window
+      ? new Date(window.startAtMs + Math.floor((window.endAtMs - window.startAtMs) / 2))
+      : this.#clock();
+    const nowIso = now.toISOString();
+    // The canonical recipe, now stated once (`PlanProjection`) instead of
+    // hand-copied here and in four other files with four sets of small
+    // differences. This use case keeps the DEFAULTS — attested passes and
+    // curriculum exceptions overlaid onto the planner's history, assigned
+    // programs appended, `planDailyAgenda` fed the RAW history — because this
+    // is the surface that prints the paper a child is holding, so it is the
+    // one every other surface has to converge on.
+    const { plan, sections, activeExceptions, projection, programStatuses } = await this.#planProjection.project({
+      learnerId,
+      // A study-day preview plans against the midpoint of that day's window,
+      // not the clock.
+      now,
+      // The day's language reel must land BETWEEN the planner and the
+      // assigned-program append: an entry pushed after `project()` returns
+      // would never reach `sections`, which is the only surface below reads.
+      augmentPlan: (draft, { assignment: assigned }) => this.#appendLanguageReel(draft, {
+        assignment: assigned, learnerId, at: now,
+      }),
+      planErrorEvent: 'school.agenda.plan-errors',
+      launcherFailedEvent: 'school.agenda.launcher-failed',
+    });
+    const { assignment, units, works } = projection;
+
+    const unitsById = new Map(units.map((u) => [u.unitId, u]));
+    // Program launchers already own their progress semantics and provide the
+    // structured rows on `section.progressRows` (piano is the canonical
+    // example). Ordinary curriculum has the same display shape available from
+    // its canonical plan; enrich only the empty side so launcher data can
+    // never be overwritten and the agenda never re-plans independently.
+    const sectionsWithProgress = sections.map((section) => {
+      if (section.next?.program || section.progressRows?.length) return section;
+      const progressRows = lessonProgressRowsFromPlan({
+        plan,
+        unit: unitsById.get(section.next?.unitId),
+        assignment,
+        works,
+      });
+      return progressRows?.length ? { ...section, progressRows } : section;
+    });
+    const offers = [];
+    const createdSessions = [];
+    const tokensBySubject = {};
+    // Keyed by TOKEN, not subject (Slice H, 2026-08-22): `receipts.mjs` pairs
+    // a code with the QR that carries the SAME token, and a subject key could
+    // only ever alias one offer — two tokened offers sharing a subject would
+    // silently fight over a single code.
+    const accessCodesByToken = {};
+    // Two sets, two kinds of collision. `mintedCodes` guards the sheet being
+    // built — two lessons on ONE piece of paper must never carry the same code.
+    // `liveCodes` guards ACROSS DAYS: a code still live from a previous agenda
+    // must not be reissued, or the registry's index keeps only the last writer
+    // and the earlier record's code silently stops resolving.
+    const mintedCodes = new Set();
+    // The tokens this build actually minted a live access code for. Returned so
+    // a caller that ends up NOT printing (a cooldown-suppressed tap) can hand
+    // the codes back instead of leaving them live for a receipt nobody holds.
+    const mintedTokens = [];
+    // Read ONCE per build, deliberately: the mint predicate is synchronous.
+    let liveCodes = new Set();
+    if (this.#selfService) {
+      const live = await this.#tokens.liveAccessCodes();
+      // "No live codes" and "the registry answered with nothing" are different
+      // things, and `new Set(undefined)` cannot tell them apart — it is an
+      // empty set either way, which would leave the cross-day guard silently
+      // not running. Say so instead.
+      if (!live || typeof live[Symbol.iterator] !== 'function') {
+        throw new Error('BuildAgenda: tokens.liveAccessCodes must resolve to an iterable of live codes');
+      }
+      liveCodes = new Set(live);
+    }
+    const actionLabelBySubject = new Map();
+    const calculatorBySubject = new Map();
+    // Hoisted out of the loop: `nowIso` and `#ttlMs` never change across
+    // subjects within one `execute()` call, so every subject_next token —
+    // and the bulk agenda_print token minted after the loop — shares this
+    // exact expiry. Computing it once (rather than per-iteration, as before)
+    // is the same value, just without needing to smuggle a loop-scoped
+    // `const` past the loop's closing brace.
+    const expiresAt = new Date(Date.parse(nowIso) + this.#ttlMs).toISOString();
+    // Subjects whose code must still open once the day's obligation is met
+    // (see `ResolveSubjectNext`'s `continueToday`): the reading shelf is a
+    // place to add a book, not only a lesson to finish. Read from the
+    // assignment `PlanProjection` already loaded — no second store read.
+    const readingSubjects = subjectsWithReadingShelf(assignment);
+    // Which subject the reading code hangs under. An enrollment may place the
+    // shelf somewhere other than English; without one there is nothing to ask,
+    // so the default stands. `subjectsWithReadingShelf` keeps deciding the
+    // SUBJECT — it no longer decides who may reach the shelf.
+    const [readingSubject = DEFAULT_BOOK_LOG_SUBJECT] = readingSubjects;
+
+    // Served subjects whose program stays open for extra rounds (see below).
+    const reopenOffers = [];
+
+    for (const section of sectionsWithProgress) {
+      const entry = section.next;
+      if (!entry) {
+        // DONE IS NOT CLOSED. A served subject used to vanish from the paper
+        // into the "Done today" tally with no code at all — so on 2026-09-25
+        // a learner who had finished their flashcards that morning and wanted another
+        // round that evening, printed a sheet that offered them no way back in.
+        // The requirement stays met (credit is untouched); a program that
+        // declares itself `reopenable` just keeps a card and a code. The reading
+        // shelf is excluded here only because it gets its own card below.
+        const reopenEntry = section.servedToday && section.reopenUnitId
+          ? plan?.entries?.find((candidate) => candidate?.unitId === section.reopenUnitId) ?? null
+          : null;
+        if (reopenEntry?.program && reopenEntry.program !== BOOK_LOG_PROGRAM_ID) {
+          // eslint-disable-next-line no-await-in-loop
+          const offer = await this.#mintReopenOffer({
+            section, entry: reopenEntry, programStatuses, learnerId, nowIso, expiresAt,
+            liveCodes, mintedCodes, mintedTokens,
+          });
+          if (offer) reopenOffers.push(offer);
+        }
+        continue; // served today, locked-with-no-offer, or unavailable
+      }
+
+      // eslint-disable-next-line no-await-in-loop
+      const { sessionId, suffix, created, moveKind } = await this.#offerFor({
+        entry, unitsById, learnerId, nowIso, activeExceptions,
+      });
+      if (created) createdSessions.push(sessionId);
+      // Printable per `nextMove`'s table (offerSession.mjs): only `kind:
+      // 'print'` units — a unit with `.document`, or a printable `.bank`
+      // (e.g. civilization worksheets) — ever route to IssueDocument.
+      // `kind: 'document'` does not exist in that table; checking for it
+      // here would silently exclude every real printable unit.
+      const printable = moveKind === 'print';
+
+      if (entry.schoolcalc) {
+        if (!this.#schoolCalcStudies || this.#schoolCalcMode === 'off') {
+          throw new Error(`BuildAgenda: SchoolCalc unit '${entry.unitId}' is enabled but study issuance is not wired`);
+        }
+        const method = this.#schoolCalcMode === 'preview' ? 'preview' : 'ensure';
+        // eslint-disable-next-line no-await-in-loop
+        const study = await this.#schoolCalcStudies[method]?.({
+          workSessionId: sessionId, learnerId,
+          unit: unitsById.get(entry.unitId), descriptor: entry.schoolcalc, at: nowIso,
+        }) ?? null;
+        const calculator = {
+          eligible: true,
+          ...(study?.studySessionId ? { studySessionId: study.studySessionId } : {}),
+          ...(study?.code ? { code: study.code, displayCode: formatStudyCode(study.code) } : {}),
+        };
+        calculatorBySubject.set(section.subject, calculator);
+        actionLabelBySubject.set(section.subject, study?.code
+          ? 'Enter on calculator.'
+          : 'Calculator eligible — code issued when printed.');
+        offers.push({
+          subject: section.subject, unitId: entry.unitId, sessionId,
+          token: null, tokenClass: 'schoolcalc_study', calculator,
+          label: `${entry.title} — ${actionLabelBySubject.get(section.subject)}`,
+        });
+        continue;
+      }
+
+      if (this.#previewOnly) {
+        // THE FOOTER SAYS WHAT THE PRINT WILL SAY. It used to read "Preview
+        // only — ask a grown-up to start this lesson", which is the one line
+        // on the card a printed agenda never carries — so the preview
+        // announced itself in the exact slot a reader consults to find out
+        // what the child will be told to do. `suffix` is the real label the
+        // mint sets, already computed above by `#offerFor`.
+        actionLabelBySubject.set(section.subject, suffix);
+        // A PREVIEW HAS TO LOOK LIKE THE PRINT. Without a token in
+        // `tokensBySubject`, `agendaDocument` falls through to its plain
+        // "## SUBJECT / label" text branch — so the preview rendered no card,
+        // no QR and no code panel, and was useless for exactly the thing a
+        // preview is for: seeing what will come out of the printer. (Verified
+        // the hard way 2026-08-25: a layout bug in the card footer could not be
+        // reproduced through the preview endpoint at all.)
+        //
+        // The placeholders are deliberately INERT and self-describing: the
+        // token resolves to nothing and the code (`PREVIEW_ACCESS_CODE`,
+        // '000000') is not a mintable value. The action label itself is the
+        // real one -- `suffix`, set above -- so the preview shows the exact
+        // instruction the printed card will carry. Nothing here touches the
+        // token store or the code registry, so a preview still opens no
+        // session and burns no code.
+        tokensBySubject[section.subject] = PREVIEW_TOKEN;
+        accessCodesByToken[PREVIEW_TOKEN] = PREVIEW_ACCESS_CODE;
+        offers.push({
+          subject: section.subject, unitId: entry.unitId, sessionId,
+          token: null, tokenClass: 'preview',
+          label: `${entry.title} — ${suffix}`,
+          // Carried in preview too, or the bulk-print card below cannot count
+          // printable subjects and the preview silently drops a whole card
+          // that the printed agenda has.
+          printable,
+        });
+        continue;
+      }
+
+      // `mintAccessCode` tests `taken` SYNCHRONOUSLY, so the registry cannot be
+      // asked per draw — a Promise is always truthy and every attempt would read
+      // as taken, failing as a (wildly misleading) exhausted code space. The
+      // live set is fetched once, above, and closed over here.
+      const accessCode = this.#selfService
+        ? mintAccessCode({ rng: this.#rng, taken: (code) => liveCodes.has(code) || mintedCodes.has(code) })
+        : null;
+      if (accessCode) mintedCodes.add(accessCode);
+      const record = mintToken({
+        tokenClass: 'subject_next',
+        subject: {
+          learnerId,
+          subject: section.subject,
+          // The reading code keeps opening once the day's obligation is met,
+          // and it names WHAT it reopens: the shelf. Without `program`, the
+          // continuation rule (`continuationEntry.mjs`) hands a re-entered
+          // code the first eligible entry, which on a day with an available
+          // english lesson is the lesson. forwardAction's "One more?" tokens
+          // carry `continueToday` without a program and still mean a lesson.
+          ...(readingSubjects.has(section.subject)
+            ? { continueToday: true, program: BOOK_LOG_PROGRAM_ID }
+            : {}),
+        },
+        at: nowIso,
+        rng: this.#rng,
+        expiresAt,
+        ...(accessCode ? {
+          accessCode,
+          // The code dies at the rollover; the token above keeps its week.
+          accessCodeExpiresAt: this.#accessCodeExpiryFor(nowIso, expiresAt),
+          // ...and it is also spent after a few opens. A lesson code opens ONE
+          // lesson; the all-day window it used to have was the thing a shared
+          // code lived in.
+          maxUses: this.#accessCodeMaxUses,
+        } : {}),
+      });
+      // eslint-disable-next-line no-await-in-loop
+      await this.#tokens.put(record);
+
+      tokensBySubject[section.subject] = record.token;
+      if (record.accessCode) accessCodesByToken[record.token] = record.accessCode;
+      if (record.accessCode) mintedTokens.push(record.token);
+      actionLabelBySubject.set(section.subject, suffix);
+      offers.push({
+        subject: section.subject,
+        unitId: entry.unitId,
+        sessionId,
+        token: record.token,
+        tokenClass: 'subject_next',
+        label: `${entry.title} — ${suffix}`,
+        printable,
+      });
+    }
+
+    // Bulk print (spec: agenda_print token, Task 4): one code that prints
+    // every printable subject's sheet in one go, minted only when there is
+    // more than one to bother bulking — a single printable subject is
+    // already exactly what its own `subject_next` code does. Self-service
+    // only: without a panel there is nowhere to scan a bulk code either.
+    let bulkToken = null;
+    let bulkAccessCode = null;
+    if (this.#selfService) {
+      const printableOffers = offers.filter((offer) => offer.printable);
+      if (this.#previewOnly) {
+        // The bulk card is a WHOLE CARD on the printed page, gated on the same
+        // ">= 2 printable subjects" rule as the mint below. A preview that
+        // left it out was not showing what comes out of the printer — the
+        // reason this branch exists at all. Inert placeholders, exactly like
+        // the per-subject ones above: nothing is minted, nothing is stored.
+        if (printableOffers.length >= 2) {
+          bulkToken = PREVIEW_BULK_TOKEN;
+          bulkAccessCode = PREVIEW_ACCESS_CODE;
+        }
+      } else if (printableOffers.length >= 2) {
+        bulkAccessCode = mintAccessCode({
+          rng: this.#rng,
+          taken: (code) => liveCodes.has(code) || mintedCodes.has(code),
+        });
+        mintedCodes.add(bulkAccessCode);
+        const bulkRecord = mintToken({
+          tokenClass: 'agenda_print',
+          subject: { learnerId, tokenRefs: printableOffers.map((offer) => offer.token) },
+          at: nowIso,
+          rng: this.#rng,
+          expiresAt,
+          accessCode: bulkAccessCode,
+          accessCodeExpiresAt: this.#accessCodeExpiryFor(nowIso, expiresAt),
+          // One use covers all N sheets — the bulk code prints the set in one
+          // job, so a use is a job and not a sheet.
+          maxUses: this.#accessCodeMaxUses,
+        });
+        await this.#tokens.put(bulkRecord);
+        bulkToken = bulkRecord.token;
+        // Same handback rule as every per-subject code above (`mintedTokens`):
+        // this token carries a LIVE access code, so a build that never reaches
+        // the printer — a cooldown-suppressed tap — has to be able to revoke
+        // it. Left out, the bulk code is the one live code nobody hands back.
+        mintedTokens.push(bulkRecord.token);
+        this.#logger.info?.('school.agenda.bulk-print.minted', {
+          learnerId,
+          tokenRefCount: printableOffers.length,
+          subjects: printableOffers.map((offer) => offer.subject),
+        });
+      } else {
+        this.#logger.debug?.('school.agenda.bulk-print.skipped', {
+          learnerId, printableCount: printableOffers.length,
+        });
+      }
+    }
+
+    // THE READING LOG, FOR EVERY LEARNER — enrolled or not.
+    //
+    // A `book-log` enrollment carries an OBLIGATION; it does not grant access.
+    // But until now it was the only way IN: `subjectsWithReadingShelf` reads
+    // the enrollment, so only an enrolled child's code named the program, and
+    // `appendAssignedProgramEntries` only puts the shelf in the plan from an
+    // enrollment. A household with one enrolled reader had three children who
+    // could not log a book at all.
+    //
+    // MINTED OUTSIDE THE SECTION LOOP, deliberately. That loop `continue`s on
+    // `!section.next` — a subject served today, or one the learner has no work
+    // in — which is exactly the day a child most wants the log: they have
+    // finished their English lesson and want to record the book they finished
+    // with it. Hanging the reading code off a section would make it disappear
+    // on precisely those days.
+    let readingToken = null;
+    let readingAccessCode = null;
+    if (this.#selfService) {
+      if (this.#previewOnly) {
+        readingToken = PREVIEW_READING_TOKEN;
+        readingAccessCode = PREVIEW_ACCESS_CODE;
+      } else {
+        readingAccessCode = mintAccessCode({
+          rng: this.#rng,
+          taken: (code) => liveCodes.has(code) || mintedCodes.has(code),
+        });
+        mintedCodes.add(readingAccessCode);
+        const readingRecord = mintToken({
+          tokenClass: 'subject_next',
+          subject: {
+            learnerId,
+            subject: readingSubject,
+            // Both flags, and both are load-bearing. `continueToday` keeps the
+            // code alive on a subject already served; `program` is what
+            // `ResolveAccessCode` honours literally, so this code opens the
+            // SHELF and never the English lesson that happens to share its
+            // subject.
+            continueToday: true,
+            program: BOOK_LOG_PROGRAM_ID,
+          },
+          at: nowIso,
+          rng: this.#rng,
+          expiresAt,
+          accessCode: readingAccessCode,
+          accessCodeExpiresAt: this.#accessCodeExpiryFor(nowIso, expiresAt),
+          // A LOOSE CAP, NOT NO CAP. See `READING_CODE_MAX_USES`: a log really
+          // is repeatable, so three (a lesson's) would break it — but leaving
+          // it uncapped made a slip left on the counter worth unlimited opens.
+          maxUses: READING_CODE_MAX_USES,
+        });
+        await this.#tokens.put(readingRecord);
+        readingToken = readingRecord.token;
+        // Handed back like every other live code, so a build that never
+        // reaches the printer can revoke it.
+        mintedTokens.push(readingRecord.token);
+        this.#logger.info?.('school.agenda.reading-code.minted', {
+          learnerId, subject: readingSubject, enrolled: readingSubjects.size > 0,
+        });
+      }
+    }
+
+    // WHAT THE READING CARD HEADLINES.
+    //
+    // Once per agenda, from the launcher's agenda-only `featuredBook()` — never
+    // from `status()`, which `collectProgramStatuses` runs for the teacher
+    // board, the status board, DoNow and the completion recompute. Titles are
+    // per-book repository reads and none of those surfaces asked to pay for
+    // them.
+    //
+    // GUARDED WHOLE. Book facts are decoration: a launcher that is not wired, a
+    // composition with no books API, a cold cache, or a `featuredBook` that
+    // throws outright all yield `null`, and `null` is the card's `unreadable`
+    // shape — a card that prints, saying it could not read the shelf. Never one
+    // card fewer.
+    let readingFeature = null;
+    try {
+      readingFeature = (await this.#launchers?.get?.(BOOK_LOG_PROGRAM_ID)?.featuredBook?.({
+        userId: learnerId,
+      })) ?? null;
+    } catch (error) {
+      this.#logger.warn?.('school.agenda.featured-book-failed', { learnerId, error: error.message });
+      readingFeature = null;
+    }
+    // TWO THINGS `featuredBook()` CANNOT ANSWER, supplied by the caller because
+    // an obligation is measured against an enrollment neither that method nor
+    // the pure receipt builder ever sees: whether it is MET (the card's `Done`
+    // rail) and how far along it is (the second bar).
+    //
+    // Both come off the shelf status `PlanProjection` ALREADY collected for
+    // this build — a second `status()` call here would re-read the whole log to
+    // learn something already in hand. An unenrolled learner has no shelf
+    // status and no obligation, which is the honest answer: no rail, no bar.
+    const shelfStatus = shelfStatusFrom(programStatuses);
+    if (readingFeature) {
+      readingFeature = {
+        ...readingFeature,
+        obligationMet: shelfStatus?.error === true ? false : shelfStatus?.doneToday === true,
+        progressRows: obligationProgressRows(shelfStatus),
+      };
+    }
+    // The author line the shelf's own card wears, so the SECTION card (below)
+    // and the standalone one cannot name the same book two different ways.
+    const featuredAuthor = (Array.isArray(readingFeature?.book?.authors)
+      ? readingFeature.book.authors
+      : []).find((name) => typeof name === 'string' && name.trim())?.trim() ?? null;
+
+    // `agendaDocument` composes its own "{title} — {actionLabel}" line, so the
+    // document sees only the SUFFIX here — the offer above carries the full
+    // label, which is a different consumer's concern (Task 11's resolver).
+    const worksById = new Map((works ?? []).map((work) => [work.work, work]));
+
+    /**
+     * The human names for an offer: Subject › Course › Unit › Lesson, plus
+     * where the lesson sits in its unit.
+     *
+     * THIS USED TO EXIST ONLY FOR THE PRINTED SHEET. The raw offer carries ids
+     * — `courseId: 'plex:675689'`, `module: '676027'` — which no reader can
+     * read, so every consumer needs the same resolution against `works` and
+     * the learner's enrollment. Computing it inline inside the document branch
+     * meant the JSON `sections` (the teacher dashboard, the learner's own
+     * rail) got the ids and nothing else, and rendered a planned lesson as a
+     * bare title with no course, no unit, and no art. One function, both
+     * consumers.
+     */
+    const offerPresentation = (section) => {
+      const entry = section.next;
+      if (!entry) return null;
+      const work = worksById.get(entry.courseId);
+      const enrollment = assignment?.courses?.find((course) => course.courseId === entry.courseId)?.enrollment;
+      const subjectLabel = section.subject ? section.subject[0].toUpperCase() + section.subject.slice(1) : 'School';
+      const moduleLabel = moduleDisplay({
+        work, enrollment, moduleId: entry.module, fallbackTitle: entry.module ?? entry.title,
+      });
+      // A program course (piano) already resolved its own names when it
+      // planned the day — `programContext` IS the resolution, so re-deriving
+      // it from `works` would only lose to it.
+      const taxonomy = entry.programContext
+        ? {
+          subject: subjectLabel,
+          course: entry.programContext.course?.title ?? entry.programContext.course?.id ?? 'Piano course',
+          // THE SHELF HAS NO UNIT, AND 'Unit' IS NOT A NAME. `bookLogContext()`
+          // supplies a course and a lesson and nothing between them, so this
+          // fallback printed the literal word "Unit" on every reading section
+          // card — and `DocumentEscPosRenderer` prints the taxonomy verbatim
+          // (`Unit · Unit`). The book's author is the real parent of a book,
+          // which is exactly what the standalone card uses; `Books` when we
+          // cannot name one. Never the placeholder.
+          ...(entry.program === BOOK_LOG_PROGRAM_ID
+            ? { unit: featuredAuthor ?? 'Books' }
+            : { unit: entry.programContext.unit?.title ?? entry.programContext.unit?.id ?? 'Unit' }),
+          lesson: entry.programContext.lesson?.title ?? entry.title,
+        }
+        : {
+          subject: subjectLabel,
+          // "Independent study" here is the GENERIC fallback: this work has no
+          // course at all. It is no longer the book-log shelf's name — that is
+          // "Reading log" (`bookLogContext`) and arrives through the branch
+          // above. The two words mean different things on the same page.
+          course: courseDisplay({ work, enrollment, fallback: entry.courseId ?? 'Independent study' }).title,
+          unit: moduleLabel.taxonomyLabel,
+          lesson: entry.title,
+        };
+      const lessons = enrollment?.lessonOrder?.[entry.module] ?? [];
+      const lessonIndex = lessons.indexOf(entry.unitId);
+      const progressLabel = Number.isInteger(moduleLabel.number) && lessonIndex >= 0
+        ? `Unit ${moduleLabel.number} · ${lessonIndex + 1}/${lessons.length}`
+        : section.progressLabel;
+      // The lesson's own artwork when the program has one (Plex thumbnails,
+      // already proxied), otherwise the course cover. Null rather than a
+      // substitute: a made-up poster claiming to be the lesson's is the
+      // failure the self-service poster route exists to refuse.
+      const posterUrl = entry.programContext?.lesson?.thumbnail
+        ?? (entry.courseId
+          ? curriculumPosterRef('selfservice', entry.courseId)
+          : null);
+      return { taxonomy, progressLabel, posterUrl };
+    };
+
+    // `agendaDocument` composes its own "{title} — {actionLabel}" line, so the
+    // document sees only the SUFFIX here — the offer above carries the full
+    // label, which is a different consumer's concern (Task 11's resolver).
+    const sectionsForDocument = sectionsWithProgress.map((section) => (actionLabelBySubject.has(section.subject)
+      ? { ...section, next: {
+        ...section.next,
+        ...(({ posterUrl, ...printed }) => printed)(offerPresentation(section) ?? {}),
+        actionLabel: actionLabelBySubject.get(section.subject),
+        ...(calculatorBySubject.has(section.subject)
+          ? { schoolcalcHandoff: calculatorBySubject.get(section.subject) }
+          : {}),
+      } }
+      : section));
+
+    const enrichedSections = sectionsWithProgress.map((section) => {
+      const presentation = offerPresentation(section);
+      if (!presentation && !calculatorBySubject.has(section.subject)) return section;
+      return { ...section, next: {
+        ...section.next,
+        ...(presentation ?? {}),
+        ...(calculatorBySubject.has(section.subject)
+          ? { schoolcalcHandoff: calculatorBySubject.get(section.subject) }
+          : {}),
+      } };
+    });
+
+    const notes = await this.#collectNotes(learnerId, now.getTime());
+
+    return {
+      learnerId,
+      plan,
+      sections: enrichedSections,
+      offers,
+      createdSessions,
+      mintedTokens,
+      document: agendaDocument({
+        learnerId, learnerName, generatedAt: nowIso, timeZone: this.#timezone,
+        sections: sectionsForDocument, tokensBySubject, accessCodesByToken,
+        reopenCards: reopenOffers.map((offer) => ({
+          ...offer.card,
+          taxonomy: offerPresentation({ subject: offer.subject, next: offer.entry })?.taxonomy ?? null,
+        })),
+        bulkToken, bulkAccessCode,
+        bulkSubjects: bulkToken ? offers.filter(offer => offer.printable).map(offer => offer.subject) : null,
+        readingToken, readingAccessCode, readingFeature, readingSubject,
+        notes,
+      }),
+    };
+  }
+
+  /**
+   * When the printed code stops working: the next study-day rollover, so a
+   * code is only good for the day its paper describes.
+   *
+   * `studyDayWindow`'s `endAtMs` IS that boundary — one copy of the math, in
+   * the domain, so this and `GetTeacherToday` can never disagree about when
+   * "today" ends.
+   *
+   * The clamp is the interesting part. `createTokenRecord` refuses a code that
+   * outlives its token (`SCHOOL_ACCESS_CODE_OUTLIVES_TOKEN`), and the two
+   * clocks are configured independently: the token's TTL is
+   * `lifecycle.subjectTokenTtlHours` (a week by default), the code's is the
+   * rollover. Set that TTL under ~24 hours and the rollover lands PAST the
+   * token's expiry — which would throw here and take the whole agenda with it.
+   * A child would get no paper at all because a grown-up shortened a TTL.
+   *
+   * So we clamp rather than fail, and say so: the code dies WITH its token,
+   * which is exactly the invariant the rule is protecting, and the print
+   * survives. The warning names the config key so the household can see why
+   * their codes expire early instead of guessing.
+   */
+  #accessCodeExpiryFor(nowIso, tokenExpiresAt) {
+    const rolloverMs = studyDayWindow(Date.parse(nowIso), {
+      timezone: this.#timezone, boundaryHour: BOUNDARY_HOUR,
+    }).endAtMs;
+    const tokenMs = Date.parse(tokenExpiresAt);
+    if (Number.isFinite(tokenMs) && rolloverMs > tokenMs) {
+      this.#logger.warn?.('school.agenda.access-code-clamped', {
+        configKey: 'lifecycle.subjectTokenTtlHours',
+        tokenExpiresAt,
+        rolloverAt: new Date(rolloverMs).toISOString(),
+        reason: 'subject token TTL is shorter than a study day; the panel code now dies with its token',
+      });
+      return tokenExpiresAt;
+    }
+    return new Date(rolloverMs).toISOString();
+  }
+
+  /**
+   * "Notes for you" (spec R7): a grown-up's resolved-item notes for this
+   * learner, restricted to items marked within the CURRENT or PREVIOUS study
+   * day (`studyDay.mjs` boundaries, same 4am rollover `planDailyAgenda`
+   * already uses for "served today") — a note from last week is stale
+   * homework feedback, not something worth reprinting on every agenda from
+   * here on. Never blocks the agenda: an unwired or failing review queue
+   * just means no notes section, same as the launcher fan-out's own
+   * per-source degrade.
+   */
+  async #collectNotes(learnerId, nowMs) {
+    if (!this.#reviewQueue?.listForLearner && !this.#teacherNotes) return [];
+    try {
+      const reviewItems = this.#reviewQueue?.listForLearner
+        ? await this.#reviewQueue.listForLearner(learnerId, { limit: 20 })
+        : [];
+      // Standalone teacher notes (spec D3) ride the same window and cap as
+      // resolved-review notes — one delivery rule, two sources.
+      const standalone = (this.#teacherNotes?.list?.({ learnerId }) ?? [])
+        .map((n) => ({ note: n.note, gradedAt: n.at }));
+      const items = [...reviewItems, ...standalone];
+      const offsetMinutes = offsetMinutesFor(this.#timezone, nowMs);
+      const todayIndex = studyDayIndex(nowMs, { boundaryHour: BOUNDARY_HOUR, offsetMinutes });
+      const windowed = items.filter((item) => {
+        const at = Date.parse(item?.gradedAt ?? '');
+        if (!Number.isFinite(at)) return false;
+        const itemOffset = offsetMinutesFor(this.#timezone, at);
+        const itemIndex = studyDayIndex(at, { boundaryHour: BOUNDARY_HOUR, offsetMinutes: itemOffset });
+        const daysAgo = todayIndex - itemIndex;
+        return daysAgo === 0 || daysAgo === 1;
+      });
+      return reviewNoteLines(windowed);
+    } catch (err) {
+      this.#logger.warn?.('school.agenda.notes-failed', { learnerId, error: err?.message ?? String(err) });
+      return [];
+    }
+  }
+
+  /**
+   * The day's Korean reel, chosen once per study day and pushed onto the plan
+   * as an ordinary entry. Runs inside `PlanProjection`'s `augmentPlan` seam —
+   * between the planner and the assigned-program append — because an entry
+   * added after sectioning would be missing from `sections`.
+   *
+   * Silent when the household has no such enrollment or no reel service; a
+   * warning (never a throw) when the corpus has nothing approved to show, since
+   * a missing reel must not cost a child the rest of their paper.
+   */
+  #appendLanguageReel(plan, { assignment, learnerId, at }) {
+    const enrolled = (assignment?.programs ?? []).find((entry) => entry?.programId === 'language-reels'
+      && entry?.corpusId === 'korean-language-reels' && entry?.daily?.selection === 'random_category');
+    if (!enrolled || !this.#languageReelService) return;
+    const dayKey = studyDayForInstant(at.getTime(), { timezone: this.#timezone, boundaryHour: BOUNDARY_HOUR });
+    const entry = this.#languageReelService.dailyEntry({ learnerId, dayKey, rng: this.#rng });
+    if (entry) plan.entries.push(entry);
+    else this.#logger.warn?.('school.language-reels.daily-none-approved', { learnerId, dayKey });
+  }
+
+  /**
+   * What the section's `next` entry means RIGHT NOW: a program entry never
+   * gets a session (there is nothing here to track — whatever surface the
+   * program's own launcher dispatches to owns it); a curriculum entry gets
+   * `ensureSession` + `nextMove`, exactly as the old per-unit path did, just
+   * no longer minting its own token.
+   *
+   * The suffix used to be hardcoded `'on the Portal'` for EVERY program,
+   * which was simply wrong for a surface program like `pe-daily` (dispatches
+   * to `garage-fitness`, never the Portal) — a garage PE ticket printed
+   * "on the Portal" and sent a child to the wrong room. It now reads the
+   * offering launcher's own `locationHint` (`null` for one that declares
+   * none, e.g. an unconfigured `SurfaceProgramLauncher`) and only falls back
+   * to a generic, location-agnostic phrase — never assumes the Portal.
+   *
+   * `moveKind` rides along so the caller can decide printability
+   * (`kind === 'print'`, per `nextMove`'s table in `offerSession.mjs`)
+   * without re-deriving it from the unit — a program entry never has a
+   * `move`, so it reports `moveKind: null` (never printable).
+   *
+   * @returns {Promise<{sessionId: string|null, suffix: string, created: boolean, moveKind: string|null}>}
+   */
+  /**
+   * A card and a code for a SERVED subject's reopenable program — extra
+   * rounds after the day's requirement is met. The token names the subject
+   * and the program; the resolvers see the subject served and reopen it to
+   * the section's own `reopenUnitId`, so the code can never open a lesson.
+   * Returns null when there is nothing honest to print (errored launcher).
+   */
+  async #mintReopenOffer({
+    section, entry, programStatuses, learnerId, nowIso, expiresAt,
+    liveCodes, mintedCodes, mintedTokens,
+  }) {
+    const status = programStatusFor(programStatuses, entry);
+    if (!status || status.error === true || status.reopenable !== true) return null;
+    const projected = projectProgramEntry(entry, status);
+    const actionLabel = this.#launchers?.get?.(entry.program)?.locationHint ?? 'go do this';
+    let token;
+    let accessCode = null;
+    if (this.#previewOnly) {
+      token = PREVIEW_TOKEN;
+      accessCode = this.#selfService ? PREVIEW_ACCESS_CODE : null;
+    } else {
+      accessCode = this.#selfService
+        ? mintAccessCode({ rng: this.#rng, taken: (code) => liveCodes.has(code) || mintedCodes.has(code) })
+        : null;
+      if (accessCode) mintedCodes.add(accessCode);
+      const record = mintToken({
+        tokenClass: 'subject_next',
+        subject: { learnerId, subject: section.subject, program: entry.program },
+        at: nowIso,
+        rng: this.#rng,
+        expiresAt,
+        ...(accessCode ? {
+          accessCode,
+          accessCodeExpiresAt: this.#accessCodeExpiryFor(nowIso, expiresAt),
+          maxUses: this.#accessCodeMaxUses,
+        } : {}),
+      });
+      await this.#tokens.put(record);
+      token = record.token;
+      if (record.accessCode) mintedTokens.push(record.token);
+      this.#logger.info?.('school.agenda.reopen-code.minted', {
+        learnerId, subject: section.subject, program: entry.program, unitId: entry.unitId,
+      });
+    }
+    return {
+      subject: section.subject,
+      entry: projected,
+      token,
+      card: {
+        subject: section.subject,
+        token,
+        accessCode,
+        title: projected.title ?? entry.title ?? section.subject,
+        unit: projected.programContext?.unit?.title ?? null,
+        progress: Array.isArray(projected.programProgress) && projected.programProgress.length
+          ? projected.programProgress
+          : (section.progressRows ?? []),
+        actionLabel,
+      },
+    };
+  }
+
+  async #offerFor({ entry, unitsById, learnerId, nowIso, activeExceptions }) {
+    if (entry.program) {
+      const launcher = this.#launchers.get(entry.program);
+      const hint = launcher?.locationHint ?? null;
+      return { sessionId: null, suffix: hint ?? 'go do this', created: false, moveKind: null };
+    }
+    // The exceptions `PlanProjection` already read for this projection. Reading
+    // them a second time here would let the paused check answer for a different
+    // instant than the plan it is annotating.
+    const paused = (activeExceptions ?? [])
+      .find((exception) => exception.kind === 'paused' && exception.resolvedLessonIds?.includes(entry.unitId));
+    if (paused) return { sessionId: null, suffix: `content paused (${paused.reason})`, created: false };
+    const { sessionId, state, created } = await ensureSession({
+      entry, learnerId, nowIso, sessions: this.#sessions, newSessionId: this.#newSessionId,
+      timezone: this.#timezone,
+    });
+    const move = nextMove(unitsById.get(entry.unitId) ?? {}, state);
+    return { sessionId, suffix: move.label, created, moveKind: move.kind };
+  }
+}
+
+/**
+ * The subjects a learner's assigned `book-log` programs sit under (the
+ * enrollment's `subject`, `DEFAULT_BOOK_LOG_SUBJECT` when unset — the same
+ * default `validateBookLogEnrollment` applies). A `subject_next` code for one of these
+ * carries `continueToday` so a met obligation still opens the shelf.
+ * @param {{programs?: Array<{programId?: string, subject?: string}>}|null} assignment
+ * @returns {Set<string>}
+ */
+function subjectsWithReadingShelf(assignment) {
+  return new Set((assignment?.programs ?? [])
+    .filter((program) => program?.programId === BOOK_LOG_PROGRAM_ID)
+    .map((program) => program.subject ?? DEFAULT_BOOK_LOG_SUBJECT));
+}
+
+/**
+ * The book-log shelf's collected status, if this learner has one.
+ *
+ * BY PROGRAM ID ALONE, deliberately. `programStatusFor` keys on the program AND
+ * its instance, and `assignedProgramPlan` gives the shelf the fixed instance
+ * `'shelf'` — so an exact-key lookup for a bare `{ program: 'book-log' }` finds
+ * nothing and the card silently loses its rail and its bar. There is ONE shelf
+ * per learner (`BOOK_LOG_SHELF_UNIT_ID`), so the id is a complete address here;
+ * `programStatusFor` still handles the object-keyed compatibility shape.
+ *
+ * Null for a learner with no book-log enrollment — which is not a failure. The
+ * shelf is open to them; they simply owe nothing, so there is nothing to draw.
+ */
+function shelfStatusFrom(programStatuses) {
+  if (Array.isArray(programStatuses)) {
+    return programStatuses.find((row) => row?.programId === BOOK_LOG_PROGRAM_ID)?.status ?? null;
+  }
+  return programStatusFor(programStatuses, { program: BOOK_LOG_PROGRAM_ID }) ?? null;
+}
+
+/** What the obligation bar is called, by metric. */
+const OBLIGATION_NOUN = Object.freeze({
+  pages: 'Pages', minutes: 'Minutes', books: 'Books', checkins: 'Check-ins',
+});
+
+/** ...and over what window. `once` is cumulative since enrollment. */
+const OBLIGATION_WINDOW_WORD = Object.freeze({
+  day: 'today', week: 'this week', month: 'this month', once: 'so far',
+});
+
+/**
+ * The reading card's SECOND bar: how far along today's obligation is.
+ *
+ * Built here rather than in `featuredBook()` because an obligation is measured
+ * against an ENROLLMENT, and the featured book is read from the log alone — the
+ * shelf is open to a child with no enrollment at all, and that child has no bar
+ * to draw. The numbers come from the shelf status the projection already
+ * collected, so this costs no second read of anything.
+ *
+ * The label names the metric and its window (`Pages this week`) rather than
+ * repeating the tally: the bar itself carries `4` and `7`, and
+ * `status.progressLabel` already says "4 of 7 pages" in words for the panel.
+ *
+ * Returns `[]` for no obligation, an unreadable shelf, or a target of zero —
+ * a bar with nothing to fill is noise on a narrow tape, and
+ * `usableProgressRows` would drop it anyway.
+ */
+function obligationProgressRows(shelfStatus) {
+  const progress = shelfStatus && shelfStatus.error !== true ? shelfStatus.obligationProgress : null;
+  if (!progress) return [];
+  const total = Math.round(Number(progress.target));
+  const completed = Math.round(Number(progress.actual));
+  if (!Number.isInteger(total) || total <= 0 || !Number.isInteger(completed)) return [];
+  const noun = OBLIGATION_NOUN[progress.metric] ?? 'Reading';
+  const when = OBLIGATION_WINDOW_WORD[progress.per];
+  return [{
+    label: when ? `${noun} ${when}` : noun,
+    // Clamp the BAR, never the count: a child who read ten pages against a
+    // seven-page target has met it, and a bar wider than its track draws off
+    // the edge of the card.
+    completed: Math.max(0, Math.min(total, completed)),
+    total,
+  }];
+}
+
+function formatStudyCode(code) {
+  if (!/^[0-9]{6}$/.test(code || '')) throw new Error('BuildAgenda: SchoolCalc code must contain six digits');
+  return `${code.slice(0, 3)} ${code.slice(3)}`;
+}
+
+export default BuildAgenda;

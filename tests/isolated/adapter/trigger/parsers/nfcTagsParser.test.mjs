@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseNfcTags } from '#adapters/trigger/parsers/nfcTagsParser.mjs';
+import { parseNfcTags } from "../../../../../capabilities/device-dispatch/server/adapters/parsers/nfcTagsParser.mjs";
 
 const KNOWN_READERS = new Set(['livingroom', 'bedroom', 'kitchen']);
 

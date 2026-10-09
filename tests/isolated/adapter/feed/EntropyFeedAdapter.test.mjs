@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { EntropyFeedAdapter } from '../../../../backend/src/1_adapters/feed/sources/EntropyFeedAdapter.mjs';
-import { IFeedSourceAdapter } from '../../../../backend/src/3_applications/feed/ports/IFeedSourceAdapter.mjs';
+import { EntropyFeedAdapter } from "../../../../modules/feed/server/adapters/sources/EntropyFeedAdapter.mjs";
+import { IFeedSourceAdapter } from "../../../../modules/feed/server/application/ports/IFeedSourceAdapter.mjs";
 
 describe('EntropyFeedAdapter', () => {
   it('implements IFeedSourceAdapter', () => {

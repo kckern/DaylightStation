@@ -1,60 +1,51 @@
 // Core API routers
 export { createApiRouter } from './api.mjs';
 export { createConfigRouter } from './config.mjs';
-export { createHealthRouter } from './health.mjs';
 export { createStaticRouter } from './static.mjs';
-export { createArtRouter } from './art.mjs';
+export { createArtRouter } from "../../../../../modules/art/server/api/art.mjs";
 
 // Domain routers - Agents & AI
 export { createAIRouter } from './ai.mjs';
 
 // Domain routers - Bots
-export { createHomebotRouter } from './homebot.mjs';
-export { createJournalistRouter } from './journalist.mjs';
-export { createNutribotRouter } from './nutribot.mjs';
 
 // Domain routers - Content & Media
-export { createContentRouter } from './content.mjs';
-export { createDisplayRouter } from './display.mjs';
-export { createInfoRouter } from './info.mjs';
-export { createQueueRouter } from './queue.mjs';
-export { createSiblingsRouter } from './siblings.mjs';
-export { createLocalContentRouter } from './localContent.mjs';
-export { createEmulatorRouter } from './emulator.mjs';
-export { createPlayRouter } from './play.mjs';
-export { createStreamRouter } from './stream.mjs';
+export { createContentRouter } from "../../../../../capabilities/content-catalog/server/api/content.mjs";
+export { createDisplayRouter } from "../../../../../capabilities/content-catalog/server/api/display.mjs";
+export { createInfoRouter } from "../../../../../capabilities/content-catalog/server/api/info.mjs";
+export { createQueueRouter } from "../../../../../capabilities/playback/server/api/queue.mjs";
+export { createSiblingsRouter } from "../../../../../capabilities/content-catalog/server/api/siblings.mjs";
+export { createLocalContentRouter } from "../../../../../capabilities/content-catalog/server/api/localContent.mjs";
+export { createPlayRouter } from "../../../../../capabilities/playback/server/api/play.mjs";
+export { createStreamRouter } from "../../../../../modules/media/server/api/stream.mjs";
 
 // Domain routers - Feed
-export { createFeedRouter } from './feed.mjs';
+export { createFeedRouter } from "../../../../../modules/feed/server/api/feed.mjs";
 
 // Domain routers - Finance
-export { createFinanceRouter } from './finance.mjs';
+export { createFinanceRouter } from "../../../../../modules/finance/server/api/finance.mjs";
 
 // Domain routers - Fitness & Health
-export { createFitnessRouter } from './fitness.mjs';
-export { createNutritionRouter } from './nutrition.mjs';
+export { createFitnessRouter } from "../../../../../modules/fitness/server/api-fitness.mjs";
 
 // Domain routers - Home & Automation
-export { createHomeAutomationRouter } from './homeAutomation.mjs';
-export { createHomeDashboardRouter } from './home-dashboard.mjs';
+export { createHomeAutomationRouter } from "../../../../../modules/home/server/api/homeAutomation.mjs";
+export { createHomeDashboardRouter } from "../../../../../modules/home/server/api/home-dashboard.mjs";
 export { createDeviceRouter } from './device.mjs';
-export { createTriggerRouter } from './trigger.mjs';
-export { createEpaperRouter } from './epaper.mjs';
+export { createTriggerRouter } from "../../../../../capabilities/device-dispatch/server/api/trigger.mjs";
 export { createPrinterRouter } from './printer.mjs';
 export { createPressureMatRouter } from './pressureMat.mjs';
 
 // Domain routers - Journaling & Tracking
-export { createJournalingRouter } from './journaling.mjs';
-export { createLifelogRouter } from './lifelog.mjs';
+export { createLifelogRouter } from "../../../../../capabilities/lifelog/server/api/lifelog.mjs";
 
 // Domain routers - Productivity
-export { createCalendarRouter } from './calendar.mjs';
+export { createCalendarRouter } from "../../../../../modules/calendar/server/api/calendar.mjs";
 export { createHarvestRouter } from './harvest.mjs';
 export { createItemRouter } from './item.mjs';
-export { createListRouter, toListItem } from './list.mjs';
+export { createListRouter, toListItem } from "../../../../../capabilities/content-catalog/server/api/list.mjs";
 export { createMessagingRouter } from './messaging.mjs';
 export { createSchedulingRouter } from './scheduling.mjs';
-export { createNewsReporterRouter } from './newsreporter.mjs';
 
 // Domain routers - Utilities
 export { createEntropyRouter } from './entropy.mjs';
@@ -65,7 +56,7 @@ export { createTTSRouter } from './tts.mjs';
 
 // Admin routers
 export { createAdminRouter, createAdminContentRouter, createAdminImagesRouter } from './admin/index.mjs';
-export { createStateGatesRouter, createEntitlementsRouter } from './state-gates.mjs';
+export { createStateGatesRouter, createEntitlementsRouter } from "../../../../../capabilities/state-gates/server/api/state-gates.mjs";
 export { createEventBusRouter } from './admin/eventbus.mjs';
 
 // Test infrastructure (dev/test only)

@@ -1,3 +1,4 @@
+import {contentRequiresCamera} from '../../../../backend/src/5_composition/policies/contentRequiresCamera.mjs';
 // Review B3 / PR-10: when nothing is subscribed to the screen's topic, the
 // URL load reports "Screen not connected" and the WebSocket fallback must not
 // turn that into ok with a broadcast nobody hears.
@@ -25,7 +26,7 @@ function setup({ subscribers = 0, loadResult = { ok: false, error: 'Screen not c
   };
   const runtime = testApplicationRuntime();
   runtime.scheduler.wait = vi.fn().mockResolvedValue(undefined);
-  const svc = new WakeAndLoadService({
+  const svc = new WakeAndLoadService({ contentRequiresCamera,
     ...runtime,
     deviceService: { get: vi.fn().mockReturnValue(device) },
     readinessPolicy: { isReady: vi.fn().mockResolvedValue({ ready: true }) },

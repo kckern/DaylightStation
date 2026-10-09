@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ContentDiscoveryService } from '#apps/content/services/ContentDiscoveryService.mjs';
-import { ListBrowseService } from '#apps/content/services/ListBrowseService.mjs';
+import { ContentDiscoveryService } from "../../../../capabilities/content-catalog/server/application/services/ContentDiscoveryService.mjs";
+import { ListBrowseService } from "../../../../capabilities/content-catalog/server/application/services/ListBrowseService.mjs";
 
 describe('content read facades', () => {
   it('isolates legacy search failure and preserves attribution/counts', async () => {

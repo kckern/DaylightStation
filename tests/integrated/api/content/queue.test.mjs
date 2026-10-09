@@ -4,12 +4,12 @@ import express from 'express';
 import request from 'supertest';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createQueueRouter, toQueueItem } from '#backend/src/4_api/v1/routers/queue.mjs';
-import { ContentSourceRegistry } from '#adapters/content/ContentSourceRegistry.mjs';
-import { ContentIdResolver } from '#apps/content/ContentIdResolver.mjs';
+import { createQueueRouter, toQueueItem } from "../../../../capabilities/playback/server/api/queue.mjs";
+import { ContentSourceRegistry } from "../../../../capabilities/content-catalog/server/adapters/ContentSourceRegistry.mjs";
+import { ContentIdResolver } from "../../../../capabilities/content-catalog/server/application/ContentIdResolver.mjs";
 import { FileAdapter } from '#adapters/content/media/files/FileAdapter.mjs';
-import { QueueService } from '#apps/content/services/QueueService.mjs';
-import { ContentExpression } from '#domains/content/ContentExpression.mjs';
+import { QueueService } from "../../../../capabilities/playback/server/application/services/QueueService.mjs";
+import { ContentExpression } from "../../../../capabilities/content-catalog/server/domain/ContentExpression.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesPath = path.resolve(__dirname, '../../_fixtures/media');

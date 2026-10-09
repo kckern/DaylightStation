@@ -2,11 +2,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createPlayRouter } from '#api/v1/routers/play.mjs';
-import { PlayResponseService } from '#apps/content/services/PlayResponseService.mjs';
-import { RecordPlaybackProgress } from '#apps/content/usecases/RecordPlaybackProgress.mjs';
-import { PlaybackReadService } from '#apps/content/services/PlaybackReadService.mjs';
-import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
+import { createPlayRouter } from "../../../../capabilities/playback/server/api/play.mjs";
+import { PlayResponseService } from "../../../../capabilities/playback/server/application/services/PlayResponseService.mjs";
+import { RecordPlaybackProgress } from "../../../../capabilities/playback/server/application/usecases/RecordPlaybackProgress.mjs";
+import { PlaybackReadService } from "../../../../capabilities/playback/server/application/services/PlaybackReadService.mjs";
+import { RegistryContentCatalogGateway } from "../../../../capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
 
 // ---------------------------------------------------------------------------
 // Minimal stubs

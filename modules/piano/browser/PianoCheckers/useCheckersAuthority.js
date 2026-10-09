@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { checkersDefinition, checkersRuleModule } from '@shared-gaming/rulesets/checkers/index.mjs';
-import { createCheckpointedLocalAuthority, isResumableSession } from '../../../../frontend/src/modules/Gaming/platform/authority/createCheckpointedLocalAuthority.js';
+import { checkersDefinition, checkersRuleModule } from "../../../../capabilities/gaming/portable/rulesets/checkers/index.mjs";
+import { createCheckpointedLocalAuthority, isResumableSession } from "../../../../capabilities/gaming/browser/platform/authority/createCheckpointedLocalAuthority.js";
 
 const ACTOR = 'piano-player';
 

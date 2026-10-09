@@ -2,8 +2,8 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { Assignment } from '../../../../src/3_applications/agents/framework/Assignment.mjs';
-import { WorkingMemoryState } from '../../../../src/3_applications/agents/framework/WorkingMemory.mjs';
+import { Assignment } from "../../../../../capabilities/agent-runtime/server/application/framework/Assignment.mjs";
+import { WorkingMemoryState } from "../../../../../capabilities/agent-runtime/server/application/framework/WorkingMemory.mjs";
 
 describe('Assignment', () => {
   describe('base class', () => {

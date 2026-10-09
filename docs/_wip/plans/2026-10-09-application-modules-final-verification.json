@@ -1,0 +1,1212 @@
+{
+  "schema": "daylight.application-modules-final-verification/v1",
+  "status": "source ownership and selected compatibility verified; native calculator artifact acceptance incomplete",
+  "wholeMilestoneComplete": false,
+  "runtime": {
+    "status": "all selected final populations independently verified",
+    "packs": [
+      {
+        "pack": "remaining-operations",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/remaining-operations-YyIX3k/receipt.json",
+        "receiptSha256": "113cfba69c4077ebca557696d8f386dc1e4c57418e639ecc4232e39fbc180a4d",
+        "originalPasses": 266,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "remaining-feed",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/remaining-feed-sbM8oD/receipt.json",
+        "receiptSha256": "2f4fd89df3075cb7e1fb1240ca39b4178e127d42db188c4ef8e4d62b908e67db",
+        "originalPasses": 172,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "remaining-camera",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/remaining-camera-3HA06Q/receipt.json",
+        "receiptSha256": "d0c272301fff05b83a82bfcff33988f534804b9733911b20ec64a233cb316429",
+        "originalPasses": 248,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "remaining-games",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/remaining-games-Srr37H/receipt.json",
+        "receiptSha256": "bbb0474c2f4b5c2d148fad31c807ad13b4a658ba37a62fce1d4c58c8a8e168c3",
+        "originalPasses": 781,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "remaining-home",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/remaining-home-wyT9aT/receipt.json",
+        "receiptSha256": "c67dcd603579d93667703d11480f13707d2e7807403c69752e3ea5cfa1841926",
+        "originalPasses": 41,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "remaining-workflows",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/remaining-workflows-MVHUFf/receipt.json",
+        "receiptSha256": "290a3f045b14bbbac83413dd004b77542277d8ba78d9567cdbff0ad7f44a9a5d",
+        "originalPasses": 510,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "remaining-media-tools",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/remaining-media-tools-YuGFkv/receipt.json",
+        "receiptSha256": "9a66c37e08129ef9738f57984df1e62a55ac9580e7abe51ba9495b89036c5260",
+        "originalPasses": 413,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 4,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "remaining-art",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/remaining-art-4PrWjD/receipt.json",
+        "receiptSha256": "004d42ee80791d915ae87b84c5258669495621c5afbd39a044acc6ef23d9eb85",
+        "originalPasses": 168,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "remaining-node",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/remaining-node-1Leish/receipt.json",
+        "receiptSha256": "0d54c6cd85584d758b5fde18443d7ef9688da16b81010cf50b492af1158caee8",
+        "originalPasses": 23,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "remaining-jest",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/remaining-jest-AweUOL/receipt.json",
+        "receiptSha256": "ca9d941223e26267b0de5dda3012cff0ff0c15ecb8374c3b4d56a2dc5c2ac957",
+        "originalPasses": 120,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "remaining-http",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/remaining-http-X4ua5e/receipt.json",
+        "receiptSha256": "31e1adf3690e6756096f0a2851cb3d224404d756f98437a3d39b69ec592747bd",
+        "originalPasses": 258,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "retained-supplement",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/retained-supplement-BG7FE7/receipt.json",
+        "receiptSha256": "04445deda3ede40cb4ccae7391d35d1faffac4e62f0ac8d0742ec894b3b62cb7",
+        "originalPasses": 574,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "retained-supplement-node",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/retained-supplement-node-jsZnoR/receipt.json",
+        "receiptSha256": "199ed9a755b107c6ff766553e639e9976c50debe8a5995a946699cd54c0eb769",
+        "originalPasses": 134,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 7,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "retained-ti86",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/retained-ti86-NwIm1c/receipt.json",
+        "receiptSha256": "4a46e0f42f20402e7a862f9783970ca4cbe72c001e567adf623f653f8065a175",
+        "originalPasses": 110,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "m2",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/m2-hpyONE/receipt.json",
+        "receiptSha256": "91da5f94a093fe3597adb8419b6fc6cceedfe0633249af76f11ee5802911cdb2",
+        "originalPasses": 145,
+        "additionalGuardPasses": 1,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "health",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/health-YbpPHt/receipt.json",
+        "receiptSha256": "219eeb0b91603c7e6be551244b17af36423bab4cf609464443200f3510bb2aef",
+        "originalPasses": 165,
+        "additionalGuardPasses": 1,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "health-stack",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/health-stack-HzasHH/receipt.json",
+        "receiptSha256": "425373928a0958fda7144083f1ca4fbbe24fef1bfd2aba121d38ba35d1db57c4",
+        "originalPasses": 146,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 39,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "school-fitness",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/school-fitness-grcAwr/receipt.json",
+        "receiptSha256": "bf2f9b02c54c826c8d218409d3db4db7c6d1fec4f98b57069f717e194f211d5a",
+        "originalPasses": 471,
+        "additionalGuardPasses": 1,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "school-http",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/school-http-DKDH5m/receipt.json",
+        "receiptSha256": "b6e697f2cd5b322fe2f117f66268fd55b00c9e39140cc1612cc7d127aec420a1",
+        "originalPasses": 8,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "agents-life-concierge",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/agents-life-concierge-meZQtQ/receipt.json",
+        "receiptSha256": "2da52fb0fc6d75eb42d7f8c945ba1d0364d497ef7adf122f13d420a3af885f1b",
+        "originalPasses": 626,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "agents-life-http",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/agents-life-http-pKYrHS/receipt.json",
+        "receiptSha256": "c9e42a42f19cefd7d6b467bd2e9060cded55a9a172009f595b4952576bbc8b39",
+        "originalPasses": 24,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "gaming-notation",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/gaming-notation-YeDwHB/receipt.json",
+        "receiptSha256": "0c6e92130ec540f708a7824b19abfb04422fa71d0da47009ffd181d50e011f9e",
+        "originalPasses": 146,
+        "additionalGuardPasses": 17,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "gaming-notation-node",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/gaming-notation-node-iOySlE/receipt.json",
+        "receiptSha256": "08bcd8df238efd1c6ba0b7cec4d774de2b9aa681b9ed3483cf6ce135f39d4039",
+        "originalPasses": 105,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "media-content",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/media-content-MduH5X/receipt.json",
+        "receiptSha256": "839e16730f51fd6b1890603273df0f05550e767228a7cdfc583cb5abe4d885bb",
+        "originalPasses": 186,
+        "additionalGuardPasses": 3,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "media-content-node",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/media-content-node-ro86W7/receipt.json",
+        "receiptSha256": "552e216e0158ff259fab1ea5dab11e9b24e49f8afa8e1c8cd919b8f680e22e8a",
+        "originalPasses": 11,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "media-content-jest",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/media-content-jest-5FXg5x/receipt.json",
+        "receiptSha256": "4eea5feb6e939fecdeea2a8b7ad3de87824d7030a92f8bc239ebd7c4f541c587",
+        "originalPasses": 10,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "content-api",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/content-api-sAMJ0w/receipt.json",
+        "receiptSha256": "5b152526a67e98405a10b516c9eeb4244e2071425e9eff2e8b112b5bb1ccfefc",
+        "originalPasses": 11,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "progress-store",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/progress-store-OTjrqK/receipt.json",
+        "receiptSha256": "2e727ceef20d1d7bbd9ffe8f6cf651af9d62d835f0d1860209e87eaa2379745f",
+        "originalPasses": 24,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "art-screens",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/art-screens-uUPgnB/receipt.json",
+        "receiptSha256": "2bbb4bb555d7751704598dca299360e0e754384c8279f7350b7e812879736216",
+        "originalPasses": 15,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "art-canvas",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/art-canvas-8OfBX2/receipt.json",
+        "receiptSha256": "12957e5f7dd278c6e47ecf2ed267133662bbb4de275c4a58e4de918f93fe9b15",
+        "originalPasses": 2,
+        "additionalGuardPasses": 4,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "piano-retained-node",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/piano-retained-node-8MwGBQ/receipt.json",
+        "receiptSha256": "95685ae2a0df63ea92b0fa05d01bdb537d9287f24a2d39e5dfbc59a40b896904",
+        "originalPasses": 19,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "bots-displays",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/bots-displays-0MOiOd/receipt.json",
+        "receiptSha256": "4755d4805ae71757b28ecf21f2e43a9ee0c7bfc08a481393b9e05b65a0a3a5e7",
+        "originalPasses": 328,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "bots-displays-node",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/bots-displays-node-OkFkdp/receipt.json",
+        "receiptSha256": "108d5964f48c8119c52b85d8104b76a5ab6b41b167d6914840a6de7833110b9c",
+        "originalPasses": 7,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "bots-displays-jest",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/bots-displays-jest-6sIehu/receipt.json",
+        "receiptSha256": "130fb27cdb9b2d9079912cba50c8b9f404313cbeaffa12d9e2fbfbb6b1d9c5ca",
+        "originalPasses": 48,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "epaper-http",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/epaper-http-ua93FB/receipt.json",
+        "receiptSha256": "b30d43a1239de6015285cc188f1a61fd0da2bc8f5262f40ca0a4c8453c80cc13",
+        "originalPasses": 3,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      },
+      {
+        "pack": "gratitude",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/gratitude-D8qNZT/receipt.json",
+        "receiptSha256": "f91e162fd016cf3c36bbaf219497c5f342b9c593ae090b0b49af1775ff8bbbea",
+        "originalPasses": 59,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
+      }
+    ],
+    "pending": [],
+    "originalPasses": 6377,
+    "additionalGuardPasses": 27,
+    "additionalExistingCasePasses": 39,
+    "knownFailures": 11,
+    "unrunNativeCalculatorSuites": 19,
+    "wholeMilestoneComplete": false
+  },
+  "knownFailures": [
+    {
+      "pack": "remaining-media-tools",
+      "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/remaining-media-tools-YuGFkv/receipt.json",
+      "actualChildExitCode": 1,
+      "failedNames": [
+        "HubFleetBridge broadcasts a valid device-state envelope per lane on first snapshot",
+        "HubStatusBroadcaster after 3 consecutive failures, backoff sequence matches expected schedule",
+        "mapLaneToSnapshot maps a playing lane to a valid playing SessionSnapshot",
+        "mapLaneToSnapshot maps paused and idle lanes"
+      ],
+      "characterization": {
+        "description": "Four unchanged preexisting PlaybackHub failures; failed statuses retained, not a green baseline",
+        "matched": true,
+        "expected": {
+          "mapLaneToSnapshot maps a playing lane to a valid playing SessionSnapshot": "AssertionError: expected { valid: false, \u2026(1) } to deeply equal { valid: true, errors: [] }",
+          "mapLaneToSnapshot maps paused and idle lanes": "AssertionError: expected false to be true // Object.is equality",
+          "HubFleetBridge broadcasts a valid device-state envelope per lane on first snapshot": "AssertionError: expected { valid: false, \u2026(1) } to deeply equal { valid: true, errors: [] }",
+          "HubStatusBroadcaster after 3 consecutive failures, backoff sequence matches expected schedule": "AssertionError: expected 0 to be greater than or equal to 3"
+        }
+      }
+    },
+    {
+      "pack": "retained-supplement-node",
+      "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/retained-supplement-node-jsZnoR/receipt.json",
+      "actualChildExitCode": 1,
+      "failedNames": [
+        "Producer catalog certification accepts a fully reconciled catalog at the production minimums",
+        "Producer catalog certification rejects an indexed groove that contains no playable notes",
+        "Producer catalog certification rejects an unledgered manifest file even when the file itself parses",
+        "Producer catalog certification rejects dead prefab refs and an exceeded manifest-build budget",
+        "Producer catalog certification rejects prefab structure that would silently disappear during runtime hydration",
+        "Producer prefab curation repairs the indexed lofi starter and preserves the original in its backup",
+        "Producer prefab curation validates references and applies new payloads only after a backup"
+      ],
+      "characterization": {
+        "description": "Seven preexisting Producer CLI semantic-source contract failures; original failed status retained",
+        "expectedNames": [
+          "Producer catalog certification accepts a fully reconciled catalog at the production minimums",
+          "Producer catalog certification rejects an indexed groove that contains no playable notes",
+          "Producer catalog certification rejects an unledgered manifest file even when the file itself parses",
+          "Producer catalog certification rejects dead prefab refs and an exceeded manifest-build budget",
+          "Producer catalog certification rejects prefab structure that would silently disappear during runtime hydration",
+          "Producer prefab curation repairs the indexed lofi starter and preserves the original in its backup",
+          "Producer prefab curation validates references and applies new payloads only after a backup"
+        ],
+        "expectedMessage": "buildManifest requires a loop manifest source",
+        "matched": true
+      }
+    }
+  ],
+  "productionFrontendBuild": {
+    "receiptSha256": "aef4ff01eb95c33d8083c28294240ef62fb265d97f2c74fcb38b47e333c00935",
+    "exitCode": 0,
+    "controls": true,
+    "protectedInputsUnchanged": true,
+    "ownerChunks": 109,
+    "publicAssets": 69,
+    "requiredOwnerEntriesObserved": [
+      "Gratitude.jsx",
+      "GratitudeConfig.jsx",
+      "FamilySelector.jsx",
+      "PianoApp.jsx",
+      "PianoVisualizer.jsx",
+      "Player.jsx",
+      "PanelRenderer.jsx"
+    ],
+    "recordedChunkFilesAllPresent": true,
+    "scope": "real production frontend Vite build only; native calculator artifact gap remains",
+    "independentlyComparedPublicAssets": 68
+  },
+  "normalDiscovery": {
+    "totalFrontendUmbrella": 1748,
+    "legacyFrontend": 109,
+    "ownerBrowser": 1638,
+    "movedArchitecture": 1,
+    "syntheticDryRunControlsPassed": 3,
+    "ownerBrowserExcludedByActualVitestConfig": 0
+  },
+  "lateCorrections": {
+    "sassPaths": {
+      "files": [
+        "capabilities/playback/browser/surround/SurroundFrame.scss",
+        "modules/fitness/browser/widgets/FitnessInstruction/GroupEditor.scss",
+        "modules/fitness/browser/widgets/FitnessInstruction/ExerciseBrowser.scss",
+        "modules/fitness/browser/widgets/FitnessInstruction/WorkoutBuilder.scss",
+        "modules/fitness/browser/widgets/FitnessInstruction/ExerciseDetail.scss",
+        "modules/fitness/browser/widgets/CycleGame/CountdownStoplight.scss",
+        "modules/fitness/browser/widgets/CycleGame/RaceRecap.scss",
+        "modules/fitness/browser/widgets/CycleGame/CycleGameContainer.scss",
+        "modules/fitness/browser/widgets/CycleGame/panels/DistanceChart.scss",
+        "modules/fitness/browser/widgets/CycleGame/panels/SplitsChart.scss",
+        "modules/fitness/browser/widgets/CycleGame/panels/OvalTrack.scss",
+        "modules/fitness/browser/widgets/CycleGame/panels/PovGrid.scss",
+        "modules/fitness/browser/widgets/CycleGame/panels/StandingsTower.scss",
+        "modules/fitness/browser/widgets/CycleGame/RaceResults.scss",
+        "modules/fitness/browser/widgets/CycleGame/CycleEventToast.scss",
+        "modules/fitness/browser/widgets/CycleGame/CycleGameHome.scss",
+        "modules/fitness/browser/widgets/CycleGame/home/picker.scss",
+        "modules/fitness/browser/widgets/CycleGame/home/RaceTypePicker.scss",
+        "modules/fitness/browser/widgets/CycleGame/home/GhostSlot.scss",
+        "modules/fitness/browser/widgets/CycleGame/home/FeaturedCourseCard.scss",
+        "modules/fitness/browser/widgets/CycleGame/home/HistoryTable.scss",
+        "modules/fitness/browser/widgets/CycleGame/home/HighScores.scss",
+        "modules/fitness/browser/widgets/CycleGame/home/BikeSlot.scss",
+        "modules/fitness/browser/widgets/CycleGame/home/GhostPicker.scss",
+        "modules/fitness/browser/widgets/CycleGame/home/RiderPicker.scss",
+        "modules/fitness/browser/widgets/CycleGame/home/VolumeModal.scss",
+        "modules/fitness/browser/widgets/CycleGame/CycleRaceScreen.scss",
+        "modules/school/browser/reading/surround/ReadingCredit.scss",
+        "modules/school/browser/lesson/surround/CheckpointMap.scss",
+        "modules/school/browser/lesson/surround/LessonScore.scss",
+        "modules/media/browser/MediaApp.scss",
+        "modules/fitness/browser/nav/SidebarFooter.scss",
+        "modules/media/browser/surround/modules/SegmentMap.scss",
+        "modules/media/browser/surround/modules/PlayCard.scss",
+        "modules/fitness/browser/shared/integrations/UserAvatarGrid/UserAvatarGrid.scss",
+        "modules/media/browser/surround/modules/PlaceCarousel.scss",
+        "modules/media/browser/surround/modules/ComposerCard.scss",
+        "modules/media/browser/surround/modules/CueTicker.scss",
+        "modules/media/browser/surround/modules/ScriptRail.scss",
+        "modules/media/browser/surround/map/CountryMap.scss",
+        "modules/media/browser/surround/map/EraTimeline.scss",
+        "modules/fitness/browser/shared/composites/DataEntryForm/DataEntryForm.scss",
+        "modules/fitness/browser/shared/composites/MultiChoice/MultiChoice.scss",
+        "modules/fitness/browser/shared/composites/AppModal/AppModal.scss",
+        "modules/fitness/browser/shared/integrations/ZoneIndicator/ZoneIndicator.scss",
+        "modules/fitness/browser/shared/composites/AppNavigation/AppNavigation.scss",
+        "modules/fitness/browser/shared/integrations/ChartWidget/ChartWidget.scss",
+        "modules/fitness/browser/shared/composites/AppList/AppList.scss",
+        "modules/fitness/browser/shared/composites/ActionBar/ActionBar.scss",
+        "modules/fitness/browser/shared/integrations/MusicPlayerWidget/MusicPlayerWidget.scss",
+        "modules/fitness/browser/shared/composites/ConfirmDialog/ConfirmDialog.scss",
+        "modules/fitness/browser/player/overlays/FullscreenVitalsOverlay.scss",
+        "modules/fitness/browser/shared/integrations/HeartRateDisplay/HeartRateDisplay.scss",
+        "modules/fitness/browser/player/FitnessShow.scss",
+        "modules/fitness/browser/shared/integrations/TreasureBoxWidget/TreasureBoxWidget.scss",
+        "modules/fitness/browser/shared/integrations/DeviceAvatar/DeviceAvatar.scss",
+        "modules/fitness/browser/shared/primitives/StripedProgressBar/StripedProgressBar.scss",
+        "modules/fitness/browser/shared/primitives/AppIconButton/AppIconButton.scss",
+        "modules/fitness/browser/shared/primitives/ProgressRing/ProgressRing.scss",
+        "modules/fitness/browser/shared/primitives/ProgressBar/ProgressBar.scss",
+        "modules/fitness/browser/shared/primitives/MicLevelIndicator/MicLevelIndicator.scss",
+        "modules/fitness/browser/shared/primitives/CountdownRing/CountdownRing.scss",
+        "modules/fitness/browser/shared/primitives/Odometer/Odometer.scss",
+        "modules/fitness/browser/shared/primitives/VolumeControl/VolumeControl.scss",
+        "modules/fitness/browser/shared/primitives/AppButton/AppButton.scss",
+        "modules/fitness/browser/shared/primitives/TouchSlider/TouchSlider.scss",
+        "modules/fitness/browser/shared/primitives/Timer/Timer.scss",
+        "modules/fitness/browser/shared/primitives/Gauge/Gauge.scss",
+        "modules/fitness/browser/shared/primitives/ElapsedTimer/ElapsedTimer.scss",
+        "modules/fitness/browser/shared/primitives/NumericKeypad/NumericKeypad.scss",
+        "modules/fitness/browser/shared/containers/SplitViewContainer/SplitViewContainer.scss",
+        "modules/fitness/browser/shared/primitives/StatusBadge/StatusBadge.scss",
+        "modules/fitness/browser/shared/styles/_variables.scss",
+        "modules/fitness/browser/shared/styles/_base.scss",
+        "modules/fitness/browser/shared/containers/FullScreenContainer/FullScreenContainer.scss"
+      ],
+      "imports": 88,
+      "allIntendedPartialsResolve": true,
+      "nonTokenBytesIdentical": true,
+      "modesIdentical": true,
+      "stagedFiles": 75,
+      "tokenDeltaDiffCheck": true,
+      "fullStagedDiffCheck": false,
+      "fullStagedWhitespaceIsOriginalBody": true,
+      "sourceEvaluated": false,
+      "fullIndexComparison": {
+        "exitCode": 0,
+        "explanation": "The helper destination-only comparison omitted rename sources and reported original whitespace; the complete index comparison is clean."
+      }
+    },
+    "normalBrowserDiscovery": {
+      "files": [
+        "tests/_infrastructure/harnesses/base.harness.mjs",
+        "tests/_infrastructure/harnesses/isolated.harness.mjs",
+        "tests/unit/tooling/isolatedBrowserDiscovery.case.mjs"
+      ],
+      "syntheticCases": 3,
+      "red": {
+        "pass": 0,
+        "fail": 3
+      },
+      "green": {
+        "pass": 3,
+        "fail": 0
+      },
+      "legacyFrontend": 109,
+      "ownerBrowserAdded": 1638,
+      "movedArchitectureAdded": 1,
+      "classificationUnchanged": true,
+      "sourceEvaluated": false,
+      "stagedFiles": 3,
+      "diffCheck": true
+    },
+    "visualHarnessPaths": {
+      "files": {
+        "tests/_infrastructure/harnesses/readalong-layout/vite.config.mjs": {
+          "beforeSha256": "68cd46c7d8ac41396b27254b4d26138964c5bb859fb2c9ededcc7a1f54fa3503",
+          "mode": 436,
+          "replacements": {
+            "frontend/src/modules/Player/Player.jsx": "capabilities/playback/browser/public.mjs"
+          },
+          "afterSha256": "847531f2f1024665601794f6ab20189562b6877123ed36fa9a69da8bce3559ce"
+        },
+        "tests/_infrastructure/harnesses/fitness-mat-hearts.mjs": {
+          "beforeSha256": "c307c9f736ced6fe874ae6f9b4299ce3dd4fe352301df3e56d29c77ee5190c41",
+          "mode": 436,
+          "replacements": {
+            "frontend/src/Apps/FitnessApp.scss": "modules/fitness/browser/FitnessApp.scss",
+            "frontend/src/context/FitnessContext.jsx": "modules/fitness/browser/context/FitnessContext.jsx",
+            "frontend/src/modules/Fitness/player/panels/FitnessUsers.jsx": "modules/fitness/browser/player/panels/FitnessUsers.jsx",
+            "shared/contracts/fitness/strapColors.mjs": "modules/fitness/portable/contracts/strapColors.mjs"
+          },
+          "afterSha256": "834895603333e8a5ce433a95fd35f5395e5af73c0373f99830213c19ddf42e03"
+        },
+        "tests/_infrastructure/harnesses/chord-staff-ink-sweep.mjs": {
+          "beforeSha256": "a1355e170b7162d35bbf1411762165731095a4cb934ae4499dad9ad9780b16e2",
+          "mode": 436,
+          "replacements": {
+            "frontend/src/modules/MusicNotation/renderers/chordStaff.js": "capabilities/music-notation/browser/renderers/chordStaff.js"
+          },
+          "afterSha256": "16c36c363aab5a0da0b32c46431922702e284c6ab9959396de3b9229f1ea0486"
+        }
+      },
+      "readalongTrace": {
+        "consumer": "capabilities/playback/browser/player/ReadalongPlaylistPlayer.jsx",
+        "import": "lazy(() => import('../public.mjs'))",
+        "requestedExport": "default",
+        "stub": "tests/_infrastructure/harnesses/readalong-layout/stubPlayer.jsx",
+        "stubExports": [
+          "default"
+        ],
+        "reason": "Intercept the published Player entry consumed by the harness, before its reexport requires named PlayerOverlayLoading from the default-only stub; no Media facade participates in this lazy edge."
+      },
+      "syntaxChecksPassed": true
+    },
+    "reportedWhitespace": {
+      "files": {
+        "capabilities/printing/server/adapters/ReceiptRendererAdapter.mjs": {
+          "beforeSha256": "dff8be8662b451641a121af1be25c94e47a426bc8387cf22ffe467ec5453fa0c",
+          "afterSha256": "3817a6b529f8083e9d79c02f6bce4c63fc58465d5080743628b07fd3fc9a5843",
+          "mode": 436,
+          "nonWhitespaceBytesIdentical": true
+        },
+        "frontend/src/lib/widgets/WidgetRegistry.js": {
+          "beforeSha256": "ab88783fe245f858c0ab4094193900d498b36330b1d950f409e6063b929789c3",
+          "afterSha256": "a2cf34836a419da021d0b3d1628a5b9aae4e885a4243491cfd28795ad13c7a71",
+          "mode": 436,
+          "nonWhitespaceBytesIdentical": true
+        },
+        "modules/donow/server/action-validation.mjs": {
+          "beforeSha256": "23a04d9e44ea15f227cd06c96fdaffafaaa7712bbd5f3d9fddc97f61507bde53",
+          "afterSha256": "55299cc9788afcfd03aa57a8fd99c32f64fecb496ae11e5fa76c054bff8b2b89",
+          "mode": 436,
+          "nonWhitespaceBytesIdentical": true
+        },
+        "modules/feed/server/composition/http-runtime.mjs": {
+          "beforeSha256": "70f66145aff22ce0f60703cd95b3c0fe864bb7ee68ad428d15d336cf2e6aeb52",
+          "afterSha256": "accaf05ac90f7a68e985d382efd0764b26d72ae1e5b329ccde3ebaa99951b903",
+          "mode": 436,
+          "nonWhitespaceBytesIdentical": true
+        },
+        "modules/fitness/cli/fitsync-auth.cli.mjs": {
+          "beforeSha256": "09d7eb90c7325e5ad4ba21dc86ad08ad187afb4da96228c9ce03f6c9b442687b",
+          "afterSha256": "7b9e8aa601a1f5c3bd52ae917f746bf9368f1220904059be596559463d5c9e49",
+          "mode": 436,
+          "nonWhitespaceBytesIdentical": true
+        },
+        "modules/health/server/application/nutrition/scaleConfig.mjs": {
+          "beforeSha256": "580db20f815902c076c52b4e1f062609099c5c624ee5e46dfe273c995b7f1516",
+          "afterSha256": "e6c364ab3e3d1997c71549d3a559f537d6013999078f9000cedd9df64cfe9fcd",
+          "mode": 436,
+          "nonWhitespaceBytesIdentical": true
+        },
+        "modules/nutribot/server/application/NutribotContainer.mjs": {
+          "beforeSha256": "94dd719a87bf18fcabc7cffa2bf404ab688492b81d97cb4cfcc9b525f261486e",
+          "afterSha256": "ff665dcd6ea6bd685d2567199db88a08d8f4998055933d6d90d923fd838d4169",
+          "mode": 436,
+          "nonWhitespaceBytesIdentical": true
+        },
+        "modules/nutribot/server/application/usecases/index.mjs": {
+          "beforeSha256": "65f087847474437b869ab3f63efb0386dd49a93cd88880e1bda6d94083176510",
+          "afterSha256": "f2ef9a041534d201ddc9d17464c1971213da304c7528a19c81247c16a0211b9a",
+          "mode": 436,
+          "nonWhitespaceBytesIdentical": true
+        },
+        "modules/weekly-review/server/composition.mjs": {
+          "beforeSha256": "fa64321e31ec206a2477cea2bf21380aa7a21c6294072d7a14fed1ff52d5fe69",
+          "afterSha256": "c8120e204619b94ac3fdab9e9f1fd09033607974afbf8cb4fda711a83ab124d5",
+          "mode": 436,
+          "nonWhitespaceBytesIdentical": true
+        }
+      },
+      "diffChecksPass": true
+    },
+    "buildAndProviderHarness": {
+      "files": [
+        {
+          "path": "tests/preimplementation/application-modules/tooling/run-landlock-build.mjs",
+          "beforeSha256": "1f4ddfd4ceded826cf5b1b75bed340aea9e0ed015fd1953df80d1fe43352753c",
+          "currentSha256": "661294a930306a637467548ca68f8da9cab15bf14bcc6867857cd9a58513e076"
+        },
+        {
+          "path": "backend/src/5_composition/integrations/providerOwnership.test.mjs",
+          "beforeSha256": "6b632dec5b3b8ee7b063881bb2470840b955ee4dac23947c4488ae8337d44866",
+          "currentSha256": "3d612c6be7cf2434d3f9b06d15c48293f05a06c5d657f5f25d482f6b3f8244fd"
+        }
+      ],
+      "scope": "harness or reporting only; product assertions unchanged"
+    },
+    "canvasRunner": {
+      "files": [
+        {
+          "path": "tests/preimplementation/application-modules/configs/vitest.config.mjs",
+          "beforeSha256": "d3d5359acbf61251cf830cd0d9d10c9244e52546520faf3555f0b9c6acf1d0e3",
+          "currentSha256": "a2d82ab95b023b031f0e61189de15dad512c062539a070fe10cac91ce5a36b9e"
+        },
+        {
+          "path": "tests/preimplementation/application-modules/tooling/landlock-runner.c",
+          "beforeSha256": "cfbd0db0cdab8c3e3b868ad26d0f8d85e0c39d8e146471e9377f4521ef36527c",
+          "currentSha256": "1e572cc4f43e02e177348f809cb0da16260a5236cb9de2879630f4481d2e59fa"
+        },
+        {
+          "path": "tests/preimplementation/application-modules/tooling/run-landlock.mjs",
+          "beforeSha256": "8a4f53bd49744e2ee38983009d031188a31d92c5497aeb91357dae75a2ab019d",
+          "currentSha256": "98eaf7e716679fd9e16da1365dc2a9ac01bdf3762be4a50ad72df04e4febc981"
+        }
+      ],
+      "scope": "harness or reporting only; product assertions unchanged"
+    },
+    "profileLimitReporting": {
+      "path": "tests/preimplementation/application-modules/tooling/run-landlock.mjs",
+      "actualLimits": {
+        "art-canvas": {
+          "addressSpaceGiB": 16,
+          "cpuSeconds": 20,
+          "alarmSeconds": 45,
+          "watchdogSeconds": 190
+        },
+        "piano-retained-node": {
+          "addressSpaceGiB": 4,
+          "cpuSeconds": 20,
+          "alarmSeconds": 45,
+          "watchdogSeconds": 190
+        }
+      },
+      "scope": "Reporting-only, C execution configuration unchanged; accepted historical receipts immutable",
+      "currentSha256": "98eaf7e716679fd9e16da1365dc2a9ac01bdf3762be4a50ad72df04e4febc981"
+    },
+    "healthCliLayout": {
+      "applied": {
+        "moves": {
+          "modules/health/server/cli/commands/health.mjs": "modules/health/cli/commands/health.mjs",
+          "modules/health/server/cli/curate-nutrition-icons.mjs": "modules/health/cli/curate-nutrition-icons.mjs",
+          "modules/health/server/cli/curate-nutrition-icons.test.mjs": "modules/health/cli/curate-nutrition-icons.test.mjs",
+          "modules/health/server/cli/health-artwork-sweep.cli.mjs": "modules/health/cli/health-artwork-sweep.cli.mjs",
+          "modules/health/server/cli/health-artwork-sweep.cli.test.mjs": "modules/health/cli/health-artwork-sweep.cli.test.mjs",
+          "modules/health/server/cli/health-budget-settings-migrate.cli.mjs": "modules/health/cli/health-budget-settings-migrate.cli.mjs",
+          "modules/health/server/cli/health-catalog-serving-repair.cli.mjs": "modules/health/cli/health-catalog-serving-repair.cli.mjs",
+          "modules/health/server/cli/health-catalog-serving-repair.cli.test.mjs": "modules/health/cli/health-catalog-serving-repair.cli.test.mjs",
+          "modules/health/server/cli/health-group-repair.cli.mjs": "modules/health/cli/health-group-repair.cli.mjs",
+          "modules/health/server/cli/health-icon-manifest-merge.cli.mjs": "modules/health/cli/health-icon-manifest-merge.cli.mjs",
+          "modules/health/server/cli/health-icon-manifest-merge.cli.test.mjs": "modules/health/cli/health-icon-manifest-merge.cli.test.mjs",
+          "modules/health/server/cli/health-ledger-repair.cli.mjs": "modules/health/cli/health-ledger-repair.cli.mjs",
+          "modules/health/server/cli/health-reconciliation-preview.cli.mjs": "modules/health/cli/health-reconciliation-preview.cli.mjs",
+          "modules/health/server/cli/health-reconstruct-untracked.cli.mjs": "modules/health/cli/health-reconstruct-untracked.cli.mjs",
+          "modules/health/server/cli/health-scan-repair.cli.mjs": "modules/health/cli/health-scan-repair.cli.mjs",
+          "modules/health/server/cli/health-scan-repair.cli.test.mjs": "modules/health/cli/health-scan-repair.cli.test.mjs",
+          "modules/health/server/cli/ingest-health-archive.cli.mjs": "modules/health/cli/ingest-health-archive.cli.mjs",
+          "modules/health/server/cli/migrations/migrate-orphaned-nutrilist.mjs": "modules/health/cli/migrations/migrate-orphaned-nutrilist.mjs",
+          "modules/health/server/cli/nutrition-auditor-backfill.cli.mjs": "modules/health/cli/nutrition-auditor-backfill.cli.mjs",
+          "modules/health/server/cli/nutrition-auditor-backfill.cli.test.mjs": "modules/health/cli/nutrition-auditor-backfill.cli.test.mjs",
+          "modules/health/server/cli/migrateSavedMealsToTemplates.lib.mjs": "modules/health/cli/migrateSavedMealsToTemplates.lib.mjs",
+          "modules/health/server/cli/migrateSavedMealsToTemplates.test.mjs": "modules/health/cli/migrateSavedMealsToTemplates.test.mjs",
+          "modules/health/server/cli/migrate-saved-meals-to-templates.mjs": "modules/health/cli/migrate-saved-meals-to-templates.mjs"
+        },
+        "filesMoved": 23,
+        "incomingFiles": 16,
+        "importTokens": 61,
+        "rootAndEnvAnchors": 4,
+        "publicKeyMoves": {
+          "modules/health/server/cli/curate-nutrition-icons.mjs": "modules/health/cli/curate-nutrition-icons.mjs",
+          "modules/health/server/cli/health-artwork-sweep.cli.mjs": "modules/health/cli/health-artwork-sweep.cli.mjs",
+          "modules/health/server/cli/health-budget-settings-migrate.cli.mjs": "modules/health/cli/health-budget-settings-migrate.cli.mjs",
+          "modules/health/server/cli/health-catalog-serving-repair.cli.mjs": "modules/health/cli/health-catalog-serving-repair.cli.mjs",
+          "modules/health/server/cli/health-group-repair.cli.mjs": "modules/health/cli/health-group-repair.cli.mjs",
+          "modules/health/server/cli/health-icon-manifest-merge.cli.mjs": "modules/health/cli/health-icon-manifest-merge.cli.mjs",
+          "modules/health/server/cli/health-ledger-repair.cli.mjs": "modules/health/cli/health-ledger-repair.cli.mjs",
+          "modules/health/server/cli/health-reconciliation-preview.cli.mjs": "modules/health/cli/health-reconciliation-preview.cli.mjs",
+          "modules/health/server/cli/health-reconstruct-untracked.cli.mjs": "modules/health/cli/health-reconstruct-untracked.cli.mjs",
+          "modules/health/server/cli/health-scan-repair.cli.mjs": "modules/health/cli/health-scan-repair.cli.mjs",
+          "modules/health/server/cli/ingest-health-archive.cli.mjs": "modules/health/cli/ingest-health-archive.cli.mjs",
+          "modules/health/server/cli/migrations/migrate-orphaned-nutrilist.mjs": "modules/health/cli/migrations/migrate-orphaned-nutrilist.mjs",
+          "modules/health/server/cli/nutrition-auditor-backfill.cli.mjs": "modules/health/cli/nutrition-auditor-backfill.cli.mjs",
+          "modules/health/server/cli/migrate-saved-meals-to-templates.mjs": "modules/health/cli/migrate-saved-meals-to-templates.mjs"
+        },
+        "dependencyIdentityRestoredToOriginal": true,
+        "bodyAndGuardAndTestAstUnchangedExceptDeclaredPaths": true,
+        "modesIdentical": true,
+        "stagedPaths": 62,
+        "sourceEvaluated": false
+      },
+      "independentReview": {
+        "filesReviewed": 39,
+        "moves": 23,
+        "exactLiteralReconstruction": true,
+        "importTargetsPreserved": true,
+        "resourceAnchorsPreserved": true,
+        "replacements": 65
+      },
+      "trigger": "Original commit hook correctly rejected 13 raw filesystem imports under the server runtime tree. All 23 files originated under cli/ and now live under modules/health/cli/. The filesystem rule was not relaxed.",
+      "failedHookReceipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/hook-7tm8co/receipt.json",
+      "affectedRuntimeReplay": {
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/health-stack-HzasHH/receipt.json",
+        "receiptSha256": "425373928a0958fda7144083f1ca4fbbe24fef1bfd2aba121d38ba35d1db57c4",
+        "originalCases": 146,
+        "additionalExistingCases": 39,
+        "baselineParity": true,
+        "controls": true,
+        "protectedInputsUnchanged": true,
+        "nativeDependencyIdentity": [
+          {
+            "specifier": "uuid",
+            "original": "file:///opt/Code/DaylightStation/node_modules/uuid/dist-node/index.js",
+            "owned": "file:///opt/Code/DaylightStation/node_modules/uuid/dist-node/index.js",
+            "importConditions": true,
+            "imported": true,
+            "commandLoaded": false,
+            "environmentLoaded": false
+          },
+          {
+            "specifier": "dotenv",
+            "original": "file:///opt/Code/DaylightStation/node_modules/dotenv/lib/main.js",
+            "owned": "file:///opt/Code/DaylightStation/node_modules/dotenv/lib/main.js",
+            "importConditions": true,
+            "imported": true,
+            "commandLoaded": false,
+            "environmentLoaded": false
+          },
+          {
+            "specifier": "js-yaml",
+            "original": "file:///opt/Code/DaylightStation/node_modules/js-yaml/dist/js-yaml.mjs",
+            "owned": "file:///opt/Code/DaylightStation/node_modules/js-yaml/dist/js-yaml.mjs",
+            "importConditions": true,
+            "imported": true,
+            "commandLoaded": false,
+            "environmentLoaded": false
+          }
+        ]
+      },
+      "additionalIncomingTestCorrection": {
+        "file": "modules/health/server/application/health/NutritionRepair.test.mjs",
+        "from": "\"../../cli/health-ledger-repair.cli.mjs\"",
+        "to": "\"../../../cli/health-ledger-repair.cli.mjs\"",
+        "beforeSha256": "6b531c5be03037269c9d2b8d4cb7b7b86d49ba48794fc0df5821362446311897",
+        "afterSha256": "9c82d7628667ce5f9d5b860c1fac22f8fac2e5fd76fafee621b279a6b03f7830",
+        "onlyImportLiteralChanged": true,
+        "targetExists": true,
+        "testCases": 3
+      },
+      "secondFailedHookReceipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/hook-TZagwD/receipt.json"
+    }
+  },
+  "nativeCalculator": {
+    "runnableSuites": 27,
+    "passingCases": 110,
+    "unrunSuites": [
+      {
+        "file": "_extensions/ti86-app/tools/complete-install-contract.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required z80asm is absent; no install or assembler replacement",
+        "nativeBuilderInputs": [
+          "_extensions/ti86-app/tools/build-qr-runtime.mjs",
+          "_extensions/ti86-app/tools/build-result-queue-runtime.mjs",
+          "_extensions/ti86-app/tools/build-schoolcalc-shell.mjs",
+          "_extensions/ti86-app/tools/build-standard-runtime.mjs",
+          "_extensions/ti86-app/tools/build-sync-runtime.mjs"
+        ]
+      },
+      {
+        "file": "_extensions/ti86-app/tools/record-reader-probe.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required z80asm is absent; no install or assembler replacement",
+        "nativeBuilderInputs": [
+          "_extensions/ti86-app/tools/build-record-reader-probe.mjs"
+        ]
+      },
+      {
+        "file": "_extensions/ti86-app/tools/runtime-adaptive-contract.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required z80asm is absent; no install or assembler replacement",
+        "nativeBuilderInputs": [
+          "_extensions/ti86-app/tools/build-standard-runtime.mjs"
+        ]
+      },
+      {
+        "file": "_extensions/ti86-app/tools/runtime-assessment-contract.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required z80asm is absent; no install or assembler replacement",
+        "nativeBuilderInputs": [
+          "_extensions/ti86-app/tools/build-standard-runtime.mjs"
+        ]
+      },
+      {
+        "file": "_extensions/ti86-app/tools/runtime-catalog-contract.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required z80asm is absent; no install or assembler replacement",
+        "nativeBuilderInputs": [
+          "_extensions/ti86-app/tools/build-catalog-runtime.mjs"
+        ]
+      },
+      {
+        "file": "_extensions/ti86-app/tools/runtime-module.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required z80asm is absent; no install or assembler replacement",
+        "nativeBuilderInputs": [
+          "_extensions/ti86-app/tools/build-catalog-runtime.mjs",
+          "_extensions/ti86-app/tools/build-native-runtime.mjs",
+          "_extensions/ti86-app/tools/build-profile-runtime.mjs",
+          "_extensions/ti86-app/tools/build-qr-runtime.mjs",
+          "_extensions/ti86-app/tools/build-request-runtime.mjs",
+          "_extensions/ti86-app/tools/build-result-queue-runtime.mjs",
+          "_extensions/ti86-app/tools/build-schoolcalc-shell.mjs",
+          "_extensions/ti86-app/tools/build-standard-runtime.mjs",
+          "_extensions/ti86-app/tools/build-sync-runtime.mjs",
+          "_extensions/ti86-app/tools/build-tutor-runtime.mjs"
+        ]
+      },
+      {
+        "file": "_extensions/ti86-app/tools/runtime-qr-contract.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required z80asm is absent; no install or assembler replacement",
+        "nativeBuilderInputs": [
+          "_extensions/ti86-app/tools/build-qr-runtime.mjs"
+        ]
+      },
+      {
+        "file": "_extensions/ti86-app/tools/runtime-request-contract.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required z80asm is absent; no install or assembler replacement",
+        "nativeBuilderInputs": [
+          "_extensions/ti86-app/tools/build-request-runtime.mjs"
+        ]
+      },
+      {
+        "file": "_extensions/ti86-app/tools/runtime-result-queue-contract.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required z80asm is absent; no install or assembler replacement",
+        "nativeBuilderInputs": [
+          "_extensions/ti86-app/tools/build-result-queue-runtime.mjs"
+        ]
+      },
+      {
+        "file": "_extensions/ti86-app/tools/runtime-sync-contract.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required z80asm is absent; no install or assembler replacement",
+        "nativeBuilderInputs": [
+          "_extensions/ti86-app/tools/build-sync-runtime.mjs"
+        ]
+      },
+      {
+        "file": "_extensions/ti86-app/tools/runtime-tutor-contract.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required z80asm is absent; no install or assembler replacement",
+        "nativeBuilderInputs": [
+          "_extensions/ti86-app/tools/build-tutor-runtime.mjs"
+        ]
+      },
+      {
+        "file": "_extensions/ti86-app/tools/schoolcalc-shell.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required z80asm is absent; no install or assembler replacement",
+        "nativeBuilderInputs": [
+          "_extensions/ti86-app/tools/build-schoolcalc-shell.mjs"
+        ]
+      },
+      {
+        "file": "_extensions/ti86-app/tools/ui-renderer-probe.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required z80asm is absent; no install or assembler replacement",
+        "nativeBuilderInputs": [
+          "_extensions/ti86-app/tools/build-ui-renderer-probe.mjs"
+        ]
+      },
+      {
+        "file": "_extensions/ti86-app/tools/foreground-listener-contract.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required source fixture or generated release artifact absent in actual checkout; no substitute fixtures generated",
+        "missingInputs": [
+          "_extensions/ticalc-relay/config.example.yml"
+        ],
+        "priorFailedReceipt": "retained-ti86-P6ByyF/receipt.json"
+      },
+      {
+        "file": "_extensions/ti86-app/tools/input-contract.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required source fixture or generated release artifact absent in actual checkout; no substitute fixtures generated",
+        "missingInputs": [
+          "_extensions/ti86-app/gui/screens.yml"
+        ],
+        "priorFailedReceipt": "retained-ti86-P6ByyF/receipt.json"
+      },
+      {
+        "file": "_extensions/ti86-app/tools/lib/schoolcalc-design-system.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required source fixture or generated release artifact absent in actual checkout; no substitute fixtures generated",
+        "missingInputs": [
+          "_extensions/ti86-app/gui/design-system.yml"
+        ],
+        "priorFailedReceipt": "retained-ti86-P6ByyF/receipt.json"
+      },
+      {
+        "file": "_extensions/ti86-app/tools/lib/schoolcalc-ui-assets.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required source fixture or generated release artifact absent in actual checkout; no substitute fixtures generated",
+        "missingInputs": [
+          "_extensions/ti86-app/gui/icons.yml"
+        ],
+        "priorFailedReceipt": "retained-ti86-P6ByyF/receipt.json"
+      },
+      {
+        "file": "_extensions/ti86-app/tools/lib/ti86-screen-text.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required source fixture or generated release artifact absent in actual checkout; no substitute fixtures generated",
+        "missingInputs": [
+          "_extensions/ti86-app/gui/icons.yml"
+        ],
+        "priorFailedReceipt": "retained-ti86-P6ByyF/receipt.json"
+      },
+      {
+        "file": "_extensions/ti86-app/tools/lib/ti86-mame-provisioning.test.mjs",
+        "status": "UNRUN",
+        "reason": "Required source fixture or generated release artifact absent in actual checkout; no substitute fixtures generated",
+        "missingInputs": [
+          "_extensions/ti86-app/dist/SCHLCALC.86p",
+          "_extensions/ti86-app/dist/DSUSERS.86s",
+          "_extensions/ti86-app/dist/DSPROG.86s"
+        ],
+        "priorFailedReceipt": "retained-ti86-P6ByyF/receipt.json"
+      }
+    ],
+    "missingInputProvenance": {
+      "inputs": {
+        "_extensions/ticalc-relay/config.example.yml": {
+          "inOriginalTrackedTree": false,
+          "mappedTarget": null,
+          "originalPathExists": false,
+          "mappedTargetExists": false
+        },
+        "_extensions/ti86-app/gui/screens.yml": {
+          "inOriginalTrackedTree": false,
+          "mappedTarget": null,
+          "originalPathExists": false,
+          "mappedTargetExists": false
+        },
+        "_extensions/ti86-app/gui/design-system.yml": {
+          "inOriginalTrackedTree": false,
+          "mappedTarget": null,
+          "originalPathExists": false,
+          "mappedTargetExists": false
+        },
+        "_extensions/ti86-app/gui/icons.yml": {
+          "inOriginalTrackedTree": false,
+          "mappedTarget": null,
+          "originalPathExists": false,
+          "mappedTargetExists": false
+        },
+        "_extensions/ti86-app/dist/SCHLCALC.86p": {
+          "inOriginalTrackedTree": false,
+          "mappedTarget": null,
+          "originalPathExists": false,
+          "mappedTargetExists": false
+        },
+        "_extensions/ti86-app/dist/DSUSERS.86s": {
+          "inOriginalTrackedTree": false,
+          "mappedTarget": null,
+          "originalPathExists": false,
+          "mappedTargetExists": false
+        },
+        "_extensions/ti86-app/dist/DSPROG.86s": {
+          "inOriginalTrackedTree": false,
+          "mappedTarget": null,
+          "originalPathExists": false,
+          "mappedTargetExists": false
+        }
+      },
+      "scope": "read-only original Git tree and current mapped targets; no generated replacement artifacts"
+    },
+    "claim": "No native build certification; missing tool/source/release inputs were not synthesized or installed."
+  },
+  "gitIntegration": {
+    "preCutoverTag": "pre-application-modules-cutover-2026-10-08",
+    "tagCommit": "b304cdf8107ca710a98f679621b75629e5333bc7",
+    "latestMainIncluded": "6cf8670352f92c4d40824bfaac9260fa53ec3c3f",
+    "m2Checkpoint": "9f19f9f2f7b664f2c17e29ad2d96d0bb8d0c2b3d",
+    "mappedUniqueDestinationsIndexed": 8795,
+    "mainMergedIntoRefactor": true,
+    "refactorMergedIntoMain": false,
+    "deployed": false
+  },
+  "checkpointPolicy": {
+    "hook": ".githooks/pre-commit",
+    "adapter": "tests/preimplementation/application-modules/tooling/run-landlock-hook.mjs",
+    "method": "The local commit itself invokes the unchanged original hook through a command-local wrapper. Hook failure blocks commit creation. No hook command is skipped; repository hook configuration is unchanged.",
+    "receiptLocation": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/hook-*/receipt.json"
+  },
+  "limitations": [
+    "Case counts are executions across overlapping selected groups, not a unique whole-repository test count.",
+    "The eleven known test failures remain actual failures, with their exact baseline names/signatures preserved.",
+    "Historical Art runner receipts may state stale resource-limit prose; actual launcher C and command evidence determine enforced limits. Reporting was corrected without changing assertions or confinement.",
+    "The successful build proves the production frontend artifact, not native calculator release artifacts or deployment."
+  ],
+  "staticGates": {
+    "ownerBoundaryDirectionAndCycles": {
+      "sourceFiles": 9572,
+      "exitCode": 0
+    },
+    "layerRatchets": {
+      "exitCode": 0,
+      "baselinesIncreased": false
+    },
+    "nativeEsmLinks": {
+      "modules": 4417,
+      "exitCode": 0
+    }
+  }
+}

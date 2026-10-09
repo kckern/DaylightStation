@@ -1,8 +1,8 @@
 // tests/unit/suite/applications/nutribot/LogFoodFromScale.test.mjs
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
-import { LogFoodFromScale } from '#apps/nutribot/usecases/LogFoodFromScale.mjs';
-import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
-import { serializeNutriLog } from '#apps/nutribot/nutriLogRecords.mjs';
+import { LogFoodFromScale } from "../../../../../modules/nutribot/server/application/usecases/LogFoodFromScale.mjs";
+import { normalizeScaleNutribotConfig } from '../../../../../modules/health/server/scale-config.mjs';
+import { serializeNutriLog } from "../../../../../modules/health/server/nutrition-records.mjs";
 
 const logger = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
 

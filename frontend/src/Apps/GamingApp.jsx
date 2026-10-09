@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import GamingRuntime from '../modules/Gaming/platform/runtime/GamingRuntime.jsx';
-import { GAMING_PRESENTERS } from '../modules/Gaming/experiences/presenterRegistry.js';
+import GamingRuntime from "../../../capabilities/gaming/browser/platform/runtime/GamingRuntime.jsx";
+import { GAMING_PRESENTERS } from "../composition/gaming/presenterRegistry.js";
 
 export default function GamingApp({ clear = null }) {
   const query = useMemo(() => new URLSearchParams(window.location.search), []);

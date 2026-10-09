@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { authorize } from '#apps/trigger/guards/authorize.mjs';
+import { authorize } from "../../../../../capabilities/device-dispatch/server/application/guards/authorize.mjs";
 
 describe('authorize', () => {
   it('approves by default (no strategies)', async () => {

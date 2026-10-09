@@ -30,9 +30,9 @@ import { ScreenSessionControlsHost } from './session/ScreenSessionControlsHost.j
 import { getPlayerSessionRegistry } from "../../../../capabilities/playback/browser/sessions.mjs";
 import { ScreenSceneProvider } from "../../../../capabilities/screen-host/browser/providers.mjs";
 import { ScreenAmbientProvider } from "../../../../capabilities/screen-host/browser/ambient.mjs";
-import { SurroundSettingContext } from '../../modules/Surround/SurroundSettingContext.js';
-import { MenuNavigationProvider } from '../../context/MenuNavigationContext.jsx';
-import { useMenuNavigationContext } from '../../context/useMenuNavigationContext.js';
+import { SurroundSettingContext } from "../../../../capabilities/playback/browser/surround-surround-setting-context.mjs";
+import { MenuNavigationProvider } from "../../../../capabilities/screen-host/browser/menu-context.mjs";
+import { useMenuNavigationContext } from "../../../../capabilities/screen-host/browser/menu-navigation.mjs";
 import { parseAutoplayParams, autoplayToAction, AUTOPLAY_ACTIONS } from '../../lib/parseAutoplayParams.js';
 import { getApp } from '../../lib/appRegistry.js';
 import { bindBackButton, enableGlobalKeyCapture } from '../../lib/fkb.js';

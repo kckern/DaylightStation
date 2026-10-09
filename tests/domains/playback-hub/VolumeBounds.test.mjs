@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { VolumeBounds } from '../../../backend/src/2_domains/playback-hub/value-objects/VolumeBounds.mjs';
+import { VolumeBounds } from "../../../modules/media/server/domain/playback-hub/value-objects/VolumeBounds.mjs";
 import { ValidationError } from '../../../backend/src/2_domains/core/errors/ValidationError.mjs';
 import { DomainInvariantError } from '../../../backend/src/2_domains/core/errors/DomainInvariantError.mjs';
-import { serializeVolumeBounds } from '../../../backend/src/1_adapters/persistence/yaml/YamlHubConfigDatastore.mjs';
+import { serializeVolumeBounds } from '../../../modules/media/server/adapters/playback-hub/YamlHubConfigDatastore.mjs';
 
 describe('VolumeBounds', () => {
   describe('defaults', () => {

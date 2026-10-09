@@ -17,7 +17,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ReportPlaybackSession } from './ReportPlaybackSession.mjs';
 import { PlaybackSessionRegistry } from '../runtime/PlaybackSessionRegistry.mjs';
-import { PlexClientIdentity } from '../../../../backend/src/2_domains/media/value-objects/PlexClientIdentity.mjs';
+import { PlexClientIdentity } from "../../../../modules/media/server/domain/value-objects/PlexClientIdentity.mjs";
 
 const T0 = 1_789_577_175_000;
 

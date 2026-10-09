@@ -10,8 +10,8 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { LogFoodFromText } from '#apps/nutribot/usecases/LogFoodFromText.mjs';
-import { ProcessRevisionInput } from '../../../backend/src/3_applications/nutribot/usecases/ProcessRevisionInput.mjs';
+import { LogFoodFromText } from "../../../modules/nutribot/server/application/usecases/LogFoodFromText.mjs";
+import { ProcessRevisionInput } from "../../../modules/nutribot/server/application/usecases/ProcessRevisionInput.mjs";
 
 // Doubled-items AI response for "Double the recipe"
 const DOUBLED_AI_RESPONSE = JSON.stringify({

@@ -19,6 +19,7 @@ export class IntegrationLoader {
   #configService;
   #loadedAdapters = new Map();
   #logger;
+  #providerDependencies;
 
   /**
    * @param {Object} options
@@ -26,10 +27,11 @@ export class IntegrationLoader {
    * @param {ConfigService} options.configService - For service URL resolution
    * @param {Object} [options.logger] - Logger instance
    */
-  constructor({ registry, configService, logger = console }) {
+  constructor({ registry, configService, logger = console, providerDependencies = {} }) {
     this.#registry = registry;
     this.#configService = configService;
     this.#logger = logger;
+    this.#providerDependencies = providerDependencies;
   }
 
   /**
@@ -109,7 +111,8 @@ export class IntegrationLoader {
       const adapterDeps = sharedDeps.logger?.child
         ? { ...sharedDeps, logger: sharedDeps.logger.child({ module: `${provider}-adapter` }) }
         : sharedDeps;
-      const adapter = new AdapterClass(config, adapterDeps);
+      const providerDeps = Object.hasOwn(this.#providerDependencies, provider) ? this.#providerDependencies[provider] : null;
+      const adapter = new AdapterClass(config, providerDeps ? { ...adapterDeps, ...providerDeps } : adapterDeps);
       if (typeof decorateAdapter !== 'function') return adapter;
       // A broken decorator must never cost the integration: fall back to the
       // plain adapter (for AI, that is today's behaviour without the wire layer).

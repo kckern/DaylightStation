@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateDocument, walkBlocks } from '#domains/school/documents/documentValidation.mjs';
+import { validateDocument, walkBlocks } from "../../../../../modules/school/server/domain/documents/documentValidation.mjs";
 
 const question = (over = {}) => ({
   type: 'question',

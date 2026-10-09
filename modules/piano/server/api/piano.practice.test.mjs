@@ -21,7 +21,7 @@ import { createPianoRouter } from './piano.mjs';
 import { withPianoRouterServices } from '../../../../tests/_lib/pianoRouterDeps.mjs';
 import { YamlPianoStudioDatastore } from '../adapters/YamlPianoStudioDatastore.mjs';
 import { PianoContainer } from '../application/PianoContainer.mjs';
-import { PianoConfigProjection } from '../../../../backend/src/1_adapters/config/ApplicationConfigProjections.mjs';
+import { PianoConfigProjection } from "../adapters/PianoConfigProjection.mjs";
 
 const configService = {
   getUserDir: (id) => `/data/users/${id}`,

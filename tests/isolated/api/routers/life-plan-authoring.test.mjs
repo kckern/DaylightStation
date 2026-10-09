@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import createLifeRouterBase from '#api/v1/routers/life.mjs';
-import { LifeApiOperations } from '#apps/lifeplan/LifeApiOperations.mjs';
+import createLifeRouterBase from "../../../../modules/life/server/api/life.mjs";
+import { LifeApiOperations } from "../../../../modules/life/server/application/LifeApiOperations.mjs";
 
 const createLifeRouter = (config) => createLifeRouterBase({
   ...config,
@@ -14,9 +14,9 @@ const createLifeRouter = (config) => createLifeRouterBase({
     lifePlanOperations: config.lifePlanOperations,
   }),
 });
-import { PlanAuthoringService } from '#apps/lifeplan/services/PlanAuthoringService.mjs';
-import { LifePlanOperations } from '#apps/lifeplan/LifePlanOperations.mjs';
-import { presentBelief, presentGoal, presentLifePlan } from '#apps/lifeplan/presenters/lifePlanPresenter.mjs';
+import { PlanAuthoringService } from "../../../../modules/life/server/application/services/PlanAuthoringService.mjs";
+import { LifePlanOperations } from "../../../../modules/life/server/application/LifePlanOperations.mjs";
+import { presentBelief, presentGoal, presentLifePlan } from "../../../../modules/life/server/application/presenters/lifePlanPresenter.mjs";
 
 /**
  * Exercises the plan genesis + authoring REST routes against the REAL

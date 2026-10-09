@@ -1,6 +1,6 @@
 // tests/isolated/domain/content/MediaProgress.completedAt.test.mjs
 import { describe, test, expect } from 'vitest';
-import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
+import { MediaProgress } from "../../../../capabilities/content-catalog/server/domain/entities/MediaProgress.mjs";
 
 describe('MediaProgress.completedAt', () => {
   test('preserves completedAt when provided', () => {

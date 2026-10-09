@@ -1,0 +1,644 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { formatAge, proxyIcon, proxyImage, isImageUrl } from "./utils.js";
+import { getBodyModule } from "./bodies/index.js";
+import { getContentPlugin } from "../../contentPlugins/index.js";
+import { feedLog } from "../feedLog.js";
+import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
+import FeedPlayer from "../../players/FeedPlayer.jsx";
+import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
+
+// Info-level logger for image lifecycle (visible in backend session logs)
+function imgLog() { return getLogger().child({ module: 'feed-card-image' }); }
+
+function formatDuration(seconds) {
+  if (!seconds || !Number.isFinite(seconds)) return '';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+const STATUS_COLORS = {
+  red: '#ff6b6b',
+  yellow: '#fab005',
+  green: '#51cf66',
+};
+
+/** Inline SVG data-URI shimmer placeholder (no network request). */
+const PLACEHOLDER_SVG = `data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300">
+    <defs>
+      <linearGradient id="g" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%" stop-color="#2c2e33"/>
+        <stop offset="50%" stop-color="#3a3c42"/>
+        <stop offset="100%" stop-color="#2c2e33"/>
+      </linearGradient>
+    </defs>
+    <rect width="400" height="300" fill="#1a1b1e"/>
+    <rect width="400" height="300" fill="url(#g)">
+      <animate attributeName="x" from="-400" to="400" dur="1.5s" repeatCount="indefinite"/>
+    </rect>
+  </svg>`
+)}`;
+
+function HeroImage({ src, thumbnail, feedItemId, title }) {
+  const proxied = proxyImage(src);
+  const [imgSrc, setImgSrc] = useState(thumbnail || src);
+  const [phase, setPhase] = useState(thumbnail ? 'thumbnail' : 'original');
+  const [loaded, setLoaded] = useState(false);
+  const loadStartRef = useRef(performance.now());
+  const imageRef = useRef(null);
+
+  useEffect(() => {
+    setImgSrc(thumbnail || src);
+    setPhase(thumbnail ? 'thumbnail' : 'original');
+    setLoaded(false);
+    loadStartRef.current = performance.now();
+  }, [src, thumbnail]);
+
+  // Upgrade a thumbnail only when the card approaches the viewport. A manual
+  // Image preload at mount bypasses native lazy-loading and multiplies network
+  // and decode pressure during a 60-card window.
+  useEffect(() => {
+    if (!thumbnail || !src || thumbnail === src) return;
+    let cancelled = false;
+    let preload = null;
+    const upgrade = () => {
+      if (preload || cancelled) return;
+      preload = new Image();
+      preload.onload = () => {
+        if (cancelled) return;
+        const durationMs = Math.round(performance.now() - loadStartRef.current);
+        imgLog().debug('preload.done', { phase: 'full', durationMs, src, feedItemId, title });
+        setImgSrc(src);
+        setPhase('original');
+        loadStartRef.current = performance.now();
+      };
+      preload.onerror = () => {
+        if (cancelled) return;
+        const durationMs = Math.round(performance.now() - loadStartRef.current);
+        imgLog().warn('preload.failed', { src, thumbnail, durationMs, feedItemId, title });
+      };
+      preload.src = src;
+    };
+
+    let observer = null;
+    if ('IntersectionObserver' in window && imageRef.current) {
+      observer = new IntersectionObserver(([entry]) => {
+        if (entry.isIntersecting) { upgrade(); observer?.disconnect(); }
+      }, { rootMargin: '600px' });
+      observer.observe(imageRef.current);
+    } else {
+      upgrade();
+    }
+    return () => {
+      cancelled = true;
+      observer?.disconnect();
+      if (preload) { preload.onload = null; preload.onerror = null; }
+    };
+  }, [feedItemId, src, thumbnail, title]);
+
+  const handleError = () => {
+    const durationMs = Math.round(performance.now() - loadStartRef.current);
+    if (phase === 'thumbnail' && src && src !== thumbnail) {
+      imgLog().warn('thumbnail.failed', { thumbnail, src, durationMs, feedItemId, title });
+      setPhase('original');
+      setImgSrc(src);
+      loadStartRef.current = performance.now();
+    } else if ((phase === 'original' || phase === 'thumbnail') && proxied) {
+      imgLog().warn('fallback.proxy', { original: src, proxy: proxied, durationMs, feedItemId, title });
+      setPhase('proxy');
+      setImgSrc(proxied);
+      loadStartRef.current = performance.now();
+    } else {
+      imgLog().warn('image.hidden', { src, durationMs, feedItemId, title });
+      setPhase('hidden');
+    }
+  };
+
+  if (phase === 'hidden') return null;
+
+  return (
+    <>
+      {/* SVG shimmer placeholder — visible until real image loads */}
+      {!loaded && (
+        <img
+          src={PLACEHOLDER_SVG}
+          alt=""
+          style={{
+            position: 'absolute', inset: 0,
+            width: '100%', height: '100%',
+            display: 'block', objectFit: 'cover',
+          }}
+        />
+      )}
+      <img
+        ref={imageRef}
+        src={imgSrc}
+        alt=""
+        className="feed-card-image"
+        loading="lazy"
+        decoding="async"
+        sizes="(min-width: 900px) 320px, 100vw"
+        style={{
+          width: '100%',
+          height: '100%',
+          display: 'block',
+          objectFit: 'cover',
+          opacity: loaded ? 1 : 0,
+          transition: 'opacity 0.3s ease-in-out',
+        }}
+        onLoad={() => {
+          const durationMs = Math.round(performance.now() - loadStartRef.current);
+          imgLog().debug('loaded', { phase, durationMs, src: imgSrc, feedItemId, title });
+          setLoaded(true);
+        }}
+        onError={handleError}
+      />
+    </>
+  );
+}
+
+/**
+ * GalleryHero — swipeable image gallery for cards with multiple images.
+ * Source-agnostic: works with any adapter that provides meta.galleryImages.
+ * Supports touch swipe (mobile) and click arrows (desktop).
+ */
+function GalleryHero({ images, feedItemId, title }) {
+  const [index, setIndex] = useState(0);
+  const dragStartRef = useRef(null);
+  const count = images.length;
+  const current = images[index] || images[0];
+
+  const goPrev = useCallback((e) => { e?.stopPropagation(); setIndex(i => Math.max(i - 1, 0)); }, []);
+  const goNext = useCallback((e) => { e?.stopPropagation(); setIndex(i => Math.min(i + 1, count - 1)); }, [count]);
+
+  // Touch swipe (mobile)
+  const handleTouchStart = (e) => { dragStartRef.current = e.touches[0].clientX; };
+  const handleTouchEnd = (e) => {
+    if (dragStartRef.current === null) return;
+    const dx = e.changedTouches[0].clientX - dragStartRef.current;
+    dragStartRef.current = null;
+    if (dx < -40) goNext();
+    else if (dx > 40) goPrev();
+  };
+
+  // Mouse drag (desktop)
+  const handleMouseDown = (e) => { dragStartRef.current = e.clientX; };
+  const handleMouseUp = (e) => {
+    if (dragStartRef.current === null) return;
+    const dx = e.clientX - dragStartRef.current;
+    dragStartRef.current = null;
+    if (dx < -40) goNext();
+    else if (dx > 40) goPrev();
+  };
+
+  // Keyboard navigation when focused
+  const handleKeyDown = useCallback((e) => {
+    if (e.key === 'ArrowLeft') goPrev(e);
+    else if (e.key === 'ArrowRight') goNext(e);
+  }, [goPrev, goNext]);
+
+  // Log only user-initiated slides (skip initial index=0)
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    if (!mountedRef.current) { mountedRef.current = true; return; }
+    feedLog.interaction('gallery-slide', { index, total: count, feedItemId, title });
+  }, [index, count, feedItemId, title]);
+
+  const arrowStyle = {
+    position: 'absolute', top: '50%', transform: 'translateY(-50%)',
+    width: '32px', height: '32px', borderRadius: '50%',
+    background: 'rgba(0,0,0,0.5)', border: 'none', color: '#fff',
+    fontSize: '16px', fontWeight: 700, cursor: 'pointer', display: 'flex',
+    alignItems: 'center', justifyContent: 'center', zIndex: 2,
+    backdropFilter: 'blur(4px)',
+  };
+
+  return (
+    <div
+      style={{ position: 'relative', width: '100%', height: '100%', userSelect: 'none' }}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+      onKeyDown={handleKeyDown}
+      tabIndex={0}
+      role="region"
+      aria-label={`Image gallery, ${index + 1} of ${count}`}
+    >
+      <HeroImage src={current.url} thumbnail={current.thumbnail} feedItemId={feedItemId} title={title} />
+
+      {/* Left arrow */}
+      {index > 0 && (
+        <button onClick={goPrev} aria-label="Previous image"
+          style={{ ...arrowStyle, left: '6px' }}>‹</button>
+      )}
+      {/* Right arrow */}
+      {index < count - 1 && (
+        <button onClick={goNext} aria-label="Next image"
+          style={{ ...arrowStyle, right: '6px' }}>›</button>
+      )}
+
+      {/* Dot indicators (cap at 10 to avoid clutter) */}
+      {count <= 10 && (
+        <div style={{
+          position: 'absolute', bottom: '8px', left: '50%', transform: 'translateX(-50%)',
+          display: 'flex', gap: '4px', zIndex: 2,
+        }}>
+          {images.map((_, i) => (
+            <span key={i} style={{
+              width: i === index ? '8px' : '6px',
+              height: i === index ? '8px' : '6px',
+              borderRadius: '50%',
+              background: i === index ? '#fff' : 'rgba(255,255,255,0.5)',
+              transition: 'all 0.2s',
+            }} />
+          ))}
+        </div>
+      )}
+
+      {/* Counter badge */}
+      <span style={{
+        position: 'absolute', top: '8px', left: '8px',
+        background: 'rgba(0,0,0,0.6)', color: '#fff',
+        fontSize: '0.6rem', fontWeight: 600,
+        padding: '2px 6px', borderRadius: '4px', zIndex: 2,
+      }}>
+        {index + 1} / {count}
+      </span>
+    </div>
+  );
+}
+
+function StatusDot({ status }) {
+  const color = STATUS_COLORS[status] || '#5c636a';
+  return (
+    <span style={{
+      display: 'inline-block',
+      width: '8px',
+      height: '8px',
+      borderRadius: '50%',
+      backgroundColor: color,
+      flexShrink: 0,
+    }} />
+  );
+}
+
+const MAX_PORTRAIT_RATIO = 4 / 5; // tallest allowed (like Instagram)
+
+/**
+ * Compute hero aspect-ratio string.
+ * - Uses provided dimensions when available
+ * - Caps portrait thumbnails at 4:5 to prevent towering cards
+ * - Falls back to 16:9
+ */
+function heroAspectRatio(item) {
+  const w = item.meta?.imageWidth;
+  const h = item.meta?.imageHeight;
+  if (w && h) {
+    const ratio = w / h;
+    if (ratio < MAX_PORTRAIT_RATIO) return `4 / 5`;
+    return `${w} / ${h}`;
+  }
+  return '16 / 9';
+}
+
+
+export default function FeedCard({ item, onDismiss, onPlay }) {
+  const tier = item.tier || 'wire';
+  const sourceName = item.meta?.sourceName || item.meta?.feedTitle || item.source || '';
+  const age = formatAge(item.timestamp);
+  const iconUrl = proxyIcon(item.meta?.sourceIcon);
+  const [playingInline, setPlayingInline] = useState(false);
+
+  const contentPlugin = getContentPlugin(item);
+  const BodyModule = contentPlugin?.ScrollBody || getBodyModule(item.source);
+
+  const canPlayInline = item.contentType === 'youtube' && item.meta?.videoId;
+
+  const handlePlay = (e) => {
+    e.stopPropagation();
+    if (canPlayInline) {
+      feedLog.interaction('inline-play', { id: item.id, title: item.title, contentType: item.contentType, videoId: item.meta?.videoId });
+      setPlayingInline(true);
+    } else {
+      feedLog.interaction('remote-play', { id: item.id, title: item.title, contentType: item.contentType });
+      onPlay?.(item, item.id);
+    }
+  };
+
+  return (
+    <div
+      className={`feed-card feed-card-${tier}`}
+      style={{
+        display: 'block',
+        background: '#25262b',
+        borderRadius: '12px',
+        overflow: 'hidden',
+        position: 'relative',
+      }}
+    >
+      {/* Hero image / inline player */}
+      {item.image && isImageUrl(item.image) && (
+        <div style={{
+            overflow: 'hidden',
+            position: 'relative',
+            aspectRatio: heroAspectRatio(item),
+            backgroundColor: '#1a1b1e',
+          }}>
+          {playingInline ? (
+            <CardYouTubePlayer item={item} />
+          ) : item.meta?.galleryImages?.length > 1 ? (
+            <GalleryHero images={item.meta.galleryImages} feedItemId={item.id} title={item.title} />
+          ) : (
+            <>
+              <HeroImage src={item.image} thumbnail={item.thumbnail} feedItemId={item.id} title={item.title} />
+              {/* Duration badge */}
+              {item.meta?.duration > 0 && (
+                <span style={{
+                  position: 'absolute',
+                  bottom: '32px',
+                  right: '8px',
+                  background: 'rgba(0,0,0,0.75)',
+                  color: '#fff',
+                  fontSize: '0.65rem',
+                  fontWeight: 600,
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  fontVariantNumeric: 'tabular-nums',
+                  zIndex: 1,
+                }}>
+                  {formatDuration(item.meta.duration)}
+                </span>
+              )}
+              {/* Play button overlay */}
+              {item.meta?.playable && (
+                <button
+                  onClick={handlePlay}
+                  style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    width: '48px',
+                    height: '48px',
+                    borderRadius: '50%',
+                    background: 'rgba(0,0,0,0.55)',
+                    border: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    padding: 0,
+                  }}
+                  aria-label="Play"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </button>
+              )}
+            </>
+          )}
+          {/* Source bar overlay — inside thumbnail */}
+          <div style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            padding: '0.4rem 0.6rem',
+            background: 'rgba(0,0,0,0.5)',
+            zIndex: 2,
+          }}>
+            {item.meta?.status && <StatusDot status={item.meta.status} />}
+            {iconUrl && (
+              <img
+                src={iconUrl}
+                alt=""
+                style={{
+                  width: '14px',
+                  height: '14px',
+                  borderRadius: '50%',
+                  flexShrink: 0,
+                }}
+                onError={(e) => { feedLog.image('source icon failed', { url: iconUrl }); e.target.style.display = 'none'; }}
+              />
+            )}
+            <span style={{
+              fontSize: '0.65rem',
+              fontWeight: 600,
+              color: 'rgba(255,255,255,0.85)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.03em',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
+              {sourceName}
+            </span>
+            <span style={{
+              fontSize: '0.6rem',
+              color: 'rgba(255,255,255,0.55)',
+              marginLeft: 'auto',
+              flexShrink: 0,
+            }}>
+              {age}
+            </span>
+          </div>
+          {/* Archive button overlay — mobile also supports swipe-left. */}
+          {onDismiss && (
+            <button
+              className="feed-card-dismiss"
+              onClick={(e) => { e.stopPropagation(); onDismiss(item); }}
+              style={{
+                position: 'absolute',
+                top: '8px',
+                right: '8px',
+                width: '28px',
+                height: '28px',
+                borderRadius: '50%',
+                background: 'rgba(0,0,0,0.55)',
+                border: 'none',
+                color: '#fff',
+                fontSize: '14px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+                lineHeight: 1,
+                zIndex: 2,
+              }}
+              aria-label="Archive"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Body below image */}
+      <div style={{ padding: '0.75rem 1rem', lineHeight: 1 }}>
+        {/* Source bar for text-only cards (no thumbnail to overlay) */}
+        {!(item.image && isImageUrl(item.image)) && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            marginBottom: '0.35rem',
+          }}>
+            {item.meta?.status && <StatusDot status={item.meta.status} />}
+            {iconUrl && (
+              <img
+                src={iconUrl}
+                alt=""
+                style={{ width: '16px', height: '16px', borderRadius: '50%', flexShrink: 0 }}
+                onError={(e) => { feedLog.image('source icon failed', { url: iconUrl }); e.target.style.display = 'none'; }}
+              />
+            )}
+            <span style={{
+              fontSize: '0.7rem', fontWeight: 600, color: '#868e96',
+              textTransform: 'uppercase', letterSpacing: '0.03em',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {sourceName}
+            </span>
+            <span style={{ fontSize: '0.65rem', color: '#5c636a', marginLeft: 'auto', flexShrink: 0 }}>
+              {age}
+            </span>
+          </div>
+        )}
+        {/* Body */}
+        <BodyModule item={item} />
+
+        {/* Overdue badge (tasks) */}
+        {item.source === 'tasks' && item.meta?.isOverdue && (
+          <span style={{
+            display: 'inline-block',
+            background: '#ff6b6b',
+            color: '#fff',
+            fontSize: '0.6rem',
+            fontWeight: 700,
+            padding: '0.1rem 0.4rem',
+            borderRadius: '999px',
+            marginTop: '0.4rem',
+            textTransform: 'uppercase',
+          }}>
+            Overdue
+          </span>
+        )}
+        {/* Archive footer for text-only cards. */}
+        {onDismiss && !(item.image && isImageUrl(item.image)) && (
+          <div className="feed-card-dismiss" style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            marginTop: '0.4rem',
+            paddingTop: '0.3rem',
+            borderTop: '1px solid rgba(255,255,255,0.05)',
+          }}>
+            <button
+              onClick={(e) => { e.stopPropagation(); onDismiss(item); }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#adb5bd',
+                fontSize: '0.78rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.25rem',
+                padding: '0.45rem 0.55rem',
+                borderRadius: '4px',
+              }}
+              aria-label="Archive"
+            >
+              ✕ <span>Archive</span>
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CardYouTubePlayer({ item }) {
+  const [playerData, setPlayerData] = useState(null);
+  const [fetchDone, setFetchDone] = useState(false);
+  const [useEmbed, setUseEmbed] = useState(false);
+
+  useEffect(() => {
+    const fetchStart = performance.now();
+    const params = new URLSearchParams();
+    params.set('quality', '720p');
+    if (item.meta) params.set('meta', JSON.stringify(item.meta));
+
+    feedLog.resolution('native-attempt', { videoId: item.meta?.videoId, title: item.title, quality: '720p' });
+
+    DaylightAPI(`/api/v1/feed/detail/${encodeURIComponent(item.id)}?${params}`)
+      .then(result => {
+        const durationMs = Math.round(performance.now() - fetchStart);
+        const section = result?.sections?.find(s => s.type === 'player' && s.data?.provider === 'youtube');
+        if (section) {
+          feedLog.resolution('native-resolved', {
+            videoId: item.meta?.videoId,
+            title: item.title,
+            hasVideoUrl: !!section.data?.videoUrl,
+            hasAudioUrl: !!section.data?.audioUrl,
+            hasUrl: !!section.data?.url,
+            mode: (section.data?.videoUrl && section.data?.audioUrl) ? 'split' : 'combined',
+            durationMs,
+          });
+          setPlayerData(section.data);
+        } else {
+          feedLog.resolution('native-no-player-section', { videoId: item.meta?.videoId, title: item.title, durationMs, sectionCount: result?.sections?.length || 0 });
+        }
+        setFetchDone(true);
+      })
+      .catch((err) => {
+        feedLog.resolution('native-fetch-error', { videoId: item.meta?.videoId, title: item.title, error: err.message });
+        setFetchDone(true);
+      });
+  }, [item.id, item.meta, item.title]);
+
+  const handleStreamError = useCallback(() => {
+    feedLog.resolution('embed-fallback', { videoId: item.meta?.videoId, title: item.title, reason: 'stream-error' });
+    setUseEmbed(true);
+  }, [item.meta?.videoId, item.title]);
+
+  const ar = (item.meta?.imageWidth && item.meta?.imageHeight)
+    ? `${item.meta.imageWidth} / ${item.meta.imageHeight}`
+    : '16 / 9';
+
+  if (!fetchDone) {
+    return (
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000' }}>
+        <div className="scroll-loading-dots"><span /><span /><span /></div>
+      </div>
+    );
+  }
+
+  if (playerData && !useEmbed && (playerData.videoUrl || playerData.url)) {
+    return (
+      <FeedPlayer playerData={playerData} onError={handleStreamError} aspectRatio={ar} />
+    );
+  }
+
+  return (
+    <iframe
+      src={`https://www.youtube.com/embed/${item.meta.videoId}?autoplay=1&rel=0`}
+      title={item.title}
+      allow="autoplay; encrypted-media"
+      allowFullScreen
+      loading="lazy"
+      referrerPolicy="strict-origin-when-cross-origin"
+      sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"
+      style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+    />
+  );
+}

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createScreenItemActions } from './screenItemActions.js';
-import { createLocalSessionController } from '../../../modules/Media/session/LocalSessionController.js';
+import { createLocalSessionController } from "../../../../../modules/media/browser/session/LocalSessionController.js";
 
 describe('screen item actions', () => {
   it('serializes rapid queue mutations across the actual asynchronous owner commit', async () => {

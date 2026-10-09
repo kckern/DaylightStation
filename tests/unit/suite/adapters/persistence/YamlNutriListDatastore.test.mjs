@@ -1,6 +1,6 @@
 // tests/unit/suite/adapters/persistence/YamlNutriListDatastore.test.mjs
 import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
-import { YamlNutriListDatastore } from '#adapters/persistence/yaml/YamlNutriListDatastore.mjs';
+import { YamlNutriListDatastore } from "../../../../../modules/health/server/adapters/persistence/yaml/YamlNutriListDatastore.mjs";
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import fs from 'fs';
 import path from 'path';

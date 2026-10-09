@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
-import { HttpSourceAdapter } from '#adapters/newsreporter/sources/HttpSourceAdapter.mjs';
-import { isSource } from '#apps/newsreporter/ports/ISource.mjs';
+import { HttpSourceAdapter } from "../../../../../modules/newsreporter/server/adapters/sources/HttpSourceAdapter.mjs";
+import { isSource } from "../../../../../modules/newsreporter/server/application/ports/ISource.mjs";
 
 /**
  * Fake HttpClient mirroring the project's HttpClient.get() contract:

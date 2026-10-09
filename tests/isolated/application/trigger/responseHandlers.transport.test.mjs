@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { dispatchResponse } from '#apps/trigger/responseHandlers.mjs';
+import { dispatchResponse } from "../../../../capabilities/device-dispatch/server/application/responseHandlers.mjs";
 
 describe('transport handler', () => {
   it('broadcasts the resolved command payload to the target screen', async () => {

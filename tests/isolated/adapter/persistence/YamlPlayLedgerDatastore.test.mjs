@@ -2,8 +2,8 @@ import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, readdirSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { YamlPlayLedgerDatastore } from '#adapters/persistence/yaml/YamlPlayLedgerDatastore.mjs';
-import { PLAY_LEDGER_RETENTION_DAYS } from '#domains/media/playLedger.mjs';
+import { YamlPlayLedgerDatastore } from "../../../../modules/media/server/adapters/persistence/YamlPlayLedgerDatastore.mjs";
+import { PLAY_LEDGER_RETENTION_DAYS } from "../../../../modules/media/server/domain/playLedger.mjs";
 
 describe('YamlPlayLedgerDatastore', () => {
   let dir;

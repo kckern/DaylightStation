@@ -1,8 +1,8 @@
 // @vitest-environment node
 /**
- * HttpPlaybackHubAdapter — integration tests against a mock HTTP server.
+ * HttpPlaybackHubAdapter — retained HTTP contract cases over its injected client port.
  *
- * Spins up a fresh `node:http` server per test so each handler can be
+ * Creates a fresh serialized in-memory dispatcher per test so each handler can be
  * tailored independently. Each test asserts a single behavior (happy path,
  * timeout, 409 contention, 500 error, body shape).
  *
@@ -12,17 +12,17 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createServer } from 'node:http';
+import { listenWith } from '../../preimplementation/application-modules/drivers/playback-hub-memory-transport.mjs';
 
-import { HttpPlaybackHubAdapter } from '../../../backend/src/1_adapters/playback-hub/HttpPlaybackHubAdapter.mjs';
-import { SlotStatus } from '../../../backend/src/2_domains/playback-hub/value-objects/SlotStatus.mjs';
-import { CommandResult } from '../../../backend/src/2_domains/playback-hub/value-objects/CommandResult.mjs';
-import { PlayCommand } from '../../../backend/src/2_domains/playback-hub/value-objects/PlayCommand.mjs';
-import { QueueRef } from '../../../backend/src/2_domains/playback-hub/value-objects/QueueRef.mjs';
-import { HubDevice } from '../../../backend/src/2_domains/playback-hub/entities/HubDevice.mjs';
-import { SlotPosition } from '../../../backend/src/2_domains/playback-hub/value-objects/SlotPosition.mjs';
-import { SlotColor } from '../../../backend/src/2_domains/playback-hub/value-objects/SlotColor.mjs';
-import { SlotClass } from '../../../backend/src/2_domains/playback-hub/value-objects/SlotClass.mjs';
+import { HttpPlaybackHubAdapter } from "../../../modules/media/server/adapters/playback-hub/HttpPlaybackHubAdapter.mjs";
+import { SlotStatus } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotStatus.mjs";
+import { CommandResult } from "../../../modules/media/server/domain/playback-hub/value-objects/CommandResult.mjs";
+import { PlayCommand } from "../../../modules/media/server/domain/playback-hub/value-objects/PlayCommand.mjs";
+import { QueueRef } from "../../../modules/media/server/domain/playback-hub/value-objects/QueueRef.mjs";
+import { HubDevice } from "../../../modules/media/server/domain/playback-hub/entities/HubDevice.mjs";
+import { SlotPosition } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotPosition.mjs";
+import { SlotColor } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotColor.mjs";
+import { SlotClass } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotClass.mjs";
 import { InfrastructureError } from '../../../backend/src/0_system/utils/errors/InfrastructureError.mjs';
 
 /**
@@ -41,13 +41,8 @@ function makeDevice(color, { cls = 'private', haEntityId = null, position = 1 } 
 }
 
 /**
- * Helper: spin up a server with a single request handler, return {server, port}.
+ * The fixture helper preserves handler/body/deadline behavior without listeners.
  */
-async function listenWith(handler) {
-  const server = createServer(handler);
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  return { server, port: server.address().port };
-}
 
 describe('HttpPlaybackHubAdapter', () => {
   let server;
@@ -89,7 +84,7 @@ describe('HttpPlaybackHubAdapter', () => {
         res.end(JSON.stringify(payload));
       });
       server = listening.server;
-      adapter = new HttpPlaybackHubAdapter({ baseUrl: `http://127.0.0.1:${listening.port}` });
+      adapter = new HttpPlaybackHubAdapter({ httpClient: server?.httpClient, baseUrl: `http://127.0.0.1:${listening.port}` });
       const result = await adapter.getStatus();
       expect(result).toHaveLength(2);
       expect(result[0]).toBeInstanceOf(SlotStatus);
@@ -105,7 +100,7 @@ describe('HttpPlaybackHubAdapter', () => {
         res.end('boom');
       });
       server = listening.server;
-      adapter = new HttpPlaybackHubAdapter({ baseUrl: `http://127.0.0.1:${listening.port}` });
+      adapter = new HttpPlaybackHubAdapter({ httpClient: server?.httpClient, baseUrl: `http://127.0.0.1:${listening.port}` });
       await expect(adapter.getStatus()).rejects.toThrow(InfrastructureError);
     });
 
@@ -114,7 +109,7 @@ describe('HttpPlaybackHubAdapter', () => {
         // never respond — let the AbortController fire
       });
       server = listening.server;
-      adapter = new HttpPlaybackHubAdapter({
+      adapter = new HttpPlaybackHubAdapter({ httpClient: server?.httpClient,
         baseUrl: `http://127.0.0.1:${listening.port}`,
         requestTimeoutSec: 0.1
       });
@@ -124,13 +119,14 @@ describe('HttpPlaybackHubAdapter', () => {
     });
 
     it('throws InfrastructureError on network error (unreachable port)', async () => {
-      // Bind+close to claim and release a port — anything we connect to next
-      // on the same address will refuse.
+      // Close the fixture transport; the injected client reports a connection error.
+      // This preserves adapter error mapping without asserting a kernel refusal.
       const tmp = await listenWith(() => {});
       const port = tmp.port;
       await new Promise(r => tmp.server.close(r));
       adapter = new HttpPlaybackHubAdapter({
         baseUrl: `http://127.0.0.1:${port}`,
+        httpClient: tmp.httpClient,
         requestTimeoutSec: 2
       });
       await expect(adapter.getStatus()).rejects.toThrow(InfrastructureError);
@@ -156,7 +152,7 @@ describe('HttpPlaybackHubAdapter', () => {
         });
       });
       server = listening.server;
-      adapter = new HttpPlaybackHubAdapter({ baseUrl: `http://127.0.0.1:${listening.port}` });
+      adapter = new HttpPlaybackHubAdapter({ httpClient: server?.httpClient, baseUrl: `http://127.0.0.1:${listening.port}` });
       const cmd = new PlayCommand({
         action: 'play',
         queue: QueueRef.parse('plex:670208'),
@@ -185,7 +181,7 @@ describe('HttpPlaybackHubAdapter', () => {
         });
       });
       server = listening.server;
-      adapter = new HttpPlaybackHubAdapter({ baseUrl: `http://127.0.0.1:${listening.port}` });
+      adapter = new HttpPlaybackHubAdapter({ httpClient: server?.httpClient, baseUrl: `http://127.0.0.1:${listening.port}` });
       const cmd = new PlayCommand({ action: 'pause' });
       await adapter.sendCommand(cmd, [makeDevice('red'), makeDevice('yellow', { position: 2 })]);
       expect(captured.action).toBe('pause');
@@ -207,7 +203,7 @@ describe('HttpPlaybackHubAdapter', () => {
         });
       });
       server = listening.server;
-      adapter = new HttpPlaybackHubAdapter({ baseUrl: `http://127.0.0.1:${listening.port}` });
+      adapter = new HttpPlaybackHubAdapter({ httpClient: server?.httpClient, baseUrl: `http://127.0.0.1:${listening.port}` });
       const cmd = new PlayCommand({
         action: 'play',
         queue: new QueueRef({ source: 'spotify', id: 'track123' })
@@ -232,7 +228,7 @@ describe('HttpPlaybackHubAdapter', () => {
         });
       });
       server = listening.server;
-      adapter = new HttpPlaybackHubAdapter({ baseUrl: `http://127.0.0.1:${listening.port}` });
+      adapter = new HttpPlaybackHubAdapter({ httpClient: server?.httpClient, baseUrl: `http://127.0.0.1:${listening.port}` });
       const cmd = new PlayCommand({ action: 'pause' });
       const result = await adapter.sendCommand(cmd, [makeDevice('red')]);
       expect(result).toBeInstanceOf(CommandResult);
@@ -252,7 +248,7 @@ describe('HttpPlaybackHubAdapter', () => {
         });
       });
       server = listening.server;
-      adapter = new HttpPlaybackHubAdapter({ baseUrl: `http://127.0.0.1:${listening.port}` });
+      adapter = new HttpPlaybackHubAdapter({ httpClient: server?.httpClient, baseUrl: `http://127.0.0.1:${listening.port}` });
       const cmd = new PlayCommand({ action: 'pause' });
       const result = await adapter.sendCommand(cmd, [makeDevice('red')]);
       expect(result.applied).toEqual(['red']);
@@ -269,7 +265,7 @@ describe('HttpPlaybackHubAdapter', () => {
         });
       });
       server = listening.server;
-      adapter = new HttpPlaybackHubAdapter({ baseUrl: `http://127.0.0.1:${listening.port}` });
+      adapter = new HttpPlaybackHubAdapter({ httpClient: server?.httpClient, baseUrl: `http://127.0.0.1:${listening.port}` });
       const cmd = new PlayCommand({ action: 'pause' });
       const result = await adapter.sendCommand(cmd, [makeDevice('red')]);
       expect(result.applied).toEqual([]);
@@ -287,7 +283,7 @@ describe('HttpPlaybackHubAdapter', () => {
         });
       });
       server = listening.server;
-      adapter = new HttpPlaybackHubAdapter({ baseUrl: `http://127.0.0.1:${listening.port}` });
+      adapter = new HttpPlaybackHubAdapter({ httpClient: server?.httpClient, baseUrl: `http://127.0.0.1:${listening.port}` });
       const cmd = new PlayCommand({ action: 'pause' });
       const result = await adapter.sendCommand(cmd, [makeDevice('red'), makeDevice('yellow', { position: 2 })]);
       expect(result).toBeInstanceOf(CommandResult);
@@ -308,7 +304,7 @@ describe('HttpPlaybackHubAdapter', () => {
         });
       });
       server = listening.server;
-      adapter = new HttpPlaybackHubAdapter({ baseUrl: `http://127.0.0.1:${listening.port}` });
+      adapter = new HttpPlaybackHubAdapter({ httpClient: server?.httpClient, baseUrl: `http://127.0.0.1:${listening.port}` });
       const cmd = new PlayCommand({ action: 'pause' });
       await expect(adapter.sendCommand(cmd, [makeDevice('red')])).rejects.toThrow(InfrastructureError);
     });
@@ -324,7 +320,7 @@ describe('HttpPlaybackHubAdapter', () => {
         });
       });
       server = listening.server;
-      adapter = new HttpPlaybackHubAdapter({ baseUrl: `http://127.0.0.1:${listening.port}` });
+      adapter = new HttpPlaybackHubAdapter({ httpClient: server?.httpClient, baseUrl: `http://127.0.0.1:${listening.port}` });
       const cmd = new PlayCommand({ action: 'pause' });
       await expect(adapter.sendCommand(cmd, [makeDevice('red')])).rejects.toThrow(InfrastructureError);
     });
@@ -332,7 +328,7 @@ describe('HttpPlaybackHubAdapter', () => {
     it('timeout on /api/play throws InfrastructureError with timeout message', async () => {
       const listening = await listenWith(() => { /* hang */ });
       server = listening.server;
-      adapter = new HttpPlaybackHubAdapter({
+      adapter = new HttpPlaybackHubAdapter({ httpClient: server?.httpClient,
         baseUrl: `http://127.0.0.1:${listening.port}`,
         requestTimeoutSec: 0.1
       });
@@ -356,7 +352,7 @@ describe('HttpPlaybackHubAdapter', () => {
         });
       });
       server = listening.server;
-      adapter = new HttpPlaybackHubAdapter({ baseUrl: `http://127.0.0.1:${listening.port}` });
+      adapter = new HttpPlaybackHubAdapter({ httpClient: server?.httpClient, baseUrl: `http://127.0.0.1:${listening.port}` });
       const cmd = new PlayCommand({ action: 'pause' });
       const result = await adapter.sendCommand(cmd, [makeDevice('red')]);
       expect(result.skipped).toEqual([{ color: 'red', reason: 'invalid-target' }]);
@@ -383,7 +379,7 @@ describe('HttpPlaybackHubAdapter', () => {
         }));
       });
       server = listening.server;
-      adapter = new HttpPlaybackHubAdapter({ baseUrl: `http://127.0.0.1:${listening.port}` });
+      adapter = new HttpPlaybackHubAdapter({ httpClient: server?.httpClient, baseUrl: `http://127.0.0.1:${listening.port}` });
       const result = await adapter.verifyAudio('white');
       expect(receivedPath).toBe('/api/verify/white');
       expect(result.audio_flowing).toBe(true);
@@ -402,7 +398,7 @@ describe('HttpPlaybackHubAdapter', () => {
         }));
       });
       server = listening.server;
-      adapter = new HttpPlaybackHubAdapter({ baseUrl: `http://127.0.0.1:${listening.port}` });
+      adapter = new HttpPlaybackHubAdapter({ httpClient: server?.httpClient, baseUrl: `http://127.0.0.1:${listening.port}` });
       await adapter.verifyAudio('weird color');
       expect(receivedPath).toBe('/api/verify/weird%20color');
     });
@@ -414,7 +410,7 @@ describe('HttpPlaybackHubAdapter', () => {
         res.end(JSON.stringify({ ok: false, error: 'unknown color' }));
       });
       server = listening.server;
-      adapter = new HttpPlaybackHubAdapter({ baseUrl: `http://127.0.0.1:${listening.port}` });
+      adapter = new HttpPlaybackHubAdapter({ httpClient: server?.httpClient, baseUrl: `http://127.0.0.1:${listening.port}` });
       await expect(adapter.verifyAudio('orange')).rejects.toThrow(InfrastructureError);
     });
 
@@ -424,7 +420,7 @@ describe('HttpPlaybackHubAdapter', () => {
         res.end('not-json');
       });
       server = listening.server;
-      adapter = new HttpPlaybackHubAdapter({ baseUrl: `http://127.0.0.1:${listening.port}` });
+      adapter = new HttpPlaybackHubAdapter({ httpClient: server?.httpClient, baseUrl: `http://127.0.0.1:${listening.port}` });
       await expect(adapter.verifyAudio('red')).rejects.toThrow(/HUB_BAD_RESPONSE|expected JSON/);
     });
   });
@@ -445,7 +441,7 @@ describe('HttpPlaybackHubAdapter', () => {
         res.end('[]');
       });
       server = listening.server;
-      adapter = new HttpPlaybackHubAdapter({ baseUrl: `http://127.0.0.1:${listening.port}/` });
+      adapter = new HttpPlaybackHubAdapter({ httpClient: server?.httpClient, baseUrl: `http://127.0.0.1:${listening.port}/` });
       await adapter.getStatus();
     });
   });

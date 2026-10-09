@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { connectFourDefinition, connectFourRuleModule } from '@shared-gaming/rulesets/connect-four/index.mjs';
-import { createCheckpointedLocalAuthority, isResumableSession } from '../../../../frontend/src/modules/Gaming/platform/authority/createCheckpointedLocalAuthority.js';
+import { connectFourDefinition, connectFourRuleModule } from "../../../../capabilities/gaming/portable/rulesets/connect-four/index.mjs";
+import { createCheckpointedLocalAuthority, isResumableSession } from "../../../../capabilities/gaming/browser/platform/authority/createCheckpointedLocalAuthority.js";
 
 const ACTOR = 'piano-player';
 

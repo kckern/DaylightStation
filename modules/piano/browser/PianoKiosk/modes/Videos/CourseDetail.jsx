@@ -2,8 +2,8 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import getLogger from '../../../../../../frontend/src/lib/logging/Logger.js';
 import { lectureUserStatus } from './lectureMeta.js';
-import { formatFitnessDate } from '../../../../../../frontend/src/modules/Fitness/lib/dateFormatter.js';
-import LockIcon from '../../../../../../frontend/src/modules/Fitness/player/overlays/LockIcon.jsx';
+import { formatFitnessDate } from "../../../../../fitness/browser/date-format.mjs";
+import LockIcon from "../../../../../fitness/browser/lock-indicator.mjs";
 import { usePianoCoursePlayable } from './usePianoCoursePlayable.js';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import { usePianoUser } from '../../PianoUserContext.jsx';

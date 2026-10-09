@@ -8,15 +8,17 @@ export class AdapterRegistry {
   #manifests = new Map();  // capability -> Map<provider, manifest>
   #adaptersRoot;
   #moduleDiscovery;
+  #relocatedManifests;
 
   /**
    * @param {Object} options
    * @param {string} options.adaptersRoot - Path to adapters directory (required).
    */
-  constructor({ adaptersRoot, moduleDiscovery = new FileModuleManifestDiscovery() } = {}) {
+  constructor({ adaptersRoot, moduleDiscovery = new FileModuleManifestDiscovery(), relocatedManifests = [] } = {}) {
     if (!adaptersRoot) throw new Error('adaptersRoot is required');
     this.#adaptersRoot = adaptersRoot;
     this.#moduleDiscovery = moduleDiscovery;
+    this.#relocatedManifests = relocatedManifests;
   }
 
   // Dependency injection points for testing
@@ -28,6 +30,12 @@ export class AdapterRegistry {
    */
   async discover() {
     const manifestPaths = await this._findManifests(this.#adaptersRoot);
+    if (this.#relocatedManifests.length) {
+      const logicalPaths = new Map(this.#relocatedManifests.map(entry => [entry.path, entry.legacyPath]));
+      manifestPaths.push(...this.#relocatedManifests.map(entry => entry.path));
+      const legacyName = file => logicalPaths.get(file) || 'backend/src/1_adapters/' + file.slice(this.#adaptersRoot.length + 1).split('\\').join('/');
+      manifestPaths.sort((a, b) => legacyName(a) < legacyName(b) ? -1 : legacyName(a) > legacyName(b) ? 1 : 0);
+    }
 
     for (const manifestPath of manifestPaths) {
       try {

@@ -3,8 +3,8 @@ import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
-import { YamlMediaProgressMemory } from '#adapters/persistence/yaml/YamlMediaProgressMemory.mjs';
+import { MediaProgress } from "../../../../capabilities/content-catalog/server/domain/entities/MediaProgress.mjs";
+import { YamlMediaProgressMemory } from "../../../../capabilities/playback/server/adapters/persistence/YamlMediaProgressMemory.mjs";
 
 describe('YamlMediaProgressMemory completedAt round-trip', () => {
   let tempDir;

@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { RetryImageDetection } from '#apps/nutribot/usecases/RetryImageDetection.mjs';
+import { RetryImageDetection } from "../../../modules/nutribot/server/application/usecases/RetryImageDetection.mjs";
 
 function buildRetryDeps(overrides = {}) {
   const conversationStateStore = {
@@ -178,7 +178,7 @@ describe('RetryImageDetection', () => {
   });
 });
 
-import { LogFoodFromImage } from '#apps/nutribot/usecases/LogFoodFromImage.mjs';
+import { LogFoodFromImage } from "../../../modules/nutribot/server/application/usecases/LogFoodFromImage.mjs";
 
 function buildImageDeps(overrides = {}) {
   const messagingGateway = {

@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AbcRenderer } from '../../../../../../frontend/src/modules/MusicNotation/renderers/AbcRenderer.jsx';
-import { SvgSequenceStaff, sequenceStaffViewBox } from '../../../../../../frontend/src/modules/MusicNotation/renderers/SvgSequenceStaff.jsx';
+import { AbcRenderer } from "../../../../../../capabilities/music-notation/browser/renderers/AbcRenderer.jsx";
+import { SvgSequenceStaff, sequenceStaffViewBox } from "../../../../../../capabilities/music-notation/browser/renderers/SvgSequenceStaff.jsx";
 import { handForPitch, instanceToAbc } from './exerciseAbc.js';
-import { getStaffPositionOnClef } from '../../../../../../frontend/src/modules/MusicNotation/model/pitch.js';
-import { attemptUnderWay, partitionHeldPitches } from '../../../../../../frontend/src/modules/MusicNotation/model/heldPitch.js';
+import { getStaffPositionOnClef } from "../../../../../../capabilities/music-notation/browser/model/pitch.js";
+import { attemptUnderWay, partitionHeldPitches } from "../../../../../../capabilities/music-notation/browser/model/heldPitch.js";
 import {
   SharpShape, FlatShape, ledgerLineYs,
   ACCIDENTAL_WIDTH, ACCIDENTAL_GAP, NOTEHEAD_RX, NOTEHEAD_RY,
-} from '../../../../../../frontend/src/modules/MusicNotation/renderers/staffGlyphs.jsx';
+} from "../../../../../../capabilities/music-notation/browser/renderers/staffGlyphs.jsx";
 import {
   accidentalForKey, clefForInstance, eventsToStaffNotes, instanceKeySignature,
 } from './runPresentation.js';

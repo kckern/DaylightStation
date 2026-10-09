@@ -1,8 +1,8 @@
-import { ContentSourceRegistry } from '../../backend/src/1_adapters/content/ContentSourceRegistry.mjs';
-import { RegistryContentCatalogGateway } from '../../backend/src/1_adapters/content/RegistryContentCatalogGateway.mjs';
-import { ContentIdResolver } from '../../backend/src/3_applications/content/ContentIdResolver.mjs';
-import { PlaybackReadService } from '../../backend/src/3_applications/content/services/PlaybackReadService.mjs';
-import { PlayResponseService } from '../../backend/src/3_applications/content/services/PlayResponseService.mjs';
+import { ContentSourceRegistry } from "../../capabilities/content-catalog/server/adapters/ContentSourceRegistry.mjs";
+import { RegistryContentCatalogGateway } from "../../capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
+import { ContentIdResolver } from "../../capabilities/content-catalog/server/application/ContentIdResolver.mjs";
+import { PlaybackReadService } from "../../capabilities/playback/server/application/services/PlaybackReadService.mjs";
+import { PlayResponseService } from "../../capabilities/playback/server/application/services/PlayResponseService.mjs";
 
 // Actual branch descriptor/format/URL/session composition. Only progress storage
 // is delegated to the existing upstream's read-only, already-resolved spot.

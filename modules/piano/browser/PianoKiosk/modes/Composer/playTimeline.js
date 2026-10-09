@@ -7,8 +7,8 @@
 // must be able to play back a bar the kid just entered — while it is still wet
 // ink and hasn't been engraved at all — so this reads the score document itself.
 // It therefore works on a draft, before or without any engraving.
-import { pitchToMidi } from '../../../../../../frontend/src/modules/MusicNotation/parseMusicXml.js';
-import { DIVISIONS, noteDivisions } from '../../../../../../frontend/src/modules/MusicNotation/duration.js';
+import { pitchToMidi } from "../../../../../../capabilities/music-notation/browser/parseMusicXml.js";
+import { DIVISIONS, noteDivisions } from "../../../../../../capabilities/music-notation/browser/duration.js";
 
 // Release each note slightly before its notated end. Without this gap a repeated
 // pitch would get its note_off at the same instant as the next note_on, and the

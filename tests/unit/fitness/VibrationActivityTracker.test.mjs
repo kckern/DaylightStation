@@ -19,7 +19,7 @@ jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
 }));
 
 const { VibrationActivityTracker } = await import(
-  '#frontend/hooks/fitness/VibrationActivityTracker.js'
+  "../../../modules/fitness/browser/hooks/fitness/VibrationActivityTracker.js"
 );
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

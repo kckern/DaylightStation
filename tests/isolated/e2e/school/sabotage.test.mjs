@@ -189,7 +189,7 @@ const payOncScenario = () => onTheConsole(async (h) => {
 
 /** codeMap.test: the printed QR is a real symbol, not a reserved box. */
 const printedQrScenario = async () => {
-  const { createDocumentPdfRenderer } = await import('#rendering/school/documents/DocumentPdfRenderer.mjs');
+  const { createDocumentPdfRenderer } = await import("../../../../modules/school/server/rendering/documents/DocumentPdfRenderer.mjs");
   const document = {
     id: 'code-doc',
     seed: 1,
@@ -261,7 +261,7 @@ const opticalQrScenario = async () => {
 
 /** documentValidation.test: an answer key anywhere in a document is refused. */
 const answerKeyScenario = async () => {
-  const { validateDocument } = await import('#domains/school/documents/documentValidation.mjs');
+  const { validateDocument } = await import("../../../../modules/school/server/domain/documents/documentValidation.mjs");
   const noKey = 'must not carry an answer key (answer keys render from the question bank)';
   const doc = (over) => ({
     id: 'doc', seed: 1, target: ['letter'],

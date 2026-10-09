@@ -1,0 +1,206 @@
+import React, { createContext, useState, useCallback, useEffect, useRef } from 'react';
+import getLogger from "../../../../frontend/src/lib/logging/Logger.js";
+
+let _navLogger;
+function navLogger() {
+  if (!_navLogger) _navLogger = getLogger().child({ component: 'MenuNav' });
+  return _navLogger;
+}
+
+export const MenuNavigationContext = createContext(null);
+
+/**
+ * Navigation state and actions for the menu system.
+ * Single source of truth for all menu navigation.
+ * 
+ * @typedef {Object} StackItem
+ * @property {'menu'|'player'|'app'} type - The type of content
+ * @property {Object} props - Props for the content component
+ * 
+ * @typedef {Object} Selection
+ * @property {number} index - Selected index
+ * @property {string|null} key - Selected item key (for persistence)
+ */
+export function MenuNavigationProvider({ children, onBackAtRoot }) {
+  // Navigation stack: array of { type, props }
+  const [stack, setStack] = useState([]);
+
+  // Selection state per depth: { [depth]: { index, key } }
+  const [selections, setSelections] = useState({ 0: { index: 0, key: null } });
+
+  // Bug 04 fix: Counter to trigger data refetch when returning from video
+  const [refetchCounter, setRefetchCounter] = useState(0);
+
+  // Current depth (derived from stack length)
+  const depth = stack.length;
+
+  // Pop guard: when set, pop() calls this instead of popping.
+  // Guard returns true to allow pop, false to block it.
+  const popGuardRef = useRef(null);
+
+  const setPopGuard = useCallback((guardFn) => {
+    popGuardRef.current = guardFn;
+  }, []);
+
+  const clearPopGuard = useCallback(() => {
+    popGuardRef.current = null;
+  }, []);
+
+  // Back consumer: gets first dibs on the hardware/browser Back button (popstate)
+  // BEFORE the menu pops. Returns true if it consumed the back (e.g. dismissed a
+  // fullscreen overlay sitting above the menu, such as a triggered ArtMode scene),
+  // in which case the menu is left untouched. Separate from popGuard, which is an
+  // in-menu confirmation gate; this is an above-the-menu overlay escape hatch.
+  const backConsumerRef = useRef(null);
+
+  const registerBackConsumer = useCallback((fn) => {
+    backConsumerRef.current = fn;
+  }, []);
+
+  const unregisterBackConsumer = useCallback(() => {
+    backConsumerRef.current = null;
+  }, []);
+  
+  /**
+   * Push new content onto the stack
+   * @param {StackItem} content - Content to push
+   */
+  const push = useCallback((content) => {
+    navLogger().info('nav.push', { type: content.type });
+    setStack(prev => [...prev, content]);
+    // Initialize selection for the new depth
+    setSelections(prev => ({
+      ...prev,
+      [prev.length || Object.keys(prev).length]: { index: 0, key: null }
+    }));
+  }, []);
+  
+  /**
+   * Pop from the stack (go back)
+   * @returns {boolean} Whether pop was successful (false if at root)
+   */
+  const pop = useCallback(() => {
+    // If a pop guard is set, let it handle the back action
+    if (popGuardRef.current) {
+      const allowed = popGuardRef.current();
+      navLogger().info('nav.pop-guarded', { allowed });
+      if (!allowed) return false;
+    }
+    setStack(prev => {
+      navLogger().info('nav.pop', { stackLength: prev.length, types: prev.map(s => s.type) });
+      if (prev.length === 0) {
+        // At root, call the callback if provided
+        onBackAtRoot?.();
+        return prev;
+      }
+      return prev.slice(0, -1);
+    });
+    // Bug 04 fix: Increment refetch counter to trigger data refresh
+    // This ensures parent lists refresh watched status when returning from video
+    setRefetchCounter(c => c + 1);
+    // Note: We don't clear selections when popping so state is preserved
+    // when navigating back
+    return true;
+  }, [onBackAtRoot]);
+  
+  /**
+   * Update selection at a specific depth
+   * @param {number} targetDepth - The depth to update
+   * @param {number} index - The new selected index
+   * @param {string|null} [key] - Optional key for the selected item
+   */
+  const setSelectionAtDepth = useCallback((targetDepth, index, key = null) => {
+    setSelections(prev => ({
+      ...prev,
+      [targetDepth]: { index, key }
+    }));
+  }, []);
+  
+  /**
+   * Get selection for a specific depth
+   * @param {number} targetDepth - The depth to get selection for
+   * @returns {Selection} The selection state
+   */
+  const getSelection = useCallback((targetDepth) => {
+    return selections[targetDepth] || { index: 0, key: null };
+  }, [selections]);
+  
+  /**
+   * Clear entire stack (reset to root)
+   */
+  const reset = useCallback(() => {
+    setStack([]);
+    setSelections({ 0: { index: 0, key: null } });
+  }, []);
+
+  /**
+   * Replace the current top of stack (useful for refreshing content)
+   * @param {StackItem} content - New content for current level
+   */
+  const replace = useCallback((content) => {
+    setStack(prev => {
+      if (prev.length === 0) return prev;
+      return [...prev.slice(0, -1), content];
+    });
+  }, []);
+
+  // Back button capture (browser popstate handling)
+  useEffect(() => {
+    const handlePopState = (event) => {
+      event.preventDefault();
+      navLogger().info('nav.popstate', { historyLength: window.history.length });
+      // Give an overlay back-consumer first dibs: a fullscreen scene above the
+      // menu (e.g. a triggered ArtMode slideshow) should be dismissed by Back
+      // instead of silently popping the hidden menu stack beneath it.
+      if (backConsumerRef.current && backConsumerRef.current()) {
+        navLogger().info('nav.popstate-consumed', {});
+      } else {
+        pop();
+      }
+      // Push a new state to keep the trap active
+      window.history.pushState(null, '', window.location.href);
+      return false;
+    };
+    
+    // Initial push to enable back button capture
+    window.history.pushState(null, '', window.location.href);
+    window.addEventListener('popstate', handlePopState);
+    
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [pop]);
+
+  const value = {
+    // State
+    stack,
+    depth,
+    currentContent: stack[stack.length - 1] || null,
+
+    // Selection
+    selections,
+    getSelection,
+    setSelectionAtDepth,
+
+    // Navigation
+    push,
+    pop,
+    reset,
+    replace,
+    setPopGuard,
+    clearPopGuard,
+    registerBackConsumer,
+    unregisterBackConsumer,
+
+    // Bug 04 fix: Refetch counter for data invalidation
+    refetchCounter,
+  };
+
+  return (
+    <MenuNavigationContext.Provider value={value}>
+      {children}
+    </MenuNavigationContext.Provider>
+  );
+}
+
+export default MenuNavigationContext;

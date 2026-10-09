@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { CATEGORIES, resolveCategory } from '#domains/school/categories.mjs';
+import { CATEGORIES, resolveCategory } from "../../../../modules/school/server/domain/categories.mjs";
 
 describe('CATEGORIES', () => {
   it('is the closed spec §3 table: course, reference, listening', () => {

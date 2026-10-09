@@ -8,7 +8,7 @@
  *
  * @module adapters/persistence/yaml
  */
-import { ISelectionTrackingStore } from '#apps/feed/ports/ISelectionTrackingStore.mjs';
+import { ISelectionTrackingStore } from "../../../../../modules/feed/server/application/ports/ISelectionTrackingStore.mjs";
 
 const TRACKING_PATH = 'current/feed/_selection_tracking';
 

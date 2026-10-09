@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { MidiPngConverter } from '#adapters/pianoaudio/MidiPngConverter.mjs';
+import { MidiPngConverter } from "../../../../modules/piano/server/adapters/pianoaudio/MidiPngConverter.mjs";
 
 const silent = { info() {}, warn() {}, error() {}, debug() {} };
 let root, sourceDir, destDir, midiPath, pngPath;

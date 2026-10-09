@@ -21,7 +21,7 @@
 // removal). This component has no state and no timers.
 
 import { WetNoteGlyph } from '../Composer/wetGlyphs.jsx';
-import { spellMidi } from '../../../../../../frontend/src/modules/MusicNotation/model/spellMidi.js';
+import { spellMidi } from "../../../../../../capabilities/music-notation/browser/model/spellMidi.js";
 
 /**
  * @param {Object} p

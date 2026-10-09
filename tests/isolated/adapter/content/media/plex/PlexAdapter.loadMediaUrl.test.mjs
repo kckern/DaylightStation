@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { PlexAdapter } from '#adapters/content/media/plex/PlexAdapter.mjs';
-import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
+import { PlexAdapter } from "../../../../../../capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs";
+import { PlayableItem } from "../../../../../../capabilities/content-catalog/server/domain/capabilities/Playable.mjs";
 
 function makeLogger() {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

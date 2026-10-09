@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { YamlCycleRaceDatastore } from '#adapters/persistence/yaml/YamlCycleRaceDatastore.mjs';
+import { YamlCycleRaceDatastore } from "../../../modules/fitness/server/adapters/persistence/YamlCycleRaceDatastore.mjs";
 
 let tmp;
 const makeStore = () => {

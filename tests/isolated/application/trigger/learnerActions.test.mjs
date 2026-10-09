@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { createLearnerActions } from '#apps/trigger/learnerActions.mjs';
-import { responseHandlers } from '#apps/trigger/responseHandlers.mjs';
+import { createLearnerActions } from "../../../../capabilities/device-dispatch/server/application/learnerActions.mjs";
+import { responseHandlers } from "../../../../capabilities/device-dispatch/server/application/responseHandlers.mjs";
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
 

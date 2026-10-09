@@ -4,7 +4,7 @@ import {
   canonicalizeFeedUrl,
   feedStateKey,
   normalizeFeedItem,
-} from '#domains/feed/feedItem.mjs';
+} from "../../../../modules/feed/server/domain/feedItem.mjs";
 
 describe('normalized feed item identity and state', () => {
   test('canonical URLs remove tracking without changing meaningful query params', () => {

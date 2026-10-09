@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { HomeAssistantAdapter } from '#adapters/home-automation/homeassistant/HomeAssistantAdapter.mjs';
+import { HomeAssistantAdapter } from "../../../../capabilities/home-control/server/adapters/homeassistant/HomeAssistantAdapter.mjs";
 
 function makeHttpClient(mockData) {
   return {

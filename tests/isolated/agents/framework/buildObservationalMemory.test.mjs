@@ -1,6 +1,6 @@
 // tests/isolated/agents/framework/buildObservationalMemory.test.mjs
 import { describe, it, expect } from 'vitest';
-import { buildObservationalMemory } from '../../../../backend/src/3_applications/agents/framework/buildObservationalMemory.mjs';
+import { buildObservationalMemory } from "../../../../capabilities/agent-runtime/server/application/framework/buildObservationalMemory.mjs";
 
 describe('buildObservationalMemory', () => {
   const processorFactory = {

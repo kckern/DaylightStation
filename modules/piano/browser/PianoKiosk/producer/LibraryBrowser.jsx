@@ -57,8 +57,8 @@
  */
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
-import { SvgStaffRenderer } from '../../../../../frontend/src/modules/MusicNotation/index.js';
-import { roleOf } from '@shared-music/layerMatch.mjs';
+import { SvgStaffRenderer } from "../../../../../capabilities/music-notation/browser/index.js";
+import { roleOf } from "../../../../../capabilities/music-notation/portable/layerMatch.mjs";
 import { RomanProgression } from '../../components/roman/RomanProgression.jsx';
 import { MaterialGlyph } from './MaterialGlyph.jsx';
 import { buildCompatibleSet, rankCompatible, timelineOf, entryIdentity } from './libraryRanking.js';

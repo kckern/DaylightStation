@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { immichDimensions } from '../../../backend/src/1_adapters/content/gallery/immich/immichDimensions.mjs';
+import { immichDimensions } from "../../../capabilities/content-catalog/server/adapters/providers/gallery/immich/immichDimensions.mjs";
 
 describe('immichDimensions', () => {
   it('prefers Immich top-level (orientation-corrected) dims over raw exif', () => {

@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 
 // Mock the loop scheduler so it returns a predictable cycle in jsdom.
-vi.mock('@shared-music/loopScheduler.mjs', () => ({
+vi.mock("../../../../capabilities/music-notation/portable/loopScheduler.mjs", () => ({
   buildLoopCycle: () => ({ events: [], lengthMs: 4000 }),
 }));
 

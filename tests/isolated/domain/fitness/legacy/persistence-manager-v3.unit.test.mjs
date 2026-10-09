@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PersistenceManager } from '#frontend/hooks/fitness/PersistenceManager.js';
+import { PersistenceManager } from "../../../../../modules/fitness/browser/hooks/fitness/PersistenceManager.js";
 
 describe('PersistenceManager v3 integration', () => {
   it('uses SessionSerializerV3 to build payload', () => {

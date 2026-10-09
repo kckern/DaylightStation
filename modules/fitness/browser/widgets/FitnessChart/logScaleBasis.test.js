@@ -1,0 +1,67 @@
+import { describe, it, expect } from 'vitest';
+import { computeScaleBasisValue, isExemptEntry } from "./logScaleBasis.js";
+
+const entry = (id, lastValue) => ({ id, lastValue });
+
+describe('isExemptEntry', () => {
+  it('matches by normalized name (case + whitespace insensitive)', () => {
+    const exempt = ['learner1', ' grandparent1 '];
+    expect(isExemptEntry(entry('learner1', 12), exempt)).toBe(true);
+    expect(isExemptEntry(entry('learner1', 12), exempt)).toBe(true);
+    expect(isExemptEntry(entry('grandparent1', 12), exempt)).toBe(true);
+    expect(isExemptEntry(entry('user_1', 382), exempt)).toBe(false);
+  });
+
+  it('falls back to profileId when id is absent', () => {
+    expect(isExemptEntry({ profileId: 'learner1', lastValue: 12 }, ['learner1'])).toBe(true);
+  });
+
+  it('treats an empty/missing exemption list as nobody exempt', () => {
+    expect(isExemptEntry(entry('learner1', 12), [])).toBe(false);
+    expect(isExemptEntry(entry('learner1', 12), undefined)).toBe(false);
+  });
+});
+
+describe('computeScaleBasisValue', () => {
+  // The real 2026-07-21 session: four racers 382..463, baby joins at minute 20
+  // with 12 rings. 12 as the basis drives k -> ~0.38 and flattens the racers.
+  const session = [
+    entry('learner4', 463),
+    entry('learner2', 456),
+    entry('user_1', 382),
+    entry('learner3', 401),
+    entry('learner1', 12)
+  ];
+
+  it('excludes exempt participants from the basis', () => {
+    expect(computeScaleBasisValue(session, ['learner1'], 0)).toBe(382);
+  });
+
+  it('is unchanged when no exemptions are configured', () => {
+    expect(computeScaleBasisValue(session, [], 0)).toBe(12);
+  });
+
+  it('uses all lines as a presentation fallback when every participant is exempt', () => {
+    const allExempt = [entry('learner1', 12), entry('grandparent1', 30)];
+    expect(computeScaleBasisValue(allExempt, ['learner1', 'grandparent1'], 0)).toBe(12);
+  });
+
+  it('ignores non-finite lastValue', () => {
+    const entries = [entry('learner4', 463), entry('learner2', null), entry('learner3', NaN)];
+    expect(computeScaleBasisValue(entries, [], 0)).toBe(463);
+  });
+
+  it('falls back to minDataValue when nothing has a finite value', () => {
+    expect(computeScaleBasisValue([entry('a', null)], [], 55)).toBe(55);
+    expect(computeScaleBasisValue([], [], 55)).toBe(55);
+  });
+
+  it('never returns a negative basis', () => {
+    expect(computeScaleBasisValue([entry('a', -20)], [], -30)).toBe(0);
+  });
+
+  it('keeps the exempt participant out even when it is not the lowest', () => {
+    const entries = [entry('learner1', 500), entry('user_1', 382)];
+    expect(computeScaleBasisValue(entries, ['learner1'], 0)).toBe(382);
+  });
+});

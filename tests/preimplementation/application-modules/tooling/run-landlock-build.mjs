@@ -1,4 +1,4 @@
-/** Fixed production frontend build against a tracked, secret-free source snapshot. */
+/** Fixed production frontend build against an inventoried, secret-free source snapshot. */
 import fs from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
@@ -12,11 +12,15 @@ const base=path.join(root,'.superpowers/sdd/2026-10-08-gratitude-module-proof/la
 const run=fs.mkdtempSync(path.join(base,'build-')),stage=path.join(run,'source'),scratch=path.join(run,'scratch'),denied=path.join(run,'denied');
 for(const directory of [stage,scratch,denied]) fs.mkdirSync(directory);
 const sentinel=path.join(denied,'private.env'); fs.writeFileSync(sentinel,'synthetic private sentinel\n');
-const tracked=spawnSync('/usr/bin/git',['ls-files','-z'],{cwd:root,encoding:'utf8',maxBuffer:8*1024*1024});
-if(tracked.status!==0) throw Error('Tracked enumeration failed');
-const files=tracked.stdout.split('\0').filter(name=>/^(frontend|shared)\//.test(name)&&!/(^|\/)(\.env[^/]*|node_modules)(\/|$)/.test(name)&&fs.existsSync(path.join(root,name)));
+const inventory=spawnSync('/usr/bin/git',['ls-files','--cached','--others','--exclude-standard','-z'],{cwd:root,encoding:'utf8',maxBuffer:16*1024*1024});
+if(inventory.status!==0) throw Error('Source enumeration failed');
+const excluded=/(^|\/)(\.env[^/]*|node_modules|\.git|\.vite|dist|build|coverage|vendor)(\/|$)/;
+const files=inventory.stdout.split('\0').filter(name=>{
+  if(!name||excluded.test(name)||!(/^(frontend|shared)\//.test(name)||/^(modules|capabilities)\/[^/]+\/(browser|portable)\//.test(name)))return false;
+  let stat;try{stat=fs.lstatSync(path.join(root,name));}catch(error){if(error.code==='ENOENT')return false;throw error;}
+  return stat.isFile()&&!stat.isSymbolicLink();
+});
 files.push('package.json','scripts/setup-owner-dependencies.mjs');
-for(const owner of ['modules/gratitude/browser','capabilities/household-identity/browser','modules/piano/browser','capabilities/playback/browser','capabilities/screen-host/browser','frontend/src/composition/screens','frontend/src/lib/diagnostics']){const walk=dir=>{for(const item of fs.readdirSync(dir,{withFileTypes:true})){if(item.name==='node_modules'||item.isSymbolicLink())continue;const file=path.join(dir,item.name);if(item.isDirectory())walk(file);else files.push(path.relative(root,file));}};walk(path.join(root,owner));}
 const hash=file=>createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const inputs=[...new Set(files)].sort().map(name=>({file:name,sha256:hash(path.join(root,name))}));
 for(const {file} of inputs){const dest=path.join(stage,file);fs.mkdirSync(path.dirname(dest),{recursive:true});fs.copyFileSync(path.join(root,file),dest);}
@@ -51,7 +55,8 @@ const outputs=(Array.isArray(result)?result:[result]).flatMap(r=>r.output);
 const generated=new Set(outputs.map(o=>o.fileName));
 for(const name of publicFiles)if(!generated.has(name))assert(fs.readFileSync(dist+'/'+name).equals(fs.readFileSync(publicRoot+'/'+name)),name+' public byte parity');
 fs.writeFileSync('public-build-output.json',JSON.stringify(publicFiles.map(name=>({file:name,generated:generated.has(name),byteParity:!generated.has(name)})),null,2));
-const owned=outputs.filter(o=>o.type==='chunk'&&Object.keys(o.modules).some(m=>m.includes('/modules/gratitude/browser/')||m.includes('/capabilities/household-identity/browser/')||m.includes('/modules/piano/browser/')||m.includes('/capabilities/playback/browser/')||m.includes('/capabilities/screen-host/browser/'))).map(o=>({file:o.fileName,modules:Object.keys(o.modules).filter(m=>m.includes('/modules/gratitude/browser/')||m.includes('/capabilities/household-identity/browser/')||m.includes('/modules/piano/browser/')||m.includes('/capabilities/playback/browser/')||m.includes('/capabilities/screen-host/browser/'))}));
+const isOwned=m=>new RegExp('/(modules|capabilities)/[^/]+/(browser|portable)/').test(m);
+const owned=outputs.filter(o=>o.type==='chunk'&&Object.keys(o.modules).some(isOwned)).map(o=>({file:o.fileName,modules:Object.keys(o.modules).filter(isOwned)}));
 assert(owned.some(o=>o.modules.some(m=>m.endsWith('/Gratitude.jsx'))));assert(owned.some(o=>o.modules.some(m=>m.endsWith('/GratitudeConfig.jsx'))));assert(owned.some(o=>o.modules.some(m=>m.endsWith('/FamilySelector.jsx'))));
 for(const icon of ['thanks','hopes','gratitude'])assert(owned.some(o=>o.modules.some(m=>m.endsWith('/assets/'+icon+'.svg'))),icon+' asset inclusion');
 for(const leaf of ['PianoApp.jsx','PianoVisualizer.jsx','Player.jsx','PanelRenderer.jsx'])assert(owned.some(o=>o.modules.some(m=>m.endsWith('/'+leaf))),leaf+' actual owner inclusion');
@@ -66,7 +71,7 @@ const output=fs.readFileSync(path.join(scratch,'result.txt'),'utf8');
 const controls=output.includes('socket(AF_INET): EPERM\n')&&output.includes('BUILD CONTROLS PASS\n')&&fs.readFileSync(sentinel,'utf8')==='synthetic private sentinel\n'&&fs.readdirSync(denied).length===1;
 const protectedInputsUnchanged=inputs.every(i=>hash(path.join(root,i.file))===i.sha256&&hash(path.join(stage,i.file))===i.sha256);
 const artifact=fs.existsSync(path.join(scratch,'owned-build-output.json'))?JSON.parse(fs.readFileSync(path.join(scratch,'owned-build-output.json'),'utf8')):null;
-const receipt={pack:'frontend-production-build',capturedAt:new Date().toISOString(),exitCode:result.status,signal:result.signal,controls,protectedInputsUnchanged,artifact,publicAssets:fs.existsSync(path.join(scratch,'public-build-output.json'))?JSON.parse(fs.readFileSync(path.join(scratch,'public-build-output.json'),'utf8')):null,viteOverrides:{configFile:false,copyPublicDir:false,emptyOutDir:false,maxParallelFileOps:64},inputs,launcherSha256,entrySha256:hash(entry),manifestSha256:hash(manifest),command:{executable:'/usr/bin/timeout',args:['--signal=KILL','190s',binary,...args]},output,limitations:['Tracked secret-free staged source; no original .env or private runtime data','Inherited Landlock/seccomp child confinement; no PID namespace or cgroup quotas','16 GiB address space, 4096 MiB Node old-space,180 CPU seconds,180-second alarm,190-second watchdog,64 MiB per-file,256 descriptors']};
+const receipt={pack:'frontend-production-build',capturedAt:new Date().toISOString(),exitCode:result.status,signal:result.signal,controls,protectedInputsUnchanged,artifact,publicAssets:fs.existsSync(path.join(scratch,'public-build-output.json'))?JSON.parse(fs.readFileSync(path.join(scratch,'public-build-output.json'),'utf8')):null,viteOverrides:{configFile:false,copyPublicDir:false,emptyOutDir:false,maxParallelFileOps:64},inputs,launcherSha256,entrySha256:hash(entry),manifestSha256:hash(manifest),command:{executable:'/usr/bin/timeout',args:['--signal=KILL','190s',binary,...args]},output,limitations:['Inventoried frontend/shared and current owner browser/portable source; no original .env or private runtime data','Inherited Landlock/seccomp child confinement; no PID namespace or cgroup quotas','16 GiB address space, 4096 MiB Node old-space,180 CPU seconds,180-second alarm,190-second watchdog,64 MiB per-file,256 descriptors']};
 fs.writeFileSync(path.join(run,'receipt.json'),JSON.stringify(receipt,null,2)+'\n');
 console.log(JSON.stringify({receipt:path.relative(root,path.join(run,'receipt.json')),exitCode:result.status,controls,protectedInputsUnchanged,ownedChunks:artifact?.length}));
 if(result.status!==0||!controls||!protectedInputsUnchanged||!artifact){console.log(output.slice(-6000)+result.stderr);process.exitCode=1;}

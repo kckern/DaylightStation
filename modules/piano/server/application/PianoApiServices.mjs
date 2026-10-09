@@ -1,7 +1,7 @@
-import { buildExerciseCatalog } from '#shared/music/exerciseCatalog.mjs';
-import { countInstances, expandSeed, instanceId, instanceIds, materializeById, searchBank } from '#shared/music/exerciseBank.mjs';
-import { validateAssessment } from '#shared/music/assessmentRecord.mjs';
-import { musicXmlToNotes } from '#shared/music/musicXmlToNotes.mjs';
+import { buildExerciseCatalog } from "../../portable/music/exerciseCatalog.mjs";
+import { countInstances, expandSeed, instanceId, instanceIds, materializeById, searchBank } from "../../portable/music/exerciseBank.mjs";
+import { validateAssessment } from "../../portable/music/assessmentRecord.mjs";
+import { musicXmlToNotes } from "../../../../capabilities/music-notation/portable/musicXmlToNotes.mjs";
 import { getManifest } from './loopManifest.mjs';
 
 const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);

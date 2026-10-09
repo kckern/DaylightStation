@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { GetLearnerDayCompletion } from '#apps/school/GetLearnerDayCompletion.mjs';
-import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
+import { GetLearnerDayCompletion } from "../../../../modules/school/server/application/GetLearnerDayCompletion.mjs";
+import { CurriculumAccess } from "../../../../modules/school/server/application/CurriculumAccess.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakeAssignmentStore, fakeClock, silentLogger,
 } from '#testlib/school/lifecycleFakes.mjs';
@@ -49,9 +49,9 @@ describe('GetLearnerDayCompletion', () => {
     // (planLearnerWork -> planDailyAgenda -> resolveDayCompletion), reusing
     // this test's own catalog/assignments/sessions fakes, to prove the two
     // use cases cannot silently diverge.
-    const { planLearnerWork } = await import('#domains/school/planner.mjs');
-    const { planDailyAgenda } = await import('#domains/school/agenda.mjs');
-    const { resolveDayCompletion } = await import('#domains/school/completion.mjs');
+    const { planLearnerWork } = await import("../../../../modules/school/server/domain/planner.mjs");
+    const { planDailyAgenda } = await import("../../../../modules/school/server/domain/agenda.mjs");
+    const { resolveDayCompletion } = await import("../../../../modules/school/server/domain/completion.mjs");
     const nowIso = clock.now().toISOString();
     const assignment = await assignments.get('kid1');
     const units = await curriculum.listUnits();

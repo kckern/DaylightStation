@@ -10,7 +10,7 @@ import {
 } from '../../../lib/volume/ScreenVolumeContext.js';
 import { ScreenActionHandler } from './ScreenActionHandler.jsx';
 import { ScreenScreensaver } from '../ScreenScreensaver.jsx';
-import { MenuNavigationProvider } from '../../../context/MenuNavigationContext.jsx';
+import { MenuNavigationProvider } from "../../../../../capabilities/screen-host/browser/menu-context.mjs";
 import { SessionSourceProvider } from '../../../../../capabilities/playback/browser/sessions/SessionSourceContext.jsx';
 import * as apiModule from '../../../lib/api.mjs';
 import {
@@ -32,7 +32,7 @@ function InterceptorRegistrar({ handled }) {
 }
 
 // Mock MenuStack and Player to avoid importing their heavy dependency trees
-vi.mock('../../../modules/Menu/MenuStack.jsx', () => ({
+vi.mock("../../../../../modules/media/browser/menu.mjs", () => ({
   // `rootMenu` is a legacy menu KEY (string) or a content id (object with
   // `contentId`) — Menu.jsx picks a different endpoint per shape, so the mock
   // exposes both rather than stringifying an object into "[object Object]".

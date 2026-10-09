@@ -1,5 +1,5 @@
 import { vi, describe, test, expect, beforeEach } from 'vitest';
-import { KomgaClient } from '#adapters/content/readable/komga/KomgaClient.mjs';
+import { KomgaClient } from "../../../../capabilities/content-catalog/server/adapters/providers/readable/komga/KomgaClient.mjs";
 
 describe('KomgaClient', () => {
   const mockHttpClient = {

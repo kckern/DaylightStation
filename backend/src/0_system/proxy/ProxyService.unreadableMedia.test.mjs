@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import http from 'http';
+import http, { request as memoryRequest } from '../../../../tests/preimplementation/application-modules/drivers/proxy-memory-transport.mjs';
 import express from 'express';
 import { ProxyService } from './ProxyService.mjs';
 import { PlexProxyAdapter } from '#adapters/proxy/PlexProxyAdapter.mjs';
@@ -58,7 +58,7 @@ describe('ProxyService — Plex media file refusals', () => {
       res.writeHead(404, { 'content-type': 'text/html' });
       res.end('<html><h1>404 Not Found</h1></html>');
     }));
-    const service = new ProxyService({ logger: { debug() {}, warn() {}, error() {}, info() {} } });
+    const service = new ProxyService({ request: memoryRequest, logger: { debug() {}, warn() {}, error() {}, info() {} } });
     service.register(new FastPlexProxyAdapter({ host: `http://127.0.0.1:${upstream.address().port}`, token: 't' }));
     listeners.forEach((l) => service.onErrorReplaced(l));
     const app = express();
@@ -123,7 +123,7 @@ describe('ProxyService — an abandoned stream is cancelled upstream', () => {
       timer = setInterval(() => res.write(Buffer.alloc(1024)), 5);
       req.socket.on('close', () => { upstreamClosed = Date.now(); clearInterval(timer); });
     }));
-    const service = new ProxyService({ logger: { debug() {}, warn() {}, error() {}, info() {} } });
+    const service = new ProxyService({ request: memoryRequest, logger: { debug() {}, warn() {}, error() {}, info() {} } });
     service.register(new FastPlexProxyAdapter({ host: `http://127.0.0.1:${upstream.address().port}`, token: 't' }));
     const app = express();
     app.use('/api/v1/proxy/plex', service.createMiddleware('plex'));

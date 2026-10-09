@@ -1,10 +1,10 @@
 // note.js — the Composer Note factory. One well-formed shape (spec §3).
-import { pitchToMidi } from '../../../../../../../frontend/src/modules/MusicNotation/parseMusicXml.js';
+import { pitchToMidi } from "../../../../../../../capabilities/music-notation/browser/parseMusicXml.js";
 
 // noteDivisions is generic duration math and now lives in the shared MusicNotation
 // layer (duration.js). Re-exported here so existing `import { noteDivisions } from
 // './note.js'` sites keep working.
-export { noteDivisions } from '../../../../../../../frontend/src/modules/MusicNotation/duration.js';
+export { noteDivisions } from "../../../../../../../capabilities/music-notation/browser/duration.js";
 
 export function makeNote(pitch, opts = {}) {
   const p = { step: pitch.step, octave: pitch.octave, alter: pitch.alter ?? 0 };

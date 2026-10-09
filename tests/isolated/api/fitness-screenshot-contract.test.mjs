@@ -1,7 +1,7 @@
 import express from 'express';
 import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
-import { createFitnessRouter } from '#api/v1/routers/fitness.mjs';
+import { createFitnessRouter } from "../../../modules/fitness/server/api/fitness.mjs";
 
 function appFor(screenshotService) {
   const app = express();

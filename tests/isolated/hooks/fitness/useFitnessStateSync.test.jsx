@@ -6,7 +6,7 @@ vi.mock('@/lib/api.mjs', () => ({
   DaylightAPI: (...args) => postMock(...args),
 }));
 
-import { useFitnessStateSync } from '@/hooks/fitness/useFitnessStateSync.js';
+import { useFitnessStateSync } from "../../../../modules/fitness/browser/hooks/fitness/useFitnessStateSync.js";
 
 describe('useFitnessStateSync', () => {
   let beaconMock;

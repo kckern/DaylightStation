@@ -93,8 +93,8 @@
  */
 import { useState, useRef, useCallback, useMemo } from 'react';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
-import { GM_DRUM } from '@shared-music/percussion.mjs';
-import { harmonicTimeline } from '@shared-music/harmonicTimeline.mjs';
+import { GM_DRUM } from "../../../../../capabilities/music-notation/portable/percussion.mjs";
+import { harmonicTimeline } from "../../../../../capabilities/music-notation/portable/harmonicTimeline.mjs";
 import { mintTakeId } from './producerIdentity.js';
 
 let _logger;

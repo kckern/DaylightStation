@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@jest/globals';
-import { ISource, isSource } from '#apps/newsreporter/ports/ISource.mjs';
-import { ISink, isSink } from '#apps/newsreporter/ports/ISink.mjs';
-import { IReportRunHistory, isReportRunHistory } from '#apps/newsreporter/ports/IReportRunHistory.mjs';
+import { ISource, isSource } from "../../../../../modules/newsreporter/server/application/ports/ISource.mjs";
+import { ISink, isSink } from "../../../../../modules/newsreporter/server/application/ports/ISink.mjs";
+import { IReportRunHistory, isReportRunHistory } from "../../../../../modules/newsreporter/server/application/ports/IReportRunHistory.mjs";
 
 describe('newsreporter ports', () => {
   it('ISource.gather throws when not implemented', async () => {

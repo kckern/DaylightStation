@@ -1,0 +1,137 @@
+/**
+ * YamlListDatastore - YAML-based list persistence
+ *
+ * Implements IListStore port for content list storage.
+ * Lists are stored at: content/lists/{type}/{name}.yml — a top-level tree,
+ * sibling to household/, NOT household-scoped (menus/programs/watchlists
+ * are shared household content, not per-household config).
+ *
+ * Handles normalization (raw YAML -> canonical sections format) on read
+ * and serialization (canonical -> compact YAML) on write via listConfigNormalizer.
+ */
+import path from 'path';
+import {
+  loadYamlSafe,
+  saveYaml,
+  listYamlFiles,
+  ensureDir,
+  deleteYaml
+} from '#system/utils/FileIO.mjs';
+import { IListStore } from "../../application/ports/IListStore.mjs";
+
+// Valid list types
+const LIST_TYPES = ['menus', 'watchlists', 'programs'];
+
+export class YamlListDatastore extends IListStore {
+  /**
+   * @param {Object} config
+   * @param {string} config.dataDir - Root data directory
+   */
+  constructor(config) {
+    super();
+    if (!config.dataDir) throw new Error('YamlListDatastore requires dataDir');
+    this.dataDir = config.dataDir;
+    if (!config.listConfigCodec) throw new Error('YamlListDatastore requires listConfigCodec');
+    this.listConfigCodec = config.listConfigCodec;
+  }
+
+  /**
+   * Get the lists base directory. content/lists is a top-level tree, sibling
+   * to household/ — NOT household-scoped, so householdId is accepted (for
+   * call-site signature compatibility) but does not affect the path.
+   */
+  _getListsBaseDir(_householdId) {
+    return path.join(this.dataDir, 'content', 'lists');
+  }
+
+  /**
+   * Get directory for a specific list type
+   */
+  _getTypeDir(type, householdId) {
+    return path.join(this._getListsBaseDir(householdId), type);
+  }
+
+  /**
+   * Get full path to a list file
+   */
+  _getListPath(type, listName, householdId) {
+    return path.join(this._getTypeDir(type, householdId), listName);
+  }
+
+  /** @inheritdoc */
+  getOverview(householdId) {
+    const baseDir = this._getListsBaseDir(householdId);
+
+    return LIST_TYPES.map(type => {
+      const typeDir = path.join(baseDir, type);
+      const names = listYamlFiles(typeDir);
+      return { type, count: names.length };
+    });
+  }
+
+  /** @inheritdoc */
+  listByType(type, householdId) {
+    const typeDir = this._getTypeDir(type, householdId);
+    const listNames = listYamlFiles(typeDir);
+
+    return listNames.map(name => {
+      const content = loadYamlSafe(path.join(typeDir, name));
+      const list = this.listConfigCodec.normalizeListConfig(content, name);
+      const itemCount = list.sections.reduce((sum, s) => sum + s.items.length, 0);
+      return {
+        name,
+        title: list.title,
+        description: list.description,
+        metadata: list.metadata,
+        itemCount
+      };
+    });
+  }
+
+  /** @inheritdoc */
+  getList(type, name, householdId) {
+    const listPath = this._getListPath(type, name, householdId);
+    const content = loadYamlSafe(listPath);
+
+    if (content === null) return null;
+
+    return this.listConfigCodec.normalizeListConfig(content, name);
+  }
+
+  /** @inheritdoc */
+  saveList(type, name, householdId, listConfig) {
+    const listPath = this._getListPath(type, name, householdId);
+    saveYaml(listPath, this.listConfigCodec.serializeListConfig(listConfig));
+  }
+
+  /** @inheritdoc */
+  createList(type, name, householdId) {
+    const typeDir = this._getTypeDir(type, householdId);
+    const listPath = path.join(typeDir, name);
+
+    // Check if list already exists
+    const existing = loadYamlSafe(listPath);
+    if (existing !== null) return false;
+
+    // Ensure the type directory exists
+    ensureDir(typeDir);
+
+    // Create empty list with new object format
+    saveYaml(listPath, { items: [] });
+    return true;
+  }
+
+  /** @inheritdoc */
+  deleteList(type, name, householdId) {
+    const listPath = this._getListPath(type, name, householdId);
+
+    // Check if list exists
+    const existing = loadYamlSafe(listPath);
+    if (existing === null) return false;
+
+    deleteYaml(listPath);
+    return true;
+  }
+}
+
+export default YamlListDatastore;

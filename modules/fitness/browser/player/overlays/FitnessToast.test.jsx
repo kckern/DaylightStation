@@ -1,0 +1,316 @@
+import React from 'react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, act } from '@testing-library/react';
+import FitnessToast, { TOAST_EXIT_MS } from "./FitnessToast.jsx";
+
+describe('FitnessToast', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('renders nothing when there is no toast', () => {
+    const { container } = render(<FitnessToast toast={null} onDone={() => {}} />);
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('renders the title and subtitle', () => {
+    render(<FitnessToast toast={{ id: 1, title: 'User_2', subtitle: 'is riding the NiceDay', durationMs: 4000 }} onDone={() => {}} />);
+    expect(screen.getByText('User_2')).toBeTruthy();
+    expect(screen.getByText('is riding the NiceDay')).toBeTruthy();
+  });
+
+  it('calls onDone with the toast id after durationMs + exit', () => {
+    const onDone = vi.fn();
+    render(<FitnessToast toast={{ id: 1, title: 'User_2', durationMs: 4000 }} onDone={onDone} />);
+    expect(onDone).not.toHaveBeenCalled();
+    act(() => { vi.advanceTimersByTime(4000 + TOAST_EXIT_MS); });
+    expect(onDone).toHaveBeenCalledTimes(1);
+    expect(onDone).toHaveBeenCalledWith(1);
+  });
+
+  it('resets the timer when a new toast id arrives and fires onDone once for the new id', () => {
+    const onDone = vi.fn();
+    const { rerender } = render(<FitnessToast toast={{ id: 1, title: 'A', durationMs: 4000 }} onDone={onDone} />);
+    act(() => { vi.advanceTimersByTime(2000); });
+    rerender(<FitnessToast toast={{ id: 2, title: 'B', durationMs: 4000 }} onDone={onDone} />);
+    act(() => { vi.advanceTimersByTime(4000 + TOAST_EXIT_MS); });
+    expect(onDone).toHaveBeenCalledTimes(1);
+    expect(onDone).toHaveBeenCalledWith(2);
+  });
+
+  it('refreshes the visible lifetime when a ring celebration revision changes', () => {
+    const onDone = vi.fn();
+    const first = {
+      id: 2,
+      revision: 0,
+      kind: 'ring-celebration',
+      durationMs: 3500,
+      ringCelebration: { entries: [{ scope: 'individual', userId: 'user_4', name: 'User_4', threshold: 100 }], contributors: [], maxVisibleContributors: 3 },
+    };
+    const { rerender } = render(<FitnessToast toast={first} onDone={onDone} />);
+    act(() => { vi.advanceTimersByTime(3000); });
+    rerender(<FitnessToast toast={{ ...first, revision: 1, ringCelebration: { ...first.ringCelebration, entries: [
+      ...first.ringCelebration.entries,
+      { scope: 'individual', userId: 'user_3', name: 'User_3', threshold: 100 },
+    ] } }} onDone={onDone} />);
+    expect(screen.getByText('100 RINGS EACH')).toBeTruthy();
+    act(() => { vi.advanceTimersByTime(3499 + TOAST_EXIT_MS); });
+    expect(onDone).not.toHaveBeenCalled();
+    act(() => { vi.advanceTimersByTime(2); });
+    expect(onDone).toHaveBeenCalledWith(2);
+  });
+
+  it('renders the spinning ring and contributor faces for a ring celebration', () => {
+    render(<FitnessToast toast={{
+      id: 14,
+      kind: 'ring-celebration',
+      variant: 'rings',
+      ringCelebration: {
+        iconUrl: '/media/fitness/ux/spinning-ring.svg',
+        entries: [{ scope: 'individual', userId: 'user_4', name: 'User_4', threshold: 500 }],
+        contributors: [{ id: 'user_4', name: 'User_4', avatarUrl: '/api/v1/static/img/users/user_4' }],
+        maxVisibleContributors: 3,
+      },
+    }} onDone={() => {}} />);
+    expect(document.querySelector('.fitness-toast--ring-celebration')).toBeTruthy();
+    expect(document.querySelector('.fitness-toast__ring-icon')?.getAttribute('src')).toBe('/media/fitness/ux/spinning-ring.svg');
+    expect(screen.getByText('500 RINGS')).toBeTruthy();
+    expect(screen.getByText('User_4 has 500 rings!')).toBeTruthy();
+  });
+
+  it('falls back to the code-owned spinning ring when the configured asset is broken', () => {
+    render(<FitnessToast toast={{
+      id: 15,
+      kind: 'ring-celebration',
+      ringCelebration: { iconUrl: '/missing-ring.svg', entries: [], contributors: [] },
+    }} onDone={() => {}} />);
+    const image = document.querySelector('img.fitness-toast__ring-icon');
+    act(() => { image.dispatchEvent(new Event('error')); });
+    expect(document.querySelector('svg.fitness-toast__ring-icon.ring-icon--spin')).toBeTruthy();
+  });
+
+  it('cleanly shows a new toast after the previous one fully dismissed and unmounted', () => {
+    const onDone = vi.fn();
+    const { rerender } = render(<FitnessToast toast={{ id: 1, title: 'A', durationMs: 4000 }} onDone={onDone} />);
+    act(() => { vi.advanceTimersByTime(4000 + TOAST_EXIT_MS); }); // toast 1 fully done
+    expect(onDone).toHaveBeenCalledWith(1);
+    rerender(<FitnessToast toast={null} onDone={onDone} />); // slot cleared
+    rerender(<FitnessToast toast={{ id: 2, title: 'B', subtitle: 'second', durationMs: 4000 }} onDone={onDone} />);
+    expect(screen.getByText('B')).toBeTruthy();
+    expect(screen.getByText('second')).toBeTruthy();
+    act(() => { vi.advanceTimersByTime(4000 + TOAST_EXIT_MS); });
+    expect(onDone).toHaveBeenCalledWith(2);
+    expect(onDone).toHaveBeenCalledTimes(2);
+  });
+
+  it('renders contributor names and avatars when present (§5B)', () => {
+    render(
+      <FitnessToast
+        toast={{
+          id: 7,
+          icon: '🏆',
+          title: 'Challenge complete!',
+          durationMs: 4000,
+          contributors: [
+            { id: 'user_2', name: 'User_2', avatarUrl: '/api/v1/static/img/users/user_2' },
+            { id: 'user_5', name: 'User_5', avatarUrl: '/api/v1/static/img/users/user_5' },
+          ],
+        }}
+        onDone={() => {}}
+      />
+    );
+    expect(screen.getByText('User_2')).toBeTruthy();
+    expect(screen.getByText('User_5')).toBeTruthy();
+    const avatars = document.querySelectorAll('.fitness-toast__contributor-avatar');
+    expect(avatars.length).toBe(2);
+    expect(avatars[0].getAttribute('src')).toBe('/api/v1/static/img/users/user_2');
+  });
+
+  it('renders a zone pill with the zone label and color when toast.zone is set (issue 3)', () => {
+    render(
+      <FitnessToast
+        toast={{
+          id: 11,
+          title: 'Challenge complete!',
+          zone: { id: 'warm', label: 'Warm', color: '#facc15' },
+          durationMs: 4000,
+        }}
+        onDone={() => {}}
+      />
+    );
+    const pill = screen.getByText('Warm');
+    expect(pill.className).toContain('fitness-toast__zone-pill');
+    expect(pill.className).toContain('zone-warm');
+  });
+
+  it('renders no zone pill when toast.zone is absent (issue 3)', () => {
+    render(<FitnessToast toast={{ id: 12, title: 'Challenge complete!', durationMs: 4000 }} onDone={() => {}} />);
+    expect(document.querySelector('.fitness-toast__zone-pill')).toBeNull();
+  });
+
+  it('dismisses on click: fires onDone(id) once after the exit animation', () => {
+    const onDone = vi.fn();
+    const { container } = render(<FitnessToast toast={{ id: 9, title: 'Tap me', durationMs: 4000 }} onDone={onDone} />);
+    const root = container.querySelector('.fitness-toast');
+    expect(root).not.toBeNull();
+    act(() => { root.click(); });
+    // Not immediate — exit animation plays first.
+    expect(onDone).not.toHaveBeenCalled();
+    act(() => { vi.advanceTimersByTime(320 + 5); });
+    expect(onDone).toHaveBeenCalledTimes(1);
+    expect(onDone).toHaveBeenCalledWith(9);
+    // The original duration timer must NOT also fire onDone again.
+    act(() => { vi.advanceTimersByTime(4000 + 320 + 5); });
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The success toast is the one moment in a session where someone is recognised
+// in front of the room. It used to be shaped like a system message: trophy,
+// "Challenge complete!", and a tally, with the people reduced to small chips.
+describe('FitnessToast achievement layout', () => {
+  const achievement = {
+    id: 900,
+    title: 'Learner-Four & Learner-Three reached Hot',
+    subtitle: 'in 45s',
+    variant: 'success',
+    achievement: true,
+    contributors: [
+      { id: 'a', name: 'Learner-Four', avatarUrl: '/api/v1/static/img/users/a' },
+      { id: 'b', name: 'Learner-Three', avatarUrl: '/api/v1/static/img/users/b' },
+    ],
+  };
+
+  it('leads with the faces, then names what they did', () => {
+    const { container } = render(<FitnessToast toast={achievement} onDone={() => {}} />);
+    const root = container.querySelector('.fitness-toast--achievement');
+    expect(root).toBeTruthy();
+    // Faces before the headline in DOM order — that is the reading order.
+    const kids = [...root.children].map((el) => el.className);
+    expect(kids.join(' | ')).toMatch(/faces.*headline/);
+  });
+
+  it('names both people and the achievement', () => {
+    const { container } = render(<FitnessToast toast={achievement} onDone={() => {}} />);
+    expect(container.textContent).toContain('Learner-Four & Learner-Three reached Hot');
+    expect(container.textContent).toContain('in 45s');
+  });
+
+  it('keeps the plain row layout for an ordinary notice', () => {
+    const notice = { id: 901, title: 'Challenge started', variant: 'info' };
+    const { container } = render(<FitnessToast toast={notice} onDone={() => {}} />);
+    expect(container.querySelector('.fitness-toast--achievement')).toBeNull();
+  });
+});
+
+describe('FitnessToast — fire zone', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  const fireToast = (overrides = {}) => ({
+    id: 7,
+    kind: 'fire',
+    variant: 'fire',
+    frameless: true,
+    durationMs: 3500,
+    name: 'Learner-One',
+    avatarUrl: '/api/v1/static/img/users/learner-one',
+    fireballUrl: '/api/v1/proxy/media/fitness/ux/fireball.gif',
+    ...overrides,
+  });
+
+  it('names the person and says they are on fire', () => {
+    render(<FitnessToast toast={fireToast()} onDone={() => {}} />);
+    expect(screen.getByText('Learner-One')).toBeTruthy();
+    expect(screen.getByText('ON FIRE')).toBeTruthy();
+  });
+
+  it('carries no card chrome', () => {
+    const { container } = render(<FitnessToast toast={fireToast()} onDone={() => {}} />);
+    expect(container.querySelector('.fitness-toast--frameless')).toBeTruthy();
+  });
+
+  it('screen-blends the fireball so the gif\'s black background drops out', () => {
+    render(<FitnessToast toast={fireToast()} onDone={() => {}} />);
+    const ball = document.body.querySelector('.fitness-toast__fire-ball');
+    expect(ball).toBeTruthy();
+    expect(ball.getAttribute('src')).toBe('/api/v1/proxy/media/fitness/ux/fireball.gif');
+    expect(ball.style.mixBlendMode).toBe('screen');
+  });
+
+  it('renders the fireball OUTSIDE the toast, or screen blending has nothing to blend against', () => {
+    // .fitness-toast is a stacking context (transform + z-index). A blended
+    // child there composites against the toast's own empty backdrop, and
+    // `screen` over transparent-black returns the source unchanged — the gif's
+    // black background stays an opaque square. Portalled to <body>, it blends
+    // against the page and the black drops out. Verified visually 2026-09-15.
+    const { container } = render(<FitnessToast toast={fireToast()} onDone={() => {}} />);
+    expect(container.querySelector('.fitness-toast__fire-ball')).toBeNull();
+    const ball = document.body.querySelector('.fitness-toast__fire-ball');
+    expect(ball).toBeTruthy();
+    expect(ball.closest('.fitness-toast')).toBeNull();
+    expect(ball.style.position).toBe('fixed');
+  });
+
+  it('renders the avatar plainly, with no zone-fire treatment to fight the gif', () => {
+    const { container } = render(<FitnessToast toast={fireToast()} onDone={() => {}} />);
+    const avatar = container.querySelector('.fitness-toast__fire-avatar');
+    expect(avatar).toBeTruthy();
+    expect(avatar.getAttribute('src')).toBe('/api/v1/static/img/users/learner-one');
+    expect(container.querySelector('.zone-fire')).toBeNull();
+  });
+
+  it('shows no countdown bar — that is a box affordance', () => {
+    const { container } = render(<FitnessToast toast={fireToast()} onDone={() => {}} />);
+    expect(container.querySelector('.fitness-toast__countdown')).toBeNull();
+  });
+
+  it('still names the person when no fireball url resolved', () => {
+    render(<FitnessToast toast={fireToast({ fireballUrl: null })} onDone={() => {}} />);
+    expect(document.body.querySelector('.fitness-toast__fire-ball')).toBeNull();
+    expect(screen.getByText('Learner-One')).toBeTruthy();
+    expect(screen.getByText('ON FIRE')).toBeTruthy();
+  });
+
+  it('keeps the fireball centred on the avatar as the toast moves under it', () => {
+    // The toast grows in from a collapsed box and collapses on exit, so the
+    // avatar moves ~77px after mount. A one-shot measurement left the flame
+    // above or below the face; it has to follow.
+    let rect = { left: 900, top: 540, width: 101, height: 101 };
+    const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function measure() {
+        if (!this.classList.contains('fitness-toast__fire-avatar')) return { left: 0, top: 0, width: 0, height: 0 };
+        return { ...rect, right: rect.left + rect.width, bottom: rect.top + rect.height };
+      });
+    try {
+      render(<FitnessToast toast={fireToast()} onDone={() => {}} />);
+      const ball = () => document.body.querySelector('.fitness-toast__fire-ball');
+      const centre = () => ({
+        x: parseFloat(ball().style.left) + parseFloat(ball().style.width) / 2,
+        y: parseFloat(ball().style.top) + parseFloat(ball().style.height) / 2,
+      });
+      expect(centre()).toEqual({ x: 950.5, y: 590.5 });
+
+      rect = { left: 895, top: 459, width: 110, height: 110 }; // settled higher and larger
+      act(() => { vi.advanceTimersByTime(50); });
+      expect(centre()).toEqual({ x: 950, y: 514 });
+      expect(parseFloat(ball().style.width)).toBe(440); // 4x the avatar box
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('fades the fireball out with the toast instead of leaving it over nothing', () => {
+    render(<FitnessToast toast={fireToast()} onDone={() => {}} />);
+    const ball = document.body.querySelector('.fitness-toast__fire-ball');
+    expect(ball.style.opacity).toBe('1');
+    act(() => { vi.advanceTimersByTime(3500); });
+    expect(document.body.querySelector('.fitness-toast__fire-ball').style.opacity).toBe('0');
+  });
+
+  it('self-dismisses on the celebration lifetime', () => {
+    const onDone = vi.fn();
+    render(<FitnessToast toast={fireToast()} onDone={onDone} />);
+    act(() => { vi.advanceTimersByTime(3500 + TOAST_EXIT_MS); });
+    expect(onDone).toHaveBeenCalledWith(7);
+  });
+});

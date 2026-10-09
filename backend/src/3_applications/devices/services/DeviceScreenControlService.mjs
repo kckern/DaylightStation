@@ -1,19 +1,18 @@
 export class DeviceScreenControlService {
-  #devices; #configuration; #overrides; #midiWake; #logger; #nowMs;
-  constructor({ devices, configuration, screenOverrides = null, midiWake = null, logger = console, nowMs = Date.now }) {
-    this.#devices = devices; this.#configuration = configuration; this.#overrides = screenOverrides;
+  #devices; #holdPolicy; #overrides; #midiWake; #logger; #nowMs;
+  constructor({ devices, holdPolicy, screenOverrides = null, midiWake = null, logger = console, nowMs = Date.now }) {
+    this.#devices = devices; this.#holdPolicy = holdPolicy; this.#overrides = screenOverrides;
     this.#midiWake = midiWake; this.#logger = logger; this.#nowMs = nowMs;
   }
-  #onMinutes() { return Number(this.#configuration.piano().button?.onHoldMinutes) || 10; }
-  #offMinutes() { const cfg = this.#configuration.piano(); return Number(cfg.button?.offHoldMinutes)
-    || Number(cfg.screensaver?.offCooldownMinutes) || 30; }
+
+
   override(deviceId) { return { override: this.#overrides?.get(deviceId) ?? null }; }
   async toggle(deviceId) {
     const device = this.#devices.get(deviceId); if (!device) return { kind: 'not_found' };
     let currentlyOn = false;
     try { currentlyOn = (await device.getStatus())?.screenOn === true; } catch { currentlyOn = false; }
     const next = !currentlyOn;
-    if (this.#overrides) { if (next) this.#overrides.set(deviceId, 'on', this.#onMinutes()); else this.#overrides.clear(deviceId); }
+    if (this.#overrides) { if (next) this.#overrides.set(deviceId, 'on', this.#holdPolicy.onMinutes()); else this.#overrides.clear(deviceId); }
     this.#logger.info?.('device.router.screen.toggle', { deviceId, next });
     const result = await device.setScreen(next);
     return { kind: 'ok', body: { screenOn: next, override: this.#overrides?.get(deviceId) ?? null, result } };
@@ -21,7 +20,7 @@ export class DeviceScreenControlService {
   async setOverride(deviceId, state, requestedMinutes) {
     const device = this.#devices.get(deviceId); if (!device) return { kind: 'not_found' };
     const minutes = requestedMinutes > 0 ? requestedMinutes
-      : (state === 'off' ? this.#offMinutes() : this.#onMinutes());
+      : (state === 'off' ? this.#holdPolicy.offMinutes() : this.#holdPolicy.onMinutes());
     if (state === 'off') {
       if (this.#midiWake?.suppressWakeUntil) this.#midiWake.suppressWakeUntil(this.#nowMs() + minutes * 60_000);
       else this.#overrides?.set(deviceId, 'off', minutes);

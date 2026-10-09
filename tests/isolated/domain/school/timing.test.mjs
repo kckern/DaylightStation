@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateDatedModule, evaluateTiming, materializeTiming, normalizeTiming, studyDate } from '#domains/school/timing.mjs';
-import { planLearnerWork } from '#domains/school/planner.mjs';
-import { planDailyAgenda } from '#domains/school/agenda.mjs';
+import { evaluateDatedModule, evaluateTiming, materializeTiming, normalizeTiming, studyDate } from "../../../../modules/school/server/domain/timing.mjs";
+import { planLearnerWork } from "../../../../modules/school/server/domain/planner.mjs";
+import { planDailyAgenda } from "../../../../modules/school/server/domain/agenda.mjs";
 
 const TODAY = '2026-07-01';
 const urgentTiming = {

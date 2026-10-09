@@ -1,15 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { ResolveScanAction } from '#apps/school/usecases/ResolveScanAction.mjs';
-import { ResolvePersonalCard } from '#apps/school/usecases/ResolvePersonalCard.mjs';
-import { ResolveSubjectNext } from '#apps/school/usecases/ResolveSubjectNext.mjs';
-import { BuildAgenda } from '#apps/school/usecases/BuildAgenda.mjs';
-import { IssueDocument } from '#apps/school/usecases/IssueDocument.mjs';
-import { DispatchMedia } from '#apps/school/usecases/DispatchMedia.mjs';
-import { OpenRemediation } from '#apps/school/usecases/OpenRemediation.mjs';
-import { CloseSessionOutcome } from '#apps/school/usecases/CloseSessionOutcome.mjs';
-import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
-import { ReceiptPrinting } from '#apps/school/ReceiptPrinting.mjs';
-import { createTokenRecord, mintToken } from '#domains/school/sessions/tokens.mjs';
+import { ResolveScanAction } from "../../../../modules/school/server/application/usecases/ResolveScanAction.mjs";
+import { ResolvePersonalCard } from "../../../../modules/school/server/application/usecases/ResolvePersonalCard.mjs";
+import { ResolveSubjectNext } from "../../../../modules/school/server/application/usecases/ResolveSubjectNext.mjs";
+import { BuildAgenda } from "../../../../modules/school/server/application/usecases/BuildAgenda.mjs";
+import { IssueDocument } from "../../../../modules/school/server/application/usecases/IssueDocument.mjs";
+import { DispatchMedia } from "../../../../modules/school/server/application/usecases/DispatchMedia.mjs";
+import { OpenRemediation } from "../../../../modules/school/server/application/usecases/OpenRemediation.mjs";
+import { CloseSessionOutcome } from "../../../../modules/school/server/application/usecases/CloseSessionOutcome.mjs";
+import { CurriculumAccess } from "../../../../modules/school/server/application/CurriculumAccess.mjs";
+import { ReceiptPrinting } from "../../../../capabilities/printing/server/receipt.mjs";
+import { createTokenRecord, mintToken } from "../../../../modules/school/server/domain/sessions/tokens.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeAssignmentStore,
   FakeFormMapStore, FakeDocumentRenderer, FakeReceiptRenderer, FakeLaserPrinter,

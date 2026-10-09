@@ -16,9 +16,9 @@ vi.mock('../../../../backend/src/0_system/utils/FileIO.mjs', () => ({
   listFiles: (dir) => Object.keys(blobs).filter(p => p.startsWith(dir + '/')).map(p => p.slice(dir.length + 1)),
   deleteFile: (p) => { const had = p in blobs; delete blobs[p]; return had; },
 }));
-import { YamlComposerSongStore as ComposerSongStore } from '../../../../backend/src/1_adapters/persistence/yaml/YamlComposerSongStore.mjs';
+import { YamlComposerSongStore as ComposerSongStore } from '../adapters/persistence/yaml/YamlComposerSongStore.mjs';
 import { PianoContainer } from '../application/PianoContainer.mjs';
-import { PianoConfigProjection } from '../../../../backend/src/1_adapters/config/ApplicationConfigProjections.mjs';
+import { PianoConfigProjection } from "../adapters/PianoConfigProjection.mjs";
 import { createPianoRouter } from './piano.mjs';
 import { withPianoRouterServices } from '../../../../tests/_lib/pianoRouterDeps.mjs';
 

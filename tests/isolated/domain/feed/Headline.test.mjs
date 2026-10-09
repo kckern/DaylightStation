@@ -1,4 +1,4 @@
-import { Headline } from '#domains/feed/entities/Headline.mjs';
+import { Headline } from "../../../../modules/feed/server/domain/entities/Headline.mjs";
 import { shortIdFromUuid } from '#system/utils/id.mjs';
 
 describe('Headline', () => {

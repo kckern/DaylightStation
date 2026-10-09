@@ -1,3 +1,6 @@
+import {YamlComposerSongStore as ComposerSongStore} from './adapters/persistence/yaml/YamlComposerSongStore.mjs';
+import {YamlPianoGameBudgetStore} from './adapters/persistence/YamlPianoGameBudgetStore.mjs';
+import {getCurriculumIndex,mergeSeason} from './adapters/plex-curriculum/CurriculumIndex.mjs';
 import {join} from "node:path";
 import { createPianoRouter } from "./api/piano.mjs";
 import { PianoContainer } from "./application/PianoContainer.mjs";
@@ -13,7 +16,7 @@ import { BankChallengePolicy } from "./application/BankChallengePolicy.mjs";
 import { PianoLearningService } from "./application/PianoLearningService.mjs";
 
 /** Installed Piano assembly; callers supply cross-product contracts explicitly. */
-export async function createPianoModule({configService, userService, rootLogger, contentRegistry, householdId, contentPath, fitnessPlayableService, contentServices, getCurriculumIndex, mergeSeason, eventBus, shortId, pianoBoardGameDayService, schoolLearnerDirectory, ComposerSongStore, YamlAssignmentStore, PianoConfigProjection, YamlPianoGameBudgetStore}) {
+export async function createPianoModule({configService, userService, rootLogger, contentRegistry, householdId, contentPath, fitnessPlayableService, contentServices, eventBus, shortId, pianoBoardGameDayService, schoolLearnerDirectory, PianoConfigProjection}) {
   const pianoStudioDatastore = new YamlPianoStudioDatastore({
     configService,
     userService,
@@ -63,14 +66,9 @@ export async function createPianoModule({configService, userService, rootLogger,
   // Piano program assignments are edited from the existing Teacher console, so
   // they use that console's one authorization predicate rather than inventing a
   // second grown-up/PIN interpretation in the piano bounded context.
-  const { makeTeacherGate } = await import("#apps/school/TeacherGate.mjs");
-  const { SchoolTeacherConfigSource } = await import("#adapters/school/SchoolTeacherConfigSource.mjs");
-  const schoolTeacherConfig = new SchoolTeacherConfigSource({ configService });
-  const schoolTeacherGate = makeTeacherGate({
-    loadTeachers: schoolTeacherConfig.teachers,
-    loadTeacherPin: schoolTeacherConfig.pin,
-    userService,
-    householdId,
+  const { createTeacherAuthorization } = await import("../../school/server/teacher-runtime.mjs");
+  const { config: schoolTeacherConfig, gate: schoolTeacherGate } = createTeacherAuthorization({
+    configService, userService, householdId,
     logger: rootLogger.child({ module: 'school-teacher-gate' }),
   });
   const pianoAttemptStore = new YamlPianoAttemptStore({
@@ -97,7 +95,8 @@ export async function createPianoModule({configService, userService, rootLogger,
   // a stateless reader of parent-editable YAML, and School's lifecycle is built
   // later in this file (it consumes the piano use case, so piano cannot wait
   // on it).
-  const pianoSchoolAssignments = new YamlAssignmentStore({
+  const { createLearnerAssignmentReader } = await import("../../school/server/learner-assignments.mjs");
+  const pianoSchoolAssignments = createLearnerAssignmentReader({
     configService, logger: rootLogger.child({ module: 'piano-school-assignments' }),
   });
   const pianoContainer = new PianoContainer({

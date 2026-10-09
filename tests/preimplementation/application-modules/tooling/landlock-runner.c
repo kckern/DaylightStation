@@ -100,9 +100,9 @@ static void limit(int resource, rlim_t n) {
 }
 int main(int argc,char **argv) {
   if (argc != 11) { fprintf(stderr,"usage: landlock-runner scratch node manifest toolroot loader entry outside pack target baseline-receipt\n"); return 2; }
-  if (strcmp(argv[8],"gratitude") && strcmp(argv[8],"browser") && strcmp(argv[8],"stored-shape") && strcmp(argv[8],"build") && strcmp(argv[8],"integration") && strcmp(argv[8],"hook") && strcmp(argv[8],"m2")) { fprintf(stderr,"unsupported pack\n"); return 2; }
+  if (strcmp(argv[8],"gratitude") && strcmp(argv[8],"browser") && strcmp(argv[8],"stored-shape") && strcmp(argv[8],"build") && strcmp(argv[8],"integration") && strcmp(argv[8],"hook") && strcmp(argv[8],"m2") && strcmp(argv[8],"health-stack") && strcmp(argv[8],"health") && strcmp(argv[8],"school-fitness") && strcmp(argv[8],"school-http") && strcmp(argv[8],"bots-displays") && strcmp(argv[8],"media-content") && strcmp(argv[8],"media-presentation") && strcmp(argv[8],"bots-displays-node") && strcmp(argv[8],"media-content-node") && strcmp(argv[8],"bots-displays-jest") && strcmp(argv[8],"media-content-jest") && strcmp(argv[8],"gaming-notation") && strcmp(argv[8],"gaming-notation-node") && strcmp(argv[8],"agents-life-diagnostic") && strcmp(argv[8],"agents-life-concierge") && strcmp(argv[8],"agents-life-http") && strcmp(argv[8],"content-api") && strcmp(argv[8],"epaper-http") && strcmp(argv[8],"remaining-operations") && strcmp(argv[8],"remaining-feed") && strcmp(argv[8],"remaining-camera") && strcmp(argv[8],"remaining-games") && strcmp(argv[8],"remaining-home") && strcmp(argv[8],"remaining-workflows") && strcmp(argv[8],"remaining-media-tools") && strcmp(argv[8],"remaining-art") && strcmp(argv[8],"remaining-node") && strcmp(argv[8],"remaining-jest") && strcmp(argv[8],"remaining-http") && strcmp(argv[8],"agents-life-config") && strcmp(argv[8],"remaining-stockfish") && strcmp(argv[8],"progress-store") && strcmp(argv[8],"art-screens") && strcmp(argv[8],"piano-retained-node") && strcmp(argv[8],"art-canvas") && strcmp(argv[8],"retained-supplement") && strcmp(argv[8],"retained-supplement-node") && strcmp(argv[8],"retained-ti86")) { fprintf(stderr,"unsupported pack\n"); return 2; }
   if (strcmp(argv[9],"baseline") && strcmp(argv[9],"candidate")) { fprintf(stderr,"unsupported target\n"); return 2; }
-  if (!strcmp(argv[9],"candidate") && strcmp(argv[8],"gratitude") && strcmp(argv[8],"browser") && strcmp(argv[8],"m2")) return 2;
+  if (!strcmp(argv[9],"candidate") && strcmp(argv[8],"gratitude") && strcmp(argv[8],"browser") && strcmp(argv[8],"m2") && strcmp(argv[8],"health-stack") && strcmp(argv[8],"health") && strcmp(argv[8],"school-fitness") && strcmp(argv[8],"school-http") && strcmp(argv[8],"bots-displays") && strcmp(argv[8],"media-content") && strcmp(argv[8],"media-presentation") && strcmp(argv[8],"bots-displays-node") && strcmp(argv[8],"media-content-node") && strcmp(argv[8],"bots-displays-jest") && strcmp(argv[8],"media-content-jest") && strcmp(argv[8],"gaming-notation") && strcmp(argv[8],"gaming-notation-node") && strcmp(argv[8],"agents-life-diagnostic") && strcmp(argv[8],"agents-life-concierge") && strcmp(argv[8],"agents-life-http") && strcmp(argv[8],"content-api") && strcmp(argv[8],"epaper-http") && strcmp(argv[8],"remaining-operations") && strcmp(argv[8],"remaining-feed") && strcmp(argv[8],"remaining-camera") && strcmp(argv[8],"remaining-games") && strcmp(argv[8],"remaining-home") && strcmp(argv[8],"remaining-workflows") && strcmp(argv[8],"remaining-media-tools") && strcmp(argv[8],"remaining-art") && strcmp(argv[8],"remaining-node") && strcmp(argv[8],"remaining-jest") && strcmp(argv[8],"remaining-http") && strcmp(argv[8],"agents-life-config") && strcmp(argv[8],"remaining-stockfish") && strcmp(argv[8],"progress-store") && strcmp(argv[8],"art-screens") && strcmp(argv[8],"piano-retained-node") && strcmp(argv[8],"art-canvas") && strcmp(argv[8],"retained-supplement") && strcmp(argv[8],"retained-supplement-node") && strcmp(argv[8],"retained-ti86")) return 2;
   char *scratch=realpath(argv[1],NULL),*node=realpath(argv[2],NULL),*outside=realpath(argv[7],NULL);
   if (!scratch || !node || !outside) fail("realpath");
   char output[4096];
@@ -118,7 +118,7 @@ int main(int argc,char **argv) {
   uint64_t ro=LANDLOCK_ACCESS_FS_READ_FILE|LANDLOCK_ACCESS_FS_EXECUTE;
   rule(fd,scratch,a.fs & ~(LANDLOCK_ACCESS_FS_MAKE_CHAR|LANDLOCK_ACCESS_FS_MAKE_BLOCK|LANDLOCK_ACCESS_FS_MAKE_SOCK|LANDLOCK_ACCESS_FS_MAKE_FIFO|(1ULL<<15)));
   rule(fd,node,ro);
-  if (!strcmp(argv[8],"hook")) rule(fd,"/dev/null",LANDLOCK_ACCESS_FS_READ_FILE|LANDLOCK_ACCESS_FS_WRITE_FILE);
+  if (!strcmp(argv[8],"hook")||!strcmp(argv[8],"retained-supplement-node")||!strcmp(argv[8],"retained-ti86")) rule(fd,"/dev/null",LANDLOCK_ACCESS_FS_READ_FILE|LANDLOCK_ACCESS_FS_WRITE_FILE);
   const char *libs[]={"/lib/x86_64-linux-gnu/libdl.so.2","/lib/x86_64-linux-gnu/libstdc++.so.6","/lib/x86_64-linux-gnu/libm.so.6","/lib/x86_64-linux-gnu/libgcc_s.so.1","/lib/x86_64-linux-gnu/libpthread.so.0","/lib/x86_64-linux-gnu/libc.so.6","/lib64/ld-linux-x86-64.so.2"};
   for (unsigned i=0;i<sizeof(libs)/sizeof(libs[0]);i++) rule(fd,libs[i],ro);
   FILE *manifest=fopen(argv[3],"r");
@@ -135,14 +135,16 @@ int main(int argc,char **argv) {
   int children=strcmp(argv[8],"gratitude")!=0;
   int hook=strcmp(argv[8],"hook")==0;
   int build=strcmp(argv[8],"build")==0 || hook;
-  limit(RLIMIT_CPU,build?180:20); limit(RLIMIT_FSIZE,(build?64:4)*1024*1024); limit(RLIMIT_NOFILE,build?256:128);
-  limit(RLIMIT_CORE,0); limit(RLIMIT_AS,(build?16ULL:(children?4ULL:2ULL))*1024*1024*1024);
+  int longpack=!strcmp(argv[8],"retained-ti86")||!strcmp(argv[8],"retained-supplement")||!strcmp(argv[8],"retained-supplement-node")||!strcmp(argv[8],"art-screens")||!strcmp(argv[8],"progress-store")||!strcmp(argv[8],"school-fitness")||!strcmp(argv[8],"health-stack")||!strcmp(argv[8],"bots-displays")||!strcmp(argv[8],"media-content")||!strcmp(argv[8],"media-presentation")||!strcmp(argv[8],"bots-displays-node")||!strcmp(argv[8],"media-content-node")||!strcmp(argv[8],"bots-displays-jest")||!strcmp(argv[8],"media-content-jest")||!strcmp(argv[8],"gaming-notation")||!strcmp(argv[8],"gaming-notation-node")||!strcmp(argv[8],"agents-life-config")||!strcmp(argv[8],"agents-life-diagnostic")||!strcmp(argv[8],"agents-life-concierge")||!strcmp(argv[8],"agents-life-http")||!strcmp(argv[8],"content-api")||!strcmp(argv[8],"epaper-http")||!strcmp(argv[8],"remaining-operations")||!strcmp(argv[8],"remaining-feed")||!strcmp(argv[8],"remaining-camera")||!strcmp(argv[8],"remaining-games")||!strcmp(argv[8],"remaining-home")||!strcmp(argv[8],"remaining-workflows")||!strcmp(argv[8],"remaining-media-tools")||!strcmp(argv[8],"remaining-art")||!strcmp(argv[8],"remaining-node")||!strcmp(argv[8],"remaining-jest")||!strcmp(argv[8],"remaining-http")||!strcmp(argv[8],"agents-life-config")||!strcmp(argv[8],"remaining-stockfish");
+  limit(RLIMIT_CPU,build||longpack?180:20); limit(RLIMIT_FSIZE,!strcmp(argv[8],"remaining-media-tools")?2ULL*1024*1024*1024:(build?64:4)*1024*1024); limit(RLIMIT_NOFILE,build?256:128);
+  int agents=!strcmp(argv[8],"art-canvas")||!strcmp(argv[8],"remaining-games")||!strcmp(argv[8],"remaining-stockfish")||!strcmp(argv[8],"agents-life-config")||!strcmp(argv[8],"agents-life-concierge")||!strcmp(argv[8],"agents-life-diagnostic")||!strcmp(argv[8],"agents-life-http");
+  limit(RLIMIT_CORE,0); limit(RLIMIT_AS,(build||agents?16ULL:(children?4ULL:2ULL))*1024*1024*1024);
   if (chdir(scratch)) fail("chdir");
   if (prctl(PR_SET_NO_NEW_PRIVS,1,0,0,0)) fail("no new privs");
   if (syscall(SYS_landlock_restrict_self,fd,0)) fail("restrict self");
   close(fd);
   if (syscall(SYS_close_range,3,~0U,0)) fail("close_range");
-  alarm(hook?1800:(build?180:45));
+  alarm(hook?1800:(build||longpack?180:45));
   filter(children);
   errno=0; int s=socket(AF_INET,SOCK_STREAM,0);
   if (s!=-1 || errno!=EPERM) fail("socket unexpectedly permitted");
@@ -175,7 +177,7 @@ int main(int argc,char **argv) {
     fprintf(stdout,"%s: EPERM\n",names[i]);
   }
   fflush(stdout);
-  char *args[]={node,build?"--max-old-space-size=4096":(children?"--max-old-space-size=256":"--max-old-space-size=64"),"--disable-wasm-trap-handler","--openssl-config=openssl.cnf","--test-reporter=tap","--experimental-loader",argv[5],argv[6],NULL};
+  char *args[]={node,build?"--max-old-space-size=4096":((!strcmp(argv[8],"gaming-notation-node")||!strcmp(argv[8],"agents-life-config")||!strcmp(argv[8],"agents-life-diagnostic")||!strcmp(argv[8],"agents-life-concierge"))?"--max-old-space-size=1024":(children?"--max-old-space-size=256":"--max-old-space-size=64")),"--disable-wasm-trap-handler","--openssl-config=openssl.cnf","--test-reporter=tap","--experimental-loader",argv[5],argv[6],NULL};
   char *homeenv,*pathenv,*openssl,*npmcache,*npmconfig,*toolenv,*runenv,*denyenv,*tmpenv,*cacheenv,*packenv,*targetenv,*driverenv,*browserenv,*baselineenv;
   if (asprintf(&homeenv,"HOME=%s",scratch)<0 || asprintf(&pathenv,"PATH=%s:/usr/bin:/bin",dirname(strdup(node)))<0 || asprintf(&openssl,"OPENSSL_CONF=%s/openssl.cnf",scratch)<0 || asprintf(&npmcache,"npm_config_cache=%s/npm-cache",scratch)<0 || asprintf(&npmconfig,"npm_config_userconfig=%s/npmrc",scratch)<0 || asprintf(&targetenv,"PRE_TARGET=%s",argv[9])<0 ||
       asprintf(&baselineenv,"PRE_BASELINE_EVIDENCE=%s",argv[10])<0 ||
@@ -185,7 +187,9 @@ int main(int argc,char **argv) {
       asprintf(&denyenv,"PRE_DENIED_ROOT=%s",outside)<0 ||
       asprintf(&tmpenv,"TMPDIR=%s",scratch)<0 ||
       asprintf(&cacheenv,"XDG_CACHE_HOME=%s/cache",scratch)<0) fail("environment");
-  char *env[]={hook?"NODE_OPTIONS=--disable-wasm-trap-handler":"NODE_OPTIONS=",hook?pathenv:"PATH=/nonexistent",homeenv,openssl,npmcache,npmconfig,"GIT_CONFIG_NOSYSTEM=1","GIT_OPTIONAL_LOCKS=0","TZ=UTC","UV_THREADPOOL_SIZE=2","ESBUILD_WORKER_THREADS=0","NODE_ENV=test","PRE_VITEST_MODE=stored-shape",
+  char *nodeoptions=(hook||longpack)?"NODE_OPTIONS=--disable-wasm-trap-handler":"NODE_OPTIONS=";
+  if (!strcmp(argv[8],"retained-ti86") && asprintf(&nodeoptions,"NODE_OPTIONS=--disable-wasm-trap-handler --import=%s/ti86-copy-preload.mjs",scratch)<0) fail("TI86 fixture preload");
+  char *env[]={nodeoptions,(hook||longpack)?pathenv:"PATH=/nonexistent",homeenv,openssl,npmcache,npmconfig,"GIT_CONFIG_NOSYSTEM=1","GIT_OPTIONAL_LOCKS=0",(!strcmp(argv[8],"health-stack")||!strcmp(argv[8],"remaining-camera")||!strcmp(argv[8],"remaining-http"))?"TZ=America/Los_Angeles":"TZ=UTC","UV_THREADPOOL_SIZE=2","ESBUILD_WORKER_THREADS=0","NODE_ENV=test","PRE_VITEST_MODE=stored-shape",
     packenv,targetenv,baselineenv,driverenv,browserenv,toolenv,runenv,denyenv,tmpenv,cacheenv,NULL};
   char *buildargs[]={node,"--max-old-space-size=4096","--disable-wasm-trap-handler","--openssl-config=openssl.cnf",argv[6],NULL};
   char *hookargs[]={"/bin/sh",argv[6],NULL};

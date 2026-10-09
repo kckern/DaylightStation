@@ -1,3 +1,4 @@
+import { createPianoScreenHoldPolicy } from "../../../modules/piano/server/application/screenHoldPolicy.mjs";
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
@@ -65,7 +66,7 @@ function harness(options = {}) {
     }),
     sessionService: new DeviceSessionApiService({ sessionControl, logger }),
     screenService: new DeviceScreenControlService({
-      devices, configuration, screenOverrides: options.screenOverrides,
+      devices, holdPolicy: createPianoScreenHoldPolicy({ getPianoConfig: () => configuration.piano() }), screenOverrides: options.screenOverrides,
       midiWake: options.midiWake, logger, nowMs: () => 1_000,
     }),
     dispatchService: new DeviceContentDispatchService({

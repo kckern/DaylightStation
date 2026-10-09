@@ -9,7 +9,7 @@
 // offset rewrite. Absent the option (the default, used everywhere outside
 // karaoke), existing resume behavior for normal content must be unchanged.
 import { describe, it, expect } from 'vitest';
-import { PlayResponseService } from '#apps/content/services/PlayResponseService.mjs';
+import { PlayResponseService } from "../../../../capabilities/playback/server/application/services/PlayResponseService.mjs";
 
 function makeService() {
   return new PlayResponseService({ mediaProgressMemory: null });

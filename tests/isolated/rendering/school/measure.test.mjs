@@ -13,8 +13,8 @@ import {
   probeDocument,
   UnsupportedBlockError,
   UnresolvedAssetError,
-} from '#rendering/school/documents/measure.mjs';
-import { documentPdfTheme as theme } from '#rendering/school/documents/documentPdfTheme.mjs';
+} from "../../../../modules/school/server/rendering/documents/measure.mjs";
+import { documentPdfTheme as theme } from "../../../../modules/school/server/rendering/documents/documentPdfTheme.mjs";
 
 const CONTENT_WIDTH = theme.page.widthPt - 2 * theme.page.marginPt;
 

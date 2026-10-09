@@ -28,7 +28,7 @@
  *
  * @module applications/scan/NfcTapIngress
  */
-import { canonicalizeNfcUid } from '#domains/trigger/nfcUid.mjs';
+import { canonicalizeNfcUid } from "../../../../capabilities/device-dispatch/server/domain/nfcUid.mjs";
 
 /**
  * @param {object} deps

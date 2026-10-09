@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { LifelogAggregator } from '#apps/lifelog/LifelogAggregator.mjs';
-import { HarvestedLifelogSourceRegistry } from '#adapters/lifelog/HarvestedLifelogSourceRegistry.mjs';
+import { LifelogAggregator } from "../../../../capabilities/lifelog/server/application/LifelogAggregator.mjs";
+import { HarvestedLifelogSourceRegistry } from "../../../../capabilities/lifelog/server/adapters/HarvestedLifelogSourceRegistry.mjs";
 
 describe('LifelogAggregator.aggregateRange', () => {
   let aggregator;

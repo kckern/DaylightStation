@@ -1,4 +1,4 @@
-import { buildTempoMap, msAtQuarter } from '../../../../frontend/src/modules/MusicNotation/scoreTimeline.js';
+import { buildTempoMap, msAtQuarter } from "../../../../capabilities/music-notation/browser/scoreTimeline.js";
 import {
   advanceAssessment,
   compileScoreExpectation,

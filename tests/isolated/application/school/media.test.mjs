@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { DispatchMedia, normaliseTargets } from '#apps/school/usecases/DispatchMedia.mjs';
-import { RecordMediaCompletion } from '#apps/school/usecases/RecordMediaCompletion.mjs';
-import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
-import { validateDocument } from '#domains/school/documents/documentValidation.mjs';
-import { createEvent } from '#domains/school/sessions/sessionEvents.mjs';
+import { DispatchMedia, normaliseTargets } from "../../../../modules/school/server/application/usecases/DispatchMedia.mjs";
+import { RecordMediaCompletion } from "../../../../modules/school/server/application/usecases/RecordMediaCompletion.mjs";
+import { CurriculumAccess } from "../../../../modules/school/server/application/CurriculumAccess.mjs";
+import { validateDocument } from "../../../../modules/school/server/domain/documents/documentValidation.mjs";
+import { createEvent } from "../../../../modules/school/server/domain/sessions/sessionEvents.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakePlayback,
   fakeClock, silentLogger,

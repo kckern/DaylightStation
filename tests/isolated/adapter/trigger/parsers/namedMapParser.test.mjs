@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseNamedMap } from '#adapters/trigger/parsers/namedMapParser.mjs';
+import { parseNamedMap } from "../../../../../capabilities/device-dispatch/server/adapters/parsers/namedMapParser.mjs";
 
 describe('parseNamedMap', () => {
   it('returns {} for falsy input', () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { serializeNfcTags } from '#adapters/trigger/parsers/nfcTagsSerializer.mjs';
-import { parseNfcTags } from '#adapters/trigger/parsers/nfcTagsParser.mjs';
+import { serializeNfcTags } from "../../../../../capabilities/device-dispatch/server/adapters/parsers/nfcTagsSerializer.mjs";
+import { parseNfcTags } from "../../../../../capabilities/device-dispatch/server/adapters/parsers/nfcTagsParser.mjs";
 
 describe('serializeNfcTags', () => {
   it('returns an empty object for an empty input', () => {

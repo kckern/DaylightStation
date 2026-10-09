@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { YamlFitnessCourseProjectionStore } from '#adapters/persistence/yaml/YamlFitnessCourseProjectionStore.mjs';
+import { YamlFitnessCourseProjectionStore } from "../../../../modules/school/server/adapters/persistence/YamlFitnessCourseProjectionStore.mjs";
 
 const roots = [];
 afterEach(() => {

@@ -1,7 +1,7 @@
 // tests/isolated/application/feed/ScrollConfigLoader.test.mjs
 import { vi } from 'vitest';
-import { ScrollConfigLoader } from '#apps/feed/services/ScrollConfigLoader.mjs';
-import { DataServiceFeedConfigRepository } from '#adapters/feed/DataServiceFeedConfigRepository.mjs';
+import { ScrollConfigLoader } from "../../../../modules/feed/server/application/services/ScrollConfigLoader.mjs";
+import { DataServiceFeedConfigRepository } from "../../../../modules/feed/server/adapters/DataServiceFeedConfigRepository.mjs";
 
 describe('ScrollConfigLoader', () => {
   let loader;

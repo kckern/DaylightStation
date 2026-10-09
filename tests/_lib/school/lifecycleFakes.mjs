@@ -11,16 +11,16 @@
  * behaviour depends on the wall clock cannot be tested at a day boundary, and
  * the spec's reward path has a cross-day scenario that must be exercised.
  */
-import { ICurriculumCatalog } from '#apps/school/ports/ICurriculumCatalog.mjs';
-import { IWorkSessionRepository } from '#apps/school/ports/IWorkSessionRepository.mjs';
-import { ITokenRegistry } from '#apps/school/ports/ITokenRegistry.mjs';
-import { IAssignmentStore } from '#apps/school/ports/IAssignmentStore.mjs';
-import { IFormMapStore } from '#apps/school/ports/IFormMapStore.mjs';
-import { IReviewQueue } from '#apps/school/ports/IReviewQueue.mjs';
-import { IDocumentRenderer, IReceiptRenderer } from '#apps/school/ports/IDocumentRenderer.mjs';
-import { GrownUpGate } from '#apps/school/GrownUpGate.mjs';
-import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
-import { TOKEN_PREFIX, isAccessCodeLive } from '#domains/school/sessions/tokens.mjs';
+import { ICurriculumCatalog } from "../../../modules/school/server/application/ports/ICurriculumCatalog.mjs";
+import { IWorkSessionRepository } from "../../../modules/school/server/application/ports/IWorkSessionRepository.mjs";
+import { ITokenRegistry } from "../../../modules/school/server/application/ports/ITokenRegistry.mjs";
+import { IAssignmentStore } from "../../../modules/school/server/application/ports/IAssignmentStore.mjs";
+import { IFormMapStore } from "../../../modules/school/server/application/ports/IFormMapStore.mjs";
+import { IReviewQueue } from "../../../modules/school/server/application/ports/IReviewQueue.mjs";
+import { IDocumentRenderer, IReceiptRenderer } from "../../../modules/school/server/application/ports/IDocumentRenderer.mjs";
+import { GrownUpGate } from "../../../modules/school/server/application/GrownUpGate.mjs";
+import { reduceSession } from "../../../modules/school/server/domain/sessions/sessionEvents.mjs";
+import { TOKEN_PREFIX, isAccessCodeLive } from "../../../modules/school/server/domain/sessions/tokens.mjs";
 
 export const silentLogger = { info() {}, warn() {}, error() {}, debug() {} };
 

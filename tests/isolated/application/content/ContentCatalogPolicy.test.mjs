@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BrowseCatalogService } from '#apps/content/services/BrowseCatalogService.mjs';
-import { ContentAccessPolicyService } from '#apps/content/services/ContentAccessPolicyService.mjs';
+import { BrowseCatalogService } from "../../../../modules/media/server/application/BrowseCatalogService.mjs";
+import { ContentAccessPolicyService } from "../../../../modules/arcade/server/application/ContentAccessPolicyService.mjs";
 
 describe('content configuration queries', () => {
   it('normalizes Browse entries without exposing configuration loading to the API', () => {

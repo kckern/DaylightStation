@@ -1,5 +1,5 @@
 // tests/unit/suite/fitness/suggestions/FavoriteStrategy.test.mjs
-import { FavoriteStrategy } from '../../../../../backend/src/3_applications/fitness/suggestions/FavoriteStrategy.mjs';
+import { FavoriteStrategy } from "../../../../../modules/fitness/server/application/suggestions/FavoriteStrategy.mjs";
 
 function makeEpisode(id, index, { isWatched = false, summary = null } = {}) {
   return {

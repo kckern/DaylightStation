@@ -1,6 +1,6 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
-import { SelectScaleDensity } from '#apps/nutribot/usecases/SelectScaleDensity.mjs';
-import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
+import { SelectScaleDensity } from "../../../../../modules/nutribot/server/application/usecases/SelectScaleDensity.mjs";
+import { normalizeScaleNutribotConfig } from '../../../../../modules/health/server/scale-config.mjs';
 
 const logger = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
 

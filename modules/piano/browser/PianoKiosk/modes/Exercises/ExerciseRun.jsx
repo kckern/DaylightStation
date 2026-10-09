@@ -28,7 +28,7 @@ import { timedTarget, timedWindowMs } from '../../../performance/timedJudge.js';
 import KeysAsk from './KeysAsk.jsx';
 import ScorePassage from './ScorePassage.jsx';
 import { titleFromScoreId } from '../SheetMusic/scoreTitle.js';
-import { SvgSequenceStaff, sequenceStaffViewBox } from '../../../../../../frontend/src/modules/MusicNotation/renderers/SvgSequenceStaff.jsx';
+import { SvgSequenceStaff, sequenceStaffViewBox } from "../../../../../../capabilities/music-notation/browser/renderers/SvgSequenceStaff.jsx";
 import { prepareExerciseAssessment } from './assessment.js';
 import { resolveExerciseRunAccess } from './authorization.js';
 import {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { BLOCK_TYPES, validateBlock } from '#domains/school/documents/blocks.mjs';
+import { BLOCK_TYPES, validateBlock } from "../../../../../modules/school/server/domain/documents/blocks.mjs";
 
 const errs = (raw, opts) => validateBlock(raw, opts).errors;
 // SOURCE-stage validation (spec §3): allowAnswers: true permits the

@@ -1,0 +1,591 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { renderHook, act } from '@testing-library/react';
+
+// ── Mocks: the hook routes across nav view + two dispatch surfaces ──
+const push = vi.fn();
+let navState = { view: 'home', params: {} };
+vi.mock("../shell/NavProvider.jsx", () => ({
+  useNav: () => ({ ...navState, push }),
+}));
+
+const dispatchToTarget = vi.fn();
+const retry = vi.fn();
+// Mutable holder for the live per-dispatchId state DispatchProvider tracks —
+// the toast-on-failure watcher polls this the same way DispatchProgressTray
+// does. Empty Map by default (nothing pending).
+let dispatchesState = new Map();
+vi.mock("../cast/useDispatch.js", () => ({
+  useDispatch: () => ({ dispatchToTarget, dispatches: dispatchesState, retry }),
+}));
+
+const playNow = vi.fn();
+const queueAdd = vi.fn();
+// queue is a stable reference in production (controller.queue), so the mock
+// returns the SAME object every render — otherwise useCallback would rebuild.
+const stableQueue = { playNow, add: queueAdd };
+let sessionQueue = stableQueue;
+const setShuffle = vi.fn();
+const stableConfig = { setShuffle };
+vi.mock("../controller/useSessionController.js", () => ({
+  useSessionController: () => ({ queue: sessionQueue, config: stableConfig }),
+}));
+
+// Mutable holder — the factory closes over it but only reads at render time.
+// Default is "no preferred target", which is what the pre-existing local-playback
+// tests below assume.
+let castTargetState = { targetIds: [], mode: 'transfer' };
+vi.mock("../cast/useCastTarget.js", () => ({
+  useCastTarget: () => castTargetState,
+}));
+
+let fleetDevices = [{ id: 'livingroom-tv', name: 'Living Room TV' }, { id: 'office-tv', name: 'Office TV' }];
+vi.mock("../fleet/useFleetContext.js", () => ({
+  useFleetContext: () => ({ devices: fleetDevices }),
+}));
+
+const notificationsShow = vi.fn();
+vi.mock('@mantine/notifications', () => ({
+  notifications: { show: (...a) => notificationsShow(...a) },
+}));
+
+import { useContentDispatch } from "./useContentDispatch.js";
+import { createLocalSessionController } from "../session/LocalSessionController.js";
+
+// Helper: render the hook and return bound dispatch/playContainerAsQueue
+// functions (call-through, so `act` around the caller's own call still works).
+function setup() {
+  const { result, rerender } = renderHook(() => useContentDispatch());
+  return {
+    rerender,
+    dispatch: (...args) => result.current.dispatch(...args),
+    dispatchLeafVerb: (...args) => result.current.dispatchLeafVerb(...args),
+    playContainerAsQueue: (...args) => result.current.playContainerAsQueue(...args),
+    addContainerToQueue: (...args) => result.current.addContainerToQueue(...args),
+    getCurrent: () => result.current,
+  };
+}
+
+beforeEach(() => {
+  dispatchToTarget.mockClear();
+  retry.mockClear();
+  playNow.mockClear();
+  queueAdd.mockClear();
+  sessionQueue = stableQueue;
+  setShuffle.mockClear();
+  push.mockClear();
+  notificationsShow.mockClear();
+  navState = { view: 'home', params: {} };
+  castTargetState = { targetIds: [], mode: 'transfer' };
+  dispatchesState = new Map();
+  fleetDevices = [{ id: 'livingroom-tv', name: 'Living Room TV' }, { id: 'office-tv', name: 'Office TV' }];
+});
+
+describe('useContentDispatch', () => {
+  it('returns stable dispatch/playContainerAsQueue/addContainerToQueue functions across renders', () => {
+    const { result, rerender } = renderHook(() => useContentDispatch());
+    const first = result.current;
+    rerender();
+    expect(result.current.dispatch).toBe(first.dispatch);
+    expect(result.current.playContainerAsQueue).toBe(first.playContainerAsQueue);
+    expect(result.current.addContainerToQueue).toBe(first.addContainerToQueue);
+  });
+
+  describe('FIND.8b/AC3 cameras and single photos show on this device', () => {
+    it('a photo tap shows here even with another screen aimed; an ordinary leaf still goes to the aim', () => {
+      castTargetState = { targetIds: ['livingroom-tv'], mode: 'fork' };
+      const { dispatch } = setup();
+      let photoRoute; let filmRoute;
+      act(() => { photoRoute = dispatch('immich:asset:1', { id: 'immich:asset:1', title: 'Beach', type: 'photo' }); });
+      expect(photoRoute).toBe('local');
+      expect(dispatchToTarget).not.toHaveBeenCalled();
+      expect(playNow).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'immich:asset:1' }), expect.anything());
+      act(() => { filmRoute = dispatch('plex:1', { id: 'plex:1', title: 'Arrival', type: 'movie' }); });
+      expect(filmRoute).toBe('cast');
+    });
+  });
+
+  describe('leaf More verbs', () => {
+    it('routes More Play Now to the aimed device without changing the local queue', () => {
+      castTargetState = { targetIds: ['livingroom-tv'], mode: 'fork' };
+      const { dispatchLeafVerb } = setup();
+      let route;
+      act(() => { route = dispatchLeafVerb('playNow', 'plex:685088', { title: 'Episode 3', type: 'episode' }); });
+
+      expect(route).toBe('cast');
+      expect(dispatchToTarget).toHaveBeenCalledWith({
+        targetIds: ['livingroom-tv'], play: 'plex:685088', mode: 'fork', title: 'Episode 3',
+      });
+      expect(playNow).not.toHaveBeenCalled();
+      expect(queueAdd).not.toHaveBeenCalled();
+    });
+
+    it('keeps a local More Play Now queue tail instead of applying selection clearRest semantics', () => {
+      const controller = createLocalSessionController({ clientId: 'more-play-now-tail' });
+      controller.queue.playNow({ contentId: 'plex:current', title: 'Current', format: 'video' }, { clearRest: true });
+      controller.queue.add({ contentId: 'plex:tail', title: 'Tail', format: 'video' });
+      sessionQueue = controller.queue;
+      const { dispatchLeafVerb } = setup();
+      let route;
+      act(() => { route = dispatchLeafVerb('playNow', 'plex:685088', { title: 'Episode 3', type: 'episode' }); });
+
+      expect(route).toBe('local');
+      expect(controller.getSnapshot().queue.items.map(item => item.contentId)).toEqual(['plex:685088', 'plex:tail']);
+      expect(controller.getSnapshot().currentItem?.contentId).toBe('plex:685088');
+      expect(dispatchToTarget).not.toHaveBeenCalled();
+    });
+
+    it('routes More Add with the default transfer aim as non-destructive fork and still appends locally without an aim', () => {
+      castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
+      const remote = setup();
+      act(() => { remote.dispatchLeafVerb('add', 'plex:685088', { title: 'Episode 3', type: 'episode' }); });
+      expect(dispatchToTarget).toHaveBeenCalledWith({
+        targetIds: ['livingroom-tv'], queue: 'plex:685088', mode: 'fork', title: 'Episode 3',
+      });
+      expect(queueAdd).not.toHaveBeenCalled();
+
+      castTargetState = { targetIds: [], mode: 'transfer' };
+      const local = setup();
+      act(() => { local.dispatchLeafVerb('add', 'plex:685088', { title: 'Episode 3', type: 'episode' }); });
+      expect(queueAdd).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'plex:685088' }));
+    });
+  });
+
+  it('non-peek view routes to local queue.playNow with clearRest', () => {
+    navState = { view: 'home', params: {} };
+    const { dispatch } = setup();
+    act(() => {
+      dispatch('plex:42', { title: 'Bluey', thumbnail: 'thumb.jpg' });
+    });
+    expect(playNow).toHaveBeenCalledWith(
+      { contentId: 'plex:42', title: 'Bluey', thumbnail: 'thumb.jpg' },
+      { clearRest: true }
+    );
+    expect(dispatchToTarget).not.toHaveBeenCalled();
+  });
+
+  it('PLACE.1a/STEER.1b Remote view still routes a leaf to the displayed local aim', () => {
+    navState = { view: 'peek', params: { deviceId: 'shield-tv' } };
+    const { dispatch } = setup();
+    act(() => {
+      dispatch('plex:99', { title: 'Lonesome Dove' });
+    });
+    expect(playNow).toHaveBeenCalledWith(
+      { contentId: 'plex:99', title: 'Lonesome Dove', thumbnail: null },
+      { clearRest: true }
+    );
+    expect(dispatchToTarget).not.toHaveBeenCalled();
+  });
+
+  it('peek view WITHOUT a deviceId falls back to local playNow', () => {
+    navState = { view: 'peek', params: {} };
+    const { dispatch } = setup();
+    act(() => {
+      dispatch('plex:7', { title: 'X' });
+    });
+    expect(playNow).toHaveBeenCalledWith(
+      { contentId: 'plex:7', title: 'X', thumbnail: null },
+      { clearRest: true }
+    );
+    expect(dispatchToTarget).not.toHaveBeenCalled();
+  });
+
+  it('defaults missing title/thumbnail to null', () => {
+    navState = { view: 'home', params: {} };
+    const { dispatch } = setup();
+    act(() => {
+      dispatch('plex:1');
+    });
+    expect(playNow).toHaveBeenCalledWith(
+      { contentId: 'plex:1', title: null, thumbnail: null },
+      { clearRest: true }
+    );
+  });
+
+  it('routes ordinary Play with the default transfer aim as non-destructive fork', () => {
+    castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
+    const { dispatch } = setup();
+    act(() => {
+      dispatch('plex:685088', { title: 'Episode 3' });
+    });
+    expect(dispatchToTarget).toHaveBeenCalledWith({
+      targetIds: ['livingroom-tv'],
+      play: 'plex:685088',
+      mode: 'fork',
+      title: 'Episode 3',
+    });
+    expect(playNow).not.toHaveBeenCalled();
+  });
+
+  it('passes the chip mode through verbatim (fork)', () => {
+    castTargetState = { targetIds: ['livingroom-tv'], mode: 'fork' };
+    const { dispatch } = setup();
+    act(() => {
+      dispatch('plex:685088', { title: 'Episode 3' });
+    });
+    expect(dispatchToTarget).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'fork' })
+    );
+  });
+
+  it('fans out to every configured target', () => {
+    castTargetState = { targetIds: ['livingroom-tv', 'office-tv'], mode: 'transfer' };
+    const { dispatch } = setup();
+    act(() => {
+      dispatch('plex:685088', { title: 'Episode 3' });
+    });
+    expect(dispatchToTarget).toHaveBeenCalledWith(
+      expect.objectContaining({ targetIds: ['livingroom-tv', 'office-tv'] })
+    );
+  });
+
+  it('PLACE.1a/STEER.1b Remote view preserves the displayed remote aim for a leaf', () => {
+    navState = { view: 'peek', params: { deviceId: 'shield-tv' } };
+    castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
+    const { dispatch } = setup();
+    act(() => {
+      dispatch('plex:99', { title: 'Lonesome Dove' });
+    });
+    expect(dispatchToTarget).toHaveBeenCalledWith({
+      targetIds: ['livingroom-tv'],
+      play: 'plex:99',
+      mode: 'fork',
+      title: 'Lonesome Dove',
+    });
+  });
+
+  it('returns the branch it took', () => {
+    const { result, rerender } = renderHook(() => useContentDispatch());
+    let route;
+    act(() => { route = result.current.dispatch('plex:1', { title: 'A' }); });
+    expect(route).toBe('local');
+
+    castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
+    rerender();
+    act(() => { route = result.current.dispatch('plex:2', { title: 'B' }); });
+    expect(route).toBe('cast');
+
+    navState = { view: 'peek', params: { deviceId: 'shield-tv' } };
+    rerender();
+    act(() => { route = result.current.dispatch('plex:3', { title: 'C' }); });
+    expect(route).toBe('cast');
+  });
+
+  // ── Task 14 (spec D6): containers ALWAYS browse — tap never blows away a
+  // queue or casts silently, regardless of what's aimed. ──
+  describe('container selections — dispatch() always browses', () => {
+    it('opens a show on the canvas instead of queueing all its episodes', () => {
+      const { dispatch } = setup();
+      let route;
+      act(() => {
+        route = dispatch('plex:663508', { title: 'Tuttle Twins', type: 'show' });
+      });
+      expect(push).toHaveBeenCalledWith('browse', {
+        path: 'plex/663508',
+        label: 'Tuttle Twins',
+        containerItem: { title: 'Tuttle Twins', type: 'show', id: 'plex:663508' },
+      });
+      expect(route).toBe('browse');
+      expect(playNow).not.toHaveBeenCalled();
+      expect(dispatchToTarget).not.toHaveBeenCalled();
+    });
+
+    it('recognizes every container marker the combobox emits', () => {
+      const { dispatch } = setup();
+      for (const item of [
+        { title: 'A', itemType: 'container' },
+        { title: 'B', isContainer: true },
+        { title: 'C', type: 'album' },
+        { title: 'D', type: 'playlist' },
+        { title: 'E', metadata: { type: 'artist' } },
+      ]) {
+        push.mockClear();
+        act(() => { dispatch('plex:1', item); });
+        expect(push).toHaveBeenCalledTimes(1);
+      }
+      expect(playNow).not.toHaveBeenCalled();
+    });
+
+    it('splits only the FIRST colon so pathy ids survive', () => {
+      const { dispatch } = setup();
+      act(() => {
+        dispatch('files:clips/summer.mp4', { title: 'Clips', itemType: 'container' });
+      });
+      expect(push).toHaveBeenCalledWith('browse', expect.objectContaining({ path: 'files/clips/summer.mp4' }));
+    });
+
+    it('falls back to the id when a container has no title', () => {
+      const { dispatch } = setup();
+      act(() => { dispatch('plex:9', { itemType: 'container' }); });
+      expect(push).toHaveBeenCalledWith('browse', {
+        path: 'plex/9',
+        label: 'plex:9',
+        containerItem: { itemType: 'container', id: 'plex:9' },
+      });
+    });
+
+    it('a leaf still plays locally', () => {
+      const { dispatch } = setup();
+      act(() => { dispatch('plex:665667', { title: 'Episode 8', type: 'episode' }); });
+      expect(push).not.toHaveBeenCalled();
+      expect(playNow).toHaveBeenCalled();
+    });
+
+    // Task 14 REVERSAL of prior behavior: an aimed cast target used to win
+    // over a container tap ("cast the album" survived). It no longer does —
+    // that silent whole-container cast on a mere tap is the exact
+    // accidental-blowaway pattern the new grammar exists to prevent. Sending
+    // a container anywhere is now the ▶ verb (playContainerAsQueue), never
+    // implicit in the tap.
+    it('an aimed cast target no longer wins — container tap still browses', () => {
+      castTargetState = { targetIds: ['speaker-red'], mode: 'transfer' };
+      const { dispatch } = setup();
+      let route;
+      act(() => {
+        route = dispatch('plex:5150', { title: 'Van Halen', type: 'album' });
+      });
+      expect(route).toBe('browse');
+      expect(push).toHaveBeenCalledWith('browse', expect.objectContaining({ path: 'plex/5150' }));
+      expect(dispatchToTarget).not.toHaveBeenCalled();
+    });
+
+    // Task 14 REVERSAL: peek used to win over opening a container. It no
+    // longer does — browsing is pure navigation and never touches the
+    // peeked device's playback, so there's nothing to protect it from.
+    it('peek no longer wins over a container tap — it still browses', () => {
+      navState = { view: 'peek', params: { deviceId: 'shield-tv' } };
+      const { dispatch } = setup();
+      let route;
+      act(() => {
+        route = dispatch('plex:663508', { title: 'Tuttle Twins', type: 'show' });
+      });
+      expect(route).toBe('browse');
+      expect(push).toHaveBeenCalledWith('browse', {
+        path: 'plex/663508',
+        label: 'Tuttle Twins',
+        containerItem: { title: 'Tuttle Twins', type: 'show', id: 'plex:663508' },
+      });
+      expect(dispatchToTarget).not.toHaveBeenCalled();
+    });
+
+    it('a bare id with no item metadata plays locally, not browse', () => {
+      const { dispatch } = setup();
+      act(() => { dispatch('plex:1'); });
+      expect(push).not.toHaveBeenCalled();
+      expect(playNow).toHaveBeenCalled();
+    });
+  });
+
+  // ── Task 14: the ▶ verb — explicit "send the whole container" action,
+  // now the ONLY way a container reaches an aimed cast target. Same
+  // destination precedence as leaves, minus the browse branch. ──
+  describe('playContainerAsQueue — the ▶ verb', () => {
+    it('PLACE.1a/STEER.1b Remote view plays a collection at the displayed local aim', () => {
+      navState = { view: 'peek', params: { deviceId: 'shield-tv' } };
+      const { playContainerAsQueue } = setup();
+      let route;
+      act(() => {
+        route = playContainerAsQueue('plex:663508', { id: 'plex:663508', title: 'Tuttle Twins', type: 'show' });
+      });
+      expect(route).toBe('local');
+      expect(playNow).toHaveBeenCalledWith(
+        expect.objectContaining({ contentId: 'plex:663508', title: 'Tuttle Twins' }),
+        { clearRest: true }
+      );
+      expect(dispatchToTarget).not.toHaveBeenCalled();
+    });
+
+    it('an aimed cast target casts the whole container there', () => {
+      castTargetState = { targetIds: ['speaker-red'], mode: 'transfer' };
+      const { playContainerAsQueue } = setup();
+      let route;
+      act(() => {
+        route = playContainerAsQueue('plex:5150', { id: 'plex:5150', title: 'Van Halen', type: 'album' });
+      });
+      expect(route).toBe('cast');
+      expect(dispatchToTarget).toHaveBeenCalledWith(
+        expect.objectContaining({ targetIds: ['speaker-red'], play: 'plex:5150', mode: 'fork' })
+      );
+      expect(playNow).not.toHaveBeenCalled();
+    });
+
+    it('leaves the cast confirmation to the dispatch outcome record (no ad-hoc toast)', () => {
+      castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
+      dispatchToTarget.mockReturnValue(['d1']);
+      const { playContainerAsQueue } = setup();
+      act(() => { playContainerAsQueue('plex:5150', { id: 'plex:5150', title: 'Van Halen', type: 'album' }); });
+      expect(dispatchToTarget).toHaveBeenCalledWith(expect.objectContaining({ play: 'plex:5150', title: 'Van Halen' }));
+      expect(notificationsShow).not.toHaveBeenCalled();
+    });
+
+    it('otherwise plays it locally as a queue, replacing the current one, with container markers preserved for expansion', () => {
+      const { playContainerAsQueue } = setup();
+      let route;
+      act(() => {
+        route = playContainerAsQueue('plex:5150', { id: 'plex:5150', title: 'Van Halen', type: 'album', childCount: 12 });
+      });
+      expect(route).toBe('local');
+      expect(playNow).toHaveBeenCalledWith(
+        expect.objectContaining({ contentId: 'plex:5150', title: 'Van Halen', type: 'album', childCount: 12 }),
+        { clearRest: true }
+      );
+      expect(dispatchToTarget).not.toHaveBeenCalled();
+    });
+
+    it('falls back to a bare content input when the item carries no usable id', () => {
+      const { playContainerAsQueue } = setup();
+      act(() => { playContainerAsQueue('plex:5150', null); });
+      expect(playNow).toHaveBeenCalledWith(
+        { contentId: 'plex:5150', title: null, thumbnail: null },
+        { clearRest: true }
+      );
+    });
+  });
+
+  // ── Task 15 (browse header): { shuffle: true } rides playContainerAsQueue
+  // for the 🔀 verb, threaded through the same three destination branches. ──
+  describe('playContainerAsQueue — shuffle option (🔀 verb)', () => {
+    it('local: turns on session shuffle before enqueueing the container', () => {
+      const { playContainerAsQueue } = setup();
+      let route;
+      act(() => {
+        route = playContainerAsQueue('plex:5150', { id: 'plex:5150', title: 'Van Halen', type: 'album' }, { shuffle: true });
+      });
+      expect(route).toBe('local');
+      expect(setShuffle).toHaveBeenCalledWith(true);
+      expect(playNow).toHaveBeenCalledWith(
+        expect.objectContaining({ contentId: 'plex:5150' }),
+        { clearRest: true }
+      );
+      // Ordering: shuffle is set before the enqueue call so nothing ever
+      // observes a full queue with shuffle still off.
+      const shuffleOrder = setShuffle.mock.invocationCallOrder[0];
+      const playNowOrder = playNow.mock.invocationCallOrder[0];
+      expect(shuffleOrder).toBeLessThan(playNowOrder);
+    });
+
+    it('without shuffle, never touches config.setShuffle (byte-identical to pre-Task-15 behavior)', () => {
+      const { playContainerAsQueue } = setup();
+      act(() => { playContainerAsQueue('plex:5150', { id: 'plex:5150', title: 'Van Halen', type: 'album' }); });
+      expect(setShuffle).not.toHaveBeenCalled();
+    });
+
+    it('cast: threads shuffle:true through to dispatchToTarget', () => {
+      castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
+      const { playContainerAsQueue } = setup();
+      act(() => {
+        playContainerAsQueue('plex:5150', { id: 'plex:5150', title: 'Van Halen', type: 'album' }, { shuffle: true });
+      });
+      expect(dispatchToTarget).toHaveBeenCalledWith(
+        expect.objectContaining({ targetIds: ['livingroom-tv'], play: 'plex:5150', shuffle: true })
+      );
+    });
+
+    it('PLACE.1a/STEER.1b Remote view shuffles a collection at the displayed local aim', () => {
+      navState = { view: 'peek', params: { deviceId: 'shield-tv' } };
+      const { playContainerAsQueue } = setup();
+      act(() => {
+        playContainerAsQueue('plex:663508', { id: 'plex:663508', title: 'Tuttle Twins', type: 'show' }, { shuffle: true });
+      });
+      expect(setShuffle).toHaveBeenCalledWith(true);
+      expect(playNow).toHaveBeenCalledWith(
+        expect.objectContaining({ contentId: 'plex:663508' }),
+        { clearRest: true }
+      );
+      expect(dispatchToTarget).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Task 15 (browse header): the + verb — append the whole container to
+  // the current destination's queue, never replacing it. ──
+  describe('addContainerToQueue — the + verb', () => {
+    it('local: appends via queue.add, container markers preserved for expansion', () => {
+      const { addContainerToQueue } = setup();
+      let route;
+      act(() => {
+        route = addContainerToQueue('plex:5150', { id: 'plex:5150', title: 'Van Halen', type: 'album', childCount: 12 });
+      });
+      expect(route).toBe('local');
+      expect(queueAdd).toHaveBeenCalledWith(
+        expect.objectContaining({ contentId: 'plex:5150', title: 'Van Halen', type: 'album', childCount: 12 })
+      );
+      expect(playNow).not.toHaveBeenCalled();
+      expect(dispatchToTarget).not.toHaveBeenCalled();
+    });
+
+    it('cast: sends the container as queue: (append), not play: (replace), reported by its outcome record', () => {
+      castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
+      const { addContainerToQueue } = setup();
+      let route;
+      act(() => {
+        route = addContainerToQueue('plex:5150', { id: 'plex:5150', title: 'Van Halen', type: 'album' });
+      });
+      expect(route).toBe('cast');
+      expect(dispatchToTarget).toHaveBeenCalledWith(
+        expect.objectContaining({ targetIds: ['livingroom-tv'], queue: 'plex:5150', mode: 'fork' })
+      );
+      expect(dispatchToTarget.mock.calls[0][0].play).toBeUndefined();
+      expect(notificationsShow).not.toHaveBeenCalled();
+    });
+
+    it('PLACE.1a/STEER.1b Remote view appends a collection at the displayed local aim', () => {
+      navState = { view: 'peek', params: { deviceId: 'shield-tv' } };
+      const { addContainerToQueue } = setup();
+      let route;
+      act(() => {
+        route = addContainerToQueue('plex:663508', { id: 'plex:663508', title: 'Tuttle Twins', type: 'show' });
+      });
+      expect(route).toBe('local');
+      expect(queueAdd).toHaveBeenCalledWith(
+        expect.objectContaining({ contentId: 'plex:663508', title: 'Tuttle Twins' })
+      );
+      expect(dispatchToTarget).not.toHaveBeenCalled();
+    });
+  });
+
+  it('stays stable across renders when the cast target is unchanged', () => {
+    castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
+    const { result, rerender } = renderHook(() => useContentDispatch());
+    const first = result.current;
+    rerender();
+    expect(result.current.dispatch).toBe(first.dispatch);
+  });
+
+  // ── Named toasts (spec D4) — the incident this closes: a tap on a search
+  // result went to hidden dock-chip state with no acknowledgement, success
+  // or failure. ──
+  describe('cast outcomes (RELY.1a: one voice)', () => {
+    it('raises no ad-hoc toast for a cast; the dispatch outcome record names the screen', () => {
+      castTargetState = { targetIds: ['livingroom-tv', 'office-tv'], mode: 'transfer' };
+      dispatchToTarget.mockReturnValue(['d1', 'd2']);
+      const { dispatch } = setup();
+      act(() => { dispatch('plex:1', { title: 'Bluey' }); });
+      expect(dispatchToTarget).toHaveBeenCalledWith(expect.objectContaining({ targetIds: ['livingroom-tv', 'office-tv'], title: 'Bluey' }));
+      expect(notificationsShow).not.toHaveBeenCalled();
+    });
+
+    it('raises no toast for a failed dispatch either; the tray row carries its own Retry', () => {
+      castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
+      dispatchToTarget.mockReturnValue(['d1']);
+      const { dispatch, rerender } = setup();
+      act(() => { dispatch('plex:1', { title: 'Bluey' }); });
+      dispatchesState = new Map([['d1', { status: 'failed', error: 'boom' }]]);
+      rerender();
+      expect(notificationsShow).not.toHaveBeenCalled();
+      expect(retry).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('useContentDispatch — Add to this queue (STEER.1b/AC7)', () => {
+  it('adds to the one screen named, as an add, whatever the aim says', async () => {
+    castTargetState = { targetIds: ['office-tv'], mode: 'transfer' };
+    const { getCurrent } = setup();
+    act(() => { getCurrent().addToScreen('livingroom-tv', 'plex:1', { id: 'plex:1', title: 'Hospital' }); });
+    await vi.waitFor(() => expect(dispatchToTarget).toHaveBeenCalled());
+    expect(dispatchToTarget).toHaveBeenCalledWith(expect.objectContaining({
+      targetIds: ['livingroom-tv'], queue: 'plex:1', mode: 'fork', title: 'Hospital',
+      itemAction: expect.objectContaining({ kind: 'add' }),
+    }));
+    expect(dispatchToTarget.mock.calls[0][0].targetIds).not.toContain('office-tv');
+  });
+});

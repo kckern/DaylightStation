@@ -11,7 +11,7 @@
  * bug than the one it fixes.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
+import { CurriculumAccess } from "../../../../modules/school/server/application/CurriculumAccess.mjs";
 import { FakeCatalog, fakeClock, silentLogger } from '#testlib/school/lifecycleFakes.mjs';
 import {
   rawUnits, rawDocuments, rawManifests, BANK_IDS,

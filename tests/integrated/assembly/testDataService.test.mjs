@@ -55,11 +55,11 @@ describe('testDataService Integration', () => {
     useTestDataRegistry(testRegistry);
 
     // Jest's VM-module linker cannot safely resolve this graph concurrently.
-    const { createApiRouters } = await import('#composition/modules/contentApi.mjs');
-    const { ContentSourceRegistry } = await import('#adapters/content/ContentSourceRegistry.mjs');
-    const { LocalContentAdapter } = await import('#adapters/content/local-content/LocalContentAdapter.mjs');
-    const { ScriptureResolver } = await import('#adapters/content/readalong/resolvers/scripture.mjs');
-    const { YamlMediaProgressMemory } = await import('#adapters/persistence/yaml/YamlMediaProgressMemory.mjs');
+    const { createApiRouters } = await import("../../../backend/src/5_composition/modules/contentApi.mjs");
+    const { ContentSourceRegistry } = await import("../../../capabilities/content-catalog/server/adapters/ContentSourceRegistry.mjs");
+    const { LocalContentAdapter } = await import("../../../capabilities/content-catalog/server/adapters/providers/local-content/LocalContentAdapter.mjs");
+    const { ScriptureResolver } = await import("../../../capabilities/content-catalog/server/adapters/providers/readalong/resolvers/scripture.mjs");
+    const { YamlMediaProgressMemory } = await import("../../../capabilities/playback/server/adapters/persistence/YamlMediaProgressMemory.mjs");
 
     const mediaProgressMemory = new YamlMediaProgressMemory({
       basePath: path.join(fixturesPath, 'watch-state'),

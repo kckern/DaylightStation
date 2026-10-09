@@ -10,8 +10,8 @@
 import React from 'react';
 import { render, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useMediaKeyboardHandler } from '../../../../../frontend/src/lib/Player/useMediaKeyboardHandler.js';
-import { __resetPlayerKeyboardOwnership } from '../../../../../frontend/src/lib/Player/playerKeyboardOwnership.js';
+import { useMediaKeyboardHandler } from "../../player-support/useMediaKeyboardHandler.js";
+import { __resetPlayerKeyboardOwnership } from "../../player-support/playerKeyboardOwnership.js";
 
 // The live Eroica payload (GET /api/v1/play/plex:663134): one media item, four
 // segments, 21.35s of applause before the first note.

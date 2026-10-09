@@ -10,7 +10,7 @@
  * wrong either double-charges a child or silently forgives a missed day.
  */
 import { describe, it, expect } from 'vitest';
-import { PianoCourseProgramLauncher } from '#apps/school/PianoCourseProgramLauncher.mjs';
+import { PianoCourseProgramLauncher } from "../../../../modules/school/server/application/PianoCourseProgramLauncher.mjs";
 
 const COURSE = 'plex:675689';
 const TZ = 'America/Los_Angeles';

@@ -5,7 +5,7 @@ import usePianoList from '../../usePianoList.js';
 import PianoEmpty from '../../PianoEmpty.jsx';
 import { SkeletonGrid } from '../../Skeleton.jsx';
 import CoverFlow from './CoverFlow.jsx';
-import { shuffleOrder } from '../../../../../../frontend/src/lib/Player/playlist.js';
+import { shuffleOrder } from "../../../../../../capabilities/playback/browser/playlist.js";
 
 // Open Cover Flow a few covers in so albums flow off BOTH sides on arrival
 // (rather than starting flush-left). Clamped to the collection size.

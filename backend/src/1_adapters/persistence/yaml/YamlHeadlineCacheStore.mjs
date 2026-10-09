@@ -14,7 +14,7 @@
  */
 
 import path from 'path';
-import { IHeadlineStore } from '#apps/feed/ports/IHeadlineStore.mjs';
+import { IHeadlineStore } from "../../../../../modules/feed/server/application/ports/IHeadlineStore.mjs";
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { listFiles } from '#system/utils/FileIO.mjs';
 

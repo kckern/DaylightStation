@@ -379,7 +379,7 @@ const operatorBindings=[
     kind:'cross-satellite build path',meaning:'TI calculator relay build reaches repository-relative TI-86 C source while emitting toolchain/bin outputs under relay. A relocation must preserve both roots or change this exact binding atomically; no fetch/build performed.'},
   {id:'OPERATOR-TI86-ROOT-SCRIPTS',target:'TARGET-ti86-app',source:at('package.json','"schoolcalc:gui:lint"'),
     kind:'package command source paths',meaning:'Root schoolcalc:gui:lint and schoolcalc:gui:render directly name TI-86 tools under _extensions. Neither script nor its output was run.'},
-  {id:'OPERATOR-HUB-VALIDATOR-PARITY',target:'TARGET-playback-hub',source:at('backend/src/1_adapters/persistence/yaml/YamlHubConfigDatastore.mjs','Private — validation (JS-side mirror of validate_config.py)'),
+  {id:'OPERATOR-HUB-VALIDATOR-PARITY',target:'TARGET-playback-hub',source:at('modules/media/server/adapters/playback-hub/YamlHubConfigDatastore.mjs','Private — validation (JS-side mirror of validate_config.py)'),
     kind:'semantic twin, not runtime import',meaning:'JS validator declares parity with satellite Python validator and shared fixture set; a comment is not a runtime import. Preserve/review both validator behaviors separately.'},
   {id:'OPERATOR-OMR-REPLAY',target:'TARGET-omr-relay',source:at('cli/school/omr.mjs','REPLAY PUBLISHES ONTO THE LIVE BUS.'),
     kind:'wire producer/operator, not source import',meaning:'CLI replay emits firmware-compatible scans; applying can persist/grade real assessments. Source reference alone does not authorize invoking the CLI even for discovery.'},

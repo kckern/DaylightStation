@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createDocumentPdfRenderer } from '#rendering/school/documents/DocumentPdfRenderer.mjs';
+import { createDocumentPdfRenderer } from "../../../../modules/school/server/rendering/documents/DocumentPdfRenderer.mjs";
 
 /**
  * A printed QR is machine-read hardware, and the golden pixel gate cannot see

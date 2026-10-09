@@ -1,6 +1,6 @@
 // tests/unit/fitness/legend-sort.test.mjs
 import { describe, it, expect } from '@jest/globals';
-import { compareLegendEntries } from '#frontend/modules/Fitness/widgets/FitnessChart/layout/utils/sort.js';
+import { compareLegendEntries } from "../../../modules/fitness/browser/widgets/FitnessChart/layout/utils/sort.js";
 
 // Shape the comparator expects (the relevant fields from an allEntries[i]-derived
 // legend entry). Extra fields (name, avatarUrl, color) are ignored.

@@ -3,7 +3,7 @@ import express from 'express';
 import request from 'supertest';
 import { Readable } from 'node:stream';
 import { createProxyRouter } from '#backend/src/4_api/v1/routers/proxy.mjs';
-import { RemoteThumbnailService } from '#apps/proxy/RemoteThumbnailService.mjs';
+import { RemoteThumbnailService } from "../../../../capabilities/content-catalog/server/application/proxy/RemoteThumbnailService.mjs";
 
 const logger = { warn: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn(), sampled: vi.fn() };
 

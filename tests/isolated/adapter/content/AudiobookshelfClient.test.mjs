@@ -1,5 +1,5 @@
 import { vi, describe, test, expect, beforeEach } from 'vitest';
-import { AudiobookshelfClient } from '#adapters/content/readable/audiobookshelf/AudiobookshelfClient.mjs';
+import { AudiobookshelfClient } from "../../../../capabilities/content-catalog/server/adapters/providers/readable/audiobookshelf/AudiobookshelfClient.mjs";
 
 describe('AudiobookshelfClient', () => {
   const mockHttpClient = {

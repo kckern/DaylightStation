@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ConciergeAgent } from '../../../../backend/src/3_applications/agents/concierge/ConciergeAgent.mjs';
-import { policyDecorator } from '../../../../backend/src/3_applications/agents/framework/decorators/PolicyDecorator.mjs';
+import { ConciergeAgent } from "../../../../modules/concierge/server/application/ConciergeAgent.mjs";
+import { policyDecorator } from "../../../../capabilities/agent-runtime/server/application/framework/decorators/PolicyDecorator.mjs";
 
 function makeBundle(name, tools = []) {
   return { name, createTools: () => tools, getPromptFragment: () => `## ${name}`, getConfig: () => ({}) };

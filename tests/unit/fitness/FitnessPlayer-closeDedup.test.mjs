@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 
-const { makeCloseGuard } = await import('#frontend/modules/Fitness/player/closeGuard.js');
+const { makeCloseGuard } = await import("../../../modules/fitness/browser/player/closeGuard.js");
 
 describe('makeCloseGuard', () => {
   it('returns true on first acquire, false on subsequent', () => {

@@ -1,0 +1,502 @@
+/**
+ * Generate Daily Report Use Case
+ * @module nutribot/usecases/GenerateDailyReport
+ *
+ * Generates a daily nutrition report for a user, including
+ * visual report and optional coaching messages.
+ */
+
+import { NOOM_COLOR_EMOJI } from "../../../../health/server/nutrition-values.mjs";
+import { prepareDailyReportPresentation } from "../DailyReportPresentation.mjs";
+import { withoutQuarantined, isQuarantined } from "../../../../health/server/nutrition-quarantine.mjs";
+import { buildReportCaption } from "./reportCaption.mjs";
+import { isCountedRow } from '../../../../health/portable/contracts/nutrition/countedRows.mjs';
+
+/**
+ * Decide which date a `/report` should render.
+ *
+ * A report should always SHOW the report, not gate on whether "today" happens
+ * to have an entry. So when the caller didn't ask for a specific date and today
+ * has no logs, fall back to the most recent day that DOES have logs (on or
+ * before today) — the report's history chart already trails the prior days up
+ * to that anchor, giving "everything up until today". Never picks a future
+ * date, and an explicit requested date always wins.
+ *
+ * @param {Object} args
+ * @param {string} [args.requestedDate]        explicit date the caller asked for
+ * @param {string} args.today                  today's date (YYYY-MM-DD, user tz)
+ * @param {boolean} args.todayHasLogs          whether `today` has accepted logs
+ * @param {string|null} [args.mostRecentLoggedDate]  latest accepted-log date <= today
+ * @returns {string} the date to report on
+ */
+export function pickReportDate({ requestedDate, today, todayHasLogs, mostRecentLoggedDate }) {
+  if (requestedDate) return requestedDate;
+  if (todayHasLogs) return today;
+  if (mostRecentLoggedDate && mostRecentLoggedDate <= today) return mostRecentLoggedDate;
+  return today;
+}
+
+/**
+ * The most recent CALENDAR day (<= today) that has an accepted log, by
+ * `meal.date` — NOT by entry/accept order. This is the crux of the back-dating
+ * bug: logging a meal today but dated to 2026-06-27 must NOT make the report
+ * anchor on 06-27; the anchor stays the latest real day (e.g. 2026-07-07).
+ * Undated logs and any dated in the future are ignored.
+ *
+ * @param {Array<{meal?: {date?: string}}>} logs  accepted logs
+ * @param {string} today                          today's date (YYYY-MM-DD)
+ * @returns {string|null} the max meal.date <= today, or null if none
+ */
+export function mostRecentLoggedDate(logs, today) {
+  let latest = null;
+  for (const log of logs || []) {
+    const d = log?.meal?.date;
+    if (!d || d > today) continue;
+    if (!latest || d > latest) latest = d;
+  }
+  return latest;
+}
+
+/**
+ * Generate daily nutrition report use case
+ */
+export class GenerateDailyReport {
+  #messagingGateway;
+  #foodLogStore;
+  #nutriListStore;
+  #conversationStateStore;
+  #config;
+  #logger;
+  #encodeCallback;
+  #reportDelivery;
+  #coachingOrchestrator;
+  #pause;
+  #budgetService;
+
+  constructor(deps) {
+    if (!deps.messagingGateway) throw new Error('messagingGateway is required');
+    if (!deps.foodLogStore) throw new Error('foodLogStore is required');
+    if (!deps.nutriListStore) throw new Error('nutriListStore is required');
+    if (!deps.config) throw new Error('config is required');
+
+    this.#messagingGateway = deps.messagingGateway;
+    this.#foodLogStore = deps.foodLogStore;
+    this.#nutriListStore = deps.nutriListStore;
+    this.#conversationStateStore = deps.conversationStateStore;
+    this.#config = deps.config;
+    this.#logger = deps.logger || console;
+    this.#encodeCallback = deps.encodeCallback || ((cmd, data) => JSON.stringify({ cmd, ...data }));
+    this.#reportDelivery = deps.reportDelivery; // Optional: reports degrade to text-only
+    this.#coachingOrchestrator = deps.coachingOrchestrator || null;
+    this.#pause = deps.pause || (async () => {});
+    this.#budgetService = deps.budgetService || null; // Optional: health budget contract
+  }
+
+  // The day's health budget, or null (no service, goals or weight): the report
+  // then falls back to the configured calorie goals.
+  async #dayBudget(userId, date) {
+    if (!this.#budgetService || !date) return null;
+    try {
+      return await this.#budgetService.getBudget(userId, date);
+    } catch (err) {
+      this.#logger.warn?.('report.budget.unavailable', { userId, date, error: err.message, code: err.code || null });
+      return null;
+    }
+  }
+
+  /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, conversationId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(conversationId, text, options),
+      sendPhoto: (src, caption, options) => this.#messagingGateway.sendPhoto(conversationId, src, caption, options),
+      updateMessage: (msgId, updates) => this.#messagingGateway.updateMessage(conversationId, msgId, updates),
+      deleteMessage: (msgId) => this.#messagingGateway.deleteMessage(conversationId, msgId),
+    };
+  }
+
+  /**
+   * Execute the use case
+   * @param {Object} input
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
+   */
+  async execute(input) {
+    const { userId, conversationId, forceRegenerate = false, messageId: triggerMessageId, responseContext } = input;
+    const today = this.#getTodayDate(userId);
+    let date = input.date || today;
+    let anchorDateForHistory = date;
+    const syncSnapshot = input.syncSnapshot;
+    let supersededReportId = null;
+
+    this.#logger.debug?.('report.generate.start', { userId, date, forceRegenerate, hasResponseContext: !!responseContext });
+
+    const messaging = this.#getMessaging(responseContext, conversationId);
+
+    try {
+      // 0. Delete any existing report message
+      try {
+        let lastReportMessageId = null;
+        if (this.#conversationStateStore) {
+          const state = await this.#conversationStateStore.get(conversationId);
+          lastReportMessageId = state?.lastReportMessageId;
+        }
+
+        const messagesToDelete = new Set();
+        if (!syncSnapshot && lastReportMessageId) messagesToDelete.add(String(lastReportMessageId));
+        if (!syncSnapshot && triggerMessageId) messagesToDelete.add(String(triggerMessageId));
+
+        for (const msgId of messagesToDelete) {
+          try {
+            await messaging.deleteMessage( msgId);
+          } catch (e) {
+            this.#logger.debug?.('report.deleteMessage.failed', { msgId, error: e.message });
+          }
+        }
+      } catch (e) {
+        this.#logger.error?.('report.deletePrevious.error', { error: e.message });
+      }
+
+      // 1. Check for pending logs
+      const skipPendingCheck = input.skipPendingCheck === true;
+      const autoAcceptPending = input.autoAcceptPending === true;
+
+      if (!skipPendingCheck) {
+        if (forceRegenerate) {
+          await this.#pause(500);
+        }
+
+        // A quarantined capture (calories unknown) waits in Needs Review for a
+        // person; it neither holds the report back nor gets auto-accepted.
+        const pendingLogs = withoutQuarantined(await this.#foodLogStore.findPending(userId));
+
+        if (pendingLogs.length > 0) {
+          if (autoAcceptPending) {
+            this.#logger.info?.('report.autoAccept.start', { userId, count: pendingLogs.length });
+            await this.#autoAcceptPendingLogs(pendingLogs, messaging);
+          } else {
+            this.#logger.info?.('report.generate.skipped', { userId, reason: 'pending_logs', count: pendingLogs.length });
+            try {
+              await messaging.sendMessage( `⏳ ${pendingLogs.length} item(s) still need confirmation before generating report.`, {});
+            } catch (e) {
+              this.#logger.debug?.('report.sendPendingNotice.failed', { error: e.message });
+            }
+            return { success: true, skipped: true, skippedReason: `${pendingLogs.length} pending log(s)` };
+          }
+        }
+      }
+
+      // 2. Get daily summary. A /report should SHOW the report — when the caller
+      //    didn't ask for a specific date and today has nothing, anchor on the
+      //    most recent CALENDAR day that has logs (by meal.date, not entry order,
+      //    so back-dated logging never drags the anchor backwards). Only skip if
+      //    the user has never logged anything at all.
+      let summary;
+      if (syncSnapshot) {
+        // App edits live in the authoritative item ledger. The original capture
+        // may have different quantities, a different date, or no rows left.
+        const rows = syncSnapshot.items.filter(row => row.kind !== 'group');
+        summary = { logCount: new Set(rows.map(row => row.logId || row.log_uuid || row.uuid)).size,
+          itemCount: rows.length, totalGrams: rows.reduce((sum, row) => sum + (Number(row.grams) || 0), 0),
+          colorCounts: {}, gramsByColor: {} };
+        for (const row of rows) {
+          const color = row.color || row.noom_color;
+          summary.colorCounts[color] = (summary.colorCounts[color] || 0) + 1;
+          summary.gramsByColor[color] = (summary.gramsByColor[color] || 0) + (Number(row.grams) || 0);
+        }
+      } else {
+        summary = await this.#foodLogStore.getDailySummary(userId, date);
+      }
+
+      if (summary.logCount === 0 && !input.date) {
+        const fallbackDate = await this.#getMostRecentLoggedDate(userId, today);
+        const resolved = pickReportDate({ requestedDate: undefined, today, todayHasLogs: false, mostRecentLoggedDate: fallbackDate });
+        if (resolved !== date) {
+          this.#logger.info?.('report.generate.fallbackDate', { userId, requestedDate: date, fallbackDate: resolved });
+          date = resolved;
+          anchorDateForHistory = resolved;
+          summary = await this.#foodLogStore.getDailySummary(userId, date);
+        }
+      }
+
+      if (summary.logCount === 0 && !syncSnapshot) {
+        this.#logger.info?.('report.generate.skipped', { userId, date, reason: 'no_logs' });
+        return { success: true, skipped: true, skippedReason: 'No food logged for this date' };
+      }
+
+      // 3. Create status indicator for report generation
+      let status = null;
+      let statusMsgId;
+
+      // Background replication keeps the previous report visible while rendering.
+      if (!syncSnapshot && messaging.createStatusIndicator) {
+        status = await messaging.createStatusIndicator(
+          '📊 Generating report',
+          { frames: ['.', '..', '...'], interval: 2000 }
+        );
+        statusMsgId = status.messageId;
+      } else if (!syncSnapshot) {
+        const result = await messaging.sendMessage('📊 Generating report...', {});
+        statusMsgId = result.messageId;
+      }
+
+      // 4. Get items for the report
+      const items = syncSnapshot?.items ?? await this.#nutriListStore.findByDate(userId, date);
+
+      // 5. Calculate totals — the COUNTED rows only (the budget's fold), so the
+      // caption's total and the report body agree.
+      const totals = items.filter(isCountedRow).reduce(
+        (acc, item) => {
+          acc.calories += item.calories || 0;
+          acc.protein += item.protein || 0;
+          acc.carbs += item.carbs || 0;
+          acc.fat += item.fat || 0;
+          return acc;
+        },
+        { calories: 0, protein: 0, carbs: 0, fat: 0 }
+      );
+
+      const configGoals = syncSnapshot?.goals ?? this.#config.getUserGoals?.(userId);
+      if (!configGoals) {
+        throw new Error(`getUserGoals returned null for user ${userId}`);
+      }
+      // The health budget contract (range floor/top, zone) replaces the
+      // configured calorie min/max wherever it can be computed.
+      const budget = await this.#dayBudget(userId, date);
+      const goals = budget?.range
+        ? { ...configGoals, calories_min: budget.range.floor, calories_max: budget.range.top }
+        : configGoals;
+
+      // 6. Build history for chart
+      const history = syncSnapshot?.history ?? await this.#buildHistory(userId, anchorDateForHistory);
+
+      // 7. Generate PNG report if renderer available
+      let preparedReport = null;
+      if (this.#reportDelivery?.prepare) {
+        try {
+          preparedReport = await this.#reportDelivery.prepare(prepareDailyReportPresentation({
+            date,
+            totals,
+            goals,
+            items,
+            history,
+          }));
+        } catch (e) {
+          this.#logger.error?.('report.png.failed', { error: e.message });
+          if (syncSnapshot) throw e;
+        }
+      }
+
+      // 8. Cancel status indicator before sending report
+      if (status) {
+        await status.cancel();
+      } else if (statusMsgId) {
+        try {
+          await messaging.deleteMessage(statusMsgId);
+        } catch (e) {
+          this.#logger.debug?.('report.deleteStatus.failed', { error: e.message });
+        }
+      }
+
+      // 9. Build caption — the health budget's range and zone when available,
+      // so the chat states exactly what the Today bar states.
+      const caption = buildReportCaption({ totals, goals, budget });
+
+      // 10. Build action buttons
+      const buttons = [
+        [
+          { text: '✏️ Adjust', callback_data: this.#encodeCallback('ra') },
+          { text: '✅ Accept', callback_data: this.#encodeCallback('rx') },
+        ],
+      ];
+
+      // 11. Send report
+      let messageId;
+      if (preparedReport) {
+        const result = await preparedReport.sendTo(messaging, caption, {
+          silent: Boolean(syncSnapshot),
+          choices: buttons,
+          inline: true,
+        });
+        messageId = result.messageId;
+      } else {
+        const reportMessage = `${syncSnapshot ? `${date} · ${caption}\n\n` : ''}${this.#buildReportMessage(summary, date)}`;
+        const result = await messaging.sendMessage( reportMessage, { parseMode: 'HTML', choices: buttons, inline: true, silent: Boolean(syncSnapshot) });
+        messageId = result.messageId;
+      }
+
+      const deliveryMode = preparedReport ? 'photo' : 'text';
+      this.#logger.info?.('report.delivery.sent', { userId, date, messageId, mode: deliveryMode });
+
+      // 12. Save report message ID
+      if (messageId && this.#conversationStateStore) {
+        try {
+          let state = await this.#conversationStateStore.get(conversationId);
+          if (!state) {
+            state = { conversationId };
+          }
+          if (syncSnapshot) {
+            supersededReportId = state.nutritionReportMessages?.[date]
+              || (state.lastReportDate === date ? state.lastReportMessageId : null);
+            state.nutritionReportMessages = { ...state.nutritionReportMessages, [date]: messageId };
+          }
+          state.lastReportMessageId = messageId;
+          state.lastReportDate = date;
+          await this.#conversationStateStore.set(conversationId, state);
+        } catch (e) {
+          this.#logger.warn?.('report.saveState.error', { error: e.message });
+        }
+      }
+
+      if (supersededReportId && String(supersededReportId) !== String(messageId)) {
+        try { await messaging.deleteMessage(supersededReportId); }
+        catch (error) { this.#logger.warn?.('report.deletePrevious.error', { error: error.message }); }
+      }
+
+      // 13. Send coaching commentary (fire-and-forget)
+      if (this.#coachingOrchestrator && !input.suppressCoaching) {
+        this.#coachingOrchestrator.sendPostReport({
+          userId,
+          conversationId,
+          date,
+          totals,
+        }).catch(e => this.#logger.warn?.('report.coaching.error', { error: e.message }));
+      }
+
+      this.#logger.info?.('report.generate.success', {
+        userId, date, messageId, itemCount: summary.itemCount, deliveryMode,
+      });
+
+      return { success: true, messageId, summary };
+    } catch (error) {
+      this.#logger.error?.('report.generate.error', { userId, date, error: error.message });
+      throw error;
+    }
+  }
+
+  /**
+   * Build history data for weekly chart
+   * @private
+   */
+  async #buildHistory(userId, anchorDate) {
+    const history = [];
+    const [year, month, day] = anchorDate.split('-').map(Number);
+
+    for (let i = 6; i >= 1; i--) {
+      const d = new Date(year, month - 1, day - i);
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+      try {
+        const items = await this.#nutriListStore.findByDate(userId, dateStr);
+        const calories = items.reduce((sum, item) => sum + (item.calories || 0), 0);
+        const protein = items.reduce((sum, item) => sum + (item.protein || 0), 0);
+        const carbs = items.reduce((sum, item) => sum + (item.carbs || 0), 0);
+        const fat = items.reduce((sum, item) => sum + (item.fat || 0), 0);
+        history.push({ date: dateStr, calories, protein, carbs, fat, itemCount: items.length });
+      } catch (e) {
+        history.push({ date: dateStr, calories: 0, protein: 0, carbs: 0, fat: 0, itemCount: 0 });
+      }
+    }
+    return history;
+  }
+
+  /**
+   * Get today's date in user's timezone
+   * @private
+   */
+  #getTodayDate(userId) {
+    let timezone = 'America/Los_Angeles';
+    try {
+      if (this.#config?.getUserTimezone) {
+        timezone = this.#config.getUserTimezone(userId);
+      } else if (this.#config?.getDefaultTimezone) {
+        timezone = this.#config.getDefaultTimezone();
+      }
+    } catch (e) {
+      this.#logger.debug?.('report.getTimezone.failed', { error: e.message });
+    }
+    return new Date().toLocaleDateString('en-CA', { timeZone: timezone });
+  }
+
+  /**
+   * The most recent calendar day (<= today) that has an accepted log, keyed by
+   * meal.date. Delegates to the module-level mostRecentLoggedDate so the "max by
+   * date, not by entry order" rule is unit-tested independently of the store.
+   * @private
+   */
+  async #getMostRecentLoggedDate(userId, today) {
+    const logs = await this.#foodLogStore.findAll(userId, { status: 'accepted' });
+    return mostRecentLoggedDate(logs, today);
+  }
+
+  /**
+   * Build the report message
+   * @private
+   */
+  #buildReportMessage(summary, date) {
+    const { logCount, itemCount, totalGrams, colorCounts, gramsByColor } = summary;
+
+    let message = `📊 <b>Nutrition Report for ${date}</b>\n\n`;
+    message += `📝 <b>Summary:</b>\n`;
+    message += `• ${logCount} meal(s) logged\n`;
+    message += `• ${itemCount} food item(s)\n`;
+    message += `• ${totalGrams}g total\n\n`;
+
+    message += `🎨 <b>By Color:</b>\n`;
+    for (const color of ['green', 'yellow', 'orange']) {
+      const count = colorCounts[color] || 0;
+      const grams = gramsByColor[color] || 0;
+      if (count > 0) {
+        message += `${NOOM_COLOR_EMOJI[color]} ${color}: ${count} items (${grams}g)\n`;
+      }
+    }
+
+    if (totalGrams > 0) {
+      message += `\n📈 <b>Distribution:</b>\n`;
+      const greenPct = Math.round((gramsByColor.green / totalGrams) * 100);
+      const yellowPct = Math.round((gramsByColor.yellow / totalGrams) * 100);
+      const orangePct = Math.round((gramsByColor.orange / totalGrams) * 100);
+      message += `🟢 ${greenPct}% | 🟡 ${yellowPct}% | 🟠 ${orangePct}%`;
+    }
+
+    return message;
+  }
+
+  /**
+   * Auto-accept pending logs
+   * @private
+   * @param {Array} pendingLogs - Logs to accept
+   * @param {Object} messaging - Messaging interface
+   */
+  async #autoAcceptPendingLogs(pendingLogs, messaging) {
+    const now = new Date();
+    for (const log of pendingLogs) {
+      if (isQuarantined(log)) continue;
+      try {
+        const acceptedLog = log.accept(now);
+        await this.#foodLogStore.save(acceptedLog);
+
+        if (this.#nutriListStore?.syncFromLog) {
+          await this.#nutriListStore.syncFromLog(acceptedLog);
+        }
+
+        const msgId = log.metadata?.messageId;
+        if (msgId && messaging?.updateMessage) {
+          try {
+            await messaging.updateMessage(msgId, { choices: [] });
+          } catch (e) {
+            this.#logger.debug?.('report.updateMessage.failed', { msgId, error: e.message });
+          }
+        }
+      } catch (e) {
+        this.#logger.error?.('autoAccept.logFailed', { logId: log.id, error: e.message });
+      }
+    }
+  }
+}
+
+export default GenerateDailyReport;

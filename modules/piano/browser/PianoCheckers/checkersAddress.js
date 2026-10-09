@@ -1,5 +1,5 @@
-import { coordToIndex } from '@shared-gaming/rulesets/checkers/engine.mjs';
-import { shuffle } from '@shared-gaming/mechanics/random.mjs';
+import { coordToIndex } from "../../../../capabilities/gaming/portable/rulesets/checkers/engine.mjs";
+import { shuffle } from "../../../../capabilities/gaming/portable/mechanics/random.mjs";
 import { DEFAULT_STAFF_SCHEME, SPLIT_MIDI, axisIndex, noteLetter, noteName, staffTokenNotes } from '../PianoChessGame/staffAddress.js';
 
 /**

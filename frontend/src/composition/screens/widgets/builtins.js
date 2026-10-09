@@ -2,19 +2,19 @@ import { getWidgetRegistry } from "../../../../../capabilities/screen-host/brows
 import Time from '../../../modules/Time/Time.jsx';
 import Weather from '../../../modules/Weather/Weather.jsx';
 import WeatherForecast from '../../../modules/Weather/WeatherForecast.jsx';
-import Upcoming from '../../../modules/Upcoming/Upcoming.jsx';
-import { FinanceChart } from '../../../modules/Finances/widgets/FinanceChart.jsx';
-import Weight from '../../../modules/Health/Weight.jsx';
-import EntropyPanel from '../../../modules/Entropy/EntropyPanel.jsx';
+import Upcoming from "../../../../../modules/home/browser/upcoming.mjs";
+import { FinanceChart } from "../../../../../modules/finance/browser/widget.mjs";
+import Weight from "../../../../../modules/health/browser/weight-widget.mjs";
+import EntropyPanel from "../../../../../modules/home/browser/entropy/EntropyPanel.jsx";
 import { PianoVisualizer } from "../../../../../modules/piano/browser/widget.mjs";
 import MenuWidget from './MenuWidget.jsx';
 import ArtMode from './ArtMode.jsx';
-import WeeklyReview from '../../../modules/WeeklyReview/WeeklyReview.jsx';
-import CameraOverlay from '../../../modules/CameraFeed/CameraOverlay.jsx';
-import PartyGamesApp from '../../../modules/Gaming/environments/party-games/app/PartyGamesApp.jsx';
-import SchoolApp from '../../../modules/School/SchoolApp.jsx';
-import ReadingSessionScreen from '../../../modules/School/reading/ReadingSessionScreen.jsx';
-import MediaLessonScreen from '../../../modules/School/lesson/MediaLessonScreen.jsx';
+import WeeklyReview from "../../../../../modules/weekly-review/browser/widget.mjs";
+import CameraOverlay from "../../../../../modules/camera/browser/overlay.mjs";
+import PartyGamesApp from "../../../../../modules/party-games/browser/widget.mjs";
+import SchoolApp from "../../../../../modules/school/browser/kiosk.mjs";
+import ReadingSessionScreen from "../../../../../modules/school/browser/reading.mjs";
+import MediaLessonScreen from "../../../../../modules/school/browser/lesson.mjs";
 
 export function registerBuiltinWidgets() {
   const registry = getWidgetRegistry();

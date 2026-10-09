@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { helpWithinCeilings } from '@shared-gaming/rulesets/chess/ladder.mjs';
+import { helpWithinCeilings } from "../../../chess/portable/ladder.mjs";
 import { fenBefore, isPlayerTurn } from './chessGameState.js';
 import { useSettledGesture } from './useSettledGesture.js';
 

@@ -1,10 +1,11 @@
+import { createPianoScreenHoldPolicy } from "../../../../modules/piano/server/application/screenHoldPolicy.mjs";
 // backend/src/5_composition/modules/deviceApi.mjs
 // Composition wiring for Device API router(s). Extracted from bootstrap.mjs (Task P2.7-E).
 
 import { createDeviceRouter } from '#api/v1/routers/device.mjs';
 import { getScreenOverrideService } from '#composition/modules/screenOverride.mjs';
 import { getVolumeBoostService } from '#composition/modules/volumeBoost.mjs';
-import { contentRequiresCamera } from '#apps/devices/services/contentRequiresCamera.mjs';
+import { contentRequiresCamera } from "../policies/contentRequiresCamera.mjs";
 import { DispatchIdempotencyService } from '#apps/devices/services/DispatchIdempotencyService.mjs';
 import { DeviceFleetControlService } from '#apps/devices/services/DeviceFleetControlService.mjs';
 import { DevicePresenceService } from '#apps/devices/services/DevicePresenceService.mjs';
@@ -89,7 +90,7 @@ export function createDeviceApiRouter(config) {
     sessionService: new DeviceSessionApiService({ sessionControl: sessionControlService, logger }),
     screenService: new DeviceScreenControlService({
       devices,
-      configuration,
+      holdPolicy: createPianoScreenHoldPolicy({ getPianoConfig: () => configService?.getHouseholdAppConfig?.(null, 'piano') || {} }),
       screenOverrides: getScreenOverrideService(),
       midiWake: pianoMidiWakeService,
       logger,

@@ -19,16 +19,16 @@
  * without one (unit tests) they fall back to an empty ledger.
  */
 import express from 'express';
-import { createMediaHouseRouter } from '../../backend/src/4_api/v1/routers/mediaHouse.mjs';
-import { ScreenRegistryService } from '../../backend/src/3_applications/media/ScreenRegistryService.mjs';
-import { ScreenSignalsReader } from '../../backend/src/3_applications/media/ScreenSignalsReader.mjs';
-import { RoutineCatalogService } from '../../backend/src/3_applications/media/RoutineCatalogService.mjs';
-import { RoutineHistoryService } from '../../backend/src/3_applications/media/RoutineHistoryService.mjs';
-import { RoutineLoadRecorder } from '../../backend/src/3_applications/media/RoutineLoadRecorder.mjs';
-import { LoadOriginHints } from '../../backend/src/3_applications/media/LoadOriginHints.mjs';
+import { createMediaHouseRouter } from "../../modules/media/server/api/mediaHouse.mjs";
+import { ScreenRegistryService } from "../../modules/media/server/application/ScreenRegistryService.mjs";
+import { ScreenSignalsReader } from "../../modules/media/server/application/ScreenSignalsReader.mjs";
+import { RoutineCatalogService } from "../../modules/media/server/application/RoutineCatalogService.mjs";
+import { RoutineHistoryService } from "../../modules/media/server/application/RoutineHistoryService.mjs";
+import { RoutineLoadRecorder } from "../../modules/media/server/application/RoutineLoadRecorder.mjs";
+import { LoadOriginHints } from "../../modules/media/server/application/LoadOriginHints.mjs";
 import { RoutineTriggerDedupeService } from '../../backend/src/3_applications/devices/services/RoutineTriggerDedupeService.mjs';
-import { ScreenPlaybackService } from '../../backend/src/3_applications/media/ScreenPlaybackService.mjs';
-import { buildRoutineRun } from '../../backend/src/2_domains/media/routineHistory.mjs';
+import { ScreenPlaybackService } from "../../modules/media/server/application/ScreenPlaybackService.mjs";
+import { buildRoutineRun } from "../../modules/media/server/domain/routineHistory.mjs";
 import { currentRequestContext } from '../../backend/src/0_system/runtime/requestContext.mjs';
 import { withRequestContext } from '../../backend/src/0_system/http/middleware/requestContext.mjs';
 

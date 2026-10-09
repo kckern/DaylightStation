@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateQuestionBank } from '#domains/school/questionBankValidation.mjs';
+import { validateQuestionBank } from "../../../../modules/school/server/domain/questionBankValidation.mjs";
 
 const mc = (over = {}) => ({ id: 'q1', type: 'multiple_choice', prompt: 'Capital of WA?', answer: 'Olympia', choices: ['Seattle', 'Olympia'], ...over });
 const bank = (over = {}) => ({ id: 'test-bank', title: 'Test', items: [mc()], ...over });

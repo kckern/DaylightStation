@@ -22,7 +22,7 @@ describe('GovernanceEngine.evaluate() zoneRankMap fallback', () => {
     const mockGetProfile = vi.fn();
     const mockZoneProfileStore = { getProfile: mockGetProfile };
 
-    const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
+    const { GovernanceEngine } = await import("../../../../../modules/fitness/browser/hooks/fitness/GovernanceEngine.js");
 
     const mockSession = {
       roster: [
@@ -80,7 +80,7 @@ describe('GovernanceEngine.evaluate() zoneRankMap fallback', () => {
     const mockGetProfile = vi.fn();
     const mockZoneProfileStore = { getProfile: mockGetProfile };
 
-    const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
+    const { GovernanceEngine } = await import("../../../../../modules/fitness/browser/hooks/fitness/GovernanceEngine.js");
 
     const mockSession = {
       roster: [

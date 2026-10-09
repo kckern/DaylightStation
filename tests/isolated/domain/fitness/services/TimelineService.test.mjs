@@ -6,7 +6,7 @@ import {
   encodeSingleSeries,
   encodeToRLE,
   isAllNullSeries
-} from '#domains/fitness/services/TimelineService.mjs';
+} from "../../../../../modules/fitness/server/domain/services/TimelineService.mjs";
 
 describe('TimelineService', () => {
   describe('isAllNullSeries', () => {

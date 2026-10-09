@@ -1,0 +1,123 @@
+import { describe, expect, it } from 'vitest';
+import { validateSyllabus } from "./syllabus.mjs";
+
+const VALID = {
+  schema: 'school.syllabus/v1',
+  syllabusId: 'elements-lower',
+  title: 'The Elements — lower',
+  courseId: 'the-elements-ted-gray',
+  profile: 'lower',
+  policy: { lesson_order: 'sequence' },
+  passing: 60,
+  term: '2026-fall',
+};
+const SETS = { courseIds: new Set(['the-elements-ted-gray']), profileIds: new Set(['lower', 'upper']) };
+
+describe('validateSyllabus', () => {
+  it('accepts a full record and normalizes it', () => {
+    const { errors, syllabus } = validateSyllabus(VALID, SETS);
+    expect(errors).toEqual([]);
+    expect(syllabus).toEqual(VALID);
+  });
+
+  it('accepts a minimal record, nulling the optional fields', () => {
+    const { errors, syllabus } = validateSyllabus({
+      schema: 'school.syllabus/v1', syllabusId: 'elements-full',
+      title: 'The Elements', courseId: 'the-elements-ted-gray',
+    }, SETS);
+    expect(errors).toEqual([]);
+    expect(syllabus.profile).toBeNull();
+    expect(syllabus.policy).toBeNull();
+    expect(syllabus.passing).toBeNull();
+    expect(syllabus.term).toBeNull();
+  });
+
+  it('requires the schema discriminator', () => {
+    const { errors } = validateSyllabus({ ...VALID, schema: 'school.syllabus/v2' }, SETS);
+    expect(errors).toContain('schema must be school.syllabus/v1');
+  });
+
+  it('refuses a syllabusId that is not a slug', () => {
+    expect(validateSyllabus({ ...VALID, syllabusId: '../escape' }, SETS).errors)
+      .toContain('syllabusId must match ^[a-z0-9][a-z0-9-]*$, got: ../escape');
+  });
+
+  it('names an unknown course rather than accepting a ghost', () => {
+    expect(validateSyllabus({ ...VALID, courseId: 'nope' }, SETS).errors)
+      .toContain("unknown course: 'nope' is not in the published catalog");
+  });
+
+  it('names an unknown profile', () => {
+    expect(validateSyllabus({ ...VALID, profile: 'middle' }, SETS).errors)
+      .toContain("unknown profile: 'middle' is not offered by the-elements-ted-gray");
+  });
+
+  it('refuses a passing bar outside 1..100', () => {
+    expect(validateSyllabus({ ...VALID, passing: 0 }, SETS).errors)
+      .toContain('passing must be an integer between 1 and 100');
+    expect(validateSyllabus({ ...VALID, passing: 101 }, SETS).errors)
+      .toContain('passing must be an integer between 1 and 100');
+  });
+
+  it('refuses module subsetting — wave 1 is whole-course only', () => {
+    expect(validateSyllabus({ ...VALID, modules: ['period-1'] }, SETS).errors)
+      .toContain('modules is not supported yet — a syllabus covers its whole course');
+  });
+
+  it('refuses unknown policy keys and bad ordering values', () => {
+    expect(validateSyllabus({ ...VALID, policy: { lesson_order: 'random' } }, SETS).errors)
+      .toContain('policy.lesson_order must be fixed|sequence|shuffle_once, got: random');
+    expect(validateSyllabus({ ...VALID, policy: { nope: 1 } }, SETS).errors)
+      .toContain('policy has unknown keys: nope');
+  });
+
+  it('normalizes a reusable timing template without making it learner state', () => {
+    const { errors, syllabus } = validateSyllabus({
+      ...VALID,
+      timingTemplate: {
+        schema: 'school.timing-template/v1', defaultAnchorId: 'fourth-of-july',
+        opensBeforeDays: 21, closesAfterDays: 1, targetOffsetDays: -1,
+        targetStrength: 'firm', basePriority: 'high', flexibility: 'flexible',
+        normalBlocks: 1, urgentBlocks: 3, urgencyLeadDays: 10,
+      },
+    }, SETS);
+    expect(errors).toEqual([]);
+    expect(syllabus.timingTemplate).toMatchObject({
+      defaultAnchorId: 'fourth-of-july', basePriority: 'high', urgentBlocks: 3,
+    });
+  });
+
+  it('accepts and normalizes a school-day schedule', () => {
+    const { errors, syllabus } = validateSyllabus({
+      ...VALID,
+      schedule: { daysOfWeek: [5, 1, 3, 1], except: ['2026-11-26'], also: ['2026-11-28'] },
+    }, SETS);
+    expect(errors).toEqual([]);
+    expect(syllabus.schedule).toEqual({
+      daysOfWeek: [1, 3, 5],
+      except: [{ from: '2026-11-26', to: '2026-11-26' }],
+      also: [{ from: '2026-11-28', to: '2026-11-28' }],
+    });
+  });
+
+  it('omits schedule entirely when none is authored', () => {
+    expect(validateSyllabus(VALID, SETS).syllabus).not.toHaveProperty('schedule');
+  });
+
+  it('refuses a malformed schedule rather than storing a term-wide excuse', () => {
+    expect(validateSyllabus({ ...VALID, schedule: { daysOfWeek: [0] } }, SETS).errors[0])
+      .toMatch(/daysOfWeek/);
+  });
+
+  it('qualifies a schedule error with its block, without saying it twice', () => {
+    expect(validateSyllabus({ ...VALID, schedule: { except: ['Christmas'] } }, SETS).errors)
+      .toEqual(['schedule.except has an invalid date: Christmas']);
+    expect(validateSyllabus({ ...VALID, schedule: 'weekdays' }, SETS).errors)
+      .toEqual(['schedule must be a mapping']);
+  });
+
+  it('degrades to accepting when reference sets are unavailable', () => {
+    const { errors } = validateSyllabus({ ...VALID, courseId: 'anything' }, {});
+    expect(errors).toEqual([]);
+  });
+});

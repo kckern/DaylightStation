@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { chessRuleModule } from '@shared-gaming/rulesets/chess/ruleModule.mjs';
-import { createCheckpointedLocalAuthority, isResumableSession } from '../../../../frontend/src/modules/Gaming/platform/authority/createCheckpointedLocalAuthority.js';
+import { chessRuleModule } from "../../../../capabilities/gaming/portable/rulesets/chess/ruleModule.mjs";
+import { createCheckpointedLocalAuthority, isResumableSession } from "../../../../capabilities/gaming/browser/platform/authority/createCheckpointedLocalAuthority.js";
 import getLogger from '../../../../frontend/src/lib/logging/Logger.js';
 
 const ACTOR = 'piano-player';

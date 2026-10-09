@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import path from 'path';
 import { createLifecycleHarness, MEDIA_UNIT, WORKSHEET_UNIT, COURSE_ID, DEFAULT_LEARNER } from '../../../_lib/school/lifecycleHarness.mjs';
-import { YamlAttestationLog } from '#adapters/persistence/yaml/YamlAttestationLog.mjs';
+import { YamlAttestationLog } from "../../../../modules/school/server/adapters/persistence/YamlAttestationLog.mjs";
 
 describe('attestation unlocks the planner without serving the subject', () => {
   let h;

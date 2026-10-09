@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
-import { createArtRouter } from '../../../backend/src/4_api/v1/routers/art.mjs';
-import { ArtPresetService } from '../../../backend/src/3_applications/content/ArtPresetService.mjs';
-import { FilesystemArtPresetCatalog } from '../../../backend/src/1_adapters/content/art/FilesystemArtPresetCatalog.mjs';
+import { createArtRouter } from "../../../modules/art/server/api/art.mjs";
+import { ArtPresetService } from "../../../modules/art/server/application/ArtPresetService.mjs";
+import { FilesystemArtPresetCatalog } from "../../../modules/art/server/adapters/FilesystemArtPresetCatalog.mjs";
 
 let dataPath;
 const logger = { debug() {}, info() {}, warn() {}, error() {} };

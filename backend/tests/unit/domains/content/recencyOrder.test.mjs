@@ -6,7 +6,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { orderWatchedByRecency } from '../../../../src/2_domains/content/utils/recencyOrder.mjs';
+import { orderWatchedByRecency } from "../../../../../capabilities/content-catalog/server/domain/utils/recencyOrder.mjs";
 
 // Deterministic "shuffle": reverse, so we can assert ordering without randomness.
 const reverse = (arr) => arr.reverse();

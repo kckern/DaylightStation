@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { AbcRenderer } from '../../../../../frontend/src/modules/MusicNotation/renderers/AbcRenderer.jsx';
-import { generateScaleAbc } from '../../../../../frontend/src/modules/MusicNotation/renderers/abc.js';
+import { AbcRenderer } from "../../../../../capabilities/music-notation/browser/renderers/AbcRenderer.jsx";
+import { generateScaleAbc } from "../../../../../capabilities/music-notation/browser/renderers/abc.js";
 import { PianoKeyboard } from '../../components/PianoKeyboard.jsx';
 import { WrongNoteGhost } from './WrongNoteGhost.jsx';
 import { scaleClefType } from './wrongNoteGhost.js';

@@ -1,10 +1,10 @@
 import express from 'express';
 import { asyncHandler, errorHandlerMiddleware } from "#system/http/middleware/index.mjs";
 import { splatPath } from "#api/utils/wildcard.mjs";
-import { musicXmlToNotes } from '#shared/music/musicXmlToNotes.mjs';
-import { countInstances, expandSeed, instanceId, instanceIds, materializeById, searchBank } from '#shared/music/exerciseBank.mjs';
-import { validateAssessment } from '#shared/music/assessmentRecord.mjs';
-import { buildExerciseCatalog } from '#shared/music/exerciseCatalog.mjs';
+import { musicXmlToNotes } from "../../../../capabilities/music-notation/portable/musicXmlToNotes.mjs";
+import { countInstances, expandSeed, instanceId, instanceIds, materializeById, searchBank } from "../../portable/music/exerciseBank.mjs";
+import { validateAssessment } from "../../portable/music/assessmentRecord.mjs";
+import { buildExerciseCatalog } from "../../portable/music/exerciseCatalog.mjs";
 
 const ATTEMPT_WRITER_ROLES = new Set(['sysadmin', 'parent', 'kiosk', 'piano-instructor', 'gaming-host']);
 const GUEST_ATTEMPT_SURFACES = new Set(['piano-challenge']);

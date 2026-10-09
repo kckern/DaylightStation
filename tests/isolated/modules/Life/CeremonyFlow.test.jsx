@@ -4,7 +4,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import React from 'react';
 import { MantineProvider } from '@mantine/core';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
-import { CeremonyFlow } from '#frontend/modules/Life/views/ceremony/CeremonyFlow.jsx';
+import { CeremonyFlow } from "../../../../modules/life/browser/views/ceremony/CeremonyFlow.jsx";
 
 /** Probe that exposes the current route so navigation clicks can be asserted. */
 const LocationProbe = () => {

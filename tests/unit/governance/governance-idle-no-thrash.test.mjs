@@ -11,7 +11,7 @@ jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
   })
 }));
 
-const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
+const { GovernanceEngine } = await import("../../../modules/fitness/browser/hooks/fitness/GovernanceEngine.js");
 
 describe('GovernanceEngine — idle state optimization', () => {
   it('should skip all reset work when _resetToIdle called repeatedly from idle state', () => {

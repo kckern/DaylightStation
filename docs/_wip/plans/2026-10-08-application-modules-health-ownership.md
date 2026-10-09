@@ -1,6 +1,7 @@
 # Health, nutrition and NutriBot ownership
 
-Source partition at `759be3aaf7` for milestone 3; implementation is still pending.
+Source partition at `759be3aaf7` for milestone 3. The nutrition primitive
+extraction described below is implemented; broader Health ownership remains pending.
 Health owns nutrition records, observations, reconciliation and health policy.
 NutriBot owns the existing conversational capture/report workflow. Sharing those
 records does not require promoting health policy into a generic platform service.
@@ -74,3 +75,82 @@ This partition does not rename NutriBot routes, agent IDs, Telegram bot IDs,
 configuration keys, persisted records, or scheduled jobs. Final file mapping must
 include associated admin/config/assets and external CLI consumers from the full
 census before the batch is complete.
+
+## Nutrition primitive extraction
+
+Following the M2 checkpoint `9f19f9f2f7`, Health owns three explicit server facets:
+`nutrition-records.mjs` (creation, serialization and settlement stamping),
+`scale-config.mjs` (existing defaults, normalization and lookup functions), and
+`scale-weight.mjs` (the existing pure tare-resolution function). Their implementation
+lives under Health application/domain directories. Nutribot's `scalePrompts.mjs`
+retains Telegram prompt and keyboard bodies. Consumers use the new facets; the old
+record/stamp/config implementations are removed rather than kept as forwarding trees.
+
+The before-change baseline `health-FmhWct` passed 165 named assertions across eight
+existing suites, including persisted-weight/prompt agreement. Candidate parity,
+native entry checks and final architecture/build verification remain required.
+
+## Full owner extraction checkpoint
+
+The 679-file Health/Nutribot move is applied, with 14 stable CLI launchers.
+Supplemental ownership review placed food-log operations, UPC nutrition lookup,
+nutrition audit/artwork stores, captured photos/audio, icon manifests, and nutrition
+configuration under Health. Shared backend code no longer constructs the Health
+runtime, nutrition budget, CLI analytics, or coaching registration directly; owned
+composition factories preserve their original initialization phases.
+
+`health-n1YXPT` passed all 165 original core assertion names. After correcting three
+obsolete density-contract imports, `health-stack-TlubL3` passed all 146 supplemental
+assertion names, with isolation controls and protected inputs unchanged. The latter
+retains the documented synthetic scratch mtime/copy adapter; it does not establish
+native metadata or host-process parity.
+
+Subsequent, not yet runtime-verified changes move mentions, scan setup, nutrition
+lookup, scale observation startup, and weekly maintenance into Health's
+`server/composition/app-runtime.mjs`. The host retains live analytics/observation
+references; callbacks resolve them when invoked. Four explicit nutrition domain
+facets and three browser entry points replace private consumer imports. Static
+parsing and local import checks pass for 702 Health/Nutribot source files.
+
+Lazy capture services now live behind a Health application contract, with one
+cache per Nutribot container and a regression for first-use reads and identity.
+Health also owns nutrition web dependencies and capture storage/vocabulary.
+Nutribot supplies destination factories at the original initialization points;
+Health no longer imports its private identity adapter. The shared response port
+moved as one unchanged class body into common application ports, with Telegram
+and Nutribot resolving the same authority. Explicit nutrition-port and scan
+contracts replace additional private imports. The latest static check covers
+708 Health/Nutribot sources with no missing local imports.
+
+These changes still require confined candidate verification and final boundary
+closure. They do not certify completion of milestone 3.
+
+The residual bridge cleanup removed six unused Health/Nutribot exports from
+neutral agent/router barrels and deleted the old sheet-provider forwarding file.
+App, printable-sheet CLI, and sheet tests now use the Health sheet contract.
+Health and Lifeplan share one common agent working-memory template; its Markdown
+content is unchanged, and existing schema/template identity assertions remain.
+
+The nutrition wire-test fixture now lives in `tests/_fixtures/nutrition`, outside
+production AI adapters; both original tests import that fixture. The food-capture
+wire benchmark CLI, library and tests now live under `modules/nutribot/cli`.
+Its original CLI path remains a static-import launcher with the original dispatch
+and executable mode. Six changed files retain identical parsed bodies after
+masking import paths; the benchmark was not executed against live AI services.
+The latest static Health/Nutribot import check covers 711 files with no missing
+local targets. These are structural checks, not candidate runtime verification.
+
+### Final installed public boundaries
+
+Nutribot's optional report-renderer initialization now lives in its owned
+`server/composition/report-renderer.mjs`. Installed app composition awaits that
+operation at the original phase. The exact constructor, configuration reads,
+native dynamic import, success/failure logging and null fallback are preserved;
+static comparison verifies the extracted block. Runtime verification is pending.
+
+The remaining reviewed interfaces are the actual owned CLI entries and existing
+composition operations, Health's weight-processing application boundary injected
+into Withings, Nutribot's Telegram identity adapter injected into scan dispatch,
+and the Health budget-zone contract consumed by Nutribot report captions.
+These are explicit public contracts; no directory-wide access is intended.
+The reviewed packet lists 24 exact entries, including the new renderer factory.

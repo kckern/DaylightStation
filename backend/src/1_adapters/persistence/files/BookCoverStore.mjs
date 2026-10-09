@@ -5,7 +5,7 @@ import yaml from 'js-yaml';
 import {
   deleteFile, ensureDir, fileExists, readBinary, readFile, writeBinaryAtomic, writeFileAtomic,
 } from '#system/utils/FileIO.mjs';
-import { coverContentType, coverExtension } from '#domains/books/BookCoverArt.mjs';
+import { coverContentType, coverExtension } from "../../../../../capabilities/book-catalog/server/domain/BookCoverArt.mjs";
 
 /**
  * BookCoverStore — the household's own copy of every cover it has found.

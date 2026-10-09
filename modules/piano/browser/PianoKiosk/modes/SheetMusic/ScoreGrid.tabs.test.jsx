@@ -1,7 +1,7 @@
 import { render, fireEvent, screen } from '@testing-library/react';
 
 // Heavy engraving chunk — irrelevant to tab behavior.
-vi.mock('../../../../../../frontend/src/modules/MusicNotation/renderers/osmdRender.js', () => ({
+vi.mock("../../../../../../capabilities/music-notation/browser/renderers/osmdRender.js", () => ({
   prefetchOsmd: () => Promise.resolve(),
 }));
 

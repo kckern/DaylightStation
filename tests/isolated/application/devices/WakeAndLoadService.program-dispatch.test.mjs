@@ -1,3 +1,4 @@
+import {contentRequiresCamera} from '../../../../backend/src/5_composition/policies/contentRequiresCamera.mjs';
 // Regression (2026-10-02/03, office-tv "Office Morning Program"):
 //   1. prewarm was unbounded — a Plex queue that serialized behind test runs
 //      held the load for 12 minutes before the screen was even told to play.
@@ -76,7 +77,7 @@ const progress = (broadcast, step, status) => broadcast.mock.calls.map(([e]) => 
 describe('WakeAndLoadService — program dispatch (prewarm deadline + watchdog basis)', () => {
   let logger, broadcast, eventBus, device, prewarmService;
 
-  const build = (extra = {}) => new WakeAndLoadService({
+  const build = (extra = {}) => new WakeAndLoadService({ contentRequiresCamera,
     ...testApplicationRuntime(),
     deviceService: { get: () => device },
     readinessPolicy: { isReady: async () => ({ ready: true }) },

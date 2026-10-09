@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import yaml from 'js-yaml';
-import { YamlFeedItemStateStore } from '#adapters/persistence/yaml/YamlFeedItemStateStore.mjs';
+import { YamlFeedItemStateStore } from "../../../../modules/feed/server/adapters/persistence/YamlFeedItemStateStore.mjs";
 
 const roots = [];
 afterEach(() => { while (roots.length) fs.rmSync(roots.pop(), { recursive: true, force: true }); });

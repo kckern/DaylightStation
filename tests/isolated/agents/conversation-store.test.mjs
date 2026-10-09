@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { YamlConversationStore } from '#adapters/agents/YamlConversationStore.mjs';
+import { YamlConversationStore } from "../../../capabilities/agent-runtime/server/adapters/YamlConversationStore.mjs";
 
 describe('YamlConversationStore', () => {
   let tmpDir, store;

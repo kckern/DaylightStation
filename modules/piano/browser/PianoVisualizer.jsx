@@ -6,7 +6,7 @@ import { TheoryPanel } from './components/TheoryPanel.jsx';
 import { useMidiSubscription } from './useMidiSubscription.js';
 import { resolveBoardRange } from './noteUtils.js';
 // Piano tokens: the office screen mounts this without Apps/PianoApp.jsx.
-import './pianoTokens.scss';
+import './tokens-style.mjs';
 import './components/PianoModePlaceholder.scss';
 import './PianoVisualizer.scss';
 import { getGameEntry, getGameIds } from './gameRegistry.js';

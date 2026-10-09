@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
-import { Ti86SchoolCalcCodec, decodeTi86Envelope } from '#adapters/schoolcalc/ti86/Ti86SchoolCalcCodec.mjs';
-import { encodeTi86SchoolActionQr } from '#adapters/schoolcalc/ti86/Ti86SchoolActionQr.mjs';
-import { HmacSchoolActionTokenIssuer } from '#adapters/school/actions/HmacSchoolActionTokenIssuer.mjs';
-import { SchoolLearningActionExecutor } from '#adapters/school/actions/SchoolLearningActionExecutor.mjs';
-import { SchoolCalcDevice } from '#domains/school/schoolcalc/index.mjs';
-import { BuildSchoolCalcArtifact } from '#apps/school/schoolcalc/BuildSchoolCalcArtifact.mjs';
-import { BuildLearningLesson } from '#apps/school/catalog/BuildLearningLesson.mjs';
-import { HydrateSchoolCalcActions } from '#apps/school/schoolcalc/HydrateSchoolCalcActions.mjs';
-import { ResolveSchoolCalcAction } from '#apps/school/schoolcalc/ResolveSchoolCalcAction.mjs';
-import { ResolveScanAction } from '#apps/school/usecases/ResolveScanAction.mjs';
+import { Ti86SchoolCalcCodec, decodeTi86Envelope } from "../../../../modules/school/server/adapters/schoolcalc/ti86/Ti86SchoolCalcCodec.mjs";
+import { encodeTi86SchoolActionQr } from "../../../../modules/school/server/adapters/schoolcalc/ti86/Ti86SchoolActionQr.mjs";
+import { HmacSchoolActionTokenIssuer } from "../../../../modules/school/server/adapters/actions/HmacSchoolActionTokenIssuer.mjs";
+import { SchoolLearningActionExecutor } from "../../../../modules/school/server/adapters/actions/SchoolLearningActionExecutor.mjs";
+import { SchoolCalcDevice } from "../../../../modules/school/server/domain/schoolcalc/index.mjs";
+import { BuildSchoolCalcArtifact } from "../../../../modules/school/server/application/schoolcalc/BuildSchoolCalcArtifact.mjs";
+import { BuildLearningLesson } from "../../../../modules/school/server/application/catalog/BuildLearningLesson.mjs";
+import { HydrateSchoolCalcActions } from "../../../../modules/school/server/application/schoolcalc/HydrateSchoolCalcActions.mjs";
+import { ResolveSchoolCalcAction } from "../../../../modules/school/server/application/schoolcalc/ResolveSchoolCalcAction.mjs";
+import { ResolveScanAction } from "../../../../modules/school/server/application/usecases/ResolveScanAction.mjs";
 
 const ADDRESS = 'main/quantitative/physics/motion/velocity';
 const ACTION_ID = 'worksheet:velocity-practice';

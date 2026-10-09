@@ -11,13 +11,13 @@
 // though the route itself does no checking at all.
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import express from 'express';
-import { createSchoolLifecycleRouter } from '#api/v1/routers/schoolLifecycle.mjs';
+import { createSchoolLifecycleRouter } from "../../../../modules/school/server/api/schoolLifecycle.mjs";
 import { errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
-import { GrownUpGate } from '#apps/school/GrownUpGate.mjs';
-import { ResolveReviewItem } from '#apps/school/usecases/ResolveReviewItem.mjs';
-import { SetAssignments } from '#apps/school/usecases/SetAssignments.mjs';
-import { MarkSessionAbandoned } from '#apps/school/usecases/MarkSessionAbandoned.mjs';
-import { SchoolLifecycleReadService } from '#apps/school/services/SchoolLifecycleReadService.mjs';
+import { GrownUpGate } from "../../../../modules/school/server/application/GrownUpGate.mjs";
+import { ResolveReviewItem } from "../../../../modules/school/server/application/usecases/ResolveReviewItem.mjs";
+import { SetAssignments } from "../../../../modules/school/server/application/usecases/SetAssignments.mjs";
+import { MarkSessionAbandoned } from "../../../../modules/school/server/application/usecases/MarkSessionAbandoned.mjs";
+import { SchoolLifecycleReadService } from "../../../../modules/school/server/application/services/SchoolLifecycleReadService.mjs";
 
 const silent = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
 const clock = () => new Date('2026-07-27T09:00:00.000Z');

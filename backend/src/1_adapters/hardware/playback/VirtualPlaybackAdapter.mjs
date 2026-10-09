@@ -36,7 +36,7 @@
  * @module adapters/hardware/playback
  */
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import { SlotStatus } from '#domains/playback-hub/value-objects/SlotStatus.mjs';
+import { SlotStatus } from "../../../../../modules/media/server/domain/playback-hub/value-objects/SlotStatus.mjs";
 
 const SOURCE = 'virtual-playback';
 const DEFAULT_TOPIC = 'school-playback';

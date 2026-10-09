@@ -24,7 +24,7 @@ const engraves = [];
 // Fed back through onLayout so tests can place the overlays against a known
 // staff geometry, the way a real OSMD extract would.
 let layoutToPublish = null;
-vi.mock('../../../../../../frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.jsx', () => ({
+vi.mock("../../../../../../capabilities/music-notation/browser/renderers/MusicXmlRenderer.jsx", () => ({
   MusicXmlRenderer: ({ musicXml, onLayout, scale, manuscript, children }) => {
     if (engraves[engraves.length - 1] !== musicXml) engraves.push(musicXml);
     useEffect(() => { if (layoutToPublish) onLayout?.(layoutToPublish); }, [musicXml, onLayout]);

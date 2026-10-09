@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolvePreset, expandFrame } from '../../../backend/src/1_adapters/content/art/presetResolver.mjs';
+import { resolvePreset, expandFrame } from "../../../modules/art/server/adapters/presetResolver.mjs";
 
 const presets = {
   'gallery-silent': { collection: 'all', music: null, matMargin: 4 },

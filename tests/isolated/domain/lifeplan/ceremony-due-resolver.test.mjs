@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CeremonyDueResolver } from '#domains/lifeplan/services/CeremonyDueResolver.mjs';
+import { CeremonyDueResolver } from "../../../../modules/life/server/domain/services/CeremonyDueResolver.mjs";
 
 const cadenceService = { isCeremonyDue: (timing) => timing === 'start_of_unit' };
 

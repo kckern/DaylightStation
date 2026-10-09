@@ -1,7 +1,7 @@
-import { createFeedRouter } from '#api/v1/routers/feed.mjs';
-import { FeedPrincipalResolver } from '#apps/feed/services/FeedPrincipalResolver.mjs';
-import { FeedReaderTimelineService } from '#apps/feed/services/FeedReaderTimelineService.mjs';
-import { FeedScrollSessionService } from '#apps/feed/services/FeedScrollSessionService.mjs';
+import { createFeedRouter } from "../../../modules/feed/server/api/feed.mjs";
+import { FeedPrincipalResolver } from "../../../modules/feed/server/application/services/FeedPrincipalResolver.mjs";
+import { FeedReaderTimelineService } from "../../../modules/feed/server/application/services/FeedReaderTimelineService.mjs";
+import { FeedScrollSessionService } from "../../../modules/feed/server/application/services/FeedScrollSessionService.mjs";
 
 export function createFeedTestRouter(legacy = {}) {
   const {

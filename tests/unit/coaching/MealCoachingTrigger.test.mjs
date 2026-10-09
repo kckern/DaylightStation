@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { MealCoachingTrigger } from '../../../backend/src/3_applications/coaching/MealCoachingTrigger.mjs';
+import { MealCoachingTrigger } from "../../../modules/health/server/application/coaching/MealCoachingTrigger.mjs";
 
 describe('MealCoachingTrigger', () => {
   let orchestrator;

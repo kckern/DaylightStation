@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { ContentQueryService } from '../../../../src/3_applications/content/ContentQueryService.mjs';
+import { ContentQueryService } from "../../../../../capabilities/content-catalog/server/application/ContentQueryService.mjs";
 
 const silentLogger = { info() {}, warn() {}, debug() {}, error() {} };
 

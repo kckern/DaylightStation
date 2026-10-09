@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SQUARES } from '@shared-gaming/rulesets/chess/index.mjs';
+import { SQUARES } from "../../../../capabilities/gaming/portable/rulesets/chess/index.mjs";
 import {
   DEFAULT_STAFF_SCHEME, identifyStaffAddress, noteLetter, noteName,
   squareToStaffAddress, staffCandidateSquares, staffToSquare, validateStaffScheme,
@@ -8,7 +8,7 @@ import {
 import { identifyChord, squareToChord, findChordCollisions, validateChordScheme } from './chordAddress.js';
 import { candidateSquares } from './chordCandidates.js';
 import { advanceCursor, createCursorState, minNotesFor } from './chordCursor.js';
-import { getStaffPosition } from '../../../../frontend/src/modules/MusicNotation/model/pitch.js';
+import { getStaffPosition } from "../../../../capabilities/music-notation/browser/model/pitch.js";
 
 const S = DEFAULT_STAFF_SCHEME;
 

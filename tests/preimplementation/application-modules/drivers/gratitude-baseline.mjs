@@ -8,7 +8,7 @@ import { GratitudeHouseholdService } from '../../../../backend/src/3_application
 import { GratitudeCardPrintService } from '../../../../backend/src/3_applications/gratitude/services/GratitudeCardPrintService.mjs';
 import { GratitudeEvents } from '../../../../backend/src/3_applications/events/RealtimePublications.mjs';
 import { YamlGratitudeDatastore } from '../../../../backend/src/1_adapters/persistence/yaml/YamlGratitudeDatastore.mjs';
-import { GratitudeFeedAdapter } from '../../../../backend/src/1_adapters/feed/sources/GratitudeFeedAdapter.mjs';
+import { GratitudeFeedAdapter } from "../../../../modules/feed/server/adapters/sources/GratitudeFeedAdapter.mjs";
 import { TemporaryImagePrintGateway } from '../../../../backend/src/1_adapters/hardware/thermal-printer/TemporaryImagePrintGateway.mjs';
 import { DataService } from '../../../../backend/src/1_adapters/persistence/files/DataService.mjs';
 import { ConfigService } from '../../../../backend/src/0_system/config/ConfigService.mjs';

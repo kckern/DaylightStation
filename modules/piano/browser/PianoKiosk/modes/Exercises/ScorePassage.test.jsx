@@ -50,7 +50,7 @@ const fourBarSteps = () => [60, 62, 64, 65, 67, 69, 71, 72].map((midi, index) =>
   notes: [{ midi, staff: 0, durationQuarters: 2, el: notehead(midi) }],
 }));
 
-vi.mock('../../../../../../frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.jsx', async () => {
+vi.mock("../../../../../../capabilities/music-notation/browser/renderers/MusicXmlRenderer.jsx", async () => {
   const { useEffect } = await import('react');
   return {
     MusicXmlRenderer: ({ musicXml, scale = 1, onLayout, onReady, onFailed, children }) => {

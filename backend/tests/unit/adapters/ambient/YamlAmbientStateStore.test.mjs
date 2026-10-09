@@ -2,7 +2,7 @@
 import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
-import { YamlAmbientStateStore } from '#adapters/ambient/YamlAmbientStateStore.mjs';
+import { YamlAmbientStateStore } from "../../../../../modules/screens/server/adapters/ambient/YamlAmbientStateStore.mjs";
 
 let dataDir;
 beforeEach(async () => {

@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { RuleMatchingService } from '#domains/lifeplan/services/RuleMatchingService.mjs';
-import { ProgressCalculator } from '#domains/lifeplan/services/ProgressCalculator.mjs';
-import { LifeEventProcessor } from '#domains/lifeplan/services/LifeEventProcessor.mjs';
-import { BiasCalibrationService } from '#domains/lifeplan/services/BiasCalibrationService.mjs';
-import { ShadowDetectionService } from '#domains/lifeplan/services/ShadowDetectionService.mjs';
-import { NightmareProximityService } from '#domains/lifeplan/services/NightmareProximityService.mjs';
-import { PastProcessingService } from '#domains/lifeplan/services/PastProcessingService.mjs';
+import { RuleMatchingService } from "../../../../modules/life/server/domain/services/RuleMatchingService.mjs";
+import { ProgressCalculator } from "../../../../modules/life/server/domain/services/ProgressCalculator.mjs";
+import { LifeEventProcessor } from "../../../../modules/life/server/domain/services/LifeEventProcessor.mjs";
+import { BiasCalibrationService } from "../../../../modules/life/server/domain/services/BiasCalibrationService.mjs";
+import { ShadowDetectionService } from "../../../../modules/life/server/domain/services/ShadowDetectionService.mjs";
+import { NightmareProximityService } from "../../../../modules/life/server/domain/services/NightmareProximityService.mjs";
+import { PastProcessingService } from "../../../../modules/life/server/domain/services/PastProcessingService.mjs";
 
 describe('RuleMatchingService', () => {
   const svc = new RuleMatchingService();
@@ -294,7 +294,7 @@ describe('LifeEventProcessor against the persisted model', () => {
 
 describe('Rule.effectivenessOf', () => {
   it('derives the label from raw counts, matching RuleMatchingService', async () => {
-    const { Rule } = await import('#domains/lifeplan/entities/Rule.mjs');
+    const { Rule } = await import("../../../../modules/life/server/domain/entities/Rule.mjs");
     const svc = new RuleMatchingService();
     for (const counts of [{}, { times_triggered: 10, times_followed: 8, times_helped: 7 },
       { times_triggered: 5, times_followed: 2, times_helped: 1 }, { times_triggered: 10, times_followed: 8, times_helped: 2 }]) {

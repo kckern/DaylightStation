@@ -8,7 +8,7 @@ const screenOff = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 vi.mock('./usePianoPlayback.js', () => ({ usePianoPlayback: () => playback }));
 vi.mock('./usePianoScreenOff.js', () => ({ usePianoScreenOff: () => screenOff }));
 vi.mock('../../../../frontend/src/lib/identity/ProfileAvatar.jsx', () => ({ default: () => null }));
-vi.mock('../../../../frontend/src/modules/Fitness/player/overlays/LockIcon.jsx', () => ({ default: () => <span data-testid="lock-icon" /> }));
+vi.mock("../../../fitness/browser/player/overlays/LockIcon.jsx", () => ({ default: () => <span data-testid="lock-icon" /> }));
 
 import PianoUserChip from './PianoUserChip.jsx';
 import PianoUserContext from './PianoUserContext.jsx';

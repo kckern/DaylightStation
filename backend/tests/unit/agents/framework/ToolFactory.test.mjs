@@ -2,8 +2,8 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { ToolFactory } from '../../../../src/3_applications/agents/framework/ToolFactory.mjs';
-import { createTool } from '../../../../src/3_applications/agents/ports/ITool.mjs';
+import { ToolFactory } from "../../../../../capabilities/agent-runtime/server/application/framework/ToolFactory.mjs";
+import { createTool } from "../../../../../capabilities/agent-runtime/server/application/ports/ITool.mjs";
 
 describe('ToolFactory', () => {
   it('should throw if createTools is not implemented', () => {

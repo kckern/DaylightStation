@@ -7,8 +7,8 @@ import { DEFAULT_CHORD_SCHEME } from '../../../PianoChessGame/chordAddress.js';
 import { staffTokenNotes } from '../../../PianoChessGame/staffAddress.js';
 import {
   clefRightEdge, ACCIDENTAL_INK_LEFT, NOTEHEAD_RX,
-} from '../../../../../../frontend/src/modules/MusicNotation/renderers/staffGlyphs.jsx';
-import { rimClefRight, rimStaffExtent } from '../../../../../../frontend/src/modules/MusicNotation/renderers/RimStaffRenderer.jsx';
+} from "../../../../../../capabilities/music-notation/browser/renderers/staffGlyphs.jsx";
+import { rimClefRight, rimStaffExtent } from "../../../../../../capabilities/music-notation/browser/renderers/RimStaffRenderer.jsx";
 
 const ghosts = (c) => c.querySelectorAll('.action-staff__ghost');
 const card = (c) => c.querySelector('.chess-staff-label');

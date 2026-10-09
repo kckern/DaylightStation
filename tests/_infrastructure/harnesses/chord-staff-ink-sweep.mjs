@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const ENTRY_SRC = `
-import { renderChordStaff, computeChordStaffLayout } from '${REPO}/frontend/src/modules/MusicNotation/renderers/chordStaff.js';
+import { renderChordStaff, computeChordStaffLayout } from '${REPO}/capabilities/music-notation/browser/renderers/chordStaff.js';
 window.renderChordStaff = renderChordStaff;
 window.computeChordStaffLayout = computeChordStaffLayout;
 `;

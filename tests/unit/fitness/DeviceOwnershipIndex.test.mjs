@@ -10,7 +10,7 @@ jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
   })
 }));
 
-const { DeviceOwnershipIndex } = await import('#frontend/hooks/fitness/DeviceOwnershipIndex.js');
+const { DeviceOwnershipIndex } = await import("../../../modules/fitness/browser/hooks/fitness/DeviceOwnershipIndex.js");
 
 describe('DeviceOwnershipIndex', () => {
   let index;

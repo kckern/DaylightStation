@@ -3,7 +3,7 @@ import {
   buildLearningSummary,
   normalizeRequirement,
   requirementEvidence,
-} from '#shared/music/learningPrograms.mjs';
+} from "../../portable/music/learningPrograms.mjs";
 import {
   InvalidInputError,
   MissingResourceError,

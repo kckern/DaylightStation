@@ -15,7 +15,7 @@
 // appear / caret drifted / staff blank / didn't save" report is traceable from
 // the logs alone.
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { MusicXmlRenderer } from '../../../../../../frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.jsx';
+import { MusicXmlRenderer } from "../../../../../../capabilities/music-notation/browser/renderers/MusicXmlRenderer.jsx";
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import getLogger from '../../../../../../frontend/src/lib/logging/Logger.js';
 import { record, intern, KIND, startRecorder, stopRecorder } from '../../../../../../frontend/src/lib/logging/inputRecorder.js';

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { NfcResolver } from '#domains/trigger/services/NfcResolver.mjs';
+import { NfcResolver } from "../../../../../capabilities/device-dispatch/server/domain/services/NfcResolver.mjs";
 
 const makeContentIdResolver = () => ({
   resolve: (compound) => compound.startsWith('plex:') ? compound : null,

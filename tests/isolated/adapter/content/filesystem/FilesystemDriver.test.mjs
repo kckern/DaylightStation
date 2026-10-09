@@ -1,5 +1,5 @@
 // tests/isolated/adapter/content/filesystem/FilesystemDriver.test.mjs
-import { FilesystemDriver } from '#adapters/content/filesystem/FilesystemDriver.mjs';
+import { FilesystemDriver } from "../../../../../capabilities/content-catalog/server/adapters/providers/filesystem/FilesystemDriver.mjs";
 
 describe('FilesystemDriver', () => {
   describe('source identification', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { BeliefSignalDetector } from '#domains/lifeplan/services/BeliefSignalDetector.mjs';
+import { BeliefSignalDetector } from "../../../../modules/life/server/domain/services/BeliefSignalDetector.mjs";
 
 describe('BeliefSignalDetector', () => {
   const detector = new BeliefSignalDetector();

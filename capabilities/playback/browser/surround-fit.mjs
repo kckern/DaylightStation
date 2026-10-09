@@ -1,0 +1,1 @@
+export { FONT_STEP_PX, LABEL_FLOOR_ANCHOR_PX, PROSE_FLOOR_ANCHOR_PX, bandPools, fitBand, fitPlate, fitStyle, lyricCeilingPx, plateStyle, proseFloorPx, rootWidthOf, withheldPlate, withheldSets, withhold } from "./surround/fit.js";

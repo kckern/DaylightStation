@@ -1,7 +1,7 @@
 // backend/src/4_api/routers/item.mjs
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
-import { toListItem } from './list.mjs';
+import { toListItem } from "../../../../../capabilities/content-catalog/server/api/list.mjs";
 import { parseModifiers } from '../utils/modifierParser.mjs';
 import { splatPath } from '#api/utils/wildcard.mjs';
 

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { ProgressSyncService } from '#apps/content/services/ProgressSyncService.mjs';
-import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
-import { ProgressWriteRuntime } from '#adapters/content/ProgressWriteRuntime.mjs';
+import { ProgressSyncService } from "../../../../capabilities/playback/server/application/services/ProgressSyncService.mjs";
+import { MediaProgress } from "../../../../capabilities/content-catalog/server/domain/entities/MediaProgress.mjs";
+import { ProgressWriteRuntime } from "../../../../capabilities/playback/server/adapters/ProgressWriteRuntime.mjs";
 
 // ── Mock factories ───────────────────────────────────────────────────
 

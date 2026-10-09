@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { HealthQueryService } from '../../../../../backend/src/3_applications/agents/health-coach/services/HealthQueryService.mjs';
+import { HealthQueryService } from "../../../../../modules/health/server/application/agents/health-coach/services/HealthQueryService.mjs";
 
 function makeStore() {
   return {

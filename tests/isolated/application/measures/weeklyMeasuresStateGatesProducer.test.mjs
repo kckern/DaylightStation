@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { WeeklyMeasuresStateGatesProducer } from '#apps/measures/WeeklyMeasuresStateGatesProducer.mjs';
+import { WeeklyMeasuresStateGatesProducer } from "../../../../modules/fitness/server/application/measures/WeeklyMeasuresStateGatesProducer.mjs";
 
 const scheduler = { schedule: () => () => {} };
 

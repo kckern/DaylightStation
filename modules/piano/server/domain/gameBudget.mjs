@@ -16,7 +16,7 @@
  * Learner and device totals move in the same applySettle call on the same
  * record, so the two cannot drift (design: "one transaction").
  */
-import { studyDate } from "#domains/school/timing.mjs";
+import { studyDate } from "../../../school/server/domain-timing.mjs";
 
 /**
  * The timezone is REQUIRED, not defaulted. `studyDate` treats a falsy

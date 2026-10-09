@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, test } from 'vitest';
-import { TriggerDispatchService } from '../../../../backend/src/3_applications/trigger/TriggerDispatchService.mjs';
-import { TriggerActuationGateway } from '../../../../backend/src/1_adapters/trigger/TriggerActuationGateway.mjs';
+import { TriggerDispatchService } from "../../../../capabilities/device-dispatch/server/application/TriggerDispatchService.mjs";
+import { TriggerActuationGateway } from "../../../../capabilities/device-dispatch/server/adapters/TriggerActuationGateway.mjs";
 import { findPushTextDefects } from '../../../../backend/src/2_domains/notification/push/pushText.mjs';
 
 const TEST_RUNTIME = {
@@ -713,7 +713,7 @@ describe('TriggerDispatchService.setNote', () => {
 });
 
 // --- appended: unified-core wiring ---
-import { TriggerEvent } from '#domains/trigger/TriggerEvent.mjs';
+import { TriggerEvent } from "../../../../capabilities/device-dispatch/server/domain/TriggerEvent.mjs";
 
 describe('TriggerDispatchService (unified core)', () => {
   function make(registry, wake) {

@@ -1,9 +1,9 @@
 // tests/unit/api/routers/finance.test.mjs
 import { vi } from 'vitest';
 import express from 'express';
-import request from 'supertest';
-import { createFinanceRouter } from '#backend/src/4_api/v1/routers/finance.mjs';
-import { FinanceApiService } from '#backend/src/3_applications/finance/FinanceApiService.mjs';
+import request from '../../../preimplementation/application-modules/drivers/remaining-http-request.mjs';
+import { createFinanceRouter } from "../../../../modules/finance/server/api/finance.mjs";
+import { FinanceApiService } from "../../../../modules/finance/server/application/FinanceApiService.mjs";
 
 describe('Finance API Router', () => {
   let app;

@@ -2,7 +2,7 @@
 
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert';
-import { YamlWorkingMemoryAdapter } from '../../../../src/1_adapters/agents/YamlWorkingMemoryAdapter.mjs';
+import { YamlWorkingMemoryAdapter } from "../../../../../capabilities/agent-runtime/server/adapters/YamlWorkingMemoryAdapter.mjs";
 
 describe('YamlWorkingMemoryAdapter', () => {
   let adapter;

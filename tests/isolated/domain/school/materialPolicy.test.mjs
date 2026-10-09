@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { CATEGORIES } from '#domains/school/categories.mjs';
+import { CATEGORIES } from "../../../../modules/school/server/domain/categories.mjs";
 import {
   orderUnits,
   unitCompleted,
   annotateLocks,
   quizSessionPassed,
-} from '#domains/school/materialPolicy.mjs';
+} from "../../../../modules/school/server/domain/materialPolicy.mjs";
 
 const threshold = { completionThresholdPercent: 90 };
 

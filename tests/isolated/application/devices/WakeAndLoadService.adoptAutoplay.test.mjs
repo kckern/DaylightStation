@@ -1,3 +1,4 @@
+import {contentRequiresCamera} from '../../../../backend/src/5_composition/policies/contentRequiresCamera.mjs';
 import { describe, it, expect, vi } from 'vitest';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
 import { testApplicationRuntime } from '../../../_lib/applicationRuntime.mjs';
@@ -12,7 +13,7 @@ function makeSvc(sendCommand) {
     prepareForContent: vi.fn().mockResolvedValue({ ok: true, coldRestart: false, cameraAvailable: true }),
     loadContent: vi.fn().mockResolvedValue({ ok: true }),
   };
-  return new WakeAndLoadService({
+  return new WakeAndLoadService({ contentRequiresCamera,
     ...testApplicationRuntime(),
     deviceService: { get: vi.fn().mockReturnValue(device) },
     readinessPolicy: { isReady: vi.fn() },

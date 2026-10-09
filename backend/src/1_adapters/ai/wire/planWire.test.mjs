@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { planWire } from './planWire.mjs';
 import { TOON_REPLY_RULES } from './replyFormat.mjs';
-import { captureTextPrompt, captureImagePrompt, captureRevisionPrompt, captureReviseEntryPrompt } from './fixtures/foodPrompts.mjs';
+import { captureTextPrompt, captureImagePrompt, captureRevisionPrompt, captureReviseEntryPrompt } from "../../../../../tests/_fixtures/nutrition/foodPrompts.mjs";
 
 const system = (messages) => messages.find(m => m.role === 'system')?.content ?? messages[0].content;
 

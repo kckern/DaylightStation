@@ -2,8 +2,8 @@
 
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert';
-import { HealthCoachAgent } from '../../../../src/3_applications/agents/health-coach/HealthCoachAgent.mjs';
-import { WorkingMemoryState } from '../../../../src/3_applications/agents/framework/WorkingMemory.mjs';
+import { HealthCoachAgent } from "../../../../../modules/health/server/application/agents/health-coach/HealthCoachAgent.mjs";
+import { WorkingMemoryState } from "../../../../../capabilities/agent-runtime/server/application/framework/WorkingMemory.mjs";
 
 describe('HealthCoachAgent', () => {
   let mockRuntime;

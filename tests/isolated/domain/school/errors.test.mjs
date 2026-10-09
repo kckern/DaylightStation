@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { GuestForbiddenError, SessionGoneError } from '#domains/school/errors.mjs';
+import { GuestForbiddenError, SessionGoneError } from "../../../../modules/school/server/domain/errors.mjs";
 
 // finding 3: bare `class X extends Error {}` leaves error.name === 'Error' (JS
 // does not set it for subclasses) and has nowhere to attach the bank/session

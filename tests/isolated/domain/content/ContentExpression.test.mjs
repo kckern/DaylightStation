@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ContentExpression } from '#domains/content/ContentExpression.mjs';
+import { ContentExpression } from "../../../../capabilities/content-catalog/server/domain/ContentExpression.mjs";
 
 describe('ContentExpression', () => {
 

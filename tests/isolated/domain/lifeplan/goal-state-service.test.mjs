@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { GoalStateService } from '#domains/lifeplan/services/GoalStateService.mjs';
-import { Goal } from '#domains/lifeplan/entities/Goal.mjs';
-import { Dependency } from '#domains/lifeplan/entities/Dependency.mjs';
+import { GoalStateService } from "../../../../modules/life/server/domain/services/GoalStateService.mjs";
+import { Goal } from "../../../../modules/life/server/domain/entities/Goal.mjs";
+import { Dependency } from "../../../../modules/life/server/domain/entities/Dependency.mjs";
 import { frozenClock } from '../../../_lib/clock-helper.mjs';
 
 describe('GoalStateService', () => {

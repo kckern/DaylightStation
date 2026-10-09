@@ -7,8 +7,8 @@
 // adapter and asserts the completion log carries a numeric per-source
 // elapsed-ms entry for both.
 import { describe, it, expect, vi } from 'vitest';
-import { ContentQueryService } from '#apps/content/ContentQueryService.mjs';
-import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
+import { ContentQueryService } from "../../../../capabilities/content-catalog/server/application/ContentQueryService.mjs";
+import { RegistryContentCatalogGateway } from "../../../../capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
 
 const catalogFor = (registry) => new RegistryContentCatalogGateway({ registry });
 

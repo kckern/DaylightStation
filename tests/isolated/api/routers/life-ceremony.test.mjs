@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import createLifeRouterBase from '#api/v1/routers/life.mjs';
-import { LifeApiOperations } from '#apps/lifeplan/LifeApiOperations.mjs';
-import { LifePlanOperations } from '#apps/lifeplan/LifePlanOperations.mjs';
+import createLifeRouterBase from "../../../../modules/life/server/api/life.mjs";
+import { LifeApiOperations } from "../../../../modules/life/server/application/LifeApiOperations.mjs";
+import { LifePlanOperations } from "../../../../modules/life/server/application/LifePlanOperations.mjs";
 
 const createLifeRouter = (config) => {
   const lifePlanOperations = new LifePlanOperations({
@@ -23,7 +23,7 @@ const createLifeRouter = (config) => {
     }),
   });
 };
-import { CeremonyService } from '#apps/lifeplan/services/CeremonyService.mjs';
+import { CeremonyService } from "../../../../modules/life/server/application/services/CeremonyService.mjs";
 
 const baseConfig = {
   lifePlanStore: { load: () => null },

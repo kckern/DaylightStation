@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { placeFragments, contentHeightPt } from '../../../../backend/src/1_rendering/school/documents/layout.mjs';
+import { placeFragments, contentHeightPt } from "../../../../modules/school/server/rendering/documents/layout.mjs";
 
 // Distinct gaps per class pair so a wrong lookup cannot coincidentally pass.
 const spacing = {

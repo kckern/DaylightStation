@@ -12,17 +12,17 @@ vi.mock('../../../../frontend/src/lib/logging/Logger.js', () => ({
   __esModule: true,
 }));
 
-vi.mock('../../../../frontend/src/hooks/fitness/types.js', () => ({
+vi.mock("../../../../modules/fitness/browser/hooks/fitness/types.js", () => ({
   resolveDisplayLabel: ({ name }) => name,
 }));
 
-vi.mock('../../../../frontend/src/modules/Fitness/domain/types.js', () => ({
+vi.mock("../../../../modules/fitness/browser/domain/types.js", () => ({
   ParticipantStatus: { ACTIVE: 'ACTIVE', INACTIVE: 'INACTIVE' },
 }));
 
 let ParticipantRoster;
 beforeAll(async () => {
-  ({ ParticipantRoster } = await import('../../../../frontend/src/hooks/fitness/ParticipantRoster.js'));
+  ({ ParticipantRoster } = await import("../../../../modules/fitness/browser/hooks/fitness/ParticipantRoster.js"));
 });
 
 describe('ParticipantRoster.getActiveParticipantState()', () => {

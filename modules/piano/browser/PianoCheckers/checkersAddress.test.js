@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { coordToIndex } from '@shared-gaming/rulesets/checkers/engine.mjs';
+import { coordToIndex } from "../../../../capabilities/gaming/portable/rulesets/checkers/engine.mjs";
 import {
   DEFAULT_FILE_NOTES, DEFAULT_RANK_NOTES, activeFileIndex, activeRankDisplayIndex,
   fileRailAddresses, rankRailAddresses, shuffleCheckersNotes,

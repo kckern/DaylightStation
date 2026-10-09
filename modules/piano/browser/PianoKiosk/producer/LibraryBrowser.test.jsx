@@ -9,7 +9,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, within, waitFor, act } from '@testing-library/react';
-import { facets } from '@shared-music/loopQuery.mjs';
+import { facets } from "../../../../../capabilities/music-notation/portable/loopQuery.mjs";
 import { LibraryBrowser } from './LibraryBrowser.jsx';
 
 const useKeepScreenAwake = vi.hoisted(() => vi.fn());

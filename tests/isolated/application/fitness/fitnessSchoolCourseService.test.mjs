@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   FitnessSchoolCourseService,
   deriveObservations,
-} from '#apps/fitness/FitnessSchoolCourseService.mjs';
-import { defaultFitnessSuccessPolicy, revisionFor } from '#domains/school/fitnessCourse.mjs';
+} from "../../../../modules/fitness/server/application/FitnessSchoolCourseService.mjs";
+import { defaultFitnessSuccessPolicy, revisionFor } from "../../../../modules/school/server/domain/fitnessCourse.mjs";
 
 class MemoryStore {
   records = new Map();

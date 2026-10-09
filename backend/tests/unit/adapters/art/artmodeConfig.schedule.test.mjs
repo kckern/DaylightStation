@@ -2,7 +2,7 @@
 import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
-import { loadArtmodeConfig, loadArtCollections } from '#adapters/content/art/artmodeConfig.mjs';
+import { loadArtmodeConfig, loadArtCollections } from "../../../../../modules/art/server/adapters/artmodeConfig.mjs";
 
 // loadArtmodeConfig takes the HOUSEHOLD dir and joins its own relative path —
 // it is not given the data root. Passing dataPath made it look under <tmp>/…,

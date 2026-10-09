@@ -6,7 +6,7 @@
  * preference routing) with fake channel adapters.
  */
 import { describe, it, expect, beforeEach } from '@jest/globals';
-import { CeremonyScheduler } from '#apps/lifeplan/services/CeremonyScheduler.mjs';
+import { CeremonyScheduler } from "../../../modules/life/server/application/services/CeremonyScheduler.mjs";
 import { NotificationService } from '#apps/notification/NotificationService.mjs';
 import { NotificationPreference } from '#domains/notification/entities/NotificationPreference.mjs';
 

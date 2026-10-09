@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createLibbyRuntime } from './libby.mjs';
+import { createLibbyRuntime } from "../../../../capabilities/content-catalog/server/composition/libby.mjs";
 
 const base = { dataPath: '/data', username: 'test-user', fetch: async () => new Response('{}') };
 

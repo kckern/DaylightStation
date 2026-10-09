@@ -9,11 +9,11 @@
 //   3. an annotated note that auto-splits across a barline keeps its annotation
 //      exactly once (the splitElement / C1 path)
 import { describe, it, expect } from 'vitest';
-import { parseMusicXml } from '#frontend/modules/MusicNotation/parseMusicXml.js';
+import { parseMusicXml } from "../../../../../../../capabilities/music-notation/browser/parseMusicXml.js";
 import { initEditor, replacePitch, insertNote, toggleDot, serializeFromEditor } from './editor.js';
 import { makeEmptyScore } from './score.js';
 import { makeNote } from './note.js';
-import maryXml from '#frontend/modules/MusicNotation/__fixtures__/maryHadALittleLamb.musicxml?raw';
+import maryXml from "../../../../../../../capabilities/music-notation/browser/__fixtures__/maryHadALittleLamb.musicxml?raw";
 
 // Project a Score to a stable, comparable shape (ignore only truly derived/positional noise).
 function project(score) {

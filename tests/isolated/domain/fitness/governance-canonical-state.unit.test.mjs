@@ -25,7 +25,7 @@ vi.mock('#frontend/lib/api.mjs', () => ({
 
 let GovernanceEngine;
 beforeAll(async () => {
-  ({ GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js'));
+  ({ GovernanceEngine } = await import("../../../../modules/fitness/browser/hooks/fitness/GovernanceEngine.js"));
 });
 
 const createMockSession = ({ participantState, roster, zoneProfileStore } = {}) => ({

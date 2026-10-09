@@ -1,6 +1,6 @@
-import request from 'supertest';
+import request from '../../../preimplementation/application-modules/drivers/remaining-http-request.mjs';
 import express from 'express';
-import { createArtRouter } from '../../../../backend/src/4_api/v1/routers/art.mjs';
+import { createArtRouter } from "../../../../modules/art/server/api/art.mjs";
 
 const noopLogger = { debug: () => {}, warn: () => {}, error: () => {}, info: () => {} };
 

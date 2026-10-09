@@ -3,8 +3,8 @@ import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
 import { createScreensRouter } from '../../../backend/src/4_api/v1/routers/screens.mjs';
-import { ScreensQueryService } from '#apps/screens/ScreensQueryService.mjs';
-import { FilesystemScreensRepository } from '#adapters/persistence/files/FilesystemScreensRepository.mjs';
+import { ScreensQueryService } from "../../../capabilities/screen-host/server/application/ScreensQueryService.mjs";
+import { FilesystemScreensRepository } from "../../../capabilities/screen-host/server/adapters/persistence/FilesystemScreensRepository.mjs";
 
 let dataPath;
 

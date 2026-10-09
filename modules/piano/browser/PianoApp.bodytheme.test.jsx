@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyPianoBodyTheme } from '../../../frontend/src/Apps/pianoBodyTheme.js';
+import { applyPianoBodyTheme } from "./pianoBodyTheme.js";
 
 describe('applyPianoBodyTheme', () => {
   it('sets the charcoal body background and returns a restore fn', () => {

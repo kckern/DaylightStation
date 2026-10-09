@@ -1,15 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
-import { YamlStateGatesPolicySource } from '#adapters/state-gates/config/YamlStateGatesPolicySource.mjs';
-import { YamlStateGatesStateEngine } from '#adapters/state-gates/persistence/YamlStateGatesStateEngine.mjs';
-import { YamlStateGatesProjectionRepository } from '#adapters/state-gates/persistence/YamlStateGatesProjectionRepository.mjs';
-import { YamlStateGatesTransitionRepository } from '#adapters/state-gates/persistence/YamlStateGatesTransitionRepository.mjs';
-import { IStateGatesProjectionRepository } from '#apps/state-gates/ports/IStateGatesProjectionRepository.mjs';
-import { IStateGatesTransitionRepository } from '#apps/state-gates/ports/IStateGatesTransitionRepository.mjs';
-import { AuthenticatedStateGatesIngress } from '#adapters/state-gates/ingress/AuthenticatedStateGatesIngress.mjs';
-import { HttpStateGatesIdentityAdapter } from '#adapters/state-gates/ingress/HttpStateGatesIdentityAdapter.mjs';
-import { ConfigStateGatesSubjectCatalog } from '#adapters/state-gates/config/ConfigStateGatesSubjectCatalog.mjs';
-import { RoleStateGatesAdministrationAuthorizer } from '#adapters/state-gates/auth/RoleStateGatesAdministrationAuthorizer.mjs';
-import { StateGatesEventBusPublisher } from '#adapters/state-gates/eventbus/StateGatesEventBusPublisher.mjs';
+import { YamlStateGatesPolicySource } from "../../../../capabilities/state-gates/server/adapters/config/YamlStateGatesPolicySource.mjs";
+import { YamlStateGatesStateEngine } from "../../../../capabilities/state-gates/server/adapters/persistence/YamlStateGatesStateEngine.mjs";
+import { YamlStateGatesProjectionRepository } from "../../../../capabilities/state-gates/server/adapters/persistence/YamlStateGatesProjectionRepository.mjs";
+import { YamlStateGatesTransitionRepository } from "../../../../capabilities/state-gates/server/adapters/persistence/YamlStateGatesTransitionRepository.mjs";
+import { IStateGatesProjectionRepository } from "../../../../capabilities/state-gates/server/application/ports/IStateGatesProjectionRepository.mjs";
+import { IStateGatesTransitionRepository } from "../../../../capabilities/state-gates/server/application/ports/IStateGatesTransitionRepository.mjs";
+import { AuthenticatedStateGatesIngress } from "../../../../capabilities/state-gates/server/adapters/ingress/AuthenticatedStateGatesIngress.mjs";
+import { HttpStateGatesIdentityAdapter } from "../../../../capabilities/state-gates/server/adapters/ingress/HttpStateGatesIdentityAdapter.mjs";
+import { ConfigStateGatesSubjectCatalog } from "../../../../capabilities/state-gates/server/adapters/config/ConfigStateGatesSubjectCatalog.mjs";
+import { RoleStateGatesAdministrationAuthorizer } from "../../../../capabilities/state-gates/server/adapters/auth/RoleStateGatesAdministrationAuthorizer.mjs";
+import { StateGatesEventBusPublisher } from "../../../../capabilities/state-gates/server/adapters/eventbus/StateGatesEventBusPublisher.mjs";
 
 describe('State Gates adapters', () => {
   it('maps household YAML into a typed candidate with a semantic digest', async () => {

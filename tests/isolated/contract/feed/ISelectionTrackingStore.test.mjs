@@ -1,6 +1,6 @@
 // tests/isolated/contract/feed/ISelectionTrackingStore.test.mjs
 import { describe, test, expect } from 'vitest';
-import { ISelectionTrackingStore } from '#apps/feed/ports/ISelectionTrackingStore.mjs';
+import { ISelectionTrackingStore } from "../../../../modules/feed/server/application/ports/ISelectionTrackingStore.mjs";
 
 describe('ISelectionTrackingStore contract', () => {
   test('getAll throws not implemented', async () => {

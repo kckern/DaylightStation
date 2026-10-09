@@ -3,7 +3,7 @@ import {
   DECISIONS,
   decideDispatch,
   decideOnApprove,
-} from '../../../../backend/src/2_domains/donow/policy.mjs';
+} from "../../../../modules/donow/server/domain/policy.mjs";
 
 describe('DoNow Policy — dispatch decision', () => {
   describe('DECISIONS constant', () => {

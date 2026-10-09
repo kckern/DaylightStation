@@ -2,7 +2,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { OutputValidator } from '../../../../src/3_applications/agents/framework/OutputValidator.mjs';
+import { OutputValidator } from "../../../../../capabilities/agent-runtime/server/application/framework/OutputValidator.mjs";
 
 const testSchema = {
   type: 'object',

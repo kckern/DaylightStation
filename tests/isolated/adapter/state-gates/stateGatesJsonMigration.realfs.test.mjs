@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import yaml from 'js-yaml';
 import { afterEach, describe, expect, it } from 'vitest';
-import { YamlStateGatesStateEngine } from '#adapters/state-gates/persistence/YamlStateGatesStateEngine.mjs';
+import { YamlStateGatesStateEngine } from "../../../../capabilities/state-gates/server/adapters/persistence/YamlStateGatesStateEngine.mjs";
 
 // No injected load/loadLegacy/mtime here on purpose: this test exercises the
 // engine's DEFAULT IO (writeFileAtomic, readYamlFromPath, fs.statSync-backed

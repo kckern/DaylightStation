@@ -19,23 +19,23 @@ vi.mock('../../../../capabilities/screen-host/browser/widgets/registry.js', () =
   getWidgetRegistry: () => ({ get: () => null }),
 }));
 
-vi.mock('@/modules/Fitness/useFitnessScreen.js', () => ({
+vi.mock("../../../../modules/fitness/browser/useFitnessScreen.js", () => ({
   useFitnessScreen: () => ({ onNavigate: null }),
 }));
 
-vi.mock('@/context/FitnessContext.jsx', () => ({
+vi.mock("../../../../modules/fitness/browser/context/FitnessContext.jsx", () => ({
   useFitnessContext: () => ({ openVoiceMemoCapture: null }),
 }));
 
-vi.mock('@/modules/Fitness/lib/dateFormatter.js', () => ({
+vi.mock("../../../../modules/fitness/browser/lib/dateFormatter.js", () => ({
   formatFitnessDate: () => '',
 }));
 
-vi.mock('#frontend/modules/Fitness/widgets/FitnessSessionDetailWidget/RouteMap.jsx', () => ({ default: () => null }));
-vi.mock('#frontend/modules/Fitness/widgets/FitnessSessionDetailWidget/FitnessTimeline.jsx', () => ({ default: () => null }));
-vi.mock('#frontend/modules/Fitness/widgets/_shared/SportIcon.jsx', () => ({ default: () => null, formatSportType: () => '' }));
+vi.mock("../../../../modules/fitness/browser/widgets/FitnessSessionDetailWidget/RouteMap.jsx", () => ({ default: () => null }));
+vi.mock("../../../../modules/fitness/browser/widgets/FitnessSessionDetailWidget/FitnessTimeline.jsx", () => ({ default: () => null }));
+vi.mock("../../../../modules/fitness/browser/widgets/_shared/SportIcon.jsx", () => ({ default: () => null, formatSportType: () => '' }));
 
-import FitnessSessionDetailWidget from '#frontend/modules/Fitness/widgets/FitnessSessionDetailWidget/FitnessSessionDetailWidget.jsx';
+import FitnessSessionDetailWidget from "../../../../modules/fitness/browser/widgets/FitnessSessionDetailWidget/FitnessSessionDetailWidget.jsx";
 
 function findDeleteButton(container) {
   // Prefer data-testid for a stable selector; fall back to text match.

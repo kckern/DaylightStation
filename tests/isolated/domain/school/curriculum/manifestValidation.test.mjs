@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { LOCATOR_KINDS, validateManifest } from '#domains/school/curriculum/manifestValidation.mjs';
+import { LOCATOR_KINDS, validateManifest } from "../../../../../modules/school/server/domain/curriculum/manifestValidation.mjs";
 
 const valid = (over = {}) => ({
   id: 'liberty-kids-01',

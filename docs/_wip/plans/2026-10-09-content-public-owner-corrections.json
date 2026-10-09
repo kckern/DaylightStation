@@ -1,0 +1,13 @@
+{
+  "moves": {
+    "capabilities/content-catalog/server/application/services/ContentAccessPolicyService.mjs": "modules/arcade/server/application/ContentAccessPolicyService.mjs",
+    "capabilities/content-catalog/server/adapters/persistence/FilesystemContentFilterRepository.mjs": "modules/media/server/adapters/persistence/FilesystemContentFilterRepository.mjs",
+    "capabilities/content-catalog/server/api/contentFilter.mjs": "modules/media/server/api/contentFilter.mjs"
+  },
+  "retiredForwardingBarrels": [
+    "backend/src/2_domains/content/index.mjs",
+    "backend/src/3_applications/content/index.mjs",
+    "backend/src/3_applications/content/ports/index.mjs"
+  ],
+  "consumerReferenceScanFiles": 11507
+}

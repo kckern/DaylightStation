@@ -1,6 +1,6 @@
 // tests/isolated/agents/health-coach/workingMemoryTemplate.test.mjs
 import { describe, it, expect } from 'vitest';
-import { healthCoachWorkingMemoryTemplate } from '../../../../backend/src/3_applications/agents/health-coach/memory/workingMemoryTemplate.mjs';
+import { userWorkingMemoryTemplate as healthCoachWorkingMemoryTemplate } from "#apps/agents/framework/userWorkingMemoryTemplate.mjs";
 
 describe('healthCoachWorkingMemoryTemplate', () => {
   it('is a non-empty string', () => {
@@ -21,7 +21,7 @@ describe('healthCoachWorkingMemoryTemplate', () => {
   });
 
   it('lifeplan-guide template re-exports the same value', async () => {
-    const m = await import('../../../../backend/src/3_applications/agents/lifeplan-guide/memory/workingMemoryTemplate.mjs');
+    const m = await import("../../../../modules/life/server/application/agents/lifeplan-guide/memory/workingMemoryTemplate.mjs");
     expect(m.lifeplanGuideWorkingMemoryTemplate).toBe(healthCoachWorkingMemoryTemplate);
   });
 });

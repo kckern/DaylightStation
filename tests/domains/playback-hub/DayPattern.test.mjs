@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DayPattern } from '../../../backend/src/2_domains/playback-hub/value-objects/DayPattern.mjs';
+import { DayPattern } from "../../../modules/media/server/domain/playback-hub/value-objects/DayPattern.mjs";
 import { ValidationError } from '../../../backend/src/2_domains/core/errors/ValidationError.mjs';
 
 // 2026-05-25 is a Monday. Build matches() fixtures referencing days of week.

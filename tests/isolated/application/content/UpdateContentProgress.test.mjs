@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { UpdateContentProgress } from '#apps/content/usecases/UpdateContentProgress.mjs';
+import { UpdateContentProgress } from "../../../../capabilities/playback/server/application/usecases/UpdateContentProgress.mjs";
 
 describe('UpdateContentProgress', () => {
   it('persists the exact progress DTO in the adapter-provided logical namespace', async () => {

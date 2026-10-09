@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const worktreeRoot = path.resolve(__dirname, '../../../..');
-const playerPath = path.join(worktreeRoot, 'frontend/src/modules/Player/Player.jsx');
+const playerPath = path.join(worktreeRoot, 'capabilities/playback/browser/public.mjs');
 const stubPath = path.join(__dirname, 'stubPlayer.jsx');
 // The worktree's frontend/node_modules is a symlink into the main checkout;
 // resolve it so aliases and fs.allow point at real paths.

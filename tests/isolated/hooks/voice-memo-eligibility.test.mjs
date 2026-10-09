@@ -11,7 +11,7 @@
  * - Match by profileId, id, or baseUserName (a guest riding under an eligible user counts).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { VoiceMemoManager } from '#frontend/hooks/fitness/VoiceMemoManager.js';
+import { VoiceMemoManager } from "../../../modules/fitness/browser/hooks/fitness/VoiceMemoManager.js";
 
 function makeSession(roster = []) {
   return {

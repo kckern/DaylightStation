@@ -1,6 +1,6 @@
 // tests/isolated/application/content/ContentQueryAliasResolver.test.mjs
 import { describe, it, expect, vi } from 'vitest';
-import { ContentQueryAliasResolver } from '#apps/content/services/ContentQueryAliasResolver.mjs';
+import { ContentQueryAliasResolver } from "../../../../capabilities/content-catalog/server/application/services/ContentQueryAliasResolver.mjs";
 
 function createMockContentCatalog(sources = []) {
   const knownSources = new Set(sources);

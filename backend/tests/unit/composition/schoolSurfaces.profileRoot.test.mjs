@@ -11,7 +11,7 @@
 import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
-import { createSchoolSurfaces } from '#composition/modules/schoolSurfaces.mjs';
+import { createSchoolSurfaces } from "../../../../modules/school/server/composition/schoolSurfaces.mjs";
 
 let dataDir;
 beforeEach(async () => { dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'surf-')); });

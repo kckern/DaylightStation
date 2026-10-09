@@ -1,4 +1,4 @@
-import { shuffleOrder } from '../../../../../../frontend/src/lib/Player/playlist.js';
+import { shuffleOrder } from "../../../../../../capabilities/playback/browser/playlist.js";
 
 // Pure queue/order logic for the Music jukebox. `order` is a permutation of
 // track indices [0..len-1]; `pos` indexes into `order`; the playing track index

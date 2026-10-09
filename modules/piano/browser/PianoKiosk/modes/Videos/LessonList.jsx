@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { courseGate, keyOf } from './subcourses.js';
 import { lectureUserStatus } from './lectureMeta.js';
-import LockIcon from '../../../../../../frontend/src/modules/Fitness/player/overlays/LockIcon.jsx';
+import LockIcon from "../../../../../fitness/browser/lock-indicator.mjs";
 
 function fmt(sec) {
   const s = Math.round(Number(sec));

@@ -1,4 +1,4 @@
-import { ILibraryMediaStreamGateway } from '#apps/proxy/ports/ILibraryMediaStreamGateway.mjs';
+import { ILibraryMediaStreamGateway } from "../../../../../../capabilities/content-catalog/server/application/proxy/ports/ILibraryMediaStreamGateway.mjs";
 
 function hostAllowed(hostname, allowedHosts) {
   return [...allowedHosts].some(rule => rule.startsWith('.')

@@ -5,7 +5,7 @@ import request from 'supertest';
 import { createPianoRouter } from './piano.mjs';
 import { withPianoRouterServices } from '../../../../tests/_lib/pianoRouterDeps.mjs';
 import { PianoContainer } from '../application/PianoContainer.mjs';
-import { PianoConfigProjection } from '../../../../backend/src/1_adapters/config/ApplicationConfigProjections.mjs';
+import { PianoConfigProjection } from "../adapters/PianoConfigProjection.mjs";
 
 const MOCK_USER = 'test-user';
 const MOCK_SHOW = '12345';

@@ -4,7 +4,7 @@ import { describe, it, expect, beforeAll } from '@jest/globals';
 let resolvePostEpisodeRedirect;
 
 beforeAll(async () => {
-  const mod = await import('#frontend/modules/Fitness/player/postEpisodeRedirect.js');
+  const mod = await import("../../../modules/fitness/browser/player/postEpisodeRedirect.js");
   resolvePostEpisodeRedirect = mod.resolvePostEpisodeRedirect;
 });
 

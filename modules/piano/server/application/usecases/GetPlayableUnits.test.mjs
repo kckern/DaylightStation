@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { GetPlayableUnits } from './GetPlayableUnits.mjs';
-import { PianoConfigProjection } from '../../../../../backend/src/1_adapters/config/ApplicationConfigProjections.mjs';
+import { PianoConfigProjection } from "../../adapters/PianoConfigProjection.mjs";
 
 const COURSE = '12345';
 const COMPOUND = `plex:${COURSE}`;

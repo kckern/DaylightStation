@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, act } from '@testing-library/react';
-import { MenuNavigationProvider } from '../../../../frontend/src/context/MenuNavigationContext.jsx';
-import { useMenuNavigationContext } from '../../../../frontend/src/context/useMenuNavigationContext.js';
+import { MenuNavigationProvider } from "../navigation/MenuNavigationContext.jsx";
+import { useMenuNavigationContext } from "../navigation/useMenuNavigationContext.js";
 import { ScreenOverlayProvider } from '../overlays/ScreenOverlayProvider.jsx';
 
 vi.mock('../../../../frontend/src/services/WebSocketService.js', () => ({ wsService: { send: vi.fn() } }));

@@ -13,7 +13,7 @@
 // surface, which is also staff-first. `ordering:'any'` material never reaches
 // this module — Task 6 renders it through KeysAsk/SvgSequenceStaff, so ABC is
 // cued-only.
-import { abcNoteLine, generateMelodyAbc } from '../../../../../../frontend/src/modules/MusicNotation/renderers/abc.js';
+import { abcNoteLine, generateMelodyAbc } from "../../../../../../capabilities/music-notation/browser/renderers/abc.js";
 
 const MIDDLE_C = 60;
 

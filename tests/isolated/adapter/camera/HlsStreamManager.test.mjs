@@ -4,7 +4,7 @@ import { EventEmitter } from 'events';
 import os from 'os';
 import path from 'path';
 import { mkdir, writeFile, access, rm } from 'fs/promises';
-import { HlsStreamManager } from '#adapters/camera/HlsStreamManager.mjs';
+import { HlsStreamManager } from "../../../../modules/camera/server/adapters/HlsStreamManager.mjs";
 
 function createFakeProc() {
   const proc = new EventEmitter();

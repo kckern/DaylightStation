@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
-import { createTriggerRouter } from '../../../../backend/src/4_api/v1/routers/trigger.mjs';
-import { dispatchSideEffect, TriggerSideEffectExecutor, UnknownSideEffectError } from '#apps/trigger/sideEffectHandlers.mjs';
+import request from '../../../preimplementation/application-modules/drivers/remaining-http-request.mjs';
+import { createTriggerRouter } from "../../../../capabilities/device-dispatch/server/api/trigger.mjs";
+import { dispatchSideEffect, TriggerSideEffectExecutor, UnknownSideEffectError } from "../../../../capabilities/device-dispatch/server/application/sideEffectHandlers.mjs";
 
 describe('createTriggerRouter — POST /side-effect', () => {
   let triggerDispatchService;

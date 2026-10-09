@@ -7,7 +7,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { QueueService } from '../../../../src/2_domains/content/services/QueueService.mjs';
+import { QueueService } from "../../../../../capabilities/content-catalog/server/domain/services/QueueService.mjs";
 
 describe('QueueService.isWatched (duration-aware)', () => {
   it('treats long video at 71% as not watched', () => {

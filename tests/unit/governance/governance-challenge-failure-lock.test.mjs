@@ -11,7 +11,7 @@ jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
   getLogger: () => mockLogger
 }));
 
-const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
+const { GovernanceEngine } = await import("../../../modules/fitness/browser/hooks/fitness/GovernanceEngine.js");
 
 function createEngine({ participants = [], grace = 30, challenges = [] } = {}) {
   const zoneConfig = [

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   computeFitnessBaseline, computeNutritionBaseline, computeWeightBaseline,
-} from '../../../../../backend/src/3_applications/agents/health-coach/services/PersonalBaselineService.mjs';
+} from "../../../../../modules/health/server/application/agents/health-coach/services/PersonalBaselineService.mjs";
 
 describe('computeFitnessBaseline', () => {
   it('rolls workouts/week by kind from event list', () => {

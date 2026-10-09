@@ -1,7 +1,7 @@
 // tests/unit/livestream/ProgramRunner.test.mjs
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ProgramRunner } from '../../../backend/src/2_domains/livestream/ProgramRunner.mjs';
+import { ProgramRunner } from "../../../modules/livestream/server/domain/ProgramRunner.mjs";
 
 const simpleProgram = {
   name: 'Test Program',

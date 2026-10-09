@@ -3,7 +3,7 @@ import { mkdtemp, rm, mkdir, writeFile, readFile, readdir } from 'node:fs/promis
 import yaml from 'js-yaml';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { YamlReadingLogStore } from '#adapters/persistence/yaml/YamlReadingLogStore.mjs';
+import { YamlReadingLogStore } from "../../../../modules/school/server/adapters/persistence/YamlReadingLogStore.mjs";
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
 let dir;

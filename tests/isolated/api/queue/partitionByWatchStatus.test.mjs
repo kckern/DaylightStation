@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { QueueService } from '../../../../backend/src/2_domains/content/services/QueueService.mjs';
+import { QueueService } from "../../../../capabilities/content-catalog/server/domain/services/QueueService.mjs";
 
 describe('partitionByWatchStatus', () => {
   const classifier = {

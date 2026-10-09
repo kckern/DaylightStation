@@ -5,7 +5,7 @@
 // One role model, every mode: Listen performs the active hands; Learn/Polish
 // practice them.
 
-import { buildStepTimeline, buildNoteTimeline } from '../../../../../../frontend/src/modules/MusicNotation/scoreTimeline.js';
+import { buildStepTimeline, buildNoteTimeline } from "../../../../../../capabilities/music-notation/browser/scoreTimeline.js";
 
 /** Distinct staves present in the extracted notes, default role 'play'. */
 export function partsOf(notes) {

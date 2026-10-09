@@ -5,7 +5,7 @@ import {
   isValidFlow,
   isValidSubFlow,
   getValidSubFlows
-} from '#backend/src/3_applications/journalist/constants/FlowState.mjs';
+} from "../../../../../modules/journalist/server/application/constants/FlowState.mjs";
 
 describe('FlowState Constants', () => {
   describe('FlowType', () => {

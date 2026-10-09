@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { YouTubeContentSource } from './YouTubeContentSource.mjs';
-import { encodeStreamUrl } from '#adapters/content/stream/streamUrlCodec.mjs';
-import { validateAdapter } from '#apps/content/ports/IContentSource.mjs';
+import { encodeStreamUrl } from "../../../../../../capabilities/playback/server/domain/streamUrlCodec.mjs";
+import { validateAdapter } from "../../../../../../capabilities/content-catalog/server/application/ports/IContentSource.mjs";
 
 const VID = 'F1sMvm6D-0Y';
 

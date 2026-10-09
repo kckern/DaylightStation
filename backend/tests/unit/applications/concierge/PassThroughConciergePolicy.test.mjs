@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { PassThroughConciergePolicy } from '../../../../src/3_applications/agents/concierge/policy/PassThroughConciergePolicy.mjs';
+import { PassThroughConciergePolicy } from "../../../../../modules/concierge/server/application/policy/PassThroughConciergePolicy.mjs";
 
 describe('PassThroughConciergePolicy', () => {
   const p = new PassThroughConciergePolicy();

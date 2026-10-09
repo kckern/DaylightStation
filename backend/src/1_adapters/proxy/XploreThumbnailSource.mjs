@@ -1,4 +1,4 @@
-import { IRemoteThumbnailSource } from '#apps/proxy/ports/IRemoteThumbnailSource.mjs';
+import { IRemoteThumbnailSource } from "../../../../capabilities/content-catalog/server/application/proxy/ports/IRemoteThumbnailSource.mjs";
 
 /** HTTP source for RetroArch thumbnails exposed by a remote file manager. */
 export class XploreThumbnailSource extends IRemoteThumbnailSource {

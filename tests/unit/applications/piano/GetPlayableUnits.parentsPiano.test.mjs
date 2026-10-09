@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GetPlayableUnits } from '../../../../modules/piano/server/application/usecases/GetPlayableUnits.mjs';
-import { PianoConfigProjection } from '../../../../backend/src/1_adapters/config/ApplicationConfigProjections.mjs';
+import { PianoConfigProjection } from "../../../../modules/piano/server/adapters/PianoConfigProjection.mjs";
 
 // GetPlayableUnits now RECEIVES the curriculum reader (Decision D1), so this
 // is a plain injected double rather than a module mock — no vi.mock, and no

@@ -5,7 +5,7 @@ import express from 'express';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createLocalFileResource } from '#system/http/streamFile.mjs';
-import { createLanguageReelsRouter } from './languageReels.mjs';
+import { createLanguageReelsRouter } from "../../../../../modules/school/server/api/languageReels.mjs";
 import { createFeedbackRouter } from './feedback.mjs';
 import { createSchoolTestRouter as createSchoolRouter } from '../../../../../tests/_lib/school/schoolRouterTestSupport.mjs';
 import { createPresentationRouter } from './presentation.mjs';

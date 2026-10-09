@@ -28,8 +28,8 @@
  */
 import { describe, expect, it, beforeEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { checkersDefinition, checkersRuleModule } from '@shared-gaming/rulesets/checkers/index.mjs';
-import { createCheckpointedLocalAuthority } from '../../../../../frontend/src/modules/Gaming/platform/authority/createCheckpointedLocalAuthority.js';
+import { checkersDefinition, checkersRuleModule } from "../../../../../capabilities/gaming/portable/rulesets/checkers/index.mjs";
+import { createCheckpointedLocalAuthority } from "../../../../../capabilities/gaming/browser/platform/authority/createCheckpointedLocalAuthority.js";
 import { useConnectFourAuthority } from '../../PianoConnectFour/useConnectFourAuthority.js';
 import { useCheckersAuthority } from '../../PianoCheckers/useCheckersAuthority.js';
 import { useChessAuthority, RESUME_MAX_IDLE_MS } from '../../PianoChessGame/useChessAuthority.js';

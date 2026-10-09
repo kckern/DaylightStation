@@ -1,7 +1,7 @@
 // backend/src/2_adapters/telegram/TelegramResponseContext.mjs
 
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import { IResponseContext } from '#apps/nutribot/ports/IResponseContext.mjs';
+import { IResponseContext } from "#apps/common/ports/IResponseContext.mjs";
 
 /**
  * TelegramResponseContext - Implements IResponseContext for Telegram

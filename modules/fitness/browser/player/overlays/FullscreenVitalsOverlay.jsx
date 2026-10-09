@@ -1,0 +1,333 @@
+import React, { useMemo, useState, useCallback, useRef, useLayoutEffect } from 'react';
+import PropTypes from 'prop-types';
+import { useFitnessContext } from "../../context/FitnessContext.jsx";
+import { DaylightMediaPath } from '@/lib/api.mjs';
+import CircularUserAvatar from "../../components/CircularUserAvatar.jsx";
+import RpmDeviceAvatar from "../../components/RpmDeviceAvatar.jsx";
+import StepMatVitalsTile from "../../components/StepMatVitalsTile.jsx";
+import { DEFAULT_ANONYMOUS_HR_HARD_FLOOR_BPM } from "../../hooks/fitness/ParticipantRoster.js";
+import { resolveUserZone } from "./resolveUserZone.js";
+import { lookupZoneProgress } from "../../domain/zoneProgressIndex.js";
+import "./FullscreenVitalsOverlay.scss";
+import { fullscreenVitalsLayout } from "./fullscreenVitalsLayout.js";
+
+const RPM_COLOR_MAP = {
+  red: '#ff6b6b',
+  orange: '#ff922b',
+  yellow: '#f0c836',
+  green: '#51cf66',
+  blue: '#6ab8ff'
+};
+
+const withAlpha = (hexColor, alpha = 0.9) => {
+  if (!hexColor || typeof hexColor !== 'string') {
+    return `rgba(0, 0, 0, ${alpha})`;
+  }
+  const normalized = hexColor.trim();
+  if (!normalized.startsWith('#') || (normalized.length !== 7 && normalized.length !== 4)) {
+    return `rgba(0, 0, 0, ${alpha})`;
+  }
+  const expand = normalized.length === 4
+    ? `#${normalized[1]}${normalized[1]}${normalized[2]}${normalized[2]}${normalized[3]}${normalized[3]}`
+    : normalized;
+  const r = parseInt(expand.slice(1, 3), 16);
+  const g = parseInt(expand.slice(3, 5), 16);
+  const b = parseInt(expand.slice(5, 7), 16);
+  if ([r, g, b].some(Number.isNaN)) {
+    return `rgba(0, 0, 0, ${alpha})`;
+  }
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+const getProfileSlug = (user) => {
+  if (!user) return 'user';
+  if (user.id) return user.id;
+  if (user.name) {
+    return user.name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '') || 'user';
+  }
+  return 'user';
+};
+
+const FullscreenVitalsOverlay = ({ visible = false }) => {
+  const fitnessCtx = useFitnessContext();
+  const [anchor, setAnchor] = useState('right');
+  const overlayRef = useRef(null);
+  const [parentSize, setParentSize] = useState({ width: 0, height: 0 });
+  const {
+    heartRateDevices = [],
+    rpmDevices = [],
+    getUserByDevice,
+    userCurrentZones,
+    zones,
+    users: _allUsers = [],
+    usersConfigRaw = {},
+    equipment = [],
+    deviceConfiguration,
+    zoneProgressIndex,
+    pressureMatActivities = {}
+  } = fitnessCtx || {};
+
+  const cycleChallenge = fitnessCtx?.governanceState?.challenge || null;
+  const boostContributions = (cycleChallenge?.type === 'cycle' && cycleChallenge.boostContributions)
+    ? cycleChallenge.boostContributions
+    : null;
+
+  const equipmentMap = useMemo(() => {
+    const map = {};
+    if (Array.isArray(equipment)) {
+      equipment.forEach((item) => {
+        if (!item) return;
+        const equipmentId = item.id || String(item.cadence || item.speed || item.ble || '');
+        if (item.cadence != null) {
+          map[String(item.cadence)] = {
+            name: item.name || String(item.cadence),
+            id: equipmentId
+          };
+        }
+        if (item.speed != null) {
+          map[String(item.speed)] = {
+            name: item.name || String(item.speed),
+            id: equipmentId
+          };
+        }
+        if (item.ble != null) {
+          map[String(item.ble)] = {
+            name: item.name || String(item.ble),
+            id: equipmentId
+          };
+        }
+      });
+    }
+    return map;
+  }, [equipment]);
+
+  const hrItems = useMemo(() => {
+    if (!Array.isArray(heartRateDevices)) return [];
+    return heartRateDevices
+      .filter((device) => {
+        if (!device || device.deviceId == null) return false;
+        // Mirror the roster's hard floor: a sub-hard-floor reading on a device
+        // with no resolved user is drawer-strap noise — hide it in fullscreen too.
+        const mapped = getUserByDevice?.(device.deviceId) || null;
+        const hr = Number.isFinite(device.heartRate) ? device.heartRate : null;
+        if (!mapped && hr != null && hr < DEFAULT_ANONYMOUS_HR_HARD_FLOOR_BPM) return false;
+        return true;
+      })
+      .map((device) => {
+        const user = getUserByDevice?.(device.deviceId) || null;
+        const zoneInfo = resolveUserZone(user?.name, device, { userCurrentZones, zones, usersConfigRaw });
+        const profileSlug = getProfileSlug(user);
+        const avatarSrc = DaylightMediaPath(`/static/img/users/${profileSlug}`);
+        // ID first: a name-only lookup misses whenever the display name has
+        // become a group label (2+ riders present).
+        const progressEntry = lookupZoneProgress(zoneProgressIndex, {
+          profileId: user?.id,
+          name: user?.name,
+          displayLabel: user?.displayLabel,
+          deviceId: device.deviceId
+        });
+        const progressValue = typeof progressEntry?.progress === 'number'
+          ? Math.max(0, Math.min(1, progressEntry.progress))
+          : null;
+        const effectiveZoneColor = zoneInfo.color || 'rgba(128, 128, 128, 0.6)';
+        const userHrInactive = user?.currentData?.hrInactive ?? false;
+        const hrValid = Number.isFinite(device?.heartRate) && device.heartRate > 0;
+        const isInactive = userHrInactive || device.inactiveSince || device.connectionState !== 'connected' || !hrValid;
+
+        return {
+          deviceId: device.deviceId,
+          name: user?.name || String(device.deviceId),
+          avatarSrc,
+          zoneId: zoneInfo.id,
+          zoneColor: effectiveZoneColor,
+          heartRate: hrValid ? Math.round(device.heartRate) : null,
+          isInactive,
+          progressValue,
+          boostBadge: boostContributions && Number.isFinite(boostContributions[user?.id])
+            ? `×${(1 + boostContributions[user.id]).toFixed(1)}`
+            : null
+        };
+      });
+  }, [getUserByDevice, heartRateDevices, userCurrentZones, usersConfigRaw, zones, zoneProgressIndex, boostContributions]);
+
+  const rpmItems = useMemo(() => {
+    const cadenceConfig = deviceConfiguration?.cadence || {};
+
+    return rpmDevices.map((device) => {
+      const isJumprope = device.type === 'jumprope';
+      const equipmentConfig = isJumprope
+        ? (equipment.find((e) => e.ble === device.deviceId) || equipmentMap[String(device.deviceId)])
+        : equipmentMap[String(device.deviceId)];
+      const equipmentId = equipmentConfig?.id || String(device.deviceId);
+      const avatarSrc = DaylightMediaPath(`/static/img/equipment/${equipmentId}`);
+      const rpm = Math.max(0, Math.round(device.cadence || 0));
+      const animationDuration = rpm > 0 ? `${270 / rpm}s` : '0s';
+      const colorKey = cadenceConfig[String(device.deviceId)];
+      const resolvedRingColor = colorKey
+        ? (RPM_COLOR_MAP[colorKey] || colorKey)
+        : RPM_COLOR_MAP.orange;
+      const overlayBg = withAlpha(resolvedRingColor, 0.9);
+
+      return {
+        deviceId: device.deviceId,
+        rpm,
+        avatarSrc,
+        animationDuration,
+        ringColor: resolvedRingColor,
+        overlayBg
+      };
+    });
+  }, [rpmDevices, equipmentMap, equipment, deviceConfiguration?.cadence]);
+
+  // Same admission rule as the panel card: a mat that has not been stepped on
+  // this session is clutter, not information.
+  const matItems = useMemo(() => {
+    const session = fitnessCtx?.fitnessSessionInstance || null;
+    return Object.values(pressureMatActivities || {})
+      .filter((snapshot) => snapshot?.seenThisSession)
+      .map((snapshot) => {
+        const equipmentEntry = (Array.isArray(equipment) ? equipment : [])
+          .find((entry) => String(entry?.id) === String(snapshot.equipmentId)) || null;
+        const assignedUserId = session?.getEquipmentUser?.(snapshot.equipmentId) || null;
+        return {
+          equipmentId: snapshot.equipmentId,
+          name: equipmentEntry?.name || 'Step Mat',
+          // The mat belongs to whoever claimed it; with nobody claiming it, the
+          // equipment image is the honest picture.
+          avatarSrc: assignedUserId
+            ? DaylightMediaPath(`/static/img/users/${assignedUserId}`)
+            : DaylightMediaPath(`/static/img/equipment/${snapshot.equipmentId}`),
+          stepsPerMinute: Number(snapshot.stepsPerMinute) || 0,
+          sessionSteps: Number(snapshot.sessionSteps) || 0,
+          sessionStomps: Number(snapshot.sessionStomps) || 0,
+          isInactive: !snapshot.active || !snapshot.online,
+        };
+      });
+  }, [pressureMatActivities, equipment, fitnessCtx?.fitnessSessionInstance]);
+
+  const hasItems = Boolean(hrItems.length || rpmItems.length || matItems.length);
+  useLayoutEffect(() => {
+    const parent = overlayRef.current?.parentElement;
+    if (!visible || !hasItems || !parent) return undefined;
+    const measure = () => {
+      const rect = parent.getBoundingClientRect();
+      setParentSize({ width: parent.clientWidth || rect.width, height: parent.clientHeight || rect.height });
+    };
+    measure();
+    // Observe the unscaled parent, never the transformed overlay itself.
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(parent);
+    return () => observer.disconnect();
+  }, [visible, hasItems]);
+  const layout = fullscreenVitalsLayout({ ...parentSize, heartRates: hrItems.length, equipment: rpmItems.length + matItems.length });
+
+  const handleToggleAnchor = useCallback((event) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    setAnchor((prev) => (prev === 'right' ? 'left' : 'right'));
+  }, []);
+
+  if (!visible || (!hrItems.length && !rpmItems.length && !matItems.length)) {
+    return null;
+  }
+
+  const overlayClassName = `fullscreen-vitals-overlay anchor-${anchor}`;
+
+  return (
+    <div
+      ref={overlayRef}
+      className={overlayClassName}
+      style={{
+        '--vitals-columns': layout.columns,
+        width: layout.width,
+        height: layout.height,
+        transform: `scale(${layout.scale})`,
+        visibility: layout.scale > 0 ? 'visible' : 'hidden',
+      }}
+      aria-hidden={!visible}
+      onClick={handleToggleAnchor}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          handleToggleAnchor(event);
+        }
+      }}
+    >
+      {hrItems.length > 0 && (
+        <div className={`fullscreen-vitals-group hr-group count-${hrItems.length}`}>
+          {hrItems.map((item) => (
+            <CircularUserAvatar
+              key={`hr-${item.deviceId}`}
+              name={item.name}
+              avatarSrc={item.avatarSrc}
+              fallbackSrc={DaylightMediaPath('/static/img/users/user')}
+              heartRate={item.heartRate}
+              zoneId={item.zoneId}
+              zoneColor={item.zoneColor}
+              progress={item.progressValue}
+              className={item.isInactive ? 'inactive' : ''}
+              showIndicator={item.progressValue !== null}
+              boostBadge={item.boostBadge}
+            />
+          ))}
+        </div>
+      )}
+      {(rpmItems.length > 0 || matItems.length > 0) && <div className="fullscreen-vitals-group equipment-group">
+      {rpmItems.length > 0 && (
+        <div className={`fullscreen-vitals-group rpm-group count-${rpmItems.length}`}>
+          {rpmItems.map((item) => (
+            <RpmDeviceAvatar
+              key={`rpm-${item.deviceId}`}
+              baseClassName={null}
+              className="vital-rpm"
+              rpm={item.rpm}
+              animationDuration={item.animationDuration}
+              avatarSrc={item.avatarSrc}
+              avatarAlt=""
+              style={{
+                '--rpm-ring-color': item.ringColor,
+                '--rpm-overlay-bg': item.overlayBg
+              }}
+              fallbackSrc={DaylightMediaPath('/static/img/equipment/equipment')}
+              renderValue={(value) => (Number.isFinite(value) ? value : 0)}
+            />
+          ))}
+        </div>
+      )}
+      {matItems.length > 0 && (
+        <div className={`fullscreen-vitals-group mat-group count-${matItems.length}`}>
+          {matItems.map((item) => (
+            <StepMatVitalsTile
+              key={`mat-${item.equipmentId}`}
+              name={item.name}
+              avatarSrc={item.avatarSrc}
+              fallbackSrc={DaylightMediaPath('/static/img/equipment/equipment')}
+              stepsPerMinute={item.stepsPerMinute}
+              sessionSteps={item.sessionSteps}
+              sessionStomps={item.sessionStomps}
+              isInactive={item.isInactive}
+            />
+          ))}
+        </div>
+      )}
+      </div>}
+    </div>
+  );
+};
+
+FullscreenVitalsOverlay.propTypes = {
+  visible: PropTypes.bool
+};
+
+export default FullscreenVitalsOverlay;

@@ -16,7 +16,7 @@
 import { render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../../../../frontend/src/modules/MusicNotation/renderers/AbcRenderer.jsx', async () => {
+vi.mock("../../../../../../capabilities/music-notation/browser/renderers/AbcRenderer.jsx", async () => {
   const { useEffect, useRef } = await import('react');
   return {
     AbcRenderer: ({ onRender }) => {

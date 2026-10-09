@@ -5,7 +5,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { encode } from '@toon-format/toon';
 import { StructuredWireLayer } from './StructuredWireLayer.mjs';
-import { LogFoodFromText } from '#apps/nutribot/usecases/LogFoodFromText.mjs';
+import { LogFoodFromText } from "../../../../modules/nutribot/server/application/usecases/LogFoodFromText.mjs";
 
 const silent = { debug() {}, info() {}, warn() {}, error() {} };
 const COLUMNS = ['name', 'icon', 'noom_color', 'quantity', 'unit', 'grams', 'calories', 'protein', 'carbs', 'fat', 'fiber', 'sugar', 'sodium', 'cholesterol', 'dish'];

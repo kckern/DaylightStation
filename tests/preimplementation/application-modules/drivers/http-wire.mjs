@@ -30,8 +30,8 @@ export async function wireRequest(app, method, url, {body, headers = {}} = {}) {
   req.headers = {host: 'audit.invalid', connection: 'close', ...headers};
   req.httpVersionMajor = 1; req.httpVersionMinor = 1; req.httpVersion = '1.1';
   if (body !== undefined) {
-    const encoded = Buffer.from(JSON.stringify(body));
-    req.headers['content-type'] = 'application/json';
+    const encoded = Buffer.isBuffer(body) ? body : Buffer.from(JSON.stringify(body));
+    if(!req.headers['content-type'])req.headers['content-type'] = Buffer.isBuffer(body)?'application/octet-stream':'application/json';
     req.headers['content-length'] = String(encoded.length);
     req.push(encoded);
   }
@@ -51,15 +51,21 @@ export async function wireRequest(app, method, url, {body, headers = {}} = {}) {
         if (separator < 0) throw new Error('Missing HTTP header delimiter');
         const rawBody = wire.subarray(separator + 4);
         const chunked = /transfer-encoding:\s*chunked/i.test(wire.subarray(0, separator).toString());
-        const text = (chunked && method !== 'HEAD' ? decodeChunks(rawBody) : rawBody).toString();
-        resolve({status: res.statusCode, headers: res.getHeaders(), body: text,
+        const bytes = chunked && method !== 'HEAD' ? decodeChunks(rawBody) : rawBody;
+        const text = bytes.toString();
+        const headers=Object.create(null);
+        for(const line of wire.subarray(0,separator).toString('latin1').split('\r\n').slice(1)){
+          const colon=line.indexOf(':');if(colon<1)throw new Error('Invalid serialized HTTP header');
+          const name=line.slice(0,colon).toLowerCase(),value=line.slice(colon+1).trim();
+          if(name==='set-cookie')(headers[name]??=[]).push(value);
+          else headers[name]=headers[name]===undefined?value:headers[name]+', '+value;
+        }
+        resolve({status: res.statusCode, headers, body: text, bytes,
           json: () => JSON.parse(text)});
       } catch (error) { reject(error); }
       finally { stream.destroy(); }
     });
-    app.handle(req, res, error => {
-      if (error) fail(error);
-      else { res.statusCode = 404; res.end(); }
-    });
+    // Express supplies its actual default error/404 finalhandler when no callback is given.
+    app.handle(req, res);
   });
 }

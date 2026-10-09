@@ -1,3 +1,4 @@
+import {contentRequiresCamera} from '../../backend/src/5_composition/policies/contentRequiresCamera.mjs';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
 import { WebSocketEventBus } from '../../backend/src/1_adapters/eventbus/WebSocketEventBus.mjs';
@@ -10,7 +11,7 @@ import { DeviceLivenessService } from '../../backend/src/3_applications/devices/
 import { CommandHandlerLivenessService } from '../../backend/src/3_applications/devices/services/CommandHandlerLivenessService.mjs';
 import { DispatchIdempotencyService } from '../../backend/src/3_applications/devices/services/DispatchIdempotencyService.mjs';
 import { EventBusBrowserPlayback } from '../../backend/src/1_adapters/eventbus/EventBusBrowserPlayback.mjs';
-import { BrowserPlaybackTracker } from '../../backend/src/3_applications/media/BrowserPlaybackTracker.mjs';
+import { BrowserPlaybackTracker } from "../../modules/media/server/application/BrowserPlaybackTracker.mjs";
 import { SessionControlService } from '../../backend/src/3_applications/devices/services/SessionControlService.mjs';
 import { DeviceSessionApiService } from '../../backend/src/3_applications/devices/services/DeviceSessionApiService.mjs';
 import { DeviceStartStatusService } from '../../backend/src/3_applications/devices/services/DeviceStartStatusService.mjs';
@@ -248,7 +249,7 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet, cat
     livenessService: deviceLiveness,
     logger,
   });
-  const wakeAndLoadService = new WakeAndLoadService({
+  const wakeAndLoadService = new WakeAndLoadService({ contentRequiresCamera,
     deviceService,
     sessionControlService: sessionControl,
     readinessPolicy: { isReady: async () => ({ ready: true }) },

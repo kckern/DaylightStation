@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { StateGatesContainer } from '#apps/state-gates/StateGatesContainer.mjs';
+import { StateGatesContainer } from "../../../../capabilities/state-gates/server/application/StateGatesContainer.mjs";
 
 function fixture({ logger = null } = {}) {
   const now = Date.parse('2026-08-30T12:00:00-07:00');

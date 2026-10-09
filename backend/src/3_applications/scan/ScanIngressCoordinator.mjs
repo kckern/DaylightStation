@@ -91,10 +91,10 @@
 import { ScanDispatcher, emit } from '#apps/scan/ScanDispatcher.mjs';
 import { PREFIX_REGISTRY, LEGACY_NUTRITION_TAGS } from '#domains/scan/ScanCode.mjs';
 import { KNOWN_COMMANDS } from '#domains/barcode/BarcodeCommandMap.mjs';
-import { TriggerEvent } from '#domains/trigger/TriggerEvent.mjs';
-import { routeNutribotScan, nutriscanRefusalNotice, swallowNotice } from '#apps/nutribot/lib/routeNutribotScan.mjs';
-import { parseGtin } from '#domains/nutrition/services/gtin.mjs';
-import { UPC_REJECTED } from '#apps/nutribot/usecases/LogFoodFromUPC.mjs';
+import { TriggerEvent } from "../../../../capabilities/device-dispatch/server/domain/TriggerEvent.mjs";
+import { routeNutribotScan, nutriscanRefusalNotice, swallowNotice } from "../../../../modules/nutribot/server/scan.mjs";
+import { parseGtin } from "../../../../modules/health/server/nutrition-scan.mjs";
+import { UPC_REJECTED } from "../../../../modules/nutribot/server/scan.mjs";
 
 /**
  * Reader route -> namespace, for the dispatcher's step 5.

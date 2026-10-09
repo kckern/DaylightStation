@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { reportSchema, parseReport } from '#apps/newsreporter/reportSchema.mjs';
+import { reportSchema, parseReport } from "../../../../../modules/newsreporter/server/application/reportSchema.mjs";
 
 describe('reportSchema', () => {
   it('accepts heading/lines/table/note sections', () => {

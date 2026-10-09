@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { cardIdenticonCells, GRID_SIZE } from '../../../../../frontend/src/modules/Gaming/experiences/card-battle/cardIdenticonModel.js';
+import { cardIdenticonCells, GRID_SIZE } from "../../../../../capabilities/gaming/browser/identiconModel.js";
 import OpponentSpeech from './OpponentSpeech.jsx';
 import './opponent.scss';
 

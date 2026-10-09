@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compactCourseModuleLabel, courseDisplay, moduleDisplay } from '#domains/school/curriculum/display.mjs';
+import { compactCourseModuleLabel, courseDisplay, moduleDisplay } from "../../../../../modules/school/server/domain/curriculum/display.mjs";
 
 const work = {
   work: 'come-follow-me-ot-2026',

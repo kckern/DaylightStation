@@ -14,7 +14,10 @@ describe.each([
   ['backfill-toc-offset.cli.mjs', 'cli:backfill-toc-offset', 'media'],
   ['journalist-debrief-preview.cli.mjs', 'cli:journalist-debrief-preview', 'journalist'],
 ])('%s', (file, origin, app) => {
-  const source = readFileSync(path.join(here, file), 'utf8');
+  const implementation = file === 'journalist-debrief-preview.cli.mjs'
+    ? '../modules/journalist/cli/journalist-debrief-preview.cli.mjs'
+    : file;
+  const source = readFileSync(path.join(here, implementation), 'utf8');
 
   it('imports runWithOrigin from the AI context', () => {
     expect(source).toMatch(/import \{ runWithOrigin \} from '#system\/runtime\/aiContext\.mjs';/);

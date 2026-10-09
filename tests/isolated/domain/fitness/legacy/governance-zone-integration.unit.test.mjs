@@ -33,8 +33,8 @@ describe('Governance + TreasureBox Zone Integration', () => {
   });
 
   test('TreasureBox should be configured with zones from ZoneProfileStore', async () => {
-    const { FitnessTreasureBox } = await import('#frontend/hooks/fitness/TreasureBox.js');
-    const { ZoneProfileStore } = await import('#frontend/hooks/fitness/ZoneProfileStore.js');
+    const { FitnessTreasureBox } = await import("../../../../../modules/fitness/browser/hooks/fitness/TreasureBox.js");
+    const { ZoneProfileStore } = await import("../../../../../modules/fitness/browser/hooks/fitness/ZoneProfileStore.js");
 
     const zoneConfig = [
       { id: 'blue', name: 'Blue', min: 0, color: 'blue', rings: 0 },
@@ -64,7 +64,7 @@ describe('Governance + TreasureBox Zone Integration', () => {
   });
 
   test('should resolve zones correctly when configured', async () => {
-    const { FitnessTreasureBox } = await import('#frontend/hooks/fitness/TreasureBox.js');
+    const { FitnessTreasureBox } = await import("../../../../../modules/fitness/browser/hooks/fitness/TreasureBox.js");
 
     const zoneConfig = [
       { id: 'blue', name: 'Blue', min: 0, color: 'blue', rings: 0 },
@@ -90,7 +90,7 @@ describe('Governance + TreasureBox Zone Integration', () => {
   });
 
   test('GovernanceEngine should cache and reuse zoneRankMap on internal pulse', async () => {
-    const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
+    const { GovernanceEngine } = await import("../../../../../modules/fitness/browser/hooks/fitness/GovernanceEngine.js");
 
     const session = {
       zoneProfileStore: { getProfile: vi.fn() },
@@ -142,7 +142,7 @@ describe('Governance + TreasureBox Zone Integration', () => {
   });
 
   test('zone change is reflected in userZoneMap before governance evaluates', async () => {
-    const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
+    const { GovernanceEngine } = await import("../../../../../modules/fitness/browser/hooks/fitness/GovernanceEngine.js");
 
     const session = {
       zoneProfileStore: { getProfile: vi.fn() },
@@ -202,7 +202,7 @@ describe('Governance + TreasureBox Zone Integration', () => {
   });
 
   test('GovernanceEngine should not lose state after internal evaluate()', async () => {
-    const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
+    const { GovernanceEngine } = await import("../../../../../modules/fitness/browser/hooks/fitness/GovernanceEngine.js");
 
     // Session provides getActiveParticipantState for no-arg evaluate() calls
     const session = {

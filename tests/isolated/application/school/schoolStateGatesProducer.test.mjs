@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { SchoolStateGatesProducer } from '#apps/school/SchoolStateGatesProducer.mjs';
+import { SchoolStateGatesProducer } from "../../../../modules/school/server/application/SchoolStateGatesProducer.mjs";
 
 const scheduler = { schedule: () => () => {} };
 

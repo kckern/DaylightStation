@@ -1,0 +1,3043 @@
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import {
+  FitnessSession,
+  setFitnessTimeouts,
+  getFitnessTimeouts,
+  resolveDisplayLabel,
+  resolveZoneThreshold
+} from "../hooks/useFitnessSession.js";
+import { DeviceAssignmentLedger } from "../hooks/fitness/DeviceAssignmentLedger.js";
+import { GuestAssignmentService } from "../hooks/fitness/GuestAssignmentService.js";
+import { useZoneLedSync } from "../hooks/fitness/useZoneLedSync.js";
+import { useEquipmentFanSync } from "../hooks/fitness/useEquipmentFanSync.js";
+import { playbackLog } from "../../../../capabilities/playback/browser/contracts.mjs";
+import getLogger from "../../../../frontend/src/lib/logging/Logger.js";
+import { getModuleManifest } from "../index.js";
+import { VIBRATION_CONSTANTS } from "../widgets/VibrationApp/constants.js";
+import { buildSelectionConfig } from "../hooks/fitness/selectPrimaryMedia.js";
+import { applyEquipmentCatalogFromConfig } from "./fitnessConfigBridge.js";
+import { buildPairRequest, buildRemoveRequest } from "./fitnessBtActions.js";
+import { endLiveSession } from "../hooks/fitness/endLiveSession.js";
+import { normalizeToast, dismissMatches } from "../player/overlays/fitnessToastSlot.js";
+import { buildRiderToast } from "../player/overlays/buildRiderToast.js";
+import { lookupUserName } from "../player/overlays/lookupUserName.js";
+import { createChallengeToastTracker, nextChallengeToast } from "../player/overlays/challengeToastTracker.js";
+import { buildChallengeToast } from "../player/overlays/buildChallengeToast.js";
+import { mergeRingCelebrationToast } from "../player/overlays/buildRingCelebrationToast.js";
+import { createFireZoneTracker, nextFireToasts } from "../player/overlays/fireZoneTracker.js";
+import { buildFireToast } from "../player/overlays/buildFireToast.js";
+import { planFireToasts } from "../player/overlays/fireToastQueue.js";
+import { createRingCelebrationTracker, normalizeRingCelebrationsConfig, ringCelebrationsForAward, seedRingCelebrationTracker } from "../player/overlays/ringCelebrations.js";
+import { DaylightMediaPath } from "../../../../frontend/src/lib/api.mjs";
+import { playRingCelebrationCue } from "../player/overlays/ringCelebrationAudio.js";
+import { normalizePressureMatMessage, pressureMatFitnessEvent } from "./fitnessPressureMat.js";
+
+// Phase 3 SSOT: Domain model imports
+import ParticipantFactory from "../domain/ParticipantFactory.js";
+import { buildZoneProgressIndex } from "../domain/zoneProgressIndex.js";
+
+// Phase 5 SSOT: Participant display map — single source for "how to render a participant"
+import { buildParticipantDisplayMap } from "../hooks/fitness/participantDisplayMap.js";
+import { buildConfiguredDeviceIdSet, filterGhostRpmDevices } from "../hooks/fitness/rpmGhostFilter.js";
+
+// Phase 5 SSOT: Zone metadata — single source for zone system info
+import { buildZoneMetadata } from "../hooks/fitness/zoneMetadata.js";
+import { buildReviewOverlayState, isOverlayMemoMissing } from "../player/overlays/voiceMemoReviewState.js";
+
+// Phase 4 SSOT: Display name resolution
+import {
+  buildDisplayNameContext,
+  resolveDisplayName
+} from "../hooks/fitness/DisplayNameResolver.js";
+
+// Developer-only flag for the Fitness app. Gates debug-only UI and logging.
+// Must remain `false` on main; flip locally when needed.
+export const FITNESS_DEBUG = false;
+
+// Create context.
+// EXPORTED so a component can read config without the throw. `useFitness`
+// (=== `useFitnessContext`) raises when there is no provider, which is right
+// for components that genuinely cannot function without one — but a widget
+// that only wants an optional cue path should degrade to silence, not crash
+// its own unit tests. Those read `useContext(FitnessContext)?.…` directly.
+export const FitnessContext = createContext(null);
+
+const normalizeLabelList = (raw) => {
+  if (!Array.isArray(raw)) return [];
+  const normalized = raw
+    .map(label => (typeof label === 'string' ? label.trim().toLowerCase() : ''))
+    .filter(Boolean);
+  return Array.from(new Set(normalized));
+};
+
+/**
+ * Extract content ID from item's action objects (play, queue, list)
+ * Prefers contentId (compound ID like "plex:12345"), falls back to legacy plex key
+ * @param {Object} item - Item with action objects
+ * @returns {string|null} The content ID or null
+ */
+const getContentIdFromActions = (item) => {
+  return item?.play?.contentId || item?.queue?.contentId || item?.list?.contentId
+    || item?.play?.plex || item?.queue?.plex || item?.list?.plex || null;
+};
+
+/**
+ * Get a unique identifier for an item
+ * Checks action objects first (canonical), then falls back to legacy top-level fields
+ * @param {Object} item - Item
+ * @returns {string|null}
+ */
+const getItemIdentifier = (item) => {
+  // Prefer action-based content ID (canonical)
+  const actionId = getContentIdFromActions(item);
+  if (actionId) return actionId;
+  // Fall back to top-level fields for backward compatibility
+  return item?.contentId || item?.id || item?.ratingKey || item?.plex || null;
+};
+
+// The fire toast's sound, relative to /media exactly like the ring cue's
+// `fitness/ux/ring.mp3` default — `playRingCelebrationCue` resolves it through
+// DaylightMediaPath, so this must NOT carry a leading slash or a /media prefix.
+// The volume matches the ring so neither celebration shouts over the other.
+const FIRE_TOAST_SFX = 'fitness/ux/fireball.mp3';
+const FIRE_TOAST_SFX_VOLUME = 0.8;
+
+const VOICE_MEMO_OVERLAY_INITIAL = {
+  open: false,
+  mode: null,
+  memoId: null,
+  autoAccept: false,
+  startedAt: null,
+  onComplete: null // Fix 5 (bugbash 4B): Callback fired when overlay closes
+};
+
+const EMPTY_USER_COLLECTIONS = Object.freeze({
+  primary: [],
+  secondary: [],
+  family: [],
+  friends: [],
+  other: [],
+  all: []
+});
+
+const createEmptyOwnership = () => ({
+  heartRate: new Map(),
+  cadence: new Map()
+});
+
+const calculateIntensity = (x, y, z) => {
+  if (x == null || y == null || z == null) return 0;
+  return Math.sqrt(x * x + y * y + z * z);
+};
+
+// Custom hook for using the context
+// eslint-disable-next-line react-refresh/only-export-components -- useFitnessContext is co-located with its Context/Provider (standard pattern); 37 consumers, splitting out of scope for a lint pass
+export const useFitnessContext = () => {
+  const context = useContext(FitnessContext);
+  if (!context) {
+    throw new Error('useFitnessContext must be used within a FitnessProvider');
+  }
+  return context;
+};
+
+/**
+ * The context WITHOUT the must-be-inside-a-provider assertion — `null` when there
+ * is no provider above.
+ *
+ * `useFitnessContext` throwing is the right default: a widget that needs live HR
+ * is broken outside the provider and should say so loudly. But a widget that only
+ * wants the session in order to ATTRIBUTE something (the Exercise Library logging
+ * a finished strength run) has a defined answer for "there is no fitness app
+ * around me" — it degrades — and that same shape is what lets it be rendered
+ * standalone in a unit test. Use this only where the absence is genuinely handled.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- useOptionalFitnessContext is co-located with its Context/Provider (standard pattern); 3 consumers, splitting out of scope for a lint pass
+export const useOptionalFitnessContext = () => useContext(FitnessContext);
+
+// Custom hook for fitness playlist management
+// eslint-disable-next-line react-refresh/only-export-components -- useFitnessPlaylist is co-located with its Context/Provider (standard pattern); 1 consumer, splitting out of scope for a lint pass
+export const useFitnessPlaylist = () => {
+  const context = useFitnessContext();
+  return {
+    selectedPlaylistId: context.selectedPlaylistId,
+    setSelectedPlaylistId: context.setSelectedPlaylistId,
+    playlists: context.plexConfig?.music_playlists || []
+  };
+};
+
+// Alias for compatibility
+// eslint-disable-next-line react-refresh/only-export-components -- useFitness is co-located with its Context/Provider (standard pattern); 17 consumers, splitting out of scope for a lint pass
+export const useFitness = useFitnessContext;
+
+// Provider component
+export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQueue: propPlayQueue, setFitnessPlayQueue: propSetPlayQueue, kioskMode = false }) => {
+  // UI State
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState(null);
+  const [, setMusicAutoEnabledState] = useState(false);
+  const [musicOverride, setMusicOverride] = useState(null);
+  const [lastPlaylistId, setLastPlaylistId] = useState(null);
+  const [videoPlayerPaused, setVideoPlayerPaused] = useState(false);
+  // True while the workout video is loading, recovering, or waiting on a file
+  // the server refuses to read — i.e. NOT playing, but not because anyone chose
+  // to pause it. videoPlayerPaused mirrors the element's paused flag (and feeds
+  // the governance freeze), so it also reads true in those states; the music
+  // player uses this to tell "the video is struggling" from "the video was
+  // paused", and keeps playing through the former (2026-09-28 postmortem).
+  const [videoLoading, setVideoLoading] = useState(false);
+  // An emergency (shutdown ceremony / lockdown) holds ALL session playback,
+  // whatever the video is doing — set by EmergencyPlaybackController only.
+  const [emergencyPlaybackHold, setEmergencyPlaybackHold] = useState(false);
+  const [sidebarSizeMode, setSidebarSizeMode] = useState('regular');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [voiceMemoOverlayState, setVoiceMemoOverlayState] = useState(VOICE_MEMO_OVERLAY_INITIAL);
+  const voiceMemoOverlayStateRef = useRef(voiceMemoOverlayState);
+  voiceMemoOverlayStateRef.current = voiceMemoOverlayState;
+  // Separate from voiceMemoOverlayState (the in-app "Voice Memo" feature's own
+  // state shape) — this flags the developer-facing Feedback panel (recording a
+  // bug/note) so MenuMusicController can duck ambient music for it too. The two
+  // features are unrelated but share the same "don't talk over my recording"
+  // requirement.
+  const [feedbackRecordingActive, setFeedbackRecordingActive] = useState(false);
+  const [fitnessToast, setFitnessToast] = useState(null);
+  const toastIdRef = useRef(0);
+  const riderToastRef = useRef(null);
+  const fitnessToastRef = useRef(null);
+  const fireZoneTrackerRef = useRef(createFireZoneTracker());
+  const pendingFireEntriesRef = useRef([]);
+  const ringCelebrationTrackerRef = useRef(createRingCelebrationTracker());
+  const pendingRingEntriesRef = useRef([]);
+  const ringFlushTimerRef = useRef(null);
+  const ringConfigSignatureRef = useRef(null);
+  const [voiceMemoVersion, setVoiceMemoVersion] = useState(0);
+  const [connected, setConnected] = useState(false);
+  const [internalPlayQueue, setInternalPlayQueue] = useState([]);
+  const [preferredMicrophoneId, setPreferredMicrophoneId] = useState('');
+  // Vibration state lives in a ref, not useState: raw Zigbee vibration packets
+  // arrive per-sensor at high frequency, and a useState setter re-rendered the
+  // whole provider on every packet, bypassing batchedForceUpdate's 250ms
+  // throttle (2026-07-17 render-storm incident). The handler mutates the ref and
+  // publishes through batchedForceUpdate so vibration re-renders at the same
+  // ~4/sec ceiling as HR. Read via getEquipmentVibration / value.vibrationState
+  // (both keyed on `version`, so each throttled publish surfaces the latest).
+  const vibrationStateRef = useRef({});
+  // Live repetition totals and analog diagnostics, keyed by mat id.
+  const pressureMatStateRef = useRef({});
+  // Bluetooth game-controller management (Task 3.3)
+  const [btInventory, setBtInventory] = useState(null);
+  const [controllerPairing, setControllerPairing] = useState(null);
+  const btReqRef = useRef(0);
+  const vibrationTimeoutRefs = useRef({});
+  const guestAssignmentLedgerRef = useRef(new DeviceAssignmentLedger());
+  const guestAssignmentServiceRef = useRef(null);
+  const musicPlayerRef = useRef(null);
+  const videoPlayerRef = useRef(null);
+  const reconnectCountRef = React.useRef(0);
+  const reconnectStabilityTimerRef = React.useRef(null);
+  const wasConnectedRef = React.useRef(false);
+  const [ledgerVersion, setLedgerVersion] = useState(0);
+  const [transferVersion, setTransferVersion] = useState(0);
+  const [currentMedia, setCurrentMedia] = useState(null);
+  const [recentlyPlayed, setRecentlyPlayed] = useState([]);
+  // Capture suppression for the currently-playing item, published by FitnessPlayer.
+  // Defaults to false so nothing changes when no player is mounted.
+  const [captureDisabled, setCaptureDisabled] = useState(false);
+
+  // App State
+  const [activeApp, setActiveApp] = useState(null);
+  const [overlayApp, setOverlayApp] = useState(null);
+  const [appHistory, setAppHistory] = useState([]);
+  const appEventListeners = useRef(new Map());
+
+  // App launch/close methods
+  const launchApp = React.useCallback((appId, options = {}) => {
+    const manifest = getModuleManifest(appId);
+    if (!manifest) return false;
+    
+    if (options.mode === 'overlay') {
+      setOverlayApp({ appId, config: options.config || {} });
+    } else {
+      setAppHistory(prev => [...prev, activeApp].filter(Boolean));
+      setActiveApp({ appId, config: options.config || {} });
+    }
+    return true;
+  }, [activeApp]);
+
+  const closeApp = React.useCallback(() => {
+    if (overlayApp) {
+      setOverlayApp(null);
+    } else if (activeApp) {
+      const previous = appHistory[appHistory.length - 1];
+      setAppHistory(prev => prev.slice(0, -1));
+      setActiveApp(previous || null);
+    }
+  }, [activeApp, overlayApp, appHistory]);
+
+  const launchOverlayApp = React.useCallback((appId, config = {}) => {
+    setOverlayApp({ appId, config });
+  }, []);
+
+  const dismissOverlayApp = React.useCallback(() => {
+    setOverlayApp(null);
+  }, []);
+
+  // App event bus
+  const emitAppEvent = React.useCallback((eventType, payload, sourceAppId, options = {}) => {
+    const event = { type: eventType, payload, source: sourceAppId, timestamp: Date.now() };
+    const listeners = appEventListeners.current.get(eventType) || [];
+    listeners.forEach(cb => { try { cb(event); } catch (e) { console.error(e); } });
+    if (options.persist !== false) fitnessSessionRef.current?.logEvent?.('app_event', event);
+  }, []);
+
+  const subscribeToAppEvent = React.useCallback((eventType, callback) => {
+    if (!appEventListeners.current.has(eventType)) {
+      appEventListeners.current.set(eventType, []);
+    }
+    appEventListeners.current.get(eventType).push(callback);
+    return () => {
+      const listeners = appEventListeners.current.get(eventType) || [];
+      const idx = listeners.indexOf(callback);
+      if (idx > -1) listeners.splice(idx, 1);
+    };
+  }, []);
+
+  const registerVideoPlayer = React.useCallback((ref) => {
+    videoPlayerRef.current = ref?.current || ref || null;
+  }, []);
+
+  const trackRecentlyPlayed = React.useCallback((item) => {
+    if (!item) return;
+    setRecentlyPlayed(prev => {
+      const contentId = getItemIdentifier(item);
+      const filtered = prev.filter(p => getItemIdentifier(p) !== contentId);
+      return [item, ...filtered].slice(0, 10);
+    });
+  }, []);
+
+  // Governance Metric Reporting
+  const reportGovernanceMetric = React.useCallback((metric) => {
+    const normalized = {
+      source: 'app',
+      appId: metric.appId,
+      type: metric.type,           // 'activity', 'completion', 'score'
+      value: metric.value,
+      userId: metric.userId || null,
+      timestamp: Date.now(),
+      metadata: metric.metadata || {}
+    };
+    
+    // Log to session
+    fitnessSessionRef.current?.logEvent?.('app_governance_metric', normalized);
+    
+    // Forward to governance engine
+    fitnessSessionRef.current?.governanceEngine?.processAppMetric?.(normalized);
+  }, []);
+
+  // Session State
+  // Lazy: `useRef(new FitnessSession())` built a throwaway session (+ a
+  // GovernanceEngine that writes phase:'pending' into window.__fitnessGovernance)
+  // on EVERY render, so profiling logs reported a phase the live engine was not in.
+  const fitnessSessionRef = useRef(null);
+  if (fitnessSessionRef.current === null) {
+    fitnessSessionRef.current = new FitnessSession();
+  }
+  const usersConfigRef = useRef({});
+  
+  // Sync kiosk mode to session — only kiosk clients auto-start sessions
+  useEffect(() => {
+    fitnessSessionRef.current?.setKioskMode(kioskMode);
+  }, [kioskMode]);
+
+  // MEMORY LEAK FIX: Cleanup session on provider unmount
+  useEffect(() => {
+    const session = fitnessSessionRef.current;
+    return () => {
+      if (session) {
+        // Stop all timers and cleanup state
+        if (typeof session.destroy === 'function') {
+          session.destroy();
+        } else {
+          // Fallback if destroy() not yet implemented
+          session.reset();
+          session.governanceEngine?.reset();
+        }
+      }
+    };
+  }, []);
+  
+  const treasureConfigSignatureRef = useRef(null);
+  const configuredSignatureRef = useRef(null);
+  const emptyRosterRef = useRef([]);
+  const rosterCacheRef = useRef({ signature: null, value: emptyRosterRef.current });
+  const [version, setVersion] = useState(0); // Trigger re-render
+  const scheduledUpdateRef = useRef(false);
+  const updateThrottleRef = useRef({ lastUpdateTime: 0, timer: null });
+  
+  // MEMORY LEAK TRACKING: Count forceUpdate calls and renders for profiling
+  const renderStatsRef = useRef({ forceUpdateCount: 0, renderCount: 0, lastResetTime: Date.now() });
+
+  // Circuit breaker: pause updates when render rate exceeds threshold
+  const circuitBreakerRef = React.useRef({
+    renderTimestamps: [],
+    tripped: false,
+    trippedAt: 0,
+    cooldownMs: 2000,
+    thresholdPerSec: 100,
+    sustainedMs: 5000,
+  });
+
+  const forceUpdate = React.useCallback(() => {
+    renderStatsRef.current.forceUpdateCount++;
+    setVersion((v) => v + 1);
+  }, []);
+
+  // Batched forceUpdate - coalesces multiple calls within same frame into single render
+  // Use this for high-frequency updates (WebSocket messages, etc.)
+  // Includes circuit breaker: trips when render rate exceeds threshold sustained over window
+  const batchedForceUpdate = React.useCallback(() => {
+    // Circuit breaker check
+    const cb = circuitBreakerRef.current;
+    const now = Date.now();
+
+    if (cb.tripped) {
+      if ((now - cb.trippedAt) < cb.cooldownMs) {
+        return; // Breaker is tripped — drop this update
+      }
+      // Cooldown expired — reset breaker
+      cb.tripped = false;
+      cb.renderTimestamps = [];
+      getLogger().info('fitness.circuit_breaker.reset');
+    }
+
+    // Track render timestamps (keep last sustainedMs window)
+    cb.renderTimestamps.push(now);
+    const cutoff = now - cb.sustainedMs;
+    while (cb.renderTimestamps.length > 0 && cb.renderTimestamps[0] < cutoff) {
+      cb.renderTimestamps.shift();
+    }
+
+    // Check if sustained rate exceeds threshold
+    if (cb.renderTimestamps.length > (cb.thresholdPerSec * (cb.sustainedMs / 1000))) {
+      cb.tripped = true;
+      cb.trippedAt = now;
+      const ratePerSec = Math.round(cb.renderTimestamps.length / (cb.sustainedMs / 1000));
+      getLogger().warn('fitness.circuit_breaker.tripped', {
+        ratePerSec,
+        windowSize: cb.renderTimestamps.length,
+        droppingUpdatesForMs: cb.cooldownMs
+      });
+      return; // Drop this update
+    }
+
+    // Time-based throttle: max ~4 updates/sec (250ms minimum interval)
+    // HR data still flows to TreasureBox/ZoneProfileStore at full rate
+    const MIN_UPDATE_INTERVAL_MS = 250;
+    const elapsed = now - updateThrottleRef.current.lastUpdateTime;
+
+    if (elapsed >= MIN_UPDATE_INTERVAL_MS) {
+      // Enough time has passed — schedule immediately via RAF
+      if (scheduledUpdateRef.current) return;
+      scheduledUpdateRef.current = true;
+      requestAnimationFrame(() => {
+        scheduledUpdateRef.current = false;
+        updateThrottleRef.current.lastUpdateTime = Date.now();
+        forceUpdate();
+      });
+    } else if (!updateThrottleRef.current.timer) {
+      // Too soon — schedule a trailing update after the remaining interval
+      const delay = MIN_UPDATE_INTERVAL_MS - elapsed;
+      updateThrottleRef.current.timer = setTimeout(() => {
+        updateThrottleRef.current.timer = null;
+        if (!scheduledUpdateRef.current) {
+          scheduledUpdateRef.current = true;
+          requestAnimationFrame(() => {
+            scheduledUpdateRef.current = false;
+            updateThrottleRef.current.lastUpdateTime = Date.now();
+            forceUpdate();
+          });
+        }
+      }, delay);
+    }
+    // Otherwise: RAF already scheduled or throttle timer pending — drop this call
+  }, [forceUpdate]);
+
+  // Track render count
+  renderStatsRef.current.renderCount++;
+  
+  // Expose render stats for profiling (auto-resets every 30s when read)
+  useEffect(() => {
+    window.__fitnessRenderStats = () => {
+      const stats = { ...renderStatsRef.current };
+      // Reset counters when read (30-second window)
+      renderStatsRef.current.forceUpdateCount = 0;
+      renderStatsRef.current.renderCount = 0;
+      renderStatsRef.current.lastResetTime = Date.now();
+      return stats;
+    };
+    return () => {
+      delete window.__fitnessRenderStats;
+    };
+  }, []);
+
+  // Logging helpers scoped after session ref so sessionId is available
+  const voiceMemoLogContext = React.useMemo(() => ({
+    source: 'FitnessContext',
+    sessionId: () => fitnessSessionRef.current?.sessionId || null
+  }), []);
+
+  const logVoiceMemo = React.useCallback((event, payload = {}, options = {}) => {
+    const contextValue = typeof voiceMemoLogContext.sessionId === 'function'
+      ? voiceMemoLogContext.sessionId()
+      : voiceMemoLogContext.sessionId;
+    playbackLog('voice-memo', {
+      event,
+      ...payload
+    }, {
+      level: options.level || 'info',
+      context: {
+        source: voiceMemoLogContext.source,
+        sessionId: contextValue,
+        ...(options.context || {})
+      },
+      tags: options.tags || undefined
+    });
+  }, [voiceMemoLogContext]);
+
+  const logFitnessContext = React.useCallback((event, payload = {}, options = {}) => {
+    const contextValue = typeof voiceMemoLogContext.sessionId === 'function'
+      ? voiceMemoLogContext.sessionId()
+      : voiceMemoLogContext.sessionId;
+    playbackLog('fitness-context', {
+      event,
+      ...payload
+    }, {
+      level: options.level || 'info',
+      context: {
+        source: 'FitnessContext',
+        sessionId: contextValue,
+        ...(options.context || {})
+      }
+    });
+  }, [voiceMemoLogContext]);
+
+  const emitVoiceMemoTelemetry = React.useCallback((eventName, payload = {}) => {
+    if (!eventName) return;
+    const detail = { event: eventName, ...payload };
+    logVoiceMemo('telemetry', detail, { level: 'info' });
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      try {
+        window.dispatchEvent(new CustomEvent('voice-memo-event', { detail }));
+      } catch (_) {
+        // ignore dispatch errors
+      }
+    }
+  }, [logVoiceMemo]);
+
+  // Configuration extraction
+  const {
+    fitnessRoot,
+    contentSource,
+    contentConfig,
+    plexConfig,
+    musicPlaylists,
+    ant_devices,
+    usersConfig,
+    ringTimeUnitMs,
+    zoneConfig,
+    governanceConfig,
+    equipmentConfig,
+    nomusicLabels,
+    governedLabels,
+    governedTypes,
+    sessionsConfig,
+    cycleGameConfig,
+    dancePartyConfig,
+    voiceMemoEligibleUsers,
+    ringCelebrationsConfig,
+  } = React.useMemo(() => {
+    const root = fitnessConfiguration?.fitness ? fitnessConfiguration.fitness : fitnessConfiguration?.plex ? fitnessConfiguration : (fitnessConfiguration || {});
+    // Prefer 'content' config key, fall back to legacy 'plex' key
+    const plex = root?.content || root?.plex || {};
+    const governance = root?.governance || {};
+    const governanceLabelSource = Array.isArray(governance?.governed_labels) && governance.governed_labels.length > 0
+      ? governance.governed_labels
+      : plex?.governed_labels;
+    const normalizedGovernedLabels = normalizeLabelList(governanceLabelSource);
+    const governanceTypeSource = Array.isArray(governance?.governed_types) && governance.governed_types.length > 0
+      ? governance.governed_types
+      : plex?.governed_types;
+    const normalizedGovernedTypes = normalizeLabelList(governanceTypeSource);
+    const normalizedNomusicLabels = Array.isArray(plex?.nomusic_labels)
+      ? plex.nomusic_labels.filter((label) => typeof label === 'string')
+      : [];
+    // Content source for media (default: 'plex', configurable for Jellyfin etc.)
+    const contentSource = root?.content_source || 'plex';
+
+    return {
+      fitnessRoot: root,
+      contentSource,
+      contentConfig: plex,  // Renamed from plexConfig for source-agnostic naming
+      plexConfig: plex,     // Keep for backward compatibility
+      musicPlaylists: Array.isArray(plex?.music_playlists) ? plex.music_playlists : [],
+      ant_devices: root?.ant_devices || {},
+      usersConfig: root?.users || {},
+      // `coin_time_unit_ms` is the pre-rename config key and is still what
+      // data/system/config/fitness.yml carries. Reading only the new name made
+      // TreasureBox fall back to its 5000ms default instead of the configured
+      // 60000ms — awarding rings TWELVE TIMES too fast, silently, on every new
+      // session. Both names are accepted until the config is migrated.
+      ringTimeUnitMs: root?.ring_time_unit_ms ?? root?.coin_time_unit_ms,
+      zoneConfig: root?.zones,
+      governanceConfig: {
+        ...governance,
+        governed_labels: normalizedGovernedLabels,
+        governed_types: normalizedGovernedTypes,
+        // W1.A: continuous-usage threshold (seconds) for participant attribution.
+        // Mirrors the FitnessConfigService default — kept here so the frontend
+        // applies the same 300s fallback if the raw config endpoint returns a
+        // YAML without the field.
+        usage_threshold_seconds: governance?.usage_threshold_seconds ?? 300
+      },
+      equipmentConfig: root?.equipment || [],
+      nomusicLabels: normalizedNomusicLabels,
+      governedLabels: normalizedGovernedLabels,
+      governedTypes: normalizedGovernedTypes,
+      sessionsConfig: root?.sessions || {},
+      cycleGameConfig: root?.cycle_game || {},
+      // Single source of truth for the dance_party block; null (not {}) when
+      // absent so consumers can distinguish "unconfigured" and fail loudly.
+      dancePartyConfig: root?.dance_party || null,
+      ringCelebrationsConfig: normalizeRingCelebrationsConfig(root?.ring_celebrations),
+      // Gates the session-end voice-memo auto-popup. Empty/absent = everyone.
+      voiceMemoEligibleUsers: Array.isArray(root?.voice_memo_eligibility?.users)
+        ? root.voice_memo_eligibility.users.filter(Boolean)
+        : []
+    };
+  }, [fitnessConfiguration]);
+
+  // Pass selection config to persistence manager for primary media selection
+  useEffect(() => {
+    const pm = fitnessSessionRef.current?._persistenceManager;
+    if (pm && plexConfig) {
+      pm.setWarmupConfig(buildSelectionConfig(plexConfig));
+    }
+  }, [plexConfig]);
+
+  // Saved participant flags describe the person: is_primary iff the id is in
+  // the configured `primary` list, family is neither, everyone else a guest;
+  // display names from config.
+  useEffect(() => {
+    const pm = fitnessSessionRef.current?._persistenceManager;
+    if (!pm) return;
+    const configuredLists = ['primary', 'secondary', 'family', 'friends']
+      .flatMap((k) => (Array.isArray(usersConfig?.[k]) ? usersConfig[k] : []));
+    pm.setParticipantDirectory?.({
+      primaryIds: (Array.isArray(usersConfig?.primary) ? usersConfig.primary : [])
+        .map((u) => u?.id || u?.profileId)
+        .filter(Boolean),
+      familyIds: (Array.isArray(usersConfig?.family) ? usersConfig.family : [])
+        .map((u) => u?.id || u?.profileId)
+        .filter(Boolean),
+      names: Object.fromEntries(configuredLists
+        .filter((u) => (u?.id || u?.profileId) && u?.name)
+        .map((u) => [u.id || u.profileId, u.name])),
+    });
+  }, [usersConfig]);
+
+  // Keep usersConfigRef in sync for simulation controller
+  useEffect(() => {
+    usersConfigRef.current = usersConfig;
+  }, [usersConfig]);
+
+  // Sync equipment catalog to session whenever config changes
+  useEffect(() => {
+    applyEquipmentCatalogFromConfig(fitnessSessionRef.current, fitnessConfiguration);
+  }, [fitnessConfiguration]);
+
+  // Derived Session State
+  const session = fitnessSessionRef.current;
+
+  // Deliberate "End Session" from the kiosk UI. Ends the LIVE session instance
+  // (the SSoT for the active recording) — the server POST alone never reaches it.
+  const requestEndSession = useCallback(() => {
+    const ok = endLiveSession(fitnessSessionRef.current);
+    if (ok) {
+      getLogger().info('fitness.session.user_end', { source: 'sidebar_button' });
+      batchedForceUpdate();
+    }
+    return ok;
+  }, [batchedForceUpdate]);
+
+  const fitnessDevices = session.deviceManager.devices;
+  const users = session.userManager.users;
+  useEffect(() => {
+    const ledger = guestAssignmentLedgerRef.current;
+    ledger?.setEventJournal?.(session?.eventJournal || null);
+    // W1.A: continuous-usage threshold for participant attribution comes from
+    // fitness.yml → governance.usage_threshold_seconds (300s default at the
+    // FitnessConfigService layer). Convert to ms for the service.
+    const usageThresholdSeconds = governanceConfig?.usage_threshold_seconds;
+    const thresholdMs = Number.isFinite(usageThresholdSeconds)
+      ? usageThresholdSeconds * 1000
+      : undefined; // let the service apply its own (back-compat 60s) default
+    const service = new GuestAssignmentService({ session, ledger, thresholdMs });
+    guestAssignmentServiceRef.current = service;
+    session?.userManager?.setAssignmentLedger?.(ledger, {
+      onChange: () => setLedgerVersion((v) => v + 1)
+    });
+    // W1.B: mirror the same threshold into PersistenceManager so the save-time
+    // backfill pass uses the same continuous-usage boundary as the in-session
+    // GuestAssignmentService. Both should resolve from the same fitness.yml key.
+    if (Number.isFinite(thresholdMs)) {
+      session?._persistenceManager?.setUsageThresholdMs?.(thresholdMs);
+    }
+    // W1.C: mirror the effort-insignificance config (fitness.yml ->
+    // governance.insignificant_usage) and known-user device-swap aliases
+    // (fitness.yml -> known_user_aliases) into PersistenceManager so the
+    // save-time backfill pass takes the effort-based reconciliation path.
+    // Both are optional — undefined is handled gracefully by the setters
+    // and by runSessionBackfill's own DEFAULT_INSIGNIFICANT_USAGE fallback.
+    session?._persistenceManager?.setInsignificantUsageConfig?.(governanceConfig?.insignificant_usage);
+    session?._persistenceManager?.setKnownUserAliases?.(fitnessRoot?.known_user_aliases);
+    return () => {
+      session?.userManager?.setAssignmentLedger?.(null);
+    };
+  }, [session, governanceConfig?.usage_threshold_seconds, governanceConfig?.insignificant_usage, fitnessRoot?.known_user_aliases]);
+
+  useEffect(() => {
+    if (!session) return;
+    // DEBUG: Disabled - suspected cause of empty deviceAssignments on save
+    // session.cleanupOrphanGuests?.();
+    session.reconcileAssignments?.();
+  }, [session, ledgerVersion]);
+  
+  // Legacy compatibility constants (userGroupLabelMap removed - use getDisplayName instead)
+        const normalizedBaseZoneConfig = React.useMemo(() => zoneConfig?.[0] || {}, [zoneConfig]);
+
+  const primaryConfigByName = React.useMemo(() => {
+    const map = new Map();
+    const list = Array.isArray(usersConfig?.primary) ? usersConfig.primary : [];
+    list.forEach((entry) => {
+      if (!entry?.name) return;
+      map.set(entry.name, entry);
+      // Also set by ID for direct lookup
+      if (entry.id) {
+        map.set(entry.id, entry);
+      }
+    });
+    return map;
+  }, [usersConfig]);
+
+  // Group label lookup for getDisplayLabel (replaces userGroupLabelMap)
+  const groupLabelLookup = React.useMemo(() => {
+    const map = new Map();
+    const registerGroupLabels = (list) => {
+      if (!Array.isArray(list)) return;
+      list.forEach((entry) => {
+        if (!entry?.name) return;
+        const id = entry.id || entry.profileId || entry.name;
+        const label = entry.group_label ?? entry.groupLabel ?? null;
+        if (id && label && !map.has(id)) {
+          map.set(id, label);
+        }
+        if (entry.name && label && entry.name !== id && !map.has(entry.name)) {
+          map.set(entry.name, label);
+        }
+      });
+    };
+    registerGroupLabels(usersConfig?.primary);
+    registerGroupLabels(usersConfig?.secondary);
+    registerGroupLabels(usersConfig?.family);
+    registerGroupLabels(usersConfig?.friends);
+    registerGroupLabels(usersConfig?.guests);
+    return map;
+  }, [usersConfig]);
+
+  const configurationInputs = React.useMemo(() => ({
+    ant_devices,
+    usersConfig,
+    zoneConfig,
+    governanceConfig,
+    ringTimeUnitMs,
+    equipmentConfig,
+    nomusicLabels,
+    governedLabels,
+    governedTypes,
+    sessionsConfig
+  }), [ant_devices, usersConfig, zoneConfig, governanceConfig, ringTimeUnitMs, equipmentConfig, nomusicLabels, governedLabels, governedTypes, sessionsConfig]);
+
+  const configurationSignature = React.useMemo(() => JSON.stringify({
+    ...configurationInputs,
+    sessionId: session?.sessionId || 'none'
+  }), [configurationInputs, session?.sessionId]);
+  
+  useEffect(() => {
+    if (configuredSignatureRef.current === configurationSignature) {
+      return;
+    }
+    configuredSignatureRef.current = configurationSignature;
+
+    // Configure Timeouts
+    const inactive = ant_devices?.timeout?.inactive;
+    const remove = ant_devices?.timeout?.remove;
+    const sessionEndCooldown = sessionsConfig?.session_end_cooldown_ms;
+    setFitnessTimeouts({ inactive, remove, sessionEndCooldown });
+
+    // Configure User Manager
+    session.userManager.configure(usersConfig, zoneConfig);
+    session.configureRosterFloors?.({
+      floor: Number(governanceConfig?.anonymous_hr_floor),
+      hardFloor: Number(governanceConfig?.anonymous_hr_hard_floor)
+    });
+    // The re-config above rebuilds users (and is where guest assignments were
+    // being lost). Re-apply any captured assignments that went missing.
+    session.restoreAssignmentSnapshot?.();
+    session.invalidateUserCaches?.();
+
+    // Configure Governance
+    session.governanceEngine.configure(
+      { ...governanceConfig, zoneConfig },
+      undefined,
+      { subscribeToAppEvent }
+    );
+    session.governanceEngine.setCallbacks({
+      onPhaseChange: () => batchedForceUpdate(),
+      onPulse: () => batchedForceUpdate(),
+      onStateChange: () => batchedForceUpdate()
+    });
+
+    // Expose governance engine for testing
+    if (typeof window !== 'undefined') {
+      window.__governanceEngine = session.governanceEngine;
+      window.__fitnessSession = session;
+      // Test hook: drive a strap reassignment exactly as the sidebar does.
+      window.__fitnessAssignGuest = (deviceId, assignment) =>
+        guestAssignmentServiceRef.current?.assignGuest(deviceId, assignment) ?? null;
+      
+      // MEMORY LEAK FIX: Add debug helper for memory monitoring
+      window.__fitnessMemoryStats = () => {
+        const series = session?.timeline?.series || {};
+        const seriesCount = Object.keys(series).length;
+        const totalPoints = Object.values(series).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
+        const perUserCount = session?.treasureBox?.perUser?.size || 0;
+        const eventLogSize = session?.eventLog?.length || 0;
+        const deviceCount = session?.deviceManager?.devices?.size || 0;
+        const userCount = session?.userManager?.users?.size || 0;
+        return { 
+          seriesCount, 
+          totalPoints, 
+          perUserCount, 
+          eventLogSize,
+          deviceCount,
+          userCount,
+          sessionActive: !!session?.sessionId
+        };
+      };
+    }
+
+    // Configure TreasureBox (lazy init in session, but we can pre-config if needed)
+    // Session handles lazy init, but we can push config now if session started.
+    // Actually, session.ensureStarted() creates treasureBox.
+    
+    forceUpdate();
+  }, [configurationSignature, ant_devices, usersConfig, zoneConfig, governanceConfig, session, forceUpdate, sessionsConfig?.session_end_cooldown_ms, subscribeToAppEvent, batchedForceUpdate]);
+
+  useEffect(() => {
+    const session = fitnessSessionRef.current;
+    const box = session?.treasureBox || null;
+    if (!box) return;
+
+    const signature = JSON.stringify({
+      ringTimeUnitMs: ringTimeUnitMs ?? null,
+      zones: zoneConfig ?? null,
+      users: usersConfig ?? null
+    });
+
+    if (treasureConfigSignatureRef.current !== signature) {
+      treasureConfigSignatureRef.current = signature;
+      box.configure({
+        ringTimeUnitMs,
+        zones: zoneConfig,
+        users: usersConfig
+      });
+    }
+
+    box.setMutationCallback(() => {
+      // TreasureBox mutated (HR data / ring update).
+      // Governance re-evaluation happens via:
+      //   1. recordDeviceActivity() -> ZoneProfileStore sync -> notifyZoneChange()
+      //   2. batchedForceUpdate() -> updateSnapshot() -> evaluate() with full data
+      // Calling _triggerPulse() here caused the ghost participant oscillation bug
+      // because it evaluated with empty userZoneMap before ZoneProfileStore could populate it.
+      batchedForceUpdate();
+    });
+    return () => {
+      if (box === session?.treasureBox) {
+        box.setMutationCallback(null);
+      }
+    };
+  }, [ringTimeUnitMs, zoneConfig, usersConfig, batchedForceUpdate, version]);
+
+  useEffect(() => {
+    const session = fitnessSessionRef.current;
+    const manager = session?.voiceMemoManager || null;
+    if (!manager) return;
+
+    manager.setMutationCallback(forceUpdate);
+    manager.setEligibleUsers(voiceMemoEligibleUsers);
+    return () => {
+      if (manager === session?.voiceMemoManager) {
+        manager.setMutationCallback(null);
+      }
+    };
+  }, [forceUpdate, version, voiceMemoEligibleUsers]);
+
+  // Sidebar toggle
+  const toggleSidebarSizeMode = React.useCallback(() => {
+    setSidebarSizeMode((m) => (m === 'regular' ? 'large' : 'regular'));
+  }, []);
+
+  // Sidebar collapse/expand control (for plugins)
+  const collapseSidebar = React.useCallback(() => setSidebarCollapsed(true), []);
+  const expandSidebar = React.useCallback(() => setSidebarCollapsed(false), []);
+  const toggleSidebarCollapsed = React.useCallback(() => setSidebarCollapsed((c) => !c), []);
+
+
+  // Guest Assignment
+  const assignGuestToDevice = React.useCallback((deviceId, assignment) => {
+    if (!guestAssignmentServiceRef.current) return;
+    const result = guestAssignmentServiceRef.current.assignGuest(deviceId, assignment);
+    if (!result?.ok && FITNESS_DEBUG) {
+      logFitnessContext('assign-guest-failed', { deviceId, message: result?.message }, { level: 'warn' });
+    }
+    // Trigger re-render for transferred users (grace period substitution)
+    setTransferVersion(v => v + 1);
+    forceUpdate();
+  }, [forceUpdate, logFitnessContext]);
+
+  const clearGuestAssignment = React.useCallback((deviceId) => {
+    if (!guestAssignmentServiceRef.current) return;
+    const result = guestAssignmentServiceRef.current.clearGuest(deviceId);
+    if (!result?.ok && FITNESS_DEBUG) {
+      logFitnessContext('clear-guest-failed', { deviceId, message: result?.message }, { level: 'warn' });
+    }
+    forceUpdate();
+  }, [forceUpdate, logFitnessContext]);
+
+  const suppressDeviceUntilNextReading = React.useCallback((deviceId) => {
+    if (deviceId == null) return false;
+
+    const session = fitnessSessionRef.current;
+    if (!session) return false;
+
+    // Use device ID directly - no slug transformation needed
+    const rawId = String(deviceId);
+
+    let mutated = false;
+
+    if (session.deviceManager?.removeDevice) {
+      mutated = session.deviceManager.removeDevice(rawId) || mutated;
+    } else if (session.deviceManager?.devices instanceof Map) {
+      if (session.deviceManager.devices.delete(rawId)) {
+        mutated = true;
+      }
+    }
+
+    const activeIds = session.activeDeviceIds;
+    if (activeIds instanceof Set) {
+      if (activeIds.delete(rawId)) {
+        mutated = true;
+      }
+    }
+
+    if (mutated) {
+      forceUpdate();
+    }
+
+    return mutated;
+  }, [forceUpdate]);
+
+  // Voice Memos
+  // version/voiceMemoVersion are force-recompute counters: fitnessSessionRef is a
+  // ref, so mutations to its voiceMemoManager never trigger a re-render on their
+  // own — these two deps exist purely to make React re-run this memo when they do.
+  const voiceMemos = React.useMemo(() => {
+    const raw = fitnessSessionRef.current?.voiceMemoManager?.memos;
+    if (!Array.isArray(raw)) return [];
+    return raw.map((memo) => ({ ...memo }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceMemoVersion, version]);
+
+  const getVoiceMemoById = React.useCallback((memoId) => {
+    if (!memoId) return null;
+    const targetId = String(memoId);
+    return voiceMemos.find((memo) => memo && String(memo.memoId) === targetId) || null;
+  }, [voiceMemos]);
+
+  const setVoiceMemoOverlayStateGuarded = React.useCallback((nextState) => {
+    setVoiceMemoOverlayState((prev) => {
+      if (!nextState || nextState.open !== true) {
+        logVoiceMemo('overlay-reset', { reason: 'closed' });
+        return VOICE_MEMO_OVERLAY_INITIAL;
+      }
+      if (
+        prev.open === nextState.open
+        && prev.mode === nextState.mode
+        && prev.memoId === nextState.memoId
+        && prev.autoAccept === nextState.autoAccept
+      ) {
+        return prev;
+      }
+      logVoiceMemo('overlay-state-change', {
+        from: { open: prev.open, mode: prev.mode, memoId: prev.memoId },
+        to: { open: nextState.open, mode: nextState.mode, memoId: nextState.memoId }
+      }, { level: 'debug' });
+      return nextState;
+    });
+  }, [logVoiceMemo]);
+
+  const addVoiceMemoToSession = React.useCallback((memo) => {
+    if (!memo) return null;
+    logVoiceMemo('memo-add-request', { memoId: memo.memoId || null });
+    let stored = memo;
+    try {
+      stored = fitnessSessionRef.current?.addVoiceMemo?.(memo) || memo;
+    } catch (error) {
+      logVoiceMemo('memo-add-error', {
+        memoId: memo.memoId || null,
+        error: error?.message || String(error)
+      }, { level: 'warn' });
+    }
+    setVoiceMemoVersion((version) => version + 1);
+    if (stored) {
+      const memoId = stored.memoId || memo.memoId || null;
+      logVoiceMemo('memo-added', { memoId });
+      emitVoiceMemoTelemetry('voice_memo_added', { memoId });
+    }
+    return stored;
+  }, [emitVoiceMemoTelemetry, logVoiceMemo]);
+
+  const removeVoiceMemoFromSession = React.useCallback((memoId) => {
+    if (!memoId) return null;
+    logVoiceMemo('memo-remove-request', { memoId });
+    let removed = null;
+    try {
+      removed = fitnessSessionRef.current?.removeVoiceMemo?.(memoId) || null;
+    } catch (error) {
+      logVoiceMemo('memo-remove-error', {
+        memoId,
+        error: error?.message || String(error)
+      }, { level: 'warn' });
+    }
+    if (removed) {
+      setVoiceMemoVersion((version) => version + 1);
+      logVoiceMemo('memo-removed', { memoId: memoId || removed.memoId || null });
+      emitVoiceMemoTelemetry('voice_memo_removed', { memoId: memoId || removed.memoId || null });
+    }
+    return removed;
+  }, [emitVoiceMemoTelemetry, logVoiceMemo]);
+
+  const replaceVoiceMemoInSession = React.useCallback((memoId, memo) => {
+    if (!memoId || !memo) return null;
+    logVoiceMemo('memo-replace-request', { memoId, nextMemoId: memo?.memoId || null });
+    let stored = null;
+    try {
+      stored = fitnessSessionRef.current?.replaceVoiceMemo?.(memoId, memo) || null;
+    } catch (error) {
+      logVoiceMemo('memo-replace-error', {
+        memoId,
+        nextMemoId: memo?.memoId || null,
+        error: error?.message || String(error)
+      }, { level: 'warn' });
+    }
+    if (stored) {
+      setVoiceMemoVersion((version) => version + 1);
+      logVoiceMemo('memo-replaced', { memoId, nextMemoId: memo?.memoId || memoId });
+      emitVoiceMemoTelemetry('voice_memo_replaced', { memoId, nextMemoId: memo?.memoId || memoId });
+    }
+    return stored;
+  }, [emitVoiceMemoTelemetry, logVoiceMemo]);
+
+  const closeVoiceMemoOverlay = React.useCallback(() => {
+    // Fix 5 (bugbash 4B): Capture onComplete before resetting state
+    const { onComplete } = voiceMemoOverlayState;
+    emitVoiceMemoTelemetry('voice_memo_overlay_close', {
+      mode: voiceMemoOverlayState.mode,
+      memoId: voiceMemoOverlayState.memoId
+    });
+    logVoiceMemo('overlay-close', {
+      mode: voiceMemoOverlayState.mode,
+      memoId: voiceMemoOverlayState.memoId
+    });
+    
+    // Clear pause state when closing overlay (BUG-08)
+    setVideoPlayerPaused(false);
+    musicPlayerRef.current?.resume?.();
+    
+    // Directly resume video playback via player ref
+    if (videoPlayerRef.current?.play) {
+      videoPlayerRef.current.play();
+    }
+
+    setVoiceMemoOverlayStateGuarded(VOICE_MEMO_OVERLAY_INITIAL);
+    // Fire onComplete callback after state reset
+    if (typeof onComplete === 'function') {
+      try {
+        onComplete();
+      } catch (_) {
+        // Swallow errors in callback
+      }
+    }
+  }, [emitVoiceMemoTelemetry, logVoiceMemo, setVoiceMemoOverlayStateGuarded, voiceMemoOverlayState]);
+
+  const openVoiceMemoReview = React.useCallback((memoOrId, { autoAccept, fromRecording = false } = {}) => {
+    // Pause video and music when opening voice memo review
+    setVideoPlayerPaused(true);
+    musicPlayerRef.current?.pause?.();
+
+    // Allow optimistic review opens when we have the memo object, even if it hasn't landed in voiceMemos yet.
+    const isObject = memoOrId && typeof memoOrId === 'object';
+    const id = isObject ? memoOrId.memoId : memoOrId;
+
+    // Retroactive memos from historical sessions arrive as an object with no
+    // memoId (backend doesn't mint one). Allow review in that case by storing
+    // the memo payload directly in overlay state — the overlay's currentMemo
+    // hook falls back to this when voiceMemos lookup misses.
+    if (!id && !isObject) return;
+
+    // 4C: Default autoAccept to true for post-recording reviews (not from list)
+    const resolvedAutoAccept = autoAccept !== undefined ? autoAccept : (fromRecording || isObject);
+
+    if (!isObject) {
+      const existing = getVoiceMemoById(id);
+      if (!existing) {
+        if (voiceMemos.length > 0) {
+          setVoiceMemoOverlayStateGuarded({
+            open: true,
+            mode: 'list',
+            memoId: null,
+            autoAccept: false,
+            startedAt: Date.now()
+          });
+        } else {
+          setVoiceMemoOverlayStateGuarded(VOICE_MEMO_OVERLAY_INITIAL);
+        }
+        return;
+      }
+    }
+
+    // A review that follows a recording continues the same capture flow: keep
+    // the historical session it targets and the callback owed on completion.
+    const prevOverlay = voiceMemoOverlayStateRef.current;
+    const carry = fromRecording && prevOverlay?.open
+      ? { sessionId: prevOverlay.sessionId ?? null, onComplete: prevOverlay.onComplete ?? null }
+      : null;
+    setVoiceMemoOverlayStateGuarded(buildReviewOverlayState({ memoOrId, autoAccept: resolvedAutoAccept, carry }));
+    logVoiceMemo('overlay-open-review', {
+      memoId: id || null,
+      autoAccept: resolvedAutoAccept,
+      hasInlineMemo: isObject,
+      carriedSessionId: carry?.sessionId ?? null,
+      carriedOnComplete: Boolean(carry?.onComplete),
+    });
+    emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'review', memoId: id || null, autoAccept: resolvedAutoAccept });
+  }, [emitVoiceMemoTelemetry, getVoiceMemoById, logVoiceMemo, setVoiceMemoOverlayStateGuarded, voiceMemos.length]);
+
+  const openVoiceMemoList = React.useCallback(() => {
+    // Pause video and music when opening voice memo list
+    setVideoPlayerPaused(true);
+    musicPlayerRef.current?.pause?.();
+
+    setVoiceMemoOverlayStateGuarded({
+      open: true,
+      mode: 'list',
+      memoId: null,
+      autoAccept: false,
+      startedAt: Date.now()
+    });
+    logVoiceMemo('overlay-open-list');
+    emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'list', memoId: null });
+  }, [emitVoiceMemoTelemetry, logVoiceMemo, setVoiceMemoOverlayStateGuarded]);
+
+  const openVoiceMemoCapture = React.useCallback((memoOrId, { autoAccept = false, fromFitnessVideoEnd = false, onComplete, sessionId: overrideSessionId = null } = {}) => {
+    // Pause video and music when opening voice memo overlay
+    setVideoPlayerPaused(true);
+    musicPlayerRef.current?.pause?.();
+
+    const id = typeof memoOrId === 'string' ? memoOrId : memoOrId?.memoId;
+    if (id) {
+      const existing = getVoiceMemoById(id);
+      if (!existing) {
+        if (voiceMemos.length > 0) {
+          setVoiceMemoOverlayStateGuarded({
+            open: true,
+            mode: 'list',
+            memoId: null,
+            autoAccept: false,
+            fromFitnessVideoEnd: false,
+            startedAt: Date.now(),
+            onComplete: onComplete || null,
+            sessionId: overrideSessionId
+          });
+        } else {
+          setVoiceMemoOverlayStateGuarded(VOICE_MEMO_OVERLAY_INITIAL);
+        }
+        return;
+      }
+    }
+    setVoiceMemoOverlayStateGuarded({
+      open: true,
+      mode: 'redo',
+      memoId: id || null,
+      autoAccept, // 4B: Pass autoAccept option for 15-minute rule
+      fromFitnessVideoEnd, // Show "How did it go?" vs "How is it going?"
+      startedAt: Date.now(),
+      onComplete: onComplete || null, // Fix 5: Store onComplete callback
+      // Override when attaching a memo to a HISTORICAL session (retroactive) —
+      // otherwise VoiceMemoOverlay falls back to the active session's id.
+      sessionId: overrideSessionId
+    });
+    logVoiceMemo('overlay-open-capture', { memoId: id || null, autoAccept, fromFitnessVideoEnd, overrideSessionId: overrideSessionId || null });
+    emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'capture', memoId: id || null, autoAccept, fromFitnessVideoEnd });
+  }, [setVoiceMemoOverlayStateGuarded, logVoiceMemo, emitVoiceMemoTelemetry, getVoiceMemoById, voiceMemos.length]);
+
+  React.useEffect(() => {
+    if (selectedPlaylistId != null) {
+      setLastPlaylistId(selectedPlaylistId);
+    }
+  }, [selectedPlaylistId]);
+
+  const resolveDefaultPlaylistId = React.useCallback(() => {
+    if (lastPlaylistId != null) {
+      const existing = musicPlaylists.find((playlist) => String(playlist?.id) === String(lastPlaylistId));
+      if (existing && existing.id != null) {
+        return existing.id;
+      }
+    }
+    return musicPlaylists[0]?.id ?? null;
+  }, [lastPlaylistId, musicPlaylists]);
+
+  const fitnessPlayQueue = propPlayQueue !== undefined ? propPlayQueue : internalPlayQueue;
+  const setFitnessPlayQueue = propSetPlayQueue || setInternalPlayQueue;
+  const queuedMusicLabels = normalizeLabelList(fitnessPlayQueue?.[0]?.labels);
+  // Resolve the current video synchronously: an effect would briefly mount the
+  // old soundtrack before clearing it on an untagged replacement video.
+  const hasVideo = Boolean(fitnessPlayQueue?.length);
+  const mediaMusicAutoEnabled = hasVideo
+    && queuedMusicLabels.some(label => normalizeLabelList(nomusicLabels).includes(label));
+  const musicAutoEnabled = mediaMusicAutoEnabled;
+  // Music is an overlay for a video that explicitly asks for an external
+  // soundtrack. It is never a standalone chart feature, and a manual request
+  // cannot manufacture permission to start it without that video.
+  const musicEnabled = hasVideo && musicAutoEnabled && musicOverride !== false;
+
+  React.useEffect(() => {
+    if (musicEnabled) {
+      if (selectedPlaylistId == null) {
+        const targetId = resolveDefaultPlaylistId();
+        if (targetId != null) {
+          setSelectedPlaylistId(targetId);
+        }
+      }
+    } else if (selectedPlaylistId != null) {
+      setSelectedPlaylistId(null);
+    }
+  }, [musicEnabled, resolveDefaultPlaylistId, selectedPlaylistId]);
+
+  const setMusicAutoEnabled = React.useCallback((nextEnabled) => {
+    setMusicAutoEnabledState(Boolean(nextEnabled));
+  }, []);
+
+  const setMusicOverrideState = React.useCallback((nextEnabled) => {
+    if (nextEnabled === null || nextEnabled === undefined) {
+      setMusicOverride(null);
+      return;
+    }
+    // Callers may silence an allowed overlay (player failure/close), but may
+    // not force music on. The settings UI intentionally exposes no toggle.
+    setMusicOverride(nextEnabled === false ? false : null);
+  }, []);
+
+  // Music player control helpers for voice memo coordination
+  const pauseMusicPlayer = useCallback(() => {
+    musicPlayerRef.current?.pause?.();
+  }, []);
+
+  const resumeMusicPlayer = useCallback(() => {
+    musicPlayerRef.current?.resume?.();
+  }, []);
+
+  // REMOVED: 1-second heartbeat that forced global re-render
+  // Countdown displays now use useDeadlineCountdown hook with deadline timestamp
+  // This eliminates ~60 unnecessary forceUpdate calls/min during active sessions
+
+  const previousMusicDecisionRef = useRef(null);
+  React.useEffect(() => {
+    const item = fitnessPlayQueue?.[0];
+    const decision = {
+      contentId: item ? getItemIdentifier(item) : null,
+      labels: normalizeLabelList(item?.labels),
+      source: musicOverride === false ? 'manual-off' : 'media-label',
+      autoEnabled: musicAutoEnabled,
+      manualOverride: musicOverride,
+      enabled: musicEnabled,
+    };
+    const previous = previousMusicDecisionRef.current;
+    if (JSON.stringify(previous) === JSON.stringify(decision)) return;
+    previousMusicDecisionRef.current = decision;
+    getLogger().info('fitness.music.decision', { previous, current: decision });
+  }, [fitnessPlayQueue, musicAutoEnabled, musicOverride, musicEnabled]);
+
+  // Governance Media Update
+  const setGovernanceMedia = React.useCallback((input) => {
+    const session = fitnessSessionRef.current;
+    if (!session) return;
+    
+    const media = input ? {
+      id: input.id,
+      labels: normalizeLabelList(input.labels),
+      type: typeof input.type === 'string' ? input.type.trim().toLowerCase() : null
+    } : null;
+    session.governanceEngine.setMedia(media);
+    forceUpdate();
+  }, [forceUpdate]);
+
+  // Park/unpark HR + cycle governance while an ungoverned screen takeover
+  // (the CycleGame race) owns the display. Keyed to the race container's
+  // mount/unmount. See docs/_wip/audits/2026-06-06-cycle-governance-deadlock-
+  // and-stale-media-audit.md (Issue 2).
+  const setGovernanceSuspended = React.useCallback((suspended) => {
+    const session = fitnessSessionRef.current;
+    if (!session) return;
+    session.governanceEngine.setSuspended(Boolean(suspended));
+    forceUpdate();
+  }, [forceUpdate]);
+
+  const updateGovernancePhase = React.useCallback((_nextPhase) => {
+    // No-op, handled by engine callbacks
+  }, []);
+  
+  // Vibration utilities
+  const handleVibrationEvent = React.useCallback((payload) => {
+    const {
+      equipmentId,
+      equipmentName,
+      equipmentType,
+      thresholds = VIBRATION_CONSTANTS.DEFAULT_THRESHOLDS,
+      data = {},
+      timestamp = Date.now()
+    } = payload || {};
+
+    if (!equipmentId) return;
+
+    const {
+      vibration = false,
+      x_axis = null,
+      y_axis = null,
+      z_axis = null,
+      battery = null,
+      battery_low = false,
+      linkquality = null
+    } = data;
+
+    const axes = { x: x_axis ?? null, y: y_axis ?? null, z: z_axis ?? null };
+    const intensity = calculateIntensity(axes.x, axes.y, axes.z);
+    const normalizedThresholds = thresholds || VIBRATION_CONSTANTS.DEFAULT_THRESHOLDS;
+
+    const prevVib = vibrationStateRef.current;
+    vibrationStateRef.current = {
+      ...prevVib,
+      [equipmentId]: {
+        id: equipmentId,
+        name: equipmentName || equipmentId,
+        type: equipmentType || null,
+        vibration: Boolean(vibration),
+        intensity,
+        axes,
+        thresholds: normalizedThresholds,
+        battery: battery ?? prevVib[equipmentId]?.battery ?? null,
+        batteryLow: Boolean(battery_low),
+        linkquality: linkquality ?? null,
+        lastEvent: timestamp
+      }
+    };
+    batchedForceUpdate();
+
+    // Feed vibration data into session tracker for timeline/governance
+    if (fitnessSessionRef.current) {
+      fitnessSessionRef.current.ingestVibration(equipmentId, {
+        vibration: data?.vibration ?? false,
+        x_axis: axes?.x ?? data?.x_axis ?? 0,
+        y_axis: axes?.y ?? data?.y_axis ?? 0,
+        z_axis: axes?.z ?? data?.z_axis ?? 0,
+        timestamp: timestamp || Date.now()
+      });
+    }
+
+    if (vibrationTimeoutRefs.current[equipmentId]) {
+      clearTimeout(vibrationTimeoutRefs.current[equipmentId]);
+    }
+
+    if (vibration) {
+      vibrationTimeoutRefs.current[equipmentId] = setTimeout(() => {
+        const prev = vibrationStateRef.current;
+        const existing = prev[equipmentId];
+        if (!existing) return;
+        vibrationStateRef.current = {
+          ...prev,
+          [equipmentId]: {
+            ...existing,
+            vibration: false
+          }
+        };
+        batchedForceUpdate();
+      }, VIBRATION_CONSTANTS.ACTIVE_STATE_MS);
+    }
+  }, [batchedForceUpdate]);
+
+  const handlePressureMatEvent = React.useCallback((message) => {
+    const previous = pressureMatStateRef.current[message?.id] || null;
+    const reading = normalizePressureMatMessage(message, previous);
+    if (!reading) return;
+
+    pressureMatStateRef.current = {
+      ...pressureMatStateRef.current,
+      [reading.id]: reading,
+    };
+    fitnessSessionRef.current?.ingestPressureMat?.(reading, { timestamp: Date.now() });
+    batchedForceUpdate();
+
+    const fitnessEvent = pressureMatFitnessEvent(reading);
+    if (!fitnessEvent) return;
+    // High-rate footfall edges are transient notifications. Canonical raw
+    // history is persisted by the backend pressure-mat relay; the workout
+    // timeline stores sampled totals and challenge milestones instead.
+    emitAppEvent('pressure-mat', reading, reading.id, { persist: false });
+    emitAppEvent(fitnessEvent.type, fitnessEvent.payload, reading.id, { persist: false });
+  }, [batchedForceUpdate, emitAppEvent]);
+
+  const assignEquipmentUser = React.useCallback((equipmentId, userId) => {
+    fitnessSessionRef.current?.setEquipmentUser?.(equipmentId, userId || null);
+    batchedForceUpdate();
+  }, [batchedForceUpdate]);
+
+  const disengagePressureMat = React.useCallback((equipmentId) => {
+    const changed = fitnessSessionRef.current?.disengagePressureMat?.(equipmentId, { reason: 'touchscreen' }) || false;
+    if (changed) batchedForceUpdate();
+    return changed;
+  }, [batchedForceUpdate]);
+
+  const pushFitnessToast = useCallback((toast) => {
+    toastIdRef.current += 1;
+    const next = normalizeToast(toast, toastIdRef.current);
+    fitnessToastRef.current = next;
+    setFitnessToast(next);
+  }, []);
+
+  const dismissFitnessToast = useCallback((id) => {
+    setFitnessToast((prev) => {
+      const next = dismissMatches(prev, id) ? null : prev;
+      fitnessToastRef.current = next;
+      return next;
+    });
+  }, []);
+
+  // WebSocket subscription using centralized WebSocketService
+  useEffect(() => {
+    // MEMORY LEAK FIX: Move cleanup refs outside .then() to ensure proper cleanup
+    let unsubscribe = null;
+    let unsubscribeStatus = null;
+    let mounted = true;
+    
+    // Import dynamically to avoid circular dependencies
+    import("../../../../frontend/src/services/WebSocketService.js").then(({ wsService }) => {
+      if (!mounted) return;
+      
+      // Subscribe to fitness and vibration topics
+      unsubscribe = wsService.subscribe(
+        ['fitness', 'vibration', 'pressure-mat', 'rider_select', 'bt_inventory', 'bt.pair.progress', 'bt.remove.result'],
+        (data) => {
+          // Guard against malformed or empty data during reconnect churn
+          if (!data || typeof data !== 'object') return;
+          if (data.topic === undefined && data.type === undefined) return;
+
+          if (data?.topic === 'vibration') {
+            handleVibrationEvent(data);
+            return;
+          }
+
+          if (data?.topic === 'pressure-mat') {
+            handlePressureMatEvent(data);
+            return;
+          }
+
+          if (data?.topic === 'bt_inventory') {
+            setBtInventory(Array.isArray(data.devices) ? data.devices : []);
+            return;
+          }
+          if (data?.topic === 'bt.pair.progress') {
+            setControllerPairing(data);
+            return;
+          }
+          if (data?.topic === 'bt.remove.result') {
+            // Forget completed (success/failure surfaced by inventory refresh); log only.
+            getLogger().info('fitness.bt.remove-result', { address: data.address, success: data.success, error: data.error });
+            return;
+          }
+
+          // Reconnection backoff: if we've reconnected >3 times rapidly, skip processing
+          if (reconnectCountRef.current > 3) {
+            return;
+          }
+
+          const session = fitnessSessionRef.current;
+          if (!session) return;
+
+          // force_break: explicitly end the current session (overrides grace period)
+          if (data?.action === 'force_break') {
+            if (session.sessionId) {
+              getLogger().info('fitness.session.force_break', { sessionId: session.sessionId });
+              session.endSession('force_break');
+              batchedForceUpdate();
+            }
+            return;
+          }
+
+          // Cosmetic rider-assignment toast (additive — must NOT return; the
+          // claim is still set by ingestData below).
+          if (data?.topic === 'rider_select') {
+            riderToastRef.current?.(data);
+          }
+
+          session.ingestData(data);
+          if (data?.topic === 'rider_select') {
+            emitAppEvent('rider-select', data, data.equipmentId || 'rider-selector', { persist: false });
+          }
+          batchedForceUpdate(); // Batched: multiple messages in same frame = 1 render
+        }
+      );
+
+      // Subscribe to connection status
+      unsubscribeStatus = wsService.onStatusChange(({ connected: isConnected }) => {
+        // Track reconnections: false→true transition = a reconnection event
+        if (isConnected && !wasConnectedRef.current) {
+          reconnectCountRef.current++;
+
+          // Reset counter after 60 seconds of stability
+          if (reconnectStabilityTimerRef.current) {
+            clearTimeout(reconnectStabilityTimerRef.current);
+          }
+          reconnectStabilityTimerRef.current = setTimeout(() => {
+            reconnectCountRef.current = 0;
+          }, 60000);
+        }
+        wasConnectedRef.current = isConnected;
+
+        setConnected(isConnected);
+      });
+    });
+
+    // Cleanup subscriptions and vibration timeouts on unmount
+    return () => {
+      mounted = false;
+      unsubscribe?.();
+      unsubscribeStatus?.();
+      if (reconnectStabilityTimerRef.current) {
+        clearTimeout(reconnectStabilityTimerRef.current);
+      }
+      Object.values(vibrationTimeoutRefs.current || {}).forEach(clearTimeout);
+      vibrationTimeoutRefs.current = {};
+    };
+  }, [batchedForceUpdate, emitAppEvent, handlePressureMatEvent, handleVibrationEvent]);
+
+  // Run device pruning unconditionally for the lifetime of FitnessProvider.
+  // Previously gated by currentSessionId — but ANT+ packets can still arrive
+  // between sessions (a sensor finishing its broadcast cycle, a leftover fob),
+  // registering devices that then persist forever because no prune ran.
+  // Pruning is cheap (small map iteration) and the staleness logic already
+  // handles the empty-map and no-significant-activity cases correctly.
+  // See docs/_wip/bugs/2026-05-28-fitness-rpm-cadence-freeze-and-ghost-devices.md (Bug 2)
+  useEffect(() => {
+    const session = fitnessSessionRef.current;
+    if (!session) return;
+
+    const interval = setInterval(() => {
+      const timeouts = getFitnessTimeouts();
+      session.deviceManager.pruneStaleDevices(timeouts);
+      batchedForceUpdate();
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [batchedForceUpdate]);
+
+  const reconnectFitnessWebSocket = React.useCallback(() => {
+    // Use the centralized WebSocketService to reconnect
+    import("../../../../frontend/src/services/WebSocketService.js").then(({ wsService }) => {
+      wsService.disconnect();
+      wsService.connect();
+    });
+  }, []);
+
+  // Bluetooth game-controller management actions (Task 3.3)
+  const pairController = useCallback((durationMs = 30000) => {
+    const requestId = `pair-${++btReqRef.current}`;
+    setControllerPairing({ phase: 'scanning', durationMs });
+    import("../../../../frontend/src/services/WebSocketService.js").then(({ wsService }) => {
+      wsService.send(buildPairRequest({ requestId, durationMs }));
+    });
+    getLogger().info('fitness.bt.pair-request', { requestId, durationMs });
+    return requestId;
+  }, []);
+
+  const forgetController = useCallback((address) => {
+    const requestId = `forget-${++btReqRef.current}`;
+    import("../../../../frontend/src/services/WebSocketService.js").then(({ wsService }) => {
+      wsService.send(buildRemoveRequest({ requestId, address }));
+    });
+    getLogger().info('fitness.bt.remove-request', { requestId, address });
+    return requestId;
+  }, []);
+
+  // ═══════════════════════════════════════════════════════════════
+  // HR Simulation Controller (localhost or Chrome browser)
+  // Gate mirrors HRSimTrigger.jsx so the sim panel popup that opens
+  // /sim-panel.html can actually find window.__fitnessSimController.
+  // ═══════════════════════════════════════════════════════════════
+  useEffect(() => {
+    const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    const ua = window.navigator?.userAgent || '';
+    const isChrome = /Chrome\//.test(ua)
+      && !/Edg\//.test(ua)
+      && !/OPR\//.test(ua)
+      && !/SamsungBrowser/.test(ua);
+    if (!isLocalhost && !isChrome) return;
+
+    let controller = null;
+
+    import("../nav/FitnessSimulationController.js")
+      .then(({ FitnessSimulationController }) => {
+        import("../../../../frontend/src/services/WebSocketService.js").then(({ wsService }) => {
+          controller = new FitnessSimulationController({
+            wsService,
+            getSession: () => fitnessSessionRef.current,
+            zoneConfig: { zones: zoneConfig },
+            getUsersConfig: () => usersConfigRef.current
+          });
+
+          window.__fitnessSimController = controller;
+
+          // Broadcast state changes for popup
+          controller.onStateChange = () => {
+            window.dispatchEvent(new CustomEvent('sim-state-change', {
+              detail: controller.getDevices()
+            }));
+          };
+
+          // Bridge governance engine cycle state changes to the same popout event.
+          const engine = fitnessSessionRef.current?.governanceEngine;
+          if (engine) {
+            engine.onCycleStateChange = () => {
+              window.dispatchEvent(new CustomEvent('sim-state-change', {
+                detail: { source: 'governance.cycle' }
+              }));
+            };
+          }
+
+          console.log('[FitnessContext] Simulation controller available on window.__fitnessSimController');
+        });
+      })
+      .catch(err => {
+        console.warn('[FitnessContext] Failed to load simulation controller:', err);
+      });
+
+    return () => {
+      if (controller) {
+        controller.destroy();
+        delete window.__fitnessSimController;
+      }
+    };
+  }, [normalizedBaseZoneConfig, zoneConfig]);
+
+  // Prepare data for context value
+  // version is a force-recompute counter for the fitnessDevices/users Maps below.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const allDevicesRaw = React.useMemo(() => Array.from(fitnessDevices.values()), [fitnessDevices, version]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const allUsers = React.useMemo(() => Array.from(users.values()), [users, version]);
+  
+  // Phase 2 SSOT: Wrap allDevices with deprecation warning in development
+  // Components should use domain selectors (activeHeartRateParticipants, rpmDevices, equipmentDevices) instead
+  const allDevicesWarnedRef = React.useRef(new Set());
+  const allDevices = React.useMemo(() => {
+    if (process.env.NODE_ENV === 'development') {
+      const warned = allDevicesWarnedRef.current;
+      return new Proxy(allDevicesRaw, {
+        get(target, prop) {
+          if (prop === 'filter' && !warned.has('filter')) {
+            warned.add('filter');
+            console.warn(
+              '[FitnessContext] DEPRECATION: Direct filtering of allDevices detected. ' +
+              'Use activeHeartRateParticipants, rpmDevices, or equipmentDevices selectors instead. ' +
+              'See docs/ops/fix-fitness-user-consistency.md'
+            );
+          }
+          return Reflect.get(target, prop);
+        }
+      });
+    }
+    return allDevicesRaw;
+  }, [allDevicesRaw]);
+  
+  // Categorized device arrays
+  const heartRateDevices = React.useMemo(() => allDevicesRaw.filter(d => d.type === 'heart_rate'), [allDevicesRaw]);
+  React.useMemo(() => allDevicesRaw.filter(d => d.type === 'speed'), [allDevicesRaw]);
+  React.useMemo(() => allDevicesRaw.filter(d => d.type === 'cadence'), [allDevicesRaw]);
+  React.useMemo(() => allDevicesRaw.filter(d => d.type === 'jumprope'), [allDevicesRaw]);
+  React.useMemo(() => allDevicesRaw.filter(d => d.type === 'power'), [allDevicesRaw]);
+  React.useMemo(() => allDevicesRaw.filter(d => d.type === 'unknown'), [allDevicesRaw]);
+
+  // ==========================================================================
+  // Phase 2 SSOT: Domain-level device selectors
+  // ==========================================================================
+  // These selectors provide domain-meaningful groupings of devices.
+  // UI components should use these instead of filtering allDevices directly.
+  
+  /**
+   * RPM devices: cadence, stationary_bike, ab_roller, jumprope
+   * Used by FitnessUsers.jsx for the unified RPM group display
+   */
+  const rpmDevices = React.useMemo(() => {
+    const candidates = allDevicesRaw.filter(d =>
+      d.type === 'cadence' ||
+      d.type === 'stationary_bike' ||
+      d.type === 'ab_roller' ||
+      d.type === 'jumprope'
+    );
+    // §2A: drop stray unregistered cadence sensors reading 0 RPM (drawer ghosts)
+    // so they don't render as phantom RPM meters. Registered equipment is never
+    // filtered — see rpmGhostFilter.js.
+    const configuredIds = buildConfiguredDeviceIdSet(equipmentConfig);
+    return filterGhostRpmDevices(candidates, configuredIds);
+  }, [allDevicesRaw, equipmentConfig]);
+
+  /**
+   * Equipment/other devices: everything that's not HR or RPM
+   * Used by FitnessUsers.jsx for the "other devices" section
+   */
+  const equipmentDevices = React.useMemo(() => {
+    return allDevicesRaw.filter(d =>
+      d.type !== 'heart_rate' && 
+      d.type !== 'cadence' &&
+      d.type !== 'stationary_bike' && 
+      d.type !== 'ab_roller' &&
+      d.type !== 'jumprope'
+    );
+  }, [allDevicesRaw]);
+
+  // ==========================================================================
+
+  // Count PRESENT HR devices (same criteria as card visibility)
+  // NOTE: We intentionally do NOT require heartRate > 0 here.
+  // The trigger for preferring group labels must match the trigger for
+  // card visibility. If a card appears, names should switch immediately.
+  const presentHeartRateDevices = React.useMemo(() =>
+    heartRateDevices.filter(d => !d.inactiveSince),
+    [heartRateDevices]
+  );
+  const preferGroupLabels = React.useMemo(() => presentHeartRateDevices.length > 1, [presentHeartRateDevices.length]);
+
+  // Log when participant count crosses the threshold for group label display
+  const prevPreferGroupLabelsRef = useRef(preferGroupLabels);
+  useEffect(() => {
+    if (prevPreferGroupLabelsRef.current !== preferGroupLabels) {
+      playbackLog('fitness-context', {
+        event: 'prefer_group_labels_changed',
+        from: prevPreferGroupLabelsRef.current,
+        to: preferGroupLabels,
+        presentHeartRateDeviceCount: presentHeartRateDevices.length,
+        totalHeartRateDeviceCount: heartRateDevices.length,
+        participantNames: presentHeartRateDevices.map(d => d.name || d.id).slice(0, 5)
+      }, { level: 'info', context: { source: 'FitnessContext' } });
+      prevPreferGroupLabelsRef.current = preferGroupLabels;
+    }
+  }, [preferGroupLabels, presentHeartRateDevices, heartRateDevices.length]);
+
+  const getDisplayLabel = React.useCallback((name, { groupLabelOverride, preferGroupLabel, userId } = {}) => {
+    if (!name) return null;
+    // Use userId for group label lookup if provided, otherwise use name
+    const lookupKey = userId || name;
+    const baseGroupLabel = groupLabelOverride !== undefined
+      ? groupLabelOverride
+      : (lookupKey ? groupLabelLookup.get(lookupKey) : null);
+    const shouldPrefer = typeof preferGroupLabel === 'boolean'
+      ? preferGroupLabel
+      : (preferGroupLabels && Boolean(baseGroupLabel));
+    return resolveDisplayLabel({
+      name,
+      groupLabel: baseGroupLabel,
+      preferGroupLabel: shouldPrefer,
+      fallback: 'Participant'
+    });
+  }, [groupLabelLookup, preferGroupLabels]);
+
+  // Phase 5 SSOT: Single zone system computation
+  const zoneMetadata = React.useMemo(
+    () => buildZoneMetadata(zoneConfig),
+    [zoneConfig]
+  );
+  const zoneRankMap = zoneMetadata.rankMap;
+  const zoneInfoMap = zoneMetadata.infoMap;
+
+  const colorToZoneId = React.useMemo(() => {
+    if (!Array.isArray(zoneConfig) || zoneConfig.length === 0) return {};
+    return zoneConfig.reduce((acc, zone) => {
+      if (!zone) return acc;
+      const zoneId = zone.id != null ? String(zone.id).toLowerCase() : null;
+      const color = zone.color ? String(zone.color).toLowerCase() : null;
+      if (zoneId && color) {
+        acc[color] = zoneId;
+      }
+      return acc;
+    }, {});
+  }, [zoneConfig]);
+
+  const governedLabelSet = React.useMemo(() => new Set(normalizeLabelList(governedLabels)), [governedLabels]);
+  const governedTypeSet = React.useMemo(() => new Set(normalizeLabelList(governedTypes)), [governedTypes]);
+
+
+
+  const participantRoster = React.useMemo(() => {
+    const roster = fitnessSessionRef.current?.roster || [];
+
+    // Primary path: full roster with vitals
+    if (roster && roster.length > 0) {
+      const signature = JSON.stringify(
+        roster.map((entry) => ({
+          name: entry?.name || null,
+          hrDeviceId: entry?.hrDeviceId || null,
+          heartRate: Number.isFinite(entry?.heartRate) ? Math.round(entry.heartRate) : null,
+          zoneId: entry?.zoneId || null,
+          zoneColor: entry?.zoneColor || null,
+          isActive: entry?.isActive ?? true // SINGLE SOURCE OF TRUTH - include in signature
+        }))
+      );
+
+      if (rosterCacheRef.current.signature === signature) {
+        return rosterCacheRef.current.value;
+      }
+
+      rosterCacheRef.current = { signature, value: roster };
+      return rosterCacheRef.current.value;
+    }
+
+    // Fallback: empty
+    rosterCacheRef.current.signature = null;
+    rosterCacheRef.current.value = emptyRosterRef.current;
+    return rosterCacheRef.current.value;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [version]);
+
+  React.useMemo(() => {
+    return participantRoster.map(p => p.name).filter(Boolean);
+  }, [participantRoster]);
+
+  // Phase 5 SSOT: Single source for "how to render a participant"
+  const participantDisplayMap = React.useMemo(() => {
+    const profiles = session?.zoneProfileStore?.getProfiles() || [];
+    const roster = session?.roster || [];
+    return buildParticipantDisplayMap(profiles, roster);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, version]);
+
+  // Persisted session participants metadata — used by the FitnessChart legend
+  // to hydrate names/avatars for offline (historical) participants whose live
+  // ZoneProfileStore profile is gone.
+  const sessionParticipantsMeta = React.useMemo(() => {
+    const meta = session?.snapshot?.usersMeta;
+    if (!(meta instanceof Map)) return new Map();
+    return meta;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, version]);
+
+  // ==========================================================================
+  // Phase 3 SSOT: Participant Domain Entities
+  // ==========================================================================
+  // This is the SINGLE SOURCE OF TRUTH for "who is participating with a heart rate device."
+  // All UI components (FitnessUsers, SidebarFooter, GovernanceOverlay, Chart) must consume
+  // this selector instead of deriving their own lists from raw devices.
+  // 
+  // Phase 3 upgrade: Uses ParticipantFactory to create proper domain entities.
+  // See: docs/ops/fix-fitness-user-consistency.md
+  //
+  // The `activeHeartRateParticipants` memo now lives BELOW `userVitalsMap`
+  // (search for "Phase 3 SSOT: participant domain entities, PRE-SORTED"), which
+  // it depends on via `zoneProgressIndex`. It cannot be declared here.
+
+  // ==========================================================================
+  // Ambient LED Zone Sync (Home Assistant Integration)
+  // ==========================================================================
+  // Syncs max participant zone to configured HA scenes for ambient lighting
+  
+  const ambientLedEnabled = React.useMemo(() => {
+    const scenes = fitnessRoot?.ambient_led?.scenes;
+    return scenes && typeof scenes === 'object' && !!scenes.off;
+  }, [fitnessRoot]);
+
+  const zoneLedPayload = React.useMemo(() => {
+    if (!ambientLedEnabled) return [];
+    return participantRoster.map(p => ({
+      zoneId: p.rawZoneId || p.zoneId || null,
+      isActive: p.isActive !== false
+    }));
+  }, [participantRoster, ambientLedEnabled]);
+
+  useZoneLedSync({
+    participantRoster: zoneLedPayload,
+    sessionActive: !!session.sessionId,
+    enabled: ambientLedEnabled,
+    householdId: fitnessRoot?._household || null
+  });
+
+  // Equipment fan: backend owns the decision + the per-session latch; the
+  // frontend just reports live RPM + HR-zone state. Enabled when any equipment
+  // has a `fan` block configured.
+  const equipmentFanEnabled = React.useMemo(() => {
+    const list = Array.isArray(fitnessRoot?.equipment) ? fitnessRoot.equipment : [];
+    return list.some(e => e?.fan && e.fan.plug_entity);
+  }, [fitnessRoot]);
+
+  // Ungated roster for the fan. Unlike `zoneLedPayload` (which returns [] unless
+  // ambient-LED scenes are configured), the fan must see the real HR-zone roster
+  // even in a household that has only a `fan:` block and no ambient-LED scenes —
+  // otherwise the backend computes maxZoneRank=-1 and the fan never fires.
+  const fanRoster = React.useMemo(
+    () => participantRoster.map(p => ({
+      zoneId: p.rawZoneId || p.zoneId || null,
+      isActive: p.isActive !== false
+    })),
+    [participantRoster]
+  );
+
+  useEquipmentFanSync({
+    rpmDevices,
+    participantRoster: fanRoster,
+    sessionActive: !!session.sessionId,
+    enabled: equipmentFanEnabled,
+    householdId: fitnessRoot?._household || null
+  });
+
+  // ==========================================================================
+
+  const deviceAssignments = React.useMemo(() => {
+    return guestAssignmentLedgerRef.current.snapshot();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ledgerVersion]);
+
+  const deviceAssignmentMap = React.useMemo(() => {
+    const map = new Map();
+    deviceAssignments.forEach((entry) => {
+      if (!entry || entry.deviceId == null) return;
+      map.set(String(entry.deviceId), entry);
+    });
+    return map;
+  }, [deviceAssignments]);
+
+  const getDeviceAssignment = React.useCallback((deviceId) => {
+    if (deviceId == null) return null;
+    return deviceAssignmentMap.get(String(deviceId)) || null;
+  }, [deviceAssignmentMap]);
+
+  const replacedPrimaryPool = React.useMemo(() => {
+    if (primaryConfigByName.size === 0) return [];
+    const seen = new Set();
+    const pool = [];
+    deviceAssignments.forEach((assignment) => {
+      const baseUserName = assignment?.metadata?.baseUserName || assignment?.metadata?.base_user_name;
+      if (!baseUserName) return;
+      const config = primaryConfigByName.get(baseUserName);
+      if (!config) return;
+      // Use explicit ID from config
+      const id = config.id || config.profileId;
+      if (!id) {
+        getLogger().warn('fitness.context.pool_config_missing_id', { name: config.name });
+        return;
+      }
+      if (seen.has(id)) return;
+      seen.add(id);
+      pool.push({
+        id,
+        name: config.name,
+        profileId: id,
+        category: 'Family',
+        source: 'Family',
+        isPrimary: true
+      });
+    });
+    return pool;
+  }, [deviceAssignments, primaryConfigByName]);
+
+  const participantLookupByDevice = React.useMemo(() => {
+    const map = new Map();
+    participantRoster.forEach((entry) => {
+      if (!entry) return;
+      // Index ALL device IDs for this participant, not just the primary
+      const allIds = entry.hrDeviceIds || [entry.hrDeviceId].filter(Boolean);
+      for (const id of allIds) {
+        const normalized = String(id);
+        if (normalized && !map.has(normalized)) {
+          map.set(normalized, entry);
+        }
+      }
+    });
+    return map;
+  }, [participantRoster]);
+
+  const participantLookupByName = React.useMemo(() => {
+    const map = new Map();
+    participantRoster.forEach((entry) => {
+      if (!entry?.name) return;
+      const key = String(entry.name).trim().toLowerCase();
+      if (!key) return;
+      if (!map.has(key)) {
+        map.set(key, entry);
+      }
+    });
+    return map;
+  }, [participantRoster]);
+
+  const userVitalsMap = React.useMemo(() => {
+    const map = new Map();
+    allUsers.forEach((user) => {
+      if (!user || !user.id) return;
+      const key = user.id;
+      const data = user.currentData || {};
+      
+      const deviceId = user.hrDeviceId ? String(user.hrDeviceId) : null;
+      const allDeviceIds = user.hrDeviceIds ? [...user.hrDeviceIds] : (deviceId ? [deviceId] : []);
+      // Check if ANY of the user's devices have a ledger entry (guest detection)
+      // Note: O(n*m) where n=users, m=devices per user — acceptable for <10 users with <5 devices each
+      const ledgerEntry = allDeviceIds.reduce((found, id) => found || deviceAssignmentMap.get(id), null);
+      const isGuest = Boolean(ledgerEntry);
+      const source = isGuest ? 'Guest' : 'Primary';
+      const displayLabel = getDisplayLabel(user.name, { userId: user.id });
+
+      map.set(key, {
+        name: user.name,
+        heartRate: data.heartRate,
+        zoneId: data.zone,
+        zoneName: data.zoneName,
+        zoneColor: data.color,
+        targetHeartRate: data.targetHeartRate,
+        rangeMin: data.rangeMin,
+        rangeMax: data.rangeMax,
+        progress: data.progressToNextZone,
+        showBar: data.showProgress,
+        nextZoneId: data.nextZoneId,
+        
+        source,
+        profileId: user.id,
+        deviceId,
+        // Full strap list, not just the primary — zoneProgressIndex aliases
+        // every one so a multi-strap user resolves from any of their devices.
+        deviceIds: allDeviceIds,
+        isGuest: !!isGuest,
+        displayLabel
+      });
+    });
+    return map;
+  // Note: preferGroupLabels is included to ensure displayLabel updates when device count changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allUsers, deviceAssignmentMap, getDisplayLabel, preferGroupLabels]);
+
+  // Zone-progress lookup index. Keyed by profile ID, device IDs, given name,
+  // AND display label so a caller holding any of them resolves the same entry.
+  // Before this, userZoneProgress was name-keyed only and every group-labelled
+  // user ("Dad") missed — silently sorting them as progress 0.
+  const zoneProgressIndex = React.useMemo(
+    () => buildZoneProgressIndex(userVitalsMap),
+    [userVitalsMap]
+  );
+
+  // Phase 3 SSOT: participant domain entities, PRE-SORTED.
+  // Consumers must render in the order given and must not re-sort.
+  const activeHeartRateParticipants = React.useMemo(() => {
+    const inactiveTimeout = ant_devices?.timeout?.inactive ?? 60000;
+
+    const participants = ParticipantFactory.fromRoster(participantRoster, {
+      devices: heartRateDevices,
+      zoneConfig,
+      inactiveTimeout,
+      getDisplayLabel,
+      zoneProgressIndex
+    });
+
+    // A participant with a live heart rate but no resolvable progress entry means
+    // the index and the entity disagree on identity — the 2026-07-21 failure mode.
+    const unresolved = participants.filter(
+      (p) => Number.isFinite(p.heartRate) && p.heartRate > 0 && p.zoneProgress === null
+    );
+    if (unresolved.length > 0) {
+      getLogger().sampled('fitness.zone_progress.lookup_miss', {
+        count: unresolved.length,
+        participants: unresolved.map((p) => ({
+          id: p.id,
+          name: p.name,
+          displayLabel: p.displayLabel,
+          heartRate: p.heartRate
+        })),
+        indexKeys: zoneProgressIndex.size
+      }, { maxPerMinute: 6, aggregate: true });
+    }
+
+    return ParticipantFactory.sortByZoneRank(participants);
+  }, [participantRoster, heartRateDevices, zoneConfig, ant_devices, getDisplayLabel, zoneProgressIndex]);
+
+  const userCollections = React.useMemo(() => {
+    const collections = session?.userCollections;
+    return collections || EMPTY_USER_COLLECTIONS;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, version]);
+
+  const configuredUsers = React.useMemo(() => {
+    return userCollections?.all || [];
+  }, [userCollections]);
+
+  const deviceOwnership = React.useMemo(() => {
+    const ownership = session?.deviceOwnership;
+    if (ownership) {
+      return ownership;
+    }
+    return createEmptyOwnership();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, version]);
+
+  // Phase 4 SSOT: Build display name context
+  const displayNameContext = React.useMemo(() => {
+    return buildDisplayNameContext({
+      devices: allDevicesRaw,
+      deviceOwnership: deviceOwnership?.heartRate,
+      deviceAssignments: deviceAssignmentMap,
+      userProfiles: new Map(
+        configuredUsers.map(u => [u.id || u.profileId, {
+          displayName: u.name,
+          groupLabel: u.group_label || u.groupLabel
+        }])
+      )
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allDevicesRaw, deviceOwnership, deviceAssignmentMap, configuredUsers, version]);
+
+  // Phase 4 SSOT: Canonical display name resolver
+  const getDisplayName = React.useCallback((deviceId) => {
+    return resolveDisplayName(deviceId, displayNameContext);
+  }, [displayNameContext]);
+
+  // Ring celebrations are event-driven: TreasureBox calls us only after it has
+  // committed an award. The first arrival gets a brief coalescing window; once
+  // a ring card is visible, later arrivals merge into it immediately and reset
+  // its whole display lifetime.
+  const flushRingCelebrations = useCallback(() => {
+    if (ringFlushTimerRef.current) {
+      clearTimeout(ringFlushTimerRef.current);
+      ringFlushTimerRef.current = null;
+    }
+    const entries = pendingRingEntriesRef.current.splice(0);
+    if (!entries.length) return;
+    const toastOptions = {
+      resolveUserName: (uid) => lookupUserName(configuredUsers, uid, { preferGroupLabels }),
+      iconUrl: ringCelebrationsConfig.icon
+        ? DaylightMediaPath(`/media/${ringCelebrationsConfig.icon}`)
+        : null,
+      durationMs: ringCelebrationsConfig.durationMs,
+      maxVisibleContributors: ringCelebrationsConfig.maxVisibleContributors,
+    };
+    setFitnessToast((previous) => {
+      // A governance/rider toast must retain its own meaning. Keep all ring
+      // arrivals together until that card goes away rather than overwriting it.
+      if (previous && previous.kind !== 'ring-celebration') {
+        pendingRingEntriesRef.current.unshift(...entries);
+        return previous;
+      }
+      const payload = mergeRingCelebrationToast(previous, entries, toastOptions);
+      const next = previous
+        ? { ...previous, ...payload, revision: (previous.revision || 0) + 1 }
+        : normalizeToast({ ...payload, revision: 0 }, ++toastIdRef.current);
+      fitnessToastRef.current = next;
+      return next;
+    });
+    getLogger().info('fitness.ring_celebration.toast', {
+      entryCount: entries.length,
+      entries: entries.map((entry) => ({ scope: entry.scope, threshold: entry.threshold, userId: entry.userId || null })),
+    });
+  }, [configuredUsers, preferGroupLabels, ringCelebrationsConfig]);
+
+  const scheduleRingCelebrationFlush = useCallback(({ immediate = false } = {}) => {
+    if (!pendingRingEntriesRef.current.length) return;
+    if (immediate || fitnessToastRef.current?.kind === 'ring-celebration' || ringCelebrationsConfig.coalesceWindowMs === 0) {
+      flushRingCelebrations();
+      return;
+    }
+    if (!ringFlushTimerRef.current) {
+      ringFlushTimerRef.current = setTimeout(flushRingCelebrations, ringCelebrationsConfig.coalesceWindowMs);
+    }
+  }, [flushRingCelebrations, ringCelebrationsConfig.coalesceWindowMs]);
+
+  const handleRingAward = useCallback((award) => {
+    const result = ringCelebrationsForAward(ringCelebrationTrackerRef.current, award, ringCelebrationsConfig);
+    ringCelebrationTrackerRef.current = result.tracker;
+    if (!result.entries.length) return;
+    pendingRingEntriesRef.current.push(...result.entries);
+    scheduleRingCelebrationFlush({ immediate: fitnessToastRef.current?.kind === 'ring-celebration' });
+  }, [ringCelebrationsConfig, scheduleRingCelebrationFlush]);
+
+  // Attaching after configuration/session changes seeds already-earned totals
+  // first. This prevents a reload or resumed session from congratulating people
+  // again for thresholds they crossed before this UI existed.
+  useEffect(() => {
+    const box = session?.treasureBox;
+    if (!box) return undefined;
+    const signature = JSON.stringify({ sessionId: session?.sessionId || null, ringCelebrationsConfig });
+    if (ringConfigSignatureRef.current !== signature) {
+      ringConfigSignatureRef.current = signature;
+      ringCelebrationTrackerRef.current = seedRingCelebrationTracker(createRingCelebrationTracker(), {
+        userTotals: box.getPerUserTotals?.(),
+        totalRings: box.totalRings,
+      }, ringCelebrationsConfig);
+      pendingRingEntriesRef.current = [];
+    }
+    box.setRingAwardCallback(handleRingAward);
+    return () => {
+      if (box === session?.treasureBox) box.setRingAwardCallback(null);
+    };
+  }, [session, version, ringCelebrationsConfig, handleRingAward]);
+
+  // A non-ring toast may have been visible when awards arrived. As soon as it
+  // clears, show their single accumulated celebration rather than losing it.
+  useEffect(() => {
+    if (!fitnessToast && pendingRingEntriesRef.current.length) scheduleRingCelebrationFlush({ immediate: true });
+  }, [fitnessToast, scheduleRingCelebrationFlush]);
+
+  const ringToastKey = fitnessToast?.kind === 'ring-celebration'
+    ? `${fitnessToast.id}:${fitnessToast.revision || 0}`
+    : null;
+  useEffect(() => {
+    if (!ringToastKey || !ringCelebrationsConfig.enabled || session?._liveSessionRole === 'mirror') return;
+    playRingCelebrationCue({ sound: ringCelebrationsConfig.sound, volume: ringCelebrationsConfig.volume });
+  }, [ringToastKey, ringCelebrationsConfig]);
+
+  // Reaching Fire gets the same treatment as closing a ring: a sound the moment
+  // the toast appears, keyed on the toast becoming visible rather than on the
+  // flush, so it lands with the fireball rather than before it.
+  //
+  // It deliberately shares the celebration audio element. That element is the
+  // one primed by `installRingCelebrationAudioUnlock` from a real gesture — and
+  // the garage fitness display is a Firefox kiosk, where an un-primed element is
+  // silently refused by autoplay policy. A second, private element would be mute
+  // on the only screen this actually plays on.
+  const fireToastKey = fitnessToast?.kind === 'fire'
+    ? `${fitnessToast.id}:${fitnessToast.revision || 0}`
+    : null;
+  useEffect(() => {
+    // The mirror screen shadows the real one; it must not double-celebrate.
+    if (!fireToastKey || session?._liveSessionRole === 'mirror') return;
+    playRingCelebrationCue({ sound: FIRE_TOAST_SFX, volume: FIRE_TOAST_SFX_VOLUME });
+  }, [fireToastKey]);
+
+  useEffect(() => () => {
+    if (ringFlushTimerRef.current) clearTimeout(ringFlushTimerRef.current);
+  }, []);
+
+  // Keep a current rider→toast handler so the WS dispatch can fire a toast without
+  // putting getDisplayName (declared below the WS effect) in that effect's deps.
+  useEffect(() => {
+    riderToastRef.current = (data) => {
+      pushFitnessToast(buildRiderToast(data, {
+        // rider_select carries a user slug (e.g. "user_3"), not a device id — resolve it
+        // against configuredUsers (the userCollections.all SSOT the roster uses), NOT the
+        // device-centric getDisplayName, which would fall through to the raw id.
+        // preferGroupLabels mirrors the main resolver: nickname ("Dad") only when 2+ HR
+        // participants are present, else the given name ("User_1").
+        resolveUserName: (uid) => lookupUserName(configuredUsers, uid, { preferGroupLabels }),
+        resolveEquipmentName: (eid) =>
+          (Array.isArray(equipmentConfig) ? equipmentConfig : []).find((e) => e?.id === eid)?.name || eid,
+      }));
+    };
+  }, [configuredUsers, equipmentConfig, pushFitnessToast, preferGroupLabels]);
+
+  const guestCandidateList = React.useMemo(() => {
+    return Array.isArray(session?.guestCandidates) ? session.guestCandidates : [];
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, version]);
+
+  const zoneProfiles = React.useMemo(() => {
+    if (!session) return [];
+    const profiles = Array.isArray(session.zoneProfiles)
+      ? session.zoneProfiles
+      : session.zoneProfileStore?.getProfiles?.() || [];
+    return profiles.map((profile) => ({
+      ...profile,
+      zoneConfig: Array.isArray(profile.zoneConfig)
+        ? profile.zoneConfig.map((zone) => ({ ...zone }))
+        : [],
+      zoneSequence: Array.isArray(profile.zoneSequence)
+        ? profile.zoneSequence.map((zone) => ({ ...zone }))
+        : [],
+      zoneSnapshot: profile.zoneSnapshot
+        ? {
+            ...profile.zoneSnapshot,
+            zoneSequence: Array.isArray(profile.zoneSnapshot.zoneSequence)
+              ? profile.zoneSnapshot.zoneSequence.map((zone) => ({ ...zone }))
+              : null
+          }
+        : null
+    }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, version]);
+
+  const zoneProfileLookup = React.useMemo(() => {
+    const map = new Map();
+    zoneProfiles.forEach((profile) => {
+      // Use profile ID directly
+      const profileId = profile?.id || profile?.profileId;
+      if (!profileId) return;
+      map.set(profileId, profile);
+      // Also index by name for backwards compat
+      if (profile.name) {
+        map.set(profile.name, profile);
+      }
+    });
+    return map;
+  }, [zoneProfiles]);
+
+  const getZoneProfile = React.useCallback((identifier) => {
+    if (!identifier) return null;
+    // Direct lookup - no slug transformation
+    return zoneProfileLookup.get(identifier) || null;
+  }, [zoneProfileLookup]);
+
+  // Reaching Fire is called out by name. Driven off the STABILIZED zone, so
+  // ZoneProfileStore's hysteresis (5s cooldown / 3s stability / 5bpm exit
+  // margin) is what keeps this from chattering at the 160bpm line; the tracker
+  // adds a per-person quiet period on top, because interval work legitimately
+  // re-crosses that line many times in a session.
+  //
+  // Must live BELOW `zoneProfiles` — a dep array referencing it from an earlier
+  // effect would read the const before initialization.
+  const flushFireToasts = useCallback(() => {
+    const { show, queue } = planFireToasts({
+      currentToast: fitnessToastRef.current,
+      queue: pendingFireEntriesRef.current,
+    });
+    pendingFireEntriesRef.current = queue;
+    if (!show) return;
+    pushFitnessToast(buildFireToast(
+      {
+        userId: show.userId,
+        name: lookupUserName(configuredUsers, show.userId, { preferGroupLabels }) || show.name,
+      },
+      { fireballUrl: DaylightMediaPath('/media/fitness/ux/fireball.gif') }
+    ));
+    getLogger().info('fitness.fire_toast.shown', {
+      userId: show.userId,
+      hr: show.heartRate ?? null,
+      fireThreshold: show.fireThreshold ?? null
+    });
+  }, [configuredUsers, preferGroupLabels, pushFitnessToast]);
+
+  useEffect(() => {
+    // The mirror screen shadows the real one; it must not double-celebrate.
+    if (session?._liveSessionRole === 'mirror') return;
+    const { entries, tracker } = nextFireToasts(fireZoneTrackerRef.current, zoneProfiles, { now: Date.now() });
+    fireZoneTrackerRef.current = tracker;
+    if (!entries.length) return;
+    pendingFireEntriesRef.current.push(...entries);
+    flushFireToasts();
+  }, [zoneProfiles, session, flushFireToasts]);
+
+  // Someone else's toast may have been up when they crossed. Show them the
+  // moment it clears rather than losing the moment.
+  useEffect(() => {
+    if (!fitnessToast && pendingFireEntriesRef.current.length) flushFireToasts();
+  }, [fitnessToast, flushFireToasts]);
+
+  React.useMemo(() => {
+    const map = new Map();
+    userVitalsMap.forEach((entry, key) => {
+      if (!entry) return;
+      if (!Number.isFinite(entry.heartRate)) return;
+      map.set(key, entry.heartRate);
+    });
+    return map;
+  }, [userVitalsMap]);
+
+  const getUserVitals = React.useCallback((nameOrId) => {
+    if (!nameOrId) return null;
+    // Try direct lookup by ID first, then by name
+    const existing = userVitalsMap.get(nameOrId) || null;
+    const normalized = typeof nameOrId === 'string' ? nameOrId.trim().toLowerCase() : '';
+    const participant = normalized ? participantLookupByName.get(normalized) : null;
+
+    if (!participant) {
+      return existing;
+    }
+
+    const participantHeartRate = Number.isFinite(participant.heartRate)
+      ? Math.round(participant.heartRate)
+      : null;
+    const mergedHeartRate = Number.isFinite(participantHeartRate)
+      ? participantHeartRate
+      : (Number.isFinite(existing?.heartRate) ? existing.heartRate : null);
+    // SSoT: Prefer ZoneProfileStore for stabilized zone (matches GovernanceEngine)
+    const mergedProfileId = existing?.profileId || participant?.profileId || participant?.id || nameOrId;
+    const zoneProfile = zoneProfileLookup.get(mergedProfileId);
+    const stabilizedZoneId = zoneProfile?.currentZoneId
+      ? String(zoneProfile.currentZoneId).toLowerCase()
+      : null;
+    const stabilizedZoneColor = zoneProfile?.currentZoneColor || null;
+    const mergedZoneId = stabilizedZoneId
+      || existing?.zoneId
+      || (participant?.zoneId ? String(participant.zoneId).toLowerCase() : null);
+    const mergedZoneColor = stabilizedZoneColor
+      || existing?.zoneColor || participant?.zoneColor || null;
+    const mergedDeviceId = existing?.deviceId || participant?.hrDeviceId || null;
+    const mergedSource = existing?.source || (participant?.isGuest ? 'Guest' : null);
+    const mergedDisplayLabel = existing?.displayLabel
+      || participant?.displayLabel
+      || getDisplayLabel(participant?.name || nameOrId, { userId: participant?.id || participant?.profileId });
+
+    if (!existing) {
+      return {
+        name: participant?.name || name,
+        heartRate: mergedHeartRate,
+        zoneId: mergedZoneId,
+        zoneName: participant?.zoneLabel || null,
+        zoneColor: mergedZoneColor,
+        targetHeartRate: null,
+        rangeMin: null,
+        rangeMax: null,
+        progress: null,
+        showBar: false,
+        nextZoneId: null,
+        source: mergedSource,
+        profileId: mergedProfileId,
+        deviceId: mergedDeviceId,
+        isGuest: Boolean(participant?.isGuest),
+        displayLabel: mergedDisplayLabel
+      };
+    }
+
+    return {
+      ...existing,
+      name: existing.name || participant?.name || name,
+      heartRate: mergedHeartRate,
+      zoneId: mergedZoneId ?? existing.zoneId ?? null,
+      zoneColor: mergedZoneColor ?? existing.zoneColor ?? null,
+      profileId: mergedProfileId,
+      deviceId: mergedDeviceId,
+      source: mergedSource ?? existing.source ?? null,
+      displayLabel: mergedDisplayLabel
+    };
+  }, [userVitalsMap, participantLookupByName, getDisplayLabel, zoneProfileLookup]);
+
+  const getUserHeartRate = React.useCallback((name) => {
+    const vitals = getUserVitals(name);
+    if (!vitals) return null;
+    return Number.isFinite(vitals.heartRate) ? vitals.heartRate : null;
+  }, [getUserVitals]);
+
+   
+  // each throttled publish returns a fresh accessor reading the latest ref value.
+  const getEquipmentVibration = React.useCallback((equipmentId) => {
+    if (!equipmentId) return null;
+    return vibrationStateRef.current[equipmentId] || null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [version]);
+
+  const resolveUserByDevice = React.useCallback((key) => {
+    if (key === undefined || key === null) return null;
+    const manager = session?.userManager;
+    if (!manager) return null;
+    // Priority 1: ownership index (O(1) lookup, includes all registered devices)
+    const idx = manager.deviceOwnershipIndex;
+    if (idx) {
+      const owner = idx.getOwner(key);
+      if (owner) return manager.getUser(owner.id) || null;
+    }
+    // Priority 2: existing resolution (handles ledger/guest assignments with side effects)
+    if (typeof manager.getUserByDeviceId === 'function') {
+      return manager.getUserByDeviceId(key) || null;
+    }
+    if (typeof manager.resolveUserForDevice === 'function') {
+      return manager.resolveUserForDevice(key) || null;
+    }
+    return null;
+  }, [session]);
+
+  const userZoneProgress = React.useMemo(() => {
+    const progressMap = new Map();
+    const cloneZoneSequence = (sequence) => (Array.isArray(sequence)
+      ? sequence.map((zone, index) => ({
+          id: zone?.id || null,
+          name: zone?.name || null,
+          color: zone?.color || null,
+          threshold: Number.isFinite(zone?.threshold) ? zone.threshold : null,
+          index: Number.isFinite(zone?.index) ? zone.index : index
+        }))
+      : null);
+    userVitalsMap.forEach((entry) => {
+      if (!entry?.name) return;
+      progressMap.set(entry.name, {
+        currentZoneId: entry.zoneId ?? null,
+        nextZoneId: entry.nextZoneId ?? null,
+        progress: entry.progress ?? null,
+        rangeMin: entry.rangeMin ?? null,
+        rangeMax: entry.rangeMax ?? null,
+        currentHR: entry.heartRate ?? null,
+        showBar: entry.showBar ?? false,
+        targetHeartRate: entry.targetHeartRate ?? null,
+        zoneName: entry.zoneName ?? null,
+        zoneColor: entry.zoneColor ?? null,
+        zoneSequence: cloneZoneSequence(entry.zoneSequence),
+        currentZoneIndex: Number.isFinite(entry.currentZoneIndex) ? entry.currentZoneIndex : null,
+        currentZoneThreshold: Number.isFinite(entry.currentZoneThreshold) ? entry.currentZoneThreshold : null,
+        nextZoneThreshold: Number.isFinite(entry.nextZoneThreshold) ? entry.nextZoneThreshold : null
+      });
+    });
+    return progressMap;
+  }, [userVitalsMap]);
+
+  const userCurrentZones = React.useMemo(() => {
+    const map = {};
+    userVitalsMap.forEach((vitals) => {
+      if (vitals.name && vitals.zoneId) {
+        map[vitals.name] = {
+          id: vitals.zoneId,
+          color: vitals.zoneColor
+        };
+      }
+    });
+    return map;
+  }, [userVitalsMap]);
+
+  const getUserZoneThreshold = React.useCallback((userName, zoneId) => {
+    if (!zoneId) return null;
+    const profile = getZoneProfile(userName);
+    const zoneConfig = Array.isArray(profile?.zoneConfig) && profile.zoneConfig.length > 0
+      ? profile.zoneConfig
+      : normalizedBaseZoneConfig;
+    return resolveZoneThreshold(zoneConfig, zoneId);
+  }, [getZoneProfile, normalizedBaseZoneConfig]);
+
+  const timelineSelectors = React.useMemo(() => {
+    const timeline = session?.timeline || null;
+    const seriesRef = timeline?.series || {};
+    const eventsRef = Array.isArray(timeline?.events) ? timeline.events.slice() : [];
+    const timebaseRef = timeline?.timebase || session?.timebase || null;
+
+    const normalizeKind = (raw) => {
+      const token = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+      if (!token) return null;
+      if (token === 'users' || token === 'user') return 'user';
+      if (token === 'devices' || token === 'device') return 'device';
+      if (token === 'globals' || token === 'global') return 'global';
+      if (token === 'entities' || token === 'entity') return 'entity'; // Phase 3
+      return token;
+    };
+
+    const buildSeriesKey = (descriptor) => {
+      if (!descriptor) return null;
+      if (typeof descriptor === 'string') {
+        const trimmed = descriptor.trim();
+        return trimmed || null;
+      }
+      if (descriptor.key) {
+        const trimmed = String(descriptor.key).trim();
+        return trimmed || null;
+      }
+      const normalizedKind = normalizeKind(descriptor.kind);
+      const metricToken = descriptor.metric ? String(descriptor.metric).trim().toLowerCase() : null;
+      if (!normalizedKind || !metricToken) return null;
+      if (normalizedKind === 'global') {
+        return `global:${metricToken}`;
+      }
+      const rawId = descriptor.id ?? descriptor.userId ?? descriptor.entityId ?? descriptor.name ?? null;
+      if (rawId == null) return null;
+      // Use ID directly for users and entities (they already have canonical IDs)
+      // Only normalize for devices which might have special characters
+      const normalizedId = (normalizedKind === 'user' || normalizedKind === 'entity')
+        ? String(rawId)
+        : String(rawId).trim().toLowerCase();
+      if (!normalizedId) return null;
+      return `${normalizedKind}:${normalizedId}:${metricToken}`;
+    };
+
+    const applyWindow = (source = [], options = {}) => {
+      const shouldClone = options.clone !== false;
+      const baseSeries = shouldClone ? source.slice() : source;
+      const windowSizeRaw = Number(options.windowSize);
+      if (!Number.isFinite(windowSizeRaw) || windowSizeRaw <= 0) {
+        return baseSeries;
+      }
+      const offsetRaw = Number(options.offset);
+      const offset = Number.isFinite(offsetRaw) && offsetRaw > 0 ? offsetRaw : 0;
+      const end = Math.max(0, baseSeries.length - offset);
+      const start = Math.max(0, end - windowSizeRaw);
+      return baseSeries.slice(start, end);
+    };
+
+    const getSeries = (descriptor, options = {}) => {
+      const key = buildSeriesKey(descriptor);
+      if (!key) return [];
+      const rawSeries = seriesRef[key];
+      if (!Array.isArray(rawSeries)) return [];
+      return applyWindow(rawSeries, options);
+    };
+
+    const getUserSeries = (identifier, metric = 'heart_rate', options = {}) => {
+      if (!identifier) return [];
+      const key = buildSeriesKey({ kind: 'user', id: identifier, metric });
+      if (!key) return [];
+      return getSeries(key, options);
+    };
+
+    /**
+     * Phase 3: Get series for an entity ID
+     * @param {string} entityId - Entity ID (e.g., "entity-1735689600000-abc12")
+     * @param {string} metric - Metric name (e.g., "heart_rate", "rings_total")
+     * @param {Object} [options] - Options for windowing/cloning
+     * @returns {Array}
+     */
+    const getEntitySeries = (entityId, metric = 'heart_rate', options = {}) => {
+      if (!entityId) return [];
+      const key = buildSeriesKey({ kind: 'entity', entityId, metric });
+      if (!key) return [];
+      return getSeries(key, options);
+    };
+
+    /**
+     * Phase 3: Get series for a user OR their active entity (prefers entity if available)
+     * This allows chart components to transparently use entity data when available
+     * @param {string} identifier - User ID or profile ID
+     * @param {string} metric - Metric name
+     * @param {Object} [options]
+     * @returns {Array}
+     */
+    const getParticipantSeries = (identifier, metric = 'heart_rate', options = {}) => {
+      if (!identifier) return [];
+      
+      // First check if this identifier IS an entity ID
+      if (typeof identifier === 'string' && identifier.startsWith('entity-')) {
+        return getEntitySeries(identifier, metric, options);
+      }
+      
+      // Otherwise try to find entity for this user via session
+      // Fall back to user series for backward compatibility
+      const entityId = session?.userManager?.assignmentLedger?.getEntityIdForUser?.(identifier);
+      if (entityId) {
+        const entitySeries = getEntitySeries(entityId, metric, options);
+        if (entitySeries.length > 0) return entitySeries;
+      }
+      
+      // Fall back to user series
+      return getUserSeries(identifier, metric, options);
+    };
+
+    const getLatestValue = (descriptor) => {
+      const key = buildSeriesKey(descriptor);
+      if (!key) return null;
+      const rawSeries = seriesRef[key];
+      if (!Array.isArray(rawSeries) || rawSeries.length === 0) return null;
+      for (let index = rawSeries.length - 1; index >= 0; index -= 1) {
+        const value = rawSeries[index];
+        if (value !== undefined && value !== null) {
+          return value;
+        }
+      }
+      return null;
+    };
+
+    return {
+      timebase: timebaseRef,
+      events: eventsRef,
+      getSeries,
+      getUserSeries,
+      getEntitySeries, // Phase 3
+      getParticipantSeries, // Phase 3
+      getLatestValue,
+      getSeriesKey: buildSeriesKey,
+      seriesKeys: Object.keys(seriesRef)
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, version]);
+
+  // The session already owns the roster; avoid writing it back every render to prevent update loops.
+
+  useEffect(() => {
+    if (!voiceMemoOverlayState.open) return;
+    if (voiceMemoOverlayState.mode === 'list' && voiceMemos.length === 0) {
+      logVoiceMemo('overlay-auto-close', { reason: 'no-memos', mode: voiceMemoOverlayState.mode });
+      setVoiceMemoOverlayState(VOICE_MEMO_OVERLAY_INITIAL);
+      return;
+    }
+    if (voiceMemoOverlayState.memoId) {
+      if (isOverlayMemoMissing(voiceMemoOverlayState, voiceMemos)) {
+        logVoiceMemo('overlay-clear-memo', {
+          reason: 'memo-missing',
+          memoId: voiceMemoOverlayState.memoId,
+          mode: voiceMemoOverlayState.mode
+        }, { level: 'warn' });
+        setVoiceMemoOverlayState((prev) => ({ ...prev, memoId: null }));
+      }
+    }
+  }, [logVoiceMemo, voiceMemoOverlayState, voiceMemos, setVoiceMemoOverlayState]);
+
+  useEffect(() => {
+    const session = fitnessSessionRef.current;
+    if (!session || typeof session.setPendingContentId !== 'function') return;
+    const head = Array.isArray(fitnessPlayQueue) ? fitnessPlayQueue[0] : null;
+    const rawId = head?.contentId || head?.id || null;
+    // Normalize at write so structured logs and any direct reads get the
+    // canonical "source:localId" form. Bare plex localIds → "plex:<id>".
+    const id = rawId == null
+      ? null
+      : (String(rawId).includes(':') ? String(rawId) : `plex:${rawId}`);
+    session.setPendingContentId(id);
+  }, [fitnessPlayQueue]);
+
+  useEffect(() => {
+    const session = fitnessSessionRef.current;
+    if (!session || typeof session.updateSnapshot !== 'function') return;
+    try {
+      session.updateSnapshot({
+        users,
+        devices: fitnessDevices,
+        playQueue: fitnessPlayQueue,
+        participantRoster,
+        zoneConfig
+      });
+    } catch (error) {
+      if (FITNESS_DEBUG) {
+        logFitnessContext('snapshot-error', { error: error?.message || String(error) }, { level: 'warn' });
+      }
+    }
+  // BUGFIX: Add version to deps - fitnessDevices is a Map reference that doesn't change
+  // when items are updated. version is incremented by forceUpdate/batchedForceUpdate
+  // when WebSocket data arrives, so this ensures updateSnapshot runs with fresh data.
+  }, [users, fitnessDevices, fitnessPlayQueue, participantRoster, zoneConfig, version, logFitnessContext]);
+
+  // Legacy governance logic removed (delegated to GovernanceEngine)
+
+  // Governance State from Engine
+  const governanceState = session?.governanceEngine?.state || { status: 'idle' };
+  const governanceChallenge = session?.governanceEngine?.challengeState || {};
+
+  // Issue 4: freeze ALL governance while the video is paused for a reason that
+  // is NOT governance's own lock — a voice memo overlay, or a manual pause while
+  // playback is unlocked/in-grace. Excluded: governance's own video lock
+  // (videoLocked) must keep evaluating so it can detect the unlock condition,
+  // else the lock screen would deadlock. setPlaybackPaused freezes the grace
+  // countdown, challenge scheduling, the active challenge timer, and the
+  // always-on base-requirement lock; resuming continues exactly where it froze.
+  const freezeGovernanceForPause = Boolean(voiceMemoOverlayState.open)
+    || (videoPlayerPaused && !governanceState?.videoLocked);
+  useEffect(() => {
+    fitnessSessionRef.current?.governanceEngine?.setPlaybackPaused?.(freezeGovernanceForPause);
+  }, [freezeGovernanceForPause]);
+
+  // Challenge start/success toasts. View-agnostic (mirrors the rider_select toast): the
+  // toast is mounted at the FitnessApp root, so its trigger lives here in context rather
+  // than in a player-only overlay.
+  //
+  // We derive discrete start/end events from the sampled governance snapshot. Keyed on
+  // the (id, status) primitives because governanceState.challenge is rebuilt every tick,
+  // so object identity can't be a dep. The tracker de-dups per id, so a coalesced render
+  // that skips an intermediate snapshot at worst drops one toast (acceptable for this UX).
+  const challengeToastTrackerRef = useRef(createChallengeToastTracker());
+  const govChallenge = governanceState.challenge || null;
+  const govChallengeId = govChallenge?.id || null;
+  const govChallengeStatus = govChallenge?.status || null;
+  useEffect(() => {
+    const { event, tracker } = nextChallengeToast(challengeToastTrackerRef.current, govChallenge);
+    challengeToastTrackerRef.current = tracker;
+    if (event) {
+      pushFitnessToast(buildChallengeToast(event, govChallenge, {
+        // Contributor names (§5B): cycle rider / HR metUsers are user slugs —
+        // resolve against configuredUsers, the same SSOT the rider toast uses.
+        resolveUserName: (uid) => lookupUserName(configuredUsers, uid, { preferGroupLabels }),
+        // Zone pill (issue 3): color the toast by the challenge's HR zone so the
+        // achieved state reads from color, not just text. infoMap is keyed by
+        // lowercased zone id (e.g. "warm" → "#facc15").
+        resolveZoneColor: (key) => zoneInfoMap[key]?.color || null,
+      }));
+      getLogger().info('fitness.challenge.toast', {
+        event,
+        challengeId: govChallengeId,
+        status: govChallengeStatus,
+      });
+    }
+    // Reading govChallenge (object) while keyed on primitives is safe: start fires once at
+    // first 'pending' and end once at 'success'; mid-'pending' count changes don't alter
+    // id/status, so the copy is intentionally built from the snapshot at the transition tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [govChallengeId, govChallengeStatus]);
+
+  const treasureBox = session?.treasureBox ? session.treasureBox.summary : null;
+  // Snapshot identity must be stable between sensor/version updates. FitnessUsers
+  // derives its card list in an effect; returning a new object on every render
+  // would make that effect set state forever.
+  const pressureMatActivities = React.useMemo(
+    () => session?.getPressureMatSnapshots?.() || {},
+    // `version` is the mutation clock for the session-owned tracker Map.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [session, version]
+  );
+
+  // TreasureBox instance and helpers for chart live edge and responsive UI
+  const treasureBoxInstance = session?.treasureBox || null;
+  const getTreasureBoxLiveSnapshot = React.useCallback(() => {
+    return session?.treasureBox?.getLiveSnapshot?.() || [];
+  }, [session]);
+  const getTreasureBoxIntervalProgress = React.useCallback((userId) => {
+    return session?.treasureBox?.getIntervalProgress?.(userId) || null;
+  }, [session]);
+
+  const triggerChallengeNow = React.useCallback((payload) => {
+      return session?.governanceEngine?.triggerChallenge(payload);
+  }, [session]);
+
+  const value = {
+    fitnessConfiguration,
+    contentSource,
+    contentConfig,
+    usersConfig,
+    zoneConfig,
+    equipmentConfig,
+    ringTimeUnitMs,
+    governanceConfig,
+    governedLabels,
+    governedLabelSet,
+    governedTypes,
+    governedTypeSet,
+    
+    connected,
+    vibrationState: vibrationStateRef.current,
+    pressureMatState: pressureMatStateRef.current,
+    pressureMatActivities,
+    // Bluetooth game-controller management (Task 3.3)
+    btInventory,
+    controllerPairing,
+    pairController,
+    forgetController,
+    fitnessDevices,
+    // Expose allDevices for backward compatibility (prefer domain selectors below)
+    allDevices,
+    heartRateDevices,
+    // Phase 2 SSOT: Domain-level device selectors
+    rpmDevices,
+    equipmentDevices,
+    users,
+    deviceAssignments,
+    zoneProfiles,
+    // DEPRECATED: Use participantDisplayMap.get(name).zoneId/zoneName/zoneColor instead
+    getZoneProfile,
+    userCollections,
+    deviceOwnership,
+    guestCandidates: guestCandidateList,
+    
+    toggleSidebarSizeMode,
+    sidebarSizeMode,
+    sidebarCollapsed,
+    setSidebarCollapsed,
+    collapseSidebar,
+    expandSidebar,
+    toggleSidebarCollapsed,
+    voiceMemoOverlayState,
+    fitnessToast,
+    pushFitnessToast,
+    dismissFitnessToast,
+
+    // Voice memo video pause/resume control (BUG-08 fix)
+    videoPlayerPaused,
+    setVideoPlayerPaused,
+    videoLoading,
+    setVideoLoading,
+    emergencyPlaybackHold,
+    setEmergencyPlaybackHold,
+    
+    registerVideoPlayer,
+    videoPlayerRef,
+    
+    forceUpdate,
+    assignGuestToDevice,
+    clearGuestAssignment,
+    suppressDeviceUntilNextReading,
+    reconnectFitnessWebSocket,
+    resetAllUserSessions: () => session?.userManager?.resetAllSessions(),
+    
+    voiceMemos,
+    addVoiceMemoToSession,
+    removeVoiceMemoFromSession,
+    replaceVoiceMemoInSession,
+    closeVoiceMemoOverlay,
+    openVoiceMemoReview,
+    openVoiceMemoList,
+    openVoiceMemoCapture,
+    
+    setGovernanceMedia,
+    setGovernanceSuspended,
+    updateGovernancePhase,
+    governanceState,
+    governanceChallenge,
+    activeGovernancePolicy: session?.governanceEngine?.activePolicy,
+    triggerChallengeNow,
+    
+    treasureBox,
+    treasureBoxInstance,
+    getTreasureBoxLiveSnapshot,
+    getTreasureBoxIntervalProgress,
+    timelineTimebase: timelineSelectors.timebase,
+    timelineEvents: timelineSelectors.events,
+    getTimelineSeries: timelineSelectors.getSeries,
+    getUserTimelineSeries: timelineSelectors.getUserSeries,
+    getEntityTimelineSeries: timelineSelectors.getEntitySeries, // Phase 3
+    getParticipantTimelineSeries: timelineSelectors.getParticipantSeries, // Phase 3
+    getTimelineLatestValue: timelineSelectors.getLatestValue,
+    getTimelineSeriesKey: timelineSelectors.getSeriesKey,
+    timelineSeriesKeys: timelineSelectors.seriesKeys,
+    
+    // Transfer version - triggers re-render when users are transferred (grace period substitution)
+    transferVersion,
+    
+    // Phase 3: Entity registry access
+    entityRegistry: session?.entityRegistry,
+    getEntitiesForProfile: session?.getEntitiesForProfile?.bind(session),
+    getProfileRingsTotal: session?.getProfileRingsTotal?.bind(session),
+    getProfileTimelineSeries: session?.getProfileTimelineSeries?.bind(session),
+    
+    // Activity Monitor - single source of truth for participant status (Phase 2)
+    activityMonitor: session?.activityMonitor,
+    
+    // Ambient LED sync status
+    ambientLedEnabled,
+    
+    getDisplayLabel,
+    // Phase 4 SSOT: Display name resolution
+    displayNameContext,
+    getDisplayName,
+    zoneMetadata,
+    zoneRankMap,
+    colorToZoneId,
+    zoneInfoMap,
+    guestAssignmentService: guestAssignmentServiceRef.current,
+    
+    getDeviceUser: resolveUserByDevice,
+    getDeviceAssignment,
+    
+    // App State & Methods
+    activeApp,
+    overlayApp,
+    launchApp,
+    closeApp,
+    launchOverlayApp,
+    dismissOverlayApp,
+
+    currentMedia,
+    setCurrentMedia,
+    captureDisabled,
+    setCaptureDisabled,
+    recentlyPlayed,
+    trackRecentlyPlayed,
+    emitAppEvent,
+    subscribeToAppEvent,
+    reportGovernanceMetric,
+    assignEquipmentUser,
+    disengagePressureMat,
+
+    // Legacy / Compatibility
+    fitnessSession: session?.summary,
+    fitnessSessionInstance: session,
+    requestEndSession,
+    isSessionActive: session?.isActive,
+    fitnessPlayQueue,
+    setFitnessPlayQueue,
+    registerSessionScreenshot: (capture) => session?.recordScreenshotCapture?.(capture),
+    configureSessionScreenshotPlan: (plan) => session?.setScreenshotPlan?.(plan),
+    preferredMicrophoneId,
+    setPreferredMicrophoneId,
+    userCount: users.size,
+    usersConfigRaw: usersConfig,
+    participantRoster,
+    participantDisplayMap,
+    sessionParticipantsMeta,
+    // Phase 1 SSOT: Canonical participant list - USE THIS instead of filtering devices
+    activeHeartRateParticipants,
+    participantsByDevice: participantLookupByDevice,
+    participantsByName: participantLookupByName,
+    userVitals: userVitalsMap,
+    // DEPRECATED: Use participantDisplayMap.get(name) instead — single source for participant display data
+    getUserVitals,
+    // DEPRECATED: Use participantDisplayMap.get(name).progress instead
+    userZoneProgress,
+    // SSOT for zone-progress lookup. Built from userVitalsMap, so entries are
+    // aliased by profileId, deviceId(s), name AND displayLabel. Resolve with
+    // lookupZoneProgress() from modules/Fitness/domain/zoneProgressIndex.js and
+    // ALWAYS pass a stable ID first — display name becomes a group label
+    // ("Dad") once 2+ riders are present, which is the 2026-07-21 sort bug.
+    // Prefer this over rebuilding an index from `userZoneProgress`: that map is
+    // a lossy, name-keyed projection whose values carry no ID fields.
+    zoneProgressIndex,
+    getUserZoneThreshold,
+    userHeartRates: new Map(), // TODO
+    getUserHeartRate,
+    getEquipmentVibration,
+    replacedPrimaryPool,
+    primaryUsers: [],
+    secondaryUsers: [],
+    deviceConfiguration: ant_devices,
+    equipment: equipmentConfig,
+    cycleGameConfig,
+    dancePartyConfig,
+    hrColorMap: {},
+    plexConfig,
+    nomusicLabels,
+    musicEnabled,
+    setMusicAutoEnabled,
+    setMusicOverride: setMusicOverrideState,
+    selectedPlaylistId,
+    setSelectedPlaylistId,
+    // Music transport for voice-capture coordination (voice memo + feedback
+    // overlays pause music while recording). Defined above but must be exposed
+    // here or consumers get undefined and the pause/resume becomes a no-op.
+    // NOTE: this only reaches the in-session FitnessMusicPlayer (musicPlayerRef
+    // is null on plain browse/menu screens, where it isn't mounted) — the
+    // ambient MENU music (useMenuMusic, via MenuMusicController) is a separate
+    // player ducked instead via feedbackRecordingActive below.
+    pauseMusicPlayer,
+    resumeMusicPlayer,
+    feedbackRecordingActive,
+    setFeedbackRecordingActive,
+    governance: governanceState.status,
+    zones: zoneConfig || [],
+    userCurrentZones,
+    heartRate: heartRateDevices[0] || null,
+    getUserByName: (nameOrId) => {
+      if (!nameOrId) return null;
+      // Direct lookup by ID
+      if (users.has(nameOrId)) return users.get(nameOrId);
+      
+      // Fallback: search by name (case-insensitive)
+      const lowerName = String(nameOrId).toLowerCase();
+      for (const user of users.values()) {
+        if (user.name?.toLowerCase() === lowerName || user.id === lowerName) {
+          return user;
+        }
+      }
+      return null;
+    },
+    getUserByDevice: resolveUserByDevice
+  };
+
+  return (
+    <FitnessContext.Provider value={value}>
+      {children}
+    </FitnessContext.Provider>
+  );
+};

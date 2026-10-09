@@ -20,12 +20,12 @@ vi.mock('../../../../frontend/src/lib/logging/Logger.js', () => ({
 }));
 
 // Mock resolveDisplayLabel
-vi.mock('../../../../frontend/src/hooks/fitness/types.js', () => ({
+vi.mock("../../../../modules/fitness/browser/hooks/fitness/types.js", () => ({
   resolveDisplayLabel: ({ name }) => name,
 }));
 
 // Mock ParticipantStatus
-vi.mock('../../../../frontend/src/modules/Fitness/domain/types.js', () => ({
+vi.mock("../../../../modules/fitness/browser/domain/types.js", () => ({
   ParticipantStatus: { ACTIVE: 'ACTIVE', INACTIVE: 'INACTIVE' },
 }));
 
@@ -33,7 +33,7 @@ describe('ParticipantRoster legacy retirement', () => {
   let ParticipantRoster;
 
   beforeEach(async () => {
-    const mod = await import('../../../../frontend/src/hooks/fitness/ParticipantRoster.js');
+    const mod = await import("../../../../modules/fitness/browser/hooks/fitness/ParticipantRoster.js");
     ParticipantRoster = mod.ParticipantRoster;
   });
 

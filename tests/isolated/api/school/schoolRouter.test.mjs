@@ -10,7 +10,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import express from 'express';
 import { createSchoolTestRouter as createSchoolRouter } from '../../../_lib/school/schoolRouterTestSupport.mjs';
-import { GuestForbiddenError, SessionGoneError } from '#domains/school/errors.mjs';
+import { GuestForbiddenError, SessionGoneError } from "../../../../modules/school/server/domain/errors.mjs";
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { PersistenceError } from '#system/utils/errors/index.mjs';
 

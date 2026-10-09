@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { FsJamCorderArchive } from '#adapters/jamcorder/FsJamCorderArchive.mjs';
+import { FsJamCorderArchive } from '../../../../modules/piano/server/adapters/jamcorder/FsJamCorderArchive.mjs';
 
 let dir;
 const cfg = () => ({ getMediaDir: () => dir });

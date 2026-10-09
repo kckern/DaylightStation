@@ -3,7 +3,7 @@ import { encode } from '@toon-format/toon';
 import { buildReplySkeleton, rewriteCueLine, stripFormatSentences, decodeReply, TOON_REPLY_RULES } from './replyFormat.mjs';
 import { templateShape } from './shapes.mjs';
 import { planWire } from './planWire.mjs';
-import { captureTextPrompt } from './fixtures/foodPrompts.mjs';
+import { captureTextPrompt } from "../../../../../tests/_fixtures/nutrition/foodPrompts.mjs";
 
 /** Every whole TOON reply ends with its END line. */
 const ended = (text) => `${text}\nEND`;

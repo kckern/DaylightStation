@@ -9,8 +9,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { WeeklyReviewService } from '#apps/weekly-review/WeeklyReviewService.mjs';
-import { FilesystemWeeklyReviewStore } from '#adapters/persistence/files/FilesystemWeeklyReviewStore.mjs';
+import { WeeklyReviewService } from "../../../../modules/weekly-review/server/application/WeeklyReviewService.mjs";
+import { FilesystemWeeklyReviewStore } from "../../../../modules/weekly-review/server/adapters/persistence/FilesystemWeeklyReviewStore.mjs";
 
 const WEEK = '2026-06-13';
 const OLD_MS = Date.now() - 60 * 24 * 60 * 60 * 1000;

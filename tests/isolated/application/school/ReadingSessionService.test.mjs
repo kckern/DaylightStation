@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ReadingSessionService as ProductionReadingSessionService, ADOPTABLE_PLAY_MS } from '#apps/school/ReadingSessionService.mjs';
+import { ReadingSessionService as ProductionReadingSessionService, ADOPTABLE_PLAY_MS } from "../../../../modules/school/server/application/ReadingSessionService.mjs";
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
 const TEST_SCHEDULER = {

@@ -1,5 +1,5 @@
 // tests/isolated/adapter/feed/YouTubeContentPlugin.test.mjs
-import { YouTubeContentPlugin } from '#adapters/feed/plugins/youtube.mjs';
+import { YouTubeContentPlugin } from "../../../../modules/feed/server/adapters/plugins/youtube.mjs";
 
 describe('YouTubeContentPlugin', () => {
   const plugin = new YouTubeContentPlugin();

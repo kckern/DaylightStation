@@ -1,0 +1,12 @@
+// Shared notation/skeleton tokens; legacy names retain existing CSS contracts.
+:root {
+  --piano-surface: #1f1f26;     // cards / tiles / bars
+  --piano-surface-2: #2a2a33;   // nested / hover / pressed
+  --piano-accent: #2ec46f;      // accent fill (buttons, progress)
+  --t-cap: 0.85rem;
+  --r-sm: 8px;    // thumbnails, small chips, score pages
+  --r-md: 12px;   // cards, tiles, bars, buttons
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+}

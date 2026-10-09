@@ -1,0 +1,30 @@
+// frontend/src/modules/Media/shell/ConfirmDialog.jsx
+import React from 'react';
+import { Modal, Button, Group, Text } from '@mantine/core';
+import { useDismissLayer } from "./useDismissLayer.js";
+
+export function ConfirmDialog({ open, title, message, children, confirmLabel = 'OK', cancelLabel = 'Cancel', confirmDisabled = false, onConfirm, onCancel }) {
+  // Mantine Modal closes itself on Escape; register as a managed layer so the
+  // shell's base dismiss (view back) is suppressed while open.
+  useDismissLayer(open, onCancel, { managed: true });
+
+  return (
+    <Modal opened={open} onClose={onCancel} title={title} centered size="sm">
+      {/* testid lives on the content (the Modal root has no box) */}
+      <div data-testid="confirm-dialog">
+        <Text size="sm" mb="md">{message}</Text>
+        {children}
+        <Group justify="flex-end" gap="sm">
+          <Button data-testid="confirm-cancel" variant="default" onClick={onCancel}>
+            {cancelLabel}
+          </Button>
+          <Button data-testid="confirm-ok" color="red" disabled={confirmDisabled} onClick={onConfirm}>
+            {confirmLabel}
+          </Button>
+        </Group>
+      </div>
+    </Modal>
+  );
+}
+
+export default ConfirmDialog;

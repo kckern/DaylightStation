@@ -1,10 +1,10 @@
 // tests/integration/api/content.test.mjs
 import express from 'express';
 import request from 'supertest';
-import { createContentRouter } from '#backend/src/4_api/v1/routers/content.mjs';
-import { UpdateContentProgress } from '#apps/content/usecases/UpdateContentProgress.mjs';
-import { ContentDiscoveryService } from '#apps/content/services/ContentDiscoveryService.mjs';
-import { ContentSourceRegistry } from '#adapters/content/ContentSourceRegistry.mjs';
+import { createContentRouter } from "../../../../capabilities/content-catalog/server/api/content.mjs";
+import { UpdateContentProgress } from "../../../../capabilities/playback/server/application/usecases/UpdateContentProgress.mjs";
+import { ContentDiscoveryService } from "../../../../capabilities/content-catalog/server/application/services/ContentDiscoveryService.mjs";
+import { ContentSourceRegistry } from "../../../../capabilities/content-catalog/server/adapters/ContentSourceRegistry.mjs";
 import { FileAdapter } from '#adapters/content/media/files/FileAdapter.mjs';
 import { YamlWatchStateDatastore } from '#adapters/persistence/yaml/YamlWatchStateDatastore.mjs';
 import path from 'path';

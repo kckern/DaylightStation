@@ -25,8 +25,8 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import yaml from 'js-yaml';
-import { SessionService } from '#apps/fitness/services/SessionService.mjs';
-import { dehydrateSessionRecord } from '#adapters/persistence/yaml/YamlSessionDatastore.mjs';
+import { SessionService } from "../../../../modules/fitness/server/application/services/SessionService.mjs";
+import { dehydrateSessionRecord } from "../../../../modules/fitness/server/adapters/persistence/YamlSessionDatastore.mjs";
 
 const HH = 'default';
 

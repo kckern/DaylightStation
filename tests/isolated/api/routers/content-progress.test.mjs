@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createContentRouter } from '#api/v1/routers/content.mjs';
+import { createContentRouter } from "../../../../capabilities/content-catalog/server/api/content.mjs";
 
 function makeApp(updateContentProgress) {
   const app = express();

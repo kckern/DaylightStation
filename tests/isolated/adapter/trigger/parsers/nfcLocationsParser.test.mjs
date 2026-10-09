@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseNfcLocations } from '#adapters/trigger/parsers/nfcLocationsParser.mjs';
+import { parseNfcLocations } from "../../../../../capabilities/device-dispatch/server/adapters/parsers/nfcLocationsParser.mjs";
 
 describe('parseNfcLocations', () => {
   it('returns empty for null/undefined/empty input', () => {

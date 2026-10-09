@@ -26,7 +26,7 @@ import { dirname, resolve as resolvePath } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { chromium } from 'playwright';
-import { INITIAL_FEN, legalMoves } from '../../../shared/gaming/rulesets/chess/engine.mjs';
+import { INITIAL_FEN, legalMoves } from "../../../capabilities/gaming/portable/rulesets/chess/engine.mjs";
 
 export const DEFAULT_URL = 'https://daylightlocal.kckern.net/piano/games/chess';
 const DEFAULT_USER = 'guest';
@@ -464,9 +464,13 @@ async function main() {
   if (!report.valid) process.exitCode = 1;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
+export function runCliEntry() {
   main().catch((error) => {
     process.stderr.write(`✗ ${error.stack || error.message}\n`);
     process.exitCode = 1;
   });
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
+  runCliEntry();
 }

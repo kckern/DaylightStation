@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SlotColor } from '../../../backend/src/2_domains/playback-hub/value-objects/SlotColor.mjs';
+import { SlotColor } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotColor.mjs";
 import { ValidationError } from '../../../backend/src/2_domains/core/errors/ValidationError.mjs';
 
 describe('SlotColor', () => {

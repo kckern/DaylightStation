@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import { JsonlFeedHistoryStore } from '#adapters/persistence/feed/JsonlFeedHistoryStore.mjs';
+import { JsonlFeedHistoryStore } from "../../../../modules/feed/server/adapters/persistence/JsonlFeedHistoryStore.mjs";
 
 describe('JsonlFeedHistoryStore', () => {
   let root;

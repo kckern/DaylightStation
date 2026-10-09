@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { normalizeBootstrapSpine } from '#apps/proxy/ports/ILibraryMediaBootstrapGateway.mjs';
+import { normalizeBootstrapSpine } from "../../../../../../capabilities/content-catalog/server/application/proxy/ports/ILibraryMediaBootstrapGateway.mjs";
 
 const DEFAULT_API_BASE = 'https://sentry.libbyapp.com/';
 // Mirrors the official web client's `acquireChip` parameters; the provider keys

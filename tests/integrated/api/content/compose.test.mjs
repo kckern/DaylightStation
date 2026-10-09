@@ -11,7 +11,7 @@
 
 import express from 'express';
 import request from 'supertest';
-import { ComposePresentationUseCase } from '#apps/content/usecases/ComposePresentationUseCase.mjs';
+import { ComposePresentationUseCase } from "../../../../capabilities/playback/server/application/usecases/ComposePresentationUseCase.mjs";
 
 /**
  * Mock content source registry that mimics the ContentSourceRegistry interface.

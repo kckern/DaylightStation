@@ -13,14 +13,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import ReviewQueue from '#frontend/modules/Admin/School/ReviewQueue.jsx';
+import ReviewQueue from "../../../../modules/school/browser/admin/ReviewQueue.jsx";
 
 const rosterMock = vi.fn();
 const pendingReviewMock = vi.fn();
 const resolveReviewMock = vi.fn();
 const curriculumUnitsMock = vi.fn();
 
-vi.mock('#frontend/modules/Admin/School/schoolAdminApi.js', () => ({
+vi.mock("../../../../modules/school/browser/admin/schoolAdminApi.js", () => ({
   schoolAdminApi: {
     roster: (...a) => rosterMock(...a),
     pendingReview: (...a) => pendingReviewMock(...a),

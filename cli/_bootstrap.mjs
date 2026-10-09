@@ -1,3 +1,4 @@
+import { readBuxferCredsDirect } from '../modules/finance/cli/access.mjs';
 /**
  * Lazy memoized factories for dscli command implementations.
  *
@@ -16,11 +17,11 @@ import { execSync } from 'node:child_process';
 import axios from 'axios';
 import { initConfigService, getConfigService as getInstance, resetConfigService } from '#system/config/index.mjs';
 import { HttpClient } from '#system/services/HttpClient.mjs';
-import { HomeAssistantAdapter } from '#adapters/home-automation/homeassistant/HomeAssistantAdapter.mjs';
+import { HomeAssistantAdapter } from "../capabilities/home-control/server/adapters/homeassistant/HomeAssistantAdapter.mjs";
 import { JevAdapter } from '#adapters/ai/JevAdapter.mjs';
 import { createSecretsProvider } from '#adapters/secrets/createSecretsProvider.mjs';
 import { DataService } from '#adapters/persistence/files/DataService.mjs';
-import { assertHomeAutomationGateway } from '#apps/home-automation/ports/IHomeAutomationGateway.mjs';
+import { assertHomeAutomationGateway } from "../capabilities/home-control/server/application/ports/IHomeAutomationGateway.mjs";
 import { createWriteAuditor } from './_writeAudit.mjs';
 
 const _isDocker = existsSync('/.dockerenv');
@@ -191,7 +192,7 @@ export async function getContentQuery() {
     }
 
     const { createContentRegistry } = await import('#composition/bootstrap.mjs');
-    const { ContentQueryService } = await import('#apps/content/ContentQueryService.mjs');
+    const { ContentQueryService } = await import("../capabilities/content-catalog/server/application/ContentQueryService.mjs");
 
     const result = createContentRegistry(
       {
@@ -230,15 +231,8 @@ export async function getMemory() {
   _memoryInitPromise = (async () => {
     const cfg = await getConfigService();
     const dataService = new DataService({ configService: cfg });
-    const { YamlWorkingMemoryAdapter } = await import('#adapters/agents/YamlWorkingMemoryAdapter.mjs');
-    const { WorkingMemoryRepository } = await import('#apps/agents/framework/WorkingMemoryRepository.mjs');
-    const { ConciergeMemoryService } = await import('#apps/agents/concierge/ConciergeMemoryService.mjs');
-    const recordStore = new YamlWorkingMemoryAdapter({ dataService });
-    const workingMemory = new WorkingMemoryRepository({ recordStore });
-    const memory = new ConciergeMemoryService({ workingMemory });
-    // Stash the working memory so `dscli memory list` can dump all keys via
-    // wm.load('concierge', 'household').then(state => state.getAll()).
-    memory.__workingMemory = workingMemory;
+    const { createConciergeMemoryAccess } = await import('../modules/concierge/server/memory-access.mjs');
+    const memory = await createConciergeMemoryAccess({ dataService });
     _memory = memory;
     return _memory;
   })();
@@ -257,16 +251,8 @@ export async function getFinance() {
   if (_financeInitPromise) return _financeInitPromise;
 
   _financeInitPromise = (async () => {
-    const cfg = await getConfigService();
-    const auth = cfg.getHouseholdAuth('buxfer');
-    if (!auth?.email || !auth?.password) {
-      throw new Error('Buxfer credentials missing (data/household/auth/buxfer.yml requires email + password).');
-    }
-    const { BuxferAdapter } = await import('#adapters/finance/BuxferAdapter.mjs');
-    _finance = new BuxferAdapter(
-      { email: auth.email, password: auth.password },
-      { httpClient: getHttpClient() },
-    );
+    const { createFinanceAccess } = await import('../modules/finance/cli/access.mjs');
+    _finance = await createFinanceAccess({ getConfigService, getHttpClient });
     return _finance;
   })();
 
@@ -331,34 +317,7 @@ export async function getConciergeConfig() {
  *
  * The dockerExec param is overridable for testing.
  */
-function readBuxferCredsDirect({ env = process.env, dockerExec = null } = {}) {
-  if (env.BUXFER_EMAIL && env.BUXFER_PASSWORD) {
-    return { email: env.BUXFER_EMAIL, password: env.BUXFER_PASSWORD };
-  }
-  const exec = dockerExec || (() => execSync(
-    `sudo docker exec daylight-station sh -c 'cat data/household/auth/buxfer.yml'`,
-    { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
-  ).trim());
 
-  let raw;
-  try { raw = exec(); }
-  catch (err) {
-    throw new Error(
-      'Buxfer credentials missing: set BUXFER_EMAIL+BUXFER_PASSWORD or ensure ' +
-      `sudo docker exec daylight-station is reachable (${err.message}).`,
-    );
-  }
-  // Minimal YAML: each line `key: value`, optional quotes
-  const out = {};
-  for (const line of raw.split('\n')) {
-    const m = line.match(/^\s*(email|password):\s*(.+)$/);
-    if (m) out[m[1]] = m[2].trim().replace(/^['"]|['"]$/g, '');
-  }
-  if (!out.email || !out.password) {
-    throw new Error('Buxfer credentials parsed but email/password missing.');
-  }
-  return out;
-}
 
 /**
  * Build a Buxfer adapter without going through ConfigService — for `--direct`
@@ -368,12 +327,8 @@ function readBuxferCredsDirect({ env = process.env, dockerExec = null } = {}) {
  */
 export async function getFinanceDirect() {
   if (_financeDirect) return _financeDirect;
-  const auth = readBuxferCredsDirect();
-  const { BuxferAdapter } = await import('#adapters/finance/BuxferAdapter.mjs');
-  _financeDirect = new BuxferAdapter(
-    { email: auth.email, password: auth.password },
-    { httpClient: getHttpClient() },
-  );
+  const { createDirectFinanceAccess } = await import('../modules/finance/cli/access.mjs');
+  _financeDirect = await createDirectFinanceAccess({ getHttpClient });
   return _financeDirect;
 }
 
@@ -400,35 +355,8 @@ export async function getHealthAnalytics() {
     const cfg = await getConfigService();
 
     const dataService                = new DataService({ configService: cfg });
-    const { YamlHealthDatastore }    = await import('#adapters/persistence/yaml/YamlHealthDatastore.mjs');
-    const { AggregateHealthUseCase } = await import('#apps/health/AggregateHealthUseCase.mjs');
-    const { HealthAnalyticsService } = await import('#apps/health/analytics/HealthAnalyticsService.mjs');
-    const { PeriodResolver }         = await import('#apps/health/analytics/PeriodResolver.mjs');
-    const { PersonalContextLoader }  = await import('#apps/health/PersonalContextLoader.mjs');
-    const { YamlPersonalPlaybookStore } = await import('#adapters/health/YamlPersonalPlaybookStore.mjs');
-    const { YamlWorkingMemoryAdapter } = await import('#adapters/agents/YamlWorkingMemoryAdapter.mjs');
-    const { readFile }               = await import('node:fs/promises');
-    const { default: yaml }          = await import('js-yaml');
-
-    const healthStore    = new YamlHealthDatastore({ dataService, configService: cfg });
-    const healthService  = new AggregateHealthUseCase({ healthStore });
-    const periodResolver = new PeriodResolver();
-
-    const dataDir    = cfg.getDataDir?.() || path.join(process.env.DAYLIGHT_BASE_PATH || '.', 'data');
-    const archiveRoot = path.join(dataDir, 'users');
-    // The loader reads playbooks through a store now, not a raw yaml reader —
-    // the same YamlPersonalPlaybookStore the composition root uses (healthApi.mjs).
-    // Left on the old `{ dataService, archiveRoot }` shape it threw on
-    // construction, so every CLI reaching getHealthAnalytics() was dead.
-    const playbookLoader       = new PersonalContextLoader({
-      playbookStore: new YamlPersonalPlaybookStore({ usersRoot: archiveRoot }),
-    });
-    const workingMemoryAdapter = new YamlWorkingMemoryAdapter({ dataService });
-
-    _healthAnalytics = new HealthAnalyticsService({
-      healthStore, healthService, periodResolver,
-      playbookLoader, workingMemoryAdapter,
-    });
+    const { createHealthCliAnalytics } = await import("../modules/health/server/composition/cli-analytics.mjs");
+    _healthAnalytics = await createHealthCliAnalytics({ configService: cfg, dataService });
     return _healthAnalytics;
   })();
 

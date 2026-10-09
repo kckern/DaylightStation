@@ -1,0 +1,192 @@
+/**
+ * Lifeplan Domain Bootstrap
+ *
+ * Wires all lifeplan services, stores, and scheduled jobs.
+ * Called from app.mjs during initialization.
+ */
+
+import { LifeplanContainer } from "./application/LifeplanContainer.mjs";
+import { YamlLifePlanStore } from "./adapters/persistence/YamlLifePlanStore.mjs";
+import { YamlLifeplanMetricsStore } from "./adapters/persistence/YamlLifeplanMetricsStore.mjs";
+import { YamlCeremonyRecordStore } from "./adapters/persistence/YamlCeremonyRecordStore.mjs";
+import { CeremonyService } from "./application/services/CeremonyService.mjs";
+import { FeedbackService } from "./application/services/FeedbackService.mjs";
+import { PlanAuthoringService } from "./application/services/PlanAuthoringService.mjs";
+import { LifeEventSuggester } from "./application/services/LifeEventSuggester.mjs";
+import { RetroService } from "./application/services/RetroService.mjs";
+import { DriftService } from "./application/services/DriftService.mjs";
+import { AlignmentService } from "./application/services/AlignmentService.mjs";
+import { CeremonyDueResolver } from "./domain/services/CeremonyDueResolver.mjs";
+import { CeremonyScheduler } from "./application/services/CeremonyScheduler.mjs";
+import { LifePlanOperations } from "./application/LifePlanOperations.mjs";
+import { LifeApiOperations } from "./application/LifeApiOperations.mjs";
+import createLifeRouter from "./api/life.mjs";
+import { createNoOpNotificationService } from '#adapters/integrations/noops.mjs';
+
+/**
+ * Bootstrap the lifeplan domain.
+ *
+ * @param {Object} deps
+ * @param {string} deps.dataPath - Base data path for YAML stores
+ * @param {Object} deps.aggregator - LifelogAggregator instance
+ * @param {Object} [deps.notificationService] - Notification service for ceremony reminders
+ * @param {Object} [deps.userService] - UserService for username validation/profiles
+ * @param {Function} [deps.listHouseholdUsers] - Returns household usernames for the switcher
+ * @param {string} [deps.defaultUsername] - Username used when requests omit one
+ * @param {string} [deps.timezone] - IANA household timezone for cadence math (defaults to UTC)
+ * @param {Object} [deps.clock] - Injectable clock
+ * @param {Object} [deps.logger] - Logger instance
+ * @param {Object} [deps.decisionGateway] - IDecisionGateway for the life-event judge (optional)
+ * @param {Object} [deps.lifeEventSignals] - { mode: shadow|decide|off, min_confidence }
+ * @returns {Object} { router, container, ceremonyScheduler, services }
+ */
+export function bootstrapLifeplan(deps) {
+  const { dataPath, aggregator, notificationService, userService, listHouseholdUsers, defaultUsername, timezone, clock, logger,
+    decisionGateway = null, lifeEventSignals = {} } = deps;
+
+  // Validate the household timezone at the composition seam (the domain has no
+  // logger; CadenceService itself falls back to UTC on an invalid zone).
+  if (timezone) {
+    try {
+      new Intl.DateTimeFormat('en-CA', { timeZone: timezone });
+    } catch {
+      logger?.warn('cadence.invalid_timezone', { timezone, fallback: 'UTC' });
+    }
+  }
+
+  // Persistence stores (constructed here at the composition root; the
+  // container receives instances per Decision D1)
+  const container = new LifeplanContainer({
+    lifePlanStore: new YamlLifePlanStore({ basePath: dataPath }),
+    metricsStore: new YamlLifeplanMetricsStore({ basePath: dataPath }),
+    ceremonyRecordStore: new YamlCeremonyRecordStore({ basePath: dataPath }),
+    timezone,
+  });
+
+  // Application services
+  const feedbackService = new FeedbackService({
+    lifePlanStore: container.getLifePlanStore(),
+  });
+
+  // Single write path for plan genesis + authoring (REST now, coach tools in C2)
+  const planAuthoringService = new PlanAuthoringService({
+    lifePlanStore: container.getLifePlanStore(),
+  });
+
+  const driftService = new DriftService({
+    lifePlanStore: container.getLifePlanStore(),
+    metricsStore: container.getMetricsStore(),
+    aggregator,
+    cadenceService: container.getCadenceService(),
+    clock,
+  });
+
+  const ceremonyService = new CeremonyService({
+    lifePlanStore: container.getLifePlanStore(),
+    ceremonyRecordStore: container.getCeremonyRecordStore(),
+    cadenceService: container.getCadenceService(),
+  });
+
+  // Life-event suggestions for the coach (keyword judge; Jev in shadow unless promoted)
+  const lifeEventSuggester = new LifeEventSuggester({
+    aggregator,
+    lifePlanStore: container.getLifePlanStore(),
+    decisionGateway,
+    mode: lifeEventSignals?.mode,
+    minConfidence: lifeEventSignals?.min_confidence,
+    timezone: timezone || 'UTC',
+    clock,
+    logger: logger?.child?.({ submodule: 'life-event-signals' }) || logger,
+  });
+
+  const retroService = new RetroService({
+    lifePlanStore: container.getLifePlanStore(),
+    feedbackService,
+    driftService,
+  });
+
+  const ceremonyDueResolver = new CeremonyDueResolver({ cadenceService: container.getCadenceService() });
+
+  const alignmentService = new AlignmentService({
+    lifePlanStore: container.getLifePlanStore(),
+    metricsStore: container.getMetricsStore(),
+    cadenceService: container.getCadenceService(),
+    ceremonyRecordStore: container.getCeremonyRecordStore(),
+    ceremonyDueResolver,
+    clock,
+  });
+
+  // Ceremony scheduler
+  const ceremonyScheduler = new CeremonyScheduler({
+    notificationService: notificationService || createNoOpNotificationService(),
+    lifePlanStore: container.getLifePlanStore(),
+    ceremonyRecordStore: container.getCeremonyRecordStore(),
+    cadenceService: container.getCadenceService(),
+    timezone,
+    clock,
+    logger,
+  });
+
+  const lifeplanDependencies = container.getRouterConfig();
+  const lifePlanOperations = new LifePlanOperations({
+    plans: lifeplanDependencies.lifePlanStore,
+    goalStates: lifeplanDependencies.goalStateService,
+    beliefEvaluator: lifeplanDependencies.beliefEvaluator,
+    cadence: lifeplanDependencies.cadenceService,
+    ceremony: ceremonyService,
+    feedback: feedbackService,
+    retrospective: retroService,
+    authoring: planAuthoringService,
+    drift: driftService,
+    clock: clock || { now: () => new Date() },
+    serviceAvailability: {
+      alignmentService: !!alignmentService,
+      driftService: !!driftService,
+      ceremonyService: !!ceremonyService,
+      feedbackService: !!feedbackService,
+      retroService: !!retroService,
+      aggregator: !!aggregator,
+    },
+  });
+
+  const lifeApi = new LifeApiOperations({
+    aggregator,
+    userDirectory: userService,
+    listHouseholdUsers,
+    defaultUsername,
+    lifePlanOperations,
+  });
+
+  // Router config exposes application capabilities and presentation functions,
+  // never repositories or domain workflow services.
+  const routerConfig = {
+    lifePlanOperations,
+    lifeApi,
+    presentBelief: lifeplanDependencies.presentBelief,
+    presentGoal: lifeplanDependencies.presentGoal,
+    presentLifePlan: lifeplanDependencies.presentLifePlan,
+    alignmentService,
+    driftService,
+  };
+
+  const router = createLifeRouter(routerConfig);
+
+  logger?.info('lifeplan.bootstrap.complete', {
+    services: ['ceremony', 'feedback', 'retro', 'drift', 'alignment', 'life-event-signals'],
+  });
+
+  return {
+    router,
+    container,
+    ceremonyScheduler,
+    services: {
+      ceremonyService,
+      feedbackService,
+      planAuthoringService,
+      lifeEventSuggester,
+      retroService,
+      driftService,
+      alignmentService,
+    },
+  };
+}

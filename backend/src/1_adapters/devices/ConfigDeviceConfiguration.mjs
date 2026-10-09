@@ -5,5 +5,4 @@ export class ConfigDeviceConfiguration extends IDeviceConfiguration {
   constructor({ configService }) { super(); this.#config = configService; }
   householdDevices(householdId) { return this.#config.getHouseholdDevices(householdId); }
   device(deviceId) { return this.#config?.getDeviceConfig ? this.#config.getDeviceConfig(deviceId) : null; }
-  piano() { return this.#config?.getHouseholdAppConfig?.(null, 'piano') || {}; }
 }

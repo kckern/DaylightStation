@@ -1,5 +1,5 @@
 // tests/isolated/assembly/feed/FeedFilterResolver.test.mjs
-import { FeedFilterResolver } from '#apps/feed/services/FeedFilterResolver.mjs';
+import { FeedFilterResolver } from "../../../../modules/feed/server/application/services/FeedFilterResolver.mjs";
 
 describe('FeedFilterResolver', () => {
   let resolver;

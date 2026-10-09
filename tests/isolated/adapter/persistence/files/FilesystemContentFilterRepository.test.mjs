@@ -3,8 +3,8 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import yaml from 'js-yaml';
-import { FilesystemContentFilterRepository } from '#adapters/persistence/files/FilesystemContentFilterRepository.mjs';
-import { IContentFilterRepository } from '#apps/content-filter/ports/IContentFilterRepository.mjs';
+import { FilesystemContentFilterRepository } from "../../../../../modules/media/server/adapters/persistence/FilesystemContentFilterRepository.mjs";
+import { IContentFilterRepository } from "../../../../../modules/media/server/application/content-filter/ports/IContentFilterRepository.mjs";
 
 describe('FilesystemContentFilterRepository', () => {
   let tmpRoot;

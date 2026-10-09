@@ -4,7 +4,7 @@ import { Writable } from 'node:stream';
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import concierge from '../../../../cli/commands/concierge.mjs';
+import concierge from "../../../../modules/concierge/cli/concierge.mjs";
 
 function makeBuffers() {
   const stdoutChunks = [];

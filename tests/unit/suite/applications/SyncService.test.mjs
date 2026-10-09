@@ -1,5 +1,5 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
-import { SyncService } from '#apps/content/services/SyncService.mjs';
+import { SyncService } from "../../../../capabilities/content-catalog/server/application/services/SyncService.mjs";
 import { EntityNotFoundError, ValidationError } from '#domains/core/errors/index.mjs';
 
 describe('SyncService', () => {

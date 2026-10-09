@@ -22,3 +22,90 @@ Read-only source review against M1 checkpoint759be3aaf7 and current M2 worktree.
 ## Verification implications
 
 Keep the existing frontend Gaming architecture checks meaningful across new roots. Include game authorization/budget/reconciliation and runtime/effects tests, Piano ladder/rivalry tests, shared deterministic rule controls, notation resource/style checks and ordinary browser artifact evidence. No device connection, activation or changed persisted data is necessary for the ownership move.
+
+## Applied ownership move, candidate verification pending
+
+The [513-file manifest](2026-10-09-gaming-notation-owner-manifest.json) is applied.
+Baseline evidence comprises 146 Vitest and 105 native Node assertions across
+26 original suites. The Node fixture copy uses confined, checked bytes/mode
+operations; this is not native metadata/copy parity.
+
+The move applied 528 cached import/resource/style rewrites. Initial invariants
+verified 152 byte-identical moves, 361 import-rewritten moves, and 517 unchanged
+JavaScript bodies after masking import/resource literals. Two original CLI paths
+now have guarded launchers with unchanged command bodies. Both architecture
+suites follow their actual destination roots and reject missing declared roots.
+An additional 34 shared-alias imports in 17 files were corrected after detecting
+backend/shared symlink resolution differences. A canonical-path static import
+check traversed 5,677 reachable files with no missing local targets.
+
+Public contract closure, notation token/style separation, candidate behavior,
+artifact validation and the complete milestone-3 gates remain outstanding.
+
+### Notation stylesheet ownership correction
+
+Nine shared token declarations now live in notation's `styles/tokens.scss`.
+Static comparison preserves all 35 original declarations across shared and Piano
+styles with no duplicate declaration ownership. Three narrow notation style
+entries restore action-only and skeleton-plus-token dependencies. Piano loads
+shared tokens through the same ESM entry before its own remaining tokens; it does
+not compile another copy through Sass. All five Piano JSX consumers now use that
+entry. The ExerciseRun measurement fixture follows actual owned styles and
+correctly distinguishes repository and frontend roots.
+
+Production notation source has no reverse Piano imports in the source import
+scan. The two suites that build/edit actual Piano Composer models now live with
+Composer; every assertion remains intact and only import paths changed. The
+tracked ownership manifest follows those final destinations.
+Runtime, compiled CSS, and rendered measurements have not yet certified this
+change.
+
+
+### Product policy and installed assembly closure
+
+Diagnostic sessions and authored definitions now live with Party Games, including
+their original tests. Their actual consumers are Party Games composition and
+catalogue assembly; the implementations contain Party Games session setup and
+charades clue-bank policy. The public media service, repository, port, and tests
+also follow Party Games because they expose its pinned clue-image/archive API.
+These nine ownership corrections preserve class/test bodies outside imports; the
+513-file manifest records their final destinations. No reverse product imports
+remain in the Gaming server capability source scan.
+
+The shared session-runtime factory constructs snapshots, journal, runtime, IDs,
+and coordinator in the original order. Party Games supplies the same ordered
+eight rulesets and identity provider; there is still one runtime/coordinator/store
+authority. Three Party Games factories now own installed catalogue/printer,
+session/assets, and HTTP construction. The generic presentation catalogue stays
+in its original installed position between the last two phases. The actual Party
+Games configuration projection moved intact; other projections were retained.
+
+Static checks preserve the nine moved bodies, all three installed construction
+blocks, and the projection, with no introduced unbound identifiers or missing
+relative imports. These changes await candidate verification. The prior
+relocation checkpoint passed 146 Vitest and 105 Node cases (`gaming-notation-SIs0ll`
+and `gaming-notation-node-MkuD0p`); those results predate this final policy wiring.
+
+### Portable product policy correction
+
+Chess now owns the unchanged ladder/progression implementation, its original
+suite, and the `gaming/log/chess` path contract under `modules/chess/portable`.
+Piano consumes that same Chess policy rather than copying its promotion rules.
+Checkers and Connect Four default opponent names, artwork URLs, dialogue profiles,
+and ordered depth values now live under Piano's `portable/game-opponents`.
+The shared Gaming opponent modules retain the original search algorithms; they
+no longer own Piano's roster declarations. The existing Connect Four suite that
+uses those roster depths follows Piano with its assertions unchanged.
+
+Two Piano stylesheet consumers now use notation's existing narrow style entries.
+Prepared-and-applied static verification preserves 25 non-import source/test
+bodies, both extracted roster declarations, and 251 relative imports. The four
+physical moves are recorded in the original 513-file ownership manifest. Exact
+public entry registration and runtime verification of this correction are pending.
+
+Before this correction, the Gaming assembly candidate passed 163 cases: the 146
+original named cases plus 17 existing supplemental cases. Its corrected receipt
+(`gaming-notation-qqD5Cm/receipt.corrected.json`) preserves the original receipt
+and raw-result hashes; the correction fixes the expected supplemental count,
+not an assertion or execution result. This evidence does not certify the later
+portable ownership changes described above.

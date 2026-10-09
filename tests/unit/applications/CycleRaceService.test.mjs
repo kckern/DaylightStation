@@ -1,8 +1,8 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { YamlCycleRaceDatastore } from '#adapters/persistence/yaml/YamlCycleRaceDatastore.mjs';
-import { CycleRaceService } from '#apps/fitness/services/CycleRaceService.mjs';
+import { YamlCycleRaceDatastore } from "../../../modules/fitness/server/adapters/persistence/YamlCycleRaceDatastore.mjs";
+import { CycleRaceService } from "../../../modules/fitness/server/application/services/CycleRaceService.mjs";
 
 let tmp, svc;
 const rec = (id, over = {}) => ({

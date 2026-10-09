@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { BeliefEvaluator } from '#domains/lifeplan/services/BeliefEvaluator.mjs';
-import { Belief } from '#domains/lifeplan/entities/Belief.mjs';
+import { BeliefEvaluator } from "../../../../modules/life/server/domain/services/BeliefEvaluator.mjs";
+import { Belief } from "../../../../modules/life/server/domain/entities/Belief.mjs";
 import { frozenClock } from '../../../_lib/clock-helper.mjs';
 
 describe('BeliefEvaluator', () => {

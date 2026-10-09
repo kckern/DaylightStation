@@ -3,7 +3,7 @@ import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
 import yaml from 'js-yaml';
-import { createArtRecencyStore } from '../../../backend/src/1_adapters/content/art/artRecencyStore.mjs';
+import { createArtRecencyStore } from "../../../modules/art/server/adapters/artRecencyStore.mjs";
 
 let dir;
 beforeEach(async () => { dir = await fs.mkdtemp(path.join(os.tmpdir(), 'artrec-')); });
