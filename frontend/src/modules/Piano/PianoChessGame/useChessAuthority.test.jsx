@@ -41,12 +41,13 @@ describe('durable resume from the server copy', () => {
     } finally { Date.now = realNow; }
   });
 
-  it('a fresh local checkpoint is used as before, and the server copy is left alone', async () => {
+  it('a fresh local checkpoint that continues the server game is used, and the server copy is left alone', async () => {
     const first = renderHook(() => useChessAuthority({ userId: USER, seed: 1, fetchResumable: async () => null }));
     await waitFor(() => expect(first.result.current.ready).toBe(true));
-    await act(async () => { await first.result.current.move(E4); });
+    await act(async () => { await first.result.current.move({ from: incident.moves[0].from, to: incident.moves[0].to }); });
     first.unmount();
-    const second = renderHook(() => useChessAuthority({ userId: USER, seed: 1, fetchResumable: serverReply() }));
+    const short = { ...incident, moves: incident.moves.slice(0, 1) };
+    const second = renderHook(() => useChessAuthority({ userId: USER, seed: 1, fetchResumable: serverReply({ record: short }) }));
     await waitFor(() => expect(second.result.current.ready).toBe(true));
     expect(second.result.current.session.state.history).toHaveLength(1);
     expect(second.result.current.resumeInfo).toBeNull();
@@ -84,5 +85,50 @@ describe('durable resume from the server copy', () => {
     await act(async () => { await result.current.reset(9); });
     expect(result.current.session.state.history).toEqual([]);
     expect(RESUME_MAX_IDLE_MS).toBeGreaterThan(0);
+  });
+});
+
+
+describe('identity arrives late and the decision log', () => {
+    it('household start then learner: server game resumed, one decision per resolved start', async () => {
+    const ask = vi.fn(serverReply());
+    const { result, rerender } = renderHook(({ u }) => useChessAuthority({ userId: u, seed: 7, fetchResumable: ask }), { initialProps: { u: 'household' } });
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(ask).not.toHaveBeenCalled();
+    rerender({ u: 'test-learner' });
+    await waitFor(() => expect(result.current.session.state.history).toHaveLength(74));
+    expect(ask).toHaveBeenCalledWith('test-learner');
+    expect(result.current.resumeInfo).toMatchObject({ source: 'server' });
+  });
+
+  it('a board with moves is never replaced by a late identity', async () => {
+    const ask = vi.fn(serverReply());
+    const { result, rerender } = renderHook(({ u }) => useChessAuthority({ userId: u, seed: 7, fetchResumable: ask }), { initialProps: { u: 'household' } });
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    await act(async () => { await result.current.move(E4); });
+    rerender({ u: 'test-learner' });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(ask).not.toHaveBeenCalled();
+    expect(result.current.session.state.history).toHaveLength(1);
+  });
+
+  it('an unrelated fresh local checkpoint loses to the open server game (2026-10-09 tablet)', async () => {
+    const first = renderHook(() => useChessAuthority({ userId: USER, seed: 1, fetchResumable: async () => null }));
+    await waitFor(() => expect(first.result.current.ready).toBe(true));
+    await act(async () => { await first.result.current.move({ from: 'd2', to: 'd4' }); });
+    first.unmount();
+    const second = renderHook(() => useChessAuthority({ userId: USER, seed: 1, fetchResumable: serverReply() }));
+    await waitFor(() => expect(second.result.current.ready).toBe(true));
+    expect(second.result.current.session.state.history).toHaveLength(74);
+  });
+
+  it('a server timeout still starts a game', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { result } = renderHook(() => useChessAuthority({ userId: USER, seed: 1, fetchResumable: () => new Promise(() => {}) }));
+      await act(async () => { await vi.advanceTimersByTimeAsync(3100); });
+      await waitFor(() => expect(result.current.ready).toBe(true));
+      expect(result.current.session.state.history).toEqual([]);
+    } finally { vi.useRealTimers(); }
   });
 });

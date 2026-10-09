@@ -31,9 +31,11 @@ const SERVER_ASK_TIMEOUT_MS = 3000;
 
 function askServer(fetchResumable, userId) {
   let timer;
-  const deadline = new Promise((resolve) => { timer = setTimeout(() => resolve(null), SERVER_ASK_TIMEOUT_MS); });
-  return Promise.race([Promise.resolve().then(() => fetchResumable(userId)).catch(() => null), deadline])
-    .finally(() => clearTimeout(timer));
+  const deadline = new Promise((resolve) => { timer = setTimeout(() => resolve({ outcome: 'timeout' }), SERVER_ASK_TIMEOUT_MS); });
+  const ask = Promise.resolve().then(() => fetchResumable(userId))
+    .then((body) => (body ? { outcome: 'answered', body } : { outcome: 'error' }))
+    .catch(() => ({ outcome: 'error' }));
+  return Promise.race([ask, deadline]).finally(() => clearTimeout(timer));
 }
 
 let cachedLogger;
@@ -54,6 +56,7 @@ export function useChessAuthority({
   const authorityRef = useRef(null);
   const sessionRef = useRef(null);
   const startPromiseRef = useRef(null);
+  const generationRef = useRef(0);
   const [session, setSession] = useState(null);
   const [resumeInfo, setResumeInfo] = useState(null);
   const definition = { id: 'chess-standard', variant: 'standard', initial_fen: initialFen };
@@ -66,13 +69,15 @@ export function useChessAuthority({
       definition,
       namespace: 'gaming:piano-chess',
     });
+    const generation = ++generationRef.current;
     authorityRef.current = authority;
     let resumed = null;
     let info = null;
+    let decision = null;
     const prior = fresh ? null : localStorage.getItem(indexKey);
     if (!fresh) {
       const persistent = Boolean(userId) && userId !== 'household';
-      const serverAsk = persistent ? askServer(fetchResumable, userId) : Promise.resolve(null);
+      const serverAsk = persistent ? askServer(fetchResumable, userId) : Promise.resolve({ outcome: 'not-asked' });
       // A FINISHED GAME IS NOT A GAME IN PROGRESS — see `isResumableSession` and
       // the identical guard in the other two board games.
       let local = { present: false };
@@ -89,7 +94,11 @@ export function useChessAuthority({
           };
         } catch { local = { present: true, unreadable: true }; }
       }
-      let server = await serverAsk;
+      const asked = await serverAsk;
+      let server = asked.outcome === 'answered' ? asked.body : null;
+      let serverKind = asked.outcome === 'answered' ? (server?.game ? 'game' : 'none') : asked.outcome;
+      if (serverKind === 'timeout') logger().warn('chess.resume.server-timeout', { userId, timeoutMs: SERVER_ASK_TIMEOUT_MS });
+      if (serverKind === 'error') logger().warn('chess.resume.server-error', { userId });
       let replay = null;
       if (server?.game) {
         const record = server.game.record;
@@ -101,10 +110,16 @@ export function useChessAuthority({
         if (unusable) {
           logger().warn('chess.resume.server-copy-unusable', { userId, gameId: server.game.game_id, reason: unusable, ply: replay.ply ?? null });
           server = null;
+          serverKind = 'none';
           replay = null;
         } else if (replay.fenMatches === false) {
           logger().warn('chess.resume.server-copy-fen-mismatch', { userId, gameId: server.game.game_id });
         }
+      }
+      if (local.present && !local.unreadable && server?.game && replay?.ok) {
+        const localMoves = priorSession?.state?.history || [];
+        local.continuesServer = replay.moves.length <= localMoves.length
+          && replay.moves.every((m, i) => m.from === localMoves[i]?.from && m.to === localMoves[i]?.to);
       }
       const choice = chooseResumeSource({ local, server });
       const plies = priorSession?.state?.history?.length ?? null;
@@ -152,7 +167,26 @@ export function useChessAuthority({
         resumed = priorSession;
       }
       if (!resumed && prior) localStorage.removeItem(indexKey);
+      decision = {
+        userId, persistent, localPresent: local.present, localAgeMs: local.idleMs ?? null,
+        server: serverKind,
+        notAskedReason: persistent ? null : (userId === 'household' ? 'household-identity' : 'no-user'),
+        chosen: !resumed ? 'new' : (resumed === priorSession ? 'local'
+          : (server?.game?.pinned ? 'pinned' : 'server')),
+        gameId: resumed === priorSession ? (priorSession?.header?.session_id ?? null) : (info?.gameId ?? null),
+        plies: resumed?.state?.history?.length ?? 0,
+      };
     }
+    // A newer start() (identity arrived) owns the board; this one stands down.
+    if (generation !== generationRef.current) {
+      logger().info('chess.resume.superseded', { userId });
+      return null;
+    }
+    if (!decision) {
+      decision = { userId, persistent: Boolean(userId) && userId !== 'household', localPresent: false, localAgeMs: null,
+        server: 'not-asked', notAskedReason: 'fresh-start', chosen: 'new', gameId: null, plies: 0 };
+    }
+    logger().info('chess.resume.decision', decision);
     setResumeInfo(info);
     if (!resumed) {
       resumed = await authority.create({
@@ -172,7 +206,16 @@ export function useChessAuthority({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [definitionKey, indexKey]);
 
-  useEffect(() => { startPromiseRef.current = start(); }, [start]);
+  const firstUserRef = useRef(userId);
+  useEffect(() => {
+    // A board with moves on it is never replaced by a late identity.
+    if (firstUserRef.current !== userId && sessionRef.current?.state?.history?.length > 0) {
+      logger().warn('chess.resume.late-identity-ignored', { from: firstUserRef.current, to: userId });
+      return;
+    }
+    firstUserRef.current = userId;
+    startPromiseRef.current = start();
+  }, [start, userId]);
 
   const dispatch = useCallback(async (command) => {
     const current = sessionRef.current || await startPromiseRef.current;

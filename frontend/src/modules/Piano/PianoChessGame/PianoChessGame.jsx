@@ -149,6 +149,8 @@ export function PianoChessGame({
 }) {
   const {
     lockedUser,
+    currentUserId,
+    adoptLateIdentity,
     displayName,
     playerAvatarId,
     gameId,
@@ -166,6 +168,11 @@ export function PianoChessGame({
   } = useChessAuthority({
     userId: authorityUserId, initialFen: fen ?? INITIAL_FEN, seed: gameSeed, playerColor,
   });
+
+  const playedPliesRef = useRef(0);
+  useEffect(() => {
+    if (!lockedUser && currentUserId && playedPliesRef.current === 0) adoptLateIdentity();
+  }, [lockedUser, currentUserId, adoptLateIdentity]);
 
   const [game, setGame] = useState(() => createChessGameState({
     fen: fen ?? undefined,
@@ -193,6 +200,7 @@ export function PianoChessGame({
     writeConfig: saveChessConfig,
     logger: logger(),
   });
+  playedPliesRef.current = game.history.length;
   const rosterPack = chessConfig?.ladder?.roster_pack || 'chess';
   const opponentProfile = useMemo(() => normalizeOpponentProfile(ladderOpponent || {}, {
     rosterPack, position: (ladderLevel ?? 0) + 1,
