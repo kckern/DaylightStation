@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { shouldSkipResilienceReload } from '../../../../frontend/src/modules/Player/lib/shouldSkipResilienceReload.js';
+import { shouldSkipResilienceReload } from '../../../../capabilities/playback/browser/player/lib/shouldSkipResilienceReload.js';
 
 /**
  * Tests for shouldSkipResilienceReload — the guard that prevents

@@ -19,7 +19,7 @@ vi.mock('../../../frontend/src/lib/logging/singleton.js', () => ({
 }));
 vi.mock('../../../frontend/src/hooks/useWebSocket.js', () => ({ useWebSocketSubscription: vi.fn() }));
 
-import ArtMode from '../../../frontend/src/screen-framework/widgets/ArtMode.jsx';
+import ArtMode from '../../../frontend/src/composition/screens/widgets/ArtMode.jsx';
 
 const artFor = (img) => ({ mode: 'single', panels: [{ image: img, meta: { title: img, width: 1600, height: 1000 } }] });
 const featuredCount = () => apiCalls.filter((u) => u.includes('art/featured')).length;

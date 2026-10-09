@@ -12,7 +12,7 @@ vi.mock('../../../frontend/src/lib/logging/Logger.js', () => {
   return { default: () => mockLogger, getLogger: () => mockLogger };
 });
 
-import { KeyboardAdapter } from '../../../frontend/src/screen-framework/input/adapters/KeyboardAdapter.js';
+import { KeyboardAdapter } from '../../../capabilities/screen-host/browser/input/adapters/KeyboardAdapter.js';
 
 describe('KeyboardAdapter logging', () => {
   let adapter;

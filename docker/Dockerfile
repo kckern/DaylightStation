@@ -40,6 +40,7 @@ COPY backend/package*.json ./backend/
 # context deliberately excludes `.git`, but the script itself must exist while
 # dependencies install; it exits cleanly outside a checkout.
 COPY scripts/install-git-hooks.mjs ./scripts/install-git-hooks.mjs
+COPY scripts/setup-owner-dependencies.mjs ./scripts/setup-owner-dependencies.mjs
 
 # Layer 6: Install all npm dependencies in one layer
 #
@@ -72,6 +73,7 @@ COPY --chown=node:node modules/ ./modules/
 COPY --chown=node:node capabilities/ ./capabilities/
 COPY --chown=node:node cli/ ./cli/
 COPY --chown=node:node package*.json ./
+RUN node scripts/setup-owner-dependencies.mjs && node scripts/setup-owner-dependencies.mjs --check
 
 # Layer 8: Build frontend
 #

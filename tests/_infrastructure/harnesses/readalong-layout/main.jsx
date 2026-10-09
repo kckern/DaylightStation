@@ -3,8 +3,8 @@
 // screen-widget--full → school-app--locked → school-app__body), exactly as
 // captured from the live tablet DOM.
 import { createRoot } from 'react-dom/client';
-import ReadalongPlaylistPlayer from '../../../../frontend/src/modules/Player/ReadalongPlaylistPlayer.jsx';
-import '../../../../frontend/src/screen-framework/panels/PanelRenderer.css';
+import ReadalongPlaylistPlayer from '../../../../capabilities/playback/browser/player/ReadalongPlaylistPlayer.jsx';
+import '../../../../capabilities/screen-host/browser/panels/PanelRenderer.css';
 import '../../../../frontend/src/modules/School/School.scss';
 
 const parts = [

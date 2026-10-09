@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { pianoLearningApi } from '../../../Piano/PianoKiosk/modes/Exercises/pianoLearningApi.js';
+import { pianoLearningApi } from "../../../../../../modules/piano/browser/learning.mjs";
 import { usePanelFetch } from '../usePanelFetch.js';
 import PanelFrame from './PanelFrame.jsx';
 import { useTeacherWrite } from '../useTeacherWrite.js';

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DaylightAPI } from '@/lib/api.mjs';
-import { playbackLog } from '@/modules/Player/lib/playbackLogger.js';
+import { playbackLog } from "../../../../../../../capabilities/playback/browser/contracts.mjs";
 import { useFitness } from '@/context/FitnessContext.jsx';
 
 const blobToBase64 = (blob) => new Promise((resolve, reject) => {

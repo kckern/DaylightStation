@@ -1,0 +1,602 @@
+
+import React, {
+    useState,
+    useRef,
+    useEffect,
+    useCallback,
+    useMemo
+  } from "react";
+  import moment from "moment";
+  import "../styles/ContentScroller.scss";
+import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
+import paperBackground from "../../../../../frontend/src/assets/backgrounds/paper.jpg";
+import { useMediaKeyboardHandler } from '../../../../../frontend/src/lib/Player/useMediaKeyboardHandler.js';
+import { useDynamicDimensions } from '../../../../../frontend/src/lib/Player/useDynamicDimensions.js';
+import { useMediaReporter } from '../hooks/useMediaReporter.js';
+import { useEndOfContentWatchdog } from '../hooks/useEndOfContentWatchdog.js';
+import { useScreenVolume } from '../../../../../frontend/src/lib/volume/ScreenVolumeContext.js';
+  import { playbackLog } from '../lib/playbackLogger.js';
+  
+  /**
+   * ContentScroller (superclass)
+   * ----------------------------
+   * Provides:
+   *  - Scrolling text over time
+   *  - Main media (audio or video) playback with optional ambient track
+   *  - Seek bar (click to seek)
+   *  - Keyboard shortcuts for seek, play/pause, exit
+   *
+   * Props:
+   *  - type: string => helps with specific styling (e.g. "scriptures", "hymn", etc.)
+   *  - className: optional extra class
+   *  - title, subtitle: strings for headings
+   *  - mainMediaUrl: string => audio or video source
+   *  - isVideo: boolean => if true, uses <video>, else <audio>
+   *  - ambientMediaUrl: optional string => background audio
+   *  - ambientConfig: optional => { fadeOutStep, fadeOutInterval, fadeInDelay, ambientVolume, ... }
+   *  - contentData: data for text content to be scrolled
+   *  - parseContent: function(contentData) => JSX
+   *  - onAdvance: function => called when main media ends
+   *  - onClear: function => called on Escape key
+   *  - yStartTime: number => seconds before scrolling starts
+   *  - playbackKeys: object => keypad mappings for playback control
+   *  - ignoreKeys: boolean => whether to ignore global key handling
+   *  - manualScrollNudge: boolean => rebind ArrowUp/ArrowDown from shader cycling to a
+   *      manual vertical offset on the scrolling text (see nudgePx below). Opt-in per
+   *      renderer; only SingalongScroller sets it.
+   */
+  
+  export default function ContentScroller({
+    type = "generic",
+    className = "",
+    assetId,
+    title,ready: _ready,
+    subtitle,
+    subsubtitle,
+    mainMediaUrl,
+    isVideo = false,
+    mainVolume = 1,
+    ambientMediaUrl,
+    ambientConfig,
+    contentData,
+    parseContent,
+    onAdvance,
+    onManualAdvance = onAdvance,
+    onClear,
+    onProgress,
+    shaders,
+    listId,
+    yStartTime = 15,
+    playbackKeys = {},
+    ignoreKeys = false,
+    manualScrollNudge = false,
+    queuePosition = 0,  // Accept queuePosition from parent (Player)
+    onPlaybackMetrics,
+    onRegisterMediaAccess,
+    seekToIntentSeconds = null,
+    onSeekRequestConsumed,
+    remountDiagnostics
+  }) {
+    // Refs for media elements
+    const mainRef = useRef(null);
+    // Screen-framework effective master (master after per-screen output ceiling
+    // and perceptual curve). Outside a ScreenVolumeProvider (e.g. Fitness host)
+    // the context default is effectiveMaster=1, so this is a no-op.
+    const { effectiveMaster: masterVolume } = useScreenVolume();
+    const {
+      reportPlaybackMetrics,
+      applyPendingSeek,
+      clearPendingSeek
+    } = useMediaReporter({
+      mediaRef: mainRef,
+      onPlaybackMetrics,
+      onRegisterMediaAccess,
+      seekToIntentSeconds,
+      onSeekRequestConsumed,
+      remountDiagnostics,
+      mediaIdentityKey: mainMediaUrl
+    });
+  
+    // Playback state
+    const [duration, setDuration] = useState(0);
+    const [currentTime, setCurrentTime] = useState(0);
+    const [progress, setProgress] = useState(0);
+    const [isSeeking, setIsSeeking] = useState(false);
+    const seekTimerRef = useRef(null);
+
+    // Manual scroll offset, in px, added on top of the time-derived yOffset.
+    // The scroll position is otherwise a pure function of the clock, so when the
+    // transcribed text and the recording disagree (a missing or repeated verse, a
+    // lead-in that doesn't match yStartTime) there is no way to re-register them.
+    // This is that way. It never touches the media clock.
+    const [nudgePx, setNudgePx] = useState(0);
+    const nudgeRef = useRef(0);
+    // The range the nudge can usefully take right now, published by the yOffset
+    // memo below. Without it a press at the very top or bottom would still
+    // accumulate into a total the display clamps away, and the next few presses
+    // back the other way would look dead.
+    const nudgeRangeRef = useRef({ min: -Infinity, max: Infinity });
+
+    // Seek-bar fill seed. Rather than repaint width every 100ms tick (which steps
+    // and freezes when a tick runs late), the fill runs a linear width keyframe
+    // (`contentSeekFill`) over the media duration on the compositor clock. JS only
+    // re-anchors it on discontinuities — play/pause/seek/stall — never per tick.
+    const [seekFill, setSeekFill] = useState({ offset: 0, running: false, rate: 1, nonce: 0 });
+  
+    // Use dynamic dimensions hook for layout measurement
+    const {
+      panelRef,
+      contentRef,
+      panelHeight,
+      contentHeight
+    } = useDynamicDimensions([contentData, duration]);
+
+  // Track in-body heading positions for sticky header
+  const headingPositionsRef = useRef([]);
+  // Height of the narrated text WITHOUT its bottom run-out padding.
+  const narratableHeightRef = useRef(0);
+
+  // Measure h4 positions and narratable height after content renders
+  useEffect(() => {
+    const contentEl = contentRef.current;
+    if (!contentEl) return;
+    const h4s = contentEl.querySelectorAll('h4');
+    headingPositionsRef.current = Array.from(h4s).map(el => ({
+      top: el.offsetTop,
+      text: el.textContent,
+    }));
+    const wrapper = contentEl.firstElementChild;
+    if (wrapper) {
+      let padBottom = 0;
+      try { padBottom = parseFloat(getComputedStyle(wrapper).paddingBottom) || 0; } catch { /* jsdom */ }
+      narratableHeightRef.current = Math.max(0, wrapper.offsetHeight - padBottom);
+    } else {
+      narratableHeightRef.current = 0;
+    }
+  }, [contentData, contentRef]);
+
+
+  const classes = Array.isArray(shaders)? shaders : ['regular', 'minimal', 'night', 'screensaver', 'dark'];
+  const [shader, setShader] = useState(classes[0]);
+  const cycleThroughClasses = (upOrDownInt) => {
+    upOrDownInt = parseInt(upOrDownInt) || 1;
+    setShader((prevClass) => {
+      const currentIndex = classes.indexOf(prevClass);
+      const newIndex = (currentIndex + upOrDownInt + classes.length) % classes.length;
+      return classes[newIndex];
+    }
+    );
+  };
+
+    // Fade-in class
+    const [init, setInit] = useState(true);
+  
+    // Ambient audio is now hoisted to Player.jsx (AmbientLayer) so it can crossfade
+    // between queue items. ambientMediaUrl/ambientConfig are accepted but unused here.
+    void ambientMediaUrl; void ambientConfig;
+
+    // Once we know main media's duration, we can do the scroll math
+    const movingTime = Math.max(0, duration - yStartTime + 2);
+    const yProgress =
+      currentTime < yStartTime || movingTime <= 0
+        ? 0
+        : (currentTime - yStartTime) / movingTime;
+
+    // Set init to false after first render
+    useEffect(() => {
+      setInit(false);
+    }, []);
+
+    useEffect(() => {
+      reportPlaybackMetrics();
+    }, [reportPlaybackMetrics]);
+
+    // Logger for media progress
+    const lastLoggedTimeRef = useRef(Date.now());
+
+    const resolvePlayLogType = useCallback((candidateType, candidateAssetId) => {
+      if (typeof candidateAssetId === 'string' && candidateAssetId.includes(':')) {
+        return candidateAssetId.split(':')[0] || candidateType;
+      }
+      if (candidateType === 'scriptures' || candidateType === 'poetry' || candidateType === 'talk') {
+        return 'readalong';
+      }
+      return candidateType;
+    }, []);
+
+    const logTime = useCallback(async (type, assetId, percent, title) => {
+      const now = Date.now();
+      const timeSinceLastLog = now - lastLoggedTimeRef.current;
+      if (timeSinceLastLog > 10000 && parseFloat(percent) > 0) {
+      const seconds = Math.round((duration * percent) / 100);
+      if (!assetId || seconds < 10) {
+        return;
+      }
+      const logType = resolvePlayLogType(type, assetId);
+      lastLoggedTimeRef.current = now;
+      try {
+        await DaylightAPI(`api/v1/play/log`, { title, type: logType, assetId, seconds, percent: Math.round(percent), listId });
+      } catch (error) {
+        playbackLog('play.log.failed', {
+          type: logType,
+          assetId,
+          seconds,
+          percent: Math.round(percent),
+          message: error?.message || 'unknown'
+        }, { level: 'warn' });
+      }
+      }
+    }, [duration, resolvePlayLogType, listId]);
+
+    const onTimeUpdate = useCallback(() => {
+      const mainEl = mainRef.current;
+      if (!mainEl || !duration) return;
+      const percent = (mainEl.currentTime / duration) * 100;
+      logTime(type, assetId, percent, title);
+    }, [duration, logTime, type, assetId, title]);
+
+    useEffect(() => {
+      const mainEl = mainRef.current;
+      if (!mainEl) return;
+
+      mainEl.addEventListener('timeupdate', onTimeUpdate);
+      return () => mainEl.removeEventListener('timeupdate', onTimeUpdate);
+    }, [mainMediaUrl, duration, title, type, assetId, listId, resolvePlayLogType, onTimeUpdate]);
+
+  
+    // Keep time and progress in sync while playing
+    useEffect(() => {
+      const mainEl = mainRef.current;
+      if (!mainEl) return () => {};
+
+      const syncInterval = setInterval(() => {
+        if (!mainEl.paused && !mainEl.ended) {
+          setCurrentTime(mainEl.currentTime);
+          if (mainEl.duration) {
+            setProgress(mainEl.currentTime / mainEl.duration);
+          }
+          reportPlaybackMetrics();
+        }
+      }, 100);
+
+      return () => clearInterval(syncInterval);
+    }, [reportPlaybackMetrics]);
+
+    // Progress bridge for shell components (e.g. ReadalongPlaylistPlayer).
+    // Content formats bypass the AudioPlayer/VideoPlayer onProgress path, so
+    // without this the Player's onProgress consumer never hears from a
+    // scroller: position, duration and paused state all read as zero upstream.
+    const onProgressRef = useRef(onProgress);
+    onProgressRef.current = onProgress;
+    useEffect(() => {
+      const el = mainRef.current;
+      if (!el) return () => {};
+      const emit = () => {
+        const cb = onProgressRef.current;
+        if (typeof cb !== 'function') return;
+        const dur = Number.isFinite(el.duration) ? el.duration : 0;
+        const cur = Number.isFinite(el.currentTime) ? el.currentTime : 0;
+        cb({
+          currentTime: cur,
+          duration: dur,
+          paused: Boolean(el.paused),
+          percent: dur > 0 ? (cur / dur) * 100 : 0
+        });
+      };
+      const events = ['loadedmetadata', 'timeupdate', 'play', 'pause', 'seeked', 'ended'];
+      events.forEach((name) => el.addEventListener(name, emit));
+      return () => events.forEach((name) => el.removeEventListener(name, emit));
+    }, [mainMediaUrl]);
+
+    // Anchor the smooth seek-bar keyframe on playback discontinuities. Each anchor
+    // captures the true playhead + rate so the CSS animation clock re-syncs to the
+    // media (no drift), then runs free at display refresh until the next event.
+    useEffect(() => {
+      const el = mainRef.current;
+      if (!el) return () => {};
+      const anchor = (running) => setSeekFill((s) => ({
+        offset: Number.isFinite(el.currentTime) ? el.currentTime : 0,
+        running,
+        rate: el.playbackRate || 1,
+        nonce: s.nonce + 1,
+      }));
+      const onPlaying = () => anchor(true);
+      const onPause = () => anchor(false);
+      const onWaiting = () => anchor(false);   // buffering: freeze at the true spot
+      const onSeeked = () => anchor(!el.paused);
+      const onEnded = () => anchor(false);
+      el.addEventListener('playing', onPlaying);
+      el.addEventListener('play', onPlaying);
+      el.addEventListener('pause', onPause);
+      el.addEventListener('waiting', onWaiting);
+      el.addEventListener('seeked', onSeeked);
+      el.addEventListener('ratechange', onPlaying);
+      el.addEventListener('ended', onEnded);
+      return () => {
+        el.removeEventListener('playing', onPlaying);
+        el.removeEventListener('play', onPlaying);
+        el.removeEventListener('pause', onPause);
+        el.removeEventListener('waiting', onWaiting);
+        el.removeEventListener('seeked', onSeeked);
+        el.removeEventListener('ratechange', onPlaying);
+        el.removeEventListener('ended', onEnded);
+      };
+    }, [mainMediaUrl]);
+
+    const handleLoadedMetadata = useCallback(() => {
+      const mainEl = mainRef.current;
+      if (mainEl) {
+        setDuration(mainEl.duration);
+
+        if (mainVolume !== undefined) {
+          let processedVolume = parseFloat(mainVolume || 100);
+          if (processedVolume > 1) processedVolume = processedVolume / 100;
+          const adjusted = Math.min(1, Math.max(0, processedVolume));
+          mainEl.volume = Math.min(1, Math.max(0, adjusted * masterVolume));
+        }
+        mainEl.play().catch(() => {});
+        applyPendingSeek();
+        reportPlaybackMetrics();
+      }
+    }, [mainVolume, masterVolume, applyPendingSeek, reportPlaybackMetrics]);
+
+    // Re-apply master × mainVolume to the active media element when either
+    // changes mid-playback. Mirrors useCommonMediaController.js:327-336 so the
+    // screen-framework numpad vol-up/down/mute affects scripture/talk/poetry/
+    // hymn/primary-song playback the same way it affects standard player media.
+    useEffect(() => {
+      const mainEl = mainRef.current;
+      if (!mainEl) return;
+      if (mainVolume === undefined) return;
+      let processed = parseFloat(mainVolume || 100);
+      if (processed > 1) processed = processed / 100;
+      const adjusted = Math.min(1, Math.max(0, processed));
+      try {
+        mainEl.volume = Math.min(1, Math.max(0, adjusted * masterVolume));
+      } catch { /* element may not yet support volume */ }
+    }, [masterVolume, mainVolume]);
+
+    // Seek bar click => set new currentTime
+    const handleSeekBarClick = (e) => {
+      if (!duration) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const offsetX = e.clientX - rect.left;
+      const newTime = (offsetX / rect.width) * duration;
+
+      if (mainRef.current) {
+        // Disable scroll transition for instant jump
+        setIsSeeking(true);
+        clearTimeout(seekTimerRef.current);
+        seekTimerRef.current = setTimeout(() => setIsSeeking(false), 100);
+
+        mainRef.current.currentTime = newTime;
+        setCurrentTime(newTime);
+        clearPendingSeek();
+        onSeekRequestConsumed?.();
+        reportPlaybackMetrics();
+      }
+    };
+  
+    // Progress is logged at most every 10s and never at the end, so a short
+    // read-along (a 17s poem) was recorded at 59% forever and never counted
+    // as heard — the office-program poetry rotation kept serving it. A
+    // natural end logs 100% once per track.
+    const completionLoggedRef = useRef(null);
+    const logCompletion = useCallback(() => {
+      const total = Number(mainRef.current?.duration) || duration;
+      if (!assetId || !(total > 0) || completionLoggedRef.current === mainMediaUrl) return;
+      completionLoggedRef.current = mainMediaUrl;
+      const logType = resolvePlayLogType(type, assetId);
+      const seconds = Math.round(total);
+      DaylightAPI(`api/v1/play/log`, { title, type: logType, assetId, seconds, percent: 100, listId })
+        .catch((error) => {
+          playbackLog('play.log.failed', {
+            type: logType, assetId, seconds, percent: 100, completion: true,
+            message: error?.message || 'unknown'
+          }, { level: 'warn' });
+        });
+    }, [assetId, duration, listId, mainMediaUrl, resolvePlayLogType, title, type]);
+
+    const handleEnded = useCallback(() => {
+      logCompletion();
+      onAdvance && onAdvance();
+    }, [logCompletion, onAdvance]);
+
+    // Fallback advance when HTML5 `ended` never fires — e.g. DASH with a
+    // zero-byte trailing fragment leaves the element paused at duration
+    // with mediaEl.seeking stuck true. See audit
+    // docs/_wip/audits/2026-05-23-livingroom-tv-end-of-video-stuck-seeking-audit.md
+    useEndOfContentWatchdog({
+      mediaRef: mainRef,
+      sourceKey: mainMediaUrl,
+      onAdvance: handleEnded,
+      enabled: !!isVideo
+    });
+
+    // Each track starts from the derived position — a nudge corrects ONE
+    // recording's drift and must not carry into the next song.
+    useEffect(() => { nudgeRef.current = 0; setNudgePx(0); }, [mainMediaUrl]);
+
+    // ArrowUp/ArrowDown scoot the text instead of cycling shaders, but only where
+    // the renderer asked for it. componentOverrides is consulted before both
+    // playbackKeys and the default map (keyboardManager.js), so this fully
+    // replaces the shader binding for those two keys on this content.
+    //
+    // Memoized because keyboardManager holds componentOverrides as an
+    // identity-compared useEffect dep. (Its wrapper spreads the map every render
+    // anyway, so this alone does not stop the listener churn — it just keeps this
+    // component from being one more cause of it.)
+    const nudgeOverrides = useMemo(() => {
+      if (!manualScrollNudge) return undefined;
+      const bump = (direction) => {
+        // Measured, not hardcoded: the same markup renders at wildly different
+        // scales (admin preview modal vs. a 4K screen), so one line is whatever a
+        // line currently is. 32px is the 2rem default when nothing is measurable.
+        const el = contentRef.current?.querySelector('.line, p');
+        const stepPx = el?.offsetHeight || 32;
+        // The ref carries the running total so the log stays a plain side effect
+        // rather than something React may replay inside a state updater.
+        const { min, max } = nudgeRangeRef.current;
+        const next = Math.max(min, Math.min(max, nudgeRef.current + (direction * stepPx)));
+        nudgeRef.current = next;
+        setNudgePx(next);
+        playbackLog('player.scroll-nudge', {
+          direction: direction > 0 ? 'up' : 'down',
+          stepPx,
+          nudgePx: next,
+          currentTime: mainRef.current?.currentTime ?? null,
+          assetId,
+          type
+        }, { level: 'info', context: { source: 'ContentScroller' } });
+      };
+      return { ArrowUp: () => bump(1), ArrowDown: () => bump(-1) };
+    }, [manualScrollNudge, contentRef, assetId, type]);
+
+    // Use centralized keyboard handler
+    useMediaKeyboardHandler({
+      mediaRef: mainRef,
+      onEnd: onManualAdvance,
+      onClear,
+      cycleThroughClasses,
+      playbackKeys,
+      queuePosition, // Use the queuePosition passed from parent
+      ignoreKeys,
+      keyboardOverrides: nudgeOverrides,
+      setCurrentTime // Pass state setter for time synchronization
+    });
+
+    // Play main media immediately once mounted; ambient (if any) runs independently in AmbientLayer.
+    useEffect(() => {
+      if (mainRef.current) {
+        mainRef.current.play().catch(() => {});
+      }
+    }, [mainMediaUrl]);
+
+    // If user provides parseContent, use it; otherwise a fallback
+    const renderedContent = parseContent
+      ? parseContent(contentData)
+      : (contentData || []).map((line, idx) => <p key={idx}>{line}</p>);
+
+    const headerMeta = [subtitle, subsubtitle].filter(Boolean).join(' • ');
+   
+    // Final transform for scrolling with safeguards against jitter
+    const yOffset = useMemo(() => {
+      // Ensure we have valid dimensions before calculating. A manual nudge still
+      // applies — a keypress must move the text whether or not the panel has been
+      // measured yet.
+      if (!contentHeight || !panelHeight) {
+        nudgeRangeRef.current = { min: 0, max: Infinity };
+        return Math.max(0, nudgePx);
+      }
+      
+      // Calculate base offset
+      const baseOffset = (yProgress * contentHeight) - (panelHeight * yProgress);
+      
+      // Clamp to reasonable bounds to prevent over-scrolling
+      const maxOffset = Math.max(0, contentHeight - panelHeight);
+      const derived = Math.max(0, Math.min(maxOffset, baseOffset));
+
+      // The manual nudge rides ON TOP of the clamped derived position, so it stays
+      // a constant user offset instead of being swallowed by the clamp. Its ceiling
+      // is the full content height (not maxOffset) so the text can still be pushed
+      // at the end of a song, where the derived position already sits at the max.
+      nudgeRangeRef.current = { min: -derived, max: contentHeight - derived };
+      return Math.max(0, Math.min(contentHeight, derived + nudgePx));
+    }, [yProgress, contentHeight, panelHeight, nudgePx]);
+
+  // Determine which section heading has scrolled past
+  const currentSection = useMemo(() => {
+    const positions = headingPositionsRef.current;
+    if (!positions.length || yOffset <= 0) return null;
+    let current = null;
+    for (const pos of positions) {
+      if (pos.top <= yOffset) current = pos.text;
+      else break;
+    }
+    if (current && subtitle && current.trim().toLowerCase() === subtitle.trim().toLowerCase()) {
+      return null;
+    }
+    return current;
+  }, [yOffset, subtitle]);
+
+    return (
+      <div className={`content-scroller ${type} ${className} ${shader}${isSeeking ? ' seeking' : ''}`} style={{
+        backgroundImage: `url(${paperBackground})`,
+        backgroundPosition: `0px ${-yOffset}px`
+      }}>
+        {title && (
+          <header className={`scroller-header${currentSection ? ' has-section' : ''}`}>
+            <span className="scroller-header-title">{title}</span>
+            {headerMeta && (
+              <span className="scroller-header-subtitle">{headerMeta}</span>
+            )}
+            {currentSection && (
+              <span key={currentSection} className="scroller-header-section">
+                {currentSection}
+              </span>
+            )}
+          </header>
+        )}
+        <div className="content-container">
+
+        {!!isVideo && <video
+              ref={mainRef}
+              src={mainMediaUrl}
+              onLoadedMetadata={handleLoadedMetadata}
+              onEnded={handleEnded}
+            />}
+        <div
+          ref={panelRef}
+          className={
+            "textpanel" +
+            (progress > 0.999 ? " fade-out" : "") +
+            (init ? " init" : "")
+          }
+        >
+          <div
+            ref={contentRef}
+            className={`scrolled-content${isSeeking ? ' seeking' : ''}`}
+            style={{ position: "absolute", transform: `translateY(-${yOffset}px)` }}
+          >
+            {renderedContent}
+          </div>
+        </div>
+
+        </div>
+  
+        {/* Seek + Controls */}
+        <div className="controls">
+          <div className="seek-bar" onClick={handleSeekBarClick}>
+            <div
+              className="seek-progress"
+              key={duration > 0 ? seekFill.nonce : 'w'}
+              style={duration > 0 ? {
+                animationName: 'contentSeekFill',
+                animationTimingFunction: 'linear',
+                animationDuration: `${duration / seekFill.rate}s`,
+                animationDelay: `-${seekFill.offset / seekFill.rate}s`,
+                animationPlayState: seekFill.running ? 'running' : 'paused',
+                animationFillMode: 'both',
+              } : { width: "0%" }}
+            >
+              <div className="current-time">
+                {moment.utc(currentTime * 1000).format("mm:ss")}
+              </div>
+            </div>
+            <div className="total-time" style={{ right: 0, position: "absolute" }}>
+              {moment.utc(duration * 1000).format("mm:ss")}
+            </div>
+          </div>
+  
+          {/* Main media (audio or video) */}
+          {!isVideo ? (
+            <audio
+              ref={mainRef}
+              src={mainMediaUrl}
+              onLoadedMetadata={handleLoadedMetadata}
+              onEnded={handleEnded}
+            />) : null }
+        </div>
+      </div>
+    );
+  }

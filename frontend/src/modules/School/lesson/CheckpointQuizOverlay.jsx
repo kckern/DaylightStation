@@ -105,7 +105,7 @@ import MultipleChoiceItem from '../quiz/items/MultipleChoiceItem.jsx';
 import ShortAnswerItem from '../quiz/items/ShortAnswerItem.jsx';
 import ClozeItem from '../quiz/items/ClozeItem.jsx';
 import MatchingItem from '../quiz/items/MatchingItem.jsx';
-import { useScreenAction } from '../../../screen-framework/input/useScreenAction.js';
+import { useScreenAction } from "../../../../../capabilities/screen-host/browser/input.mjs";
 import getLogger from '../../../lib/logging/Logger.js';
 import './CheckpointQuizOverlay.scss';
 

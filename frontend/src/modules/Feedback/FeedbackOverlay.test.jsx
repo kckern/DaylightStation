@@ -14,13 +14,13 @@ vi.mock('../VoiceCapture/useMediaRecorderCapture.js', () => {
     }),
   };
 });
-vi.mock('./feedbackApi.js', () => ({
+vi.mock('../../lib/diagnostics/feedbackApi.js', () => ({
   submitFeedback: vi.fn(async () => ({ id: 'f1', transcriptStatus: 'pending' })),
   pollFeedbackTranscript: vi.fn(async () => ({ id: 'f1', transcriptStatus: 'done', transcript: 'It stutters.' })),
   deleteFeedback: vi.fn(async () => ({ ok: true })),
 }));
 
-import { submitFeedback, pollFeedbackTranscript, deleteFeedback } from './feedbackApi.js';
+import { submitFeedback, pollFeedbackTranscript, deleteFeedback } from '../../lib/diagnostics/feedbackApi.js';
 import FeedbackOverlay from './FeedbackOverlay.jsx';
 
 beforeEach(() => { submitFeedback.mockClear(); pollFeedbackTranscript.mockClear(); deleteFeedback.mockClear(); });

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { VIEW_MODES, modeIndexByName, nextMode, prevMode, objectFitWindows, defaultModeIndex, fillDecision }
-  from '../../../frontend/src/screen-framework/widgets/artModes.js';
+  from '../../../frontend/src/composition/screens/widgets/artModes.js';
 
 describe('VIEW_MODES', () => {
   it('has five modes in museum→immersive order', () => {

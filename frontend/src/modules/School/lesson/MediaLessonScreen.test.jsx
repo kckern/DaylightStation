@@ -53,7 +53,7 @@ vi.mock('../../../hooks/useWebSocket.js', () => ({
   useWebSocketSubscription: (_topic, cb) => { h.handler = cb; },
 }));
 
-vi.mock('../../../screen-framework/overlays/ScreenOverlayProvider.jsx', () => ({
+vi.mock('../../../../../capabilities/screen-host/browser/overlays/ScreenOverlayProvider.jsx', () => ({
   useScreenOverlay: () => ({
     showOverlay: (Component, props, options) => {
       h.shown.push({ Component, props, options });
@@ -67,7 +67,7 @@ vi.mock('../../../screen-framework/overlays/ScreenOverlayProvider.jsx', () => ({
   }),
 }));
 
-vi.mock('../../Player/Player.jsx', () => ({
+vi.mock('../../../../../capabilities/playback/browser/player/Player.jsx', () => ({
   default: (props) => {
     h.player.clear = props.clear;
     h.player.onMediaRef = props.onMediaRef;
@@ -90,7 +90,7 @@ vi.mock('../../../lib/logging/Logger.js', () => {
   return { default: () => child, getLogger: () => child };
 });
 
-import { getActionBus, resetActionBus } from '../../../screen-framework/input/ActionBus.js';
+import { getActionBus, resetActionBus } from '../../../../../capabilities/screen-host/browser/input/ActionBus.js';
 import { MediaLessonScreen } from './MediaLessonScreen.jsx';
 
 const MC = {
@@ -352,7 +352,7 @@ describe('MediaLessonScreen', () => {
 
 describe('the widget registry', () => {
   it('registers `school-lesson`', async () => {
-    const { registerBuiltinWidgets } = await import('../../../screen-framework/widgets/builtins.js');
+    const { registerBuiltinWidgets } = await import('../../../composition/screens/widgets/builtins.js');
     const { default: MediaLessonScreenDefault } = await import('./MediaLessonScreen.jsx');
     expect(registerBuiltinWidgets().get('school-lesson')).toBe(MediaLessonScreenDefault);
   });

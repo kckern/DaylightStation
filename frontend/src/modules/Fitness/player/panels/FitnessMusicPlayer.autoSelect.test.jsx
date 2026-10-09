@@ -8,7 +8,7 @@ const state = vi.hoisted(() => ({
   setSelectedPlaylistId: vi.fn(),
 }));
 vi.mock('@/context/FitnessContext.jsx', () => ({ useFitnessContext: () => state }));
-vi.mock('@/modules/Player/Player.jsx', () => ({ default: () => null }));
+vi.mock('../../../../../../capabilities/playback/browser/player/Player.jsx', () => ({ default: () => null }));
 vi.mock('@/modules/Fitness/nav/usePersistentVolume.js', () => ({ usePersistentVolume: () => ({ volume: 0.1, setVolume: vi.fn(), applyToPlayer: vi.fn() }) }));
 import FitnessMusicPlayer from './FitnessMusicPlayer.jsx';
 

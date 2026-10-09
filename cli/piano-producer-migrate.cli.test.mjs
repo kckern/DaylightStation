@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 import YAML from 'yaml';
-import { auditProducerData, applyProducerMigration } from './piano-producer-migrate.cli.mjs';
+import { auditProducerData, applyProducerMigration } from '../modules/piano/cli/piano-producer-migrate.cli.mjs';
 
 const cliPath = fileURLToPath(new URL('./piano-producer-migrate.cli.mjs', import.meta.url));
 

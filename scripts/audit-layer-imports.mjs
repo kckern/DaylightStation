@@ -7,13 +7,14 @@
 //   node scripts/audit-layer-imports.mjs             # check against baseline
 //   node scripts/audit-layer-imports.mjs --update    # rewrite baseline (only after a task legitimately lowers counts)
 //   node scripts/audit-layer-imports.mjs --list=<rule>  # print offending file:line for one rule
-import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, lstatSync, existsSync } from 'node:fs';
 import { dirname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from '@babel/parser';
 import traverseModule from '@babel/traverse';
 import { listIndexFiles, readIndexFile, readIndexFiles } from './index-snapshot.mjs';
 import { DESTINATION_ROOTS, destinationServerPath, matchesAuditLayer, targetsAuditLayer } from './audit-server-layout.mjs';
+import { declaredServerEntry } from './owner-entry-policy.mjs';
 
 const traverse = typeof traverseModule === 'function' ? traverseModule : traverseModule.default;
 
@@ -81,7 +82,7 @@ const isTest = (f) => /(^|\/)(__tests__|test|tests|fixtures)(\/|$)/.test(f) ||
 export const RULES = [
   // D4 shared-kernel exception: 0_system may import pure domain shared-kernel utils (#domains/core/utils/*)
   { rule: 'system-no-upward', layer: '0_system/', bad: (s, p) => /^#(domains(?!\/core\/utils)|adapters|apps|applications|api|rendering)\//.test(s) || (targetsLayer(p, '1_adapters', '1_rendering', '2_domains', '3_applications', '4_api') && !p.includes(`${SOURCE_ROOT}2_domains/core/utils/`)), exempt: isCompositionRoot },
-  { rule: 'domains-no-adapters', layer: '2_domains/', bad: (s, p) => /^#(adapters|apps|applications|api|system|rendering)\//.test(s) || targetsLayer(p, '0_system', '1_adapters', '1_rendering', '3_applications', '4_api') },
+  { rule: 'domains-no-adapters', layer: '2_domains/', bad: (s, p) => /^#(adapters|apps|applications|api|system|rendering)\//.test(s) || targetsLayer(p, '0_system', '1_adapters', '1_rendering', '3_applications', '4_api') || declaredServerEntry(p)?.layer === 'composition' },
   { rule: 'domains-no-node-io', layer: '2_domains/', bad: s => /^(node:)?(fs|fs\/promises|path|child_process)$/.test(s) },
   { rule: 'apps-no-adapters', layer: '3_applications/', bad: (s, p) => /^#adapters\//.test(s) || /1_adapters\//.test(s) || targetsLayer(p, '1_adapters') },
   { rule: 'apps-no-config-internals', layer: '3_applications/', bad: (s, p) => /^#system\/config\//.test(s) || targetsLayer(p, '0_system/config') },
@@ -110,7 +111,7 @@ export const RULES = [
     const targetFamily = adapterFamily(target);
     return Boolean(sourceFamily && targetFamily && sourceFamily !== targetFamily);
   } },
-  { rule: 'rendering-no-adapters-apps', layer: '1_rendering/', bad: (s, p) => /^#(adapters|apps|applications)\//.test(s) || targetsLayer(p, '1_adapters', '3_applications') },
+  { rule: 'rendering-no-adapters-apps', layer: '1_rendering/', bad: (s, p) => /^#(adapters|apps|applications)\//.test(s) || targetsLayer(p, '1_adapters', '3_applications') || declaredServerEntry(p)?.layer === 'composition' },
   { rule: 'api-no-adapters', layer: '4_api/', bad: (s, p) => /^#adapters\//.test(s) || /1_adapters\//.test(s) || targetsLayer(p, '1_adapters') },
   { rule: 'api-no-apps', layer: '4_api/', bad: (s, p) => /^#(apps|applications)\//.test(s) || /3_applications\//.test(s) || targetsLayer(p, '3_applications') },
   { rule: 'api-no-domains', layer: '4_api/', bad: (s, p) => /^#domains\//.test(s) || /2_domains\//.test(s) || targetsLayer(p, '2_domains') },
@@ -617,7 +618,10 @@ function walk(dir, acc = []) {
   if (!existsSync(dir)) return acc;
   for (const e of readdirSync(dir)) {
     const p = join(dir, e);
-    if (statSync(p).isDirectory()) walk(p, acc);
+    if (e === 'node_modules') continue;
+    const stat = lstatSync(p);
+    if (stat.isSymbolicLink()) continue;
+    if (stat.isDirectory()) walk(p, acc);
     else if (isLayerSource(p)) acc.push(p);
   }
   return acc;

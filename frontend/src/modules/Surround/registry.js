@@ -13,7 +13,7 @@
  * surround module is driven by.
  */
 
-import { WidgetRegistry } from '../../screen-framework/widgets/registry.js';
+import { WidgetRegistry } from "../../../../capabilities/screen-host/browser/public.mjs";
 
 let surroundRegistry = null;
 

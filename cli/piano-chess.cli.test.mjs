@@ -10,7 +10,7 @@ import {
   parseChordSymbol,
   pickSource,
   readRimFromDocument,
-} from './piano-chess.cli.mjs';
+} from '../modules/piano/cli/piano-chess.cli.mjs';
 // The source of truth this CLI mirrors. The CLI cannot import it at runtime
 // (chordAddress.js uses the vite-only @shared-gaming alias), so these tests
 // exist to make any drift between the two tables a red build, not a silent
@@ -20,7 +20,7 @@ import {
   DEFAULT_CHORD_SCHEME,
   chordPitchClasses,
   squareToChord,
-} from '../frontend/src/modules/Piano/PianoChessGame/chordAddress.js';
+} from '../modules/piano/browser/PianoChessGame/chordAddress.js';
 
 describe('parseArgs', () => {
   it('defaults to the deployed chess route with the fake bridge on 8770', () => {

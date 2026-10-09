@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { NativeSelect } from '@mantine/core';
 import { DaylightAPI, DaylightMediaPath } from '../../../lib/api.mjs';
-import Player from '../../Player/Player.jsx';
+import { Player as Player } from "../../../../../capabilities/playback/browser/public.mjs";
 import { previewFrameVars } from './previewFrame.js';
 import { usePreviewScreens, FALLBACK_SCREEN } from './usePreviewScreens.js';
 import getLogger from '../../../lib/logging/Logger.js';

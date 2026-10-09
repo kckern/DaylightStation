@@ -5,7 +5,7 @@ import useVoiceMemoRecorder from '../panels/hooks/useVoiceMemoRecorder.js';
 import { MicLevelIndicator } from '@/modules/Fitness/shared';
 import { formatTime } from '@/modules/Fitness/shared/utils/time';
 import './VoiceMemoOverlay.scss';
-import { playbackLog } from '@/modules/Player/lib/playbackLogger.js';
+import { playbackLog } from "../../../../../../capabilities/playback/browser/contracts.mjs";
 import { getDaylightLogger } from '@/lib/logging/singleton.js';
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import { resolveDismissAction } from './voiceMemoOverlayUtils.js';

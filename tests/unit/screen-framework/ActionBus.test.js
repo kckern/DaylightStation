@@ -13,7 +13,7 @@ vi.mock('../../../frontend/src/lib/logging/Logger.js', () => {
   return { default: () => mockLogger, getLogger: () => mockLogger };
 });
 
-import { ActionBus } from '../../../frontend/src/screen-framework/input/ActionBus.js';
+import { ActionBus } from '../../../capabilities/screen-host/browser/input/ActionBus.js';
 
 describe('ActionBus logging', () => {
   let bus;

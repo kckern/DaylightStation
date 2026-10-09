@@ -35,17 +35,17 @@ const loadMediaApp = () => import('./Apps/MediaApp.jsx');
 const MediaApp = React.lazy(loadMediaApp);
 const loadLiveStreamApp = () => import('./Apps/LiveStreamApp.jsx');
 const LiveStreamApp = React.lazy(loadLiveStreamApp);
-const loadPianoApp = () => import('./Apps/PianoApp.jsx');
+const loadPianoApp = () => import('../../modules/piano/browser/kiosk.mjs');
 const PianoApp = React.lazy(loadPianoApp);
 const loadAppContainer = () => import('./modules/AppContainer/AppContainer.jsx');
 const AppContainer = React.lazy(loadAppContainer);
 const Blank = React.lazy(() => import('./modules/Blank/Blank.jsx'));
-const FilterPoc = React.lazy(() => import('./modules/Player/poc/FilterPoc.jsx'));
+const FilterPoc = React.lazy(() => import('../../capabilities/playback/browser/debug.mjs'));
 const SetupWizard = React.lazy(() => import('./modules/Auth/SetupWizard.jsx'));
 const InviteAccept = React.lazy(() => import('./modules/Auth/InviteAccept.jsx'));
 const PartyGamesHost = React.lazy(() => import('./modules/Gaming/environments/party-games/surfaces/PartyGamesHost.jsx'));
 const PartyGamesVerifier = React.lazy(() => import('./modules/Gaming/environments/party-games/surfaces/PartyGamesVerifier.jsx'));
-const loadScreenRenderer = () => import('./screen-framework/index.js');
+const loadScreenRenderer = () => import('./composition/screens/index.js');
 const ScreenRenderer = React.lazy(() => loadScreenRenderer().then(module => ({ default: module.ScreenRenderer })));
 // Start this page's chunk NOW, not once SetupCheck's auth request has
 // answered and <Routes> first renders: the two then load side by side.
@@ -68,7 +68,7 @@ const DecoderSwatches = React.lazy(() => import('./dev/DecoderSwatches/DecoderSw
 const TeacherConsoleRoute = () => (
   <React.Suspense fallback={<div />}> <TeacherConsole /> </React.Suspense>
 );
-import { configurePlaybackLogger } from './modules/Player/lib/playbackLogger.js';
+import { configurePlaybackLogger } from "../../capabilities/playback/browser/contracts.mjs";
 import { configureDaylightLogger, getDaylightLogger } from './lib/logging/singleton.js';
 import { setupGlobalErrorHandlers } from './lib/logging/errorHandlers.js';
 import { interceptConsole } from './lib/logging/consoleInterceptor.js';

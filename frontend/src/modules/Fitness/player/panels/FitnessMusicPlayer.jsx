@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { ContentDisplayUrl } from '@/lib/api.mjs';
-import Player from '@/modules/Player/Player.jsx';
+import { Player as Player } from "../../../../../../capabilities/playback/browser/public.mjs";
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import { TouchVolumeButtons } from './TouchVolumeButtons.jsx';
 import { snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume, logVolumeFromLevel, logLevelFromVolume } from './touchVolumeModel.js';
 import FitnessPlaylistSelector from './FitnessPlaylistSelector.jsx';
 import '../FitnessSidebar.scss';
 import { usePersistentVolume } from '@/modules/Fitness/nav/usePersistentVolume.js';
-import { durationFromSeconds } from '@/modules/Player/utils/mediaIdentity.js';
-import { guid } from '@/modules/Player/lib/helpers.js';
+import { durationFromSeconds } from "../../../../../../capabilities/playback/browser/contracts.mjs";
+import { guid } from "../../../../../../capabilities/playback/browser/contracts.mjs";
 import getLogger from '@/lib/logging/Logger.js';
 import { musicShouldPause } from './musicVideoSync.js';
 import { useMusicRecovery } from './useMusicRecovery.js';

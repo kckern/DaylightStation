@@ -22,8 +22,8 @@ import { sortNavItems, filterNavItemsByDay, isNavItemActive, shouldPlayMenuMusic
 import useDayOfWeek from '../hooks/useDayOfWeek.js';
 import VoiceMemoOverlay from '../modules/Fitness/player/overlays/VoiceMemoOverlay.jsx';
 import FitnessToast from '../modules/Fitness/player/overlays/FitnessToast.jsx';
-import { DeviceStatePublisher } from '../screen-framework/publishers/DeviceStatePublisher.jsx';
-import { usePlayerSessionBinding } from '../screen-framework/publishers/usePlayerSessionBinding.js';
+import { DeviceStatePublisher } from "../../../capabilities/screen-host/browser/publishers.mjs";
+import { usePlayerSessionBinding } from "../../../capabilities/playback/browser/sessions.mjs";
 import EmergencyLockdownOverlay from '../modules/Fitness/player/overlays/EmergencyLockdownOverlay.jsx';
 import { IdentityProvider } from '../modules/Fitness/identity/IdentityProvider';
 import { useFitnessContext } from '../context/FitnessContext.jsx';
@@ -32,12 +32,12 @@ import { useFitnessUrlParams } from '../hooks/fitness/useFitnessUrlParams.js';
 import { useFitnessLaunch } from '../hooks/fitness/useFitnessLaunch.js';
 import { computeVideoFpsSample, deriveVideoState, pickProfiledVideo } from '../hooks/fitness/videoFpsSample.js';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ScreenDataProvider, ScreenDataActionsContext } from '../screen-framework/data/ScreenDataProvider.jsx';
-import { ScreenProvider } from '../screen-framework/providers/ScreenProvider.jsx';
-import { PanelRenderer } from '../screen-framework/panels/PanelRenderer.jsx';
+import { ScreenDataProvider, ScreenDataActionsContext } from "../../../capabilities/screen-host/browser/data.mjs";
+import { ScreenProvider } from "../../../capabilities/screen-host/browser/providers.mjs";
+import { PanelRenderer } from "../../../capabilities/screen-host/browser/public.mjs";
 import { FitnessScreenProvider } from '../modules/Fitness/FitnessScreenProvider.jsx';
 import { sessionDetailSeed } from '../modules/Fitness/widgets/FitnessSessionsWidget/sessionDetailPane.js';
-import { registerBuiltinWidgets } from '../screen-framework/widgets/builtins.js';
+import { registerBuiltinWidgets } from '../composition/screens/widgets/builtins.js';
 // Ensure fitness modules are registered in widget registry
 import '../modules/Fitness/index.js';
 import {

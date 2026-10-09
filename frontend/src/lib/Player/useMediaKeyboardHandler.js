@@ -3,7 +3,7 @@ import { DaylightAPI } from '../api.mjs';
 import { usePlayerKeyboard } from '../keyboard/keyboardManager.js';
 import { acquirePlayerKeyboard } from './playerKeyboardOwnership.js';
 import { createMediaTransportAdapter } from './mediaTransportAdapter.js';
-import { playbackLog } from '../../modules/Player/lib/playbackLogger.js';
+import { playbackLog } from "../../../../capabilities/playback/browser/contracts.mjs";
 import { getChildLogger } from '../logging/singleton.js';
 import { resolveContentId } from '../../modules/Surround/segments.js';
 // The restart grace period that used to be a literal `5` in `previousTrack`

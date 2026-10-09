@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { RemuxPlayer } from '../../Player/renderers/RemuxPlayer.jsx';
+import { RemuxPlayer } from "../../../../../capabilities/playback/browser/remux.mjs";
 import { useFeedPlayer } from './FeedPlayerContext.jsx';
 import getLogger from '../../../lib/logging/Logger.js';
 

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, it } from 'node:test';
 import YAML from 'yaml';
-import { certifyProducerCatalog } from './piano-producer-catalog.cli.mjs';
+import { certifyProducerCatalog } from '../modules/piano/cli/piano-producer-catalog.cli.mjs';
 
 const TYPE_FOLDERS = ['chords', 'basslines', 'melodies', 'ideas', 'percussion'];
 

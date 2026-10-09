@@ -2,8 +2,8 @@
 // div (one line in the real component). Everything below it — ReadalongScroller,
 // ContentScroller, all SCSS — is the real production code under test.
 import { forwardRef, useImperativeHandle, useRef } from 'react';
-import ReadalongScroller from '../../../../frontend/src/modules/Player/renderers/ReadalongScroller.jsx';
-import '../../../../frontend/src/modules/Player/styles/Player.scss';
+import ReadalongScroller from '../../../../capabilities/playback/browser/player/renderers/ReadalongScroller.jsx';
+import '../../../../capabilities/playback/browser/player/styles/Player.scss';
 import fixture from './fixtureData.js';
 
 const StubPlayer = forwardRef(function StubPlayer({ play, clear, onProgress }, ref) {

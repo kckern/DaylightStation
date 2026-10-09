@@ -1,0 +1,86 @@
+import { useState } from 'react';
+import ProfileAvatar from '../../../../../../frontend/src/lib/identity/ProfileAvatar.jsx';
+import { chipPercent, chipIsStale } from './courseChipModel.js';
+
+// r chosen so the circumference is exactly 100 units — strokeDasharray can
+// then take the percent directly.
+const RING_R = 100 / (2 * Math.PI);
+
+/**
+ * One course/poster tile. The cover loads lazily and starts blurred
+ * (`is-loading`); on load it un-blurs and fades in, so covers appear
+ * progressively instead of all-at-once. Covers are cached by the display
+ * redirect (see display.mjs Cache-Control), so revisits are instant.
+ *
+ * `progress` (optional) drives two sequential-course adornments:
+ *   - a top-left "sequential" badge when `progress.isSequential`
+ *   - a bottom gradient overlay with one avatar chip (completed/total) per
+ *     qualifying user (already filtered/sorted by the caller) when
+ *     `progress.users` is non-empty. Both sit inside the poster box and never
+ *     change its size.
+ */
+export default function CourseTile({ item, onSelect, progress = null }) {
+  const [loaded, setLoaded] = useState(false);
+  const src = item.thumbnail || item.image;
+  const isSequential = !!progress?.isSequential;
+  const users = Array.isArray(progress?.users) ? progress.users : [];
+  return (
+    <li>
+      <button type="button" className="piano-video-grid__tile" onClick={() => onSelect(item)} title={item.title}>
+        {/* One positioned box holds the poster AND its overlays: the one-page
+            wall letterboxes a fixed 2:3 poster inside a variable cell, and the
+            badge/chips must ride the poster's corners, not the cell's. */}
+        <span className="piano-cover-box">
+        {src && (
+          <img
+            src={src}
+            alt={item.title}
+            loading="lazy"
+            decoding="async"
+            className={`piano-cover${loaded ? '' : ' is-loading'}`}
+            onLoad={() => setLoaded(true)}
+            onError={() => setLoaded(true)}
+          />
+        )}
+        {isSequential && (
+          <span className="piano-cover-badge" role="img" aria-label="Sequential course" title="Sequential course">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              {/* Ascending steps — "work through this in order". */}
+              <path d="M4 19h4v-4H4v4Zm6 0h4v-8h-4v8Zm6 0h4V7h-4v12Z" fill="currentColor" />
+            </svg>
+          </span>
+        )}
+        {users.length > 0 && (
+          <div className="piano-cover-progress" aria-label="Player progress">
+            {users.map((u) => {
+              const pct = chipPercent(u);
+              const stale = chipIsStale(u);
+              return (
+                <span
+                  key={u.id}
+                  className={`piano-cover-progress__chip${stale ? ' is-stale' : ''}`}
+                  title={`${u.name || u.id}: ${u.completed}/${u.total}${stale ? ' (resting)' : ''}`}
+                >
+                  <span className="piano-cover-progress__ring">
+                    <svg viewBox="0 0 36 36" aria-hidden="true">
+                      <circle className="piano-cover-progress__ring-track" cx="18" cy="18" r={RING_R} />
+                      <circle
+                        className="piano-cover-progress__ring-fill"
+                        cx="18" cy="18" r={RING_R}
+                        strokeDasharray={`${pct} 100`}
+                        transform="rotate(-90 18 18)"
+                      />
+                    </svg>
+                    <ProfileAvatar id={u.id} name={u.name} />
+                  </span>
+                  <span className="piano-cover-progress__pct">{pct}%</span>
+                </span>
+              );
+            })}
+          </div>
+        )}
+        </span>
+      </button>
+    </li>
+  );
+}

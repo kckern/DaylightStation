@@ -1,4 +1,4 @@
-import { resolveAmbient } from '../../../frontend/src/screen-framework/widgets/resolveAmbient.js';
+import { resolveAmbient } from '../../../frontend/src/composition/screens/widgets/resolveAmbient.js';
 
 const curveA = [{ lux: 0, dim: 0.9 }, { lux: 100, dim: 0.2 }];
 const curveB = [{ lux: 0, dim: 0.8 }, { lux: 50, dim: 0.1 }];

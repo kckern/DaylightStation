@@ -4,7 +4,7 @@ import { relative } from 'node:path';
 /** Read-only access to the exact Git index snapshot that a commit will record. */
 export function listIndexFiles(pathspecs = []) {
   const output = execFileSync('git', ['ls-files', '-z', '--', ...pathspecs], {
-    encoding: 'utf8',
+    encoding: 'utf8', maxBuffer: 8 * 1024 * 1024,
   });
   return output.split('\0').filter(Boolean);
 }

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { useMediaRecorderCapture } from '@/modules/VoiceCapture/useMediaRecorderCapture.js';
-import { submitFeedback } from '@/modules/Feedback/feedbackApi.js';
+import { submitFeedback } from '../../../lib/diagnostics/feedbackApi.js';
 import { AppButton, MicLevelIndicator } from '@/modules/Fitness/shared/primitives';
 import getLogger from '@/lib/logging/Logger.js';
 import './FitnessFeedback.scss';

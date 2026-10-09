@@ -3,15 +3,15 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import PartyGamesApp from './PartyGamesApp.jsx';
 import AppContainer from '@/modules/AppContainer/AppContainer.jsx';
-import { ScreenAutoplay } from '@/screen-framework/ScreenRenderer.jsx';
+import { ScreenAutoplay } from '../../../../../composition/screens/ScreenRenderer.jsx';
 const navigation = vi.hoisted(() => ({ push: null }));
 vi.mock('@/context/useMenuNavigationContext.js',()=>({useMenuNavigationContext:()=>({push:navigation.push})}));
-vi.mock('@/screen-framework/widgets/builtins.js',()=>({registerBuiltinWidgets:()=>{}}));
+vi.mock('../../../../../composition/screens/widgets/builtins.js',()=>({registerBuiltinWidgets:()=>{}}));
 vi.mock('@/lib/fkb.js',async importOriginal=>({...await importOriginal(),bindBackButton:()=>{},enableGlobalKeyCapture:()=>{}}));
 import {fetchBoot,createSession} from './sessionClient.js';
 vi.mock('./sessionClient.js',()=>({fetchBoot:vi.fn(),createSession:vi.fn()}));
 vi.mock('@/hooks/useWebSocket.js',()=>({useWebSocketStatus:()=>({connected:true})}));
-vi.mock('../../../../../screen-framework/input/adapters/GamepadAdapter.js',()=>({acquireGamepadInputHost:()=>({release:()=>{}}),bindNextGamepadPress:()=>{}}));
+vi.mock('../../../../../../../capabilities/screen-host/browser/input/adapters/GamepadAdapter.js',()=>({acquireGamepadInputHost:()=>({release:()=>{}}),bindNextGamepadPress:()=>{}}));
 vi.mock('../effects/EffectOverlay.jsx',()=>({default:()=> <div>Effect rail</div>}));
 vi.mock('./PartyGamesExperience.jsx',()=>({default:({onComplete,sessionId})=><button onClick={()=>onComplete({outcome:{kind:'completed'},scores:[]})}>Complete {sessionId}</button>}));
 const config={household_members:[{id:'a',name:'Alice'},{id:'b',name:'Bob'}],team_presets:[]};

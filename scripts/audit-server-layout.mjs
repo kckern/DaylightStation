@@ -1,5 +1,6 @@
 // Destination layout mapping shared by the static layer and filesystem gates.
 // Keep evidence paths physical; only rule selection uses the legacy layer names.
+import { declaredServerEntry } from './owner-entry-policy.mjs';
 export const DESTINATION_ROOTS = ['modules', 'capabilities'];
 const LEGACY_LAYERS = Object.freeze({
   domain: '2_domains',
@@ -16,7 +17,7 @@ export function isDestinationServerFile(file) {
 
 export function destinationServerPath(file) {
   const match = file?.match(/(?:^|\/)(modules|capabilities)\/([^/]+)\/server\/(domain|application|adapters|api|rendering|composition)\/(.*)$/);
-  return match ? { tree: match[1], owner: match[2], layer: match[3], suffix: match[4] } : null;
+  return match ? { tree: match[1], owner: match[2], layer: match[3], suffix: match[4] } : declaredServerEntry(file);
 }
 
 export function matchesAuditLayer(file, legacyLayer) {

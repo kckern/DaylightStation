@@ -1,0 +1,21 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,symlinkSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join,dirname} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {spawnSync} from 'node:child_process';
+const repo=fileURLToPath(new URL('../../../',import.meta.url));
+for(const forbidden of [false,true])test(`filesystem CLI ignores dependency links while ${forbidden?'rejecting':'scanning'} actual owned source`,t=>{
+ const root=mkdtempSync(join(tmpdir(),'fs-gate-walk-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
+ const put=(name,source)=>{const file=join(root,name);mkdirSync(dirname(file),{recursive:true});writeFileSync(file,source);};
+ for(const name of ['audit-direct-fs-imports.mjs','audit-server-layout.mjs','owner-entry-policy.mjs'])put('scripts/'+name,readFileSync(join(repo,'scripts',name),'utf8'));
+ symlinkSync(join(repo,'node_modules'),join(root,'node_modules'));
+ put('modules/piano/server/application/Owned.mjs',forbidden?"import fs from 'node:fs';":"export const owned=true;");
+ put('modules/piano/server/node_modules/application/Dependency.mjs',"import fs from 'node:fs';");
+ symlinkSync(join(root,'modules/piano/server'),join(root,'modules/piano/server/loop'));
+ const result=spawnSync(process.execPath,[join(root,'scripts/audit-direct-fs-imports.mjs')],{cwd:root,encoding:'utf8',timeout:3000});
+ assert.equal(result.status,forbidden?1:0,result.stdout+result.stderr);
+ assert.doesNotMatch(result.stderr,/ELOOP|Dependency|\/loop\//);
+ if(forbidden)assert.match(result.stderr,/Owned\.mjs:1 direct node:fs import/);else assert.match(result.stdout,/1 runtime files checked/);
+});

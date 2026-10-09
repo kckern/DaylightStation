@@ -21,7 +21,7 @@ vi.mock('../../../frontend/src/hooks/useWebSocket.js', () => ({
   useWebSocketSubscription: vi.fn(),
 }));
 
-import ArtMode from '../../../frontend/src/screen-framework/widgets/ArtMode.jsx';
+import ArtMode from '../../../frontend/src/composition/screens/widgets/ArtMode.jsx';
 
 const featuredCalls = () => apiCalls.filter((u) => u.includes('art/featured')).length;
 

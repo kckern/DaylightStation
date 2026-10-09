@@ -5,6 +5,10 @@ frontend/node_modules
 frontend/dist
 frontend/build
 backend/node_modules
+/modules/*/server/node_modules
+/modules/*/browser/node_modules
+/capabilities/*/server/node_modules
+/capabilities/*/browser/node_modules
 *.yml
 !content/seeds/**/*.yml
 !docker-compose.test.yml
@@ -79,6 +83,9 @@ config.app-local.yml
 !scripts/audit-server-layout.mjs
 !scripts/audit-baseline.json
 !scripts/gate-vitest.mjs
+!scripts/setup-owner-dependencies.mjs
+!scripts/audit-owner-boundaries.mjs
+!scripts/owner-entry-policy.mjs
 !scripts/audit-baseline.vitest.txt
 !scripts/build-daylight.sh
 !scripts/school-smoke.mjs
@@ -250,3 +257,5 @@ docs/_wip/audits/**/measurements.json
 # Already-tracked files are unaffected (gitignore only governs new adds), so
 # the small curated evidence indexes committed alongside an audit stay.
 docs/_wip/audits/**/*.json
+
+!scripts/audit-owner-boundaries.mjs

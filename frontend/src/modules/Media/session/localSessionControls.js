@@ -28,8 +28,8 @@
 // The facade mirrors `controller.sessionControls` on a remote screen
 // (peek/RemoteSessionController.js): every method returns a Promise of
 // `{ ok, code? }`, and `getState()` returns the §9.14 block.
-import { createScreenSessionControls } from '../../../screen-framework/session/screenSessionControls.js';
-import { createContinuationResolver } from '../../../screen-framework/session/continuationResolver.js';
+import { createScreenSessionControls } from "../../../../../capabilities/screen-host/browser/session.mjs";
+import { createContinuationResolver } from "../../../../../capabilities/screen-host/browser/session.mjs";
 import mediaLog from '../logging/mediaLog.js';
 
 export const LOCAL_CONTROLS_STORAGE_PREFIX = 'media-app.session-controls.v1:';

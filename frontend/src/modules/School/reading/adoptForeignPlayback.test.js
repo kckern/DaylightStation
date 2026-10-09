@@ -70,7 +70,7 @@ describe('resolveAdoptablePlayback', () => {
 // returns `{ snapshot, identity, capabilities }`; state, current item and
 // position live under `snapshot`. The fixtures above were flat, which is why
 // every real adoption would have been declined `no-owner` while they passed.
-import { createSessionSource } from '../../../screen-framework/publishers/SessionSource.js';
+import { createSessionSource } from '../../../../../capabilities/playback/browser/sessions/SessionSource.js';
 
 describe('resolveAdoptablePlayback — through the real session source', () => {
   it('proves the field case from a capture built by createSessionSource', async () => {

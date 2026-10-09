@@ -100,9 +100,9 @@ static void limit(int resource, rlim_t n) {
 }
 int main(int argc,char **argv) {
   if (argc != 11) { fprintf(stderr,"usage: landlock-runner scratch node manifest toolroot loader entry outside pack target baseline-receipt\n"); return 2; }
-  if (strcmp(argv[8],"gratitude") && strcmp(argv[8],"browser") && strcmp(argv[8],"stored-shape") && strcmp(argv[8],"build") && strcmp(argv[8],"integration") && strcmp(argv[8],"hook")) { fprintf(stderr,"unsupported pack\n"); return 2; }
+  if (strcmp(argv[8],"gratitude") && strcmp(argv[8],"browser") && strcmp(argv[8],"stored-shape") && strcmp(argv[8],"build") && strcmp(argv[8],"integration") && strcmp(argv[8],"hook") && strcmp(argv[8],"m2")) { fprintf(stderr,"unsupported pack\n"); return 2; }
   if (strcmp(argv[9],"baseline") && strcmp(argv[9],"candidate")) { fprintf(stderr,"unsupported target\n"); return 2; }
-  if (!strcmp(argv[9],"candidate") && strcmp(argv[8],"gratitude") && strcmp(argv[8],"browser")) return 2;
+  if (!strcmp(argv[9],"candidate") && strcmp(argv[8],"gratitude") && strcmp(argv[8],"browser") && strcmp(argv[8],"m2")) return 2;
   char *scratch=realpath(argv[1],NULL),*node=realpath(argv[2],NULL),*outside=realpath(argv[7],NULL);
   if (!scratch || !node || !outside) fail("realpath");
   char output[4096];
@@ -142,7 +142,7 @@ int main(int argc,char **argv) {
   if (syscall(SYS_landlock_restrict_self,fd,0)) fail("restrict self");
   close(fd);
   if (syscall(SYS_close_range,3,~0U,0)) fail("close_range");
-  alarm(hook?600:(build?180:45));
+  alarm(hook?1800:(build?180:45));
   filter(children);
   errno=0; int s=socket(AF_INET,SOCK_STREAM,0);
   if (s!=-1 || errno!=EPERM) fail("socket unexpectedly permitted");

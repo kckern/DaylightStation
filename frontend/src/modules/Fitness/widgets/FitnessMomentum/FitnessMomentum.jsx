@@ -3,7 +3,7 @@
 // their height and labels are rings while their bands retain the familiar
 // green/yellow/orange/red contribution breakdown.
 import React, { useMemo } from 'react';
-import { useScreenData } from '@/screen-framework/data/useScreenData.js';
+import { useScreenData } from "../../../../../../capabilities/screen-host/browser/data.mjs";
 import { useFitnessScreen } from '@/modules/Fitness/useFitnessScreen.js';
 import { resolveUserDisplayName } from '@/hooks/fitness/DisplayNameResolver.js';
 import RingIcon from '@/lib/icons/RingIcon.jsx';

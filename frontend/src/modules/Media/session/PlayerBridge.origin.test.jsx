@@ -26,7 +26,7 @@ let appliedShader = null;
 let mountedMediaRegistration = null;
 let mountedOperationObserver = null;
 let beginRendererBoundary = null;
-vi.mock('../../Player/Player.jsx', () => ({
+vi.mock('../../../../../capabilities/playback/browser/player/Player.jsx', () => ({
   default: React.forwardRef(function MockPlayer(props, ref) {
     latestPlayerProps = props;
     React.useImperativeHandle(ref, () => ({

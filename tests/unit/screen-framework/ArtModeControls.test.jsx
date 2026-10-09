@@ -19,8 +19,8 @@ vi.mock('../../../frontend/src/lib/logging/singleton.js', () => ({
 }));
 vi.mock('../../../frontend/src/hooks/useWebSocket.js', () => ({ useWebSocketSubscription: vi.fn() }));
 
-import ArtMode from '../../../frontend/src/screen-framework/widgets/ArtMode.jsx';
-import { getActionBus } from '../../../frontend/src/screen-framework/input/ActionBus.js';
+import ArtMode from '../../../frontend/src/composition/screens/widgets/ArtMode.jsx';
+import { getActionBus } from '../../../capabilities/screen-host/browser/input/ActionBus.js';
 
 const featuredCalls = () => apiCalls.filter((u) => u.includes('art/featured')).length;
 

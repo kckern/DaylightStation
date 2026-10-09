@@ -1,16 +1,16 @@
 import React, { useCallback, useEffect, Suspense, lazy } from 'react';
 import { useMenuNavigationContext } from '../../context/useMenuNavigationContext.js';
-import { useScreenOverlay } from '../../screen-framework/overlays/ScreenOverlayProvider.jsx';
+import { useScreenOverlay } from "../../../../capabilities/screen-host/browser/overlays.mjs";
 import { TVMenu } from './Menu';
-import { PlayerOverlayLoading } from '../Player/Player';
+import { PlayerOverlayLoading } from "../../../../capabilities/playback/browser/public.mjs";
 import { PlexMenuRouter } from './PlexMenuRouter';
 import { getLogger } from '../../lib/logging/Logger.js';
-import { getActionBus } from '../../screen-framework/input/ActionBus.js';
+import { getActionBus } from "../../../../capabilities/screen-host/browser/input.mjs";
 import { artSceneIdFromDisplay } from './displaySelection.js';
 import SurroundHost from '../Surround/SurroundHost.jsx';
 
 // Lazy load components that may be rendered from the stack
-const Player = lazy(() => import('../Player/Player').then(m => ({ default: m.default || m.Player })));
+const Player = lazy(() => import('../../../../capabilities/playback/browser/public.mjs').then(m => ({ default: m.default || m.Player })));
 const AppContainer = lazy(() => import('../AppContainer/AppContainer').then(m => ({ default: m.default || m.AppContainer })));
 const Displayer = lazy(() => import('../Displayer/Displayer').then(m => ({ default: m.default })));
 const LaunchCard = lazy(() => import('./LaunchCard.jsx'));

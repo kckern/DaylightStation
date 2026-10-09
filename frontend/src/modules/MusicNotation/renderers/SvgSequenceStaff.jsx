@@ -26,7 +26,7 @@ import {
 import './SvgSequenceStaff.scss';
 // The action-staff__* classes this renderer emits are styled there; import it
 // here so every screen that draws notation gets them, whatever else it loads.
-import '../../Piano/components/ActionStaff.scss';
+import "../../../../../modules/piano/browser/action-staff-style.mjs";
 
 /**
  * SvgSequenceStaff — the house engraver, extended from "a chord" to "an ordered

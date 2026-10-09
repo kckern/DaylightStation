@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } 
 
 const h = vi.hoisted(() => ({ handler: null, overlay: { shown: [], dismissed: 0 }, cues: [], capture: null }));
 
-vi.mock('../../../screen-framework/publishers/useSessionSourceContext.js', () => ({
+vi.mock('../../../../../capabilities/playback/browser/sessions/useSessionSourceContext.js', () => ({
   useSessionSourceContext: () => ({ capture: () => h.capture }),
 }));
 
@@ -19,7 +19,7 @@ vi.mock('../../../hooks/useWebSocket.js', () => ({
   useWebSocketSubscription: (_topic, cb) => { h.handler = cb; },
 }));
 
-vi.mock('../../../screen-framework/overlays/ScreenOverlayProvider.jsx', () => ({
+vi.mock('../../../../../capabilities/screen-host/browser/overlays/ScreenOverlayProvider.jsx', () => ({
   useScreenOverlay: () => ({
     showOverlay: (Component, props, options) => { h.overlay.shown.push({ Component, props, options }); },
     dismissOverlay: () => { h.overlay.dismissed += 1; },
@@ -29,7 +29,7 @@ vi.mock('../../../screen-framework/overlays/ScreenOverlayProvider.jsx', () => ({
 
 // The Player is a 1,500-line media stack; this suite is about what is handed
 // TO it and what comes back OUT of it.
-vi.mock('../../Player/Player.jsx', () => ({ default: () => null }));
+vi.mock('../../../../../capabilities/playback/browser/player/Player.jsx', () => ({ default: () => null }));
 
 vi.mock('../selfService/scanCeremonySound.js', () => ({
   playScanCeremonyTone: (tone) => { h.cues.push(tone); },

@@ -99,10 +99,11 @@
     "dscli": "./cli/dscli.mjs"
   },
   "scripts": {
-    "prepare": "node scripts/install-git-hooks.mjs",
+    "prepare": "node scripts/install-git-hooks.mjs && node scripts/setup-owner-dependencies.mjs",
     "hooks:install": "node scripts/install-git-hooks.mjs",
     "audit:fs": "node scripts/audit-direct-fs-imports.mjs",
     "audit:layers": "node scripts/audit-layer-imports.mjs",
+    "audit:owners": "node scripts/audit-owner-boundaries.mjs",
     "audit:ui": "node scripts/audit-ui-tokens.mjs",
     "audit:css-ownership": "node scripts/audit-css-ownership.mjs",
     "test:refactor": "vitest run tests/unit/tooling/auditLayerImports.test.mjs tests/unit/tooling/auditDirectFsImports.test.mjs tests/unit/system/vendorError.test.mjs tests/unit/system/systemErrors.test.mjs tests/unit/system/errorHandlerString.test.mjs tests/unit/system/deepMerge.test.mjs tests/unit/system/logging/inputChannelRouting.test.mjs tests/unit/system/logging/sessionEventsFile.test.mjs tests/unit/domains/fitness/zoneSSOT.test.mjs tests/unit/domains/fitness/receiptStats.char.test.mjs tests/unit/domains/messaging/conversationStoredShape.char.test.mjs tests/unit/domains/gratitude/gratitudeStoredShape.char.test.mjs tests/unit/config/timezoneDefault.test.mjs tests/unit/applications/fitness/querySessionsDateWindow.test.mjs tests/unit/applications/fitness/manageAccessEligibility.test.mjs tests/unit/applications/admin/yamlConfigFileService.test.mjs tests/unit/applications/piano/GetCourseProgress.char.test.mjs tests/unit/applications/piano/GetPlayableUnits.char.test.mjs tests/unit/domains/health/foodCatalogStoredShape.char.test.mjs",
@@ -112,8 +113,9 @@
     "dev:kill": "node scripts/port-manager.mjs kill 3112",
     "start": "concurrently \"npm run backend\" \"npm run frontend\"",
     "start:dev": "concurrently \"npm run backend:dev\" \"npm run frontend:dev\"",
+    "prestart:dev": "node scripts/setup-owner-dependencies.mjs && node scripts/setup-owner-dependencies.mjs --check",
     "backend": "node backend/index.js",
-    "backend:dev": "nodemon --watch backend --ext js,mjs,json,yml backend/index.js",
+    "backend:dev": "nodemon --watch backend --watch modules --watch capabilities --ext js,mjs,json,yml backend/index.js",
     "backend:log": "node backend/index.js 2>&1 | tee dev.log",
     "frontend": "npm run dev --prefix frontend",
     "frontend:dev": "npm run dev --prefix frontend",

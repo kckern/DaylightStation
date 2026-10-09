@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { boxAspect, artLayout, coverCropPerSide } from '../../../frontend/src/screen-framework/widgets/artLayout.js';
+import { boxAspect, artLayout, coverCropPerSide } from '../../../frontend/src/composition/screens/widgets/artLayout.js';
 
 const FRAME = { top: 11.9, right: 6.5, bottom: 11.1, left: 7.0 };
 const CFG = { frame: FRAME, matMargin: 4, crop: 0.08 };

@@ -116,11 +116,11 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import PropTypes from 'prop-types';
-import Player from '../../Player/Player.jsx';
+import { Player as Player } from "../../../../../capabilities/playback/browser/public.mjs";
 import SurroundFrame from '../../Surround/SurroundFrame.jsx';
 import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
-import { useScreenOverlay } from '../../../screen-framework/overlays/ScreenOverlayProvider.jsx';
-import { useScreenAction } from '../../../screen-framework/input/useScreenAction.js';
+import { useScreenOverlay } from "../../../../../capabilities/screen-host/browser/overlays.mjs";
+import { useScreenAction } from "../../../../../capabilities/screen-host/browser/input.mjs";
 import { useMediaClockState } from '../../../lib/Player/useMediaClock.js';
 import { useMediaGate } from '../../../lib/Player/gate/useMediaGate.js';
 import { useCheckpointGate } from './useCheckpointGate.js';

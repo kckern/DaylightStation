@@ -1,0 +1,221 @@
+import { useEffect, useRef } from 'react';
+import { wsService } from '../../../../frontend/src/services/WebSocketService.js';
+import { buildCommandAck } from '@shared-contracts/media/envelopes.mjs';
+import { COMMAND_HANDLER_PRESENCE_TOPIC } from '@shared-contracts/media/topics.mjs';
+import getLogger from '../../../../frontend/src/lib/logging/Logger.js';
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'CommandAckPublisher' });
+  return _logger;
+}
+
+/**
+ * Events emitted by `useScreenCommands` that carry a `commandId` correlator.
+ * We listen for these on the ActionBus and ack them as "received by handler".
+ */
+// `media:adopt-snapshot` is deliberately absent: a move is acked by its outcome
+// (media:session-control-applied / command-handler-error from ScreenActionHandler),
+// so a failed adopt reaches the mover at once instead of after the 45 s window.
+const ACKED_COMMAND_EVENTS = Object.freeze([
+  'media:playback',
+  'media:seek-abs',
+  'media:go-live',
+  'media:seek-rel',
+  'media:queue-op',
+  'media:config-set',
+  'escape',
+  'display:sleep',
+  'display:wake',
+]);
+
+const ERROR_EVENT = 'command-handler-error';
+
+const DEDUPE_TTL_MS = 60_000;
+const PRESENCE_INTERVAL_MS = 10_000;
+
+/**
+ * useCommandAckPublisher - emits CommandAck (§6.3) for every dispatched
+ * command envelope reaching the ActionBus.
+ *
+ * v1 contract: an ack is sent the moment a command-dispatch event with a
+ * `commandId` is emitted on the ActionBus (i.e. "the command reached a
+ * handler"). Downstream handlers do not yet report their own success/failure;
+ * handlers that explicitly fail can emit `command-handler-error` with
+ * `{ commandId, error, code? }` to produce an `ok: false` ack.
+ *
+ * Each commandId is acked at most once within a 60s rolling window to keep
+ * the channel quiet if the same event is re-emitted on the bus.
+ *
+ * Future work (out of scope): handlers emit explicit acks after actually
+ * applying state changes, replacing this dispatch-time optimism.
+ *
+ * @param {object} opts
+ * @param {string} opts.deviceId   - Required; hook is a no-op when falsy.
+ * @param {object} opts.actionBus  - ActionBus with `.subscribe(action, handler)`.
+ */
+export function useCommandAckPublisher({ deviceId, actionBus, handoffExecutor = null } = {}) {
+  const deviceIdRef = useRef(deviceId);
+  deviceIdRef.current = deviceId;
+  const busRef = useRef(actionBus);
+  busRef.current = actionBus;
+
+  useEffect(() => {
+    if (!deviceId) return undefined;
+    const bus = busRef.current;
+    if (!bus || typeof bus.subscribe !== 'function') return undefined;
+
+    // commandId -> timestamp of last ack. Used for the 60s dedupe window.
+    const recent = new Map();
+
+    const isStillRecent = (ts) => (Date.now() - ts) < DEDUPE_TTL_MS;
+
+    const pruneExpired = () => {
+      for (const [cid, ts] of recent) {
+        if (!isStillRecent(ts)) recent.delete(cid);
+      }
+    };
+
+    const publishAck = ({ commandId, ok, error, code, handoff, appliedAs, requestedOp }) => {
+      if (typeof commandId !== 'string' || commandId.length === 0) {
+        logger().debug('ack-skipped-no-commandId', { ok });
+        return;
+      }
+      pruneExpired();
+      if (recent.has(commandId)) {
+        logger().debug('ack-deduped', { commandId });
+        return;
+      }
+      recent.set(commandId, Date.now());
+
+      try {
+        const ack = buildCommandAck({
+          deviceId: deviceIdRef.current,
+          commandId,
+          ok,
+          error,
+          code,
+          handoff,
+          appliedAs,
+          requestedOp,
+          appliedAt: new Date().toISOString(),
+        });
+        wsService.send(ack);
+        logger().debug('ack-sent', { commandId, ok, ...(appliedAs ? { appliedAs } : {}) });
+      } catch (err) {
+        logger().warn('ack-build-failed', { commandId, error: String(err?.message ?? err) });
+      }
+    };
+
+    const successHandler = (payload) => {
+      const commandId = payload?.commandId;
+      if (!commandId) return;
+      // Add requires a durable queue-owner mutation. Its receipt event is not
+      // success; ScreenActionHandler emits media:queue-op-applied only after the
+      // owning Player exposes the appended item in its post-mutation snapshot.
+      if (['add', 'item-action', 'undo', 'reorder'].includes(payload?.op)) return;
+      // Shuffle/repeat/volume are acked by their outcome (ScreenActionHandler.handleMediaConfigSet), so a bad value or a missing owner reaches the Remote.
+      if (payload?.setting && ['shuffle', 'repeat', 'volume'].includes(payload.setting)) return;
+      publishAck({ commandId, ok: true });
+    };
+
+    const queueOpAppliedHandler = (payload) => {
+      if (!['add', 'item-action', 'undo', 'reorder'].includes(payload?.op)) return;
+      // Add only (RQ-PLAY-10) rewrote a Play into an Add — the ack says so.
+      publishAck({
+        commandId: payload?.commandId, ok: true,
+        ...(payload?.appliedAs ? { appliedAs: payload.appliedAs } : {}),
+        ...(payload?.requestedOp ? { requestedOp: payload.requestedOp } : {}),
+      });
+    };
+
+    // Session controls (sleep timer, put-back, countdown, session flags) are
+    // acked by their outcome, emitted by ScreenSessionControlsHost.
+    const sessionControlAppliedHandler = (payload) => {
+      // Show briefly (RQ-PLAY-11) answers a play with `appliedAs: "brief"`.
+      publishAck({ commandId: payload?.commandId, ok: true, ...(payload?.appliedAs ? { appliedAs: payload.appliedAs } : {}) });
+    };
+
+    const errorHandler = (payload) => {
+      const commandId = payload?.commandId;
+      if (!commandId) return;
+      publishAck({
+        commandId,
+        ok: false,
+        error: payload?.error != null ? String(payload.error) : undefined,
+        code: payload?.code,
+      });
+    };
+
+    // Receipt-time success is specifically unsafe for handoff: no F3a owner
+    // executor exists to prove capture/start/stop. Return an explicit typed
+    // terminal failure and leave every owner untouched.
+    const handoffUnsupportedHandler = async (payload) => {
+      const commandId = payload?.commandId;
+      const transferId = payload?.transferId;
+      if (!commandId || !transferId) return;
+      if (handoffExecutor?.execute) {
+        const { commandId: _commandId, ...params } = payload;
+        try {
+          const result = await handoffExecutor.execute({ commandId, params });
+          publishAck({
+            commandId,
+            ok: result?.ok === true,
+            error: result?.error,
+            code: result?.code ?? result?.handoff?.code,
+            handoff: result?.handoff,
+          });
+        } catch (err) {
+          publishAck({ commandId, ok: false, error: String(err?.message ?? err) });
+        }
+        return;
+      }
+      publishAck({
+        commandId, ok: false, code: 'HANDOFF_UNSUPPORTED', error: 'Handoff executor unavailable',
+        handoff: { transferId, phase: 'failed', code: 'HANDOFF_UNSUPPORTED' },
+      });
+    };
+
+    const unsubs = [];
+    for (const evt of ACKED_COMMAND_EVENTS) {
+      unsubs.push(bus.subscribe(evt, successHandler));
+    }
+    unsubs.push(bus.subscribe('media:queue-op-applied', queueOpAppliedHandler));
+    unsubs.push(bus.subscribe('media:session-control-applied', sessionControlAppliedHandler));
+    unsubs.push(bus.subscribe('media:handoff', handoffUnsupportedHandler));
+    unsubs.push(bus.subscribe(ERROR_EVENT, errorHandler));
+
+    const presenceTopic = COMMAND_HANDLER_PRESENCE_TOPIC(deviceId);
+    const sendPresence = (online) => {
+      try {
+        wsService.send({
+          topic: presenceTopic,
+          deviceId,
+          online,
+          ts: new Date().toISOString(),
+        });
+      } catch (err) {
+        logger().warn('presence-send-failed', { error: String(err?.message ?? err) });
+      }
+    };
+
+    sendPresence(true);
+    const presenceTimer = setInterval(() => sendPresence(true), PRESENCE_INTERVAL_MS);
+
+    logger().info('mounted', { deviceId });
+
+    return () => {
+      clearInterval(presenceTimer);
+      sendPresence(false);
+      for (const u of unsubs) {
+        try { u?.(); } catch (err) {
+          logger().warn('unsubscribe-failed', { error: String(err?.message ?? err) });
+        }
+      }
+      recent.clear();
+      logger().info('unmounted', { deviceId });
+    };
+  }, [deviceId, handoffExecutor]);
+}
+
+export default useCommandAckPublisher;

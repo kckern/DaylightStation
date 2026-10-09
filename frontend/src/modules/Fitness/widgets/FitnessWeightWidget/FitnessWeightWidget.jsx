@@ -1,6 +1,6 @@
 import React from 'react';
 import { Text, Title, Stack, Badge } from '@mantine/core';
-import { useScreenData } from '@/screen-framework/data/useScreenData.js';
+import { useScreenData } from "../../../../../../capabilities/screen-host/browser/data.mjs";
 import { DashboardCard } from '../_shared/DashboardCard.jsx';
 import Skeleton from '@/lib/ui/Skeleton.jsx';
 

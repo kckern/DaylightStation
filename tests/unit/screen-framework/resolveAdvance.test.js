@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveAdvance } from '../../../frontend/src/screen-framework/widgets/resolveAdvance.js';
+import { resolveAdvance } from '../../../frontend/src/composition/screens/widgets/resolveAdvance.js';
 
 describe('resolveAdvance', () => {
   it('passes explicit triggers through unchanged', () => {

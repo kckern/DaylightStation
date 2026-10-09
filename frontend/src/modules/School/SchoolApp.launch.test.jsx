@@ -109,7 +109,7 @@ vi.mock('./Programs/SentenceLadder/languageApi.js', () => ({
   },
 }));
 
-vi.mock('../Player/Player.jsx', () => ({
+vi.mock('../../../../capabilities/playback/browser/player/Player.jsx', () => ({
   default: ({ play }) => <div data-testid="player-stub">Player: {play?.contentId ?? 'none'}</div>,
 }));
 

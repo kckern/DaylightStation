@@ -6,16 +6,16 @@ import { MantineProvider } from '@mantine/core';
 const mockRestore = vi.fn();
 const mockRefetch = vi.fn().mockResolvedValue(undefined);
 
-vi.mock('@/screen-framework/providers/useScreen.js', () => ({
+vi.mock('../../../../capabilities/screen-host/browser/providers/useScreen.js', () => ({
   useScreen: () => ({ restore: mockRestore, replace: () => () => {} }),
 }));
 
-vi.mock('@/screen-framework/data/useScreenData.js', () => ({
+vi.mock('../../../../capabilities/screen-host/browser/data/useScreenData.js', () => ({
   useScreenDataRefetch: () => mockRefetch,
   useScreenData: () => null,
 }));
 
-vi.mock('@/screen-framework/widgets/registry.js', () => ({
+vi.mock('../../../../capabilities/screen-host/browser/widgets/registry.js', () => ({
   getWidgetRegistry: () => ({ get: () => null }),
 }));
 

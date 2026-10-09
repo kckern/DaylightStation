@@ -12,7 +12,7 @@ vi.mock('../../../frontend/src/lib/logging/Logger.js', () => {
   return { default: () => mockLogger, getLogger: () => mockLogger };
 });
 
-import { RemoteAdapter } from '../../../frontend/src/screen-framework/input/adapters/RemoteAdapter.js';
+import { RemoteAdapter } from '../../../capabilities/screen-host/browser/input/adapters/RemoteAdapter.js';
 
 describe('RemoteAdapter logging', () => {
   let adapter;

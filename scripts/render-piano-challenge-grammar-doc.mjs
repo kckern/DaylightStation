@@ -1,5 +1,5 @@
 /** Render the generated portion of the PianoChallenge reference from AXES/PRESETS. */
-import { AXES, PRESETS } from '../frontend/src/modules/Piano/ask/askSchema.js';
+import { AXES, PRESETS } from '../modules/piano/browser/ask/askSchema.js';
 
 const values = (value) => Array.isArray(value) ? value.map((item) => `\`${item}\``).join(' · ') : null;
 

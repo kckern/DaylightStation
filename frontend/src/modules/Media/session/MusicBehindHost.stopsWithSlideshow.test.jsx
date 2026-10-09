@@ -8,7 +8,7 @@ const session = { snapshot: { state: 'playing', currentItem: { contentId: 'immic
 vi.mock('../controller/useSessionController.js', () => ({
   useSessionController: () => ({ snapshot: session.snapshot, controller: { getSnapshot: () => session.snapshot } }),
 }));
-vi.mock('../../Player/components/MusicBehindLayer.jsx', () => ({
+vi.mock('../../../../../capabilities/playback/browser/player/components/MusicBehindLayer.jsx', () => ({
   MusicBehindLayer: () => <div data-testid="music-layer" />,
 }));
 

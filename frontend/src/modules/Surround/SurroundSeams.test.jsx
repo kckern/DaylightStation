@@ -15,7 +15,7 @@ import { registerSurroundModule } from './registry.js';
 
 const h = vi.hoisted(() => ({ item: null, media: null }));
 
-vi.mock('../Player/Player.jsx', async () => {
+vi.mock('../../../../capabilities/playback/browser/player/Player.jsx', async () => {
   const React = await import('react');
   const Player = React.forwardRef((props, ref) => {
     React.useImperativeHandle(ref, () => ({
@@ -37,7 +37,7 @@ vi.mock('../../context/useMenuNavigationContext.js', () => ({
   MenuNavigationProvider: ({ children }) => children,
 }));
 
-vi.mock('../../screen-framework/overlays/ScreenOverlayProvider.jsx', () => ({
+vi.mock('../../../../capabilities/screen-host/browser/overlays/ScreenOverlayProvider.jsx', () => ({
   useScreenOverlay: () => ({
     registerEscapeInterceptor: vi.fn(),
     unregisterEscapeInterceptor: vi.fn(),
@@ -82,7 +82,7 @@ describe('surround seams', () => {
   describe('ScreenPlayer (WS + URL playback)', () => {
     it('frames the player when the now-playing item is enriched', async () => {
       h.item = { id: 'plex:663134', surround: SURROUND };
-      const { ScreenPlayer } = await import('../../screen-framework/publishers/ScreenPlayer.jsx');
+      const { ScreenPlayer } = await import('../../composition/screens/publishers/ScreenPlayer.jsx');
 
       const { container } = render(<ScreenPlayer play={{ plex: '663134' }} />);
       await settle();
@@ -94,7 +94,7 @@ describe('surround seams', () => {
 
     it('renders the bare player when the item is not enriched', async () => {
       h.item = { id: 'plex:900001' };
-      const { ScreenPlayer } = await import('../../screen-framework/publishers/ScreenPlayer.jsx');
+      const { ScreenPlayer } = await import('../../composition/screens/publishers/ScreenPlayer.jsx');
 
       const { container } = render(<ScreenPlayer play={{ plex: '900001' }} />);
       await settle();

@@ -1,10 +1,12 @@
 /** Standalone preparation config: no inherited root setup or dev server. */
 import fs from 'node:fs';
+import {m2Selected} from './m2-selected.mjs';
+const dom= ['integration','m2'].includes(process.env.PRE_VITEST_MODE);
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 const root=fileURLToPath(new URL('../../../../',import.meta.url)).replace(/\/$/,'');
 if(!process.env.PRE_RUN_ROOT)throw new Error('Isolated root required');
-const selected={
+const selected={m2:m2Selected,
   'stored-shape':['tests/unit/domains/gratitude/gratitudeStoredShape.char.test.mjs'],
   'integration':[
  'tests/unit/domains/gratitude/PrintSelectionService.test.mjs',
@@ -22,9 +24,9 @@ const selected={
 const include=process.env.PRE_VITEST_MODE==='discover'?JSON.parse(fs.readFileSync(path.join(root,'docs/_wip/audits/2026-09-05-application-module-preimplementation/test-population.json'))).files.map(f=>f.path):selected[process.env.PRE_VITEST_MODE];
 if(!include)throw new Error('Explicit allowlisted preparation Vitest mode required');
 export default {
-  plugins:process.env.PRE_VITEST_MODE==='integration'?[{name:'selected-dom-style-resolution',enforce:'pre',resolveId(id){if(id.endsWith('.scss'))return path.join(process.env.PRE_RUN_ROOT,'styles.css');}}]:[],
+  plugins:dom?[{name:'selected-dom-style-resolution',enforce:'pre',resolveId(id){if(id.endsWith('.scss'))return path.join(process.env.PRE_RUN_ROOT,'styles.css');}}]:[],
   root,esbuild:{jsx:'automatic',jsxImportSource:'react'},cacheDir:path.join(process.env.PRE_RUN_ROOT,'vite-cache'),
-  resolve:{dedupe:['react','react-dom'],alias:{'@':path.join(root,'frontend/src'),'react':path.join(process.env.PRE_TOOLCHAIN_ROOT,'frontend/node_modules/react'),'react-dom':path.join(process.env.PRE_TOOLCHAIN_ROOT,'frontend/node_modules/react-dom'),'@testing-library':path.join(process.env.PRE_TOOLCHAIN_ROOT,'frontend/node_modules/@testing-library'),...Object.fromEntries([['#adapters','1_adapters'],['#apps','3_applications'],['#system','0_system'],['#domains','2_domains'],['#api','4_api']].map(([alias,layer])=>[alias,path.join(root,'backend/src',layer)])),'#backend':path.join(root,'backend')}},
+  resolve:{dedupe:['react','react-dom'],alias:{'@':path.join(root,'frontend/src'),'react':path.join(process.env.PRE_TOOLCHAIN_ROOT,'frontend/node_modules/react'),'@shared-contracts':path.join(root,'shared/contracts'),'@shared-presentation':path.join(root,'shared/presentation/scenes'),'@shared-gaming':path.join(root,'shared/gaming'),'@shared-music':path.join(root,'shared/music'),'@shared-interaction':path.join(root,'shared/interaction'),'react-dom':path.join(process.env.PRE_TOOLCHAIN_ROOT,'frontend/node_modules/react-dom'),'@testing-library':path.join(process.env.PRE_TOOLCHAIN_ROOT,'frontend/node_modules/@testing-library'),...Object.fromEntries([['#adapters','1_adapters'],['#apps','3_applications'],['#system','0_system'],['#domains','2_domains'],['#api','4_api']].map(([alias,layer])=>[alias,path.join(root,'backend/src',layer)])),'#backend':path.join(root,'backend')}},
   server:{host:"127.0.0.1",watch:null,middlewareMode:true,hmr:false},
-  test:{include,exclude:['**/node_modules/**'],environment:'node',setupFiles:process.env.PRE_VITEST_MODE==='integration'?[path.join(process.env.PRE_RUN_ROOT,'vitest-setup.mjs')]:[],globals:process.env.PRE_VITEST_MODE==='integration',watch:false,cache:false,pool:process.env.PRE_VITEST_MODE==='integration'?'forks':'threads',maxWorkers:1,fileParallelism:false,passWithNoTests:false}
+  test:{include,exclude:['**/node_modules/**'],environment:process.env.PRE_VITEST_MODE==='m2'?path.join(root,'tests/_infrastructure/frontend-env.mjs'):'node',setupFiles:dom?[path.join(process.env.PRE_RUN_ROOT,'vitest-setup.mjs')]:[],globals:dom,watch:false,cache:false,pool:dom?'forks':'threads',maxWorkers:1,fileParallelism:false,passWithNoTests:false}
 };

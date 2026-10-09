@@ -43,7 +43,7 @@ function playerApi() {
     },
   };
 }
-vi.mock('../../Player/Player.jsx', async () => {
+vi.mock('../../../../../capabilities/playback/browser/player/Player.jsx', async () => {
   const { forwardRef, useImperativeHandle } = await import('react');
   return {
     default: forwardRef(({ play, clear, onProgress }, ref) => {

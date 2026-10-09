@@ -1,7 +1,7 @@
 import React from 'react';
 import { Text, Title, Group, Stack, Badge, Paper } from '@mantine/core';
 import { DaylightMediaPath } from '@/lib/api.mjs';
-import { useScreenData } from '@/screen-framework/data/useScreenData.js';
+import { useScreenData } from "../../../../../../capabilities/screen-host/browser/data.mjs";
 import { useFitnessScreen } from '@/modules/Fitness/useFitnessScreen.js';
 import { DashboardCard } from '../_shared/DashboardCard.jsx';
 import './FitnessUpNextWidget.scss';

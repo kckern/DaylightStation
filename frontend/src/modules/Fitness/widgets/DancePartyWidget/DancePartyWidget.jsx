@@ -1,6 +1,6 @@
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import PropTypes from 'prop-types';
-import Player from '@/modules/Player/Player.jsx';
+import { Player as Player } from "../../../../../../capabilities/playback/browser/public.mjs";
 import { ContentDisplayUrl } from '@/lib/api.mjs';
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import { resolveDancePlaylists } from './resolveDancePlaylists.js';

@@ -37,7 +37,7 @@ import useMediaChrome from './useMediaChrome.js';
 import SchoolPlayerChrome from './SchoolPlayerChrome.jsx';
 
 // Player is heavy — code-split it so the grid/detail views don't pay for it.
-const Player = lazy(() => import('../../Player/Player.jsx'));
+const Player = lazy(() => import('../../../../../capabilities/playback/browser/public.mjs'));
 
 const PROGRESS_THROTTLE_MS = 10000;
 // CD-player rule for the leftmost transport button: past this point into the

@@ -1,0 +1,40 @@
+name: Architecture
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  boundaries:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      # Static checks need only the root tooling dependencies. Do not invoke
+      # application setup, native package installers, or household services.
+      - name: Install locked tooling dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Enforce application ownership and server layers
+        run: |
+          npm run audit:owners
+          npm run audit:layers
+          npm run audit:fs
+          npm run audit:links
+      - name: Verify working-tree and staged violation controls
+        run: >-
+          node --test
+          tests/unit/tooling/fsGateTraversal.case.mjs
+          tests/unit/tooling/ownerPrivateBoundaries.case.mjs
+          tests/unit/tooling/auditDestinationLayers.case.mjs
+          tests/unit/tooling/esmDestinationServer.case.mjs
+      - name: Verify existing architecture rules
+        run: node node_modules/vitest/vitest.mjs run --config tests/unit/tooling/vitest.audit.config.mjs

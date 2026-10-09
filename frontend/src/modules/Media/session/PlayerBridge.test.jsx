@@ -28,7 +28,7 @@ let beginRendererBoundary = null;
 // one completion per visit; only a renderer boundary (a new visit) or a stop
 // releases it. A seek does NOT.
 let completionKeyHeld = false;
-vi.mock('../../Player/Player.jsx', () => ({
+vi.mock('../../../../../capabilities/playback/browser/player/Player.jsx', () => ({
   default: React.forwardRef(function MockPlayer(props, ref) {
     latestPlayerProps = props;
     React.useImperativeHandle(ref, () => ({

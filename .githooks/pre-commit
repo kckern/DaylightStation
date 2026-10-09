@@ -14,6 +14,8 @@ node scripts/audit-direct-fs-imports.mjs
 # dependency and link-integrity rules on every commit.
 npm run audit:layers
 node scripts/audit-layer-imports.mjs --staged
+npm run audit:owners
+node scripts/audit-owner-boundaries.mjs --staged
 npm run audit:ui
 npm run audit:css-ownership
 npm run audit:links

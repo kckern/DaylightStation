@@ -1,0 +1,499 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
+import useDocumentTitle from '../../hooks/useDocumentTitle.js';
+import { DaylightAPI } from '../../lib/api.mjs';
+import { PanelRenderer } from "../../../../capabilities/screen-host/browser/public.mjs";
+import { ScreenDataProvider } from "../../../../capabilities/screen-host/browser/data.mjs";
+import { ScreenProvider } from "../../../../capabilities/screen-host/browser/providers.mjs";
+import { ScreenOverlayProvider, useScreenOverlay } from "../../../../capabilities/screen-host/browser/overlays.mjs";
+import { PipManager } from "../../../../capabilities/screen-host/browser/pip.mjs";
+import { usePip } from "../../../../capabilities/screen-host/browser/pip.mjs";
+import { ScreenVolumeProvider } from "../../../../capabilities/screen-host/browser/providers.mjs";
+import { MasterVolumeToast } from "../../../../capabilities/screen-host/browser/overlays.mjs";
+import { PortalKeysBridge } from "../../../../capabilities/screen-host/browser/lifecycle.mjs";
+import { registerBuiltinWidgets } from './widgets/builtins.js';
+import { getActionBus } from "../../../../capabilities/screen-host/browser/input.mjs";
+import { createInputManager } from "../../../../capabilities/screen-host/browser/input.mjs";
+import { ScreenActionHandler } from './actions/ScreenActionHandler.jsx';
+import { getWidgetRegistry } from "../../../../capabilities/screen-host/browser/public.mjs";
+import { useScreenSubscriptions } from "../../../../capabilities/screen-host/browser/subscriptions.mjs";
+import { useScreenCommands } from "../../../../capabilities/screen-host/browser/commands.mjs";
+import { ScreenSessionPublishers } from './ScreenSessionPublishers.jsx';
+import { ScreenScreensaver } from './ScreenScreensaver.jsx';
+import { ScreenExit } from './ScreenExit.jsx';
+import { ScreenPresencePublisher } from "../../../../capabilities/screen-host/browser/publishers.mjs";
+import { SessionSourceProvider } from "../../../../capabilities/playback/browser/sessions.mjs";
+import { createRegistrySessionSource } from "../../../../capabilities/playback/browser/sessions.mjs";
+import { createScreenSessionControls } from "../../../../capabilities/screen-host/browser/session.mjs";
+import { createScreenPlayerFeatures } from "../../../../capabilities/screen-host/browser/session.mjs";
+import { ScreenSessionControlsHost } from './session/ScreenSessionControlsHost.jsx';
+import { getPlayerSessionRegistry } from "../../../../capabilities/playback/browser/sessions.mjs";
+import { ScreenSceneProvider } from "../../../../capabilities/screen-host/browser/providers.mjs";
+import { ScreenAmbientProvider } from "../../../../capabilities/screen-host/browser/ambient.mjs";
+import { SurroundSettingContext } from '../../modules/Surround/SurroundSettingContext.js';
+import { MenuNavigationProvider } from '../../context/MenuNavigationContext.jsx';
+import { useMenuNavigationContext } from '../../context/useMenuNavigationContext.js';
+import { parseAutoplayParams, autoplayToAction, AUTOPLAY_ACTIONS } from '../../lib/parseAutoplayParams.js';
+import { getApp } from '../../lib/appRegistry.js';
+import { bindBackButton, enableGlobalKeyCapture } from '../../lib/fkb.js';
+import getLogger from '../../lib/logging/Logger.js';
+import { useInitialActionGate } from "../../../../capabilities/screen-host/browser/lifecycle.mjs";
+import { useFleetDeviceIdentity } from "../../../../capabilities/screen-host/browser/lifecycle.mjs";
+import { ActionLoadingShell } from "../../../../capabilities/screen-host/browser/lifecycle.mjs";
+import { layoutOwnsRouting } from "../../../../capabilities/screen-host/browser/lifecycle.mjs";
+import { resolveScreenAppPath } from './screenAppPath.js';
+import { rescueGesture, RESCUE_PRESSES, RESCUE_WINDOW_MS } from "../../../../capabilities/screen-host/browser/input.mjs";
+
+// Register built-ins on module load
+registerBuiltinWidgets();
+// Bind FKB back button → Escape on module load
+bindBackButton();
+// Log all remote button presses for Shield TV audit
+enableGlobalKeyCapture();
+
+/**
+ * ScreenAutoplay - Parses URL path suffix and query params into navigation actions.
+ *
+ * Supports two input forms:
+ *   Path:  /screens/living-room/fhe  → navigates to menu:fhe submenu
+ *   Query: ?queue=plex:642120        → queues content for playback
+ *
+ * Path-based navigation pushes directly onto the MenuNavigationContext stack
+ * (no ActionBus) so it works with panel-based MenuWidgets.
+ * Query-based autoplay emits on the ActionBus for the ScreenActionHandler.
+ *
+ * Runs once on mount, then cleans the URL to prevent re-triggering on reload.
+ */
+export function ScreenAutoplay({ routes, layout }) {
+  const { push } = useMenuNavigationContext();
+  const [initialLocation] = useState(() => ({ pathname: window.location.pathname, search: window.location.search }));
+
+  useEffect(() => {
+    const { pathname, search } = initialLocation;
+    let timer;
+
+    // Path-based navigation: /screens/living-room/weekly-review or /screens/living-room/fhe
+    const pathMatch = pathname.match(/\/screens?\/[^/]+\/(.+)/);
+    if (pathMatch && !layoutOwnsRouting(layout)) {
+      const subPath = pathMatch[1];
+      const logger = getLogger().child({ component: 'ScreenAutoplay' });
+      logger.info('screen-autoplay.path', { subPath });
+
+      // The first suffix segment identifies the app; the remainder belongs to
+      // that app (for example party-games/charades).
+      const appRoute = resolveScreenAppPath(pathname, (appId) => Boolean(getApp(appId)), routes);
+      if (appRoute) {
+        logger.info('screen-autoplay.app', { app: appRoute.appId, appPath: appRoute.appPath });
+        timer = setTimeout(() => {
+          const bus = getActionBus();
+          bus.emit('menu:open', { menuId: appRoute.menuId });
+        }, 500);
+      } else if (routes?.[subPath]) {
+        // Route defined in screen config — use its content ID and props
+        // Props like menuStyle go INSIDE the list object — MenuStack passes
+        // props.list to TVMenu, dropping any sibling properties.
+        const { contentId, ...routeProps } = routes[subPath];
+        logger.info('screen-autoplay.route', { subPath, contentId });
+        timer = setTimeout(() => {
+          push({ type: 'menu', props: { list: { contentId, ...routeProps } } });
+        }, 500);
+      } else {
+        // Default: treat suffix as menu name
+        timer = setTimeout(() => {
+          push({ type: 'menu', props: { list: { contentId: `menu:${subPath}` } } });
+        }, 500);
+      }
+
+      // App deep links are durable: keep the canonical URL so a refresh opens
+      // the same app/game. One-shot menu suffixes retain the legacy cleanup.
+      if (!appRoute?.appPath && subPath !== 'fhe') {
+        const cleanPath = pathname.replace(/\/[^/]+$/, '');
+        window.history.replaceState({}, '', cleanPath);
+      }
+      return () => clearTimeout(timer);
+    }
+
+    // Query-based autoplay: ?queue=plex:642120&shader=dark
+    if (!search) return;
+
+    const autoplay = parseAutoplayParams(search, AUTOPLAY_ACTIONS);
+    if (!autoplay) return;
+
+    const bus = getActionBus();
+    const logger = getLogger().child({ component: 'ScreenAutoplay' });
+    logger.info('screen-autoplay.parsed', { keys: Object.keys(autoplay) });
+
+    // Emit appropriate action after a brief delay to let the screen framework mount
+    const action = autoplayToAction(autoplay);
+    if (action) {
+      timer = setTimeout(() => {
+        bus.emit(action.event, action.payload);
+      }, 500);
+    }
+
+    // Clean URL to prevent re-trigger
+    window.history.replaceState({}, '', pathname);
+    return () => clearTimeout(timer);
+  // Deliberately mount-once (see docblock): this parses the URL for a one-shot
+  // autoplay action and then rewrites the URL specifically so it can't re-fire.
+  // Adding layout/routes would let a later config reload re-trigger the very
+  // autoplay this effect just cleaned up after.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [push]);
+
+  return null;
+}
+
+/**
+ * ScreenCommandHandler - Bridges WS command config to the ActionBus.
+ *
+ * Reads the websocket block from screen YAML config, subscribes to WS messages
+ * that look like remote commands, and emits ActionBus events.
+ *
+ * This is a renderless component (returns null).
+ */
+function ScreenCommandHandler({ wsConfig, screenId, controls }) {
+  const bus = useMemo(() => getActionBus(), []);
+  useScreenCommands(wsConfig, bus, screenId, controls);
+  return null;
+}
+
+/**
+ * ScreenSubscriptionHandler - Bridges WS subscription config to the overlay system.
+ *
+ * Reads the subscriptions block from screen YAML config, subscribes to declared
+ * WS topics, and triggers showOverlay/dismissOverlay based on incoming events.
+ *
+ * Must be mounted inside ScreenOverlayProvider to access overlay context.
+ * This is a renderless component (returns null).
+ */
+function ScreenSubscriptionHandler({ subscriptions }) {
+  const { showOverlay, dismissOverlay, hasOverlay } = useScreenOverlay();
+  const pip = usePip();
+  const registry = useMemo(() => getWidgetRegistry(), []);
+  useScreenSubscriptions(subscriptions, showOverlay, dismissOverlay, registry, { hasOverlay, pip });
+  return null;
+}
+
+/**
+ * ScreenRenderer - Config-driven kiosk screen.
+ * Fetches YAML config, sets up theme + data + input, renders panel tree.
+ */
+export function ScreenRenderer({ screenId: propScreenId }) {
+  useDocumentTitle('Screen');
+  const params = useParams();
+  const screenId = propScreenId || params.screenId;
+
+  const [config, setConfig] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const inputHealthyRef = React.useRef(false);
+  const screenRootRef = React.useRef(null);
+
+  // Sign this screen's requests with its fleet name (X-Daylight-Device:
+  // fleet:<name>) as soon as the served config says which device it is. The
+  // Home Line join depends on it; every backend log line benefits.
+  useFleetDeviceIdentity(config?.websocket?.guardrails?.device);
+
+  // Initial-only menu-flash suppression gate. If the URL had ?play=/?queue=/etc
+  // on first mount, suppress the YAML layout until an overlay opens or 5s lapse.
+  // typeof window guard preserves SSR safety even though this codebase
+  // doesn't currently SSR — keep it defensive.
+  const { suppressLayout, releaseGate } = useInitialActionGate(
+    typeof window !== 'undefined' ? window.location.search : '',
+  );
+
+  // Release the gate as soon as ScreenOverlayProvider mounts a fullscreen overlay.
+  // Subscribe unconditionally so ActionBus never sees overlay-mounted as unhandled —
+  // calling releaseGate() after the gate is already released is a React no-op.
+  useEffect(() => {
+    const bus = getActionBus();
+    const unsub = bus.subscribe('screen:overlay-mounted', () => releaseGate());
+    return () => unsub?.();
+  }, [releaseGate]);
+
+  // Viewport telemetry: report the WebView's actual CSS viewport + DPR once per
+  // mount. This is how we right-size a screen's fixed `resolution` to the real
+  // kiosk (e.g. the living-room Shield renders a 960x540 CSS viewport @ 2x DPR).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    getLogger().child({ component: 'ScreenRenderer', screenId }).info('screen.viewport', {
+      cssWidth: window.innerWidth,
+      cssHeight: window.innerHeight,
+      dpr: window.devicePixelRatio,
+      physicalWidth: Math.round(window.innerWidth * (window.devicePixelRatio || 1)),
+      physicalHeight: Math.round(window.innerHeight * (window.devicePixelRatio || 1)),
+    });
+  }, [screenId]);
+
+  // Failsafe: digit 4 gets the screen back, in two different situations.
+  //
+  // 1. INPUT IS DEAD — one press reloads. "Handling" means the adapter attached
+  //    AND (where relevant) its keymap actually loaded. If the keymap fetch
+  //    failed or returned empty, NumpadAdapter silently drops every keystroke,
+  //    so the failsafe must stay armed for the user to escape at all.
+  //
+  // 2. INPUT IS HEALTHY BUT NOBODY IS LISTENING — {@link RESCUE_PRESSES} presses
+  //    inside {@link RESCUE_WINDOW_MS} reloads anyway. A healthy adapter proves
+  //    the keystroke was DELIVERED; it proves nothing about anyone acting on it.
+  //    A fullscreen piano game registers an escape interceptor that returns
+  //    "handled" and deliberately does nothing (PianoVisualizer.jsx — a stray
+  //    keypress must not quit a game mid-move). That same interceptor also makes
+  //    ScreenActionHandler's `consumeBack` stand down. On a screen whose only
+  //    input is this keypad, that closed every exit at once and stranded the
+  //    office TV on a stuck game with no way to even reload the page.
+  //
+  //    So the escape hatch is deliberate repetition rather than one press: it
+  //    cannot fire by accident, and no interceptor gets a vote on it.
+  //
+  // CAPTURE PHASE, deliberately. NumpadAdapter's own window listener calls
+  // `stopImmediatePropagation()` on a mapped key, which would starve any
+  // same-phase listener registered after it. A capture listener on `window` runs
+  // before that can happen, so the failsafe cannot be disarmed by the very input
+  // path it exists to rescue the user from.
+  useEffect(() => {
+    let presses = [];
+    const failsafe = (e) => {
+      const key = e.key || e.code?.replace(/^(Digit|Numpad)/, '');
+      if (key !== '4') return;
+      const healthy = inputHealthyRef.current;
+      const verdict = rescueGesture({ presses, now: Date.now(), inputHealthy: healthy, repeat: e.repeat });
+      presses = verdict.presses;
+      if (!verdict.reload) return;
+      getLogger().child({ component: 'ScreenRenderer', screenId }).warn('screen.rescue-reload', {
+        inputHealthy: healthy, presses: RESCUE_PRESSES, windowMs: RESCUE_WINDOW_MS,
+      });
+      window.location.reload();
+    };
+    window.addEventListener('keydown', failsafe, true);
+    return () => window.removeEventListener('keydown', failsafe, true);
+  }, [screenId]);
+
+  // Focus probe: if the document loses focus, attempt to recover so keyboard input
+  // from remotes/keyboards continues to route through the screen input adapters.
+  useEffect(() => {
+    const focusLogger = getLogger().child({ component: 'ScreenRenderer', screenId });
+    const probeFocus = (reason) => {
+      if (typeof document.hasFocus !== 'function') return;
+      if (document.visibilityState === 'hidden') return;
+      if (document.hasFocus()) return;
+
+      window.focus?.();
+      if (!document.hasFocus()) {
+        const fallbackTarget = screenRootRef.current || document.body || document.documentElement;
+        fallbackTarget?.focus?.();
+      }
+
+      focusLogger.sampled(
+        'screen.focus-probe',
+        { reason, recovered: document.hasFocus() },
+        { maxPerMinute: 12, aggregate: true }
+      );
+    };
+
+    probeFocus('mount');
+    const onBlur = () => probeFocus('blur');
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'hidden') probeFocus('visibilitychange');
+    };
+    const timer = window.setInterval(() => probeFocus('interval'), 2000);
+
+    window.addEventListener('blur', onBlur);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('blur', onBlur);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [screenId]);
+
+  // Fetch screen configuration
+  useEffect(() => {
+    if (!screenId) {
+      setError('No screen ID provided');
+      setLoading(false);
+      return;
+    }
+
+    const fetchConfig = async () => {
+      try {
+        const data = await DaylightAPI(`api/v1/screens/${screenId}`);
+        setConfig(data);
+      } catch (err) {
+        setError(`Failed to load screen "${screenId}": ${err.message}`);
+      }
+      setLoading(false);
+    };
+
+    fetchConfig();
+  }, [screenId]);
+
+  // Initialize input system
+  useEffect(() => {
+    if (!config?.input) return;
+    const manager = createInputManager(getActionBus(), config.input);
+
+    // The adapter's attach() is async (keymap fetch). Wait for it to complete,
+    // then set inputHealthy only if the adapter reports itself healthy.
+    // Adapters without isHealthy() fall back to "attached = healthy" (unchanged
+    // behavior for KeyboardAdapter/GamepadAdapter).
+    let cancelled = false;
+    manager.ready
+      .then(() => {
+        if (cancelled) return;
+        const adapter = manager.adapter;
+        const healthy = typeof adapter?.isHealthy === 'function'
+          ? adapter.isHealthy()
+          : true;
+        inputHealthyRef.current = healthy;
+      })
+      .catch(() => {
+        if (cancelled) return;
+        inputHealthyRef.current = false;
+      });
+
+    return () => {
+      cancelled = true;
+      manager.destroy();
+      inputHealthyRef.current = false;
+    };
+  }, [config]);
+
+  // Registry-backed session source: bridges whatever Player is currently
+  // registered (overlay or nav stack) to <SessionStatePublisher> via
+  // SessionSourceContext. Idle snapshot when nothing is registered. Only
+  // built when the screen has a device identity to publish as.
+  const sessionDeviceId = config?.websocket?.guardrails?.device || null;
+  // Screen session controls (sleep timer, Add only, end of queue, notes, …):
+  // one per device identity, published inside every snapshot. Ports needing
+  // the React tree are bound by <ScreenSessionControlsHost>.
+  const sessionControls = useMemo(() => {
+    if (!sessionDeviceId) return null;
+    const controls = createScreenSessionControls({ ownerId: sessionDeviceId });
+    // Player features (P2): subtitles/audio language, Show briefly, music behind.
+    controls.attachExtension(createScreenPlayerFeatures({ ownerId: sessionDeviceId }));
+    return controls;
+  }, [sessionDeviceId]);
+  useEffect(() => () => sessionControls?.dispose(), [sessionControls]);
+  const sessionSource = useMemo(() => {
+    if (!sessionDeviceId) return null;
+    try {
+      return createRegistrySessionSource({
+        registry: getPlayerSessionRegistry(),
+        ownerId: sessionDeviceId,
+        controls: sessionControls,
+      });
+    } catch (err) {
+      getLogger().child({ component: 'ScreenRenderer', screenId }).warn(
+        'session-source-create-failed',
+        { error: String(err?.message ?? err) },
+      );
+      return null;
+    }
+  }, [sessionDeviceId, screenId, sessionControls]);
+
+  // Convert theme to --screen-* CSS custom properties
+  const themeStyle = useMemo(() => {
+    if (!config?.theme) return {};
+    return Object.fromEntries(
+      Object.entries(config.theme).map(([k, v]) => [`--screen-${k}`, String(v)])
+    );
+  }, [config]);
+
+  const res = config?.resolution;
+  const bgColor = config?.theme?.['screen-bg'] || '#000';
+
+  // Always render the dark viewport wrapper to prevent white flash during loading
+  const viewport = (content) => (
+    <div className="screen-viewport" style={{
+      width: '100vw',
+      height: '100vh',
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+      overflow: 'hidden',
+      backgroundColor: bgColor,
+    }}>
+      {content}
+    </div>
+  );
+
+  if (loading) {
+    return viewport(
+      <div className="screen-root screen-root--loading">Loading screen: {screenId}...</div>
+    );
+  }
+
+  if (error) {
+    return viewport(
+      <div className="screen-root screen-root--error"><h2>Screen Error</h2><p>{error}</p></div>
+    );
+  }
+
+  if (!config) {
+    return viewport(
+      <div className="screen-root screen-root--not-found">Screen not found: {screenId}</div>
+    );
+  }
+
+  return (
+    <ScreenDataProvider sources={config.data}>
+      {viewport(
+        <div ref={screenRootRef} tabIndex={-1} className={`screen-root screen-root--${screenId}`} style={{
+          width: res ? `${res.width}px` : '100%',
+          height: res ? `${res.height}px` : '100%',
+          display: 'flex',
+          position: 'relative',
+          overflow: 'hidden',
+          ...themeStyle,
+        }}>
+          <ScreenVolumeProvider
+            storageKey={`screen-volume-${screenId}`}
+            defaultMaster={config.volume?.defaultMaster}
+            stepSize={config.volume?.stepSize}
+            outputCeiling={config.volume?.outputCeiling}
+            curveExponent={config.volume?.curveExponent}
+            curve={config.volume?.curve}
+            fixed={config.volume?.fixed}
+          >
+            <MasterVolumeToast />
+            <PortalKeysBridge config={config.portalKeys} />
+            {/* Screen-level surround setting: 'auto' (default) or 'off', and
+                nothing else. Read by SurroundHost at the two player seams. */}
+            <SurroundSettingContext.Provider value={config.surround ?? 'auto'}>
+            <ScreenAmbientProvider value={config.ambient}>
+            <MenuNavigationProvider>
+              <ScreenSceneProvider>
+              <ScreenOverlayProvider inputType={config.input?.type}>
+                <SessionSourceProvider source={sessionSource}>
+                <PipManager config={config.pip}>
+                  <ScreenAutoplay routes={config.routes} layout={config.layout} />
+                  <ScreenActionHandler actions={config.actions} inputType={config.input?.type} />
+                  <ScreenCommandHandler wsConfig={config.websocket} screenId={screenId} controls={sessionControls} />
+                  {sessionControls && sessionSource && (
+                    <ScreenSessionControlsHost controls={sessionControls} source={sessionSource} />
+                  )}
+                  <ScreenSessionPublishers wsConfig={config.websocket} />
+                  <ScreenSubscriptionHandler subscriptions={config.subscriptions} />
+                  <ScreenScreensaver config={config.screensaver} />
+                  <ScreenExit config={config.exit} />
+                  <ScreenPresencePublisher deviceId={config.websocket?.guardrails?.device} />
+                  <ScreenProvider config={config.layout}>
+                    {suppressLayout ? <ActionLoadingShell /> : <PanelRenderer />}
+                  </ScreenProvider>
+                </PipManager>
+                </SessionSourceProvider>
+              </ScreenOverlayProvider>
+              </ScreenSceneProvider>
+            </MenuNavigationProvider>
+            </ScreenAmbientProvider>
+            </SurroundSettingContext.Provider>
+          </ScreenVolumeProvider>
+        </div>
+      )}
+    </ScreenDataProvider>
+  );
+}
+
+export default ScreenRenderer;

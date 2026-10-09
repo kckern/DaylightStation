@@ -121,7 +121,7 @@ vi.mock('./Programs/SentenceLadder/languageApi.js', () => ({
 // SchoolMaterialPlayer wraps the real, heavy shared Player (lazy-imported) —
 // stub it the same way MediaApp.test.jsx does, so materials-flow tests never
 // pay for (or depend on) real playback engine internals.
-vi.mock('../Player/Player.jsx', () => ({
+vi.mock('../../../../capabilities/playback/browser/player/Player.jsx', () => ({
   default: ({ play }) => <div data-testid="player-stub">Player: {play?.contentId ?? 'none'}</div>,
 }));
 

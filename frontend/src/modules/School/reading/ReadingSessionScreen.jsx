@@ -28,11 +28,11 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import PropTypes from 'prop-types';
-import Player from '../../Player/Player.jsx';
+import { Player as Player } from "../../../../../capabilities/playback/browser/public.mjs";
 import SurroundFrame from '../../Surround/SurroundFrame.jsx';
 import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
-import { useScreenOverlay } from '../../../screen-framework/overlays/ScreenOverlayProvider.jsx';
-import { useSessionSourceContext } from '../../../screen-framework/publishers/useSessionSourceContext.js';
+import { useScreenOverlay } from "../../../../../capabilities/screen-host/browser/overlays.mjs";
+import { useSessionSourceContext } from "../../../../../capabilities/playback/browser/sessions.mjs";
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { resolveAdoptablePlayback } from './adoptForeignPlayback.js';
 import { playScanCeremonyTone } from '../selfService/scanCeremonySound.js';

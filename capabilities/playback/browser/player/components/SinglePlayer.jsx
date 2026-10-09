@@ -1,0 +1,636 @@
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import PropTypes from 'prop-types';
+import AppContainer from '../../../../../frontend/src/modules/AppContainer/AppContainer.jsx';
+import { getRenderer, isMediaFormat } from '../lib/registry.js';
+import { fetchMediaInfo } from '../lib/api.js';
+import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
+import { AudioPlayer } from '../renderers/AudioPlayer.jsx';
+import { VideoPlayer } from '../renderers/VideoPlayer.jsx';
+import { ImageFrame } from '../renderers/ImageFrame.jsx';
+import { TitleCardRenderer } from '../renderers/TitleCardRenderer.jsx';
+import { PlayerOverlayLoading } from './PlayerOverlayLoading.jsx';
+import { SlideshowMetadataOverlay } from './SlideshowMetadataOverlay.jsx';
+import { useShaderDiagnostics } from '../hooks/useShaderDiagnostics.js';
+
+/**
+ * Single player component that handles different media types
+ * Routes to appropriate player based on media type
+ */
+export function SinglePlayer(props = {}) {
+  const {
+    onResolvedMeta,
+    onPlaybackMetrics,
+    onRegisterMediaAccess,
+    onRegisterResilienceBridge,
+    onRequestRecovery,
+    seekToIntentSeconds = null,
+    onSeekRequestConsumed,
+    remountDiagnostics,
+    // Player's itemSessionKey — the recoveryLedger session scope. Distinct from
+    // the local playbackSessionKey below (watchedDuration storage key).
+    resilienceSessionKey = null,
+    wrapWithContainer = true,
+    suppressLocalOverlay = false,
+    plexClientSession = null,
+    // Opt-in track choice (RQ-STEER-14): the Player passes a resolver that
+    // returns the item unchanged unless its owner remembered a choice.
+    resolveTracks = null,
+    ...play
+  } = props;
+  const resolveTracksRef = useRef(resolveTracks);
+  resolveTracksRef.current = resolveTracks;
+  const withTracks = (info) => (typeof resolveTracksRef.current === 'function' ? resolveTracksRef.current(info) ?? info : info);
+  const {
+    contentId: contentIdProp,
+    plex,
+    media,
+    advance,
+    manualAdvance = advance,
+    open,
+    clear,
+    setShader,
+    cycleThroughClasses,
+    classes,
+    playbackKeys,
+    queuePosition,
+    playerType,
+    ignoreKeys,
+    shuffle,
+    continuous,
+    shader,
+    volume,
+    playbackRate,
+    onProgress,
+    onMediaRef,
+    assetId: mediaKeyProp,
+    upscaleEffects,
+    nextMedia
+  } = play || {};
+
+  // Compute effective contentId. Prefers the canonical contentId prop;
+  // falls back to legacy plex/media props for backward compatibility.
+  const effectiveContentId = contentIdProp
+    || (plex ? `plex:${plex}` : null)
+    || media
+    || null;
+
+  // Prepare common props for content scroller components
+  const contentProps = {
+    ...play,
+    playbackKeys,
+    ignoreKeys,
+    queuePosition
+  };
+
+  // Shader diagnostics for loading state
+  const loadingShaderRef = useRef(null);
+  const playerContainerRef = useRef(null);
+
+  const [mediaInfo, setMediaInfo] = useState({});
+  const [isReady, setIsReady] = useState(false);
+  const [goToApp, setGoToApp] = useState(false);
+  const [videoMetaVisible, setVideoMetaVisible] = useState(false);
+  const videoMetaTimerRef = useRef(null);
+  const watchedDurationRef = useRef(0);
+  const playbackTimerRef = useRef({ lastTickTs: null });
+
+  // Shader is only used for media playback formats (video/audio).
+  // Non-media formats (scrollers, apps, etc.) handle their own chrome.
+  const isMediaPlayback = isReady && isMediaFormat(mediaInfo?.format);
+  useShaderDiagnostics({
+    shaderRef: loadingShaderRef,
+    containerRef: playerContainerRef,
+    label: 'loading-shader',
+    shaderState: 'on',
+    enabled: (!isReady || isMediaPlayback) && !suppressLocalOverlay
+  });
+
+  const setWatchedDurationValue = useCallback((value = 0) => {
+    const numeric = Number(value);
+    watchedDurationRef.current = Number.isFinite(numeric) && numeric >= 0 ? numeric : 0;
+    playbackTimerRef.current.lastTickTs = null;
+  }, []);
+
+  const getWatchedDuration = useCallback(() => watchedDurationRef.current, []);
+
+  const accumulateWatchedDuration = useCallback((progress = {}) => {
+    const now = (typeof performance !== 'undefined' && typeof performance.now === 'function')
+      ? performance.now()
+      : Date.now();
+    const paused = Boolean(progress?.paused);
+    if (!paused) {
+      if (playbackTimerRef.current.lastTickTs != null) {
+        const deltaSeconds = Math.max(0, (now - playbackTimerRef.current.lastTickTs) / 1000);
+        watchedDurationRef.current += deltaSeconds;
+      }
+      playbackTimerRef.current.lastTickTs = now;
+    } else {
+      playbackTimerRef.current.lastTickTs = null;
+    }
+    return watchedDurationRef.current;
+  }, []);
+
+  const playbackSessionKey = useMemo(() => {
+    const candidates = [
+      mediaInfo?.contentId,
+      mediaInfo?.assetId,
+      mediaInfo?.key,
+      mediaInfo?.plex,
+      mediaInfo?.id,
+      mediaInfo?.mediaUrl,
+      effectiveContentId,
+      plex,
+      mediaKeyProp,
+      media
+    ];
+    const firstDefined = candidates.find((value) => value != null && String(value).length);
+    return firstDefined != null ? String(firstDefined) : null;
+  }, [mediaInfo?.contentId, mediaInfo?.assetId, mediaInfo?.key, mediaInfo?.plex, mediaInfo?.id, mediaInfo?.mediaUrl, effectiveContentId, plex, mediaKeyProp, media]);
+
+  const handleProgress = useCallback((payload = {}) => {
+    const watchedDuration = accumulateWatchedDuration(payload);
+    if (typeof window !== 'undefined') {
+      const percentValue = Number(payload?.percent);
+      const storageKey = playbackSessionKey ? `watchedDuration:${playbackSessionKey}` : null;
+      if (storageKey) {
+        try {
+          if (Number.isFinite(percentValue) && percentValue >= 99) {
+            window.localStorage.removeItem(storageKey);
+          } else {
+            window.localStorage.setItem(storageKey, JSON.stringify({
+              value: watchedDuration,
+              updatedAt: Date.now()
+            }));
+          }
+        } catch (_) {
+          // Ignore storage errors; timer state remains in memory
+        }
+      }
+    }
+    // Forward playback metrics to Player.jsx for resilience tracking
+    // This bridges useCommonMediaController's stall state to useMediaResilience
+    if (typeof onPlaybackMetrics === 'function') {
+      onPlaybackMetrics({
+        seconds: payload?.currentTime,
+        isPaused: payload?.paused,
+        isSeeking: payload?.isSeeking ?? false,
+        stalled: payload?.stalled,
+        stallState: payload?.stallState
+      });
+    }
+    if (typeof onProgress === 'function') {
+      onProgress({
+        ...payload,
+        watchedDuration
+      });
+    }
+  }, [accumulateWatchedDuration, onPlaybackMetrics, onProgress, playbackSessionKey]);
+
+  const contentScrollerBridge = {
+    onResolvedMeta,
+    onPlaybackMetrics,
+    onRegisterMediaAccess,
+    seekToIntentSeconds,
+    onSeekRequestConsumed,
+    remountDiagnostics,
+    // Content formats (scrollers) otherwise never reach the onProgress
+    // consumer — only AudioPlayer/VideoPlayer were wired to handleProgress,
+    // so a shell like ReadalongPlaylistPlayer saw position/duration stuck at
+    // zero for readalong content.
+    onProgress: handleProgress
+  };
+
+  useEffect(() => {
+    if (!playbackSessionKey || typeof window === 'undefined') {
+      setWatchedDurationValue(0);
+      return;
+    }
+    const storageKey = `watchedDuration:${playbackSessionKey}`;
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      if (!raw) {
+        setWatchedDurationValue(0);
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      const storedValue = typeof parsed === 'number'
+        ? parsed
+        : Number.isFinite(parsed?.value)
+          ? parsed.value
+          : null;
+      if (Number.isFinite(storedValue) && storedValue >= 0) {
+        setWatchedDurationValue(storedValue);
+      } else {
+        setWatchedDurationValue(0);
+      }
+    } catch (_) {
+      setWatchedDurationValue(0);
+    }
+  }, [playbackSessionKey, setWatchedDurationValue]);
+
+  const fetchVideoInfoCallback = useCallback(async () => {
+    setIsReady(false);
+
+    // Direct-play bypass: if the play prop already contains mediaUrl and a media format,
+    // skip the /play API call entirely. This happens when queue items come from
+    // the /queue endpoint with pre-resolved media URLs.
+    // Content formats (readalong, singalong, etc.) need the /play API for full content data.
+    const directFormat = play?.format;
+    const directMediaUrl = play?.mediaUrl;
+    const isRecoveryRemount = !!remountDiagnostics;
+    // Title cards are self-contained (no mediaUrl needed). Queue images are also
+    // authoritative, resolved descriptors: re-fetching an Immich image through
+    // `/play` downgrades it to a browse item and drops both its display URL and
+    // queue-owned slideshow policy.
+    const isResolvedImmichMedia = Boolean(directMediaUrl)
+      && String(effectiveContentId || '').startsWith('immich:')
+      && (directFormat === 'image' || isMediaFormat(directFormat));
+    const isSelfContainedFormat = directFormat === 'titlecard'
+      || (directFormat === 'image' && Boolean(directMediaUrl))
+      || isResolvedImmichMedia;
+    // A queue item may carry an opaque transport URL plus a stale format. When
+    // it has a canonical content id, `/play` is the transport authority (and
+    // may correctly describe that same opaque Plex stream as HLS). Reserve the
+    // direct-media bypass for identity-less embeds, which have no descriptor to
+    // resolve; otherwise a stale queue `dash_video` makes dash.js parse HLS.
+    const hasResolvableContent = Boolean(effectiveContentId);
+    // Some queue items own playback shape `/play` cannot reproduce: a photo's
+    // preview URL + slideshow config (`/play` returns an image with no mediaUrl
+    // at all), and a clip's segment window. Neither is an opaque stream with a
+    // stale format, so the queue item stays authoritative for them.
+    const queueOwnsPlayback = directFormat === 'image' || play?.segment != null;
+    if (isSelfContainedFormat || ((directMediaUrl && directFormat && !getRenderer(directFormat)
+      && (!hasResolvableContent || queueOwnsPlayback)) && !isRecoveryRemount)) {
+      const directInfo = {
+        ...play,
+        id: play.id || play.contentId || effectiveContentId,
+        assetId: play.assetId || play.id || play.contentId || effectiveContentId,
+        continuous,
+        maxVideoBitrate: play?.maxVideoBitrate ?? null,
+        maxResolution: play?.maxResolution ?? null,
+      };
+      if (play?.seconds !== undefined) directInfo.seconds = play.seconds;
+      if (play?.resume !== undefined) directInfo.resume = play.resume;
+      if (play?.origin) directInfo.origin = play.origin;
+      if (play?.resumePosition !== undefined && directInfo.seconds === undefined) {
+        directInfo.seconds = play.resumePosition;
+      }
+      setMediaInfo(directInfo);
+      setIsReady(true);
+      return;
+    }
+
+    const info = await fetchMediaInfo({
+      contentId: effectiveContentId,
+      plex,
+      media,
+      shuffle,
+      maxVideoBitrate: play?.maxVideoBitrate,
+      maxResolution: play?.maxResolution,
+      session: plexClientSession,
+      resume: play?.resume
+    });
+
+    if (info) {
+      // Detect if this is a collection/folder (format: "list", or no mediaUrl/playable mediaType)
+      const isPlayable = info.format !== 'list'
+        && (info.mediaUrl || ['dash_video', 'video', 'audio'].includes(info.mediaType)
+            || getRenderer(info.format));
+
+      if (!isPlayable && effectiveContentId) {
+        // This is a collection - fetch first playable item
+        try {
+          const { items } = await DaylightAPI(`/api/v1/queue/${effectiveContentId}?limit=1`);
+          if (items && items.length > 0) {
+            const firstItem = items[0];
+            const firstItemId = firstItem.contentId || firstItem.id;
+            if (firstItemId) {
+              // Fetch media info for the first playable item
+              const resolvedId = String(firstItemId).includes(':') ? firstItemId : `plex:${firstItemId}`;
+              const playableInfo = await fetchMediaInfo({
+                contentId: resolvedId,
+                shuffle: false,
+                maxVideoBitrate: play?.maxVideoBitrate,
+                maxResolution: play?.maxResolution,
+                session: plexClientSession
+              });
+              if (playableInfo) {
+                const withCap = {
+                  ...playableInfo,
+                  continuous,
+                  maxVideoBitrate: play?.maxVideoBitrate ?? null,
+                  maxResolution: play?.maxResolution ?? null
+                };
+                if (play?.seconds !== undefined) withCap.seconds = play.seconds;
+                if (play?.resume !== undefined) withCap.resume = play.resume;
+                if (play?.origin) withCap.origin = play.origin;
+                setMediaInfo(withTracks(withCap));
+                setIsReady(true);
+                return;
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[SinglePlayer] Failed to expand collection:', err);
+        }
+      }
+
+      const withCap = {
+        ...info,
+        continuous,
+        maxVideoBitrate: play?.maxVideoBitrate ?? null,
+        maxResolution: play?.maxResolution ?? null
+      };
+
+      // Override seconds if explicitly provided in play object
+      if (play?.seconds !== undefined) {
+        withCap.seconds = play.seconds;
+      }
+
+      // Override resume if explicitly provided in play object
+      if (play?.resume !== undefined) {
+        withCap.resume = play.resume;
+      }
+
+      // Who started this playback (a routine, another device), for the
+      // play ledger — reported on play/log (media tech doc §2.4).
+      if (play?.origin) withCap.origin = play.origin;
+
+      setMediaInfo(withTracks(withCap));
+      setIsReady(true);
+    } else if (open) {
+      setGoToApp(open);
+    }
+  // `play` itself is deliberately excluded: it is commonly passed as a fresh
+  // object literal from parents, and depending on it directly reproduces a
+  // documented incident (2026-08-16) where object-identity churn on `play`
+  // caused runaway remounts and 495 Plex transcode sessions in four minutes.
+  // The four `play?.*` fields above are the ones this effect actually branches
+  // on; the rest (id/contentId/assetId/resumePosition) are read only inside the
+  // direct-play bypass's early-return branch.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveContentId, plex, media, open, shuffle, continuous, play?.maxVideoBitrate, play?.maxResolution, play?.seconds, play?.resume, plexClientSession, remountDiagnostics]);
+
+  useEffect(() => {
+    fetchVideoInfoCallback();
+  }, [fetchVideoInfoCallback]);
+
+  useEffect(() => {
+    if (!isReady || (!mediaInfo?.mediaType && !mediaInfo?.format)) {
+      return;
+    }
+    onResolvedMeta?.(mediaInfo);
+  }, [isReady, mediaInfo, onResolvedMeta]);
+
+  // Video metadata overlay: show shortly after video starts, hide after a few seconds
+  const showVideoMeta = isReady && mediaInfo?.slideshow?.showMetadata
+    && mediaInfo?.format !== 'image' && isMediaFormat(mediaInfo?.format);
+  useEffect(() => {
+    if (videoMetaTimerRef.current) {
+      clearTimeout(videoMetaTimerRef.current);
+      videoMetaTimerRef.current = null;
+    }
+    if (!showVideoMeta) {
+      setVideoMetaVisible(false);
+      return;
+    }
+    // Fade in after 500ms, fade out after 4s
+    videoMetaTimerRef.current = setTimeout(() => {
+      setVideoMetaVisible(true);
+      videoMetaTimerRef.current = setTimeout(() => {
+        setVideoMetaVisible(false);
+      }, 4000);
+    }, 500);
+    return () => {
+      if (videoMetaTimerRef.current) clearTimeout(videoMetaTimerRef.current);
+    };
+  }, [showVideoMeta, mediaInfo?.id, mediaInfo?.mediaUrl]);
+
+  // Calculate plexId from available sources - plex prop is passed directly from Player
+  const initialPlexId = plex || media || mediaInfo?.assetId || mediaInfo?.key || mediaInfo?.plex || null;
+
+  // Create ref to hold registered accessors
+  const mediaAccessorsRef = useRef({ getMediaEl: () => null, getContainerEl: () => null });
+
+  const resilienceBridge = useMemo(() => ({
+    onPlaybackMetrics,
+    onRegisterMediaAccess,
+    seekToIntentSeconds,
+    onSeekRequestConsumed,
+    remountDiagnostics,
+    requestRecovery: typeof onRequestRecovery === 'function' ? onRequestRecovery : null,
+    // Ledger session scope for renderer-level recovery actors (dash-error).
+    playbackSessionKey: resilienceSessionKey,
+    // New: accessor registration for children
+    registerAccessors: ({ getMediaEl, getContainerEl }) => {
+      mediaAccessorsRef.current = {
+        getMediaEl: getMediaEl || (() => null),
+        getContainerEl: getContainerEl || (() => null)
+      };
+    },
+    // New: accessors that delegate to registered functions
+    getMediaEl: () => mediaAccessorsRef.current.getMediaEl(),
+    getContainerEl: () => mediaAccessorsRef.current.getContainerEl()
+  }), [onPlaybackMetrics, onRegisterMediaAccess, seekToIntentSeconds, onSeekRequestConsumed, remountDiagnostics, onRequestRecovery, resilienceSessionKey]);
+
+  // Register the resilienceBridge with the parent Player component
+  useEffect(() => {
+    if (typeof onRegisterResilienceBridge === 'function') {
+      onRegisterResilienceBridge(resilienceBridge);
+    }
+    return () => {
+      if (typeof onRegisterResilienceBridge === 'function') {
+        onRegisterResilienceBridge(null);
+      }
+    };
+  }, [resilienceBridge, onRegisterResilienceBridge]);
+
+  // Format-based dispatch: the API's `format` field drives which component renders.
+  function renderByFormat() {
+    if (!isReady) return null;
+
+    const format = mediaInfo?.format;
+
+    // Title card → rendered like a media item (needs media/advance/resilienceBridge)
+    if (format === 'titlecard') {
+      return (
+        <TitleCardRenderer
+          media={mediaInfo}
+          advance={advance}
+          resilienceBridge={resilienceBridge}
+        />
+      );
+    }
+
+    // Media playback formats → video/audio player
+    if (isMediaFormat(format)) {
+      if (format === 'image') {
+        return (
+          <ImageFrame
+            media={mediaInfo}
+            advance={advance}
+            manualAdvance={manualAdvance}
+            clear={clear}
+            shader={shader}
+            resilienceBridge={resilienceBridge}
+            ignoreKeys={ignoreKeys}
+            nextMedia={nextMedia}
+          />
+        );
+      }
+      const PlayerComponent = format === 'audio' ? AudioPlayer : VideoPlayer;
+      const videoEl = (
+        <PlayerComponent
+          media={mediaInfo}
+          advance={advance}
+          manualAdvance={manualAdvance}
+          clear={clear}
+          shader={shader}
+          volume={volume}
+          playbackRate={playbackRate}
+          setShader={setShader}
+          cycleThroughClasses={cycleThroughClasses}
+          classes={classes}
+          playbackKeys={playbackKeys}
+          queuePosition={queuePosition}
+          fetchVideoInfo={fetchVideoInfoCallback}
+          ignoreKeys={ignoreKeys}
+          onProgress={handleProgress}
+          onMediaRef={onMediaRef}
+          keyboardOverrides={play?.keyboardOverrides}
+          onController={play?.onController}
+          resilienceBridge={resilienceBridge}
+          maxVideoBitrate={mediaInfo?.maxVideoBitrate ?? play?.maxVideoBitrate ?? null}
+          maxResolution={mediaInfo?.maxResolution ?? play?.maxResolution ?? null}
+          watchedDurationProvider={getWatchedDuration}
+          upscaleEffects={upscaleEffects}
+        />
+      );
+      if (!showVideoMeta) return videoEl;
+      const videoMediaId = mediaInfo?.id || mediaInfo?.assetId || effectiveContentId;
+      return (
+        <>
+          {videoEl}
+          <SlideshowMetadataOverlay
+            mediaId={videoMediaId}
+            visible={videoMetaVisible}
+            preloaded={{
+              capturedAt: mediaInfo?.metadata?.capturedAt || null,
+              localDateTime: mediaInfo?.metadata?.localDateTime || null,
+              people: mediaInfo?.metadata?.people || null,
+              location: mediaInfo?.metadata?.location || null,
+              captureTimeZone: (
+                mediaInfo?.metadata?.captureTimeZone
+                && mediaInfo.metadata.captureTimeZone !== 'UTC'
+                  ? mediaInfo.metadata.captureTimeZone
+                  : null
+              ) || mediaInfo?.slideshow?.captureTimeZone
+                || mediaInfo?.metadata?.captureTimeZone || null,
+            }}
+          />
+        </>
+      );
+    }
+
+    // Content format → registered component (scrollers, readers, etc.)
+    const ContentComponent = getRenderer(format);
+    if (ContentComponent) {
+      return <ContentComponent contentId={mediaInfo.id || effectiveContentId} initialData={mediaInfo} {...contentProps} {...contentScrollerBridge} />;
+    }
+
+    // Unknown format: render debug info
+    return (
+      <pre>
+        {JSON.stringify(mediaInfo, null, 2)}
+      </pre>
+    );
+  }
+
+  if (goToApp) return <AppContainer open={goToApp} clear={clear} />;
+
+  const playerBody = (
+    <>
+      {!isReady && !suppressLocalOverlay && (
+        <div ref={loadingShaderRef} className={`shader on notReady ${shader}`}>
+          <PlayerOverlayLoading
+            shouldRender
+            isVisible
+            isPaused={false}
+            seconds={0}
+            stalled={false}
+            waitingToPlay
+            showPauseOverlay={false}
+            showDebug={false}
+            plexId={initialPlexId}
+            debugContext={{ scope: 'media-info' }}
+          />
+        </div>
+      )}
+      {renderByFormat()}
+    </>
+  );
+
+  if (!wrapWithContainer) {
+    return playerBody;
+  }
+
+  return (
+    <div ref={playerContainerRef} className={`player ${playerType || ''}`}>
+      {playerBody}
+    </div>
+  );
+}
+
+SinglePlayer.propTypes = {
+  contentId: PropTypes.string,
+  plex: PropTypes.string,
+  media: PropTypes.string,
+  rate: PropTypes.number,
+  advance: PropTypes.func,
+  manualAdvance: PropTypes.func,
+  open: PropTypes.string,
+  clear: PropTypes.func,
+  setShader: PropTypes.func,
+  cycleThroughClasses: PropTypes.func,
+  classes: PropTypes.arrayOf(PropTypes.string),
+  playbackKeys: PropTypes.oneOfType([
+    PropTypes.arrayOf(PropTypes.string),
+    PropTypes.objectOf(PropTypes.arrayOf(PropTypes.string))
+  ]),
+  queuePosition: PropTypes.number,
+  playerType: PropTypes.string,
+  ignoreKeys: PropTypes.bool,
+  shuffle: PropTypes.oneOfType([PropTypes.bool, PropTypes.number]),
+  continuous: PropTypes.bool,
+  shader: PropTypes.string,
+  volume: PropTypes.number,
+  playbackRate: PropTypes.number,
+  onProgress: PropTypes.func,
+  onMediaRef: PropTypes.func,
+  keyboardOverrides: PropTypes.objectOf(PropTypes.func),
+  onController: PropTypes.func,
+  wrapWithContainer: PropTypes.bool,
+  onResolvedMeta: PropTypes.func,
+  onPlaybackMetrics: PropTypes.func,
+  onRegisterMediaAccess: PropTypes.func,
+  onRegisterResilienceBridge: PropTypes.func,
+  seekToIntentSeconds: PropTypes.number,
+  onSeekRequestConsumed: PropTypes.func,
+  resilienceSessionKey: PropTypes.string,
+  remountDiagnostics: PropTypes.shape({
+    reason: PropTypes.string,
+    source: PropTypes.string,
+    seekSeconds: PropTypes.number,
+    remountNonce: PropTypes.number,
+    waitKey: PropTypes.string,
+    trigger: PropTypes.object,
+    conditions: PropTypes.object,
+    timestamp: PropTypes.number,
+    wasPaused: PropTypes.bool
+  }),
+  suppressLocalOverlay: PropTypes.bool,
+  maxVideoBitrate: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  maxResolution: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  upscaleEffects: PropTypes.oneOf(['auto', 'blur-only', 'crt-only', 'aggressive', 'none']),
+  onRequestRecovery: PropTypes.func
+};

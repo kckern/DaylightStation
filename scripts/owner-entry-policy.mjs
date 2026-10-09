@@ -1,0 +1,51 @@
+/** Reviewed build-time visibility and executable server layer; no discovery. */
+export const OWNER_ENTRY_POLICY = Object.freeze({
+  'modules/gratitude/server/public.mjs': 'composition',
+  'modules/gratitude/server/print-gateway.mjs': 'adapters',
+  'modules/gratitude/server/rendering.mjs': 'rendering',
+  'modules/gratitude/server/print-presentation.mjs': 'application',
+  'modules/gratitude/browser/public.mjs': null,
+  'modules/gratitude/browser/admin.mjs': null,
+  'modules/gratitude/browser/assets.mjs': null,
+  'capabilities/household-identity/server/public.mjs': 'application',
+  'capabilities/household-identity/browser/public.mjs': null,
+  'modules/piano/server/public.mjs': 'application',
+  'modules/piano/server/budget.mjs': 'domain',
+  'modules/piano/server/composition.mjs': 'composition',
+  'capabilities/playback/server/public.mjs': 'application',
+  'modules/piano/browser/widget.mjs': null,
+  'modules/piano/browser/kiosk.mjs': null,
+  'modules/piano/browser/producer.mjs': null,
+  'modules/piano/browser/action-staff-style.mjs': null,
+  'modules/piano/browser/tokens-style.mjs': null,
+  'modules/piano/browser/skeleton-style.mjs': null,
+  'modules/piano/browser/learning.mjs': null,
+  'capabilities/playback/browser/public.mjs': null,
+  'capabilities/playback/browser/debug.mjs': null,
+  'capabilities/playback/browser/sessions.mjs': null,
+  'capabilities/playback/browser/contracts.mjs': null,
+  'capabilities/playback/browser/controller.mjs': null,
+  'capabilities/playback/browser/readalong.mjs': null,
+  'capabilities/playback/browser/remux.mjs': null,
+  'capabilities/playback/browser/music-behind.mjs': null,
+  'capabilities/playback/browser/lifecycle.mjs': null,
+  'capabilities/screen-host/browser/public.mjs': null,
+  'capabilities/screen-host/browser/input.mjs': null,
+  'capabilities/screen-host/browser/overlays.mjs': null,
+  'capabilities/screen-host/browser/providers.mjs': null,
+  'capabilities/screen-host/browser/data.mjs': null,
+  'capabilities/screen-host/browser/pip.mjs': null,
+  'capabilities/screen-host/browser/session.mjs': null,
+  'capabilities/screen-host/browser/ambient.mjs': null,
+  'capabilities/screen-host/browser/lifecycle.mjs': null,
+  'capabilities/screen-host/browser/publishers.mjs': null,
+  'capabilities/screen-host/browser/actions.mjs': null,
+  'capabilities/screen-host/browser/commands.mjs': null,
+  'capabilities/screen-host/browser/subscriptions.mjs': null,
+});
+export const PUBLIC_OWNER_ENTRIES = new Set(Object.keys(OWNER_ENTRY_POLICY));
+export function declaredServerEntry(file) {
+  const match = file?.match(/(?:^|\/)((modules|capabilities)\/([^/]+)\/server\/([^/]+))$/);
+  const layer = match && OWNER_ENTRY_POLICY[match[1]];
+  return layer ? { tree: match[2], owner: match[3], layer, suffix: match[4], entry: true } : null;
+}

@@ -1,4 +1,4 @@
-import { getWidgetRegistry } from '@/screen-framework/widgets/registry.js';
+import { getWidgetRegistry } from "../../../../capabilities/screen-host/browser/public.mjs";
 
 // Auto-register modules into the unified widget registry
 import * as FitnessChart from './widgets/FitnessChart/index.jsx';

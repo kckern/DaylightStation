@@ -14,7 +14,7 @@ vi.mock('@/modules/VoiceCapture/useMediaRecorderCapture.js', () => ({
 }));
 
 const submitMock = vi.fn(async () => ({ ok: true }));
-vi.mock('@/modules/Feedback/feedbackApi.js', () => ({
+vi.mock('../../../lib/diagnostics/feedbackApi.js', () => ({
   submitFeedback: (...args) => submitMock(...args),
   default: (...args) => submitMock(...args),
 }));

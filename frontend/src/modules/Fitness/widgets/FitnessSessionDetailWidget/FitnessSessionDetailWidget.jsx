@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallback } from 'react';
 import { Text } from '@mantine/core';
-import { getWidgetRegistry } from '@/screen-framework/widgets/registry.js';
-import { useScreen } from '@/screen-framework/providers/useScreen.js';
-import { useScreenData, useScreenDataRefetch } from '@/screen-framework/data/useScreenData.js';
+import { getWidgetRegistry } from "../../../../../../capabilities/screen-host/browser/public.mjs";
+import { useScreen } from "../../../../../../capabilities/screen-host/browser/providers.mjs";
+import { useScreenData, useScreenDataRefetch } from "../../../../../../capabilities/screen-host/browser/data.mjs";
 import { useFitnessScreen } from '@/modules/Fitness/useFitnessScreen.js';
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import FitnessTimeline from './FitnessTimeline.jsx';

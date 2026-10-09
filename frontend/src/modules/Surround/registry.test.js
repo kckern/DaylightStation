@@ -4,7 +4,7 @@ import {
   registerSurroundModule,
   resetSurroundRegistry,
 } from './registry.js';
-import { getWidgetRegistry, resetWidgetRegistry } from '../../screen-framework/widgets/registry.js';
+import { getWidgetRegistry, resetWidgetRegistry } from '../../../../capabilities/screen-host/browser/widgets/registry.js';
 
 const Dummy = () => null;
 const Other = () => null;

@@ -4,7 +4,7 @@ import green from "../../assets/icons/green.png";
 import yellow from "../../assets/icons/yellow.png";
 import red from "../../assets/icons/red.png";
 import lime from "../../assets/icons/lime.png";
-import { useScreenData } from '../../screen-framework/data/useScreenData.js';
+import { useScreenData } from "../../../../capabilities/screen-host/browser/data.mjs";
 
 const codes = {
   "0": {

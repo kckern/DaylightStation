@@ -20,8 +20,8 @@ vi.mock('../../../frontend/src/lib/Player/useBackgroundMusic.js', () => ({
   useBackgroundMusic: () => ({}),
 }));
 
-import ArtMode from '../../../frontend/src/screen-framework/widgets/ArtMode.jsx';
-import { ScreenAmbientProvider } from '../../../frontend/src/screen-framework/ambient/ScreenAmbientContext.jsx';
+import ArtMode from '../../../frontend/src/composition/screens/widgets/ArtMode.jsx';
+import { ScreenAmbientProvider } from '../../../capabilities/screen-host/browser/ambient/ScreenAmbientContext.jsx';
 
 const officeAmbient = {
   topic: 'ambient:office',

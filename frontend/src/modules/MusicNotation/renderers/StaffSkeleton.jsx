@@ -1,6 +1,6 @@
 // The shimmer (.piano-skeleton.is-shimmer) and the tokens it paints with.
-import '../../Piano/pianoTokens.scss';
-import '../../Piano/PianoKiosk/Skeleton.scss';
+import "../../../../../modules/piano/browser/tokens-style.mjs";
+import "../../../../../modules/piano/browser/skeleton-style.mjs";
 import './StaffSkeleton.scss';
 
 /**

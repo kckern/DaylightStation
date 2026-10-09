@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { volumeCurve } from '../../../frontend/src/screen-framework/providers/volumeCurve.js';
+import { volumeCurve } from '../../../capabilities/screen-host/browser/providers/volumeCurve.js';
 
 // The office knee: slider 0.5 → gain 0.1. Bottom half scales 0→0.1, top half 0.1→1.
 const KNEE = [{ in: 0, out: 0 }, { in: 0.5, out: 0.1 }, { in: 1, out: 1 }];

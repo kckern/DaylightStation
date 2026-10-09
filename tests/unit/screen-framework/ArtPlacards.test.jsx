@@ -7,8 +7,8 @@ vi.mock('../../../frontend/src/lib/api.mjs', () => ({
   DaylightMediaPath: (p) => `/${p}`,
 }));
 
-import ArtPlacards, { ArtPlacard } from '../../../frontend/src/screen-framework/widgets/ArtPlacards.jsx';
-import { VIEW_MODES } from '../../../frontend/src/screen-framework/widgets/artModes.js';
+import ArtPlacards, { ArtPlacard } from '../../../frontend/src/composition/screens/widgets/ArtPlacards.jsx';
+import { VIEW_MODES } from '../../../frontend/src/composition/screens/widgets/artModes.js';
 
 const GALLERY = VIEW_MODES[0];
 const FRAME = { top: 11.9, right: 6.5, bottom: 11.1, left: 7.0 };

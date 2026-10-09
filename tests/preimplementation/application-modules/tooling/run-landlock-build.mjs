@@ -4,6 +4,7 @@ import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
+import {setupOwnerDependencies} from '../../../../scripts/setup-owner-dependencies.mjs';
 const root=fs.realpathSync(new URL('../../../../',import.meta.url));
 if(process.argv.length!==2 || process.platform!=='linux' || process.arch!=='x64') throw Error('Fixed Linux x64 build only');
 const toolRoot=fs.realpathSync(process.env.PRE_TOOLCHAIN_ROOT);
@@ -14,12 +15,14 @@ const sentinel=path.join(denied,'private.env'); fs.writeFileSync(sentinel,'synth
 const tracked=spawnSync('/usr/bin/git',['ls-files','-z'],{cwd:root,encoding:'utf8',maxBuffer:8*1024*1024});
 if(tracked.status!==0) throw Error('Tracked enumeration failed');
 const files=tracked.stdout.split('\0').filter(name=>/^(frontend|shared)\//.test(name)&&!/(^|\/)(\.env[^/]*|node_modules)(\/|$)/.test(name)&&fs.existsSync(path.join(root,name)));
-files.push('package.json');
-for(const owner of ['modules/gratitude/browser','capabilities/household-identity/browser']) for(const name of fs.readdirSync(path.join(root,owner),{recursive:true})) if(fs.statSync(path.join(root,owner,name)).isFile()) files.push(path.join(owner,name));
+files.push('package.json','scripts/setup-owner-dependencies.mjs');
+for(const owner of ['modules/gratitude/browser','capabilities/household-identity/browser','modules/piano/browser','capabilities/playback/browser','capabilities/screen-host/browser','frontend/src/composition/screens','frontend/src/lib/diagnostics']){const walk=dir=>{for(const item of fs.readdirSync(dir,{withFileTypes:true})){if(item.name==='node_modules'||item.isSymbolicLink())continue;const file=path.join(dir,item.name);if(item.isDirectory())walk(file);else files.push(path.relative(root,file));}};walk(path.join(root,owner));}
 const hash=file=>createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const inputs=[...new Set(files)].sort().map(name=>({file:name,sha256:hash(path.join(root,name))}));
 for(const {file} of inputs){const dest=path.join(stage,file);fs.mkdirSync(path.dirname(dest),{recursive:true});fs.copyFileSync(path.join(root,file),dest);}
 for(const scope of ['','frontend']) fs.symlinkSync(path.join(toolRoot,scope,'node_modules'),path.join(stage,scope,'node_modules'),'dir');
+setupOwnerDependencies(stage);
+setupOwnerDependencies(stage,{check:true});
 const grants=new Map([[stage,'D']]);
 for(const scope of ['','frontend']) grants.set(fs.realpathSync(path.join(toolRoot,scope,'node_modules')),'D');
 for(const binary of ['@esbuild/linux-x64/bin/esbuild','sass-embedded-linux-x64/dart-sass/src/dart']) grants.set(fs.realpathSync(path.join(toolRoot,'frontend/node_modules',binary)),'X');
@@ -48,9 +51,10 @@ const outputs=(Array.isArray(result)?result:[result]).flatMap(r=>r.output);
 const generated=new Set(outputs.map(o=>o.fileName));
 for(const name of publicFiles)if(!generated.has(name))assert(fs.readFileSync(dist+'/'+name).equals(fs.readFileSync(publicRoot+'/'+name)),name+' public byte parity');
 fs.writeFileSync('public-build-output.json',JSON.stringify(publicFiles.map(name=>({file:name,generated:generated.has(name),byteParity:!generated.has(name)})),null,2));
-const owned=outputs.filter(o=>o.type==='chunk'&&Object.keys(o.modules).some(m=>m.includes('/modules/gratitude/browser/')||m.includes('/capabilities/household-identity/browser/'))).map(o=>({file:o.fileName,modules:Object.keys(o.modules).filter(m=>m.includes('/modules/gratitude/browser/')||m.includes('/capabilities/household-identity/browser/'))}));
+const owned=outputs.filter(o=>o.type==='chunk'&&Object.keys(o.modules).some(m=>m.includes('/modules/gratitude/browser/')||m.includes('/capabilities/household-identity/browser/')||m.includes('/modules/piano/browser/')||m.includes('/capabilities/playback/browser/')||m.includes('/capabilities/screen-host/browser/'))).map(o=>({file:o.fileName,modules:Object.keys(o.modules).filter(m=>m.includes('/modules/gratitude/browser/')||m.includes('/capabilities/household-identity/browser/')||m.includes('/modules/piano/browser/')||m.includes('/capabilities/playback/browser/')||m.includes('/capabilities/screen-host/browser/'))}));
 assert(owned.some(o=>o.modules.some(m=>m.endsWith('/Gratitude.jsx'))));assert(owned.some(o=>o.modules.some(m=>m.endsWith('/GratitudeConfig.jsx'))));assert(owned.some(o=>o.modules.some(m=>m.endsWith('/FamilySelector.jsx'))));
 for(const icon of ['thanks','hopes','gratitude'])assert(owned.some(o=>o.modules.some(m=>m.endsWith('/assets/'+icon+'.svg'))),icon+' asset inclusion');
+for(const leaf of ['PianoApp.jsx','PianoVisualizer.jsx','Player.jsx','PanelRenderer.jsx'])assert(owned.some(o=>o.modules.some(m=>m.endsWith('/'+leaf))),leaf+' actual owner inclusion');
 fs.writeFileSync('owned-build-output.json',JSON.stringify(owned,null,2));process.stdout.write('OWNED BUILD OUTPUT PASS\\n');
 `);
 const c=path.join(root,'tests/preimplementation/application-modules/tooling/landlock-runner.c'),binary=path.join(run,'landlock-runner');

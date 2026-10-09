@@ -2,7 +2,7 @@ import { render, act } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
 import { MenuNavigationProvider } from '../../context/MenuNavigationContext.jsx';
-import { ScreenOverlayProvider } from '../../screen-framework/overlays/ScreenOverlayProvider.jsx';
+import { ScreenOverlayProvider } from '../../../../capabilities/screen-host/browser/overlays/ScreenOverlayProvider.jsx';
 import MenuStack from './MenuStack.jsx';
 
 // Mock the heavy list-fetching menu view and Plex router — this test only
@@ -45,7 +45,7 @@ vi.mock('../Surround/SurroundHost.jsx', () => ({
 
 // Player.jsx is imported both as PlayerOverlayLoading (named, eager) and as
 // the lazy-loaded default. Mock the whole module so both resolve.
-vi.mock('../Player/Player', () => ({
+vi.mock('../../../../capabilities/playback/browser/player/Player.jsx', () => ({
   __esModule: true,
   default: React.forwardRef(function MockPlayer(props, ref) {
     return (

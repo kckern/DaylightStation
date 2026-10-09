@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { render } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { MantineProvider } from '@mantine/core';
-import { ScreenProvider } from '@/screen-framework/providers/ScreenProvider.jsx';
-import { ScreenDataContext } from '@/screen-framework/data/ScreenDataProvider.jsx';
+import { ScreenProvider } from '../../../../../../capabilities/screen-host/browser/providers/ScreenProvider.jsx';
+import { ScreenDataContext } from '../../../../../../capabilities/screen-host/browser/data/ScreenDataProvider.jsx';
 import { FitnessScreenProvider } from '@/modules/Fitness/FitnessScreenProvider.jsx';
 import FitnessSessionsWidget from './FitnessSessionsWidget.jsx';
 

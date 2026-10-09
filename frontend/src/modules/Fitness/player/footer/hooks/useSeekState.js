@@ -12,7 +12,7 @@
  */
 
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
-import playbackLog from '@/modules/Player/lib/playbackLogger.js';
+import { Default_playbackLogger_js as playbackLog } from "../../../../../../../capabilities/playback/browser/contracts.mjs";
 
 const DEBUG_SEEK = false;
 const SEEK_LOG_EVENT = 'fitness-seek-state';

@@ -19,7 +19,7 @@ import { dirname, join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 // Single source of truth for the preset lists, shared with the runtime
 // (gmSynth.js) so the downloader and the synth can never drift.
-import { GM_PROGRAMS, DRUM_NOTES } from '../src/modules/Piano/PianoKiosk/producer/presetManifest.js';
+import { GM_PROGRAMS, DRUM_NOTES } from "../../modules/piano/browser/producer.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const frontendRoot = join(__dirname, '..');

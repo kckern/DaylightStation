@@ -1,0 +1,461 @@
+/**
+ * useGameBudgetMeter — the CLIENT half of the piano game-time budget.
+ *
+ * Mirrors `coinMeteredGate.js` (frontend/src/modules/Fitness/widgets/EmulatorGame/)
+ * as a hook: open a session against the backend, meter locally at 1s
+ * resolution while the child is actually present, settle the cumulative
+ * total periodically (hold-and-settle — see SETTLE CONTRACT below), and
+ * close on depletion or unmount.
+ *
+ * SETTLE CONTRACT (same as coinMeteredGate): `cumulativeSeconds` sent to
+ * settle/close is the CUMULATIVE total seconds consumed since the session
+ * opened (a monotonically increasing high-water mark), NOT a per-interval
+ * delta. The server charges only newly-crossed whole seconds, so settles
+ * are idempotent and safe to retry. ALWAYS send the running total.
+ *
+ * THE SEEDING FIX (the reason this hook exists as a separate exercise from
+ * copy-pasting coinMeteredGate): `coinMeteredGate.js`'s `start()` sets
+ * `totalConsumed = 0` unconditionally and never reads a seed back from the
+ * server. On the arcade that is mostly harmless — a coin-metered session is
+ * short and a mid-session reload is rare. On this kiosk it is not: the
+ * tablet reloads many times a day (render watchdog, page-failure reload,
+ * connectivity-loss reload, manual kiosk restarts), and because settles are
+ * a monotonic high-water mark, a client that restarts its local counter at
+ * 0 sends settles the server treats as no-ops until the local counter
+ * climbs back past the pre-reload total — i.e. every reload buys the player
+ * free, unmetered game time, in exactly the direction this feature exists
+ * to prevent. `open`'s response carries `cumulativeSeconds` for exactly
+ * this reason; see the seeding comment on `totalSeconds` below.
+ *
+ * FAIL OPEN: an `open` that throws, or answers `{ enabled: false }`, means
+ * games are allowed and unmetered (`'unavailable'` / `'off'`) — never a
+ * lockout. Only the throw is logged as `budget.open-failed` (a real
+ * problem worth `level:warn` triage); `{ enabled: false }` is the ordinary
+ * "feature is off" state (true on this household's live config today) and
+ * logs `budget.disabled` instead, so turning the feature off does not fill
+ * the warn-level log stream with a "failure" that never happened.
+ */
+import { useEffect, useRef, useState } from 'react';
+import { DaylightAPI } from '../../../../frontend/src/lib/api.mjs';
+import getLogger from '../../../../frontend/src/lib/logging/Logger.js';
+import { activitySignal } from './activitySignal.js';
+import { clientStudyDate } from './clientStudyDate.js';
+
+// Lazy module logger (avoids import-time timing issues; never raw console).
+let _log;
+const log = () => (_log ||= getLogger().child({ component: 'piano-game-budget' }));
+
+const TICK_MS = 1000;
+
+// Fallbacks only used if the server answer is missing/malformed a field —
+// the server is authoritative and normally supplies all three.
+const DEFAULT_WARN_AT_SECONDS = 60;
+const DEFAULT_SETTLE_INTERVAL_SEC = 60;
+const DEFAULT_IDLE_AFTER_SECONDS = 90;
+
+// A settle must not be allowed to hang forever. `api.settle` is an
+// arbitrary injected fetch with no timeout of its own — a dropped kiosk
+// network can leave it pending for minutes. Without a bound, `settling`
+// (below) never clears, every subsequent settle WINDOW returns early with
+// nothing sent, and if the tab reloads before the hung call ever resolves,
+// every second since the last settle that actually landed is free —
+// the same "reload buys free time" failure this task exists to close,
+// arriving through a different door (a wedged loop instead of a zeroed
+// seed). This does not cancel the underlying fetch (the injected `api` has
+// no abort hook); it only stops WAITING on it so the loop keeps moving.
+const SETTLE_TIMEOUT_MS = 15_000;
+
+/**
+ * Default API adapter: a thin wrapper over DaylightAPI, mirroring
+ * `createDefaultCoinApi`'s shape and injectability. Tests never touch the
+ * network — they pass a fake `api` instead. The four Task-4 routes:
+ *   GET  /users/:userId/game-budget                          -> balance()
+ *   POST /users/:userId/game-budget/session                  -> open()
+ *   POST /users/:userId/game-budget/session/:sessionId/settle -> settle()
+ *   POST /users/:userId/game-budget/session/:sessionId/close  -> close()
+ *
+ * settle/close bodies MUST be a numeric JSON `{ cumulativeSeconds }` — the
+ * route hard-rejects anything else with a 400 (see piano.mjs's
+ * `parseCumulativeSeconds`). DaylightAPI always sends `Content-Type:
+ * application/json` and JSON.stringifies the body for a non-GET call, which
+ * is exactly what the route needs — do NOT reach for `navigator.sendBeacon`
+ * on unmount close: a bare beacon defaults to `text/plain`, the route 400s,
+ * and the session is never sealed.
+ */
+export function createDefaultGameBudgetApi() {
+  return {
+    open: ({ learnerId, deviceId }) =>
+      DaylightAPI(`api/v1/piano/users/${learnerId}/game-budget/session`, { deviceId }),
+    settle: ({ learnerId, sessionId, cumulativeSeconds }) =>
+      DaylightAPI(`api/v1/piano/users/${learnerId}/game-budget/session/${sessionId}/settle`, { cumulativeSeconds }),
+    close: ({ learnerId, sessionId, cumulativeSeconds }) =>
+      DaylightAPI(`api/v1/piano/users/${learnerId}/game-budget/session/${sessionId}/close`, { cumulativeSeconds }),
+    balance: ({ learnerId }) =>
+      DaylightAPI(`api/v1/piano/users/${learnerId}/game-budget`),
+  };
+}
+
+const defaultApi = createDefaultGameBudgetApi();
+
+/**
+ * Race a promise against a timeout, WITHOUT cancelling the underlying work
+ * (the injected `api` gives no abort hook). If `promise` wins, the timer is
+ * cleared so it never fires. If the timer wins, the returned promise
+ * rejects with `{ timedOut: true }` — used by settle() so a hung fetch
+ * un-wedges the loop instead of leaving `settling` stuck forever (Important
+ * #3: a wedged loop that never settles is the same "reload buys free time"
+ * failure this task exists to close, arriving through a different door).
+ */
+function raceTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(Object.assign(new Error(`timed out after ${ms}ms`), { timedOut: true }));
+    }, ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (err) => { clearTimeout(timer); reject(err); },
+    );
+  });
+}
+
+/**
+ * Meter game time for one learner/device pair while `active`.
+ *
+ * @param {object} opts
+ * @param {string} opts.learnerId
+ * @param {string} opts.deviceId
+ * @param {boolean} opts.active     meter only while true (e.g. inside a match)
+ * @param {object} [opts.api]       injectable api adapter (see createDefaultGameBudgetApi)
+ * @returns {{
+ *   state: 'off'|'opening'|'playing'|'idle-paused'|'warning'|'depleted'|'device-depleted'|'unavailable',
+ *   secondsLeft: number,
+ *   warn: boolean,
+ * }}
+ */
+export default function useGameBudgetMeter({ learnerId, deviceId, active, api = defaultApi }) {
+  const [state, setState] = useState('off');
+  const [secondsLeft, setSecondsLeft] = useState(0);
+
+  useEffect(() => {
+    if (!active) {
+      setState('off');
+      return undefined;
+    }
+
+    let cancelled = false;
+    let tickHandle = null;
+
+    // --- Per-session bookkeeping. Refs, not state: the tick loop mutates
+    // these every second, and re-rendering on every tick would be wasteful
+    // (matches coinMeteredGate's plain-object equivalent).
+    const sessionId = { current: null };
+
+    // totalSeconds is the cumulative high-water mark reported to (or about
+    // to be reported to) the server. NEVER reset to 0 here — see the
+    // module-level "THE SEEDING FIX" comment. It is seeded from the
+    // server's `cumulativeSeconds` inside openSession(), below.
+    const totalSeconds = { current: 0 };
+    const secondsLeftLocal = { current: 0 };
+    const warnAtSeconds = { current: DEFAULT_WARN_AT_SECONDS };
+    const settleIntervalSec = { current: DEFAULT_SETTLE_INTERVAL_SEC };
+    const idleAfterSeconds = { current: DEFAULT_IDLE_AFTER_SECONDS };
+    const secondsSinceSettle = { current: 0 };
+    const idle = { current: false };
+    const settling = { current: false };
+    const closed = { current: true }; // no open session to close, by default
+    const warned = { current: false };
+
+    /**
+     * Every meter line, stamped with the four identity fields the design
+     * requires of ALL budget and gate events: `learnerId`, `deviceId`,
+     * `studyDate`, `sessionId`. Routed through one helper rather than spelled
+     * at fourteen call sites, so the contract cannot drift a field at a time.
+     *
+     * `deviceId` is the field that answers "which tablet burned the device
+     * cap this afternoon" — the device-wide cap is shared across kiosks, so a
+     * budget line without it can only be joined back to a tablet through
+     * whichever `budget.opened` happened to carry the same session id, which
+     * is a join an operator has to know to make and the seven-day window may
+     * already have dropped.
+     *
+     * `studyDate` is computed HERE, per line, not captured when the session
+     * opened: the household day rolls at 4am and a late-evening match can
+     * outlive it, so a captured value would file the tail of a session under
+     * the wrong day and disagree with the day file the server actually
+     * charged.
+     */
+    const emit = (level, event, data = {}) => {
+      log()[level](event, {
+        learnerId, deviceId, studyDate: clientStudyDate(), sessionId: sessionId.current, ...data,
+      });
+    };
+
+    /**
+     * Land on `playing` or `warning` from the current local balance, and
+     * announce the CROSSING into `warning` exactly once.
+     *
+     * `budget.warning` is the design's layer-1 signal that a child is nearly
+     * out of time, and it is deliberately an EDGE rather than a state. The
+     * tick recomputes `warning` every second, so logging on the state would
+     * write one identical line per second for the whole warning window —
+     * with the shipped defaults, 300 lines per child per depletion, into a
+     * 7-day store, drowning the one line that carries information.
+     *
+     * The flag resets whenever the balance is back above the threshold,
+     * because a settle can return a LARGER `secondsLeft` than the local
+     * countdown held (the server is authoritative, and a household can raise
+     * an allowance mid-day). A second window in the same session is a second
+     * piece of news and says so.
+     */
+    const applyBalanceState = () => {
+      const warning = secondsLeftLocal.current <= warnAtSeconds.current;
+      if (!warning) {
+        warned.current = false;
+      } else if (!warned.current) {
+        warned.current = true;
+        emit('info', 'budget.warning', {
+          secondsLeft: secondsLeftLocal.current,
+          warnAtSeconds: warnAtSeconds.current,
+        });
+      }
+      setState(warning ? 'warning' : 'playing');
+    };
+
+    const clearTick = () => {
+      if (tickHandle != null) {
+        clearInterval(tickHandle);
+        tickHandle = null;
+      }
+    };
+
+    // Idempotent: close the session once, with the final cumulative total.
+    // This is how the meter closes on unmount (contract #6) — the effect's
+    // cleanup function below calls this synchronously; the fetch it fires
+    // is not aborted by the unmount because DaylightAPI issues a plain
+    // `fetch()` with no AbortController tied to the component lifecycle.
+    async function closeSession() {
+      clearTick();
+      if (closed.current || !sessionId.current) {
+        closed.current = true;
+        return;
+      }
+      closed.current = true;
+      const cumulativeSeconds = totalSeconds.current;
+      try {
+        await api.close({ learnerId, sessionId: sessionId.current, cumulativeSeconds });
+      } catch (err) {
+        emit('warn', 'budget.settle-failed', {
+          cumulativeSeconds, phase: 'close', error: err && err.message,
+        });
+      }
+    }
+
+    // --- Periodic settle (hold-and-settle: send the CUMULATIVE running total).
+    async function settle() {
+      if (settling.current || cancelled || !sessionId.current) return;
+      settling.current = true;
+      const cumulativeSeconds = totalSeconds.current;
+      try {
+        const res = await raceTimeout(
+          api.settle({ learnerId, sessionId: sessionId.current, cumulativeSeconds }),
+          SETTLE_TIMEOUT_MS,
+        );
+        if (cancelled) return;
+
+        if (Number.isFinite(res?.secondsLeft)) {
+          secondsLeftLocal.current = Math.max(0, res.secondsLeft);
+          setSecondsLeft(secondsLeftLocal.current);
+        }
+
+        if (res?.depleted) {
+          emit('info', 'budget.depleted', { cumulativeSeconds });
+          setState('depleted');
+          await closeSession();
+          return;
+        }
+        if (res?.deviceDepleted) {
+          emit('info', 'budget.device-depleted', { cumulativeSeconds });
+          setState('device-depleted');
+          await closeSession();
+          return;
+        }
+
+        emit('debug', 'budget.settled', { cumulativeSeconds });
+        if (!idle.current) applyBalanceState();
+      } catch (err) {
+        if (cancelled) return;
+
+        if (err?.status === 409) {
+          // Permanent, not transient: the server's ownership check
+          // (PianoGameBudgetService.settle/close) rejects a sessionId whose
+          // recorded learnerId doesn't match the caller — and it never will
+          // start matching on a retry. Retrying every settleIntervalSec
+          // forever would warn indefinitely while charging nothing. Stop
+          // the tick and fail open rather than lock the child out; do NOT
+          // call closeSession() — this session isn't ours, and closing it
+          // would 409 the same way.
+          emit('warn', 'budget.learner-mismatch', { cumulativeSeconds, error: err && err.message });
+          clearTick();
+          closed.current = true; // not ours to close
+          setState('unavailable');
+          return;
+        }
+
+        // Any other failure (network, 5xx, or the timeout race above) is
+        // transient — settles are idempotent/retryable, so the next window
+        // resends a larger cumulative total. The timeout race is what keeps
+        // a hung fetch from wedging `settling` shut (see SETTLE_TIMEOUT_MS)
+        // for the rest of the session.
+        emit('warn', 'budget.settle-failed', {
+          cumulativeSeconds, error: err && err.message, timedOut: !!err?.timedOut,
+        });
+      } finally {
+        settling.current = false;
+      }
+    }
+
+    // --- Local meter tick: idle pauses the drain entirely (no charge, no
+    // countdown) until the next activitySignal bump.
+    function tick() {
+      const idleNow = Date.now() - activitySignal.lastActivityAt() >= idleAfterSeconds.current * 1000;
+
+      if (idleNow) {
+        if (!idle.current) {
+          idle.current = true;
+          emit('info', 'budget.idle-paused', {});
+          setState('idle-paused');
+        }
+        return;
+      }
+
+      if (idle.current) {
+        idle.current = false;
+        emit('info', 'budget.idle-resumed', {});
+        // Fall through: this tick counts as active time immediately.
+      }
+
+      totalSeconds.current += 1;
+      secondsLeftLocal.current = Math.max(0, secondsLeftLocal.current - 1);
+      setSecondsLeft(secondsLeftLocal.current);
+
+      applyBalanceState();
+
+      secondsSinceSettle.current += 1;
+      if (secondsSinceSettle.current >= settleIntervalSec.current) {
+        secondsSinceSettle.current -= settleIntervalSec.current;
+        settle();
+      }
+    }
+
+    async function openSession() {
+      setState('opening');
+      try {
+        const res = await api.open({ learnerId, deviceId });
+        if (cancelled) return;
+
+        if (!res?.enabled) {
+          // The ordinary "feature is off" state — NOT a failure. Distinct
+          // from budget.open-failed (below) so turning the feature off in
+          // household config doesn't fill level:warn triage with a
+          // "failure" that never happened (this is the default today: the
+          // live piano config has no gameLimit block).
+          emit('debug', 'budget.disabled', {});
+          setState('off');
+          return;
+        }
+
+        sessionId.current = res.sessionId;
+        closed.current = false;
+
+        // Seed from the server, NEVER zero — see "THE SEEDING FIX" at the
+        // top of this file. A client that starts counting from 0 after a
+        // mid-match reload makes the reload free, unmetered play, which on
+        // this reload-happy kiosk would be the feature's most common
+        // failure, in the exact direction it exists to prevent. A missing
+        // or non-numeric `cumulativeSeconds` is a server-contract
+        // violation, not a normal case — it still falls back to 0 (fail
+        // open rather than refuse to play), but it is loud about it.
+        //
+        // Deliberately `typeof === 'number'`, NOT `Number(res.cumulativeSeconds)`:
+        // `Number(null)` is `0`, a perfectly valid-looking seed, so a
+        // coercing check would silently swallow exactly the malformed-field
+        // case this guard exists to catch. Mirrors the server's own
+        // `parseCumulativeSeconds` validation (piano.mjs) on purpose.
+        const seed = res.cumulativeSeconds;
+        if (typeof seed === 'number' && Number.isFinite(seed) && seed >= 0) {
+          totalSeconds.current = seed;
+        } else {
+          totalSeconds.current = 0;
+          emit('warn', 'budget.seed-invalid', { cumulativeSeconds: seed });
+        }
+
+        secondsLeftLocal.current = Number.isFinite(res.secondsLeft) ? Math.max(0, res.secondsLeft) : 0;
+        setSecondsLeft(secondsLeftLocal.current);
+        warnAtSeconds.current = Number.isFinite(res.warnAtSeconds) ? res.warnAtSeconds : DEFAULT_WARN_AT_SECONDS;
+        settleIntervalSec.current = Number.isFinite(res.settleIntervalSec) && res.settleIntervalSec > 0
+          ? res.settleIntervalSec : DEFAULT_SETTLE_INTERVAL_SEC;
+        idleAfterSeconds.current = Number.isFinite(res.idleAfterSeconds) && res.idleAfterSeconds > 0
+          ? res.idleAfterSeconds : DEFAULT_IDLE_AFTER_SECONDS;
+        secondsSinceSettle.current = 0;
+
+        // Important #1: `open` returns the LIVE balance (the server holds
+        // this session's history — it may be a re-open of a match that was
+        // already exhausted earlier today). Checking only `enabled`/`res`
+        // shape and unconditionally starting the tick would re-arm a full
+        // warning-then-playing window on every new match indefinitely,
+        // because `depleted` was previously only reachable via a settle
+        // response. Enter the terminal state directly instead, and never
+        // arm the interval — nothing was charged, so there is nothing to
+        // settle or close; the effect's unmount cleanup still closes this
+        // session normally if the component goes away.
+        // Both fall back to Infinity, NOT to the local seed. `secondsLeftLocal`
+        // is 0 whenever `res.secondsLeft` was itself non-finite, so seeding the
+        // learner side from it turned one malformed `enabled:true` response —
+        // a truncated proxy reply, a partial 200 during a restart — into
+        // "Games are done for today" for a child with a full allowance, logged
+        // as `budget.depleted` and therefore indistinguishable in the store
+        // from a real depletion. Infrastructure fails OPEN; only an
+        // affirmative balance closes the gate. A depletion the server actually
+        // means always arrives as a finite 0.
+        const learnerSecondsLeft = Number.isFinite(res.learnerSecondsLeft)
+          ? res.learnerSecondsLeft : Infinity;
+        const deviceSecondsLeft = Number.isFinite(res.deviceSecondsLeft)
+          ? res.deviceSecondsLeft : Infinity;
+        if (learnerSecondsLeft <= 0) {
+          emit('info', 'budget.depleted', { atOpen: true });
+          setState('depleted');
+          return;
+        }
+        if (deviceSecondsLeft <= 0) {
+          emit('info', 'budget.device-depleted', { atOpen: true });
+          setState('device-depleted');
+          return;
+        }
+
+        idle.current = Date.now() - activitySignal.lastActivityAt() >= idleAfterSeconds.current * 1000;
+        if (idle.current) {
+          setState('idle-paused');
+        } else {
+          applyBalanceState();
+        }
+
+        clearTick();
+        tickHandle = setInterval(tick, TICK_MS);
+      } catch (err) {
+        if (cancelled) return;
+        emit('warn', 'budget.open-failed', { error: err && err.message });
+        setState('unavailable');
+      }
+    }
+
+    openSession();
+
+    return () => {
+      cancelled = true;
+      closeSession();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, learnerId, deviceId, api]);
+
+  return { state, secondsLeft, warn: state === 'warning' };
+}

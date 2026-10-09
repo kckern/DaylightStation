@@ -22,7 +22,7 @@ vi.mock('../../../lib/logging/Logger.js', () => ({
   default: () => ({ child: () => ({ info() {}, debug() {}, warn() {}, error() {} }) }),
 }));
 
-import { getActionBus, resetActionBus } from '../../../screen-framework/input/ActionBus.js';
+import { getActionBus, resetActionBus } from '../../../../../capabilities/screen-host/browser/input/ActionBus.js';
 import CheckpointQuizOverlay from './CheckpointQuizOverlay.jsx';
 
 const MC = {

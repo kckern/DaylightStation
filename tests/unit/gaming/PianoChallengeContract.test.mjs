@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { BankChallengePolicy } from '../../../backend/src/3_applications/piano/BankChallengePolicy.mjs';
+import { BankChallengePolicy } from '../../../modules/piano/server/application/BankChallengePolicy.mjs';
 import { generateScaleAbc, midiToAbc } from '../../../frontend/src/modules/MusicNotation/renderers/abc.js';
 import {
   createAssessmentAttempt,
   observeAssessment,
   prepareExerciseAssessment,
   startAssessmentAttempt,
-} from '../../../frontend/src/modules/Piano/performance/assessmentSession.js';
+} from '../../../modules/piano/browser/performance/assessmentSession.js';
 
 function pitchesOf(prompt) {
   return prompt.expected_events.flatMap((event) => event.notes.map((note) => note.midi));

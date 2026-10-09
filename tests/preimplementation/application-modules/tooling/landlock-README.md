@@ -108,7 +108,7 @@ and checked for credential/include/header fields without printing values. Global
 config, private working-tree files and credentials remain excluded. `/dev/null`
 read/write is the only additional device grant Git requires. Source contents remain
 read-only; scratch holds npm/Vite caches. Hook limits are16 GiB virtual address
-space,180 CPU seconds per process,600-second alarm,610-second outer watchdog,
+space,180 CPU seconds per process,1800-second alarm,1810-second outer watchdog,
 64 MiB per-file and256 descriptors. C socket/outside-read/host-read/symlink/source-
 write/truncate controls are mandatory, and protected source/index hashes must match.
 The temporary core.hooksPath wrapper executes this adapter; parent Git writes its
@@ -124,3 +124,27 @@ in root Vitest config avoids denied localhost DNS. Canvas needs the same exact
 read-only libuuid/libresolv files used by selected rendering tests. The scratch
 composition-only diagnostic proves the inherited flag and all15 original registry
 assertions with the same confinement; it does not replace the final full hook.
+
+Piano/playback contributor baseline (M2):
+
+```sh
+PRE_TOOLCHAIN_ROOT=/opt/Code/DaylightStation node tests/preimplementation/application-modules/tooling/run-landlock.mjs m2
+```
+
+The fixed15-suite inventory is `configs/m2-selected.mjs`: widget registration and
+panel rendering, the session bridge/control path, actual Player session-port
+integration, Piano lecture policy/resume/remount, backend course queries, and
+playback session/report lifecycle. It passes145 original named assertions plus a published Piano keyboard/host
+embedding check using
+synthetic roster/course/media/session boundaries, requiring no household, MIDI
+hardware, speakers, credentials or running backend. It reuses the repository's
+synthetic frontend environment (including inert same-origin WebSocket/fetch),
+frontend dependency identity and existing shared aliases. Tracked shader files
+are explicit read-only inputs. DOM styles are stubbed as in the existing selected
+integration lane; this is behavioral contributor evidence, not a browser/device
+or production-build claim. Kernel denial controls and protected-input hashes are
+mandatory. The original pre-move baseline is m2-MH0NZP. Candidate mode requires a prior
+green145-case receipt through PRE_BASELINE_EVIDENCE, compares the exact named
+original assertions, and separately requires the embedding assertion. Default
+contributor mode runs146 assertions without historical receipts. Failed harness-wiring attempts remain recorded;
+no product fixtures or assertion expectations were changed.

@@ -13,7 +13,7 @@
  *
  * Advisory: a ledger failure is logged and never reaches play/log's caller.
  */
-import { PlaybackSessionRegistry } from '#apps/content/runtime/PlaybackSessionRegistry.mjs';
+import { PlaybackSessionRegistry } from "../../../../capabilities/playback/server/public.mjs";
 import { buildPlayLedgerRow, selectPlays, PLAY_LEDGER_RETENTION_DAYS } from '#domains/media/playLedger.mjs';
 
 const DEFAULT_RESUME_GAP_MS = 15 * 60 * 1000;

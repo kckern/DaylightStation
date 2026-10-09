@@ -10,7 +10,7 @@ import { DeviceAssignmentLedger } from '../hooks/fitness/DeviceAssignmentLedger.
 import { GuestAssignmentService } from '../hooks/fitness/GuestAssignmentService.js';
 import { useZoneLedSync } from '../hooks/fitness/useZoneLedSync.js';
 import { useEquipmentFanSync } from '../hooks/fitness/useEquipmentFanSync.js';
-import { playbackLog } from '../modules/Player/lib/playbackLogger.js';
+import { playbackLog } from "../../../capabilities/playback/browser/contracts.mjs";
 import getLogger from '../lib/logging/Logger.js';
 import { getModuleManifest } from '../modules/Fitness/index.js';
 import { VIBRATION_CONSTANTS } from '../modules/Fitness/widgets/VibrationApp/constants.js';

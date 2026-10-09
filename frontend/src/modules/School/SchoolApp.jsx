@@ -54,7 +54,7 @@ import LaunchCardPreview from './selfService/LaunchCardPreview.jsx';
 import ScanCeremony from './selfService/ScanCeremony.jsx';
 import { useSelfService, DEFAULT_IDLE_TIMEOUT_SECONDS } from './selfService/useSelfService.js';
 import { useScanCeremony } from './selfService/useScanCeremony.js';
-import ReadalongPlaylistPlayer from '../Player/ReadalongPlaylistPlayer.jsx';
+import { ReadalongPlaylistPlayer as ReadalongPlaylistPlayer } from "../../../../capabilities/playback/browser/readalong.mjs";
 import { ShutdownBlackout, useShutdownLock } from '../../hooks/useShutdownLock.js';
 import HangulTypingProvider from './ime/HangulTypingProvider.jsx';
 import './School.scss';

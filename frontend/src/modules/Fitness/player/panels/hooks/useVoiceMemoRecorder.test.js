@@ -11,7 +11,7 @@ vi.mock('@/context/FitnessContext.jsx', () => ({
   useFitness: () => ({ currentMedia: null, recentlyPlayed: [], fitnessSessionInstance: null, householdId: 'hh' })
 }));
 
-vi.mock('@/modules/Player/lib/playbackLogger.js', () => ({
+vi.mock('../../../../../../../capabilities/playback/browser/player/lib/playbackLogger.js', () => ({
   playbackLog: vi.fn()
 }));
 

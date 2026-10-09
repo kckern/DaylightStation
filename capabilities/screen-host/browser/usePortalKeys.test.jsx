@@ -1,0 +1,200 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import React from 'react';
+import { render, act } from '@testing-library/react';
+import { ScreenVolumeContext } from '../../../frontend/src/lib/volume/ScreenVolumeContext.js';
+import { PortalKeysBridge } from './PortalKeysBridge.jsx';
+
+// ── Fake WebSocket ───────────────────────────────────────────────────────────
+// Captures every instance so tests can drive onmessage/onclose directly.
+
+let sockets = [];
+
+class FakeWebSocket {
+  constructor(url) {
+    this.url = url;
+    this.readyState = 0;
+    this.onopen = null;
+    this.onmessage = null;
+    this.onerror = null;
+    this.onclose = null;
+    this.closed = false;
+    sockets.push(this);
+  }
+  open() {
+    this.readyState = 1;
+    if (this.onopen) this.onopen();
+  }
+  emit(obj) {
+    if (this.onmessage) this.onmessage({ data: JSON.stringify(obj) });
+  }
+  emitRaw(data) {
+    if (this.onmessage) this.onmessage({ data });
+  }
+  fireClose() {
+    if (this.onclose) this.onclose();
+  }
+  close() {
+    this.closed = true;
+    this.readyState = 3;
+  }
+}
+
+function renderBridge({ config, step = vi.fn(), stepSize = 0.1 }) {
+  const value = {
+    master: 0.5,
+    effectiveMaster: 0.5,
+    muted: false,
+    setMaster: vi.fn(),
+    step,
+    toggleMute: vi.fn(),
+    stepSize,
+  };
+  const utils = render(
+    <ScreenVolumeContext.Provider value={value}>
+      <PortalKeysBridge config={config} />
+    </ScreenVolumeContext.Provider>
+  );
+  return { ...utils, step };
+}
+
+const volumeSocket = () => sockets.find((socket) => socket.url.includes(':8771/') || socket.url.includes(':9999/'));
+
+describe('usePortalKeys / PortalKeysBridge', () => {
+  beforeEach(() => {
+    sockets = [];
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('does not open a socket unless explicitly enabled', () => {
+    renderBridge({ config: undefined });
+    expect(sockets).toHaveLength(0);
+
+    renderBridge({ config: { enabled: false } });
+    expect(sockets).toHaveLength(0);
+  });
+
+  it('connects to the configured port on localhost when enabled', () => {
+    renderBridge({ config: { enabled: true, port: 9999 } });
+    expect(sockets).toHaveLength(2);
+    expect(volumeSocket().url).toBe('ws://localhost:9999/');
+  });
+
+  it('defaults to port 8771', () => {
+    renderBridge({ config: { enabled: true } });
+    expect(volumeSocket().url).toBe('ws://localhost:8771/');
+    expect(sockets.some((socket) => socket.url === 'ws://127.0.0.1:8774/')).toBe(true);
+  });
+
+  it('steps volume up by stepSize on VOLUME_UP', () => {
+    const { step } = renderBridge({ config: { enabled: true }, stepSize: 0.1 });
+    act(() => {
+      volumeSocket().open();
+      volumeSocket().emit({ type: 'key', key: 'KEYCODE_VOLUME_UP', action: 'down' });
+    });
+    expect(step).toHaveBeenCalledWith(0.1);
+  });
+
+  // The APK broadcasts BOTH down and up for every physical press (see
+  // PortalKeysService.onKeyEvent). Acting on both moved the master by 2x
+  // stepSize per press, which is how a panel configured to start at 0.6
+  // arrived at a saturated 1.0 after two taps and then stopped responding.
+  it('steps ONCE per physical press, ignoring the key-up half', () => {
+    const { step } = renderBridge({ config: { enabled: true }, stepSize: 0.1 });
+
+    act(() => {
+      volumeSocket().emit({ type: 'key', key: 'KEYCODE_VOLUME_UP', action: 'down' });
+      volumeSocket().emit({ type: 'key', key: 'KEYCODE_VOLUME_UP', action: 'up' });
+    });
+
+    expect(step).toHaveBeenCalledTimes(1);
+    expect(step).toHaveBeenCalledWith(0.1);
+  });
+
+  it('ignores a key-up for VOLUME_DOWN too', () => {
+    const { step } = renderBridge({ config: { enabled: true }, stepSize: 0.1 });
+
+    act(() => {
+      volumeSocket().emit({ type: 'key', key: 'KEYCODE_VOLUME_DOWN', action: 'up' });
+    });
+
+    expect(step).not.toHaveBeenCalled();
+  });
+
+  it('steps volume down by stepSize on VOLUME_DOWN', () => {
+    const { step } = renderBridge({ config: { enabled: true }, stepSize: 0.05 });
+    act(() => {
+      volumeSocket().open();
+      volumeSocket().emit({ type: 'key', key: 'KEYCODE_VOLUME_DOWN', action: 'down' });
+    });
+    expect(step).toHaveBeenCalledWith(-0.05);
+  });
+
+  // The camera button is the APK's job — it must work when this WebView is dozing
+  // or wedged, so the SPA must never be the thing that acts on it.
+  it('does NOT touch volume on MUTE (screen toggle is native)', () => {
+    const { step } = renderBridge({ config: { enabled: true } });
+    act(() => {
+      volumeSocket().open();
+      volumeSocket().emit({ type: 'key', key: 'KEYCODE_MUTE', action: 'down' });
+      volumeSocket().emit({ type: 'key', key: 'KEYCODE_VOLUME_MUTE', action: 'down' });
+    });
+    expect(step).not.toHaveBeenCalled();
+  });
+
+  it('ignores non-key messages and malformed payloads', () => {
+    const { step } = renderBridge({ config: { enabled: true } });
+    act(() => {
+      volumeSocket().open();
+      volumeSocket().emit({ type: 'ready', port: 8771 });
+      volumeSocket().emitRaw('not json at all');
+    });
+    expect(step).not.toHaveBeenCalled();
+  });
+
+  it('reconnects after the socket closes', () => {
+    renderBridge({ config: { enabled: true } });
+    expect(sockets).toHaveLength(2);
+
+    act(() => { volumeSocket().fireClose(); });
+    act(() => { vi.advanceTimersByTime(1000); });
+
+    expect(sockets).toHaveLength(3);
+  });
+
+  it('backs off exponentially so non-Portal screens stay cheap', () => {
+    renderBridge({ config: { enabled: true } });
+
+    // 1st retry at 1s
+    const firstVolume = volumeSocket();
+    act(() => { firstVolume.fireClose(); });
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(sockets).toHaveLength(3);
+
+    // 2nd retry should NOT have fired at another 1s — backoff doubled to 2s.
+    const secondVolume = sockets.filter((socket) => socket.url === 'ws://localhost:8771/')[1];
+    act(() => { secondVolume.fireClose(); });
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(sockets).toHaveLength(3);
+
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(sockets).toHaveLength(4);
+  });
+
+  it('stops reconnecting after unmount', () => {
+    const { unmount } = renderBridge({ config: { enabled: true } });
+    const first = volumeSocket();
+
+    unmount();
+    act(() => { first.fireClose(); });
+    act(() => { vi.advanceTimersByTime(60000); });
+
+    expect(sockets).toHaveLength(2);
+    expect(first.closed).toBe(true);
+  });
+});

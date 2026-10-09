@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { shouldEmitTrackChanged } from '../../../../frontend/src/modules/Player/lib/shouldEmitTrackChanged.js';
+import { shouldEmitTrackChanged } from '../../../../capabilities/playback/browser/player/lib/shouldEmitTrackChanged.js';
 
 /**
  * Tests for queue-track-changed emission filtering.

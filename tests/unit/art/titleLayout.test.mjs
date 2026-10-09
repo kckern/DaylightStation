@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { layoutTitle } from '../../../frontend/src/screen-framework/widgets/titleLayout.js';
+import { layoutTitle } from '../../../frontend/src/composition/screens/widgets/titleLayout.js';
 
 // fake measurer: width = character count
 const measure = (s) => s.length;

@@ -13,7 +13,7 @@
  *   (audio).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import usePlayerController from '../../Player/usePlayerController.js';
+import { usePlayerController as usePlayerController } from "../../../../../capabilities/playback/browser/controller.mjs";
 import { schoolLog } from '../schoolLog.js';
 
 export default function useMediaChrome(playerRef, { autoHide = false, idleMs = 3500 } = {}) {

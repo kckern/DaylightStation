@@ -1,0 +1,1312 @@
+import { render, act, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import React from 'react';
+import { getActionBus, resetActionBus } from '../../../../../capabilities/screen-host/browser/input/ActionBus.js';
+import { ScreenOverlayProvider } from '../../../../../capabilities/screen-host/browser/overlays/ScreenOverlayProvider.jsx';
+import { ScreenVolumeProvider } from '../../../../../capabilities/screen-host/browser/providers/ScreenVolumeProvider.jsx';
+import {
+  useScreenVolume,
+  _resetForTests as resetVolumeModuleState,
+} from '../../../lib/volume/ScreenVolumeContext.js';
+import { ScreenActionHandler } from './ScreenActionHandler.jsx';
+import { ScreenScreensaver } from '../ScreenScreensaver.jsx';
+import { MenuNavigationProvider } from '../../../context/MenuNavigationContext.jsx';
+import { SessionSourceProvider } from '../../../../../capabilities/playback/browser/sessions/SessionSourceContext.jsx';
+import * as apiModule from '../../../lib/api.mjs';
+import {
+  __resetPlayerQueueOpRegistryForTests,
+  getPlayerQueueOpRegistry,
+} from '../../../../../capabilities/playback/browser/player/lib/queueOpRegistry.js';
+
+import { useScreenOverlay } from '../../../../../capabilities/screen-host/browser/overlays/ScreenOverlayProvider.jsx';
+
+/**
+ * Test helper: registers an escape interceptor that returns the given value.
+ */
+function InterceptorRegistrar({ handled }) {
+  const { registerEscapeInterceptor } = useScreenOverlay();
+  React.useEffect(() => {
+    registerEscapeInterceptor(() => handled);
+  }, [handled, registerEscapeInterceptor]);
+  return null;
+}
+
+// Mock MenuStack and Player to avoid importing their heavy dependency trees
+vi.mock('../../../modules/Menu/MenuStack.jsx', () => ({
+  // `rootMenu` is a legacy menu KEY (string) or a content id (object with
+  // `contentId`) — Menu.jsx picks a different endpoint per shape, so the mock
+  // exposes both rather than stringifying an object into "[object Object]".
+  default: (props) => (
+    <div
+      data-testid="menu-stack"
+      data-menu={typeof props.rootMenu === 'string' ? props.rootMenu : undefined}
+      data-menu-contentid={props.rootMenu?.contentId}
+    >
+      MenuStack
+    </div>
+  ),
+}));
+
+vi.mock('../../../../../capabilities/playback/browser/player/Player.jsx', () => ({
+  default: React.forwardRef(function MockPlayer(props, ref) {
+    return (
+      <div
+        ref={ref}
+        data-testid="player"
+        data-play={typeof props.play === 'object' ? JSON.stringify(props.play) : props.play}
+        data-queue={typeof props.queue === 'object' ? JSON.stringify(props.queue) : props.queue}
+      >Player</div>
+    );
+  }),
+}));
+
+// Stub the 'art' widget so the scene overlay renders without ArtMode's deps.
+// Spread the real module first: `modules/Surround/registry.js` builds the surround
+// registry from this file's `WidgetRegistry` CLASS, and a partial mock that drops
+// that export breaks the import chain (ScreenPlayer -> SurroundHost -> registry).
+// Only `getWidgetRegistry` is stubbed, exactly as before.
+vi.mock('../../../../../capabilities/screen-host/browser/widgets/registry.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  getWidgetRegistry: () => ({
+    get: () => (props) => (
+      <button data-testid="art-scene" data-collection={props.collection || ''} onClick={props.onExit}>art</button>
+    ),
+  }),
+}));
+
+describe('ScreenActionHandler', () => {
+  beforeEach(() => {
+    resetActionBus();
+    resetVolumeModuleState();
+    __resetPlayerQueueOpRegistryForTests();
+    window.localStorage.clear();
+  });
+
+  it('opens MenuStack overlay on menu:open action', () => {
+    const { getByTestId, queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+        <div data-testid="dashboard">Dashboard</div>
+      </ScreenOverlayProvider>
+    );
+
+    expect(queryByTestId('menu-stack')).toBeNull();
+
+    act(() => getActionBus().emit('menu:open', { menuId: 'music' }));
+
+    expect(getByTestId('menu-stack')).toBeTruthy();
+    expect(getByTestId('menu-stack').dataset.menu).toBe('music');
+  });
+
+  // A MenuStack overlay RENDERS the shared MenuNavigation stack, and so does
+  // the screen's own menu widget. Unless the overlay claims the stack, both
+  // render it — and a menu selection then mounts the Player TWICE (two unmuted
+  // videos in sync, two transcode sessions). The claim is what MenuWidget reads
+  // to yield, so it has to be made at every site that opens a MenuStack.
+  it('claims the nav stack for the MenuStack it opens', () => {
+    function OwnershipProbe() {
+      const { overlayOwnsNavStack } = useScreenOverlay();
+      return <span data-testid="owns-nav-stack">{String(overlayOwnsNavStack)}</span>;
+    }
+
+    const { getByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+        <OwnershipProbe />
+      </ScreenOverlayProvider>
+    );
+
+    expect(getByTestId('owns-nav-stack').textContent).toBe('false');
+
+    act(() => getActionBus().emit('menu:open', { menuId: 'music' }));
+
+    expect(getByTestId('owns-nav-stack').textContent).toBe('true');
+  });
+
+  // A cast Player does not RENDER the nav stack, but it must suspend the stack's
+  // background renderer. Otherwise a Player already on that stack keeps its
+  // audio alive underneath the fullscreen cast Player.
+  it('suspends the nav stack for a Player overlay without claiming ownership', () => {
+    function NavStackProbe() {
+      const { overlayOwnsNavStack, overlaySuspendsNavStack } = useScreenOverlay();
+      return (
+        <>
+          <span data-testid="owns-nav-stack">{String(overlayOwnsNavStack)}</span>
+          <span data-testid="suspends-nav-stack">{String(overlaySuspendsNavStack)}</span>
+        </>
+      );
+    }
+
+    const { getByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+        <NavStackProbe />
+      </ScreenOverlayProvider>
+    );
+
+    act(() => getActionBus().emit('media:play', { contentId: 'plex:12345' }));
+
+    expect(getByTestId('owns-nav-stack').textContent).toBe('false');
+    expect(getByTestId('suspends-nav-stack').textContent).toBe('true');
+  });
+
+  // A source-prefixed menuId is a CONTENT ID, not a watchlist key. Handed to
+  // Menu.jsx as a bare string it resolves `api/v1/list/watchlist/plex:663144`,
+  // which answers 200 with `items: []` — the menu opens empty and the trigger
+  // looks like it did nothing. `?list=`, NFC triggers and WS dispatch all mint
+  // this shape (see `toContentId` in parseAutoplayParams).
+  it('opens a source-prefixed menuId as a content id, not a watchlist key', () => {
+    const { getByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+
+    act(() => getActionBus().emit('menu:open', { menuId: 'plex:663144' }));
+
+    const stack = getByTestId('menu-stack');
+    expect(stack.dataset.menuContentid).toBe('plex:663144');
+    expect(stack.dataset.menu).toBeUndefined();
+  });
+
+  it('opens Player overlay on media:play action', () => {
+    const { getByTestId, queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+
+    expect(queryByTestId('player')).toBeNull();
+
+    act(() => getActionBus().emit('media:play', { contentId: 'plex:12345' }));
+
+    expect(getByTestId('player')).toBeTruthy();
+    expect(getByTestId('player').dataset.play).toContain('plex:12345');
+  });
+
+  it('opens Player overlay on media:queue action', () => {
+    const { getByTestId, queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+
+    expect(queryByTestId('player')).toBeNull();
+
+    act(() => getActionBus().emit('media:queue', { contentId: 'plex:67890' }));
+
+    expect(getByTestId('player')).toBeTruthy();
+  });
+
+  it('mounts Player overlay on media:queue-op with op=play-now', () => {
+    const { getByTestId, queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+
+    expect(queryByTestId('player')).toBeNull();
+
+    act(() => getActionBus().emit('media:queue-op', {
+      op: 'play-now',
+      contentId: 'plex:777',
+      shader: 'dark',
+      shuffle: true,
+      commandId: 'cmd-abc',
+    }));
+
+    expect(getByTestId('player')).toBeTruthy();
+  });
+
+  it('ignores media:queue-op with non play-now op (logs debug)', () => {
+    const { queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+
+    act(() => getActionBus().emit('media:queue-op', {
+      op: 'clear',
+      commandId: 'cmd-xyz',
+    }));
+
+    expect(queryByTestId('player')).toBeNull();
+    expect(queryByTestId('menu-stack')).toBeNull();
+  });
+
+  it('dismisses overlay on escape action when no overlay is active', () => {
+    const { queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+
+    // Should not throw
+    act(() => getActionBus().emit('escape', {}));
+
+    expect(queryByTestId('menu-stack')).toBeNull();
+  });
+
+  it('dismisses fullscreen overlay on escape action', () => {
+    const { getByTestId, queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+
+    act(() => getActionBus().emit('menu:open', { menuId: 'tv' }));
+    expect(getByTestId('menu-stack')).toBeTruthy();
+
+    act(() => getActionBus().emit('escape', {}));
+    expect(queryByTestId('menu-stack')).toBeNull();
+  });
+
+  describe('media:config-set (Remote shuffle / repeat / volume)', () => {
+    const mountHandler = () => render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler actions={{}} />
+      </ScreenOverlayProvider>
+    );
+
+    it('hands shuffle, repeat and volume to the queue owner', () => {
+      const owner = vi.fn();
+      getPlayerQueueOpRegistry().register(owner);
+      const { unmount } = mountHandler();
+      act(() => getActionBus().emit('media:config-set', { setting: 'shuffle', value: true, commandId: 'c1' }));
+      act(() => getActionBus().emit('media:config-set', { setting: 'repeat', value: 'all', commandId: 'c2' }));
+      act(() => getActionBus().emit('media:config-set', { setting: 'volume', value: 40, commandId: 'c3' }));
+      expect(owner).toHaveBeenCalledWith(expect.objectContaining({ op: 'set-config', setting: 'shuffle', value: true }));
+      expect(owner).toHaveBeenCalledWith(expect.objectContaining({ op: 'set-config', setting: 'repeat', value: 'all' }));
+      expect(owner).toHaveBeenCalledWith(expect.objectContaining({ op: 'set-config', setting: 'volume', value: 40 }));
+      unmount();
+    });
+
+    it('leaves other settings (shader, session flags) alone, and rejects a bad value or a missing owner', () => {
+      const owner = vi.fn();
+      const errors = [];
+      getActionBus().subscribe('command-handler-error', (e) => errors.push(e));
+      const { unmount } = mountHandler();
+      act(() => getActionBus().emit('media:config-set', { setting: 'shader', value: 'dark', commandId: 'c4' }));
+      act(() => getActionBus().emit('media:config-set', { setting: 'repeat', value: 'sometimes', commandId: 'c5' }));
+      act(() => getActionBus().emit('media:config-set', { setting: 'shuffle', value: true, commandId: 'c6' }));
+      expect(owner).not.toHaveBeenCalled();
+      expect(errors.map((e) => [e.commandId, e.code])).toEqual([['c5', 'INVALID_VALUE'], ['c6', 'QUEUE_OWNER_UNAVAILABLE']]);
+      unmount();
+    });
+  });
+
+  describe('sleep wake mode', () => {
+    afterEach(() => {
+      document.querySelectorAll('.screen-action-shader').forEach(el => el.remove());
+    });
+
+    it('wakes from sleep on keydown when actions.sleep.wake is "keydown"', () => {
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ sleep: { wake: 'keydown' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      // Enter sleep
+      act(() => getActionBus().emit('display:sleep', {}));
+
+      const shader = document.querySelector('.screen-action-shader');
+      expect(shader).toBeTruthy();
+      expect(shader.style.opacity).toBe('1');
+
+      // Wake via keydown
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'x', bubbles: true }));
+      });
+
+      expect(parseFloat(shader.style.opacity)).toBeLessThan(1);
+    });
+
+    it('does not wake on keydown when wake mode is "click"', () => {
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ sleep: { wake: 'click' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('display:sleep', {}));
+
+      const shader = document.querySelector('.screen-action-shader');
+      expect(shader.style.opacity).toBe('1');
+
+      // Keydown should NOT wake
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'x', bubbles: true }));
+      });
+
+      expect(shader.style.opacity).toBe('1');
+    });
+
+    it('wakes on both click and keydown when wake mode is "both"', () => {
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ sleep: { wake: 'both' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      // Test keydown wake
+      act(() => getActionBus().emit('display:sleep', {}));
+
+      const shader = document.querySelector('.screen-action-shader');
+      expect(shader.style.opacity).toBe('1');
+
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'x', bubbles: true }));
+      });
+
+      expect(parseFloat(shader.style.opacity)).toBeLessThan(1);
+    });
+
+    it('defaults to click-only wake when no actions.sleep configured', () => {
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('display:sleep', {}));
+
+      const shader = document.querySelector('.screen-action-shader');
+      expect(shader.style.opacity).toBe('1');
+
+      // Keydown should NOT wake (default is click)
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'x', bubbles: true }));
+      });
+
+      expect(shader.style.opacity).toBe('1');
+    });
+  });
+
+  describe('configurable escape fallback chain', () => {
+    const escapeActions = {
+      escape: [
+        { when: 'shader_active', do: 'clear_shader' },
+        { when: 'overlay_active', do: 'dismiss_overlay' },
+        { when: 'idle', do: 'reload' },
+      ],
+    };
+
+    it('reloads page on escape when no shader or overlay (actions.escape configured with idle->reload)', () => {
+      const reloadMock = vi.fn();
+      Object.defineProperty(window, 'location', {
+        value: { ...window.location, reload: reloadMock },
+        writable: true,
+        configurable: true,
+      });
+
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={escapeActions} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('escape', {}));
+      expect(reloadMock).toHaveBeenCalled();
+    });
+
+    it('dismisses overlay before reloading when overlay is active', () => {
+      const reloadMock = vi.fn();
+      Object.defineProperty(window, 'location', {
+        value: { ...window.location, reload: reloadMock },
+        writable: true,
+        configurable: true,
+      });
+
+      const { getByTestId, queryByTestId } = render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={escapeActions} />
+        </ScreenOverlayProvider>
+      );
+
+      // Open an overlay first
+      act(() => getActionBus().emit('menu:open', { menuId: 'tv' }));
+      expect(getByTestId('menu-stack')).toBeTruthy();
+
+      // Escape should dismiss overlay, not reload
+      act(() => getActionBus().emit('escape', {}));
+      expect(queryByTestId('menu-stack')).toBeNull();
+      expect(reloadMock).not.toHaveBeenCalled();
+    });
+
+    it('clears shader before dismissing when shader is active', () => {
+      const reloadMock = vi.fn();
+      Object.defineProperty(window, 'location', {
+        value: { ...window.location, reload: reloadMock },
+        writable: true,
+        configurable: true,
+      });
+
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={escapeActions} />
+        </ScreenOverlayProvider>
+      );
+
+      // Activate shader by cycling it
+      act(() => getActionBus().emit('display:shader', {}));
+
+      // Escape should clear shader, not dismiss or reload
+      act(() => getActionBus().emit('escape', {}));
+
+      const shader = document.querySelector('.screen-action-shader');
+      expect(parseFloat(shader.style.opacity)).toBe(0);
+      expect(reloadMock).not.toHaveBeenCalled();
+    });
+
+    it('keeps default behavior when actions.escape is not configured', () => {
+      const reloadMock = vi.fn();
+      Object.defineProperty(window, 'location', {
+        value: { ...window.location, reload: reloadMock },
+        writable: true,
+        configurable: true,
+      });
+
+      const { getByTestId, queryByTestId } = render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler />
+        </ScreenOverlayProvider>
+      );
+
+      // With no actions configured, escape on idle should NOT reload
+      act(() => getActionBus().emit('escape', {}));
+      expect(reloadMock).not.toHaveBeenCalled();
+
+      // Should still dismiss overlays
+      act(() => getActionBus().emit('menu:open', { menuId: 'tv' }));
+      expect(getByTestId('menu-stack')).toBeTruthy();
+
+      act(() => getActionBus().emit('escape', {}));
+      expect(queryByTestId('menu-stack')).toBeNull();
+    });
+  });
+
+  describe('menu duplicate guard', () => {
+    it('ignores second menu:open with same menuId when duplicate is "ignore"', () => {
+      const { getAllByTestId } = render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ menu: { duplicate: 'ignore' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('menu:open', { menuId: 'music' }));
+      act(() => getActionBus().emit('menu:open', { menuId: 'music' }));
+
+      // Should only have one menu-stack rendered
+      expect(getAllByTestId('menu-stack')).toHaveLength(1);
+    });
+
+    it('allows opening a different menu even with duplicate guard', () => {
+      const { getByTestId, queryByTestId } = render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ menu: { duplicate: 'ignore' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('menu:open', { menuId: 'music' }));
+      expect(getByTestId('menu-stack')).toBeTruthy();
+
+      // Dismiss first, then open a different menu
+      act(() => getActionBus().emit('escape', {}));
+      expect(queryByTestId('menu-stack')).toBeNull();
+
+      act(() => getActionBus().emit('menu:open', { menuId: 'tv' }));
+      expect(getByTestId('menu-stack').dataset.menu).toBe('tv');
+    });
+
+    it('dispatches synthetic ArrowRight keydown when duplicate is "navigate" and same menu is open', () => {
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ menu: { duplicate: 'navigate' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('menu:open', { menuId: 'education' }));
+
+      // Clear spy calls from first open
+      dispatchSpy.mockClear();
+
+      // Second emit of same menu should dispatch ArrowRight to advance selection sequentially
+      act(() => getActionBus().emit('menu:open', { menuId: 'education' }));
+
+      const arrowCalls = dispatchSpy.mock.calls.filter(
+        ([e]) => e instanceof KeyboardEvent && e.key === 'ArrowRight'
+      );
+      expect(arrowCalls).toHaveLength(1);
+
+      dispatchSpy.mockRestore();
+    });
+
+    it('allows re-opening same menu after escape dismisses it', () => {
+      const { getByTestId, queryByTestId } = render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ menu: { duplicate: 'ignore' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('menu:open', { menuId: 'music' }));
+      expect(getByTestId('menu-stack')).toBeTruthy();
+
+      act(() => getActionBus().emit('escape', {}));
+      expect(queryByTestId('menu-stack')).toBeNull();
+
+      act(() => getActionBus().emit('menu:open', { menuId: 'music' }));
+      expect(getByTestId('menu-stack')).toBeTruthy();
+    });
+  });
+
+  describe('escape interceptor', () => {
+    const escapeActions = {
+      escape: [
+        { when: 'shader_active', do: 'clear_shader' },
+        { when: 'overlay_active', do: 'dismiss_overlay' },
+        { when: 'idle', do: 'reload' },
+      ],
+    };
+
+    it('interceptor prevents overlay dismiss when it returns true', () => {
+      const { getByTestId } = render(
+        <ScreenOverlayProvider>
+          <InterceptorRegistrar handled={true} />
+          <ScreenActionHandler actions={escapeActions} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('menu:open', { menuId: 'tv' }));
+      expect(getByTestId('menu-stack')).toBeTruthy();
+
+      // Escape should be intercepted — overlay stays
+      act(() => getActionBus().emit('escape', {}));
+      expect(getByTestId('menu-stack')).toBeTruthy();
+    });
+
+    it('interceptor returning false allows normal escape chain', () => {
+      const { getByTestId, queryByTestId } = render(
+        <ScreenOverlayProvider>
+          <InterceptorRegistrar handled={false} />
+          <ScreenActionHandler actions={escapeActions} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('menu:open', { menuId: 'tv' }));
+      expect(getByTestId('menu-stack')).toBeTruthy();
+
+      // Interceptor returns false — overlay should dismiss
+      act(() => getActionBus().emit('escape', {}));
+      expect(queryByTestId('menu-stack')).toBeNull();
+    });
+
+    it('dismisses overlay when no interceptor is registered', () => {
+      const { getByTestId, queryByTestId } = render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={escapeActions} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('menu:open', { menuId: 'tv' }));
+      expect(getByTestId('menu-stack')).toBeTruthy();
+
+      act(() => getActionBus().emit('escape', {}));
+      expect(queryByTestId('menu-stack')).toBeNull();
+    });
+
+    it('interceptor prevents page reload when no overlay is active', () => {
+      const reloadMock = vi.fn();
+      Object.defineProperty(window, 'location', {
+        value: { ...window.location, reload: reloadMock },
+        writable: true,
+        configurable: true,
+      });
+
+      render(
+        <ScreenOverlayProvider>
+          <InterceptorRegistrar handled={true} />
+          <ScreenActionHandler actions={escapeActions} />
+        </ScreenOverlayProvider>
+      );
+
+      // No overlay active — escape chain would hit idle→reload
+      // But interceptor should handle it first
+      act(() => getActionBus().emit('escape', {}));
+      expect(reloadMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('WebSocket skip commands', () => {
+    /** Every synthetic keydown this render dispatched, in order. */
+    const pressKeysFor = (command) => {
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+      const { unmount } = render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'dispatch' } }} />
+        </ScreenOverlayProvider>
+      );
+      act(() => {
+        getActionBus().emit('media:playback', { command });
+      });
+      const keys = dispatchSpy.mock.calls
+        .filter(([e]) => e instanceof KeyboardEvent && e.type === 'keydown')
+        .map(([e]) => e.key);
+      dispatchSpy.mockRestore();
+      unmount();
+      return keys;
+    };
+
+    // The WS envelope's transport vocabulary is skipNext/skipPrev
+    // (shared/contracts/media/commands.mjs). Before these were mapped, a remote
+    // skip hit `playback.unknown-command` and silently did nothing.
+    it('a WS skipNext produces the same keydown as the numpad\'s next', () => {
+      expect(pressKeysFor('skipNext')).toEqual(pressKeysFor('next'));
+      expect(pressKeysFor('skipNext')).toEqual(['Tab']);
+    });
+
+    it('routes WS skipPrev to the queue owner while hardware prev retains Backspace semantics', () => {
+      const owner = vi.fn();
+      getPlayerQueueOpRegistry().register(owner);
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+      const { unmount } = render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'dispatch' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('media:playback', { command: 'skipPrev', commandId: 'prev-1' }));
+
+      expect(owner).toHaveBeenCalledWith(expect.objectContaining({ op: 'skip-prev', commandId: 'prev-1' }));
+      expect(dispatchSpy.mock.calls.some(([event]) => event instanceof KeyboardEvent && event.key === 'Backspace'))
+        .toBe(false);
+      dispatchSpy.mockRestore();
+      unmount();
+      expect(pressKeysFor('prev')).toEqual(['Backspace']);
+    });
+
+    it('routes WS skipNext to the queue owner only for a photo slideshow; video keeps Tab', () => {
+      const owner = vi.fn();
+      getPlayerQueueOpRegistry().register(owner);
+      let current = { contentId: 'fixture:art-1', format: 'image' };
+      const source = { getBareSnapshot: () => ({ currentItem: current }), subscribe: () => () => {} };
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+      const { unmount } = render(
+        <SessionSourceProvider source={source}>
+          <ScreenOverlayProvider>
+            <ScreenActionHandler actions={{ playback: { when_idle: 'dispatch' } }} />
+          </ScreenOverlayProvider>
+        </SessionSourceProvider>
+      );
+      act(() => getActionBus().emit('media:playback', { command: 'skipNext', commandId: 'next-1' }));
+      expect(owner).toHaveBeenCalledWith(expect.objectContaining({ op: 'skip-next', commandId: 'next-1' }));
+      expect(dispatchSpy.mock.calls.some(([event]) => event instanceof KeyboardEvent && event.key === 'Tab')).toBe(false);
+      current = { contentId: 'plex:1', format: 'video' };
+      owner.mockClear();
+      act(() => getActionBus().emit('media:playback', { command: 'skipNext', commandId: 'next-2' }));
+      expect(owner).not.toHaveBeenCalledWith(expect.objectContaining({ op: 'skip-next' }));
+      expect(dispatchSpy.mock.calls.some(([event]) => event instanceof KeyboardEvent && event.key === 'Tab')).toBe(true);
+      dispatchSpy.mockRestore();
+      unmount();
+    });
+
+    it('routes remote Stop to the active Player owner without synthesizing Escape', () => {
+      const owner = vi.fn();
+      getPlayerQueueOpRegistry().register(owner);
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'dispatch' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('media:playback', { command: 'stop', commandId: 'stop-1' }));
+
+      expect(owner).toHaveBeenCalledWith(expect.objectContaining({ op: 'stop', commandId: 'stop-1' }));
+      expect(dispatchSpy.mock.calls.some(([event]) => event instanceof KeyboardEvent && event.key === 'Escape'))
+        .toBe(false);
+      dispatchSpy.mockRestore();
+    });
+
+    it('routes explicit remote transport commands to the active Player owner without toggling by keydown', () => {
+      const owner = vi.fn();
+      getPlayerQueueOpRegistry().register(owner);
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'dispatch' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('media:playback', { command: 'play', commandId: 'play-1' }));
+      act(() => getActionBus().emit('media:playback', { command: 'pause', commandId: 'pause-1' }));
+      act(() => getActionBus().emit('media:playback', { command: 'toggle', commandId: 'toggle-1' }));
+
+      expect(owner).toHaveBeenNthCalledWith(1, expect.objectContaining({ op: 'play', commandId: 'play-1' }));
+      expect(owner).toHaveBeenNthCalledWith(2, expect.objectContaining({ op: 'pause', commandId: 'pause-1' }));
+      expect(owner).toHaveBeenNthCalledWith(3, expect.objectContaining({ op: 'toggle', commandId: 'toggle-1' }));
+      expect(dispatchSpy.mock.calls.some(([event]) => event instanceof KeyboardEvent)).toBe(false);
+      dispatchSpy.mockRestore();
+    });
+
+    it('routes a value-bearing remote relative seek to the active Player owner', () => {
+      const owner = vi.fn();
+      getPlayerQueueOpRegistry().register(owner);
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('media:seek-rel', { value: 10, commandId: 'seek-1' }));
+
+      expect(owner).toHaveBeenCalledWith(expect.objectContaining({ op: 'seek-rel', value: 10, commandId: 'seek-1' }));
+      expect(dispatchSpy.mock.calls.some(([event]) => event instanceof KeyboardEvent)).toBe(false);
+      dispatchSpy.mockRestore();
+    });
+  });
+
+  describe('go to live', () => {
+    it('routes a remote go-live to the active Player owner', () => {
+      const owner = vi.fn();
+      getPlayerQueueOpRegistry().register(owner);
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler />
+        </ScreenOverlayProvider>
+      );
+      act(() => getActionBus().emit('media:go-live', { commandId: 'live-1' }));
+      expect(owner).toHaveBeenCalledWith(expect.objectContaining({ op: 'go-live', commandId: 'live-1' }));
+    });
+  });
+
+  describe('playback secondary fallback', () => {
+    it('uses secondary action when idle and when_idle is "secondary"', () => {
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'secondary' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      // No media elements exist, so media is idle
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+
+      act(() => {
+        getActionBus().emit('media:playback', {
+          command: 'play',
+          secondary: { action: 'media:queue', payload: { contentId: 'morning-program' } },
+        });
+      });
+
+      // Should NOT dispatch a synthetic keydown — secondary fallback should handle it
+      const keydownCalls = dispatchSpy.mock.calls.filter(
+        ([e]) => e instanceof KeyboardEvent
+      );
+      expect(keydownCalls).toHaveLength(0);
+
+      dispatchSpy.mockRestore();
+    });
+
+    it('threads shader (and other config) through the secondary media:queue fallback', () => {
+      const { getByTestId } = render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'secondary' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => {
+        getActionBus().emit('media:playback', {
+          command: 'play',
+          secondary: {
+            action: 'media:queue',
+            payload: { contentId: 'morning-program', shader: 'minimal', shuffle: true },
+          },
+        });
+      });
+
+      const player = getByTestId('player');
+      const queue = JSON.parse(player.dataset.queue);
+      expect(queue.shader).toBe('minimal');
+      expect(queue.contentId).toBe('morning-program');
+    });
+
+    it('threads shader (and other config) through the secondary media:play fallback', () => {
+      const { getByTestId } = render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'secondary' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => {
+        getActionBus().emit('media:playback', {
+          command: 'play',
+          secondary: {
+            action: 'media:play',
+            payload: { contentId: 'morning-program', shader: 'minimal', shuffle: true },
+          },
+        });
+      });
+
+      const player = getByTestId('player');
+      const play = JSON.parse(player.dataset.play);
+      expect(play.shader).toBe('minimal');
+      expect(play.contentId).toBe('morning-program');
+    });
+
+    it('opens a source-prefixed menuId as a content id via the secondary menu:open fallback', () => {
+      const { getByTestId } = render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'secondary' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => {
+        getActionBus().emit('media:playback', {
+          command: 'play',
+          secondary: { action: 'menu:open', payload: { menuId: 'plex:663144' } },
+        });
+      });
+
+      const stack = getByTestId('menu-stack');
+      expect(stack.dataset.menuContentid).toBe('plex:663144');
+      expect(stack.dataset.menu).toBeUndefined();
+    });
+
+    it('dispatches keydown normally when when_idle is "dispatch"', () => {
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'dispatch' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => {
+        getActionBus().emit('media:playback', {
+          command: 'play',
+          secondary: { action: 'media:queue', payload: { contentId: 'morning-program' } },
+        });
+      });
+
+      const keydownCalls = dispatchSpy.mock.calls.filter(
+        ([e]) => e instanceof KeyboardEvent
+      );
+      expect(keydownCalls.length).toBeGreaterThan(0);
+
+      dispatchSpy.mockRestore();
+    });
+
+    it('dispatches keydown when no secondary is provided even if when_idle is "secondary"', () => {
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'secondary' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => {
+        getActionBus().emit('media:playback', { command: 'play' });
+      });
+
+      const keydownCalls = dispatchSpy.mock.calls.filter(
+        ([e]) => e instanceof KeyboardEvent
+      );
+      expect(keydownCalls.length).toBeGreaterThan(0);
+
+      dispatchSpy.mockRestore();
+    });
+
+    it('dispatches keydown when media is active even if when_idle is "secondary"', () => {
+      // Create a fake video element that is playing
+      const video = document.createElement('video');
+      Object.defineProperty(video, 'paused', { value: false });
+      document.body.appendChild(video);
+
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'secondary' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => {
+        getActionBus().emit('media:playback', {
+          command: 'play',
+          secondary: { action: 'media:queue', payload: { contentId: 'morning-program' } },
+        });
+      });
+
+      const keydownCalls = dispatchSpy.mock.calls.filter(
+        ([e]) => e instanceof KeyboardEvent
+      );
+      expect(keydownCalls.length).toBeGreaterThan(0);
+
+      dispatchSpy.mockRestore();
+      document.body.removeChild(video);
+    });
+  });
+
+  it('engages the art scene on a display:content art: id', async () => {
+    const spy = vi.spyOn(apiModule, 'DaylightAPI').mockResolvedValue({ collection: 'all', music: { queue: 'plex:622894' } });
+    const { findByTestId, queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+    expect(queryByTestId('art-scene')).toBeNull();
+    await act(async () => { getActionBus().emit('display:content', { id: 'art:classical-evening' }); });
+    const el = await findByTestId('art-scene');
+    expect(el.dataset.collection).toBe('all');
+    expect(spy).toHaveBeenCalledWith('api/v1/art/preset/classical-evening');
+    spy.mockRestore();
+  });
+
+  it('ignores non-art display:content ids', async () => {
+    const spy = vi.spyOn(apiModule, 'DaylightAPI').mockResolvedValue({});
+    render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+    act(() => { getActionBus().emit('display:content', { id: 'immich:abc' }); });
+    await Promise.resolve();
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it('does not engage when the preset fetch fails (404)', async () => {
+    const spy = vi.spyOn(apiModule, 'DaylightAPI').mockRejectedValue(new Error('HTTP 404'));
+    const { queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+    await act(async () => { getActionBus().emit('display:content', { id: 'art:nope' }); });
+    await Promise.resolve();
+    expect(queryByTestId('art-scene')).toBeNull();
+    spy.mockRestore();
+  });
+
+  it('onExit dismisses the scene', async () => {
+    const spy = vi.spyOn(apiModule, 'DaylightAPI').mockResolvedValue({ collection: 'all' });
+    const { findByTestId, queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+    await act(async () => { getActionBus().emit('display:content', { id: 'art:x' }); });
+    const el = await findByTestId('art-scene');
+    act(() => { el.click(); });   // stub's onClick = the injected onExit
+    expect(queryByTestId('art-scene')).toBeNull();
+    spy.mockRestore();
+  });
+
+  it('the scene replaces an existing fullscreen overlay (priority high)', async () => {
+    const spy = vi.spyOn(apiModule, 'DaylightAPI').mockResolvedValue({ collection: 'all' });
+    const { findByTestId, queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+    act(() => { getActionBus().emit('menu:open', { menuId: 'music' }); });
+    expect(queryByTestId('menu-stack')).toBeTruthy();
+    await act(async () => { getActionBus().emit('display:content', { id: 'art:x' }); });
+    await findByTestId('art-scene');
+    expect(queryByTestId('menu-stack')).toBeNull();   // replaced → priority:'high' worked
+    spy.mockRestore();
+  });
+
+  it('media:queue-op op=play-next with no active player mounts a fresh Player', () => {
+    const { getByTestId, queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+    expect(queryByTestId('player')).toBeNull();
+    act(() => getActionBus().emit('media:queue-op', { op: 'play-next', contentId: 'plex:1' }));
+    expect(getByTestId('player')).toBeTruthy();
+  });
+
+  it('does not mount a second Player when media exists but its owner is temporarily unavailable', () => {
+    const dummy = document.createElement('div');
+    dummy.className = 'audio-player';
+    document.body.appendChild(dummy);
+    const { queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+
+    act(() => getActionBus().emit('media:queue-op', { op: 'play-next', contentId: 'plex:1' }));
+
+    expect(queryByTestId('player')).toBeNull();
+    dummy.remove();
+  });
+
+  it('media:queue-op op=play-next dispatches only to the registered Player owner', () => {
+    const background = vi.fn();
+    const foreground = vi.fn();
+    getPlayerQueueOpRegistry().register(background);
+    getPlayerQueueOpRegistry().register(foreground);
+
+    render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+    act(() => getActionBus().emit('media:queue-op', { op: 'play-next', contentId: 'plex:1' }));
+
+    expect(foreground).toHaveBeenCalledTimes(1);
+    expect(foreground).toHaveBeenCalledWith(expect.objectContaining({ op: 'play-next', contentId: 'plex:1' }));
+    expect(background).not.toHaveBeenCalled();
+  });
+
+  it('media:queue-op op=add dispatches only to the registered Player owner', () => {
+    const background = vi.fn();
+    const foreground = vi.fn();
+    getPlayerQueueOpRegistry().register(background);
+    getPlayerQueueOpRegistry().register(foreground);
+
+    const { queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+    act(() => getActionBus().emit('media:queue-op', {
+      op: 'add', contentId: 'plex:added', commandId: 'cmd-add',
+    }));
+
+    expect(foreground).toHaveBeenCalledTimes(1);
+    expect(foreground).toHaveBeenCalledWith(expect.objectContaining({
+      op: 'add', contentId: 'plex:added', commandId: 'cmd-add',
+    }));
+    expect(background).not.toHaveBeenCalled();
+    expect(queryByTestId('player')).toBeNull();
+  });
+
+  it('reports idle op=add unsupported instead of mounting an autoplaying Player', () => {
+    const failure = vi.fn();
+    getActionBus().subscribe('command-handler-error', failure);
+    const { queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+
+    act(() => getActionBus().emit('media:queue-op', {
+      op: 'add', contentId: 'plex:held', commandId: 'cmd-idle-add',
+    }));
+
+    expect(queryByTestId('player')).toBeNull();
+    expect(failure).toHaveBeenCalledWith(expect.objectContaining({
+      commandId: 'cmd-idle-add', code: 'QUEUE_OWNER_UNAVAILABLE',
+    }));
+  });
+
+  it('media:queue-op op=play-now with no active player mounts a fresh Player', () => {
+    const { getByTestId, queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+    expect(queryByTestId('player')).toBeNull();
+    act(() => getActionBus().emit('media:queue-op', { op: 'play-now', contentId: 'plex:1' }));
+    expect(getByTestId('player')).toBeTruthy();
+  });
+
+  it('media:queue-op op=play-now dispatches to the registered Player owner', () => {
+    const handler = vi.fn();
+    getPlayerQueueOpRegistry().register(handler);
+
+    render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+    act(() => getActionBus().emit('media:queue-op', { op: 'play-now', contentId: 'plex:2' }));
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledWith(expect.objectContaining({ op: 'play-now', contentId: 'plex:2' }));
+  });
+
+  it('replaces an idle fullscreen overlay before bootstrapping an item-action owner', async () => {
+    let snapshot = {
+      sessionId: 'screen-session',
+      state: 'idle',
+      currentItem: null,
+      position: 0,
+      queue: { items: [], currentIndex: -1, upNextCount: 0, executionOrder: [] },
+      config: { shuffle: false, repeat: 'off', shader: null, volume: 50, playbackRate: 1 },
+      meta: { ownerId: 'acceptance-media', updatedAt: new Date().toISOString() },
+    };
+    let queueRevision = 0;
+    const ownerIdentity = () => document.querySelector('[data-testid="player"]') ? {
+      ownerInstanceId: 'screen-player', playbackRevision: 0, queueRevision, stopRevision: 0,
+    } : null;
+    const source = {
+      ownerId: 'acceptance-media',
+      getActionOwner: ownerIdentity,
+      capture: () => ({ snapshot: structuredClone(snapshot), identity: ownerIdentity() }),
+      applyQueue: vi.fn(),
+      adopt: vi.fn((next) => {
+        snapshot = structuredClone(next);
+        queueRevision += 1;
+        return { ok: true };
+      }),
+    };
+    const apiSpy = vi.spyOn(apiModule, 'DaylightAPI').mockResolvedValue({ ok: true });
+    const applied = vi.fn();
+    getActionBus().subscribe('media:queue-op-applied', applied);
+
+    const { findByTestId, queryByTestId } = render(
+      <MenuNavigationProvider>
+        <ScreenOverlayProvider>
+          <SessionSourceProvider source={source}>
+            <ScreenScreensaver config={{ widget: 'art', idle: 0.01, showOnLoad: true, interactive: true }} />
+            <ScreenActionHandler />
+          </SessionSourceProvider>
+        </ScreenOverlayProvider>
+      </MenuNavigationProvider>
+    );
+    await findByTestId('art-scene');
+
+    act(() => getActionBus().emit('media:queue-op', {
+      op: 'item-action',
+      kind: 'playNow',
+      item: { contentId: 'plex:55854', title: 'Arrival', type: 'movie' },
+      clearRest: false,
+      operationId: 'cold-play',
+      tappedAt: Date.now(),
+      commandId: 'cold-command',
+      options: {},
+    }));
+
+    await findByTestId('player', {}, { timeout: 1000 });
+    expect(queryByTestId('art-scene')).toBeNull();
+    await waitFor(() => expect(applied).toHaveBeenCalledWith(expect.objectContaining({
+      operationId: 'cold-play', ok: true,
+    })));
+    expect(source.adopt).toHaveBeenCalledTimes(1);
+
+    act(() => getActionBus().emit('escape', {}));
+    await waitFor(() => expect(queryByTestId('player')).toBeNull());
+    await findByTestId('art-scene', {}, { timeout: 1000 });
+    apiSpy.mockRestore();
+  });
+
+  describe('hardware Back (popstate) consumer', () => {
+    it('dismisses a fullscreen art scene on Back (popstate)', async () => {
+      const spy = vi.spyOn(apiModule, 'DaylightAPI').mockResolvedValue({ collection: 'all' });
+      const { findByTestId, queryByTestId } = render(
+        <MenuNavigationProvider>
+          <ScreenOverlayProvider>
+            <ScreenActionHandler />
+          </ScreenOverlayProvider>
+        </MenuNavigationProvider>
+      );
+      await act(async () => { getActionBus().emit('display:content', { id: 'art:x' }); });
+      await findByTestId('art-scene');
+
+      act(() => { window.dispatchEvent(new PopStateEvent('popstate')); });
+      expect(queryByTestId('art-scene')).toBeNull();   // Back left the scene
+      spy.mockRestore();
+    });
+
+    it('defers to menu nav (scene stays) when an overlay owns its back via an escape interceptor', async () => {
+      const spy = vi.spyOn(apiModule, 'DaylightAPI').mockResolvedValue({ collection: 'all' });
+      const { findByTestId, getByTestId } = render(
+        <MenuNavigationProvider>
+          <ScreenOverlayProvider>
+            <InterceptorRegistrar handled={true} />
+            <ScreenActionHandler />
+          </ScreenOverlayProvider>
+        </MenuNavigationProvider>
+      );
+      await act(async () => { getActionBus().emit('display:content', { id: 'art:x' }); });
+      await findByTestId('art-scene');
+
+      // An interceptor is registered → the consumer defers (menu pop owns Back),
+      // so the fullscreen overlay is NOT dismissed by the consumer.
+      act(() => { window.dispatchEvent(new PopStateEvent('popstate')); });
+      expect(getByTestId('art-scene')).toBeTruthy();
+      spy.mockRestore();
+    });
+
+    it('does not crash on Back when nothing is open', () => {
+      render(
+        <MenuNavigationProvider>
+          <ScreenOverlayProvider>
+            <ScreenActionHandler />
+          </ScreenOverlayProvider>
+        </MenuNavigationProvider>
+      );
+      act(() => { window.dispatchEvent(new PopStateEvent('popstate')); });
+      // no throw, nothing to assert beyond a clean run
+    });
+  });
+
+  describe('display:volume (software master)', () => {
+    function VolumeProbe({ onValue }) {
+      const v = useScreenVolume();
+      React.useEffect(() => onValue(v), [v, onValue]);
+      return null;
+    }
+
+    function withProviders() {
+      const onValue = vi.fn();
+      const utils = render(
+        <ScreenVolumeProvider defaultMaster={0.5} stepSize={0.1}>
+          <ScreenOverlayProvider>
+            <ScreenActionHandler />
+            <VolumeProbe onValue={onValue} />
+          </ScreenOverlayProvider>
+        </ScreenVolumeProvider>
+      );
+      return { ...utils, onValue };
+    }
+
+    it('+1 increments master by step', () => {
+      const { onValue } = withProviders();
+      act(() => getActionBus().emit('display:volume', { command: '+1' }));
+      expect(onValue.mock.calls.at(-1)[0].master).toBeCloseTo(0.6);
+    });
+
+    it('-1 decrements master by step', () => {
+      const { onValue } = withProviders();
+      act(() => getActionBus().emit('display:volume', { command: '-1' }));
+      expect(onValue.mock.calls.at(-1)[0].master).toBeCloseTo(0.4);
+    });
+
+    it('mute_toggle toggles muted state', () => {
+      const { onValue } = withProviders();
+      act(() => getActionBus().emit('display:volume', { command: 'mute_toggle' }));
+      expect(onValue.mock.calls.at(-1)[0].muted).toBe(true);
+      expect(onValue.mock.calls.at(-1)[0].master).toBe(0);
+      act(() => getActionBus().emit('display:volume', { command: 'mute_toggle' }));
+      expect(onValue.mock.calls.at(-1)[0].muted).toBe(false);
+      expect(onValue.mock.calls.at(-1)[0].master).toBe(0.5);
+    });
+
+    it('does not call DaylightAPI for any volume command (regression guard)', () => {
+      const apiSpy = vi.spyOn(apiModule, 'DaylightAPI').mockResolvedValue({});
+      withProviders();
+      act(() => getActionBus().emit('display:volume', { command: '+1' }));
+      act(() => getActionBus().emit('display:volume', { command: '-1' }));
+      act(() => getActionBus().emit('display:volume', { command: 'mute_toggle' }));
+      expect(apiSpy).not.toHaveBeenCalled();
+      apiSpy.mockRestore();
+    });
+
+    it('unknown command logs warn but does not throw', () => {
+      const { onValue } = withProviders();
+      const before = onValue.mock.calls.at(-1)[0].master;
+      act(() => getActionBus().emit('display:volume', { command: 'cycle' }));
+      expect(onValue.mock.calls.at(-1)[0].master).toBe(before);
+    });
+  });
+});

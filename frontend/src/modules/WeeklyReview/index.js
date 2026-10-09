@@ -1,4 +1,4 @@
-import { getWidgetRegistry } from '@/screen-framework/widgets/registry.js';
+import { getWidgetRegistry } from "../../../../capabilities/screen-host/browser/public.mjs";
 import WeeklyReview from './WeeklyReview.jsx';
 
 const registry = getWidgetRegistry();

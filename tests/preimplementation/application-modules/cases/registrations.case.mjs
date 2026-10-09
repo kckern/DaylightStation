@@ -20,7 +20,7 @@ import {createOmrRelay} from '../../../../backend/src/3_applications/hardware/om
 import {createAutomotiveRelay} from '../../../../backend/src/3_applications/hardware/automotiveRelay.mjs';
 import {createEinkRouter} from '../../../../backend/src/4_api/v1/routers/eink.mjs';
 import {HttpPlaybackHubAdapter} from '../../../../backend/src/1_adapters/playback-hub/HttpPlaybackHubAdapter.mjs';
-import {resetPianoBridge} from '../../../../frontend/src/modules/Piano/PianoKiosk/pianoBridgeClient.js';
+import {resetPianoBridge} from '../../../../modules/piano/browser/PianoKiosk/pianoBridgeClient.js';
 import {EventBusBiometricGateway} from '../../../../backend/src/1_adapters/fitness/EventBusBiometricGateway.mjs';
 import {createContinuousScanLoop,faultBackoffMs} from '../../../../_extensions/fitness/src/continuousScanLoop.mjs';
 import {BleHeartRateDecoder} from '../../../../_extensions/fitness/src/decoders/heart_rate.mjs';

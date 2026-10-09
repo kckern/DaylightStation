@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { luxToDim } from '../../../frontend/src/screen-framework/widgets/luxToDim.js';
+import { luxToDim } from '../../../frontend/src/composition/screens/widgets/luxToDim.js';
 
 const curve = [
   { lux: 0, dim: 0.92 },

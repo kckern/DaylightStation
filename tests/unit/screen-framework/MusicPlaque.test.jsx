@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { render, act, cleanup } from '@testing-library/react';
 
-import MusicPlaque from '../../../frontend/src/screen-framework/widgets/MusicPlaque.jsx';
+import MusicPlaque from '../../../frontend/src/composition/screens/widgets/MusicPlaque.jsx';
 
 const plaque = (c) => c.querySelector('[data-testid="artmode-music-plaque"]');
 const textOf = (c) => plaque(c)?.textContent ?? '';

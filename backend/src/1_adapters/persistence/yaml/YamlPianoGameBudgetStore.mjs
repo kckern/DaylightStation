@@ -15,7 +15,7 @@
  */
 import path from 'node:path';
 import { loadYamlSafe, saveYamlToPathAtomic, ensureDir, fileExists } from '#system/utils/FileIO.mjs';
-import { emptyDay } from '#domains/piano/gameBudget.mjs';
+import { emptyDay } from "../../../../../modules/piano/server/budget.mjs";
 
 const SCHEMA = 'piano.game-budget-day/v1';
 const DAY = /^\d{4}-\d{2}-\d{2}$/;

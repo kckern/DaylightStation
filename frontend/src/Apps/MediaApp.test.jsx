@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { notifications } from '@mantine/notifications';
 
-vi.mock('../modules/Player/Player.jsx', () => ({
+vi.mock('../../../capabilities/playback/browser/player/Player.jsx', () => ({
   default: ({ play }) => <div data-testid="player-stub">Player: {play?.contentId ?? 'none'}</div>,
 }));
 vi.mock('../services/WebSocketService.js', () => ({

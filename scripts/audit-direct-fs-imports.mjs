@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from '@babel/parser';
@@ -94,9 +94,10 @@ function ignoreMissing(fn, fallback) {
 
 function walk(dir, files = []) {
   for (const entry of ignoreMissing(() => readdirSync(dir), [])) {
+    if (entry === 'node_modules') continue;
     const file = join(dir, entry);
-    const stat = ignoreMissing(() => statSync(file), null);
-    if (stat === null) continue;
+    const stat = ignoreMissing(() => lstatSync(file), null);
+    if (stat === null || stat.isSymbolicLink()) continue;
     if (stat.isDirectory()) walk(file, files);
     else if (isScannedRuntimeFile(file)) files.push(file);
   }

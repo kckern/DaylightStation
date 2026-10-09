@@ -16,7 +16,7 @@ vi.mock('../logging/mediaLog.js', () => {
 
 let latestProps = null;
 const mounts = vi.fn();
-vi.mock('../../Player/Player.jsx', () => ({
+vi.mock('../../../../../capabilities/playback/browser/player/Player.jsx', () => ({
   default: React.forwardRef(function MockPlayer(props, ref) {
     latestProps = props;
     React.useImperativeHandle(ref, () => ({

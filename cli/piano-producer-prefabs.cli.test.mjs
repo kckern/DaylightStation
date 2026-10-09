@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, it } from 'node:test';
 import YAML from 'yaml';
-import { CURATED_PREFABS, applyPrefabCuration, planPrefabCuration } from './piano-producer-prefabs.cli.mjs';
+import { CURATED_PREFABS, applyPrefabCuration, planPrefabCuration } from '../modules/piano/cli/piano-producer-prefabs.cli.mjs';
 
 function playableXml(path) {
   const type = path.startsWith('percussion/') ? 'groove'

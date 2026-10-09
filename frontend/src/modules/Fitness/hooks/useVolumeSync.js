@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { RESILIENCE_STATUS } from '../../Player/hooks/useResilienceState.js';
+import { RESILIENCE_STATUS } from "../../../../../capabilities/playback/browser/lifecycle.mjs";
 
 /**
  * Synchronizes volume state with media element on:

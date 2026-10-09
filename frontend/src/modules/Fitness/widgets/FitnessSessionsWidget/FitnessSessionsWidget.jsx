@@ -1,8 +1,8 @@
 import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Text, Stack } from '@mantine/core';
-import { useScreenData } from '@/screen-framework/data/useScreenData.js';
-import { useScreen } from '@/screen-framework/providers/useScreen.js';
+import { useScreenData } from "../../../../../../capabilities/screen-host/browser/data.mjs";
+import { useScreen } from "../../../../../../capabilities/screen-host/browser/providers.mjs";
 import { DashboardCard } from '../_shared/DashboardCard.jsx';
 import { useFitnessScreen } from '@/modules/Fitness/useFitnessScreen.js';
 import SportIcon from '../_shared/SportIcon.jsx';

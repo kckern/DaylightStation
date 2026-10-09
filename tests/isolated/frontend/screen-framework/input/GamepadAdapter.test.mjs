@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
-import { GamepadAdapter } from '../../../../../frontend/src/screen-framework/input/adapters/GamepadAdapter.js';
+import { GamepadAdapter } from '../../../../../capabilities/screen-host/browser/input/adapters/GamepadAdapter.js';
 
 // Button 8 (Select) maps to Escape in GamepadAdapter's BUTTON_MAP.
 const ESCAPE_BUTTON = 8;

@@ -3,7 +3,7 @@ import { render, act, fireEvent } from '@testing-library/react';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import React from 'react';
 import { MantineProvider } from '@mantine/core';
-import { ScreenProvider, ScreenContext } from '@/screen-framework/providers/ScreenProvider.jsx';
+import { ScreenProvider, ScreenContext } from '../../../../../../capabilities/screen-host/browser/providers/ScreenProvider.jsx';
 import { FitnessScreenProvider } from '@/modules/Fitness/FitnessScreenProvider.jsx';
 import { useFitnessScreen } from '@/modules/Fitness/useFitnessScreen.js';
 import FitnessSessionsWidget from './FitnessSessionsWidget.jsx';
@@ -177,7 +177,7 @@ describe('FitnessSessionsWidget outside selection', () => {
   });
 
   it('opening a row by click and toggling it off both survive the URL effect', async () => {
-    const { ScreenDataContext } = await import('@/screen-framework/data/ScreenDataProvider.jsx');
+    const { ScreenDataContext } = await import('../../../../../../capabilities/screen-host/browser/data/ScreenDataProvider.jsx');
     const sessions = { sessions: [{ sessionId: 's7', date: '2026-09-24', startTime: Date.now(), media: [], participants: {} }] };
     const states = [];
     const nav = {};

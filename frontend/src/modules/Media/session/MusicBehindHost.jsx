@@ -6,9 +6,9 @@
 import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { LocalSessionContext } from './LocalSessionContext.js';
 import { useSessionController } from '../controller/useSessionController.js';
-import { musicBehindVerdict } from '../../Player/lib/musicBehindPolicy.js';
+import { musicBehindVerdict } from "../../../../../capabilities/playback/browser/contracts.mjs";
 import { getLocalPlayerFeatures } from './localPlayerFeatures.js';
-import { MusicBehindLayer } from '../../Player/components/MusicBehindLayer.jsx';
+import { MusicBehindLayer } from "../../../../../capabilities/playback/browser/music-behind.mjs";
 import { isSlideshowItem } from '@shared-contracts/media/playerFeatures.mjs';
 import mediaLog from '../logging/mediaLog.js';
 

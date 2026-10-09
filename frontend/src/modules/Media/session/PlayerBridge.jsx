@@ -23,11 +23,11 @@
 //    Recoverable media errors are left to the Player's own resilience.
 import React, { useContext, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import Player from '../../Player/Player.jsx';
+import { Player as Player } from "../../../../../capabilities/playback/browser/public.mjs";
 import { LocalSessionContext } from './LocalSessionContext.js';
 import { PlayerHostContext, PlayerHostPresentationContext } from './playerHostContext.js';
 import { TIMING } from '../constants.js';
-import { registerTrackOwner, createTrackPreferenceStore } from '../../Player/lib/trackPolicy.js';
+import { registerTrackOwner, createTrackPreferenceStore } from "../../../../../capabilities/playback/browser/contracts.mjs";
 import { getLocalPlayerFeatures } from './localPlayerFeatures.js';
 import { playLogOrigin } from './playOrigin.js';
 

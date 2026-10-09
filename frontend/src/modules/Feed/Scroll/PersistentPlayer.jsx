@@ -1,7 +1,7 @@
 import { lazy, Suspense, forwardRef, useMemo } from 'react';
 import { feedLog } from './feedLog.js';
 
-const Player = lazy(() => import('../../Player/Player.jsx'));
+const Player = lazy(() => import('../../../../../capabilities/playback/browser/public.mjs'));
 
 const PersistentPlayer = forwardRef(function PersistentPlayer({ contentId, onEnd }, ref) {
   // Memoize the play prop so Player receives a stable object reference.

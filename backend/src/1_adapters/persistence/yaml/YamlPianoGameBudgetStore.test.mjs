@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { YamlPianoGameBudgetStore } from './YamlPianoGameBudgetStore.mjs';
-import { emptyDay, applyOpen } from '#domains/piano/gameBudget.mjs';
+import { emptyDay, applyOpen } from '../../../../../modules/piano/server/domain/gameBudget.mjs';
 
 let root; let store;
 beforeEach(() => {

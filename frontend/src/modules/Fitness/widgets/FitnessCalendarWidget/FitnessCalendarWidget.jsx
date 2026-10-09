@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { useScreenData } from '@/screen-framework/data/useScreenData.js';
+import { useScreenData } from "../../../../../../capabilities/screen-host/browser/data.mjs";
 import { useFitnessScreen } from '@/modules/Fitness/useFitnessScreen.js';
 import './FitnessCalendarWidget.scss';
 

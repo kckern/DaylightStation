@@ -14,7 +14,7 @@ vi.mock('../../../lib/logging/Logger.js', () => {
   const logger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {}, child: () => logger };
   return { default: () => logger };
 });
-vi.mock('../../Player/Player.jsx', () => ({ default: () => <div data-testid="player-stub" /> }));
+vi.mock('../../../../../capabilities/playback/browser/player/Player.jsx', () => ({ default: () => <div data-testid="player-stub" /> }));
 
 import AdminPreviewPlayer from './AdminPreviewPlayer.jsx';
 

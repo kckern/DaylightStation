@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMediaRecorderCapture } from '../VoiceCapture/useMediaRecorderCapture.js';
 import { VoiceCaptureOverlay } from '../VoiceCapture/VoiceCaptureOverlay.jsx';
-import { submitFeedback, pollFeedbackTranscript, deleteFeedback } from './feedbackApi.js';
+import { submitFeedback, pollFeedbackTranscript, deleteFeedback } from '../../lib/diagnostics/feedbackApi.js';
 import getLogger from '../../lib/logging/Logger.js';
 
 const log = () => getLogger().child({ component: 'feedback-overlay' });

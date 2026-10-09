@@ -12,7 +12,7 @@ const sessions = [{
     },
   },
 }];
-vi.mock('@/screen-framework/data/useScreenData.js', () => ({
+vi.mock('../../../../../../capabilities/screen-host/browser/data/useScreenData.js', () => ({
   useScreenData: () => ({ sessions, total: 1 }),
 }));
 vi.mock('@/modules/Fitness/useFitnessScreen.js', () => ({
