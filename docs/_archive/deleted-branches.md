@@ -621,3 +621,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-10-09 | fix/ghost-note-engraving | cb19f21458 | Wrong-note ghost engraved as chord on target stem; merged as c423426897 |
 | 2026-10-09 | fix/exercise-resolve-hold | 7e2a02c971 | Resolve hold before onPassed/onFailed; merged as 989124c4ca |
 | 2026-10-09 | fix/chess-resume-identity-race | eb52663237 | chess late-identity resume + pin/local-continuation fixes |
+| 2026-10-09 | fix/kiosk-foreground-guard | 6f4ecc6234 | Piano-bridge foreground guard (p24) + 1h stand-down ceiling |
