@@ -48,6 +48,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWebSocketSubscription } from '../../../hooks/useWebSocket.js';
 import { schoolApi } from '../schoolApi.js';
+import { readRecentlyTitle } from './readRecentlyTitle.js';
 import { readingLog } from './readingLog.js';
 
 /** How long a child has to change their mind. Long enough to reach the shelf. */
@@ -868,8 +869,17 @@ export function useReadingSession({
       }
       case 'book-refused': {
         // D5, assignment mode: one story at a time.
-        readingLog.pick('book-refused', { contentId: payload.contentId ?? null, reason: payload.reason ?? null });
+        readingLog.pick('book-refused', {
+          contentId: payload.contentId ?? null, reason: payload.reason ?? null,
+          lastReadOn: payload.lastReadOn ?? null, noRepeatDays: payload.noRepeatDays ?? null,
+        });
         cue('warn');
+        if (payload.reason === 'read-recently') {
+          // Assignment mode, a book finished within `noRepeatDays`. The session
+          // is untouched; the child just picks another.
+          say({ tone: 'warn', title: readRecentlyTitle(payload.lastReadOn, payload.today), detail: 'Pick a different book!' });
+          return;
+        }
         say({ tone: 'warn', title: 'Finish this one first', detail: "We'll pick the next book when this story ends." });
         return;
       }
