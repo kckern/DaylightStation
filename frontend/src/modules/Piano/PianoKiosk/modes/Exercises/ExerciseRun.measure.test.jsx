@@ -390,6 +390,26 @@ window.__stage = {
     flushSync(() => root.render(h('div', { className: 'piano-exercise-run__stage piano-exercise-run__score' },
       h(ExerciseNotation, { instance, eventIndex, verdicts: map, windowOpen: false }))));
   },
+  /**
+   * The engraved stage alone, LIVE: a cursor on eventIndex and nothing held.
+   * pressLive then puts keys down AFTER the cursor arrived (a ghost needs an
+   * onset at this entry), stamped exactly as noteStore.noteOn stamps them.
+   */
+  mountLive({ instance, eventIndex = 0 }) {
+    root = createRoot(host());
+    window.__live = { instance, eventIndex };
+    window.__stage.renderLive(new Map());
+  },
+  renderLive(active) {
+    const { instance, eventIndex } = window.__live;
+    flushSync(() => root.render(h('div', { className: 'piano-exercise-run__stage piano-exercise-run__score' },
+      h(ExerciseNotation, { instance, eventIndex, activeNotes: active }))));
+  },
+  async pressLive(midis) {
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    const at = Date.now();
+    window.__stage.renderLive(new Map(midis.map((m) => [m, { velocity: 1, timestamp: at }])));
+  },
   /** The engraver alone: the geometry every score assertion above rests on. */
   mountEngraver({ musicXml }) {
     root = createRoot(host());
@@ -1853,12 +1873,86 @@ describe('the engraved stage paints a timed run\'s record, in real abcjs', () =>
     const ghost = await probe.one('.exercise-notation__ghost.is-wrong ellipse');
     expect(ghost?.painted, 'the recorded wrong pitch has no red ghost').toBe(true);
     expect(ghost.midi).toBe('66');
-    expect(ghost.left, `the ghost ${say(ghost)} is not beside its beat ${say(lapsed)}`).toBeGreaterThan(lapsed.right);
+    // The ghost is engraved INTO its beat's column (one chord, one stem), not
+    // floated off to the right of it: it overlaps the beat horizontally.
+    expect(ghost.left, `the ghost ${say(ghost)} is not in its beat's column ${say(lapsed)}`).toBeLessThan(lapsed.right);
+    expect(ghost.right, `the ghost ${say(ghost)} is not in its beat's column ${say(lapsed)}`).toBeGreaterThan(lapsed.left);
     expect(await probe.prop('.exercise-notation__ghost.is-wrong ellipse', 'fill')).toBe('rgba(200, 40, 40, 0.8)');
     // The lane at the cursor is dimmed: this beat's window is shut.
     expect(await probe.count('.exercise-notation__cursor.is-window-closed')).toBe(1);
     await page.screenshot({ path: '/tmp/timed-record-notation.png' });
     expectNoPageErrors();
+  }, 60000);
+});
+
+/**
+ * THE WRONG-NOTE GHOST IS ENGRAVED AS A CHORD ON THE TARGET'S STEM.
+ *
+ * It used to be drawn out from the cursor lane's right edge — floating beside
+ * the column, lower, stemless, touching nothing (owner screenshot, match-gate
+ * rung keys-3: stem-down B4 asked, A4 pressed). Notes on one beat are one chord
+ * on one stem, and a second flips to the other side of the stem and touches it.
+ * jsdom cannot see any of this, so it is measured in real abcjs.
+ */
+describe('the live wrong-note ghost, engraved into the target\'s column', () => {
+  const quarter = (midi) => ({ ...SCALE, id: `ghost@${midi}`, events: [{ id: 'n1', value: 'quarter', notes: [{ midi }] }] });
+  const SHOT_DIR = process.env.GHOST_SHOT_DIR;
+  const live = async (target, pressed, shot) => {
+    await openStage(css, js);
+    await page.evaluate(PROBE);
+    await page.evaluate((arg) => window.__stage.mountLive(arg), { instance: quarter(target), eventIndex: 0 });
+    await page.waitForSelector('.exercise-note-next');
+    await page.evaluate((m) => window.__stage.pressLive(m), pressed);
+    await page.waitForSelector('.exercise-notation__ghost ellipse');
+    const out = {
+      head: await probe.one('.abcjs-notehead'),
+      stem: await probe.one('.abcjs-stem'),
+      ghost: await probe.one('.exercise-notation__ghost ellipse'),
+      lane: await probe.one('.exercise-notation__cursor'),
+      ghostStem: await probe.one('.exercise-notation__ghost-stem'),
+    };
+    if (SHOT_DIR) await (await page.$('.piano-exercise-run__stage')).screenshot({ path: `${SHOT_DIR}/${shot}.png` });
+    return out;
+  };
+
+  it('stem-down B4 asked, A4 pressed: the red head is LEFT of the stem, touching it, one step lower', async () => {
+    const { head, stem, ghost, lane } = await live(71, [69], 'second-stem-down');
+    expect(ghost.painted).toBe(true);
+    expect(ghost.right, `ghost ${say(ghost)} stops short of the stem ${say(stem)}`).toBeGreaterThanOrEqual(stem.left);
+    expect(ghost.right, `ghost ${say(ghost)} overshoots the stem ${say(stem)}`).toBeLessThanOrEqual(stem.right + head.width * 0.2);
+    expect(ghost.cx, 'the flipped head is left of the target head').toBeLessThan(head.cx - head.width / 2);
+    expect(ghost.cy, 'one step (half a line space) lower').toBeGreaterThan(head.cy);
+    expect(ghost.cy - head.cy).toBeLessThan(head.height);
+    expect(ghost.left).toBeGreaterThanOrEqual(lane.left);
+    expect(ghost.right).toBeLessThanOrEqual(lane.right);
+  }, 60000);
+
+  it('stem-up G4 asked, A4 pressed: the red head is RIGHT of the stem, touching it', async () => {
+    const { head, stem, ghost, lane } = await live(67, [69], 'second-stem-up');
+    expect(ghost.left, `ghost ${say(ghost)} stops short of the stem ${say(stem)}`).toBeLessThanOrEqual(stem.right);
+    expect(ghost.left, `ghost ${say(ghost)} overshoots the stem ${say(stem)}`).toBeGreaterThanOrEqual(stem.left - head.width * 0.2);
+    expect(ghost.cx).toBeGreaterThan(head.cx + head.width / 2);
+    expect(ghost.cy).toBeLessThan(head.cy);
+    expect(ghost.right).toBeLessThanOrEqual(lane.right);
+  }, 60000);
+
+  it('a third: the red head shares the target head\'s side of the stem and its x', async () => {
+    const { head, ghost } = await live(71, [67], 'third-stem-down');
+    expect(Math.abs(ghost.cx - head.cx), `ghost ${say(ghost)} is not in the target column ${say(head)}`).toBeLessThan(head.width * 0.15);
+    expect(ghost.cy).toBeGreaterThan(head.cy);
+  }, 60000);
+
+  it('a far note past the stem tip gets a short red stem joining it to the chord', async () => {
+    const { stem, ghost, ghostStem } = await live(71, [57], 'far-stem-down');
+    expect(ghostStem, 'no stem segment joins the ghost to the stem').not.toBeNull();
+    expect(Math.abs(ghostStem.left - stem.left)).toBeLessThan(stem.width + 3);
+    expect(ghostStem.bottom).toBeGreaterThanOrEqual(ghost.cy - 1);
+  }, 60000);
+
+  it('a flipped head carries its accidental to its own left', async () => {
+    const { ghost } = await live(71, [70], 'accidental-second');
+    const acc = await probe.one('.exercise-notation__ghost g');
+    expect(acc.right).toBeLessThanOrEqual(ghost.left + 1);
   }, 60000);
 });
 
