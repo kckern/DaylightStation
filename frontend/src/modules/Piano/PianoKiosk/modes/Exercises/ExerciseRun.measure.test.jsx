@@ -1220,6 +1220,25 @@ describe('SP2 presentation cells in real Chromium', () => {
     expect(await probe.count('.piano-score-passage'), 'bank material incorrectly entered the score resolver').toBe(0);
   });
 
+  it('holds the resolved staff on screen before the host hears the pass', async () => {
+    await run({
+      instance: ENGRAVED_LINE,
+      props: {
+        tier: 2, ask: 'Read the line.', intent: 'challenge', askTuple: ENGRAVED_FREE_TUPLE,
+        requirementOverride: FREE_REQUIREMENT,
+      },
+    }, FREE_READY);
+    await page.waitForFunction(() => document.querySelectorAll('.abcjs-note').length === 4);
+    for (const midi of [60, 62, 64, 65]) await probe.press(midi);
+    // Mid-hold: the run is decided and painted, the host has not been told.
+    await page.waitForSelector('.piano-exercise-run.is-resolve-held');
+    expect((await probe.calls()).some((c) => c.name === 'passed'), 'the host was told before the hold').toBe(false);
+    expect(await probe.count('.exercise-note-done, .exercise-note-hit'), 'the confirmed notes are not painted during the hold').toBe(4);
+    if (process.env.GHOST_SHOT_DIR) await page.screenshot({ path: `${process.env.GHOST_SHOT_DIR}/resolve-hold-mid.png` });
+    await page.waitForFunction(() => window.__stage.calls.some((c) => c.name === 'passed'), undefined, { timeout: 5000 });
+    expectNoPageErrors();
+  }, 60_000);
+
   it('renders a one-note reading ask as one compact staff card', async () => {
     await run({
       instance: { ...ONE_KEY, title: 'Middle C', staff: 'treble' },

@@ -112,6 +112,17 @@ const JUDGED_STATUSES = Object.freeze(new Set(['completed', 'timeout']));
 const FREE_STALL_MS = 20000;
 /** A recall hint must arrive with enough time left to use it before the stall. */
 const HINT_REVEAL_MS = 12000;
+/**
+ * How long a resolved staff stays up before the host is told. `onPassed` and
+ * `onFailed` used to fire in the very commit that made the result judged, so
+ * the host swapped the card before the final note's verdict was ever painted
+ * and the child never saw the last note confirmed. The staff holds this long
+ * (long enough to read the colour and see one swell), input is ignored, and
+ * only then does the host hear about it.
+ */
+export const RESOLVE_HOLD_MS = 700;
+/** The swell on the confirmed notes lasts this long, then the notes settle. */
+const RESOLVE_PULSE_MS = 280;
 
 /**
  * How long metronome practice clicks at a piano nobody is sitting at.
@@ -709,6 +720,37 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     else logger.warn('piano.exercise-assessment', { ...who, ...log });
   }, [access.persistent, challenge, currentUser, logger, programId, selectedMode, stepId, subject]);
 
+  // THE RESOLVE HOLD. A resolved attempt keeps its staff up for RESOLVE_HOLD_MS
+  // before the host hears `onPassed`/`onFailed`; input is ignored meanwhile (a
+  // key still down must not start the next attempt) and the exit gesture is
+  // untouched. Unmounting cancels the pending callback.
+  const onPassedRef = useRef(onPassed);
+  const onFailedRef = useRef(onFailed);
+  onPassedRef.current = onPassed;
+  onFailedRef.current = onFailed;
+  const [resolveHold, setResolveHold] = useState(null);
+  const resolveHeldRef = useRef(false);
+  const resolveTimersRef = useRef([]);
+  const cancelResolveHold = useCallback(() => {
+    resolveTimersRef.current.forEach((timer) => globalThis.clearTimeout(timer));
+    resolveTimersRef.current = [];
+    resolveHeldRef.current = false;
+    setResolveHold(null);
+  }, []);
+  const holdResolve = useCallback((outcome, fire, active) => {
+    if (!active) return;
+    resolveHeldRef.current = true;
+    setResolveHold({ outcome, settled: false });
+    logger.info('piano.exercise-resolve-held', { ...traceFieldsRef.current, outcome, holdMs: RESOLVE_HOLD_MS });
+    resolveTimersRef.current = [
+      globalThis.setTimeout(() => setResolveHold((hold) => (hold ? { ...hold, settled: true } : hold)), RESOLVE_PULSE_MS),
+      globalThis.setTimeout(() => { resolveHeldRef.current = false; fire(); }, RESOLVE_HOLD_MS),
+    ];
+  }, [logger]);
+  useEffect(() => () => {
+    resolveTimersRef.current.forEach((timer) => globalThis.clearTimeout(timer));
+  }, []);
+
   useEffect(() => {
     if (!snapshot.result || !resultReady || persistedRef.current) return;
     // installRuntime's effect is declared earlier than this one, so a commit
@@ -763,11 +805,15 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     }
     // A judged attempt that did not clear its bar. `onPassed` stays
     // automatic for every host;
-    // a failure is reported straight to the host so
-    // it can offer its own ways forward — and so a host counting failures
-    // counts only attempts that actually happened.
-    if (!passed) onFailed?.(snapshot.result);
-  }, [challenge, traceEvent, onFailed, persist, resultReady, runRequirement, snapshot, subject]);
+    // a failure is reported to the host so it can offer its own ways forward —
+    // and so a host counting failures counts only attempts that actually
+    // happened. Reported AFTER the resolve hold, so the last note's verdict is
+    // on screen first.
+    if (!passed) {
+      const result = snapshot.result;
+      holdResolve('failed', () => onFailedRef.current?.(result), Boolean(onFailedRef.current));
+    }
+  }, [challenge, traceEvent, persist, resultReady, runRequirement, snapshot, subject, holdResolve]);
 
   // Completion belongs to the host whenever it supplied a callback. Every
   // host advances automatically; this piano surface has no pointer controls.
@@ -780,13 +826,16 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   const localRetry = Boolean(judgedResult && !hostOwnsResult);
   useEffect(() => {
     passTakenRef.current = false;
-  }, [runtime]);
+    cancelResolveHold();
+  }, [runtime, cancelResolveHold]);
   useEffect(() => {
     if (!judgedResult || !resultPassed || !onPassed || passTakenRef.current) return;
     passTakenRef.current = true;
-    logger.info('piano.exercise-pass-taken', { ...traceFieldsRef.current, via: 'automatic' });
-    onPassed({ ...judgedResult, assessmentId: assessmentIdRef.current });
-  }, [judgedResult, resultPassed, onPassed, logger]);
+    holdResolve('passed', () => {
+      logger.info('piano.exercise-pass-taken', { ...traceFieldsRef.current, via: 'automatic' });
+      onPassedRef.current?.({ ...judgedResult, assessmentId: assessmentIdRef.current });
+    }, true);
+  }, [judgedResult, resultPassed, onPassed, logger, holdResolve]);
   const { exitHeld } = usePianoExitGesture({
     activeNotes, keyboard: keyboardConfig, onExit, enabled: Boolean(onExit) || localRetry,
     continueEnabled: localRetry, resetKey: runtime,
@@ -1057,6 +1106,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     });
     for (const midi of releases) countdownHeldRef.current.delete(midi);
     if (exitHeld) return;
+    // Resolve hold: the attempt is decided; a key still down is not an answer.
+    if (resolveHeldRef.current) return;
     const currentState = runtime.getSnapshot();
     const timedInput = currentState.matcher === 'timed' && currentState.status === 'running';
     /**
@@ -1449,7 +1500,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     && Number.isFinite(result?.score);
 
   return (
-    <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}`} data-tier={runTier} data-stage={stage} data-surface={surface} data-phase={phase} data-armed={runtime ? 'true' : undefined} data-expected-cursor={timeline?.expectedCursor ?? eventIndex} data-displayed-cursor={visualCursor.index} data-hunting={countingDown ? undefined : huntHelp ?? undefined}
+    <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}${resolveHold ? ` is-resolve-held is-resolve-${resolveHold.outcome}${resolveHold.settled ? ' is-resolve-settled' : ''}` : ''}`} data-tier={runTier} data-stage={stage} data-surface={surface} data-phase={phase} data-armed={runtime ? 'true' : undefined} data-expected-cursor={timeline?.expectedCursor ?? eventIndex} data-displayed-cursor={visualCursor.index} data-hunting={countingDown ? undefined : huntHelp ?? undefined}
       data-beat-pulse={beatPulse ?? undefined} data-downbeat={beatPulse == null || timeline.downbeat == null ? undefined : String(timeline.downbeat)}>
       <header className="piano-exercise-run__head">
         {/* WHY YOU ARE HERE, AND NOTHING ELSE, WHEN THERE IS CHROME.
