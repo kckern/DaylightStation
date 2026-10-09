@@ -226,3 +226,45 @@ describe('StoryTimeProgramLauncher', () => {
     expect(await launcher.status({ userId: 'user_5' })).toMatchObject({ error: true, enrolled: true, target: 2 });
   });
 });
+
+describe('StoryTimeProgramLauncher.repeatCheck', () => {
+  const BOOK = 'plex:621568';
+  const NOW = '2026-10-09T18:00:00.000Z'; // study day 2026-10-09
+  const make = ({ byDay = {}, program = {}, listForDay, enrolled = true } = {}) => new StoryTimeProgramLauncher({
+    readingLog: { listForDay: listForDay ?? (async (_u, day) => byDay[day] ?? []) },
+    assignments: { get: async () => ({ programs: enrolled ? [{ programId: 'story-time', target: 2, ...program }] : [] }) },
+    timezone: 'America/Los_Angeles', clock: at(NOW), logger: silent,
+  });
+  const ask = (l, contentId = BOOK) => l.repeatCheck({ userId: 'user_5', contentId });
+
+  it('refuses a book read 3 days ago, default window', async () => {
+    expect(await ask(make({ byDay: { '2026-10-06': [{ contentId: BOOK }] } })))
+      .toMatchObject({ refuse: true, lastReadOn: '2026-10-06', today: '2026-10-09', noRepeatDays: 4 });
+  });
+  it('allows a book read 4 days ago', async () => {
+    expect((await ask(make({ byDay: { '2026-10-05': [{ contentId: BOOK }] } }))).refuse).toBe(false);
+  });
+  it("counts today's earlier read", async () => {
+    expect((await ask(make({ byDay: { '2026-10-09': [{ contentId: BOOK }] } }))).refuse).toBe(true);
+  });
+  it('browsing mode (target met) is unrestricted', async () => {
+    const byDay = { '2026-10-09': [{ contentId: 'a' }, { contentId: BOOK }] };
+    expect((await ask(make({ byDay }))).refuse).toBe(false);
+  });
+  it('not enrolled is unrestricted', async () => {
+    expect((await ask(make({ enrolled: false }))).refuse).toBe(false);
+  });
+  it('noRepeatDays 0 disables, and an unusable value fails open', async () => {
+    const byDay = { '2026-10-08': [{ contentId: BOOK }] };
+    expect((await ask(make({ byDay, program: { noRepeatDays: 0 } }))).refuse).toBe(false);
+    expect((await ask(make({ byDay, program: { noRepeatDays: 'x' } }))).refuse).toBe(false);
+  });
+  it('honours a custom window', async () => {
+    const byDay = { '2026-10-04': [{ contentId: BOOK }] };
+    expect((await ask(make({ byDay, program: { noRepeatDays: 7 } }))).refuse).toBe(true);
+  });
+  it('fails open when history cannot be read', async () => {
+    const l = make({ listForDay: async (_u, day) => { if (day !== '2026-10-09') throw new Error('disk'); return []; } });
+    expect((await ask(l)).refuse).toBe(false);
+  });
+});

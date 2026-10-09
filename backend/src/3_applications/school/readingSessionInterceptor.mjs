@@ -112,6 +112,31 @@ export class ReadingSessionInterceptor {
     const contentId = response.expression?.contentId ?? null;
     const { learnerId } = session;
 
+    // READ-RECENTLY (assignment mode only): a book finished within the last
+    // `noRepeatDays` study days is refused on every road that would CREDIT it
+    // — held during the launch card, and picked at prompt/confirm. Mid-story
+    // is already refused wholesale (`finish-this-one`). The session is left
+    // exactly as it was; the child simply picks another book. Fails open.
+    if (session.state !== 'reading') {
+      const repeat = await this.#repeatOf(learnerId, contentId);
+      if (repeat) {
+        const announced = this.#broadcast(location, {
+          event: 'book-refused', reason: 'read-recently', learnerId, location, contentId,
+          lastReadOn: repeat.lastReadOn, today: repeat.today, noRepeatDays: repeat.noRepeatDays,
+          target: response.target ?? null, at: this.#clock().toISOString(),
+        });
+        if (!announced) {
+          this.#abandonReopen(reopened, location);
+          return null;
+        }
+        this.#log('info', 'school.reading.book-refused', {
+          location, learnerId, contentId, reason: 'read-recently',
+          lastReadOn: repeat.lastReadOn, noRepeatDays: repeat.noRepeatDays, state: session.state,
+        });
+        return { claimed: true, by: CLAIMED_BY, refused: true, reason: 'read-recently', learnerId, contentId, lastReadOn: repeat.lastReadOn };
+      }
+    }
+
     if (['starting', 'presenting', 'returning'].includes(session.state)) {
       // THE FIRST CARD'S BOOK IS HELD, NOT REFUSED (2026-09-30). While the
       // initial launch card is still being delivered — a cold TV can take the
@@ -473,6 +498,22 @@ export class ReadingSessionInterceptor {
         learnerId, error: err?.message ?? String(err),
       });
       return MODE_UNREADABLE;
+    }
+  }
+
+  /**
+   * Was this book read lately by a learner who still owes stories? Total: any
+   * failure is "no", logged — the rule must never cost a child a book.
+   * @returns {Promise<{lastReadOn: string|null, today: string|null, noRepeatDays: number|null}|null>}
+   */
+  async #repeatOf(learnerId, contentId) {
+    if (!contentId || !this.#storyTime?.repeatCheck) return null;
+    try {
+      const verdict = await this.#storyTime.repeatCheck({ userId: learnerId, contentId });
+      return verdict?.refuse ? verdict : null;
+    } catch (err) {
+      this.#log('warn', 'school.reading.repeat-check-failed', { learnerId, contentId, error: err?.message ?? String(err) });
+      return null;
     }
   }
 

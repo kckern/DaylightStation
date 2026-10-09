@@ -431,6 +431,14 @@ the launcher answers `error: true` with `target: null` and logs
 target that is present but not a positive integer (`target: '5'` in a
 hand-edited plan) is refused for the same reason.
 
+**`noRepeatDays` — no repeats while story time is owed.** Optional, beside
+`target`/`schedule` on the enrollment: an integer 0-60 (validated at write
+time), default 4, `0` turns it off. While the learner still owes stories, a
+book they finished within the last `noRepeatDays` study days (today included)
+is refused on the TV; browsing mode is unrestricted. A stored value that is
+present but unusable disables the rule rather than refusing books. Behaviour
+and window: `reading-sessions.md` D13.
+
 Both error branches answer the same shape as the success branch —
 `count`/`target`/`reads` are always present, `count: null` when unknown — so a
 caller reading `status().count` gets "unknown" rather than `undefined`.
