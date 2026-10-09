@@ -1,0 +1,227 @@
+schema: schoolcalc.design-system/v1
+display:
+  width: 128
+  height: 64
+  blank: "."
+  filled: "█"
+regions:
+  header: { x: 0, y: 0, width: 128, height: 8 }
+  header_margin: { x: 0, y: 8, width: 128, height: 1 }
+  body: { x: 0, y: 9, width: 128, height: 46 }
+  separator: { x: 0, y: 55, width: 128, height: 1 }
+  softkeys: { x: 0, y: 56, width: 128, height: 8 }
+  rail: { x: 125, y: 9, width: 3, height: 46 }
+softkey_slots:
+  - { key: F1, x: 0, width: 25 }
+  - { key: F2, x: 26, width: 24 }
+  - { key: F3, x: 51, width: 25 }
+  - { key: F4, x: 77, width: 24 }
+  - { key: F5, x: 102, width: 26 }
+hardware_keys: [up, down, left, right, enter, exit, del, clear, numeric, alpha, on, f1, f2, f3, f4, f5]
+forbidden_softkey_labels: [EXIT, PREV, NEXT, UP, DOWN, ENTER, HOME]
+scroll_models: [none, item, line, page, card, reason]
+motion:
+  availability_download:
+    cadence_ticks: 100
+    source_clock_hz: 200
+    phases: [filled, hollow]
+    reduced_motion_fallback: hollow
+  local_transition:
+    cadence_ticks: 24
+    source_clock_hz: 200
+    phases: [".", "..", "..."]
+    reduced_motion_fallback: "..."
+qr_profiles:
+  school_action:
+    version: 1
+    error_correction: L
+    modules: 21
+    scale: 2
+    quiet_zone_modules: 4
+    full_pixels: 58
+  result_output:
+    version: 5
+    error_correction: M
+    modules: 37
+    scale: 1
+    quiet_zone_modules: 4
+    origin: { x: 45, y: 13 }
+    rail: sparse
+layout_profiles:
+  standard:
+    header: required
+    header_margin: required
+    separator: required
+    softkeys: allowed
+    body_frames: forbidden
+  modal:
+    header: required
+    header_margin: required
+    separator: required
+    softkeys: required
+    body_frames: allowed
+  transition:
+    header: required
+    header_margin: required
+    separator: required
+    softkeys: allowed
+    body_frames: forbidden
+  ephemeral:
+    header: required
+    header_margin: required
+    separator: allowed
+    softkeys: forbidden
+    body_frames: forbidden
+  full_frame:
+    header: forbidden
+    header_margin: not_applicable
+    separator: forbidden
+    softkeys: forbidden
+    body_frames: allowed
+  qr_output:
+    header: forbidden
+    header_margin: not_applicable
+    separator: required
+    softkeys: required
+    softkey_anchor: sparse
+    body_frames: allowed
+component_categories: [shell, navigation, content, input, learning, feedback, integration]
+components:
+  - { id: StickyHeader, category: shell }
+  - { id: BodyRegion, category: shell }
+  - { id: SoftkeyBar, category: shell }
+  - { id: ScrollRail, category: shell }
+  - { id: ScrollCompletion, category: feedback }
+  - { id: BrowseList, category: navigation }
+  - { id: ListItem, category: navigation }
+  - { id: AvailabilityIndicator, category: feedback }
+  - { id: PositionLabel, category: navigation }
+  - { id: ContextAction, category: navigation }
+  - { id: OverviewCanvas, category: navigation }
+  - { id: FocusCursor, category: navigation }
+  - { id: SelectionInspector, category: content }
+  - { id: SnapNavigation, category: navigation }
+  - { id: StatusMarker, category: feedback }
+  - { id: AlternateListView, category: navigation }
+  - { id: Legend, category: content }
+  - { id: PositionMemory, category: navigation }
+  - { id: ProseBlock, category: content }
+  - { id: DefinitionBlock, category: content }
+  - { id: FormulaBlock, category: content }
+  - { id: WorkedExample, category: content }
+  - { id: InfoDocument, category: content }
+  - { id: StudyCard, category: learning }
+  - { id: ToolInvitation, category: learning }
+  - { id: ScanAction, category: integration }
+  - { id: ChoiceGroup, category: input }
+  - { id: NumericField, category: input }
+  - { id: TextField, category: input }
+  - { id: ConfirmationDialog, category: input }
+  - { id: CommitAction, category: input }
+  - { id: IdentityPicker, category: input }
+  - { id: MatchingBoard, category: learning }
+  - { id: SortingBoard, category: learning }
+  - { id: StatusRow, category: feedback }
+  - { id: ProgressMeter, category: feedback }
+  - { id: QueueIndicator, category: feedback }
+  - { id: ResultSummary, category: feedback }
+  - { id: ProgressSummary, category: feedback }
+  - { id: FollowUpList, category: learning }
+  - { id: TutorTurn, category: learning }
+  - { id: TutorStatus, category: feedback }
+  - { id: ErrorNotice, category: feedback }
+  - { id: IncompatibilityNotice, category: feedback }
+  - { id: StorageSummary, category: feedback }
+  - { id: IdentityStatus, category: feedback }
+  - { id: SyncStatus, category: integration }
+  - { id: TransportPresence, category: integration }
+  - { id: TransportDirection, category: integration }
+  - { id: TransferSafety, category: integration }
+  - { id: TransferProgress, category: integration }
+  - { id: QrPresenter, category: integration }
+  - { id: OutputReceipt, category: feedback }
+  - { id: NativeHandoff, category: integration }
+  - { id: LocalTransition, category: feedback }
+  - { id: CustomModuleHost, category: integration }
+templates:
+  - id: home
+    layout: standard
+    required_components: [StickyHeader, BrowseList, ListItem, QueueIndicator, SoftkeyBar]
+  - id: catalog
+    layout: standard
+    required_components: [StickyHeader, BrowseList, ListItem, AvailabilityIndicator, ScrollRail, ScrollCompletion, SoftkeyBar]
+  - id: course
+    layout: standard
+    required_components: [StickyHeader, BrowseList, ListItem, ScrollRail, ScrollCompletion, SoftkeyBar]
+  - id: unit
+    layout: standard
+    required_components: [StickyHeader, BrowseList, ListItem, ScrollRail, ScrollCompletion, SoftkeyBar]
+  - id: lesson
+    layout: standard
+    required_components: [StickyHeader, BrowseList, ListItem, ScrollCompletion, SoftkeyBar]
+  - id: info-document
+    layout: standard
+    required_components: [StickyHeader, BodyRegion, InfoDocument, ProseBlock, ScrollRail, ScrollCompletion, SoftkeyBar]
+  - id: study-card
+    layout: standard
+    required_components: [StickyHeader, BodyRegion, StudyCard, ScrollRail, ScrollCompletion, SoftkeyBar]
+  - id: worked-example
+    layout: standard
+    required_components: [StickyHeader, BodyRegion, WorkedExample, ScrollRail, ScrollCompletion, SoftkeyBar]
+  - id: choice-question
+    layout: standard
+    required_components: [StickyHeader, ChoiceGroup, CommitAction, SoftkeyBar]
+  - id: numeric-response
+    layout: standard
+    required_components: [StickyHeader, NumericField, CommitAction, SoftkeyBar]
+  - id: text-response
+    layout: standard
+    required_components: [StickyHeader, TextField, CommitAction, SoftkeyBar]
+  - id: matching-activity
+    layout: standard
+    required_components: [StickyHeader, MatchingBoard, CommitAction, SoftkeyBar]
+  - id: result
+    layout: standard
+    required_components: [StickyHeader, ResultSummary, QueueIndicator, SoftkeyBar]
+  - id: identity-picker
+    layout: standard
+    required_components: [StickyHeader, IdentityPicker, BrowseList, ListItem, ScrollRail, SoftkeyBar]
+  - id: identity-notice
+    layout: standard
+    required_components: [StickyHeader, IdentityStatus, SoftkeyBar]
+  - id: progress-overview
+    layout: standard
+    required_components: [StickyHeader, ProgressSummary, OverviewCanvas, FocusCursor, SelectionInspector, SnapNavigation, StatusMarker, PositionMemory, FollowUpList]
+  - id: tutor-turn
+    layout: standard
+    required_components: [StickyHeader, TutorTurn, ChoiceGroup, TransportPresence, ScrollRail, SoftkeyBar]
+  - id: tutor-status
+    layout: standard
+    required_components: [StickyHeader, TutorStatus, TransportPresence, ErrorNotice, SoftkeyBar]
+  - id: sync
+    layout: standard
+    required_components: [StickyHeader, SyncStatus, TransportPresence, TransferSafety, SoftkeyBar]
+  - id: confirmation
+    layout: modal
+    required_components: [StickyHeader, ConfirmationDialog, SoftkeyBar]
+  - id: incompatibility
+    layout: standard
+    required_components: [StickyHeader, IncompatibilityNotice, ScrollRail, SoftkeyBar]
+  - id: storage
+    layout: standard
+    required_components: [StickyHeader, StorageSummary, ProgressMeter, SoftkeyBar]
+  - id: qr
+    layout: full_frame
+    required_components: [QrPresenter]
+  - id: qr-output
+    layout: qr_output
+    required_components: [QrPresenter, OutputReceipt, QueueIndicator, SoftkeyBar]
+  - id: native-handoff
+    layout: transition
+    required_components: [StickyHeader, ToolInvitation, NativeHandoff, SoftkeyBar]
+  - id: local-transition
+    layout: ephemeral
+    required_components: [StickyHeader, LocalTransition]
+  - id: custom-module
+    layout: standard
+    required_components: [StickyHeader, CustomModuleHost, OverviewCanvas, FocusCursor, SelectionInspector, SnapNavigation, StatusMarker, PositionMemory, SoftkeyBar]

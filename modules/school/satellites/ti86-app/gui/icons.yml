@@ -1,0 +1,246 @@
+schema: schoolcalc.icons/v1
+icon_width: 7
+icon_height: 7
+blank: "."
+filled: "█"
+icons:
+  - id: home
+    meaning: "Go to the SchoolCalc home view"
+    pixels:
+      - "...█..."
+      - "..███.."
+      - ".█████."
+      - "██...██"
+      - ".█...█."
+      - ".█.█.█."
+      - ".█████."
+  - id: next
+    meaning: "Move to the next item or page"
+    pixels:
+      - "...█..."
+      - "....█.."
+      - ".....█."
+      - "███████"
+      - ".....█."
+      - "....█.."
+      - "...█..."
+  - id: previous
+    meaning: "Move to the previous item or page"
+    pixels:
+      - "...█..."
+      - "..█...."
+      - ".█....."
+      - "███████"
+      - ".█....."
+      - "..█...."
+      - "...█..."
+  - id: back
+    meaning: "Return one level while preserving parent state"
+    pixels:
+      - "..█...."
+      - ".█....."
+      - "█████.."
+      - ".█..██."
+      - "..█..█."
+      - ".....█."
+      - ".....█."
+  - id: exit
+    meaning: "Leave SchoolCalc"
+    pixels:
+      - "████..."
+      - "█..█..."
+      - "█..█.█."
+      - "█..████"
+      - "█..█.█."
+      - "█..█..."
+      - "████..."
+  - id: open
+    meaning: "Open or enter the focused item"
+    pixels:
+      - "....█.."
+      - ".....█."
+      - "......█"
+      - "███████"
+      - "......█"
+      - ".....█."
+      - "....█.."
+  - id: info
+    meaning: "Show information"
+    pixels:
+      - "..██..."
+      - "..██..."
+      - "......."
+      - "..██..."
+      - "..██..."
+      - "..██..."
+      - ".████.."
+  - id: download
+    meaning: "Install content from Catalog"
+    pixels:
+      - "...█..."
+      - "...█..."
+      - ".█.█.█."
+      - "..███.."
+      - "...█..."
+      - "......."
+      - ".█████."
+  - id: search
+    meaning: "Find Catalog content"
+    pixels:
+      - ".███..."
+      - "█...█.."
+      - "█...█.."
+      - ".███..."
+      - "..██..."
+      - "...██.."
+      - "....█.."
+  - id: sync
+    meaning: "Exchange queued data"
+    pixels:
+      - "....█.."
+      - ".█████."
+      - "....█.."
+      - "......."
+      - "..█...."
+      - ".█████."
+      - "..█...."
+  - id: queue
+    meaning: "Show offline result queue"
+    pixels:
+      - "██....."
+      - "█████.."
+      - "......."
+      - "██....."
+      - "██████."
+      - "......."
+      - "███████"
+  - id: mark
+    meaning: "Bookmark or mark for review"
+    pixels:
+      - "...█..."
+      - "█..█..█"
+      - ".█████."
+      - "..███.."
+      - ".█████."
+      - "█..█..█"
+      - "...█..."
+  - id: flip
+    meaning: "Flip a study card"
+    pixels:
+      - ".█....."
+      - "█████.."
+      - ".█..█.."
+      - "......."
+      - "..█..█."
+      - "..█████"
+      - ".....█."
+  - id: qr
+    meaning: "Display QR output"
+    pixels:
+      - "███.███"
+      - "█.█.█.█"
+      - "███.███"
+      - "......."
+      - "██.███."
+      - ".██.█.."
+      - "█.█.███"
+  - id: check
+    meaning: "Confirm or complete"
+    pixels:
+      - "......█"
+      - ".....█."
+      - "....█.."
+      - "█..█..."
+      - ".██...."
+      - "..█...."
+      - "......."
+  - id: close
+    meaning: "Cancel, clear, or reject"
+    pixels:
+      - "█.....█"
+      - ".█...█."
+      - "..█.█.."
+      - "...█..."
+      - "..█.█.."
+      - ".█...█."
+      - "█.....█"
+  - id: up
+    meaning: "Move or scroll up"
+    pixels:
+      - "...█..."
+      - "..███.."
+      - ".█.█.█."
+      - "█..█..█"
+      - "...█..."
+      - "...█..."
+      - "...█..."
+  - id: down
+    meaning: "Move or scroll down"
+    pixels:
+      - "...█..."
+      - "...█..."
+      - "...█..."
+      - "█..█..█"
+      - ".█.█.█."
+      - "..███.."
+      - "...█..."
+  - id: menu
+    meaning: "Open a list or menu"
+    pixels:
+      - "█.█████"
+      - "......."
+      - "█.█████"
+      - "......."
+      - "█.█████"
+      - "......."
+      - "......."
+  - id: a
+    meaning: "Answer choice A"
+    pixels:
+      - "..███.."
+      - ".█...█."
+      - ".█...█."
+      - ".█████."
+      - ".█...█."
+      - ".█...█."
+      - ".█...█."
+  - id: b
+    meaning: "Answer choice B"
+    pixels:
+      - ".████.."
+      - ".█...█."
+      - ".████.."
+      - ".█...█."
+      - ".█...█."
+      - ".█...█."
+      - ".████.."
+  - id: c
+    meaning: "Answer choice C"
+    pixels:
+      - "..████."
+      - ".█....."
+      - ".█....."
+      - ".█....."
+      - ".█....."
+      - ".█....."
+      - "..████."
+  - id: d
+    meaning: "Answer choice D"
+    pixels:
+      - ".████.."
+      - ".█...█."
+      - ".█...█."
+      - ".█...█."
+      - ".█...█."
+      - ".█...█."
+      - ".████.."
+  - id: e
+    meaning: "Answer choice E"
+    pixels:
+      - ".█████."
+      - ".█....."
+      - ".█....."
+      - ".████.."
+      - ".█....."
+      - ".█....."
+      - ".█████."

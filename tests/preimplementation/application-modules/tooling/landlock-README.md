@@ -188,6 +188,36 @@ Both runs must have the same eleven ordered assertion names and the same
 verified assembler hash. The baseline/candidate receipts and tool provenance are
 pinned in `docs/_wip/plans/2026-10-09-application-modules-final-verification.json`.
 
-Seventeen other suites remain unrun. Authentic `gui/icons.yml`,
-`gui/design-system.yml`, and relay `config.example.yml` are missing; the assembler
-alone cannot supply them. No substitute GUI/configuration fixtures are generated.
+The authentic user-provided GUI archive subsequently unlocked sixteen more
+suites through `retained-ti86-gui`; only the relay configuration suite remains
+unrun. Historical receipts and the original fixed selections are preserved.
+
+Recovered GUI verification
+
+The `retained-ti86-gui` profile uses the same native-tool receipt and
+original/candidate invocation described above. Before running the original
+snapshot, copy the three tracked `icons.yml`, `design-system.yml`, and
+`screens.yml` files from the owned GUI directory into its original
+`_extensions/ti86-app/gui/` directory, and include those three paths in the
+snapshot's `tracked-files.json`. Verify their bytes against
+`docs/_wip/plans/2026-10-09-calculator-gui-recovery.json`. The existing type.yml
+and README.md already match the supplied archive exactly.
+
+Both runs invoke the existing shell and fixed synthetic provisioning builders
+inside confined scratch, producing real SCHLCALC.86p, DSUSERS.86s, and DSPROG.86s.
+Candidate acceptance requires exact enabled assertion names, the one exact
+original disabled reference case, the pinned tool hash, and all three release
+hashes to match the original baseline. There are 87 enabled cases in this profile;
+the disabled case is reported separately and never counted as a pass.
+
+The native copy syscall is denied by the existing profile. The reviewed
+`ti86-release-copy.mjs` adapter permits byte/mode-preserving copies for exactly
+seven known same-stage release outputs into an install-ti86a-<12hex> directory.
+Seven controls reject other layouts, names, flags, mode mismatches, and symlinks;
+actual child-copy observations are required. It does not change native metadata
+functions, product assertions, filesystem rights, or syscall permissions. The
+initial EPERM attempt remains a failed receipt.
+
+The authenticated GUI sources are now tracked with explicit ignore exceptions.
+No substitute GUI/configuration fixtures are generated. The remaining authentic
+relay `config.example.yml` is still needed for the final suite.

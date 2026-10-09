@@ -1,0 +1,70 @@
+{
+  "archive": "/media/kckern/Meta/Dropbox/Apps/DaylightStation/media/tmp/gui.zip",
+  "archiveSha256": "84419427cb3a753614f5541257700b2a6347adee05fe03ff58f5fcf502acc329",
+  "files": [
+    {
+      "file": "modules/school/satellites/ti86-app/gui/icons.yml",
+      "archiveSha256": "340d27a48f0fce83799c4dbf52f03f10c560f6d5f9bab56ec9852db4898489e0",
+      "existed": false,
+      "existingMatchesArchive": false,
+      "restored": true
+    },
+    {
+      "file": "modules/school/satellites/ti86-app/gui/design-system.yml",
+      "archiveSha256": "3f2c3a94a1df5ff02d4d76c62740ad90e46bce890d2a2e0424c2b9bc6e0c020f",
+      "existed": false,
+      "existingMatchesArchive": false,
+      "restored": true
+    },
+    {
+      "file": "modules/school/satellites/ti86-app/gui/screens.yml",
+      "archiveSha256": "6709eb80217d9567502af9a547d0c6183f2494b92b5d3468c1bad102635882db",
+      "existed": false,
+      "existingMatchesArchive": false,
+      "restored": true
+    },
+    {
+      "file": "modules/school/satellites/ti86-app/gui/type.yml",
+      "archiveSha256": "2ac36c08d8c2e2b139af6a33460a378d051505b1e8e8ea3623e31f2a7f483716",
+      "existed": true,
+      "existingMatchesArchive": true,
+      "restored": false
+    },
+    {
+      "file": "modules/school/satellites/ti86-app/gui/README.md",
+      "archiveSha256": "e4a846726d3c21ecefad132ee2748a4b7fba58fc1fc800ca8edf44aae3b92226",
+      "existed": true,
+      "existingMatchesArchive": true,
+      "restored": false
+    }
+  ],
+  "source": "User-provided gui.zip from the shared Dropbox mount",
+  "scope": "Only the three absent GUI files were restored; existing type.yml and README.md match the archive byte-for-byte and were not overwritten.",
+  "runtimeValidation": {
+    "baseline": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/retained-ti86-gui-PBFayJ/receipt.json",
+    "candidate": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/retained-ti86-gui-o5PMXD/receipt.json",
+    "originalEnabledCases": 87,
+    "originalDisabledCases": [
+      "TI-86 reviewed runtime-module boundary retains the superseded broad v0 client-release builder as reference tooling"
+    ],
+    "exactParity": true,
+    "releaseArtifacts": [
+      {
+        "name": "SCHLCALC.86p",
+        "sha256": "d337b96e4ea24986b60cfff4be81c592f16b7c55cad52a6d089b96421f6183fa",
+        "bytes": 9259
+      },
+      {
+        "name": "DSUSERS.86s",
+        "sha256": "00cbd080867ef3b8aecfc9e371d4604b3cc9feb2331ee69ab283f1d5d19628f3",
+        "bytes": 145
+      },
+      {
+        "name": "DSPROG.86s",
+        "sha256": "88c2b9f2110a78f0f695259516d12056bb2fe5f400169cd25c05ba33ec9b3f89",
+        "bytes": 501
+      }
+    ]
+  },
+  "ignorePolicy": "Explicit exceptions for the four SchoolCalc GUI YAML source assets prevent the original accidental omission."
+}

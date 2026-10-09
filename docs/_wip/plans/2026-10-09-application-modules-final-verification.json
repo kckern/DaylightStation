@@ -487,15 +487,36 @@
         "controls": true,
         "protectedInputsUnchangedAtRun": true,
         "incomplete": false
+      },
+      {
+        "pack": "retained-ti86-gui",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/retained-ti86-gui-o5PMXD/receipt.json",
+        "receiptSha256": "e4a630f192a290d1918684aa0e35c39e6c67768057416b518532ffbde74b0234",
+        "baselineReceipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/retained-ti86-gui-PBFayJ/receipt.json",
+        "baselineReceiptSha256": "825ed8e2525ab9c0f5bc469571381e7594c2672797ef60bda6ea9b0bfc3433b2",
+        "originalPasses": 87,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalDisabledCases": [
+          "TI-86 reviewed runtime-module boundary retains the superseded broad v0 client-release builder as reference tooling"
+        ],
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
       }
     ],
     "pending": [],
-    "originalPasses": 6388,
+    "originalPasses": 6475,
     "additionalGuardPasses": 27,
     "additionalExistingCasePasses": 39,
     "knownFailures": 11,
-    "unrunNativeCalculatorSuites": 17,
-    "wholeMilestoneComplete": false
+    "unrunNativeCalculatorSuites": 1,
+    "wholeMilestoneComplete": false,
+    "originalDisabledCases": [
+      "TI-86 reviewed runtime-module boundary retains the superseded broad v0 client-release builder as reference tooling"
+    ]
   },
   "knownFailures": [
     {
@@ -1011,166 +1032,68 @@
       "assertionsUnchanged": true,
       "runtimeStatus": "UNRUN: authentic release program unavailable",
       "priorHookInterrupted": "hook-WD5I8R"
+    },
+    "calculatorGuiRecovery": {
+      "archiveSha256": "84419427cb3a753614f5541257700b2a6347adee05fe03ff58f5fcf502acc329",
+      "restoredFiles": [
+        {
+          "file": "modules/school/satellites/ti86-app/gui/icons.yml",
+          "archiveSha256": "340d27a48f0fce83799c4dbf52f03f10c560f6d5f9bab56ec9852db4898489e0",
+          "existed": false,
+          "existingMatchesArchive": false,
+          "restored": true
+        },
+        {
+          "file": "modules/school/satellites/ti86-app/gui/design-system.yml",
+          "archiveSha256": "3f2c3a94a1df5ff02d4d76c62740ad90e46bce890d2a2e0424c2b9bc6e0c020f",
+          "existed": false,
+          "existingMatchesArchive": false,
+          "restored": true
+        },
+        {
+          "file": "modules/school/satellites/ti86-app/gui/screens.yml",
+          "archiveSha256": "6709eb80217d9567502af9a547d0c6183f2494b92b5d3468c1bad102635882db",
+          "existed": false,
+          "existingMatchesArchive": false,
+          "restored": true
+        }
+      ],
+      "runnerReview": {
+        "helper": "tests/preimplementation/application-modules/tooling/ti86-release-copy.mjs",
+        "sha256": "83ef74b88f3838eb1f4be3e453413b8f7ead1b3f4fc0da2db81c187982dfd18c",
+        "reviewed": [
+          "exact seven binary names",
+          "same artifact dist and install-ti86a-12hex destination",
+          "underlying canonical path and symlink rejection",
+          "real bytes and mode with EXCL semantics",
+          "native metadata functions unchanged",
+          "existing confinement preserved",
+          "durable recovered GUI provenance path",
+          "exact original skipped name and release/tool parity"
+        ],
+        "status": "approved for original/candidate runtime comparison"
+      },
+      "originalAndCandidateCopyAdaptationIdentical": true,
+      "originalDisabledCaseNotCountedAsPass": true,
+      "populationReportingCorrection": {
+        "file": "tests/preimplementation/application-modules/tooling/run-landlock.mjs",
+        "beforeSha256": "b7b0e5a89685c3f5e222ddfee8f62dc0c48b90731576c68ad75a04e6b07d900d",
+        "afterSha256": "3a10c1fef425eaef11e0c5ed470eafc659825cf2a8792d14a584ad008edb5531",
+        "scope": "Reporting only: preserve original46-suite universe when current UNRUN inventory shrinks; fixed executable selections unchanged.",
+        "originalSuitePopulation": 46
+      }
     }
   },
   "nativeCalculator": {
-    "runnableSuites": 29,
-    "passingCases": 121,
+    "runnableSuites": 45,
+    "passingCases": 208,
     "unrunSuites": [
-      {
-        "file": "_extensions/ti86-app/tools/complete-install-contract.test.mjs",
-        "status": "UNRUN",
-        "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
-        "nativeBuilderInputs": [
-          "_extensions/ti86-app/tools/build-qr-runtime.mjs",
-          "_extensions/ti86-app/tools/build-result-queue-runtime.mjs",
-          "_extensions/ti86-app/tools/build-schoolcalc-shell.mjs",
-          "_extensions/ti86-app/tools/build-standard-runtime.mjs",
-          "_extensions/ti86-app/tools/build-sync-runtime.mjs"
-        ]
-      },
-      {
-        "file": "_extensions/ti86-app/tools/record-reader-probe.test.mjs",
-        "status": "UNRUN",
-        "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
-        "nativeBuilderInputs": [
-          "_extensions/ti86-app/tools/build-record-reader-probe.mjs"
-        ]
-      },
-      {
-        "file": "_extensions/ti86-app/tools/runtime-adaptive-contract.test.mjs",
-        "status": "UNRUN",
-        "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
-        "nativeBuilderInputs": [
-          "_extensions/ti86-app/tools/build-standard-runtime.mjs"
-        ]
-      },
-      {
-        "file": "_extensions/ti86-app/tools/runtime-catalog-contract.test.mjs",
-        "status": "UNRUN",
-        "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
-        "nativeBuilderInputs": [
-          "_extensions/ti86-app/tools/build-catalog-runtime.mjs"
-        ]
-      },
-      {
-        "file": "_extensions/ti86-app/tools/runtime-module.test.mjs",
-        "status": "UNRUN",
-        "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
-        "nativeBuilderInputs": [
-          "_extensions/ti86-app/tools/build-catalog-runtime.mjs",
-          "_extensions/ti86-app/tools/build-native-runtime.mjs",
-          "_extensions/ti86-app/tools/build-profile-runtime.mjs",
-          "_extensions/ti86-app/tools/build-qr-runtime.mjs",
-          "_extensions/ti86-app/tools/build-request-runtime.mjs",
-          "_extensions/ti86-app/tools/build-result-queue-runtime.mjs",
-          "_extensions/ti86-app/tools/build-schoolcalc-shell.mjs",
-          "_extensions/ti86-app/tools/build-standard-runtime.mjs",
-          "_extensions/ti86-app/tools/build-sync-runtime.mjs",
-          "_extensions/ti86-app/tools/build-tutor-runtime.mjs"
-        ]
-      },
-      {
-        "file": "_extensions/ti86-app/tools/runtime-qr-contract.test.mjs",
-        "status": "UNRUN",
-        "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
-        "nativeBuilderInputs": [
-          "_extensions/ti86-app/tools/build-qr-runtime.mjs"
-        ]
-      },
-      {
-        "file": "_extensions/ti86-app/tools/runtime-request-contract.test.mjs",
-        "status": "UNRUN",
-        "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
-        "nativeBuilderInputs": [
-          "_extensions/ti86-app/tools/build-request-runtime.mjs"
-        ]
-      },
-      {
-        "file": "_extensions/ti86-app/tools/runtime-sync-contract.test.mjs",
-        "status": "UNRUN",
-        "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
-        "nativeBuilderInputs": [
-          "_extensions/ti86-app/tools/build-sync-runtime.mjs"
-        ]
-      },
-      {
-        "file": "_extensions/ti86-app/tools/runtime-tutor-contract.test.mjs",
-        "status": "UNRUN",
-        "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
-        "nativeBuilderInputs": [
-          "_extensions/ti86-app/tools/build-tutor-runtime.mjs"
-        ]
-      },
-      {
-        "file": "_extensions/ti86-app/tools/schoolcalc-shell.test.mjs",
-        "status": "UNRUN",
-        "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
-        "nativeBuilderInputs": [
-          "_extensions/ti86-app/tools/build-schoolcalc-shell.mjs"
-        ]
-      },
-      {
-        "file": "_extensions/ti86-app/tools/ui-renderer-probe.test.mjs",
-        "status": "UNRUN",
-        "reason": "Required authentic GUI source assets remain absent; the verified scratch assembler alone does not satisfy this builder. No substitute GUI fixtures generated.",
-        "nativeBuilderInputs": [
-          "_extensions/ti86-app/tools/build-ui-renderer-probe.mjs"
-        ]
-      },
       {
         "file": "_extensions/ti86-app/tools/foreground-listener-contract.test.mjs",
         "status": "UNRUN",
         "reason": "Required source fixture or generated release artifact absent in actual checkout; no substitute fixtures generated",
         "missingInputs": [
           "_extensions/ticalc-relay/config.example.yml"
-        ],
-        "priorFailedReceipt": "retained-ti86-P6ByyF/receipt.json"
-      },
-      {
-        "file": "_extensions/ti86-app/tools/input-contract.test.mjs",
-        "status": "UNRUN",
-        "reason": "Required source fixture or generated release artifact absent in actual checkout; no substitute fixtures generated",
-        "missingInputs": [
-          "_extensions/ti86-app/gui/screens.yml"
-        ],
-        "priorFailedReceipt": "retained-ti86-P6ByyF/receipt.json"
-      },
-      {
-        "file": "_extensions/ti86-app/tools/lib/schoolcalc-design-system.test.mjs",
-        "status": "UNRUN",
-        "reason": "Required source fixture or generated release artifact absent in actual checkout; no substitute fixtures generated",
-        "missingInputs": [
-          "_extensions/ti86-app/gui/design-system.yml"
-        ],
-        "priorFailedReceipt": "retained-ti86-P6ByyF/receipt.json"
-      },
-      {
-        "file": "_extensions/ti86-app/tools/lib/schoolcalc-ui-assets.test.mjs",
-        "status": "UNRUN",
-        "reason": "Required source fixture or generated release artifact absent in actual checkout; no substitute fixtures generated",
-        "missingInputs": [
-          "_extensions/ti86-app/gui/icons.yml"
-        ],
-        "priorFailedReceipt": "retained-ti86-P6ByyF/receipt.json"
-      },
-      {
-        "file": "_extensions/ti86-app/tools/lib/ti86-screen-text.test.mjs",
-        "status": "UNRUN",
-        "reason": "Required source fixture or generated release artifact absent in actual checkout; no substitute fixtures generated",
-        "missingInputs": [
-          "_extensions/ti86-app/gui/icons.yml"
-        ],
-        "priorFailedReceipt": "retained-ti86-P6ByyF/receipt.json"
-      },
-      {
-        "file": "_extensions/ti86-app/tools/lib/ti86-mame-provisioning.test.mjs",
-        "status": "UNRUN",
-        "reason": "Required source fixture or generated release artifact absent in actual checkout; no substitute fixtures generated",
-        "missingInputs": [
-          "_extensions/ti86-app/dist/SCHLCALC.86p",
-          "_extensions/ti86-app/dist/DSUSERS.86s",
-          "_extensions/ti86-app/dist/DSPROG.86s"
         ],
         "priorFailedReceipt": "retained-ti86-P6ByyF/receipt.json"
       }
@@ -1220,9 +1143,10 @@
           "mappedTargetExists": false
         }
       },
-      "scope": "read-only original Git tree and current mapped targets; no generated replacement artifacts"
+      "scope": "read-only original Git tree and current mapped targets; no generated replacement artifacts",
+      "historicalSnapshot": true
     },
-    "claim": "29 suites and 121 cases verified across the original and native continuation profiles. Full native release acceptance remains incomplete: 17 suites require absent authentic source or release inputs. The assembler was built in scratch; no system installation or substitute GUI/configuration fixtures.",
+    "claim": "45 suites and 208 enabled cases verified across fixed original/native/GUI profiles; one original disabled reference case remains explicit. The three generated release artifacts match byte-for-byte between original and migrated layouts. One relay-config suite remains unrun because its authentic config.example.yml is absent.",
     "historicalUnrunSuites": [
       {
         "file": "_extensions/ti86-app/tools/complete-install-contract.test.mjs",
@@ -1597,10 +1521,273 @@
       "productOrAssertionChanges": false,
       "installed": false,
       "missingAuthoritativeSources": [
-        "_extensions/ti86-app/gui/icons.yml",
-        "_extensions/ti86-app/gui/design-system.yml",
         "_extensions/ticalc-relay/config.example.yml"
       ]
+    },
+    "originalDisabledCases": [
+      "TI-86 reviewed runtime-module boundary retains the superseded broad v0 client-release builder as reference tooling"
+    ],
+    "guiRecovery": {
+      "provenanceDocument": "2026-10-09-calculator-gui-recovery.json",
+      "archiveSha256": "84419427cb3a753614f5541257700b2a6347adee05fe03ff58f5fcf502acc329",
+      "verification": {
+        "baseline": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/retained-ti86-gui-PBFayJ/receipt.json",
+        "candidate": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/retained-ti86-gui-o5PMXD/receipt.json",
+        "baselineSha256": "825ed8e2525ab9c0f5bc469571381e7594c2672797ef60bda6ea9b0bfc3433b2",
+        "candidateSha256": "e4a630f192a290d1918684aa0e35c39e6c67768057416b518532ffbde74b0234",
+        "originalPasses": 87,
+        "failed": [],
+        "originalDisabledCases": [
+          "TI-86 reviewed runtime-module boundary retains the superseded broad v0 client-release builder as reference tooling"
+        ],
+        "exactOriginalAssertionAndDisabledParity": true,
+        "releaseArtifacts": [
+          {
+            "name": "SCHLCALC.86p",
+            "sha256": "d337b96e4ea24986b60cfff4be81c592f16b7c55cad52a6d089b96421f6183fa",
+            "bytes": 9259
+          },
+          {
+            "name": "DSUSERS.86s",
+            "sha256": "00cbd080867ef3b8aecfc9e371d4604b3cc9feb2331ee69ab283f1d5d19628f3",
+            "bytes": 145
+          },
+          {
+            "name": "DSPROG.86s",
+            "sha256": "88c2b9f2110a78f0f695259516d12056bb2fe5f400169cd25c05ba33ec9b3f89",
+            "bytes": 501
+          }
+        ],
+        "assemblerSha256": "e40088b47340044245ac90350ec121aeafbb0bfb7ba64015ef75e63e35844617",
+        "copyControls": {
+          "names": [
+            "real binary bytes, source intact, mode",
+            "exclusive existing destination",
+            "wrong name, layout, outside, source",
+            "destination symlink rejected",
+            "mode mismatch rejected",
+            "clone flags rejected",
+            "native metadata functions unchanged"
+          ],
+          "observations": {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 1,
+            "modeVerifications": 1
+          }
+        },
+        "copyObservations": [
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 7,
+            "modeVerifications": 7
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 7,
+            "modeVerifications": 7
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          },
+          {
+            "mtimeSets": 0,
+            "overlayStats": 0,
+            "byteCopies": 0,
+            "modeVerifications": 0
+          }
+        ],
+        "controls": true,
+        "protectedInputsUnchanged": true,
+        "originalAndStagedArtifactInputBytesUnchanged": true
+      },
+      "scope": "Identical authentic recovered GUI bytes supplied to original and migrated source; original builders generate actual release files in confined scratch.",
+      "failedInitialAttempt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/retained-ti86-gui-DEH4s6/receipt.json"
     }
   },
   "gitIntegration": {
