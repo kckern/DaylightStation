@@ -1,0 +1,284 @@
+{
+  "schema": "comparator-v1",
+  "cases": [
+    {
+      "id": "node-edge-liveness",
+      "method": "GET",
+      "path": "/healthz",
+      "safety": {
+        "reviewed": true,
+        "disposition": "read-only",
+        "sideEffects": false,
+        "nonlocal": false,
+        "longLived": false
+      },
+      "expected": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "kind": "json",
+          "required": {
+            "ok": "boolean",
+            "server": "string",
+            "timestamp": "number",
+            "uptime": "number"
+          },
+          "equals": {
+            "ok": true,
+            "server": "main"
+          }
+        }
+      },
+      "normalize": {
+        "jsonPaths": [
+          "timestamp",
+          "uptime"
+        ],
+        "headers": [
+          "date",
+          "connection",
+          "keep-alive",
+          "content-length"
+        ]
+      },
+      "normalizationRationale": {
+        "timestamp": "Wall clock differs between requests; number asserted before normalization.",
+        "transportHeaders": "Date, connection and keep-alive depend on request timing/client connection. Content-length follows volatile JSON encoding.",
+        "uptime": "Distinct server process ages; number asserted before normalization."
+      }
+    },
+    {
+      "id": "player-default-config",
+      "method": "GET",
+      "path": "/api/v1/config/player",
+      "safety": {
+        "reviewed": true,
+        "disposition": "read-only",
+        "sideEffects": false,
+        "nonlocal": false,
+        "longLived": false
+      },
+      "expected": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-embedder-policy": "credentialless"
+        },
+        "body": {
+          "kind": "json",
+          "required": {
+            "on_deck": "object"
+          },
+          "equals": {
+            "on_deck": {
+              "preempt_seconds": 15,
+              "displace_to_queue": false
+            }
+          }
+        }
+      },
+      "normalize": {
+        "jsonPaths": [],
+        "headers": [
+          "date",
+          "connection",
+          "keep-alive"
+        ]
+      },
+      "expectationSource": "ConfigQueryService PLAYER_DEFAULTS; this case explicitly requires default configuration."
+    },
+    {
+      "id": "fitness-authored-course",
+      "method": "GET",
+      "path": "/api/v1/fitness/skyline-glider/courses",
+      "safety": {
+        "reviewed": true,
+        "disposition": "read-only",
+        "sideEffects": false,
+        "nonlocal": false,
+        "longLived": false
+      },
+      "expected": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-embedder-policy": "credentialless"
+        },
+        "body": {
+          "kind": "json",
+          "required": {
+            "courses": "array"
+          },
+          "equals": {
+            "courses": [
+              {
+                "schema": "skyline-glider-course/v1",
+                "id": "mountain-pass",
+                "version": 3,
+                "name": "Mountain Pass",
+                "description": "Hold steady through long climbs, ease down beneath one cloud shelf, and finish strong.",
+                "duration_s": 300,
+                "motion": {
+                  "filter_s": 0.25,
+                  "deadband_rpm": 2,
+                  "response_s": 0.6,
+                  "max_climb_rate": 0.3,
+                  "max_descent_rate": 0.3,
+                  "coast_s": 1,
+                  "disconnect_grace_s": 0.75,
+                  "slow_signal_grace_s": 5,
+                  "inferred_slowdown_s": 0.5
+                },
+                "rules": {
+                  "lives": 3,
+                  "invincibility_s": 1.25,
+                  "restart_delay_s": 2
+                },
+                "segments": [
+                  {
+                    "id": "valley",
+                    "type": "open",
+                    "start_s": 0,
+                    "end_s": 300
+                  },
+                  {
+                    "id": "meadow-hold",
+                    "type": "lower-terrain",
+                    "start_s": 15,
+                    "end_s": 55,
+                    "top": 0.55
+                  },
+                  {
+                    "id": "course-bells",
+                    "type": "collectible-path",
+                    "start_s": 20,
+                    "end_s": 280,
+                    "collectibles": [
+                      {
+                        "id": "mp-bell-01",
+                        "at_s": 30,
+                        "altitude": 0.5
+                      },
+                      {
+                        "id": "mp-bell-02",
+                        "at_s": 48,
+                        "altitude": 0.48
+                      },
+                      {
+                        "id": "mp-bell-03",
+                        "at_s": 100,
+                        "altitude": 0.44
+                      },
+                      {
+                        "id": "mp-bell-04",
+                        "at_s": 115,
+                        "altitude": 0.44
+                      },
+                      {
+                        "id": "mp-bell-05",
+                        "at_s": 138,
+                        "altitude": 0.54
+                      },
+                      {
+                        "id": "mp-bell-06",
+                        "at_s": 183,
+                        "altitude": 0.4
+                      },
+                      {
+                        "id": "mp-bell-07",
+                        "at_s": 215,
+                        "altitude": 0.5
+                      },
+                      {
+                        "id": "mp-bell-08",
+                        "at_s": 252,
+                        "altitude": 0.39
+                      },
+                      {
+                        "id": "mp-bell-09",
+                        "at_s": 272,
+                        "altitude": 0.4
+                      }
+                    ]
+                  },
+                  {
+                    "id": "checkpoint-one",
+                    "type": "checkpoint",
+                    "start_s": 75,
+                    "restart_altitude": 0.5
+                  },
+                  {
+                    "id": "ridge-hold",
+                    "type": "lower-terrain",
+                    "start_s": 88,
+                    "end_s": 120,
+                    "top": 0.48
+                  },
+                  {
+                    "id": "cloud-descent",
+                    "type": "upper-terrain",
+                    "start_s": 132,
+                    "end_s": 145,
+                    "bottom": 0.43
+                  },
+                  {
+                    "id": "checkpoint-two",
+                    "type": "checkpoint",
+                    "start_s": 150,
+                    "restart_altitude": 0.5
+                  },
+                  {
+                    "id": "summit-hold",
+                    "type": "lower-terrain",
+                    "start_s": 170,
+                    "end_s": 200,
+                    "top": 0.45
+                  },
+                  {
+                    "id": "wide-tunnel",
+                    "type": "corridor",
+                    "start_s": 210,
+                    "end_s": 220,
+                    "ceiling": 0.22,
+                    "floor": 0.64
+                  },
+                  {
+                    "id": "checkpoint-three",
+                    "type": "checkpoint",
+                    "start_s": 225,
+                    "restart_altitude": 0.5
+                  },
+                  {
+                    "id": "final-hold",
+                    "type": "lower-terrain",
+                    "start_s": 238,
+                    "end_s": 278,
+                    "top": 0.44
+                  },
+                  {
+                    "id": "finish",
+                    "type": "finish",
+                    "start_s": 300
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "normalize": {
+        "jsonPaths": [],
+        "headers": [
+          "date",
+          "connection",
+          "keep-alive"
+        ]
+      },
+      "expectationSource": "Tracked modules/fitness/server/adapters/courses/mountain-pass.yml; this case requires no household overrides, whose presence must fail rather than normalize."
+    }
+  ]
+}

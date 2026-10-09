@@ -1,0 +1,28 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import net from 'node:net';
+import http from 'node:http';
+const scratch=process.env.PRE_RUN_ROOT;
+const {sourceRoot}=JSON.parse(fs.readFileSync(path.join(scratch,'probe-input.json')));
+const controls=[];
+const denied=(label,fn)=>{assert.throws(fn,e=>['EPERM','EACCES'].includes(e.code));controls.push(label);};
+denied('private read',()=>fs.readFileSync(path.join(process.env.PRE_DENIED_ROOT,'private.env')));
+denied('host read',()=>fs.readFileSync('/etc/hostname'));
+denied('source write',()=>fs.openSync(path.join(sourceRoot,'backend/src/app.mjs'),'w'));
+const deniedAsync=(label,start)=>new Promise((resolve,reject)=>{
+ const object=start(); const timer=setTimeout(()=>reject(new Error(label+' timed out')),1500);
+ object.once('error',e=>{clearTimeout(timer);if(!['EPERM','EACCES'].includes(e.code)){reject(e);return;}controls.push(label);resolve();});
+ object.once('listening',()=>{clearTimeout(timer);object.close();reject(new Error(label+' unexpectedly allowed'));});
+ object.once('connect',()=>{clearTimeout(timer);object.destroy();reject(new Error(label+' unexpectedly allowed'));});
+});
+await deniedAsync('other TCP bind',()=>net.createServer().listen(43130,'127.0.0.1'));
+await deniedAsync('AF_UNIX socket',()=>net.createServer().listen(path.join(scratch,'forbidden.sock')));
+await deniedAsync('outbound TCP connect',()=>net.createConnection({host:'127.0.0.1',port:43129}));
+const server=http.createServer((req,res)=>{assert.equal(req.url,'/synthetic-control');assert.equal(req.method,'GET');res.setHeader('x-control','actual-http');res.end('synthetic transport bytes\n');});
+await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(43129,'127.0.0.1',resolve);});
+assert.equal(server.address().address,'127.0.0.1');assert.equal(server.address().port,43129);
+controls.push('exact loopback TCP bind');
+fs.writeFileSync(path.join(scratch,'ready.json'),JSON.stringify({port:43129,address:'127.0.0.1'}));
+const wall=setTimeout(()=>{console.error('no control request');process.exit(1);},10000);
+server.once('request',()=>setTimeout(()=>server.close(()=>{clearTimeout(wall);controls.push('actual HTTP response');fs.writeFileSync(path.join(scratch,'controls.json'),JSON.stringify({controls,completed:true}));process.exit(0);}),100));

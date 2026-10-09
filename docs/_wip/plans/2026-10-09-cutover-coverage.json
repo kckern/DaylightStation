@@ -1,0 +1,1501 @@
+{
+  "schema": "daylight.cutover-readiness-evidence/v1",
+  "readinessAccepted": false,
+  "stage": "Read-only live/local pattern proven on three cases; inventory classification and reusable runner expansion in progress; integration uncommitted",
+  "referenceMain": "c9234d2ba9ffe5a30ba03abf54a94b3b28d0c9df",
+  "sourceCheckpointBeforeIntegration": "7c0936d1b5d450c3495fb5c105d7aaf196d3bc54",
+  "schoolMainIntegration": {
+    "baseline": "/tmp/daylight-story-time-main-baseline/.superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/main-school-Vdk3GX/receipt.json",
+    "candidate": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/main-school-kTK5tU/receipt.json",
+    "baselineSha256": "a80ba89cbaff2e947a7b4fa6b4328b65d6c98ca996e2cd5db0e252fc3371488f",
+    "candidateSha256": "7d9bdeb9ee971db92698840b43e789f3c67e60d049824047c900e1b765cea521",
+    "cases": 179,
+    "suites": 7,
+    "exactPassedNameParity": true,
+    "controls": true,
+    "protectedInputsUnchanged": true,
+    "incomplete": false,
+    "scope": "Selected original main School behavior and mapped candidate; not full installed application or Docker HTTP proof."
+  },
+  "resolvedMainPaths": [
+    {
+      "original": "backend/src/2_domains/school/storyTime.mjs",
+      "destination": "modules/school/server/domain/storyTime.mjs",
+      "sha256": "105fe45a43201070f52dc916ffc1f923ad80a068075e7885f3ccf6cc3ce1b064"
+    },
+    {
+      "original": "backend/src/3_applications/school/SchoolProgramEnrollmentValidators.test.mjs",
+      "destination": "modules/school/server/application/SchoolProgramEnrollmentValidators.test.mjs",
+      "sha256": "dc812b310dbcd82aa4e7291576dba263dfaff0c027504db67acdb24e72d5e74c"
+    },
+    {
+      "original": "backend/src/3_applications/school/StoryTimeProgramLauncher.mjs",
+      "destination": "modules/school/server/application/StoryTimeProgramLauncher.mjs",
+      "sha256": "161d56cd02ff639dd33c5a82cc142745f115df441a4497f022031cad946a9deb"
+    },
+    {
+      "original": "backend/src/3_applications/school/readingSessionInterceptor.mjs",
+      "destination": "modules/school/server/application/readingSessionInterceptor.mjs",
+      "sha256": "7dc17ce91701fc05d64fa3a85c0fe3f7c840f429685b77c846d31826158a8ca7"
+    },
+    {
+      "original": "backend/src/3_applications/school/workflows/LearnerCardActions.mjs",
+      "destination": "modules/school/server/application/workflows/LearnerCardActions.mjs",
+      "sha256": "927ccba7ce08de1a32c0d830878ea193d99c74992b56a83bb70e140919a1d2cc"
+    },
+    {
+      "original": "backend/src/app.mjs",
+      "destination": "modules/school/server/composition/reading-runtime.mjs",
+      "sha256": "01679535f0e982acc7d5eb4c36edb630d0b7d1885adab69ad6ab7f70c0e0b8ee"
+    },
+    {
+      "original": "docs/reference/school/programs.md",
+      "destination": "docs/reference/school/programs.md",
+      "sha256": "932b212c018b6456def2c4963b11610e09d37379c73e55062a1ba26dbd5b4cfa"
+    },
+    {
+      "original": "docs/reference/school/reading-sessions.md",
+      "destination": "docs/reference/school/reading-sessions.md",
+      "sha256": "1d170bc9f1465989f4193cd2b569fb75dd6767787f7c12055994f60833f869e8"
+    },
+    {
+      "original": "frontend/src/modules/School/reading/ReadingSessionScreen.test.jsx",
+      "destination": "modules/school/browser/reading/ReadingSessionScreen.test.jsx",
+      "sha256": "dbcb04b391f7278c0ea65cc16b26e13868072c11e9e5913b835a2d1788b947f3"
+    },
+    {
+      "original": "frontend/src/modules/School/reading/readRecentlyTitle.js",
+      "destination": "modules/school/browser/reading/readRecentlyTitle.js",
+      "sha256": "15d5afc8ab5862ac425d73d97c884596ed82d1e602c742764898c7006bf81338"
+    },
+    {
+      "original": "frontend/src/modules/School/reading/readRecentlyTitle.test.js",
+      "destination": "modules/school/browser/reading/readRecentlyTitle.test.js",
+      "sha256": "c01efbf81f54053accc7e77bfdb769c2cfdf546c64fa6b08d0af4f6dce8a7a4b"
+    },
+    {
+      "original": "frontend/src/modules/School/reading/useReadingSession.js",
+      "destination": "modules/school/browser/reading/useReadingSession.js",
+      "sha256": "fa04818969182d030a70c87f8a4ec8f0c5a46227f3f807699ed33f464f925574"
+    },
+    {
+      "original": "tests/isolated/application/school/StoryTimeProgramLauncher.test.mjs",
+      "destination": "tests/isolated/application/school/StoryTimeProgramLauncher.test.mjs",
+      "sha256": "52e2ffb376e2298068808f4325237a194af15e6c5b364a8fb7a0aaa274a7d40e"
+    },
+    {
+      "original": "tests/isolated/application/school/learnerCardActions.readingAdoption.test.mjs",
+      "destination": "tests/isolated/application/school/learnerCardActions.readingAdoption.test.mjs",
+      "sha256": "d9d14ca0dec41104a126e43c04f0552edb9487e8e142f00984aa0e1aa51fa9b1"
+    },
+    {
+      "original": "tests/isolated/application/school/readingSessionInterceptor.test.mjs",
+      "destination": "tests/isolated/application/school/readingSessionInterceptor.test.mjs",
+      "sha256": "ed60add4f45a529729e6868956767e327dc53138563ef658295074dc4a2e9eab"
+    },
+    {
+      "original": "tests/isolated/domain/school/storyTimeNoRepeat.test.mjs",
+      "destination": "tests/isolated/domain/school/storyTimeNoRepeat.test.mjs",
+      "sha256": "589daedb67f6f9e3095f74066d49f77e8809b2802e7a83ef04180b83febc8f5a"
+    }
+  ],
+  "productionFrontendBuild": {
+    "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/build-YykVLk/receipt.json",
+    "receiptSha256": "2fd72c62acc046c527fc86287f808d2d47c4dd066e70e0f99a9fc096f5a5299c",
+    "exitCode": 0,
+    "controls": true,
+    "protectedInputsUnchanged": true,
+    "scope": "Actual production Vite output; not Docker image or full-server HTTP proof",
+    "ownedChunkCount": 109,
+    "chunks": [
+      {
+        "file": "assets/index-DRyd_vdC.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/debug-UVd19HLH.js",
+        "ownedModuleCount": 2
+      },
+      {
+        "file": "assets/verifier-CgD-YIo8.js",
+        "ownedModuleCount": 2
+      },
+      {
+        "file": "assets/readingPrograms-COulQOhQ.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/pianoLearningApi-fDjGfwHr.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/MenuNavigationContext-ezNroRLt.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/useNoteSelection-BPxtnRCn.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/playlist-CSoWaSow.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/ruleModule-CXQZko2U.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/scripture-guide-CgmZN4wb.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/random-DnDDDXcu.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/PianoFullscreenToggle-BGyLnq5T.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/playerName-CBGF0X-v.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/useAutoGameLifecycle-DW4hyPYb.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/useMatchRematch-CRwZELTF.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/flashcardEngine-BbPTfpQC.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/useStaffMatching-BXPMjkf5.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/recognition-DyQ9Gq-J.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/identiconModel-BCGIte34.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/useFlashcardGame-C-Dt6lDb.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/touchCapability-BK7iyHlt.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/ShowView-CGKoM401.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/useFetchContentData-B1_Ot2Ot.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/SeasonView-DI4EfdC3.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/dayToDayChartOptions-Je1-07a7.js",
+        "ownedModuleCount": 2
+      },
+      {
+        "file": "assets/MedicalView-CPGviCvM.js",
+        "ownedModuleCount": 2
+      },
+      {
+        "file": "assets/IntakeBurnChart-BO6Y71NS.js",
+        "ownedModuleCount": 2
+      },
+      {
+        "file": "assets/GameButton-BZowoRy_.js",
+        "ownedModuleCount": 2
+      },
+      {
+        "file": "assets/dice-C26SEM6s.js",
+        "ownedModuleCount": 2
+      },
+      {
+        "file": "assets/usePianoPlayback-ChxVLttW.js",
+        "ownedModuleCount": 2
+      },
+      {
+        "file": "assets/index-l0dPQKcv.js",
+        "ownedModuleCount": 2
+      },
+      {
+        "file": "assets/WeightTrendChart-DPPuwos5.js",
+        "ownedModuleCount": 2
+      },
+      {
+        "file": "assets/FitnessSimulationController-kmxTHua-.js",
+        "ownedModuleCount": 2
+      },
+      {
+        "file": "assets/useSpaceInvadersGame-DJ75WKZH.js",
+        "ownedModuleCount": 2
+      },
+      {
+        "file": "assets/useTetrisGame-DCz85x4S.js",
+        "ownedModuleCount": 2
+      },
+      {
+        "file": "assets/LaunchCard-px-s_FZM.js",
+        "ownedModuleCount": 2
+      },
+      {
+        "file": "assets/AndroidLaunchCard-l-x4wm5L.js",
+        "ownedModuleCount": 2
+      },
+      {
+        "file": "assets/wrap-up-B3UWVYXj.js",
+        "ownedModuleCount": 3
+      },
+      {
+        "file": "assets/office-off-DDanqLkd.js",
+        "ownedModuleCount": 3
+      },
+      {
+        "file": "assets/FeedSearch-CBgxat_n.js",
+        "ownedModuleCount": 2
+      },
+      {
+        "file": "assets/ProgressView-D2CIuzn3.js",
+        "ownedModuleCount": 3
+      },
+      {
+        "file": "assets/HealthSettings-DxNwJavy.js",
+        "ownedModuleCount": 3
+      },
+      {
+        "file": "assets/StaffNoteLabel-Bn6EyXY0.js",
+        "ownedModuleCount": 3
+      },
+      {
+        "file": "assets/useMediaHealth-BHrwQXup.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/spellMidi-wReUqs3R.js",
+        "ownedModuleCount": 3
+      },
+      {
+        "file": "assets/usePianoRunSession-BUMtHInS.js",
+        "ownedModuleCount": 3
+      },
+      {
+        "file": "assets/index-unyRUmLe.js",
+        "ownedModuleCount": 3
+      },
+      {
+        "file": "assets/700-BkYU72Xe.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/SpaceInvadersGame-rn9k-L5u.js",
+        "ownedModuleCount": 4
+      },
+      {
+        "file": "assets/Headlines-Cbk7mH-h.js",
+        "ownedModuleCount": 4
+      },
+      {
+        "file": "assets/Reader-DiO2CjT3.js",
+        "ownedModuleCount": 4
+      },
+      {
+        "file": "assets/kiosk-CacgfIAR.js",
+        "ownedModuleCount": 6
+      },
+      {
+        "file": "assets/host-CznbfXzo.js",
+        "ownedModuleCount": 6
+      },
+      {
+        "file": "assets/CameraRenderer-BQvtrOtz.js",
+        "ownedModuleCount": 5
+      },
+      {
+        "file": "assets/useSideScrollerGame-Cs-hI71C.js",
+        "ownedModuleCount": 5
+      },
+      {
+        "file": "assets/PianoFlashcards-CCcLJiPh.js",
+        "ownedModuleCount": 5
+      },
+      {
+        "file": "assets/kiosk-BYD7eyST.js",
+        "ownedModuleCount": 7
+      },
+      {
+        "file": "assets/AiUsageCard-DVDscNz1.js",
+        "ownedModuleCount": 6
+      },
+      {
+        "file": "assets/useShutdownLock-DhSlq6ud.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/FilterOverlay-1oduzbdS.js",
+        "ownedModuleCount": 6
+      },
+      {
+        "file": "assets/wager-Cnb0jDjb.js",
+        "ownedModuleCount": 6
+      },
+      {
+        "file": "assets/ruleModule-MP2R-LE7.js",
+        "ownedModuleCount": 5
+      },
+      {
+        "file": "assets/SideScrollerGame-D16RMSYK.js",
+        "ownedModuleCount": 6
+      },
+      {
+        "file": "assets/PianoTetris-ChuoXK2q.js",
+        "ownedModuleCount": 6
+      },
+      {
+        "file": "assets/createPianoGameClient-B5Kj8g9F.js",
+        "ownedModuleCount": 6
+      },
+      {
+        "file": "assets/kiosk-Brrzwwgm.js",
+        "ownedModuleCount": 7
+      },
+      {
+        "file": "assets/CardGame-smMDclAu.js",
+        "ownedModuleCount": 7
+      },
+      {
+        "file": "assets/PianoHeroGame-MYxzZgfT.js",
+        "ownedModuleCount": 7
+      },
+      {
+        "file": "assets/PianoConnectFour-kSGw0MCG.js",
+        "ownedModuleCount": 7
+      },
+      {
+        "file": "assets/DeviceStatePublisher-pjB7pKkU.js",
+        "ownedModuleCount": 3
+      },
+      {
+        "file": "assets/AuditorPage-CQ5BhCJF.js",
+        "ownedModuleCount": 8
+      },
+      {
+        "file": "assets/SegmentedSecretText-CBDt850n.js",
+        "ownedModuleCount": 8
+      },
+      {
+        "file": "assets/ActionStaff-eoSy8pKZ.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/tv-Cs8LX6K9.js",
+        "ownedModuleCount": 5
+      },
+      {
+        "file": "assets/useVirtualFeedWindow-DLg8zUJR.js",
+        "ownedModuleCount": 7
+      },
+      {
+        "file": "assets/MusicBehindLayer-_aZ1HIBw.js",
+        "ownedModuleCount": 8
+      },
+      {
+        "file": "assets/PianoCheckers-Bg3chUCW.js",
+        "ownedModuleCount": 11
+      },
+      {
+        "file": "assets/kiosk-Buw1hwnD.js",
+        "ownedModuleCount": 13
+      },
+      {
+        "file": "assets/AppContainer-CO2uI2fy.js",
+        "ownedModuleCount": 4
+      },
+      {
+        "file": "assets/useAnyKeyToContinue-BW6S6D3B.js",
+        "ownedModuleCount": 12
+      },
+      {
+        "file": "assets/scoreGroups-BEPn6yEZ.js",
+        "ownedModuleCount": 12
+      },
+      {
+        "file": "assets/GamePresentationHarness-BcWnDTSe.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/kiosk-DQ-JbF6U.js",
+        "ownedModuleCount": 15
+      },
+      {
+        "file": "assets/presenterRegistry-SHC1KZIt.js",
+        "ownedModuleCount": 19
+      },
+      {
+        "file": "assets/ChessBoard-C10EdSrI.js",
+        "ownedModuleCount": 28
+      },
+      {
+        "file": "assets/kiosk-BENxnLoy.js",
+        "ownedModuleCount": 26
+      },
+      {
+        "file": "assets/buildScheme-Q5ajAKbJ.js",
+        "ownedModuleCount": 33
+      },
+      {
+        "file": "assets/Scroll-DNyLohvR.js",
+        "ownedModuleCount": 40
+      },
+      {
+        "file": "assets/public-BWQnl0ff.js",
+        "ownedModuleCount": 5
+      },
+      {
+        "file": "assets/index-B6paA0V6.js",
+        "ownedModuleCount": 29
+      },
+      {
+        "file": "assets/PianoChessGame-B5FEWtx8.js",
+        "ownedModuleCount": 44
+      },
+      {
+        "file": "assets/useStatusOverlay-YH6Qz7yb.js",
+        "ownedModuleCount": 13
+      },
+      {
+        "file": "assets/InstructionalInsightsOverview-UUVeqVfF.js",
+        "ownedModuleCount": 68
+      },
+      {
+        "file": "assets/teacher-DQAhOnH1.js",
+        "ownedModuleCount": 69
+      },
+      {
+        "file": "assets/kiosk-CSzupa5x.js",
+        "ownedModuleCount": 47
+      },
+      {
+        "file": "assets/kiosk-ClOkQFKx.js",
+        "ownedModuleCount": 89
+      },
+      {
+        "file": "assets/playback-DPoXRKc-.js",
+        "ownedModuleCount": 115
+      },
+      {
+        "file": "assets/builtins-CBXdYUwB.js",
+        "ownedModuleCount": 128
+      },
+      {
+        "file": "assets/kiosk-DwwAeNbS.js",
+        "ownedModuleCount": 178
+      },
+      {
+        "file": "assets/AdminApp-DkluAMaB.js",
+        "ownedModuleCount": 84
+      },
+      {
+        "file": "assets/IconScale-GXN-yoD5.js",
+        "ownedModuleCount": 5
+      },
+      {
+        "file": "assets/kiosk-CCkAOj0q.js",
+        "ownedModuleCount": 317
+      },
+      {
+        "file": "assets/addressingPolicy-buFzhvjf.js",
+        "ownedModuleCount": 226
+      },
+      {
+        "file": "assets/kiosk-B2FrvDOc.js",
+        "ownedModuleCount": 648
+      },
+      {
+        "file": "assets/topics-B86CPrh-.js",
+        "ownedModuleCount": 1
+      },
+      {
+        "file": "assets/public-DQgYGi19.js",
+        "ownedModuleCount": 3
+      },
+      {
+        "file": "assets/widget-oStV8E8p.js",
+        "ownedModuleCount": 22
+      },
+      {
+        "file": "assets/widget-naihmbm9.js",
+        "ownedModuleCount": 59
+      },
+      {
+        "file": "assets/kiosk-CKABPjdM.js",
+        "ownedModuleCount": 235
+      }
+    ]
+  },
+  "comparatorControls": {
+    "command": [
+      "node",
+      "--test",
+      "--test-reporter=tap",
+      "tests/readiness/application-modules/comparator-controls.test.mjs"
+    ],
+    "receipt": "/tmp/cutover-comparator-array-green.tap",
+    "exitCode": 0,
+    "passed": 14,
+    "failed": 0,
+    "skipped": 0,
+    "networkExecution": false,
+    "readinessAccepted": false,
+    "scope": "Synthetic control tests for expected responses, strict parity, fail-closed safety, isolated/live target provenance and exact array-root contracts",
+    "files": [
+      {
+        "path": "tests/readiness/application-modules/api-comparator.mjs",
+        "sha256": "6b277db241efb6b51813a80860c59682964672d707cd92c69996f970c9f06025"
+      },
+      {
+        "path": "tests/readiness/application-modules/comparator-controls.test.mjs",
+        "sha256": "f461ed530e1a4a53f86125eb3e0cb3a5fc2e8afca24561c5639f01d18ffc6619"
+      }
+    ]
+  },
+  "apiCoverage": {
+    "sourceManifest": "tests/readiness/application-modules/http-source-inventory.json",
+    "caseInventory": "tests/readiness/application-modules/http-case-inventory.json",
+    "literalRouteDeclarationsPerSnapshot": 1176,
+    "literalGetDeclarationsPerSnapshot": 647,
+    "nonliteralGetCandidatesPerSnapshot": 10,
+    "explicitHeadDeclarations": 0,
+    "unresolvedMountRecordsPerSnapshot": 147,
+    "literalApiRegistryMountEntries": 83,
+    "reviewedCandidateCaseProposals": 16,
+    "currentlyRunnableExpectationCases": 24,
+    "fullApplicationHttpCasesExecuted": 24,
+    "coveragePercentageEstablished": false,
+    "limitations": "Twenty-four unique actual TCP live/local cases have accepted finite execution receipts. Latest eleven add ten populated branches and one absent snapshot-list branch; that populated gap is explicit. Source-backed private projections remain independent snapshots; eligible denominator and required response branches remain incomplete.",
+    "mountedInventory": "tests/readiness/application-modules/http-mounted-readonly-inventory.json",
+    "executedExpectationManifest": "tests/readiness/application-modules/first-readonly-expectations.json",
+    "fullApplicationHttpCasesPassed": 24
+  },
+  "packaging": {
+    "file": ".dockerignore",
+    "change": "Move authored Fitness YAML exception to owner directory; remove obsolete School YAML exception because course data is compiled JavaScript",
+    "actualDockerContextVerified": false,
+    "syntheticPolicyInspection": "Two narrow policy checks ran, then their homemade matcher was excluded from the durable suite because it cannot establish Docker semantics."
+  },
+  "failedPreliminaryReceipts": [
+    "EEBtbK",
+    "Ix13pw",
+    "PbZl38",
+    "1yEud5"
+  ],
+  "externalExecutionBlocker": {
+    "dockerSocket": "permission denied",
+    "noninteractiveSudo": "password required",
+    "rootlessProbe": "uid_map Operation not permitted; no subordinate mappings",
+    "permissionOrSecurityWorkaroundsAttempted": false
+  },
+  "cutoverRunbook": "docs/runbooks/application-modules-cutover.md",
+  "currentPhase": {
+    "scope": "Inventory read-only APIs across all applications, then compare reviewed requests against live and a separate local candidate",
+    "dockerRequired": false,
+    "createUpdateDeleteTestsInScope": false,
+    "liveReference": {
+      "observedCommit": "25b5318b7209ad1054c8865d0d18ead628c4c6df",
+      "evidence": "/tmp/readiness-durable-proof/daylight-local-http-BflUyN/receipt.json",
+      "observedBy": "Before-pack build metadata guard; old declared source rejected",
+      "businessCasesExecutedInThisAttempt": 0,
+      "includesIntegratedSchoolAndChessFeatures": true
+    },
+    "nextRequirements": [
+      "Resolve mounted route inventory and review delegated side effects",
+      "Prepare safe local candidate with separate storage and autonomous effects disabled",
+      "Execute meaningful expected-contract and differential cases",
+      "Separate intentional post-live feature changes and data drift from refactor regressions"
+    ],
+    "firstLiveApplicationReads": {
+      "privateEvidence": "/tmp/cutover-live-readonly-first-cases.json",
+      "candidateCompared": false,
+      "results": [
+        {
+          "path": "/api/v1/config/player",
+          "status": 200,
+          "initialContract": "passed numeric range and boolean shape"
+        },
+        {
+          "path": "/api/v1/config/content-prefixes",
+          "status": 200,
+          "initialContract": "failed: expected populated legacy map; actual top-level keys aliases/storagePaths"
+        },
+        {
+          "path": "/api/v1/fitness/skyline-glider/courses",
+          "status": 200,
+          "initialContract": "passed populated course list and schema markers"
+        }
+      ]
+    },
+    "baselineContractFindings": [
+      {
+        "endpoint": "GET /api/v1/config/content-prefixes",
+        "consumer": "frontend/src/lib/queryParamResolver.js:13",
+        "expectedByConsumer": "config.legacy mapping; absent mapping becomes empty without error fallback",
+        "observedLiveKeys": [
+          "aliases",
+          "storagePaths"
+        ],
+        "disposition": "Unresolved pre-existing live consumer/API mismatch. Do not count as contract pass or silently normalize. No behavior change made."
+      }
+    ],
+    "liveReferenceHistory": [
+      {
+        "observedCommit": "6cf8670352f92c4d40824bfaac9260fa53ec3c3f",
+        "evidence": "/tmp/cutover-live-readonly-provenance.json",
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/healthz",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/build.txt",
+            "status": 200
+          }
+        ],
+        "coverageClaim": "Liveness and source provenance only; no differential application API evidence",
+        "differsFromMain": true
+      }
+    ]
+  },
+  "futureReleaseRequirements": [
+    "Actual Docker images built and immutable reference retained",
+    "Synthetic fixture boot of actual application and mounted-route census",
+    "Meaningful full-server read-only API expectations and old/new execution across eligible surface",
+    "Auth/permission, writes/events/jobs/restart and representative browser journeys",
+    "Production configuration/image rollback capture and disposable rehearsal",
+    "Fresh-main inclusion and original-hook clean checkpoint"
+  ],
+  "remainingRequirements": [
+    "Resolve mounted route inventory and review delegated side effects",
+    "Prepare safe local candidate with separate storage and autonomous effects disabled",
+    "Execute meaningful expected-contract and differential cases",
+    "Separate intentional post-live feature changes and data drift from refactor regressions",
+    "Finish verified fresh-main integration and original-hook checkpoint",
+    "Complete applicable future release gates before actual cutover"
+  ],
+  "externalExecutionBlockerScope": "Docker access affects future image/rollback rehearsal, not the current local-server read-only baseline.",
+  "chessMainIntegration": {
+    "scope": "Fresh-main Chess owner integration only; not full-server HTTP parity",
+    "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/main-chess-UJ5uVV/receipt.json",
+    "sha256": "f432caa63b584b931bed8ed792054d1ca212a3d11d5745e17763583b3ede1f2d",
+    "passed": 176,
+    "failed": 0,
+    "baselineReceipt": "/tmp/daylight-chess-main-baseline/.superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/main-chess-vdwBhm/receipt.json",
+    "parity": true,
+    "controls": true,
+    "protectedInputsUnchanged": true,
+    "incomplete": false
+  },
+  "postChessFrontendBuild": {
+    "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/build-xww8bS/receipt.json",
+    "sha256": "1490e797181995d34ce3ac55486bd2daaf4707e3c4b2f878ce715fc1a225e000",
+    "exitCode": 0,
+    "controls": true,
+    "protectedInputsUnchanged": true,
+    "scope": "Actual frontend build; not full-server HTTP parity"
+  },
+  "liveReferenceComparatorControls": {
+    "tests": 13,
+    "passed": 13,
+    "failed": 0,
+    "evidence": "/tmp/cutover-comparator-live-green.tap",
+    "scope": "Synthetic comparator behavior and fail-closed target/request validation; no actual application HTTP parity",
+    "files": {
+      "tests/readiness/application-modules/api-comparator.mjs": "de287dd503fcee9e70d76a0b2c5ced04cb804bb80c250b05f24ae132d1db13fb",
+      "tests/readiness/application-modules/comparator-controls.test.mjs": "3b3de060836ffb09a1e35fe9b546c41e8387d3fdedeac560649c12b704a308b2"
+    }
+  },
+  "localHttpIsolationControls": {
+    "receipt": "/tmp/daylight-http-controls-vdzuGN/receipt.json",
+    "receiptSha256": "b07cf5b41f66d19cc68b28d646ca5005e2229742110a41fd5f63535128e3c3d8",
+    "completed": true,
+    "controls": [
+      "private read",
+      "host read",
+      "source write",
+      "other TCP bind",
+      "AF_UNIX socket",
+      "outbound TCP connect",
+      "exact loopback TCP bind",
+      "actual HTTP response"
+    ],
+    "scope": "Synthetic networking controls only; no application requests or boot",
+    "limitation": "Landlock restricts TCP port, not bind address; loopback binding comes from the audited driver",
+    "actualApplicationCompared": false
+  },
+  "firstActualLiveLocalComparison": {
+    "receipt": "/tmp/daylight-local-app-7eCp6g/receipt.json",
+    "receiptSha256": "0e5523212da5959b02bcfcb49cef671a4c6912b0d2c2285dc519ed0558202774",
+    "privateComparison": "/tmp/daylight-local-app-7eCp6g/comparison.json",
+    "comparisonSha256": "5b9c0bfb9a24688c982688c581bfede3f8b968bb466e1a95691a9417e8f04d5c",
+    "expectations": "tests/readiness/application-modules/first-readonly-expectations.json",
+    "expectationsSha256": "84055bcb8c813169413425cf512141c5df88d2b4df94be63917453921ac3d3cf",
+    "referenceCommit": "6cf8670352f92c4d40824bfaac9260fa53ec3c3f",
+    "candidateCheckpoint": "7c0936d1b5d450c3495fb5c105d7aaf196d3bc54",
+    "candidateWorkingTreeSha256": "f9e77e9d78c32369def8ce80a047066fda8151233b98de2b1163b4e63f970bc8",
+    "passedCases": [
+      "node-edge-liveness",
+      "player-default-config",
+      "fitness-authored-course"
+    ],
+    "failedCases": [],
+    "exitCode": 0,
+    "controls": true,
+    "protectedInputsUnchanged": true,
+    "capturedStartupErrors": [],
+    "scope": "Actual createApp and production request handler over loopback TCP; three independent expected-contract and differential cases against live. Synthetic candidate config, no live writable storage.",
+    "limitations": [
+      "Only three cases; not whole API coverage",
+      "No production serverMain entrypoint or deployment packaging proof",
+      "Deliberate bounded exit, not graceful shutdown/lifecycle proof",
+      "Private snapshot parity for School/Health/Piano not yet executed"
+    ]
+  },
+  "historicalComparatorControls": [
+    {
+      "kind": "synthetic-comparator-control-receipt",
+      "command": [
+        "node",
+        "--test",
+        "tests/readiness/application-modules/comparator-controls.test.mjs"
+      ],
+      "exitCode": 0,
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "productExecution": false,
+      "networkExecution": false,
+      "readinessAccepted": false,
+      "files": [
+        {
+          "path": "tests/readiness/application-modules/api-comparator.mjs",
+          "sha256": "0777c2e98e63ac3cb4f2823311803162ed843b135ecf9fe2212d9b683e046611"
+        },
+        {
+          "path": "tests/readiness/application-modules/api-expectations.json",
+          "sha256": "9cab3684661f55a2c9885a9ad49e4a8c40b271d0c72d4bb47305500ee711e5e6"
+        },
+        {
+          "path": "tests/readiness/application-modules/comparator-controls.test.mjs",
+          "sha256": "be2645281e076384fb6db37723073876185bfad9a231db47a56b74e94fb58557"
+        },
+        {
+          "path": "tests/readiness/application-modules/isolated-container-recipe.md",
+          "sha256": "7dd2f9fe553c35e2050679b44f36d031c8cb048d3bf7287b3381126b6c52fa3b",
+          "currentDocumentationSha256": "bc59712456644350ae3c29d2ad955a892168e881e911f515c7608bce5182ac64",
+          "documentationUpdatedAfterControlRun": true
+        }
+      ],
+      "limitations": [
+        "No container or real API executed",
+        "Image/source/fixture identities declared; independent runtime provisioning required",
+        "Initial unauthenticated top-level JSON/text cases only"
+      ]
+    }
+  ],
+  "durableRunnerReplay": {
+    "runner": "tests/readiness/application-modules/run-local-app.mjs",
+    "receipt": "/tmp/readiness-durable-proof/daylight-local-http-F6wnXe/receipt.json",
+    "receiptSha256": "56698d4bdded4c8635726cfde7668d62c7cc9bd9bcdb2754677326533670daa4",
+    "privateComparison": "/tmp/readiness-durable-proof/daylight-local-http-F6wnXe/comparison.json",
+    "comparisonSha256": "d235a6d2e7ddc112dd9ce861ac4fc7dc5f556711fa059734f7aa8d7350446ef1",
+    "exitCode": 0,
+    "completed": true,
+    "controls": true,
+    "protectedInputsUnchanged": true,
+    "comparisonAccepted": true,
+    "caseIds": [
+      "node-edge-liveness",
+      "player-default-config",
+      "fitness-authored-course"
+    ],
+    "sourceCommit": "7c0936d1b5d450c3495fb5c105d7aaf196d3bc54",
+    "workingTreeSha256": "9681a0efed25874e8ae2d43a32954259c2d17e80ed3753a865f1ae1adfa2507c",
+    "scope": "Reproduction of the same three actual live/local cases from repository runner and manifests; not three additional endpoints"
+  },
+  "liveReferenceDriftGuard": {
+    "receipt": "/tmp/readiness-durable-proof/daylight-local-http-BflUyN/receipt.json",
+    "sha256": "e17280175992fb945a409505de4b7ed026acf8ef0153c9da0edff0c1ed5b554e",
+    "candidateProcessExitCode": 0,
+    "completed": false,
+    "controls": true,
+    "protectedInputsUnchanged": true,
+    "businessComparisons": 0,
+    "expectedSource": "6cf8670352f92c4d40824bfaac9260fa53ec3c3f",
+    "observedSource": "25b5318b7209ad1054c8865d0d18ead628c4c6df",
+    "disposition": "Correctly rejected source drift before business requests; no new coverage credited. Explicit target refresh and backing-file revalidation required."
+  },
+  "sevenCaseLiveLocalComparison": {
+    "receipt": "/tmp/readiness-durable-proof/daylight-local-http-MTJkPU/receipt.json",
+    "receiptSha256": "aeb6c4029fe60ddb6fb6e5f9ef83961c497c2de214eb3c8d359138fba77162d1",
+    "privateComparison": "/tmp/readiness-durable-proof/daylight-local-http-MTJkPU/comparison.json",
+    "comparisonSha256": "01b7198b4db14b7fd17735f4c9284fe7e4c3e524b11ceb77b6f75705228b131e",
+    "caseIds": [
+      "node-edge-liveness",
+      "player-default-config",
+      "fitness-authored-course",
+      "school-private-roster",
+      "health-private-context",
+      "piano-guest-budget-disabled",
+      "gratitude-private-users"
+    ],
+    "referenceIdentityBefore": {
+      "sourceCommit": "25b5318b7209ad1054c8865d0d18ead628c4c6df",
+      "observedAt": "2026-10-09T17:03:20.539Z"
+    },
+    "referenceIdentityAfter": {
+      "sourceCommit": "25b5318b7209ad1054c8865d0d18ead628c4c6df",
+      "observedAt": "2026-10-09T17:03:20.696Z"
+    },
+    "candidateSourceCommit": "7c0936d1b5d450c3495fb5c105d7aaf196d3bc54",
+    "workingTreeSha256": "467b9c32c76c0ab4a2c598a30e5de83118c9246e8d804dd5e75ec6cc2a433d76",
+    "completed": true,
+    "controls": true,
+    "protectedInputsUnchanged": true,
+    "exitCode": 0,
+    "passed": 7,
+    "failed": 0,
+    "dataRelationship": "Selected private backing configuration projected into independent candidate storage; authentication/providers remain synthetic",
+    "limitations": [
+      "Piano enabled budget/history not exercised",
+      "School configured-learner override and empty branches not exercised",
+      "Read-only selected cases only; no whole-app authorization/lifecycle/deployment claim"
+    ]
+  },
+  "privateReadonlyProjectionGenerator": {
+    "path": "tests/readiness/application-modules/project-readonly-fixture.mjs",
+    "sha256": "9a62edb5981eed0c5bd3b0e7b02f1a3d9ffb4958b1618013d5ff25e88c69c222",
+    "privateOutput": "/tmp/readiness-projected-corrected/",
+    "fixtureSha256": "7af3d1d938be866d5056d375e46c0672293d47b60521e394141f2cfac3a4c05f",
+    "provenanceSha256": "f3340197b3e6fe51c56f41b32713607c0b00af9b9b32d784e61e91a5b870b149",
+    "initialCases": 7,
+    "nextCases": 6,
+    "initialManifest": "/tmp/readiness-projected-corrected/expectations.json",
+    "nextManifest": "/tmp/readiness-projected-corrected/next-readonly-expectations.json",
+    "nextManifestSha256": "583bbcf3016a160dc0de6cff2837d5ba3a6e3e73d4fdb8b4a6275aea3087b98c",
+    "scope": "Source-derived selected fields/files only; independent snapshot with fixed synthetic startup; no full live dataset identity",
+    "controls": {
+      "evidence": "/tmp/readiness-projected-batch/generator-controls.json",
+      "privateArtifactsMode": true,
+      "protectedStartupUnchanged": true,
+      "overwriteRefused": true,
+      "runnerRejected": [
+        "unreviewed-array",
+        "protected-startup"
+      ],
+      "businessRequests": 0
+    },
+    "limitations": [
+      "Populated School roster and configured density table required",
+      "Enabled Piano budget history excluded",
+      "Empty/absent weight root branch excluded"
+    ],
+    "previousPrivateOutput": "/tmp/readiness-projected-batch/"
+  },
+  "nextReadonlyBatch": {
+    "attempts": [
+      {
+        "receipt": "/tmp/readiness-next-proof/daylight-local-http-yqCZJI/receipt.json",
+        "receiptSha256": "7963bae0d36246d24c705e447873b1902812402dc05f1956739383b0471670f1",
+        "comparison": "/tmp/readiness-next-proof/daylight-local-http-yqCZJI/comparison.json",
+        "comparisonSha256": "3e1424021fcd6ed256ac852f6a937505bd3cba2c7a346b9d9011fac05274096e",
+        "command": [
+          "node",
+          "tests/readiness/application-modules/run-local-app.mjs",
+          "--source-root",
+          "/opt/Code/DaylightStation/.worktrees/application-modules",
+          "--tool-root",
+          "/opt/Code/DaylightStation",
+          "--output-root",
+          "/tmp/readiness-next-proof",
+          "--fixture",
+          "/tmp/readiness-projected-batch/fixture.json",
+          "--manifest",
+          "/tmp/readiness-projected-batch/next-readonly-expectations.json",
+          "--targets",
+          "/tmp/readiness-projected-batch/targets.json"
+        ],
+        "referenceIdentityBefore": {
+          "sourceCommit": "25b5318b7209ad1054c8865d0d18ead628c4c6df",
+          "observedAt": "2026-10-09T17:27:23.560Z"
+        },
+        "referenceIdentityAfter": {
+          "sourceCommit": "25b5318b7209ad1054c8865d0d18ead628c4c6df",
+          "observedAt": "2026-10-09T17:27:24.248Z"
+        },
+        "candidateSourceCommit": "7c0936d1b5d450c3495fb5c105d7aaf196d3bc54",
+        "candidateWorkingTreeSha256": "48fc851d0a7580ac2759b3865080c303f5774197f70bc859f51f37cfaa94d6c3",
+        "completed": false,
+        "comparisonAccepted": true,
+        "controls": true,
+        "protectedInputsUnchanged": true,
+        "backingInputsUnchanged": true,
+        "absenceStatesUnchanged": true,
+        "exitCode": null,
+        "signal": "SIGKILL",
+        "passedComparisonCaseIds": [
+          "health-private-weight",
+          "lifelog-private-weight",
+          "finance-private-budgets",
+          "finance-private-memos",
+          "finance-private-pairs",
+          "piano-private-roster"
+        ],
+        "failedComparisonCaseIds": [],
+        "wrapperStartedAt": "2026-10-09T17:27:04.521084+00:00",
+        "wrapperElapsedSeconds": 49.765,
+        "readyArtifactModifiedAt": "2026-10-09T17:27:22.666553+00:00",
+        "driverProofModifiedAt": "2026-10-09T17:27:52.684147+00:00",
+        "driverCompleted": true,
+        "driverPhases": [
+          "actual-config-and-secrets",
+          "actual-logging-console",
+          "actual-app-import",
+          "actual-createApp-returned",
+          "actual-mounted-graph-enumerated",
+          "actual-loopback-listener-ready"
+        ],
+        "driverErrors": []
+      },
+      {
+        "receipt": "/tmp/readiness-next-proof/daylight-local-http-5OKAOx/receipt.json",
+        "receiptSha256": "676c7f8160fd0e62c014333ea2cccb767d9c0b8dd816053544f2c074ae3d8466",
+        "comparison": "/tmp/readiness-next-proof/daylight-local-http-5OKAOx/comparison.json",
+        "comparisonSha256": "89640cddd898db158d50e91837cb9724381eb11fdee18aa13ed979061edded19",
+        "command": [
+          "node",
+          "tests/readiness/application-modules/run-local-app.mjs",
+          "--source-root",
+          "/opt/Code/DaylightStation/.worktrees/application-modules",
+          "--tool-root",
+          "/opt/Code/DaylightStation",
+          "--output-root",
+          "/tmp/readiness-next-proof",
+          "--fixture",
+          "/tmp/readiness-projected-batch/fixture.json",
+          "--manifest",
+          "/tmp/readiness-projected-batch/next-readonly-expectations.json",
+          "--targets",
+          "/tmp/readiness-projected-batch/targets.json"
+        ],
+        "referenceIdentityBefore": {
+          "sourceCommit": "25b5318b7209ad1054c8865d0d18ead628c4c6df",
+          "observedAt": "2026-10-09T17:29:18.875Z"
+        },
+        "referenceIdentityAfter": {
+          "sourceCommit": "25b5318b7209ad1054c8865d0d18ead628c4c6df",
+          "observedAt": "2026-10-09T17:29:20.363Z"
+        },
+        "candidateSourceCommit": "7c0936d1b5d450c3495fb5c105d7aaf196d3bc54",
+        "candidateWorkingTreeSha256": "48fc851d0a7580ac2759b3865080c303f5774197f70bc859f51f37cfaa94d6c3",
+        "completed": false,
+        "comparisonAccepted": true,
+        "controls": true,
+        "protectedInputsUnchanged": true,
+        "backingInputsUnchanged": true,
+        "absenceStatesUnchanged": true,
+        "exitCode": null,
+        "signal": "SIGKILL",
+        "passedComparisonCaseIds": [
+          "health-private-weight",
+          "lifelog-private-weight",
+          "finance-private-budgets",
+          "finance-private-memos",
+          "finance-private-pairs",
+          "piano-private-roster"
+        ],
+        "failedComparisonCaseIds": [],
+        "wrapperStartedAt": "2026-10-09T17:28:58.540749+00:00",
+        "wrapperElapsedSeconds": 50.528,
+        "readyArtifactModifiedAt": "2026-10-09T17:29:18.144537+00:00",
+        "driverProofModifiedAt": "2026-10-09T17:29:18.143537+00:00",
+        "driverCompleted": false,
+        "driverPhases": [
+          "actual-config-and-secrets",
+          "actual-logging-console",
+          "actual-app-import",
+          "actual-createApp-returned",
+          "actual-mounted-graph-enumerated",
+          "actual-loopback-listener-ready"
+        ],
+        "driverErrors": []
+      },
+      {
+        "receipt": "/tmp/readiness-next-proof/daylight-local-http-2Nzdly/receipt.json",
+        "receiptSha256": "584a516cb8fc0c78a7b8d32663d9b26cbf2f013c7c6cf5bedd71421d45f1a713",
+        "comparison": "/tmp/readiness-next-proof/daylight-local-http-2Nzdly/comparison.json",
+        "comparisonSha256": "31b636a31f101272f4e3c1a905c942a1036496b6fbc6c879d476fd66bf0a052f",
+        "command": [
+          "node",
+          "tests/readiness/application-modules/run-local-app.mjs",
+          "--source-root",
+          "/opt/Code/DaylightStation/.worktrees/application-modules",
+          "--tool-root",
+          "/opt/Code/DaylightStation",
+          "--output-root",
+          "/tmp/readiness-next-proof",
+          "--fixture",
+          "/tmp/readiness-projected-corrected/fixture.json",
+          "--manifest",
+          "/tmp/readiness-projected-corrected/next-readonly-expectations.json",
+          "--targets",
+          "/tmp/readiness-projected-corrected/targets.json"
+        ],
+        "referenceIdentityBefore": {
+          "sourceCommit": "25b5318b7209ad1054c8865d0d18ead628c4c6df",
+          "observedAt": "2026-10-09T17:31:55.994Z"
+        },
+        "referenceIdentityAfter": {
+          "sourceCommit": "25b5318b7209ad1054c8865d0d18ead628c4c6df",
+          "observedAt": "2026-10-09T17:31:56.565Z"
+        },
+        "candidateSourceCommit": "7c0936d1b5d450c3495fb5c105d7aaf196d3bc54",
+        "candidateWorkingTreeSha256": "c8ba6ba0ce60701c6e06b1f5735f37294311b1cc4f9bf609aa80bb5b638affd5",
+        "completed": true,
+        "comparisonAccepted": true,
+        "controls": true,
+        "protectedInputsUnchanged": true,
+        "backingInputsUnchanged": true,
+        "absenceStatesUnchanged": true,
+        "exitCode": 0,
+        "signal": null,
+        "passedComparisonCaseIds": [
+          "health-private-weight",
+          "lifelog-private-weight",
+          "finance-private-budgets",
+          "finance-private-memos",
+          "finance-private-pairs",
+          "piano-private-roster"
+        ],
+        "failedComparisonCaseIds": [],
+        "wrapperStartedAt": "2026-10-09T17:31:37.553504+00:00",
+        "wrapperElapsedSeconds": 49.242,
+        "limits": {
+          "port": 43129,
+          "bindAddress": "127.0.0.1",
+          "addressSpaceGiB": 16,
+          "heapMiB": 1024,
+          "cpuSeconds": 180,
+          "alarmSeconds": 180,
+          "wallSeconds": 75,
+          "listenerSeconds": 30,
+          "fileMiB": 4,
+          "descriptors": 128
+        },
+        "driverCompleted": true,
+        "driverPhases": [
+          "actual-config-and-secrets",
+          "actual-logging-console",
+          "actual-app-import",
+          "actual-createApp-returned",
+          "actual-mounted-graph-enumerated",
+          "actual-loopback-listener-ready"
+        ],
+        "driverErrors": []
+      }
+    ],
+    "uniqueNewComparisonCasesPassed": 6,
+    "uniqueNewComparisonCasesFailed": 0,
+    "acceptedExecutionCasesAdded": 6,
+    "executionAccepted": true,
+    "blocker": null,
+    "dataRelationship": "Selected source-backed private projections in independent storage; hashes and absent states unchanged before/after each attempt",
+    "limitations": [
+      "Only six additional unique observed read-only branches; no whole-app readiness",
+      "Missing/empty/invalid/authenticated/alternate configuration branches remain uncovered",
+      "Health daily/longitudinal and Gratitude options/bootstrap remain excluded effectful GETs"
+    ],
+    "boundCorrection": "Outer process wall bound raised from45s to75s to cover application construction plus unchanged30s listener. All other limits unchanged. Both former SIGKILL receipts retained.",
+    "preflightBackingDrift": {
+      "oldProjection": "/tmp/readiness-projected-batch/",
+      "relativeInput": "household/finance/finances.yml",
+      "disposition": "Backing hash drift rejected before HTTP; source-derived projection regenerated in new private directory",
+      "businessRequests": 0
+    }
+  },
+  "nextReadonlyTransportControls": {
+    "receipt": "/tmp/readiness-next-proof/daylight-local-http-JEBaxa/receipt.json",
+    "sha256": "35a6ed8eb8d309f5a7be220ebc3c423ae87409ce34947d7e490ccf472767b4b6",
+    "completed": true,
+    "controls": true,
+    "exitCode": 0,
+    "protectedInputsUnchanged": true,
+    "businessRequests": 0
+  },
+  "extendedReadonlyBatch": {
+    "receipt": "/tmp/readiness-extended-proof/daylight-local-http-VfBIk6/receipt.json",
+    "receiptSha256": "52c87d747ce67b5511c1b729534aa670f8658492032fd6fd3ec96e4adeab65e9",
+    "comparison": "/tmp/readiness-extended-proof/daylight-local-http-VfBIk6/comparison.json",
+    "comparisonSha256": "89927bbbb6ce86620619b1476623e72c19efb1a3e1ee58e756fa909b8c546647",
+    "command": [
+      "node",
+      "tests/readiness/application-modules/run-local-app.mjs",
+      "--source-root",
+      "/opt/Code/DaylightStation/.worktrees/application-modules",
+      "--tool-root",
+      "/opt/Code/DaylightStation",
+      "--output-root",
+      "/tmp/readiness-extended-proof",
+      "--fixture",
+      "/tmp/readiness-projected-extended/fixture.json",
+      "--manifest",
+      "/tmp/readiness-projected-extended/extended-readonly-expectations.json",
+      "--targets",
+      "/tmp/readiness-projected-extended/targets.json"
+    ],
+    "referenceIdentityBefore": {
+      "sourceCommit": "25b5318b7209ad1054c8865d0d18ead628c4c6df",
+      "observedAt": "2026-10-09T17:38:50.675Z"
+    },
+    "referenceIdentityAfter": {
+      "sourceCommit": "25b5318b7209ad1054c8865d0d18ead628c4c6df",
+      "observedAt": "2026-10-09T17:38:51.307Z"
+    },
+    "candidateSourceCommit": "7c0936d1b5d450c3495fb5c105d7aaf196d3bc54",
+    "candidateWorkingTreeSha256": "e3522cf3dc88b0a509db69687949c035ca1da9436cf4f8634f9e75805334a20a",
+    "completed": true,
+    "comparisonAccepted": true,
+    "controls": true,
+    "protectedInputsUnchanged": true,
+    "backingInputsUnchanged": true,
+    "absenceAndDirectoryStatesUnchanged": true,
+    "exitCode": 0,
+    "signal": null,
+    "passedCaseIds": [
+      "health-private-workouts",
+      "health-private-fitness",
+      "health-private-nutrition",
+      "health-private-coaching",
+      "chess-guest-private-config",
+      "chess-guest-private-ladder",
+      "gratitude-private-selections",
+      "gratitude-private-discarded",
+      "gratitude-private-snapshot-list",
+      "piano-private-preferences",
+      "piano-private-preset"
+    ],
+    "failedCaseIds": [],
+    "wrapperElapsedSeconds": 47.021,
+    "limits": {
+      "port": 43129,
+      "bindAddress": "127.0.0.1",
+      "addressSpaceGiB": 16,
+      "heapMiB": 1024,
+      "cpuSeconds": 180,
+      "alarmSeconds": 180,
+      "wallSeconds": 75,
+      "listenerSeconds": 30,
+      "fileMiB": 4,
+      "descriptors": 128
+    },
+    "driverErrors": [],
+    "acceptedUniqueCasesAdded": 11,
+    "populatedCasesAdded": 10,
+    "emptyOrAbsentCasesAdded": 1,
+    "branches": [
+      {
+        "caseId": "health-private-workouts",
+        "branch": "populated",
+        "populatedGap": false
+      },
+      {
+        "caseId": "health-private-fitness",
+        "branch": "populated",
+        "populatedGap": false
+      },
+      {
+        "caseId": "health-private-nutrition",
+        "branch": "populated",
+        "populatedGap": false
+      },
+      {
+        "caseId": "health-private-coaching",
+        "branch": "populated",
+        "populatedGap": false
+      },
+      {
+        "caseId": "chess-guest-private-config",
+        "branch": "populated",
+        "populatedGap": false
+      },
+      {
+        "caseId": "chess-guest-private-ladder",
+        "branch": "populated",
+        "populatedGap": false
+      },
+      {
+        "caseId": "gratitude-private-selections",
+        "branch": "populated",
+        "populatedGap": false
+      },
+      {
+        "caseId": "gratitude-private-discarded",
+        "branch": "populated",
+        "populatedGap": false
+      },
+      {
+        "caseId": "gratitude-private-snapshot-list",
+        "branch": "empty-or-absent",
+        "populatedGap": true
+      },
+      {
+        "caseId": "piano-private-preferences",
+        "branch": "populated",
+        "populatedGap": false
+      },
+      {
+        "caseId": "piano-private-preset",
+        "branch": "populated",
+        "populatedGap": false
+      }
+    ],
+    "executionAccepted": true,
+    "readinessAccepted": false,
+    "limitations": [
+      "Snapshot list covers absent directory only; populated metadata and malformed snapshot cases remain uncovered",
+      "Gratitude covers gratitude category only; hopes/invalid categories not exercised",
+      "Piano preferences/preset cover known head-member populated files only",
+      "Guest Chess config/ladder do not certify authenticated progress, engine moves or persistence",
+      "Health populated raw-file branches only; empty/invalid/authenticated alternate branches not exercised"
+    ]
+  },
+  "extendedReadonlyProjectionGenerator": {
+    "path": "tests/readiness/application-modules/project-readonly-fixture.mjs",
+    "sha256": "fb31295c8a4d7aea86f3a9ceaa319a2e1638eb8860bb5fb04332e7f0a508dddf",
+    "privateOutput": "/tmp/readiness-projected-extended/",
+    "fixtureSha256": "9f69bf95cab8a808d5f5933a3fffea21048370371b930af383994144212979e2",
+    "manifest": "/tmp/readiness-projected-extended/extended-readonly-expectations.json",
+    "manifestSha256": "d777dacf8b04fba63ed4cb90d2e2659a6ba3c681878dc53c4ebfb67da0817ceb",
+    "provenanceSha256": "133c1e114b832661e4c4d3f3227172ceffd10a9e71a38767fbec05bdeba6c453",
+    "guardControls": {
+      "evidence": "/tmp/readiness-projected-extended/generator-controls.json",
+      "privateArtifactsMode": true,
+      "protectedStartupUnchanged": true,
+      "overwriteRefused": true,
+      "runnerRejected": [
+        "unreviewed-array",
+        "unreviewed-gratitude-array",
+        "protected-startup"
+      ],
+      "businessRequests": 0
+    },
+    "scope": "Selected private files/response fields; independent source-derived snapshot, synthetic startup; no full live fixture identity",
+    "newBranches": [
+      {
+        "caseId": "health-private-workouts",
+        "branch": "populated",
+        "populatedGap": false
+      },
+      {
+        "caseId": "health-private-fitness",
+        "branch": "populated",
+        "populatedGap": false
+      },
+      {
+        "caseId": "health-private-nutrition",
+        "branch": "populated",
+        "populatedGap": false
+      },
+      {
+        "caseId": "health-private-coaching",
+        "branch": "populated",
+        "populatedGap": false
+      },
+      {
+        "caseId": "chess-guest-private-config",
+        "branch": "populated",
+        "populatedGap": false
+      },
+      {
+        "caseId": "chess-guest-private-ladder",
+        "branch": "populated",
+        "populatedGap": false
+      },
+      {
+        "caseId": "gratitude-private-selections",
+        "branch": "populated",
+        "populatedGap": false
+      },
+      {
+        "caseId": "gratitude-private-discarded",
+        "branch": "populated",
+        "populatedGap": false
+      },
+      {
+        "caseId": "gratitude-private-snapshot-list",
+        "branch": "empty-or-absent",
+        "populatedGap": true
+      },
+      {
+        "caseId": "piano-private-preferences",
+        "branch": "populated",
+        "populatedGap": false
+      },
+      {
+        "caseId": "piano-private-preset",
+        "branch": "populated",
+        "populatedGap": false
+      }
+    ],
+    "generatorBlockers": [],
+    "startupConfigurationMatchesFixedFixture": true
+  },
+  "localCheckpointAssessment": {
+    "head": "7c0936d1b5d450c3495fb5c105d7aaf196d3bc54",
+    "mergeHead": "989124c4ca5e6a27a859abddb3921df11cb6fb06",
+    "pinnedMain": "989124c4ca5e6a27a859abddb3921df11cb6fb06",
+    "currentMain": "2395efff6a91b8a269a898f4fa9eeefe8334252c",
+    "subsequentMainDrift": true,
+    "unmergedPaths": [],
+    "sourceCoherence": "Mapped148 named original tests pass; production Vite build passes. School179 and Chess176 source/test hashes preserved. Fourteen readiness files and network policy preserved. Chromium measurement tests remain unexecuted.",
+    "originalHookRun": false,
+    "checkpointCommitted": false,
+    "readinessAccepted": false
+  },
+  "latestMainCheckpointReconciliation": {
+    "head": "7c0936d1b5d450c3495fb5c105d7aaf196d3bc54",
+    "previousMergeHead": "c9234d2ba9ffe5a30ba03abf54a94b3b28d0c9df",
+    "mergeHead": "989124c4ca5e6a27a859abddb3921df11cb6fb06",
+    "pinnedMain": "989124c4ca5e6a27a859abddb3921df11cb6fb06",
+    "currentMainObserved": "2395efff6a91b8a269a898f4fa9eeefe8334252c",
+    "subsequentMainDrift": true,
+    "snapshot": "/tmp/readiness-checkpoint-snapshot-im39uoqw",
+    "snapshotManifestSha256": "745284f59413360bf60f16034f1bd5fc98ec58e445b1efc14b027d1b1f9fae2c",
+    "snapshotVerified": {
+      "verified": true,
+      "paths": 73,
+      "metadataHashes": true,
+      "indexMatches": true
+    },
+    "restoration": {
+      "preservedPaths": 72,
+      "intersections": [
+        "docs/_archive/deleted-branches.md"
+      ],
+      "archiveThreeWayMerged": true,
+      "gitMergeHead": "989124c4ca5e6a27a859abddb3921df11cb6fb06",
+      "noUnmergedPaths": true
+    },
+    "method": "Verified private bytes/modes/deletion/symlink manifest, raw index and binary patches; normal merge abort then normal no-commit no-ff merge of pinned main. Saved disjoint files restored; archive intersecting file merged three-way; relocated integrations resolved from saved owner sources. Initial stale426 merge invocation was corrected by normal abort before the snapshot-pinned989 merge. No merge metadata edited manually.",
+    "mappedIncomingPaths": [
+      "modules/piano/browser/PianoKiosk/modes/Exercises/ExerciseNotation.jsx",
+      "modules/piano/browser/PianoKiosk/modes/Exercises/ExerciseRun.component.test.jsx",
+      "modules/piano/browser/PianoKiosk/modes/Exercises/ExerciseRun.jsx",
+      "modules/piano/browser/PianoKiosk/modes/Exercises/ExerciseRun.measure.test.jsx",
+      "modules/piano/browser/PianoKiosk/modes/Exercises/Exercises.scss",
+      "modules/piano/browser/PianoKiosk/modes/Exercises/ghostEngraving.js",
+      "modules/piano/browser/PianoKiosk/modes/Exercises/ghostEngraving.test.js",
+      "modules/piano/browser/PianoKiosk/modes/Games/GameGate.measure.test.jsx"
+    ],
+    "archiveThreeWayMerged": true,
+    "readinessFilesByteUnchanged": 14,
+    "originalReadinessNetworkPolicyPreserved": true,
+    "unmergedPaths": [],
+    "sourceIntegrationCoherentForCheckpoint": true,
+    "remainingCheckpointGate": "Original pre-commit hook not yet run; root will invoke unchanged hook when authorized. No commit performed.",
+    "readinessAccepted": false,
+    "subsequentMainDriftDetail": {
+      "observedMain": "2395efff6a91b8a269a898f4fa9eeefe8334252c",
+      "subjects": [
+        "2395efff6a docs: record deleted fix/exercise-resolve-hold branch"
+      ],
+      "files": [
+        "docs/_archive/deleted-branches.md"
+      ],
+      "disposition": "Docs-only branch deletion record; pin retained, no merge restart."
+    }
+  },
+  "mainGhostIntegration": {
+    "pinnedMain": "989124c4ca5e6a27a859abddb3921df11cb6fb06",
+    "baselineReceipt": "/tmp/daylight-ghost-main-baseline/.superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/main-ghost-WgtdHc/receipt.json",
+    "baselineSha256": "362802aa88aa69ca65cdcac8a93f436a3ac362547b64e0243bf5fc76f2c86d1c",
+    "candidateReceipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/main-ghost-SfeYyN/receipt.json",
+    "candidateSha256": "6cd13fc5f6f4895fbf86857e0730a62dfced29b2bbc96b8775dfc94292e067bb",
+    "passed": 148,
+    "failed": 0,
+    "suites": 2,
+    "exactPassedNameParity": true,
+    "controls": true,
+    "protectedInputsUnchanged": true,
+    "incomplete": false,
+    "selectedConfig": "tests/preimplementation/application-modules/configs/main-ghost-selected.mjs",
+    "selectedConfigSha256": "0b39ac3e2bd51b014e39980b61edb589e343cf4cf2c337190b0fe4b58f77e969",
+    "nativePublicESMApplicable": false,
+    "scope": "Original ghost engraving and resolved-staff hold unit/component suites with exact named candidate parity; browser JSX transformed by real Vitest and production Vite. No standalone native JSX ESM claim.",
+    "failedSetupEvidence": {
+      "receipt": "/tmp/daylight-ghost-main-baseline/.superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/main-ghost-0u0tBw/receipt.json",
+      "sha256": "fd2c1dd05f330acf648c0c73c84b40585bdeca6a380a75b4d0c7079017160fe2",
+      "reason": "Baseline canonical dependency symlinks absent; zero tests executed. Corrected links use already-granted canonical toolchain; failed receipt retained."
+    },
+    "blockedOriginalSuites": [
+      {
+        "original": "frontend/src/modules/Piano/PianoKiosk/modes/Exercises/ExerciseRun.measure.test.jsx",
+        "candidate": "modules/piano/browser/PianoKiosk/modes/Exercises/ExerciseRun.measure.test.jsx"
+      },
+      {
+        "original": "frontend/src/modules/Piano/PianoKiosk/modes/Games/GameGate.measure.test.jsx",
+        "candidate": "modules/piano/browser/PianoKiosk/modes/Games/GameGate.measure.test.jsx"
+      }
+    ],
+    "blockedReason": "Original suites launch real Chromium; existing confined lane has no browser executable/runtime grants and denies required browser syscalls. Not executed, not passed; source oracle and location semantics retained."
+  },
+  "schoolChessCheckpointEvidenceReuse": {
+    "hashEvidence": "/tmp/readiness-checkpoint-snapshot-im39uoqw/reused-suite-hashes.json",
+    "sha256": "a0ed482b831d5ee3bab4553b3cf246041641a235d385829118ab8a5c1935684c",
+    "checks": [
+      {
+        "scope": "School179",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/main-school-kTK5tU/receipt.json",
+        "receiptSha256": "7d9bdeb9ee971db92698840b43e789f3c67e60d049824047c900e1b765cea521",
+        "checkedOwnedFiles": 1826,
+        "selectedTestFiles": 7,
+        "ownedInputHashesUnchanged": true,
+        "passed": 179,
+        "exactNamedParity": true
+      },
+      {
+        "scope": "Chess176",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/main-chess-UJ5uVV/receipt.json",
+        "receiptSha256": "f432caa63b584b931bed8ed792054d1ca212a3d11d5745e17763583b3ede1f2d",
+        "checkedOwnedFiles": 180,
+        "selectedTestFiles": 11,
+        "ownedInputHashesUnchanged": true,
+        "passed": 176,
+        "exactNamedParity": true
+      }
+    ],
+    "scope": "Exact bytes of all recorded owned source/test inputs and selected test files unchanged. Prior School receipt predates separate Chess integration; changed global grant inputs outside respective owned suites are not claimed unchanged. Full selected suites not rerun."
+  },
+  "postLatestMainFrontendBuild": {
+    "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/build-K5FXxw/receipt.json",
+    "sha256": "798f34ba44f1c19dd3ccd058d4b73931f1a1e749ed688ebd658d85b01eac7cd9",
+    "exitCode": 0,
+    "controls": true,
+    "protectedInputsUnchanged": true,
+    "ownedChunks": 109,
+    "scope": "Actual production Vite build after ghost engraving and resolved-staff hold integration; no Chromium geometry or Docker/deployment claim"
+  }
+}

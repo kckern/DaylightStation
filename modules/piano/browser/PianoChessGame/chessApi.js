@@ -188,6 +188,47 @@ export async function fetchLadder(userId) {
   }
 }
 
+/**
+ * The server's copy of a game in progress — what makes a reload, a cleared
+ * localStorage or a deploy survivable. Resolves null on failure: the caller
+ * keeps playing and the next ply tries again.
+ */
+export async function saveGameProgress(record) {
+  try {
+    return await DaylightAPI('api/v1/piano-games/chess/progress', record, 'POST');
+  } catch (error) {
+    logger().warn('chess.progress.save-error', { error: error.message });
+    return null;
+  }
+}
+
+/** Same save, for the way out of the page. */
+export function beaconProgress(record) {
+  try {
+    if (typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function') return false;
+    const blob = new Blob([JSON.stringify(record)], { type: 'application/json' });
+    return navigator.sendBeacon('/api/v1/piano-games/chess/progress', blob);
+  } catch (error) {
+    logger().warn('chess.progress.beacon-error', { error: error.message });
+    return false;
+  }
+}
+
+/**
+ * The unfinished game this player resumes. Distinguishes "the server says there
+ * is none" (`{ game: null }`) from "could not ask" (`null`): a local checkpoint
+ * may only be set aside for a server copy that is CONFIRMED to exist.
+ */
+export async function fetchResumableGame(userId) {
+  try {
+    const body = await DaylightAPI(`api/v1/piano-games/chess/users/${encodeURIComponent(userId)}/resumable`);
+    return body && typeof body === 'object' && 'game' in body ? body : null;
+  } catch (error) {
+    logger().warn('chess.resume.fetch-error', { userId, error: error.message });
+    return null;
+  }
+}
+
 export function beaconArchive(record) {
   try {
     if (typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function') return false;
@@ -201,5 +242,5 @@ export function beaconArchive(record) {
 
 export default {
   requestOpponentMove, requestOpponentQuip, requestDialogue, requestBestMove, fetchChessConfig, saveChessConfig, saveGameRecord,
-  archiveGame, beaconArchive, fetchLadder,
+  archiveGame, beaconArchive, fetchLadder, saveGameProgress, beaconProgress, fetchResumableGame,
 };

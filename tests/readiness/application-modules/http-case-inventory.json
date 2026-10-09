@@ -1,0 +1,1538 @@
+{
+  "schema": "daylight.http-case-inventory/v1",
+  "comparatorRuntimeSchema": "comparator-v1 owned separately in api-expectations.json",
+  "sourceSnapshots": {
+    "reference": "16a0f157f1",
+    "referenceMainHead": "27e7b58a68",
+    "candidate": "7c0936d1b5"
+  },
+  "policy": "This review inventory is NOT an executable comparator manifest. Every listed case is blocked until full fixture/auth/mount/expected contract is approved. null means unknown, not wildcard. GET and HEAD do not imply safe reads.",
+  "coverageCategories": [
+    "full-app-http",
+    "in-memory-IncomingMessage-ServerResponse/local-router",
+    "direct-handler",
+    "imported-service/mock",
+    "untested",
+    "provider-blocked"
+  ],
+  "fullAppHttpEvidence": [],
+  "cases": [
+    {
+      "id": "auth-setup",
+      "method": "GET",
+      "pathTemplate": "/api/v1/auth/setup-status",
+      "source": {
+        "file": "backend/src/4_api/v1/routers/auth.mjs",
+        "line": 59,
+        "sha256": "8edee74e3a3c48b640ccb76c36d6fc962a56d9ce45713c1dda3a0e3bb7624048"
+      },
+      "mountProvenance": [
+        {
+          "file": "backend/src/app.mjs",
+          "line": 4137,
+          "expression": "app.use('/api/v1', apiRouter)"
+        },
+        {
+          "mountPath": "/auth",
+          "routerKey": "auth",
+          "file": "backend/src/4_api/v1/routers/api.mjs",
+          "line": 138,
+          "guard": "routers[key] truthy at router.use(path, routers[key])",
+          "externalPrefix": "/api/v1 from app mount; provider inclusion still unresolved"
+        }
+      ],
+      "mountStatus": "literal prefixes identified; installed router-key binding/provider availability must be verified at runtime",
+      "fixtureInputs": {
+        "pathParameters": {},
+        "query": null,
+        "syntheticHouseholdConfig": null
+      },
+      "auth": {
+        "roles": null,
+        "session": null,
+        "inheritedMiddleware": "app request/device/household/network/token/permission pipeline not proven by local router fixture"
+      },
+      "expected": {
+        "status": 200,
+        "headers": null,
+        "body": {
+          "kind": "json",
+          "required": {
+            "needsSetup": "boolean"
+          }
+        },
+        "order": null
+      },
+      "risk": {
+        "sideEffects": "unknown; delegated service not traced",
+        "nonlocal": "unknown; provider implementation not traced",
+        "longLived": "unknown until actual service branch verified"
+      },
+      "evidenceCategory": "static-declaration-only",
+      "executionStatus": "blocked",
+      "blockedReasons": [
+        "No reviewed full-app synthetic fixture and auth identity",
+        "Installed mount graph/guards and entire response contract not verified"
+      ],
+      "normalization": {
+        "jsonPaths": [],
+        "headers": []
+      },
+      "normalizationPolicy": "No wildcard/blanket omission; use only individually reviewed volatile fields"
+    },
+    {
+      "id": "auth-anonymous-sessions",
+      "method": "GET",
+      "pathTemplate": "/api/v1/auth/sessions",
+      "source": {
+        "file": "backend/src/4_api/v1/routers/auth.mjs",
+        "line": 122,
+        "sha256": "8edee74e3a3c48b640ccb76c36d6fc962a56d9ce45713c1dda3a0e3bb7624048"
+      },
+      "mountProvenance": [
+        {
+          "file": "backend/src/app.mjs",
+          "line": 4137,
+          "expression": "app.use('/api/v1', apiRouter)"
+        },
+        {
+          "mountPath": "/auth",
+          "routerKey": "auth",
+          "file": "backend/src/4_api/v1/routers/api.mjs",
+          "line": 138,
+          "guard": "routers[key] truthy at router.use(path, routers[key])",
+          "externalPrefix": "/api/v1 from app mount; provider inclusion still unresolved"
+        }
+      ],
+      "mountStatus": "literal prefixes identified; installed router-key binding/provider availability must be verified at runtime",
+      "fixtureInputs": {
+        "pathParameters": {},
+        "query": null,
+        "syntheticHouseholdConfig": null
+      },
+      "auth": {
+        "roles": null,
+        "session": null,
+        "inheritedMiddleware": "app request/device/household/network/token/permission pipeline not proven by local router fixture"
+      },
+      "expected": {
+        "status": 401,
+        "headers": null,
+        "body": {
+          "kind": "json",
+          "equals": {
+            "error": "Authentication required"
+          }
+        },
+        "order": null,
+        "branch": "req.user absent; inherited auth gate may intercept first"
+      },
+      "risk": {
+        "sideEffects": "unknown; delegated service not traced",
+        "nonlocal": "unknown; provider implementation not traced",
+        "longLived": "unknown until actual service branch verified"
+      },
+      "evidenceCategory": "static-declaration-only",
+      "executionStatus": "blocked",
+      "blockedReasons": [
+        "No reviewed full-app synthetic fixture and auth identity",
+        "Installed mount graph/guards and entire response contract not verified"
+      ],
+      "normalization": {
+        "jsonPaths": [],
+        "headers": []
+      },
+      "normalizationPolicy": "No wildcard/blanket omission; use only individually reviewed volatile fields"
+    },
+    {
+      "id": "config-player",
+      "method": "GET",
+      "pathTemplate": "/api/v1/config/player",
+      "source": {
+        "file": "backend/src/4_api/v1/routers/config.mjs",
+        "line": 75,
+        "sha256": "77c503630a58ef11140c49fb1f4202eebd86341e2b38f919dd414e813cf59acd"
+      },
+      "mountProvenance": [
+        {
+          "file": "backend/src/app.mjs",
+          "line": 4137,
+          "expression": "app.use('/api/v1', apiRouter)"
+        },
+        {
+          "mountPath": "/config",
+          "routerKey": "config",
+          "file": "backend/src/4_api/v1/routers/api.mjs",
+          "line": 88,
+          "guard": "routers[key] truthy at router.use(path, routers[key])",
+          "externalPrefix": "/api/v1 from app mount; provider inclusion still unresolved"
+        }
+      ],
+      "mountStatus": "literal prefixes identified; installed router-key binding/provider availability must be verified at runtime",
+      "fixtureInputs": {
+        "pathParameters": {},
+        "query": null,
+        "syntheticHouseholdConfig": null
+      },
+      "auth": {
+        "roles": null,
+        "session": null,
+        "inheritedMiddleware": "app request/device/household/network/token/permission pipeline not proven by local router fixture"
+      },
+      "expected": {
+        "status": null,
+        "headers": null,
+        "body": null,
+        "order": null,
+        "localHandlerEvidence": {
+          "literalStatuses": [],
+          "responseOperations": [
+            "res.json(result);"
+          ],
+          "requestInputs": [],
+          "possibleSideEffectEvidence": [],
+          "possibleNonlocalEvidence": [],
+          "possibleLongLivedEvidence": [],
+          "classification": "lexical handler evidence only; called service implementations and inherited middleware not inferred"
+        }
+      },
+      "risk": {
+        "sideEffects": "unknown; delegated service not traced",
+        "nonlocal": "unknown; provider implementation not traced",
+        "longLived": "unknown until actual service branch verified"
+      },
+      "evidenceCategory": "static-declaration-only",
+      "executionStatus": "blocked",
+      "blockedReasons": [
+        "No reviewed full-app synthetic fixture and auth identity",
+        "Installed mount graph/guards and entire response contract not verified"
+      ],
+      "normalization": {
+        "jsonPaths": [],
+        "headers": []
+      },
+      "normalizationPolicy": "No wildcard/blanket omission; use only individually reviewed volatile fields"
+    },
+    {
+      "id": "catalog-sources",
+      "method": "GET",
+      "pathTemplate": "/api/v1/content/sources",
+      "source": {
+        "file": "capabilities/content-catalog/server/api/content.mjs",
+        "line": 117,
+        "sha256": "23d2c57d8364962ad06baf564227780c47ec91a65777fd2cde09151be47b9e75"
+      },
+      "mountProvenance": [
+        {
+          "file": "backend/src/app.mjs",
+          "line": 4137,
+          "expression": "app.use('/api/v1', apiRouter)"
+        },
+        {
+          "mountPath": "/content",
+          "routerKey": "content",
+          "file": "backend/src/4_api/v1/routers/api.mjs",
+          "line": 89,
+          "guard": "routers[key] truthy at router.use(path, routers[key])",
+          "externalPrefix": "/api/v1 from app mount; provider inclusion still unresolved"
+        }
+      ],
+      "mountStatus": "literal prefixes identified; installed router-key binding/provider availability must be verified at runtime",
+      "fixtureInputs": {
+        "pathParameters": {},
+        "query": null,
+        "syntheticHouseholdConfig": null
+      },
+      "auth": {
+        "roles": null,
+        "session": null,
+        "inheritedMiddleware": "app request/device/household/network/token/permission pipeline not proven by local router fixture"
+      },
+      "expected": {
+        "status": null,
+        "headers": null,
+        "body": null,
+        "order": null,
+        "localHandlerEvidence": {
+          "literalStatuses": [],
+          "responseOperations": [
+            "res.json(contentDiscovery.getSources());"
+          ],
+          "requestInputs": [],
+          "possibleSideEffectEvidence": [],
+          "possibleNonlocalEvidence": [],
+          "possibleLongLivedEvidence": [],
+          "classification": "lexical handler evidence only; called service implementations and inherited middleware not inferred"
+        }
+      },
+      "risk": {
+        "sideEffects": "unknown; delegated service not traced",
+        "nonlocal": "unknown; provider implementation not traced",
+        "longLived": "unknown until actual service branch verified"
+      },
+      "evidenceCategory": "static-declaration-only",
+      "executionStatus": "blocked",
+      "blockedReasons": [
+        "No reviewed full-app synthetic fixture and auth identity",
+        "Installed mount graph/guards and entire response contract not verified"
+      ],
+      "normalization": {
+        "jsonPaths": [],
+        "headers": []
+      },
+      "normalizationPolicy": "No wildcard/blanket omission; use only individually reviewed volatile fields"
+    },
+    {
+      "id": "catalog-search-stream",
+      "method": "GET",
+      "pathTemplate": "/api/v1/content/query/search/stream",
+      "source": {
+        "file": "capabilities/content-catalog/server/api/content.mjs",
+        "line": 265,
+        "sha256": "23d2c57d8364962ad06baf564227780c47ec91a65777fd2cde09151be47b9e75"
+      },
+      "mountProvenance": [
+        {
+          "file": "backend/src/app.mjs",
+          "line": 4137,
+          "expression": "app.use('/api/v1', apiRouter)"
+        },
+        {
+          "mountPath": "/content",
+          "routerKey": "content",
+          "file": "backend/src/4_api/v1/routers/api.mjs",
+          "line": 89,
+          "guard": "routers[key] truthy at router.use(path, routers[key])",
+          "externalPrefix": "/api/v1 from app mount; provider inclusion still unresolved"
+        }
+      ],
+      "mountStatus": "literal prefixes identified; installed router-key binding/provider availability must be verified at runtime",
+      "fixtureInputs": {
+        "pathParameters": {},
+        "query": null,
+        "syntheticHouseholdConfig": null
+      },
+      "auth": {
+        "roles": null,
+        "session": null,
+        "inheritedMiddleware": "app request/device/household/network/token/permission pipeline not proven by local router fixture"
+      },
+      "expected": {
+        "status": null,
+        "headers": null,
+        "body": null,
+        "order": null,
+        "localHandlerEvidence": {
+          "literalStatuses": [
+            501,
+            400
+          ],
+          "responseOperations": [
+            "res.setHeader('Content-Type', 'text/event-stream');",
+            "res.setHeader('Cache-Control', 'no-cache');",
+            "res.setHeader('Connection', 'keep-alive');",
+            "res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering",
+            "res.end() is never reached,",
+            "res.end(); } catch { /* socket already gone */ }",
+            "res.write(`data: ${JSON.stringify(event)}\\n\\n`);",
+            "res.write(`data: ${JSON.stringify({ event: 'error', message: error.message })}\\n\\n`);",
+            "res.end();"
+          ],
+          "requestInputs": [
+            "req.query"
+          ],
+          "possibleSideEffectEvidence": [],
+          "possibleNonlocalEvidence": [],
+          "possibleLongLivedEvidence": [
+            "text/event-stream",
+            "res.flushHeaders();",
+            "req.on('close', finish);",
+            "res.write(`data: ${JSON.stringify(event)}\\n\\n`);",
+            "res.write(`data: ${JSON.stringify({ event: 'error', message: error.message })}\\n\\n`);"
+          ],
+          "classification": "lexical handler evidence only; called service implementations and inherited middleware not inferred"
+        }
+      },
+      "risk": {
+        "sideEffects": "unknown provider cache/update",
+        "nonlocal": "provider-backed; live provider disallowed without synthetic contract",
+        "longLived": "SSE; require results/complete order and cancellation contract, not JSON comparator"
+      },
+      "evidenceCategory": "static-declaration-only",
+      "executionStatus": "blocked",
+      "blockedReasons": [
+        "No reviewed full-app synthetic fixture and auth identity",
+        "Installed mount graph/guards and entire response contract not verified"
+      ],
+      "normalization": {
+        "jsonPaths": [],
+        "headers": []
+      },
+      "normalizationPolicy": "No wildcard/blanket omission; use only individually reviewed volatile fields"
+    },
+    {
+      "id": "school-roster",
+      "method": "GET",
+      "pathTemplate": "/api/v1/school/roster",
+      "source": {
+        "file": "modules/school/server/api/school.mjs",
+        "line": 228,
+        "sha256": "55bc2671538038f6f8a49bfc0e5b9cbf6cd448e89ac512f421b83bd5f76fc9e7"
+      },
+      "mountProvenance": [
+        {
+          "file": "backend/src/app.mjs",
+          "line": 4137,
+          "expression": "app.use('/api/v1', apiRouter)"
+        },
+        {
+          "mountPath": "/school",
+          "routerKey": "school",
+          "file": "backend/src/4_api/v1/routers/api.mjs",
+          "line": 162,
+          "guard": "routers[key] truthy at router.use(path, routers[key])",
+          "externalPrefix": "/api/v1 from app mount; provider inclusion still unresolved"
+        }
+      ],
+      "mountStatus": "literal prefixes identified; installed router-key binding/provider availability must be verified at runtime",
+      "fixtureInputs": {
+        "localDriver": "tests/preimplementation/application-modules/drivers/school-http.mjs",
+        "roster": [
+          {
+            "id": "kid1",
+            "name": "KID1"
+          }
+        ],
+        "fullAppFixture": null
+      },
+      "auth": {
+        "roles": null,
+        "session": null,
+        "inheritedMiddleware": "app request/device/household/network/token/permission pipeline not proven by local router fixture"
+      },
+      "expected": {
+        "status": 200,
+        "headers": null,
+        "body": {
+          "kind": "json",
+          "exactArray": [
+            {
+              "id": "kid1",
+              "name": "KID1"
+            }
+          ]
+        },
+        "order": {
+          "writes": []
+        }
+      },
+      "risk": {
+        "sideEffects": "unknown; delegated service not traced",
+        "nonlocal": "unknown; provider implementation not traced",
+        "longLived": "unknown until actual service branch verified"
+      },
+      "evidenceCategory": "in-memory-IncomingMessage-ServerResponse/local-real-router/injected-service",
+      "executionStatus": "blocked",
+      "blockedReasons": [
+        "No reviewed full-app synthetic fixture and auth identity",
+        "Installed mount graph/guards and entire response contract not verified"
+      ],
+      "normalization": {
+        "jsonPaths": [],
+        "headers": []
+      },
+      "normalizationPolicy": "No wildcard/blanket omission; use only individually reviewed volatile fields"
+    },
+    {
+      "id": "school-banks",
+      "method": "GET",
+      "pathTemplate": "/api/v1/school/banks",
+      "source": {
+        "file": "modules/school/server/api/school.mjs",
+        "line": 243,
+        "sha256": "55bc2671538038f6f8a49bfc0e5b9cbf6cd448e89ac512f421b83bd5f76fc9e7"
+      },
+      "mountProvenance": [
+        {
+          "file": "backend/src/app.mjs",
+          "line": 4137,
+          "expression": "app.use('/api/v1', apiRouter)"
+        },
+        {
+          "mountPath": "/school",
+          "routerKey": "school",
+          "file": "backend/src/4_api/v1/routers/api.mjs",
+          "line": 162,
+          "guard": "routers[key] truthy at router.use(path, routers[key])",
+          "externalPrefix": "/api/v1 from app mount; provider inclusion still unresolved"
+        }
+      ],
+      "mountStatus": "literal prefixes identified; installed router-key binding/provider availability must be verified at runtime",
+      "fixtureInputs": {
+        "localDriver": "tests/preimplementation/application-modules/drivers/school-http.mjs",
+        "query": {
+          "audience": "generic"
+        },
+        "fullAppFixture": null
+      },
+      "auth": {
+        "roles": null,
+        "session": null,
+        "inheritedMiddleware": "app request/device/household/network/token/permission pipeline not proven by local router fixture"
+      },
+      "expected": {
+        "status": 200,
+        "headers": null,
+        "body": {
+          "kind": "json",
+          "exactArray": [
+            {
+              "id": "animals"
+            }
+          ]
+        },
+        "order": {
+          "calls": [
+            {
+              "banks": {
+                "audience": "generic"
+              }
+            }
+          ],
+          "writes": []
+        }
+      },
+      "risk": {
+        "sideEffects": "unknown; delegated service not traced",
+        "nonlocal": "unknown; provider implementation not traced",
+        "longLived": "unknown until actual service branch verified"
+      },
+      "evidenceCategory": "in-memory-IncomingMessage-ServerResponse/local-real-router/injected-service",
+      "executionStatus": "blocked",
+      "blockedReasons": [
+        "No reviewed full-app synthetic fixture and auth identity",
+        "Installed mount graph/guards and entire response contract not verified"
+      ],
+      "normalization": {
+        "jsonPaths": [],
+        "headers": []
+      },
+      "normalizationPolicy": "No wildcard/blanket omission; use only individually reviewed volatile fields"
+    },
+    {
+      "id": "piano-game-budget",
+      "method": "GET",
+      "pathTemplate": "/api/v1/piano/users/:userId/game-budget",
+      "source": {
+        "file": "modules/piano/server/api/piano.mjs",
+        "line": 348,
+        "sha256": "c233dfb6756948bf94eaf92ff1483b01516591e52077a350b0c8e94936699587"
+      },
+      "mountProvenance": [
+        {
+          "file": "backend/src/app.mjs",
+          "line": 4137,
+          "expression": "app.use('/api/v1', apiRouter)"
+        },
+        {
+          "mountPath": "/piano",
+          "routerKey": "piano",
+          "file": "backend/src/4_api/v1/routers/api.mjs",
+          "line": 152,
+          "guard": "routers[key] truthy at router.use(path, routers[key])",
+          "externalPrefix": "/api/v1 from app mount; provider inclusion still unresolved"
+        }
+      ],
+      "mountStatus": "literal prefixes identified; installed router-key binding/provider availability must be verified at runtime",
+      "fixtureInputs": {
+        "pathParameters": {
+          "userId": null
+        },
+        "query": null,
+        "syntheticHouseholdConfig": null
+      },
+      "auth": {
+        "roles": null,
+        "session": null,
+        "inheritedMiddleware": "app request/device/household/network/token/permission pipeline not proven by local router fixture"
+      },
+      "expected": {
+        "status": null,
+        "headers": null,
+        "body": null,
+        "order": null,
+        "localHandlerEvidence": {
+          "literalStatuses": [
+            400
+          ],
+          "responseOperations": [
+            "res.json({ enabled: false });",
+            "res.set('Cache-Control', 'no-store');",
+            "res.json(await pianoGameBudgetService.balance({ learnerId: req.params.userId }));"
+          ],
+          "requestInputs": [
+            "req.params.userId",
+            "req.params.userId",
+            "req.params.userId"
+          ],
+          "possibleSideEffectEvidence": [],
+          "possibleNonlocalEvidence": [],
+          "possibleLongLivedEvidence": [],
+          "classification": "lexical handler evidence only; called service implementations and inherited middleware not inferred"
+        }
+      },
+      "risk": {
+        "sideEffects": "unknown; delegated service not traced",
+        "nonlocal": "unknown; provider implementation not traced",
+        "longLived": "unknown until actual service branch verified"
+      },
+      "evidenceCategory": "static-declaration-only",
+      "executionStatus": "blocked",
+      "blockedReasons": [
+        "No reviewed full-app synthetic fixture and auth identity",
+        "Installed mount graph/guards and entire response contract not verified"
+      ],
+      "normalization": {
+        "jsonPaths": [],
+        "headers": []
+      },
+      "normalizationPolicy": "No wildcard/blanket omission; use only individually reviewed volatile fields"
+    },
+    {
+      "id": "fitness-print-get",
+      "method": "GET",
+      "pathTemplate": "/api/v1/fitness/receipt/:sessionId/print{/:location}",
+      "source": {
+        "file": "modules/fitness/server/api/fitness.mjs",
+        "line": 658,
+        "sha256": "49ed4c7e257b6475329b4b8eedfd15296af9d0dfcbf6aca855fb586bf6dce76a"
+      },
+      "mountProvenance": [
+        {
+          "file": "backend/src/app.mjs",
+          "line": 4137,
+          "expression": "app.use('/api/v1', apiRouter)"
+        },
+        {
+          "mountPath": "/fitness",
+          "routerKey": "fitness",
+          "file": "backend/src/4_api/v1/routers/api.mjs",
+          "line": 113,
+          "guard": "routers[key] truthy at router.use(path, routers[key])",
+          "externalPrefix": "/api/v1 from app mount; provider inclusion still unresolved"
+        }
+      ],
+      "mountStatus": "literal prefixes identified; installed router-key binding/provider availability must be verified at runtime",
+      "fixtureInputs": {
+        "pathParameters": {
+          "sessionId": null,
+          "location": null
+        },
+        "query": null,
+        "syntheticHouseholdConfig": null
+      },
+      "auth": {
+        "roles": null,
+        "session": null,
+        "inheritedMiddleware": "app request/device/household/network/token/permission pipeline not proven by local router fixture"
+      },
+      "expected": {
+        "status": null,
+        "headers": null,
+        "body": null,
+        "order": null,
+        "localHandlerEvidence": {
+          "literalStatuses": [
+            501,
+            404
+          ],
+          "responseOperations": [
+            "res.json({"
+          ],
+          "requestInputs": [
+            "req.params",
+            "req.query.upsidedown",
+            "req.params.location"
+          ],
+          "possibleSideEffectEvidence": [
+            "printFitnessReceipt.execute({"
+          ],
+          "possibleNonlocalEvidence": [],
+          "possibleLongLivedEvidence": [],
+          "classification": "lexical handler evidence only; called service implementations and inherited middleware not inferred"
+        }
+      },
+      "risk": {
+        "sideEffects": "PRINT: printFitnessReceipt.execute; not read-only",
+        "nonlocal": "printer/device adapter; require no-delivery synthetic transport",
+        "longLived": "unknown; printing operation can outlive request"
+      },
+      "evidenceCategory": "static-declaration-only",
+      "executionStatus": "blocked",
+      "blockedReasons": [
+        "No reviewed full-app synthetic fixture and auth identity",
+        "Installed mount graph/guards and entire response contract not verified"
+      ],
+      "normalization": {
+        "jsonPaths": [],
+        "headers": []
+      },
+      "normalizationPolicy": "No wildcard/blanket omission; use only individually reviewed volatile fields"
+    },
+    {
+      "id": "media-plex-stream-mint",
+      "method": "GET",
+      "pathTemplate": "/api/v1/proxy/plex/stream/:ratingKey",
+      "source": {
+        "file": "backend/src/4_api/v1/routers/proxy.mjs",
+        "line": 202,
+        "sha256": "2aeb5ad0ebe14db0fe84584ce7a88c4b14b5cbc28ffcf626d9425c5b829312f8"
+      },
+      "mountProvenance": [
+        {
+          "file": "backend/src/app.mjs",
+          "line": 4137,
+          "expression": "app.use('/api/v1', apiRouter)"
+        },
+        {
+          "mountPath": "/proxy",
+          "routerKey": "proxy",
+          "file": "backend/src/4_api/v1/routers/api.mjs",
+          "line": 90,
+          "guard": "routers[key] truthy at router.use(path, routers[key])",
+          "externalPrefix": "/api/v1 from app mount; provider inclusion still unresolved"
+        }
+      ],
+      "mountStatus": "literal prefixes identified; installed router-key binding/provider availability must be verified at runtime",
+      "fixtureInputs": {
+        "pathParameters": {
+          "ratingKey": null
+        },
+        "query": null,
+        "syntheticHouseholdConfig": null
+      },
+      "auth": {
+        "roles": null,
+        "session": null,
+        "inheritedMiddleware": "app request/device/household/network/token/permission pipeline not proven by local router fixture"
+      },
+      "expected": {
+        "status": null,
+        "headers": null,
+        "body": null,
+        "order": null,
+        "localHandlerEvidence": {
+          "literalStatuses": [
+            404
+          ],
+          "responseOperations": [
+            "res.redirect(result.url);"
+          ],
+          "requestInputs": [
+            "req.params.ratingKey",
+            "req.query.offset",
+            "req.query.session",
+            "req.query.session",
+            "req.query.session",
+            "req.query"
+          ],
+          "possibleSideEffectEvidence": [
+            "mintPlaybackStream.execute({ ratingKey, startOffset, session, ...(tracks ? { tracks } : {}) });"
+          ],
+          "possibleNonlocalEvidence": [],
+          "possibleLongLivedEvidence": [],
+          "classification": "lexical handler evidence only; called service implementations and inherited middleware not inferred"
+        }
+      },
+      "risk": {
+        "sideEffects": "mintPlaybackStream.execute allocates provider playback/session behavior",
+        "nonlocal": "Plex/provider backed",
+        "longLived": "redirect result; downstream playback lifetime not covered by request"
+      },
+      "evidenceCategory": "static-declaration-only",
+      "executionStatus": "blocked",
+      "blockedReasons": [
+        "No reviewed full-app synthetic fixture and auth identity",
+        "Installed mount graph/guards and entire response contract not verified"
+      ],
+      "normalization": {
+        "jsonPaths": [],
+        "headers": []
+      },
+      "normalizationPolicy": "No wildcard/blanket omission; use only individually reviewed volatile fields"
+    },
+    {
+      "id": "admin-config-files",
+      "method": "GET",
+      "pathTemplate": "/api/v1/admin/config/files",
+      "source": {
+        "file": "backend/src/4_api/v1/routers/admin/config.mjs",
+        "line": 40,
+        "sha256": "597d630f2fc0cd8a9cddcf49939bb3ccaac2d6676bac6845db4a97d232ab8c43"
+      },
+      "mountProvenance": [
+        {
+          "file": "backend/src/app.mjs",
+          "line": 4137,
+          "expression": "app.use('/api/v1', apiRouter)"
+        },
+        {
+          "mountPath": "/admin",
+          "routerKey": "admin",
+          "file": "backend/src/4_api/v1/routers/api.mjs",
+          "line": 139,
+          "guard": "routers[key] truthy at router.use(path, routers[key])",
+          "externalPrefix": "/api/v1 from app mount; provider inclusion still unresolved"
+        },
+        {
+          "file": "backend/src/4_api/v1/routers/admin/index.mjs",
+          "line": 81,
+          "expression": "router.use('/config', configRouter)"
+        }
+      ],
+      "mountStatus": "literal prefixes identified; installed router-key binding/provider availability must be verified at runtime",
+      "fixtureInputs": {
+        "pathParameters": {},
+        "query": null,
+        "syntheticHouseholdConfig": null
+      },
+      "auth": {
+        "roles": null,
+        "session": null,
+        "inheritedMiddleware": "app request/device/household/network/token/permission pipeline not proven by local router fixture"
+      },
+      "expected": {
+        "status": null,
+        "headers": null,
+        "body": null,
+        "order": null,
+        "localHandlerEvidence": {
+          "literalStatuses": [],
+          "responseOperations": [
+            "res.json(service.listFiles());"
+          ],
+          "requestInputs": [],
+          "possibleSideEffectEvidence": [],
+          "possibleNonlocalEvidence": [],
+          "possibleLongLivedEvidence": [],
+          "classification": "lexical handler evidence only; called service implementations and inherited middleware not inferred"
+        }
+      },
+      "risk": {
+        "sideEffects": "filesystem listing via injected policy service; no live files allowed",
+        "nonlocal": "local filesystem; reviewed synthetic directory required",
+        "longLived": "not demonstrated"
+      },
+      "evidenceCategory": "static-declaration-only",
+      "executionStatus": "blocked",
+      "blockedReasons": [
+        "No reviewed full-app synthetic fixture and auth identity",
+        "Installed mount graph/guards and entire response contract not verified"
+      ],
+      "normalization": {
+        "jsonPaths": [],
+        "headers": []
+      },
+      "normalizationPolicy": "No wildcard/blanket omission; use only individually reviewed volatile fields"
+    },
+    {
+      "id": "admin-config-file-read",
+      "method": "GET",
+      "pathTemplate": "/api/v1/admin/config/files{/*splat}",
+      "source": {
+        "file": "backend/src/4_api/v1/routers/admin/config.mjs",
+        "line": 45,
+        "sha256": "597d630f2fc0cd8a9cddcf49939bb3ccaac2d6676bac6845db4a97d232ab8c43"
+      },
+      "mountProvenance": [
+        {
+          "file": "backend/src/app.mjs",
+          "line": 4137,
+          "expression": "app.use('/api/v1', apiRouter)"
+        },
+        {
+          "mountPath": "/admin",
+          "routerKey": "admin",
+          "file": "backend/src/4_api/v1/routers/api.mjs",
+          "line": 139,
+          "guard": "routers[key] truthy at router.use(path, routers[key])",
+          "externalPrefix": "/api/v1 from app mount; provider inclusion still unresolved"
+        },
+        {
+          "file": "backend/src/4_api/v1/routers/admin/index.mjs",
+          "line": 81,
+          "expression": "router.use('/config', configRouter)"
+        }
+      ],
+      "mountStatus": "literal prefixes identified; installed router-key binding/provider availability must be verified at runtime",
+      "fixtureInputs": {
+        "pathParameters": {},
+        "query": null,
+        "syntheticHouseholdConfig": null
+      },
+      "auth": {
+        "roles": null,
+        "session": null,
+        "inheritedMiddleware": "app request/device/household/network/token/permission pipeline not proven by local router fixture"
+      },
+      "expected": {
+        "status": null,
+        "headers": null,
+        "body": null,
+        "order": null,
+        "localHandlerEvidence": {
+          "literalStatuses": [],
+          "responseOperations": [
+            "res.json(service.readFile(splatPath(req)));"
+          ],
+          "requestInputs": [],
+          "possibleSideEffectEvidence": [],
+          "possibleNonlocalEvidence": [],
+          "possibleLongLivedEvidence": [],
+          "classification": "lexical handler evidence only; called service implementations and inherited middleware not inferred"
+        }
+      },
+      "risk": {
+        "sideEffects": "readFile policy/IO; exposure and traversal contract need explicit fixtures",
+        "nonlocal": "local filesystem; synthetic allowed/masked/traversal cases needed",
+        "longLived": "not demonstrated"
+      },
+      "evidenceCategory": "static-declaration-only",
+      "executionStatus": "blocked",
+      "blockedReasons": [
+        "No reviewed full-app synthetic fixture and auth identity",
+        "Installed mount graph/guards and entire response contract not verified"
+      ],
+      "normalization": {
+        "jsonPaths": [],
+        "headers": []
+      },
+      "normalizationPolicy": "No wildcard/blanket omission; use only individually reviewed volatile fields"
+    },
+    {
+      "id": "feed-reader-categories",
+      "method": "GET",
+      "pathTemplate": "/api/v1/feed/reader/categories",
+      "source": {
+        "file": "modules/feed/server/api/feed.mjs",
+        "line": 69,
+        "sha256": "d1d6950d3b66f9fc718a8349a802d2cf106b0cf3f8bbb0280d1446bcbc8bf48c"
+      },
+      "mountProvenance": [
+        {
+          "file": "backend/src/app.mjs",
+          "line": 4137,
+          "expression": "app.use('/api/v1', apiRouter)"
+        },
+        {
+          "mountPath": "/feed",
+          "routerKey": "feed",
+          "file": "backend/src/4_api/v1/routers/api.mjs",
+          "line": 100,
+          "guard": "routers[key] truthy at router.use(path, routers[key])",
+          "externalPrefix": "/api/v1 from app mount; provider inclusion still unresolved"
+        }
+      ],
+      "mountStatus": "literal prefixes identified; installed router-key binding/provider availability must be verified at runtime",
+      "fixtureInputs": {
+        "pathParameters": {},
+        "query": null,
+        "syntheticHouseholdConfig": null
+      },
+      "auth": {
+        "roles": null,
+        "session": null,
+        "inheritedMiddleware": "app request/device/household/network/token/permission pipeline not proven by local router fixture"
+      },
+      "expected": {
+        "status": null,
+        "headers": null,
+        "body": null,
+        "order": null,
+        "localHandlerEvidence": {
+          "literalStatuses": [],
+          "responseOperations": [
+            "res.json(categories);"
+          ],
+          "requestInputs": [],
+          "possibleSideEffectEvidence": [],
+          "possibleNonlocalEvidence": [],
+          "possibleLongLivedEvidence": [],
+          "classification": "lexical handler evidence only; called service implementations and inherited middleware not inferred"
+        }
+      },
+      "risk": {
+        "sideEffects": "unknown; delegated service not traced",
+        "nonlocal": "unknown; provider implementation not traced",
+        "longLived": "unknown until actual service branch verified"
+      },
+      "evidenceCategory": "static-declaration-only",
+      "executionStatus": "blocked",
+      "blockedReasons": [
+        "No reviewed full-app synthetic fixture and auth identity",
+        "Installed mount graph/guards and entire response contract not verified"
+      ],
+      "normalization": {
+        "jsonPaths": [],
+        "headers": []
+      },
+      "normalizationPolicy": "No wildcard/blanket omission; use only individually reviewed volatile fields"
+    },
+    {
+      "id": "health-dashboard",
+      "method": "GET",
+      "pathTemplate": "/api/v1/health/dashboard",
+      "source": {
+        "file": "modules/health/server/api/routers/health.mjs",
+        "line": 685,
+        "sha256": "3f0b255f7b07eae8c7c211a1bee24f5fb7b3a5784840a18e2f46636c33139ac4"
+      },
+      "mountProvenance": [
+        {
+          "file": "backend/src/app.mjs",
+          "line": 4137,
+          "expression": "app.use('/api/v1', apiRouter)"
+        },
+        {
+          "mountPath": "/health",
+          "routerKey": "health",
+          "file": "backend/src/4_api/v1/routers/api.mjs",
+          "line": 98,
+          "guard": "routers[key] truthy at router.use(path, routers[key])",
+          "externalPrefix": "/api/v1 from app mount; provider inclusion still unresolved"
+        }
+      ],
+      "mountStatus": "literal prefixes identified; installed router-key binding/provider availability must be verified at runtime",
+      "fixtureInputs": {
+        "pathParameters": {},
+        "query": null,
+        "syntheticHouseholdConfig": null
+      },
+      "auth": {
+        "roles": null,
+        "session": null,
+        "inheritedMiddleware": "app request/device/household/network/token/permission pipeline not proven by local router fixture"
+      },
+      "expected": {
+        "status": null,
+        "headers": null,
+        "body": null,
+        "order": null,
+        "localHandlerEvidence": {
+          "literalStatuses": [
+            501
+          ],
+          "responseOperations": [
+            "res.json(dashboard);"
+          ],
+          "requestInputs": [],
+          "possibleSideEffectEvidence": [
+            "dashboardService.execute(userId);"
+          ],
+          "possibleNonlocalEvidence": [],
+          "possibleLongLivedEvidence": [],
+          "classification": "lexical handler evidence only; called service implementations and inherited middleware not inferred"
+        }
+      },
+      "risk": {
+        "sideEffects": "dashboardService.execute; cache/query policy not traced",
+        "nonlocal": "provider-backed dependencies possible; classify after fixture composition",
+        "longLived": "unknown"
+      },
+      "evidenceCategory": "static-declaration-only",
+      "executionStatus": "blocked",
+      "blockedReasons": [
+        "No reviewed full-app synthetic fixture and auth identity",
+        "Installed mount graph/guards and entire response contract not verified"
+      ],
+      "normalization": {
+        "jsonPaths": [],
+        "headers": []
+      },
+      "normalizationPolicy": "No wildcard/blanket omission; use only individually reviewed volatile fields"
+    },
+    {
+      "id": "finance-overview",
+      "method": "GET",
+      "pathTemplate": "/api/v1/finance/",
+      "source": {
+        "file": "modules/finance/server/api/finance.mjs",
+        "line": 28,
+        "sha256": "04921919546bb3a65b6da5b06ad410dfc6780a796b74ba29fafb18c29c71607b"
+      },
+      "mountProvenance": [
+        {
+          "file": "backend/src/app.mjs",
+          "line": 4137,
+          "expression": "app.use('/api/v1', apiRouter)"
+        },
+        {
+          "mountPath": "/finance",
+          "routerKey": "finance",
+          "file": "backend/src/4_api/v1/routers/api.mjs",
+          "line": 102,
+          "guard": "routers[key] truthy at router.use(path, routers[key])",
+          "externalPrefix": "/api/v1 from app mount; provider inclusion still unresolved"
+        }
+      ],
+      "mountStatus": "literal prefixes identified; installed router-key binding/provider availability must be verified at runtime",
+      "fixtureInputs": {
+        "pathParameters": {},
+        "query": null,
+        "syntheticHouseholdConfig": null
+      },
+      "auth": {
+        "roles": null,
+        "session": null,
+        "inheritedMiddleware": "app request/device/household/network/token/permission pipeline not proven by local router fixture"
+      },
+      "expected": {
+        "status": null,
+        "headers": null,
+        "body": null,
+        "order": null,
+        "localHandlerEvidence": {
+          "literalStatuses": [
+            404
+          ],
+          "responseOperations": [
+            "res.json(result);"
+          ],
+          "requestInputs": [
+            "req.query.household"
+          ],
+          "possibleSideEffectEvidence": [],
+          "possibleNonlocalEvidence": [],
+          "possibleLongLivedEvidence": [],
+          "classification": "lexical handler evidence only; called service implementations and inherited middleware not inferred"
+        }
+      },
+      "risk": {
+        "sideEffects": "unknown; delegated service not traced",
+        "nonlocal": "unknown; provider implementation not traced",
+        "longLived": "unknown until actual service branch verified"
+      },
+      "evidenceCategory": "static-declaration-only",
+      "executionStatus": "blocked",
+      "blockedReasons": [
+        "No reviewed full-app synthetic fixture and auth identity",
+        "Installed mount graph/guards and entire response contract not verified"
+      ],
+      "normalization": {
+        "jsonPaths": [],
+        "headers": []
+      },
+      "normalizationPolicy": "No wildcard/blanket omission; use only individually reviewed volatile fields"
+    },
+    {
+      "id": "home-tv-state",
+      "method": "GET",
+      "pathTemplate": "/api/v1/home/tv/:state",
+      "source": {
+        "file": "modules/home/server/api/homeAutomation.mjs",
+        "line": 49,
+        "sha256": "cbfc5399db45fb56bb466b6640391992597137ff01a2362d8c2628e3df5bcf61"
+      },
+      "mountProvenance": [
+        {
+          "file": "backend/src/app.mjs",
+          "line": 4137,
+          "expression": "app.use('/api/v1', apiRouter)"
+        },
+        {
+          "mountPath": "/home",
+          "routerKey": "home",
+          "file": "backend/src/4_api/v1/routers/api.mjs",
+          "line": 116,
+          "guard": "routers[key] truthy at router.use(path, routers[key])",
+          "externalPrefix": "/api/v1 from app mount; provider inclusion still unresolved"
+        }
+      ],
+      "mountStatus": "literal prefixes identified; installed router-key binding/provider availability must be verified at runtime",
+      "fixtureInputs": {
+        "pathParameters": {
+          "state": null
+        },
+        "query": null,
+        "syntheticHouseholdConfig": null
+      },
+      "auth": {
+        "roles": null,
+        "session": null,
+        "inheritedMiddleware": "app request/device/household/network/token/permission pipeline not proven by local router fixture"
+      },
+      "expected": {
+        "status": null,
+        "headers": null,
+        "body": null,
+        "order": null,
+        "localHandlerEvidence": {
+          "literalStatuses": [
+            503
+          ],
+          "responseOperations": [
+            "res.json(outcome.value);"
+          ],
+          "requestInputs": [
+            "req.params.state",
+            "req.params.state",
+            "req.params"
+          ],
+          "possibleSideEffectEvidence": [],
+          "possibleNonlocalEvidence": [],
+          "possibleLongLivedEvidence": [],
+          "classification": "lexical handler evidence only; called service implementations and inherited middleware not inferred"
+        }
+      },
+      "risk": {
+        "sideEffects": "DEVICE COMMAND: controlTv(on|off|toggle); not read-only",
+        "nonlocal": "Home Assistant/TV command transport",
+        "longLived": "device operation; no live execution permitted"
+      },
+      "evidenceCategory": "static-declaration-only",
+      "executionStatus": "blocked",
+      "blockedReasons": [
+        "No reviewed full-app synthetic fixture and auth identity",
+        "Installed mount graph/guards and entire response contract not verified"
+      ],
+      "normalization": {
+        "jsonPaths": [],
+        "headers": []
+      },
+      "normalizationPolicy": "No wildcard/blanket omission; use only individually reviewed volatile fields"
+    }
+  ],
+  "existingLocalEvidence": {
+    "fullInstalledApplicationHttp": "No evidence located in inspected fixed drivers/receipt packets; local mounted-router transport is not full-app HTTP",
+    "provableFixtureRequestDeclarations": [
+      {
+        "pack": "school",
+        "method": "GET",
+        "requestLiteralPrefix": "/api/v1/school/roster",
+        "source": "tests/preimplementation/application-modules/cases/school-http.case.mjs",
+        "line": 8,
+        "classification": "in-memory-real-IncomingMessage/ServerResponse mounted real router with synthetic/injected services",
+        "completeLiteral": true,
+        "receipt": null,
+        "limitations": [
+          "Not full createApp boot",
+          "No installed auth/permission/feature middleware parity inferred",
+          "Dynamic loops and concatenated IDs require case-body interpretation"
+        ]
+      },
+      {
+        "pack": "school",
+        "method": "GET",
+        "requestLiteralPrefix": "/api/v1/school/banks?audience=generic",
+        "source": "tests/preimplementation/application-modules/cases/school-http.case.mjs",
+        "line": 10,
+        "classification": "in-memory-real-IncomingMessage/ServerResponse mounted real router with synthetic/injected services",
+        "completeLiteral": true,
+        "receipt": null,
+        "limitations": [
+          "Not full createApp boot",
+          "No installed auth/permission/feature middleware parity inferred",
+          "Dynamic loops and concatenated IDs require case-body interpretation"
+        ]
+      },
+      {
+        "pack": "school",
+        "method": "POST",
+        "requestLiteralPrefix": "/api/v1/school/sessions",
+        "source": "tests/preimplementation/application-modules/cases/school-http.case.mjs",
+        "line": 18,
+        "classification": "in-memory-real-IncomingMessage/ServerResponse mounted real router with synthetic/injected services",
+        "completeLiteral": true,
+        "receipt": null,
+        "limitations": [
+          "Not full createApp boot",
+          "No installed auth/permission/feature middleware parity inferred",
+          "Dynamic loops and concatenated IDs require case-body interpretation"
+        ]
+      },
+      {
+        "pack": "school",
+        "method": "POST",
+        "requestLiteralPrefix": "/api/v1/school/sessions",
+        "source": "tests/preimplementation/application-modules/cases/school-http.case.mjs",
+        "line": 21,
+        "classification": "in-memory-real-IncomingMessage/ServerResponse mounted real router with synthetic/injected services",
+        "completeLiteral": true,
+        "receipt": null,
+        "limitations": [
+          "Not full createApp boot",
+          "No installed auth/permission/feature middleware parity inferred",
+          "Dynamic loops and concatenated IDs require case-body interpretation"
+        ]
+      },
+      {
+        "pack": "school",
+        "method": "POST",
+        "requestLiteralPrefix": "/api/v1/school/sessions/",
+        "source": "tests/preimplementation/application-modules/cases/school-http.case.mjs",
+        "line": 29,
+        "classification": "in-memory-real-IncomingMessage/ServerResponse mounted real router with synthetic/injected services",
+        "completeLiteral": false,
+        "receipt": null,
+        "limitations": [
+          "Not full createApp boot",
+          "No installed auth/permission/feature middleware parity inferred",
+          "Dynamic loops and concatenated IDs require case-body interpretation"
+        ]
+      },
+      {
+        "pack": "school",
+        "method": "POST",
+        "requestLiteralPrefix": "/api/v1/school/sessions/ses_1/answer",
+        "source": "tests/preimplementation/application-modules/cases/school-http.case.mjs",
+        "line": 31,
+        "classification": "in-memory-real-IncomingMessage/ServerResponse mounted real router with synthetic/injected services",
+        "completeLiteral": true,
+        "receipt": null,
+        "limitations": [
+          "Not full createApp boot",
+          "No installed auth/permission/feature middleware parity inferred",
+          "Dynamic loops and concatenated IDs require case-body interpretation"
+        ]
+      },
+      {
+        "pack": "school",
+        "method": "GET",
+        "requestLiteralPrefix": "/api/v1/school/users/kid1/material-progress?subject=science",
+        "source": "tests/preimplementation/application-modules/cases/school-http.case.mjs",
+        "line": 38,
+        "classification": "in-memory-real-IncomingMessage/ServerResponse mounted real router with synthetic/injected services",
+        "completeLiteral": true,
+        "receipt": null,
+        "limitations": [
+          "Not full createApp boot",
+          "No installed auth/permission/feature middleware parity inferred",
+          "Dynamic loops and concatenated IDs require case-body interpretation"
+        ]
+      },
+      {
+        "pack": "school",
+        "method": "GET",
+        "requestLiteralPrefix": "/api/v1/school/lifecycle/learners/kid1/agenda?studyDay=2026-07-27",
+        "source": "tests/preimplementation/application-modules/cases/school-http.case.mjs",
+        "line": 45,
+        "classification": "in-memory-real-IncomingMessage/ServerResponse mounted real router with synthetic/injected services",
+        "completeLiteral": true,
+        "receipt": null,
+        "limitations": [
+          "Not full createApp boot",
+          "No installed auth/permission/feature middleware parity inferred",
+          "Dynamic loops and concatenated IDs require case-body interpretation"
+        ]
+      },
+      {
+        "pack": "school",
+        "method": "POST",
+        "requestLiteralPrefix": "/api/v1/school/lifecycle/learners/kid1/agenda",
+        "source": "tests/preimplementation/application-modules/cases/school-http.case.mjs",
+        "line": 48,
+        "classification": "in-memory-real-IncomingMessage/ServerResponse mounted real router with synthetic/injected services",
+        "completeLiteral": true,
+        "receipt": null,
+        "limitations": [
+          "Not full createApp boot",
+          "No installed auth/permission/feature middleware parity inferred",
+          "Dynamic loops and concatenated IDs require case-body interpretation"
+        ]
+      },
+      {
+        "pack": "school",
+        "method": "PUT",
+        "requestLiteralPrefix": "/api/v1/school/lifecycle/assignments/kid1",
+        "source": "tests/preimplementation/application-modules/cases/school-http.case.mjs",
+        "line": 54,
+        "classification": "in-memory-real-IncomingMessage/ServerResponse mounted real router with synthetic/injected services",
+        "completeLiteral": true,
+        "receipt": null,
+        "limitations": [
+          "Not full createApp boot",
+          "No installed auth/permission/feature middleware parity inferred",
+          "Dynamic loops and concatenated IDs require case-body interpretation"
+        ]
+      },
+      {
+        "pack": "school",
+        "method": "PUT",
+        "requestLiteralPrefix": "/api/v1/school/lifecycle/assignments/kid1",
+        "source": "tests/preimplementation/application-modules/cases/school-http.case.mjs",
+        "line": 59,
+        "classification": "in-memory-real-IncomingMessage/ServerResponse mounted real router with synthetic/injected services",
+        "completeLiteral": true,
+        "receipt": null,
+        "limitations": [
+          "Not full createApp boot",
+          "No installed auth/permission/feature middleware parity inferred",
+          "Dynamic loops and concatenated IDs require case-body interpretation"
+        ]
+      },
+      {
+        "pack": "school",
+        "method": "PUT",
+        "requestLiteralPrefix": "/api/v1/school/lifecycle/assignments/kid1",
+        "source": "tests/preimplementation/application-modules/cases/school-http.case.mjs",
+        "line": 65,
+        "classification": "in-memory-real-IncomingMessage/ServerResponse mounted real router with synthetic/injected services",
+        "completeLiteral": true,
+        "receipt": null,
+        "limitations": [
+          "Not full createApp boot",
+          "No installed auth/permission/feature middleware parity inferred",
+          "Dynamic loops and concatenated IDs require case-body interpretation"
+        ]
+      },
+      {
+        "pack": "epaper",
+        "method": "GET",
+        "requestLiteralPrefix": "/epaper/image.png",
+        "source": "tests/preimplementation/application-modules/cases/epaper-http.case.mjs",
+        "line": 14,
+        "classification": "in-memory-real-IncomingMessage/ServerResponse mounted real router with synthetic/injected services",
+        "completeLiteral": true,
+        "receipt": null,
+        "limitations": [
+          "Not full createApp boot",
+          "No installed auth/permission/feature middleware parity inferred",
+          "Dynamic loops and concatenated IDs require case-body interpretation"
+        ]
+      },
+      {
+        "pack": "epaper",
+        "method": "POST",
+        "requestLiteralPrefix": "/epaper/render",
+        "source": "tests/preimplementation/application-modules/cases/epaper-http.case.mjs",
+        "line": 29,
+        "classification": "in-memory-real-IncomingMessage/ServerResponse mounted real router with synthetic/injected services",
+        "completeLiteral": true,
+        "receipt": null,
+        "limitations": [
+          "Not full createApp boot",
+          "No installed auth/permission/feature middleware parity inferred",
+          "Dynamic loops and concatenated IDs require case-body interpretation"
+        ]
+      },
+      {
+        "pack": "epaper",
+        "method": "GET",
+        "requestLiteralPrefix": "/epaper/status",
+        "source": "tests/preimplementation/application-modules/cases/epaper-http.case.mjs",
+        "line": 45,
+        "classification": "in-memory-real-IncomingMessage/ServerResponse mounted real router with synthetic/injected services",
+        "completeLiteral": true,
+        "receipt": null,
+        "limitations": [
+          "Not full createApp boot",
+          "No installed auth/permission/feature middleware parity inferred",
+          "Dynamic loops and concatenated IDs require case-body interpretation"
+        ]
+      }
+    ],
+    "relatedReceipts": [
+      {
+        "path": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/epaper-http-opjY84/receipt.json",
+        "profile": "epaper-http-opjY84",
+        "statusFields": {
+          "exitCode": 0,
+          "failed": [],
+          "incomplete": false,
+          "passed": [
+            "CASE-EPAPER-HTTP-CACHED-PNG-HEADERS",
+            "CASE-EPAPER-HTTP-RENDER-BODY-AND-RESPONSE",
+            "CASE-EPAPER-HTTP-STATUS-AND-UNCONFIGURED"
+          ]
+        }
+      },
+      {
+        "path": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/epaper-http-rPeLWN/receipt.json",
+        "profile": "epaper-http-rPeLWN",
+        "statusFields": {
+          "exitCode": 0,
+          "failed": [],
+          "incomplete": false,
+          "passed": [
+            "CASE-EPAPER-HTTP-CACHED-PNG-HEADERS",
+            "CASE-EPAPER-HTTP-RENDER-BODY-AND-RESPONSE",
+            "CASE-EPAPER-HTTP-STATUS-AND-UNCONFIGURED"
+          ]
+        }
+      },
+      {
+        "path": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/epaper-http-ua93FB/receipt.json",
+        "profile": "epaper-http-ua93FB",
+        "statusFields": {
+          "exitCode": 0,
+          "failed": [],
+          "incomplete": false,
+          "passed": [
+            "CASE-EPAPER-HTTP-CACHED-PNG-HEADERS",
+            "CASE-EPAPER-HTTP-RENDER-BODY-AND-RESPONSE",
+            "CASE-EPAPER-HTTP-STATUS-AND-UNCONFIGURED"
+          ]
+        }
+      },
+      {
+        "path": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/school-http-DKDH5m/receipt.json",
+        "profile": "school-http-DKDH5m",
+        "statusFields": {
+          "exitCode": 0,
+          "failed": [],
+          "incomplete": false,
+          "passed": [
+            "CASE-SCHOOL-HTTP-AGENDA-GET-PREVIEWS-POST-ISSUES",
+            "CASE-SCHOOL-HTTP-ANSWER-STATUS-AND-PAYLOAD",
+            "CASE-SCHOOL-HTTP-ASSIGNMENT-ADULT-EXACT-WRITE",
+            "CASE-SCHOOL-HTTP-ASSIGNMENT-CHILD-REFUSAL-NO-WRITE",
+            "CASE-SCHOOL-HTTP-PROGRESS-QUERY-FORWARDING",
+            "CASE-SCHOOL-HTTP-ROSTER-BANK-FILTER",
+            "CASE-SCHOOL-HTTP-SESSION-ERROR-TYPES",
+            "CASE-SCHOOL-HTTP-UNWIRED-LIFECYCLE-ABSENT"
+          ]
+        }
+      },
+      {
+        "path": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/school-http-Ko2h23/receipt.json",
+        "profile": "school-http-Ko2h23",
+        "statusFields": {
+          "exitCode": 0,
+          "failed": [],
+          "incomplete": false,
+          "passed": [
+            "CASE-SCHOOL-HTTP-AGENDA-GET-PREVIEWS-POST-ISSUES",
+            "CASE-SCHOOL-HTTP-ANSWER-STATUS-AND-PAYLOAD",
+            "CASE-SCHOOL-HTTP-ASSIGNMENT-ADULT-EXACT-WRITE",
+            "CASE-SCHOOL-HTTP-ASSIGNMENT-CHILD-REFUSAL-NO-WRITE",
+            "CASE-SCHOOL-HTTP-PROGRESS-QUERY-FORWARDING",
+            "CASE-SCHOOL-HTTP-ROSTER-BANK-FILTER",
+            "CASE-SCHOOL-HTTP-SESSION-ERROR-TYPES",
+            "CASE-SCHOOL-HTTP-UNWIRED-LIFECYCLE-ABSENT"
+          ]
+        }
+      },
+      {
+        "path": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/school-http-N3aIoz/receipt.json",
+        "profile": "school-http-N3aIoz",
+        "statusFields": {
+          "exitCode": 0,
+          "failed": [],
+          "incomplete": false,
+          "passed": [
+            "CASE-SCHOOL-HTTP-AGENDA-GET-PREVIEWS-POST-ISSUES",
+            "CASE-SCHOOL-HTTP-ANSWER-STATUS-AND-PAYLOAD",
+            "CASE-SCHOOL-HTTP-ASSIGNMENT-ADULT-EXACT-WRITE",
+            "CASE-SCHOOL-HTTP-ASSIGNMENT-CHILD-REFUSAL-NO-WRITE",
+            "CASE-SCHOOL-HTTP-PROGRESS-QUERY-FORWARDING",
+            "CASE-SCHOOL-HTTP-ROSTER-BANK-FILTER",
+            "CASE-SCHOOL-HTTP-SESSION-ERROR-TYPES",
+            "CASE-SCHOOL-HTTP-UNWIRED-LIFECYCLE-ABSENT"
+          ]
+        }
+      }
+    ],
+    "otherCoverage": "Remaining HTTP fixed suites require individual request/body->router tracing before coverage attribution; service/mock imports are not HTTP coverage",
+    "unattributedLiteralDeclarations": "All declaration records default to unknown/untested until explicit route-to-case mapping; no percentages inferred"
+  }
+}

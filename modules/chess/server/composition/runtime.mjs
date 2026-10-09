@@ -1,3 +1,4 @@
+import { createChessResumeService } from "../application/ChessResumeService.mjs";
 import { createStockfishEngine } from "../adapters/StockfishEngineAdapter.mjs";
 import { createStockfishAnalyst } from "../adapters/StockfishAnalysisAdapter.mjs";
 import { createChessConfigService } from "../application/ChessConfigService.mjs";
@@ -38,6 +39,14 @@ export function createChessRuntime({configService,dataService,rootLogger,server}
   });
 
   return {createRouter({pianoBoardGameDayService,sharedChessCommentary,sharedChessRivalry}) {
+  // The server's copy of each player's unfinished game, so a reload, a cleared
+  // localStorage or a deploy mid-game cannot lose it (see resumeSlot.mjs).
+  const chessResumeService = createChessResumeService({
+    readSlot: (userId) => dataService.user.read('apps/chess/resume', userId) || null,
+    writeSlot: (userId, slot) => dataService.user.write('apps/chess/resume', slot, userId),
+    readConfig: (userId) => chessConfigService.read(userId),
+    logger: rootLogger.child({ module: 'chess-resume' }),
+  });
   const pianoChessRouter = createChessRouter({
     engine: chessEngine,
     analyst: chessAnalyst,
@@ -58,6 +67,7 @@ export function createChessRuntime({configService,dataService,rootLogger,server}
         );
       },
     },
+    resumeService: chessResumeService,
     ladderService: chessLadderService,
     commentaryService: sharedChessCommentary,
     rivalryMemory: sharedChessRivalry,

@@ -113,3 +113,12 @@ describe('piano-course — a course sequence (then:)', () => {
     expect(result.errors).toEqual([message]);
   });
 });
+
+describe('story-time noRepeatDays through the enrollment validator', () => {
+  it('keeps a valid value (0 included) and refuses a bad one', async () => {
+    const ok = await validators().get('story-time')({ programId: 'story-time', noRepeatDays: 0 });
+    const bad = await validators().get('story-time')({ programId: 'story-time', noRepeatDays: -2 });
+    expect(ok).toMatchObject({ errors: [], enrollment: { noRepeatDays: 0 } });
+    expect(bad.errors[0]).toMatch(/noRepeatDays/);
+  });
+});

@@ -3,24 +3,13 @@
 > A roadmap for making Daylight Station extensible at the application level,
 > without weakening its existing domain and adapter boundaries.
 
-**Status:** Migration ditched 2026-09-25, never implemented; this page stays as the idea. The preparation packet (plans, review evidence, refactor index) was dropped with it; `tests/preimplementation/application-modules/` remains. | **Last updated:** 2026-09-25
+**Status:** Structural migration resumed in October 2026 and implemented in the isolated `refactor/application-modules` worktree. Milestones 2 and 3 are checkpointed at `7c0936d1b5`; production cutover readiness is in progress. No merge into main or production deployment is claimed. | **Last updated:** 2026-10-09
 
-**Former work plan (dropped 2026-09-25):** numbered pre-implementation checklist.
-Inventory, boundary design, dedicated characterization tests and documentation
-lead to an auditable Gratitude rehearsal plan. Existing application code remains
-unchanged; executing the migration is outside this preparation scope.
+**Current execution:** [M2/M3 ownership migration plan](../_wip/plans/2026-10-08-application-modules-m2-m3.md) and [cutover readiness plan](../_wip/plans/2026-10-09-application-modules-cutover-readiness.md). The September 25 decision to abandon the earlier preparation effort is historical; it no longer describes the current branch.
 
-**Former immediate design (dropped 2026-09-25):** application ownership and behavior-preserving migration.
-It takes precedence for the first cutover: reorganize ownership and dependencies,
-prove existing behavior with green/red gates, and add no runtime functionality.
-The module runtime exploration
-and the larger capability/satellite designs below are deferred directions, not
-prerequisites for that migration.
+**Immediate design:** application ownership and behavior-preserving migration. Sections 0.4–0.7 take precedence for the first cutover: reorganize ownership and dependencies, prove existing behavior, and add no runtime functionality. The module runtime exploration and larger capability/satellite designs below remain deferred directions, not prerequisites for the structural migration.
 
-The source inventory
-and five-round review record
-support the immediate plan. Layer requirements remain binding; review completion
-authorizes neither source moves before their gates nor a production deployment.
+**Readiness evidence:** selected behavioral comparisons, architecture gates, the production frontend build, and calculator artifacts are verified. These do not establish complete deployed HTTP or daily-use equivalence. The readiness work inventories mounted APIs, creates old/new contract comparisons against identical isolated fixtures, validates the actual Docker image and representative browser flows, and prepares rollback. The pre-cutover tag preserves the original source reference; deployment rollback must also preserve intervening main changes.
 
 **Related:** [Backend Architecture](../reference/core/backend-architecture.md),
 [Application Layer Guidelines](../reference/core/layers-of-abstraction/application-layer-guidelines.md),

@@ -1,0 +1,84 @@
+{
+  "fixtureFiles": {
+    "data/system/config/system.yml": {
+      "households": {
+        "default": "default"
+      },
+      "timezone": "America/Los_Angeles",
+      "env": "readiness",
+      "app": {
+        "ports": {
+          "default": 3111,
+          "readiness": 3111,
+          "docker": 3111
+        }
+      },
+      "secrets": {
+        "provider": "yaml"
+      }
+    },
+    "data/household/household.yml": {
+      "head": "user_1",
+      "users": [
+        "user_1"
+      ],
+      "timezone": "America/Los_Angeles"
+    },
+    "data/users/user_1/profile.yml": {
+      "id": "user_1",
+      "name": "Synthetic Parent",
+      "birthyear": 1980,
+      "household_id": "default"
+    },
+    "data/system/config/auth.yml": {
+      "jwt": {
+        "secret": "SYNTHETIC-READINESS-NOT-A-PRODUCTION-SECRET",
+        "issuer": "daylight-station",
+        "algorithm": "HS256",
+        "expiry": "1h"
+      },
+      "household_roles": {},
+      "roles": {
+        "sysadmin": {
+          "apps": [
+            "*"
+          ]
+        },
+        "reader": {
+          "apps": [
+            "school",
+            "piano",
+            "fitness",
+            "content"
+          ]
+        }
+      },
+      "app_routes": {
+        "admin": [
+          "admin/*"
+        ],
+        "finance": [
+          "finance/*"
+        ],
+        "home": [
+          "home/*",
+          "home-automation/*"
+        ]
+      }
+    },
+    "data/system/config/domains.yml": {
+      "domain_mapping": {
+        "fixture.invalid": "default"
+      },
+      "patterns": []
+    },
+    "data/system/config/services.yml": {},
+    "data/system/config/adapters.yml": {},
+    "data/system/config/bots.yml": {},
+    "data/system/secrets.yml": {},
+    "data/household/integrations.yml": {},
+    "data/household/hardware/devices.yml": {
+      "devices": {}
+    }
+  }
+}

@@ -310,6 +310,8 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   'capabilities/music-notation/portable/transpose.mjs': null,
   'modules/chess/portable/ladder.mjs': null,
   'modules/chess/portable/archivePaths.mjs': null,
+  'modules/chess/portable/resumeSlot.mjs': null,
+  'modules/chess/cli/chess-resume-pin.cli.mjs': null,
   'capabilities/gaming/server/composition/session-runtime.mjs': 'composition',
   'modules/party-games/server/composition/installed-runtime.mjs': 'composition',
   'modules/party-games/server/composition/gamingApi.mjs': 'composition',

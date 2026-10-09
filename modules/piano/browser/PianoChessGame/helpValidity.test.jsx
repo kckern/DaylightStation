@@ -36,6 +36,9 @@ vi.mock('./chessApi.js', () => ({
   archiveGame: vi.fn(async () => null),
   beaconArchive: vi.fn(() => true),
   fetchLadder: vi.fn(async () => null),
+  saveGameProgress: vi.fn(async () => null),
+  beaconProgress: vi.fn(() => true),
+  fetchResumableGame: vi.fn(async () => ({ game: null, window_days: 3 })),
 }));
 
 import { PianoChessGame } from './PianoChessGame.jsx';

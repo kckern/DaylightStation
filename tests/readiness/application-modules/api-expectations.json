@@ -1,0 +1,99 @@
+{
+  "schema": "comparator-v1",
+  "cases": [
+    {
+      "id": "node-edge-liveness",
+      "method": "GET",
+      "path": "/healthz",
+      "safety": {
+        "reviewed": true,
+        "disposition": "read-only",
+        "sideEffects": false,
+        "nonlocal": false,
+        "longLived": false
+      },
+      "expected": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "kind": "json",
+          "required": {
+            "ok": "boolean",
+            "server": "string",
+            "timestamp": "number",
+            "uptime": "number"
+          },
+          "equals": {
+            "ok": true,
+            "server": "main"
+          }
+        }
+      },
+      "normalize": {
+        "jsonPaths": [
+          "timestamp",
+          "uptime"
+        ],
+        "headers": [
+          "date",
+          "connection",
+          "keep-alive",
+          "content-length"
+        ]
+      },
+      "normalizationRationale": {
+        "timestamp": "Wall clock differs between requests; number asserted before normalization.",
+        "transportHeaders": "Date, connection and keep-alive depend on request timing/client connection. Content-length follows volatile JSON encoding.",
+        "uptime": "Distinct server process ages; number asserted before normalization."
+      }
+    },
+    {
+      "id": "express-api-ping",
+      "method": "GET",
+      "path": "/api/v1/ping",
+      "safety": {
+        "reviewed": true,
+        "disposition": "read-only",
+        "sideEffects": false,
+        "nonlocal": false,
+        "longLived": false
+      },
+      "expected": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-embedder-policy": "credentialless"
+        },
+        "body": {
+          "kind": "json",
+          "required": {
+            "ok": "boolean",
+            "timestamp": "number"
+          },
+          "equals": {
+            "ok": true
+          }
+        }
+      },
+      "normalize": {
+        "jsonPaths": [
+          "timestamp"
+        ],
+        "headers": [
+          "date",
+          "connection",
+          "keep-alive",
+          "content-length",
+          "etag"
+        ]
+      },
+      "normalizationRationale": {
+        "timestamp": "Wall clock differs; number asserted before normalization.",
+        "transportHeaders": "Date, connection and keep-alive depend on request timing/client connection. Content-length and ETag follow the timestamp-bearing JSON body."
+      }
+    }
+  ]
+}

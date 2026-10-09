@@ -7,6 +7,12 @@ import MatchGateContext from '../PianoKiosk/modes/Games/MatchGateContext.js';
 // A read that never answers must cost the record its level, never the record.
 const LADDER_SETTLE_TIMEOUT_MS = 5000;
 
+// How long a move waits before the server's copy of the game is refreshed. A
+// player's move and the engine's reply land a second or two apart; coalescing
+// them is one request per exchange rather than two, and the server write is
+// idempotent by game id so a repeat is free.
+export const PROGRESS_DEBOUNCE_MS = 1500;
+
 function freshLifecycle(gameId) {
   return {
     gameId,
@@ -186,6 +192,39 @@ export function useChessPersistenceLifecycle({
     });
   }, [archiveOneGame]);
 
+  // THE SERVER'S COPY OF A GAME IN PROGRESS. localStorage on one tablet is not a
+  // save slot: on 2026-10-09 a won position was lost to a six-hour idle rule
+  // because the checkpoint was the only copy. Every committed ply refreshes the
+  // server's record (same shape as the archive, `ended_by: 'in_progress'`), so
+  // a reload, cleared storage, crash or deploy cannot lose the game. Never
+  // blocks play and never throws: a failed save is retried by the next ply.
+  const progressTimerRef = useRef(null);
+  const progressPendingRef = useRef(false);
+  const sendProgress = useCallback((useBeacon = false) => {
+    clearTimeout(progressTimerRef.current);
+    progressTimerRef.current = null;
+    progressPendingRef.current = false;
+    const inputs = archiveInputsRef.current;
+    const active = lifecycleRef.current;
+    if (!inputs?.userId || !active || active.archived || inputs.gameId !== active.gameId) return;
+    if (inputs.game?.status?.game_over) return;
+    const record = buildGameArchive({ ...inputs, endedAt: Date.now(), endedBy: 'in_progress' });
+    if (!record) return;
+    const currentGateway = gatewayRef.current;
+    if (useBeacon && currentGateway.beaconProgress?.(record)) return;
+    Promise.resolve(currentGateway.saveProgress?.(record)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    clearTimeout(progressTimerRef.current);
+    progressTimerRef.current = null;
+    progressPendingRef.current = false;
+    if (!plies || gameOver || !userId) return undefined;
+    progressPendingRef.current = true;
+    progressTimerRef.current = setTimeout(() => sendProgress(false), PROGRESS_DEBOUNCE_MS);
+    return () => { clearTimeout(progressTimerRef.current); };
+  }, [gameId, plies, gameOver, userId, sendProgress]);
+
   // A result parked waiting for its rung, carried out rather than dropped.
   const flushPendingResult = useCallback(() => {
     const deferred = pendingFileRef.current;
@@ -199,11 +238,12 @@ export function useChessPersistenceLifecycle({
       // resume and finish this game; archiving here would create two histories.
       if (event?.persisted === true) return;
       flushPendingResult();
+      if (progressPendingRef.current) sendProgress(true);
       archiveAbandonedGame(true);
     };
     window.addEventListener('pagehide', flush);
     return () => window.removeEventListener('pagehide', flush);
-  }, [archiveAbandonedGame, flushPendingResult]);
+  }, [archiveAbandonedGame, flushPendingResult, sendProgress]);
 
   // THE CLEANUP BELOW DEPENDS ON EFFECT ORDER. React tears effects down in
   // declaration order, so the parked result is carried out and then judged as

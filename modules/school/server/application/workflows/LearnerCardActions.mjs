@@ -155,6 +155,9 @@ const RECLAIMABLE_CLOSE_REASONS = new Set([
 export function makeReadingSessionHandler({
   sessions, isPlaying = null, wakeScreen = null, alertAdult = null, realtime = null,
   studyDay = () => null,
+  // Optional `({userId, contentId}) => {refuse, lastReadOn, today, noRepeatDays}`;
+  // an adopted story is credited, so a recently-read one is not adopted.
+  repeatCheck = null,
   clock = () => new Date(), logger = console,
   ackTimeoutMs = 8_000, maxDeliveryAttempts = 2,
   // How long a COLD reader gets to paint its first launch card. On 2026-09-30
@@ -245,7 +248,22 @@ export function makeReadingSessionHandler({
         // scanning now is claiming it. Adopt it in place: no launch card, no
         // picker, no restart. The TV proves it is really playing that book
         // before it ACKs; if it cannot, it declines and D2 applies as before.
-        const unclaimed = sessions.unclaimedPlay?.(location) ?? null;
+        let unclaimed = sessions.unclaimedPlay?.(location) ?? null;
+        let repeat = null;
+        if (unclaimed && typeof repeatCheck === 'function') {
+          try {
+            const verdict = await repeatCheck({ userId: learnerId, contentId: unclaimed.contentId });
+            if (verdict?.refuse) repeat = verdict;
+          } catch (err) {
+            log('warn', 'school.reading.repeat-check-failed', { location, learnerId, error: err?.message ?? String(err) });
+          }
+          if (repeat) {
+            log('info', 'school.reading.adoption-skipped', {
+              location, learnerId, contentId: unclaimed.contentId, reason: 'read-recently', lastReadOn: repeat.lastReadOn,
+            });
+            unclaimed = null;
+          }
+        }
         if (unclaimed && typeof sessions.beginAdoption === 'function') {
           const adopting = sessions.beginAdoption({
             location, learnerId, target, contentId: unclaimed.contentId, studyDay: studyDay?.() ?? null,
@@ -295,6 +313,19 @@ export function makeReadingSessionHandler({
         const ownRoom = Boolean(learnerId)
           && departed?.session?.learnerId === learnerId
           && RECLAIMABLE_CLOSE_REASONS.has(departed.reason);
+        if (!ownRoom && repeat) {
+          tell(location, {
+            event: 'book-refused', reason: 'read-recently', learnerId, location, target,
+            contentId: sessions.unclaimedPlay?.(location)?.contentId ?? null,
+            lastReadOn: repeat.lastReadOn, today: repeat.today, noRepeatDays: repeat.noRepeatDays,
+            at: clock().toISOString(),
+          });
+          log('info', 'school.reading.book-refused', {
+            location, learnerId, reason: 'read-recently', lastReadOn: repeat.lastReadOn,
+            noRepeatDays: repeat.noRepeatDays, path: 'adoption',
+          });
+          return { status: 'reading_session_refused', reason: 'read-recently', learnerId, location };
+        }
         if (!ownRoom) {
           tell(location, {
             event: 'session-refused', reason: 'content-playing', learnerId, location, target,
