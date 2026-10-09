@@ -2,7 +2,7 @@
 
 Milestones 2 and 3 retain the full source census. This is the current ownership and migration record, **not cutover certification**. Milestone 2 is checkpointed at `9f19f9f2f7`; Milestone 3 has a source checkpoint at `646caba119` and remains in acceptance in the isolated `refactor/application-modules` worktree. No deployment or merge into main is represented here.
 
-This snapshot includes the final 447 frontend/shared/satellite moves, 138 CLI moves, configuration policy split, command-entry restorations, and three reviewed prototype retirements. All enumerated ownership transitions are structurally reconciled. Final selected runtime replay and the production frontend build are verified; native calculator artifact acceptance remains incomplete.
+This snapshot includes the final 447 frontend/shared/satellite moves, 138 CLI moves, configuration policy split, command-entry restorations, and three reviewed prototype retirements. All enumerated ownership transitions are structurally reconciled. Final selected runtime replay and the production frontend build are verified; all native calculator artifact suites are now verified.
 
 ## Source universe and provenance
 
@@ -71,13 +71,13 @@ Additional tracked corrections:
 
 ## Final selected verification and remaining acceptance
 
-The [final verification record](2026-10-09-application-modules-final-verification.json) pins all 38 accepted final test-group receipts and their hashes. Independent comparison verifies 6,475 original passing case executions, 27 supplemental guards, and the exact same 11 failed executions as the baselines. Counts include overlapping groups; this is not a unique whole-repository test count or an all-tests-pass claim. The four Playback Hub and seven Producer failures retain their actual failed statuses, messages, and nonzero child exits.
+The [final verification record](2026-10-09-application-modules-final-verification.json) pins all 39 accepted final test-group receipts and their hashes. Independent comparison verifies 6,480 original passing case executions, 27 supplemental guards, and the exact same 11 failed executions as the baselines. Counts include overlapping groups; this is not a unique whole-repository test count or an all-tests-pass claim. The four Playback Hub and seven Producer failures retain their actual failed statuses, messages, and nonzero child exits.
 
 The production Vite build passed with 109 application-owned chunks, including the actual Player, screen host, Piano, and Gratitude modules. All recorded chunk files exist. Of 69 public assets, 68 copied assets were independently compared byte-for-byte; the remaining asset is generated. Native module identity and owner embedding checks are included in the selected runtime evidence.
 
 All 43 move maps resolve to present terminal files. Every one of the 8,795 unique mapped destinations is indexed, including reviewed files covered by ignore patterns. The full ownership audit checks private boundaries, dependency direction, and owner cycles. Layer ratchets are unchanged and native import-link checks pass. The local source checkpoint `646caba119` passed the unchanged original staged/working pre-commit hook through the confined adapter, including 349 stylesheet builds and 15 composition assertions. No merge into main or deployment is represented here.
 
-The native calculator remains an explicit acceptance gap: 45 suites passed 208 enabled cases, while one relay-config suite remains unrun and one pre-existing disabled reference case is recorded separately. The user-provided GUI archive restored the missing authored inputs. Original and migrated code pass the same 87 newly enabled cases and produce byte-identical SCHLCALC, DSUSERS, and DSPROG artifacts using the pinned scratch assembler. The relay config.example.yml remains unavailable. The original missing-input snapshot remains recorded; the recovered GUI sources are now tracked, and the release artifacts are generated in confined scratch. No source inputs or passing results were invented; the result-queue artifact was built by the authentic pinned assembler. Milestone 3 is therefore not certified complete.
+All 46 calculator artifact suite files are verified: 213 enabled cases pass and one pre-existing disabled reference case remains recorded separately. The user-provided GUI archive and relay example configuration restored the missing authored inputs. Original and migrated code produce byte-identical SCHLCALC, DSUSERS, and DSPROG artifacts using the pinned scratch assembler. The final relay profile passes the same five cases against identical supplied configuration bytes in both layouts. Historical missing-input and failed receipts remain recorded. No private configuration or hardware execution was needed.
 
 ## Retained ownership and final corrections
 
@@ -100,3 +100,5 @@ Health CLI final replay: 146 original cases preserve exact baseline parity and 3
 The subsequent original hook link scan found one stale import in NutritionRepair.test.mjs. Its single import literal was corrected, its three original cases were included in the 39 supplemental cases above, and the 185-case Health retry passed with unchanged baseline assertions.
 
 [Recovered GUI provenance](2026-10-09-calculator-gui-recovery.json) pins the user-supplied archive and restored bytes. Existing type.yml and README.md matched exactly. Explicit ignore exceptions preserve all four GUI YAML source files in future checkouts. The reviewed release-copy adapter preserves real bytes/modes for seven exact same-stage outputs; the failed initial native copy attempt remains recorded.
+
+The completion audit also restored normal isolated discovery for the two moved Art suites under `modules/art/tests/isolated`. Three synthetic controls and actual CLI dry runs verify exact-once discovery, existing target filters, and frontend exclusion. See the final verification record for the bounded repair evidence.

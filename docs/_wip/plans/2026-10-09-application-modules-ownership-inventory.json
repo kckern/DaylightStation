@@ -1,6 +1,6 @@
 {
   "schema": "daylight.application-module-ownership-inventory/v1",
-  "status": "Ownership transitions structurally reconciled; 38 selected runtime groups and the production frontend artifact verified. Native calculator artifact acceptance remains incomplete.",
+  "status": "Ownership transitions reconciled; 39 selected runtime groups, production frontend artifact, and all 46 calculator artifact suites verified.",
   "censusBase": "759be3aaf7",
   "head": "9f19f9f2f7b664f2c17e29ad2d96d0bb8d0c2b3d",
   "censusSha256": "aaefd891712df697ba4e42231141a26fd66fd003f3920756d62e57ad5f0ffcbf",
@@ -57806,7 +57806,7 @@
   "limitations": [
     "Ownership decisions alone are not runtime proof; final selected compatibility evidence is recorded separately.",
     "All recorded ownership actions are structurally reconciled; selected final runtime populations preserve their exact baselines.",
-    "One calculator relay suite remains unrun because authentic config.example.yml is unavailable; one original disabled reference case is recorded separately."
+    "All 213 enabled calculator cases pass; one original disabled reference case remains explicitly recorded. No native suite remains unrun."
   ],
   "finalVerification": "2026-10-09-application-modules-final-verification.json"
 }

@@ -1,6 +1,6 @@
 {
   "schema": "daylight.application-modules-final-verification/v1",
-  "status": "source ownership and selected compatibility verified; native calculator artifact acceptance incomplete",
+  "status": "All M2/M3 implementation and selected acceptance requirements verified; final hook-gated commit and clean-tree check pending",
   "wholeMilestoneComplete": false,
   "runtime": {
     "status": "all selected final populations independently verified",
@@ -505,14 +505,27 @@
         "controls": true,
         "protectedInputsUnchangedAtRun": true,
         "incomplete": false
+      },
+      {
+        "pack": "retained-ti86-relay",
+        "receipt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/retained-ti86-relay-iys1GM/receipt.json",
+        "receiptSha256": "a0f14c9a5a9489bd42be708addffa0f25aba7bdf86f9f4c7cd20b0e2bb202094",
+        "originalPasses": 5,
+        "additionalGuardPasses": 0,
+        "additionalExistingCasePasses": 0,
+        "knownFailures": 0,
+        "originalAssertionNamesAndFailurePopulationExact": true,
+        "controls": true,
+        "protectedInputsUnchangedAtRun": true,
+        "incomplete": false
       }
     ],
     "pending": [],
-    "originalPasses": 6475,
+    "originalPasses": 6480,
     "additionalGuardPasses": 27,
     "additionalExistingCasePasses": 39,
     "knownFailures": 11,
-    "unrunNativeCalculatorSuites": 1,
+    "unrunNativeCalculatorSuites": 0,
     "wholeMilestoneComplete": false,
     "originalDisabledCases": [
       "TI-86 reviewed runtime-module boundary retains the superseded broad v0 client-release builder as reference tooling"
@@ -595,7 +608,67 @@
     "ownerBrowser": 1638,
     "movedArchitecture": 1,
     "syntheticDryRunControlsPassed": 3,
-    "ownerBrowserExcludedByActualVitestConfig": 0
+    "ownerBrowserExcludedByActualVitestConfig": 0,
+    "ownerIsolatedClosure": {
+      "writes": [
+        {
+          "file": "tests/_infrastructure/harnesses/isolated.harness.mjs",
+          "sha256": "72aca4e655f7b5b9f4b7ff3972b4cdc390232cdd4512d8029ca39f24ce10ed23"
+        },
+        {
+          "file": "tests/unit/tooling/isolatedOwnerDiscovery.case.mjs",
+          "sha256": "c9e96bef8a5ce4d94a802e919b89cd31d2a6c3e6bbec571de2f369bfa59a4117"
+        }
+      ],
+      "syntheticControlsExit": 0,
+      "syntheticControls": 3,
+      "actualDryRun": [
+        {
+          "flags": [],
+          "discoveredPopulation": 1644,
+          "ArtOccurrences": {
+            "modules/art/tests/isolated/adapter/persistence/files/FilesystemCanvasImageRepository.test.mjs": 1,
+            "modules/art/tests/isolated/api/routers/canvas.test.mjs": 1
+          }
+        },
+        {
+          "flags": [
+            "--only=adapter"
+          ],
+          "discoveredPopulation": 168,
+          "ArtOccurrences": {
+            "modules/art/tests/isolated/adapter/persistence/files/FilesystemCanvasImageRepository.test.mjs": 1,
+            "modules/art/tests/isolated/api/routers/canvas.test.mjs": 0
+          }
+        },
+        {
+          "flags": [
+            "--only=api"
+          ],
+          "discoveredPopulation": 81,
+          "ArtOccurrences": {
+            "modules/art/tests/isolated/adapter/persistence/files/FilesystemCanvasImageRepository.test.mjs": 0,
+            "modules/art/tests/isolated/api/routers/canvas.test.mjs": 1
+          }
+        },
+        {
+          "flags": [
+            "--only=frontend"
+          ],
+          "discoveredPopulation": 1748,
+          "ArtOccurrences": {
+            "modules/art/tests/isolated/adapter/persistence/files/FilesystemCanvasImageRepository.test.mjs": 0,
+            "modules/art/tests/isolated/api/routers/canvas.test.mjs": 0
+          }
+        }
+      ],
+      "stagedExactPaths": [
+        "tests/_infrastructure/harnesses/isolated.harness.mjs",
+        "tests/unit/tooling/isolatedOwnerDiscovery.case.mjs"
+      ],
+      "productExecution": false,
+      "populationNote": "Dry-run stdout counts are not a full-population census; exact Art occurrence checks are the acceptance criteria."
+    }
   },
   "lateCorrections": {
     "sassPaths": {
@@ -1082,22 +1155,25 @@
         "scope": "Reporting only: preserve original46-suite universe when current UNRUN inventory shrinks; fixed executable selections unchanged.",
         "originalSuitePopulation": 46
       }
+    },
+    "calculatorRelayRecovery": {
+      "provenance": "docs/_wip/plans/2026-10-09-calculator-relay-recovery.json",
+      "scope": "User-supplied example only; no private configuration or hardware execution."
+    },
+    "ownerIsolatedDiscovery": {
+      "files": [
+        "tests/_infrastructure/harnesses/isolated.harness.mjs",
+        "tests/unit/tooling/isolatedOwnerDiscovery.case.mjs"
+      ],
+      "scope": "Restored the two relocated Art suites to the existing isolated targets and import-based runner routing.",
+      "syntheticControlsPassed": 3,
+      "actualCliDefaultAndFiltersPassed": true
     }
   },
   "nativeCalculator": {
-    "runnableSuites": 45,
-    "passingCases": 208,
-    "unrunSuites": [
-      {
-        "file": "_extensions/ti86-app/tools/foreground-listener-contract.test.mjs",
-        "status": "UNRUN",
-        "reason": "Required source fixture or generated release artifact absent in actual checkout; no substitute fixtures generated",
-        "missingInputs": [
-          "_extensions/ticalc-relay/config.example.yml"
-        ],
-        "priorFailedReceipt": "retained-ti86-P6ByyF/receipt.json"
-      }
-    ],
+    "runnableSuites": 46,
+    "passingCases": 213,
+    "unrunSuites": [],
     "missingInputProvenance": {
       "inputs": {
         "_extensions/ticalc-relay/config.example.yml": {
@@ -1146,7 +1222,7 @@
       "scope": "read-only original Git tree and current mapped targets; no generated replacement artifacts",
       "historicalSnapshot": true
     },
-    "claim": "45 suites and 208 enabled cases verified across fixed original/native/GUI profiles; one original disabled reference case remains explicit. The three generated release artifacts match byte-for-byte between original and migrated layouts. One relay-config suite remains unrun because its authentic config.example.yml is absent.",
+    "claim": "All 46 original artifact suite files verified: 213 enabled cases pass; one original disabled reference case remains explicit. Three generated release artifacts match byte-for-byte across layouts. No native suite remains unrun.",
     "historicalUnrunSuites": [
       {
         "file": "_extensions/ti86-app/tools/complete-install-contract.test.mjs",
@@ -1520,9 +1596,7 @@
       },
       "productOrAssertionChanges": false,
       "installed": false,
-      "missingAuthoritativeSources": [
-        "_extensions/ticalc-relay/config.example.yml"
-      ]
+      "missingAuthoritativeSources": []
     },
     "originalDisabledCases": [
       "TI-86 reviewed runtime-module boundary retains the superseded broad v0 client-release builder as reference tooling"
@@ -1788,6 +1862,61 @@
       },
       "scope": "Identical authentic recovered GUI bytes supplied to original and migrated source; original builders generate actual release files in confined scratch.",
       "failedInitialAttempt": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/retained-ti86-gui-DEH4s6/receipt.json"
+    },
+    "relayRecovery": {
+      "provenance": "docs/_wip/plans/2026-10-09-calculator-relay-recovery.json",
+      "verification": {
+        "baseline": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/retained-ti86-relay-tlMO0Y/receipt.json",
+        "candidate": ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/retained-ti86-relay-iys1GM/receipt.json",
+        "baselineSha256": "8d228184e09e570fd99843609b21b3af0cab171b4acdf9cce9320a6e7757b1cf",
+        "candidateSha256": "a0f14c9a5a9489bd42be708addffa0f25aba7bdf86f9f4c7cd20b0e2bb202094",
+        "passedNames": [
+          "calculator-initiated foreground listener contract accepts exactly-one-low only and never calls idle-high connected",
+          "calculator-initiated foreground listener contract keeps foreground listening behind both firmware safety gates",
+          "calculator-initiated foreground listener contract keeps proactive auto-sync as a separate Silent Link compatibility path",
+          "calculator-initiated foreground listener contract polls for a start edge while idle and atomically yields to explicit jobs",
+          "calculator-initiated foreground listener contract reports listener readiness, initiation provenance, verification, and safety"
+        ],
+        "exactOrderedAssertionParity": true,
+        "controls": true,
+        "protectedInputsUnchanged": true,
+        "originalCases": 5,
+        "staticReadInputHashes": [
+          {
+            "file": "firmware/src/main.cpp",
+            "originalSha256": "b98a2d203fefee18a1ec275f376734ca8f3ee701efee69c07cfce0e026483697",
+            "candidateSha256": "b98a2d203fefee18a1ec275f376734ca8f3ee701efee69c07cfce0e026483697",
+            "exactBytesMatch": true
+          },
+          {
+            "file": "firmware/src/SchoolCalcTransportAwareness.h",
+            "originalSha256": "f411d9493c001cf35fff36db8d3b87a9605dac78f05d1e611d247a71f2f4f160",
+            "candidateSha256": "f411d9493c001cf35fff36db8d3b87a9605dac78f05d1e611d247a71f2f4f160",
+            "exactBytesMatch": true
+          },
+          {
+            "file": "firmware/src/SchoolCalcTransportAwareness.cpp",
+            "originalSha256": "14b1c6b12b134df1dafa3e97ec23f238cea65d63ca1622f3afbd65f5756140ee",
+            "candidateSha256": "14b1c6b12b134df1dafa3e97ec23f238cea65d63ca1622f3afbd65f5756140ee",
+            "exactBytesMatch": true
+          },
+          {
+            "file": "firmware/tools/gen-config.mjs",
+            "originalSha256": "e7625f80f865b92746402e6993795066ff1a56f4eb2a9c52142da6b675f19dd2",
+            "candidateSha256": "e7625f80f865b92746402e6993795066ff1a56f4eb2a9c52142da6b675f19dd2",
+            "exactBytesMatch": true
+          },
+          {
+            "file": "config.example.yml",
+            "originalSha256": "519e8ecd465e94daf0dc0a5083a91d6461cae0ccbe772d099084c0b30258bc6b",
+            "candidateSha256": "519e8ecd465e94daf0dc0a5083a91d6461cae0ccbe772d099084c0b30258bc6b",
+            "exactBytesMatch": true
+          }
+        ],
+        "assemblerInvoked": false,
+        "buildersInvoked": false,
+        "hardwareInvoked": false
+      }
     }
   },
   "gitIntegration": {
@@ -1822,7 +1951,7 @@
     "Case counts are executions across overlapping selected groups, not a unique whole-repository test count.",
     "The eleven known test failures remain actual failures, with their exact baseline names/signatures preserved.",
     "Historical Art runner receipts may state stale resource-limit prose; actual launcher C and command evidence determine enforced limits. Reporting was corrected without changing assertions or confinement.",
-    "The successful build proves the production frontend artifact, not native calculator release artifacts or deployment."
+    "The production frontend build and native calculator artifacts are verified separately; no deployment or live-device execution is claimed."
   ],
   "staticGates": {
     "ownerBoundaryDirectionAndCycles": {
@@ -1847,5 +1976,155 @@
       "scssEntrypoints": 349,
       "compositionCases": 15
     }
-  }
+  },
+  "requirementAudit": {
+    "schema": "daylight.application-modules-completion-audit/v1",
+    "scope": "Bounded requirement-by-requirement review of approved M2/M3 plan and current durable evidence; no new product tests or broad audits.",
+    "plan": "docs/_wip/plans/2026-10-08-application-modules-m2-m3.md",
+    "roadmap": "docs/roadmap/2026-08-31-full-stack-application-modules.md",
+    "roadmapSections": [
+      "0.4",
+      "0.5",
+      "0.6",
+      "0.7",
+      "11.3",
+      "13 scope note and architecture enforcement"
+    ],
+    "requirements": [
+      {
+        "id": "M2-contributor",
+        "requirement": "Synthetic Piano contributor and host embedding proof",
+        "status": "verified",
+        "evidence": [
+          "tests/preimplementation/application-modules/tooling/landlock-README.md",
+          ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/m2-hpyONE/receipt.json"
+        ],
+        "finding": "145 original assertions plus one embedding guard; no private household data or unrelated hardware."
+      },
+      {
+        "id": "M2-dependencies",
+        "requirement": "Canonical backend/browser package identities and developer/build setup",
+        "status": "verified",
+        "evidence": [
+          "scripts/setup-owner-dependencies.mjs",
+          "docs/_wip/plans/2026-10-09-application-modules-final-verification.json"
+        ],
+        "finding": "Native import identities and shared dependency scopes exercised; no hoisting or dependency-version changes required by the migration."
+      },
+      {
+        "id": "M2-boundaries",
+        "requirement": "Piano ownership, neutral screen host and reusable playback; one installed registry",
+        "status": "verified",
+        "evidence": [
+          "docs/_wip/plans/2026-10-09-application-modules-ownership-inventory.json",
+          "docs/_wip/plans/2026-10-09-application-modules-final-verification.json",
+          ".github/workflows/architecture.yml"
+        ],
+        "finding": "Ownership/layer/public-entry/capability-direction and cycle gates passed; original behavior/embedding and built entry inclusion verified."
+      },
+      {
+        "id": "M2-policy",
+        "requirement": "Product-specific gaming/audio/MIDI/video policy remains product-owned",
+        "status": "verified",
+        "evidence": [
+          "docs/_wip/plans/2026-10-09-application-modules-ownership-inventory.json",
+          "docs/_wip/plans/2026-10-09-retained-source-disposition.json",
+          "docs/_wip/plans/2026-10-08-application-modules-gaming-notation-ownership.md"
+        ],
+        "finding": "File-level mixed-owner dispositions and reviewed semantic corrections replace blanket directory moves."
+      },
+      {
+        "id": "M3-census",
+        "requirement": "Every original source group and retained source has an implemented disposition",
+        "status": "verified",
+        "evidence": [
+          "docs/_wip/plans/2026-10-09-application-modules-ownership-inventory.json",
+          "docs/_wip/plans/2026-10-09-retained-source-disposition.json"
+        ],
+        "finding": "917 groups/10,225 original files; all2,049 retained-snapshot dispositions reconciled, no missing terminal targets or unresolved originals."
+      },
+      {
+        "id": "M3-vertical-ownership",
+        "requirement": "Full server/browser/admin/assets/config/jobs/CLI/satellite ownership and host assembly",
+        "status": "verified",
+        "evidence": [
+          "docs/_wip/plans/2026-10-09-application-modules-ownership-inventory.json",
+          "docs/_wip/plans/2026-10-09-retained-source-disposition.json",
+          "docs/_wip/plans/2026-10-09-application-modules-final-verification.json"
+        ],
+        "finding": "Complete enumerated ownership and incoming-resource review; canonical implementations remain single authorities, temporary unused facades retired and original command entries retained."
+      },
+      {
+        "id": "M3-compatibility",
+        "requirement": "Behavior, data/config formats, permissions, routes/events/lifecycle preserved",
+        "status": "verified",
+        "evidence": [
+          "docs/_wip/plans/2026-10-09-application-modules-final-verification.json"
+        ],
+        "finding": "39 fixed groups:6,480 original passing executions,27 guards,39 existing supplemental cases;11 exact pre-existing failures retained. Counts are overlapping executions, not a unique whole-repository test total."
+      },
+      {
+        "id": "M3-discovery",
+        "requirement": "Normal test discovery and target/runner filtering preserved",
+        "status": "verified",
+        "evidence": [
+          "docs/_wip/plans/2026-10-09-application-modules-final-verification.json",
+          "tests/_infrastructure/harnesses/isolated.harness.mjs",
+          "docs/_wip/plans/2026-10-09-application-modules-final-verification.json#normalDiscovery"
+        ],
+        "finding": "1,638 owner browser suites and relocated architecture oracle restored; two Art owner-isolated suites discovered exactly once by default with adapter/API filters and frontend exclusion preserved. Synthetic dry-run controls passed; no broad product rerun needed."
+      },
+      {
+        "id": "M3-enforcement",
+        "requirement": "Layout-independent working/staged architecture checks and CI",
+        "status": "verified",
+        "evidence": [
+          ".githooks/pre-commit",
+          ".github/workflows/architecture.yml",
+          "docs/_wip/plans/2026-10-09-application-modules-final-verification.json"
+        ],
+        "finding": "Required local/CI owner, layer, filesystem and link checks include literal aliases/reexports/dynamic/CommonJS edges and owner SCCs; legacy ratchets not increased. CI configuration is implemented; no remote push/run is claimed."
+      },
+      {
+        "id": "M3-artifacts",
+        "requirement": "Actual build, native dependency and resource artifact proof",
+        "status": "verified",
+        "evidence": [
+          "docs/_wip/plans/2026-10-09-application-modules-final-verification.json",
+          ".superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/build-4GSCes/receipt.json",
+          "docs/_wip/plans/2026-10-09-calculator-relay-recovery.json"
+        ],
+        "finding": "Production Vite109owner chunks and copied assets verified;46calculator suites/213enabled cases verified, one original disabled reference case separate, zeroUNRUN. Pinned assembler and three genuine release artifact hashes match original/candidate. Docker image build, physical hardware and deployment are not claimed."
+      },
+      {
+        "id": "M3-integration",
+        "requirement": "Main incorporated without modifying main; staged/working hook and clean local checkpoint",
+        "status": "pending-final-checkpoint",
+        "evidence": [
+          "docs/_wip/plans/2026-10-09-application-modules-final-verification.json"
+        ],
+        "finding": "Source and evidence checkpoints already passed original confined hook. Final relay/assets/discovery/accounting follow-up requires its own actual hook-gated commit, clean worktree, fresh main-inclusion and reviewed-tree confirmation."
+      },
+      {
+        "id": "scope",
+        "requirement": "Coordinated structural cutover preparation without new activation/discovery/data migration",
+        "status": "verified",
+        "evidence": [
+          "docs/_wip/plans/2026-10-08-application-modules-m2-m3.md",
+          "docs/_wip/plans/2026-10-09-application-modules-final-verification.json"
+        ],
+        "finding": "No deployment, push, merge into main, runtime activation redesign or data migration claimed or required for this authorized milestone candidate."
+      }
+    ],
+    "foundAndClosedInThisReview": [
+      "Two relocated Art isolated test suites were omitted by normal discovery. Exact two-file repair applied; three synthetic controls and current-tree default/target/frontend dry runs passed."
+    ],
+    "remainingRequirements": [
+      "Run unchanged original staged/working hook as part of final follow-up commit; verify resulting tree, clean worktree and latest-main inclusion."
+    ],
+    "noOtherUnresolvedScopeRequirementIdentified": true,
+    "wholeMilestoneComplete": false,
+    "completionCondition": "Change completion status only after final hook-gated checkpoint and clean-tree/main checks succeed."
+  },
+  "snapshotPhase": "Pre-commit acceptance record. The final commit runs the unchanged original hook; completion is certified by that successful commit and its clean-tree receipt, not by this pre-commit snapshot."
 }

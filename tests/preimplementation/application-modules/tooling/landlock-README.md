@@ -189,8 +189,8 @@ verified assembler hash. The baseline/candidate receipts and tool provenance are
 pinned in `docs/_wip/plans/2026-10-09-application-modules-final-verification.json`.
 
 The authentic user-provided GUI archive subsequently unlocked sixteen more
-suites through `retained-ti86-gui`; only the relay configuration suite remains
-unrun. Historical receipts and the original fixed selections are preserved.
+suites through `retained-ti86-gui`; the subsequently supplied relay example
+closes the last suite through `retained-ti86-relay`. Historical receipts and the original fixed selections are preserved.
 
 Recovered GUI verification
 
@@ -219,5 +219,17 @@ functions, product assertions, filesystem rights, or syscall permissions. The
 initial EPERM attempt remains a failed receipt.
 
 The authenticated GUI sources are now tracked with explicit ignore exceptions.
-No substitute GUI/configuration fixtures are generated. The remaining authentic
-relay `config.example.yml` is still needed for the final suite.
+No substitute GUI/configuration fixtures are generated.
+
+Recovered relay verification
+
+The `retained-ti86-relay` profile runs only the five original static foreground
+listener contract cases. Copy the tracked relay `config.example.yml` into the
+original snapshot at `_extensions/ticalc-relay/config.example.yml`, add that path
+to its `tracked-files.json`, and verify the hash against
+`docs/_wip/plans/2026-10-09-calculator-relay-recovery.json`. Use the same baseline
+and candidate environment described above with `PRE_PACK=retained-ti86-relay`.
+This profile requires no native-tool receipt and invokes no assembler, release
+builder, copy adapter, or device. Original and candidate must preserve all five
+assertion names and the identical supplied example bytes. The original suite
+population remains 46 files; no current suite remains UNRUN.

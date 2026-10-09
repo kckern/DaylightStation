@@ -123,6 +123,21 @@ function routeByImports(jestFiles, vitestFiles) {
   return { jest, vitest, moved };
 }
 
+function findOwnerIsolatedFiles(targets, args, options = {}) {
+  const files = [];
+  for (const scope of ['modules', 'capabilities']) {
+    const owners = path.join(ROOT_DIR, scope);
+    if (!fs.existsSync(owners) || fs.lstatSync(owners).isSymbolicLink()) continue;
+    for (const owner of fs.readdirSync(owners, { withFileTypes: true })) {
+      if (!owner.isDirectory() || owner.name === 'node_modules') continue;
+      const isolated = path.join(owners, owner.name, 'tests', 'isolated');
+      if (!fs.existsSync(isolated) || fs.lstatSync(isolated).isSymbolicLink()) continue;
+      files.push(...findTestFiles(isolated, targets, args, options));
+    }
+  }
+  return files;
+}
+
 async function main() {
   const args = parseArgs(process.argv);
 
@@ -133,16 +148,22 @@ async function main() {
   // user explicitly asks for `frontend`.
   const runColocated = !args.only || args.only.includes(VITEST_COLOCATED_TARGET);
 
-  const jestFiles   = findTestFiles(ISOLATED_DIR, JEST_TARGETS,   jestArgs);
+  const jestFiles = [
+    ...findTestFiles(ISOLATED_DIR, JEST_TARGETS, jestArgs),
+    ...findOwnerIsolatedFiles(JEST_TARGETS, jestArgs),
+  ];
   // Vitest targets may include both `.test.mjs` and `.test.jsx` specs (the
   // existing tests/isolated/modules/Fitness/*.test.jsx files were never
   // matched by the old finder). Pass extensions explicitly here.
-  const vitestFiles = findTestFiles(
+  const vitestFiles = [...findOwnerIsolatedFiles(
+    VITEST_TARGETS, vitestArgs,
+    { extensions: ['.test.mjs', '.test.jsx', '.test.js'] }
+  ), ...findTestFiles(
     ISOLATED_DIR,
     VITEST_TARGETS,
     vitestArgs,
     { extensions: ['.test.mjs', '.test.jsx', '.test.js'] }
-  );
+  )];
   // Colocated frontend specs (live alongside the source they cover, e.g.
   // frontend/src/hooks/fitness/CycleStateMachine.test.js). These never lived
   // under tests/isolated/, so they need a separate walk.

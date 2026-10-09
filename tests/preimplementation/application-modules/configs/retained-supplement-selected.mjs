@@ -98,15 +98,5 @@ export const retainedTi86Vitest=[
   "_extensions/ti86-app/tools/ti86-resource-contract.test.mjs"
 ];
 // Initial 19-suite gap is preserved in commit 646caba119 and historical receipts.
-// Two suites are verified by retained-ti86-native and sixteen by retained-ti86-gui.
-export const retainedTi86Unrun=[
-  {
-    "file": "_extensions/ti86-app/tools/foreground-listener-contract.test.mjs",
-    "status": "UNRUN",
-    "reason": "Required source fixture or generated release artifact absent in actual checkout; no substitute fixtures generated",
-    "missingInputs": [
-      "_extensions/ticalc-relay/config.example.yml"
-    ],
-    "priorFailedReceipt": "retained-ti86-P6ByyF/receipt.json"
-  }
-];
+// Two native, sixteen GUI, and one relay suite now pass their focused profiles.
+export const retainedTi86Unrun=[];

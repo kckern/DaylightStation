@@ -1,0 +1,49 @@
+# Private source of truth: data/household/config/ticalc-relay.yml
+provisioning:
+  wifi_ssid: "YOUR_SSID"
+  wifi_password: "YOUR_WIFI_PASSWORD"
+
+backend:
+  host: "daylightlocal.kckern.net"
+  port: 3112
+  scheme: http
+  ws_path: /ws
+  api_base_path: /api/v1/school/calc
+
+relays:
+  ticalc-relay-01:
+    label: "TI calculator relay"
+    platform: ti86
+    # Must match household auth ticalc-relay.relays.ticalc-relay-01.api_token.
+    # Use a distinct random secret of at least 32 bytes for every relay.
+    api_token: ""
+    tip_sense_pin: 32
+    tip_sink_pin: 25
+    ring_sense_pin: 33
+    ring_sink_pin: 26
+    link:
+      # Keep false until the MOSFET/divider interface passes the meter checks
+      # in docs/hardware-build.md. false = observe-only, cannot pull TI lines low.
+      transmit_enabled: false
+      # Accept a SchoolCalc SCF1 HELLO initiated by the calculator. This is the
+      # normal learner flow and remains inert until transmit_enabled is true.
+      foreground_listener: true
+      # Poll for DSID every 15 seconds. Keep false until the full protected
+      # cable path and manual /sync transaction have passed bench testing. This
+      # is relay-initiated Silent Link, separate from foreground_listener.
+      auto_sync: false
+    input:
+      ble_keyboard:
+        # Optional local/offline input. When enabled, firmware accepts only this
+        # exact bonded keyboard identity; discovery is never an open-ended trust
+        # decision during normal operation.
+        enabled: false
+        address: "AA:BB:CC:DD:EE:FF"
+        address_type: public
+        label: "SchoolCalc keyboard"
+        # Explicit local pairing action expires after this bounded interval.
+        pairing_window_ms: 60000
+        # Recommended: relay displays a six-digit passkey in local /status and
+        # the user types it on the keyboard. Set false only for a keyboard that
+        # cannot perform authenticated passkey pairing.
+        require_mitm: true
