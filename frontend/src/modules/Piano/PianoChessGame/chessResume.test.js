@@ -67,3 +67,15 @@ describe('chooseResumeSource', () => {
     expect(chooseResumeSource({ local: local({ finished: true }), server: server() }).source).toBe('server');
   });
 });
+
+describe('a local checkpoint only beats an open server game if it continues it', () => {
+  const server = { game: { pinned: false }, window_days: 3 };
+  const local = (over) => ({ present: true, unreadable: false, finished: false, idleMs: 1000, maxIdleMs: 6e6, ...over });
+  it('diverging local loses to the server game', () => {
+    expect(chooseResumeSource({ local: local({ continuesServer: false }), server }))
+      .toEqual({ source: 'server', discardLocal: 'diverges-from-server-game' });
+  });
+  it('continuing local still wins', () => {
+    expect(chooseResumeSource({ local: local({ continuesServer: true }), server }).source).toBe('local');
+  });
+});
