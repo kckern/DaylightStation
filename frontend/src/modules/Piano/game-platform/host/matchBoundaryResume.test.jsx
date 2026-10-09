@@ -136,9 +136,31 @@ describe('a gated rematch never resumes the finished game', () => {
     expect(second.result.current.session.state.history).toHaveLength(1);
   });
 
-  // 2026-09-27: a month-old game came back on the office display.
-  it('chess: an unfinished game idle past the resume window starts fresh', async () => {
-    const first = renderHook(() => useChessAuthority({ userId: USER, seed: 1 }));
+  // 2026-09-27: a month-old game came back on the office display. The window is
+  // now the SERVER's: a checkpoint older than the whole resume window, with the
+  // server confirming it has no copy, is set aside. (The 2026-10-09 rule — idle
+  // past six hours discards — is gone: it destroyed the only copy of a game.)
+  it('chess: an unfinished game older than the whole server window starts fresh', async () => {
+    const confirmedNone = async () => ({ game: null, window_days: 3 });
+    const first = renderHook(() => useChessAuthority({ userId: USER, seed: 1, fetchResumable: confirmedNone }));
+    await waitFor(() => expect(first.result.current.ready).toBe(true));
+    await act(async () => { await first.result.current.move(FOOLS_MATE[0]); });
+    first.unmount();
+
+    const realNow = Date.now;
+    Date.now = () => realNow() + 4 * 24 * 3600e3;
+    try {
+      const second = renderHook(() => useChessAuthority({ userId: USER, seed: 1, fetchResumable: confirmedNone }));
+      await waitFor(() => expect(second.result.current.ready).toBe(true));
+      expect(second.result.current.session.state.history).toEqual([]);
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
+  it('chess: a checkpoint idle past six hours is KEPT when the server cannot confirm a copy', async () => {
+    const unreachable = async () => null;
+    const first = renderHook(() => useChessAuthority({ userId: USER, seed: 1, fetchResumable: unreachable }));
     await waitFor(() => expect(first.result.current.ready).toBe(true));
     await act(async () => { await first.result.current.move(FOOLS_MATE[0]); });
     first.unmount();
@@ -146,9 +168,9 @@ describe('a gated rematch never resumes the finished game', () => {
     const realNow = Date.now;
     Date.now = () => realNow() + RESUME_MAX_IDLE_MS + 60000;
     try {
-      const second = renderHook(() => useChessAuthority({ userId: USER, seed: 1 }));
+      const second = renderHook(() => useChessAuthority({ userId: USER, seed: 1, fetchResumable: unreachable }));
       await waitFor(() => expect(second.result.current.ready).toBe(true));
-      expect(second.result.current.session.state.history).toEqual([]);
+      expect(second.result.current.session.state.history).toHaveLength(1);
     } finally {
       Date.now = realNow;
     }

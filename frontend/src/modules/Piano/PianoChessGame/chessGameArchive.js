@@ -66,7 +66,8 @@ function serializeMove(entry, ply, undone, thinkMs = null) {
  * @param {number} args.takebacks
  * @param {number} args.startedAt
  * @param {number} args.endedAt
- * @param {string} args.endedBy     'game_over' | 'left' | 'restarted'
+ * @param {string} args.endedBy     'game_over' | 'left' | 'restarted' | 'in_progress'
+ *                                 ('in_progress' is a durable-resume save, not an exit)
  */
 export function buildGameArchive({
   game, gameId, userId, rungId, opponent = null, addressing = 'chords',
@@ -154,6 +155,9 @@ export function buildGameArchive({
     // interpreted — 'C/B' is two staff notes, 'Cm' is a chord.
     addressing,
     scheme: game?.scheme?.id || null,
+    // What a durable resume needs to deal the board the same way again. Omitted
+    // (not nulled) when unknown so an older record is distinguishable.
+    ...(Number.isFinite(game?.seed) ? { seed: game.seed } : {}),
 
     // Enough to replay: the start position and every move in both notations.
     initial_fen: game?.initialFen || INITIAL_FEN,

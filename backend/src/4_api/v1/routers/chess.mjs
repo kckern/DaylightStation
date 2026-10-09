@@ -16,7 +16,7 @@ import { safeSegment } from './lib/emulatorPaths.mjs';
  * route or transferring Piano composition to the Gaming kernel.
  */
 export function createChessRouter({
-  engine, configService, archiveStore = null, ladderService = null,
+  engine, configService, archiveStore = null, resumeService = null, ladderService = null,
   commentaryService = null, rivalryMemory = null, analyst = null, boardGameDayService = null, logger = null,
 }) {
   const router = express.Router();
@@ -199,6 +199,59 @@ export function createChessRouter({
    * logged and answered 202 rather than 500 — the client has already navigated
    * away and has nothing it could do with the failure.
    */
+  const fileForResume = async (record) => {
+    if (!resumeService || !record.user_id) return;
+    try {
+      await resumeService.record(record);
+    } catch (error) {
+      logger?.warn?.('chess.resume.record-failed', { user: record.user_id, gameId: record.game_id, error: error.message });
+    }
+  };
+
+  /**
+   * An unfinished game, saved as it is played. Not an archive: it writes no
+   * history file, only refreshes the server's copy of the game so that a
+   * reload, a crash or a deploy cannot lose it. Idempotent by game_id.
+   */
+  router.post('/progress', asyncHandler(async (req, res) => {
+    if (!resumeService) return res.status(501).json({ error: 'resume_unavailable' });
+    const record = req.body || {};
+    if (!record.game_id || !Array.isArray(record.moves) || record.moves.length === 0) {
+      return res.status(400).json({ error: 'no_moves' });
+    }
+    if (!record.user_id) return res.status(202).json({ saved: false, reason: 'guest' });
+    try {
+      record.user_id = safeSegment(String(record.user_id));
+    } catch {
+      return res.status(400).json({ error: 'invalid_user' });
+    }
+    try {
+      const result = await resumeService.record(record);
+      return res.status(result.applied ? 201 : 200).json({ saved: !!result.applied, reason: result.reason ?? null });
+    } catch (error) {
+      logger?.warn?.('chess.resume.record-failed', { user: record.user_id, gameId: record.game_id, error: error.message });
+      return res.status(202).json({ saved: false });
+    }
+  }));
+
+  /** The unfinished game this player resumes on launch, or `{ game: null }`. */
+  router.get('/users/:userId/resumable', asyncHandler(async (req, res) => {
+    if (!resumeService) return res.status(501).json({ error: 'resume_unavailable' });
+    let userId;
+    try {
+      userId = safeSegment(String(req.params.userId));
+    } catch {
+      return res.status(400).json({ error: 'invalid_user' });
+    }
+    const { game, window_days: windowDays } = await resumeService.resumable(userId);
+    return res.json({
+      window_days: windowDays,
+      game: game ? {
+        game_id: game.gameId, pinned: game.pinned, age_ms: game.ageMs, record: game.record,
+      } : null,
+    });
+  }));
+
   router.post('/history', asyncHandler(async (req, res) => {
     if (!archiveStore) return res.status(501).json({ error: 'archive_unavailable' });
     const record = req.body || {};
@@ -217,6 +270,10 @@ export function createChessRouter({
       }
     }
     const saved = await archiveStore.save({ ...record, user_id: record.user_id || null }, userSegment);
+    // Leaving keeps a game resumable; finishing or restarting closes it. A
+    // failed archive write must not stop that bookkeeping, and the bookkeeping
+    // must never fail the archive — the child has already left.
+    await fileForResume({ ...record, user_id: record.user_id || null });
     if (!saved) {
       logger?.warn?.('chess.history.archive-failed', {
         user: userSegment, moves: record.moves.length, completed: !!record.completed,
