@@ -12,6 +12,7 @@ export class RemoteAuthority {
 export class CheckpointedLocalAuthority {
   constructor({ coordinator }) { this.kind = AUTHORITY_STRATEGIES.CHECKPOINTED_LOCAL; this.coordinator = coordinator; }
   create(request) { return this.coordinator.create(request); }
+  createWithHistory(request, steps) { return this.coordinator.createWithHistory(request, steps); }
   resume(id, viewer) { return this.coordinator.resume(id, viewer); }
   dispatch(id, envelope, viewer) { return this.coordinator.dispatch(id, envelope, viewer); }
   observe(id, listener) { return this.coordinator.observe(id, listener); }
