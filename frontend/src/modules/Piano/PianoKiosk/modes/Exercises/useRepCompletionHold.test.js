@@ -43,6 +43,14 @@ describe('useRepCompletionHold', () => {
     expect(logger.info).toHaveBeenCalledWith('piano.exercise-rep-hold-released', expect.objectContaining({ repIndex: 0, endedBy: 'next-input' }));
   });
 
+  it('a backward cursor move (reset) releases the hold labelled reset, not next-input', () => {
+    const { result, rerender, logger } = setup(2);
+    rerender({ cursorIndex: 3 });
+    rerender({ cursorIndex: 0 });
+    expect(result.current).toBeNull();
+    expect(logger.info).toHaveBeenCalledWith('piano.exercise-rep-hold-released', expect.objectContaining({ repIndex: 0, endedBy: 'reset' }));
+  });
+
   it('does not hold inside a rep, at the end of the run, or when disabled', () => {
     const { result, rerender } = setup(0);
     rerender({ cursorIndex: 1 });

@@ -40,6 +40,8 @@ import {
   staffFitsAsk,
 } from './runPresentation.js';
 import { askTupleFor, deriveStage } from '../../../ask/askSchema.js';
+import useRepCompletionHold, { REP_HOLD_MS } from './useRepCompletionHold.js';
+export { REP_HOLD_MS };
 import { nextHuntState, huntingArmed, NO_HUNT } from './stuckLadder.js';
 import { useMetronomeClick } from '../SheetMusic/useMetronomeClick.js';
 import { resolveClickLead, logClickAnchored } from '../SheetMusic/clickLead.js';
@@ -1227,6 +1229,33 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     runtimeRef.current?.dispose();
   }, [persist]);
 
+  // The tier, the presentation and the stage are decided here, ABOVE the early
+  // returns below, because the rep completion hold is a hook and must run on
+  // every render. Everything they read (props, `selectedMode`, `tierUsable`)
+  // exists by this point; nothing below changes them.
+  const runTier = tierUsable ? tier : deriveRunTier(instance, selectedMode);
+  const presentation = askTuple ?? askTupleFor({ tier: runTier }, null).tuple;
+  const stage = score ? 'score' : deriveStage(presentation, instance);
+
+  // THE REP COMPLETION HOLD (owner, 2026-10-09). The keys window used to jump
+  // to the next rep in the same render that judged the last note, so that note
+  // never painted done. Display-only: the judge's cursor is untouched. The
+  // cursor fed in is the one `visualCursor` uses for an untimed run, computed
+  // here because `visualCursor` itself lives below the early returns.
+  const repHoldEvents = instance ? instance.events : (snapshot.expectation?.events ?? []);
+  const repHoldCursor = visualCursorFor(
+    repHoldEvents,
+    Math.min(runtime ? assessmentProgress(snapshot).eventIndex : 0, repHoldEvents.length),
+    snapshot.status,
+  ).index;
+  const repHold = useRepCompletionHold({
+    instance,
+    cursorIndex: repHoldCursor,
+    enabled: !timed && Boolean(instance) && stage === 'keys',
+    logger,
+    traceFields: traceFieldsRef.current,
+  });
+
   // PianoEmpty's prop is `message` — `title`/`hint` are silently dropped, which
   // is why these states used to render a bare "Nothing here yet."
   if (!access.allowed) return <PianoEmpty message="Choose a player. Challenges need a saved piano profile so the result can be recorded." />;
@@ -1315,7 +1344,6 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
    * `passed`, the evidence, and every callback above are computed from the
    * requirement and do not know it exists.
    */
-  const runTier = tierUsable ? tier : deriveRunTier(instance, selectedMode);
   // A score's stage is the engraved passage at every tier. The tier still
   // decides the READOUT (words or a percentage) — it just cannot decide the
   // stage, because there is only one way to draw real sheet music.
@@ -1330,15 +1358,15 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   // the two agree on every cell. `runTier` itself is unmoved: it still exists
   // to fill `data-tier`/`is-tier-N` below, which `Exercises.scss` keys real
   // layout off, and to gate `askStaff` two lines down.
-  const presentation = askTuple ?? askTupleFor({ tier: runTier }, null).tuple;
-  const stage = score ? 'score' : deriveStage(presentation, instance);
+  // `runTier`, `presentation` and `stage` are computed above the early returns
+  // (the rep completion hold needs `stage`, and a hook cannot sit below them).
   // Tier 1's reinforcement staff is offered, not forced: an ask that no single
   // clef holds, or that spans more than an octave, is still a complete ask on
   // lit keys, and a staff it cannot draw legibly helps nobody.
   // A deck whose rep is a whole shape shows the rep being played, not all of
   // them: the staff is judged on what is drawn, so three different arpeggios
   // side by side never cost a child the staff they each fit on alone.
-  const keysWindow = deckWindow(instance, visualCursor.index);
+  const keysWindow = repHold ? repHold.window : deckWindow(instance, visualCursor.index);
   const askStaff = !score && runTier >= 1 && staffFitsAsk(keysWindow.events);
   // The bank splits a key across `key` (the root) and an axis (the quality);
   // `instanceKeySignature` re-joins them, so a minor instance is not spelled
@@ -1554,10 +1582,11 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
           <KeysAsk
             events={keysWindow.events}
             cursorIndex={keysWindow.cursorIndex}
-            activeNotes={feedbackNotes}
-            wrongMidi={countingDown ? null : lastWrong?.midi ?? null}
+            completed={Boolean(repHold)}
+            activeNotes={repHold ? new Map() : feedbackNotes}
+            wrongMidi={repHold || countingDown ? null : lastWrong?.midi ?? null}
             {...(verdicts ? {
-              verdicts: windowOfVerdicts(verdicts, visualCursor.index - keysWindow.cursorIndex, keysWindow.events.length),
+              verdicts: windowOfVerdicts(verdicts, repHold ? repHold.repOffset : visualCursor.index - keysWindow.cursorIndex, keysWindow.events.length),
               windowOpen,
             } : {})}
             showStaff={askStaff}

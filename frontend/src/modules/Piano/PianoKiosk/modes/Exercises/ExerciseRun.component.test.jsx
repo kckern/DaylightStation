@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import ExerciseRun, { CLICK_PREROLL_MS, RESOLVE_HOLD_MS } from './ExerciseRun.jsx';
+import ExerciseRun, { CLICK_PREROLL_MS, REP_HOLD_MS, RESOLVE_HOLD_MS } from './ExerciseRun.jsx';
 import { BUILT_IN_FLOOR } from '../Games/gateRepertoire.js';
 import { requirementForLevel } from '../Games/gateAsk.js';
 import { keysInstance } from '../Games/gateMaterial.js';
@@ -107,6 +107,8 @@ vi.mock('./KeysAsk.jsx', () => ({
       data-accidental={props.accidental}
       data-clef={props.clef ?? ''}
       data-events={(props.events ?? []).length}
+      data-completed={String(Boolean(props.completed))}
+      data-midis={(props.events ?? []).map((e) => e.notes.map((n) => n.midi).join('+')).join(',')}
     />
   ),
 }));
@@ -2168,5 +2170,67 @@ describe('ExerciseRun — a flashcard deck draws set/rep chrome', () => {
     render(<ExerciseRun {...props} />);
     expect(await screen.findByText('Play the first note to begin.')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Play the fragment.' })).toBeInTheDocument();
+  });
+});
+
+/**
+ * THE REP COMPLETION HOLD. The keys window used to jump to the next rep in the
+ * same render that judged the last note, so that note never painted done.
+ * KeysAsk is doubled in this file, so the window it is handed is what is pinned
+ * here: which rep's notes (`data-midis`), the cursor, and `completed`. How a
+ * completed window draws is KeysAsk.test.jsx's job.
+ */
+describe('ExerciseRun — rep completion hold', () => {
+  beforeEach(() => { vi.useFakeTimers({ shouldAdvanceTime: true }); resetHarness(); });
+  afterEach(() => { vi.useRealTimers(); h.instanceData = null; });
+
+  const DECK = keysInstance({ kind: 'keys', notes: 3, arrangement: 'sequence', sets: 1, reps: 3 }, 0);
+  const midiOf = (i) => DECK.events[i].notes[0].midi;
+  const repMidis = (from) => DECK.events.slice(from, from + 3).map((e) => e.notes[0].midi).join(',');
+  const mount = async () => {
+    h.instanceData = DECK;
+    const props = { instance: DECK, score: null, intent: 'practice', practiceMode: 'free', tier: 1, ask: 'Play the lit keys in order.' };
+    const view = render(<ExerciseRun {...props} />);
+    await waitFor(() => expect(view.container.querySelector('.piano-exercise-run')).toHaveAttribute('data-armed', 'true'));
+    return { view, props };
+  };
+  const down = (view, props, midi) => act(() => { h.activeNotes = new Map([[midi, { velocity: 1 }]]); view.rerender(<ExerciseRun {...props} />); });
+  const up = (view, props) => act(() => { h.activeNotes = new Map(); view.rerender(<ExerciseRun {...props} />); });
+  const tap = (view, props, i) => { down(view, props, midiOf(i)); up(view, props); };
+  const ask = () => screen.getByTestId('keys-ask');
+
+  it('keeps the finished rep on screen, completed, until the beat runs out, then shows the next rep', async () => {
+    const { view, props } = await mount();
+    expect(ask()).toHaveAttribute('data-midis', repMidis(0));
+    tap(view, props, 0);
+    await waitFor(() => expect(ask()).toHaveAttribute('data-cursor', '1'));
+    tap(view, props, 1);
+    await waitFor(() => expect(ask()).toHaveAttribute('data-cursor', '2'));
+    expect(ask()).toHaveAttribute('data-completed', 'false');
+    tap(view, props, 2);
+    await waitFor(() => expect(ask()).toHaveAttribute('data-completed', 'true'));
+    expect(ask()).toHaveAttribute('data-midis', repMidis(0));
+    expect(ask()).toHaveAttribute('data-cursor', '3');
+    expect(h.log.info).toHaveBeenCalledWith('piano.exercise-rep-completed', expect.objectContaining({ repIndex: 0, holdMs: REP_HOLD_MS }));
+    act(() => { vi.advanceTimersByTime(REP_HOLD_MS); });
+    await waitFor(() => expect(ask()).toHaveAttribute('data-completed', 'false'));
+    expect(ask()).toHaveAttribute('data-midis', repMidis(3));
+    expect(ask()).toHaveAttribute('data-cursor', '0');
+  });
+
+  it('the judge is not held: a note played during the beat advances the next rep and ends the hold', async () => {
+    const { view, props } = await mount();
+    // One note at a time, each settled: the run publishes its snapshot async.
+    tap(view, props, 0);
+    await waitFor(() => expect(ask()).toHaveAttribute('data-cursor', '1'));
+    tap(view, props, 1);
+    await waitFor(() => expect(ask()).toHaveAttribute('data-cursor', '2'));
+    tap(view, props, 2);
+    await waitFor(() => expect(ask()).toHaveAttribute('data-completed', 'true'));
+    tap(view, props, 3);
+    await waitFor(() => expect(ask()).toHaveAttribute('data-completed', 'false'));
+    expect(ask()).toHaveAttribute('data-midis', repMidis(3));
+    expect(ask()).toHaveAttribute('data-cursor', '1');
+    expect(h.log.info).toHaveBeenCalledWith('piano.exercise-rep-hold-released', expect.objectContaining({ repIndex: 0, endedBy: 'next-input' }));
   });
 });

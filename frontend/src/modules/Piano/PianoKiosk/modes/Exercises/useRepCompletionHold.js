@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { heldRepWindow, repBoundaryCrossed } from './deckProgress.js';
 
 /**
@@ -33,11 +33,13 @@ export default function useRepCompletionHold({ instance, cursorIndex, enabled, l
     if (endedBy) loggerRef.current?.info?.('piano.exercise-rep-hold-released', { ...traceRef.current, repIndex: current.repIndex, endedBy });
   };
 
-  useEffect(() => {
+  // Layout effect: the hold must be in place before the browser paints, or the
+  // next rep would show for one frame ahead of the rep being held.
+  useLayoutEffect(() => {
     const prev = prevRef.current;
     prevRef.current = { instance, cursorIndex };
     if (prev.instance !== instance || !enabled) { release(null); return; }
-    if (holdRef.current && cursorIndex !== prev.cursorIndex) release('next-input');
+    if (holdRef.current && cursorIndex !== prev.cursorIndex) release(cursorIndex > prev.cursorIndex ? 'next-input' : 'reset');
     const crossed = repBoundaryCrossed(instance, prev.cursorIndex, cursorIndex);
     if (!crossed) return;
     const next = { repOffset: crossed.repOffset, repIndex: crossed.repIndex, window: heldRepWindow(instance, crossed.repOffset) };
