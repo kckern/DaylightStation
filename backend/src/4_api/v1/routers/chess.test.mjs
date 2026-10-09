@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createChessRouter } from './chess.mjs';
+import { createChessResumeService } from '#apps/chess/ChessResumeService.mjs';
 
 const START = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 const CONFIG = {
@@ -319,5 +320,57 @@ describe('POST /api/v1/piano-games/chess/analyze', () => {
     const res = await request(appWith({ engine: {}, configService: stubConfig() }))
       .post('/api/v1/piano-games/chess/analyze').send({ fen: START });
     expect(res.status).toBe(501);
+  });
+});
+
+describe('durable resume endpoints', () => {
+  const memory = () => {
+    const files = new Map();
+    return createChessResumeService({
+      readSlot: async (u) => files.get(u) ?? null,
+      writeSlot: async (u, slot) => { files.set(u, JSON.parse(JSON.stringify(slot))); },
+      readConfig: async () => ({}),
+    });
+  };
+  const build = (resumeService, archiveStore) => {
+    const app = express();
+    app.use(express.json());
+    app.use('/c', createChessRouter({ engine: {}, configService: stubConfig(), resumeService, archiveStore, logger: silentLogger }));
+    return app;
+  };
+  const record = (over = {}) => ({
+    game_id: 'g1', user_id: 'kid', completed: false, ended_by: 'in_progress', initial_fen: START,
+    ended_at: new Date().toISOString(),
+    moves: [{ ply: 1, san: 'e4', from: 'e2', to: 'e4', undone: false }], ...over,
+  });
+
+  it('POST /progress saves, GET /users/:id/resumable returns it', async () => {
+    const app = build(memory());
+    expect((await request(app).post('/c/progress').send(record())).status).toBe(201);
+    const res = await request(app).get('/c/users/kid/resumable');
+    expect(res.body.game.game_id).toBe('g1');
+    expect(res.body.game.pinned).toBe(false);
+  });
+
+  it('rejects a progress save with no moves or an unsafe user', async () => {
+    const app = build(memory());
+    expect((await request(app).post('/c/progress').send(record({ moves: [] }))).status).toBe(400);
+    expect((await request(app).post('/c/progress').send(record({ user_id: '../x' }))).status).toBe(400);
+    expect((await request(app).get('/c/users/..%2Fx/resumable')).status).toBe(400);
+  });
+
+  it('a leaving archive keeps the game resumable; a finishing or restarting archive closes it', async () => {
+    const archiveStore = { save: vi.fn(async () => true) };
+    const app = build(memory(), archiveStore);
+    await request(app).post('/c/history').send(record({ ended_by: 'left' }));
+    expect((await request(app).get('/c/users/kid/resumable')).body.game.game_id).toBe('g1');
+    await request(app).post('/c/history').send(record({ ended_by: 'restarted' }));
+    expect((await request(app).get('/c/users/kid/resumable')).body.game).toBeNull();
+  });
+
+  it('a failed archive write still files the resume copy', async () => {
+    const app = build(memory(), { save: vi.fn(async () => false) });
+    expect((await request(app).post('/c/history').send(record({ ended_by: 'left' }))).status).toBe(202);
+    expect((await request(app).get('/c/users/kid/resumable')).body.game.game_id).toBe('g1');
   });
 });

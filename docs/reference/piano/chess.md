@@ -375,6 +375,71 @@ and error rate of each. The median rather than a fixed number of seconds: "fast"
 *for this child in this game*, or a fixed cutoff would call every move fast for a quick player and
 report that as a finding. Below four moves either side of the split, nothing is claimed at all.
 
+## Resuming a game (the server holds it)
+
+An unfinished game is held by the **server**, not by the tablet. The tablet's
+localStorage checkpoint is a fast path for a reload; it is never the only copy.
+
+**Incident, 2026-10-09.** A child one or two moves from mate (ply 74 against
+the level-1 opponent) left the board. The next morning the launch logged
+`chess.resume.stale-discarded {idleMs: 45776902, plies: 74}`: the checkpoint
+lived only in that tablet's localStorage, and the six-hour idle rule threw it
+away. The game was in the household archive the whole time and nothing read it
+back. The idle rule was the bug: it could destroy the only copy.
+
+**What is saved.** Every committed ply refreshes the server's copy
+(`POST /api/v1/piano-games/chess/progress`), debounced to one request per
+exchange (`PROGRESS_DEBOUNCE_MS`), plus a beacon on page-hide. The record is the
+archive shape (`chessGameArchive.js`) with `ended_by: 'in_progress'` and the
+game's `seed`. It lives in `users/<id>/apps/chess/resume.yml`, keyed by
+`game_id` (idempotent; a late, older save is ignored). Guests are not saved.
+The archive writer (`POST /history`) files into the same slot:
+
+| Archived as | Slot state | Resumes? |
+|---|---|---|
+| `left`, `in_progress` | open | yes |
+| `game_over` (completed) | finished | never |
+| `restarted` (Play again / new game) | abandoned | never |
+| a continuation of it (same line, new id) | the earlier id becomes superseded | no |
+
+Terminal states are sticky: a late progress save cannot resurrect a finished or
+abandoned game. A reload resumes under a new `game_id`, so a game whose played
+line is a prefix of a newer one is superseded by it; ending the newer game
+therefore cannot bring the older one back.
+
+**Which game resumes.** `GET /api/v1/piano-games/chess/users/:userId/resumable`
+returns the pinned game if there is one, else the newest open game updated within
+`resume_max_days` (learner chess config, default 3; 0 turns server resume off).
+Rules live in `shared/gaming/rulesets/chess/resumeSlot.mjs`, shared by the
+service, the pin CLI and the tests.
+
+**Launch order** (`useChessAuthority` + `chooseResumeSource`):
+
+1. A **pinned** server game, even over a fresh local checkpoint.
+2. A fresh local checkpoint (idle under `RESUME_MAX_IDLE_MS`, 6h): unchanged.
+3. The server's resumable game. The board is rebuilt by replaying the played
+   moves from `initial_fen` through the real engine and authority in one pass
+   (`createWithHistory`; 74 single dispatches cost ~18s because every dispatch
+   replays the whole journal). Logged `chess.resume.from-server {gameId, plies, ageMs}`.
+4. Otherwise a new game.
+
+The six-hour rule may only skip the **local** checkpoint, and only for a server
+copy that is confirmed to exist. If the server is unreachable or has no copy, a
+stale local checkpoint is **kept** (`chess.resume.stale-kept`). The one
+exception is a checkpoint older than the server's whole resume window, which is
+the 2026-09-27 month-old-board case. Every set-aside is logged
+`chess.resume.local-discarded {reason}`, and a server copy that will not replay
+(`server-copy-unusable`) is ignored, never half-restored. Taken-back moves are
+not replayed; the board is the played line. Records written before `seed` was
+archived deal the board from a fresh seed (the player's addressing comes from
+config, so a staff or no-shuffle player sees no difference).
+
+**Operator: restore a specific game.**
+`npm run chess:resume-pin -- --user <id> --game <game_id> [--write]` (inside the
+container, dry run without `--write`) finds the game in the archive and pins it
+in the slot. Games that began after it and were left unfinished are filed as
+superseded, not deleted. A finished game is refused.
+
 ## Reviewing a game afterwards
 
 The archive says which rung a child faced and whether they won. It cannot say how well they

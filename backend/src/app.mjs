@@ -370,6 +370,7 @@ import { chessArchiveDayDir } from '#shared/gaming/rulesets/chess/archivePaths.m
 import { mergeLadderConfig } from '#shared/gaming/rulesets/chess/ladder.mjs';
 import { createChessConfigService } from './3_applications/chess/ChessConfigService.mjs';
 import { createChessLadderService } from './3_applications/chess/ChessLadderService.mjs';
+import { createChessResumeService } from './3_applications/chess/ChessResumeService.mjs';
 import { projectHeadToHead, rivalryOpponentId } from '#apps/piano-games/GameRivalryMemoryService.mjs';
 import { createPianoGamesModule } from '#composition/modules/pianoGames.mjs';
 import { WikipediaAdapter } from './1_adapters/reference/WikipediaAdapter.mjs';
@@ -2376,6 +2377,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       });
     },
   };
+  // The server's copy of each player's unfinished game, so a reload, a cleared
+  // localStorage or a deploy mid-game cannot lose it (see resumeSlot.mjs).
+  const chessResumeService = createChessResumeService({
+    readSlot: (userId) => dataService.user.read('apps/chess/resume', userId) || null,
+    writeSlot: (userId, slot) => dataService.user.write('apps/chess/resume', slot, userId),
+    readConfig: (userId) => chessConfigService.read(userId),
+    logger: rootLogger.child({ module: 'chess-resume' }),
+  });
   const pianoChessRouter = createChessRouter({
     engine: chessEngine,
     analyst: chessAnalyst,
@@ -2396,6 +2405,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         );
       },
     },
+    resumeService: chessResumeService,
     ladderService: chessLadderService,
     commentaryService: sharedChessCommentary,
     rivalryMemory: sharedChessRivalry,

@@ -1,0 +1,987 @@
+{
+ "game_id": "chess-1791514906380",
+ "user_id": "learner",
+ "played_on": "2026-10-08",
+ "started_at": "2026-10-09T03:01:46.383Z",
+ "ended_at": "2026-10-09T03:02:28.887Z",
+ "duration_ms": 42504,
+ "completed": false,
+ "ended_by": "left",
+ "result": null,
+ "outcome": null,
+ "player_color": "w",
+ "rung": "learner",
+ "opponent": {
+  "level": 1,
+  "name": "Weedle"
+ },
+ "addressing": "staff",
+ "scheme": "staff-grand-x3s-y3s:0:shuffled:3244336913",
+ "initial_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+ "final_fen": "4Q2B/8/8/3k4/7P/2R5/P1P2P2/RN2KBN1 w - - 3 38",
+ "move_count": 74,
+ "moves": [
+  {
+   "ply": 1,
+   "san": "e4",
+   "from": "e2",
+   "to": "e4",
+   "color": "w",
+   "captured": null,
+   "played": [
+    "E/A",
+    "E/C"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 2,
+   "san": "d5",
+   "from": "d7",
+   "to": "d5",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "C/E",
+    "C/D"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 3,
+   "san": "exd5",
+   "from": "e4",
+   "to": "d5",
+   "color": "w",
+   "captured": "p",
+   "played": [
+    "A/G",
+    "E/F"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 4,
+   "san": "Be6",
+   "from": "c8",
+   "to": "e6",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "F/A",
+    "A/D"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 5,
+   "san": "dxe6",
+   "from": "d5",
+   "to": "e6",
+   "color": "w",
+   "captured": "b",
+   "played": [
+    "F/D",
+    "C/C"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 6,
+   "san": "a6",
+   "from": "a7",
+   "to": "a6",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "E/E",
+    "E/C"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 7,
+   "san": "exf7+",
+   "from": "e6",
+   "to": "f7",
+   "color": "w",
+   "captured": "p",
+   "played": [
+    "D/F",
+    "A#/A"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 8,
+   "san": "Kxf7",
+   "from": "e8",
+   "to": "f7",
+   "color": "b",
+   "captured": "p",
+   "played": [
+    "D/D",
+    "A#/A"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 9,
+   "san": "Bc4+",
+   "from": "f1",
+   "to": "c4",
+   "color": "w",
+   "captured": null,
+   "played": [
+    "G/B",
+    "A#/F"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 10,
+   "san": "e6",
+   "from": "e7",
+   "to": "e6",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "A/A",
+    "A/D"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 11,
+   "san": "Bf1",
+   "from": "c4",
+   "to": "f1",
+   "color": "w",
+   "captured": null,
+   "played": [
+    "D/G",
+    "B/F"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 12,
+   "san": "Qxd2+",
+   "from": "d8",
+   "to": "d2",
+   "color": "b",
+   "captured": "p",
+   "played": [
+    "A#/C",
+    "A#/B"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 13,
+   "san": "Kxd2",
+   "from": "e1",
+   "to": "d2",
+   "color": "w",
+   "captured": "q",
+   "played": [
+    "E/G#",
+    "G/B"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 14,
+   "san": "Kf6",
+   "from": "f7",
+   "to": "f6",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "A#/A",
+    "A#/D"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 15,
+   "san": "Ke1",
+   "from": "d2",
+   "to": "e1",
+   "color": "w",
+   "captured": null,
+   "played": [
+    "A/A",
+    "E/E"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 16,
+   "san": "Bb4+",
+   "from": "f8",
+   "to": "b4",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "D/B",
+    "C/C"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 17,
+   "san": "Ke2",
+   "from": "e1",
+   "to": "e2",
+   "color": "w",
+   "captured": null,
+   "played": [
+    "C/B",
+    "C/G#"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 18,
+   "san": "Bc3",
+   "from": "b4",
+   "to": "c3",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "G/F",
+    "E/E"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 19,
+   "san": "Qd5",
+   "from": "d1",
+   "to": "d5",
+   "color": "w",
+   "captured": null,
+   "played": [
+    "C/G#",
+    "C/A"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 20,
+   "san": "exd5",
+   "from": "e6",
+   "to": "d5",
+   "color": "b",
+   "captured": "q",
+   "played": [
+    "A/B",
+    "C/A"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 21,
+   "san": "h4",
+   "from": "h2",
+   "to": "h4",
+   "color": "w",
+   "captured": null,
+   "played": [
+    "C/B",
+    "C/G#"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 22,
+   "san": "Bxb2",
+   "from": "c3",
+   "to": "b2",
+   "color": "b",
+   "captured": "p",
+   "played": [
+    "D/A",
+    "B/B"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 23,
+   "san": "Bxb2+",
+   "from": "c1",
+   "to": "b2",
+   "color": "w",
+   "captured": "b",
+   "played": [
+    "D/B",
+    "B/E"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 24,
+   "san": "d4",
+   "from": "d5",
+   "to": "d4",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "C/C",
+    "C/G"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 25,
+   "san": "Bxd4+",
+   "from": "b2",
+   "to": "d4",
+   "color": "w",
+   "captured": "p",
+   "played": [
+    "C/D",
+    "G/G"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 26,
+   "san": "Ke6",
+   "from": "f6",
+   "to": "e6",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "F/F",
+    "B/F"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 27,
+   "san": "Ke1",
+   "from": "e2",
+   "to": "e1",
+   "color": "w",
+   "captured": null,
+   "played": [
+    "C/G",
+    "C/A"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 28,
+   "san": "Kd5",
+   "from": "e6",
+   "to": "d5",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "C/G#",
+    "G/F"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 29,
+   "san": "Bxg7",
+   "from": "d4",
+   "to": "g7",
+   "color": "w",
+   "captured": "p",
+   "played": [
+    "F/G#",
+    "D/E"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 30,
+   "san": "Ke6",
+   "from": "d5",
+   "to": "e6",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "F/C",
+    "E/B"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 31,
+   "san": "Bxh8",
+   "from": "g7",
+   "to": "h8",
+   "color": "w",
+   "captured": "r",
+   "played": [
+    "F/G#",
+    "E/E"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 32,
+   "san": "b6",
+   "from": "b7",
+   "to": "b6",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "C/G#",
+    "C/C"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 33,
+   "san": "Rh3",
+   "from": "h1",
+   "to": "h3",
+   "color": "w",
+   "captured": null,
+   "played": [
+    "C/C",
+    "C/B"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 34,
+   "san": "Kf5",
+   "from": "e6",
+   "to": "f5",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "E/G",
+    "G/A"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 35,
+   "san": "Rf3+",
+   "from": "h3",
+   "to": "f3",
+   "color": "w",
+   "captured": null,
+   "played": [
+    "C/F",
+    "E/F"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 36,
+   "san": "Ke6",
+   "from": "f5",
+   "to": "e6",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "E/G",
+    "D/B"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 37,
+   "san": "Rf8",
+   "from": "f3",
+   "to": "f8",
+   "color": "w",
+   "captured": null,
+   "played": [
+    "G/B",
+    "G/G"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 38,
+   "san": "c5",
+   "from": "c7",
+   "to": "c5",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "E/E",
+    "E/F"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 39,
+   "san": "Rxg8",
+   "from": "f8",
+   "to": "g8",
+   "color": "w",
+   "captured": "n",
+   "played": [
+    "E/B",
+    "A#/B"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 40,
+   "san": "a5",
+   "from": "a6",
+   "to": "a5",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "F/G#",
+    "F/F"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 41,
+   "san": "Rxb8",
+   "from": "g8",
+   "to": "b8",
+   "color": "w",
+   "captured": "n",
+   "played": [
+    "A#/A",
+    "A/A"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 42,
+   "san": "c4",
+   "from": "c5",
+   "to": "c4",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "F/B",
+    "F/G"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 43,
+   "san": "Rxa8",
+   "from": "b8",
+   "to": "a8",
+   "color": "w",
+   "captured": "r",
+   "played": [
+    "D/A",
+    "A/A"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 44,
+   "san": "c3",
+   "from": "c4",
+   "to": "c3",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "E/C",
+    "E/E"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 45,
+   "san": "Rxa5",
+   "from": "a8",
+   "to": "a5",
+   "color": "w",
+   "captured": "p",
+   "played": [
+    "A/B",
+    "A/E"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 46,
+   "san": "h6",
+   "from": "h7",
+   "to": "h6",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "F/F",
+    "F/G#"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 47,
+   "san": "Ra6",
+   "from": "a5",
+   "to": "a6",
+   "color": "w",
+   "captured": null,
+   "played": [
+    "E/E",
+    "E/F"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 48,
+   "san": "Kd5",
+   "from": "e6",
+   "to": "d5",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "B/F",
+    "G/E"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 49,
+   "san": "Rxb6",
+   "from": "a6",
+   "to": "b6",
+   "color": "w",
+   "captured": "p",
+   "played": [
+    "B/G",
+    "G/G"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 50,
+   "san": "Ke4",
+   "from": "d5",
+   "to": "e4",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "F/D",
+    "A/E"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 51,
+   "san": "Rxh6",
+   "from": "b6",
+   "to": "h6",
+   "color": "w",
+   "captured": "p",
+   "played": [
+    "G/G",
+    "D/G"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 52,
+   "san": "Kd5",
+   "from": "e4",
+   "to": "d5",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "A/F",
+    "C/G#"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 53,
+   "san": "Ra6",
+   "from": "h6",
+   "to": "a6",
+   "color": "w",
+   "captured": null,
+   "played": [
+    "F/G#",
+    "B/G#"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 54,
+   "san": "Ke4",
+   "from": "d5",
+   "to": "e4",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "C/E",
+    "A/F"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 55,
+   "san": "Ra3",
+   "from": "a6",
+   "to": "a3",
+   "color": "w",
+   "captured": null,
+   "played": [
+    "A/F",
+    "A/A"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 56,
+   "san": "Kf4",
+   "from": "e4",
+   "to": "f4",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "B/C",
+    "C/C"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 57,
+   "san": "Rxc3",
+   "from": "a3",
+   "to": "c3",
+   "color": "w",
+   "captured": "p",
+   "played": [
+    "D/G",
+    "A/G"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 58,
+   "san": "Ke4",
+   "from": "f4",
+   "to": "e4",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "C/C",
+    "E/C"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 59,
+   "san": "Rc8",
+   "from": "c3",
+   "to": "c8",
+   "color": "w",
+   "captured": null,
+   "played": [
+    "C/B",
+    "C/C"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 60,
+   "san": "Kd5",
+   "from": "e4",
+   "to": "d5",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "F/G#",
+    "D/E"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 61,
+   "san": "Rc3",
+   "from": "c8",
+   "to": "c3",
+   "color": "w",
+   "captured": null,
+   "played": [
+    "A#/G#",
+    "A#/A"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 62,
+   "san": "Kd6",
+   "from": "d5",
+   "to": "d6",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "D/G",
+    "D/D"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 63,
+   "san": "g4",
+   "from": "g2",
+   "to": "g4",
+   "color": "w",
+   "captured": null,
+   "played": [
+    "D/C",
+    "D/G"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 64,
+   "san": "Kd5",
+   "from": "d6",
+   "to": "d5",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "A/B",
+    "A/D"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 65,
+   "san": "g5",
+   "from": "g4",
+   "to": "g5",
+   "color": "w",
+   "captured": null,
+   "played": [
+    "C/D",
+    "C/F"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 66,
+   "san": "Ke6",
+   "from": "d5",
+   "to": "e6",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "B/F",
+    "D/C"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 67,
+   "san": "g6",
+   "from": "g5",
+   "to": "g6",
+   "color": "w",
+   "captured": null,
+   "played": [
+    "A/F",
+    "A/D"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 68,
+   "san": "Kd5",
+   "from": "e6",
+   "to": "d5",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "A#/D",
+    "C/F"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 69,
+   "san": "g7",
+   "from": "g6",
+   "to": "g7",
+   "color": "w",
+   "captured": null,
+   "played": [
+    "B/D",
+    "B/E"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 70,
+   "san": "Ke5",
+   "from": "d5",
+   "to": "e5",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "F/A",
+    "D/A"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 71,
+   "san": "g8=Q+",
+   "from": "g7",
+   "to": "g8",
+   "color": "w",
+   "captured": null,
+   "played": [
+    "A#/G#",
+    "A#/C"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 72,
+   "san": "Ke4",
+   "from": "e5",
+   "to": "e4",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "C/A",
+    "C/G"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 73,
+   "san": "Qe8+",
+   "from": "g8",
+   "to": "e8",
+   "color": "w",
+   "captured": null,
+   "played": [
+    "A#/E",
+    "G/E"
+   ],
+   "undone": false
+  },
+  {
+   "ply": 74,
+   "san": "Kd5",
+   "from": "e4",
+   "to": "d5",
+   "color": "b",
+   "captured": null,
+   "played": [
+    "G/D",
+    "B/F"
+   ],
+   "undone": false
+  }
+ ]
+}

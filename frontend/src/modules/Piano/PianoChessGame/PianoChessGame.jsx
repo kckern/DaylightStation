@@ -23,7 +23,7 @@ import { keyFallbackNeeded } from '../game-platform/input/touchCapability.js';
 import { usePlayerLock } from '../PianoKiosk/usePianoPlayback.js';
 import MatchGateContext from '../PianoKiosk/modes/Games/MatchGateContext.js';
 import {
-  archiveGame, beaconArchive, fetchChessConfig, fetchLadder, requestBestMove,
+  archiveGame, beaconArchive, saveGameProgress, beaconProgress, fetchChessConfig, fetchLadder, requestBestMove,
   requestOpponentMove, requestOpponentQuip, saveChessConfig, saveGameRecord,
 } from './chessApi.js';
 import OpponentPanel from '../game-platform/opponent/OpponentPanel.jsx';
@@ -124,7 +124,9 @@ function logger() {
   return cachedLogger;
 }
 const CHESS_ADDRESSING_CLIENT = Object.freeze({ writeConfig: saveChessConfig });
-const CHESS_PERSISTENCE_GATEWAY = Object.freeze({ archiveGame, beaconArchive, saveGameRecord });
+const CHESS_PERSISTENCE_GATEWAY = Object.freeze({
+  archiveGame, beaconArchive, saveGameRecord, saveGameProgress, beaconProgress,
+});
 
 export function PianoChessGame({
   gameConfig = null,
@@ -161,7 +163,9 @@ export function PianoChessGame({
     move: commitChessMove,
     takeback: commitChessTakeback,
     reset: resetChessAuthority,
-  } = useChessAuthority({ userId: authorityUserId, initialFen: fen ?? INITIAL_FEN, seed: gameSeed });
+  } = useChessAuthority({
+    userId: authorityUserId, initialFen: fen ?? INITIAL_FEN, seed: gameSeed, playerColor,
+  });
 
   const [game, setGame] = useState(() => createChessGameState({
     fen: fen ?? undefined,
