@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { deckSets, deckProjection, deckWindow } from './deckProgress.js';
+import { deckSets, deckProjection, deckWindow, repBoundaryCrossed, heldRepWindow } from './deckProgress.js';
 import { keysInstance } from '../Games/gateMaterial.js';
 
 /**
@@ -126,5 +126,47 @@ describe('what of a deck is on screen', () => {
     const sightread = keysInstance(SIGHTREAD_3x3, 0);
     expect(deckWindow(sightread, 4)).toEqual({ events: sightread.events, cursorIndex: 4 });
     expect(deckWindow(null, 0)).toEqual({ events: [], cursorIndex: 0 });
+  });
+});
+
+const ev = (midi) => ({ notes: [{ midi }] });
+const deckOf = (unit, reps, sets = 1) => ({
+  deck: { sets, reps, unit },
+  events: Array.from({ length: sets * reps * unit }, (_, i) => ev(60 + i)),
+});
+
+describe('repBoundaryCrossed', () => {
+  it('reports the finished rep when the cursor moves from its last note into the next rep', () => {
+    const instance = deckOf(3, 3); // 9 events, reps at 0,3,6
+    expect(repBoundaryCrossed(instance, 2, 3)).toEqual({ repOffset: 0, repIndex: 0, unit: 3 });
+    expect(repBoundaryCrossed(instance, 5, 6)).toEqual({ repOffset: 3, repIndex: 1, unit: 3 });
+  });
+  it('is null inside a rep', () => {
+    expect(repBoundaryCrossed(deckOf(3, 3), 0, 1)).toBeNull();
+    expect(repBoundaryCrossed(deckOf(3, 3), 3, 4)).toBeNull();
+  });
+  it('is null at the end of the run (the resolve hold owns that)', () => {
+    expect(repBoundaryCrossed(deckOf(3, 3), 8, 9)).toBeNull();
+  });
+  it('is null when the cursor moves backwards or jumps more than one rep', () => {
+    expect(repBoundaryCrossed(deckOf(3, 3), 3, 2)).toBeNull();
+    expect(repBoundaryCrossed(deckOf(3, 3), 2, 7)).toBeNull();
+  });
+  it('is null when there is no declared rep unit (unit <= 1 or no deck)', () => {
+    expect(repBoundaryCrossed({ events: [ev(60), ev(62)] }, 0, 1)).toBeNull();
+    expect(repBoundaryCrossed(deckOf(1, 4), 0, 1)).toBeNull();
+  });
+  it('is null for non-finite cursors', () => {
+    expect(repBoundaryCrossed(deckOf(3, 3), -1, 0)).toBeNull();
+    expect(repBoundaryCrossed(deckOf(3, 3), Number.NaN, 3)).toBeNull();
+  });
+});
+
+describe('heldRepWindow', () => {
+  it('returns the finished rep with the cursor past its last note', () => {
+    const instance = deckOf(3, 3);
+    const held = heldRepWindow(instance, 3);
+    expect(held.events).toEqual(instance.events.slice(3, 6));
+    expect(held.cursorIndex).toBe(3);
   });
 });

@@ -466,6 +466,25 @@ there.
 Nothing in the chrome names the key: the staff stands its own signature and, on
 a drill, the placard already says it.
 
+#### Rep completion hold
+
+A drill shows one rep at a time (`deckWindow`, picked by `floor(cursor / unit)`).
+When the last note of a rep was judged, the cursor moved into the next rep in the
+same render, so the staff swapped to rep k+1 before rep k's last column was ever
+painted done. The child got no sign that the note was right.
+
+`useRepCompletionHold` holds the **display only**. When the cursor steps from a
+rep's last note into the next rep, the finished rep stays on screen for
+`REP_HOLD_MS` (600 ms) with every note done and nothing current, and `KeysAsk`
+shows it `completed`. The judge is untouched: a note played during the beat
+counts toward the next rep, and that progress ends the hold at once, so a correct
+note never vanishes unseen. There is no rep hold at the end of the run; the
+existing `RESOLVE_HOLD_MS` owns that. Timed runs, single-note units and stages
+other than keys never hold.
+
+Logs: `piano.exercise-rep-completed {repIndex, unit, holdMs}` and
+`piano.exercise-rep-hold-released {repIndex, endedBy: timer | next-input | reset}`.
+
 Exercise runs have no touch controls. Hold the physical keyboard's lowest and
 highest keys together for two seconds to exit. After a failure, release all
 keys and press any key to retry. A lone outer key waits 300 ms so adding its

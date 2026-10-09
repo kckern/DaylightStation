@@ -43,6 +43,14 @@ const note = (midi) => ({ midi });
 const event = (...midis) => ({ notes: midis.map(note) });
 
 describe('KeysAsk', () => {
+  it('a completed window lights no target key and draws every note done', () => {
+    const events = [60, 62, 64].map((midi) => event(midi));
+    render(<KeysAsk events={events} cursorIndex={3} completed showStaff />);
+    expect(document.querySelectorAll('.keys-ask__badge.is-done')).toHaveLength(3);
+    expect(document.querySelector('.keys-ask__badge.is-current')).toBeNull();
+    expect(screen.getByTestId('keyboard')).toHaveAttribute('data-target', '');
+  });
+
   it('a together-ask (one event, many notes) lights every target midi at once', () => {
     render(<KeysAsk events={[event(60, 64, 67)]} cursorIndex={0} />);
     expect(screen.getByTestId('keyboard')).toHaveAttribute('data-target', '60,64,67');
