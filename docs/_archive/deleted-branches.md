@@ -619,3 +619,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-10-09 | feat/story-time-no-repeat | ef5e840864 | Story time no-repeat (noRepeatDays); merged as 16a0f157f1 |
 | 2026-10-09 | fix/chess-durable-resume | d9d9261442 | server-side durable chess resume |
 | 2026-10-09 | fix/ghost-note-engraving | cb19f21458 | Wrong-note ghost engraved as chord on target stem; merged as c423426897 |
+| 2026-10-09 | fix/exercise-resolve-hold | 7e2a02c971 | Resolve hold before onPassed/onFailed; merged as 989124c4ca |
