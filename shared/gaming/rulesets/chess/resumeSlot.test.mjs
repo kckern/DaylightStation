@@ -104,3 +104,16 @@ describe('continuations', () => {
     expect(selectResumable(slot, { now: NOW })).toBeNull();
   });
 });
+
+describe('a pin survives a resume with no move played', () => {
+  const night = rec('night', { moves: [mv(1, 'e2', 'e4'), mv(2, 'e7', 'e5')] });
+  it('same line filed under a new id does not retire the pin; a played move does', () => {
+    let slot = put(emptySlot(), night, hoursAgo(5));
+    slot = pinGame(slot, night, hoursAgo(4)).slot;
+    slot = put(slot, rec('night-resumed', { moves: night.moves }), hoursAgo(3));
+    expect(selectResumable(slot, { now: NOW })).toMatchObject({ gameId: 'night', pinned: true });
+    slot = put(slot, rec('night-resumed', { moves: [...night.moves, mv(3, 'g1', 'f3')] }), hoursAgo(2));
+    expect(slot.games.night.state).toBe(STATE.SUPERSEDED);
+    expect(selectResumable(slot, { now: NOW })).toMatchObject({ gameId: 'night-resumed' });
+  });
+});

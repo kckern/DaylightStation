@@ -70,6 +70,13 @@ export function chooseResumeSource({ local, server }) {
       : { source: 'new', discardLocal: 'finished' };
   }
   const stale = localPresent && Number.isFinite(local.idleMs) && local.idleMs > local.maxIdleMs;
+  // A LOCAL CHECKPOINT BEATS AN OPEN SERVER GAME ONLY IF IT CONTINUES IT (the
+  // server game's moves are a prefix of the local ones). 2026-10-09: a tablet's
+  // fresh-but-unrelated checkpoint outranked the game the owner had restored.
+  // The local game is not deleted; it stays on the server as its own entry.
+  if (localPresent && !stale && hasServerGame && local.continuesServer === false) {
+    return { source: 'server', discardLocal: 'diverges-from-server-game' };
+  }
   if (localPresent && !stale) return { source: 'local', discardLocal: null };
   if (hasServerGame) return { source: 'server', discardLocal: stale ? 'stale-server-copy-exists' : null };
   if (stale) {

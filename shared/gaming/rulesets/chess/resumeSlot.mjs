@@ -111,6 +111,9 @@ export function recordIntoSlot(rawSlot, record, now = new Date()) {
     // ends — whether it ends finished, restarted or left.
     for (const [otherId, other] of Object.entries(games)) {
       if (otherId === gameId || other.state !== STATE.OPEN) continue;
+      // A PIN SURVIVES UNTIL A MOVE IS PLAYED IN THE PINNED GAME. A resume files
+      // the same line under a new id; with no new move it must not retire the pin.
+      if (otherId === slot.pinned && playedMoves(record).length <= playedMoves(other.record).length) continue;
       if (other.record?.user_id === record.user_id && isPrefixLine(other.record, record)) {
         games[otherId] = { ...other, state: STATE.SUPERSEDED, superseded_by: gameId };
       }
