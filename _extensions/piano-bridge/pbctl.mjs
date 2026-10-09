@@ -27,7 +27,7 @@
 //   node pbctl.mjs suppress <ms>     # mute MIDI-wake for <ms> from now (0 = clear)
 //   node pbctl.mjs kiosk-settings    # FKB kiosk-settings drift guard: verdict + repairs
 //   node pbctl.mjs kiosk-check       # force one drift pass NOW (bypasses install hold)
-//   node pbctl.mjs kiosk-disarm [m]  # pause drift repair while fiddling (default 60 min)
+//   node pbctl.mjs kiosk-disarm [m]  # pause drift repair + foreground recall while fiddling (default = max = 60 min)
 //   node pbctl.mjs kiosk-rearm       # resume drift repair now
 
 const HOST = process.env.PB_HOST || '10.0.0.245:8770';
@@ -360,7 +360,13 @@ const cmds = {
     if (s.lastRepair) console.log(`last repair  : ${s.lastRepair}`);
     const repairs = Object.entries(s.repairsSinceBoot || {});
     console.log(`repairs      : ${repairs.length ? repairs.map(([k, n]) => `${k}×${n}`).join(', ') : 'none since boot'}`);
-    if (s.disarmed) console.log(`⚠ DISARMED until ${new Date(s.disarmUntilMs).toISOString()} — drift will NOT be repaired`);
+    const fg = s.foreground;
+    if (fg) {
+      const away = fg.awayForMs == null ? '' : `   AWAY ${fmtDur(fg.awayForMs)}`;
+      console.log(`foreground   : ${fg.verdict ?? '(no tick yet)'}   ${fg.lastApp ?? '?'}${away}   every ${fmtDur(fg.intervalMs)}, Settings grace ${fmtDur(fg.settingsGraceMs)}`);
+      console.log(`recalls      : ${fg.recallsSinceBoot} since boot${fg.lastRecall ? `   last: ${fg.lastRecall}` : ''}`);
+    }
+    if (s.disarmed) console.log(`⚠ DISARMED until ${new Date(s.disarmUntilMs).toISOString()} — drift will NOT be repaired, other apps NOT recalled`);
     if (s.installHoldActive) {
       // Report time REMAINING, not time since the /update: the hold is persisted and
       // survives the service restart the install causes, after which

@@ -120,7 +120,7 @@ public class ControlServer extends NanoWSD {
     }
 
     /** Which payload built this server — so "who is answering :8770" is never ambiguous. */
-    public static final String BUILT_BY = "p21-self-heal";
+    public static final String BUILT_BY = "p24-foreground-launch";
 
     @Override
     protected WebSocket openWebSocket(IHTTPSession handshake) {
@@ -169,7 +169,7 @@ public class ControlServer extends NanoWSD {
                             .put("POST /kiosk/beat            (page heartbeat ingest: {fps,visibility,url})")
                             .put("GET /kiosk/settings         (FKB kiosk-settings drift guard: verdict, repairs, disarm)")
                             .put("POST /kiosk/settings/check   (force one drift pass NOW, bypassing the install hold)")
-                            .put("POST /kiosk/settings/disarm?minutes=60  (stop repairing drift while fiddling; max 24h)")
+                            .put("POST /kiosk/settings/disarm?minutes=60  (stop repairing drift + foreground recall while fiddling; max 1h)")
                             .put("POST /kiosk/settings/rearm   (re-arm the drift guard now)")
                             .put("GET /crashlog               (durable death/crash + reboot-cap record)")
                             .put("GET|POST /update?url=<apk-url>  (ADB-free self-update; one-tap confirm)")
@@ -257,8 +257,9 @@ public class ControlServer extends NanoWSD {
                     KioskSettingsGuard g = service.getKioskSettingsGuard();
                     if (g == null) return json(err("no_settings_guard"));
                     int minutes = parseIntParam(session, "minutes", 60);
-                    // Clamp to 24h so a fat-fingered "6000" can't disarm until next year.
-                    minutes = Math.max(1, Math.min(24 * 60, minutes));
+                    // Clamp to 1h: while disarmed nothing pulls a child back out of
+                    // another app, so no disarm may outlast KioskSettingsGuard.MAX_STAND_DOWN_MS.
+                    minutes = Math.max(1, Math.min(60, minutes));
                     JSONObject r = g.disarmForMinutes(minutes);
                     return json(r.put("minutes", minutes).put("disarmUntilMs", g.disarmUntilMs()));
                 }

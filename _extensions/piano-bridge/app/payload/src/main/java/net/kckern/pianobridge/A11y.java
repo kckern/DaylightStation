@@ -97,6 +97,50 @@ public final class A11y {
     }
 
     /**
+     * Start {@code pkg}'s launch activity from the bound AccessibilityService's own
+     * context. Android exempts an app with a system-bound accessibility service from
+     * the background-activity-start block that silently refuses FKB's toForeground
+     * and our HOME press (both measured 2026-10-09 against Chrome: no effect).
+     * @return true if the start was issued, else false.
+     */
+    public static boolean launch(String pkg) {
+        AccessibilityService s = svc;
+        if (s == null) return false;
+        try {
+            android.content.Intent i = s.getPackageManager().getLaunchIntentForPackage(pkg);
+            if (i == null) { Log.w(TAG, "no launch intent for " + pkg); return false; }
+            i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                    | android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+            s.startActivity(i);
+            Log.i(TAG, "launch " + pkg + " issued");
+            return true;
+        } catch (Exception e) {
+            Log.w(TAG, "launch " + pkg + " failed: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Press HOME. FKB is the tablet's home app, so this returns to the kiosk from any
+     * other app. Needed because FKB's own toForeground is refused by Android's
+     * background-activity-start rule (measured 2026-10-09: answered OK, Chrome stayed
+     * in front); a global action from a bound AccessibilityService is not.
+     * @return true if HOME was performed (service bound), else false.
+     */
+    public static boolean home() {
+        AccessibilityService s = svc;
+        if (s == null) return false;
+        try {
+            boolean ok = s.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME);
+            Log.i(TAG, "GLOBAL_ACTION_HOME -> " + ok);
+            return ok;
+        } catch (Exception e) {
+            Log.w(TAG, "performGlobalAction failed: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Click a node on screen by its visible text (case-insensitive contains), via the
      * accessibility node tree. Used to press "Restart" on the power dialog raised by
      * {@link #powerDialog()}. Text-based rather than coordinate-based so it survives
