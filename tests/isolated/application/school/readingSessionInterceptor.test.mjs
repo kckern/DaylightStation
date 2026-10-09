@@ -904,3 +904,54 @@ describe('ReadingSessionInterceptor — remembers the book nobody claimed', () =
     expect(sessions.unclaimedPlay('livingroom')).toBeNull();
   });
 });
+
+
+describe('ReadingSessionInterceptor — read-recently (no-repeat)', () => {
+  const repeating = (over = {}) => ({
+    ...owing,
+    repeatCheck: async ({ contentId }) => (contentId === 'plex:620681'
+      ? { refuse: true, lastReadOn: '2026-10-07', today: '2026-10-09', noRepeatDays: 4, ...over }
+      : { refuse: false }),
+  });
+  const other = () => bookTap({ expression: { action: 'play-next', contentId: 'plex:999', options: {} } });
+
+  it('refuses a recent repeat at the prompt, keeps the session open, then a different book plays', async () => {
+    const logger = recordingLogger();
+    const { interceptor, sessions, sent } = build({ storyTime: repeating(), logger });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    const refused = await interceptor.claim(bookTap());
+    expect(refused).toMatchObject({ claimed: true, refused: true, reason: 'read-recently', lastReadOn: '2026-10-07' });
+    expect(sent.find((m) => m.payload.event === 'book-refused').payload)
+      .toMatchObject({ reason: 'read-recently', lastReadOn: '2026-10-07', today: '2026-10-09', noRepeatDays: 4 });
+    expect(sessions.current('livingroom')).toMatchObject({ state: 'prompt' });
+    expect(sent.some((m) => m.payload.event === 'book-selected')).toBe(false);
+    expect(logger.lines.find((l) => l.event === 'school.reading.book-refused').data)
+      .toMatchObject({ reason: 'read-recently', lastReadOn: '2026-10-07', noRepeatDays: 4 });
+
+    expect(await interceptor.claim(other())).toMatchObject({ claimed: true, learnerId: 'user_5' });
+    expect(sessions.current('livingroom')).toMatchObject({ state: 'confirm', pick: { contentId: 'plex:999' } });
+  });
+
+  it('keeps an existing pick when a repeat is tapped during the countdown', async () => {
+    const { interceptor, sessions } = build({ storyTime: repeating() });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    await interceptor.claim(other());
+    await interceptor.claim(bookTap());
+    expect(sessions.current('livingroom').pick.contentId).toBe('plex:999');
+  });
+
+  it('a throwing check fails open and the book is picked', async () => {
+    const { interceptor, sessions } = build({ storyTime: { ...owing, repeatCheck: async () => { throw new Error('x'); } } });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    expect(await interceptor.claim(bookTap())).toMatchObject({ claimed: true });
+    expect(sessions.current('livingroom').state).toBe('confirm');
+  });
+
+  it('a book held during the launch card is refused, not held', async () => {
+    const { interceptor, sessions } = build({ storyTime: repeating() });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5', state: 'starting' });
+    const result = await interceptor.claim(bookTap());
+    expect(result).toMatchObject({ refused: true, reason: 'read-recently' });
+    expect(result.held).toBeUndefined();
+  });
+});

@@ -279,6 +279,17 @@ describe('ReadingSessionScreen', () => {
     expect(h.cues).toContain('warn');
   });
 
+  it('a recently read book names the weekday and asks for another', async () => {
+    render(<ReadingSessionScreen />);
+    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+    await deliver({
+      event: 'book-refused', learnerId: 'user_5', contentId: 'plex:999', reason: 'read-recently',
+      lastReadOn: '2026-10-07', today: '2026-10-09', noRepeatDays: 4,
+    });
+    expect(screen.getByTestId('reading-notice')).toHaveTextContent('You read this on Wednesday.');
+    expect(screen.getByTestId('reading-notice')).toHaveTextContent('Pick a different book!');
+  });
+
   // §9: an obligation that cannot be read is surfaced, never silently relaxed —
   // and it must not stop a four-year-old picking a book.
   it('an unreadable obligation is said out loud, and the prompt stays usable', async () => {
