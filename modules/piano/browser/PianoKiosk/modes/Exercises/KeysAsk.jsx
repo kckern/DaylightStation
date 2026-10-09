@@ -49,11 +49,16 @@ export default function KeysAsk({
   keyboard = null,
   verdicts = null,
   windowOpen = undefined,
+  completed = false,
 }) {
   const isSequence = events.length > 1;
-  const currentEvent = isSequence
-    ? events[Math.min(Math.max(cursorIndex, 0), events.length - 1)]
-    : events[0];
+  // `completed`: a finished rep held on screen for a beat. Every note is done
+  // and nothing is the target, so no key is lit for a note already played.
+  const currentEvent = completed
+    ? null
+    : isSequence
+      ? events[Math.min(Math.max(cursorIndex, 0), events.length - 1)]
+      : events[0];
 
   const targetNotes = useMemo(
     () => new Map((currentEvent?.notes || []).map((note) => [note.midi, { velocity: 1 }])),

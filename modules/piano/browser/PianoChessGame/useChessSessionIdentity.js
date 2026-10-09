@@ -47,7 +47,21 @@ export function useChessSessionIdentity({ currentUser, playerName, initialSeed =
     return next;
   }, []);
 
+  // The learner can arrive after the board mounted (office screen: gate/kiosk
+  // context lands a render late). Adopt it into a household snapshot, but only
+  // while the caller says no move has been played.
+  const adoptLateIdentity = useCallback(() => {
+    const previous = sessionRef.current;
+    const candidate = candidateRef.current;
+    if (previous.userId || !candidate.userId) return false;
+    const next = { ...previous, ...candidate };
+    sessionRef.current = next;
+    setSession(next);
+    return true;
+  }, []);
+
   return {
+    adoptLateIdentity,
     currentUserId: candidateRef.current.userId,
     lockedUser: session.userId,
     playerAvatarId: session.avatarId,

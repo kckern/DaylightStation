@@ -173,3 +173,31 @@ export function deckWindow(instance, cursorIndex = 0) {
   const offset = Math.floor(Math.min(cursor, events.length - 1) / unit) * unit;
   return { events: events.slice(offset, offset + unit), cursorIndex: cursor - offset };
 }
+
+/**
+ * The rep a cursor step just FINISHED, or null.
+ *
+ * A step counts only when the cursor moves forward by one event from the last
+ * note of a rep into the first note of the next rep. A jump, a step backwards
+ * or a step inside a rep is not a completed rep. Neither is the step past the
+ * final event: that is the end of the run, which the resolve hold owns.
+ */
+export function repBoundaryCrossed(instance, prevCursor, nextCursor) {
+  const events = instance?.events ?? [];
+  const unit = declaredSets(instance)?.[0]?.unit ?? 1;
+  if (unit <= 1) return null;
+  if (!Number.isInteger(prevCursor) || !Number.isInteger(nextCursor)) return null;
+  if (prevCursor < 0 || nextCursor !== prevCursor + 1) return null;
+  if (nextCursor >= events.length) return null;
+  if (nextCursor % unit !== 0) return null;
+  const repOffset = nextCursor - unit;
+  return { repOffset, repIndex: repOffset / unit, unit };
+}
+
+/** The finished rep as a display window: every note done, nothing current. */
+export function heldRepWindow(instance, repOffset) {
+  const events = instance?.events ?? [];
+  const unit = declaredSets(instance)?.[0]?.unit ?? 1;
+  const slice = events.slice(repOffset, repOffset + unit);
+  return { events: slice, cursorIndex: slice.length };
+}

@@ -1,6 +1,6 @@
 {
   "schema": "daylight.http-readonly-eligibility/v1",
-  "candidateCommit": "c6ac6e69f8c104a968c397931c92dc55df1297f4",
+  "candidateCommit": "f3029f1b4e3c49f4aae656f800495b099a20a11d",
   "policy": "Read policy permits benign process memoization/font registration and finite existing-file streams; excludes durable data writes, provider/device actions and session/intent changes. Effect classifications preserved; eligibility is distinct from mounting and success correctness. No source-only fact authorizes HTTP or counted production coverage.",
   "scope": "Every committed-source GET. Eligibility is conditional on exact read-only middleware/dependencies and mount prerequisites; no production execution authorization. Compatibility and independent correctness tracked separately. Unreviewed effects are future review gaps, not permanent read API exclusions.",
   "globalPrerequisites": [
@@ -15801,7 +15801,7 @@
     {
       "declarationId": "decl-0934912564aa258a29bf1a1e-0",
       "file": "modules/chess/server/api/chess.mjs",
-      "line": 305,
+      "line": 309,
       "pathExpression": "'/ladder'",
       "effectClassification": "finite-safe",
       "effectEligibility": "eligible-finite-read",
@@ -15813,10 +15813,10 @@
       "reason": "Existing classifier review; eligibility requires complete concrete path",
       "sourceProof": [
         "backend/src/app.mjs:1684",
-        "modules/chess/server/api/chess.mjs:305",
+        "modules/chess/server/api/chess.mjs:309",
         "modules/chess/server/application/ChessLadderService.mjs:28-53",
         "modules/chess/server/composition/runtime.mjs:30-33",
-        "modules/chess/server/api/chess.mjs:305-309",
+        "modules/chess/server/api/chess.mjs:309-313",
         "modules/chess/portable/ladder.mjs:159-171,177-204,314-331,350-367,406-408"
       ],
       "installedLivePresence": "unproved; source and synthetic observations do not establish live installation",
@@ -15845,13 +15845,13 @@
         "guardBranches": [],
         "condition": "Configured successful boot; root registry assignment and factory composition",
         "sourceProof": [
-          "modules/chess/server/api/chess.mjs:305",
+          "modules/chess/server/api/chess.mjs:309",
           "backend/src/app.mjs",
           "backend/src/4_api/v1/routers/api.mjs:83-185",
           "backend/src/app.mjs:1684",
           "modules/chess/server/application/ChessLadderService.mjs:28-53",
           "modules/chess/server/composition/runtime.mjs:30-33",
-          "modules/chess/server/api/chess.mjs:305-309",
+          "modules/chess/server/api/chess.mjs:309-313",
           "modules/chess/portable/ladder.mjs:159-171,177-204,314-331,350-367,406-408"
         ],
         "referenceDeclaration": {
@@ -48687,8 +48687,8 @@
     "counts": {
       "historicalLiveUniqueCases": 134,
       "historicalLiveIndependentContracts": 125,
-      "isolatedUniqueAcceptedCaseIds": 43,
-      "isolatedAcceptedOccurrences": 43,
+      "isolatedUniqueAcceptedCaseIds": 57,
+      "isolatedAcceptedOccurrences": 57,
       "isolatedReplayIdsAlreadyLive": [
         "health-catalog-food-not-found",
         "health-catalog-missing-query",
@@ -48706,6 +48706,11 @@
         "player-default-config"
       ],
       "isolatedNewCaseIds": [
+        "array-auto-document-records",
+        "array-auto-service-records",
+        "array-health-saved-meals-ordered",
+        "array-health-templates-active",
+        "array-health-templates-proposed",
         "following-auto-authored-place",
         "following-fitness-skyline-stored-run",
         "following-fitness-workout-run-projection",
@@ -48716,6 +48721,15 @@
         "following-life-roster",
         "following-school-reading-status",
         "following-school-reading-timeline",
+        "gaming-authored-definition",
+        "gaming-authored-experiences",
+        "gaming-authored-launch",
+        "gaming-authored-manifest",
+        "gaming-content-detail",
+        "gaming-content-list",
+        "gaming-filtered-experience-catalog",
+        "gaming-party-catalog",
+        "gaming-populated-environment",
         "synthetic-board-game-day",
         "synthetic-chess-pinned-resume",
         "synthetic-config-status",
@@ -48736,11 +48750,11 @@
         "synthetic-school-surface",
         "synthetic-school-transcript"
       ],
-      "unionUniqueAcceptedCaseIds": 163,
-      "unionIndependentContracts": 154,
+      "unionUniqueAcceptedCaseIds": 177,
+      "unionIndependentContracts": 168,
       "newLiveTemplates": 2,
-      "isolatedDistinctTemplates": 35,
-      "newIsolatedTemplates": 28,
+      "isolatedDistinctTemplates": 48,
+      "newIsolatedTemplates": 41,
       "pendingNext15": {
         "cases": 15,
         "terminalResult": {
@@ -48756,6 +48770,23 @@
           "sha256": "6c338e43a14bda4c7fa47f2811218f23af19bc2fc11f1b397a31155fa102b85c"
         },
         "acceptedCredit": 10
+      },
+      "completedGaming9": {
+        "cases": 9,
+        "terminalResult": {
+          "path": "/tmp/readiness-gaming-pair-run/pair-result.json",
+          "sha256": "27122fc7111e9aca3c837ca4d0f33dcc73213190e4444f04f6ccf256e9d71fc6"
+        },
+        "acceptedCredit": 9
+      },
+      "completedArrayStored5": {
+        "cases": 5,
+        "templates": 4,
+        "terminalResult": {
+          "path": "/tmp/readiness-array-stored-pair-run/pair-result.json",
+          "sha256": "149bafeb6281b74f9ea31dbb2e958f7e4e21bfaf001c25f0d553b111c6783a0f"
+        },
+        "acceptedCredit": 5
       }
     },
     "cases": [
@@ -49229,6 +49260,160 @@
           "decl-89256c34ff8da94f2c9d828e-0"
         ],
         "provenance": "actual-isolated-original14beb-vs-candidate"
+      },
+      {
+        "id": "gaming-authored-definition",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/gaming/definitions/:definitionId",
+        "declarationIds": [
+          "decl-b0985eec4aa7f278e2044f4b-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+      },
+      {
+        "id": "gaming-authored-launch",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/gaming/launch/:definitionId",
+        "declarationIds": [
+          "decl-8581ae4a14ccc60adc099b3e-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+      },
+      {
+        "id": "gaming-filtered-experience-catalog",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/gaming/catalog",
+        "declarationIds": [
+          "decl-7fe049a3c7d229b239ac0183-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+      },
+      {
+        "id": "gaming-authored-experiences",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/gaming/experiences",
+        "declarationIds": [
+          "decl-70a191b3a3b1898b594a40ff-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+      },
+      {
+        "id": "gaming-authored-manifest",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/gaming/experiences/:experienceId/manifest",
+        "declarationIds": [
+          "decl-3e33bc739b8fc1a35f2b77c1-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+      },
+      {
+        "id": "gaming-populated-environment",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/gaming/environments/party-games/profile",
+        "declarationIds": [
+          "decl-46543dcdf650bf3ef8530639-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+      },
+      {
+        "id": "gaming-party-catalog",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/gaming/environments/party-games/catalog",
+        "declarationIds": [
+          "decl-76ff92627b5380366b141940-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+      },
+      {
+        "id": "gaming-content-list",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/gaming/experiences/:experienceId/content",
+        "declarationIds": [
+          "decl-4c3eb093205fe4d06e41bdfb-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+      },
+      {
+        "id": "gaming-content-detail",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/gaming/experiences/:experienceId/content/:contentId",
+        "declarationIds": [
+          "decl-7c19fd6d9d8f820b261a0ee2-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+      },
+      {
+        "id": "array-health-saved-meals-ordered",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/health/nutrition/meals",
+        "declarationIds": [
+          "decl-0d7435e174445a12e6be9bf9-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-uncommitted-pinned-main10d8-integrated-candidate"
+      },
+      {
+        "id": "array-health-templates-active",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/health/nutrition/templates",
+        "declarationIds": [
+          "decl-f3648be8be07429628b3a54a-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-uncommitted-pinned-main10d8-integrated-candidate"
+      },
+      {
+        "id": "array-health-templates-proposed",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/health/nutrition/templates",
+        "declarationIds": [
+          "decl-f3648be8be07429628b3a54a-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-uncommitted-pinned-main10d8-integrated-candidate"
+      },
+      {
+        "id": "array-auto-service-records",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/automotive/vehicles/:id/service",
+        "declarationIds": [
+          "decl-e59430bd29d682b38ad0536b-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-uncommitted-pinned-main10d8-integrated-candidate"
+      },
+      {
+        "id": "array-auto-document-records",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/automotive/vehicles/:id/documents",
+        "declarationIds": [
+          "decl-81f47d806662491e10554215-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-uncommitted-pinned-main10d8-integrated-candidate"
       }
     ],
     "infrastructure": {
@@ -49263,5 +49448,39 @@
       "scope": "Actual original14beb and candidate source processes; same current installed dependencies. No original production image, fictionalimageDigest, liveconfig fixtureidentity or installed-runtime denominator claim."
     },
     "readinessAccepted": false
+  },
+  "sourceState": {
+    "kind": "uncommitted-composite-source",
+    "recordedHEAD": "f3029f1b4e3c49f4aae656f800495b099a20a11d",
+    "mergeMainPin": "10d8d2107d5146bf7b147c5433c6f04b5072c777",
+    "overrideFiles": [
+      {
+        "file": "modules/chess/server/api/chess.mjs",
+        "sha256": "2bd72f67cf475ed95e839943b48051717cdc1972ca94ef9e619ad35d49f0d1e0",
+        "origin": "Reviewed full pinned-main merge into actual owner path"
+      }
+    ],
+    "parserFile": "/opt/Code/DaylightStation/.worktrees/application-modules/tests/readiness/application-modules/capture-http-declarations.cjs",
+    "parserSha256": "a5157e508fad57f0e48ea6dfa5ff0e70d187da35d0396947e2ab4d5040c92e65",
+    "otherCapturedFilesWorkingBytesEqualHEAD": "git diff HEAD exact captured-file intersection contains only reviewed override; no other selected API/composition/app changes",
+    "canonicalCaptureRequiredAfterCommit": true,
+    "capture": {
+      "path": "/tmp/readiness-main-integration/ledger-renewal/capture.json",
+      "sha256": "d691fabf50d3a9c863fc212a272947c4860a84742689c2b8be4b6c8b5f198c63"
+    },
+    "renewal": {
+      "path": "/tmp/readiness-main-integration/changed-source-facts.json",
+      "sha256": "e4b21b2104518170c1a0c351c6078a8ea779aaa1f0ab99c2f9a5829a3c151e32"
+    },
+    "historicalCandidateCommit": "c6ac6e69f8c104a968c397931c92dc55df1297f4",
+    "historicalAffectedSourcePins": {
+      "modules/chess/server/api/chess.mjs": "db5b1eade346a4b05608309e2b56ee2029f60a921fd0dffe9016733ba7a3b8c0",
+      "modules/chess/portable/resumeSlot.mjs": "fce5606a4ddb380703007dc3489e54454f0c8c707fc948d42e6f228fd549dce7",
+      "modules/chess/server/application/ChessResumeService.mjs": "e3a7d0634696999a53b57232df47b2699910324950812d54e7aad9ce411750f6",
+      "modules/chess/server/composition/runtime.mjs": "c5bff5c183557c446e6ec853be1f98482c478f95cd35397b080b5cfb203dfd1b",
+      "modules/chess/server/application/ChessConfigService.mjs": "e0dde434a8e469726f2603e806cf6f8918b1af710ab822837c1caeb96c7723d5"
+    },
+    "globalSourceEffectReaudit": false,
+    "freshEvidenceScope": "353 matching named JS assertions eachrole, one confined production build, one repeated ChessGET versusactual10d8 and five storedGETs versusactual14beb, bothwith actualintegratedcandidatebytes; no177case latestmain replay"
   }
 }

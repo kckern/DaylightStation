@@ -1,7 +1,7 @@
 {
   "schema": "daylight.http-denominator-reconciliation/v1",
-  "candidateCommit": "c6ac6e69f8c104a968c397931c92dc55df1297f4",
-  "captureCommand": "node tests/readiness/application-modules/capture-http-declarations.cjs <source-root> <output-file>",
+  "candidateCommit": "f3029f1b4e3c49f4aae656f800495b099a20a11d",
+  "captureCommand": "Existing capture-http-declarations.cjs parser unchanged; private exact reviewedChessrouter gitshow input override recorded by sourceState. Canonicalcapture from final mergedHEAD required aftercommit.",
   "sourceSha256": {
     "backend/src/4_api/buildMetadataRouter.mjs": "8a5d8d98041b77f2e1a016adb202be50be7bc0a09ce0dd04511ee419fdbb61d1",
     "backend/src/4_api/middleware/platformHttp.mjs": "e8c1312221c056febeb4a3c5cf146dbfebb755f587df0da62c2d7ddf1f3768b0",
@@ -72,7 +72,7 @@
     "modules/auto/server/api/automotive.mjs": "63b1741cea9b277a495c508fce829a46454040d01512765aca564fb8873d72dc",
     "modules/calendar/server/api/calendar.mjs": "8e2a8b713fb85c706c42a72474f900df0e40fcb9905173fa54742e6713033557",
     "modules/camera/server/api/camera.mjs": "789e0288997a69120f625055c0bbc3420363bcedef737efb59c341978f8973f1",
-    "modules/chess/server/api/chess.mjs": "db5b1eade346a4b05608309e2b56ee2029f60a921fd0dffe9016733ba7a3b8c0",
+    "modules/chess/server/api/chess.mjs": "2bd72f67cf475ed95e839943b48051717cdc1972ca94ef9e619ad35d49f0d1e0",
     "modules/donow/server/api/donow.mjs": "781754e4e3e1197c091b423e00283abbb6de35926e5f1dba4d59c86c6c052365",
     "modules/economy/server/api/earnings.mjs": "bc5bf196f0d73b0fc7c077853c546011002afd63cfac4da9e8bb1ed32f333343",
     "modules/economy/server/api/economy.mjs": "a58bc6ac24d9d7932e37143301bd921edd08264012a2a39532e0503b0aaa6634",
@@ -155,7 +155,7 @@
       "source-resolved-finite-expansion": 10
     }
   },
-  "scope": "Current committed-source declarations; finite source family reconciliation. Not installed-live denominator and no percentage claimed. All non-GET/ALL handlers remain excluded from live read-only execution; inherited middleware and unresolved calls do not gain clearance.",
+  "scope": "Composite current actual source declarations: recoveryHEADf302 with exact reviewed uncommitted pinned-main10d8 Chess router input. Existing900 effect dependency pins mechanically admitted; onlyfive Chess dependency pins/two changed bytes and one read-only conclusion renewed, no broad effect re-audit. Sourceexpectedmount accounting retains historical bindings; not installed-live denominator or fresh172case replay.",
   "identityPolicy": "Declaration identity hashes owner, receiver, method, expression, guard conditions and handler excerpts, plus repeated-identical occurrence ordinal; independent of line offsets. Aliases and mounted occurrences must retain distinct mount IDs; no installed-live coverage implied.",
   "deviceFamily": [
     {
@@ -6988,7 +6988,7 @@
     {
       "declarationId": "decl-0934912564aa258a29bf1a1e-0",
       "file": "modules/chess/server/api/chess.mjs",
-      "line": 305,
+      "line": 309,
       "method": "get",
       "literalPaths": [
         "/ladder"
@@ -20484,8 +20484,8 @@
       },
       "expectedSourceURLTemplates": 644,
       "potentialEligibleExpectedSourceURLTemplates": 384,
-      "eligibleExpectedSourceURLsWithHistoricalCaseLinks": 56,
-      "eligibleExpectedSourceURLsWithoutHistoricalCaseLinks": 328,
+      "eligibleExpectedSourceURLsWithHistoricalCaseLinks": 94,
+      "eligibleExpectedSourceURLsWithoutHistoricalCaseLinks": 290,
       "configuredRuntimeObservedInstalledDenominator": null,
       "conditionalConstructionTemplates": [
         "/api/v1/home-dashboard/config",
@@ -20500,5 +20500,39 @@
     },
     "evidenceKind": "source-derived expected graph, conditional on successful exact-source boot and pinned Docker configuration profile; synthetic observations recorded separately, not installed runtime graph",
     "scope": "Source-derived expected config-pinned graph; actual production environment/config/loading and optional construction proofs remain separate. No observed-live denominator or request authorization."
+  },
+  "sourceState": {
+    "kind": "uncommitted-composite-source",
+    "recordedHEAD": "f3029f1b4e3c49f4aae656f800495b099a20a11d",
+    "mergeMainPin": "10d8d2107d5146bf7b147c5433c6f04b5072c777",
+    "overrideFiles": [
+      {
+        "file": "modules/chess/server/api/chess.mjs",
+        "sha256": "2bd72f67cf475ed95e839943b48051717cdc1972ca94ef9e619ad35d49f0d1e0",
+        "origin": "Reviewed full pinned-main merge into actual owner path"
+      }
+    ],
+    "parserFile": "/opt/Code/DaylightStation/.worktrees/application-modules/tests/readiness/application-modules/capture-http-declarations.cjs",
+    "parserSha256": "a5157e508fad57f0e48ea6dfa5ff0e70d187da35d0396947e2ab4d5040c92e65",
+    "otherCapturedFilesWorkingBytesEqualHEAD": "git diff HEAD exact captured-file intersection contains only reviewed override; no other selected API/composition/app changes",
+    "canonicalCaptureRequiredAfterCommit": true,
+    "capture": {
+      "path": "/tmp/readiness-main-integration/ledger-renewal/capture.json",
+      "sha256": "d691fabf50d3a9c863fc212a272947c4860a84742689c2b8be4b6c8b5f198c63"
+    },
+    "renewal": {
+      "path": "/tmp/readiness-main-integration/changed-source-facts.json",
+      "sha256": "e4b21b2104518170c1a0c351c6078a8ea779aaa1f0ab99c2f9a5829a3c151e32"
+    },
+    "historicalCandidateCommit": "c6ac6e69f8c104a968c397931c92dc55df1297f4",
+    "historicalAffectedSourcePins": {
+      "modules/chess/server/api/chess.mjs": "db5b1eade346a4b05608309e2b56ee2029f60a921fd0dffe9016733ba7a3b8c0",
+      "modules/chess/portable/resumeSlot.mjs": "fce5606a4ddb380703007dc3489e54454f0c8c707fc948d42e6f228fd549dce7",
+      "modules/chess/server/application/ChessResumeService.mjs": "e3a7d0634696999a53b57232df47b2699910324950812d54e7aad9ce411750f6",
+      "modules/chess/server/composition/runtime.mjs": "c5bff5c183557c446e6ec853be1f98482c478f95cd35397b080b5cfb203dfd1b",
+      "modules/chess/server/application/ChessConfigService.mjs": "e0dde434a8e469726f2603e806cf6f8918b1af710ab822837c1caeb96c7723d5"
+    },
+    "globalSourceEffectReaudit": false,
+    "freshEvidenceScope": "353 matching named JS assertions eachrole, one confined production build, one repeated ChessGET versusactual10d8 and five storedGETs versusactual14beb, bothwith actualintegratedcandidatebytes; no177case latestmain replay"
   }
 }

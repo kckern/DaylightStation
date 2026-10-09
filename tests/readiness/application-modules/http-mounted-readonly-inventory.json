@@ -51368,7 +51368,7 @@
   },
   "currentDenominatorReconciliation": {
     "artifact": "tests/readiness/application-modules/http-denominator-reconciliation.json",
-    "candidateCommit": "c6ac6e69f8c104a968c397931c92dc55df1297f4",
+    "candidateCommit": "f3029f1b4e3c49f4aae656f800495b099a20a11d",
     "counts": {
       "staticCalls": 1325,
       "literalRouteDeclarations": 1178,
@@ -51391,7 +51391,41 @@
       }
     },
     "historicalInventoryRetained": true,
-    "knownRemainingMountGaps": "Current100 historical declarations have78 source mount/expansion bindings and22 source-unwired dispositions in reviewed production boot. No remaining record lacks a source disposition; installed-live presence and unresolved transitive effects remain unknown. Source-unwired is not a live absence claim."
+    "knownRemainingMountGaps": "Current100 historical declarations have78 source mount/expansion bindings and22 source-unwired dispositions in reviewed production boot. No remaining record lacks a source disposition; installed-live presence and unresolved transitive effects remain unknown. Source-unwired is not a live absence claim.",
+    "sourceState": {
+      "kind": "uncommitted-composite-source",
+      "recordedHEAD": "f3029f1b4e3c49f4aae656f800495b099a20a11d",
+      "mergeMainPin": "10d8d2107d5146bf7b147c5433c6f04b5072c777",
+      "overrideFiles": [
+        {
+          "file": "modules/chess/server/api/chess.mjs",
+          "sha256": "2bd72f67cf475ed95e839943b48051717cdc1972ca94ef9e619ad35d49f0d1e0",
+          "origin": "Reviewed full pinned-main merge into actual owner path"
+        }
+      ],
+      "parserFile": "/opt/Code/DaylightStation/.worktrees/application-modules/tests/readiness/application-modules/capture-http-declarations.cjs",
+      "parserSha256": "a5157e508fad57f0e48ea6dfa5ff0e70d187da35d0396947e2ab4d5040c92e65",
+      "otherCapturedFilesWorkingBytesEqualHEAD": "git diff HEAD exact captured-file intersection contains only reviewed override; no other selected API/composition/app changes",
+      "canonicalCaptureRequiredAfterCommit": true,
+      "capture": {
+        "path": "/tmp/readiness-main-integration/ledger-renewal/capture.json",
+        "sha256": "d691fabf50d3a9c863fc212a272947c4860a84742689c2b8be4b6c8b5f198c63"
+      },
+      "renewal": {
+        "path": "/tmp/readiness-main-integration/changed-source-facts.json",
+        "sha256": "e4b21b2104518170c1a0c351c6078a8ea779aaa1f0ab99c2f9a5829a3c151e32"
+      },
+      "historicalCandidateCommit": "c6ac6e69f8c104a968c397931c92dc55df1297f4",
+      "historicalAffectedSourcePins": {
+        "modules/chess/server/api/chess.mjs": "db5b1eade346a4b05608309e2b56ee2029f60a921fd0dffe9016733ba7a3b8c0",
+        "modules/chess/portable/resumeSlot.mjs": "fce5606a4ddb380703007dc3489e54454f0c8c707fc948d42e6f228fd549dce7",
+        "modules/chess/server/application/ChessResumeService.mjs": "e3a7d0634696999a53b57232df47b2699910324950812d54e7aad9ce411750f6",
+        "modules/chess/server/composition/runtime.mjs": "c5bff5c183557c446e6ec853be1f98482c478f95cd35397b080b5cfb203dfd1b",
+        "modules/chess/server/application/ChessConfigService.mjs": "e0dde434a8e469726f2603e806cf6f8918b1af710ab822837c1caeb96c7723d5"
+      },
+      "globalSourceEffectReaudit": false,
+      "freshEvidenceScope": "353 matching named JS assertions eachrole, one confined production build, one repeated ChessGET versusactual10d8 and five storedGETs versusactual14beb, bothwith actualintegratedcandidatebytes; no177case latestmain replay"
+    }
   },
   "currentLayerObservation": {
     "artifact": "tests/readiness/application-modules/http-mounted-layer-observation.json",

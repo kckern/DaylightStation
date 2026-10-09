@@ -1,7 +1,7 @@
 {
   "schema": "daylight.cutover-readiness-evidence/v1",
   "readinessAccepted": false,
-  "stage": "134 historical live comparisons/125 independent contracts; 43 isolated unique accepted cases; union 163 accepted unique IDs, runtime denominator/readiness unproved; prior baseline failures retained",
+  "stage": "134 historical live comparisons/125 independent contracts;57 isolated unique accepted cases; historical-source union177 accepted IDs/168 independent contracts; selected pinned-main integration353JS+build+1ChessGET and5storedGETs verified; runtime denominator/readiness unproved, prior failures retained",
   "referenceMain": "c9234d2ba9ffe5a30ba03abf54a94b3b28d0c9df",
   "sourceCheckpointBeforeIntegration": "7c0936d1b5d450c3495fb5c105d7aaf196d3bc54",
   "schoolMainIntegration": {
@@ -596,7 +596,7 @@
       "unresolvedMountRecordsPerSnapshot": 147
     },
     "currentCommittedDeclarationSnapshot": "tests/readiness/application-modules/http-denominator-reconciliation.json",
-    "currentCandidateCommit": "c6ac6e69f8c104a968c397931c92dc55df1297f4",
+    "currentCandidateCommit": "f3029f1b4e3c49f4aae656f800495b099a20a11d",
     "currentExplicitGetDeclarations": 658,
     "currentLiteralGetDeclarations": 648,
     "currentDynamicGetDeclarations": 10,
@@ -620,8 +620,8 @@
     "isolatedAndLiveEvidenceAccounting": {
       "historicalLiveUniqueCases": 134,
       "historicalLiveIndependentContracts": 125,
-      "isolatedUniqueAcceptedCaseIds": 43,
-      "isolatedAcceptedOccurrences": 43,
+      "isolatedUniqueAcceptedCaseIds": 57,
+      "isolatedAcceptedOccurrences": 57,
       "isolatedReplayIdsAlreadyLive": [
         "health-catalog-food-not-found",
         "health-catalog-missing-query",
@@ -639,6 +639,11 @@
         "player-default-config"
       ],
       "isolatedNewCaseIds": [
+        "array-auto-document-records",
+        "array-auto-service-records",
+        "array-health-saved-meals-ordered",
+        "array-health-templates-active",
+        "array-health-templates-proposed",
         "following-auto-authored-place",
         "following-fitness-skyline-stored-run",
         "following-fitness-workout-run-projection",
@@ -649,6 +654,15 @@
         "following-life-roster",
         "following-school-reading-status",
         "following-school-reading-timeline",
+        "gaming-authored-definition",
+        "gaming-authored-experiences",
+        "gaming-authored-launch",
+        "gaming-authored-manifest",
+        "gaming-content-detail",
+        "gaming-content-list",
+        "gaming-filtered-experience-catalog",
+        "gaming-party-catalog",
+        "gaming-populated-environment",
         "synthetic-board-game-day",
         "synthetic-chess-pinned-resume",
         "synthetic-config-status",
@@ -669,11 +683,11 @@
         "synthetic-school-surface",
         "synthetic-school-transcript"
       ],
-      "unionUniqueAcceptedCaseIds": 163,
-      "unionIndependentContracts": 154,
+      "unionUniqueAcceptedCaseIds": 177,
+      "unionIndependentContracts": 168,
       "newLiveTemplates": 2,
-      "isolatedDistinctTemplates": 35,
-      "newIsolatedTemplates": 28,
+      "isolatedDistinctTemplates": 48,
+      "newIsolatedTemplates": 41,
       "pendingNext15": {
         "cases": 15,
         "terminalResult": {
@@ -689,6 +703,23 @@
           "sha256": "6c338e43a14bda4c7fa47f2811218f23af19bc2fc11f1b397a31155fa102b85c"
         },
         "acceptedCredit": 10
+      },
+      "completedGaming9": {
+        "cases": 9,
+        "terminalResult": {
+          "path": "/tmp/readiness-gaming-pair-run/pair-result.json",
+          "sha256": "27122fc7111e9aca3c837ca4d0f33dcc73213190e4444f04f6ccf256e9d71fc6"
+        },
+        "acceptedCredit": 9
+      },
+      "completedArrayStored5": {
+        "cases": 5,
+        "templates": 4,
+        "terminalResult": {
+          "path": "/tmp/readiness-array-stored-pair-run/pair-result.json",
+          "sha256": "149bafeb6281b74f9ea31dbb2e958f7e4e21bfaf001c25f0d553b111c6783a0f"
+        },
+        "acceptedCredit": 5
       }
     },
     "currentHistoricalLiveEligibleSourceTemplateLinks": 94,
@@ -696,17 +727,30 @@
     "currentSourceUnionEvidenceAccounting": {
       "scope": "Separate historical-live and actual-source isolated executed coverage; source-template union only, no installed-live denominator",
       "historicalLiveEligibleTemplateLinks": 94,
-      "isolatedAdditionalEligibleTemplateLinks": 28,
-      "unionEligibleTemplatesWithExecutedCaseLinks": 122,
-      "unionEligibleTemplatesWithoutExecutedCaseLinks": 262,
+      "isolatedAdditionalEligibleTemplateLinks": 41,
+      "unionEligibleTemplatesWithExecutedCaseLinks": 135,
+      "unionEligibleTemplatesWithoutExecutedCaseLinks": 249,
       "isolatedOnlyTemplates": [
         "/api/v1/automotive/places",
+        "/api/v1/automotive/vehicles/:id/documents",
+        "/api/v1/automotive/vehicles/:id/service",
         "/api/v1/config/status",
         "/api/v1/fitness/skyline-glider/runs/:runId",
         "/api/v1/fitness/workouts/:id/run",
+        "/api/v1/gaming/catalog",
+        "/api/v1/gaming/definitions/:definitionId",
+        "/api/v1/gaming/environments/party-games/catalog",
+        "/api/v1/gaming/environments/party-games/profile",
+        "/api/v1/gaming/experiences",
+        "/api/v1/gaming/experiences/:experienceId/content",
+        "/api/v1/gaming/experiences/:experienceId/content/:contentId",
+        "/api/v1/gaming/experiences/:experienceId/manifest",
+        "/api/v1/gaming/launch/:definitionId",
         "/api/v1/gratitude/print",
         "/api/v1/health/coaching/schema",
         "/api/v1/health/medical",
+        "/api/v1/health/nutrition/meals",
+        "/api/v1/health/nutrition/templates",
         "/api/v1/home/weather",
         "/api/v1/life/user",
         "/api/v1/life/users",
@@ -732,8 +776,8 @@
       "counts": {
         "historicalLiveUniqueCases": 134,
         "historicalLiveIndependentContracts": 125,
-        "isolatedUniqueAcceptedCaseIds": 43,
-        "isolatedAcceptedOccurrences": 43,
+        "isolatedUniqueAcceptedCaseIds": 57,
+        "isolatedAcceptedOccurrences": 57,
         "isolatedReplayIdsAlreadyLive": [
           "health-catalog-food-not-found",
           "health-catalog-missing-query",
@@ -751,6 +795,11 @@
           "player-default-config"
         ],
         "isolatedNewCaseIds": [
+          "array-auto-document-records",
+          "array-auto-service-records",
+          "array-health-saved-meals-ordered",
+          "array-health-templates-active",
+          "array-health-templates-proposed",
           "following-auto-authored-place",
           "following-fitness-skyline-stored-run",
           "following-fitness-workout-run-projection",
@@ -761,6 +810,15 @@
           "following-life-roster",
           "following-school-reading-status",
           "following-school-reading-timeline",
+          "gaming-authored-definition",
+          "gaming-authored-experiences",
+          "gaming-authored-launch",
+          "gaming-authored-manifest",
+          "gaming-content-detail",
+          "gaming-content-list",
+          "gaming-filtered-experience-catalog",
+          "gaming-party-catalog",
+          "gaming-populated-environment",
           "synthetic-board-game-day",
           "synthetic-chess-pinned-resume",
           "synthetic-config-status",
@@ -781,11 +839,11 @@
           "synthetic-school-surface",
           "synthetic-school-transcript"
         ],
-        "unionUniqueAcceptedCaseIds": 163,
-        "unionIndependentContracts": 154,
+        "unionUniqueAcceptedCaseIds": 177,
+        "unionIndependentContracts": 168,
         "newLiveTemplates": 2,
-        "isolatedDistinctTemplates": 35,
-        "newIsolatedTemplates": 28,
+        "isolatedDistinctTemplates": 48,
+        "newIsolatedTemplates": 41,
         "pendingNext15": {
           "cases": 15,
           "terminalResult": {
@@ -801,6 +859,23 @@
             "sha256": "6c338e43a14bda4c7fa47f2811218f23af19bc2fc11f1b397a31155fa102b85c"
           },
           "acceptedCredit": 10
+        },
+        "completedGaming9": {
+          "cases": 9,
+          "terminalResult": {
+            "path": "/tmp/readiness-gaming-pair-run/pair-result.json",
+            "sha256": "27122fc7111e9aca3c837ca4d0f33dcc73213190e4444f04f6ccf256e9d71fc6"
+          },
+          "acceptedCredit": 9
+        },
+        "completedArrayStored5": {
+          "cases": 5,
+          "templates": 4,
+          "terminalResult": {
+            "path": "/tmp/readiness-array-stored-pair-run/pair-result.json",
+            "sha256": "149bafeb6281b74f9ea31dbb2e958f7e4e21bfaf001c25f0d553b111c6783a0f"
+          },
+          "acceptedCredit": 5
         }
       },
       "cases": [
@@ -1294,6 +1369,160 @@
             "decl-89256c34ff8da94f2c9d828e-0"
           ],
           "provenance": "actual-isolated-original14beb-vs-candidate"
+        },
+        {
+          "id": "gaming-authored-definition",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/gaming/definitions/:definitionId",
+          "declarationIds": [
+            "decl-b0985eec4aa7f278e2044f4b-0"
+          ],
+          "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+        },
+        {
+          "id": "gaming-authored-launch",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/gaming/launch/:definitionId",
+          "declarationIds": [
+            "decl-8581ae4a14ccc60adc099b3e-0"
+          ],
+          "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+        },
+        {
+          "id": "gaming-filtered-experience-catalog",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/gaming/catalog",
+          "declarationIds": [
+            "decl-7fe049a3c7d229b239ac0183-0"
+          ],
+          "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+        },
+        {
+          "id": "gaming-authored-experiences",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/gaming/experiences",
+          "declarationIds": [
+            "decl-70a191b3a3b1898b594a40ff-0"
+          ],
+          "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+        },
+        {
+          "id": "gaming-authored-manifest",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/gaming/experiences/:experienceId/manifest",
+          "declarationIds": [
+            "decl-3e33bc739b8fc1a35f2b77c1-0"
+          ],
+          "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+        },
+        {
+          "id": "gaming-populated-environment",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/gaming/environments/party-games/profile",
+          "declarationIds": [
+            "decl-46543dcdf650bf3ef8530639-0"
+          ],
+          "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+        },
+        {
+          "id": "gaming-party-catalog",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/gaming/environments/party-games/catalog",
+          "declarationIds": [
+            "decl-76ff92627b5380366b141940-0"
+          ],
+          "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+        },
+        {
+          "id": "gaming-content-list",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/gaming/experiences/:experienceId/content",
+          "declarationIds": [
+            "decl-4c3eb093205fe4d06e41bdfb-0"
+          ],
+          "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+        },
+        {
+          "id": "gaming-content-detail",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/gaming/experiences/:experienceId/content/:contentId",
+          "declarationIds": [
+            "decl-7c19fd6d9d8f820b261a0ee2-0"
+          ],
+          "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+        },
+        {
+          "id": "array-health-saved-meals-ordered",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/health/nutrition/meals",
+          "declarationIds": [
+            "decl-0d7435e174445a12e6be9bf9-0"
+          ],
+          "provenance": "actual-isolated-original14beb-vs-uncommitted-pinned-main10d8-integrated-candidate"
+        },
+        {
+          "id": "array-health-templates-active",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/health/nutrition/templates",
+          "declarationIds": [
+            "decl-f3648be8be07429628b3a54a-0"
+          ],
+          "provenance": "actual-isolated-original14beb-vs-uncommitted-pinned-main10d8-integrated-candidate"
+        },
+        {
+          "id": "array-health-templates-proposed",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/health/nutrition/templates",
+          "declarationIds": [
+            "decl-f3648be8be07429628b3a54a-0"
+          ],
+          "provenance": "actual-isolated-original14beb-vs-uncommitted-pinned-main10d8-integrated-candidate"
+        },
+        {
+          "id": "array-auto-service-records",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/automotive/vehicles/:id/service",
+          "declarationIds": [
+            "decl-e59430bd29d682b38ad0536b-0"
+          ],
+          "provenance": "actual-isolated-original14beb-vs-uncommitted-pinned-main10d8-integrated-candidate"
+        },
+        {
+          "id": "array-auto-document-records",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/automotive/vehicles/:id/documents",
+          "declarationIds": [
+            "decl-81f47d806662491e10554215-0"
+          ],
+          "provenance": "actual-isolated-original14beb-vs-uncommitted-pinned-main10d8-integrated-candidate"
         }
       ],
       "infrastructure": {
@@ -1328,7 +1557,42 @@
         "scope": "Actual original14beb and candidate source processes; same current installed dependencies. No original production image, fictionalimageDigest, liveconfig fixtureidentity or installed-runtime denominator claim."
       },
       "readinessAccepted": false
-    }
+    },
+    "currentSourceState": {
+      "kind": "uncommitted-composite-source",
+      "recordedHEAD": "f3029f1b4e3c49f4aae656f800495b099a20a11d",
+      "mergeMainPin": "10d8d2107d5146bf7b147c5433c6f04b5072c777",
+      "overrideFiles": [
+        {
+          "file": "modules/chess/server/api/chess.mjs",
+          "sha256": "2bd72f67cf475ed95e839943b48051717cdc1972ca94ef9e619ad35d49f0d1e0",
+          "origin": "Reviewed full pinned-main merge into actual owner path"
+        }
+      ],
+      "parserFile": "/opt/Code/DaylightStation/.worktrees/application-modules/tests/readiness/application-modules/capture-http-declarations.cjs",
+      "parserSha256": "a5157e508fad57f0e48ea6dfa5ff0e70d187da35d0396947e2ab4d5040c92e65",
+      "otherCapturedFilesWorkingBytesEqualHEAD": "git diff HEAD exact captured-file intersection contains only reviewed override; no other selected API/composition/app changes",
+      "canonicalCaptureRequiredAfterCommit": true,
+      "capture": {
+        "path": "/tmp/readiness-main-integration/ledger-renewal/capture.json",
+        "sha256": "d691fabf50d3a9c863fc212a272947c4860a84742689c2b8be4b6c8b5f198c63"
+      },
+      "renewal": {
+        "path": "/tmp/readiness-main-integration/changed-source-facts.json",
+        "sha256": "e4b21b2104518170c1a0c351c6078a8ea779aaa1f0ab99c2f9a5829a3c151e32"
+      },
+      "historicalCandidateCommit": "c6ac6e69f8c104a968c397931c92dc55df1297f4",
+      "historicalAffectedSourcePins": {
+        "modules/chess/server/api/chess.mjs": "db5b1eade346a4b05608309e2b56ee2029f60a921fd0dffe9016733ba7a3b8c0",
+        "modules/chess/portable/resumeSlot.mjs": "fce5606a4ddb380703007dc3489e54454f0c8c707fc948d42e6f228fd549dce7",
+        "modules/chess/server/application/ChessResumeService.mjs": "e3a7d0634696999a53b57232df47b2699910324950812d54e7aad9ce411750f6",
+        "modules/chess/server/composition/runtime.mjs": "c5bff5c183557c446e6ec853be1f98482c478f95cd35397b080b5cfb203dfd1b",
+        "modules/chess/server/application/ChessConfigService.mjs": "e0dde434a8e469726f2603e806cf6f8918b1af710ab822837c1caeb96c7723d5"
+      },
+      "globalSourceEffectReaudit": false,
+      "freshEvidenceScope": "353 matching named JS assertions eachrole, one confined production build, one repeated ChessGET versusactual10d8 and five storedGETs versusactual14beb, bothwith actualintegratedcandidatebytes; no177case latestmain replay"
+    },
+    "currentCommittedDeclarationSnapshotIsCompositePendingCommit": true
   },
   "packaging": {
     "file": ".dockerignore",
@@ -2240,7 +2504,7 @@
   },
   "denominatorReconciliation": {
     "artifact": "tests/readiness/application-modules/http-denominator-reconciliation.json",
-    "candidateCommit": "c6ac6e69f8c104a968c397931c92dc55df1297f4",
+    "candidateCommit": "f3029f1b4e3c49f4aae656f800495b099a20a11d",
     "counts": {
       "staticCalls": 1325,
       "literalRouteDeclarations": 1178,
@@ -2263,7 +2527,41 @@
       }
     },
     "historicalInventoryRetained": true,
-    "knownRemainingMountGaps": "Historical100 declarations retain78 source bindings and22 source-unwired boot dispositions. Current658GET has0 unresolved classification labels, but47 conditional declarations still require separate source effect/mount prerequisite review. Installed-live presence and eligible denominator remain unknown; source-unwired is not proof live absence."
+    "knownRemainingMountGaps": "Historical100 declarations retain78 source bindings and22 source-unwired boot dispositions. Current658GET has0 unresolved classification labels, but47 conditional declarations still require separate source effect/mount prerequisite review. Installed-live presence and eligible denominator remain unknown; source-unwired is not proof live absence.",
+    "sourceState": {
+      "kind": "uncommitted-composite-source",
+      "recordedHEAD": "f3029f1b4e3c49f4aae656f800495b099a20a11d",
+      "mergeMainPin": "10d8d2107d5146bf7b147c5433c6f04b5072c777",
+      "overrideFiles": [
+        {
+          "file": "modules/chess/server/api/chess.mjs",
+          "sha256": "2bd72f67cf475ed95e839943b48051717cdc1972ca94ef9e619ad35d49f0d1e0",
+          "origin": "Reviewed full pinned-main merge into actual owner path"
+        }
+      ],
+      "parserFile": "/opt/Code/DaylightStation/.worktrees/application-modules/tests/readiness/application-modules/capture-http-declarations.cjs",
+      "parserSha256": "a5157e508fad57f0e48ea6dfa5ff0e70d187da35d0396947e2ab4d5040c92e65",
+      "otherCapturedFilesWorkingBytesEqualHEAD": "git diff HEAD exact captured-file intersection contains only reviewed override; no other selected API/composition/app changes",
+      "canonicalCaptureRequiredAfterCommit": true,
+      "capture": {
+        "path": "/tmp/readiness-main-integration/ledger-renewal/capture.json",
+        "sha256": "d691fabf50d3a9c863fc212a272947c4860a84742689c2b8be4b6c8b5f198c63"
+      },
+      "renewal": {
+        "path": "/tmp/readiness-main-integration/changed-source-facts.json",
+        "sha256": "e4b21b2104518170c1a0c351c6078a8ea779aaa1f0ab99c2f9a5829a3c151e32"
+      },
+      "historicalCandidateCommit": "c6ac6e69f8c104a968c397931c92dc55df1297f4",
+      "historicalAffectedSourcePins": {
+        "modules/chess/server/api/chess.mjs": "db5b1eade346a4b05608309e2b56ee2029f60a921fd0dffe9016733ba7a3b8c0",
+        "modules/chess/portable/resumeSlot.mjs": "fce5606a4ddb380703007dc3489e54454f0c8c707fc948d42e6f228fd549dce7",
+        "modules/chess/server/application/ChessResumeService.mjs": "e3a7d0634696999a53b57232df47b2699910324950812d54e7aad9ce411750f6",
+        "modules/chess/server/composition/runtime.mjs": "c5bff5c183557c446e6ec853be1f98482c478f95cd35397b080b5cfb203dfd1b",
+        "modules/chess/server/application/ChessConfigService.mjs": "e0dde434a8e469726f2603e806cf6f8918b1af710ab822837c1caeb96c7723d5"
+      },
+      "globalSourceEffectReaudit": false,
+      "freshEvidenceScope": "353 matching named JS assertions eachrole, one confined production build, one repeated ChessGET versusactual10d8 and five storedGETs versusactual14beb, bothwith actualintegratedcandidatebytes; no177case latestmain replay"
+    }
   },
   "reconciledReadonlyBatch": {
     "candidateCommit": "c6ac6e69f8c104a968c397931c92dc55df1297f4",
@@ -6075,13 +6373,267 @@
           }
         ],
         "productionOrLiveCoverage": false
+      },
+      {
+        "name": "gaming-synthetic-9",
+        "result": {
+          "path": "/tmp/readiness-gaming-pair-run/pair-result.json",
+          "sha256": "27122fc7111e9aca3c837ca4d0f33dcc73213190e4444f04f6ccf256e9d71fc6"
+        },
+        "comparison": {
+          "path": "/tmp/readiness-gaming-pair-run/comparison.json",
+          "sha256": "28014c6364cd7368642b67506fb36b7c0e27716ecd057c44ccfde1c500f7dff2"
+        },
+        "runs": [
+          {
+            "role": "original",
+            "sourceCommit": "14beb0cc931b3e87dc578d4f09dc0e4dbaa63cbd",
+            "workingTreeSha256": "39dd456bc5813060b2b7bc7a0ad81e650c29dfae63108c01154566a92cc1963d",
+            "capture": {
+              "file": "/tmp/readiness-gaming-pair-run/original/daylight-local-http-vEN2rV/capture.json",
+              "sha256": "87dfc7ab243afd37699ce74644b9cd7cba68ecd93c04eb14abd668a600a63de5"
+            },
+            "receipt": {
+              "file": "/tmp/readiness-gaming-pair-run/original/daylight-local-http-vEN2rV/receipt.json",
+              "sha256": "e8b30017bfa1efd6b34b564e30cfe2c6342237d2bf5f283af05f593883879693"
+            }
+          },
+          {
+            "role": "candidate",
+            "sourceCommit": "f3029f1b4e3c49f4aae656f800495b099a20a11d",
+            "workingTreeSha256": "fb27c1cef728a965e69f12e51fa7c2955024a85cd265e328c04348f437726577",
+            "capture": {
+              "file": "/tmp/readiness-gaming-pair-run/candidate/daylight-local-http-gq2Vxz/capture.json",
+              "sha256": "35c4d05708b3b5c8feb68e7bdd18e39d7b6821f2d7b21e8bff0187d771303889"
+            },
+            "receipt": {
+              "file": "/tmp/readiness-gaming-pair-run/candidate/daylight-local-http-gq2Vxz/receipt.json",
+              "sha256": "baf8231766df94819b7e1d29801178689415dc2c94de6b9a561cfc203d32ce2f"
+            }
+          }
+        ],
+        "proofSha256": "ae8656f30bfe7c544eba9fadb2f7fbf5d25a03193550d7697b44b2b20afb8b79",
+        "equivalenceAccepted": true,
+        "cases": [
+          {
+            "id": "gaming-authored-definition",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/gaming/definitions/:definitionId",
+            "declarationIds": [
+              "decl-b0985eec4aa7f278e2044f4b-0"
+            ],
+            "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+          },
+          {
+            "id": "gaming-authored-launch",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/gaming/launch/:definitionId",
+            "declarationIds": [
+              "decl-8581ae4a14ccc60adc099b3e-0"
+            ],
+            "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+          },
+          {
+            "id": "gaming-filtered-experience-catalog",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/gaming/catalog",
+            "declarationIds": [
+              "decl-7fe049a3c7d229b239ac0183-0"
+            ],
+            "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+          },
+          {
+            "id": "gaming-authored-experiences",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/gaming/experiences",
+            "declarationIds": [
+              "decl-70a191b3a3b1898b594a40ff-0"
+            ],
+            "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+          },
+          {
+            "id": "gaming-authored-manifest",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/gaming/experiences/:experienceId/manifest",
+            "declarationIds": [
+              "decl-3e33bc739b8fc1a35f2b77c1-0"
+            ],
+            "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+          },
+          {
+            "id": "gaming-populated-environment",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/gaming/environments/party-games/profile",
+            "declarationIds": [
+              "decl-46543dcdf650bf3ef8530639-0"
+            ],
+            "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+          },
+          {
+            "id": "gaming-party-catalog",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/gaming/environments/party-games/catalog",
+            "declarationIds": [
+              "decl-76ff92627b5380366b141940-0"
+            ],
+            "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+          },
+          {
+            "id": "gaming-content-list",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/gaming/experiences/:experienceId/content",
+            "declarationIds": [
+              "decl-4c3eb093205fe4d06e41bdfb-0"
+            ],
+            "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+          },
+          {
+            "id": "gaming-content-detail",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/gaming/experiences/:experienceId/content/:contentId",
+            "declarationIds": [
+              "decl-7c19fd6d9d8f820b261a0ee2-0"
+            ],
+            "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+          }
+        ],
+        "productionOrLiveCoverage": false
+      },
+      {
+        "name": "array-stored-five",
+        "result": {
+          "path": "/tmp/readiness-array-stored-pair-run/pair-result.json",
+          "sha256": "149bafeb6281b74f9ea31dbb2e958f7e4e21bfaf001c25f0d553b111c6783a0f"
+        },
+        "comparison": {
+          "path": "/tmp/readiness-array-stored-pair-run/comparison.json",
+          "sha256": "7664fe8e13b075c0e64b143921bfb103dcf155543594c8b3536dca8d255eb21a"
+        },
+        "runs": [
+          {
+            "role": "original",
+            "sourceCommit": "14beb0cc931b3e87dc578d4f09dc0e4dbaa63cbd",
+            "workingTreeSha256": "39dd456bc5813060b2b7bc7a0ad81e650c29dfae63108c01154566a92cc1963d",
+            "capture": {
+              "file": "/tmp/readiness-array-stored-pair-run/original/daylight-local-http-fojM0s/capture.json",
+              "sha256": "67ba82c1a5c3084da1a13594798e0c2ff05dca2c822b7a7c72e5c12047de3ea3"
+            },
+            "receipt": {
+              "file": "/tmp/readiness-array-stored-pair-run/original/daylight-local-http-fojM0s/receipt.json",
+              "sha256": "d3a8cd31ce150d8829fdf168c920e2ed268ea4a96aca82341c6a2003eb0f9598"
+            }
+          },
+          {
+            "role": "candidate",
+            "sourceCommit": "f3029f1b4e3c49f4aae656f800495b099a20a11d",
+            "workingTreeSha256": "d650934a817efc793e34abdb5df859a8c4cbd9ccc8fec9ec02e8951602aebdd8",
+            "capture": {
+              "file": "/tmp/readiness-array-stored-pair-run/candidate/daylight-local-http-6MtOST/capture.json",
+              "sha256": "b7d8098894ce6bbe1938e4b101e2af29ebc1bb0f4950fa4c32fb014660960d61"
+            },
+            "receipt": {
+              "file": "/tmp/readiness-array-stored-pair-run/candidate/daylight-local-http-6MtOST/receipt.json",
+              "sha256": "60c6166a6b3e8333cb2468effc702d2557cdef54ef96aeb1cfd208c7ca7754b0"
+            }
+          }
+        ],
+        "proofSha256": "1bb7ca9ee68efafb192bae7cd38c34fb5e1a99709af53138024576f2db45dcb5",
+        "equivalenceAccepted": true,
+        "cases": [
+          {
+            "id": "array-health-saved-meals-ordered",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/health/nutrition/meals",
+            "declarationIds": [
+              "decl-0d7435e174445a12e6be9bf9-0"
+            ],
+            "provenance": "actual-isolated-original14beb-vs-uncommitted-pinned-main10d8-integrated-candidate"
+          },
+          {
+            "id": "array-health-templates-active",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/health/nutrition/templates",
+            "declarationIds": [
+              "decl-f3648be8be07429628b3a54a-0"
+            ],
+            "provenance": "actual-isolated-original14beb-vs-uncommitted-pinned-main10d8-integrated-candidate"
+          },
+          {
+            "id": "array-health-templates-proposed",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/health/nutrition/templates",
+            "declarationIds": [
+              "decl-f3648be8be07429628b3a54a-0"
+            ],
+            "provenance": "actual-isolated-original14beb-vs-uncommitted-pinned-main10d8-integrated-candidate"
+          },
+          {
+            "id": "array-auto-service-records",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/automotive/vehicles/:id/service",
+            "declarationIds": [
+              "decl-e59430bd29d682b38ad0536b-0"
+            ],
+            "provenance": "actual-isolated-original14beb-vs-uncommitted-pinned-main10d8-integrated-candidate"
+          },
+          {
+            "id": "array-auto-document-records",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/automotive/vehicles/:id/documents",
+            "declarationIds": [
+              "decl-81f47d806662491e10554215-0"
+            ],
+            "provenance": "actual-isolated-original14beb-vs-uncommitted-pinned-main10d8-integrated-candidate"
+          }
+        ],
+        "productionOrLiveCoverage": false,
+        "fixtureAdmissionReview": {
+          "path": "/tmp/readiness-array-stored-execution-preparation/review.json",
+          "sha256": "1e4f4fa53c6baab1fbb28cbda77cd34ccee30a31103e7c3489f839f5b695f96e"
+        },
+        "fixtureAdmissionBeforeFailure": {
+          "path": "/tmp/readiness-array-stored-execution-preparation/controls-before.log",
+          "sha256": "835474fa92e1ee6daac7e63a9528489bb65e97faa9daf266118a752e8305ce60"
+        },
+        "fixtureAdmissionAfterControls": {
+          "path": "/tmp/readiness-array-stored-execution-preparation/controls-after.log",
+          "sha256": "0f13e2c015fb4916bb23b68592938163a57edfaffff68f52cd02d94b09f54005"
+        }
       }
     ],
     "counts": {
       "historicalLiveUniqueCases": 134,
       "historicalLiveIndependentContracts": 125,
-      "isolatedUniqueAcceptedCaseIds": 43,
-      "isolatedAcceptedOccurrences": 43,
+      "isolatedUniqueAcceptedCaseIds": 57,
+      "isolatedAcceptedOccurrences": 57,
       "isolatedReplayIdsAlreadyLive": [
         "health-catalog-food-not-found",
         "health-catalog-missing-query",
@@ -6099,6 +6651,11 @@
         "player-default-config"
       ],
       "isolatedNewCaseIds": [
+        "array-auto-document-records",
+        "array-auto-service-records",
+        "array-health-saved-meals-ordered",
+        "array-health-templates-active",
+        "array-health-templates-proposed",
         "following-auto-authored-place",
         "following-fitness-skyline-stored-run",
         "following-fitness-workout-run-projection",
@@ -6109,6 +6666,15 @@
         "following-life-roster",
         "following-school-reading-status",
         "following-school-reading-timeline",
+        "gaming-authored-definition",
+        "gaming-authored-experiences",
+        "gaming-authored-launch",
+        "gaming-authored-manifest",
+        "gaming-content-detail",
+        "gaming-content-list",
+        "gaming-filtered-experience-catalog",
+        "gaming-party-catalog",
+        "gaming-populated-environment",
         "synthetic-board-game-day",
         "synthetic-chess-pinned-resume",
         "synthetic-config-status",
@@ -6129,11 +6695,11 @@
         "synthetic-school-surface",
         "synthetic-school-transcript"
       ],
-      "unionUniqueAcceptedCaseIds": 163,
-      "unionIndependentContracts": 154,
+      "unionUniqueAcceptedCaseIds": 177,
+      "unionIndependentContracts": 168,
       "newLiveTemplates": 2,
-      "isolatedDistinctTemplates": 35,
-      "newIsolatedTemplates": 28,
+      "isolatedDistinctTemplates": 48,
+      "newIsolatedTemplates": 41,
       "pendingNext15": {
         "cases": 15,
         "terminalResult": {
@@ -6149,10 +6715,285 @@
           "sha256": "6c338e43a14bda4c7fa47f2811218f23af19bc2fc11f1b397a31155fa102b85c"
         },
         "acceptedCredit": 10
+      },
+      "completedGaming9": {
+        "cases": 9,
+        "terminalResult": {
+          "path": "/tmp/readiness-gaming-pair-run/pair-result.json",
+          "sha256": "27122fc7111e9aca3c837ca4d0f33dcc73213190e4444f04f6ccf256e9d71fc6"
+        },
+        "acceptedCredit": 9
+      },
+      "completedArrayStored5": {
+        "cases": 5,
+        "templates": 4,
+        "terminalResult": {
+          "path": "/tmp/readiness-array-stored-pair-run/pair-result.json",
+          "sha256": "149bafeb6281b74f9ea31dbb2e958f7e4e21bfaf001c25f0d553b111c6783a0f"
+        },
+        "acceptedCredit": 5
       }
     },
     "fullBodyDifferentialRetained": true,
     "independentContractScope": "Pinned meaningful whole/subset source-derived contracts; agreement does not certify complete business algorithms",
     "readinessAccepted": false
+  },
+  "pinnedMain10d8Integration": {
+    "state": "Uncommitted full pinned-main merge, parentreview/finalhook/commit pending",
+    "mainPin": "10d8d2107d5146bf7b147c5433c6f04b5072c777",
+    "recordedCandidateHEAD": "f3029f1b4e3c49f4aae656f800495b099a20a11d",
+    "sourceState": {
+      "kind": "uncommitted-composite-source",
+      "recordedHEAD": "f3029f1b4e3c49f4aae656f800495b099a20a11d",
+      "mergeMainPin": "10d8d2107d5146bf7b147c5433c6f04b5072c777",
+      "overrideFiles": [
+        {
+          "file": "modules/chess/server/api/chess.mjs",
+          "sha256": "2bd72f67cf475ed95e839943b48051717cdc1972ca94ef9e619ad35d49f0d1e0",
+          "origin": "Reviewed full pinned-main merge into actual owner path"
+        }
+      ],
+      "parserFile": "/opt/Code/DaylightStation/.worktrees/application-modules/tests/readiness/application-modules/capture-http-declarations.cjs",
+      "parserSha256": "a5157e508fad57f0e48ea6dfa5ff0e70d187da35d0396947e2ab4d5040c92e65",
+      "otherCapturedFilesWorkingBytesEqualHEAD": "git diff HEAD exact captured-file intersection contains only reviewed override; no other selected API/composition/app changes",
+      "canonicalCaptureRequiredAfterCommit": true,
+      "capture": {
+        "path": "/tmp/readiness-main-integration/ledger-renewal/capture.json",
+        "sha256": "d691fabf50d3a9c863fc212a272947c4860a84742689c2b8be4b6c8b5f198c63"
+      },
+      "renewal": {
+        "path": "/tmp/readiness-main-integration/changed-source-facts.json",
+        "sha256": "e4b21b2104518170c1a0c351c6078a8ea779aaa1f0ab99c2f9a5829a3c151e32"
+      },
+      "historicalCandidateCommit": "c6ac6e69f8c104a968c397931c92dc55df1297f4",
+      "historicalAffectedSourcePins": {
+        "modules/chess/server/api/chess.mjs": "db5b1eade346a4b05608309e2b56ee2029f60a921fd0dffe9016733ba7a3b8c0",
+        "modules/chess/portable/resumeSlot.mjs": "fce5606a4ddb380703007dc3489e54454f0c8c707fc948d42e6f228fd549dce7",
+        "modules/chess/server/application/ChessResumeService.mjs": "e3a7d0634696999a53b57232df47b2699910324950812d54e7aad9ce411750f6",
+        "modules/chess/server/composition/runtime.mjs": "c5bff5c183557c446e6ec853be1f98482c478f95cd35397b080b5cfb203dfd1b",
+        "modules/chess/server/application/ChessConfigService.mjs": "e0dde434a8e469726f2603e806cf6f8918b1af710ab822837c1caeb96c7723d5"
+      },
+      "globalSourceEffectReaudit": false,
+      "freshEvidenceScope": "353 matching named JS assertions eachrole, one confined production build, one repeated ChessGET versusactual10d8 and five storedGETs versusactual14beb, bothwith actualintegratedcandidatebytes; no177case latestmain replay"
+    },
+    "productChanges": 28,
+    "sourceCorrespondence": {
+      "path": "/tmp/readiness-main-integration/source-correspondence.json",
+      "sha256": "5e62d91d92357bad4d9e8681759a3fb6c427cb3adb6821301fcd6b50fa61a0ca"
+    },
+    "JSEvidence": [
+      {
+        "path": "/tmp/readiness-main-integration/chess-verification.json",
+        "sha256": "7ead597b95aee045029f6971f664f51e8d37bb0795cfaac370947615e8611f49"
+      },
+      {
+        "path": "/tmp/readiness-main-integration/exercise-verification.json",
+        "sha256": "2262528151ded7ac564bc7523c1ed7ecc2a00a5a932c84d8eb11f46f0458c7cc"
+      }
+    ],
+    "namedAssertionsEachRole": 353,
+    "build": {
+      "path": "/tmp/readiness-main-integration/production-build-verification.json",
+      "sha256": "72fe95e3f0c357fc2faadf34ad1a4a74fdea7da20e7945a4dadac4d590c4a1c6"
+    },
+    "focusedGET": {
+      "path": "/tmp/readiness-main-integration/chess-http-run/pair-result.json",
+      "sha256": "8b5a735aff0c8f8c46567d387551b53be41902903d8301599f7449d6c2c37cf1"
+    },
+    "focusedGETCases": 1,
+    "focusedGETId": "synthetic-chess-pinned-resume",
+    "newHTTPCaseCredit": 0,
+    "freshAll172HTTPReplay": false,
+    "JVM": {
+      "status": "durable original/candidate35each passed; independent result review required before checkpoint",
+      "receipt": {
+        "path": "/tmp/readiness-jvm35-og648W/receipt.json",
+        "sha256": "e291f9cf3ce22a3e128066e4b7b31dee8a10bd0bee5388bbc3c077ac7ba6183f"
+      },
+      "handoff": {
+        "path": "/tmp/readiness-jvm-execution/durable-result-handoff.json",
+        "sha256": "563453b720a8d0b06b8a85f627d20c12006779be75839c66e67116f438e621e1"
+      },
+      "same35Names": true,
+      "startedFinishedEachRole": 35,
+      "failedSkippedAssumptions": 0,
+      "controlsProtectedInputs": true,
+      "artifactScope": "Confined JVMunit tests against shared pinned unit stub; not Android/device/deploy proof",
+      "limitations": [
+        "-source11 -target11 on pinned JRE21: Java11 syntax/bytecode only; no Java11 API/platform or Android build compatibility certification (ct.sym absent)",
+        "shared unverified-origin unit stub; no API33/device/platform proof",
+        "networkInitializationDenied=true, outboundConnectExercised=false, connectionDenied=false; no outside-sentinel read control",
+        "no API comparison count or global cutover/device readiness claim"
+      ],
+      "durableFiles": [
+        {
+          "path": "tests/preimplementation/application-modules/tooling/java-guard-runner.c",
+          "sha256": "28cf1d9a9c16b1d673058bcad4d3e472319d9f8ee52bcdff7823da4b9dd001ea"
+        },
+        {
+          "path": "tests/preimplementation/application-modules/tooling/JvmLaneControl.java",
+          "sha256": "f914897f0281810d460351cf61ff66ba2b7c7d611b244efd699c8d399fd0d4f4"
+        },
+        {
+          "path": "tests/preimplementation/application-modules/tooling/run-reviewed-jvm35.mjs",
+          "sha256": "b663ed654867070d2358dc726952fcc42a24c84cf21f320ec61d453b7d6473d3"
+        },
+        {
+          "path": "tests/preimplementation/application-modules/tooling/selection.json",
+          "sha256": "ed74851acaf2e1a8576563ee75278cf143e8afe075df6a567f3fda29121135df"
+        },
+        {
+          "path": "tests/preimplementation/application-modules/tooling/bundle-pins.json",
+          "sha256": "f5a98781c46c4e9a634b6a1a45082306ebcf633338a35bd668cbe91018f876d9"
+        },
+        {
+          "path": "docs/_wip/audits/2026-10-09-readiness-confined-jvm35.md",
+          "sha256": "8a0474ccd9b53d6245a0f4ec674f70e0993d7f9ce18a513734853fa904740322"
+        }
+      ]
+    },
+    "failedIntegrationAttempts": [
+      {
+        "receipt": {
+          "path": "/tmp/readiness-main-integration/original-source/.superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/main-chess-LjqYjO/receipt.json",
+          "sha256": "c2fd3cf3e44af8b85a6009d8cbc046098dcbeb0c2a5e936ad4519318cf8de99d"
+        },
+        "pack": "main-chess",
+        "exitCode": 1,
+        "passed": 0,
+        "failed": [],
+        "incomplete": true
+      },
+      {
+        "receipt": {
+          "path": "/tmp/readiness-main-integration/original-source/.superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/main-chess-8MpJr4/receipt.json",
+          "sha256": "4d0ae99b05ed7d1cde9c1c2c636c724745ef2e17d94e04382073f62ef2f24574"
+        },
+        "pack": "main-chess",
+        "exitCode": 1,
+        "passed": 153,
+        "failed": [
+          "/api/v1/piano-games/chess/config refuses to write without a user",
+          "/api/v1/piano-games/chess/config serves the merged config",
+          "/api/v1/piano-games/chess/config writes the user layer on PUT",
+          "POST /api/v1/piano-games/chess/analyze answers with the engine's best move, never a rung's",
+          "POST /api/v1/piano-games/chess/analyze carries a promotion through, so a hint can point at a queening move",
+          "POST /api/v1/piano-games/chess/analyze rejects an invalid FEN before it reaches the engine",
+          "POST /api/v1/piano-games/chess/analyze says so plainly when no analyst is wired, rather than 500ing",
+          "POST /api/v1/piano-games/chess/analyze treats a finished position as a null move, not an error",
+          "POST /api/v1/piano-games/chess/games answers honestly when the ladder fails to persist, instead of claiming success",
+          "POST /api/v1/piano-games/chess/games folds a finished game into the ladder and answers with where it left the player",
+          "POST /api/v1/piano-games/chess/games is unavailable without a ladder service",
+          "POST /api/v1/piano-games/chess/games refuses without a user, so nothing is filed anonymously",
+          "POST /api/v1/piano-games/chess/games rejects a traversal in the user segment",
+          "POST /api/v1/piano-games/chess/games still answers 201 when head-to-head memory throws, because it is cosmetic",
+          "POST /api/v1/piano-games/chess/move logs and returns the server-resolved ladder opponent",
+          "POST /api/v1/piano-games/chess/move rejects an invalid FEN before it reaches the engine",
+          "POST /api/v1/piano-games/chess/move reports game over as a null move rather than an error",
+          "POST /api/v1/piano-games/chess/move returns the engine move for a legal position",
+          "POST /api/v1/piano-games/chess/quip maps an invalid replay to 400",
+          "POST /api/v1/piano-games/chess/quip passes only the validated user and serializable game request to the service",
+          "durable resume endpoints POST /progress saves, GET /users/:id/resumable returns it",
+          "durable resume endpoints a failed archive write still files the resume copy",
+          "durable resume endpoints a leaving archive keeps the game resumable; a finishing or restarting archive closes it",
+          "durable resume endpoints rejects a progress save with no moves or an unsafe user",
+          "identity arrives late and the decision log an unrelated fresh local checkpoint loses to the open server game (2026-10-09 tablet)",
+          "user id validation (path traversal) rejects a slash-bearing user even without dot-dot",
+          "user id validation (path traversal) rejects a traversal user on GET /config without reading anything",
+          "user id validation (path traversal) rejects a traversal user on POST /move before reading config or moving",
+          "user id validation (path traversal) rejects a traversal user on PUT /config without writing anything",
+          "user id validation (path traversal) still serves a plain user id"
+        ],
+        "incomplete": true
+      },
+      {
+        "receipt": {
+          "path": "/tmp/readiness-main-integration/original-source/.superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/main-piano-rep-J0FCqI/receipt.json",
+          "sha256": "60760ab72a4d7c82eae805445ba2f88d48b423209d99ec9007668b2bc886172c"
+        },
+        "pack": "main-piano-rep",
+        "exitCode": 2,
+        "passed": 0,
+        "failed": [],
+        "incomplete": true
+      },
+      {
+        "receipt": {
+          "path": "/tmp/readiness-main-integration/original-source/.superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/main-chess-3qj2Pz/receipt.json",
+          "sha256": "e292c6109db27c39325ba39c74a78b2d50397d53b0d6c724cb9af0925fee7963"
+        },
+        "pack": "main-chess",
+        "exitCode": 1,
+        "passed": 180,
+        "failed": [
+          "durable resume from the server copy a pinned server game beats even a fresh local checkpoint",
+          "durable resume from the server copy the incident: a checkpoint idle 12.7h defers to the server copy",
+          "identity arrives late and the decision log an unrelated fresh local checkpoint loses to the open server game (2026-10-09 tablet)"
+        ],
+        "incomplete": true
+      },
+      {
+        "receipt": {
+          "path": "/tmp/readiness-main-integration/original-source/.superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/main-chess-59Dvqq/receipt.json",
+          "sha256": "404c9f6e02455ae0d7f6799d9b65d14c37c8ea9e39928efaec37ff8f91a3b355"
+        },
+        "pack": "main-chess",
+        "exitCode": 1,
+        "passed": 177,
+        "failed": [],
+        "incomplete": true
+      }
+    ],
+    "directMissingOriginalLauncherAttempt": {
+      "path": "/tmp/readiness-main-integration/original-harness-overlay.json",
+      "sha256": "1b8f96f50ebd67c2182991bc981672e8d5f64bb6cf0a061fad8abd94acb3f2b1"
+    },
+    "ChessWaitPolicy": {
+      "libraryDefaultMs": 1000,
+      "configuredDefaultMs": 3000,
+      "scope": "Exact main-chess DOM suites, bothroles equally",
+      "explicitPerTestOverridesUnchanged": true,
+      "productFetchDeadlineUnchangedMs": 3000,
+      "noRetriesOrAssertionSubstitution": true,
+      "runtimeNeverTrueControl": "ActualDOM explicit25ms false condition rejected before1000mswatchdog; configurationmarker and actualhookdurations required",
+      "latencyCertification": false,
+      "reviews": [
+        {
+          "path": "/tmp/readiness-main-integration/chess-wait-review/review-verdict.json",
+          "sha256": "a6c0e0465072db35a50b2117f4194b7e7d83c4dff07d5965eebe5a68446579b8"
+        },
+        {
+          "path": "/tmp/readiness-main-integration/chess-wait-dom-review/verdict.json",
+          "sha256": "7e7984be97cb1db883063d79537600d61db2534b78c9eb857433118d8a5d0660"
+        }
+      ]
+    },
+    "canonicalCaptureRequiredAfterCommit": true,
+    "productionOrLiveCoverage": false,
+    "readinessAccepted": false,
+    "sourceReconciliation": {
+      "artifact": "tests/readiness/application-modules/http-denominator-reconciliation.json",
+      "countsUnchanged": true,
+      "existingStrictPinChecksPassed": true,
+      "GETIdentitiesUnchanged": true,
+      "currentCompositeCapture": {
+        "path": "/tmp/readiness-main-integration/ledger-renewal/capture.json",
+        "sha256": "d691fabf50d3a9c863fc212a272947c4860a84742689c2b8be4b6c8b5f198c63"
+      },
+      "canonicalPostCommitCaptureRequired": true
+    },
+    "additionalStoredGETEvidence": {
+      "pairResult": {
+        "path": "/tmp/readiness-array-stored-pair-run/pair-result.json",
+        "sha256": "149bafeb6281b74f9ea31dbb2e958f7e4e21bfaf001c25f0d553b111c6783a0f"
+      },
+      "referenceSource": "14beb0cc931b3e87dc578d4f09dc0e4dbaa63cbd",
+      "actualIntegratedCandidateSourceSha256": "d650934a817efc793e34abdb5df859a8c4cbd9ccc8fec9ec02e8951602aebdd8",
+      "cases": 5,
+      "templates": 4,
+      "historicalSourceComparison": true,
+      "independentContracts": true,
+      "no177caseLatestMainReplay": true
+    }
   }
 }

@@ -1,0 +1,21 @@
+{
+  "schema": "daylight.private-jvm-reviewed-bundle/v1",
+  "files": [
+    {
+      "name": "selection.json",
+      "sha256": "ed74851acaf2e1a8576563ee75278cf143e8afe075df6a567f3fda29121135df"
+    },
+    {
+      "name": "java-guard-runner.c",
+      "sha256": "28cf1d9a9c16b1d673058bcad4d3e472319d9f8ee52bcdff7823da4b9dd001ea"
+    },
+    {
+      "name": "JvmLaneControl.java",
+      "sha256": "f914897f0281810d460351cf61ff66ba2b7c7d611b244efd699c8d399fd0d4f4"
+    },
+    {
+      "name": "run-reviewed-jvm35.mjs",
+      "sha256": "b663ed654867070d2358dc726952fcc42a24c84cf21f320ec61d453b7d6473d3"
+    }
+  ]
+}

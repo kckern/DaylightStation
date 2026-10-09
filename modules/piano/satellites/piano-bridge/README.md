@@ -1,5 +1,10 @@
 # Piano Bridge (APK)
 
+> **2026-10-09: PAYLOAD p24 (`p24-foreground-launch`) is ON THE TABLET.** It adds the
+> foreground guard: any app but FKB is recalled within ~10 s (Settings gets 3 min
+> for Bluetooth pairing), and no disarm or install hold can last over 1 h. See
+> "Foreground guard" below.
+
 > **2026-09-30: SHELL v31 (`2.2-self-heal`) + PAYLOAD p21 (`p21-self-heal`) are ON THE
 > TABLET** (installed 12:36 PDT; right after the install the a11y bind restarted the
 > service by itself). Battery exemption GRANTED 12:40 PDT (`/status` → `batteryOptExempt: true`); the "Allow" tap needs kioskMode off or FKB steals the foreground first.
@@ -173,6 +178,50 @@ is overridden while plugged, and no ambient/AOD doze is configured (`doze_enable
 piano's own idle screensaver (FKB `screenOff`, 3-min) — exactly the dark-tablet case
 `ScreenWaker` wakes from. To make it stay on 24/7 instead, disable that screensaver
 (piano.yml `timeoutMinutes: 0`); the wake then becomes a pure safety net.
+
+### Foreground guard (payload p24, 2026-10-09)
+
+**Why it exists.** On 2026-10-09 the kids got out of the kiosk while `kioskMode` stayed
+`true` the whole time. The operator drawer's **Bluetooth pairing** tile opens Android
+Settings (FKB `startIntent`), and from Settings they reached other apps. The drift
+guard below saw nothing wrong, because nothing in FKB's settings had changed.
+
+So the same guard also asks, every 10 s, **is FKB actually in front?**
+(`KioskSettingsGuard.foregroundTick`, reading FKB `deviceInfo.foregroundApp`):
+
+| In front | Action |
+|---|---|
+| `de.ozerov.fully` | nothing; the away clock resets |
+| `com.android.settings` | allowed for `watchdogKioskForegroundSettingsGraceMs` (default 3 min) for Bluetooth pairing, then recalled |
+| `net.kckern.pianobridge` | allowed 2 min (the bounce-the-process launch) |
+| anything else | recalled on the tick it is seen |
+
+The grace counts from **first leaving FKB**, so hopping Settings → app → Settings does
+not restart it. A recall that does not take is retried every tick (noted once, then
+every 30th retry).
+
+**How a recall works, and what does NOT work.** FKB's own `toForeground` answers OK
+and does nothing: Android's background-activity-start rule refuses it (measured
+against Chrome). A HOME global action did not bring FKB back either. What works is the
+bridge starting FKB's launch intent **from its bound AccessibilityService context**,
+which Android exempts from that rule (`A11y.launch`). The recall sends all three:
+HOME, then the a11y launch, then `toForeground`. Measured on p24: Chrome was in front
+for 6.6 s before the page was visible again.
+
+**Stand-down ceiling.** Disarm and install hold both silence the foreground recall
+too, so neither may outlast **1 hour** (`MAX_STAND_DOWN_MS`). `POST
+/kiosk/settings/disarm` clamps to 60 min, and a longer deadline already in config
+(e.g. set with `pbctl config set`) is cut back to now + 1 h on the next tick.
+
+Config: `watchdogKioskForegroundEnabled` (true), `watchdogKioskForegroundIntervalMs`
+(10000), `watchdogKioskForegroundSettingsGraceMs` (180000). Status: `pbctl
+kiosk-settings` (the `foreground:` and `recalls:` lines).
+
+**Building on kckern-server** (no Mac needed): JDK 17 and the Android SDK live under
+`~/toolchains/`. Put `sdk.dir=$HOME/toolchains/android-sdk` in `app/local.properties`
+and export `JAVA_HOME=$(ls -d ~/toolchains/jdk-17*)`. Serve the jar to the tablet with
+`python3 -m http.server 8799 --bind <this-host-ip>` from `payload/build/payload/`; the sha256
+gate makes the source irrelevant to safety.
 
 ### FKB kiosk-settings drift guard (`KioskSettingsGuard`, versionCode 22)
 

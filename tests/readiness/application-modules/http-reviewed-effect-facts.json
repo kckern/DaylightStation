@@ -1,6 +1,6 @@
 {
   "schema": "daylight.reviewed-http-effects/v1",
-  "candidateCommit": "c6ac6e69f8c104a968c397931c92dc55df1297f4",
+  "candidateCommit": "f3029f1b4e3c49f4aae656f800495b099a20a11d",
   "sourceSha256": {
     "modules/piano/server/adapters/YamlPianoStudioDatastore.mjs": "6a29546186ce33ad48865978c60584ffec12ecd547b1b7f14db6cf27807cdba1",
     "modules/piano/server/adapters/persistence/yaml/YamlComposerSongStore.mjs": "db2d00ce61146bf78f17b1853de7d2e5664ee0618c2c1b5bc3f2ad4255610635",
@@ -530,11 +530,11 @@
     "modules/donow/server/application/surfaces/GarageFitnessSurface.mjs": "0219f0cc43fe34087b344f481754d047b52cb3d6ca74b4527f74fb6aa1f68523",
     "modules/donow/server/application/surfaces/LivingroomTvSurface.mjs": "22d4ad3b93de23a50903a9c29a9ba115bf1ac6ff37f472fab7c2a2592c8dfa1f",
     "modules/donow/server/application/surfaces/LaserSurface.mjs": "3d0ceb65e17bec0c2484901cc5f17cfddc924de21e896a234d58e1015f3d33be",
-    "modules/chess/server/api/chess.mjs": "db5b1eade346a4b05608309e2b56ee2029f60a921fd0dffe9016733ba7a3b8c0",
+    "modules/chess/server/api/chess.mjs": "2bd72f67cf475ed95e839943b48051717cdc1972ca94ef9e619ad35d49f0d1e0",
     "modules/chess/server/composition/runtime.mjs": "c5bff5c183557c446e6ec853be1f98482c478f95cd35397b080b5cfb203dfd1b",
     "modules/chess/server/application/ChessResumeService.mjs": "e3a7d0634696999a53b57232df47b2699910324950812d54e7aad9ce411750f6",
     "modules/chess/server/application/ChessConfigService.mjs": "e0dde434a8e469726f2603e806cf6f8918b1af710ab822837c1caeb96c7723d5",
-    "modules/chess/portable/resumeSlot.mjs": "fce5606a4ddb380703007dc3489e54454f0c8c707fc948d42e6f228fd549dce7",
+    "modules/chess/portable/resumeSlot.mjs": "e6c8c46d6aea672098febe6652d8b8059465761e2c8d87f3164fc1aaf1b531d4",
     "modules/finance/server/api/finance.mjs": "04921919546bb3a65b6da5b06ad410dfc6780a796b74ba29fafb18c29c71607b",
     "modules/finance/server/composition/financeApi.mjs": "cec09de271e1f393f990672a836d8c1e41cbe49e79d3656b9d19a6970e335e69",
     "modules/finance/server/application/FinanceApiService.mjs": "b9069667c3d523ba940d67977735981de52c05341c4283bd8a65f68b08fbee97",
@@ -10729,7 +10729,23 @@
         "backend/src/4_api/middleware/networkTrustResolver.mjs"
       ],
       "branchNotes": "Pinned composition only; configured mount/permission mapping and no-cookie/no-Bearer lane required. Active sid can save session lastSeenAt before permission denial. No live requests authorized. Missing resumeService501; unsafe user400. readSlot DataService direct uncached YAML; maxDays reads household config snapshot and user override. selectResumable normalizes per-request and chooses pinned/latest within window; does not abandon/clear expired slot/writeSlot or start engine process. Runtime engine construction is separate composition effect.",
-      "liveRequestAuthorized": false
+      "liveRequestAuthorized": false,
+      "sourceRenewal": {
+        "pins": {
+          "modules/chess/server/api/chess.mjs": "2bd72f67cf475ed95e839943b48051717cdc1972ca94ef9e619ad35d49f0d1e0",
+          "modules/chess/portable/resumeSlot.mjs": "e6c8c46d6aea672098febe6652d8b8059465761e2c8d87f3164fc1aaf1b531d4",
+          "modules/chess/server/application/ChessResumeService.mjs": "e3a7d0634696999a53b57232df47b2699910324950812d54e7aad9ce411750f6",
+          "modules/chess/server/composition/runtime.mjs": "c5bff5c183557c446e6ec853be1f98482c478f95cd35397b080b5cfb203dfd1b",
+          "modules/chess/server/application/ChessConfigService.mjs": "e0dde434a8e469726f2603e806cf6f8918b1af710ab822837c1caeb96c7723d5"
+        },
+        "conclusion": "Finite existing-slot/config lookup and pure selectResumable remain safe in isolated token-free/no-cookie lane. Actual selected GET invokes resumable -> readSlot+readConfig/selectResumable, not recordIntoSlot/writeSlot/engine/abandon. Logging is existing operational diagnostics, not state/provider/session mutation.",
+        "declarationIdentityUnchanged": true,
+        "actualSelectedPairedReceipt": {
+          "path": "/tmp/readiness-main-integration/chess-http-run/pair-result.json",
+          "sha256": "8b5a735aff0c8f8c46567d387551b53be41902903d8301599f7449d6c2c37cf1"
+        },
+        "globalAudit": false
+      }
     },
     {
       "declarationId": "decl-aa0f3caebfab4a802321a10f-0",
@@ -18152,5 +18168,39 @@
     }
   ],
   "mountPolicy": "Source-unwired-in-reviewed-boot means no current boot wiring established for this declaration; it is not a statement of installed-live absence or complete dynamic-plugin exclusion.",
-  "eligibilityPolicy": "Read policy permits benign process memoization/font registration and finite existing-file streams; excludes durable data writes, provider/device actions and session/intent changes. Effect classifications preserved; eligibility is distinct from mounting and success correctness. No source-only fact authorizes HTTP or counted production coverage."
+  "eligibilityPolicy": "Read policy permits benign process memoization/font registration and finite existing-file streams; excludes durable data writes, provider/device actions and session/intent changes. Effect classifications preserved; eligibility is distinct from mounting and success correctness. No source-only fact authorizes HTTP or counted production coverage.",
+  "sourceState": {
+    "kind": "uncommitted-composite-source",
+    "recordedHEAD": "f3029f1b4e3c49f4aae656f800495b099a20a11d",
+    "mergeMainPin": "10d8d2107d5146bf7b147c5433c6f04b5072c777",
+    "overrideFiles": [
+      {
+        "file": "modules/chess/server/api/chess.mjs",
+        "sha256": "2bd72f67cf475ed95e839943b48051717cdc1972ca94ef9e619ad35d49f0d1e0",
+        "origin": "Reviewed full pinned-main merge into actual owner path"
+      }
+    ],
+    "parserFile": "/opt/Code/DaylightStation/.worktrees/application-modules/tests/readiness/application-modules/capture-http-declarations.cjs",
+    "parserSha256": "a5157e508fad57f0e48ea6dfa5ff0e70d187da35d0396947e2ab4d5040c92e65",
+    "otherCapturedFilesWorkingBytesEqualHEAD": "git diff HEAD exact captured-file intersection contains only reviewed override; no other selected API/composition/app changes",
+    "canonicalCaptureRequiredAfterCommit": true,
+    "capture": {
+      "path": "/tmp/readiness-main-integration/ledger-renewal/capture.json",
+      "sha256": "d691fabf50d3a9c863fc212a272947c4860a84742689c2b8be4b6c8b5f198c63"
+    },
+    "renewal": {
+      "path": "/tmp/readiness-main-integration/changed-source-facts.json",
+      "sha256": "e4b21b2104518170c1a0c351c6078a8ea779aaa1f0ab99c2f9a5829a3c151e32"
+    },
+    "historicalCandidateCommit": "c6ac6e69f8c104a968c397931c92dc55df1297f4",
+    "historicalAffectedSourcePins": {
+      "modules/chess/server/api/chess.mjs": "db5b1eade346a4b05608309e2b56ee2029f60a921fd0dffe9016733ba7a3b8c0",
+      "modules/chess/portable/resumeSlot.mjs": "fce5606a4ddb380703007dc3489e54454f0c8c707fc948d42e6f228fd549dce7",
+      "modules/chess/server/application/ChessResumeService.mjs": "e3a7d0634696999a53b57232df47b2699910324950812d54e7aad9ce411750f6",
+      "modules/chess/server/composition/runtime.mjs": "c5bff5c183557c446e6ec853be1f98482c478f95cd35397b080b5cfb203dfd1b",
+      "modules/chess/server/application/ChessConfigService.mjs": "e0dde434a8e469726f2603e806cf6f8918b1af710ab822837c1caeb96c7723d5"
+    },
+    "globalSourceEffectReaudit": false,
+    "freshEvidenceScope": "353 matching named JS assertions eachrole, one confined production build, one repeated ChessGET versusactual10d8 and five storedGETs versusactual14beb, bothwith actualintegratedcandidatebytes; no177case latestmain replay"
+  }
 }

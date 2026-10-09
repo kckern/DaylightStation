@@ -1,6 +1,6 @@
 {
   "schema": "daylight.expected-installed-route-matrix/v1",
-  "candidateCommit": "c6ac6e69f8c104a968c397931c92dc55df1297f4",
+  "candidateCommit": "f3029f1b4e3c49f4aae656f800495b099a20a11d",
   "referenceCommit": "14beb0cc931b3e87dc578d4f09dc0e4dbaa63cbd",
   "evidenceKind": "source-derived expected graph, conditional on successful exact-source boot and pinned Docker configuration profile; synthetic observations recorded separately, not installed runtime graph",
   "configuration": {
@@ -405,12 +405,12 @@
     "modules/camera/server/application/CameraService.mjs": "0022e739a6c2ed7ac3bf8a68013dbc5d40d51465eefe122103e3df2c969a675c",
     "modules/camera/server/adapters/ReolinkCameraAdapter.mjs": "b08e8a6aa752fc664b4e022ad4c9a92279ef7657d245b06a3a0a89ff16a2028b",
     "modules/camera/server/adapters/HlsStreamManager.mjs": "531c97ef19c3b8c4971ecc81e9e818be9f8bd2ef8b23b7b793637124504b167b",
-    "modules/chess/server/api/chess.mjs": "db5b1eade346a4b05608309e2b56ee2029f60a921fd0dffe9016733ba7a3b8c0",
+    "modules/chess/server/api/chess.mjs": "2bd72f67cf475ed95e839943b48051717cdc1972ca94ef9e619ad35d49f0d1e0",
     "modules/chess/server/application/ChessConfigService.mjs": "e0dde434a8e469726f2603e806cf6f8918b1af710ab822837c1caeb96c7723d5",
     "modules/chess/server/composition/runtime.mjs": "c5bff5c183557c446e6ec853be1f98482c478f95cd35397b080b5cfb203dfd1b",
     "shared/contracts/householdConfig.mjs": "2d6c8fb289e6af95a827207f7937fe69b0ad7200b2944d6979827a799c94dd25",
     "modules/chess/server/application/ChessResumeService.mjs": "e3a7d0634696999a53b57232df47b2699910324950812d54e7aad9ce411750f6",
-    "modules/chess/portable/resumeSlot.mjs": "fce5606a4ddb380703007dc3489e54454f0c8c707fc948d42e6f228fd549dce7",
+    "modules/chess/portable/resumeSlot.mjs": "e6c8c46d6aea672098febe6652d8b8059465761e2c8d87f3164fc1aaf1b531d4",
     "modules/chess/server/application/ChessLadderService.mjs": "940fefa813ab2536bd14202a24742d25a8eef526ae174fb6d4ad178df67466e2",
     "modules/chess/portable/ladder.mjs": "262d3edfbc3a5a3f3a283b8157979ca334e68f737db2f2ae34dc71af4b01bd23",
     "modules/donow/server/api/donow.mjs": "781754e4e3e1197c091b423e00283abbb6de35926e5f1dba4d59c86c6c052365",
@@ -970,7 +970,7 @@
   },
   "referenceGETDeclarationCapture": "/tmp/readiness-live14-mount-source-capture.json",
   "referenceCaptureSha256": "891c1a38b76224916147d3635dd33118d16c7058c0c54547c76192b9dd922deb",
-  "candidateCapture": "/tmp/readiness-effects-current-capture.json",
+  "candidateCapture": "/tmp/readiness-main-integration/ledger-renewal/capture.json",
   "layerObservation": "tests/readiness/application-modules/http-mounted-layer-observation.json",
   "counts": {
     "allGETDeclarations": 658,
@@ -9610,13 +9610,13 @@
       "guardBranches": [],
       "condition": "Configured successful boot; root registry assignment and factory composition",
       "sourceProof": [
-        "modules/chess/server/api/chess.mjs:305",
+        "modules/chess/server/api/chess.mjs:309",
         "backend/src/app.mjs",
         "backend/src/4_api/v1/routers/api.mjs:83-185",
         "backend/src/app.mjs:1684",
         "modules/chess/server/application/ChessLadderService.mjs:28-53",
         "modules/chess/server/composition/runtime.mjs:30-33",
-        "modules/chess/server/api/chess.mjs:305-309",
+        "modules/chess/server/api/chess.mjs:309-313",
         "modules/chess/portable/ladder.mjs:159-171,177-204,314-331,350-367,406-408"
       ],
       "referenceDeclaration": {
@@ -45160,17 +45160,30 @@
   "isolatedAndLiveEvidenceUnion": {
     "scope": "Separate historical-live and actual-source isolated executed coverage; source-template union only, no installed-live denominator",
     "historicalLiveEligibleTemplateLinks": 94,
-    "isolatedAdditionalEligibleTemplateLinks": 28,
-    "unionEligibleTemplatesWithExecutedCaseLinks": 122,
-    "unionEligibleTemplatesWithoutExecutedCaseLinks": 262,
+    "isolatedAdditionalEligibleTemplateLinks": 41,
+    "unionEligibleTemplatesWithExecutedCaseLinks": 135,
+    "unionEligibleTemplatesWithoutExecutedCaseLinks": 249,
     "isolatedOnlyTemplates": [
       "/api/v1/automotive/places",
+      "/api/v1/automotive/vehicles/:id/documents",
+      "/api/v1/automotive/vehicles/:id/service",
       "/api/v1/config/status",
       "/api/v1/fitness/skyline-glider/runs/:runId",
       "/api/v1/fitness/workouts/:id/run",
+      "/api/v1/gaming/catalog",
+      "/api/v1/gaming/definitions/:definitionId",
+      "/api/v1/gaming/environments/party-games/catalog",
+      "/api/v1/gaming/environments/party-games/profile",
+      "/api/v1/gaming/experiences",
+      "/api/v1/gaming/experiences/:experienceId/content",
+      "/api/v1/gaming/experiences/:experienceId/content/:contentId",
+      "/api/v1/gaming/experiences/:experienceId/manifest",
+      "/api/v1/gaming/launch/:definitionId",
       "/api/v1/gratitude/print",
       "/api/v1/health/coaching/schema",
       "/api/v1/health/medical",
+      "/api/v1/health/nutrition/meals",
+      "/api/v1/health/nutrition/templates",
       "/api/v1/home/weather",
       "/api/v1/life/user",
       "/api/v1/life/users",
@@ -45196,8 +45209,8 @@
     "counts": {
       "historicalLiveUniqueCases": 134,
       "historicalLiveIndependentContracts": 125,
-      "isolatedUniqueAcceptedCaseIds": 43,
-      "isolatedAcceptedOccurrences": 43,
+      "isolatedUniqueAcceptedCaseIds": 57,
+      "isolatedAcceptedOccurrences": 57,
       "isolatedReplayIdsAlreadyLive": [
         "health-catalog-food-not-found",
         "health-catalog-missing-query",
@@ -45215,6 +45228,11 @@
         "player-default-config"
       ],
       "isolatedNewCaseIds": [
+        "array-auto-document-records",
+        "array-auto-service-records",
+        "array-health-saved-meals-ordered",
+        "array-health-templates-active",
+        "array-health-templates-proposed",
         "following-auto-authored-place",
         "following-fitness-skyline-stored-run",
         "following-fitness-workout-run-projection",
@@ -45225,6 +45243,15 @@
         "following-life-roster",
         "following-school-reading-status",
         "following-school-reading-timeline",
+        "gaming-authored-definition",
+        "gaming-authored-experiences",
+        "gaming-authored-launch",
+        "gaming-authored-manifest",
+        "gaming-content-detail",
+        "gaming-content-list",
+        "gaming-filtered-experience-catalog",
+        "gaming-party-catalog",
+        "gaming-populated-environment",
         "synthetic-board-game-day",
         "synthetic-chess-pinned-resume",
         "synthetic-config-status",
@@ -45245,11 +45272,11 @@
         "synthetic-school-surface",
         "synthetic-school-transcript"
       ],
-      "unionUniqueAcceptedCaseIds": 163,
-      "unionIndependentContracts": 154,
+      "unionUniqueAcceptedCaseIds": 177,
+      "unionIndependentContracts": 168,
       "newLiveTemplates": 2,
-      "isolatedDistinctTemplates": 35,
-      "newIsolatedTemplates": 28,
+      "isolatedDistinctTemplates": 48,
+      "newIsolatedTemplates": 41,
       "pendingNext15": {
         "cases": 15,
         "terminalResult": {
@@ -45265,6 +45292,23 @@
           "sha256": "6c338e43a14bda4c7fa47f2811218f23af19bc2fc11f1b397a31155fa102b85c"
         },
         "acceptedCredit": 10
+      },
+      "completedGaming9": {
+        "cases": 9,
+        "terminalResult": {
+          "path": "/tmp/readiness-gaming-pair-run/pair-result.json",
+          "sha256": "27122fc7111e9aca3c837ca4d0f33dcc73213190e4444f04f6ccf256e9d71fc6"
+        },
+        "acceptedCredit": 9
+      },
+      "completedArrayStored5": {
+        "cases": 5,
+        "templates": 4,
+        "terminalResult": {
+          "path": "/tmp/readiness-array-stored-pair-run/pair-result.json",
+          "sha256": "149bafeb6281b74f9ea31dbb2e958f7e4e21bfaf001c25f0d553b111c6783a0f"
+        },
+        "acceptedCredit": 5
       }
     },
     "cases": [
@@ -45758,6 +45802,160 @@
           "decl-89256c34ff8da94f2c9d828e-0"
         ],
         "provenance": "actual-isolated-original14beb-vs-candidate"
+      },
+      {
+        "id": "gaming-authored-definition",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/gaming/definitions/:definitionId",
+        "declarationIds": [
+          "decl-b0985eec4aa7f278e2044f4b-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+      },
+      {
+        "id": "gaming-authored-launch",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/gaming/launch/:definitionId",
+        "declarationIds": [
+          "decl-8581ae4a14ccc60adc099b3e-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+      },
+      {
+        "id": "gaming-filtered-experience-catalog",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/gaming/catalog",
+        "declarationIds": [
+          "decl-7fe049a3c7d229b239ac0183-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+      },
+      {
+        "id": "gaming-authored-experiences",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/gaming/experiences",
+        "declarationIds": [
+          "decl-70a191b3a3b1898b594a40ff-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+      },
+      {
+        "id": "gaming-authored-manifest",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/gaming/experiences/:experienceId/manifest",
+        "declarationIds": [
+          "decl-3e33bc739b8fc1a35f2b77c1-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+      },
+      {
+        "id": "gaming-populated-environment",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/gaming/environments/party-games/profile",
+        "declarationIds": [
+          "decl-46543dcdf650bf3ef8530639-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+      },
+      {
+        "id": "gaming-party-catalog",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/gaming/environments/party-games/catalog",
+        "declarationIds": [
+          "decl-76ff92627b5380366b141940-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+      },
+      {
+        "id": "gaming-content-list",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/gaming/experiences/:experienceId/content",
+        "declarationIds": [
+          "decl-4c3eb093205fe4d06e41bdfb-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+      },
+      {
+        "id": "gaming-content-detail",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/gaming/experiences/:experienceId/content/:contentId",
+        "declarationIds": [
+          "decl-7c19fd6d9d8f820b261a0ee2-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-candidate-f302"
+      },
+      {
+        "id": "array-health-saved-meals-ordered",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/health/nutrition/meals",
+        "declarationIds": [
+          "decl-0d7435e174445a12e6be9bf9-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-uncommitted-pinned-main10d8-integrated-candidate"
+      },
+      {
+        "id": "array-health-templates-active",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/health/nutrition/templates",
+        "declarationIds": [
+          "decl-f3648be8be07429628b3a54a-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-uncommitted-pinned-main10d8-integrated-candidate"
+      },
+      {
+        "id": "array-health-templates-proposed",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/health/nutrition/templates",
+        "declarationIds": [
+          "decl-f3648be8be07429628b3a54a-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-uncommitted-pinned-main10d8-integrated-candidate"
+      },
+      {
+        "id": "array-auto-service-records",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/automotive/vehicles/:id/service",
+        "declarationIds": [
+          "decl-e59430bd29d682b38ad0536b-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-uncommitted-pinned-main10d8-integrated-candidate"
+      },
+      {
+        "id": "array-auto-document-records",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/automotive/vehicles/:id/documents",
+        "declarationIds": [
+          "decl-81f47d806662491e10554215-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-uncommitted-pinned-main10d8-integrated-candidate"
       }
     ],
     "infrastructure": {
@@ -45792,5 +45990,39 @@
       "scope": "Actual original14beb and candidate source processes; same current installed dependencies. No original production image, fictionalimageDigest, liveconfig fixtureidentity or installed-runtime denominator claim."
     },
     "readinessAccepted": false
+  },
+  "sourceState": {
+    "kind": "uncommitted-composite-source",
+    "recordedHEAD": "f3029f1b4e3c49f4aae656f800495b099a20a11d",
+    "mergeMainPin": "10d8d2107d5146bf7b147c5433c6f04b5072c777",
+    "overrideFiles": [
+      {
+        "file": "modules/chess/server/api/chess.mjs",
+        "sha256": "2bd72f67cf475ed95e839943b48051717cdc1972ca94ef9e619ad35d49f0d1e0",
+        "origin": "Reviewed full pinned-main merge into actual owner path"
+      }
+    ],
+    "parserFile": "/opt/Code/DaylightStation/.worktrees/application-modules/tests/readiness/application-modules/capture-http-declarations.cjs",
+    "parserSha256": "a5157e508fad57f0e48ea6dfa5ff0e70d187da35d0396947e2ab4d5040c92e65",
+    "otherCapturedFilesWorkingBytesEqualHEAD": "git diff HEAD exact captured-file intersection contains only reviewed override; no other selected API/composition/app changes",
+    "canonicalCaptureRequiredAfterCommit": true,
+    "capture": {
+      "path": "/tmp/readiness-main-integration/ledger-renewal/capture.json",
+      "sha256": "d691fabf50d3a9c863fc212a272947c4860a84742689c2b8be4b6c8b5f198c63"
+    },
+    "renewal": {
+      "path": "/tmp/readiness-main-integration/changed-source-facts.json",
+      "sha256": "e4b21b2104518170c1a0c351c6078a8ea779aaa1f0ab99c2f9a5829a3c151e32"
+    },
+    "historicalCandidateCommit": "c6ac6e69f8c104a968c397931c92dc55df1297f4",
+    "historicalAffectedSourcePins": {
+      "modules/chess/server/api/chess.mjs": "db5b1eade346a4b05608309e2b56ee2029f60a921fd0dffe9016733ba7a3b8c0",
+      "modules/chess/portable/resumeSlot.mjs": "fce5606a4ddb380703007dc3489e54454f0c8c707fc948d42e6f228fd549dce7",
+      "modules/chess/server/application/ChessResumeService.mjs": "e3a7d0634696999a53b57232df47b2699910324950812d54e7aad9ce411750f6",
+      "modules/chess/server/composition/runtime.mjs": "c5bff5c183557c446e6ec853be1f98482c478f95cd35397b080b5cfb203dfd1b",
+      "modules/chess/server/application/ChessConfigService.mjs": "e0dde434a8e469726f2603e806cf6f8918b1af710ab822837c1caeb96c7723d5"
+    },
+    "globalSourceEffectReaudit": false,
+    "freshEvidenceScope": "353 matching named JS assertions eachrole, one confined production build, one repeated ChessGET versusactual10d8 and five storedGETs versusactual14beb, bothwith actualintegratedcandidatebytes; no177case latestmain replay"
   }
 }

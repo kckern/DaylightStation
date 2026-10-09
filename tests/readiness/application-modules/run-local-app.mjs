@@ -51,7 +51,9 @@ for (const [relative, value] of Object.entries(prepared.fixtureFiles)) {
   const reviewedArray = /^(?:(?:data\/household(?:-[a-zA-Z0-9_-]+)?\/(?:finance\/transaction\.pairs|gratitude\/(?:selections|discarded)\.gratitude|calendar\/calendar|apps\/calendar)|data\/users\/[a-zA-Z0-9_-]+\/lifelog\/nutrition\/(?:food_catalog|observations))\.ya?ml|data\/users\/[a-zA-Z0-9_-]+\/(?:lifeplan-metrics|ceremony-records)\.yml)$/.test(relative);
   // Exact metadata recipe source only; no dataset/raw path or resolution grant.
   const reviewedRecipeArray = relative === 'data/content/school/generated-banks/recipes.yml';
-  assert.ok(value && typeof value === 'object' && (!Array.isArray(value) || reviewedArray || reviewedRecipeArray), 'Only reviewed stored-data or exact School recipes paths may have an array root');
+  // Exact synthetic stored-array destinations only; no raw or filesystem grant.
+  const reviewedStoredArray = ["data/users/user_1/apps/health/meals.yml","data/household/automotive/synthetic-array-car/service.yml","data/household/automotive/synthetic-array-car/documents.yml"].includes(relative);
+  assert.ok(value && typeof value === 'object' && (!Array.isArray(value) || reviewedArray || reviewedRecipeArray || reviewedStoredArray), 'Only reviewed stored-data or exact School recipes paths may have an array root');
 }
 // Explicit runtime timezone matches the reviewed deployment/config contract.
 const runtimeTimezone = prepared.fixtureFiles['data/system/config/system.yml']?.timezone;

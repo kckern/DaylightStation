@@ -619,3 +619,7 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-10-09 | feat/story-time-no-repeat | ef5e840864 | Story time no-repeat (noRepeatDays); merged as 16a0f157f1 |
 | 2026-10-09 | fix/chess-durable-resume | d9d9261442 | server-side durable chess resume |
 | 2026-10-09 | fix/ghost-note-engraving | cb19f21458 | Wrong-note ghost engraved as chord on target stem; merged as c423426897 |
+| 2026-10-09 | fix/exercise-resolve-hold | 7e2a02c971 | Resolve hold before onPassed/onFailed; merged as 989124c4ca |
+| 2026-10-09 | fix/chess-resume-identity-race | eb52663237 | chess late-identity resume + pin/local-continuation fixes |
+| 2026-10-09 | fix/kiosk-foreground-guard | 6f4ecc6234 | Piano-bridge foreground guard (p24) + 1h stand-down ceiling |
+| 2026-10-09 | fix/rep-completion-hold | 1e3f7a07ca | Piano exercise: hold finished rep so its last note shows done |

@@ -244,6 +244,10 @@ export function createChessRouter({
       return res.status(400).json({ error: 'invalid_user' });
     }
     const { game, window_days: windowDays } = await resumeService.resumable(userId);
+    logger?.info?.('chess.resumable.served', {
+      userId, gameId: game?.gameId ?? null, pinned: Boolean(game?.pinned),
+      reason: game ? (game.pinned ? 'pinned' : 'newest-open') : 'none-open',
+    });
     return res.json({
       window_days: windowDays,
       game: game ? {

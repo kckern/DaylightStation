@@ -252,6 +252,15 @@ public class DeviceConfig {
     public long watchdogKioskSettingsInstallHoldMs() { return longOr("watchdogKioskSettingsInstallHoldMs", 900000L); }
     public long kioskSettingsDisarmUntilMs() { return longOr("kioskSettingsDisarmUntilEpochMs", 0L); }
 
+    // Foreground guard (2026-10-09): kioskMode stayed TRUE while kids roamed the tablet —
+    // the operator drawer's Bluetooth tile opened Android Settings, and from Settings they
+    // reached other apps. So "is FKB configured as a kiosk" is not enough; this pass asks
+    // "is FKB actually in front" and calls it back. Settings keeps a short grace so
+    // Bluetooth pairing still works; the grace counts from first leaving FKB.
+    public boolean watchdogKioskForegroundEnabled() { return boolOr("watchdogKioskForegroundEnabled", true); }
+    public long watchdogKioskForegroundIntervalMs() { return longOr("watchdogKioskForegroundIntervalMs", 10000L); }
+    public long watchdogKioskForegroundSettingsGraceMs() { return longOr("watchdogKioskForegroundSettingsGraceMs", 180000L); }
+
     // The install hold's DEADLINE, persisted because the APK install it guards against
     // STOPS this service — deploy step 7 then relaunches it (and says to repeat until
     // it answers). While this lived only in a BridgeCore field it reset to 0 on
