@@ -26,15 +26,32 @@
 import { existsSync, readFileSync } from 'fs';
 import { execSync } from 'child_process';
 import { hostname } from 'os';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
 import axios from 'axios';
 
 // ============================================================================
-// Config: read auth + host from container via docker exec
+// Config: read auth + host from the local data tree ($DAYLIGHT_BASE_PATH/data,
+// falling back to the repo's .env), else from the container via docker exec
 // (matches the buxfer.cli.mjs pattern — self-contained, no app server bootstrap)
 // ============================================================================
 
 const CONTAINER = 'daylight-station';
+const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
+
+function readDotEnv(key) {
+    const envFile = path.join(REPO_ROOT, '.env');
+    if (!existsSync(envFile)) return undefined;
+    const line = readFileSync(envFile, 'utf-8').split('\n').find(l => l.startsWith(`${key}=`));
+    return line?.slice(key.length + 1).trim().replace(/^["']|["']$/g, '') || undefined;
+}
+
+function localDataDir() {
+    if (process.env.DAYLIGHT_DATA_PATH) return process.env.DAYLIGHT_DATA_PATH;
+    const base = process.env.DAYLIGHT_BASE_PATH || readDotEnv('DAYLIGHT_BASE_PATH');
+    return base ? path.join(base, 'data') : null;
+}
 
 function dockerRead(filePath) {
     try {
@@ -45,6 +62,16 @@ function dockerRead(filePath) {
     } catch {
         return null;
     }
+}
+
+// filePath is relative to the app root (e.g. data/household/auth/plex.yml)
+function readDataFile(filePath) {
+    const dataDir = localDataDir();
+    if (dataDir) {
+        const local = path.join(dataDir, filePath.replace(/^data\//, ''));
+        if (existsSync(local)) return readFileSync(local, 'utf-8');
+    }
+    return dockerRead(filePath);
 }
 
 function loadConfig() {
@@ -59,10 +86,10 @@ function loadConfig() {
     // Token from household auth (env override wins)
     let token = envToken;
     if (!token) {
-        const authRaw = dockerRead('data/household/auth/plex.yml');
+        const authRaw = readDataFile('data/household/auth/plex.yml');
         if (!authRaw) {
-            console.error('Error: cannot read data/household/auth/plex.yml from the daylight-station container.');
-            console.error('Ensure the container is running, or set PLEX_TOKEN (and PLEX_HOST) to run off-host.');
+            console.error('Error: cannot read data/household/auth/plex.yml from the local data tree or the daylight-station container.');
+            console.error('Set DAYLIGHT_BASE_PATH (or put it in .env), or set PLEX_TOKEN (and PLEX_HOST).');
             process.exit(1);
         }
         token = (yaml.load(authRaw) || {}).token;
@@ -75,17 +102,18 @@ function loadConfig() {
     // Host from services.yml — keyed by current hostname (env override wins)
     let host = envHost;
     if (!host) {
-        const servicesRaw = dockerRead('data/system/config/services.yml');
+        const servicesRaw = readDataFile('data/system/config/services.yml');
         if (!servicesRaw) {
-            console.error('Error: cannot read data/system/config/services.yml from the container.');
+            console.error('Error: cannot read data/system/config/services.yml from the local data tree or the container.');
             console.error('Set PLEX_HOST env var to override.');
             process.exit(1);
         }
         const plexHosts = (yaml.load(servicesRaw) || {}).plex || {};
-        host = plexHosts[hostname()] || plexHosts['kckern-server'] || plexHosts.docker;
+        const env = process.env.DAYLIGHT_ENV || readDotEnv('DAYLIGHT_ENV');
+        host = (env && plexHosts[env]) || plexHosts[hostname()] || plexHosts['kckern-server'] || plexHosts.docker;
         if (!host) {
             console.error('Error: no plex host found in services.yml for the current host.');
-            console.error(`Tried hostname=${hostname()}, fallback kckern-server, fallback docker.`);
+            console.error(`Tried DAYLIGHT_ENV=${env}, hostname=${hostname()}, fallback kckern-server, fallback docker.`);
             console.error('Set PLEX_HOST env var to override.');
             process.exit(1);
         }
