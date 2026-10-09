@@ -25,6 +25,47 @@ export class GameSessionCoordinator {
     return this.#view(session, pinned.definition, viewer);
   }
 
+  /**
+   * Create a session and apply a known sequence of commands to it in ONE pass.
+   *
+   * Exists for rebuilding a game from its record (durable chess resume). The
+   * same commands sent through `dispatch` cost O(n^3): every dispatch reloads
+   * the session by replaying the whole journal through the rules, so a 74-ply
+   * game took ~18s to rebuild. Here each command is applied once, in memory,
+   * and committed to the journal as `dispatch` would have; the snapshot is
+   * written once at the end. Any rejected command throws and leaves a journal
+   * that stops at the last accepted one, which a later `resume` recovers from.
+   *
+   * @param {object} request  as `create`
+   * @param {Array<{actor_id: string, logical_time: number, command: object}>} steps
+   */
+  async createWithHistory(request, steps = []) {
+    const { ruleset, experience = null, launch = null, definitionId, participants = [], seats = [], setup = {}, seed, viewer = {} } = request;
+    const loaded = await this.definitions.getCurrent(definitionId);
+    if (!loaded) throw new GamingKernelError('definition_not_found', `Definition ${definitionId} was not found`);
+    const pinned = await this.definitions.pin(loaded);
+    const header = createGameSessionHeader({
+      sessionId: this.ids.session(), ruleset: { ...ruleset, definition_hash: pinned.hash }, experience, launch, artifacts: pinned.artifacts || {}, seed: seed ?? this.ids.seed(),
+      participants, seats, status: SESSION_STATUSES.ACTIVE,
+    });
+    let session = this.runtime.create({ header, definition: pinned.definition, setup });
+    const created = { header: clone(header), definition_id: definitionId, setup: clone(setup) };
+    await this.journal.create(header.session_id, { ...created, checksum: stableHash(created) });
+    for (const step of steps) {
+      const envelope = {
+        command_id: this.ids.command(), actor_id: step.actor_id, expected_revision: session.header.revision,
+        logical_time: step.logical_time, command: step.command,
+      };
+      this.authorization.authorizeCommand({ session, envelope, viewer });
+      const result = this.runtime.dispatch(session, envelope, pinned.definition, { recordedAt: this.clock.now().toISOString() });
+      const committed = { revision: result.session.header.revision, command: clone(envelope), events: clone(result.events) };
+      await this.journal.append(header.session_id, { ...committed, checksum: stableHash(committed) }, { expectedRevision: session.header.revision });
+      session = result.session;
+    }
+    await this.snapshots.put(session, { expectedRevision: null });
+    return this.#view(session, pinned.definition, viewer);
+  }
+
   async resume(sessionId, viewer = {}) {
     const loaded = await this.#load(sessionId);
     let { session } = loaded;

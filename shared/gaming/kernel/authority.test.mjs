@@ -59,3 +59,28 @@ describe('authority strategy conformance', () => {
     } }));
   });
 });
+
+describe('createWithHistory', () => {
+  const build = () => {
+    let n = 0;
+    const base = coordinator({ snapshots: new MemorySnapshotRepository(), journal: new MemorySessionJournal() });
+    base.ids = { ...base.ids, command: () => `authority:cmd-${n += 1}` };
+    return new CheckpointedLocalAuthority({ coordinator: base });
+  };
+  const steps = [3, 4, 5].map((amount, i) => ({ actor_id: 'p1', logical_time: i + 1, command: { type: 'add', amount } }));
+
+  it('applies every command once and survives a resume from the journal', async () => {
+    const authority = build();
+    const made = await authority.createWithHistory({ ...request, viewer: { participant_id: 'p1' } }, steps);
+    expect(made).toMatchObject({ header: { revision: 3 }, state: { count: 12 } });
+    await expect(authority.resume('authority:1', { participant_id: 'p1' })).resolves.toMatchObject({ header: { revision: 3 }, state: { count: 12 } });
+    // and it is a live session: the next command continues from it
+    const next = await authority.dispatch('authority:1', { ...envelope, command_id: 'authority:next', expected_revision: 3, logical_time: 9 }, { participant_id: 'p1' });
+    expect(next.state.count).toBe(15);
+  });
+
+  it('an empty history is just a created session', async () => {
+    const made = await build().createWithHistory({ ...request, viewer: { participant_id: 'p1' } }, []);
+    expect(made.header.revision).toBe(0);
+  });
+});

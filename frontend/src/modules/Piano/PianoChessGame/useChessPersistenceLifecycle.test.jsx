@@ -1,13 +1,15 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const api = vi.hoisted(() => ({
   archiveGame: vi.fn(),
   beaconArchive: vi.fn(() => true),
   saveGameRecord: vi.fn(async () => ({ ladder: { promoted: true } })),
+  saveProgress: vi.fn(async () => ({ saved: true })),
+  beaconProgress: vi.fn(() => true),
 }));
 
-import { useChessPersistenceLifecycle } from './useChessPersistenceLifecycle.js';
+import { useChessPersistenceLifecycle, PROGRESS_DEBOUNCE_MS } from './useChessPersistenceLifecycle.js';
 
 const move = { at: 20, san: 'e4', from: 'e2', to: 'e4', color: 'w', chords: ['Em', 'Eadd9'] };
 const game = (gameOver = false, plies = 1) => ({
@@ -373,5 +375,58 @@ describe('a game abandoned by starting another', () => {
     expect(logger.warn).toHaveBeenCalledWith('game-abandon-refused', expect.objectContaining({
       gameId: 'game-1', plies: 21, watchedPlies: 0, reason: 'not-played-here',
     }));
+  });
+});
+
+describe('server-side progress (durable resume)', () => {
+  beforeEach(() => { vi.clearAllMocks(); vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  const mount = (plies = 3, overrides = {}) => renderHook(
+    ({ currentGame, ...rest }) => useChessPersistenceLifecycle(props(currentGame, rest)),
+    { initialProps: { currentGame: game(false, plies), ...overrides } },
+  );
+
+  it('saves the in-progress game once the debounce elapses, in the archive shape', () => {
+    mount(3);
+    expect(api.saveProgress).not.toHaveBeenCalled();
+    act(() => { vi.advanceTimersByTime(PROGRESS_DEBOUNCE_MS + 1); });
+    expect(api.saveProgress).toHaveBeenCalledOnce();
+    expect(api.saveProgress.mock.calls[0][0]).toMatchObject({
+      game_id: 'game-1', user_id: 'learner4', completed: false, ended_by: 'in_progress', move_count: 3,
+    });
+  });
+
+  it('coalesces a move and its reply into one save', () => {
+    const { rerender } = mount(3);
+    act(() => { vi.advanceTimersByTime(PROGRESS_DEBOUNCE_MS - 100); });
+    rerender({ currentGame: game(false, 4) });
+    act(() => { vi.advanceTimersByTime(PROGRESS_DEBOUNCE_MS - 100); });
+    expect(api.saveProgress).not.toHaveBeenCalled();
+    act(() => { vi.advanceTimersByTime(200); });
+    expect(api.saveProgress).toHaveBeenCalledOnce();
+    expect(api.saveProgress.mock.calls[0][0].move_count).toBe(4);
+  });
+
+  it('does not save a board with no moves, a finished game, or a guest', () => {
+    mount(0);
+    mount(5, { currentGame: game(true, 5) });
+    renderHook(() => useChessPersistenceLifecycle(props(game(false, 3), { userId: null })));
+    act(() => { vi.advanceTimersByTime(PROGRESS_DEBOUNCE_MS * 2); });
+    expect(api.saveProgress).not.toHaveBeenCalled();
+  });
+
+  it('flushes a pending save by beacon when the page goes away', () => {
+    mount(3);
+    act(() => window.dispatchEvent(new Event('pagehide')));
+    expect(api.beaconProgress).toHaveBeenCalledOnce();
+    act(() => { vi.advanceTimersByTime(PROGRESS_DEBOUNCE_MS * 2); });
+    expect(api.saveProgress).not.toHaveBeenCalled();
+  });
+
+  it('a failing save never throws into play', async () => {
+    api.saveProgress.mockRejectedValueOnce(new Error('offline'));
+    mount(3);
+    expect(() => act(() => { vi.advanceTimersByTime(PROGRESS_DEBOUNCE_MS + 1); })).not.toThrow();
   });
 });
