@@ -22,7 +22,7 @@ class ReadingSessionService extends ProductionReadingSessionService {
   constructor(config = {}) { super({ scheduler: TEST_SCHEDULER, ...config }); }
 }
 
-function rig({ playing = true, scheduler = TEST_SCHEDULER } = {}) {
+function rig({ playing = true, scheduler = TEST_SCHEDULER, repeatCheck = null } = {}) {
   const state = { now: Date.parse('2026-09-30T18:31:36Z') };
   const clock = () => new Date(state.now);
   const sent = [];
@@ -43,6 +43,7 @@ function rig({ playing = true, scheduler = TEST_SCHEDULER } = {}) {
     isPlaying: typeof playing === 'function' ? playing : () => playing,
     wakeScreen: async (args) => { woke.push(args); return { ok: true }; },
     studyDay: () => '2026-09-30',
+    repeatCheck,
     realtime, clock, logger,
   });
   return {
@@ -161,5 +162,26 @@ describe('a failed adoption does not cost the child the room (review I1, M1)', (
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(r.logs.some((l) => l.event === 'school.reading.adoption-unacknowledged')).toBe(false);
     expect(r.sent.filter((m) => m.event === 'session-present')).toHaveLength(1);
+  });
+});
+
+
+describe('a learner card while a RECENTLY READ book is playing', () => {
+  it('does not adopt it: the book is refused read-recently and nothing is credited', async () => {
+    const r = rig({ repeatCheck: async () => ({ refuse: true, lastReadOn: '2026-09-28', today: '2026-09-30', noRepeatDays: 4 }) });
+    r.bookPlayed();
+    const result = await r.tap();
+    expect(result).toMatchObject({ status: 'reading_session_refused', reason: 'read-recently' });
+    expect(r.sessions.current('livingroom')).toBeNull();
+    expect(r.sent.find((m) => m.event === 'book-refused')).toMatchObject({ reason: 'read-recently', lastReadOn: '2026-09-28' });
+    expect(r.logs.some((l) => l.event === 'school.reading.adoption-skipped')).toBe(true);
+  });
+  it('adopts normally when the check allows or throws (fail open)', async () => {
+    const ok = rig({ repeatCheck: async () => ({ refuse: false }) });
+    ok.bookPlayed();
+    expect(await ok.tap()).toMatchObject({ status: 'reading_session_adopting' });
+    const boom = rig({ repeatCheck: async () => { throw new Error('x'); } });
+    boom.bookPlayed();
+    expect(await boom.tap()).toMatchObject({ status: 'reading_session_adopting' });
   });
 });

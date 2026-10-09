@@ -29,7 +29,10 @@ import { studyDayForInstant } from '#domains/school/studyDay.mjs';
 // validates them. A launcher fallback that could drift from the validator's
 // default would change what a learner's obligation MEANS without anything
 // failing.
-import { STORY_TIME_PROGRAM_ID, DEFAULT_STORY_TARGET } from '#domains/school/storyTime.mjs';
+import {
+  STORY_TIME_PROGRAM_ID, DEFAULT_STORY_TARGET, DEFAULT_STORY_NO_REPEAT_DAYS,
+  MAX_STORY_NO_REPEAT_DAYS, recentlyRead, noRepeatWindowDays,
+} from '#domains/school/storyTime.mjs';
 
 /** Wording for every "you can't start this here" path — one sentence, one place. */
 const AT_THE_TV = 'Story time happens on the living room TV — tap your card there.';
@@ -126,14 +129,19 @@ export class StoryTimeProgramLauncher {
     // it was simply never returned, so every surface downstream had to treat a
     // Saturday as a day the child failed to read.
     const schedule = entry.schedule ?? null;
+    // Absent takes the default; an unusable value turns the rule OFF (fail
+    // open — a typo must never refuse a child's book).
+    const nr = entry.noRepeatDays;
+    const noRepeatDays = nr === undefined || nr === null ? DEFAULT_STORY_NO_REPEAT_DAYS
+      : (Number.isInteger(nr) && nr >= 0 && nr <= MAX_STORY_NO_REPEAT_DAYS ? nr : 0);
     const subject = typeof entry.subject === 'string' && entry.subject.trim()
       ? entry.subject.trim()
       : null;
     if (entry.target === undefined || entry.target === null) {
-      return { enrolled: true, target: DEFAULT_STORY_TARGET, subject, schedule, unreadable: false };
+      return { enrolled: true, target: DEFAULT_STORY_TARGET, subject, schedule, noRepeatDays, unreadable: false };
     }
     if (Number.isInteger(entry.target) && entry.target > 0) {
-      return { enrolled: true, target: entry.target, subject, schedule, unreadable: false };
+      return { enrolled: true, target: entry.target, subject, schedule, noRepeatDays, unreadable: false };
     }
     return { enrolled: true, target: null, subject, schedule, unreadable: true };
   }
@@ -190,7 +198,7 @@ export class StoryTimeProgramLauncher {
     // No enrollment, no obligation — and no reason to read the log for a count
     // nothing will be compared against.
     if (!enrollment.enrolled) return this.#notEnrolled();
-    const { target, subject, schedule } = enrollment;
+    const { target, subject, schedule, noRepeatDays } = enrollment;
     let rows;
     try {
       rows = await this.#readingLog.listForDay(userId, day);
@@ -217,12 +225,47 @@ export class StoryTimeProgramLauncher {
       subject,
       // For the streak wall: which days this child is even asked to read on.
       schedule,
+      noRepeatDays,
       reads: rows ?? [],
       obligationProgress: { completed: Math.min(count, target), total: target },
       // Daily story time has no work session, so this is the durable identity
       // that keeps its completed disc on the board after `next` disappears.
       servedWork: doneToday ? [{ unitId: 'story-time:daily', title: 'Story time' }] : [],
     };
+  }
+
+  /**
+   * May this learner be refused this book because they finished it lately?
+   *
+   * ASSIGNMENT MODE ONLY (enrolled and count < target): a browsing child may
+   * re-read anything. FAILS OPEN on every doubt — unreadable enrollment or log,
+   * a throw, no contentId, rule off — answering `{refuse: false}` with a warn,
+   * because refusing a child's book on a guess is worse than a repeat.
+   * See `recentlyRead` for the exact window (today included).
+   *
+   * @returns {Promise<{refuse: boolean, lastReadOn: string|null, today: string|null, noRepeatDays: number|null}>}
+   */
+  async repeatCheck({ userId, contentId }) {
+    const allow = { refuse: false, lastReadOn: null, today: null, noRepeatDays: null };
+    if (!contentId) return allow;
+    try {
+      const status = await this.status({ userId });
+      if (status.error || !status.enrolled) return allow;
+      if (!(status.count < status.target)) return allow;
+      const noRepeatDays = status.noRepeatDays;
+      if (!(noRepeatDays > 0)) return { ...allow, noRepeatDays };
+      const today = this.studyDay();
+      const days = noRepeatWindowDays(today, noRepeatDays);
+      const perDay = await Promise.all(days.map(async (day) => {
+        const rows = day === today && Array.isArray(status.reads) ? status.reads : await this.#readingLog.listForDay(userId, day);
+        return (Array.isArray(rows) ? rows : []).map((r) => ({ ...r, studyDay: day }));
+      }));
+      const { recent, lastReadOn } = recentlyRead({ reads: perDay.flat(), contentId, today, noRepeatDays });
+      return { refuse: recent, lastReadOn, today, noRepeatDays };
+    } catch (err) {
+      this.#logger.warn?.('school.story-time.repeat-check-failed', { userId, contentId, error: err?.message ?? String(err) });
+      return allow;
+    }
   }
 
   /**
