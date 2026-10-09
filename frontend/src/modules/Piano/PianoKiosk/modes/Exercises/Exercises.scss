@@ -764,3 +764,23 @@
 @media (prefers-reduced-motion: reduce) {
   .piano-exercises *, .piano-exercise-run * { scroll-behavior: auto !important; transition: none !important; }
 }
+
+// THE RESOLVE HOLD (ExerciseRun `RESOLVE_HOLD_MS`). The host is told about a
+// resolved attempt only after the final note's verdict has been on screen; the
+// confirmed notes swell once, then settle. A transition on ds motion tokens —
+// no keyframes — and under reduced motion the colour alone carries it.
+.piano-exercise-run.is-resolve-held {
+  .exercise-note-done, .exercise-note-hit, .sequence-note-hit {
+    transform-box: fill-box;
+    transform-origin: center;
+    transition: transform var(--ds-motion-base, 200ms) var(--ds-motion-easing, ease-out);
+  }
+  &.is-resolve-passed:not(.is-resolve-settled) {
+    .exercise-note-done, .exercise-note-hit, .sequence-note-hit { transform: scale(1.18); }
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .piano-exercise-run.is-resolve-held {
+    .exercise-note-done, .exercise-note-hit, .sequence-note-hit { transition: none; transform: none !important; }
+  }
+}
