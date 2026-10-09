@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
@@ -36,6 +37,11 @@ function validate(manifest, targets) {
     assert.match(targets.reference.fixtureSha256, /^[a-f0-9]{64}$/);
     assert.equal(targets.reference.fixtureSha256, targets.candidate.fixtureSha256);
   }
+  validateManifest(manifest, targets.reference.url);
+}
+function validateManifest(manifest, origin) {
+  assert.equal(manifest?.schema, 'comparator-v1');
+  assert.ok(Array.isArray(manifest.cases) && manifest.cases.length > 0);
   const ids = new Set();
   for (const c of manifest.cases) {
     assert.ok(c.id && !ids.has(c.id)); ids.add(c.id);
@@ -43,12 +49,12 @@ function validate(manifest, targets) {
     assert.ok(['GET', 'HEAD'].includes(c.method));
     assert.match(c.path, /^\/(?!\/)/);
     assert.ok(!c.path.includes('\\') && !c.path.includes('#'));
-    assert.equal(new URL(c.path, targets.reference.url).origin, new URL(targets.reference.url).origin);
+    assert.equal(new URL(c.path, origin).origin, new URL(origin).origin);
     const e = c.expected;
     assert.ok(Number.isInteger(e?.status) && e.status >= 200 && e.status < 500, 'explicit non-server-error status required');
     assert.ok(e.headers && Object.keys(e.headers).length > 0);
     for (const [name, value] of Object.entries(e.headers)) { assert.equal(name, name.toLowerCase()); assert.equal(typeof value, 'string'); }
-    assert.ok(['json', 'json-array', 'text'].includes(e.body?.kind));
+    assert.ok(['json', 'json-array', 'text', 'binary'].includes(e.body?.kind));
     if (c.method === 'HEAD') assert.deepEqual(e.body, { kind: 'text', exact: '' }, 'HEAD requires an empty text body expectation');
     if (e.body.kind === 'json') {
       assert.ok(e.body.required && Object.keys(e.body.required).length > 0);
@@ -56,6 +62,10 @@ function validate(manifest, targets) {
       assert.ok(e.body.equals && Object.keys(e.body.equals).length > 0, 'independent expected JSON values required');
     } else if (e.body.kind === 'json-array') {
       assert.ok(Array.isArray(e.body.exact), 'independent exact array expectation required');
+    } else if (e.body.kind === 'binary') {
+      assert.ok(Number.isInteger(e.body.byteLength) && e.body.byteLength > 0 && e.body.byteLength <= 1048576);
+      assert.match(e.body.sha256, /^[a-f0-9]{64}$/);
+      assert.ok(e.headers['content-type'], 'Binary MIME required');
     } else assert.equal(typeof e.body.exact, 'string');
     const n = c.normalize ?? { jsonPaths: [], headers: [] };
     assert.ok(Array.isArray(n.jsonPaths) && Array.isArray(n.headers));
@@ -88,6 +98,14 @@ function inspect(response, c) {
     body = JSON.parse(body);
     assert.ok(Array.isArray(body), 'array response required');
     assert.deepEqual(body, c.expected.body.exact, 'expected array values and order');
+  } else if (c.expected.body.kind === 'binary') {
+    assert.equal(typeof response.bodyBase64, 'string', 'Raw binary bytes required');
+    const bytes = Buffer.from(response.bodyBase64, 'base64');
+    assert.equal(bytes.toString('base64'), response.bodyBase64, 'Canonical binary bytes required');
+    assert.ok(bytes.length <= 1048576, 'response exceeds 1 MiB');
+    assert.equal(bytes.length, c.expected.body.byteLength, 'Binary byte length');
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), c.expected.body.sha256, 'Binary SHA256');
+    body = response.bodyBase64; // Exact reference/candidate byte equality, no text decoding.
   } else assert.equal(body, c.expected.body.exact);
   for (const header of c.normalize?.headers ?? []) delete headers[header];
   return { status: response.status, headers, body };
@@ -98,6 +116,9 @@ function inspect(response, c) {
 // isolation or provenance proof. Live mode keeps its reference data identity separate.
 export async function compareApi({ manifest, targets, transport }) {
   validate(manifest, targets);
+  return compareValidated({ manifest, targets, transport });
+}
+async function compareValidated({ manifest, targets, transport }) {
   assert.equal(typeof transport, 'function');
   const cases = [];
   for (const c of manifest.cases) {
@@ -105,7 +126,7 @@ export async function compareApi({ manifest, targets, transport }) {
     const errors = [];
     for (const side of ['reference', 'candidate']) {
       try {
-        observations[side] = await transport({ side, url: new URL(c.path, targets[side].url).href, method: c.method });
+        observations[side] = await transport({ side, caseId:c.id, url: new URL(c.path, targets[side].url).href, method: c.method, bodyKind: c.expected.body.kind });
         inspect(observations[side], c);
       } catch (error) { errors.push({ side, message: error.message }); }
     }
@@ -125,7 +146,76 @@ export async function compareApi({ manifest, targets, transport }) {
   };
 }
 
-export async function fetchTransport({ url, method }) {
+// Admission is shared by capture and offline replay, before any socket request.
+export function validateCaptureManifest(manifest) {
+  validateManifest(manifest, 'http://127.0.0.1:43129');
+  for (const c of manifest.cases) {
+    assert.equal(c.method, 'GET');
+    assert.ok(!Object.hasOwn(c, 'headers') && !Object.hasOwn(c, 'body'), 'Capture has no credentials, headers or body');
+    const url = new URL(c.path, 'http://127.0.0.1:43129');
+    for (const key of url.searchParams.keys()) assert.ok(!/^(sid|cookie|authorization|bearer|token)$/i.test(key), 'Credential query denied');
+  }
+}
+export async function compareCapturedApi({ manifest, manifestSha256, pairNonce, fixtureFileSha256,
+  runtimeSha256, harnessSha256, runs, guardsAccepted }) {
+  validateCaptureManifest(manifest);
+  assert.equal(guardsAccepted, true, 'Fresh coordinator input guards required');
+  assert.match(pairNonce, /^[a-f0-9]{32}$/);
+  assert.equal(createHash('sha256').update(JSON.stringify(manifest)).digest('hex'), manifestSha256, 'Manifest identity mismatch');
+  for (const pin of [fixtureFileSha256, runtimeSha256, harnessSha256]) assert.match(pin, /^[a-f0-9]{64}$/);
+  assert.equal(runs.length, 2);
+  assert.deepEqual(runs.map(run => run.role), ['original', 'candidate']);
+  assert.notEqual(runs[0].sourceCommit, runs[1].sourceCommit);
+  assert.notEqual(runs[0].receipt.file, runs[1].receipt.file);
+  assert.notEqual(runs[0].capture.file, runs[1].capture.file);
+  const load = async pin => {
+    assert.match(pin.sha256, /^[a-f0-9]{64}$/);
+    const bytes = await readFile(pin.file);
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), pin.sha256, 'Stored evidence tampered');
+    return JSON.parse(bytes);
+  };
+  const captures = [];
+  for (const run of runs) {
+    assert.match(run.sourceCommit, /^[a-f0-9]{40}$/); assert.match(run.workingTreeSha256, /^[a-f0-9]{64}$/);
+    const receipt = await load(run.receipt), capture = await load(run.capture);
+    assert.equal(receipt.schema, 'local-app-result-v1');
+    assert.ok(receipt.completed && receipt.controls && receipt.protectedInputsUnchanged, 'Final guarded controls receipt required');
+    assert.equal(receipt.exitCode, 0); assert.equal(receipt.signal, null);
+    assert.equal(receipt.sourceCommit, run.sourceCommit);
+    assert.equal(capture.schema, 'isolated-api-capture-v1');
+    assert.equal(capture.url, 'http://127.0.0.1:43129');
+    for (const [key, value] of Object.entries({role:run.role, pairNonce, sourceCommit:run.sourceCommit,
+      workingTreeSha256:run.workingTreeSha256, fixtureFileSha256, runtimeSha256, harnessSha256, manifestSha256})) {
+      assert.equal(capture[key], value, 'Capture linkage: '+key);
+      if(key !== 'sourceCommit') assert.equal(receipt.capture[key], value, 'Receipt linkage: '+key);
+    }
+    assert.equal(receipt.capture.file, run.capture.file); assert.equal(receipt.capture.sha256, run.capture.sha256);
+    assert.equal(receipt.fixtureSha256, capture.fixtureSha256); assert.equal(receipt.runtimeTimezone, capture.runtimeTimezone);
+    assert.equal(receipt.capture.startedAt, capture.startedAt); assert.equal(receipt.capture.endedAt, capture.endedAt);
+    assert.ok(Number.isFinite(capture.startedAt) && Number.isFinite(capture.endedAt) && capture.startedAt < capture.endedAt);
+    assert.equal(capture.cases.length, manifest.cases.length);
+    for (const [i, c] of manifest.cases.entries()) {
+      const row = capture.cases[i];
+      assert.deepEqual(Object.keys(row).sort(), ['id','method','path','url','bodyKind','observed'].sort(), 'Unexpected captured request fields');
+      for (const [key, value] of Object.entries({id:c.id,method:c.method,path:c.path,bodyKind:c.expected.body.kind,url:new URL(c.path,capture.url).href})) assert.equal(row[key],value,'Request linkage: '+key);
+    }
+    captures.push(capture);
+  }
+  assert.ok(captures[0].endedAt <= captures[1].startedAt, 'Listeners must be sequential');
+  assert.equal(captures[0].fixtureSha256, captures[1].fixtureSha256);
+  assert.equal(captures[0].runtimeTimezone, captures[1].runtimeTimezone);
+  const targets = { mode:'captured-isolated', reference:captures[0], candidate:captures[1] };
+  const result = await compareValidated({ manifest, targets, transport:async ({side,caseId,url,method,bodyKind}) => {
+    const capture = captures[side === 'reference' ? 0 : 1];
+    const row = capture.cases.find(row => row.id === caseId && row.url === url && row.method === method && row.bodyKind === bodyKind);
+    assert.ok(row, 'No verified stored request'); return row.observed;
+  }});
+  result.declaredTargets = Object.fromEntries(Object.entries(targets).map(([key,value]) => [key,typeof value === 'object' ? { ...value, cases:undefined } : value]));
+  result.evidence = runs; result.productionOrLiveCoverage = false;
+  return result;
+}
+
+export async function fetchTransport({ url, method, bodyKind }) {
   const response = await fetch(url, { method, redirect: 'manual', signal: AbortSignal.timeout(5000) });
   // A fixed response limit keeps accidental stream endpoints out of this probe.
   const reader = response.body?.getReader();
@@ -138,7 +228,10 @@ export async function fetchTransport({ url, method }) {
       }
     } finally { await reader.cancel(); }
   }
-  return { status: response.status, headers: Object.fromEntries(response.headers), body: Buffer.concat(chunks).toString('utf8') };
+  const bytes = Buffer.concat(chunks);
+  return { status: response.status, headers: Object.fromEntries(response.headers),
+    ...(bodyKind === 'binary' ? { bodyBase64: bytes.toString('base64') } : { body: bytes.toString('utf8') }) };
+
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

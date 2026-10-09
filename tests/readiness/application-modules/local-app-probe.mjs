@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
 
 const scratch = process.env.PRE_RUN_ROOT;
-const { sourceRoot, fixtureFiles } = JSON.parse(fs.readFileSync(path.join(scratch, 'probe-input.json'), 'utf8'));
+const { sourceRoot, fixtureFiles, rawUTF8Files = [], rawBinaryFiles = [], fixtureDirectories = [], metadataDirectories = [] } = JSON.parse(fs.readFileSync(path.join(scratch, 'probe-input.json'), 'utf8'));
 const resultFile = path.join(scratch, 'boot-result.json');
 const result = { scope: 'Actual assembled app with synthetic configs and loopback HTTP; scheduler/MQTT disabled, no production data/provider/Docker/auth/shutdown certification', readinessAccepted: false, completed: false, phases: [], errors: [], termination: null };
 const save = () => fs.writeFileSync(resultFile, JSON.stringify(result, null, 2));
@@ -22,6 +22,13 @@ try {
   denied('host read', () => fs.readFileSync('/etc/hostname'));
   denied('source write', () => fs.openSync(path.join(sourceRoot, 'backend/src/app.mjs'), 'w'));
   fs.writeFileSync(path.join(scratch, 'permitted.txt'), 'synthetic');
+  // The launcher supplies UTC; reviewed application reads must use the fixture's
+  // explicit deployment timezone before any product module parses local dates.
+  const runtimeTimezone = fixtureFiles['data/system/config/system.yml']?.timezone;
+  assert.ok(typeof runtimeTimezone === 'string' && /^[A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)*$/.test(runtimeTimezone));
+  new Intl.DateTimeFormat('en-US', { timeZone: runtimeTimezone }).format(0);
+  process.env.TZ = runtimeTimezone;
+  result.runtimeTimezone = runtimeTimezone;
   process.env.DAYLIGHT_BASE_PATH = scratch;
   process.env.DAYLIGHT_ENV = 'readiness';
   for (const [relative, value] of Object.entries(fixtureFiles)) {
@@ -29,7 +36,30 @@ try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n');
   }
+  for (const row of [...rawUTF8Files, ...rawBinaryFiles]) {
+    const file = path.join(scratch, row.destination);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, Buffer.from(row.base64, 'base64'), { flag: 'wx', mode: 0o600 });
+  }
+  for (const relative of fixtureDirectories) fs.mkdirSync(path.join(scratch,relative),{recursive:true});
+  // Exact names-only menu projection: payload paths remain absent. No other fs call
+  // or readdir option is intercepted, and the original directory stays empty.
+  const originalReadDirectory = fs.readdirSync;
+  const metadata = new Map(metadataDirectories.map(row=>{const dir=path.join(scratch,row.destination);fs.mkdirSync(dir,{recursive:true});assert.equal(fs.realpathSync(dir),dir);assert.equal(originalReadDirectory(dir).length,0);return [dir,row];}));
+  if(metadata.size) fs.readdirSync = function(dir, options){
+    const row=typeof dir==='string'&&metadata.get(dir);
+    if(!row)return Reflect.apply(originalReadDirectory,this,arguments);
+    assert.equal(options,undefined,'Metadata admits names-only readdir');
+    return row.entries.map(entry=>entry.name);
+  };
   for (const directory of ['media/logs', 'data/system/history/ai-usage']) fs.mkdirSync(path.join(scratch, directory), { recursive: true });
+  for(const [dir,row] of metadata){
+    assert.deepEqual(fs.readdirSync(dir),row.entries.map(e=>e.name));
+    assert.deepEqual(originalReadDirectory(dir),[]);
+    assert.throws(()=>fs.readdirSync(dir,{withFileTypes:true}),/names-only/);
+    for(const entry of row.entries){assert.equal(fs.existsSync(path.join(dir,entry.name)),false);assert.throws(()=>fs.readFileSync(path.join(dir,entry.name)),error=>error.code==='ENOENT');}
+  }
+  if(metadata.size){assert.deepEqual(fs.readdirSync(path.join(scratch,'media/logs')),originalReadDirectory(path.join(scratch,'media/logs')));result.metadataDirectoryControls={exactNames:true,nonmatchingCallsOriginal:true,audioPayloadsAbsent:true,nonNameOptionsDenied:true};}
   const { initConfigService, configService } = await imported('backend/src/0_system/config/index.mjs');
   const { createSecretsProvider } = await imported('backend/src/1_adapters/secrets/createSecretsProvider.mjs');
   await initConfigService(path.join(scratch, 'data'), { secretsProviderFactory: createSecretsProvider });

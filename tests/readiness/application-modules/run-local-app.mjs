@@ -4,18 +4,30 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { validateCaptureManifest, fetchTransport } from './api-comparator.mjs';
+import { validateRawFixtures, validateDirectoryFixtures } from './raw-utf8-fixture.mjs';
 
 // Explicit local paths only; no default live origin, writable data mount or credentials.
 const options = {};
 for (let i = 2; i < process.argv.length; i++) {
   const key = process.argv[i];
-  assert.ok(['--source-root', '--tool-root', '--output-root', '--fixture', '--manifest', '--targets', '--controls-only'].includes(key), `Unknown option: ${key}`);
+  assert.ok(['--source-root', '--tool-root', '--output-root', '--fixture', '--manifest', '--targets', '--controls-only', '--capture-role', '--pair-nonce', '--runtime-sha256', '--harness-sha256'].includes(key), `Unknown option: ${key}`);
   assert.ok(!Object.hasOwn(options, key), `Duplicate option: ${key}`);
   if (key === '--controls-only') options[key] = true;
   else { assert.ok(process.argv[i + 1] && !process.argv[i + 1].startsWith('--'), `Missing ${key}`); options[key] = process.argv[++i]; }
 }
 for (const key of ['--source-root', '--tool-root', '--output-root']) assert.ok(path.isAbsolute(options[key] ?? ''), `Explicit absolute ${key} required`);
-assert.equal(Boolean(options['--manifest']), Boolean(options['--targets']), '--manifest and --targets must be supplied together');
+const captureRole = options['--capture-role'];
+assert.ok(!captureRole || ['original','candidate'].includes(captureRole));
+assert.equal(Boolean(options['--manifest']), Boolean(options['--targets'] || captureRole), '--manifest requires targets or capture role');
+assert.ok(!captureRole || !options['--targets'], 'Capture and live comparison are mutually exclusive');
+let captureExpectations = null;
+if (captureRole) {
+  assert.match(options['--pair-nonce'] ?? '', /^[a-f0-9]{32}$/);
+  for (const key of ['--runtime-sha256','--harness-sha256']) assert.match(options[key] ?? '', /^[a-f0-9]{64}$/);
+  captureExpectations = JSON.parse(fs.readFileSync(options['--manifest'], 'utf8'));
+  validateCaptureManifest(captureExpectations);
+} else for(const key of ['--pair-nonce','--runtime-sha256','--harness-sha256']) assert.equal(options[key], undefined, 'Capture-only metadata');
 assert.ok(!options['--controls-only'] || !options['--manifest'], 'Controls do not make business requests');
 const sourceRoot = fs.realpathSync(options['--source-root']);
 const revision = spawnSync('/usr/bin/git', ['rev-parse', 'HEAD'], { cwd: sourceRoot, encoding: 'utf8' });
@@ -28,13 +40,23 @@ assert.ok(outputRoot !== sourceRoot && !outputRoot.startsWith(sourceRoot + path.
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const fixtureFile = fs.realpathSync(options['--fixture'] ?? path.join(directory, 'local-app-fixture.json'));
 const prepared = JSON.parse(fs.readFileSync(fixtureFile, 'utf8'));
+const rawUTF8Files = validateRawFixtures(prepared);
+const rawBinaryFiles = prepared.rawBinaryFiles ?? [];
+const {fixtureDirectories, metadataDirectories} = validateDirectoryFixtures(prepared);
+const fixtureIdentity = rawUTF8Files.length || rawBinaryFiles.length || fixtureDirectories.length || metadataDirectories.length ? { fixtureFiles: prepared.fixtureFiles, rawUTF8Files, ...(rawBinaryFiles.length ? { rawBinaryFiles } : {}), ...(fixtureDirectories.length ? {fixtureDirectories} : {}), ...(metadataDirectories.length ? {metadataDirectories} : {}) } : prepared.fixtureFiles;
 const fixed = JSON.parse(fs.readFileSync(path.join(directory, 'local-app-fixture.json'), 'utf8'));
 assert.ok(prepared.fixtureFiles && typeof prepared.fixtureFiles === 'object');
 for (const [relative, value] of Object.entries(prepared.fixtureFiles)) {
   assert.ok(!path.isAbsolute(relative) && !relative.split(/[\\/]/).includes('..') && /^data\/.+\.ya?ml$/.test(relative), 'Unsafe fixture path');
-  const reviewedArray = /^data\/household(?:-[a-zA-Z0-9_-]+)?\/(?:finance\/transaction\.pairs|gratitude\/(?:selections|discarded)\.gratitude)\.ya?ml$/.test(relative);
-  assert.ok(value && typeof value === 'object' && (!Array.isArray(value) || reviewedArray), 'Only reviewed Finance pairs or Gratitude selections/discarded data may have an array root');
+  const reviewedArray = /^(?:(?:data\/household(?:-[a-zA-Z0-9_-]+)?\/(?:finance\/transaction\.pairs|gratitude\/(?:selections|discarded)\.gratitude|calendar\/calendar|apps\/calendar)|data\/users\/[a-zA-Z0-9_-]+\/lifelog\/nutrition\/(?:food_catalog|observations))\.ya?ml|data\/users\/[a-zA-Z0-9_-]+\/(?:lifeplan-metrics|ceremony-records)\.yml)$/.test(relative);
+  // Exact metadata recipe source only; no dataset/raw path or resolution grant.
+  const reviewedRecipeArray = relative === 'data/content/school/generated-banks/recipes.yml';
+  assert.ok(value && typeof value === 'object' && (!Array.isArray(value) || reviewedArray || reviewedRecipeArray), 'Only reviewed stored-data or exact School recipes paths may have an array root');
 }
+// Explicit runtime timezone matches the reviewed deployment/config contract.
+const runtimeTimezone = prepared.fixtureFiles['data/system/config/system.yml']?.timezone;
+assert.ok(typeof runtimeTimezone === 'string' && /^[A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)*$/.test(runtimeTimezone), 'Explicit supported fixture timezone required');
+new Intl.DateTimeFormat('en-US', { timeZone: runtimeTimezone }).format(0);
 // Keep credentials, services, integrations and devices synthetic and disabled.
 for (const relative of ['data/system/config/auth.yml', 'data/system/config/services.yml', 'data/system/config/adapters.yml', 'data/system/config/bots.yml', 'data/system/secrets.yml', 'data/household/integrations.yml', 'data/household/hardware/devices.yml']) {
   assert.deepEqual(prepared.fixtureFiles[relative], fixed.fixtureFiles[relative], `Unsafe startup fixture change: ${relative}`);
@@ -45,7 +67,7 @@ const scratch = path.join(run, 'scratch'), denied = path.join(run, 'denied');
 fs.mkdirSync(scratch); fs.mkdirSync(denied);
 fs.writeFileSync(path.join(denied, 'private.env'), 'synthetic private sentinel\n', { mode: 0o600 });
 fs.writeFileSync(path.join(scratch, 'openssl.cnf'), '');
-fs.writeFileSync(path.join(scratch, 'probe-input.json'), JSON.stringify({ sourceRoot, fixtureFiles: prepared.fixtureFiles }), { mode: 0o600 });
+fs.writeFileSync(path.join(scratch, 'probe-input.json'), JSON.stringify({ sourceRoot, fixtureFiles: prepared.fixtureFiles, rawUTF8Files, rawBinaryFiles, fixtureDirectories, metadataDirectories }), { mode: 0o600 });
 const hash = file => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const jsonHash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const grants = new Map();
@@ -79,14 +101,17 @@ const manifest = path.join(run, 'read-allowlist.tsv');
 assert.ok([...grants.keys()].every(file => !/[\r\n\t]/.test(file)), 'Unsafe grant path');
 fs.writeFileSync(manifest, [...grants].sort().map(([file, kind]) => `${kind}\t${file}\n`).join(''));
 const sourceInputs = [...grants].filter(([file, kind]) => kind === 'F').map(([file]) => ({ file, sha256: hash(file) }));
-for (const file of [fileURLToPath(import.meta.url), path.join(directory, 'api-comparator.mjs'), path.join(directory, entryName), path.join(directory, 'transparent-loader.mjs'), fixtureFile, path.join(sourceRoot, 'tests/preimplementation/application-modules/tooling/landlock-runner.c'), ...['--manifest', '--targets'].filter(key => options[key]).map(key => fs.realpathSync(options[key]))]) {
+const workingTreeSha256 = jsonHash(sourceInputs.filter(row=>row.file.startsWith(sourceRoot+path.sep)).map(row=>({path:path.relative(sourceRoot,row.file).split(path.sep).join('/'),sha256:row.sha256})).sort((a,b)=>a.path.localeCompare(b.path)));
+for (const file of [fileURLToPath(import.meta.url), path.join(directory, 'api-comparator.mjs'), path.join(directory, 'raw-utf8-fixture.mjs'), path.join(directory, entryName), path.join(directory, 'transparent-loader.mjs'), fixtureFile, path.resolve(directory, '../../preimplementation/application-modules/tooling/landlock-runner.c'), ...['--manifest', '--targets'].filter(key => options[key]).map(key => fs.realpathSync(options[key]))]) {
   if (!sourceInputs.some(row => row.file === file)) sourceInputs.push({ file, sha256: hash(file) });
 }
-const c = path.join(sourceRoot, 'tests/preimplementation/application-modules/tooling/landlock-runner.c');
+const c = path.resolve(directory, '../../preimplementation/application-modules/tooling/landlock-runner.c');
 const binary = path.join(run, 'landlock-runner');
 const compile = spawnSync('/usr/bin/gcc', ['-O2', '-Wall', '-Wextra', '-Werror', c, '-o', binary], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' } });
 assert.equal(compile.status, 0, compile.stderr);
 const args = [scratch, fs.realpathSync(process.execPath), manifest, toolRoot, path.join(run, 'transparent-loader.mjs'), path.join(run, entryName), denied, 'readiness-http', 'baseline', ''];
+const captureStartedAt = Date.now();
+let captured = null;
 const child = spawn('/usr/bin/timeout', ['--signal=KILL', '75s', binary, ...args], { cwd: scratch, env: { PATH: '/usr/bin:/bin' } });
 let stderr = '', finished = null, comparison = null, comparisonError = null, response = null, referenceIdentityBefore = null, referenceIdentityAfter = null;
 const referenceObservations = [];
@@ -100,6 +125,13 @@ for (let attempt = 0; attempt < 400 && !finished; attempt++) {
         const result = await fetch('http://127.0.0.1:43129/synthetic-control', { redirect: 'manual', signal: AbortSignal.timeout(2000) });
         response = { status: result.status, header: result.headers.get('x-control'), body: await result.text() };
         assert.deepEqual(response, { status: 200, header: 'actual-http', body: 'synthetic transport bytes\n' });
+      } else if (captureRole) {
+        captured = [];
+        for (const c of captureExpectations.cases) {
+          const url = new URL(c.path, 'http://127.0.0.1:43129').href;
+          captured.push({ id:c.id,method:c.method,path:c.path,url,bodyKind:c.expected.body.kind,
+            observed:await fetchTransport({url,method:c.method,bodyKind:c.expected.body.kind}) });
+        }
       } else if (options['--manifest']) {
         const { compareApi, fetchTransport } = await import('./api-comparator.mjs');
         const expectations = JSON.parse(fs.readFileSync(options['--manifest'], 'utf8'));
@@ -111,7 +143,7 @@ for (let attempt = 0; attempt < 400 && !finished; attempt++) {
         }
         assert.equal(new URL(targets.candidate.url).origin, 'http://127.0.0.1:43129', 'Candidate must be this task-owned listener');
         targets.candidate.workingTreeSha256 = jsonHash(sourceInputs.filter(row => row.file.startsWith(sourceRoot + path.sep)).map(row => ({ path: path.relative(sourceRoot, row.file).split(path.sep).join('/'), sha256: row.sha256 })).sort((a, b) => a.path.localeCompare(b.path)));
-        targets.candidate.fixtureSha256 = jsonHash(prepared.fixtureFiles);
+        targets.candidate.fixtureSha256 = jsonHash(fixtureIdentity);
         const observeReference = async () => {
           assert.equal(targets.readOnlyReference, true);
           const origin = new URL(targets.reference.url);
@@ -150,7 +182,19 @@ const required = ['private read', 'host read', 'source write', 'other TCP bind',
 const controls = cControls && (options['--controls-only'] ? required.every(name => proof?.controls?.includes(name)) : ['private read', 'host read', 'source write'].every(name => output.includes(`BOOT CONTROL ${name}: denied`)));
 const protectedInputsUnchanged = sourceInputs.every(row => hash(row.file) === row.sha256);
 const completed = terminal.exitCode === 0 && proof?.completed === true && controls && protectedInputsUnchanged && !comparisonError;
-const receipt = { sourceCommit, referenceObservations, referenceIdentityBefore, referenceIdentityAfter, executionInputs:sourceInputs.filter(row=>[fileURLToPath(import.meta.url),path.join(directory,'api-comparator.mjs'),path.join(directory,entryName),path.join(directory,'transparent-loader.mjs'),fixtureFile,c,...['--manifest','--targets'].filter(key=>options[key]).map(key=>fs.realpathSync(options[key]))].includes(row.file)), schema: 'local-app-result-v1', readinessAccepted: false, scope: options['--controls-only'] ? 'Synthetic networking controls' : 'Actual assembled application, synthetic configuration, finite reviewed HTTP cases only', ...terminal, completed, controls, protectedInputsUnchanged, comparisonAccepted: comparison?.accepted ?? null, comparisonPath: comparison ? path.join(run, 'comparison.json') : null, comparisonError, proof, response, output, stderr, sourceInputs, fixtureSha256: jsonHash(prepared.fixtureFiles), launcherSha256: hash(c), limits: { port: 43129, bindAddress: '127.0.0.1', addressSpaceGiB: 16, heapMiB: 1024, cpuSeconds: 180, alarmSeconds: 180, wallSeconds: 75, listenerSeconds: 30, fileMiB: 4, descriptors: 128 }, exclusions: ['Landlock constrains port, not bind address; audited driver binds loopback', 'Outbound TCP and standalone Unix sockets denied; existing anonymous IPC allowed', 'Scheduler/MQTT disabled; remaining real timers bounded', 'No production entrypoint, Docker, denied-role auth, live provider or natural shutdown proof'] };
+let capture = null;
+if (captureRole && captured) {
+  const record = {schema:'isolated-api-capture-v1', role:captureRole, pairNonce:options['--pair-nonce'],sourceCommit,
+    workingTreeSha256,
+    runtimeSha256:options['--runtime-sha256'],harnessSha256:options['--harness-sha256'],
+    fixtureFileSha256:hash(fixtureFile),fixtureSha256:jsonHash(fixtureIdentity),runtimeTimezone,
+    manifestSha256:jsonHash(captureExpectations),url:'http://127.0.0.1:43129',
+    startedAt:captureStartedAt,endedAt:Date.now(),cases:captured};
+  const file=path.join(run,'capture.json');
+  fs.writeFileSync(file,JSON.stringify(record,null,2),{mode:0o600,flag:'wx'});
+  const {cases,...metadata}=record;capture={...metadata,file,sha256:hash(file)};
+}
+const receipt = { capture, sourceCommit, runtimeTimezone, referenceObservations, referenceIdentityBefore, referenceIdentityAfter, executionInputs:sourceInputs.filter(row=>[fileURLToPath(import.meta.url),path.join(directory,'api-comparator.mjs'),path.join(directory,entryName),path.join(directory,'transparent-loader.mjs'),fixtureFile,c,...['--manifest','--targets'].filter(key=>options[key]).map(key=>fs.realpathSync(options[key]))].includes(row.file)), schema: 'local-app-result-v1', readinessAccepted: false, scope: options['--controls-only'] ? 'Synthetic networking controls' : 'Actual assembled application, synthetic configuration, finite reviewed HTTP cases only', ...terminal, completed, controls, protectedInputsUnchanged, comparisonAccepted: comparison?.accepted ?? null, comparisonPath: comparison ? path.join(run, 'comparison.json') : null, comparisonError, proof, response, output, stderr, sourceInputs, fixtureSha256: jsonHash(fixtureIdentity), launcherSha256: hash(c), limits: { port: 43129, bindAddress: '127.0.0.1', addressSpaceGiB: 16, heapMiB: 1024, cpuSeconds: 180, alarmSeconds: 180, wallSeconds: 75, listenerSeconds: 30, fileMiB: 4, descriptors: 128 }, exclusions: ['Landlock constrains port, not bind address; audited driver binds loopback', 'Outbound TCP and standalone Unix sockets denied; existing anonymous IPC allowed', 'Scheduler/MQTT disabled; remaining real timers bounded', 'No production entrypoint, Docker, denied-role auth, live provider or natural shutdown proof'] };
 fs.writeFileSync(path.join(run, 'receipt.json'), JSON.stringify(receipt, null, 2), { mode: 0o600 });
 console.log(JSON.stringify({ receipt: path.join(run, 'receipt.json'), ...terminal, completed, controls, protectedInputsUnchanged, comparisonAccepted: receipt.comparisonAccepted, comparisonError }));
 if (!completed || comparison?.accepted === false) process.exitCode = 1;

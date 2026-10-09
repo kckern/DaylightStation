@@ -89,3 +89,19 @@ test('array-root contracts preserve exact populated values and order', async () 
   }
   await assert.rejects(run(response(expected), response(expected), { manifest: { ...selected, cases: [{ ...selected.cases[0], normalize: { jsonPaths: ['0'], headers: [] } }] } }));
 });
+
+const binaryBytes = Buffer.from([255, 128, 65]);
+test('binary contracts compare canonical bytes, SHA256, length and MIME without UTF8 collapse', async () => {
+  const { createHash } = await import('node:crypto');
+  const body = { kind: 'binary', byteLength: binaryBytes.length, sha256: createHash('sha256').update(binaryBytes).digest('hex') };
+  const selected = { ...manifest, cases: [{ ...manifest.cases[0], expected: { status: 200, headers: { 'content-type': 'audio/mpeg', 'content-length': String(binaryBytes.length) }, body }, normalize: { jsonPaths: [], headers: ['date'] } }] };
+  const response = bytes => ({ status: 200, headers: { 'content-type': 'audio/mpeg', 'content-length': String(bytes.length), date: 'synthetic' }, body: bytes.toString('utf8'), bodyBase64: bytes.toString('base64') });
+  assert.equal((await run(response(binaryBytes), response(binaryBytes), { manifest: selected })).accepted, true);
+  const other = Buffer.from([254, 129, 65]);
+  assert.equal(binaryBytes.toString('utf8'), other.toString('utf8'));
+  assert.equal((await run(response(binaryBytes), response(other), { manifest: selected })).accepted, false);
+  for (const bad of [{ ...response(binaryBytes), bodyBase64: undefined }, { ...response(binaryBytes), bodyBase64: binaryBytes.toString('base64') + '\n' }, { ...response(binaryBytes), headers: { 'content-type': 'text/plain' } }, response(Buffer.from([255, 128]))]) assert.equal((await run(bad, bad, { manifest: selected })).accepted, false);
+  let calls = 0;
+  for (const change of [{ byteLength: 1048577 }, { byteLength: 0 }, { sha256: 'bad' }]) await assert.rejects(run(response(binaryBytes), response(binaryBytes), { manifest: { ...selected, cases: [{ ...selected.cases[0], expected: { ...selected.cases[0].expected, body: { ...body, ...change } } }] }, transport: async () => { calls++; return response(binaryBytes); } }));
+  assert.equal(calls, 0);
+});
