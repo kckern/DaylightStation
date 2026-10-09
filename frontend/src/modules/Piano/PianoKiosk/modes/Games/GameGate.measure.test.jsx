@@ -250,6 +250,8 @@ describe('GameGate geometry at the kiosk canvas (1280x800, real compiled SCSS)',
         act(() => { h.activeNotes = new Map([[60, { velocity: 1 }]]); view.rerender(gateElement()); });
         act(() => { h.activeNotes = new Map(); view.rerender(gateElement()); });
         await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+        // The host hears of the failure only after the resolve hold.
+        await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
       } finally { vi.useRealTimers(); }
       await waitFor(() => expect(screen.getByText('Not this time')).toBeTruthy());
     });
