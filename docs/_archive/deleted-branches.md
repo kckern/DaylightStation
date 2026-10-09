@@ -617,3 +617,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-10-08 | fix/broken-tests | 589272ad9e | Stale test repairs + print baselines + empty vitest gate baseline — merged via 834ebbbaa8 |
 | 2026-10-08 | fix/hub-broadcaster-clock | 0683697f52 | HubStatusBroadcaster test clock freeze — merged |
 | 2026-10-09 | feat/story-time-no-repeat | ef5e840864 | Story time no-repeat (noRepeatDays); merged as 16a0f157f1 |
+| 2026-10-09 | fix/chess-durable-resume | d9d9261442 | server-side durable chess resume |
