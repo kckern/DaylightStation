@@ -16,6 +16,11 @@ describe('derivePianos', () => {
 });
 
 describe('resolvePianoConfig', () => {
+  it('carries the household timezone the server served (null when absent)', () => {
+    expect(resolvePianoConfig({}, 'default', { timezone: 'America/Los_Angeles' }).timezone).toBe('America/Los_Angeles');
+    expect(resolvePianoConfig({}, 'default').timezone).toBeNull();
+  });
+
   it('resolves timing.clickLeadMs: null by default, shared, per-piano override', () => {
     expect(resolvePianoConfig({}, 'default').timing).toEqual({ clickLeadMs: null });
     const raw = { timing: { clickLeadMs: 120 }, pianos: { p1: { timing: { clickLeadMs: 280 } }, p2: {} } };

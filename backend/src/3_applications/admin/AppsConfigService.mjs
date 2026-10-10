@@ -2,10 +2,31 @@ import { ValidationError, NotFoundError } from '#apps/common/errors/SemanticErro
 
 export class AppsConfigService {
   #configStore;
-  constructor({ configStore, logger = console }) {
+  #getHouseholdTimezone;
+  /**
+   * @param {Object} deps
+   * @param {Object} deps.configStore
+   * @param {() => (string|null)} [deps.getHouseholdTimezone] - household IANA
+   *   zone, injected from the composition root. Served on every read as
+   *   `householdTimezone` so a client (the piano kiosk) evaluates its time
+   *   windows on the household clock rather than its own device clock — on
+   *   2026-10-09 the piano tablet's zone was changed to Chicago and its curfew
+   *   began at 17:00 Pacific.
+   */
+  constructor({ configStore, getHouseholdTimezone = null, logger = console }) {
     if (!configStore) throw new Error('AppsConfigService requires a configStore dependency');
     this.#configStore = configStore;
+    this.#getHouseholdTimezone = typeof getHouseholdTimezone === 'function' ? getHouseholdTimezone : null;
     this.logger = logger;
+  }
+
+  #householdTimezone() {
+    try {
+      return this.#getHouseholdTimezone?.() || null;
+    } catch (error) {
+      this.logger.warn?.('admin.apps.timezone.failed', { error: error?.message });
+      return null;
+    }
   }
 
   listApps() {
@@ -24,7 +45,9 @@ export class AppsConfigService {
     }
     const { kind: _kind, ...record } = result;
     this.logger.info?.('admin.apps.config.read', { appId });
-    return record;
+    // Beside `parsed`/`raw`, never inside them: write-backs PUT `raw`, so the
+    // zone can't leak into the file.
+    return { ...record, householdTimezone: this.#householdTimezone() };
   }
 
   writeAppConfig(appId, content = {}) {
