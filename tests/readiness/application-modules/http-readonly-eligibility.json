@@ -49431,8 +49431,8 @@
     "counts": {
       "historicalLiveUniqueCases": 134,
       "historicalLiveIndependentContracts": 125,
-      "isolatedUniqueAcceptedCaseIds": 342,
-      "isolatedAcceptedOccurrences": 342,
+      "isolatedUniqueAcceptedCaseIds": 385,
+      "isolatedAcceptedOccurrences": 385,
       "isolatedReplayIdsAlreadyLive": [
         "health-catalog-food-not-found",
         "health-catalog-missing-query",
@@ -49474,6 +49474,17 @@
         "critical-school-authored-catalog",
         "critical-school-lesson-comparison",
         "critical-school-lesson-intro",
+        "curation-usage-ai-1",
+        "curation-usage-ai-2",
+        "curation-usage-ai-7",
+        "curation-usage-art-artist",
+        "curation-usage-art-collection",
+        "curation-usage-art-flagged",
+        "curation-usage-art-hidden",
+        "curation-usage-art-page1",
+        "curation-usage-art-page2",
+        "curation-usage-drafts-2026-09-28",
+        "curation-usage-drafts-2026-10-05",
         "daily-catalogs-art-gallery",
         "daily-catalogs-art-landscapes",
         "daily-catalogs-art-morning",
@@ -49579,8 +49590,27 @@
         "household-history-placement-user_2",
         "household-history-placement-user_3",
         "household-history-setup-status",
+        "household-static-art-explicit",
+        "household-static-art-extension",
+        "household-static-avatar-default",
+        "household-static-avatar-profile",
+        "household-static-entropy",
+        "household-static-equipment-convention",
+        "household-static-equipment-declared",
+        "household-static-generic-art",
+        "household-static-generic-avatar",
+        "household-static-generic-equipment",
+        "household-static-source-discovery",
         "integrated-admin-fitness-household-timezone",
         "integrated-admin-piano-household-timezone",
+        "launch-compat-card-ladder-stage",
+        "launch-compat-cube-preview",
+        "launch-compat-image",
+        "launch-compat-info",
+        "launch-compat-info-modifier",
+        "launch-compat-queue",
+        "launch-compat-queue-query",
+        "launch-compat-word-ladder-stage",
         "learner-home-fitness-fingerprints",
         "learner-home-report-household",
         "learner-home-report-learner",
@@ -49763,6 +49793,19 @@
         "synthetic-school-remediation-list",
         "synthetic-school-surface",
         "synthetic-school-transcript",
+        "teacher-records-attestations-active",
+        "teacher-records-attestations-park",
+        "teacher-records-attestations-river",
+        "teacher-records-attestations-withdrawn",
+        "teacher-records-enrichment-active",
+        "teacher-records-enrichment-park",
+        "teacher-records-enrichment-river",
+        "teacher-records-enrichment-withdrawn",
+        "teacher-records-period-history",
+        "teacher-records-teacher-notes-active",
+        "teacher-records-teacher-notes-park",
+        "teacher-records-teacher-notes-river",
+        "teacher-records-teacher-notes-withdrawn",
         "timeline-health-all-mentions",
         "timeline-health-dated-dashboard",
         "timeline-health-metric-mention",
@@ -49779,11 +49822,11 @@
         "timeline-lifelog-day",
         "timeline-lifelog-sources"
       ],
-      "unionUniqueAcceptedCaseIds": 462,
-      "unionIndependentContracts": 453,
+      "unionUniqueAcceptedCaseIds": 505,
+      "unionIndependentContracts": 496,
       "newLiveTemplates": 2,
-      "isolatedDistinctTemplates": 215,
-      "newIsolatedTemplates": 208,
+      "isolatedDistinctTemplates": 234,
+      "newIsolatedTemplates": 227,
       "pendingNext15": {
         "cases": 15,
         "terminalResult": {
@@ -57269,6 +57312,1124 @@
           "path": "/tmp/readiness-agent-feed-stored-execution/result-review.json",
           "sha256": "cef6540785b56c6b075b73bf410688514f5d8fea60093f43eeda3af0bc974dc6"
         }
+      },
+      {
+        "id": "teacher-records-attestations-active",
+        "urlTemplate": "/api/v1/school/attestations",
+        "declarationIds": [
+          "decl-fa17f5c5bc448b1a9d19c342-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+        "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+        "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+        "result": {
+          "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+          "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+        },
+        "proof": {
+          "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+          "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+          "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "teacher-records-attestations-river",
+        "urlTemplate": "/api/v1/school/attestations",
+        "declarationIds": [
+          "decl-fa17f5c5bc448b1a9d19c342-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+        "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+        "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+        "result": {
+          "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+          "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+        },
+        "proof": {
+          "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+          "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+          "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "teacher-records-attestations-park",
+        "urlTemplate": "/api/v1/school/attestations",
+        "declarationIds": [
+          "decl-fa17f5c5bc448b1a9d19c342-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+        "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+        "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+        "result": {
+          "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+          "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+        },
+        "proof": {
+          "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+          "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+          "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "teacher-records-attestations-withdrawn",
+        "urlTemplate": "/api/v1/school/attestations",
+        "declarationIds": [
+          "decl-fa17f5c5bc448b1a9d19c342-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+        "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+        "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+        "result": {
+          "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+          "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+        },
+        "proof": {
+          "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+          "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+          "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "teacher-records-teacher-notes-active",
+        "urlTemplate": "/api/v1/school/teacher-notes",
+        "declarationIds": [
+          "decl-505deda8c3800a2b74d591f2-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+        "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+        "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+        "result": {
+          "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+          "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+        },
+        "proof": {
+          "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+          "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+          "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "teacher-records-teacher-notes-river",
+        "urlTemplate": "/api/v1/school/teacher-notes",
+        "declarationIds": [
+          "decl-505deda8c3800a2b74d591f2-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+        "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+        "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+        "result": {
+          "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+          "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+        },
+        "proof": {
+          "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+          "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+          "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "teacher-records-teacher-notes-park",
+        "urlTemplate": "/api/v1/school/teacher-notes",
+        "declarationIds": [
+          "decl-505deda8c3800a2b74d591f2-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+        "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+        "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+        "result": {
+          "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+          "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+        },
+        "proof": {
+          "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+          "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+          "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "teacher-records-teacher-notes-withdrawn",
+        "urlTemplate": "/api/v1/school/teacher-notes",
+        "declarationIds": [
+          "decl-505deda8c3800a2b74d591f2-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+        "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+        "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+        "result": {
+          "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+          "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+        },
+        "proof": {
+          "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+          "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+          "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "teacher-records-enrichment-active",
+        "urlTemplate": "/api/v1/school/enrichment",
+        "declarationIds": [
+          "decl-2e9db88f1cfa45fc7ec09b3b-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+        "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+        "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+        "result": {
+          "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+          "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+        },
+        "proof": {
+          "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+          "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+          "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "teacher-records-enrichment-river",
+        "urlTemplate": "/api/v1/school/enrichment",
+        "declarationIds": [
+          "decl-2e9db88f1cfa45fc7ec09b3b-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+        "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+        "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+        "result": {
+          "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+          "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+        },
+        "proof": {
+          "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+          "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+          "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "teacher-records-enrichment-park",
+        "urlTemplate": "/api/v1/school/enrichment",
+        "declarationIds": [
+          "decl-2e9db88f1cfa45fc7ec09b3b-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+        "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+        "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+        "result": {
+          "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+          "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+        },
+        "proof": {
+          "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+          "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+          "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "teacher-records-enrichment-withdrawn",
+        "urlTemplate": "/api/v1/school/enrichment",
+        "declarationIds": [
+          "decl-2e9db88f1cfa45fc7ec09b3b-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+        "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+        "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+        "result": {
+          "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+          "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+        },
+        "proof": {
+          "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+          "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+          "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "teacher-records-period-history",
+        "urlTemplate": "/api/v1/school/periods-meta",
+        "declarationIds": [
+          "decl-5cde31871e5dc0dc51c63a28-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+        "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+        "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+        "result": {
+          "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+          "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+        },
+        "proof": {
+          "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+          "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+          "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "launch-compat-card-ladder-stage",
+        "urlTemplate": "/api/v1/school/card-ladder/stage",
+        "declarationIds": [
+          "decl-ebefab4a16bb418ba78be25c-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+        "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+        "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+        "result": {
+          "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+          "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+        },
+        "proof": {
+          "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+          "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+          "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "launch-compat-word-ladder-stage",
+        "urlTemplate": "/api/v1/school/word-ladder/stage",
+        "declarationIds": [
+          "decl-ebefab4a16bb418ba78be25c-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+        "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+        "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+        "result": {
+          "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+          "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+        },
+        "proof": {
+          "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+          "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+          "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "launch-compat-cube-preview",
+        "urlTemplate": "/api/v1/school/rubiks-cube/preview",
+        "declarationIds": [
+          "decl-074a3c66666ae4af616f8798-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+        "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+        "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+        "result": {
+          "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+          "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+        },
+        "proof": {
+          "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+          "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+          "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "launch-compat-image",
+        "urlTemplate": "/api/v1/content/:source/image/:id",
+        "declarationIds": [
+          "decl-8fc3a7bd79227520ebd4fb35-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+        "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+        "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+        "result": {
+          "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+          "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+        },
+        "proof": {
+          "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+          "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+          "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "launch-compat-info",
+        "urlTemplate": "/api/v1/content/:source/info/:id{/:modifiers}",
+        "declarationIds": [
+          "decl-c4fe0e08599aba7ba49da73e-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+        "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+        "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+        "result": {
+          "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+          "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+        },
+        "proof": {
+          "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+          "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+          "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "launch-compat-info-modifier",
+        "urlTemplate": "/api/v1/content/:source/info/:id{/:modifiers}",
+        "declarationIds": [
+          "decl-c4fe0e08599aba7ba49da73e-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+        "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+        "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+        "result": {
+          "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+          "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+        },
+        "proof": {
+          "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+          "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+          "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "launch-compat-queue",
+        "urlTemplate": "/api/v1/content/playables/:source{/*splat}",
+        "declarationIds": [
+          "decl-518e7711bbe967813513f078-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+        "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+        "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+        "result": {
+          "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+          "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+        },
+        "proof": {
+          "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+          "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+          "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "launch-compat-queue-query",
+        "urlTemplate": "/api/v1/content/playables/:source{/*splat}",
+        "declarationIds": [
+          "decl-518e7711bbe967813513f078-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+        "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+        "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+        "result": {
+          "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+          "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+        },
+        "proof": {
+          "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+          "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+          "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "curation-usage-art-page1",
+        "urlTemplate": "/api/v1/admin/art/works",
+        "declarationIds": [
+          "decl-f8d394220a70d8929bc6fee7-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+        "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+        "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+        "result": {
+          "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+          "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+          "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+          "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "curation-usage-art-page2",
+        "urlTemplate": "/api/v1/admin/art/works",
+        "declarationIds": [
+          "decl-f8d394220a70d8929bc6fee7-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+        "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+        "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+        "result": {
+          "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+          "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+          "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+          "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "curation-usage-art-collection",
+        "urlTemplate": "/api/v1/admin/art/works",
+        "declarationIds": [
+          "decl-f8d394220a70d8929bc6fee7-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+        "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+        "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+        "result": {
+          "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+          "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+          "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+          "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "curation-usage-art-flagged",
+        "urlTemplate": "/api/v1/admin/art/works",
+        "declarationIds": [
+          "decl-f8d394220a70d8929bc6fee7-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+        "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+        "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+        "result": {
+          "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+          "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+          "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+          "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "curation-usage-art-hidden",
+        "urlTemplate": "/api/v1/admin/art/works",
+        "declarationIds": [
+          "decl-f8d394220a70d8929bc6fee7-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+        "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+        "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+        "result": {
+          "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+          "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+          "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+          "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "curation-usage-art-artist",
+        "urlTemplate": "/api/v1/admin/art/works",
+        "declarationIds": [
+          "decl-f8d394220a70d8929bc6fee7-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+        "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+        "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+        "result": {
+          "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+          "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+          "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+          "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "curation-usage-ai-1",
+        "urlTemplate": "/api/v1/health/ai-usage",
+        "declarationIds": [
+          "decl-5a8872f2cf4c66430312c6a9-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+        "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+        "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+        "result": {
+          "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+          "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+          "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+          "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "curation-usage-ai-2",
+        "urlTemplate": "/api/v1/health/ai-usage",
+        "declarationIds": [
+          "decl-5a8872f2cf4c66430312c6a9-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+        "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+        "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+        "result": {
+          "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+          "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+          "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+          "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "curation-usage-ai-7",
+        "urlTemplate": "/api/v1/health/ai-usage",
+        "declarationIds": [
+          "decl-5a8872f2cf4c66430312c6a9-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+        "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+        "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+        "result": {
+          "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+          "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+          "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+          "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "household-static-art-explicit",
+        "urlTemplate": "/api/v1/static/art/*splat",
+        "declarationIds": [
+          "decl-846dcca82b49d0efc1a5720e-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+        "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+        "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+        "result": {
+          "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+          "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+          "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+          "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "household-static-art-extension",
+        "urlTemplate": "/api/v1/static/art/*splat",
+        "declarationIds": [
+          "decl-846dcca82b49d0efc1a5720e-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+        "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+        "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+        "result": {
+          "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+          "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+          "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+          "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "household-static-avatar-profile",
+        "urlTemplate": "/api/v1/static/users/:id",
+        "declarationIds": [
+          "decl-9306bf395707618eb5a5cc53-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+        "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+        "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+        "result": {
+          "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+          "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+          "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+          "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "household-static-avatar-default",
+        "urlTemplate": "/api/v1/static/users/:id",
+        "declarationIds": [
+          "decl-9306bf395707618eb5a5cc53-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+        "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+        "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+        "result": {
+          "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+          "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+          "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+          "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "household-static-equipment-declared",
+        "urlTemplate": "/api/v1/static/equipment/:id",
+        "declarationIds": [
+          "decl-06c6e71aba3adcfa1a427dba-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+        "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+        "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+        "result": {
+          "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+          "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+          "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+          "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "household-static-equipment-convention",
+        "urlTemplate": "/api/v1/static/equipment/:id",
+        "declarationIds": [
+          "decl-06c6e71aba3adcfa1a427dba-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+        "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+        "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+        "result": {
+          "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+          "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+          "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+          "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "household-static-entropy",
+        "urlTemplate": "/api/v1/static/entropy/:icon",
+        "declarationIds": [
+          "decl-e2913f460448c49331f964a5-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+        "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+        "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+        "result": {
+          "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+          "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+          "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+          "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "household-static-generic-art",
+        "urlTemplate": "/api/v1/static/img/*splat",
+        "declarationIds": [
+          "decl-a6bceea2387cdbf13da0e7ca-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+        "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+        "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+        "result": {
+          "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+          "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+          "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+          "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "household-static-generic-equipment",
+        "urlTemplate": "/api/v1/static/img/*splat",
+        "declarationIds": [
+          "decl-a6bceea2387cdbf13da0e7ca-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+        "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+        "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+        "result": {
+          "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+          "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+          "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+          "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "household-static-generic-avatar",
+        "urlTemplate": "/api/v1/static/img/*splat",
+        "declarationIds": [
+          "decl-a6bceea2387cdbf13da0e7ca-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+        "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+        "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+        "result": {
+          "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+          "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+          "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+          "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "household-static-source-discovery",
+        "urlTemplate": "/api/v1/content/sources",
+        "declarationIds": [
+          "decl-00544be07760914af6ceb31f-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+        "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+        "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+        "result": {
+          "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+          "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+          "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+          "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "curation-usage-drafts-2026-10-05",
+        "urlTemplate": "/api/v1/weekly-review/recording/drafts",
+        "declarationIds": [
+          "decl-e16cadfff39b11636f48e607-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-weekly-inert-mount2",
+        "fixtureSha256": "5d9ed145fe3a5342ffd849c50a7a316a6cc3c36e78cd60ec489cf1ac53408a06",
+        "manifestSha256": "85750a079e5bc875be895faf7dbf6d795ab294f6b6c4461a7bfd8dfd44a989da",
+        "result": {
+          "path": "/tmp/readiness-weekly-drafts-mount2-pair/pair-result.json",
+          "sha256": "9d585c2b7c163940eb91a635dc8c5e7f7544f86927175e2b0189581cd22c0217"
+        },
+        "proof": {
+          "path": "/tmp/readiness-weekly-drafts-mount2-execution/proof.json",
+          "sha256": "91e09d9c52abfe1e9e62948695392ea8c021a659af897fec169fbcd1af925f09"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-weekly-drafts-mount2-execution/result-review.json",
+          "sha256": "bea954d670678f555165cb649cc1c363c022ded2c6f663ee2c917313adad8bb2"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "curation-usage-drafts-2026-09-28",
+        "urlTemplate": "/api/v1/weekly-review/recording/drafts",
+        "declarationIds": [
+          "decl-e16cadfff39b11636f48e607-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-23abfc-weekly-inert-mount2",
+        "fixtureSha256": "5d9ed145fe3a5342ffd849c50a7a316a6cc3c36e78cd60ec489cf1ac53408a06",
+        "manifestSha256": "85750a079e5bc875be895faf7dbf6d795ab294f6b6c4461a7bfd8dfd44a989da",
+        "result": {
+          "path": "/tmp/readiness-weekly-drafts-mount2-pair/pair-result.json",
+          "sha256": "9d585c2b7c163940eb91a635dc8c5e7f7544f86927175e2b0189581cd22c0217"
+        },
+        "proof": {
+          "path": "/tmp/readiness-weekly-drafts-mount2-execution/proof.json",
+          "sha256": "91e09d9c52abfe1e9e62948695392ea8c021a659af897fec169fbcd1af925f09"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-weekly-drafts-mount2-execution/result-review.json",
+          "sha256": "bea954d670678f555165cb649cc1c363c022ded2c6f663ee2c917313adad8bb2"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
       }
     ],
     "infrastructure": {

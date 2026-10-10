@@ -70,7 +70,8 @@ new Intl.DateTimeFormat('en-US', { timeZone: runtimeTimezone }).format(0);
 for (const relative of ['data/system/config/auth.yml', 'data/system/config/services.yml', 'data/system/config/adapters.yml', 'data/system/config/bots.yml', 'data/system/secrets.yml', 'data/household/integrations.yml', 'data/household/hardware/devices.yml']) {
   // Exact synthetic descriptors only: no capabilities, providers, hosts, auth or activation.
   const reviewedMetadataDevices = relative === 'data/household/hardware/devices.yml' && JSON.stringify(prepared.fixtureFiles[relative]) === "{\"devices\":{\"synthetic-reading-panel\":{\"type\":\"readiness-metadata\",\"name\":\"Reading Panel\",\"location\":\"Reading Room\",\"icon\":\"book\"},\"synthetic-fitness-panel\":{\"type\":\"readiness-metadata\",\"name\":\"Movement Panel\",\"location\":\"Exercise Room\",\"icon\":\"fitness\"}}}" && createHash('sha256').update(JSON.stringify(prepared)).digest('hex') === '17806e1d1d5a096f8b9dc08b9e946ef581e4cf96621c360f83c7a79f30bc1018';
-  if (!reviewedMetadataDevices) assert.deepEqual(prepared.fixtureFiles[relative], fixed.fixtureFiles[relative], `Unsafe startup fixture change: ${relative}`);
+  const reviewedInertWeeklyImmich = relative === 'data/system/config/services.yml' && JSON.stringify(prepared.fixtureFiles[relative]) === "{\"immich\":{\"readiness\":\"http://readiness-immich.invalid:9\"}}" && JSON.stringify(prepared.fixtureFiles['data/household/auth/immich.yml']) === "{\"token\":\"SYNTHETIC-READINESS-IMMICH-NOT-A-REAL-TOKEN\"}" && createHash('sha256').update(JSON.stringify(prepared)).digest('hex') === '6624753a47feb863894060de1d18757ed5cde3af10560e59a7b59d4f5d01386f';
+  if (!reviewedMetadataDevices && !reviewedInertWeeklyImmich) assert.deepEqual(prepared.fixtureFiles[relative], fixed.fixtureFiles[relative], `Unsafe startup fixture change: ${relative}`);
 }
 const run = fs.mkdtempSync(path.join(outputRoot, 'daylight-local-http-'));
 fs.chmodSync(run, 0o700);

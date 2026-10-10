@@ -63,6 +63,27 @@ def reconcile_conditional_reads(facts, eligibility, matrix, current_by_id):
  if records:assert eligibility['counts']['explicitlyReviewedConditionalReadDeclarations']==len({r['declarationId'] for r in records})
  return dict(derived,conditionalReadAdmissions=records,scope='Potential source-bound read branches only; exact approved case/query and same fixture+manifest pair required. Broad handler exclusions retained; no HTTP execution, independent correctness, or installed-live credit is created.')
 
+def reconcile_executed_template_coverage(eligibility,matrix):
+ union=matrix['isolatedAndLiveEvidenceUnion']
+ historical=set(union['historicalEligibleTemplates'])
+ assert len(historical)==len(union['historicalEligibleTemplates']), 'Duplicate historical template binding'
+ by={d['declarationId']:d for d in eligibility['declarations']}
+ potential={t for d in matrix['declarations'] if d['status'].startswith('expected-bound') and by[d['declarationId']]['effectEligibility'].startswith('eligible-') for t in d['urlTemplates']}
+ potential|={r['urlTemplate'] for r in matrix.get('conditionalReadAdmissions',[])}
+ assert len(potential)==matrix['counts']['potentialEligibleExpectedSourceURLTemplates'], 'Eligible denominator does not match exact template set'
+ assert historical<=potential, 'Historical eligible bindings outside current eligible set'
+ executed={r['urlTemplate'] for r in union['cases'] if r['accepted']}
+ covered=(historical|executed)&potential
+ additional=(executed-historical)&potential
+ gaps=potential-covered
+ assert union['historicalLiveEligibleTemplateLinks']==len(historical), 'Historical template count drift'
+ assert union['isolatedAdditionalEligibleTemplateLinks']==len(additional) and set(union['isolatedOnlyTemplates'])==additional and len(union['isolatedOnlyTemplates'])==len(additional), 'Overlapping or ineligible isolated templates inflate coverage'
+ assert union['unionEligibleTemplatesWithExecutedCaseLinks']==len(covered) and union['eligibleExecutedTemplateUnion']==sorted(covered), 'Executed template coverage must be exact set union'
+ assert union['unionEligibleTemplatesWithoutExecutedCaseLinks']==len(gaps), 'Gap count must be exact eligible complement'
+ assert [r['urlTemplate'] for r in matrix['eligibleExpectedSourceURLGaps']]==sorted(gaps), 'Current gap rows must be exact eligible complement'
+ assert union['outsideEligibleAcceptedCaseTemplates']==sorted(executed-potential), 'Accepted noneligible observations must remain explicit'
+ return {'eligibleTemplates':sorted(potential),'historicalTemplates':sorted(historical),'executedCaseTemplates':sorted(executed),'historicalExecutedOverlap':sorted(historical&executed),'coveredTemplates':sorted(covered),'uncoveredTemplates':sorted(gaps),'scope':'Accepted parity template links only; no new execution/case credit, independent-health or production proof.'}
+
 parser=argparse.ArgumentParser(description='Reconcile captured declarations with reviewed source effects and historical mount gaps; never probe HTTP')
 parser.add_argument('--source-root',required=True);parser.add_argument('--capture',required=True);parser.add_argument('--layer-receipt',required=True);parser.add_argument('--output-file',required=True);parser.add_argument('--update-mounted-inventory',action='store_true')
 args=parser.parse_args();os.chdir(pathlib.Path(args.source_root).resolve())
@@ -189,6 +210,7 @@ if os.path.exists(expectedMountPath):
  if os.path.exists(eligibilityPath):
   eligibility=json.load(open(eligibilityPath))
   conditional=reconcile_conditional_reads(facts,eligibility,expectedMount,currentById)
+  artifact['derivedExecutedTemplateCoverage']=reconcile_executed_template_coverage(eligibility,expectedMount)
   artifact['conditionalReadAdmissions']=conditional['conditionalReadAdmissions']
   artifact['derivedConditionalReadEligibility']={k:v for k,v in conditional.items() if k!='conditionalReadAdmissions'}
   for row in artifact['GETDeclarations']:

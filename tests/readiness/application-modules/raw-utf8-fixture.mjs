@@ -21,12 +21,15 @@ export function validateRawFixtures(fixture) {
     const lexicon = /^media\/school\/language\/[A-Za-z0-9_-]+\/lexicon\.yml$/.test(destination);
     const manifest = /^data\/household(?:-[A-Za-z0-9_-]+)?\/school\/artifacts\/issued\/agenda\/([A-Za-z0-9_-]+)\/\d{8}T\d{9}Z\.yml$/.exec(destination);
     const payload = /^data\/household(?:-[A-Za-z0-9_-]+)?\/school\/artifacts\/issued\/agenda\/([A-Za-z0-9_-]+)\/\d{8}T\d{9}Z\.png$/.exec(destination);
-    const asset = /^media\/school\/language\/[A-Za-z0-9_-]+\/words\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\/(image\.jpg|term\.mp3)$/.test(destination);
+    const householdStaticPNG = ["media/img/users/user_1.png", "media/img/users/default.png", "media/img/equipment/synthetic-cycle.png", "media/img/entropy/synthetic-reading.png"].includes(destination);
+  const asset = /^media\/school\/language\/[A-Za-z0-9_-]+\/words\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\/(image\.jpg|term\.mp3)$/.test(destination);
     const race = /^data\/household(?:-[A-Za-z0-9_-]+)?\/fitness\/log\/cycle-races\/\d{4}-\d{2}-\d{2}\/\d{14}\.ya?ml$/.test(destination);
     const memo = /^data\/household(?:-[A-Za-z0-9_-]+)?\/fitness\/voice-memos\/vm_[A-Za-z0-9]{16}\.json$/.test(destination);
     const languageCorpus = /^data\/content\/school\/language\/[A-Za-z0-9_-]+\.yml$/.test(destination);
     const promptAudio = /^media\/school\/language\/[A-Za-z0-9_-]+\/\d{4}-[A-Za-z]{2,8}\.mp3$/.test(destination);
     const pianoLesson = ['media/docs/piano-lessons/synthetic-daily-lessons/index.yml', 'media/docs/piano-lessons/synthetic-daily-lessons/five-finger.yml'].includes(destination);
+    const curationUsageText = ["media/img/art/classic/synthetic-forest/metadata.yaml", "media/img/art/classic/synthetic-room/metadata.yaml", "media/img/art/classic/synthetic-river/metadata.yaml", "data/system/history/ai-usage/2026-10.synthetic-readiness.jsonl", "media/weekly-review/2026-10-05/.drafts/synthetic-family-a.meta.json", "media/weekly-review/2026-10-05/.drafts/synthetic-family-b.meta.json", "media/weekly-review/2026-09-28/.drafts/synthetic-prior-family.meta.json"].includes(destination);
+    const curationUsageImage = ["media/img/art/classic/synthetic-forest/image.png", "media/img/art/classic/synthetic-room/image.png", "media/img/art/classic/synthetic-river/image.png"].includes(destination);
     const gamingStored = ['media/games/_common/catalog/synthetic-read-assets.yml', 'data/household/gaming/effects/sessions/synthetic_asset-session.jsonl'].includes(destination);
     const gamingSchoolImage = ['media/games/_common/synthetic-read-assets/tiles.png', 'media/games/party-games/synthetic-read-assets.png', 'media/school/language/synthetic-read-assets/words/en/star/image.png'].includes(destination);
     const mediaNavigationImage = ["media/audio/readalong/synthetic-media-navigation/cover.png", "media/audio/readalong/synthetic-media-navigation/chapter/cover.png", "data/content/readalong/synthetic-media-navigation/icon.png"].includes(destination);
@@ -35,7 +38,7 @@ export function validateRawFixtures(fixture) {
     if (gamingSchoolImage || mediaNavigationImage) assert.equal(row.mtimeMs, 1759276800000, 'Exact image fixture mtime required');
     const studyRecording = destination === "media/school/language/daily-korean/recordings/user_1/0002-KR.wav";
     const cueAudio = destination === 'media/school/_ux/ding.mp3';
-    assert.ok(binary ? mediaNavigationImage || mediaNavigationAudio || studyRecording || gamingSchoolImage || payload || asset || promptAudio || cueAudio : gamingStored || pianoLesson || languageCorpus || producer || composer || deck || attempts || bypass || lexicon || manifest || race || memo, 'Unreviewed raw destination');
+    assert.ok(binary ? householdStaticPNG || curationUsageImage || mediaNavigationImage || mediaNavigationAudio || studyRecording || gamingSchoolImage || payload || asset || promptAudio || cueAudio : curationUsageText || gamingStored || pianoLesson || languageCorpus || producer || composer || deck || attempts || bypass || lexicon || manifest || race || memo, 'Unreviewed raw destination');
     for (const match of [attempts, manifest, payload]) if (match) assert.ok(Object.hasOwn(fixture.fixtureFiles, 'data/users/' + match[1] + '/profile.yml'), 'Raw School user must have projected roster profile');
     if (composer) assert.ok(Object.hasOwn(fixture.fixtureFiles, 'data/users/' + composer[1] + '/profile.yml'), 'Raw composer user must have a projected roster profile');
     assert.ok(!seen.has(destination) && !Object.hasOwn(fixture.fixtureFiles, destination), 'Raw duplicate or JSON collision'); seen.add(destination);

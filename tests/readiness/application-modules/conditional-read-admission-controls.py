@@ -2,7 +2,7 @@ import ast,copy,json,pathlib,re,sys,unittest
 root=pathlib.Path(__file__).resolve().parent
 script=pathlib.Path(sys.argv.pop(1)) if len(sys.argv)>1 else root/'reconcile-http-denominator.py'
 base=pathlib.Path(sys.argv.pop(1)) if len(sys.argv)>1 else root
-ns={'re':re};tree=ast.parse(script.read_text());functions=[n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name in ['reconcile_conditional_reads','conditional_request_admitted']]
+ns={'re':re};tree=ast.parse(script.read_text());functions=[n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name in ['reconcile_conditional_reads','conditional_request_admitted','reconcile_executed_template_coverage']]
 exec(compile(ast.Module(body=functions,type_ignores=[]),str(script),'exec'),ns)
 fixtures=[json.loads((base/name).read_text()) for name in ['http-reviewed-effect-facts.json','http-readonly-eligibility.json','http-expected-installed-route-matrix.json']]
 read={r['declarationId']:dict(r,method='get') for r in fixtures[1]['declarations']}
@@ -61,4 +61,21 @@ class Controls(unittest.TestCase):
   for k,v in {'potentialEligibleExpectedSourceURLTemplates':384,'potentialEligibleUnconditionalConstructionURLTemplates':382,'potentialEligibleConditionalConstructionURLTemplates':2}.items():data[2]['counts'][k]=v
   for k in ['potentialEligibleHandlerWideSourceURLTemplates','potentialEligibleExplicitBranchConditionalSourceURLTemplates']:data[2]['counts'].pop(k,None)
   out=self.reconcile(data);self.assertEqual(out['potentialEligibleExpectedSourceURLTemplates'],384);self.assertEqual(out['conditionalReadAdmissions'],[])
+class ExecutedTemplateSetControls(unittest.TestCase):
+ def data(self):
+  e={'declarations':[{'declarationId':'d','effectEligibility':'eligible-finite-existing-file-stream'}]}
+  u={'historicalEligibleTemplates':['/shared'],'historicalLiveEligibleTemplateLinks':1,'cases':[{'urlTemplate':'/shared','accepted':True},{'urlTemplate':'/new','accepted':True},{'urlTemplate':'/healthz','accepted':True},{'urlTemplate':'/gap','accepted':False}],'isolatedOnlyTemplates':['/new'],'isolatedAdditionalEligibleTemplateLinks':1,'eligibleExecutedTemplateUnion':['/new','/shared'],'unionEligibleTemplatesWithExecutedCaseLinks':2,'unionEligibleTemplatesWithoutExecutedCaseLinks':1,'outsideEligibleAcceptedCaseTemplates':['/healthz']}
+  m={'declarations':[{'declarationId':'d','status':'expected-bound-source-derived','urlTemplates':['/shared','/new','/gap']}],'counts':{'potentialEligibleExpectedSourceURLTemplates':3},'conditionalReadAdmissions':[],'isolatedAndLiveEvidenceUnion':u,'eligibleExpectedSourceURLGaps':[{'urlTemplate':'/gap'}]}
+  return e,m
+ def test_overlap_counts_once_and_bootstrap_excluded_without_mutation(self):
+  e,m=self.data();before=copy.deepcopy([e,m]);r=ns['reconcile_executed_template_coverage'](e,m);self.assertEqual(r['coveredTemplates'],['/new','/shared']);self.assertEqual(r['uncoveredTemplates'],['/gap']);self.assertEqual(r['historicalExecutedOverlap'],['/shared']);self.assertEqual([e,m],before)
+ def test_additive_overlap_scalar_inflation_rejected(self):
+  e,m=self.data();u=m['isolatedAndLiveEvidenceUnion'];u.update(isolatedOnlyTemplates=['/new','/shared'],isolatedAdditionalEligibleTemplateLinks=2,unionEligibleTemplatesWithExecutedCaseLinks=3,unionEligibleTemplatesWithoutExecutedCaseLinks=0)
+  with self.assertRaisesRegex(AssertionError,'inflate'):ns['reconcile_executed_template_coverage'](e,m)
+ def test_stale_gap_list_rejected(self):
+  e,m=self.data();m['eligibleExpectedSourceURLGaps'].append({'urlTemplate':'/shared'})
+  with self.assertRaisesRegex(AssertionError,'complement'):ns['reconcile_executed_template_coverage'](e,m)
+ def test_current_exact_template_sets(self):
+  e,m=copy.deepcopy(fixtures[1:]);r=ns['reconcile_executed_template_coverage'](e,m);self.assertEqual(len(r['coveredTemplates'])+len(r['uncoveredTemplates']),m['counts']['potentialEligibleExpectedSourceURLTemplates'])
+
 unittest.main()

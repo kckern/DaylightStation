@@ -1,7 +1,7 @@
 {
   "schema": "daylight.cutover-readiness-evidence/v1",
   "readinessAccepted": false,
-  "stage": "Mixed historical evidence462accepted/453independent contracts;297accepted parity templates of396potential/99gaps. Corrected preview2 and AgentFeed11 add thirteen independent successes once; original404 and unavailable200 failures preserved. 465credited-or-baseline diagnostic IDs,467literal observed including bootstrap aliases. No full fresh replay or global readiness.",
+  "stage": "Mixed historical evidence505accepted/496independent contracts;304accepted parity templates of396potential/92gaps. Exact set correction creates zero case credit; guarded Static11+Weekly2 adds13 independent successes once. 510credited-or-baseline diagnostic IDs,512literal observations. No full fresh replay/global readiness/provider health claim.",
   "referenceMain": "c9234d2ba9ffe5a30ba03abf54a94b3b28d0c9df",
   "sourceCheckpointBeforeIntegration": "7c0936d1b5d450c3495fb5c105d7aaf196d3bc54",
   "schoolMainIntegration": {
@@ -620,8 +620,8 @@
     "isolatedAndLiveEvidenceAccounting": {
       "historicalLiveUniqueCases": 134,
       "historicalLiveIndependentContracts": 125,
-      "isolatedUniqueAcceptedCaseIds": 342,
-      "isolatedAcceptedOccurrences": 342,
+      "isolatedUniqueAcceptedCaseIds": 385,
+      "isolatedAcceptedOccurrences": 385,
       "isolatedReplayIdsAlreadyLive": [
         "health-catalog-food-not-found",
         "health-catalog-missing-query",
@@ -663,6 +663,17 @@
         "critical-school-authored-catalog",
         "critical-school-lesson-comparison",
         "critical-school-lesson-intro",
+        "curation-usage-ai-1",
+        "curation-usage-ai-2",
+        "curation-usage-ai-7",
+        "curation-usage-art-artist",
+        "curation-usage-art-collection",
+        "curation-usage-art-flagged",
+        "curation-usage-art-hidden",
+        "curation-usage-art-page1",
+        "curation-usage-art-page2",
+        "curation-usage-drafts-2026-09-28",
+        "curation-usage-drafts-2026-10-05",
         "daily-catalogs-art-gallery",
         "daily-catalogs-art-landscapes",
         "daily-catalogs-art-morning",
@@ -768,8 +779,27 @@
         "household-history-placement-user_2",
         "household-history-placement-user_3",
         "household-history-setup-status",
+        "household-static-art-explicit",
+        "household-static-art-extension",
+        "household-static-avatar-default",
+        "household-static-avatar-profile",
+        "household-static-entropy",
+        "household-static-equipment-convention",
+        "household-static-equipment-declared",
+        "household-static-generic-art",
+        "household-static-generic-avatar",
+        "household-static-generic-equipment",
+        "household-static-source-discovery",
         "integrated-admin-fitness-household-timezone",
         "integrated-admin-piano-household-timezone",
+        "launch-compat-card-ladder-stage",
+        "launch-compat-cube-preview",
+        "launch-compat-image",
+        "launch-compat-info",
+        "launch-compat-info-modifier",
+        "launch-compat-queue",
+        "launch-compat-queue-query",
+        "launch-compat-word-ladder-stage",
         "learner-home-fitness-fingerprints",
         "learner-home-report-household",
         "learner-home-report-learner",
@@ -952,6 +982,19 @@
         "synthetic-school-remediation-list",
         "synthetic-school-surface",
         "synthetic-school-transcript",
+        "teacher-records-attestations-active",
+        "teacher-records-attestations-park",
+        "teacher-records-attestations-river",
+        "teacher-records-attestations-withdrawn",
+        "teacher-records-enrichment-active",
+        "teacher-records-enrichment-park",
+        "teacher-records-enrichment-river",
+        "teacher-records-enrichment-withdrawn",
+        "teacher-records-period-history",
+        "teacher-records-teacher-notes-active",
+        "teacher-records-teacher-notes-park",
+        "teacher-records-teacher-notes-river",
+        "teacher-records-teacher-notes-withdrawn",
         "timeline-health-all-mentions",
         "timeline-health-dated-dashboard",
         "timeline-health-metric-mention",
@@ -968,11 +1011,11 @@
         "timeline-lifelog-day",
         "timeline-lifelog-sources"
       ],
-      "unionUniqueAcceptedCaseIds": 462,
-      "unionIndependentContracts": 453,
+      "unionUniqueAcceptedCaseIds": 505,
+      "unionIndependentContracts": 496,
       "newLiveTemplates": 2,
-      "isolatedDistinctTemplates": 215,
-      "newIsolatedTemplates": 208,
+      "isolatedDistinctTemplates": 234,
+      "newIsolatedTemplates": 227,
       "pendingNext15": {
         "cases": 15,
         "terminalResult": {
@@ -1072,11 +1115,12 @@
     "currentSourceUnionEvidenceAccounting": {
       "scope": "Separate historical-live and actual-source isolated executed coverage; source-template union only, no installed-live denominator",
       "historicalLiveEligibleTemplateLinks": 94,
-      "isolatedAdditionalEligibleTemplateLinks": 203,
-      "unionEligibleTemplatesWithExecutedCaseLinks": 297,
-      "unionEligibleTemplatesWithoutExecutedCaseLinks": 99,
+      "isolatedAdditionalEligibleTemplateLinks": 210,
+      "unionEligibleTemplatesWithExecutedCaseLinks": 304,
+      "unionEligibleTemplatesWithoutExecutedCaseLinks": 92,
       "isolatedOnlyTemplates": [
         "/api/v1/admin/apps/:appId/config",
+        "/api/v1/admin/art/works",
         "/api/v1/admin/content/lists",
         "/api/v1/admin/content/lists/:type",
         "/api/v1/admin/content/lists/:type/:name",
@@ -1103,7 +1147,11 @@
         "/api/v1/automotive/vehicles/:id/journeys",
         "/api/v1/automotive/vehicles/:id/service",
         "/api/v1/config/status",
+        "/api/v1/content/:source/image/:id",
+        "/api/v1/content/:source/info/:id{/:modifiers}",
         "/api/v1/content/aliases",
+        "/api/v1/content/playables/:source{/*splat}",
+        "/api/v1/content/sources",
         "/api/v1/cost/dashboard",
         "/api/v1/cost/entries",
         "/api/v1/cost/spend/category",
@@ -1128,16 +1176,11 @@
         "/api/v1/finance",
         "/api/v1/finance/data",
         "/api/v1/fitness",
-        "/api/v1/fitness/cycle-races",
-        "/api/v1/fitness/cycle-races/:raceId",
         "/api/v1/fitness/fingerprints",
         "/api/v1/fitness/resumable",
         "/api/v1/fitness/sessions",
         "/api/v1/fitness/sessions/:sessionId",
-        "/api/v1/fitness/sessions/dates",
         "/api/v1/fitness/skyline-glider/runs/:runId",
-        "/api/v1/fitness/workouts",
-        "/api/v1/fitness/workouts/:id",
         "/api/v1/fitness/workouts/:id/run",
         "/api/v1/gaming/assets/:packId",
         "/api/v1/gaming/assets/:packId/:assetId/image",
@@ -1155,6 +1198,7 @@
         "/api/v1/gratitude/print",
         "/api/v1/health-dashboard/:userId",
         "/api/v1/health-dashboard/:userId/:date",
+        "/api/v1/health/ai-usage",
         "/api/v1/health/coaching/schema",
         "/api/v1/health/date/:date",
         "/api/v1/health/medical",
@@ -1227,12 +1271,12 @@
         "/api/v1/piano/users/:userId/program-assignments",
         "/api/v1/piano/users/:userId/progress",
         "/api/v1/school/banks",
+        "/api/v1/school/card-ladder/stage",
         "/api/v1/school/catalogs",
         "/api/v1/school/catalogs/:catalogId/subjects/:subjectId/courses/:courseId/units/:unitId/lessons/:lessonId",
         "/api/v1/school/continuation-code",
         "/api/v1/school/flashcards/assets/*assetId",
         "/api/v1/school/geography/decks",
-        "/api/v1/school/language/courses",
         "/api/v1/school/language/preview/:corpusId/day",
         "/api/v1/school/language/recordings/:userId/:corpusId/:seq",
         "/api/v1/school/language/users/:userId/history",
@@ -1248,7 +1292,6 @@
         "/api/v1/school/print/pending",
         "/api/v1/school/print/quota",
         "/api/v1/school/print/requests",
-        "/api/v1/school/progress",
         "/api/v1/school/progress-report",
         "/api/v1/school/progress/insights",
         "/api/v1/school/progress/options",
@@ -1262,8 +1305,8 @@
         "/api/v1/school/report-card/frozen",
         "/api/v1/school/report-card/frozen/versions",
         "/api/v1/school/review/learner/:learnerId",
+        "/api/v1/school/rubiks-cube/preview",
         "/api/v1/school/self-service/preview/:link",
-        "/api/v1/school/sentence-ladder/courses",
         "/api/v1/school/sentence-ladder/preview/:corpusId/day",
         "/api/v1/school/sentence-ladder/recordings/:userId/:corpusId/:seq",
         "/api/v1/school/sentence-ladder/users/:userId/history",
@@ -1272,19 +1315,26 @@
         "/api/v1/school/teacher/curriculum-exceptions",
         "/api/v1/school/teacher/learners/:learnerId/answer-sheets",
         "/api/v1/school/transcript",
+        "/api/v1/school/word-ladder/stage",
         "/api/v1/screens",
         "/api/v1/screens/:screenId",
         "/api/v1/state-gates",
         "/api/v1/state-gates/:gateId",
         "/api/v1/state-gates/transitions",
+        "/api/v1/static/art/*splat",
+        "/api/v1/static/entropy/:icon",
+        "/api/v1/static/equipment/:id",
+        "/api/v1/static/img/*splat",
+        "/api/v1/static/users/:id",
         "/api/v1/stream/readalong/:collection{/*splat}",
-        "/api/v1/stream/singalong/:collection/:id"
+        "/api/v1/stream/singalong/:collection/:id",
+        "/api/v1/weekly-review/recording/drafts"
       ],
       "counts": {
         "historicalLiveUniqueCases": 134,
         "historicalLiveIndependentContracts": 125,
-        "isolatedUniqueAcceptedCaseIds": 342,
-        "isolatedAcceptedOccurrences": 342,
+        "isolatedUniqueAcceptedCaseIds": 385,
+        "isolatedAcceptedOccurrences": 385,
         "isolatedReplayIdsAlreadyLive": [
           "health-catalog-food-not-found",
           "health-catalog-missing-query",
@@ -1326,6 +1376,17 @@
           "critical-school-authored-catalog",
           "critical-school-lesson-comparison",
           "critical-school-lesson-intro",
+          "curation-usage-ai-1",
+          "curation-usage-ai-2",
+          "curation-usage-ai-7",
+          "curation-usage-art-artist",
+          "curation-usage-art-collection",
+          "curation-usage-art-flagged",
+          "curation-usage-art-hidden",
+          "curation-usage-art-page1",
+          "curation-usage-art-page2",
+          "curation-usage-drafts-2026-09-28",
+          "curation-usage-drafts-2026-10-05",
           "daily-catalogs-art-gallery",
           "daily-catalogs-art-landscapes",
           "daily-catalogs-art-morning",
@@ -1431,8 +1492,27 @@
           "household-history-placement-user_2",
           "household-history-placement-user_3",
           "household-history-setup-status",
+          "household-static-art-explicit",
+          "household-static-art-extension",
+          "household-static-avatar-default",
+          "household-static-avatar-profile",
+          "household-static-entropy",
+          "household-static-equipment-convention",
+          "household-static-equipment-declared",
+          "household-static-generic-art",
+          "household-static-generic-avatar",
+          "household-static-generic-equipment",
+          "household-static-source-discovery",
           "integrated-admin-fitness-household-timezone",
           "integrated-admin-piano-household-timezone",
+          "launch-compat-card-ladder-stage",
+          "launch-compat-cube-preview",
+          "launch-compat-image",
+          "launch-compat-info",
+          "launch-compat-info-modifier",
+          "launch-compat-queue",
+          "launch-compat-queue-query",
+          "launch-compat-word-ladder-stage",
           "learner-home-fitness-fingerprints",
           "learner-home-report-household",
           "learner-home-report-learner",
@@ -1615,6 +1695,19 @@
           "synthetic-school-remediation-list",
           "synthetic-school-surface",
           "synthetic-school-transcript",
+          "teacher-records-attestations-active",
+          "teacher-records-attestations-park",
+          "teacher-records-attestations-river",
+          "teacher-records-attestations-withdrawn",
+          "teacher-records-enrichment-active",
+          "teacher-records-enrichment-park",
+          "teacher-records-enrichment-river",
+          "teacher-records-enrichment-withdrawn",
+          "teacher-records-period-history",
+          "teacher-records-teacher-notes-active",
+          "teacher-records-teacher-notes-park",
+          "teacher-records-teacher-notes-river",
+          "teacher-records-teacher-notes-withdrawn",
           "timeline-health-all-mentions",
           "timeline-health-dated-dashboard",
           "timeline-health-metric-mention",
@@ -1631,11 +1724,11 @@
           "timeline-lifelog-day",
           "timeline-lifelog-sources"
         ],
-        "unionUniqueAcceptedCaseIds": 462,
-        "unionIndependentContracts": 453,
+        "unionUniqueAcceptedCaseIds": 505,
+        "unionIndependentContracts": 496,
         "newLiveTemplates": 2,
-        "isolatedDistinctTemplates": 215,
-        "newIsolatedTemplates": 208,
+        "isolatedDistinctTemplates": 234,
+        "newIsolatedTemplates": 227,
         "pendingNext15": {
           "cases": 15,
           "terminalResult": {
@@ -9141,6 +9234,1124 @@
             "path": "/tmp/readiness-agent-feed-stored-execution/result-review.json",
             "sha256": "cef6540785b56c6b075b73bf410688514f5d8fea60093f43eeda3af0bc974dc6"
           }
+        },
+        {
+          "id": "teacher-records-attestations-active",
+          "urlTemplate": "/api/v1/school/attestations",
+          "declarationIds": [
+            "decl-fa17f5c5bc448b1a9d19c342-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+          "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+          "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+          "result": {
+            "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+            "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+          },
+          "proof": {
+            "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+            "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+            "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "teacher-records-attestations-river",
+          "urlTemplate": "/api/v1/school/attestations",
+          "declarationIds": [
+            "decl-fa17f5c5bc448b1a9d19c342-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+          "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+          "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+          "result": {
+            "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+            "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+          },
+          "proof": {
+            "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+            "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+            "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "teacher-records-attestations-park",
+          "urlTemplate": "/api/v1/school/attestations",
+          "declarationIds": [
+            "decl-fa17f5c5bc448b1a9d19c342-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+          "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+          "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+          "result": {
+            "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+            "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+          },
+          "proof": {
+            "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+            "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+            "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "teacher-records-attestations-withdrawn",
+          "urlTemplate": "/api/v1/school/attestations",
+          "declarationIds": [
+            "decl-fa17f5c5bc448b1a9d19c342-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+          "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+          "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+          "result": {
+            "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+            "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+          },
+          "proof": {
+            "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+            "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+            "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "teacher-records-teacher-notes-active",
+          "urlTemplate": "/api/v1/school/teacher-notes",
+          "declarationIds": [
+            "decl-505deda8c3800a2b74d591f2-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+          "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+          "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+          "result": {
+            "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+            "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+          },
+          "proof": {
+            "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+            "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+            "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "teacher-records-teacher-notes-river",
+          "urlTemplate": "/api/v1/school/teacher-notes",
+          "declarationIds": [
+            "decl-505deda8c3800a2b74d591f2-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+          "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+          "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+          "result": {
+            "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+            "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+          },
+          "proof": {
+            "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+            "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+            "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "teacher-records-teacher-notes-park",
+          "urlTemplate": "/api/v1/school/teacher-notes",
+          "declarationIds": [
+            "decl-505deda8c3800a2b74d591f2-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+          "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+          "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+          "result": {
+            "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+            "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+          },
+          "proof": {
+            "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+            "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+            "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "teacher-records-teacher-notes-withdrawn",
+          "urlTemplate": "/api/v1/school/teacher-notes",
+          "declarationIds": [
+            "decl-505deda8c3800a2b74d591f2-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+          "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+          "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+          "result": {
+            "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+            "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+          },
+          "proof": {
+            "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+            "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+            "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "teacher-records-enrichment-active",
+          "urlTemplate": "/api/v1/school/enrichment",
+          "declarationIds": [
+            "decl-2e9db88f1cfa45fc7ec09b3b-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+          "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+          "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+          "result": {
+            "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+            "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+          },
+          "proof": {
+            "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+            "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+            "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "teacher-records-enrichment-river",
+          "urlTemplate": "/api/v1/school/enrichment",
+          "declarationIds": [
+            "decl-2e9db88f1cfa45fc7ec09b3b-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+          "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+          "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+          "result": {
+            "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+            "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+          },
+          "proof": {
+            "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+            "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+            "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "teacher-records-enrichment-park",
+          "urlTemplate": "/api/v1/school/enrichment",
+          "declarationIds": [
+            "decl-2e9db88f1cfa45fc7ec09b3b-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+          "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+          "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+          "result": {
+            "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+            "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+          },
+          "proof": {
+            "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+            "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+            "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "teacher-records-enrichment-withdrawn",
+          "urlTemplate": "/api/v1/school/enrichment",
+          "declarationIds": [
+            "decl-2e9db88f1cfa45fc7ec09b3b-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+          "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+          "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+          "result": {
+            "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+            "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+          },
+          "proof": {
+            "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+            "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+            "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "teacher-records-period-history",
+          "urlTemplate": "/api/v1/school/periods-meta",
+          "declarationIds": [
+            "decl-5cde31871e5dc0dc51c63a28-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+          "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+          "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+          "result": {
+            "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+            "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+          },
+          "proof": {
+            "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+            "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+            "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "launch-compat-card-ladder-stage",
+          "urlTemplate": "/api/v1/school/card-ladder/stage",
+          "declarationIds": [
+            "decl-ebefab4a16bb418ba78be25c-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+          "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+          "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+          "result": {
+            "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+            "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+          },
+          "proof": {
+            "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+            "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+            "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "launch-compat-word-ladder-stage",
+          "urlTemplate": "/api/v1/school/word-ladder/stage",
+          "declarationIds": [
+            "decl-ebefab4a16bb418ba78be25c-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+          "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+          "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+          "result": {
+            "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+            "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+          },
+          "proof": {
+            "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+            "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+            "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "launch-compat-cube-preview",
+          "urlTemplate": "/api/v1/school/rubiks-cube/preview",
+          "declarationIds": [
+            "decl-074a3c66666ae4af616f8798-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+          "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+          "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+          "result": {
+            "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+            "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+          },
+          "proof": {
+            "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+            "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+            "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "launch-compat-image",
+          "urlTemplate": "/api/v1/content/:source/image/:id",
+          "declarationIds": [
+            "decl-8fc3a7bd79227520ebd4fb35-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+          "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+          "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+          "result": {
+            "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+            "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+          },
+          "proof": {
+            "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+            "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+            "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "launch-compat-info",
+          "urlTemplate": "/api/v1/content/:source/info/:id{/:modifiers}",
+          "declarationIds": [
+            "decl-c4fe0e08599aba7ba49da73e-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+          "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+          "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+          "result": {
+            "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+            "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+          },
+          "proof": {
+            "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+            "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+            "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "launch-compat-info-modifier",
+          "urlTemplate": "/api/v1/content/:source/info/:id{/:modifiers}",
+          "declarationIds": [
+            "decl-c4fe0e08599aba7ba49da73e-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+          "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+          "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+          "result": {
+            "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+            "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+          },
+          "proof": {
+            "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+            "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+            "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "launch-compat-queue",
+          "urlTemplate": "/api/v1/content/playables/:source{/*splat}",
+          "declarationIds": [
+            "decl-518e7711bbe967813513f078-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+          "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+          "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+          "result": {
+            "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+            "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+          },
+          "proof": {
+            "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+            "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+            "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "launch-compat-queue-query",
+          "urlTemplate": "/api/v1/content/playables/:source{/*splat}",
+          "declarationIds": [
+            "decl-518e7711bbe967813513f078-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+          "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+          "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+          "result": {
+            "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+            "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+          },
+          "proof": {
+            "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+            "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+            "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "curation-usage-art-page1",
+          "urlTemplate": "/api/v1/admin/art/works",
+          "declarationIds": [
+            "decl-f8d394220a70d8929bc6fee7-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+          "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+          "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+          "result": {
+            "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+            "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+          },
+          "proof": {
+            "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+            "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+            "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "curation-usage-art-page2",
+          "urlTemplate": "/api/v1/admin/art/works",
+          "declarationIds": [
+            "decl-f8d394220a70d8929bc6fee7-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+          "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+          "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+          "result": {
+            "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+            "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+          },
+          "proof": {
+            "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+            "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+            "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "curation-usage-art-collection",
+          "urlTemplate": "/api/v1/admin/art/works",
+          "declarationIds": [
+            "decl-f8d394220a70d8929bc6fee7-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+          "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+          "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+          "result": {
+            "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+            "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+          },
+          "proof": {
+            "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+            "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+            "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "curation-usage-art-flagged",
+          "urlTemplate": "/api/v1/admin/art/works",
+          "declarationIds": [
+            "decl-f8d394220a70d8929bc6fee7-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+          "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+          "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+          "result": {
+            "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+            "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+          },
+          "proof": {
+            "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+            "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+            "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "curation-usage-art-hidden",
+          "urlTemplate": "/api/v1/admin/art/works",
+          "declarationIds": [
+            "decl-f8d394220a70d8929bc6fee7-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+          "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+          "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+          "result": {
+            "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+            "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+          },
+          "proof": {
+            "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+            "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+            "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "curation-usage-art-artist",
+          "urlTemplate": "/api/v1/admin/art/works",
+          "declarationIds": [
+            "decl-f8d394220a70d8929bc6fee7-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+          "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+          "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+          "result": {
+            "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+            "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+          },
+          "proof": {
+            "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+            "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+            "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "curation-usage-ai-1",
+          "urlTemplate": "/api/v1/health/ai-usage",
+          "declarationIds": [
+            "decl-5a8872f2cf4c66430312c6a9-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+          "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+          "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+          "result": {
+            "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+            "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+          },
+          "proof": {
+            "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+            "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+            "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "curation-usage-ai-2",
+          "urlTemplate": "/api/v1/health/ai-usage",
+          "declarationIds": [
+            "decl-5a8872f2cf4c66430312c6a9-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+          "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+          "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+          "result": {
+            "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+            "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+          },
+          "proof": {
+            "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+            "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+            "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "curation-usage-ai-7",
+          "urlTemplate": "/api/v1/health/ai-usage",
+          "declarationIds": [
+            "decl-5a8872f2cf4c66430312c6a9-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+          "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+          "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+          "result": {
+            "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+            "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+          },
+          "proof": {
+            "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+            "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+            "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "household-static-art-explicit",
+          "urlTemplate": "/api/v1/static/art/*splat",
+          "declarationIds": [
+            "decl-846dcca82b49d0efc1a5720e-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+          "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+          "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+          "result": {
+            "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+            "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+          },
+          "proof": {
+            "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+            "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+            "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "household-static-art-extension",
+          "urlTemplate": "/api/v1/static/art/*splat",
+          "declarationIds": [
+            "decl-846dcca82b49d0efc1a5720e-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+          "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+          "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+          "result": {
+            "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+            "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+          },
+          "proof": {
+            "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+            "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+            "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "household-static-avatar-profile",
+          "urlTemplate": "/api/v1/static/users/:id",
+          "declarationIds": [
+            "decl-9306bf395707618eb5a5cc53-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+          "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+          "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+          "result": {
+            "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+            "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+          },
+          "proof": {
+            "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+            "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+            "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "household-static-avatar-default",
+          "urlTemplate": "/api/v1/static/users/:id",
+          "declarationIds": [
+            "decl-9306bf395707618eb5a5cc53-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+          "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+          "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+          "result": {
+            "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+            "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+          },
+          "proof": {
+            "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+            "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+            "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "household-static-equipment-declared",
+          "urlTemplate": "/api/v1/static/equipment/:id",
+          "declarationIds": [
+            "decl-06c6e71aba3adcfa1a427dba-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+          "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+          "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+          "result": {
+            "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+            "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+          },
+          "proof": {
+            "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+            "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+            "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "household-static-equipment-convention",
+          "urlTemplate": "/api/v1/static/equipment/:id",
+          "declarationIds": [
+            "decl-06c6e71aba3adcfa1a427dba-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+          "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+          "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+          "result": {
+            "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+            "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+          },
+          "proof": {
+            "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+            "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+            "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "household-static-entropy",
+          "urlTemplate": "/api/v1/static/entropy/:icon",
+          "declarationIds": [
+            "decl-e2913f460448c49331f964a5-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+          "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+          "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+          "result": {
+            "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+            "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+          },
+          "proof": {
+            "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+            "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+            "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "household-static-generic-art",
+          "urlTemplate": "/api/v1/static/img/*splat",
+          "declarationIds": [
+            "decl-a6bceea2387cdbf13da0e7ca-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+          "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+          "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+          "result": {
+            "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+            "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+          },
+          "proof": {
+            "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+            "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+            "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "household-static-generic-equipment",
+          "urlTemplate": "/api/v1/static/img/*splat",
+          "declarationIds": [
+            "decl-a6bceea2387cdbf13da0e7ca-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+          "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+          "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+          "result": {
+            "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+            "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+          },
+          "proof": {
+            "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+            "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+            "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "household-static-generic-avatar",
+          "urlTemplate": "/api/v1/static/img/*splat",
+          "declarationIds": [
+            "decl-a6bceea2387cdbf13da0e7ca-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+          "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+          "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+          "result": {
+            "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+            "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+          },
+          "proof": {
+            "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+            "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+            "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "household-static-source-discovery",
+          "urlTemplate": "/api/v1/content/sources",
+          "declarationIds": [
+            "decl-00544be07760914af6ceb31f-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+          "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+          "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+          "result": {
+            "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+            "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+          },
+          "proof": {
+            "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+            "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+            "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "curation-usage-drafts-2026-10-05",
+          "urlTemplate": "/api/v1/weekly-review/recording/drafts",
+          "declarationIds": [
+            "decl-e16cadfff39b11636f48e607-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-weekly-inert-mount2",
+          "fixtureSha256": "5d9ed145fe3a5342ffd849c50a7a316a6cc3c36e78cd60ec489cf1ac53408a06",
+          "manifestSha256": "85750a079e5bc875be895faf7dbf6d795ab294f6b6c4461a7bfd8dfd44a989da",
+          "result": {
+            "path": "/tmp/readiness-weekly-drafts-mount2-pair/pair-result.json",
+            "sha256": "9d585c2b7c163940eb91a635dc8c5e7f7544f86927175e2b0189581cd22c0217"
+          },
+          "proof": {
+            "path": "/tmp/readiness-weekly-drafts-mount2-execution/proof.json",
+            "sha256": "91e09d9c52abfe1e9e62948695392ea8c021a659af897fec169fbcd1af925f09"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-weekly-drafts-mount2-execution/result-review.json",
+            "sha256": "bea954d670678f555165cb649cc1c363c022ded2c6f663ee2c917313adad8bb2"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
+        },
+        {
+          "id": "curation-usage-drafts-2026-09-28",
+          "urlTemplate": "/api/v1/weekly-review/recording/drafts",
+          "declarationIds": [
+            "decl-e16cadfff39b11636f48e607-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-23abfc-weekly-inert-mount2",
+          "fixtureSha256": "5d9ed145fe3a5342ffd849c50a7a316a6cc3c36e78cd60ec489cf1ac53408a06",
+          "manifestSha256": "85750a079e5bc875be895faf7dbf6d795ab294f6b6c4461a7bfd8dfd44a989da",
+          "result": {
+            "path": "/tmp/readiness-weekly-drafts-mount2-pair/pair-result.json",
+            "sha256": "9d585c2b7c163940eb91a635dc8c5e7f7544f86927175e2b0189581cd22c0217"
+          },
+          "proof": {
+            "path": "/tmp/readiness-weekly-drafts-mount2-execution/proof.json",
+            "sha256": "91e09d9c52abfe1e9e62948695392ea8c021a659af897fec169fbcd1af925f09"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-weekly-drafts-mount2-execution/result-review.json",
+            "sha256": "bea954d670678f555165cb649cc1c363c022ded2c6f663ee2c917313adad8bb2"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": []
         }
       ],
       "infrastructure": {
@@ -9285,7 +10496,671 @@
           }
         }
       ],
-      "coverageMeaning": "Accepted parity-linked source-template coverage, including historical independent-contract gaps; independent contracts counted separately. Latest35 newly linked templates have successful independent contracts; no claim that every historical union template is independently healthy."
+      "coverageMeaning": "Accepted parity-linked source-template coverage, including historical independent-contract gaps; independent contracts counted separately. Latest35 newly linked templates have successful independent contracts; no claim that every historical union template is independently healthy.",
+      "historicalEligibleTemplates": [
+        "/api/v1/automotive/service-types",
+        "/api/v1/automotive/vehicles",
+        "/api/v1/automotive/vehicles/:id/trip",
+        "/api/v1/calendar/events",
+        "/api/v1/calendar/events/:date",
+        "/api/v1/calendar/events/today",
+        "/api/v1/config/content-prefixes",
+        "/api/v1/config/player",
+        "/api/v1/feedback",
+        "/api/v1/feedback/:app/:id",
+        "/api/v1/finance/budgets",
+        "/api/v1/finance/budgets/:budgetId",
+        "/api/v1/finance/data/daytoday",
+        "/api/v1/finance/memos",
+        "/api/v1/finance/mortgage",
+        "/api/v1/finance/pairs",
+        "/api/v1/fitness/cycle-races",
+        "/api/v1/fitness/cycle-races/:raceId",
+        "/api/v1/fitness/menu-music",
+        "/api/v1/fitness/sessions/dates",
+        "/api/v1/fitness/skyline-glider/courses",
+        "/api/v1/fitness/voice_memo/artifacts",
+        "/api/v1/fitness/workouts",
+        "/api/v1/fitness/workouts/:id",
+        "/api/v1/gratitude/discarded/:category",
+        "/api/v1/gratitude/selections/:category",
+        "/api/v1/gratitude/snapshot/list",
+        "/api/v1/gratitude/users",
+        "/api/v1/health/coaching",
+        "/api/v1/health/context",
+        "/api/v1/health/fitness",
+        "/api/v1/health/goals",
+        "/api/v1/health/nutrition",
+        "/api/v1/health/nutrition/catalog",
+        "/api/v1/health/nutrition/catalog/:id",
+        "/api/v1/health/nutrition/catalog/recent",
+        "/api/v1/health/nutrition/observations",
+        "/api/v1/health/weight",
+        "/api/v1/health/workouts",
+        "/api/v1/life/now",
+        "/api/v1/life/now/drift",
+        "/api/v1/life/now/drift/history",
+        "/api/v1/life/plan",
+        "/api/v1/life/plan/beliefs",
+        "/api/v1/life/plan/cadence",
+        "/api/v1/life/plan/ceremony/:type",
+        "/api/v1/life/plan/feedback",
+        "/api/v1/life/plan/goals",
+        "/api/v1/life/plan/goals/:goalId",
+        "/api/v1/life/plan/retro",
+        "/api/v1/lifelog/weight",
+        "/api/v1/piano-games/chess/config",
+        "/api/v1/piano-games/chess/ladder",
+        "/api/v1/piano/bank",
+        "/api/v1/piano/bank/*splat",
+        "/api/v1/piano/bank/catalog",
+        "/api/v1/piano/bank/search",
+        "/api/v1/piano/compositions/shared",
+        "/api/v1/piano/producer/crate",
+        "/api/v1/piano/producer/crate/:id",
+        "/api/v1/piano/producer/loops",
+        "/api/v1/piano/producer/loops/:id",
+        "/api/v1/piano/producer/songs",
+        "/api/v1/piano/producer/songs/:id",
+        "/api/v1/piano/programs",
+        "/api/v1/piano/programs/:programId",
+        "/api/v1/piano/users",
+        "/api/v1/piano/users/:userId/compositions",
+        "/api/v1/piano/users/:userId/compositions/:id",
+        "/api/v1/piano/users/:userId/game-budget",
+        "/api/v1/piano/users/:userId/practice/:scoreKey",
+        "/api/v1/piano/users/:userId/preferences",
+        "/api/v1/piano/users/:userId/preset",
+        "/api/v1/piano/users/:userId/studio",
+        "/api/v1/piano/users/:userId/studio/:id",
+        "/api/v1/school/attempt-days",
+        "/api/v1/school/attestations",
+        "/api/v1/school/enrichment",
+        "/api/v1/school/flashcards",
+        "/api/v1/school/flashcards/:deckId",
+        "/api/v1/school/language/audio/:corpusId/:seq/:lang",
+        "/api/v1/school/language/courses",
+        "/api/v1/school/language/cue/:name",
+        "/api/v1/school/periods",
+        "/api/v1/school/periods-meta",
+        "/api/v1/school/program-day-bypasses",
+        "/api/v1/school/roster",
+        "/api/v1/school/sentence-ladder/audio/:corpusId/:seq/:lang",
+        "/api/v1/school/sentence-ladder/courses",
+        "/api/v1/school/sentence-ladder/cue/:name",
+        "/api/v1/school/teacher-notes",
+        "/api/v1/school/teacher/artifacts/:artifactId",
+        "/api/v1/school/teachers",
+        "/api/v1/school/users/:userId/results"
+      ],
+      "historicalTemplateBindingEvidence": {
+        "existingDeclarationVerifiedCasesRetained": true,
+        "previousExactLegacyBindings": {
+          "path": "/tmp/readiness-local-census-reconciliation/explicit-live-bindings.json",
+          "sha256": "241a3d244ba9fcb27a23d3ac3c60886e9738f8a12a9a401497db485f1984f94a"
+        },
+        "previousIndependentReview": {
+          "path": "/tmp/readiness-local-census-reconciliation/review.json",
+          "sha256": "b4192be83e0bface49e316cfc2774b3e2018d882031e193022aed7cc032c9e35"
+        },
+        "exactReconciliation": {
+          "path": "/tmp/readiness-current-gap-reconciliation/HANDOFF.json",
+          "sha256": "695c71a6d84b2865f7a73e46f63ba040bc809401bea89bc6f29348be2bd81f5a"
+        },
+        "scope": "Existing historical134 request/receipt links only; no new execution/case credit or current source guarantee."
+      },
+      "eligibleExecutedTemplateUnion": [
+        "/api/v1/admin/apps/:appId/config",
+        "/api/v1/admin/art/works",
+        "/api/v1/admin/content/lists",
+        "/api/v1/admin/content/lists/:type",
+        "/api/v1/admin/content/lists/:type/:name",
+        "/api/v1/admin/household",
+        "/api/v1/admin/household/members/:username",
+        "/api/v1/admin/notifications/ledger",
+        "/api/v1/admin/scheduler/jobs",
+        "/api/v1/admin/scheduler/jobs/:id",
+        "/api/v1/admin/state-gates/assertions",
+        "/api/v1/admin/state-gates/policy",
+        "/api/v1/agents",
+        "/api/v1/agents/:agentId/assignments",
+        "/api/v1/agents/:agentId/memory/:userId",
+        "/api/v1/arcade-game-sessions/devices/:deviceId/history",
+        "/api/v1/arcade-game-sessions/usage",
+        "/api/v1/art/preset/:key",
+        "/api/v1/auth/context",
+        "/api/v1/auth/setup-status",
+        "/api/v1/automotive/places",
+        "/api/v1/automotive/service-types",
+        "/api/v1/automotive/vehicles",
+        "/api/v1/automotive/vehicles/:id",
+        "/api/v1/automotive/vehicles/:id/documents",
+        "/api/v1/automotive/vehicles/:id/events",
+        "/api/v1/automotive/vehicles/:id/fuel",
+        "/api/v1/automotive/vehicles/:id/journeys",
+        "/api/v1/automotive/vehicles/:id/service",
+        "/api/v1/automotive/vehicles/:id/trip",
+        "/api/v1/calendar/events",
+        "/api/v1/calendar/events/:date",
+        "/api/v1/calendar/events/today",
+        "/api/v1/config/content-prefixes",
+        "/api/v1/config/player",
+        "/api/v1/config/status",
+        "/api/v1/content/:source/image/:id",
+        "/api/v1/content/:source/info/:id{/:modifiers}",
+        "/api/v1/content/aliases",
+        "/api/v1/content/playables/:source{/*splat}",
+        "/api/v1/content/sources",
+        "/api/v1/cost/dashboard",
+        "/api/v1/cost/entries",
+        "/api/v1/cost/spend/category",
+        "/api/v1/cost/spend/resource",
+        "/api/v1/cost/spend/user",
+        "/api/v1/device",
+        "/api/v1/device/:deviceId/presence",
+        "/api/v1/device/:deviceId/session",
+        "/api/v1/device/:deviceId/start-status",
+        "/api/v1/device/config",
+        "/api/v1/device/self/input",
+        "/api/v1/donow/surfaces",
+        "/api/v1/earnings/rules",
+        "/api/v1/entitlements",
+        "/api/v1/entitlements/:capabilityId",
+        "/api/v1/entropy",
+        "/api/v1/entropy/:source",
+        "/api/v1/feed/annotations",
+        "/api/v1/feed/headlines/:source",
+        "/api/v1/feed/headlines/pages",
+        "/api/v1/feed/workspace",
+        "/api/v1/feedback",
+        "/api/v1/feedback/:app/:id",
+        "/api/v1/finance",
+        "/api/v1/finance/budgets",
+        "/api/v1/finance/budgets/:budgetId",
+        "/api/v1/finance/data",
+        "/api/v1/finance/data/daytoday",
+        "/api/v1/finance/memos",
+        "/api/v1/finance/mortgage",
+        "/api/v1/finance/pairs",
+        "/api/v1/fitness",
+        "/api/v1/fitness/cycle-races",
+        "/api/v1/fitness/cycle-races/:raceId",
+        "/api/v1/fitness/fingerprints",
+        "/api/v1/fitness/menu-music",
+        "/api/v1/fitness/resumable",
+        "/api/v1/fitness/sessions",
+        "/api/v1/fitness/sessions/:sessionId",
+        "/api/v1/fitness/sessions/dates",
+        "/api/v1/fitness/skyline-glider/courses",
+        "/api/v1/fitness/skyline-glider/runs/:runId",
+        "/api/v1/fitness/voice_memo/artifacts",
+        "/api/v1/fitness/workouts",
+        "/api/v1/fitness/workouts/:id",
+        "/api/v1/fitness/workouts/:id/run",
+        "/api/v1/gaming/assets/:packId",
+        "/api/v1/gaming/assets/:packId/:assetId/image",
+        "/api/v1/gaming/catalog",
+        "/api/v1/gaming/definitions/:definitionId",
+        "/api/v1/gaming/environments/party-games/catalog",
+        "/api/v1/gaming/environments/party-games/profile",
+        "/api/v1/gaming/experiences",
+        "/api/v1/gaming/experiences/:experienceId/content",
+        "/api/v1/gaming/experiences/:experienceId/content/:contentId",
+        "/api/v1/gaming/experiences/:experienceId/manifest",
+        "/api/v1/gaming/launch/:definitionId",
+        "/api/v1/gaming/media/*splat",
+        "/api/v1/gaming/sessions/:sessionId/effects",
+        "/api/v1/gratitude/discarded/:category",
+        "/api/v1/gratitude/print",
+        "/api/v1/gratitude/selections/:category",
+        "/api/v1/gratitude/snapshot/list",
+        "/api/v1/gratitude/users",
+        "/api/v1/health-dashboard/:userId",
+        "/api/v1/health-dashboard/:userId/:date",
+        "/api/v1/health/ai-usage",
+        "/api/v1/health/coaching",
+        "/api/v1/health/coaching/schema",
+        "/api/v1/health/context",
+        "/api/v1/health/date/:date",
+        "/api/v1/health/fitness",
+        "/api/v1/health/goals",
+        "/api/v1/health/medical",
+        "/api/v1/health/mentions/all",
+        "/api/v1/health/mentions/metrics",
+        "/api/v1/health/mentions/periods",
+        "/api/v1/health/mentions/recent-days",
+        "/api/v1/health/nutrition",
+        "/api/v1/health/nutrition/catalog",
+        "/api/v1/health/nutrition/catalog/:id",
+        "/api/v1/health/nutrition/catalog/recent",
+        "/api/v1/health/nutrition/meals",
+        "/api/v1/health/nutrition/observations",
+        "/api/v1/health/nutrition/pending",
+        "/api/v1/health/nutrition/templates",
+        "/api/v1/health/range",
+        "/api/v1/health/weight",
+        "/api/v1/health/workouts",
+        "/api/v1/home-automation/calendar",
+        "/api/v1/home-automation/entropy",
+        "/api/v1/home-automation/events",
+        "/api/v1/home-automation/status",
+        "/api/v1/home-automation/todos",
+        "/api/v1/home-automation/weather",
+        "/api/v1/home-dashboard/config",
+        "/api/v1/home/calendar",
+        "/api/v1/home/entropy",
+        "/api/v1/home/events",
+        "/api/v1/home/status",
+        "/api/v1/home/todos",
+        "/api/v1/home/weather",
+        "/api/v1/life/log/:username/:date",
+        "/api/v1/life/log/:username/category/:category",
+        "/api/v1/life/log/:username/range",
+        "/api/v1/life/log/:username/scope/:scope",
+        "/api/v1/life/log/sources",
+        "/api/v1/life/now",
+        "/api/v1/life/now/drift",
+        "/api/v1/life/now/drift/history",
+        "/api/v1/life/plan",
+        "/api/v1/life/plan/beliefs",
+        "/api/v1/life/plan/cadence",
+        "/api/v1/life/plan/ceremony/:type",
+        "/api/v1/life/plan/feedback",
+        "/api/v1/life/plan/goals",
+        "/api/v1/life/plan/goals/:goalId",
+        "/api/v1/life/plan/retro",
+        "/api/v1/life/schedule/:format",
+        "/api/v1/life/user",
+        "/api/v1/life/users",
+        "/api/v1/lifelog/aggregate/:username/:date",
+        "/api/v1/lifelog/sources",
+        "/api/v1/lifelog/weight",
+        "/api/v1/list",
+        "/api/v1/local-content/collection-cover/:adapter/:collection",
+        "/api/v1/local-content/collection-cover/:adapter/:collection/*splat",
+        "/api/v1/local-content/collection-icon/:adapter/:collection",
+        "/api/v1/local-content/collection/:name",
+        "/api/v1/local-content/cover{/*splat}",
+        "/api/v1/local-content/hymn/:number",
+        "/api/v1/local-content/poem/*splat",
+        "/api/v1/local-content/primary/:number",
+        "/api/v1/local-content/scripture/*splat",
+        "/api/v1/local-content/talk/*splat",
+        "/api/v1/local/browse{/*splat}",
+        "/api/v1/media/config",
+        "/api/v1/media/household/favourites",
+        "/api/v1/media/household/plays",
+        "/api/v1/media/household/removed",
+        "/api/v1/media/queue",
+        "/api/v1/media/routines",
+        "/api/v1/media/routines/flags",
+        "/api/v1/media/routines/history",
+        "/api/v1/media/screens",
+        "/api/v1/media/screens/:id",
+        "/api/v1/media/screens/:id/routines",
+        "/api/v1/media/screens/:id/started-by",
+        "/api/v1/media/screens/rooms/adjacency",
+        "/api/v1/piano-games/:gameId/config",
+        "/api/v1/piano-games/:gameId/ladder",
+        "/api/v1/piano-games/chess/config",
+        "/api/v1/piano-games/chess/ladder",
+        "/api/v1/piano-games/chess/users/:userId/resumable",
+        "/api/v1/piano-games/day/current",
+        "/api/v1/piano/bank",
+        "/api/v1/piano/bank/*splat",
+        "/api/v1/piano/bank/catalog",
+        "/api/v1/piano/bank/search",
+        "/api/v1/piano/compositions/shared",
+        "/api/v1/piano/lessons/:collection",
+        "/api/v1/piano/lessons/:collection/:id",
+        "/api/v1/piano/producer/crate",
+        "/api/v1/piano/producer/crate/:id",
+        "/api/v1/piano/producer/loops",
+        "/api/v1/piano/producer/loops/:id",
+        "/api/v1/piano/producer/songs",
+        "/api/v1/piano/producer/songs/:id",
+        "/api/v1/piano/programs",
+        "/api/v1/piano/programs/:programId",
+        "/api/v1/piano/users",
+        "/api/v1/piano/users/:userId/attempts",
+        "/api/v1/piano/users/:userId/board-game-day",
+        "/api/v1/piano/users/:userId/compositions",
+        "/api/v1/piano/users/:userId/compositions/:id",
+        "/api/v1/piano/users/:userId/game-budget",
+        "/api/v1/piano/users/:userId/learning",
+        "/api/v1/piano/users/:userId/piano-challenge-profile",
+        "/api/v1/piano/users/:userId/practice/:scoreKey",
+        "/api/v1/piano/users/:userId/preferences",
+        "/api/v1/piano/users/:userId/preset",
+        "/api/v1/piano/users/:userId/program-assignments",
+        "/api/v1/piano/users/:userId/progress",
+        "/api/v1/piano/users/:userId/studio",
+        "/api/v1/piano/users/:userId/studio/:id",
+        "/api/v1/school/attempt-days",
+        "/api/v1/school/attestations",
+        "/api/v1/school/banks",
+        "/api/v1/school/card-ladder/stage",
+        "/api/v1/school/catalogs",
+        "/api/v1/school/catalogs/:catalogId/subjects/:subjectId/courses/:courseId/units/:unitId/lessons/:lessonId",
+        "/api/v1/school/continuation-code",
+        "/api/v1/school/enrichment",
+        "/api/v1/school/flashcards",
+        "/api/v1/school/flashcards/:deckId",
+        "/api/v1/school/flashcards/assets/*assetId",
+        "/api/v1/school/geography/decks",
+        "/api/v1/school/language/audio/:corpusId/:seq/:lang",
+        "/api/v1/school/language/courses",
+        "/api/v1/school/language/cue/:name",
+        "/api/v1/school/language/preview/:corpusId/day",
+        "/api/v1/school/language/recordings/:userId/:corpusId/:seq",
+        "/api/v1/school/language/users/:userId/history",
+        "/api/v1/school/lesson/:sessionId",
+        "/api/v1/school/lifecycle/direct-launch/programs",
+        "/api/v1/school/lifecycle/learners/:learnerId/agenda/preview",
+        "/api/v1/school/lifecycle/learners/:learnerId/sessions",
+        "/api/v1/school/lifecycle/review",
+        "/api/v1/school/lifecycle/sessions/:sessionId/events",
+        "/api/v1/school/lifecycle/sessions/:sessionId/review",
+        "/api/v1/school/milestones",
+        "/api/v1/school/pass-overrides",
+        "/api/v1/school/periods",
+        "/api/v1/school/periods-meta",
+        "/api/v1/school/print/pending",
+        "/api/v1/school/print/quota",
+        "/api/v1/school/print/requests",
+        "/api/v1/school/program-day-bypasses",
+        "/api/v1/school/progress-report",
+        "/api/v1/school/progress/insights",
+        "/api/v1/school/progress/options",
+        "/api/v1/school/reading/events",
+        "/api/v1/school/reading/read-status",
+        "/api/v1/school/reading/summary",
+        "/api/v1/school/remediation",
+        "/api/v1/school/remediation/:sessionId",
+        "/api/v1/school/report",
+        "/api/v1/school/report-card",
+        "/api/v1/school/report-card/frozen",
+        "/api/v1/school/report-card/frozen/versions",
+        "/api/v1/school/review/learner/:learnerId",
+        "/api/v1/school/roster",
+        "/api/v1/school/rubiks-cube/preview",
+        "/api/v1/school/self-service/preview/:link",
+        "/api/v1/school/sentence-ladder/audio/:corpusId/:seq/:lang",
+        "/api/v1/school/sentence-ladder/courses",
+        "/api/v1/school/sentence-ladder/cue/:name",
+        "/api/v1/school/sentence-ladder/preview/:corpusId/day",
+        "/api/v1/school/sentence-ladder/recordings/:userId/:corpusId/:seq",
+        "/api/v1/school/sentence-ladder/users/:userId/history",
+        "/api/v1/school/surfaces/profile",
+        "/api/v1/school/teacher-notes",
+        "/api/v1/school/teacher/answer-sheets/:cardId",
+        "/api/v1/school/teacher/artifacts/:artifactId",
+        "/api/v1/school/teacher/curriculum-exceptions",
+        "/api/v1/school/teacher/learners/:learnerId/answer-sheets",
+        "/api/v1/school/teachers",
+        "/api/v1/school/transcript",
+        "/api/v1/school/users/:userId/results",
+        "/api/v1/school/word-ladder/stage",
+        "/api/v1/screens",
+        "/api/v1/screens/:screenId",
+        "/api/v1/state-gates",
+        "/api/v1/state-gates/:gateId",
+        "/api/v1/state-gates/transitions",
+        "/api/v1/static/art/*splat",
+        "/api/v1/static/entropy/:icon",
+        "/api/v1/static/equipment/:id",
+        "/api/v1/static/img/*splat",
+        "/api/v1/static/users/:id",
+        "/api/v1/stream/readalong/:collection{/*splat}",
+        "/api/v1/stream/singalong/:collection/:id",
+        "/api/v1/weekly-review/recording/drafts"
+      ],
+      "outsideEligibleAcceptedCaseTemplates": [
+        "/api/v1/school/progress",
+        "/healthz"
+      ],
+      "setAccountingCorrection": {
+        "priorReportedTemplateCoverage": 309,
+        "priorReportedGaps": 87,
+        "correctedBeforeNew13Coverage": 297,
+        "correctedBeforeNew13Gaps": 99,
+        "historicalIsolatedOverlap": [
+          "/api/v1/fitness/cycle-races",
+          "/api/v1/fitness/cycle-races/:raceId",
+          "/api/v1/fitness/sessions/dates",
+          "/api/v1/fitness/workouts",
+          "/api/v1/fitness/workouts/:id",
+          "/api/v1/school/attestations",
+          "/api/v1/school/enrichment",
+          "/api/v1/school/language/courses",
+          "/api/v1/school/periods-meta",
+          "/api/v1/school/sentence-ladder/courses",
+          "/api/v1/school/teacher-notes"
+        ],
+        "outsideEligibleIsolatedLabel": [
+          "/api/v1/school/progress"
+        ],
+        "previousIsolatedTemplateLabels": [
+          "/api/v1/admin/apps/:appId/config",
+          "/api/v1/admin/art/works",
+          "/api/v1/admin/content/lists",
+          "/api/v1/admin/content/lists/:type",
+          "/api/v1/admin/content/lists/:type/:name",
+          "/api/v1/admin/household",
+          "/api/v1/admin/household/members/:username",
+          "/api/v1/admin/notifications/ledger",
+          "/api/v1/admin/scheduler/jobs",
+          "/api/v1/admin/scheduler/jobs/:id",
+          "/api/v1/admin/state-gates/assertions",
+          "/api/v1/admin/state-gates/policy",
+          "/api/v1/agents",
+          "/api/v1/agents/:agentId/assignments",
+          "/api/v1/agents/:agentId/memory/:userId",
+          "/api/v1/arcade-game-sessions/devices/:deviceId/history",
+          "/api/v1/arcade-game-sessions/usage",
+          "/api/v1/art/preset/:key",
+          "/api/v1/auth/context",
+          "/api/v1/auth/setup-status",
+          "/api/v1/automotive/places",
+          "/api/v1/automotive/vehicles/:id",
+          "/api/v1/automotive/vehicles/:id/documents",
+          "/api/v1/automotive/vehicles/:id/events",
+          "/api/v1/automotive/vehicles/:id/fuel",
+          "/api/v1/automotive/vehicles/:id/journeys",
+          "/api/v1/automotive/vehicles/:id/service",
+          "/api/v1/config/status",
+          "/api/v1/content/:source/image/:id",
+          "/api/v1/content/:source/info/:id{/:modifiers}",
+          "/api/v1/content/aliases",
+          "/api/v1/content/playables/:source{/*splat}",
+          "/api/v1/cost/dashboard",
+          "/api/v1/cost/entries",
+          "/api/v1/cost/spend/category",
+          "/api/v1/cost/spend/resource",
+          "/api/v1/cost/spend/user",
+          "/api/v1/device",
+          "/api/v1/device/:deviceId/presence",
+          "/api/v1/device/:deviceId/session",
+          "/api/v1/device/:deviceId/start-status",
+          "/api/v1/device/config",
+          "/api/v1/device/self/input",
+          "/api/v1/donow/surfaces",
+          "/api/v1/earnings/rules",
+          "/api/v1/entitlements",
+          "/api/v1/entitlements/:capabilityId",
+          "/api/v1/entropy",
+          "/api/v1/entropy/:source",
+          "/api/v1/feed/annotations",
+          "/api/v1/feed/headlines/:source",
+          "/api/v1/feed/headlines/pages",
+          "/api/v1/feed/workspace",
+          "/api/v1/finance",
+          "/api/v1/finance/data",
+          "/api/v1/fitness",
+          "/api/v1/fitness/cycle-races",
+          "/api/v1/fitness/cycle-races/:raceId",
+          "/api/v1/fitness/fingerprints",
+          "/api/v1/fitness/resumable",
+          "/api/v1/fitness/sessions",
+          "/api/v1/fitness/sessions/:sessionId",
+          "/api/v1/fitness/sessions/dates",
+          "/api/v1/fitness/skyline-glider/runs/:runId",
+          "/api/v1/fitness/workouts",
+          "/api/v1/fitness/workouts/:id",
+          "/api/v1/fitness/workouts/:id/run",
+          "/api/v1/gaming/assets/:packId",
+          "/api/v1/gaming/assets/:packId/:assetId/image",
+          "/api/v1/gaming/catalog",
+          "/api/v1/gaming/definitions/:definitionId",
+          "/api/v1/gaming/environments/party-games/catalog",
+          "/api/v1/gaming/environments/party-games/profile",
+          "/api/v1/gaming/experiences",
+          "/api/v1/gaming/experiences/:experienceId/content",
+          "/api/v1/gaming/experiences/:experienceId/content/:contentId",
+          "/api/v1/gaming/experiences/:experienceId/manifest",
+          "/api/v1/gaming/launch/:definitionId",
+          "/api/v1/gaming/media/*splat",
+          "/api/v1/gaming/sessions/:sessionId/effects",
+          "/api/v1/gratitude/print",
+          "/api/v1/health-dashboard/:userId",
+          "/api/v1/health-dashboard/:userId/:date",
+          "/api/v1/health/ai-usage",
+          "/api/v1/health/coaching/schema",
+          "/api/v1/health/date/:date",
+          "/api/v1/health/medical",
+          "/api/v1/health/mentions/all",
+          "/api/v1/health/mentions/metrics",
+          "/api/v1/health/mentions/periods",
+          "/api/v1/health/mentions/recent-days",
+          "/api/v1/health/nutrition/meals",
+          "/api/v1/health/nutrition/pending",
+          "/api/v1/health/nutrition/templates",
+          "/api/v1/health/range",
+          "/api/v1/home-automation/calendar",
+          "/api/v1/home-automation/entropy",
+          "/api/v1/home-automation/events",
+          "/api/v1/home-automation/status",
+          "/api/v1/home-automation/todos",
+          "/api/v1/home-automation/weather",
+          "/api/v1/home-dashboard/config",
+          "/api/v1/home/calendar",
+          "/api/v1/home/entropy",
+          "/api/v1/home/events",
+          "/api/v1/home/status",
+          "/api/v1/home/todos",
+          "/api/v1/home/weather",
+          "/api/v1/life/log/:username/:date",
+          "/api/v1/life/log/:username/category/:category",
+          "/api/v1/life/log/:username/range",
+          "/api/v1/life/log/:username/scope/:scope",
+          "/api/v1/life/log/sources",
+          "/api/v1/life/schedule/:format",
+          "/api/v1/life/user",
+          "/api/v1/life/users",
+          "/api/v1/lifelog/aggregate/:username/:date",
+          "/api/v1/lifelog/sources",
+          "/api/v1/list",
+          "/api/v1/local-content/collection-cover/:adapter/:collection",
+          "/api/v1/local-content/collection-cover/:adapter/:collection/*splat",
+          "/api/v1/local-content/collection-icon/:adapter/:collection",
+          "/api/v1/local-content/collection/:name",
+          "/api/v1/local-content/cover{/*splat}",
+          "/api/v1/local-content/hymn/:number",
+          "/api/v1/local-content/poem/*splat",
+          "/api/v1/local-content/primary/:number",
+          "/api/v1/local-content/scripture/*splat",
+          "/api/v1/local-content/talk/*splat",
+          "/api/v1/local/browse{/*splat}",
+          "/api/v1/media/config",
+          "/api/v1/media/household/favourites",
+          "/api/v1/media/household/plays",
+          "/api/v1/media/household/removed",
+          "/api/v1/media/queue",
+          "/api/v1/media/routines",
+          "/api/v1/media/routines/flags",
+          "/api/v1/media/routines/history",
+          "/api/v1/media/screens",
+          "/api/v1/media/screens/:id",
+          "/api/v1/media/screens/:id/routines",
+          "/api/v1/media/screens/:id/started-by",
+          "/api/v1/media/screens/rooms/adjacency",
+          "/api/v1/piano-games/:gameId/config",
+          "/api/v1/piano-games/:gameId/ladder",
+          "/api/v1/piano-games/chess/users/:userId/resumable",
+          "/api/v1/piano-games/day/current",
+          "/api/v1/piano/lessons/:collection",
+          "/api/v1/piano/lessons/:collection/:id",
+          "/api/v1/piano/users/:userId/attempts",
+          "/api/v1/piano/users/:userId/board-game-day",
+          "/api/v1/piano/users/:userId/learning",
+          "/api/v1/piano/users/:userId/piano-challenge-profile",
+          "/api/v1/piano/users/:userId/program-assignments",
+          "/api/v1/piano/users/:userId/progress",
+          "/api/v1/school/attestations",
+          "/api/v1/school/banks",
+          "/api/v1/school/card-ladder/stage",
+          "/api/v1/school/catalogs",
+          "/api/v1/school/catalogs/:catalogId/subjects/:subjectId/courses/:courseId/units/:unitId/lessons/:lessonId",
+          "/api/v1/school/continuation-code",
+          "/api/v1/school/enrichment",
+          "/api/v1/school/flashcards/assets/*assetId",
+          "/api/v1/school/geography/decks",
+          "/api/v1/school/language/courses",
+          "/api/v1/school/language/preview/:corpusId/day",
+          "/api/v1/school/language/recordings/:userId/:corpusId/:seq",
+          "/api/v1/school/language/users/:userId/history",
+          "/api/v1/school/lesson/:sessionId",
+          "/api/v1/school/lifecycle/direct-launch/programs",
+          "/api/v1/school/lifecycle/learners/:learnerId/agenda/preview",
+          "/api/v1/school/lifecycle/learners/:learnerId/sessions",
+          "/api/v1/school/lifecycle/review",
+          "/api/v1/school/lifecycle/sessions/:sessionId/events",
+          "/api/v1/school/lifecycle/sessions/:sessionId/review",
+          "/api/v1/school/milestones",
+          "/api/v1/school/pass-overrides",
+          "/api/v1/school/periods-meta",
+          "/api/v1/school/print/pending",
+          "/api/v1/school/print/quota",
+          "/api/v1/school/print/requests",
+          "/api/v1/school/progress",
+          "/api/v1/school/progress-report",
+          "/api/v1/school/progress/insights",
+          "/api/v1/school/progress/options",
+          "/api/v1/school/reading/events",
+          "/api/v1/school/reading/read-status",
+          "/api/v1/school/reading/summary",
+          "/api/v1/school/remediation",
+          "/api/v1/school/remediation/:sessionId",
+          "/api/v1/school/report",
+          "/api/v1/school/report-card",
+          "/api/v1/school/report-card/frozen",
+          "/api/v1/school/report-card/frozen/versions",
+          "/api/v1/school/review/learner/:learnerId",
+          "/api/v1/school/rubiks-cube/preview",
+          "/api/v1/school/self-service/preview/:link",
+          "/api/v1/school/sentence-ladder/courses",
+          "/api/v1/school/sentence-ladder/preview/:corpusId/day",
+          "/api/v1/school/sentence-ladder/recordings/:userId/:corpusId/:seq",
+          "/api/v1/school/sentence-ladder/users/:userId/history",
+          "/api/v1/school/surfaces/profile",
+          "/api/v1/school/teacher-notes",
+          "/api/v1/school/teacher/answer-sheets/:cardId",
+          "/api/v1/school/teacher/curriculum-exceptions",
+          "/api/v1/school/teacher/learners/:learnerId/answer-sheets",
+          "/api/v1/school/transcript",
+          "/api/v1/school/word-ladder/stage",
+          "/api/v1/screens",
+          "/api/v1/screens/:screenId",
+          "/api/v1/state-gates",
+          "/api/v1/state-gates/:gateId",
+          "/api/v1/state-gates/transitions",
+          "/api/v1/stream/readalong/:collection{/*splat}",
+          "/api/v1/stream/singalong/:collection/:id"
+        ],
+        "newCaseCreditFromCorrection": 0,
+        "newAcceptedTemplateLinksFromReviewed13": 7,
+        "scope": "Set union intersected with authoritative eligible template set. Raw accepted case counts unchanged by correction; bootstrap healthz and source-unwired progress excluded only from current eligible numerator."
+      }
     },
     "currentSourceState": {
       "kind": "uncommitted-composite-source",
@@ -9506,10 +11381,10 @@
       "noHTTPRerun": true,
       "productionOrLiveCoverage": false
     },
-    "observedUniqueIdsIncludingBaselineDiagnostics": 465,
-    "acceptedParityTemplateMeaning": "297 templates have accepted parity links; prior9 independent-contract gaps remain, no all-template independently healthy claim",
+    "observedUniqueIdsIncludingBaselineDiagnostics": 510,
+    "acceptedParityTemplateMeaning": "304 eligible templates have accepted parity links from exact set union;92 eligible gaps. Historical observations retain their original source/time and nine independent-contract gaps; five baseline diagnostics remain zero credit.",
     "observedIdAccountingScope": "Accepted-credit IDs plus preserved baseline diagnostic IDs; excludes two explicitly no-credit repeated bootstrap alias IDs",
-    "literalObservedIdsIncludingRepeatedBootstrapAliases": 467,
+    "literalObservedIdsIncludingRepeatedBootstrapAliases": 512,
     "actualLocalMountedCensusObservation": {
       "scope": "Actual candidate-only private readiness configuration/fixture mounted graph; separate from historical source-derived Docker accounting. No production/global-readiness or case/template credit",
       "handoff": {
@@ -22975,13 +24850,1508 @@
           "path": "/tmp/readiness-agent-feed-stored-execution/TERMINAL.json",
           "sha256": "0e08f004cd25003e490d91d16fb19a7bf0486d2ba0b32c05ed482c13f283175f"
         }
+      },
+      {
+        "name": "teacher-launch23-partial21",
+        "result": {
+          "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+          "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+        },
+        "comparison": {
+          "path": "/tmp/readiness-teacher-launch23-pair/comparison.json",
+          "sha256": "3b2902b153ecd3105807872d5edfa5a04ff408217ef19a4b7825828ec721e841"
+        },
+        "runs": [
+          {
+            "role": "original",
+            "sourceCommit": "60cb94db60d94fa413a6f2bdc6c2b3bf8b58131c",
+            "workingTreeSha256": "01d9d2f81ac3ba79a00b760b3ad65fe85191d48c0093327b076497c9e0b1f9e3",
+            "capture": {
+              "file": "/tmp/readiness-teacher-launch23-pair/original/daylight-local-http-1xQp33/capture.json",
+              "sha256": "01d9d67221c491cdf46f791b71bda45c23db2f3ac5a15bb08b9bc087bb3d20a5"
+            },
+            "receipt": {
+              "file": "/tmp/readiness-teacher-launch23-pair/original/daylight-local-http-1xQp33/receipt.json",
+              "sha256": "f94ca2bb31170e80c3c29d84ebcfffb3785689fde045215211445720866b24ef"
+            }
+          },
+          {
+            "role": "candidate",
+            "sourceCommit": "23abfc72e6473b04d946a52abdc85293fb621a05",
+            "workingTreeSha256": "fddc6a57ede9852705d7b740223adc095b1600dca6693898aca629e6365db4a3",
+            "capture": {
+              "file": "/tmp/readiness-teacher-launch23-pair/candidate/daylight-local-http-SehO8x/capture.json",
+              "sha256": "95d8a13911301e484461087a1f65cc643c549fff7f801de982fcf43b95d4a78d"
+            },
+            "receipt": {
+              "file": "/tmp/readiness-teacher-launch23-pair/candidate/daylight-local-http-SehO8x/receipt.json",
+              "sha256": "167cf2ccfa655acf03e3db11aea2daafe9abba3d21c704a9c2637398108cd1e4"
+            }
+          }
+        ],
+        "proof": {
+          "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+          "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+          "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+        },
+        "cases": [
+          {
+            "id": "teacher-records-attestations-active",
+            "urlTemplate": "/api/v1/school/attestations",
+            "declarationIds": [
+              "decl-fa17f5c5bc448b1a9d19c342-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+            "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+            "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+            "result": {
+              "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+              "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+            },
+            "proof": {
+              "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+              "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+              "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "teacher-records-attestations-river",
+            "urlTemplate": "/api/v1/school/attestations",
+            "declarationIds": [
+              "decl-fa17f5c5bc448b1a9d19c342-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+            "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+            "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+            "result": {
+              "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+              "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+            },
+            "proof": {
+              "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+              "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+              "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "teacher-records-attestations-park",
+            "urlTemplate": "/api/v1/school/attestations",
+            "declarationIds": [
+              "decl-fa17f5c5bc448b1a9d19c342-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+            "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+            "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+            "result": {
+              "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+              "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+            },
+            "proof": {
+              "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+              "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+              "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "teacher-records-attestations-withdrawn",
+            "urlTemplate": "/api/v1/school/attestations",
+            "declarationIds": [
+              "decl-fa17f5c5bc448b1a9d19c342-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+            "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+            "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+            "result": {
+              "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+              "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+            },
+            "proof": {
+              "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+              "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+              "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "teacher-records-teacher-notes-active",
+            "urlTemplate": "/api/v1/school/teacher-notes",
+            "declarationIds": [
+              "decl-505deda8c3800a2b74d591f2-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+            "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+            "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+            "result": {
+              "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+              "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+            },
+            "proof": {
+              "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+              "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+              "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "teacher-records-teacher-notes-river",
+            "urlTemplate": "/api/v1/school/teacher-notes",
+            "declarationIds": [
+              "decl-505deda8c3800a2b74d591f2-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+            "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+            "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+            "result": {
+              "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+              "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+            },
+            "proof": {
+              "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+              "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+              "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "teacher-records-teacher-notes-park",
+            "urlTemplate": "/api/v1/school/teacher-notes",
+            "declarationIds": [
+              "decl-505deda8c3800a2b74d591f2-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+            "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+            "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+            "result": {
+              "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+              "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+            },
+            "proof": {
+              "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+              "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+              "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "teacher-records-teacher-notes-withdrawn",
+            "urlTemplate": "/api/v1/school/teacher-notes",
+            "declarationIds": [
+              "decl-505deda8c3800a2b74d591f2-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+            "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+            "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+            "result": {
+              "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+              "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+            },
+            "proof": {
+              "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+              "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+              "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "teacher-records-enrichment-active",
+            "urlTemplate": "/api/v1/school/enrichment",
+            "declarationIds": [
+              "decl-2e9db88f1cfa45fc7ec09b3b-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+            "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+            "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+            "result": {
+              "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+              "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+            },
+            "proof": {
+              "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+              "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+              "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "teacher-records-enrichment-river",
+            "urlTemplate": "/api/v1/school/enrichment",
+            "declarationIds": [
+              "decl-2e9db88f1cfa45fc7ec09b3b-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+            "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+            "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+            "result": {
+              "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+              "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+            },
+            "proof": {
+              "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+              "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+              "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "teacher-records-enrichment-park",
+            "urlTemplate": "/api/v1/school/enrichment",
+            "declarationIds": [
+              "decl-2e9db88f1cfa45fc7ec09b3b-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+            "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+            "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+            "result": {
+              "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+              "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+            },
+            "proof": {
+              "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+              "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+              "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "teacher-records-enrichment-withdrawn",
+            "urlTemplate": "/api/v1/school/enrichment",
+            "declarationIds": [
+              "decl-2e9db88f1cfa45fc7ec09b3b-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+            "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+            "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+            "result": {
+              "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+              "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+            },
+            "proof": {
+              "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+              "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+              "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "teacher-records-period-history",
+            "urlTemplate": "/api/v1/school/periods-meta",
+            "declarationIds": [
+              "decl-5cde31871e5dc0dc51c63a28-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+            "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+            "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+            "result": {
+              "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+              "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+            },
+            "proof": {
+              "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+              "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+              "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "launch-compat-card-ladder-stage",
+            "urlTemplate": "/api/v1/school/card-ladder/stage",
+            "declarationIds": [
+              "decl-ebefab4a16bb418ba78be25c-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+            "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+            "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+            "result": {
+              "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+              "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+            },
+            "proof": {
+              "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+              "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+              "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "launch-compat-word-ladder-stage",
+            "urlTemplate": "/api/v1/school/word-ladder/stage",
+            "declarationIds": [
+              "decl-ebefab4a16bb418ba78be25c-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+            "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+            "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+            "result": {
+              "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+              "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+            },
+            "proof": {
+              "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+              "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+              "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "launch-compat-cube-preview",
+            "urlTemplate": "/api/v1/school/rubiks-cube/preview",
+            "declarationIds": [
+              "decl-074a3c66666ae4af616f8798-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+            "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+            "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+            "result": {
+              "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+              "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+            },
+            "proof": {
+              "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+              "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+              "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "launch-compat-image",
+            "urlTemplate": "/api/v1/content/:source/image/:id",
+            "declarationIds": [
+              "decl-8fc3a7bd79227520ebd4fb35-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+            "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+            "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+            "result": {
+              "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+              "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+            },
+            "proof": {
+              "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+              "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+              "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "launch-compat-info",
+            "urlTemplate": "/api/v1/content/:source/info/:id{/:modifiers}",
+            "declarationIds": [
+              "decl-c4fe0e08599aba7ba49da73e-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+            "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+            "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+            "result": {
+              "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+              "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+            },
+            "proof": {
+              "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+              "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+              "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "launch-compat-info-modifier",
+            "urlTemplate": "/api/v1/content/:source/info/:id{/:modifiers}",
+            "declarationIds": [
+              "decl-c4fe0e08599aba7ba49da73e-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+            "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+            "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+            "result": {
+              "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+              "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+            },
+            "proof": {
+              "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+              "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+              "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "launch-compat-queue",
+            "urlTemplate": "/api/v1/content/playables/:source{/*splat}",
+            "declarationIds": [
+              "decl-518e7711bbe967813513f078-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+            "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+            "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+            "result": {
+              "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+              "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+            },
+            "proof": {
+              "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+              "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+              "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "launch-compat-queue-query",
+            "urlTemplate": "/api/v1/content/playables/:source{/*splat}",
+            "declarationIds": [
+              "decl-518e7711bbe967813513f078-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+            "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+            "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+            "result": {
+              "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+              "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+            },
+            "proof": {
+              "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+              "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+              "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          }
+        ],
+        "diagnosticCases": [
+          {
+            "id": "teacher-records-stale-3",
+            "urlTemplate": "/api/v1/school/lifecycle/sessions/stale",
+            "declarationIds": [
+              "decl-5ddb1885388339a60225b19a-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+            "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+            "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+            "result": {
+              "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+              "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+            },
+            "proof": {
+              "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+              "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+              "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+            },
+            "accepted": false,
+            "equivalenceAccepted": false,
+            "independentContractAccepted": false,
+            "correctnessAccepted": false,
+            "reviewedExpectationApproved": true,
+            "zeroCoverageCredit": true,
+            "errors": [],
+            "classification": "shared-baseline-missing-lifecycle-learner-directory",
+            "intendedPopulatedExpectationPreserved": true,
+            "diagnosis": {
+              "path": "/tmp/readiness-stale-session-composition-finding/HANDOFF.json",
+              "sha256": "6c2b394502f740db00883b6488ccbf19b59cd150ebe5a11fbeb5cb43e1a24405"
+            },
+            "diagnosisReview": {
+              "path": "/tmp/readiness-stale-session-composition-finding/review.json",
+              "sha256": "4a18a2da531af339dc282fb188f9b78c7f60966e86be6a5354ffa4d5b4bd2e6c"
+            }
+          },
+          {
+            "id": "teacher-records-stale-7",
+            "urlTemplate": "/api/v1/school/lifecycle/sessions/stale",
+            "declarationIds": [
+              "decl-5ddb1885388339a60225b19a-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-teacher-launch23",
+            "fixtureSha256": "f61fd14e03a5d9faefc712977d8ba71e96843c65ce6bd55b0f302c9cec313c37",
+            "manifestSha256": "c6f00616fc8c99b49300474365eb1600601201092f9ec481e5ea35714dced1cf",
+            "result": {
+              "path": "/tmp/readiness-teacher-launch23-pair/pair-result.json",
+              "sha256": "8cc2f45d40973ae52a866b44508e3e6676764247cbc7ed013d72c58752989cab"
+            },
+            "proof": {
+              "path": "/tmp/readiness-teacher-launch23-execution/proof.json",
+              "sha256": "be8530000e0f7a608431b1cdb2e9be668f8cc7b4b81ba4ef9ad2302f8bbebb21"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-teacher-launch23-execution/result-review.json",
+              "sha256": "21797dc6f80385ebec24b51b236cd76b98e06cecf4f1368e41fb6142b9f07094"
+            },
+            "accepted": false,
+            "equivalenceAccepted": false,
+            "independentContractAccepted": false,
+            "correctnessAccepted": false,
+            "reviewedExpectationApproved": true,
+            "zeroCoverageCredit": true,
+            "errors": [],
+            "classification": "shared-baseline-missing-lifecycle-learner-directory",
+            "intendedPopulatedExpectationPreserved": true,
+            "diagnosis": {
+              "path": "/tmp/readiness-stale-session-composition-finding/HANDOFF.json",
+              "sha256": "6c2b394502f740db00883b6488ccbf19b59cd150ebe5a11fbeb5cb43e1a24405"
+            },
+            "diagnosisReview": {
+              "path": "/tmp/readiness-stale-session-composition-finding/review.json",
+              "sha256": "4a18a2da531af339dc282fb188f9b78c7f60966e86be6a5354ffa4d5b4bd2e6c"
+            }
+          }
+        ],
+        "executedCases": 23,
+        "acceptedCredit": 21,
+        "strictComparisonAccepted": false,
+        "observedFailedCaseIds": [
+          "teacher-records-stale-3",
+          "teacher-records-stale-7"
+        ],
+        "partialAcceptedResult": true,
+        "productionOrLiveCoverage": false,
+        "actualExecutionEvidence": {
+          "path": "/tmp/readiness-teacher-launch23-execution/TERMINAL.json",
+          "sha256": "81e1c235de1698fc289f33458f845c3a7821d73fc253a0a8e47d6cd645eb08bb"
+        }
+      },
+      {
+        "name": "curation11-partial9",
+        "result": {
+          "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+          "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+        },
+        "comparison": {
+          "path": "/tmp/readiness-curation-usage-drafts-pair/comparison.json",
+          "sha256": "0609faacd515a9063425dcefd2f824a040f3e9fb42ce1b1115e579c934e0ce37"
+        },
+        "runs": [
+          {
+            "role": "original",
+            "sourceCommit": "60cb94db60d94fa413a6f2bdc6c2b3bf8b58131c",
+            "workingTreeSha256": "01d9d2f81ac3ba79a00b760b3ad65fe85191d48c0093327b076497c9e0b1f9e3",
+            "capture": {
+              "file": "/tmp/readiness-curation-usage-drafts-pair/original/daylight-local-http-GjxyxA/capture.json",
+              "sha256": "e795fdd32d52d024eb6177aaae1e658c6ed96ae28c77d7f009ed9e40c6aad0a1"
+            },
+            "receipt": {
+              "file": "/tmp/readiness-curation-usage-drafts-pair/original/daylight-local-http-GjxyxA/receipt.json",
+              "sha256": "08ff2d911896228a54d832d46400334eabf5e19018cc459fa055d8a42adbf9a3"
+            }
+          },
+          {
+            "role": "candidate",
+            "sourceCommit": "23abfc72e6473b04d946a52abdc85293fb621a05",
+            "workingTreeSha256": "fddc6a57ede9852705d7b740223adc095b1600dca6693898aca629e6365db4a3",
+            "capture": {
+              "file": "/tmp/readiness-curation-usage-drafts-pair/candidate/daylight-local-http-jHaXjS/capture.json",
+              "sha256": "bf09bc6a204d9864eea2e75a0b00314ff032c876802490fd96416acbefdbac69"
+            },
+            "receipt": {
+              "file": "/tmp/readiness-curation-usage-drafts-pair/candidate/daylight-local-http-jHaXjS/receipt.json",
+              "sha256": "5026fafc01bfcc2f6f454192615f1c9a43421918e59d7ae888362283ba371b7c"
+            }
+          }
+        ],
+        "proof": {
+          "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+          "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+          "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+        },
+        "cases": [
+          {
+            "id": "curation-usage-art-page1",
+            "urlTemplate": "/api/v1/admin/art/works",
+            "declarationIds": [
+              "decl-f8d394220a70d8929bc6fee7-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+            "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+            "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+            "result": {
+              "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+              "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+            },
+            "proof": {
+              "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+              "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+              "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "curation-usage-art-page2",
+            "urlTemplate": "/api/v1/admin/art/works",
+            "declarationIds": [
+              "decl-f8d394220a70d8929bc6fee7-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+            "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+            "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+            "result": {
+              "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+              "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+            },
+            "proof": {
+              "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+              "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+              "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "curation-usage-art-collection",
+            "urlTemplate": "/api/v1/admin/art/works",
+            "declarationIds": [
+              "decl-f8d394220a70d8929bc6fee7-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+            "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+            "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+            "result": {
+              "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+              "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+            },
+            "proof": {
+              "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+              "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+              "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "curation-usage-art-flagged",
+            "urlTemplate": "/api/v1/admin/art/works",
+            "declarationIds": [
+              "decl-f8d394220a70d8929bc6fee7-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+            "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+            "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+            "result": {
+              "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+              "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+            },
+            "proof": {
+              "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+              "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+              "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "curation-usage-art-hidden",
+            "urlTemplate": "/api/v1/admin/art/works",
+            "declarationIds": [
+              "decl-f8d394220a70d8929bc6fee7-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+            "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+            "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+            "result": {
+              "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+              "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+            },
+            "proof": {
+              "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+              "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+              "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "curation-usage-art-artist",
+            "urlTemplate": "/api/v1/admin/art/works",
+            "declarationIds": [
+              "decl-f8d394220a70d8929bc6fee7-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+            "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+            "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+            "result": {
+              "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+              "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+            },
+            "proof": {
+              "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+              "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+              "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "curation-usage-ai-1",
+            "urlTemplate": "/api/v1/health/ai-usage",
+            "declarationIds": [
+              "decl-5a8872f2cf4c66430312c6a9-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+            "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+            "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+            "result": {
+              "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+              "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+            },
+            "proof": {
+              "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+              "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+              "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "curation-usage-ai-2",
+            "urlTemplate": "/api/v1/health/ai-usage",
+            "declarationIds": [
+              "decl-5a8872f2cf4c66430312c6a9-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+            "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+            "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+            "result": {
+              "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+              "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+            },
+            "proof": {
+              "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+              "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+              "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "curation-usage-ai-7",
+            "urlTemplate": "/api/v1/health/ai-usage",
+            "declarationIds": [
+              "decl-5a8872f2cf4c66430312c6a9-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+            "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+            "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+            "result": {
+              "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+              "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+            },
+            "proof": {
+              "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+              "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+              "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          }
+        ],
+        "diagnosticCases": [],
+        "executedCases": 11,
+        "acceptedCredit": 9,
+        "strictComparisonAccepted": false,
+        "observedFailedCaseIds": [
+          "curation-usage-drafts-2026-10-05",
+          "curation-usage-drafts-2026-09-28"
+        ],
+        "zeroCreditFixtureFailures": [
+          {
+            "id": "curation-usage-drafts-2026-10-05",
+            "urlTemplate": "/api/v1/weekly-review/recording/drafts",
+            "declarationIds": [
+              "decl-e16cadfff39b11636f48e607-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+            "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+            "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+            "result": {
+              "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+              "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+            },
+            "proof": {
+              "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+              "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+              "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+            },
+            "accepted": false,
+            "independentContractAccepted": false,
+            "correctnessAccepted": false,
+            "zeroCoverageCredit": true,
+            "classification": "fixture-missing-immich-dependent-weekly-mount",
+            "errors": []
+          },
+          {
+            "id": "curation-usage-drafts-2026-09-28",
+            "urlTemplate": "/api/v1/weekly-review/recording/drafts",
+            "declarationIds": [
+              "decl-e16cadfff39b11636f48e607-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-curation11",
+            "fixtureSha256": "bc0e6d28437502197930633799b5f13bf6fdc8b93c4a0634593c0200929429df",
+            "manifestSha256": "93ab8afc5595278b69a9be023b13d08b0c2237772374c38f6422ed4b5ea14628",
+            "result": {
+              "path": "/tmp/readiness-curation-usage-drafts-pair/pair-result.json",
+              "sha256": "c3462bada7247a42e544f3d7cc88d03476d514d654cab7447bd7d99b10f65baa"
+            },
+            "proof": {
+              "path": "/tmp/readiness-curation-usage-drafts-execution/proof.json",
+              "sha256": "a84a413aafe27d512ad2b06534813834bd345b2731c0d581ce5b69fb7a95acc5"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-curation-usage-drafts-execution/result-review.json",
+              "sha256": "e0a287e50fe98f210e8ee49a7021c06c14285731766c9b2b1ccccc3af99c5cb1"
+            },
+            "accepted": false,
+            "independentContractAccepted": false,
+            "correctnessAccepted": false,
+            "zeroCoverageCredit": true,
+            "classification": "fixture-missing-immich-dependent-weekly-mount",
+            "errors": []
+          }
+        ],
+        "partialAcceptedResult": true,
+        "productionOrLiveCoverage": false,
+        "actualExecutionEvidence": {
+          "path": "/tmp/readiness-curation-usage-drafts-execution/TERMINAL.json",
+          "sha256": "30206e1e6f2e98673847f5f50f6146a049e29f71e026cb72e3eb54ef9700920a"
+        }
+      },
+      {
+        "name": "static-discovery11",
+        "result": {
+          "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+          "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+        },
+        "comparison": {
+          "path": "/tmp/readiness-household-static-discovery-pair/comparison.json",
+          "sha256": "4a7015be99642ec8742df0623ae80794702524a54033eba050ea74be6d5dc861"
+        },
+        "runs": [
+          {
+            "role": "original",
+            "sourceCommit": "60cb94db60d94fa413a6f2bdc6c2b3bf8b58131c",
+            "workingTreeSha256": "01d9d2f81ac3ba79a00b760b3ad65fe85191d48c0093327b076497c9e0b1f9e3",
+            "capture": {
+              "file": "/tmp/readiness-household-static-discovery-pair/original/daylight-local-http-y4aFnL/capture.json",
+              "sha256": "f56d07c6baa0251dbc4416bb61d5775446f4f1fbadeb5f1adf7cb37fbf3ef127"
+            },
+            "receipt": {
+              "file": "/tmp/readiness-household-static-discovery-pair/original/daylight-local-http-y4aFnL/receipt.json",
+              "sha256": "e668baa1eb8b95c3383abb82012250c0cb95c7c6a05ca912ba668032246a5402"
+            }
+          },
+          {
+            "role": "candidate",
+            "sourceCommit": "23abfc72e6473b04d946a52abdc85293fb621a05",
+            "workingTreeSha256": "fddc6a57ede9852705d7b740223adc095b1600dca6693898aca629e6365db4a3",
+            "capture": {
+              "file": "/tmp/readiness-household-static-discovery-pair/candidate/daylight-local-http-FjcrdG/capture.json",
+              "sha256": "f74523460e0621df76cc63b3da24b36becaf6f139c9c46ab344f2ac9d2da7965"
+            },
+            "receipt": {
+              "file": "/tmp/readiness-household-static-discovery-pair/candidate/daylight-local-http-FjcrdG/receipt.json",
+              "sha256": "34f90f15f92e161b0cffd666bab471a7aeed6dff6d2b6c65316932b48ec4f77a"
+            }
+          }
+        ],
+        "proof": {
+          "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+          "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+          "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+        },
+        "cases": [
+          {
+            "id": "household-static-art-explicit",
+            "urlTemplate": "/api/v1/static/art/*splat",
+            "declarationIds": [
+              "decl-846dcca82b49d0efc1a5720e-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+            "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+            "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+            "result": {
+              "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+              "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+            },
+            "proof": {
+              "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+              "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+              "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "household-static-art-extension",
+            "urlTemplate": "/api/v1/static/art/*splat",
+            "declarationIds": [
+              "decl-846dcca82b49d0efc1a5720e-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+            "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+            "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+            "result": {
+              "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+              "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+            },
+            "proof": {
+              "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+              "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+              "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "household-static-avatar-profile",
+            "urlTemplate": "/api/v1/static/users/:id",
+            "declarationIds": [
+              "decl-9306bf395707618eb5a5cc53-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+            "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+            "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+            "result": {
+              "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+              "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+            },
+            "proof": {
+              "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+              "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+              "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "household-static-avatar-default",
+            "urlTemplate": "/api/v1/static/users/:id",
+            "declarationIds": [
+              "decl-9306bf395707618eb5a5cc53-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+            "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+            "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+            "result": {
+              "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+              "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+            },
+            "proof": {
+              "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+              "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+              "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "household-static-equipment-declared",
+            "urlTemplate": "/api/v1/static/equipment/:id",
+            "declarationIds": [
+              "decl-06c6e71aba3adcfa1a427dba-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+            "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+            "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+            "result": {
+              "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+              "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+            },
+            "proof": {
+              "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+              "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+              "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "household-static-equipment-convention",
+            "urlTemplate": "/api/v1/static/equipment/:id",
+            "declarationIds": [
+              "decl-06c6e71aba3adcfa1a427dba-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+            "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+            "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+            "result": {
+              "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+              "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+            },
+            "proof": {
+              "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+              "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+              "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "household-static-entropy",
+            "urlTemplate": "/api/v1/static/entropy/:icon",
+            "declarationIds": [
+              "decl-e2913f460448c49331f964a5-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+            "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+            "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+            "result": {
+              "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+              "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+            },
+            "proof": {
+              "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+              "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+              "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "household-static-generic-art",
+            "urlTemplate": "/api/v1/static/img/*splat",
+            "declarationIds": [
+              "decl-a6bceea2387cdbf13da0e7ca-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+            "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+            "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+            "result": {
+              "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+              "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+            },
+            "proof": {
+              "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+              "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+              "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "household-static-generic-equipment",
+            "urlTemplate": "/api/v1/static/img/*splat",
+            "declarationIds": [
+              "decl-a6bceea2387cdbf13da0e7ca-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+            "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+            "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+            "result": {
+              "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+              "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+            },
+            "proof": {
+              "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+              "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+              "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "household-static-generic-avatar",
+            "urlTemplate": "/api/v1/static/img/*splat",
+            "declarationIds": [
+              "decl-a6bceea2387cdbf13da0e7ca-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+            "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+            "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+            "result": {
+              "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+              "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+            },
+            "proof": {
+              "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+              "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+              "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "household-static-source-discovery",
+            "urlTemplate": "/api/v1/content/sources",
+            "declarationIds": [
+              "decl-00544be07760914af6ceb31f-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-static-discovery11",
+            "fixtureSha256": "8e040ae54b88696409b20b5e5329cb1ed5318c390a8b4b1de56f4a4ed1c76277",
+            "manifestSha256": "91252aa54a8cbfda95082317d0f9e81b35e4e5045892f1a608c218e09941216d",
+            "result": {
+              "path": "/tmp/readiness-household-static-discovery-pair/pair-result.json",
+              "sha256": "57a58421a68211eb117127f17d533d747603627d3920bcd1b9bef50e138057fa"
+            },
+            "proof": {
+              "path": "/tmp/readiness-household-static-discovery-execution/proof.json",
+              "sha256": "5ab670151e3f0489cc7338c4a38e7dc343ae43e63decf0de048eaff20d06f282"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-household-static-discovery-execution/result-review.json",
+              "sha256": "9c14b6d87b829b6d567dfce08630ccfda4f8fcbc7a6cbd59ebe3cd793cff5e31"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          }
+        ],
+        "executedCases": 11,
+        "acceptedCredit": 11,
+        "strictComparisonAccepted": true,
+        "productionOrLiveCoverage": false,
+        "actualExecutionEvidence": {
+          "path": "/tmp/readiness-household-static-discovery-execution/TERMINAL.json",
+          "sha256": "95f192a33c8a75d837157dda6db1e02d48146e61143d060d4681d156464acd16"
+        }
+      },
+      {
+        "name": "weekly-inert-mount2",
+        "result": {
+          "path": "/tmp/readiness-weekly-drafts-mount2-pair/pair-result.json",
+          "sha256": "9d585c2b7c163940eb91a635dc8c5e7f7544f86927175e2b0189581cd22c0217"
+        },
+        "comparison": {
+          "path": "/tmp/readiness-weekly-drafts-mount2-pair/comparison.json",
+          "sha256": "a1bff3fabe6d74641f3f6ae79bbab583aff16c32127bbd450a3a6f5352c7aceb"
+        },
+        "runs": [
+          {
+            "role": "original",
+            "sourceCommit": "60cb94db60d94fa413a6f2bdc6c2b3bf8b58131c",
+            "workingTreeSha256": "01d9d2f81ac3ba79a00b760b3ad65fe85191d48c0093327b076497c9e0b1f9e3",
+            "capture": {
+              "file": "/tmp/readiness-weekly-drafts-mount2-pair/original/daylight-local-http-JG1ojD/capture.json",
+              "sha256": "bfa86e46e96b9e924f4328993fdc7ce9d3aff667b14b2ef9306267ea5176417e"
+            },
+            "receipt": {
+              "file": "/tmp/readiness-weekly-drafts-mount2-pair/original/daylight-local-http-JG1ojD/receipt.json",
+              "sha256": "e386682bcb10a4d804cfb225fd1e772a7943273da15db76a657e45891cae1a35"
+            }
+          },
+          {
+            "role": "candidate",
+            "sourceCommit": "23abfc72e6473b04d946a52abdc85293fb621a05",
+            "workingTreeSha256": "fddc6a57ede9852705d7b740223adc095b1600dca6693898aca629e6365db4a3",
+            "capture": {
+              "file": "/tmp/readiness-weekly-drafts-mount2-pair/candidate/daylight-local-http-4JliT6/capture.json",
+              "sha256": "34b4ad159c1fe276739e3a05e15e1a35f1aaf2e7731c5012da1a21e3098d8fee"
+            },
+            "receipt": {
+              "file": "/tmp/readiness-weekly-drafts-mount2-pair/candidate/daylight-local-http-4JliT6/receipt.json",
+              "sha256": "daeceb455922ba93b6bea2c3e5631c9677987293278941248178217706f51af6"
+            }
+          }
+        ],
+        "proof": {
+          "path": "/tmp/readiness-weekly-drafts-mount2-execution/proof.json",
+          "sha256": "91e09d9c52abfe1e9e62948695392ea8c021a659af897fec169fbcd1af925f09"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-weekly-drafts-mount2-execution/result-review.json",
+          "sha256": "bea954d670678f555165cb649cc1c363c022ded2c6f663ee2c917313adad8bb2"
+        },
+        "cases": [
+          {
+            "id": "curation-usage-drafts-2026-10-05",
+            "urlTemplate": "/api/v1/weekly-review/recording/drafts",
+            "declarationIds": [
+              "decl-e16cadfff39b11636f48e607-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-weekly-inert-mount2",
+            "fixtureSha256": "5d9ed145fe3a5342ffd849c50a7a316a6cc3c36e78cd60ec489cf1ac53408a06",
+            "manifestSha256": "85750a079e5bc875be895faf7dbf6d795ab294f6b6c4461a7bfd8dfd44a989da",
+            "result": {
+              "path": "/tmp/readiness-weekly-drafts-mount2-pair/pair-result.json",
+              "sha256": "9d585c2b7c163940eb91a635dc8c5e7f7544f86927175e2b0189581cd22c0217"
+            },
+            "proof": {
+              "path": "/tmp/readiness-weekly-drafts-mount2-execution/proof.json",
+              "sha256": "91e09d9c52abfe1e9e62948695392ea8c021a659af897fec169fbcd1af925f09"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-weekly-drafts-mount2-execution/result-review.json",
+              "sha256": "bea954d670678f555165cb649cc1c363c022ded2c6f663ee2c917313adad8bb2"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          },
+          {
+            "id": "curation-usage-drafts-2026-09-28",
+            "urlTemplate": "/api/v1/weekly-review/recording/drafts",
+            "declarationIds": [
+              "decl-e16cadfff39b11636f48e607-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-23abfc-weekly-inert-mount2",
+            "fixtureSha256": "5d9ed145fe3a5342ffd849c50a7a316a6cc3c36e78cd60ec489cf1ac53408a06",
+            "manifestSha256": "85750a079e5bc875be895faf7dbf6d795ab294f6b6c4461a7bfd8dfd44a989da",
+            "result": {
+              "path": "/tmp/readiness-weekly-drafts-mount2-pair/pair-result.json",
+              "sha256": "9d585c2b7c163940eb91a635dc8c5e7f7544f86927175e2b0189581cd22c0217"
+            },
+            "proof": {
+              "path": "/tmp/readiness-weekly-drafts-mount2-execution/proof.json",
+              "sha256": "91e09d9c52abfe1e9e62948695392ea8c021a659af897fec169fbcd1af925f09"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-weekly-drafts-mount2-execution/result-review.json",
+              "sha256": "bea954d670678f555165cb649cc1c363c022ded2c6f663ee2c917313adad8bb2"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": []
+          }
+        ],
+        "executedCases": 2,
+        "acceptedCredit": 2,
+        "strictComparisonAccepted": true,
+        "productionOrLiveCoverage": false,
+        "actualExecutionEvidence": {
+          "path": "/tmp/readiness-weekly-drafts-mount2-execution/TERMINAL.json",
+          "sha256": "caeda4b736150a6260d998715c31cfc5f28cd0f969075d98f8c29aa8df491a9a"
+        }
       }
     ],
     "counts": {
       "historicalLiveUniqueCases": 134,
       "historicalLiveIndependentContracts": 125,
-      "isolatedUniqueAcceptedCaseIds": 342,
-      "isolatedAcceptedOccurrences": 342,
+      "isolatedUniqueAcceptedCaseIds": 385,
+      "isolatedAcceptedOccurrences": 385,
       "isolatedReplayIdsAlreadyLive": [
         "health-catalog-food-not-found",
         "health-catalog-missing-query",
@@ -23023,6 +26393,17 @@
         "critical-school-authored-catalog",
         "critical-school-lesson-comparison",
         "critical-school-lesson-intro",
+        "curation-usage-ai-1",
+        "curation-usage-ai-2",
+        "curation-usage-ai-7",
+        "curation-usage-art-artist",
+        "curation-usage-art-collection",
+        "curation-usage-art-flagged",
+        "curation-usage-art-hidden",
+        "curation-usage-art-page1",
+        "curation-usage-art-page2",
+        "curation-usage-drafts-2026-09-28",
+        "curation-usage-drafts-2026-10-05",
         "daily-catalogs-art-gallery",
         "daily-catalogs-art-landscapes",
         "daily-catalogs-art-morning",
@@ -23128,8 +26509,27 @@
         "household-history-placement-user_2",
         "household-history-placement-user_3",
         "household-history-setup-status",
+        "household-static-art-explicit",
+        "household-static-art-extension",
+        "household-static-avatar-default",
+        "household-static-avatar-profile",
+        "household-static-entropy",
+        "household-static-equipment-convention",
+        "household-static-equipment-declared",
+        "household-static-generic-art",
+        "household-static-generic-avatar",
+        "household-static-generic-equipment",
+        "household-static-source-discovery",
         "integrated-admin-fitness-household-timezone",
         "integrated-admin-piano-household-timezone",
+        "launch-compat-card-ladder-stage",
+        "launch-compat-cube-preview",
+        "launch-compat-image",
+        "launch-compat-info",
+        "launch-compat-info-modifier",
+        "launch-compat-queue",
+        "launch-compat-queue-query",
+        "launch-compat-word-ladder-stage",
         "learner-home-fitness-fingerprints",
         "learner-home-report-household",
         "learner-home-report-learner",
@@ -23312,6 +26712,19 @@
         "synthetic-school-remediation-list",
         "synthetic-school-surface",
         "synthetic-school-transcript",
+        "teacher-records-attestations-active",
+        "teacher-records-attestations-park",
+        "teacher-records-attestations-river",
+        "teacher-records-attestations-withdrawn",
+        "teacher-records-enrichment-active",
+        "teacher-records-enrichment-park",
+        "teacher-records-enrichment-river",
+        "teacher-records-enrichment-withdrawn",
+        "teacher-records-period-history",
+        "teacher-records-teacher-notes-active",
+        "teacher-records-teacher-notes-park",
+        "teacher-records-teacher-notes-river",
+        "teacher-records-teacher-notes-withdrawn",
         "timeline-health-all-mentions",
         "timeline-health-dated-dashboard",
         "timeline-health-metric-mention",
@@ -23328,11 +26741,11 @@
         "timeline-lifelog-day",
         "timeline-lifelog-sources"
       ],
-      "unionUniqueAcceptedCaseIds": 462,
-      "unionIndependentContracts": 453,
+      "unionUniqueAcceptedCaseIds": 505,
+      "unionIndependentContracts": 496,
       "newLiveTemplates": 2,
-      "isolatedDistinctTemplates": 215,
-      "newIsolatedTemplates": 208,
+      "isolatedDistinctTemplates": 234,
+      "newIsolatedTemplates": 227,
       "pendingNext15": {
         "cases": 15,
         "terminalResult": {
