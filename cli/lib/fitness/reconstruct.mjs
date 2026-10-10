@@ -173,6 +173,7 @@ export async function run(argv, ctx) {
   const configDir = path.join(ctx.dataDir, 'system', 'config');
   const { hydrateProcessEnvFromConfigs } = await import('#system/logging/config.mjs');
   const { initConfigService } = await import('#system/config/index.mjs');
+  const { createSecretsProvider } = await import('#adapters/secrets/createSecretsProvider.mjs');
   const { loadYamlSafe, saveYaml, fileExists } = await import('#system/utils/FileIO.mjs');
   const { encodeSingleSeries } = await import('#domains/fitness/services/TimelineService.mjs');
   const {
@@ -180,7 +181,7 @@ export async function run(argv, ctx) {
   } = await import('#domains/fitness/services/StravaSessionBuilder.mjs');
 
   hydrateProcessEnvFromConfigs(configDir);
-  await initConfigService(ctx.dataDir);
+  await initConfigService(ctx.dataDir, { secretsProviderFactory: createSecretsProvider });
 
   const username = 'user_1';
 
