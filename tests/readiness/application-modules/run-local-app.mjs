@@ -25,12 +25,15 @@ const captureRole = options['--capture-role'];
 assert.ok(!captureRole || ['original','candidate'].includes(captureRole));
 assert.equal(Boolean(options['--manifest']), Boolean(options['--targets'] || captureRole), '--manifest requires targets or capture role');
 assert.ok(!captureRole || !options['--targets'], 'Capture and live comparison are mutually exclusive');
+const directory = path.dirname(fileURLToPath(import.meta.url));
+const fixtureFile = fs.realpathSync(options['--fixture'] ?? path.join(directory, 'local-app-fixture.json'));
+const studyFixtureFileSha256=createHash('sha256').update(fs.readFileSync(fixtureFile)).digest('hex');
 let captureExpectations = null;
 if (captureRole) {
   assert.match(options['--pair-nonce'] ?? '', /^[a-f0-9]{32}$/);
   for (const key of ['--runtime-sha256','--harness-sha256']) assert.match(options[key] ?? '', /^[a-f0-9]{64}$/);
   captureExpectations = JSON.parse(fs.readFileSync(options['--manifest'], 'utf8'));
-  validateCaptureManifest(captureExpectations);
+  validateCaptureManifest(captureExpectations,studyFixtureFileSha256);
 } else for(const key of ['--pair-nonce','--runtime-sha256','--harness-sha256']) assert.equal(options[key], undefined, 'Capture-only metadata');
 assert.ok(!options['--controls-only'] || !options['--manifest'], 'Controls do not make business requests');
 const sourceRoot = fs.realpathSync(options['--source-root']);
@@ -41,10 +44,7 @@ assert.match(sourceCommit, /^[a-f0-9]{40}$/);
 const toolRoot = fs.realpathSync(options['--tool-root']);
 const outputRoot = fs.realpathSync(options['--output-root']);
 assert.ok(outputRoot !== sourceRoot && !outputRoot.startsWith(sourceRoot + path.sep), 'Outputs must be outside source');
-const directory = path.dirname(fileURLToPath(import.meta.url));
-const fixtureFile = fs.realpathSync(options['--fixture'] ?? path.join(directory, 'local-app-fixture.json'));
 const prepared = JSON.parse(fs.readFileSync(fixtureFile, 'utf8'));
-const studyFixtureFileSha256=createHash('sha256').update(fs.readFileSync(fixtureFile)).digest('hex');
 if(captureExpectations) {validateCaptureManifest(captureExpectations,studyFixtureFileSha256);validateStudyWindow(captureExpectations,Date.now());}
 const publishedUnitRequired=captureExpectations?lessonReadinessRequired(captureExpectations,studyFixtureFileSha256):false;
 const rawUTF8Files = validateRawFixtures(prepared);

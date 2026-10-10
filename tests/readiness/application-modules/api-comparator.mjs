@@ -1,3 +1,4 @@
+import {validateSheetPdf,validateSheetPdfCase} from './sheet-pdf-contract.mjs';
 import {validatePublishedUnitEvidence} from './published-unit-readiness.mjs';
 import {validateStudyPacket, validateStudyWindow, approvedStudyHeaders} from './synthetic-study-grant.mjs';
 import assert from 'node:assert/strict';
@@ -205,6 +206,7 @@ function validateManifest(manifest, origin) {
       assert.match(e.body.sha256, /^[a-f0-9]{64}$/);
       assert.ok(e.headers['content-type'], 'Binary MIME required');
     } else assert.equal(typeof e.body.exact, 'string');
+    if(c.generatedSheetPdfContract!==undefined)validateSheetPdfCase(c);
     validateTimestampContract(c);
     validateFitnessClock(c);
     const n = c.normalize ?? { jsonPaths: [], headers: [] };
@@ -247,7 +249,8 @@ function inspect(response, c, context) {
     assert.equal(bytes.toString('base64'), response.bodyBase64, 'Canonical binary bytes required');
     assert.ok(bytes.length <= 1048576, 'response exceeds 1 MiB');
     assert.equal(bytes.length, c.expected.body.byteLength, 'Binary byte length');
-    assert.equal(createHash('sha256').update(bytes).digest('hex'), c.expected.body.sha256, 'Binary SHA256');
+    if(c.generatedSheetPdfContract!==undefined)validateSheetPdf(c,response);
+    else assert.equal(createHash('sha256').update(bytes).digest('hex'), c.expected.body.sha256, 'Binary SHA256');
     body = response.bodyBase64; // Exact reference/candidate byte equality, no text decoding.
   } else assert.equal(body, c.expected.body.exact);
   for (const header of c.normalize?.headers ?? []) delete headers[header];
@@ -258,6 +261,7 @@ function inspect(response, c, context) {
 // independently provisioned and reviewed; loopback and declared metadata are not
 // isolation or provenance proof. Live mode keeps its reference data identity separate.
 export async function compareApi({ manifest, targets, transport }) {
+  assert.ok(!manifest.cases.some(c=>c.generatedSheetPdfContract!==undefined),'Fixed PDF policy requires guarded isolated capture');
   assert.ok(!manifest.cases.some(c=>Object.hasOwn(c,'headers')), 'Synthetic study grants forbidden in live comparison');
   validate(manifest, targets);
   return compareValidated({ manifest, targets, transport });
@@ -296,6 +300,7 @@ export function validateCaptureManifest(manifest, fixtureFileSha256) {
   validateManifest(manifest, 'http://127.0.0.1:43129');
   for (const c of manifest.cases) {
     assert.equal(c.method, 'GET');
+    if(c.generatedSheetPdfContract!==undefined)assert.equal(fixtureFileSha256,c.generatedSheetPdfContract.fixtureFileSha256,'Exact reviewed PDF fixture');
     assert.ok(!Object.hasOwn(c,'body') && (!Object.hasOwn(c,'headers') || reviewedStudy), 'Capture denies unreviewed credentials, headers or body');
     const url = new URL(c.path, 'http://127.0.0.1:43129');
     for (const key of url.searchParams.keys()) assert.ok(!/^(sid|cookie|authorization|bearer|token)$/i.test(key), 'Credential query denied');

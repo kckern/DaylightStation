@@ -38238,5 +38238,137 @@
     ],
     "fullSuiteAccepted": false,
     "readinessAccepted": false
+  },
+  "post624SheetsPdfSupplementalEvidence": {
+    "schema": "daylight.post624-sheets-pdf-supplemental-evidence/v1",
+    "scope": "One new finite populated native PDF read contract, separate from original624 across-run cohort; no product repair or general PDF policy",
+    "actualCandidateCommit": "85025d70b803b6c7d1087cb7882c929b543ebb4e",
+    "originalSourceCommit": "60cb94db60d94fa413a6f2bdc6c2b3bf8b58131c",
+    "acceptedSupplementalCaseIds": [
+      "sheets-native-populated-tare-cards-pdf"
+    ],
+    "acceptedSupplementalHealthyContracts": 1,
+    "uniqueCaseIncrement": 1,
+    "sourceTemplateIncrement": 1,
+    "eligibleSourceTemplate": "/api/v1/sheets/:id.pdf",
+    "actualReview": {
+      "path": "/tmp/readiness-sheets-pdf-one-native-config-outcome-independent-review/review.json",
+      "sha256": "73733e88e32606d663e53decd63dc453484e5d6275db7d0ffc817a5179f9f5cd"
+    },
+    "actualHandoff": {
+      "path": "/tmp/readiness-sheets-pdf-one-native-config-outcome/HANDOFF.json",
+      "sha256": "d9528bb46e57e15ac34603833db14951d6c10e1eb31f36743e321142b469c49f"
+    },
+    "derivedReceipt": {
+      "path": "/tmp/readiness-sheets-pdf-one-native-config-execution/local-sheets-native-tare-pdf1/derived/receipt.json",
+      "sha256": "de4562bad75922969f844f17efafc6574c65ea25acef5aedf539f0a4df1ecf00"
+    },
+    "derivedComparison": {
+      "path": "/tmp/readiness-sheets-pdf-one-native-config-execution/local-sheets-native-tare-pdf1/derived/comparison.json",
+      "sha256": "5fa7406595e82d2ee0d126b20cd6c4e0ab5c7e58a0b6d7842275c62de00f3987"
+    },
+    "nativeRawComparisonAccepted": false,
+    "rawChildExit": 1,
+    "scopedWrapperExit": 1,
+    "rawDifferentialPreserved": "Only validated current CreationDate, two dependent native trailer IDs and raw ETag differ; raw full responses and failed comparison remain immutable.",
+    "nativeContract": "Both full200/6687 PDFs, exact MIME/disposition/raw Content-Length/ETag/Date, complete independently authored populated nutrition container QR content/layout; all other bytes equal. Each creation millisecond uniquely recomputed from native PDFKit MD5 inside the recorded request interval. Actual admission, execution/finalguards and cleanup accepted.",
+    "fixedPolicy": {
+      "review": {
+        "path": "/tmp/readiness-sheets-pdf-policy-independent-review/review.json",
+        "sha256": "5f6d83a6421a8b87a1eff7644dce984fcfd3e0e8f6f52d23705e660f8e7bf908"
+      },
+      "applied": {
+        "path": "/tmp/readiness-sheets-pdf-policy-private/APPLIED.json",
+        "sha256": "f90b8eb724237818fa5744f5e9f3cc14d8894a13b6eadab46ea1b35f591138ba"
+      },
+      "scope": "Literal owner/case/GET/path/fixture/full case/source/review bindings; full independent binary template with exactly three validated metadata value spans. Complete structure/resources/object/xref/stream ownership preserved by exact all-other-byte comparison; no golden capture-fitting or PDF rewrite."
+    },
+    "practicalCorrections": {
+      "runnerFixtureContext": {
+        "review": {
+          "path": "/tmp/readiness-sheets-pdf-runner-context-independent-review/review.json",
+          "sha256": "c59994edfbf80a90120d460c8a7bb1ae4e883bb45ccb52fa5af516cea82e53cf"
+        },
+        "applied": {
+          "path": "/tmp/readiness-sheets-pdf-runner-context-private/APPLIED.json",
+          "sha256": "da3b3a9a21c0ced8be4c1d39fa4d59c8d5cd3280adf6b8cba44e43125a71383b"
+        },
+        "detail": "Initial native runner capture admission now receives the same canonical fixture hash as later validation; missing/wrong/mutated inputs reject before bootstrap."
+      },
+      "nativeFixturePaths": {
+        "review": {
+          "path": "/tmp/readiness-sheets-pdf-native-config-correction-independent-review/review.json",
+          "sha256": "db3387069a1af31dd6f1262250b303b191352c22f61c01bdf319645766c012a0"
+        },
+        "applied": {
+          "path": "/tmp/readiness-sheets-pdf-native-config-correction-private/APPLIED.json",
+          "sha256": "d50385f9f01d8191677ec0a20e29be59f8add55977fbaa66bf25ee8cb9b15c02"
+        },
+        "detail": "Only two fixture keys moved from retired household/config paths to registered household/sheets/config.yml and household/hardware/scales.yml; values, sheet ID and independent PDF oracle unchanged. Both native loaders\u2192ConfigService\u2192providers produce exact independent model/QR/layout."
+      }
+    },
+    "failedAttemptsPreserved": [
+      {
+        "path": "/tmp/readiness-sheets-pdf-one-failed-outcome/HANDOFF.json",
+        "sha256": "f7ae8648689333dcd96b86f63c28709b850bc9cda18967ce2f45cf94aac52162"
+      },
+      {
+        "path": "/tmp/readiness-sheets-pdf-one-failed-outcome-independent-review/review.json",
+        "sha256": "c1c2d47d3d2f4498f55c8c8da450c0845de262fd38aa48894a1331e48317d0fb"
+      },
+      {
+        "path": "/tmp/readiness-sheets-pdf-one-retry-outcome/HANDOFF.json",
+        "sha256": "bf4d806db1aa9661bc7a0654eeca1488b1db5a50e0f3a59d47df8980e748b3c7"
+      },
+      {
+        "path": "/tmp/readiness-sheets-pdf-one-retry-outcome-independent-review/review.json",
+        "sha256": "23422194efe21d9ba6a44359fba3b3e686585f569e9f92663f54d0ae10e7db98"
+      }
+    ],
+    "failedAttemptsCredit": 0,
+    "currentCombinedEvidenceAccounting": {
+      "uniqueAcceptedCaseIds": 636,
+      "successfulIndependentContracts": 635,
+      "parityLinkedEligibleSourceTemplates": 371,
+      "eligibleSourceTemplates": 396,
+      "remainingEligibleSourceTemplateGaps": 25,
+      "remainingHistoricalContractGaps": 1,
+      "remainingHistoricalGapIds": [
+        "life-feedback-period-timestamp-gap"
+      ],
+      "single635CaseRun": false,
+      "original624AndPriorSupplementalReplacementReceiptsUnchanged": true,
+      "historical633Accepted624HealthySnapshotUnchanged": true,
+      "productionInstalledCoverageUnproved": true
+    },
+    "sourceFindings": {
+      "localRootsAndSearch": {
+        "finding": {
+          "path": "/tmp/readiness-local-roots-search-native-feasibility/HANDOFF.json",
+          "sha256": "21f0b967ce0db8aa5b95babc67f5d18ebbc753ac5abc2e8babe3e4fcf6f2e0ee"
+        },
+        "sourceOnly": true,
+        "roots": "Native bootstrap omits householdId and required getHouseholdConfig accessor is absent; YAML cannot repair wiring.",
+        "search": "Native adapter returns {items,total}, forwarded where router expects array/count; frontend uses a separate content SSE route. No healthy nested/empty fixture credit.",
+        "noHealthyCredit": true
+      },
+      "statusStaticContract": {
+        "finding": {
+          "path": "/tmp/readiness-status-static-contract-native-path-diagnosis/HANDOFF.json",
+          "sha256": "01ed7ba1ac2b9aaa3dc5723dc28ae8f0592d3173d348ece28dcab4c2386f6e80"
+        },
+        "sourceOnly": true,
+        "detail": "Safe native initialized endpoint; role-specific scratch config paths and exact logger startup counters require separately reviewed finite comparison contract. No guessed/reset/masked counters or empty/error padding.",
+        "noHealthyCredit": true
+      }
+    },
+    "limitations": [
+      "This narrowly reviewed Sheets metadata method supersedes the earlier source-only comparison-method obstacle for this exact populated case only; prior findings remain immutable.",
+      "Common native PDFKit/QR algorithm reuse does not independently certify library correctness, optical scanning, printing or browser behavior.",
+      "Life historical contract gap and25 source-template gaps remain. Fitness receipt/Nutribot PNG baseline wiring findings remain; no product repair authorized.",
+      "Production image/config/mount/installed denominator and nonGET/browser/WS/jobs/restart/rollback/cutover gates remain unproved."
+    ],
+    "fullSuiteAccepted": false,
+    "readinessAccepted": false
   }
 }
