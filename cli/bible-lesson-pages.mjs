@@ -15,7 +15,12 @@ const sg = require('scripture-guide');
 
 const INDEX =
   process.env.PAGE_INDEX ||
-  '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data/content/school/scripture/nirv-adventure-early-readers/page-index.yml';
+  // The live index is the one come-follow-me-ot-2026's `reader.page_index`
+  // names, under media/; the legacy data/content path is kept as a fallback.
+  [
+    '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/media/school/scripture/come-follow-me-ot-2026/bible/nirv-adventure-bible-for-early-readers/mapping/2014-inferred/page-index.yml',
+    '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data/content/school/scripture/nirv-adventure-early-readers/page-index.yml',
+  ].find((p) => fs.existsSync(p));
 
 const index = yaml.load(fs.readFileSync(INDEX, 'utf8'));
 const rows = index.pages;

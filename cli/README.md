@@ -236,11 +236,22 @@ DaylightStation content, so validation is reproducible without a database.
 #### Printed-page tools
 
 The NIrV text does not contain physical page numbers. Those belong to the
-specific *NIrV Adventure Bible for Early Readers* printing and live in:
+specific *NIrV Adventure Bible for Early Readers* printing. The live index is
+the one the Come Follow Me course names in `reader.page_index`:
 
 ```text
-{dataDir}/content/school/scripture/nirv-adventure-early-readers/page-index.yml
+{basePath}/media/school/scripture/come-follow-me-ot-2026/bible/nirv-adventure-bible-for-early-readers/mapping/2014-inferred/page-index.yml
 ```
+
+The tools fall back to the legacy
+`{dataDir}/content/school/scripture/nirv-adventure-early-readers/page-index.yml`
+when the live index is absent.
+
+The Book of Mormon, D&C and Pearl of Great Price have their own observed index,
+parsed from the 2013 English triple combination's running heads:
+`{basePath}/media/school/scripture/triple-combination/english-2013/page-index.yml`.
+Its three page sequences (`section: bom|dc|pgp`) are independent, so always
+cite the section with the page.
 
 Available commands:
 
