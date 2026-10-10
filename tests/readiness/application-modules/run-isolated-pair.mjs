@@ -95,7 +95,7 @@ export async function main(argv=process.argv.slice(2)) {
     result.guardsAccepted=true;
     const comparison=await compareCapturedApi({manifest,manifestSha256:jsonHash(manifest),pairNonce,fixtureFileSha256:proof.fixtureFileSha256,runtimeSha256,harnessSha256,runs:result.runs,guardsAccepted:true});
     write(path.join(output,'comparison.json'),comparison);result.comparison=path.join(output,'comparison.json');
-    result.aggregate=aggregateCases([{name:proof.name??'selected-isolated',approvals:proof.cases,cases:comparison.cases,comparison:result.comparison,receipt:result.runs.map(r=>r.receipt.file)}]);
+    result.aggregate=aggregateCases([{name:proof.name??'selected-isolated',approvals:proof.cases,admittedSelection:{proof,manifest,fixtureFileSha256:hash(o.fixture),manifestFileSha256:hash(o.manifest)},cases:comparison.cases,comparison:result.comparison,receipt:result.runs.map(r=>r.receipt.file)}]);
     guard();result.executionAccepted=true;result.equivalenceAccepted=comparison.accepted;
   }catch(error){result.errors.push(error.stack);result.executionAccepted=false;result.equivalenceAccepted=false;}
   write(path.join(output,'pair-result.json'),result);

@@ -33,6 +33,29 @@ export function validateSelection(manifest, approvals, {isolatedStudyFixtureFile
   }
 }
 
+// Exact native legacy fixture/full contract independently accepted in review28371812a4fe16f1ebcaeaecc181e7732d7cef2c221f4476eea9d848d502207c.
+// Context comes only from the pair coordinator after existing native admission;
+// source/runtime identity rebinds retain this fixture/contract, not historical aliases-only data.
+function acceptsNativeConfigLegacy(result, approved) {
+  if (approved.id !== 'config-private-content-prefixes' || approved.method !== 'GET'
+      || approved.path !== '/api/v1/config/content-prefixes') return false;
+  try {
+    const context = result.admittedSelection, proof = context?.proof, manifest = context?.manifest;
+    assert.equal(proof?.schema, 'daylight.isolated-api-pair-proof/v1');
+    assert.equal(proof.reviewed, true);
+    assert.equal(context.fixtureFileSha256, '66ea16f9b3305047dd4d8cec2317b3bba45c94018ff736758255259159afcae6');
+    assert.equal(proof.fixtureFileSha256, context.fixtureFileSha256);
+    assert.match(context.manifestFileSha256, /^[a-f0-9]{64}$/);
+    assert.equal(proof.manifestFileSha256, context.manifestFileSha256);
+    assert.deepEqual(result.approvals, proof.cases);
+    validateSelection(manifest, proof.cases, { isolatedStudyFixtureFileSha256: context.fixtureFileSha256 });
+    const contract = manifest.cases.find(c => c.id === approved.id);
+    assert.equal(createHash('sha256').update(JSON.stringify(contract)).digest('hex'),
+      '57d66d9e85342f614f1b94595adc9293dba89f28dbd5db8988f826fabe04b7ba');
+    return true;
+  } catch { return false; }
+}
+
 export function aggregateCases(results) {
   const unique = new Map();
   let occurrences = 0;
@@ -48,7 +71,8 @@ export function aggregateCases(results) {
     row.equivalenceAccepted &&= observed.accepted === true;
     // These are known consumer/domain failures even if the HTTP bodies agree.
     row.independentContractAccepted &&= approved.independentContractAccepted === true
-      && !['life-feedback-period-timestamp-gap', 'config-private-content-prefixes'].includes(row.id);
+      && row.id !== 'life-feedback-period-timestamp-gap'
+      && (row.id !== 'config-private-content-prefixes' || acceptsNativeConfigLegacy(result, approved));
     row.occurrences.push({ pack: result.name, accepted: observed.accepted === true,
       branch: approved.branch ?? 'source-defined-unlabeled', independentContractAccepted: approved.independentContractAccepted === true,
       errors: observed.errors ?? [], receipt: result.receipt, comparison: result.comparison });

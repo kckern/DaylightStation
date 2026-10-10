@@ -38131,5 +38131,112 @@
     ],
     "fullSuiteAccepted": false,
     "readinessAccepted": false
+  },
+  "post624ChessConfigContractReplacementEvidence": {
+    "schema": "daylight.post624-chess-config-replacement-evidence/v1",
+    "scope": "Two existing historical IDs now have independent full healthy contracts; no new ID/template counts, no baseline product repair",
+    "actualCandidateCommit": "f3ac4d535e1db5fdd566932d682de6bc0779f946",
+    "originalSourceCommit": "60cb94db60d94fa413a6f2bdc6c2b3bf8b58131c",
+    "acceptedExistingReplacementIds": [
+      "chess-guest-private-ladder",
+      "config-private-content-prefixes"
+    ],
+    "acceptedExistingReplacements": 2,
+    "uniqueCaseIncrement": 0,
+    "sourceTemplateIncrement": 0,
+    "actualReview": {
+      "path": "/tmp/readiness-chess-config-two-current-outcome-independent-review/review.json",
+      "sha256": "28371812a4fe16f1ebcaeaecc181e7732d7cef2c221f4476eea9d848d502207c"
+    },
+    "actualHandoff": {
+      "path": "/tmp/readiness-chess-config-two-current-outcome/HANDOFF.json",
+      "sha256": "b6f6ed3fdbad86fc5b7c9eac471f8211c2080104faacaf815995b6b9a7f9fdd7"
+    },
+    "actualPair": {
+      "path": "/tmp/readiness-chess-config-two-current-pair/pair-result.json",
+      "sha256": "00dc9fbc913b50b19dc8ad07e2e3f02f83c78da38bcd08e9330c2578a8554f76"
+    },
+    "actualComparison": {
+      "path": "/tmp/readiness-chess-config-two-current-pair/comparison.json",
+      "sha256": "ec624babbb66cf185f7dc2dbdfafab2b7aa8adb88cf741b49a22958451e2ee8d"
+    },
+    "nativeRawAggregatePreserved": {
+      "correctContractCases": 1,
+      "correctnessAccepted": false
+    },
+    "newSupplementalOfflineAdjudication": {
+      "path": "/tmp/readiness-config-legacy-aggregate-private/supplemental-offline-adjudication.json",
+      "sha256": "87b525450b54c51d8a88994bb618b72d9ff5533aa3e24361f9f2862e94b872df"
+    },
+    "newOfflineAggregate": {
+      "correctContractCases": 2,
+      "correctnessAccepted": true,
+      "readinessAccepted": false
+    },
+    "aggregateCorrection": {
+      "review": {
+        "path": "/tmp/readiness-config-legacy-aggregate-independent-review/review.json",
+        "sha256": "279c11daabeb2d2c016e9f3939dcd9014fe0be15690d183a209f5ad31fc79ea8"
+      },
+      "applied": {
+        "path": "/tmp/readiness-config-legacy-aggregate-private/APPLIED.json",
+        "sha256": "4c6d17251df31f0923b9eb967966620452641f25dfc968fc71fb08b0b4df9fac"
+      },
+      "scope": "Literal Config ID/GET/path, exact reviewed fixture and full manifest-case contract bound to existing admitted proof/manifest context and matching approval; historical defaultdeny and unconditional Life denial preserved, AND duplicates preserved, source-only rebind allowed",
+      "noNewHTTPOrRawReceiptRewrite": true
+    },
+    "nativeContracts": "Guest Chess full populated roster and Config full aliases/storagePaths/legacy output; raw ETag/Content-Length and ten saved Config\u2192native frontend projections independently accepted; actual execution/final guards/cleanup accepted.",
+    "oldTwoEvidence": {
+      "path": "/tmp/readiness-chess-config-two-native-private/preserved-old-two.json",
+      "sha256": "de72f03738838539e7ed5a8bcd701130e703711be6b60eca8b42198b34e131df"
+    },
+    "currentCombinedEvidenceAccounting": {
+      "uniqueAcceptedCaseIds": 635,
+      "successfulIndependentContracts": 634,
+      "parityLinkedEligibleSourceTemplates": 370,
+      "eligibleSourceTemplates": 396,
+      "remainingEligibleSourceTemplateGaps": 26,
+      "remainingHistoricalContractGaps": 1,
+      "remainingHistoricalGapIds": [
+        "life-feedback-period-timestamp-gap"
+      ],
+      "supersedesEarlierCombinedHealthyCount632": true,
+      "single634CaseRun": false,
+      "original624AndProxyNutribotAndPianoReceiptsUnchanged": true,
+      "historical633Accepted624HealthySnapshotUnchanged": true,
+      "productionInstalledCoverageUnproved": true
+    },
+    "sourceFindings": {
+      "remainingLifeFeedback": {
+        "finding": {
+          "path": "/tmp/readiness-three-historical-gaps-native-diagnosis/HANDOFF.json",
+          "sha256": "4fe12d502d2edbed030635aa17cbc1fc26626b5c19f076ff12ba4893133c81e3"
+        },
+        "status": "shared-baseline-date-vs-timestamp-contract",
+        "detail": "Native feedback writer/entity/store use date, period reader tests timestamp, hydration strips unknown timestamp. Fixture-only healthy period correction unsupported; product repair not authorized.",
+        "noHealthyCredit": true
+      },
+      "threeFiniteRenderGaps": {
+        "finding": {
+          "path": "/tmp/readiness-three-render-source-feasibility/HANDOFF.json",
+          "sha256": "ebf8bd62f188e40ffa86512e2c885119af9945a390370bcb7effab7d9bcdba35"
+        },
+        "sourceOnly": true,
+        "noRenderingOrHTTP": true,
+        "fitnessReceipt": "Direct native renderer receives sessionId instead of presentation model in both builds; existing loader/presenter adapter not wired",
+        "nutribotReportPng": "Optional getReportRenderer missing in both containers selects1\u00d71 placeholder; populated report fixture cannot connect renderer",
+        "sheetsPdf": "Native PDFKit current CreationDate and derived trailer ID prevent deterministic complete raw binary oracle under unchanged policy",
+        "noEmptyErrorPaddingRepairOrNewNormalizer": true,
+        "noHealthyCredit": true
+      }
+    },
+    "limitations": [
+      "Two reviewed full contracts and separate offline aggregate correction do not retroactively change raw aggregate1/false",
+      "Zero IDs or source-template increments; current healthy corpus634/635 is an across-run union, not one634-case run",
+      "Remaining Life baseline gap and26 source-template gaps persist; no production data repair or browser/provider/device/printing/effect certification",
+      "Production image/config/mount/installed denominator, nonGET/browser/WS/jobs/restart/Docker rollback and cutover readiness remain unproved"
+    ],
+    "fullSuiteAccepted": false,
+    "readinessAccepted": false
   }
 }
