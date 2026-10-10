@@ -142,6 +142,8 @@ export const documentPdfTheme = Object.freeze({
     choiceSizePt: 10,
     choiceLeadingPt: 12.5,
     choiceGapPt: 3,
+    /** Clear space between adjacent choice columns; a full-width label otherwise abuts the next. */
+    choiceColumnGutterPt: 8,
     /** Lines of choice text reserved when the probe has no bank to measure. */
     probeChoiceLines: 2,
     // Matches `measure.mjs`/`DocumentPdfRenderer.mjs`'s prior bare-literal
