@@ -38033,5 +38033,103 @@
       "Production image/config/mount provenance and installed denominator; nonGET/browser/WS/jobs/restart/actual Docker rollback remain unproved",
       "No create/update/data pollution or cutover authorization is implied"
     ]
+  },
+  "post624HistoricalContractReplacementEvidence": {
+    "schema": "daylight.post624-historical-contract-replacement-evidence/v1",
+    "scope": "Six existing historical Piano producer IDs now have independent populated healthy read contracts; no new IDs/source templates and no repair of original stored data",
+    "sourceCandidateCommit": "f639238e00d188ca51e9af2090f2ab1597b2a31e",
+    "originalSourceCommit": "60cb94db60d94fa413a6f2bdc6c2b3bf8b58131c",
+    "acceptedExistingReplacementIds": [
+      "piano-producer-loops-baseline-list",
+      "piano-producer-loops-baseline-detail",
+      "piano-producer-crate-baseline-list",
+      "piano-producer-crate-baseline-detail",
+      "piano-producer-songs-baseline-list",
+      "piano-producer-songs-baseline-detail"
+    ],
+    "acceptedExistingReplacements": 6,
+    "uniqueCaseIncrement": 0,
+    "sourceTemplateIncrement": 0,
+    "review": {
+      "path": "/tmp/readiness-piano-six-current-outcome-independent-review/review.json",
+      "sha256": "5d4bf7cd629bc943e6c5586f9ae2e8e19a98faa7f90f1a7a8654c24bc18f2301"
+    },
+    "actualHandoff": {
+      "path": "/tmp/readiness-piano-six-current-outcome/HANDOFF.json",
+      "sha256": "798217583e8ba37e1f3d7e960eeea6a7519a9328280612312e162faaf865a34d"
+    },
+    "actualPair": {
+      "path": "/tmp/readiness-piano-six-current-pair/pair-result.json",
+      "sha256": "5f1369649b36b82de8649f5304b0a43015a7a98210e308a004e1789e5c408309"
+    },
+    "actualComparison": {
+      "path": "/tmp/readiness-piano-six-current-pair/comparison.json",
+      "sha256": "d988aee082b856f59b879bc2c0f80f796a0203c727f2357b5a8d37dded68ffee"
+    },
+    "preparationReview": {
+      "path": "/tmp/readiness-piano-producer-six-native-independent-review/review.json",
+      "sha256": "8c579d6a8ce44b88263851ae5dda2edf033ecea30b50ca3cb51c1d04206fd53d"
+    },
+    "launchReview": {
+      "path": "/tmp/readiness-piano-six-launch-independent-review/review.json",
+      "sha256": "bd3ffa17c0fd859957717391143809e10378535b2481d57589d51ba96c164b3b"
+    },
+    "originalInvalidSixEvidence": {
+      "path": "/tmp/readiness-piano-producer-six-native-private/preserved-old-six.json",
+      "sha256": "f01f4a88f15a3a92a9ffdbf1d0431f7db835f669dbf9557670c53244c38a5466"
+    },
+    "nativeContracts": "Schema2 three independently authored populated records; complete three light lists/three full details, note/loop/layer/section/arrangement links, content hashes and raw Content-Length/ETag. Both native roles, identity admission, final guards and cleanup accepted.",
+    "currentCombinedEvidenceAccounting": {
+      "uniqueAcceptedCaseIds": 635,
+      "successfulIndependentContracts": 632,
+      "parityLinkedEligibleSourceTemplates": 370,
+      "eligibleSourceTemplates": 396,
+      "remainingEligibleSourceTemplateGaps": 26,
+      "remainingHistoricalContractGaps": 3,
+      "remainingHistoricalGapIds": [
+        "chess-guest-private-ladder",
+        "config-private-content-prefixes",
+        "life-feedback-period-timestamp-gap"
+      ],
+      "supersedesEarlierPost624CombinedHealthyCount626": true,
+      "single632CaseRun": false,
+      "original624CohortUnchanged": true,
+      "historical633Accepted624HealthySnapshotUnchanged": true,
+      "proxyNutribotSupplementsUnchanged": true,
+      "productionInstalledCoverageUnproved": true
+    },
+    "concreteSourceBlockers": {
+      "schoolStaleSessions": {
+        "finding": {
+          "path": "/tmp/readiness-school-stale-native-diagnosis/HANDOFF.json",
+          "sha256": "406a661969eae460f5050b8c890af3fbf39c9152fc0edccc4cd533f7c1f3323a"
+        },
+        "status": "shared-baseline-composition-defect-missing-learnerDirectory",
+        "noFixtureEventOrRosterDefect": true,
+        "noMigrationSpecificDefect": true,
+        "noProductRepairOrHealthyCredit": true
+      },
+      "livestreamChannelReads": {
+        "finding": {
+          "path": "/tmp/readiness-livestream-native-population-blocker/HANDOFF.json",
+          "sha256": "f05e4845aa7fecc073694390cf9b81b22ef1154f0e94d526a2fc1d9612dbd5d9"
+        },
+        "templates": [
+          "/api/v1/livestream/channels",
+          "/api/v1/livestream/:channel"
+        ],
+        "status": "finite-GETs-but-no-safe-populated-native-boot-fixture",
+        "nativeDependency": "Native registry begins empty and composition does not hydrate configured channel definitions. Native create starts FFmpeg then ambient timer and broadcasts in both builds; no fake DI/private Map seeding/effectful create/empty-list padding.",
+        "noHTTPOrHealthyCredit": true
+      }
+    },
+    "limits": [
+      "Six schema-supported authored fixture replacements leave original invalid records/422 historical responses unchanged",
+      "No saves/migration/audio/browser/production data repair or cutover authorization",
+      "No fresh632 suite run; original624 remains the reviewed across-run union and supplements stay separate",
+      "26 eligible source-template gaps remain; production image/config/mount/installed denominator, nonGET/browser/WS/jobs/restart/Docker rollback remain unproved"
+    ],
+    "fullSuiteAccepted": false,
+    "readinessAccepted": false
   }
 }
