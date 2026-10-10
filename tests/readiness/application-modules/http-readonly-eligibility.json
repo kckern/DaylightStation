@@ -49228,8 +49228,8 @@
     "counts": {
       "historicalLiveUniqueCases": 134,
       "historicalLiveIndependentContracts": 125,
-      "isolatedUniqueAcceptedCaseIds": 155,
-      "isolatedAcceptedOccurrences": 155,
+      "isolatedUniqueAcceptedCaseIds": 157,
+      "isolatedAcceptedOccurrences": 157,
       "isolatedReplayIdsAlreadyLive": [
         "health-catalog-food-not-found",
         "health-catalog-missing-query",
@@ -49293,6 +49293,8 @@
         "gaming-filtered-experience-catalog",
         "gaming-party-catalog",
         "gaming-populated-environment",
+        "integrated-admin-fitness-household-timezone",
+        "integrated-admin-piano-household-timezone",
         "ledger-household-device-bounds",
         "ledger-household-plays",
         "ledger-household-time-limit",
@@ -49389,11 +49391,11 @@
         "timeline-lifelog-day",
         "timeline-lifelog-sources"
       ],
-      "unionUniqueAcceptedCaseIds": 275,
-      "unionIndependentContracts": 266,
+      "unionUniqueAcceptedCaseIds": 277,
+      "unionIndependentContracts": 268,
       "newLiveTemplates": 2,
-      "isolatedDistinctTemplates": 119,
-      "newIsolatedTemplates": 112,
+      "isolatedDistinctTemplates": 120,
+      "newIsolatedTemplates": 113,
       "pendingNext15": {
         "cases": 15,
         "terminalResult": {
@@ -49471,6 +49473,21 @@
         ],
         "noHTTPRerun": true,
         "originalFailedOracleSyntaxComparisonsPreserved": true
+      },
+      "completedAdminTimezone": {
+        "executedCases": 4,
+        "acceptedCredit": 2,
+        "successfulIndependentContracts": 2,
+        "acceptedParityTemplates": 1,
+        "bootstrapRepeatCredit": 0,
+        "terminal": {
+          "path": "/tmp/readiness-admin-timezone-execution/TERMINAL.json",
+          "sha256": "1c2240785fafefcf32d69b8849a9361e5ca8cbef1ac32d49f64d05dafc69ba11"
+        },
+        "review": {
+          "path": "/tmp/readiness-admin-timezone-execution/result-review.json",
+          "sha256": "4b5d3e9e83db5b9e3d91329ee4522be6ddc0510ad9d30b6042363f768f5c3e2e"
+        }
       }
     },
     "cases": [
@@ -51542,6 +51559,66 @@
         },
         "correctedManifestWasUsedDuringHTTP": false,
         "noHTTPRerun": true
+      },
+      {
+        "id": "integrated-admin-piano-household-timezone",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/admin/apps/:appId/config",
+        "declarationIds": [
+          "decl-6516e19799b120ecdc562fd0-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-e96eca-reviewed-mapped-product-integration",
+        "fixtureSha256": "12f8f4e977ff762fe15a8ebcaf970cf02634e542b295f7bd6cbd7139db8ff42a",
+        "manifestSha256": "ebd7c296787978a4443ac92a2742024f96859c572e90b70b83c07fa97ac39635",
+        "result": {
+          "path": "/tmp/readiness-admin-timezone-pair-run/pair-result.json",
+          "sha256": "1c7d8b3f37315413cde7a2c25faa029d1566da18becdc52ed14a5de867ab7585"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-timezone-execution/proof.json",
+          "sha256": "c68f2fec1ff411fca3fe720acd93b0d3410f9f745d091ec5148e85bee6a7c02f"
+        },
+        "mandatoryMetadataSupplement": {
+          "path": "/tmp/readiness-admin-timezone-pack/actual-metadata-result.json",
+          "sha256": "12c8f0529e69a7fca6d9354a97334501d303ea0e41e4a0ef0ee120ddca4cb5bb"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-timezone-execution/result-review.json",
+          "sha256": "4b5d3e9e83db5b9e3d91329ee4522be6ddc0510ad9d30b6042363f768f5c3e2e"
+        }
+      },
+      {
+        "id": "integrated-admin-fitness-household-timezone",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/admin/apps/:appId/config",
+        "declarationIds": [
+          "decl-6516e19799b120ecdc562fd0-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-e96eca-reviewed-mapped-product-integration",
+        "fixtureSha256": "12f8f4e977ff762fe15a8ebcaf970cf02634e542b295f7bd6cbd7139db8ff42a",
+        "manifestSha256": "ebd7c296787978a4443ac92a2742024f96859c572e90b70b83c07fa97ac39635",
+        "result": {
+          "path": "/tmp/readiness-admin-timezone-pair-run/pair-result.json",
+          "sha256": "1c7d8b3f37315413cde7a2c25faa029d1566da18becdc52ed14a5de867ab7585"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-timezone-execution/proof.json",
+          "sha256": "c68f2fec1ff411fca3fe720acd93b0d3410f9f745d091ec5148e85bee6a7c02f"
+        },
+        "mandatoryMetadataSupplement": {
+          "path": "/tmp/readiness-admin-timezone-pack/actual-metadata-result.json",
+          "sha256": "12c8f0529e69a7fca6d9354a97334501d303ea0e41e4a0ef0ee120ddca4cb5bb"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-timezone-execution/result-review.json",
+          "sha256": "4b5d3e9e83db5b9e3d91329ee4522be6ddc0510ad9d30b6042363f768f5c3e2e"
+        }
       }
     ],
     "infrastructure": {

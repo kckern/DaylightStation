@@ -1,11 +1,11 @@
 {
-  "mainPin": "10d8d2107d5146bf7b147c5433c6f04b5072c777",
+  "mainPin": "0c660f6e7851bb2bd09fcbae3e76a0f09f73d1e8",
   "sources": [
     {
       "mainPath": "_extensions/piano-bridge/app/payload/src/main/java/net/kckern/pianobridge/A11y.java",
       "candidatePath": "modules/piano/satellites/piano-bridge/app/payload/src/main/java/net/kckern/pianobridge/A11y.java",
-      "sha256": "464041feb31847381140b9763225bf189ed0e85bdcdca07481f84f21f1475273",
-      "candidateSha256": "464041feb31847381140b9763225bf189ed0e85bdcdca07481f84f21f1475273"
+      "sha256": "e95b5b39a90261b21c81d6fcb5b45f0053affcf049454387edebec6cfa4a402b",
+      "candidateSha256": "e95b5b39a90261b21c81d6fcb5b45f0053affcf049454387edebec6cfa4a402b"
     },
     {
       "mainPath": "_extensions/piano-bridge/app/payload/src/main/java/net/kckern/pianobridge/A2dpConnector.java",
@@ -46,8 +46,8 @@
     {
       "mainPath": "_extensions/piano-bridge/app/payload/src/main/java/net/kckern/pianobridge/ControlServer.java",
       "candidatePath": "modules/piano/satellites/piano-bridge/app/payload/src/main/java/net/kckern/pianobridge/ControlServer.java",
-      "sha256": "1d3d5c5177844a13801d72bcdef5bab02e27018ad532480afb3990faaf7eba10",
-      "candidateSha256": "1d3d5c5177844a13801d72bcdef5bab02e27018ad532480afb3990faaf7eba10"
+      "sha256": "d7458445bd626b64c19cc255874642550f26da6ec5eac9ab57ce5177186d3bf2",
+      "candidateSha256": "d7458445bd626b64c19cc255874642550f26da6ec5eac9ab57ce5177186d3bf2"
     },
     {
       "mainPath": "_extensions/piano-bridge/app/payload/src/main/java/net/kckern/pianobridge/CrashLog.java",
@@ -399,12 +399,14 @@
     }
   ],
   "candidateFreeze": {
-    "selectedSourceRevision": "f3029f1b4e3c49f4aae656f800495b099a20a11d",
-    "policy": "Exact candidateSha256 for every selected source; current HEAD recorded at admission and must remain unchanged through pair. Unrelated documentation/tooling commits do not alter approved source bytes."
+    "selectedSourceRevision": "e96eca15fc0e81214897d2c015da56e01de8f9a3",
+    "policy": "Exact candidateSha256 for every selected source; current HEAD recorded at admission and must remain unchanged through pair. Unrelated documentation/tooling commits do not alter approved source bytes.",
+    "reviewedUncommittedMainIntegration": "0c660f6e7851bb2bd09fcbae3e76a0f09f73d1e8",
+    "integrationReview": "/tmp/readiness-pinned-main-integration-proposal/applied-review.json"
   },
   "helperPin": {
     "relativePath": "tests/preimplementation/application-modules/tooling/landlock-runner.c",
-    "sha256": "fd6e7386483ea3c01f40b64d00fe382b3694f28d3e4f57fca25fda82760c823e"
+    "sha256": "35f1744f80d54c49d5a7091a92578f9f97abcec831276b8303cbc0b9d94abb4f"
   },
   "buildToolPins": [
     {

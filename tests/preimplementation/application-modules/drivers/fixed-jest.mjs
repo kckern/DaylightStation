@@ -5,7 +5,7 @@ import {pathToFileURL} from 'node:url';
 import {fixedRunnerSelection} from '../configs/fixed-runner-selection.mjs';
 import {fixedJestConfig} from '../configs/fixed-jest-config.mjs';
 export async function runFixedJest(profile) {
-  if(!['bots-displays-jest','media-content-jest','remaining-jest'].includes(profile))throw new Error('Unknown fixed Jest profile');
+  if(!['main-current-jest','bots-displays-jest','media-content-jest','remaining-jest'].includes(profile))throw new Error('Unknown fixed Jest profile');
   const selection=fixedRunnerSelection(profile);
   const config=fixedJestConfig(profile);
   const jest=await import(pathToFileURL(path.join(selection.toolRoot,'node_modules/jest/build/index.js')).href);

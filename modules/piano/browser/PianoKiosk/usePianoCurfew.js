@@ -20,17 +20,25 @@ const TICK_MS = 30_000;
  * morning) without a reload.
  *
  * @param {{enabled?: boolean, start?: string, end?: string}|null} curfew
+ * @param {string|null} [timeZone] household IANA zone (config.timezone). The
+ *   tablet's own zone is a Settings toggle a child can change (2026-10-09).
  * @returns {boolean}
  */
-export function usePianoCurfew(curfew) {
-  const [active, setActive] = useState(() => isCurfewActive(new Date(), curfew));
+export function usePianoCurfew(curfew, timeZone) {
+  const [active, setActive] = useState(() => isCurfewActive(new Date(), curfew, timeZone));
 
   useEffect(() => {
     const evaluate = () => {
       setActive((was) => {
-        const now = isCurfewActive(new Date(), curfew);
+        const now = isCurfewActive(new Date(), curfew, timeZone);
         if (now !== was) {
-          logger().info('piano.curfew.change', { active: now, start: curfew?.start, end: curfew?.end });
+          logger().info('piano.curfew.change', {
+            active: now,
+            start: curfew?.start,
+            end: curfew?.end,
+            // null = no household zone served; the window was read on the device clock.
+            timeZone: timeZone || null,
+          });
         }
         return now;
       });
@@ -38,7 +46,7 @@ export function usePianoCurfew(curfew) {
     evaluate(); // config changed → re-evaluate immediately, don't wait a tick
     const id = setInterval(evaluate, TICK_MS);
     return () => clearInterval(id);
-  }, [curfew?.enabled, curfew?.start, curfew?.end]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [curfew?.enabled, curfew?.start, curfew?.end, timeZone]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return active;
 }

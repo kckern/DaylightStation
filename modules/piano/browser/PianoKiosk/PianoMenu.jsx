@@ -53,7 +53,7 @@ export function PianoMenu() {
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
   const logger = useMemo(() => getLogger().child({ component: 'piano-menu' }), []);
   const cols = balancedColumns(PIANO_MODES.length); // 10 → 5
-  const curfew = usePianoCurfew(config?.curfew);
+  const curfew = usePianoCurfew(config?.curfew, config?.timezone);
   // Curfew wins outright: after bedtime there is nothing to offer, so the
   // closed-for-the-night view stands rather than a launchable lesson card.
   const lessonGate = usePianoLessonGate(currentUser);

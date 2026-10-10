@@ -1,7 +1,7 @@
 {
   "schema": "daylight.cutover-readiness-evidence/v1",
   "readinessAccepted": false,
-  "stage": "Historical mixed-reference union275 accepted IDs/266 successful independent contracts;278 observed IDs includes certification404 plus two report since-date baseline failures with zero credit.155 isolated accepted IDs overlap historical live134 in14 IDs.206 accepted parity-linked templates of394 potential,188 remain. Clean finalguardaccepted replay140/133 spans6e126/119 and97414/14. Historical10d8 37/35 belongs to a failed wholeattempt and is qualified earlier casewise evidence only, not accepted clean replay; recorded177/168 across revisions is not whole-attempt accepted. No275-case fresh replay/global readiness.",
+  "stage": "Historical mixed-reference union277 accepted IDs/268 successful independent contracts;280 credit-or-diagnostic IDs including3 preserved failures;282 literal observed IDs include2 no-credit repeatedbootstrap aliases.157 isolated accepted IDs overlap live134 in14.207 accepted parity templates of394potential,187gaps. NewAdmin2/1template excludes repeatedbootstrap2. Clean recorded177/168 across separate revisions/intervals earns no newIDs; no single-current177 or fresh277/globalreadiness claim.",
   "referenceMain": "c9234d2ba9ffe5a30ba03abf54a94b3b28d0c9df",
   "sourceCheckpointBeforeIntegration": "7c0936d1b5d450c3495fb5c105d7aaf196d3bc54",
   "schoolMainIntegration": {
@@ -620,8 +620,8 @@
     "isolatedAndLiveEvidenceAccounting": {
       "historicalLiveUniqueCases": 134,
       "historicalLiveIndependentContracts": 125,
-      "isolatedUniqueAcceptedCaseIds": 155,
-      "isolatedAcceptedOccurrences": 155,
+      "isolatedUniqueAcceptedCaseIds": 157,
+      "isolatedAcceptedOccurrences": 157,
       "isolatedReplayIdsAlreadyLive": [
         "health-catalog-food-not-found",
         "health-catalog-missing-query",
@@ -685,6 +685,8 @@
         "gaming-filtered-experience-catalog",
         "gaming-party-catalog",
         "gaming-populated-environment",
+        "integrated-admin-fitness-household-timezone",
+        "integrated-admin-piano-household-timezone",
         "ledger-household-device-bounds",
         "ledger-household-plays",
         "ledger-household-time-limit",
@@ -781,11 +783,11 @@
         "timeline-lifelog-day",
         "timeline-lifelog-sources"
       ],
-      "unionUniqueAcceptedCaseIds": 275,
-      "unionIndependentContracts": 266,
+      "unionUniqueAcceptedCaseIds": 277,
+      "unionIndependentContracts": 268,
       "newLiveTemplates": 2,
-      "isolatedDistinctTemplates": 119,
-      "newIsolatedTemplates": 112,
+      "isolatedDistinctTemplates": 120,
+      "newIsolatedTemplates": 113,
       "pendingNext15": {
         "cases": 15,
         "terminalResult": {
@@ -863,6 +865,21 @@
         ],
         "noHTTPRerun": true,
         "originalFailedOracleSyntaxComparisonsPreserved": true
+      },
+      "completedAdminTimezone": {
+        "executedCases": 4,
+        "acceptedCredit": 2,
+        "successfulIndependentContracts": 2,
+        "acceptedParityTemplates": 1,
+        "bootstrapRepeatCredit": 0,
+        "terminal": {
+          "path": "/tmp/readiness-admin-timezone-execution/TERMINAL.json",
+          "sha256": "1c2240785fafefcf32d69b8849a9361e5ca8cbef1ac32d49f64d05dafc69ba11"
+        },
+        "review": {
+          "path": "/tmp/readiness-admin-timezone-execution/result-review.json",
+          "sha256": "4b5d3e9e83db5b9e3d91329ee4522be6ddc0510ad9d30b6042363f768f5c3e2e"
+        }
       }
     },
     "currentHistoricalLiveEligibleSourceTemplateLinks": 94,
@@ -870,10 +887,11 @@
     "currentSourceUnionEvidenceAccounting": {
       "scope": "Separate historical-live and actual-source isolated executed coverage; source-template union only, no installed-live denominator",
       "historicalLiveEligibleTemplateLinks": 94,
-      "isolatedAdditionalEligibleTemplateLinks": 112,
-      "unionEligibleTemplatesWithExecutedCaseLinks": 206,
-      "unionEligibleTemplatesWithoutExecutedCaseLinks": 188,
+      "isolatedAdditionalEligibleTemplateLinks": 113,
+      "unionEligibleTemplatesWithExecutedCaseLinks": 207,
+      "unionEligibleTemplatesWithoutExecutedCaseLinks": 187,
       "isolatedOnlyTemplates": [
+        "/api/v1/admin/apps/:appId/config",
         "/api/v1/automotive/places",
         "/api/v1/automotive/vehicles/:id/documents",
         "/api/v1/automotive/vehicles/:id/service",
@@ -990,8 +1008,8 @@
       "counts": {
         "historicalLiveUniqueCases": 134,
         "historicalLiveIndependentContracts": 125,
-        "isolatedUniqueAcceptedCaseIds": 155,
-        "isolatedAcceptedOccurrences": 155,
+        "isolatedUniqueAcceptedCaseIds": 157,
+        "isolatedAcceptedOccurrences": 157,
         "isolatedReplayIdsAlreadyLive": [
           "health-catalog-food-not-found",
           "health-catalog-missing-query",
@@ -1055,6 +1073,8 @@
           "gaming-filtered-experience-catalog",
           "gaming-party-catalog",
           "gaming-populated-environment",
+          "integrated-admin-fitness-household-timezone",
+          "integrated-admin-piano-household-timezone",
           "ledger-household-device-bounds",
           "ledger-household-plays",
           "ledger-household-time-limit",
@@ -1151,11 +1171,11 @@
           "timeline-lifelog-day",
           "timeline-lifelog-sources"
         ],
-        "unionUniqueAcceptedCaseIds": 275,
-        "unionIndependentContracts": 266,
+        "unionUniqueAcceptedCaseIds": 277,
+        "unionIndependentContracts": 268,
         "newLiveTemplates": 2,
-        "isolatedDistinctTemplates": 119,
-        "newIsolatedTemplates": 112,
+        "isolatedDistinctTemplates": 120,
+        "newIsolatedTemplates": 113,
         "pendingNext15": {
           "cases": 15,
           "terminalResult": {
@@ -1233,6 +1253,21 @@
           ],
           "noHTTPRerun": true,
           "originalFailedOracleSyntaxComparisonsPreserved": true
+        },
+        "completedAdminTimezone": {
+          "executedCases": 4,
+          "acceptedCredit": 2,
+          "successfulIndependentContracts": 2,
+          "acceptedParityTemplates": 1,
+          "bootstrapRepeatCredit": 0,
+          "terminal": {
+            "path": "/tmp/readiness-admin-timezone-execution/TERMINAL.json",
+            "sha256": "1c2240785fafefcf32d69b8849a9361e5ca8cbef1ac32d49f64d05dafc69ba11"
+          },
+          "review": {
+            "path": "/tmp/readiness-admin-timezone-execution/result-review.json",
+            "sha256": "4b5d3e9e83db5b9e3d91329ee4522be6ddc0510ad9d30b6042363f768f5c3e2e"
+          }
         }
       },
       "cases": [
@@ -3324,6 +3359,66 @@
           },
           "correctedManifestWasUsedDuringHTTP": false,
           "noHTTPRerun": true
+        },
+        {
+          "id": "integrated-admin-piano-household-timezone",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/admin/apps/:appId/config",
+          "declarationIds": [
+            "decl-6516e19799b120ecdc562fd0-0"
+          ],
+          "provenance": "actual-isolated-pinned0c-original-vs-e96eca-reviewed-mapped-product-integration",
+          "fixtureSha256": "12f8f4e977ff762fe15a8ebcaf970cf02634e542b295f7bd6cbd7139db8ff42a",
+          "manifestSha256": "ebd7c296787978a4443ac92a2742024f96859c572e90b70b83c07fa97ac39635",
+          "result": {
+            "path": "/tmp/readiness-admin-timezone-pair-run/pair-result.json",
+            "sha256": "1c7d8b3f37315413cde7a2c25faa029d1566da18becdc52ed14a5de867ab7585"
+          },
+          "proof": {
+            "path": "/tmp/readiness-admin-timezone-execution/proof.json",
+            "sha256": "c68f2fec1ff411fca3fe720acd93b0d3410f9f745d091ec5148e85bee6a7c02f"
+          },
+          "mandatoryMetadataSupplement": {
+            "path": "/tmp/readiness-admin-timezone-pack/actual-metadata-result.json",
+            "sha256": "12c8f0529e69a7fca6d9354a97334501d303ea0e41e4a0ef0ee120ddca4cb5bb"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-admin-timezone-execution/result-review.json",
+            "sha256": "4b5d3e9e83db5b9e3d91329ee4522be6ddc0510ad9d30b6042363f768f5c3e2e"
+          }
+        },
+        {
+          "id": "integrated-admin-fitness-household-timezone",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/admin/apps/:appId/config",
+          "declarationIds": [
+            "decl-6516e19799b120ecdc562fd0-0"
+          ],
+          "provenance": "actual-isolated-pinned0c-original-vs-e96eca-reviewed-mapped-product-integration",
+          "fixtureSha256": "12f8f4e977ff762fe15a8ebcaf970cf02634e542b295f7bd6cbd7139db8ff42a",
+          "manifestSha256": "ebd7c296787978a4443ac92a2742024f96859c572e90b70b83c07fa97ac39635",
+          "result": {
+            "path": "/tmp/readiness-admin-timezone-pair-run/pair-result.json",
+            "sha256": "1c7d8b3f37315413cde7a2c25faa029d1566da18becdc52ed14a5de867ab7585"
+          },
+          "proof": {
+            "path": "/tmp/readiness-admin-timezone-execution/proof.json",
+            "sha256": "c68f2fec1ff411fca3fe720acd93b0d3410f9f745d091ec5148e85bee6a7c02f"
+          },
+          "mandatoryMetadataSupplement": {
+            "path": "/tmp/readiness-admin-timezone-pack/actual-metadata-result.json",
+            "sha256": "12c8f0529e69a7fca6d9354a97334501d303ea0e41e4a0ef0ee120ddca4cb5bb"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-admin-timezone-execution/result-review.json",
+            "sha256": "4b5d3e9e83db5b9e3d91329ee4522be6ddc0510ad9d30b6042363f768f5c3e2e"
+          }
         }
       ],
       "infrastructure": {
@@ -3689,8 +3784,10 @@
       "noHTTPRerun": true,
       "productionOrLiveCoverage": false
     },
-    "observedUniqueIdsIncludingBaselineDiagnostics": 278,
-    "acceptedParityTemplateMeaning": "206 templates have accepted parity links; prior9 independent-contract gaps remain, no all-template independently healthy claim"
+    "observedUniqueIdsIncludingBaselineDiagnostics": 280,
+    "acceptedParityTemplateMeaning": "207 templates have accepted parity links; prior9 independent-contract gaps remain, no all-template independently healthy claim",
+    "observedIdAccountingScope": "Accepted-credit IDs plus preserved baseline diagnostic IDs; excludes two explicitly no-credit repeated bootstrap alias IDs",
+    "literalObservedIdsIncludingRepeatedBootstrapAliases": 282
   },
   "packaging": {
     "file": ".dockerignore",
@@ -10648,13 +10745,133 @@
         "productionOrLiveCoverage": false,
         "noHTTPRerun": true,
         "correctedManifestWasUsedDuringHTTP": false
+      },
+      {
+        "name": "pinned-main-admin-timezone",
+        "result": {
+          "path": "/tmp/readiness-admin-timezone-pair-run/pair-result.json",
+          "sha256": "1c7d8b3f37315413cde7a2c25faa029d1566da18becdc52ed14a5de867ab7585"
+        },
+        "comparison": "/tmp/readiness-admin-timezone-pair-run/comparison.json",
+        "runs": [
+          {
+            "role": "original",
+            "sourceCommit": "0c660f6e7851bb2bd09fcbae3e76a0f09f73d1e8",
+            "workingTreeSha256": "0b91f5fb48fd631aba4d20da2c58b532028a886d91fee655574e52988397b162",
+            "capture": {
+              "file": "/tmp/readiness-admin-timezone-pair-run/original/daylight-local-http-IFQ2n8/capture.json",
+              "sha256": "bf5cd5833af7639b465bf691390d26a4815f206e0cdb28db1080df5468555ecc"
+            },
+            "receipt": {
+              "file": "/tmp/readiness-admin-timezone-pair-run/original/daylight-local-http-IFQ2n8/receipt.json",
+              "sha256": "6b626102a03cc3f2bc62b4dfff18bf90f7a7e3a606e7ee639430fb955220b89a"
+            }
+          },
+          {
+            "role": "candidate",
+            "sourceCommit": "e96eca15fc0e81214897d2c015da56e01de8f9a3",
+            "workingTreeSha256": "baa5f0c37dedc8f57a02ea0b1960dfe0ef3855cc2d07825ab1828561580c64cc",
+            "capture": {
+              "file": "/tmp/readiness-admin-timezone-pair-run/candidate/daylight-local-http-YTaiw6/capture.json",
+              "sha256": "f097c13b773d9cbd5e591d0f3504cc30dee4c4dc8b8bd01b7656eeeacd136369"
+            },
+            "receipt": {
+              "file": "/tmp/readiness-admin-timezone-pair-run/candidate/daylight-local-http-YTaiw6/receipt.json",
+              "sha256": "295107235b86e7701d73154b0bbcb17d9dc377760cef49c9b33aa2bbff3c9cd4"
+            }
+          }
+        ],
+        "proof": {
+          "path": "/tmp/readiness-admin-timezone-execution/proof.json",
+          "sha256": "c68f2fec1ff411fca3fe720acd93b0d3410f9f745d091ec5148e85bee6a7c02f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-timezone-execution/result-review.json",
+          "sha256": "4b5d3e9e83db5b9e3d91329ee4522be6ddc0510ad9d30b6042363f768f5c3e2e"
+        },
+        "mandatoryMetadataSupplement": {
+          "path": "/tmp/readiness-admin-timezone-pack/actual-metadata-result.json",
+          "sha256": "12c8f0529e69a7fca6d9354a97334501d303ea0e41e4a0ef0ee120ddca4cb5bb"
+        },
+        "cases": [
+          {
+            "id": "integrated-admin-piano-household-timezone",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/admin/apps/:appId/config",
+            "declarationIds": [
+              "decl-6516e19799b120ecdc562fd0-0"
+            ],
+            "provenance": "actual-isolated-pinned0c-original-vs-e96eca-reviewed-mapped-product-integration",
+            "fixtureSha256": "12f8f4e977ff762fe15a8ebcaf970cf02634e542b295f7bd6cbd7139db8ff42a",
+            "manifestSha256": "ebd7c296787978a4443ac92a2742024f96859c572e90b70b83c07fa97ac39635",
+            "result": {
+              "path": "/tmp/readiness-admin-timezone-pair-run/pair-result.json",
+              "sha256": "1c7d8b3f37315413cde7a2c25faa029d1566da18becdc52ed14a5de867ab7585"
+            },
+            "proof": {
+              "path": "/tmp/readiness-admin-timezone-execution/proof.json",
+              "sha256": "c68f2fec1ff411fca3fe720acd93b0d3410f9f745d091ec5148e85bee6a7c02f"
+            },
+            "mandatoryMetadataSupplement": {
+              "path": "/tmp/readiness-admin-timezone-pack/actual-metadata-result.json",
+              "sha256": "12c8f0529e69a7fca6d9354a97334501d303ea0e41e4a0ef0ee120ddca4cb5bb"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-admin-timezone-execution/result-review.json",
+              "sha256": "4b5d3e9e83db5b9e3d91329ee4522be6ddc0510ad9d30b6042363f768f5c3e2e"
+            }
+          },
+          {
+            "id": "integrated-admin-fitness-household-timezone",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/admin/apps/:appId/config",
+            "declarationIds": [
+              "decl-6516e19799b120ecdc562fd0-0"
+            ],
+            "provenance": "actual-isolated-pinned0c-original-vs-e96eca-reviewed-mapped-product-integration",
+            "fixtureSha256": "12f8f4e977ff762fe15a8ebcaf970cf02634e542b295f7bd6cbd7139db8ff42a",
+            "manifestSha256": "ebd7c296787978a4443ac92a2742024f96859c572e90b70b83c07fa97ac39635",
+            "result": {
+              "path": "/tmp/readiness-admin-timezone-pair-run/pair-result.json",
+              "sha256": "1c7d8b3f37315413cde7a2c25faa029d1566da18becdc52ed14a5de867ab7585"
+            },
+            "proof": {
+              "path": "/tmp/readiness-admin-timezone-execution/proof.json",
+              "sha256": "c68f2fec1ff411fca3fe720acd93b0d3410f9f745d091ec5148e85bee6a7c02f"
+            },
+            "mandatoryMetadataSupplement": {
+              "path": "/tmp/readiness-admin-timezone-pack/actual-metadata-result.json",
+              "sha256": "12c8f0529e69a7fca6d9354a97334501d303ea0e41e4a0ef0ee120ddca4cb5bb"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-admin-timezone-execution/result-review.json",
+              "sha256": "4b5d3e9e83db5b9e3d91329ee4522be6ddc0510ad9d30b6042363f768f5c3e2e"
+            }
+          }
+        ],
+        "diagnosticCases": [],
+        "executedCases": 4,
+        "acceptedCredit": 2,
+        "bootstrapRepeatedContractsCredit": 0,
+        "bootstrapRepeatedIds": [
+          "integrated-bootstrap-node-edge-liveness",
+          "integrated-bootstrap-piano-guest-budget-disabled"
+        ],
+        "strictComparisonAccepted": true,
+        "productionOrLiveCoverage": false
       }
     ],
     "counts": {
       "historicalLiveUniqueCases": 134,
       "historicalLiveIndependentContracts": 125,
-      "isolatedUniqueAcceptedCaseIds": 155,
-      "isolatedAcceptedOccurrences": 155,
+      "isolatedUniqueAcceptedCaseIds": 157,
+      "isolatedAcceptedOccurrences": 157,
       "isolatedReplayIdsAlreadyLive": [
         "health-catalog-food-not-found",
         "health-catalog-missing-query",
@@ -10718,6 +10935,8 @@
         "gaming-filtered-experience-catalog",
         "gaming-party-catalog",
         "gaming-populated-environment",
+        "integrated-admin-fitness-household-timezone",
+        "integrated-admin-piano-household-timezone",
         "ledger-household-device-bounds",
         "ledger-household-plays",
         "ledger-household-time-limit",
@@ -10814,11 +11033,11 @@
         "timeline-lifelog-day",
         "timeline-lifelog-sources"
       ],
-      "unionUniqueAcceptedCaseIds": 275,
-      "unionIndependentContracts": 266,
+      "unionUniqueAcceptedCaseIds": 277,
+      "unionIndependentContracts": 268,
       "newLiveTemplates": 2,
-      "isolatedDistinctTemplates": 119,
-      "newIsolatedTemplates": 112,
+      "isolatedDistinctTemplates": 120,
+      "newIsolatedTemplates": 113,
       "pendingNext15": {
         "cases": 15,
         "terminalResult": {
@@ -10896,6 +11115,21 @@
         ],
         "noHTTPRerun": true,
         "originalFailedOracleSyntaxComparisonsPreserved": true
+      },
+      "completedAdminTimezone": {
+        "executedCases": 4,
+        "acceptedCredit": 2,
+        "successfulIndependentContracts": 2,
+        "acceptedParityTemplates": 1,
+        "bootstrapRepeatCredit": 0,
+        "terminal": {
+          "path": "/tmp/readiness-admin-timezone-execution/TERMINAL.json",
+          "sha256": "1c2240785fafefcf32d69b8849a9361e5ca8cbef1ac32d49f64d05dafc69ba11"
+        },
+        "review": {
+          "path": "/tmp/readiness-admin-timezone-execution/result-review.json",
+          "sha256": "4b5d3e9e83db5b9e3d91329ee4522be6ddc0510ad9d30b6042363f768f5c3e2e"
+        }
       }
     },
     "fullBodyDifferentialRetained": true,
@@ -11565,6 +11799,164 @@
       },
       "current6eConfig4Separate": true,
       "readinessAccepted": false
+    },
+    "clean37Replay": {
+      "path": "/tmp/readiness-clean37-pair-run/pair-result.json",
+      "sha256": "1acac08970f58689d5626c5f2b82183d3d9f8c8404702a317e6a20a3ffae766e"
+    },
+    "cleanMixed177RecordedIntervals": {
+      "linkage": {
+        "path": "/tmp/readiness-consolidated177-clean-recorded-intervals.json",
+        "sha256": "4b90965623c2130d9d699376fd2e37e4d4ae19f03f401bfc4133a671c23ac7d6"
+      },
+      "comparisons": 177,
+      "contracts": 168,
+      "newUniqueCredit": 0,
+      "singleRevision": false,
+      "singleExecution": false,
+      "oldFailed37Preserved": true
     }
+  },
+  "pinnedMainIntegrationEvidence": {
+    "schema": "private-pinned-main-integration-evidence/v1",
+    "mainPin": "0c660f6e7851bb2bd09fcbae3e76a0f09f73d1e8",
+    "integratedBase": "10d8d2107d5146bf7b147c5433c6f04b5072c777",
+    "candidateCheckpointBefore": "e96eca15fc0e81214897d2c015da56e01de8f9a3",
+    "actualMainDeltaFiles": 29,
+    "mappedProductFiles": 29,
+    "deltaMissingFromMap": [],
+    "mappedPathsAbsentFromDelta": [],
+    "toolingFiles": 11,
+    "productBeforeAfterCorrespondence": {
+      "path": "/tmp/readiness-pinned-main-integration-proposal/correspondence.json",
+      "sha256": "a6c440b984f0330cdebdd735df3e3c6929f7b210ff4a607c0e6f2e216590ca77"
+    },
+    "productFiles": {
+      "modules/piano/satellites/piano-bridge/app/payload/src/main/java/net/kckern/pianobridge/A11y.java": "e95b5b39a90261b21c81d6fcb5b45f0053affcf049454387edebec6cfa4a402b",
+      "modules/piano/satellites/piano-bridge/app/payload/src/main/java/net/kckern/pianobridge/ControlServer.java": "d7458445bd626b64c19cc255874642550f26da6ec5eac9ab57ce5177186d3bf2",
+      "modules/piano/satellites/piano-bridge/app/payload/src/main/java/net/kckern/pianobridge/payload/Main.java": "301c23ea7900e68c0bbc76bdb8a55f17fc88326154f08822629dddf53b77ab66",
+      "backend/src/3_applications/admin/AppsConfigService.mjs": "c868bd0b7acbc9b0d8d320f901808e10855e49052f1b8ec6fdd14bdda7cb9d29",
+      "backend/src/app.mjs": "f08938761585e6caf74582327b829fc74dbc646e84bb27ce7668fa720fcf7030",
+      "docs/_archive/deleted-branches.md": "7c1fd9db31072cfc22d97997dfab564b1e5ecd7c19db990a55c508c98bd0ba23",
+      "docs/reference/piano/README.md": "1c8a3c162b9a8438382ba2991ec99627d26334d2404d3a8952ee474d12f9c669",
+      "docs/reference/player/README.md": "11fd964fb9af57e889e20eebbc7ab45489893502dd1bb71b4a3d309f7ede42d8",
+      "modules/piano/browser/PianoApp.jsx": "85eaf4126bddc7472845b07619cc62220faef5a12f2a60abdb6c0b0745238158",
+      "modules/piano/browser/PianoKiosk/PianoConfig.jsx": "1e0c5e88070105b8dfcc7f6d26d397ece0a4dd59261623920ef64ae4b24dce65",
+      "modules/piano/browser/PianoKiosk/PianoConfig.test.js": "25524f9c22563d6435e6756dab17cfa59e43965cd7fc3e9981fe964b18dfda50",
+      "modules/piano/browser/PianoKiosk/PianoMenu.curfew.test.js": "459a49cde9d8dde0ea3c4c9371c4d2d13e975dc94a8541be88f7cb270b4aa4a8",
+      "modules/piano/browser/PianoKiosk/PianoMenu.jsx": "57837118676b66d5a79459a288305af206fdd4b89e14013708da34b98967ed25",
+      "modules/piano/browser/PianoKiosk/pianoConfigModel.js": "17f12c58e54ec6ca929ab9a1e1ca23be2a4b4611f5c39194c58fcdf8ae21d103",
+      "modules/piano/browser/PianoKiosk/pianoCurfew.js": "7c19d07385d4f71a15a724383f431cc2629a9c68173b0a243b44489f294eba13",
+      "modules/piano/browser/PianoKiosk/pianoCurfew.test.js": "050b338fc2a8abafca17a34d6383222e411463c8fee65b5be74598074c5d8c7b",
+      "modules/piano/browser/PianoKiosk/timeWindow.js": "6e6d0daae589b2d1345914d569685ea15f3c410566df21023bd8a0254e8d411a",
+      "modules/piano/browser/PianoKiosk/timeWindow.test.js": "2082e07dd0278d53d3b6e127f6cac2d45e57ff51451670c78328684d40495a17",
+      "modules/piano/browser/PianoKiosk/usePianoCurfew.js": "a8d8ece44fa825475f6ee2855d2fe3eed5ca81b035f4545637fdda698ae904ff",
+      "modules/piano/browser/PianoKiosk/usePianoScreensaver.test.js": "66ae07acf835b7e17e19bdc23409aa2df9d36ae5413a476b38ca2a46bc67b2e8",
+      "modules/piano/browser/PianoKiosk/usePianoScreensaverHooks.js": "10702ba0d18230809611b176904073b6726b1ac2a98456666c68f5f1d9ee6114",
+      "capabilities/playback/browser/player/hooks/useUpscaleEffects.crtThreshold.test.js": "5b33d23abfdbcab55edaaa476f2dfce64be9d61282d9ee136c42a4a838219c0d",
+      "capabilities/playback/browser/player/hooks/useUpscaleEffects.js": "8a910f2790e81b8f22964d195ba78dd1000d5bd3cd3574bb11989f43ce14c69b",
+      "capabilities/playback/browser/player/renderers/VideoPlayer.jsx": "f2c0ead3a97ac96e7652b1f3ef59f1bde1b024797457f100f0fb2ac642d3a43c",
+      "tests/unit/applications/admin/appsConfigService.test.mjs": "61853684c43fd880618b1cd896adb71587ce554989ad285aff057b47b30c58f2",
+      "backend/src/1_adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs": "94190fea5f91e7a5748f2d91850644606b6549205bb0d3bc91b05eec7561d647",
+      "docs/reference/school/README.md": "3d5963027aa7f3d5b4833bfd04c65c127f4331a6fd6da13dbc47b3125e499d11",
+      "docs/runbooks/school/logs-and-tracing.md": "f2ad27504a1eb3b718e51d7da9034a2f378d9ef479082a675fd142ec584a8a13",
+      "tests/unit/adapters/hardware/thermal-printer/ThermalPrinterAdapter.slowlink.test.mjs": "87e98dccce30d19148b129b99db5263f592412d2288bdfb97e868b2defb78c32"
+    },
+    "toolingFilesSha256": {
+      "tests/preimplementation/application-modules/tooling/run-landlock.mjs": "922ddd88a97f9e567096065c5cfab3c78d9508084ba82ff6335593475091798c",
+      "tests/preimplementation/application-modules/configs/vitest.config.mjs": "5fa222aa1ad53f0948e3e17bf339e0900aeb8abbf811484363c4d08a8b000eee",
+      "tests/preimplementation/application-modules/tooling/landlock-runner.c": "35f1744f80d54c49d5a7091a92578f9f97abcec831276b8303cbc0b9d94abb4f",
+      "tests/preimplementation/application-modules/configs/fixed-runner-selection.mjs": "b3aaf6995de4feb1e67382866d5753e3612ab006727711d502027f95fa2e915e",
+      "tests/preimplementation/application-modules/configs/fixed-jest-config.mjs": "57deaeb371ba798d22acb139b77459c86f267f678419c452000ae373682d888e",
+      "tests/preimplementation/application-modules/drivers/fixed-jest.mjs": "534ca04e69ee549378e04b78e1b4854e3d0a22f18a741edca86dce3916ade17b",
+      "tests/preimplementation/application-modules/configs/main-current-selected.mjs": "51af0777039d54aea93a31fb85a345430fbd04a8c14b5c6735a9efd046cd91e5",
+      "tests/preimplementation/application-modules/cases/main-current-jest.case.mjs": "1ed5382b7b8c01540684ee64f3a8af851d5d68227ef505e2e5df8500e8cf1554",
+      "tests/preimplementation/application-modules/tooling/selection.json": "37504ee6d88410abfbd3c15d2a308345fb566533bbbd4045a3d5e712885a1bcb",
+      "tests/preimplementation/application-modules/tooling/run-reviewed-jvm35.mjs": "527c16a29f1e27b2c8b1fc40dda14ffdedee76a831928f509adc9371c05e809e",
+      "tests/preimplementation/application-modules/tooling/bundle-pins.json": "a750ae86dda38c846d20eda353efa215af632e6a1fb80d73e0d1b8041d1a5a60"
+    },
+    "validated": {
+      "JSNamedAssertionsBothRoles": 87,
+      "JSNamedParity": true,
+      "JVM35BothRoles": 35,
+      "buildOwnedChunks": 109,
+      "controlsProtectedFinalGuards": true
+    },
+    "references": {
+      "productApplicationReview": {
+        "path": "/tmp/readiness-pinned-main-integration-proposal/applied-review.json",
+        "sha256": "d7f9d5a2a7ea84605f980ff8030a2a5b3c5710de1a83c3315da24f6928beefc9"
+      },
+      "JS87BuildReview": {
+        "path": "/tmp/readiness-pinned-main-js8-v2/result-review.json",
+        "sha256": "fd3308cb399aee79f80d6ded2154015c91da19c895496cac68e4e95b818e1d5b"
+      },
+      "JVM35Review": {
+        "path": "/tmp/readiness-jvm35-pin-renewal/result-review.json",
+        "sha256": "76fefa1261e6fa528d753917edd8d2b44316594f95c27d0e4879a4a8de9be55a"
+      },
+      "JVM35Terminal": {
+        "path": "/tmp/readiness-jvm35-pin-renewal/TERMINAL.json",
+        "sha256": "805b760e3be2502242b345684d585d295e1fa4e0dbf68e8fec49297a7f79ad28"
+      },
+      "clean37Review": {
+        "path": "/tmp/readiness-clean37-execution/result-review.json",
+        "sha256": "4cebb17ac93b24dbe01e1144244bd6dae8333c9493dbe8c2d61da8dca254a032"
+      },
+      "clean37Result": {
+        "path": "/tmp/readiness-clean37-pair-run/pair-result.json",
+        "sha256": "1acac08970f58689d5626c5f2b82183d3d9f8c8404702a317e6a20a3ffae766e"
+      },
+      "clean177Intervals": {
+        "path": "/tmp/readiness-consolidated177-clean-recorded-intervals.json",
+        "sha256": "4b90965623c2130d9d699376fd2e37e4d4ae19f03f401bfc4133a671c23ac7d6"
+      }
+    },
+    "API": {
+      "status": "actual approved4/4 plus strict rawmetadata",
+      "terminal": {
+        "path": "/tmp/readiness-admin-timezone-execution/TERMINAL.json",
+        "sha256": "1c2240785fafefcf32d69b8849a9361e5ca8cbef1ac32d49f64d05dafc69ba11"
+      },
+      "review": {
+        "path": "/tmp/readiness-admin-timezone-execution/result-review.json",
+        "sha256": "4b5d3e9e83db5b9e3d91329ee4522be6ddc0510ad9d30b6042363f768f5c3e2e"
+      },
+      "newAcceptedIDs": [
+        "integrated-admin-fitness-household-timezone",
+        "integrated-admin-piano-household-timezone"
+      ],
+      "newCredit": 2,
+      "newTemplates": 1,
+      "bootstrapRepeatCredit": 0
+    },
+    "clean37Replay": {
+      "comparisons": 37,
+      "successfulIndependentContracts": 35,
+      "newUniqueCaseCredit": 0,
+      "reference": "6e795444c1d10533022c06067b8fc37a33d8d6dc",
+      "candidate": "e96eca15fc0e81214897d2c015da56e01de8f9a3",
+      "originalFailed37Preserved": true
+    },
+    "mixedRevision177": {
+      "cleanRecordedComparisons": 177,
+      "successfulIndependentContracts": 168,
+      "knownBaselineContractGaps": 9,
+      "newUniqueCaseCredit": 0,
+      "singleRevision": false,
+      "singleExecution": false,
+      "allAt974": false,
+      "allAtPinned0c": false
+    },
+    "limits": [
+      "35JUnitassertions only KioskSettingsGuard unit contract; new A11y/ControlServer compiled but remoteoperations/payloadMain untested",
+      "PinnedJRE21-source11-target11 proves syntax/bytecode only, notJava11API/Androidbuildcompatibility",
+      "Androidunitstubjar hasunverifiedorigin; noAPI33/device/platformproof",
+      "Networkinitializationdenied ishonestcontrol, outboundConnectExercisedfalse",
+      "JSdevice/browser unit assertions and confinedbrowserbuild do not certify physicaldevices/printers/UIdeployment",
+      "Prior certification404 and reportdatedexpectation failures remain baseline diagnostics with zerohealthycredit",
+      "Entirepinnedmain delta mapped; do not chase newlyadvancing main tip",
+      "Historical277/268/207of394187gaps is mixed-revision union, not fresh277/globalreadiness"
+    ]
   }
 }

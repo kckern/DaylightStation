@@ -3,7 +3,7 @@
   "files": [
     {
       "name": "selection.json",
-      "sha256": "ed74851acaf2e1a8576563ee75278cf143e8afe075df6a567f3fda29121135df"
+      "sha256": "37504ee6d88410abfbd3c15d2a308345fb566533bbbd4045a3d5e712885a1bcb"
     },
     {
       "name": "java-guard-runner.c",
@@ -15,7 +15,7 @@
     },
     {
       "name": "run-reviewed-jvm35.mjs",
-      "sha256": "b663ed654867070d2358dc726952fcc42a24c84cf21f320ec61d453b7d6473d3"
+      "sha256": "527c16a29f1e27b2c8b1fc40dda14ffdedee76a831928f509adc9371c05e809e"
     }
   ]
 }

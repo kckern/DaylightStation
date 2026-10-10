@@ -203,7 +203,7 @@ this event, what does it mean."
 
 | Event | Level | Meaning |
 |---|---|---|
-| `thermalPrinter.preflight.refused` | warn | Pre-flight status check found a fault before sending — job aborted, correctly reported as not-dispatched |
+| `thermalPrinter.preflight.refused` | warn | Pre-flight status check found a fault before sending — job aborted, correctly reported as not-dispatched. `faults: ['link_slow']` (with `firstReplyMs`) means the printer answered, but only after the normal window: its link is degraded — ping it against the other printer. Physical fix, not code |
 | `thermalPrinter.timeout` | error | Connect timeout; socket destroyed so it can't wedge the printer's one connection slot |
 | `thermalPrinter.open.after-abort` | warn | Connect succeeded *after* the timeout already fired — printer is slow, not unreachable; consider raising the timeout |
 | `thermalPrinter.postjob.fault` / `.unverified` / `.ok` | error/warn/info | Three-tier post-send verification; only `fault` is recorded as NOT printed — `unverified` is treated as printed (bias toward never telling a child their work is lost when it may have succeeded) |

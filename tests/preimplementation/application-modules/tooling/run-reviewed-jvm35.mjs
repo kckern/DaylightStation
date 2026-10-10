@@ -15,7 +15,7 @@ const bundlePins=JSON.parse(fs.readFileSync(path.join(bundle,'bundle-pins.json')
 for(const p of bundlePins.files)check(hash(path.join(bundle,p.name))===p.sha256,'review bundle changed: '+p.name);
 const config=JSON.parse(fs.readFileSync(path.join(bundle,'selection.json')));
 check(config.sources.length===29&&config.expectedMethods.length===35&&new Set(config.expectedMethods).size===35,'selection completeness');
-check(config.mainPin==='10d8d2107d5146bf7b147c5433c6f04b5072c777','wrong original pin');
+check(config.mainPin==='0c660f6e7851bb2bd09fcbae3e76a0f09f73d1e8','wrong original pin');
 const readGit=args=>{
  const r=spawnSync('/usr/bin/git',args,{cwd:sourceRoot,encoding:null,maxBuffer:4*1024*1024,timeout:15000,env:{PATH:'/nonexistent',GIT_CONFIG_NOSYSTEM:'1',GIT_OPTIONAL_LOCKS:'0',HOME:'/nonexistent'}});
  check(!r.error&&r.status===0,'fixed git read failed');return r.stdout;

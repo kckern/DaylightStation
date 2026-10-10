@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {fixedRunnerSelection} from './fixed-runner-selection.mjs';
 export function fixedJestConfig(profile) {
-  if(!['bots-displays-jest','media-content-jest','remaining-jest'].includes(profile))throw new Error('Unknown fixed Jest profile');
+  if(!['main-current-jest','bots-displays-jest','media-content-jest','remaining-jest'].includes(profile))throw new Error('Unknown fixed Jest profile');
   const {root,files,scratch,toolRoot}=fixedRunnerSelection(profile);
   if(JSON.parse(fs.readFileSync(path.join(toolRoot,'node_modules/jest/package.json'),'utf8')).version!=='29.7.0')throw new Error('Reviewed Jest 29.7.0 required');
   const imports=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8')).imports;

@@ -285,6 +285,14 @@ recover from the rough edges of an aging WebView.
   and `end` are local `HH:MM` (start inclusive, end exclusive; `start > end` means an
   overnight window), and the kiosk re-evaluates on a 30s timer, so a wall tablet parked on
   the menu for days crosses the boundary without a reload.
+- **Household clock, not the tablet's.** Curfew and screensaver quiet hours are read in
+  the household timezone (`system.yml` → `timezone`), which the backend serves beside the
+  piano config as `householdTimezone` (`GET /api/v1/admin/apps/piano/config`) and the
+  resolver exposes as `config.timezone`; the window math uses `Intl.DateTimeFormat` in that
+  zone (`timeWindow.js`). The tablet's own zone is a Settings toggle — on 2026-10-09 it was
+  switched to America/Chicago, the device clock ran two hours ahead, and curfew closed a
+  child's lesson at 17:00 Pacific. A missing or invalid zone falls back to the device clock
+  (fail-open). `piano.curfew.change` logs the `timeZone` it used (`null` = device clock).
 - **Click timing.** The metronome click reaches the ear late on the tablet (Bluetooth
   A2DP), so timed runs anchor the click to the grading clock and play it early by
   `timing.clickLeadMs`, which a grown-up measures with **Piano maintenance → Click

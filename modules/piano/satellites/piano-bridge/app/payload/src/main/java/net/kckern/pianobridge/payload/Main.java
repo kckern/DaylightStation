@@ -16,7 +16,7 @@ import net.kckern.pianobridge.api.ShellServices;
 public final class Main implements Payload {
 
     private static final String TAG = "PianoBridge";
-    private static final String VERSION = "p24-foreground-launch";
+    private static final String VERSION = "p25-a11y-remote";
 
     private BridgeCore core;
 

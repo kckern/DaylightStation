@@ -7,8 +7,12 @@ const MAX_BLUR_PX = 4;        // cap to prevent over-softening
 const BLUR_FACTOR_AGGRESSIVE = 2.0;
 const MAX_BLUR_PX_AGGRESSIVE = 6;
 
-// CRT threshold: only sources strictly shorter than this get the CRT; 480p itself is left clean.
-const CRT_BELOW_HEIGHT = 480;
+// CRT threshold: the CRT is for SUB-SD sources — narrower than 640 AND shorter
+// than 480. 640 wide is square-pixel SD (what a DVD's 720 becomes), so 640x360
+// and a 768x432 widescreen file stay clean; height alone put the CRT on the
+// latter (2026-10-09). 480x360 and 320x240 still get it.
+const SD_WIDTH = 640;
+const SD_HEIGHT = 480;
 
 // Timing
 const DEFAULT_STABILIZE_MS = 1500;
@@ -167,7 +171,7 @@ export function useUpscaleEffects({
     const ratio = effectiveWidth / srcDimensions.width;
 
     const isUpscaled = ratio > 1.05; // small threshold to avoid floating point issues
-    const isLowRes = srcDimensions.height < CRT_BELOW_HEIGHT;
+    const isLowRes = srcDimensions.width < SD_WIDTH && srcDimensions.height < SD_HEIGHT;
 
     const blurFactor = presetConfig.aggressive ? BLUR_FACTOR_AGGRESSIVE : BLUR_FACTOR;
     const maxBlur = presetConfig.aggressive ? MAX_BLUR_PX_AGGRESSIVE : MAX_BLUR_PX;

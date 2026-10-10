@@ -34,7 +34,7 @@
   },
   "sourceSha256": {
     "backend/src/4_api/buildMetadataRouter.mjs": "8a5d8d98041b77f2e1a016adb202be50be7bc0a09ce0dd04511ee419fdbb61d1",
-    "backend/src/app.mjs": "7401bfd01260cc611cd90fbaebf7c96a4b983a6c11f8f38f41c548c91c9bc3ec",
+    "backend/src/app.mjs": "f08938761585e6caf74582327b829fc74dbc646e84bb27ce7668fa720fcf7030",
     "backend/src/4_api/v1/routers/api.mjs": "5020d62e5d844b482943ae3136237e897a194e6246a497727830782c83055dbd",
     "backend/src/4_api/v1/routers/index.mjs": "b4441f6e40f9d380e5e4a550f1b7a77cb9caa84a5cc12742bccedcf389e49856",
     "backend/src/1_adapters/runtime/BuildMetadataSource.mjs": "66fae938a69540e01f296a1fe6c4a7d592dd654b57a324425c5f120e583af450",
@@ -46,7 +46,7 @@
     "backend/src/4_api/middleware/permissionGate.mjs": "ceca4facc2f2a9112a26fed8ce77266739714e194d2dd0ef0dbf043afe0ac406",
     "backend/src/4_api/middleware/networkTrustResolver.mjs": "aeeef49198e8e3446ce9f5f51b25b89f7b46fb0114d492840cefbda29aa88e90",
     "backend/src/4_api/v1/routers/admin/apps.mjs": "19f0a46ca8b14bc389fb095fb27a5498cca2a8a33a879bcf800aa34f751fba9e",
-    "backend/src/3_applications/admin/AppsConfigService.mjs": "3db31d08d8cf0ae9df589d21e8667178cb803494ce0feaf4b93a663e7452b924",
+    "backend/src/3_applications/admin/AppsConfigService.mjs": "c868bd0b7acbc9b0d8d320f901808e10855e49052f1b8ec6fdd14bdda7cb9d29",
     "backend/src/1_adapters/persistence/yaml/YamlAdminConfigStore.mjs": "f07a23826cbbd16f6fb2c0bab1cd5f015d9404233b2dcfe484b6c232c8737e3d",
     "backend/src/0_system/utils/FileIO.mjs": "3799031dbe7466838081149cecdf4db1cdfa490e00cccf5e9e66f31b54d8991c",
     "backend/src/4_api/v1/routers/admin/index.mjs": "6f1b5ee7381dfabe6abb6b91fc88368b0e34186051bcd5970488f1d12852cb62",
@@ -190,7 +190,7 @@
     "backend/src/4_api/v1/routers/printer.mjs": "b918109c03e1de9a2e3ee5713826523787418aefc552a31573a3f2c9f41e7793",
     "backend/src/3_applications/printer/PrinterControlService.mjs": "7a3daab931abb912eb1840cdc28387e7c1c9f1c6e5de3a4c05b32fe8141f087c",
     "backend/src/1_adapters/hardware/thermal-printer/ThermalPrinterRegistry.mjs": "a2de984ad28966c9c0958bf6b9505dc980d83dd44c6748a573d89aaa256b94f0",
-    "backend/src/1_adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs": "b849e0d60afe7372c8a9335eb348234dc55dffd1dd3156ebe0dee785ace998a2",
+    "backend/src/1_adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs": "94190fea5f91e7a5748f2d91850644606b6549205bb0d3bc91b05eec7561d647",
     "backend/src/1_adapters/hardware/thermal-printer/VirtualThermalPrinterAdapter.mjs": "3465ab8aba6a819dea307896d7360ad87fa18273ce2f21ee21ef12f38d91b3be",
     "backend/src/4_api/v1/routers/proxy.mjs": "2aeb5ad0ebe14db0fe84584ce7a88c4b14b5cbc28ffcf626d9425c5b829312f8",
     "capabilities/content-catalog/server/application/proxy/LibraryMediaCoverService.mjs": "392f954943c7fee00572b6c79f0cac879306dbd3ae2e877643af5a6663cc4e3e",
@@ -45951,10 +45951,11 @@
   "isolatedAndLiveEvidenceUnion": {
     "scope": "Separate historical-live and actual-source isolated executed coverage; source-template union only, no installed-live denominator",
     "historicalLiveEligibleTemplateLinks": 94,
-    "isolatedAdditionalEligibleTemplateLinks": 112,
-    "unionEligibleTemplatesWithExecutedCaseLinks": 206,
-    "unionEligibleTemplatesWithoutExecutedCaseLinks": 188,
+    "isolatedAdditionalEligibleTemplateLinks": 113,
+    "unionEligibleTemplatesWithExecutedCaseLinks": 207,
+    "unionEligibleTemplatesWithoutExecutedCaseLinks": 187,
     "isolatedOnlyTemplates": [
+      "/api/v1/admin/apps/:appId/config",
       "/api/v1/automotive/places",
       "/api/v1/automotive/vehicles/:id/documents",
       "/api/v1/automotive/vehicles/:id/service",
@@ -46071,8 +46072,8 @@
     "counts": {
       "historicalLiveUniqueCases": 134,
       "historicalLiveIndependentContracts": 125,
-      "isolatedUniqueAcceptedCaseIds": 155,
-      "isolatedAcceptedOccurrences": 155,
+      "isolatedUniqueAcceptedCaseIds": 157,
+      "isolatedAcceptedOccurrences": 157,
       "isolatedReplayIdsAlreadyLive": [
         "health-catalog-food-not-found",
         "health-catalog-missing-query",
@@ -46136,6 +46137,8 @@
         "gaming-filtered-experience-catalog",
         "gaming-party-catalog",
         "gaming-populated-environment",
+        "integrated-admin-fitness-household-timezone",
+        "integrated-admin-piano-household-timezone",
         "ledger-household-device-bounds",
         "ledger-household-plays",
         "ledger-household-time-limit",
@@ -46232,11 +46235,11 @@
         "timeline-lifelog-day",
         "timeline-lifelog-sources"
       ],
-      "unionUniqueAcceptedCaseIds": 275,
-      "unionIndependentContracts": 266,
+      "unionUniqueAcceptedCaseIds": 277,
+      "unionIndependentContracts": 268,
       "newLiveTemplates": 2,
-      "isolatedDistinctTemplates": 119,
-      "newIsolatedTemplates": 112,
+      "isolatedDistinctTemplates": 120,
+      "newIsolatedTemplates": 113,
       "pendingNext15": {
         "cases": 15,
         "terminalResult": {
@@ -46314,6 +46317,21 @@
         ],
         "noHTTPRerun": true,
         "originalFailedOracleSyntaxComparisonsPreserved": true
+      },
+      "completedAdminTimezone": {
+        "executedCases": 4,
+        "acceptedCredit": 2,
+        "successfulIndependentContracts": 2,
+        "acceptedParityTemplates": 1,
+        "bootstrapRepeatCredit": 0,
+        "terminal": {
+          "path": "/tmp/readiness-admin-timezone-execution/TERMINAL.json",
+          "sha256": "1c2240785fafefcf32d69b8849a9361e5ca8cbef1ac32d49f64d05dafc69ba11"
+        },
+        "review": {
+          "path": "/tmp/readiness-admin-timezone-execution/result-review.json",
+          "sha256": "4b5d3e9e83db5b9e3d91329ee4522be6ddc0510ad9d30b6042363f768f5c3e2e"
+        }
       }
     },
     "cases": [
@@ -48405,6 +48423,66 @@
         },
         "correctedManifestWasUsedDuringHTTP": false,
         "noHTTPRerun": true
+      },
+      {
+        "id": "integrated-admin-piano-household-timezone",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/admin/apps/:appId/config",
+        "declarationIds": [
+          "decl-6516e19799b120ecdc562fd0-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-e96eca-reviewed-mapped-product-integration",
+        "fixtureSha256": "12f8f4e977ff762fe15a8ebcaf970cf02634e542b295f7bd6cbd7139db8ff42a",
+        "manifestSha256": "ebd7c296787978a4443ac92a2742024f96859c572e90b70b83c07fa97ac39635",
+        "result": {
+          "path": "/tmp/readiness-admin-timezone-pair-run/pair-result.json",
+          "sha256": "1c7d8b3f37315413cde7a2c25faa029d1566da18becdc52ed14a5de867ab7585"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-timezone-execution/proof.json",
+          "sha256": "c68f2fec1ff411fca3fe720acd93b0d3410f9f745d091ec5148e85bee6a7c02f"
+        },
+        "mandatoryMetadataSupplement": {
+          "path": "/tmp/readiness-admin-timezone-pack/actual-metadata-result.json",
+          "sha256": "12c8f0529e69a7fca6d9354a97334501d303ea0e41e4a0ef0ee120ddca4cb5bb"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-timezone-execution/result-review.json",
+          "sha256": "4b5d3e9e83db5b9e3d91329ee4522be6ddc0510ad9d30b6042363f768f5c3e2e"
+        }
+      },
+      {
+        "id": "integrated-admin-fitness-household-timezone",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/admin/apps/:appId/config",
+        "declarationIds": [
+          "decl-6516e19799b120ecdc562fd0-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-e96eca-reviewed-mapped-product-integration",
+        "fixtureSha256": "12f8f4e977ff762fe15a8ebcaf970cf02634e542b295f7bd6cbd7139db8ff42a",
+        "manifestSha256": "ebd7c296787978a4443ac92a2742024f96859c572e90b70b83c07fa97ac39635",
+        "result": {
+          "path": "/tmp/readiness-admin-timezone-pair-run/pair-result.json",
+          "sha256": "1c7d8b3f37315413cde7a2c25faa029d1566da18becdc52ed14a5de867ab7585"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-timezone-execution/proof.json",
+          "sha256": "c68f2fec1ff411fca3fe720acd93b0d3410f9f745d091ec5148e85bee6a7c02f"
+        },
+        "mandatoryMetadataSupplement": {
+          "path": "/tmp/readiness-admin-timezone-pack/actual-metadata-result.json",
+          "sha256": "12c8f0529e69a7fca6d9354a97334501d303ea0e41e4a0ef0ee120ddca4cb5bb"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-timezone-execution/result-review.json",
+          "sha256": "4b5d3e9e83db5b9e3d91329ee4522be6ddc0510ad9d30b6042363f768f5c3e2e"
+        }
       }
     ],
     "infrastructure": {
@@ -49102,5 +49180,43 @@
       "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
       "denominatorContribution": "new-template"
     }
-  ]
+  ],
+  "pinnedMainSourceRenewal": {
+    "schema": "bounded-reviewed-sourcepin-renewal/v1",
+    "pinnedMain": "0c660f6e7851bb2bd09fcbae3e76a0f09f73d1e8",
+    "candidateCommit": "e96eca15fc0e81214897d2c015da56e01de8f9a3",
+    "candidateSourceState": "uncommitted exact reviewed mapped29 productchanges",
+    "applicationReview": {
+      "path": "/tmp/readiness-pinned-main-integration-proposal/applied-review.json",
+      "sha256": "d7f9d5a2a7ea84605f980ff8030a2a5b3c5710de1a83c3315da24f6928beefc9"
+    },
+    "changes": [
+      {
+        "path": "backend/src/3_applications/admin/AppsConfigService.mjs",
+        "oldFactsSha256": "3db31d08d8cf0ae9df589d21e8667178cb803494ce0feaf4b93a663e7452b924",
+        "oldMatrixSha256": "3db31d08d8cf0ae9df589d21e8667178cb803494ce0feaf4b93a663e7452b924",
+        "newSha256": "c868bd0b7acbc9b0d8d320f901808e10855e49052f1b8ec6fdd14bdda7cb9d29",
+        "delegateImpact": "New readonly injected timezone getter adds adjacent householdTimezone field on configread; guardedAPI4 verifies explicitconfiguredzone. Writes methods unchanged."
+      },
+      {
+        "path": "backend/src/app.mjs",
+        "oldFactsSha256": "7401bfd01260cc611cd90fbaebf7c96a4b983a6c11f8f38f41c548c91c9bc3ec",
+        "oldMatrixSha256": "7401bfd01260cc611cd90fbaebf7c96a4b983a6c11f8f38f41c548c91c9bc3ec",
+        "newSha256": "f08938761585e6caf74582327b829fc74dbc646e84bb27ce7668fa720fcf7030",
+        "delegateImpact": "Exactly reviewed Admin getter injection reads existing ConfigService timezone; other cutover composition preserved. No auth/session/provider/device permission change."
+      },
+      {
+        "path": "backend/src/1_adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs",
+        "oldFactsSha256": "b849e0d60afe7372c8a9335eb348234dc55dffd1dd3156ebe0dee785ace998a2",
+        "oldMatrixSha256": "b849e0d60afe7372c8a9335eb348234dc55dffd1dd3156ebe0dee785ace998a2",
+        "newSha256": "94190fea5f91e7a5748f2d91850644606b6549205bb0d3bc91b05eec7561d647",
+        "delegateImpact": "Reviewed late-reply preflight changes physical print dispatch; publicstatus default lateGrace0 and existing external/device exclusions remain. No finite-safe reclassification or physicalprinter evidence."
+      }
+    ],
+    "broadEffectFactsUnchanged": true,
+    "broadGETCount": 658,
+    "conditionalPotentialTemplates": 394,
+    "historicalCaptureCommandSourceStateScopePreserved": true,
+    "notFreshDeclarationCapture": true
+  }
 }

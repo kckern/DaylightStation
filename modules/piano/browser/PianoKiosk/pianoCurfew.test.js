@@ -34,6 +34,15 @@ describe('isCurfewActive', () => {
     expect(isCurfewActive(at(15), school)).toBe(false);
   });
 
+  // 2026-10-09: the tablet's Android zone was set to Chicago and curfew began
+  // at 17:00 Pacific. The household zone, not the device's, decides.
+  it('evaluates the window in the household timezone when one is given', () => {
+    const instant = new Date(Date.UTC(2026, 9, 10, 0, 15, 0)); // 17:15 PDT / 19:15 CDT
+    expect(isCurfewActive(instant, evening, 'America/Los_Angeles')).toBe(false);
+    expect(isCurfewActive(instant, evening, 'America/Chicago')).toBe(true);
+    expect(isCurfewActive(instant, { ...evening, enabled: false }, 'America/Chicago')).toBe(false);
+  });
+
   // Off by default in code: the household's actual cut-off is config-driven
   // (data/household/piano/config.yml → curfew:), so a piano with no curfew
   // block never greys out.

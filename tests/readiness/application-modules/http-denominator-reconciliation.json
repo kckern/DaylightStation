@@ -44,7 +44,7 @@
     "backend/src/4_api/v1/routers/test.mjs": "ff9f2f49f8df95fbec2747ddd6a26f06e0b3da07c2bc5a86ecec620861a22378",
     "backend/src/4_api/v1/routers/tts.mjs": "f3c0465ee6f7b0b28c5939884fe52182dc669b792153a86c092427daeae18699",
     "backend/src/4_api/v1/routers/wikipedia.mjs": "097c52dd88c17d6bb208f25ced29e87848fc2ce05d67c62b0ceaa9a3ca9fe540",
-    "backend/src/app.mjs": "7401bfd01260cc611cd90fbaebf7c96a4b983a6c11f8f38f41c548c91c9bc3ec",
+    "backend/src/app.mjs": "f08938761585e6caf74582327b829fc74dbc646e84bb27ce7668fa720fcf7030",
     "capabilities/agent-runtime/server/api/createAgentMemoryRouter.mjs": "e00b67bb3f77295d8aa0063ff68f32364f3128e64842459f86e32285a6bd9660",
     "capabilities/agent-runtime/server/api/createAgentMetaRouter.mjs": "364efdc02eb38255553845f9403d244c839b027e49ba9393efa2506fc06a13c1",
     "capabilities/agent-runtime/server/api/mountAgentHttp.mjs": "c112a3e3df74d0bec08e766f92c990f7b2e69712bc386e64ec54d8397eca9f3f",
@@ -21631,5 +21631,43 @@
       "path": "/tmp/readiness-school-fitness-standing-group/sourceguards.json",
       "sha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398"
     }
+  },
+  "pinnedMainSourceRenewal": {
+    "schema": "bounded-reviewed-sourcepin-renewal/v1",
+    "pinnedMain": "0c660f6e7851bb2bd09fcbae3e76a0f09f73d1e8",
+    "candidateCommit": "e96eca15fc0e81214897d2c015da56e01de8f9a3",
+    "candidateSourceState": "uncommitted exact reviewed mapped29 productchanges",
+    "applicationReview": {
+      "path": "/tmp/readiness-pinned-main-integration-proposal/applied-review.json",
+      "sha256": "d7f9d5a2a7ea84605f980ff8030a2a5b3c5710de1a83c3315da24f6928beefc9"
+    },
+    "changes": [
+      {
+        "path": "backend/src/3_applications/admin/AppsConfigService.mjs",
+        "oldFactsSha256": "3db31d08d8cf0ae9df589d21e8667178cb803494ce0feaf4b93a663e7452b924",
+        "oldMatrixSha256": "3db31d08d8cf0ae9df589d21e8667178cb803494ce0feaf4b93a663e7452b924",
+        "newSha256": "c868bd0b7acbc9b0d8d320f901808e10855e49052f1b8ec6fdd14bdda7cb9d29",
+        "delegateImpact": "New readonly injected timezone getter adds adjacent householdTimezone field on configread; guardedAPI4 verifies explicitconfiguredzone. Writes methods unchanged."
+      },
+      {
+        "path": "backend/src/app.mjs",
+        "oldFactsSha256": "7401bfd01260cc611cd90fbaebf7c96a4b983a6c11f8f38f41c548c91c9bc3ec",
+        "oldMatrixSha256": "7401bfd01260cc611cd90fbaebf7c96a4b983a6c11f8f38f41c548c91c9bc3ec",
+        "newSha256": "f08938761585e6caf74582327b829fc74dbc646e84bb27ce7668fa720fcf7030",
+        "delegateImpact": "Exactly reviewed Admin getter injection reads existing ConfigService timezone; other cutover composition preserved. No auth/session/provider/device permission change."
+      },
+      {
+        "path": "backend/src/1_adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs",
+        "oldFactsSha256": "b849e0d60afe7372c8a9335eb348234dc55dffd1dd3156ebe0dee785ace998a2",
+        "oldMatrixSha256": "b849e0d60afe7372c8a9335eb348234dc55dffd1dd3156ebe0dee785ace998a2",
+        "newSha256": "94190fea5f91e7a5748f2d91850644606b6549205bb0d3bc91b05eec7561d647",
+        "delegateImpact": "Reviewed late-reply preflight changes physical print dispatch; publicstatus default lateGrace0 and existing external/device exclusions remain. No finite-safe reclassification or physicalprinter evidence."
+      }
+    ],
+    "broadEffectFactsUnchanged": true,
+    "broadGETCount": 658,
+    "conditionalPotentialTemplates": 394,
+    "historicalCaptureCommandSourceStateScopePreserved": true,
+    "notFreshDeclarationCapture": true
   }
 }

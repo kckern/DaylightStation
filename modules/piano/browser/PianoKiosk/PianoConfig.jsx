@@ -16,13 +16,20 @@ const ActivePianoContext = createContext(null);
  */
 export function PianoConfigProvider({ children }) {
   const [raw, setRaw] = useState(null); // null = loading
+  // Household IANA zone, served beside the file (not inside it). Curfew and
+  // quiet hours are read on this clock, never the tablet's (2026-10-09).
+  const [timezone, setTimezone] = useState(null);
   const [generation, setGeneration] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     const logger = getLogger().child({ component: 'piano-config' });
     DaylightAPI('api/v1/admin/apps/piano/config')
-      .then((res) => { if (!cancelled) setRaw(res?.parsed ?? {}); })
+      .then((res) => {
+        if (cancelled) return;
+        setTimezone(typeof res?.householdTimezone === 'string' ? res.householdTimezone : null);
+        setRaw(res?.parsed ?? {});
+      })
       .catch((err) => { logger.warn('piano.config-failed', { error: err.message }); if (!cancelled) setRaw({}); });
     return () => { cancelled = true; };
   }, [generation]);
@@ -35,14 +42,15 @@ export function PianoConfigProvider({ children }) {
   const value = useMemo(() => ({
     loading: raw === null,
     raw: raw ?? {},
+    timezone,
     pianos: derivePianos(raw),
     reload,
-  }), [raw, reload]);
+  }), [raw, timezone, reload]);
 
   return <RosterContext.Provider value={value}>{children}</RosterContext.Provider>;
 }
 
-/** Household roster: { loading, raw, pianos:[{id,label}], reload() }. */
+/** Household roster: { loading, raw, timezone, pianos:[{id,label}], reload() }. */
 // eslint-disable-next-line react-refresh/only-export-components -- usePianoRoster is co-located with its Context/Provider (standard pattern); 3 consumers, splitting out of scope for a lint pass
 export function usePianoRoster() {
   const ctx = useContext(RosterContext);
@@ -64,8 +72,8 @@ export function ActivePianoProvider({ pianoId, basePath, config, children }) {
   const value = useMemo(() => ({
     pianoId,
     basePath: basePath ?? `/piano/${pianoId}`,
-    config: config || resolvePianoConfig(roster?.raw, pianoId),
-  }), [pianoId, basePath, config, roster?.raw]);
+    config: config || resolvePianoConfig(roster?.raw, pianoId, { timezone: roster?.timezone }),
+  }), [pianoId, basePath, config, roster?.raw, roster?.timezone]);
   return <ActivePianoContext.Provider value={value}>{children}</ActivePianoContext.Provider>;
 }
 

@@ -24,10 +24,11 @@ function logger() {
  *
  * @param {Date} now
  * @param {{start?: string, end?: string}|null} quietHours
+ * @param {string} [timeZone] household IANA zone; device-local when absent
  * @returns {boolean}
  */
-export function isWithinQuietHours(now, quietHours) {
-  return isWithinWindow(now, quietHours);
+export function isWithinQuietHours(now, quietHours, timeZone) {
+  return isWithinWindow(now, quietHours, timeZone);
 }
 
 /**
@@ -99,6 +100,8 @@ const POLL_INTERVAL_MS = 15_000;
  * @param {Array}    args.noteHistory      - grows on each note-on (= a fresh note)
  * @param {number}   [args.timeoutMinutes]
  * @param {{start?:string,end?:string}|null} [args.quietHours]
+ * @param {string|null} [args.timeZone] household IANA zone the quiet hours are
+ *   read in (config.timezone) — never the tablet's own, which Settings can change.
  * @param {boolean}  [args.keepAlive]        - while true, hold the screen awake
  *   (a performance is playing). Distinct from activeNotes/noteHistory activity:
  *   Listen-mode playback performs via timestamped sendNoteAt and never churns
@@ -106,7 +109,7 @@ const POLL_INTERVAL_MS = 15_000;
  *   performance is underway. Resets/holds the idle timer like continuous
  *   activity; normal timeout behavior resumes once it goes false.
  */
-export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeoutMinutes, quietHours, offCooldownMinutes = 30, keepAlive = false }) {
+export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeoutMinutes, quietHours, timeZone = null, offCooldownMinutes = 30, keepAlive = false }) {
   const enabled = !!deviceId && timeoutMinutes > 0;
   const held = usePianoWakeLockState();
   const keepAliveRef = useRef(keepAlive);
@@ -120,6 +123,8 @@ export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeou
   heldRef.current = held;
   const quietRef = useRef(quietHours);
   quietRef.current = quietHours;
+  const tzRef = useRef(timeZone);
+  tzRef.current = timeZone;
 
   // Manual screen-off MIDI-wake suppression. Armed by the Who's-Playing button
   // (via PianoScreenControlContext); cleared by a touch or offCooldownMinutes of
@@ -181,7 +186,7 @@ export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeou
     // While the manual screen-off cooldown is armed, MIDI must NOT wake the
     // screen — but keep refreshing lastActivity so the "no input" clock (below)
     // only elapses once the player actually stops.
-    if (enabled && !midiSuppressedRef.current && !serverOffRef.current && !isWithinQuietHours(new Date(), quietRef.current)) setScreen(true);
+    if (enabled && !midiSuppressedRef.current && !serverOffRef.current && !isWithinQuietHours(new Date(), quietRef.current, tzRef.current)) setScreen(true);
   }, [activeNotes, historyLen, enabled, setScreen]);
 
   // Touch/keypress: bump activity and wake (unless quiet hours).
@@ -204,7 +209,7 @@ export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeou
             .catch((err) => logger().warn('piano.screen-off-cooldown.release-failed', { deviceId, error: err.message }));
         }
       }
-      if (!isWithinQuietHours(new Date(), quietRef.current)) setScreen(true);
+      if (!isWithinQuietHours(new Date(), quietRef.current, tzRef.current)) setScreen(true);
     };
     window.addEventListener('pointerdown', bump, true);
     window.addEventListener('keydown', bump, true);
@@ -247,7 +252,7 @@ export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeou
       // the idle clock AND quiet hours. Refresh activity so that when the window
       // lapses the screen gets a full idle timeout, not an instant sleep.
       if (serverOnRef.current) { lastActivityRef.current = Date.now(); return; }
-      if (isWithinQuietHours(new Date(), quietRef.current)) { setScreen(false); return; }
+      if (isWithinQuietHours(new Date(), quietRef.current, tzRef.current)) { setScreen(false); return; }
       if (Date.now() - lastActivityRef.current >= thresholdMs) setScreen(false);
     }, POLL_INTERVAL_MS);
     return () => clearInterval(id);

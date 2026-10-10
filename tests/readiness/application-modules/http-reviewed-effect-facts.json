@@ -62,7 +62,7 @@
     "backend/src/5_composition/modules/messagingApi.mjs": "cb622bb7c2f7c5c2688c44b49b8a5ea56352fdd618d97b0cf7c7ea704e1b000b",
     "backend/src/4_api/v1/routers/api.mjs": "5020d62e5d844b482943ae3136237e897a194e6246a497727830782c83055dbd",
     "backend/src/4_api/v1/routers/notification.mjs": "d9e74e59895aef4178f00848f8a0e0dc81834439b6f202b3de3d9ccc16f8c6e8",
-    "backend/src/app.mjs": "7401bfd01260cc611cd90fbaebf7c96a4b983a6c11f8f38f41c548c91c9bc3ec",
+    "backend/src/app.mjs": "f08938761585e6caf74582327b829fc74dbc646e84bb27ce7668fa720fcf7030",
     "backend/src/4_api/v1/routers/test.mjs": "ff9f2f49f8df95fbec2747ddd6a26f06e0b3da07c2bc5a86ecec620861a22378",
     "backend/src/4_api/v1/routers/index.mjs": "b4441f6e40f9d380e5e4a550f1b7a77cb9caa84a5cc12742bccedcf389e49856",
     "backend/src/4_api/v1/routers/tts.mjs": "f3c0465ee6f7b0b28c5939884fe52182dc669b792153a86c092427daeae18699",
@@ -228,7 +228,7 @@
     "modules/school/server/application/usecases/GetTranscript.mjs": "50e756e76d98607c69200dbc2ec1a89fa6c5ac52f5e8e789b53a864de9395309",
     "modules/school/server/rendering/reports/TranscriptRenderer.mjs": "9f428ecc96c105ed682aeddc8bea3df034cd49321a9863d0dc2974c3e5520561",
     "modules/school/server/application/usecases/GetLearnerRecord.mjs": "e1dca45e4103f68fdb570650b45d2b70e9d3304f07f457dfff8544dfe85295a8",
-    "backend/src/3_applications/admin/AppsConfigService.mjs": "3db31d08d8cf0ae9df589d21e8667178cb803494ce0feaf4b93a663e7452b924",
+    "backend/src/3_applications/admin/AppsConfigService.mjs": "c868bd0b7acbc9b0d8d320f901808e10855e49052f1b8ec6fdd14bdda7cb9d29",
     "backend/src/1_adapters/persistence/yaml/YamlAdminConfigStore.mjs": "f07a23826cbbd16f6fb2c0bab1cd5f015d9404233b2dcfe484b6c232c8737e3d",
     "backend/src/4_api/middleware/tokenResolver.mjs": "8e22c380069827bb44de9972597be3b9c45abf27b7445a84d5ce98d2b654ec5f",
     "backend/src/1_adapters/auth/DataServiceAuthSessionStore.mjs": "d7f8be8196aca12fa7b764e933d9b9cfe20789ec0f1d0de24a88660873a510ce",
@@ -301,7 +301,7 @@
     "backend/src/1_adapters/admin/AdminImageFileStore.mjs": "1f1d0b9850c1d2e665e95f4759e0faeb91519c0abe2b53bea31cb61031bc440d",
     "backend/src/4_api/v1/routers/admin/images.mjs": "709fef1558efa9b241cb9356cb0d30d5e26f1a35d0476d4fa3f927e82c1d7423",
     "backend/src/1_adapters/hardware/thermal-printer/ThermalPrinterRegistry.mjs": "a2de984ad28966c9c0958bf6b9505dc980d83dd44c6748a573d89aaa256b94f0",
-    "backend/src/1_adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs": "b849e0d60afe7372c8a9335eb348234dc55dffd1dd3156ebe0dee785ace998a2",
+    "backend/src/1_adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs": "94190fea5f91e7a5748f2d91850644606b6549205bb0d3bc91b05eec7561d647",
     "backend/src/1_adapters/hardware/thermal-printer/VirtualThermalPrinterAdapter.mjs": "3465ab8aba6a819dea307896d7360ad87fa18273ce2f21ee21ef12f38d91b3be",
     "backend/src/1_adapters/persistence/yaml/presentation/YamlPresentationCatalog.mjs": "7e2d04bf0648af826a4bcbeb4b7ee5594299c1021116c05a466acfa82b2fd671",
     "backend/src/3_applications/presentation/GetPublicPresentationCatalog.mjs": "32959ded89fca9e66ee9251516e7116a30df4c4708f3e4a3e51d0dd5cdcb1fa9",
@@ -18723,5 +18723,43 @@
       "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
       "denominatorContribution": "new-template"
     }
-  ]
+  ],
+  "pinnedMainSourceRenewal": {
+    "schema": "bounded-reviewed-sourcepin-renewal/v1",
+    "pinnedMain": "0c660f6e7851bb2bd09fcbae3e76a0f09f73d1e8",
+    "candidateCommit": "e96eca15fc0e81214897d2c015da56e01de8f9a3",
+    "candidateSourceState": "uncommitted exact reviewed mapped29 productchanges",
+    "applicationReview": {
+      "path": "/tmp/readiness-pinned-main-integration-proposal/applied-review.json",
+      "sha256": "d7f9d5a2a7ea84605f980ff8030a2a5b3c5710de1a83c3315da24f6928beefc9"
+    },
+    "changes": [
+      {
+        "path": "backend/src/3_applications/admin/AppsConfigService.mjs",
+        "oldFactsSha256": "3db31d08d8cf0ae9df589d21e8667178cb803494ce0feaf4b93a663e7452b924",
+        "oldMatrixSha256": "3db31d08d8cf0ae9df589d21e8667178cb803494ce0feaf4b93a663e7452b924",
+        "newSha256": "c868bd0b7acbc9b0d8d320f901808e10855e49052f1b8ec6fdd14bdda7cb9d29",
+        "delegateImpact": "New readonly injected timezone getter adds adjacent householdTimezone field on configread; guardedAPI4 verifies explicitconfiguredzone. Writes methods unchanged."
+      },
+      {
+        "path": "backend/src/app.mjs",
+        "oldFactsSha256": "7401bfd01260cc611cd90fbaebf7c96a4b983a6c11f8f38f41c548c91c9bc3ec",
+        "oldMatrixSha256": "7401bfd01260cc611cd90fbaebf7c96a4b983a6c11f8f38f41c548c91c9bc3ec",
+        "newSha256": "f08938761585e6caf74582327b829fc74dbc646e84bb27ce7668fa720fcf7030",
+        "delegateImpact": "Exactly reviewed Admin getter injection reads existing ConfigService timezone; other cutover composition preserved. No auth/session/provider/device permission change."
+      },
+      {
+        "path": "backend/src/1_adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs",
+        "oldFactsSha256": "b849e0d60afe7372c8a9335eb348234dc55dffd1dd3156ebe0dee785ace998a2",
+        "oldMatrixSha256": "b849e0d60afe7372c8a9335eb348234dc55dffd1dd3156ebe0dee785ace998a2",
+        "newSha256": "94190fea5f91e7a5748f2d91850644606b6549205bb0d3bc91b05eec7561d647",
+        "delegateImpact": "Reviewed late-reply preflight changes physical print dispatch; publicstatus default lateGrace0 and existing external/device exclusions remain. No finite-safe reclassification or physicalprinter evidence."
+      }
+    ],
+    "broadEffectFactsUnchanged": true,
+    "broadGETCount": 658,
+    "conditionalPotentialTemplates": 394,
+    "historicalCaptureCommandSourceStateScopePreserved": true,
+    "notFreshDeclarationCapture": true
+  }
 }
