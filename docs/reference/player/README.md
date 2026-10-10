@@ -255,6 +255,15 @@ framework — they are the primary tool for diagnosing a stall. Key events:
 | `crt.frames-skipped` | Frames the CRT canvas never painted (see below) |
 | `crt.renderer-created` / `crt.stopped` | CRT renderer instance lifecycle; `crt.stopped` carries that instance's `drawn` / `skipped` totals |
 
+### When the CRT applies
+
+`useUpscaleEffects` (preset `auto`) puts the CRT on **sub-SD** sources only:
+narrower than 640 **and** shorter than 480. 640 wide is square-pixel SD, so
+640×360 and widescreen SD like 768×432 play clean; 480×360 and 320×240 get the
+CRT. It used to be height alone (< 480), which put the CRT on a modern 768×432
+kids' show (2026-10-09). A menu item, play or queue can override with
+`upscaleEffects: none | blur-only | crt-only | aggressive`.
+
 ### `crt.frames-skipped` — presentation drops the decoder cannot see
 
 Under the CRT shader the `<video>` is hidden and what the eye sees is a WebGL
