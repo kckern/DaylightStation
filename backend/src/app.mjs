@@ -7008,6 +7008,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
   const appsConfigService = new AppsConfigService({
     configStore: adminConfigStore,
+    // Household clock for kiosk time windows (piano curfew / quiet hours).
+    getHouseholdTimezone: () => configService.getTimezone?.() || null,
     logger: adminApiLogger.child?.({ submodule: 'apps' }) || adminApiLogger
   });
   const schedulerAdminService = new SchedulerAdminService({

@@ -29,4 +29,11 @@ describe('isWithinQuietHours', () => {
     expect(isWithinQuietHours(at(8, 59), q)).toBe(false);
     expect(isWithinQuietHours(at(23), q)).toBe(false);
   });
+
+  it('evaluates quiet hours in the household timezone when one is given', () => {
+    const instant = new Date(Date.UTC(2026, 9, 10, 4, 45, 0)); // 21:45 PDT / 23:45 CDT
+    const q = { start: '22:00', end: '07:00' };
+    expect(isWithinQuietHours(instant, q, 'America/Los_Angeles')).toBe(false);
+    expect(isWithinQuietHours(instant, q, 'America/Chicago')).toBe(true);
+  });
 });

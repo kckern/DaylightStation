@@ -12,6 +12,7 @@ import { __clearPianoListCache } from './usePianoList.js';
 
 const navigate = vi.fn();
 let curfewConfig;
+let householdTimezone;
 let activityResponse;
 
 vi.mock('react-router-dom', async () => {
@@ -23,7 +24,7 @@ vi.mock('./PianoConfig.jsx', () => ({
   usePianoKioskConfig: () => ({
     pianoId: 'test-piano',
     basePath: '/piano',
-    config: { keyboard: { startNote: 21, endNote: 108 }, curfew: curfewConfig },
+    config: { keyboard: { startNote: 21, endNote: 108 }, curfew: curfewConfig, timezone: householdTimezone },
   }),
 }));
 vi.mock('./PianoUserContext.jsx', () => ({ usePianoUser: () => ({ setCurrentUser: () => {} }) }));
@@ -54,6 +55,7 @@ beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   navigate.mockClear();
   curfewConfig = CURFEW;
+  householdTimezone = undefined;
   activityResponse = ACTIVITY;
   __clearPianoListCache();
   localStorage.clear();
@@ -129,5 +131,22 @@ describe('PianoMenu under curfew', () => {
     curfewConfig = undefined;
     renderMenu();
     expect(tiles().filter((t) => t.disabled)).toHaveLength(2);
+  });
+
+  // 2026-10-09: the tablet's Android zone was set to Chicago, so the device
+  // clock read 19:15 while the household's was 17:15 and the menu went dark on
+  // a child's lesson. The served household zone decides, not the tablet's.
+  it('reads the household timezone, not the device clock', () => {
+    vi.setSystemTime(new Date(Date.UTC(2026, 9, 10, 0, 15, 0))); // 17:15 PDT / 19:15 CDT
+    householdTimezone = 'America/Los_Angeles';
+    renderMenu();
+    expect(tiles().filter((t) => t.disabled)).toHaveLength(2);
+  });
+
+  it('the same instant under a Chicago household zone IS curfew', () => {
+    vi.setSystemTime(new Date(Date.UTC(2026, 9, 10, 0, 15, 0)));
+    householdTimezone = 'America/Chicago';
+    renderMenu();
+    expect(tiles().every((t) => t.disabled)).toBe(true);
   });
 });

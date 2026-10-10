@@ -23,11 +23,13 @@ export const CURFEW_DEFAULTS = { enabled: false, start: '19:00', end: '06:00' };
  *
  * @param {Date} now
  * @param {{enabled?: boolean, start?: string, end?: string}|null} curfew
+ * @param {string} [timeZone] household IANA zone (config.timezone); the window
+ *   is read on the household clock, never the tablet's — see timeWindow.js.
  * @returns {boolean}
  */
-export function isCurfewActive(now, curfew) {
+export function isCurfewActive(now, curfew, timeZone) {
   if (!curfew || curfew.enabled === false) return false;
-  return isWithinWindow(now, curfew);
+  return isWithinWindow(now, curfew, timeZone);
 }
 
 /**

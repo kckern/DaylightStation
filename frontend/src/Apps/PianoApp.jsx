@@ -151,6 +151,8 @@ function ScreensaverDriver() {
     noteHistory,
     timeoutMinutes: config.screensaver?.timeoutMinutes,
     quietHours: config.screensaver?.quietHours,
+    // Household clock, not the tablet's (2026-10-09 Chicago-zone incident).
+    timeZone: config.timezone,
     offCooldownMinutes: config.screensaver?.offCooldownMinutes,
     keepAlive: playing,
   });
@@ -311,8 +313,13 @@ function ActivePiano({ pianoId: pianoIdProp, basePath: basePathProp }) {
   const params = useParams();
   const pianoId = pianoIdProp ?? params.pianoId;
   const basePath = basePathProp ?? `/piano/${pianoId}`;
-  const { raw } = usePianoRoster();
-  const config = useMemo(() => resolvePianoConfig(raw, pianoId), [raw, pianoId]);
+  const { raw, timezone } = usePianoRoster();
+  // The household zone rides along so curfew/quiet hours read the house clock,
+  // not the tablet's (2026-10-09: tablet switched to Chicago, curfew at 17:00 PT).
+  const config = useMemo(
+    () => resolvePianoConfig(raw, pianoId, { timezone }),
+    [raw, pianoId, timezone],
+  );
 
   return (
     <ActivePianoProvider pianoId={pianoId} basePath={basePath} config={config}>

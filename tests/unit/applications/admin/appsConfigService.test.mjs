@@ -105,3 +105,28 @@ describe('AppsConfigService — stale-map write guard', () => {
     expect(() => service.writeAppConfig('not-a-real-app', { parsed: {} })).toThrow();
   });
 });
+
+// 2026-10-09: the piano kiosk read its curfew on the TABLET's clock, and the
+// tablet's Android zone had been changed to Chicago. The kiosk now gets the
+// household zone from the same response it reads its config from — served
+// beside `parsed`, never inside it, so a kiosk write-back can't bake it into
+// the file.
+describe('AppsConfigService — household timezone on read', () => {
+  it('serves householdTimezone beside the parsed file', () => {
+    write('household/piano/config.yml', 'curfew:\n  enabled: true\n');
+    const svc = new AppsConfigService({
+      configStore: new YamlAdminConfigStore({ dataRoot }),
+      getHouseholdTimezone: () => 'America/Los_Angeles',
+      logger: { info() {}, warn() {}, error() {} },
+    });
+    const res = svc.readAppConfig('piano');
+    expect(res.householdTimezone).toBe('America/Los_Angeles');
+    expect(res.parsed).toEqual({ curfew: { enabled: true } });
+    expect(res.raw).not.toContain('America/Los_Angeles');
+  });
+
+  it('serves null when no timezone source is wired', () => {
+    write('household/piano/config.yml', 'curfew:\n  enabled: true\n');
+    expect(service.readAppConfig('piano').householdTimezone).toBeNull();
+  });
+});

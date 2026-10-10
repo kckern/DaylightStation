@@ -177,8 +177,16 @@ export function derivePianos(raw) {
 // 24-tile grid that must not scroll. 16 is the remaining headroom.
 const SHORTLIST_MAX = 16;
 
-/** Resolve one piano's effective config: per-piano values override shared, over defaults. */
-export function resolvePianoConfig(raw, pianoId) {
+/**
+ * Resolve one piano's effective config: per-piano values override shared, over defaults.
+ *
+ * `context.timezone` is the HOUSEHOLD IANA zone the server serves beside the
+ * file (GET admin/apps/piano/config → householdTimezone). Curfew and screensaver
+ * quiet hours are read on that clock, not the tablet's (2026-10-09: the tablet
+ * was switched to Chicago and curfew began at 17:00 Pacific). Null = not served;
+ * the windows then fall back to the device clock.
+ */
+export function resolvePianoConfig(raw, pianoId, context = {}) {
   const shared = raw || {};
   const pianos = shared.pianos || {};
   // 'default' (the synthesized single piano) inherits straight from shared top-level.
@@ -218,6 +226,7 @@ export function resolvePianoConfig(raw, pianoId) {
     games: p.games ?? shared.games ?? null,
     screensaver: resolveScreensaver(shared, p),
     curfew: resolveCurfew(shared, p),
+    timezone: context?.timezone || null,
     studio: {
       topPaneLayout: p.studio?.topPaneLayout
         ?? shared.studio?.topPaneLayout
