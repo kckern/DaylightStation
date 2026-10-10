@@ -78,7 +78,15 @@ parser (`pageidx.py`) and lookup (`find.py`) sit beside it.
   These were generated from one table so pages, refs and answer letters stay
   consistent. Answer letters are a seeded shuffle of a balanced pool (12–13 per
   letter).
-- Published: `scripture/baptism-path/part-1@ef415483c` … `part-5@e90148bf9`.
+- Every question block carries `omr: true`. A `worksheet` (unlike a `quiz`)
+  only spends a card row on questions marked that way (`planRows` in
+  `2_domains/school/documents/allocation.mjs`); without it the card mint
+  refuses with `has no row-consuming questions to allocate a card to`.
+- Published: `part-1@57124ce28`, `part-2@feb2d6c2f`, `part-3@c46e63f38`,
+  `part-4@8092ae823`, `part-5@44d70eacc` (republished 2026-10-09 with the
+  `omr: true` flags). The first revs (`ef415483c` … `e90148bf9`) lack the flag
+  and cannot be put on a card. The sources sit outside the CLI's default
+  source root, so validate/publish them by absolute path inside the container.
 - Layout: `flow` at `standard` type scale, two pages per part.
 
 ## Printing on one card
@@ -90,6 +98,9 @@ parser (`pageidx.py`) and lookup (`find.py`) sit beside it.
 2. Parts 2–5: same call with `{ card: "<id>", startRow: 11 | 21 | 31 | 41 }`.
    The planner numbers each sheet's questions with its card rows.
 3. Scanning the card grades all five allocations.
+
+First printing (2026-10-09): card `5705644`, rows 1–10 … 41–50, learnerName
+`test-learner`, no learnerId.
 
 ## Renderer fix made alongside
 
