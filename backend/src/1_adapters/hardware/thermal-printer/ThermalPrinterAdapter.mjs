@@ -109,6 +109,28 @@ const STATUS_QUERY_GAP_MS = 100;
 const STATUS_REPLY_GRACE_MS = 200;
 
 /**
+ * SLOW LINK — a printer that answers, but too late to trust with a job.
+ *
+ * 2026-10-10: a learner's agenda (225 KB, one `GS v 0` raster) went to the
+ * downstairs printer while its link was swinging 16–1455 ms RTT. The pre-flight
+ * got none of its four replies inside the normal window, the job was written
+ * anyway, took 132 s instead of the usual 6–11 s, and came out as metres of
+ * raster bytes printed as text. In the eight days before it, every pre-flight
+ * on that printer got at least one reply in the normal window — silence there
+ * was the one signal that night differed on.
+ *
+ * Silence alone is still not a fault (a transport whose status path is broken
+ * must keep printing — see `faultsIn`). So a silent pre-flight keeps listening
+ * for a further grace: replies that do come, but only after the normal window,
+ * prove the printer is there and the link is not fit to carry a raster. That
+ * job is refused before a byte of it is written. Total silence through the
+ * late grace stays "unknown" and prints as before. (Not a second probe: the
+ * first probe's late replies would land inside it and read as prompt.)
+ */
+const STATUS_PROBE_WINDOW_MS = STATUS_QUERIES.length * STATUS_QUERY_GAP_MS + STATUS_REPLY_GRACE_MS;
+const SLOW_LINK_LATE_GRACE_MS = 3000;
+
+/**
  * How long to let the printer settle after a job's socket is destroyed before
  * opening a new one to ask how it went.
  *
@@ -162,6 +184,7 @@ const POST_JOB_STATUS_ATTEMPTS = 1;
  */
 function faultsIn(status) {
   if (!status?.success) return null;
+  if (status.linkSlow) return ['link_slow'];
   const answered = status.answered || 0;
   if (answered < 1) return null;
 
@@ -979,11 +1002,15 @@ export class ThermalPrinterAdapter {
           const statusCapable = typeof device.read === 'function';
           let preflight = null;
           if (statusCapable) {
-            preflight = await this.#queryStatusOn(device);
+            preflight = await this.#queryStatusOn(device, { lateGraceMs: SLOW_LINK_LATE_GRACE_MS });
+            if (preflight?.answered && preflight.firstReplyMs > STATUS_PROBE_WINDOW_MS) {
+              preflight = { ...preflight, linkSlow: true };
+            }
             const faults = faultsIn(preflight);
             if (faults) {
               this.#logger.warn?.('thermalPrinter.preflight.refused', {
-                target: `${config.host}:${config.port}`, faults, ...logContext,
+                target: `${config.host}:${config.port}`, faults,
+                firstReplyMs: preflight?.firstReplyMs ?? null, ...logContext,
               });
               // Not a byte of the job goes out. Refusing here is the whole
               // point: paper that will not come out must not be recorded as
@@ -1112,19 +1139,27 @@ export class ThermalPrinterAdapter {
    * Ask the four `DLE EOT` queries on an ALREADY-OPEN transport.
    *
    * @param {{read: Function, write: Function}} device
-   * @returns {Promise<object|null>} parsed status, or null if the exchange
-   *   could not even be attempted.
+   * @param {{lateGraceMs?: number}} [opts] when NOTHING has answered by the
+   *   normal grace, keep listening this much longer (see SLOW LINK)
+   * @returns {Promise<object|null>} parsed status (with `firstReplyMs`, the
+   *   delay from the first query to the first reply byte, or null), or null if
+   *   the exchange could not even be attempted.
    */
-  async #queryStatusOn(device) {
+  async #queryStatusOn(device, { lateGraceMs = 0 } = {}) {
     return new Promise((resolve) => {
       try {
         const responses = [];
+        const askedAt = Date.now();
+        let firstReplyMs = null;
         // `escpos-network` surfaces printer bytes ONLY through `read(cb)`, which
         // attaches to the underlying socket. Its `on('data')` is the WRAPPER's
         // own EventEmitter and never re-emits what the socket received —
         // listening there is why every status read parsed an empty response set
         // and reported a healthy printer as offline with no paper.
-        device.read((data) => { responses.push(data); });
+        device.read((data) => {
+          if (firstReplyMs === null) firstReplyMs = Date.now() - askedAt;
+          responses.push(data);
+        });
 
         let queryIndex = 0;
         const sendNextQuery = () => {
@@ -1134,12 +1169,15 @@ export class ThermalPrinterAdapter {
             setTimeout(sendNextQuery, STATUS_QUERY_GAP_MS);
             return;
           }
+          const finish = () => resolve({
+            success: true,
+            ...this.#parseStatusResponses(responses),
+            firstReplyMs,
+            timestamp: nowTs24(),
+          });
           setTimeout(() => {
-            resolve({
-              success: true,
-              ...this.#parseStatusResponses(responses),
-              timestamp: nowTs24(),
-            });
+            if (responses.length || !lateGraceMs) return finish();
+            setTimeout(finish, lateGraceMs);
           }, STATUS_REPLY_GRACE_MS);
         };
 

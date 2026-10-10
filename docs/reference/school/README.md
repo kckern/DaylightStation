@@ -1714,6 +1714,16 @@ that nothing was recorded.
 > printer sets it while perfectly healthy. A status read that fails is an
 > absence of knowledge, never a fault: it drops `verified` and never blocks a
 > job, because a broken probe must not stop a household from printing.
+>
+> **A printer that answers late is refused (`link_slow`).** When none of the
+> pre-flight's replies arrive inside the normal ~600 ms window, the adapter
+> keeps listening up to 3 s more. Replies that turn up late prove the printer is
+> there and its link is too degraded to carry a raster, so the job is refused
+> before a byte goes out and the child gets the retryable `print_failed`. Total
+> silence through that grace is still "unknown" and prints. This came from
+> 2026-10-10, when an agenda went out over a link swinging 16–1455 ms RTT: the
+> pre-flight answered nothing, the 225 KB job took 132 s rather than the usual
+> 6–11 s, and metres of raster came out printed as text.
 
 The personal card is NFC, not a printed barcode. A child taps it on the reader in
 the school room and a **sectioned daily agenda** prints — one block per assigned
