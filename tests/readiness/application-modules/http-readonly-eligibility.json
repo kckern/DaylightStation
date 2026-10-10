@@ -45,7 +45,7 @@
     "totalHistoricalCasesAccounted": 134,
     "verifiedCaseDeclarationLinks": 133,
     "independentCorrectHistoricalCases": 125,
-    "explicitlyReviewedConditionalReadDeclarations": 11
+    "explicitlyReviewedConditionalReadDeclarations": 13
   },
   "declarations": [
     {
@@ -40360,7 +40360,62 @@
         },
         "variantAccounting": "all-source-guard-prerequisites-preserved",
         "livePresenceObserved": false
-      }
+      },
+      "conditionalReadAdmissions": [
+        {
+          "admissionId": "bank-preview-conditional-6720ef986b6e414d",
+          "urlTemplate": "/api/v1/school/banks",
+          "declarationId": "decl-2571f3bf52fce99a3a96f398-0",
+          "scope": "Only exact approved localbank/readingpreview request branch; broad handler exclusions retained",
+          "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+          "requestCases": [
+            {
+              "id": "school-bank-browser-all",
+              "method": "GET",
+              "path": "/api/v1/school/banks"
+            },
+            {
+              "id": "school-bank-browser-assigned",
+              "method": "GET",
+              "path": "/api/v1/school/banks?audience=assigned"
+            },
+            {
+              "id": "school-bank-browser-generic",
+              "method": "GET",
+              "path": "/api/v1/school/banks?audience=generic"
+            }
+          ],
+          "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+          "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2",
+          "safetyPrerequisites": "Exactly2authoredvalidlocallegacybank files, catalogdisabled, integrations/services disabled. awaitwarm reads those files and updates only process-local summary/in-flight caches; no save, provider, session/grading/render call. SAMEmergedfixture/manifest pair plus exactcaseID/GET/query required. Allother handler/cache/migration/provider/action branches remainexcluded.",
+          "sourceProof": [
+            "modules/school/server/api/school.mjs:243",
+            "modules/school/server/application/services/SchoolApiSessionService.mjs:10-11",
+            "modules/school/server/application/SchoolService.mjs:244-282",
+            "modules/school/server/adapters/persistence/YamlSchoolDatastore.mjs:251-280"
+          ],
+          "independentReview": {
+            "path": "/tmp/readiness-school-reading-bank-preview-group/review.json",
+            "sha256": "087c26caaf4f0de6fab38344dcfe207dba13c36f773060be242f72da886fe23e"
+          },
+          "diagnosticOnly": false,
+          "noProductionAuthorization": true,
+          "approvedPackets": [
+            {
+              "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+              "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2"
+            }
+          ],
+          "approvedFixtureSha256": [
+            "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf"
+          ],
+          "approvedManifestSha256": [
+            "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2"
+          ],
+          "sourceGuardSha256": "88da0e526f4fafdaee3a45b8aa5d1912380cf27cd9c3e0d0177910cefe30c230",
+          "denominatorContribution": "new-template"
+        }
+      ]
     },
     {
       "declarationId": "decl-89deb2c09e08ca5c58a6c33f-0",
@@ -45116,7 +45171,97 @@
         },
         "variantAccounting": "Concrete declaration guards recorded with polarity; factory construction/renderer prerequisites retain source conditions",
         "livePresenceObserved": false
-      }
+      },
+      "conditionalReadAdmissions": [
+        {
+          "admissionId": "bank-preview-conditional-d34d7fe0ec037b54",
+          "urlTemplate": "/api/v1/school/self-service/preview/:link",
+          "declarationId": "decl-a8e172bb3b99f742a815dcd1-0",
+          "scope": "Only exact approved localbank/readingpreview request branch; broad handler exclusions retained",
+          "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+          "requestCases": [
+            {
+              "id": "school-preview-reading-partial",
+              "method": "GET",
+              "path": "/api/v1/school/self-service/preview/eyJsZWFybmVySWQiOiJ1c2VyXzIiLCJzdWJqZWN0IjoiZW5nbGlzaCJ9"
+            },
+            {
+              "id": "school-preview-reading-completed",
+              "method": "GET",
+              "path": "/api/v1/school/self-service/preview/eyJsZWFybmVySWQiOiJ1c2VyXzMiLCJzdWJqZWN0IjoiZW5nbGlzaCJ9"
+            }
+          ],
+          "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+          "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2",
+          "safetyPrerequisites": "Only explicituser2/user3story-time enrollment and validunsignedlinksubjectenglish. No flashcards/card-ladder (legacy migration), materials/provider roots or work/session/token writes. Plan/status read memo allowed, previewdoesnotexecuteaction/grant/limiter. SAMEmergedfixture/manifest pair plus exactcaseID/GET/query required. Allother handler/cache/migration/provider/action branches remainexcluded. Corrected2-only pair additionally requires school.yml selfService.enabled=true; this mounts actual read preview router only, no delegates called on registration, lifecycle.virtualDevices=true and fixed disabled services/integrations/devices/enableScheduler=false retained. Original failed7 pair remains historical; this amendment grants no success credit. Trigger-corrected TWO-only pair additionally declares metadata-only nfc reading-session at synthetic-unactivated-target under triggers/sources.yml; no tag bindings/inbox/endpoints/responses or registered physical target. Actual trigger factory and YAML repository sweep writes0/device or broadcast calls0; PlanProjection/resolver real readonly chain proves original unchanged partial/completed DTOs before HTTP. Preview never dispatches inert actions, issues tokens or opens sessions.",
+          "sourceProof": [
+            "modules/school/server/api/school.selfservice.mjs:87-91",
+            "modules/school/server/application/usecases/ResolveAccessCode.mjs:428-486,755-862",
+            "modules/school/server/application/PlanProjection.mjs:250-394",
+            "modules/school/server/application/StoryTimeProgramLauncher.mjs:185-239"
+          ],
+          "independentReview": {
+            "path": "/tmp/readiness-school-reading-bank-preview-group/review.json",
+            "sha256": "087c26caaf4f0de6fab38344dcfe207dba13c36f773060be242f72da886fe23e"
+          },
+          "diagnosticOnly": false,
+          "noProductionAuthorization": true,
+          "approvedPackets": [
+            {
+              "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+              "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2"
+            },
+            {
+              "fixtureSha256": "3155335225ebdbe4fb6a65b1952485188edfb2417e60d887d5897bf7fea8e7af",
+              "manifestSha256": "f0f0565602e287b43b7c6893316f14d0e2d9d43b78460d73e6124aaee5ba9834"
+            },
+            {
+              "fixtureSha256": "f413eee2b06fea2c3cb025d8794f924a04a884616b2ab93180ed2179598429cc",
+              "manifestSha256": "f0f0565602e287b43b7c6893316f14d0e2d9d43b78460d73e6124aaee5ba9834"
+            }
+          ],
+          "approvedFixtureSha256": [
+            "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+            "3155335225ebdbe4fb6a65b1952485188edfb2417e60d887d5897bf7fea8e7af",
+            "f413eee2b06fea2c3cb025d8794f924a04a884616b2ab93180ed2179598429cc"
+          ],
+          "approvedManifestSha256": [
+            "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2",
+            "f0f0565602e287b43b7c6893316f14d0e2d9d43b78460d73e6124aaee5ba9834",
+            "f0f0565602e287b43b7c6893316f14d0e2d9d43b78460d73e6124aaee5ba9834"
+          ],
+          "sourceGuardSha256": "88da0e526f4fafdaee3a45b8aa5d1912380cf27cd9c3e0d0177910cefe30c230",
+          "denominatorContribution": "new-template",
+          "fixturePrerequisiteCorrection": {
+            "diagnosis": {
+              "path": "/tmp/readiness-school-preview2-correction/DIAGNOSIS.json",
+              "sha256": "5097ca8c6478bbcdb1131daa0f3f09994cc0a660bac12e2af2c755c647aadb7b"
+            },
+            "routerExposure": {
+              "path": "/tmp/readiness-school-preview2-correction/router-exposure-result.json",
+              "sha256": "b4c78321111ff09e1ab7c58f2002968f5beb7742d67b84f8ac2fa8c190b82a9a"
+            },
+            "sameTwoRequestsOracles": true,
+            "oldFailedPairPreserved": true
+          },
+          "triggerPrerequisiteCorrection": {
+            "diagnosis": {
+              "path": "/tmp/readiness-school-preview-chain-diagnostic/HANDOFF.json",
+              "sha256": "c0f7fd36be1a82f2c2373848f59e29b5f775089a2646bdeadf93d4063c5f7741"
+            },
+            "diagnosisReview": {
+              "path": "/tmp/readiness-school-preview-chain-diagnostic/review.json",
+              "sha256": "559bb963f3bd5dfc0c77907e22f6c9e2b4b4c15dd16e98bcc64a3089c12d56e4"
+            },
+            "actualChain": {
+              "path": "/tmp/readiness-school-preview-chain-diagnostic/RESULT.json",
+              "sha256": "31af73856abc524951c2eb7b819d007ccb97f27702a1d05ba0884fd2bb805aa9"
+            },
+            "unchangedOracles": true,
+            "oldFailedBothAttemptsPreserved": true
+          }
+        }
+      ]
     },
     {
       "declarationId": "decl-c784842b8c3a8795728a9d7e-0",
@@ -49286,8 +49431,8 @@
     "counts": {
       "historicalLiveUniqueCases": 134,
       "historicalLiveIndependentContracts": 125,
-      "isolatedUniqueAcceptedCaseIds": 314,
-      "isolatedAcceptedOccurrences": 314,
+      "isolatedUniqueAcceptedCaseIds": 342,
+      "isolatedAcceptedOccurrences": 342,
       "isolatedReplayIdsAlreadyLive": [
         "health-catalog-food-not-found",
         "health-catalog-missing-query",
@@ -49305,6 +49450,17 @@
         "player-default-config"
       ],
       "isolatedNewCaseIds": [
+        "agent-feed-annotations-alias",
+        "agent-feed-annotations-all",
+        "agent-feed-annotations-direct",
+        "agent-feed-assignments-echo",
+        "agent-feed-assignments-health-coach",
+        "agent-feed-assignments-lifeplan-guide",
+        "agent-feed-discovery",
+        "agent-feed-memory-echo-user_1",
+        "agent-feed-memory-health-coach-user_1",
+        "agent-feed-memory-health-coach-user_2",
+        "agent-feed-memory-lifeplan-guide-user_1",
         "array-auto-document-records",
         "array-auto-service-records",
         "array-health-saved-meals-ordered",
@@ -49473,6 +49629,16 @@
         "media-policy-transitions-all",
         "media-policy-transitions-expired",
         "media-policy-transitions-page",
+        "operations-notification-all",
+        "operations-notification-latest-one",
+        "operations-notification-latest-two",
+        "operations-play-history-after-first",
+        "operations-play-history-all",
+        "operations-play-usage-later-starts",
+        "operations-play-usage-whole-evening",
+        "operations-scheduler-1",
+        "operations-scheduler-2",
+        "operations-scheduler-jobs",
         "reading-configured-aliases",
         "reading-hymn-detail",
         "reading-hymn-index",
@@ -49480,10 +49646,15 @@
         "reading-poem-courage",
         "reading-primary-detail",
         "reading-primary-index",
+        "reading-return-direct-launch-picker",
+        "reading-return-populated-summary",
         "reading-scripture-synthetic-one",
         "reading-scripture-synthetic-two",
         "reading-talk-01",
         "reading-talk-02",
+        "school-bank-browser-all",
+        "school-bank-browser-assigned",
+        "school-bank-browser-generic",
         "school-insights-populated-monitor",
         "school-language-joins-cross-recording",
         "school-language-joins-denied-cross-corpus",
@@ -49506,6 +49677,8 @@
         "school-language-joins-sentence-ladder-recording",
         "school-language-joins-sheet-1234567",
         "school-language-joins-sheet-7654321",
+        "school-preview-reading-completed",
+        "school-preview-reading-partial",
         "school-stored-pending",
         "school-stored-progress",
         "school-stored-progress-filter",
@@ -49606,11 +49779,11 @@
         "timeline-lifelog-day",
         "timeline-lifelog-sources"
       ],
-      "unionUniqueAcceptedCaseIds": 434,
-      "unionIndependentContracts": 425,
+      "unionUniqueAcceptedCaseIds": 462,
+      "unionIndependentContracts": 453,
       "newLiveTemplates": 2,
-      "isolatedDistinctTemplates": 202,
-      "newIsolatedTemplates": 195,
+      "isolatedDistinctTemplates": 215,
+      "newIsolatedTemplates": 208,
       "pendingNext15": {
         "cases": 15,
         "terminalResult": {
@@ -56368,6 +56541,734 @@
           "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
           "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
         }
+      },
+      {
+        "id": "reading-return-populated-summary",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/reading/summary",
+        "declarationIds": [
+          "decl-2cf22041f5e7137a92a4b803-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-partial-reading-bank7",
+        "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+        "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2",
+        "result": {
+          "path": "/tmp/readiness-school-reading-bank-preview-pair/pair-result.json",
+          "sha256": "21ebdeba395d23b09eb2fea8869b1dcc23b8230df62d26f8c9263188afefface"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-reading-bank-preview-execution/proof.json",
+          "sha256": "f2b32d9f779ab1c16b1f09b8026cecc3d7662a4839ee2c591fa9a53799f874c7"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-reading-bank-preview-execution/result-review.json",
+          "sha256": "b93461e4591fc5373e3d411c373a266bb660f3250c26358d1320d1d55be729b7"
+        }
+      },
+      {
+        "id": "reading-return-direct-launch-picker",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/lifecycle/direct-launch/programs",
+        "declarationIds": [
+          "decl-e03ec1e13d1b50ea838b0328-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-partial-reading-bank7",
+        "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+        "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2",
+        "result": {
+          "path": "/tmp/readiness-school-reading-bank-preview-pair/pair-result.json",
+          "sha256": "21ebdeba395d23b09eb2fea8869b1dcc23b8230df62d26f8c9263188afefface"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-reading-bank-preview-execution/proof.json",
+          "sha256": "f2b32d9f779ab1c16b1f09b8026cecc3d7662a4839ee2c591fa9a53799f874c7"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-reading-bank-preview-execution/result-review.json",
+          "sha256": "b93461e4591fc5373e3d411c373a266bb660f3250c26358d1320d1d55be729b7"
+        }
+      },
+      {
+        "id": "school-bank-browser-all",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/banks",
+        "declarationIds": [
+          "decl-2571f3bf52fce99a3a96f398-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-partial-reading-bank7",
+        "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+        "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2",
+        "result": {
+          "path": "/tmp/readiness-school-reading-bank-preview-pair/pair-result.json",
+          "sha256": "21ebdeba395d23b09eb2fea8869b1dcc23b8230df62d26f8c9263188afefface"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-reading-bank-preview-execution/proof.json",
+          "sha256": "f2b32d9f779ab1c16b1f09b8026cecc3d7662a4839ee2c591fa9a53799f874c7"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-reading-bank-preview-execution/result-review.json",
+          "sha256": "b93461e4591fc5373e3d411c373a266bb660f3250c26358d1320d1d55be729b7"
+        }
+      },
+      {
+        "id": "school-bank-browser-assigned",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/banks",
+        "declarationIds": [
+          "decl-2571f3bf52fce99a3a96f398-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-partial-reading-bank7",
+        "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+        "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2",
+        "result": {
+          "path": "/tmp/readiness-school-reading-bank-preview-pair/pair-result.json",
+          "sha256": "21ebdeba395d23b09eb2fea8869b1dcc23b8230df62d26f8c9263188afefface"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-reading-bank-preview-execution/proof.json",
+          "sha256": "f2b32d9f779ab1c16b1f09b8026cecc3d7662a4839ee2c591fa9a53799f874c7"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-reading-bank-preview-execution/result-review.json",
+          "sha256": "b93461e4591fc5373e3d411c373a266bb660f3250c26358d1320d1d55be729b7"
+        }
+      },
+      {
+        "id": "school-bank-browser-generic",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/banks",
+        "declarationIds": [
+          "decl-2571f3bf52fce99a3a96f398-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-partial-reading-bank7",
+        "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+        "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2",
+        "result": {
+          "path": "/tmp/readiness-school-reading-bank-preview-pair/pair-result.json",
+          "sha256": "21ebdeba395d23b09eb2fea8869b1dcc23b8230df62d26f8c9263188afefface"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-reading-bank-preview-execution/proof.json",
+          "sha256": "f2b32d9f779ab1c16b1f09b8026cecc3d7662a4839ee2c591fa9a53799f874c7"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-reading-bank-preview-execution/result-review.json",
+          "sha256": "b93461e4591fc5373e3d411c373a266bb660f3250c26358d1320d1d55be729b7"
+        }
+      },
+      {
+        "id": "operations-notification-all",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/admin/notifications/ledger",
+        "declarationIds": [
+          "decl-dd98d632b7ab405fda485e75-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-household-operations10",
+        "fixtureSha256": "3611baf16ad5878afc084ce076f0f81953a0dd3899f2b355f3b0a5993d2b0969",
+        "manifestSha256": "cb20cabee7df8ad1b49860e7a996ff321d40d5bb3b0906cccc0ed53cacb0194f",
+        "result": {
+          "path": "/tmp/readiness-household-operations-pair/pair-result.json",
+          "sha256": "ef5e51f62a5fc6ed2fc49965ee213b87e4f0ebc1c3384b6b8f5a05d2526a1d78"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-operations-execution/proof.json",
+          "sha256": "d1c1b2bf12320e6faea351910cf70a827e38721e0fa3cc4f464ecd94736f886c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-operations-execution/result-review.json",
+          "sha256": "b9daa65716279a248f7c0d2365d264c8aa97329421d22c912a15021885fe0dad"
+        }
+      },
+      {
+        "id": "operations-notification-latest-two",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/admin/notifications/ledger",
+        "declarationIds": [
+          "decl-dd98d632b7ab405fda485e75-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-household-operations10",
+        "fixtureSha256": "3611baf16ad5878afc084ce076f0f81953a0dd3899f2b355f3b0a5993d2b0969",
+        "manifestSha256": "cb20cabee7df8ad1b49860e7a996ff321d40d5bb3b0906cccc0ed53cacb0194f",
+        "result": {
+          "path": "/tmp/readiness-household-operations-pair/pair-result.json",
+          "sha256": "ef5e51f62a5fc6ed2fc49965ee213b87e4f0ebc1c3384b6b8f5a05d2526a1d78"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-operations-execution/proof.json",
+          "sha256": "d1c1b2bf12320e6faea351910cf70a827e38721e0fa3cc4f464ecd94736f886c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-operations-execution/result-review.json",
+          "sha256": "b9daa65716279a248f7c0d2365d264c8aa97329421d22c912a15021885fe0dad"
+        }
+      },
+      {
+        "id": "operations-notification-latest-one",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/admin/notifications/ledger",
+        "declarationIds": [
+          "decl-dd98d632b7ab405fda485e75-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-household-operations10",
+        "fixtureSha256": "3611baf16ad5878afc084ce076f0f81953a0dd3899f2b355f3b0a5993d2b0969",
+        "manifestSha256": "cb20cabee7df8ad1b49860e7a996ff321d40d5bb3b0906cccc0ed53cacb0194f",
+        "result": {
+          "path": "/tmp/readiness-household-operations-pair/pair-result.json",
+          "sha256": "ef5e51f62a5fc6ed2fc49965ee213b87e4f0ebc1c3384b6b8f5a05d2526a1d78"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-operations-execution/proof.json",
+          "sha256": "d1c1b2bf12320e6faea351910cf70a827e38721e0fa3cc4f464ecd94736f886c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-operations-execution/result-review.json",
+          "sha256": "b9daa65716279a248f7c0d2365d264c8aa97329421d22c912a15021885fe0dad"
+        }
+      },
+      {
+        "id": "operations-scheduler-jobs",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/admin/scheduler/jobs",
+        "declarationIds": [
+          "decl-ddb53a3c927eb79bf2599721-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-household-operations10",
+        "fixtureSha256": "3611baf16ad5878afc084ce076f0f81953a0dd3899f2b355f3b0a5993d2b0969",
+        "manifestSha256": "cb20cabee7df8ad1b49860e7a996ff321d40d5bb3b0906cccc0ed53cacb0194f",
+        "result": {
+          "path": "/tmp/readiness-household-operations-pair/pair-result.json",
+          "sha256": "ef5e51f62a5fc6ed2fc49965ee213b87e4f0ebc1c3384b6b8f5a05d2526a1d78"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-operations-execution/proof.json",
+          "sha256": "d1c1b2bf12320e6faea351910cf70a827e38721e0fa3cc4f464ecd94736f886c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-operations-execution/result-review.json",
+          "sha256": "b9daa65716279a248f7c0d2365d264c8aa97329421d22c912a15021885fe0dad"
+        }
+      },
+      {
+        "id": "operations-scheduler-1",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/admin/scheduler/jobs/:id",
+        "declarationIds": [
+          "decl-be16f7ff6127161e7bead7ff-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-household-operations10",
+        "fixtureSha256": "3611baf16ad5878afc084ce076f0f81953a0dd3899f2b355f3b0a5993d2b0969",
+        "manifestSha256": "cb20cabee7df8ad1b49860e7a996ff321d40d5bb3b0906cccc0ed53cacb0194f",
+        "result": {
+          "path": "/tmp/readiness-household-operations-pair/pair-result.json",
+          "sha256": "ef5e51f62a5fc6ed2fc49965ee213b87e4f0ebc1c3384b6b8f5a05d2526a1d78"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-operations-execution/proof.json",
+          "sha256": "d1c1b2bf12320e6faea351910cf70a827e38721e0fa3cc4f464ecd94736f886c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-operations-execution/result-review.json",
+          "sha256": "b9daa65716279a248f7c0d2365d264c8aa97329421d22c912a15021885fe0dad"
+        }
+      },
+      {
+        "id": "operations-scheduler-2",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/admin/scheduler/jobs/:id",
+        "declarationIds": [
+          "decl-be16f7ff6127161e7bead7ff-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-household-operations10",
+        "fixtureSha256": "3611baf16ad5878afc084ce076f0f81953a0dd3899f2b355f3b0a5993d2b0969",
+        "manifestSha256": "cb20cabee7df8ad1b49860e7a996ff321d40d5bb3b0906cccc0ed53cacb0194f",
+        "result": {
+          "path": "/tmp/readiness-household-operations-pair/pair-result.json",
+          "sha256": "ef5e51f62a5fc6ed2fc49965ee213b87e4f0ebc1c3384b6b8f5a05d2526a1d78"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-operations-execution/proof.json",
+          "sha256": "d1c1b2bf12320e6faea351910cf70a827e38721e0fa3cc4f464ecd94736f886c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-operations-execution/result-review.json",
+          "sha256": "b9daa65716279a248f7c0d2365d264c8aa97329421d22c912a15021885fe0dad"
+        }
+      },
+      {
+        "id": "operations-play-history-all",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/arcade-game-sessions/devices/:deviceId/history",
+        "declarationIds": [
+          "decl-6321c377f261a1eed7e672e3-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-household-operations10",
+        "fixtureSha256": "3611baf16ad5878afc084ce076f0f81953a0dd3899f2b355f3b0a5993d2b0969",
+        "manifestSha256": "cb20cabee7df8ad1b49860e7a996ff321d40d5bb3b0906cccc0ed53cacb0194f",
+        "result": {
+          "path": "/tmp/readiness-household-operations-pair/pair-result.json",
+          "sha256": "ef5e51f62a5fc6ed2fc49965ee213b87e4f0ebc1c3384b6b8f5a05d2526a1d78"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-operations-execution/proof.json",
+          "sha256": "d1c1b2bf12320e6faea351910cf70a827e38721e0fa3cc4f464ecd94736f886c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-operations-execution/result-review.json",
+          "sha256": "b9daa65716279a248f7c0d2365d264c8aa97329421d22c912a15021885fe0dad"
+        }
+      },
+      {
+        "id": "operations-play-history-after-first",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/arcade-game-sessions/devices/:deviceId/history",
+        "declarationIds": [
+          "decl-6321c377f261a1eed7e672e3-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-household-operations10",
+        "fixtureSha256": "3611baf16ad5878afc084ce076f0f81953a0dd3899f2b355f3b0a5993d2b0969",
+        "manifestSha256": "cb20cabee7df8ad1b49860e7a996ff321d40d5bb3b0906cccc0ed53cacb0194f",
+        "result": {
+          "path": "/tmp/readiness-household-operations-pair/pair-result.json",
+          "sha256": "ef5e51f62a5fc6ed2fc49965ee213b87e4f0ebc1c3384b6b8f5a05d2526a1d78"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-operations-execution/proof.json",
+          "sha256": "d1c1b2bf12320e6faea351910cf70a827e38721e0fa3cc4f464ecd94736f886c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-operations-execution/result-review.json",
+          "sha256": "b9daa65716279a248f7c0d2365d264c8aa97329421d22c912a15021885fe0dad"
+        }
+      },
+      {
+        "id": "operations-play-usage-whole-evening",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/arcade-game-sessions/usage",
+        "declarationIds": [
+          "decl-e02d59bc40f3b70b57134c0d-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-household-operations10",
+        "fixtureSha256": "3611baf16ad5878afc084ce076f0f81953a0dd3899f2b355f3b0a5993d2b0969",
+        "manifestSha256": "cb20cabee7df8ad1b49860e7a996ff321d40d5bb3b0906cccc0ed53cacb0194f",
+        "result": {
+          "path": "/tmp/readiness-household-operations-pair/pair-result.json",
+          "sha256": "ef5e51f62a5fc6ed2fc49965ee213b87e4f0ebc1c3384b6b8f5a05d2526a1d78"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-operations-execution/proof.json",
+          "sha256": "d1c1b2bf12320e6faea351910cf70a827e38721e0fa3cc4f464ecd94736f886c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-operations-execution/result-review.json",
+          "sha256": "b9daa65716279a248f7c0d2365d264c8aa97329421d22c912a15021885fe0dad"
+        }
+      },
+      {
+        "id": "operations-play-usage-later-starts",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/arcade-game-sessions/usage",
+        "declarationIds": [
+          "decl-e02d59bc40f3b70b57134c0d-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-household-operations10",
+        "fixtureSha256": "3611baf16ad5878afc084ce076f0f81953a0dd3899f2b355f3b0a5993d2b0969",
+        "manifestSha256": "cb20cabee7df8ad1b49860e7a996ff321d40d5bb3b0906cccc0ed53cacb0194f",
+        "result": {
+          "path": "/tmp/readiness-household-operations-pair/pair-result.json",
+          "sha256": "ef5e51f62a5fc6ed2fc49965ee213b87e4f0ebc1c3384b6b8f5a05d2526a1d78"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-operations-execution/proof.json",
+          "sha256": "d1c1b2bf12320e6faea351910cf70a827e38721e0fa3cc4f464ecd94736f886c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-operations-execution/result-review.json",
+          "sha256": "b9daa65716279a248f7c0d2365d264c8aa97329421d22c912a15021885fe0dad"
+        }
+      },
+      {
+        "id": "school-preview-reading-partial",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/self-service/preview/:link",
+        "declarationIds": [
+          "decl-a8e172bb3b99f742a815dcd1-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-school-preview2-trigger-corrected",
+        "fixtureSha256": "f413eee2b06fea2c3cb025d8794f924a04a884616b2ab93180ed2179598429cc",
+        "manifestSha256": "f0f0565602e287b43b7c6893316f14d0e2d9d43b78460d73e6124aaee5ba9834",
+        "result": {
+          "path": "/tmp/readiness-school-preview2-trigger-pair/pair-result.json",
+          "sha256": "657e8c7e300a88dd2fb4804d2ab00a4d2e3b64d45051e2e9f3ec19c6561a517e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-preview2-trigger-execution/proof.json",
+          "sha256": "13f6f846203ba7ca634c5bc1d2e47866c9f0cff5159377220090b4b9811a4cf7"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-preview2-trigger-execution/result-review.json",
+          "sha256": "6a361b5831cdea51c8c44d455ac55a8d35b108fc9255ab8226eb2c9a7ba20712"
+        }
+      },
+      {
+        "id": "school-preview-reading-completed",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/self-service/preview/:link",
+        "declarationIds": [
+          "decl-a8e172bb3b99f742a815dcd1-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-school-preview2-trigger-corrected",
+        "fixtureSha256": "f413eee2b06fea2c3cb025d8794f924a04a884616b2ab93180ed2179598429cc",
+        "manifestSha256": "f0f0565602e287b43b7c6893316f14d0e2d9d43b78460d73e6124aaee5ba9834",
+        "result": {
+          "path": "/tmp/readiness-school-preview2-trigger-pair/pair-result.json",
+          "sha256": "657e8c7e300a88dd2fb4804d2ab00a4d2e3b64d45051e2e9f3ec19c6561a517e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-preview2-trigger-execution/proof.json",
+          "sha256": "13f6f846203ba7ca634c5bc1d2e47866c9f0cff5159377220090b4b9811a4cf7"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-preview2-trigger-execution/result-review.json",
+          "sha256": "6a361b5831cdea51c8c44d455ac55a8d35b108fc9255ab8226eb2c9a7ba20712"
+        }
+      },
+      {
+        "id": "agent-feed-discovery",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/agents",
+        "declarationIds": [
+          "decl-c7d6ff3e38874530196db38e-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-agent-feed-stored11",
+        "fixtureSha256": "8619111e93edbeb96195bf32debb9532c1763d83e8e0117e315c245f93bed221",
+        "manifestSha256": "ff7d388eb31e183f3955a39e2648d375a8fdbfb452e4630cfb078de176ff249d",
+        "result": {
+          "path": "/tmp/readiness-agent-feed-stored-pair/pair-result.json",
+          "sha256": "aebbf97a66b6f8ef821f1decc1c9a3c53555f761c803b88bfde65f7c2dd7e416"
+        },
+        "proof": {
+          "path": "/tmp/readiness-agent-feed-stored-execution/proof.json",
+          "sha256": "0f1670955d93fc8059486bfcc89c3df87b5af04dedc766a7dae31db74b9f9b39"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-agent-feed-stored-execution/result-review.json",
+          "sha256": "cef6540785b56c6b075b73bf410688514f5d8fea60093f43eeda3af0bc974dc6"
+        }
+      },
+      {
+        "id": "agent-feed-assignments-health-coach",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/agents/:agentId/assignments",
+        "declarationIds": [
+          "decl-12dbc01fead8303bf0e4330d-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-agent-feed-stored11",
+        "fixtureSha256": "8619111e93edbeb96195bf32debb9532c1763d83e8e0117e315c245f93bed221",
+        "manifestSha256": "ff7d388eb31e183f3955a39e2648d375a8fdbfb452e4630cfb078de176ff249d",
+        "result": {
+          "path": "/tmp/readiness-agent-feed-stored-pair/pair-result.json",
+          "sha256": "aebbf97a66b6f8ef821f1decc1c9a3c53555f761c803b88bfde65f7c2dd7e416"
+        },
+        "proof": {
+          "path": "/tmp/readiness-agent-feed-stored-execution/proof.json",
+          "sha256": "0f1670955d93fc8059486bfcc89c3df87b5af04dedc766a7dae31db74b9f9b39"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-agent-feed-stored-execution/result-review.json",
+          "sha256": "cef6540785b56c6b075b73bf410688514f5d8fea60093f43eeda3af0bc974dc6"
+        }
+      },
+      {
+        "id": "agent-feed-assignments-lifeplan-guide",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/agents/:agentId/assignments",
+        "declarationIds": [
+          "decl-12dbc01fead8303bf0e4330d-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-agent-feed-stored11",
+        "fixtureSha256": "8619111e93edbeb96195bf32debb9532c1763d83e8e0117e315c245f93bed221",
+        "manifestSha256": "ff7d388eb31e183f3955a39e2648d375a8fdbfb452e4630cfb078de176ff249d",
+        "result": {
+          "path": "/tmp/readiness-agent-feed-stored-pair/pair-result.json",
+          "sha256": "aebbf97a66b6f8ef821f1decc1c9a3c53555f761c803b88bfde65f7c2dd7e416"
+        },
+        "proof": {
+          "path": "/tmp/readiness-agent-feed-stored-execution/proof.json",
+          "sha256": "0f1670955d93fc8059486bfcc89c3df87b5af04dedc766a7dae31db74b9f9b39"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-agent-feed-stored-execution/result-review.json",
+          "sha256": "cef6540785b56c6b075b73bf410688514f5d8fea60093f43eeda3af0bc974dc6"
+        }
+      },
+      {
+        "id": "agent-feed-assignments-echo",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/agents/:agentId/assignments",
+        "declarationIds": [
+          "decl-12dbc01fead8303bf0e4330d-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-agent-feed-stored11",
+        "fixtureSha256": "8619111e93edbeb96195bf32debb9532c1763d83e8e0117e315c245f93bed221",
+        "manifestSha256": "ff7d388eb31e183f3955a39e2648d375a8fdbfb452e4630cfb078de176ff249d",
+        "result": {
+          "path": "/tmp/readiness-agent-feed-stored-pair/pair-result.json",
+          "sha256": "aebbf97a66b6f8ef821f1decc1c9a3c53555f761c803b88bfde65f7c2dd7e416"
+        },
+        "proof": {
+          "path": "/tmp/readiness-agent-feed-stored-execution/proof.json",
+          "sha256": "0f1670955d93fc8059486bfcc89c3df87b5af04dedc766a7dae31db74b9f9b39"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-agent-feed-stored-execution/result-review.json",
+          "sha256": "cef6540785b56c6b075b73bf410688514f5d8fea60093f43eeda3af0bc974dc6"
+        }
+      },
+      {
+        "id": "agent-feed-memory-health-coach-user_1",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/agents/:agentId/memory/:userId",
+        "declarationIds": [
+          "decl-c13f9ebd0afa92f3becde009-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-agent-feed-stored11",
+        "fixtureSha256": "8619111e93edbeb96195bf32debb9532c1763d83e8e0117e315c245f93bed221",
+        "manifestSha256": "ff7d388eb31e183f3955a39e2648d375a8fdbfb452e4630cfb078de176ff249d",
+        "result": {
+          "path": "/tmp/readiness-agent-feed-stored-pair/pair-result.json",
+          "sha256": "aebbf97a66b6f8ef821f1decc1c9a3c53555f761c803b88bfde65f7c2dd7e416"
+        },
+        "proof": {
+          "path": "/tmp/readiness-agent-feed-stored-execution/proof.json",
+          "sha256": "0f1670955d93fc8059486bfcc89c3df87b5af04dedc766a7dae31db74b9f9b39"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-agent-feed-stored-execution/result-review.json",
+          "sha256": "cef6540785b56c6b075b73bf410688514f5d8fea60093f43eeda3af0bc974dc6"
+        }
+      },
+      {
+        "id": "agent-feed-memory-health-coach-user_2",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/agents/:agentId/memory/:userId",
+        "declarationIds": [
+          "decl-c13f9ebd0afa92f3becde009-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-agent-feed-stored11",
+        "fixtureSha256": "8619111e93edbeb96195bf32debb9532c1763d83e8e0117e315c245f93bed221",
+        "manifestSha256": "ff7d388eb31e183f3955a39e2648d375a8fdbfb452e4630cfb078de176ff249d",
+        "result": {
+          "path": "/tmp/readiness-agent-feed-stored-pair/pair-result.json",
+          "sha256": "aebbf97a66b6f8ef821f1decc1c9a3c53555f761c803b88bfde65f7c2dd7e416"
+        },
+        "proof": {
+          "path": "/tmp/readiness-agent-feed-stored-execution/proof.json",
+          "sha256": "0f1670955d93fc8059486bfcc89c3df87b5af04dedc766a7dae31db74b9f9b39"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-agent-feed-stored-execution/result-review.json",
+          "sha256": "cef6540785b56c6b075b73bf410688514f5d8fea60093f43eeda3af0bc974dc6"
+        }
+      },
+      {
+        "id": "agent-feed-memory-lifeplan-guide-user_1",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/agents/:agentId/memory/:userId",
+        "declarationIds": [
+          "decl-c13f9ebd0afa92f3becde009-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-agent-feed-stored11",
+        "fixtureSha256": "8619111e93edbeb96195bf32debb9532c1763d83e8e0117e315c245f93bed221",
+        "manifestSha256": "ff7d388eb31e183f3955a39e2648d375a8fdbfb452e4630cfb078de176ff249d",
+        "result": {
+          "path": "/tmp/readiness-agent-feed-stored-pair/pair-result.json",
+          "sha256": "aebbf97a66b6f8ef821f1decc1c9a3c53555f761c803b88bfde65f7c2dd7e416"
+        },
+        "proof": {
+          "path": "/tmp/readiness-agent-feed-stored-execution/proof.json",
+          "sha256": "0f1670955d93fc8059486bfcc89c3df87b5af04dedc766a7dae31db74b9f9b39"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-agent-feed-stored-execution/result-review.json",
+          "sha256": "cef6540785b56c6b075b73bf410688514f5d8fea60093f43eeda3af0bc974dc6"
+        }
+      },
+      {
+        "id": "agent-feed-memory-echo-user_1",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/agents/:agentId/memory/:userId",
+        "declarationIds": [
+          "decl-c13f9ebd0afa92f3becde009-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-agent-feed-stored11",
+        "fixtureSha256": "8619111e93edbeb96195bf32debb9532c1763d83e8e0117e315c245f93bed221",
+        "manifestSha256": "ff7d388eb31e183f3955a39e2648d375a8fdbfb452e4630cfb078de176ff249d",
+        "result": {
+          "path": "/tmp/readiness-agent-feed-stored-pair/pair-result.json",
+          "sha256": "aebbf97a66b6f8ef821f1decc1c9a3c53555f761c803b88bfde65f7c2dd7e416"
+        },
+        "proof": {
+          "path": "/tmp/readiness-agent-feed-stored-execution/proof.json",
+          "sha256": "0f1670955d93fc8059486bfcc89c3df87b5af04dedc766a7dae31db74b9f9b39"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-agent-feed-stored-execution/result-review.json",
+          "sha256": "cef6540785b56c6b075b73bf410688514f5d8fea60093f43eeda3af0bc974dc6"
+        }
+      },
+      {
+        "id": "agent-feed-annotations-all",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/feed/annotations",
+        "declarationIds": [
+          "decl-b9fd7a1e4bb4f928269f59a1-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-agent-feed-stored11",
+        "fixtureSha256": "8619111e93edbeb96195bf32debb9532c1763d83e8e0117e315c245f93bed221",
+        "manifestSha256": "ff7d388eb31e183f3955a39e2648d375a8fdbfb452e4630cfb078de176ff249d",
+        "result": {
+          "path": "/tmp/readiness-agent-feed-stored-pair/pair-result.json",
+          "sha256": "aebbf97a66b6f8ef821f1decc1c9a3c53555f761c803b88bfde65f7c2dd7e416"
+        },
+        "proof": {
+          "path": "/tmp/readiness-agent-feed-stored-execution/proof.json",
+          "sha256": "0f1670955d93fc8059486bfcc89c3df87b5af04dedc766a7dae31db74b9f9b39"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-agent-feed-stored-execution/result-review.json",
+          "sha256": "cef6540785b56c6b075b73bf410688514f5d8fea60093f43eeda3af0bc974dc6"
+        }
+      },
+      {
+        "id": "agent-feed-annotations-direct",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/feed/annotations",
+        "declarationIds": [
+          "decl-b9fd7a1e4bb4f928269f59a1-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-agent-feed-stored11",
+        "fixtureSha256": "8619111e93edbeb96195bf32debb9532c1763d83e8e0117e315c245f93bed221",
+        "manifestSha256": "ff7d388eb31e183f3955a39e2648d375a8fdbfb452e4630cfb078de176ff249d",
+        "result": {
+          "path": "/tmp/readiness-agent-feed-stored-pair/pair-result.json",
+          "sha256": "aebbf97a66b6f8ef821f1decc1c9a3c53555f761c803b88bfde65f7c2dd7e416"
+        },
+        "proof": {
+          "path": "/tmp/readiness-agent-feed-stored-execution/proof.json",
+          "sha256": "0f1670955d93fc8059486bfcc89c3df87b5af04dedc766a7dae31db74b9f9b39"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-agent-feed-stored-execution/result-review.json",
+          "sha256": "cef6540785b56c6b075b73bf410688514f5d8fea60093f43eeda3af0bc974dc6"
+        }
+      },
+      {
+        "id": "agent-feed-annotations-alias",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/feed/annotations",
+        "declarationIds": [
+          "decl-b9fd7a1e4bb4f928269f59a1-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-adef-agent-feed-stored11",
+        "fixtureSha256": "8619111e93edbeb96195bf32debb9532c1763d83e8e0117e315c245f93bed221",
+        "manifestSha256": "ff7d388eb31e183f3955a39e2648d375a8fdbfb452e4630cfb078de176ff249d",
+        "result": {
+          "path": "/tmp/readiness-agent-feed-stored-pair/pair-result.json",
+          "sha256": "aebbf97a66b6f8ef821f1decc1c9a3c53555f761c803b88bfde65f7c2dd7e416"
+        },
+        "proof": {
+          "path": "/tmp/readiness-agent-feed-stored-execution/proof.json",
+          "sha256": "0f1670955d93fc8059486bfcc89c3df87b5af04dedc766a7dae31db74b9f9b39"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-agent-feed-stored-execution/result-review.json",
+          "sha256": "cef6540785b56c6b075b73bf410688514f5d8fea60093f43eeda3af0bc974dc6"
+        }
       }
     ],
     "infrastructure": {
@@ -57011,6 +57912,147 @@
       ],
       "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
       "denominatorContribution": "new-template"
+    },
+    {
+      "admissionId": "bank-preview-conditional-6720ef986b6e414d",
+      "urlTemplate": "/api/v1/school/banks",
+      "declarationId": "decl-2571f3bf52fce99a3a96f398-0",
+      "scope": "Only exact approved localbank/readingpreview request branch; broad handler exclusions retained",
+      "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+      "requestCases": [
+        {
+          "id": "school-bank-browser-all",
+          "method": "GET",
+          "path": "/api/v1/school/banks"
+        },
+        {
+          "id": "school-bank-browser-assigned",
+          "method": "GET",
+          "path": "/api/v1/school/banks?audience=assigned"
+        },
+        {
+          "id": "school-bank-browser-generic",
+          "method": "GET",
+          "path": "/api/v1/school/banks?audience=generic"
+        }
+      ],
+      "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+      "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2",
+      "safetyPrerequisites": "Exactly2authoredvalidlocallegacybank files, catalogdisabled, integrations/services disabled. awaitwarm reads those files and updates only process-local summary/in-flight caches; no save, provider, session/grading/render call. SAMEmergedfixture/manifest pair plus exactcaseID/GET/query required. Allother handler/cache/migration/provider/action branches remainexcluded.",
+      "sourceProof": [
+        "modules/school/server/api/school.mjs:243",
+        "modules/school/server/application/services/SchoolApiSessionService.mjs:10-11",
+        "modules/school/server/application/SchoolService.mjs:244-282",
+        "modules/school/server/adapters/persistence/YamlSchoolDatastore.mjs:251-280"
+      ],
+      "independentReview": {
+        "path": "/tmp/readiness-school-reading-bank-preview-group/review.json",
+        "sha256": "087c26caaf4f0de6fab38344dcfe207dba13c36f773060be242f72da886fe23e"
+      },
+      "diagnosticOnly": false,
+      "noProductionAuthorization": true,
+      "approvedPackets": [
+        {
+          "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+          "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2"
+        }
+      ],
+      "approvedFixtureSha256": [
+        "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf"
+      ],
+      "approvedManifestSha256": [
+        "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2"
+      ],
+      "sourceGuardSha256": "88da0e526f4fafdaee3a45b8aa5d1912380cf27cd9c3e0d0177910cefe30c230",
+      "denominatorContribution": "new-template"
+    },
+    {
+      "admissionId": "bank-preview-conditional-d34d7fe0ec037b54",
+      "urlTemplate": "/api/v1/school/self-service/preview/:link",
+      "declarationId": "decl-a8e172bb3b99f742a815dcd1-0",
+      "scope": "Only exact approved localbank/readingpreview request branch; broad handler exclusions retained",
+      "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+      "requestCases": [
+        {
+          "id": "school-preview-reading-partial",
+          "method": "GET",
+          "path": "/api/v1/school/self-service/preview/eyJsZWFybmVySWQiOiJ1c2VyXzIiLCJzdWJqZWN0IjoiZW5nbGlzaCJ9"
+        },
+        {
+          "id": "school-preview-reading-completed",
+          "method": "GET",
+          "path": "/api/v1/school/self-service/preview/eyJsZWFybmVySWQiOiJ1c2VyXzMiLCJzdWJqZWN0IjoiZW5nbGlzaCJ9"
+        }
+      ],
+      "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+      "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2",
+      "safetyPrerequisites": "Only explicituser2/user3story-time enrollment and validunsignedlinksubjectenglish. No flashcards/card-ladder (legacy migration), materials/provider roots or work/session/token writes. Plan/status read memo allowed, previewdoesnotexecuteaction/grant/limiter. SAMEmergedfixture/manifest pair plus exactcaseID/GET/query required. Allother handler/cache/migration/provider/action branches remainexcluded. Corrected2-only pair additionally requires school.yml selfService.enabled=true; this mounts actual read preview router only, no delegates called on registration, lifecycle.virtualDevices=true and fixed disabled services/integrations/devices/enableScheduler=false retained. Original failed7 pair remains historical; this amendment grants no success credit. Trigger-corrected TWO-only pair additionally declares metadata-only nfc reading-session at synthetic-unactivated-target under triggers/sources.yml; no tag bindings/inbox/endpoints/responses or registered physical target. Actual trigger factory and YAML repository sweep writes0/device or broadcast calls0; PlanProjection/resolver real readonly chain proves original unchanged partial/completed DTOs before HTTP. Preview never dispatches inert actions, issues tokens or opens sessions.",
+      "sourceProof": [
+        "modules/school/server/api/school.selfservice.mjs:87-91",
+        "modules/school/server/application/usecases/ResolveAccessCode.mjs:428-486,755-862",
+        "modules/school/server/application/PlanProjection.mjs:250-394",
+        "modules/school/server/application/StoryTimeProgramLauncher.mjs:185-239"
+      ],
+      "independentReview": {
+        "path": "/tmp/readiness-school-reading-bank-preview-group/review.json",
+        "sha256": "087c26caaf4f0de6fab38344dcfe207dba13c36f773060be242f72da886fe23e"
+      },
+      "diagnosticOnly": false,
+      "noProductionAuthorization": true,
+      "approvedPackets": [
+        {
+          "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+          "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2"
+        },
+        {
+          "fixtureSha256": "3155335225ebdbe4fb6a65b1952485188edfb2417e60d887d5897bf7fea8e7af",
+          "manifestSha256": "f0f0565602e287b43b7c6893316f14d0e2d9d43b78460d73e6124aaee5ba9834"
+        },
+        {
+          "fixtureSha256": "f413eee2b06fea2c3cb025d8794f924a04a884616b2ab93180ed2179598429cc",
+          "manifestSha256": "f0f0565602e287b43b7c6893316f14d0e2d9d43b78460d73e6124aaee5ba9834"
+        }
+      ],
+      "approvedFixtureSha256": [
+        "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+        "3155335225ebdbe4fb6a65b1952485188edfb2417e60d887d5897bf7fea8e7af",
+        "f413eee2b06fea2c3cb025d8794f924a04a884616b2ab93180ed2179598429cc"
+      ],
+      "approvedManifestSha256": [
+        "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2",
+        "f0f0565602e287b43b7c6893316f14d0e2d9d43b78460d73e6124aaee5ba9834",
+        "f0f0565602e287b43b7c6893316f14d0e2d9d43b78460d73e6124aaee5ba9834"
+      ],
+      "sourceGuardSha256": "88da0e526f4fafdaee3a45b8aa5d1912380cf27cd9c3e0d0177910cefe30c230",
+      "denominatorContribution": "new-template",
+      "fixturePrerequisiteCorrection": {
+        "diagnosis": {
+          "path": "/tmp/readiness-school-preview2-correction/DIAGNOSIS.json",
+          "sha256": "5097ca8c6478bbcdb1131daa0f3f09994cc0a660bac12e2af2c755c647aadb7b"
+        },
+        "routerExposure": {
+          "path": "/tmp/readiness-school-preview2-correction/router-exposure-result.json",
+          "sha256": "b4c78321111ff09e1ab7c58f2002968f5beb7742d67b84f8ac2fa8c190b82a9a"
+        },
+        "sameTwoRequestsOracles": true,
+        "oldFailedPairPreserved": true
+      },
+      "triggerPrerequisiteCorrection": {
+        "diagnosis": {
+          "path": "/tmp/readiness-school-preview-chain-diagnostic/HANDOFF.json",
+          "sha256": "c0f7fd36be1a82f2c2373848f59e29b5f775089a2646bdeadf93d4063c5f7741"
+        },
+        "diagnosisReview": {
+          "path": "/tmp/readiness-school-preview-chain-diagnostic/review.json",
+          "sha256": "559bb963f3bd5dfc0c77907e22f6c9e2b4b4c15dd16e98bcc64a3089c12d56e4"
+        },
+        "actualChain": {
+          "path": "/tmp/readiness-school-preview-chain-diagnostic/RESULT.json",
+          "sha256": "31af73856abc524951c2eb7b819d007ccb97f27702a1d05ba0884fd2bb805aa9"
+        },
+        "unchangedOracles": true,
+        "oldFailedBothAttemptsPreserved": true
+      }
     }
   ],
   "baselineDiagnosticFailures": [

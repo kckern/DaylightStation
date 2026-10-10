@@ -17143,7 +17143,62 @@
         "family": "School bank cache refresh",
         "reason": "Cold or expired bank summaries initiate shared async file scan and mutate summary/warming cache; attempts summary indirectly calls listBanks. Warm cache reads are separate.",
         "branchNotes": "Fresh cache reads finite; missing/expired cache rebuilds in memory and logs invalid authored banks. No durable repair observed, but cache creation is an effect; no live authorization."
-      }
+      },
+      "conditionalReadAdmissions": [
+        {
+          "admissionId": "bank-preview-conditional-6720ef986b6e414d",
+          "urlTemplate": "/api/v1/school/banks",
+          "declarationId": "decl-2571f3bf52fce99a3a96f398-0",
+          "scope": "Only exact approved localbank/readingpreview request branch; broad handler exclusions retained",
+          "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+          "requestCases": [
+            {
+              "id": "school-bank-browser-all",
+              "method": "GET",
+              "path": "/api/v1/school/banks"
+            },
+            {
+              "id": "school-bank-browser-assigned",
+              "method": "GET",
+              "path": "/api/v1/school/banks?audience=assigned"
+            },
+            {
+              "id": "school-bank-browser-generic",
+              "method": "GET",
+              "path": "/api/v1/school/banks?audience=generic"
+            }
+          ],
+          "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+          "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2",
+          "safetyPrerequisites": "Exactly2authoredvalidlocallegacybank files, catalogdisabled, integrations/services disabled. awaitwarm reads those files and updates only process-local summary/in-flight caches; no save, provider, session/grading/render call. SAMEmergedfixture/manifest pair plus exactcaseID/GET/query required. Allother handler/cache/migration/provider/action branches remainexcluded.",
+          "sourceProof": [
+            "modules/school/server/api/school.mjs:243",
+            "modules/school/server/application/services/SchoolApiSessionService.mjs:10-11",
+            "modules/school/server/application/SchoolService.mjs:244-282",
+            "modules/school/server/adapters/persistence/YamlSchoolDatastore.mjs:251-280"
+          ],
+          "independentReview": {
+            "path": "/tmp/readiness-school-reading-bank-preview-group/review.json",
+            "sha256": "087c26caaf4f0de6fab38344dcfe207dba13c36f773060be242f72da886fe23e"
+          },
+          "diagnosticOnly": false,
+          "noProductionAuthorization": true,
+          "approvedPackets": [
+            {
+              "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+              "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2"
+            }
+          ],
+          "approvedFixtureSha256": [
+            "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf"
+          ],
+          "approvedManifestSha256": [
+            "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2"
+          ],
+          "sourceGuardSha256": "88da0e526f4fafdaee3a45b8aa5d1912380cf27cd9c3e0d0177910cefe30c230",
+          "denominatorContribution": "new-template"
+        }
+      ]
     },
     {
       "declarationId": "decl-89deb2c09e08ca5c58a6c33f-0",
@@ -19275,7 +19330,57 @@
         "family": "Conditional mount and delegated-read effect review",
         "reason": "Self-service preview delegates configured plan/program statuses including legacy card store migration. ",
         "branchNotes": "Preview avoids scan token consume/created event append, but normal #resolve/#projectionFor plan can call linked card-ladder program status/courseEvidence; installed stores.open ignores readOnly and can COPY old directory. Program injection-specific complete no-write branch needed; invalid link finite refusal not populated preview authorization."
-      }
+      },
+      "conditionalReadAdmissions": [
+        {
+          "admissionId": "bank-preview-conditional-d34d7fe0ec037b54",
+          "urlTemplate": "/api/v1/school/self-service/preview/:link",
+          "declarationId": "decl-a8e172bb3b99f742a815dcd1-0",
+          "scope": "Only exact approved localbank/readingpreview request branch; broad handler exclusions retained",
+          "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+          "requestCases": [
+            {
+              "id": "school-preview-reading-partial",
+              "method": "GET",
+              "path": "/api/v1/school/self-service/preview/eyJsZWFybmVySWQiOiJ1c2VyXzIiLCJzdWJqZWN0IjoiZW5nbGlzaCJ9"
+            },
+            {
+              "id": "school-preview-reading-completed",
+              "method": "GET",
+              "path": "/api/v1/school/self-service/preview/eyJsZWFybmVySWQiOiJ1c2VyXzMiLCJzdWJqZWN0IjoiZW5nbGlzaCJ9"
+            }
+          ],
+          "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+          "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2",
+          "safetyPrerequisites": "Only explicituser2/user3story-time enrollment and validunsignedlinksubjectenglish. No flashcards/card-ladder (legacy migration), materials/provider roots or work/session/token writes. Plan/status read memo allowed, previewdoesnotexecuteaction/grant/limiter. SAMEmergedfixture/manifest pair plus exactcaseID/GET/query required. Allother handler/cache/migration/provider/action branches remainexcluded.",
+          "sourceProof": [
+            "modules/school/server/api/school.selfservice.mjs:87-91",
+            "modules/school/server/application/usecases/ResolveAccessCode.mjs:428-486,755-862",
+            "modules/school/server/application/PlanProjection.mjs:250-394",
+            "modules/school/server/application/StoryTimeProgramLauncher.mjs:185-239"
+          ],
+          "independentReview": {
+            "path": "/tmp/readiness-school-reading-bank-preview-group/review.json",
+            "sha256": "087c26caaf4f0de6fab38344dcfe207dba13c36f773060be242f72da886fe23e"
+          },
+          "diagnosticOnly": false,
+          "noProductionAuthorization": true,
+          "approvedPackets": [
+            {
+              "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+              "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2"
+            }
+          ],
+          "approvedFixtureSha256": [
+            "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf"
+          ],
+          "approvedManifestSha256": [
+            "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2"
+          ],
+          "sourceGuardSha256": "88da0e526f4fafdaee3a45b8aa5d1912380cf27cd9c3e0d0177910cefe30c230",
+          "denominatorContribution": "new-template"
+        }
+      ]
     },
     {
       "declarationId": "decl-c784842b8c3a8795728a9d7e-0",
@@ -21638,14 +21743,832 @@
       ],
       "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
       "denominatorContribution": "new-template"
+    },
+    {
+      "admissionId": "bank-preview-conditional-6720ef986b6e414d",
+      "urlTemplate": "/api/v1/school/banks",
+      "declarationId": "decl-2571f3bf52fce99a3a96f398-0",
+      "scope": "Only exact approved localbank/readingpreview request branch; broad handler exclusions retained",
+      "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+      "requestCases": [
+        {
+          "id": "school-bank-browser-all",
+          "method": "GET",
+          "path": "/api/v1/school/banks"
+        },
+        {
+          "id": "school-bank-browser-assigned",
+          "method": "GET",
+          "path": "/api/v1/school/banks?audience=assigned"
+        },
+        {
+          "id": "school-bank-browser-generic",
+          "method": "GET",
+          "path": "/api/v1/school/banks?audience=generic"
+        }
+      ],
+      "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+      "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2",
+      "safetyPrerequisites": "Exactly2authoredvalidlocallegacybank files, catalogdisabled, integrations/services disabled. awaitwarm reads those files and updates only process-local summary/in-flight caches; no save, provider, session/grading/render call. SAMEmergedfixture/manifest pair plus exactcaseID/GET/query required. Allother handler/cache/migration/provider/action branches remainexcluded.",
+      "sourceProof": [
+        "modules/school/server/api/school.mjs:243",
+        "modules/school/server/application/services/SchoolApiSessionService.mjs:10-11",
+        "modules/school/server/application/SchoolService.mjs:244-282",
+        "modules/school/server/adapters/persistence/YamlSchoolDatastore.mjs:251-280"
+      ],
+      "independentReview": {
+        "path": "/tmp/readiness-school-reading-bank-preview-group/review.json",
+        "sha256": "087c26caaf4f0de6fab38344dcfe207dba13c36f773060be242f72da886fe23e"
+      },
+      "diagnosticOnly": false,
+      "noProductionAuthorization": true,
+      "approvedPackets": [
+        {
+          "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+          "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2"
+        }
+      ],
+      "approvedFixtureSha256": [
+        "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf"
+      ],
+      "approvedManifestSha256": [
+        "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2"
+      ],
+      "sourceGuardSha256": "88da0e526f4fafdaee3a45b8aa5d1912380cf27cd9c3e0d0177910cefe30c230",
+      "denominatorContribution": "new-template"
+    },
+    {
+      "admissionId": "bank-preview-conditional-d34d7fe0ec037b54",
+      "urlTemplate": "/api/v1/school/self-service/preview/:link",
+      "declarationId": "decl-a8e172bb3b99f742a815dcd1-0",
+      "scope": "Only exact approved localbank/readingpreview request branch; broad handler exclusions retained",
+      "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+      "requestCases": [
+        {
+          "id": "school-preview-reading-partial",
+          "method": "GET",
+          "path": "/api/v1/school/self-service/preview/eyJsZWFybmVySWQiOiJ1c2VyXzIiLCJzdWJqZWN0IjoiZW5nbGlzaCJ9"
+        },
+        {
+          "id": "school-preview-reading-completed",
+          "method": "GET",
+          "path": "/api/v1/school/self-service/preview/eyJsZWFybmVySWQiOiJ1c2VyXzMiLCJzdWJqZWN0IjoiZW5nbGlzaCJ9"
+        }
+      ],
+      "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+      "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2",
+      "safetyPrerequisites": "Only explicituser2/user3story-time enrollment and validunsignedlinksubjectenglish. No flashcards/card-ladder (legacy migration), materials/provider roots or work/session/token writes. Plan/status read memo allowed, previewdoesnotexecuteaction/grant/limiter. SAMEmergedfixture/manifest pair plus exactcaseID/GET/query required. Allother handler/cache/migration/provider/action branches remainexcluded. Corrected2-only pair additionally requires school.yml selfService.enabled=true; this mounts actual read preview router only, no delegates called on registration, lifecycle.virtualDevices=true and fixed disabled services/integrations/devices/enableScheduler=false retained. Original failed7 pair remains historical; this amendment grants no success credit. Trigger-corrected TWO-only pair additionally declares metadata-only nfc reading-session at synthetic-unactivated-target under triggers/sources.yml; no tag bindings/inbox/endpoints/responses or registered physical target. Actual trigger factory and YAML repository sweep writes0/device or broadcast calls0; PlanProjection/resolver real readonly chain proves original unchanged partial/completed DTOs before HTTP. Preview never dispatches inert actions, issues tokens or opens sessions.",
+      "sourceProof": [
+        "modules/school/server/api/school.selfservice.mjs:87-91",
+        "modules/school/server/application/usecases/ResolveAccessCode.mjs:428-486,755-862",
+        "modules/school/server/application/PlanProjection.mjs:250-394",
+        "modules/school/server/application/StoryTimeProgramLauncher.mjs:185-239"
+      ],
+      "independentReview": {
+        "path": "/tmp/readiness-school-reading-bank-preview-group/review.json",
+        "sha256": "087c26caaf4f0de6fab38344dcfe207dba13c36f773060be242f72da886fe23e"
+      },
+      "diagnosticOnly": false,
+      "noProductionAuthorization": true,
+      "approvedPackets": [
+        {
+          "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+          "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2"
+        },
+        {
+          "fixtureSha256": "3155335225ebdbe4fb6a65b1952485188edfb2417e60d887d5897bf7fea8e7af",
+          "manifestSha256": "f0f0565602e287b43b7c6893316f14d0e2d9d43b78460d73e6124aaee5ba9834"
+        },
+        {
+          "fixtureSha256": "f413eee2b06fea2c3cb025d8794f924a04a884616b2ab93180ed2179598429cc",
+          "manifestSha256": "f0f0565602e287b43b7c6893316f14d0e2d9d43b78460d73e6124aaee5ba9834"
+        }
+      ],
+      "approvedFixtureSha256": [
+        "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+        "3155335225ebdbe4fb6a65b1952485188edfb2417e60d887d5897bf7fea8e7af",
+        "f413eee2b06fea2c3cb025d8794f924a04a884616b2ab93180ed2179598429cc"
+      ],
+      "approvedManifestSha256": [
+        "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2",
+        "f0f0565602e287b43b7c6893316f14d0e2d9d43b78460d73e6124aaee5ba9834",
+        "f0f0565602e287b43b7c6893316f14d0e2d9d43b78460d73e6124aaee5ba9834"
+      ],
+      "sourceGuardSha256": "88da0e526f4fafdaee3a45b8aa5d1912380cf27cd9c3e0d0177910cefe30c230",
+      "denominatorContribution": "new-template",
+      "fixturePrerequisiteCorrection": {
+        "diagnosis": {
+          "path": "/tmp/readiness-school-preview2-correction/DIAGNOSIS.json",
+          "sha256": "5097ca8c6478bbcdb1131daa0f3f09994cc0a660bac12e2af2c755c647aadb7b"
+        },
+        "routerExposure": {
+          "path": "/tmp/readiness-school-preview2-correction/router-exposure-result.json",
+          "sha256": "b4c78321111ff09e1ab7c58f2002968f5beb7742d67b84f8ac2fa8c190b82a9a"
+        },
+        "sameTwoRequestsOracles": true,
+        "oldFailedPairPreserved": true
+      },
+      "triggerPrerequisiteCorrection": {
+        "diagnosis": {
+          "path": "/tmp/readiness-school-preview-chain-diagnostic/HANDOFF.json",
+          "sha256": "c0f7fd36be1a82f2c2373848f59e29b5f775089a2646bdeadf93d4063c5f7741"
+        },
+        "diagnosisReview": {
+          "path": "/tmp/readiness-school-preview-chain-diagnostic/review.json",
+          "sha256": "559bb963f3bd5dfc0c77907e22f6c9e2b4b4c15dd16e98bcc64a3089c12d56e4"
+        },
+        "actualChain": {
+          "path": "/tmp/readiness-school-preview-chain-diagnostic/RESULT.json",
+          "sha256": "31af73856abc524951c2eb7b819d007ccb97f27702a1d05ba0884fd2bb805aa9"
+        },
+        "unchangedOracles": true,
+        "oldFailedBothAttemptsPreserved": true
+      }
     }
   ],
   "derivedConditionalReadEligibility": {
     "potentialEligibleHandlerWideSourceURLTemplates": 384,
-    "potentialEligibleExplicitBranchConditionalSourceURLTemplates": 10,
-    "potentialEligibleExpectedSourceURLTemplates": 394,
-    "potentialEligibleUnconditionalConstructionURLTemplates": 392,
+    "potentialEligibleExplicitBranchConditionalSourceURLTemplates": 12,
+    "potentialEligibleExpectedSourceURLTemplates": 396,
+    "potentialEligibleUnconditionalConstructionURLTemplates": 394,
     "potentialEligibleConditionalConstructionURLTemplates": 2,
+    "conditionalReadAdmissions": [
+      {
+        "admissionId": "critical-conditional-6962445663692f32",
+        "urlTemplate": "/api/v1/school/catalogs",
+        "declarationId": "decl-08644b49bfae811a103e9800-0",
+        "scope": "Only exact reviewed authored fixture/query branches; historical broad handler effectEligibility remains blocked",
+        "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+        "requestCases": [
+          {
+            "id": "critical-school-authored-catalog",
+            "method": "GET",
+            "path": "/api/v1/school/catalogs?learnerId=user_1"
+          }
+        ],
+        "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+        "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+        "safetyPrerequisites": "Valid authored YAML catalog/document; explicit configured learner user_1 and assignedcourse rates. catalog.exercise_library omitted disables generatedcorpus source. Assignment get deletes process-local corruptCurrent marker only; no save/put/atomicwrite. Actual learner-scoped catalog and hydrated lesson tested, never teacherlessonpreview/launch/session.",
+        "sourceProof": [
+          "modules/school/server/adapters/persistence/YamlAssignmentStore.mjs:124-149",
+          "modules/school/server/application/catalog/BuildSchoolCatalog.mjs:54",
+          "modules/school/server/application/GetLearningCatalog.mjs:28-74"
+        ],
+        "independentReview": {
+          "path": "/tmp/readiness-critical-school-fitness-pack/review.json",
+          "sha256": "7a72bc3dfb7270f8d48ce33a7337ad4a854c73c55a86eff408492c3e8c08e307"
+        },
+        "diagnosticOnly": false,
+        "noProductionAuthorization": true,
+        "approvedPackets": [
+          {
+            "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+            "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2"
+          },
+          {
+            "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+            "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+          }
+        ],
+        "approvedFixtureSha256": [
+          "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+          "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3"
+        ],
+        "approvedManifestSha256": [
+          "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+          "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+        ],
+        "packetBindingRule": "The same approvedPackets entry must match BOTH fixture and manifest hashes, plus exact request ID/method/path. Separate hash arrays are indexes only, not cross-product authorization.",
+        "sourceGuardSha256": "2669183eefc2839c606efd3c7737154eea2ed9355a3b414375eec8f87ce8d51b",
+        "mergedPacketReviewRequired": "/tmp/readiness-pending-pack-grouping/household-timeline-critical/HANDOFF.json"
+      },
+      {
+        "admissionId": "critical-conditional-2ee4612e6868f607",
+        "urlTemplate": "/api/v1/school/catalogs/:catalogId/subjects/:subjectId/courses/:courseId/units/:unitId/lessons/:lessonId",
+        "declarationId": "decl-c61d7ee0dbd31c57306f4187-0",
+        "scope": "Only exact reviewed authored fixture/query branches; historical broad handler effectEligibility remains blocked",
+        "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+        "requestCases": [
+          {
+            "id": "critical-school-lesson-intro",
+            "method": "GET",
+            "path": "/api/v1/school/catalogs/synthetic-school/subjects/mathematics/courses/rates/units/walking/lessons/intro?learnerId=user_1"
+          },
+          {
+            "id": "critical-school-lesson-comparison",
+            "method": "GET",
+            "path": "/api/v1/school/catalogs/synthetic-school/subjects/mathematics/courses/rates/units/walking/lessons/compare?learnerId=user_1"
+          }
+        ],
+        "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+        "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+        "safetyPrerequisites": "Valid authored YAML catalog/document; explicit configured learner user_1 and assignedcourse rates. catalog.exercise_library omitted disables generatedcorpus source. Assignment get deletes process-local corruptCurrent marker only; no save/put/atomicwrite. Actual learner-scoped catalog and hydrated lesson tested, never teacherlessonpreview/launch/session.",
+        "sourceProof": [
+          "modules/school/server/adapters/persistence/YamlAssignmentStore.mjs:124-149",
+          "modules/school/server/application/catalog/BuildSchoolCatalog.mjs:54",
+          "modules/school/server/application/GetLearningCatalog.mjs:28-74"
+        ],
+        "independentReview": {
+          "path": "/tmp/readiness-critical-school-fitness-pack/review.json",
+          "sha256": "7a72bc3dfb7270f8d48ce33a7337ad4a854c73c55a86eff408492c3e8c08e307"
+        },
+        "diagnosticOnly": false,
+        "noProductionAuthorization": true,
+        "approvedPackets": [
+          {
+            "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+            "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2"
+          },
+          {
+            "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+            "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+          }
+        ],
+        "approvedFixtureSha256": [
+          "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+          "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3"
+        ],
+        "approvedManifestSha256": [
+          "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+          "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+        ],
+        "packetBindingRule": "The same approvedPackets entry must match BOTH fixture and manifest hashes, plus exact request ID/method/path. Separate hash arrays are indexes only, not cross-product authorization.",
+        "sourceGuardSha256": "2669183eefc2839c606efd3c7737154eea2ed9355a3b414375eec8f87ce8d51b",
+        "mergedPacketReviewRequired": "/tmp/readiness-pending-pack-grouping/household-timeline-critical/HANDOFF.json"
+      },
+      {
+        "admissionId": "critical-conditional-2053637ad71374f6",
+        "urlTemplate": "/api/v1/fitness",
+        "declarationId": "decl-aaf7f16ecfa8c62ff40005ce-0",
+        "scope": "Only exact reviewed authored fixture/query branches; historical broad handler effectEligibility remains blocked",
+        "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+        "requestCases": [
+          {
+            "id": "critical-fitness-bootstrap",
+            "method": "GET",
+            "path": "/api/v1/fitness"
+          }
+        ],
+        "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+        "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+        "safetyPrerequisites": "Exactly authored local dashboard/history config with plex.music_playlists=[]; content catalog enrichment returns immediately before provider method. Inline primary learner hydrates only localmembership. Do not generalize configured playlist IDs/Plexcollections/video.",
+        "sourceProof": [
+          "modules/fitness/server/adapters/ProviderFitnessContentCatalog.mjs:109-114",
+          "modules/fitness/server/application/services/FitnessContentService.mjs:10-16",
+          "modules/fitness/server/application/services/FitnessUserHydrator.mjs:50-55"
+        ],
+        "independentReview": {
+          "path": "/tmp/readiness-critical-school-fitness-pack/review.json",
+          "sha256": "7a72bc3dfb7270f8d48ce33a7337ad4a854c73c55a86eff408492c3e8c08e307"
+        },
+        "diagnosticOnly": false,
+        "noProductionAuthorization": true,
+        "approvedPackets": [
+          {
+            "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+            "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2"
+          },
+          {
+            "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+            "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+          }
+        ],
+        "approvedFixtureSha256": [
+          "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+          "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3"
+        ],
+        "approvedManifestSha256": [
+          "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+          "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+        ],
+        "packetBindingRule": "The same approvedPackets entry must match BOTH fixture and manifest hashes, plus exact request ID/method/path. Separate hash arrays are indexes only, not cross-product authorization.",
+        "sourceGuardSha256": "2669183eefc2839c606efd3c7737154eea2ed9355a3b414375eec8f87ce8d51b",
+        "mergedPacketReviewRequired": "/tmp/readiness-pending-pack-grouping/household-timeline-critical/HANDOFF.json"
+      },
+      {
+        "admissionId": "critical-conditional-37072f21bf20c9e1",
+        "urlTemplate": "/api/v1/fitness/sessions",
+        "declarationId": "decl-cf42e87541e6ed8b3c759a51-0",
+        "scope": "Only exact reviewed authored fixture/query branches; historical broad handler effectEligibility remains blocked",
+        "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+        "requestCases": [
+          {
+            "id": "critical-fitness-session-list",
+            "method": "GET",
+            "path": "/api/v1/fitness/sessions?date=2026-10-09"
+          },
+          {
+            "id": "critical-fitness-session-list-ungrouped",
+            "method": "GET",
+            "path": "/api/v1/fitness/sessions?date=2026-10-09&group=none"
+          }
+        ],
+        "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+        "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+        "safetyPrerequisites": "GET exact date=2026-10-09; no since/relative query. QuerySessions date branch calls findByDate only, never rangeindex rebuild/save. Defaultgrouping two1h-separated singletonstoredWalk sessions; ActivityRegistry foreignsport guard returnsbefore Cycle/Skyline providers. Explicitgroup=none secondarycontract separately. StoredStrava field is synthetic historical displaymetadata, no providerimport or playback claim.",
+        "sourceProof": [
+          "modules/fitness/server/application/usecases/QuerySessions.mjs:78-89",
+          "modules/fitness/server/adapters/persistence/YamlSessionDatastore.mjs:384-398",
+          "modules/fitness/server/application/activities/ActivityRegistry.mjs:10-15"
+        ],
+        "independentReview": {
+          "path": "/tmp/readiness-critical-school-fitness-pack/review.json",
+          "sha256": "7a72bc3dfb7270f8d48ce33a7337ad4a854c73c55a86eff408492c3e8c08e307"
+        },
+        "diagnosticOnly": false,
+        "noProductionAuthorization": true,
+        "approvedPackets": [
+          {
+            "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+            "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2"
+          },
+          {
+            "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+            "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+          }
+        ],
+        "approvedFixtureSha256": [
+          "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+          "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3"
+        ],
+        "approvedManifestSha256": [
+          "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+          "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+        ],
+        "packetBindingRule": "The same approvedPackets entry must match BOTH fixture and manifest hashes, plus exact request ID/method/path. Separate hash arrays are indexes only, not cross-product authorization.",
+        "sourceGuardSha256": "2669183eefc2839c606efd3c7737154eea2ed9355a3b414375eec8f87ce8d51b",
+        "mergedPacketReviewRequired": "/tmp/readiness-pending-pack-grouping/household-timeline-critical/HANDOFF.json"
+      },
+      {
+        "admissionId": "critical-conditional-6e2f52674ae19311",
+        "urlTemplate": "/api/v1/school/certification",
+        "declarationId": "decl-74ce67c8fe6bf50db74c19c4-0",
+        "scope": "Only exact reviewed authored fixture/query branches; historical broad handler effectEligibility remains blocked",
+        "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+        "requestCases": [
+          {
+            "id": "critical-school-certification-diagnostic",
+            "method": "GET",
+            "path": "/api/v1/school/certification?address=synthetic-school%2Fmathematics%2Frates%2Fwalking%2Fintro&surface=screen-browser"
+          }
+        ],
+        "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+        "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+        "safetyPrerequisites": "Pure screenport certification of authored reader/examples capabilities; GetSurfaceCertification request-local bundle/row Maps only, no publicationmanifestwrite. Freshper-callbuilder; exactsurfacefilter. Mandatory diagnostic independentexpected200/full row; suspectedcomposedmissingselect may404 in bothroles, never credit404 correctness.",
+        "sourceProof": [
+          "modules/school/server/composition/lifecycle-runtime.mjs:734",
+          "modules/school/server/api/school.mjs:294",
+          "modules/school/server/application/surfaces/BuildSchoolSurfaceCertification.mjs:32-35"
+        ],
+        "independentReview": {
+          "path": "/tmp/readiness-critical-school-fitness-pack/review.json",
+          "sha256": "7a72bc3dfb7270f8d48ce33a7337ad4a854c73c55a86eff408492c3e8c08e307"
+        },
+        "diagnosticOnly": true,
+        "noProductionAuthorization": true,
+        "approvedPackets": [
+          {
+            "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+            "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2"
+          },
+          {
+            "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+            "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+          }
+        ],
+        "approvedFixtureSha256": [
+          "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+          "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3"
+        ],
+        "approvedManifestSha256": [
+          "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+          "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+        ],
+        "packetBindingRule": "The same approvedPackets entry must match BOTH fixture and manifest hashes, plus exact request ID/method/path. Separate hash arrays are indexes only, not cross-product authorization.",
+        "sourceGuardSha256": "2669183eefc2839c606efd3c7737154eea2ed9355a3b414375eec8f87ce8d51b",
+        "mergedPacketReviewRequired": "/tmp/readiness-pending-pack-grouping/household-timeline-critical/HANDOFF.json"
+      },
+      {
+        "admissionId": "standing-conditional-646036ffcf60e2fb",
+        "urlTemplate": "/api/v1/school/report",
+        "declarationId": "decl-4413ff96adc59a78968484f1-0",
+        "scope": "Exact reviewed synthetic local School standing request branch; broad effectful handler remains excluded",
+        "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+        "requestCases": [
+          {
+            "id": "standing-report-learner",
+            "method": "GET",
+            "path": "/api/v1/school/report?userId=user_1&audience=learner"
+          },
+          {
+            "id": "standing-report-parent",
+            "method": "GET",
+            "path": "/api/v1/school/report?userId=user_1&audience=parent"
+          },
+          {
+            "id": "learner-home-report-learner",
+            "method": "GET",
+            "path": "/api/v1/school/report?userId=user_1&audience=learner"
+          },
+          {
+            "id": "learner-home-report-parent",
+            "method": "GET",
+            "path": "/api/v1/school/report?userId=user_1&audience=parent"
+          },
+          {
+            "id": "learner-home-report-sibling",
+            "method": "GET",
+            "path": "/api/v1/school/report?userId=user_2&audience=learner"
+          },
+          {
+            "id": "learner-home-report-household",
+            "method": "GET",
+            "path": "/api/v1/school/report?audience=parent"
+          }
+        ],
+        "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+        "safetyPrerequisites": "No auth sid; lifecycle.enabled=true,virtualDevices=true; local schema-absent paper-only curriculum/document, no fitness-course units, no school materials config, no media/provider/program/launch/action refs; stored object session events and exact reviewed queue array only. JSON report-card/progress-report/format=json preview with previewOnly stubs; process-local memoization/corruption flags allowed, no persistent cache/provider/device/real session/ticket actions. Expiry admission and both roles checked. SAME reviewed fixture/manifest pair and exact case ID/method/query mandatory. Additional exact learner-home packet: lifecycle.enabled=false means WorkSessionReporter is not constructed; no language corpus/enrollment or School materials/curriculum. Synthetic two-learner normal/invalidated attempt-shard reads and configured adult teacher/profile-only Fitness listing; genuine recently ended Fitness session read only. No auth sid, provider enrollment/device identify/resume/merge/write. Exact added request ID/method/query and SAME preferred/fallback fixture-manifest pair required; all old standing fixtures/requests/diagnostics retained.",
+        "sourceProof": [
+          "modules/school/server/application/GetSchoolReport.mjs",
+          "modules/school/server/application/WorkSessionReporter.mjs",
+          "modules/school/server/application/SchoolService.mjs"
+        ],
+        "independentReview": {
+          "path": "/tmp/readiness-school-fitness-standing-group/review.json",
+          "sha256": "f56680136daa12fa700e1af2d2bb9dc42e32dcce1a1ad9fe17f4ca46b4460b8a"
+        },
+        "diagnosticOnly": false,
+        "noProductionAuthorization": true,
+        "approvedPackets": [
+          {
+            "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+            "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+          },
+          {
+            "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+            "manifestSha256": "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1"
+          },
+          {
+            "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+            "manifestSha256": "29035274d7930c8b82b4f5fbed8e1565e8eeedaf9e492d9da9c3c8882bf95905"
+          }
+        ],
+        "approvedFixtureSha256": [
+          "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+          "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+          "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e"
+        ],
+        "approvedManifestSha256": [
+          "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+          "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1",
+          "29035274d7930c8b82b4f5fbed8e1565e8eeedaf9e492d9da9c3c8882bf95905"
+        ],
+        "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
+        "denominatorContribution": "new-template",
+        "reviewedBranchExtensions": [
+          {
+            "name": "learner-home-quiz-report-join",
+            "requestCaseIds": [
+              "learner-home-report-learner",
+              "learner-home-report-parent",
+              "learner-home-report-sibling",
+              "learner-home-report-household"
+            ],
+            "approvedPackets": [
+              {
+                "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+                "manifestSha256": "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1"
+              },
+              {
+                "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+                "manifestSha256": "29035274d7930c8b82b4f5fbed8e1565e8eeedaf9e492d9da9c3c8882bf95905"
+              }
+            ],
+            "sourceGuardSha256": "c2cb701e3ecd3def5123df173eca169c743988bc5a30bfd24460658bc5a11236",
+            "packetHandoff": "/tmp/readiness-learner-home-pack/HANDOFF.json",
+            "reviewRequiredBeforeApply": "/tmp/readiness-learner-home-pack/review.json",
+            "effects": "Pure aggregate of stored quiz attempts; inert lifecycle excludes WorkSessionReporter and its caches/actions. Original baseline pending-date expectations untouched.",
+            "noDenominatorGrowth": true
+          }
+        ]
+      },
+      {
+        "admissionId": "standing-conditional-f321ca26a5912bdd",
+        "urlTemplate": "/api/v1/school/report-card",
+        "declarationId": "decl-f7efea901612200a42c3c0b1-0",
+        "scope": "Exact reviewed synthetic local School standing request branch; broad effectful handler remains excluded",
+        "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+        "requestCases": [
+          {
+            "id": "standing-report-card",
+            "method": "GET",
+            "path": "/api/v1/school/report-card?learnerId=user_1&periodId=synthetic-term"
+          }
+        ],
+        "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+        "safetyPrerequisites": "No auth sid; lifecycle.enabled=true,virtualDevices=true; local schema-absent paper-only curriculum/document, no fitness-course units, no school materials config, no media/provider/program/launch/action refs; stored object session events and exact reviewed queue array only. JSON report-card/progress-report/format=json preview with previewOnly stubs; process-local memoization/corruption flags allowed, no persistent cache/provider/device/real session/ticket actions. Expiry admission and both roles checked. SAME reviewed fixture/manifest pair and exact case ID/method/query mandatory.",
+        "sourceProof": [
+          "modules/school/server/application/usecases/GetReportCard.mjs",
+          "modules/school/server/application/FitnessCourseCurriculumCatalog.mjs",
+          "modules/school/server/composition/catalog-runtime.mjs"
+        ],
+        "independentReview": {
+          "path": "/tmp/readiness-school-fitness-standing-group/review.json",
+          "sha256": "f56680136daa12fa700e1af2d2bb9dc42e32dcce1a1ad9fe17f4ca46b4460b8a"
+        },
+        "diagnosticOnly": false,
+        "noProductionAuthorization": true,
+        "approvedPackets": [
+          {
+            "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+            "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+          }
+        ],
+        "approvedFixtureSha256": [
+          "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e"
+        ],
+        "approvedManifestSha256": [
+          "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+        ],
+        "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
+        "denominatorContribution": "new-template"
+      },
+      {
+        "admissionId": "standing-conditional-7f381d1dcc57ace7",
+        "urlTemplate": "/api/v1/school/progress-report",
+        "declarationId": "decl-0fd7bb7f3487bb776fd9d1dd-0",
+        "scope": "Exact reviewed synthetic local School standing request branch; broad effectful handler remains excluded",
+        "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+        "requestCases": [
+          {
+            "id": "standing-progress-report",
+            "method": "GET",
+            "path": "/api/v1/school/progress-report?learnerId=user_1&periodId=synthetic-term"
+          }
+        ],
+        "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+        "safetyPrerequisites": "No auth sid; lifecycle.enabled=true,virtualDevices=true; local schema-absent paper-only curriculum/document, no fitness-course units, no school materials config, no media/provider/program/launch/action refs; stored object session events and exact reviewed queue array only. JSON report-card/progress-report/format=json preview with previewOnly stubs; process-local memoization/corruption flags allowed, no persistent cache/provider/device/real session/ticket actions. Expiry admission and both roles checked. SAME reviewed fixture/manifest pair and exact case ID/method/query mandatory.",
+        "sourceProof": [
+          "modules/school/server/application/usecases/GetProgressReport.mjs",
+          "modules/school/server/application/usecases/GetReportCard.mjs",
+          "modules/school/server/composition/catalog-runtime.mjs"
+        ],
+        "independentReview": {
+          "path": "/tmp/readiness-school-fitness-standing-group/review.json",
+          "sha256": "f56680136daa12fa700e1af2d2bb9dc42e32dcce1a1ad9fe17f4ca46b4460b8a"
+        },
+        "diagnosticOnly": false,
+        "noProductionAuthorization": true,
+        "approvedPackets": [
+          {
+            "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+            "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+          }
+        ],
+        "approvedFixtureSha256": [
+          "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e"
+        ],
+        "approvedManifestSha256": [
+          "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+        ],
+        "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
+        "denominatorContribution": "new-template"
+      },
+      {
+        "admissionId": "standing-conditional-194aeb9278056d2e",
+        "urlTemplate": "/api/v1/school/lifecycle/learners/:learnerId/agenda/preview",
+        "declarationId": "decl-1800e657146d11c7e7deec31-0",
+        "scope": "Exact reviewed synthetic local School standing request branch; broad effectful handler remains excluded",
+        "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+        "requestCases": [
+          {
+            "id": "standing-agenda-json",
+            "method": "GET",
+            "path": "/api/v1/school/lifecycle/learners/user_1/agenda/preview?format=json&studyDay=2026-10-09"
+          }
+        ],
+        "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+        "safetyPrerequisites": "No auth sid; lifecycle.enabled=true,virtualDevices=true; local schema-absent paper-only curriculum/document, no fitness-course units, no school materials config, no media/provider/program/launch/action refs; stored object session events and exact reviewed queue array only. JSON report-card/progress-report/format=json preview with previewOnly stubs; process-local memoization/corruption flags allowed, no persistent cache/provider/device/real session/ticket actions. Expiry admission and both roles checked. SAME reviewed fixture/manifest pair and exact case ID/method/query mandatory.",
+        "sourceProof": [
+          "modules/school/server/application/PreviewSchoolStores.mjs",
+          "modules/school/server/application/usecases/BuildAgenda.mjs",
+          "modules/school/server/application/PlanProjection.mjs"
+        ],
+        "independentReview": {
+          "path": "/tmp/readiness-school-fitness-standing-group/review.json",
+          "sha256": "f56680136daa12fa700e1af2d2bb9dc42e32dcce1a1ad9fe17f4ca46b4460b8a"
+        },
+        "diagnosticOnly": false,
+        "noProductionAuthorization": true,
+        "approvedPackets": [
+          {
+            "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+            "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+          }
+        ],
+        "approvedFixtureSha256": [
+          "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e"
+        ],
+        "approvedManifestSha256": [
+          "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+        ],
+        "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
+        "denominatorContribution": "none-existing-template"
+      },
+      {
+        "admissionId": "standing-conditional-df96afc46319c043",
+        "urlTemplate": "/api/v1/school/review/learner/:learnerId",
+        "declarationId": "decl-34357f8f3292155ecb03b3ff-0",
+        "scope": "Exact reviewed synthetic local School standing request branch; broad effectful handler remains excluded",
+        "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+        "requestCases": [
+          {
+            "id": "standing-learner-feedback-default",
+            "method": "GET",
+            "path": "/api/v1/school/review/learner/user_1?limit=20"
+          },
+          {
+            "id": "standing-learner-feedback-limit-one",
+            "method": "GET",
+            "path": "/api/v1/school/review/learner/user_1?limit=1"
+          }
+        ],
+        "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+        "safetyPrerequisites": "No auth sid; lifecycle.enabled=true,virtualDevices=true; local schema-absent paper-only curriculum/document, no fitness-course units, no school materials config, no media/provider/program/launch/action refs; stored object session events and exact reviewed queue array only. JSON report-card/progress-report/format=json preview with previewOnly stubs; process-local memoization/corruption flags allowed, no persistent cache/provider/device/real session/ticket actions. Expiry admission and both roles checked. SAME reviewed fixture/manifest pair and exact case ID/method/query mandatory.",
+        "sourceProof": [
+          "modules/school/server/application/services/SchoolRecordsQueryService.mjs",
+          "modules/school/server/adapters/persistence/YamlReviewQueue.mjs",
+          "modules/school/server/application/CurriculumAccess.mjs"
+        ],
+        "independentReview": {
+          "path": "/tmp/readiness-school-fitness-standing-group/review.json",
+          "sha256": "f56680136daa12fa700e1af2d2bb9dc42e32dcce1a1ad9fe17f4ca46b4460b8a"
+        },
+        "diagnosticOnly": false,
+        "noProductionAuthorization": true,
+        "approvedPackets": [
+          {
+            "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+            "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+          }
+        ],
+        "approvedFixtureSha256": [
+          "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e"
+        ],
+        "approvedManifestSha256": [
+          "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+        ],
+        "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
+        "denominatorContribution": "new-template"
+      },
+      {
+        "admissionId": "standing-conditional-3e6a56b06190e413",
+        "urlTemplate": "/api/v1/school/lifecycle/sessions/:sessionId/events",
+        "declarationId": "decl-93b604b7ce495056d10192a5-0",
+        "scope": "Exact reviewed synthetic local School standing request branch; broad effectful handler remains excluded",
+        "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+        "requestCases": [
+          {
+            "id": "standing-session-events",
+            "method": "GET",
+            "path": "/api/v1/school/lifecycle/sessions/synthetic-completed-session/events"
+          }
+        ],
+        "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+        "safetyPrerequisites": "No auth sid; lifecycle.enabled=true,virtualDevices=true; local schema-absent paper-only curriculum/document, no fitness-course units, no school materials config, no media/provider/program/launch/action refs; stored object session events and exact reviewed queue array only. JSON report-card/progress-report/format=json preview with previewOnly stubs; process-local memoization/corruption flags allowed, no persistent cache/provider/device/real session/ticket actions. Expiry admission and both roles checked. SAME reviewed fixture/manifest pair and exact case ID/method/query mandatory.",
+        "sourceProof": [
+          "modules/school/server/application/services/SchoolLifecycleReadService.mjs",
+          "modules/school/server/adapters/persistence/YamlWorkSessionDatastore.mjs"
+        ],
+        "independentReview": {
+          "path": "/tmp/readiness-school-fitness-standing-group/review.json",
+          "sha256": "f56680136daa12fa700e1af2d2bb9dc42e32dcce1a1ad9fe17f4ca46b4460b8a"
+        },
+        "diagnosticOnly": false,
+        "noProductionAuthorization": true,
+        "approvedPackets": [
+          {
+            "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+            "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+          }
+        ],
+        "approvedFixtureSha256": [
+          "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e"
+        ],
+        "approvedManifestSha256": [
+          "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+        ],
+        "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
+        "denominatorContribution": "new-template"
+      },
+      {
+        "admissionId": "bank-preview-conditional-6720ef986b6e414d",
+        "urlTemplate": "/api/v1/school/banks",
+        "declarationId": "decl-2571f3bf52fce99a3a96f398-0",
+        "scope": "Only exact approved localbank/readingpreview request branch; broad handler exclusions retained",
+        "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+        "requestCases": [
+          {
+            "id": "school-bank-browser-all",
+            "method": "GET",
+            "path": "/api/v1/school/banks"
+          },
+          {
+            "id": "school-bank-browser-assigned",
+            "method": "GET",
+            "path": "/api/v1/school/banks?audience=assigned"
+          },
+          {
+            "id": "school-bank-browser-generic",
+            "method": "GET",
+            "path": "/api/v1/school/banks?audience=generic"
+          }
+        ],
+        "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+        "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2",
+        "safetyPrerequisites": "Exactly2authoredvalidlocallegacybank files, catalogdisabled, integrations/services disabled. awaitwarm reads those files and updates only process-local summary/in-flight caches; no save, provider, session/grading/render call. SAMEmergedfixture/manifest pair plus exactcaseID/GET/query required. Allother handler/cache/migration/provider/action branches remainexcluded.",
+        "sourceProof": [
+          "modules/school/server/api/school.mjs:243",
+          "modules/school/server/application/services/SchoolApiSessionService.mjs:10-11",
+          "modules/school/server/application/SchoolService.mjs:244-282",
+          "modules/school/server/adapters/persistence/YamlSchoolDatastore.mjs:251-280"
+        ],
+        "independentReview": {
+          "path": "/tmp/readiness-school-reading-bank-preview-group/review.json",
+          "sha256": "087c26caaf4f0de6fab38344dcfe207dba13c36f773060be242f72da886fe23e"
+        },
+        "diagnosticOnly": false,
+        "noProductionAuthorization": true,
+        "approvedPackets": [
+          {
+            "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+            "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2"
+          }
+        ],
+        "approvedFixtureSha256": [
+          "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf"
+        ],
+        "approvedManifestSha256": [
+          "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2"
+        ],
+        "sourceGuardSha256": "88da0e526f4fafdaee3a45b8aa5d1912380cf27cd9c3e0d0177910cefe30c230",
+        "denominatorContribution": "new-template"
+      },
+      {
+        "admissionId": "bank-preview-conditional-d34d7fe0ec037b54",
+        "urlTemplate": "/api/v1/school/self-service/preview/:link",
+        "declarationId": "decl-a8e172bb3b99f742a815dcd1-0",
+        "scope": "Only exact approved localbank/readingpreview request branch; broad handler exclusions retained",
+        "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+        "requestCases": [
+          {
+            "id": "school-preview-reading-partial",
+            "method": "GET",
+            "path": "/api/v1/school/self-service/preview/eyJsZWFybmVySWQiOiJ1c2VyXzIiLCJzdWJqZWN0IjoiZW5nbGlzaCJ9"
+          },
+          {
+            "id": "school-preview-reading-completed",
+            "method": "GET",
+            "path": "/api/v1/school/self-service/preview/eyJsZWFybmVySWQiOiJ1c2VyXzMiLCJzdWJqZWN0IjoiZW5nbGlzaCJ9"
+          }
+        ],
+        "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+        "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2",
+        "safetyPrerequisites": "Only explicituser2/user3story-time enrollment and validunsignedlinksubjectenglish. No flashcards/card-ladder (legacy migration), materials/provider roots or work/session/token writes. Plan/status read memo allowed, previewdoesnotexecuteaction/grant/limiter. SAMEmergedfixture/manifest pair plus exactcaseID/GET/query required. Allother handler/cache/migration/provider/action branches remainexcluded.",
+        "sourceProof": [
+          "modules/school/server/api/school.selfservice.mjs:87-91",
+          "modules/school/server/application/usecases/ResolveAccessCode.mjs:428-486,755-862",
+          "modules/school/server/application/PlanProjection.mjs:250-394",
+          "modules/school/server/application/StoryTimeProgramLauncher.mjs:185-239"
+        ],
+        "independentReview": {
+          "path": "/tmp/readiness-school-reading-bank-preview-group/review.json",
+          "sha256": "087c26caaf4f0de6fab38344dcfe207dba13c36f773060be242f72da886fe23e"
+        },
+        "diagnosticOnly": false,
+        "noProductionAuthorization": true,
+        "approvedPackets": [
+          {
+            "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+            "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2"
+          }
+        ],
+        "approvedFixtureSha256": [
+          "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf"
+        ],
+        "approvedManifestSha256": [
+          "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2"
+        ],
+        "sourceGuardSha256": "88da0e526f4fafdaee3a45b8aa5d1912380cf27cd9c3e0d0177910cefe30c230",
+        "denominatorContribution": "new-template"
+      }
+    ],
     "scope": "Potential source-bound read branches only; exact approved case/query and same fixture+manifest pair required. Broad handler exclusions retained; no HTTP execution, independent correctness, or installed-live credit is created."
   },
   "expectedInstalledMountAccounting": {
@@ -21803,5 +22726,38 @@
     "historyAndBroadHandlerExclusionsPreserved": true,
     "newCaseCredit": 0,
     "potentialTemplatesUnchanged": 394
+  },
+  "bankPreviewConditionalReadRenewal": {
+    "scope": "Bounded SAMEreviewed merged7fixture/manifest/exact5GETbranches; localbankwarm memo and onlystory-time preview statuses. No freshdeclaration/sourcecapture or HTTP/correctness claim.",
+    "review": {
+      "path": "/tmp/readiness-school-reading-bank-preview-group/review.json",
+      "sha256": "087c26caaf4f0de6fab38344dcfe207dba13c36f773060be242f72da886fe23e"
+    },
+    "conditionalProposal": {
+      "path": "/tmp/readiness-school-reading-bank-preview-group/CONDITIONAL-PROPOSAL.json",
+      "sha256": "94185af60b72fa8b0a7dea3dc848118191bc9cb8522fb164e3898ab17a027c3a"
+    },
+    "newTemplateAdmissions": 2,
+    "derivedPotentialTemplates": 396,
+    "acceptedParityTemplatesUnchanged": 284,
+    "gapsBeforeExecution": 112,
+    "broadHandlersAndHistoricalCapturePreserved": true
+  },
+  "previewMountPrerequisiteRenewal": {
+    "scope": "Bounded existing conditional SAMEfixture/manifest amendment, preserves historical capture/source metadata and broad rows; no new denominator/source capture",
+    "diagnosis": {
+      "path": "/tmp/readiness-school-preview2-correction/DIAGNOSIS.json",
+      "sha256": "5097ca8c6478bbcdb1131daa0f3f09994cc0a660bac12e2af2c755c647aadb7b"
+    },
+    "potentialTemplatesUnchanged": 396,
+    "noExecutionCredit": true
+  },
+  "previewTriggerPrerequisiteRenewal": {
+    "scope": "Bounded existing exactpair amendment only, preserves historical sourceState/captureCommand/scope/candidateCommit/broadrows/counts; no freshcapture/newdenominator",
+    "diagnosis": {
+      "path": "/tmp/readiness-school-preview-chain-diagnostic/HANDOFF.json",
+      "sha256": "c0f7fd36be1a82f2c2373848f59e29b5f775089a2646bdeadf93d4063c5f7741"
+    },
+    "prospectiveCredit": 0
   }
 }

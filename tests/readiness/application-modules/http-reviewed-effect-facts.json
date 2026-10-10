@@ -18780,6 +18780,147 @@
       ],
       "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
       "denominatorContribution": "new-template"
+    },
+    {
+      "admissionId": "bank-preview-conditional-6720ef986b6e414d",
+      "urlTemplate": "/api/v1/school/banks",
+      "declarationId": "decl-2571f3bf52fce99a3a96f398-0",
+      "scope": "Only exact approved localbank/readingpreview request branch; broad handler exclusions retained",
+      "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+      "requestCases": [
+        {
+          "id": "school-bank-browser-all",
+          "method": "GET",
+          "path": "/api/v1/school/banks"
+        },
+        {
+          "id": "school-bank-browser-assigned",
+          "method": "GET",
+          "path": "/api/v1/school/banks?audience=assigned"
+        },
+        {
+          "id": "school-bank-browser-generic",
+          "method": "GET",
+          "path": "/api/v1/school/banks?audience=generic"
+        }
+      ],
+      "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+      "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2",
+      "safetyPrerequisites": "Exactly2authoredvalidlocallegacybank files, catalogdisabled, integrations/services disabled. awaitwarm reads those files and updates only process-local summary/in-flight caches; no save, provider, session/grading/render call. SAMEmergedfixture/manifest pair plus exactcaseID/GET/query required. Allother handler/cache/migration/provider/action branches remainexcluded.",
+      "sourceProof": [
+        "modules/school/server/api/school.mjs:243",
+        "modules/school/server/application/services/SchoolApiSessionService.mjs:10-11",
+        "modules/school/server/application/SchoolService.mjs:244-282",
+        "modules/school/server/adapters/persistence/YamlSchoolDatastore.mjs:251-280"
+      ],
+      "independentReview": {
+        "path": "/tmp/readiness-school-reading-bank-preview-group/review.json",
+        "sha256": "087c26caaf4f0de6fab38344dcfe207dba13c36f773060be242f72da886fe23e"
+      },
+      "diagnosticOnly": false,
+      "noProductionAuthorization": true,
+      "approvedPackets": [
+        {
+          "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+          "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2"
+        }
+      ],
+      "approvedFixtureSha256": [
+        "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf"
+      ],
+      "approvedManifestSha256": [
+        "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2"
+      ],
+      "sourceGuardSha256": "88da0e526f4fafdaee3a45b8aa5d1912380cf27cd9c3e0d0177910cefe30c230",
+      "denominatorContribution": "new-template"
+    },
+    {
+      "admissionId": "bank-preview-conditional-d34d7fe0ec037b54",
+      "urlTemplate": "/api/v1/school/self-service/preview/:link",
+      "declarationId": "decl-a8e172bb3b99f742a815dcd1-0",
+      "scope": "Only exact approved localbank/readingpreview request branch; broad handler exclusions retained",
+      "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+      "requestCases": [
+        {
+          "id": "school-preview-reading-partial",
+          "method": "GET",
+          "path": "/api/v1/school/self-service/preview/eyJsZWFybmVySWQiOiJ1c2VyXzIiLCJzdWJqZWN0IjoiZW5nbGlzaCJ9"
+        },
+        {
+          "id": "school-preview-reading-completed",
+          "method": "GET",
+          "path": "/api/v1/school/self-service/preview/eyJsZWFybmVySWQiOiJ1c2VyXzMiLCJzdWJqZWN0IjoiZW5nbGlzaCJ9"
+        }
+      ],
+      "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+      "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2",
+      "safetyPrerequisites": "Only explicituser2/user3story-time enrollment and validunsignedlinksubjectenglish. No flashcards/card-ladder (legacy migration), materials/provider roots or work/session/token writes. Plan/status read memo allowed, previewdoesnotexecuteaction/grant/limiter. SAMEmergedfixture/manifest pair plus exactcaseID/GET/query required. Allother handler/cache/migration/provider/action branches remainexcluded. Corrected2-only pair additionally requires school.yml selfService.enabled=true; this mounts actual read preview router only, no delegates called on registration, lifecycle.virtualDevices=true and fixed disabled services/integrations/devices/enableScheduler=false retained. Original failed7 pair remains historical; this amendment grants no success credit. Trigger-corrected TWO-only pair additionally declares metadata-only nfc reading-session at synthetic-unactivated-target under triggers/sources.yml; no tag bindings/inbox/endpoints/responses or registered physical target. Actual trigger factory and YAML repository sweep writes0/device or broadcast calls0; PlanProjection/resolver real readonly chain proves original unchanged partial/completed DTOs before HTTP. Preview never dispatches inert actions, issues tokens or opens sessions.",
+      "sourceProof": [
+        "modules/school/server/api/school.selfservice.mjs:87-91",
+        "modules/school/server/application/usecases/ResolveAccessCode.mjs:428-486,755-862",
+        "modules/school/server/application/PlanProjection.mjs:250-394",
+        "modules/school/server/application/StoryTimeProgramLauncher.mjs:185-239"
+      ],
+      "independentReview": {
+        "path": "/tmp/readiness-school-reading-bank-preview-group/review.json",
+        "sha256": "087c26caaf4f0de6fab38344dcfe207dba13c36f773060be242f72da886fe23e"
+      },
+      "diagnosticOnly": false,
+      "noProductionAuthorization": true,
+      "approvedPackets": [
+        {
+          "fixtureSha256": "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+          "manifestSha256": "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2"
+        },
+        {
+          "fixtureSha256": "3155335225ebdbe4fb6a65b1952485188edfb2417e60d887d5897bf7fea8e7af",
+          "manifestSha256": "f0f0565602e287b43b7c6893316f14d0e2d9d43b78460d73e6124aaee5ba9834"
+        },
+        {
+          "fixtureSha256": "f413eee2b06fea2c3cb025d8794f924a04a884616b2ab93180ed2179598429cc",
+          "manifestSha256": "f0f0565602e287b43b7c6893316f14d0e2d9d43b78460d73e6124aaee5ba9834"
+        }
+      ],
+      "approvedFixtureSha256": [
+        "71e9972e68a8019a5cb2e5ad38fe8655ed36d0a99a7119aff2b8c26124f882cf",
+        "3155335225ebdbe4fb6a65b1952485188edfb2417e60d887d5897bf7fea8e7af",
+        "f413eee2b06fea2c3cb025d8794f924a04a884616b2ab93180ed2179598429cc"
+      ],
+      "approvedManifestSha256": [
+        "455d8cb92433ab7ecf61379e3bee3e0c0e094c06fe250c2b2aa4bc3bc052a4f2",
+        "f0f0565602e287b43b7c6893316f14d0e2d9d43b78460d73e6124aaee5ba9834",
+        "f0f0565602e287b43b7c6893316f14d0e2d9d43b78460d73e6124aaee5ba9834"
+      ],
+      "sourceGuardSha256": "88da0e526f4fafdaee3a45b8aa5d1912380cf27cd9c3e0d0177910cefe30c230",
+      "denominatorContribution": "new-template",
+      "fixturePrerequisiteCorrection": {
+        "diagnosis": {
+          "path": "/tmp/readiness-school-preview2-correction/DIAGNOSIS.json",
+          "sha256": "5097ca8c6478bbcdb1131daa0f3f09994cc0a660bac12e2af2c755c647aadb7b"
+        },
+        "routerExposure": {
+          "path": "/tmp/readiness-school-preview2-correction/router-exposure-result.json",
+          "sha256": "b4c78321111ff09e1ab7c58f2002968f5beb7742d67b84f8ac2fa8c190b82a9a"
+        },
+        "sameTwoRequestsOracles": true,
+        "oldFailedPairPreserved": true
+      },
+      "triggerPrerequisiteCorrection": {
+        "diagnosis": {
+          "path": "/tmp/readiness-school-preview-chain-diagnostic/HANDOFF.json",
+          "sha256": "c0f7fd36be1a82f2c2373848f59e29b5f775089a2646bdeadf93d4063c5f7741"
+        },
+        "diagnosisReview": {
+          "path": "/tmp/readiness-school-preview-chain-diagnostic/review.json",
+          "sha256": "559bb963f3bd5dfc0c77907e22f6c9e2b4b4c15dd16e98bcc64a3089c12d56e4"
+        },
+        "actualChain": {
+          "path": "/tmp/readiness-school-preview-chain-diagnostic/RESULT.json",
+          "sha256": "31af73856abc524951c2eb7b819d007ccb97f27702a1d05ba0884fd2bb805aa9"
+        },
+        "unchangedOracles": true,
+        "oldFailedBothAttemptsPreserved": true
+      }
     }
   ],
   "pinnedMainSourceRenewal": {
