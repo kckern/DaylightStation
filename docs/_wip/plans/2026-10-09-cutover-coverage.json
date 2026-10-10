@@ -37863,5 +37863,175 @@
       "NonGET/browser/WS/jobs/restart and actual Docker-image rollback gates remain deferred and unproved",
       "No create/update/data pollution or cutover authorization; no whole cutover readiness claim"
     ]
+  },
+  "post624SupplementalReadonlyEvidence": {
+    "schema": "daylight.post624-supplemental-readonly-evidence/v1",
+    "scope": "Two new independently reviewed native read contracts, separate from original selected624 across-run cohort and historical633/624 evidence snapshot",
+    "candidateSourceCommit": "1bab834c3aa3edc2ef0e3b896595aa5d3c1f1d01",
+    "originalSourceCommit": "60cb94db60d94fa413a6f2bdc6c2b3bf8b58131c",
+    "original624CohortUnchanged": true,
+    "historicalSnapshotUnchanged": {
+      "acceptedCases": 633,
+      "healthyContracts": 624,
+      "parityLinkedSourceTemplates": 368,
+      "eligibleSourceTemplates": 396,
+      "sourceTemplateGaps": 28,
+      "contractGaps": 9
+    },
+    "acceptedSupplementalCaseIds": [
+      "proxy-media-existing-pcm-wav",
+      "nutribot-populated-current-day-report"
+    ],
+    "acceptedSupplementalTemplates": [
+      "/api/v1/proxy/media{/*splat}",
+      "/api/v1/nutribot/report"
+    ],
+    "supplementalHealthyContracts": 2,
+    "supplementalSourceTemplateLinks": 2,
+    "currentCombinedEvidenceAccounting": {
+      "uniqueAcceptedCaseIds": 635,
+      "successfulIndependentContracts": 626,
+      "parityLinkedEligibleSourceTemplates": 370,
+      "eligibleSourceTemplates": 396,
+      "remainingEligibleSourceTemplateGaps": 26,
+      "remainingHistoricalContractGaps": 9,
+      "selected624PopulationUnchanged": true,
+      "single626CaseRun": false,
+      "sourceTemplateParityIsNotProductionInstalledCoverage": true
+    },
+    "proxyMedia": {
+      "review": {
+        "path": "/tmp/readiness-proxy-media-one-outcome-independent-review/review.json",
+        "sha256": "6891cd5c88fdd0969b16b0316f96b1a27d1bb8c846f7954fdfc10aeb5437dbf1"
+      },
+      "handoff": {
+        "path": "/tmp/readiness-proxy-media-one-outcome/HANDOFF.json",
+        "sha256": "b224e5bc7451c1cfa2e825b285224db8cf8cd21165011c88c240eaec0ed98156"
+      },
+      "pairResult": {
+        "path": "/tmp/readiness-proxy-media-one-pair/pair-result.json",
+        "sha256": "2a2741f79a3638a5f479df056877705e5c7c075d13feef3fd09f5ba4177155df"
+      },
+      "comparison": {
+        "path": "/tmp/readiness-proxy-media-one-pair/comparison.json",
+        "sha256": "3551806870752aefdac324f1926c737a6946958d9a38b0a4e7c832aea7919e36"
+      },
+      "inputInventory": {
+        "path": "/tmp/readiness-proxy-media-one-pair/input-inventory.json",
+        "sha256": "3a1e813c6a1431416c8c214c399af4fba5338fc1186bf1a2d9f059c5d1082237"
+      },
+      "cleanup": {
+        "path": "/tmp/readiness-proxy-media-one-outcome/cleanup-observation.json",
+        "sha256": "b4109a4668f36d1315069831cb470ea39b9343ff926e6cd44716e3ed61223650"
+      },
+      "caseIds": [
+        "proxy-media-existing-pcm-wav"
+      ],
+      "urlTemplate": "/api/v1/proxy/media{/*splat}",
+      "declarationId": "decl-fd7564e52d1dc1c9c655dffb-0",
+      "rawBinaryBytes": 1644,
+      "rawBinarySha256": "7e1cadde739b9bf60d71ec7aeb1fbf7f93b7ca77965b7ec309714d768d7c8616",
+      "fullNativeRoleResponsesAndEightHeadersAccepted": true,
+      "executionFinalGuardsAndCleanupAccepted": true,
+      "rangeConditionalPlaybackUnproved": true
+    },
+    "nutribotReport": {
+      "review": {
+        "path": "/tmp/readiness-nutribot-report-one-outcome-independent-review/review.json",
+        "sha256": "376193cc9229868382fc79932f3a35ebc8de344a42c3645353b582f0bda8a8f3"
+      },
+      "handoff": {
+        "path": "/tmp/readiness-nutribot-report-one-outcome/HANDOFF.json",
+        "sha256": "f99c4ac4a69f4b2ad32d4c7c4e27284d985888fd64f994dcc12fee3f07b0a782"
+      },
+      "preparationReview": {
+        "path": "/tmp/readiness-nutribot-report-trace-independent-review/review.json",
+        "sha256": "d9407cb6ffdaa41ed954a38c20a52f97946489254f50da97e148c61b58c589bd"
+      },
+      "appliedLaunch": {
+        "path": "/tmp/readiness-nutribot-report-applied-launch/HANDOFF.json",
+        "sha256": "c02cead41319c1a7d7dfb1b98b2b4a0635bce8eebadf750f0894a3d30a440647"
+      },
+      "rawPair": {
+        "path": "/tmp/readiness-nutribot-report-one-batch/local-nutribot-populated-report1/pair-result.json",
+        "sha256": "e48a0704fd181de96adbac3c7e3ccbcdb908f80937adaf40e235ca2fd7bafac3"
+      },
+      "rawComparison": {
+        "path": "/tmp/readiness-nutribot-report-one-batch/local-nutribot-populated-report1/comparison.json",
+        "sha256": "5ea778c1798af19dab0ddec5ececeae6a11c62ebd1543ec30b65ecc0e7727879"
+      },
+      "derivedComparison": {
+        "path": "/tmp/readiness-nutribot-report-one-batch/local-nutribot-populated-report1/derived/comparison.json",
+        "sha256": "ee4dcf0353793b2ce9f665e822a1664ebf1f00e4d1fb5f25aae29997c4e5b33c"
+      },
+      "dualProvenanceDerivedReceipt": {
+        "path": "/tmp/readiness-nutribot-report-one-batch/local-nutribot-populated-report1/derived/receipt.json",
+        "sha256": "31215ff5bad1db11857036e932e0af71da475dc9adb53e0dd0bd98f1859a3cf5"
+      },
+      "inputInventory": {
+        "path": "/tmp/readiness-nutribot-report-one-batch/local-nutribot-populated-report1/input-inventory.json",
+        "sha256": "b2ee00165f37eef3e453250653f7eb41dc6cf8ffd7301f25ef9cd1b24208e6b0"
+      },
+      "cleanup": {
+        "path": "/tmp/readiness-nutribot-report-one-outcome/cleanup-observation.json",
+        "sha256": "c3c346e70030720f6fe41ce2d9e10a1d8300e670693d92ff0855a6690800a0cf"
+      },
+      "caseIds": [
+        "nutribot-populated-current-day-report"
+      ],
+      "urlTemplate": "/api/v1/nutribot/report",
+      "declarationId": "decl-af0ac9cb72d4148a7de90038-0",
+      "rawBodyBytes": 912,
+      "fullIndependentStaticReportContractAccepted": true,
+      "rawUUIDBodyHeaderBindingAndETagCLValidatedBeforeReplacement": true,
+      "onlyTraceBodyHeaderAndDependentETagReplaced": true,
+      "rawTraceDifferentialFailurePreserved": true,
+      "rawNativeChildExit": 1,
+      "scopedBatchExit": 1,
+      "scopedExitExpected": true,
+      "executionFinalGuardsAndCleanupAccepted": true,
+      "observedDay": "2026-10-10",
+      "timezone": "America/Los_Angeles",
+      "nativeDayExpiry": "2026-10-11T07:00:00Z",
+      "historicalDayQueryUnsupported": true,
+      "healthTraceFixedETagUnchanged": true,
+      "nativeProjectionScope": "Three foods/two accepted meals with exact labels/icons/grams/amounts/colors/order/day and color totals/percentages, pending1; previous-day accepted sentinel excluded. Calorie/protein/micronutrient totals are not projected by this native report."
+    },
+    "practicalFindings": {
+      "gratitudeCard": {
+        "sourceFinding": {
+          "path": "/tmp/readiness-gratitude-card-native-blocker/HANDOFF.json",
+          "sha256": "48b5c55b38ac66dcf94f6b906cfa0de6ca5b1f847758f56a9a41b3c8a628a7e6"
+        },
+        "status": "unclosed-native-current-minute-text-painted-into-PNG",
+        "noClockInjectionPixelMaskOrProductRepair": true
+      },
+      "journalistExport": {
+        "sourceFinding": {
+          "path": "/tmp/readiness-journal-export-native-schema-diagnosis/HANDOFF.json",
+          "sha256": "e283f272dd6b6abfb61f95f5693476a42b6d436a085b5ab319a312d7a9c1b15e"
+        },
+        "status": "unclosed-native-writer-exporter-schema-mismatch",
+        "detail": "Writer stores timestamp/content; exporter reads date or createdAt and text, with no native conversion in either build. No healthy fixture invented or credit added."
+      },
+      "nutribotPriorSourceFindingPreserved": {
+        "path": "/tmp/readiness-nutribot-report-native-blocker/HANDOFF.json",
+        "sha256": "127f544169384554dbaf0b262c82d53583504dfe3b8f8d1253b6e3278c66f2b5"
+      },
+      "finiteBackingFilesRequireDevInoKindAndExactBytes": true,
+      "oneMiBResponseCapUnchanged": true,
+      "earlierLifeStaleDayMetadataFailureAndFinanceOversizeFailureRemainPreserved": true
+    },
+    "fullSuiteAccepted": false,
+    "readinessAccepted": false,
+    "limitations": [
+      "Original624 remains complete only as an across-run union; these two new IDs are supplemental, not a repeat/full626 run",
+      "Historical633/624 and368/396 snapshots and prior failures stay unchanged; current combined source-template tally is370/396 with26 remaining, not all APIs covered",
+      "Committed route matrix remains the historical coverage snapshot; supplemental exact declaration/template links above provide the two new accepted additions without a fresh census",
+      "Proxy proves only full finite existing-file streaming, not range/conditional/playback/browser/production serving paths",
+      "Nutribot proves current-day authored hot reads plus bounded trace derivation; report.PNG/input/send/provider/draft effects remain outside scope",
+      "Production image/config/mount provenance and installed denominator; nonGET/browser/WS/jobs/restart/actual Docker rollback remain unproved",
+      "No create/update/data pollution or cutover authorization is implied"
+    ]
   }
 }
