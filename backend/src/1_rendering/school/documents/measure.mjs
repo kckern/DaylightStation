@@ -589,7 +589,9 @@ function measureOmrNode(ctx, block, { widthPt, path }) {
       label,
       lines: label && !letterOnly
         ? wrapRuns(doc, theme, choiceRuns(label), {
-          widthPt: compact ? cellWidthPt - theme.omr.compactLabelWidthPt - 2 : cellWidthPt,
+          widthPt: compact
+            ? cellWidthPt - theme.omr.compactLabelWidthPt - 2
+            : cellWidthPt - (theme.omr.choiceColumnGutterPt ?? 0),
           sizePt: theme.omr.choiceSizePt, leadingPt: theme.omr.choiceLeadingPt,
         })
         : [],
