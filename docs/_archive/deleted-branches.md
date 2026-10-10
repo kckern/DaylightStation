@@ -624,3 +624,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-10-09 | fix/kiosk-foreground-guard | 6f4ecc6234 | Piano-bridge foreground guard (p24) + 1h stand-down ceiling |
 | 2026-10-09 | fix/rep-completion-hold | 1e3f7a07ca | Piano exercise: hold finished rep so its last note shows done |
 | 2026-10-09 | fix/crt-sub-sd-pixels | 927d099934 | Player CRT only for sub-SD (<640w and <480h) |
+| 2026-10-09 | fix/piano-household-tz | 77e91ae010 | Piano kiosk curfew/quiet hours in household timezone |
