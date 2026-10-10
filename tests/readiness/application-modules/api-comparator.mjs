@@ -83,6 +83,33 @@ function validateTimestampContract(c) {
     assert.ok(!(c.normalize?.headers ?? []).includes('etag'), 'No unchecked ETag exception');
   }
 }
+
+const fitnessClockPointers=['/uptime/ms','/uptime/formatted','/uptime/startedAt','/rates/requestsPerMinute'];
+function validateFitnessClock(c){
+ if(c.elapsedUptimeContract===undefined)return;
+ assert.equal(c.id,'fitness-native-led-metrics');assert.equal(c.path,'/api/v1/fitness/zone_led/metrics');assert.equal(c.method,'GET');assert.equal(c.expected.body.kind,'json');
+ assert.deepEqual(c.elapsedUptimeContract,{kind:'fitness-led-constructor-uptime',etag:'express-weak-raw-body'});
+ assert.equal(c.timestampContract,undefined);assert.deepEqual(c.normalize,{jsonPaths:[],headers:['date','connection','keep-alive']});
+ assert.ok(!Object.hasOwn(c.expected.headers,'etag'));assert.ok(!Object.hasOwn(c.expected.body.equals,'uptime'));assert.ok(!Object.hasOwn(c.expected.body.equals,'rates'));
+ for(const p of Object.keys(c.expected.body.equalsPointers??{}))assert.ok(!fitnessClockPointers.some(leaf=>overlaps(p,leaf)));
+}
+function inspectFitnessClock(body,response,c,headers,context){
+ if(!c.elapsedUptimeContract)return;
+ assert.ok(context && Number.isSafeInteger(context.startedAt)&&Number.isSafeInteger(context.endedAt)&&context.startedAt<context.endedAt);
+ assert.ok(Array.isArray(context.cases)&&context.cases.length>0);
+ const first=observationInterval(context.cases[0].observed),current=observationInterval(response);
+ assert.ok(context.startedAt<=first.startedAt&&first.endedAt<=context.endedAt&&first.startedAt<=current.startedAt&&current.endedAt<=context.endedAt);
+ exactKeys(body.uptime,['ms','formatted','startedAt']);const u=body.uptime;
+ assert.ok(Number.isSafeInteger(u.ms)&&u.ms>=0);assert.ok(current.startedAt-first.startedAt<=u.ms&&u.ms<=current.endedAt-context.startedAt);
+ assert.equal(typeof u.startedAt,'string');assert.match(u.startedAt,/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u);
+ const start=Date.parse(u.startedAt);assert.ok(Number.isFinite(start));assert.equal(new Date(start).toISOString(),u.startedAt);assert.ok(context.startedAt<=start&&start<=first.endedAt);assert.ok(current.startedAt<=start+u.ms&&start+u.ms<=current.endedAt);
+ const sec=Math.floor(u.ms/1000),min=Math.floor(sec/60),hr=Math.floor(min/60),day=Math.floor(hr/24);
+ assert.equal(u.formatted,day>0?`${day}d ${hr%24}h`:hr>0?`${hr}h ${min%60}m`:min>0?`${min}m ${sec%60}s`:`${sec}s`);
+ assert.equal(body.rates.requestsPerMinute,u.ms>60000?'0.00':'N/A (uptime < 1min)');
+ assert.ok(headers['content-encoding']===undefined||headers['content-encoding']==='identity');const bytes=Buffer.from(response.body,'utf8');assert.equal(headers['content-length'],String(bytes.length));const h=createHash('sha1').update(bytes).digest('base64').slice(0,27);assert.equal(headers.etag,`W/"${bytes.length.toString(16)}-${h}"`);delete headers.etag;
+ for(const p of fitnessClockPointers){const leaf=pointerLeaf(body,p);delete leaf.parent[leaf.key];}
+}
+
 function observationInterval(response) {
   const interval = response.observationInterval;
   exactKeys(interval, ['startedAt','endedAt']);
@@ -179,6 +206,7 @@ function validateManifest(manifest, origin) {
       assert.ok(e.headers['content-type'], 'Binary MIME required');
     } else assert.equal(typeof e.body.exact, 'string');
     validateTimestampContract(c);
+    validateFitnessClock(c);
     const n = c.normalize ?? { jsonPaths: [], headers: [] };
     assert.ok(Array.isArray(n.jsonPaths) && Array.isArray(n.headers));
     for (const key of n.jsonPaths) {
@@ -191,7 +219,7 @@ function validateManifest(manifest, origin) {
     }
   }
 }
-function inspect(response, c) {
+function inspect(response, c, context) {
   assert.equal(response.status, c.expected.status, 'unexpected status');
   const headers = Object.fromEntries(Object.entries(response.headers).map(([k, v]) => [k.toLowerCase(), v]));
   for (const [name, value] of Object.entries(c.expected.headers)) assert.equal(headers[name], value, `header ${name}`);
@@ -207,6 +235,7 @@ function inspect(response, c) {
     for (const [key, value] of Object.entries(c.expected.body.equals)) assert.deepEqual(body[key], value, `body value ${key}`);
     for (const [pointer, value] of Object.entries(c.expected.body.equalsPointers ?? {})) assert.deepEqual(pointerLeaf(body,pointer).value, value, 'body pointer value '+pointer);
     inspectTimestamps(body,response,c,headers);
+    inspectFitnessClock(body,response,c,headers,context);
     for (const key of c.normalize?.jsonPaths ?? []) delete body[key];
   } else if (c.expected.body.kind === 'json-array') {
     body = JSON.parse(body);
@@ -242,11 +271,11 @@ async function compareValidated({ manifest, targets, transport }) {
     for (const side of ['reference', 'candidate']) {
       try {
         observations[side] = await transport({ side, caseId:c.id, url: new URL(c.path, targets[side].url).href, method: c.method, bodyKind: c.expected.body.kind, ...(Object.hasOwn(c,'headers')?{headers:c.headers}:{}) });
-        inspect(observations[side], c);
+        inspect(observations[side], c, targets[side]);
       } catch (error) { errors.push({ side, message: error.message }); }
     }
     if (errors.length === 0) {
-      try { assert.deepEqual(inspect(observations.reference, c), inspect(observations.candidate, c)); }
+      try { assert.deepEqual(inspect(observations.reference, c, targets.reference), inspect(observations.candidate, c, targets.candidate)); }
       catch (error) { errors.push({ side: 'differential', message: error.message }); }
     }
     cases.push({ id: c.id, accepted: errors.length === 0, observations, errors });

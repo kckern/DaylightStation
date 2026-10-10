@@ -27948,37 +27948,9 @@
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
     {
-      "urlTemplate": "/api/v1/auth/invite/:token",
-      "eligibleDeclarationIds": [
-        "decl-5a808d01832f6b738a1659d5-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/camera",
-      "eligibleDeclarationIds": [
-        "decl-77ce39d8690c058bdcabb46c-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/content-filter/:ratingKey",
-      "eligibleDeclarationIds": [
-        "decl-1667f851350b7ed5343c97c5-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
       "urlTemplate": "/api/v1/cost/budgets",
       "eligibleDeclarationIds": [
         "decl-21b47405b6429f27def6590c-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/eink/:id/status",
-      "eligibleDeclarationIds": [
-        "decl-156af58e7e4305889a27830f-0"
       ],
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
@@ -27990,51 +27962,9 @@
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
     {
-      "urlTemplate": "/api/v1/finance/metrics",
-      "eligibleDeclarationIds": [
-        "decl-cb3587e61001cdf2f304eb5c-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/fitness/equipment_fan/status",
-      "eligibleDeclarationIds": [
-        "decl-956d951fda3e78cb0659d5c7-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/fitness/provider/webhook",
-      "eligibleDeclarationIds": [
-        "decl-c40bba72d2ed143f4c47926e-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
       "urlTemplate": "/api/v1/fitness/receipt/:sessionId",
       "eligibleDeclarationIds": [
         "decl-d39b0f5794ee6b128b7c64c0-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/fitness/simulate/status",
-      "eligibleDeclarationIds": [
-        "decl-852b26c557d3abd2974d6065-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/fitness/zone_led/metrics",
-      "eligibleDeclarationIds": [
-        "decl-aff6c0e65dc6f5aab91f0b36-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/fitness/zone_led/status",
-      "eligibleDeclarationIds": [
-        "decl-63710f468c0ff1cdef438cfe-0"
       ],
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
@@ -28056,20 +27986,6 @@
       "urlTemplate": "/api/v1/gratitude/card",
       "eligibleDeclarationIds": [
         "decl-b7d95238484108ce431935d7-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/harvest",
-      "eligibleDeclarationIds": [
-        "decl-1e497dd8e4eed2dbfa016ce3-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/harvest/status/:serviceId",
-      "eligibleDeclarationIds": [
-        "decl-4b3e4cdfb4896c6d8c69bcae-0"
       ],
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
@@ -28144,37 +28060,9 @@
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
     {
-      "urlTemplate": "/api/v1/ping",
-      "eligibleDeclarationIds": [
-        "decl-f5fc1c3c42f736ae76b5844d-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
       "urlTemplate": "/api/v1/playback-hub/config",
       "eligibleDeclarationIds": [
         "decl-28a35ab1d0688159eafe6312-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/pressure-mats",
-      "eligibleDeclarationIds": [
-        "decl-f433f2e75e07e1ca90b8723c-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/pressure-mats/:id",
-      "eligibleDeclarationIds": [
-        "decl-c2915f77df9374ca64b36c21-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/printer",
-      "eligibleDeclarationIds": [
-        "decl-85d01271fd49093befb48a6b-0"
       ],
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
@@ -28229,23 +28117,9 @@
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
     {
-      "urlTemplate": "/api/v1/sync/:source/status",
-      "eligibleDeclarationIds": [
-        "decl-c28f7e7b632431df6f18a9d6-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
       "urlTemplate": "/build.txt",
       "eligibleDeclarationIds": [
         "decl-5a334164728e91a3b7edfad5-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/v1/models",
-      "eligibleDeclarationIds": [
-        "decl-f6b2311077a5148548dfbc67-0"
       ],
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     }
@@ -44290,9 +44164,9 @@
   "isolatedAndLiveEvidenceUnion": {
     "scope": "Separate historical-live and actual-source isolated executed coverage; source-template union only, no installed-live denominator",
     "historicalLiveEligibleTemplateLinks": 94,
-    "isolatedAdditionalEligibleTemplateLinks": 254,
-    "unionEligibleTemplatesWithExecutedCaseLinks": 348,
-    "unionEligibleTemplatesWithoutExecutedCaseLinks": 48,
+    "isolatedAdditionalEligibleTemplateLinks": 272,
+    "unionEligibleTemplatesWithExecutedCaseLinks": 366,
+    "unionEligibleTemplatesWithoutExecutedCaseLinks": 30,
     "isolatedOnlyTemplates": [
       "/api/v1/admin/apps",
       "/api/v1/admin/apps/:appId/config",
@@ -44324,6 +44198,7 @@
       "/api/v1/arcade-game-sessions/usage",
       "/api/v1/art/preset/:key",
       "/api/v1/auth/context",
+      "/api/v1/auth/invite/:token",
       "/api/v1/auth/setup-status",
       "/api/v1/automotive/places",
       "/api/v1/automotive/vehicles/:id",
@@ -44332,8 +44207,10 @@
       "/api/v1/automotive/vehicles/:id/fuel",
       "/api/v1/automotive/vehicles/:id/journeys",
       "/api/v1/automotive/vehicles/:id/service",
+      "/api/v1/camera",
       "/api/v1/canvas/image/*splat",
       "/api/v1/config/status",
+      "/api/v1/content-filter/:ratingKey",
       "/api/v1/content/:source/image/:id",
       "/api/v1/content/:source/info/:id{/:modifiers}",
       "/api/v1/content/aliases",
@@ -44353,6 +44230,7 @@
       "/api/v1/device/self/input",
       "/api/v1/donow/surfaces",
       "/api/v1/earnings/rules",
+      "/api/v1/eink/:id/status",
       "/api/v1/emulator/art/:system/:gameId/:kind",
       "/api/v1/emulator/engine/*splat",
       "/api/v1/emulator/library",
@@ -44372,14 +44250,20 @@
       "/api/v1/feedback/:app/:id/audio",
       "/api/v1/finance",
       "/api/v1/finance/data",
+      "/api/v1/finance/metrics",
       "/api/v1/fitness",
+      "/api/v1/fitness/equipment_fan/status",
       "/api/v1/fitness/fingerprints",
+      "/api/v1/fitness/provider/webhook",
       "/api/v1/fitness/resumable",
       "/api/v1/fitness/school-attempts/:workSessionId/plan",
       "/api/v1/fitness/sessions",
       "/api/v1/fitness/sessions/:sessionId",
+      "/api/v1/fitness/simulate/status",
       "/api/v1/fitness/skyline-glider/runs/:runId",
       "/api/v1/fitness/workouts/:id/run",
+      "/api/v1/fitness/zone_led/metrics",
+      "/api/v1/fitness/zone_led/status",
       "/api/v1/gaming/assets/:packId",
       "/api/v1/gaming/assets/:packId/:assetId/image",
       "/api/v1/gaming/catalog",
@@ -44394,6 +44278,8 @@
       "/api/v1/gaming/media/*splat",
       "/api/v1/gaming/sessions/:sessionId/effects",
       "/api/v1/gratitude/print",
+      "/api/v1/harvest",
+      "/api/v1/harvest/status/:serviceId",
       "/api/v1/health-dashboard/:userId",
       "/api/v1/health-dashboard/:userId/:date",
       "/api/v1/health/ai-usage",
@@ -44475,7 +44361,11 @@
       "/api/v1/piano/users/:userId/piano-challenge-profile",
       "/api/v1/piano/users/:userId/program-assignments",
       "/api/v1/piano/users/:userId/progress",
+      "/api/v1/ping",
       "/api/v1/presentation/catalogs/:packId/scenes",
+      "/api/v1/pressure-mats",
+      "/api/v1/pressure-mats/:id",
+      "/api/v1/printer",
       "/api/v1/school/banks",
       "/api/v1/school/books/:learnerId/shelf",
       "/api/v1/school/card-ladder/stage",
@@ -44547,13 +44437,15 @@
       "/api/v1/stream/ambient/:id",
       "/api/v1/stream/readalong/:collection{/*splat}",
       "/api/v1/stream/singalong/:collection/:id",
-      "/api/v1/weekly-review/recording/drafts"
+      "/api/v1/sync/:source/status",
+      "/api/v1/weekly-review/recording/drafts",
+      "/v1/models"
     ],
     "counts": {
       "historicalLiveUniqueCases": 134,
       "historicalLiveIndependentContracts": 125,
-      "isolatedUniqueAcceptedCaseIds": 486,
-      "isolatedAcceptedOccurrences": 486,
+      "isolatedUniqueAcceptedCaseIds": 511,
+      "isolatedAcceptedOccurrences": 511,
       "isolatedReplayIdsAlreadyLive": [
         "health-catalog-food-not-found",
         "health-catalog-missing-query",
@@ -44674,6 +44566,9 @@
         "dashboard-piano-board-day",
         "dashboard-school-code-upper",
         "dashboard-school-code-zero",
+        "device-camera-metadata",
+        "device-eink-stored",
+        "device-eink-unreported",
         "device-home-configuration",
         "device-home-entitlement-detail",
         "device-home-entitlements-all",
@@ -44697,6 +44592,11 @@
         "device-home-state-learner",
         "device-home-status-home",
         "device-home-status-home-automation",
+        "device-mat-absent",
+        "device-mat-configured",
+        "device-mat-defaults",
+        "device-mats-list",
+        "device-printer-metadata",
         "emulator-stored-battery",
         "emulator-stored-bezel",
         "emulator-stored-cover",
@@ -44708,8 +44608,14 @@
         "emulator-stored-rom",
         "emulator-stored-save-users",
         "emulator-stored-state",
+        "finance-native-provider-availability",
+        "fitness-configured-fan-status",
+        "fitness-configured-led-status",
+        "fitness-native-led-metrics",
+        "fitness-native-simulation-idle",
         "fitness-stored-accepted-plan",
         "fitness-stored-prepared-plan",
+        "fitness-subscription-challenge",
         "following-auto-authored-place",
         "following-fitness-skyline-stored-run",
         "following-fitness-workout-run-projection",
@@ -44845,6 +44751,7 @@
         "media-policy-transitions-all",
         "media-policy-transitions-expired",
         "media-policy-transitions-page",
+        "models-configured-metadata",
         "operations-notification-all",
         "operations-notification-latest-one",
         "operations-notification-latest-two",
@@ -44868,6 +44775,15 @@
         "reading-scripture-synthetic-two",
         "reading-talk-01",
         "reading-talk-02",
+        "remaining-auth-invite-learner",
+        "remaining-auth-invite-missing",
+        "remaining-auth-invite-parent",
+        "remaining-content-filter-default",
+        "remaining-content-filter-strict",
+        "remaining-harvest-piano-status",
+        "remaining-harvest-registry",
+        "remaining-harvest-todoist-status",
+        "remaining-ping",
         "runtime-status-ai",
         "runtime-status-dev",
         "runtime-status-expired-shutdown",
@@ -44996,6 +44912,7 @@
         "surfaces-screen-documents",
         "surfaces-screen-registry",
         "surfaces-screen-routines",
+        "sync-retroarch-stored-status",
         "synthetic-board-game-day",
         "synthetic-chess-pinned-resume",
         "synthetic-config-status",
@@ -45044,11 +44961,11 @@
         "timeline-lifelog-day",
         "timeline-lifelog-sources"
       ],
-      "unionUniqueAcceptedCaseIds": 606,
-      "unionIndependentContracts": 597,
+      "unionUniqueAcceptedCaseIds": 631,
+      "unionIndependentContracts": 622,
       "newLiveTemplates": 2,
-      "isolatedDistinctTemplates": 278,
-      "newIsolatedTemplates": 271,
+      "isolatedDistinctTemplates": 296,
+      "newIsolatedTemplates": 289,
       "pendingNext15": {
         "cases": 15,
         "terminalResult": {
@@ -56468,6 +56385,816 @@
           "sha256": "917705d5634c3ff7be4f3cc5348263e64ac259b08f0b95f0c26c4017d001beb5"
         },
         "derivation": "Exact source-clock validation before only four native School generated-field substitutions; stable Fitness2 unchanged; original raw failures preserved"
+      },
+      {
+        "id": "device-camera-metadata",
+        "urlTemplate": "/api/v1/camera",
+        "declarationIds": [
+          "decl-77ce39d8690c058bdcabb46c-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-config-device13-reviewed-transport-policy",
+        "fixtureSha256": "9246e76b705ed088d27e0c1d9474b186be792e33ed3bb009a50b8fa8785ec226",
+        "manifestSha256": "b45e8b105c4c02a7c8419b940e28cfca019766679be2fbae070a8c4f085eb99c",
+        "result": {
+          "path": "/tmp/readiness-config-device13-pair/pair-result.json",
+          "sha256": "dfb60e6a0415c04f0a4f755fc009fd41e4a2e0efeacccb89cb334dc2a5a690ef"
+        },
+        "proof": {
+          "path": "/tmp/readiness-config-device13-execution/proof.json",
+          "sha256": "fffc60b805c4282789d9cfe7b1321f969fca773aa9626cd46c47f319d359ec2a"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-config-device13-date-correction/result-review.json",
+          "sha256": "88ee0805ba1b862404bfded809ee5c5ce2ce2ec10768aebd2d456e376f77e9ac"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": false,
+        "derivedComparison": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-corrected-comparison.json",
+          "sha256": "04fe3d74e7bfe343643bae17b8e60b8b65d675978c2c87ca1993006ee69deefe"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-derived-receipt.json",
+          "sha256": "2ae100c91b75f5e9640832ac3479ac528f28b979e859cf767d2d2fbc35cb3020"
+        },
+        "derivation": "Existing explicit date/connection/keep-alive transport policy only; all26 raw Dates validated against exact request intervals; all body/status/other headers unchanged."
+      },
+      {
+        "id": "device-printer-metadata",
+        "urlTemplate": "/api/v1/printer",
+        "declarationIds": [
+          "decl-85d01271fd49093befb48a6b-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-config-device13-reviewed-transport-policy",
+        "fixtureSha256": "9246e76b705ed088d27e0c1d9474b186be792e33ed3bb009a50b8fa8785ec226",
+        "manifestSha256": "b45e8b105c4c02a7c8419b940e28cfca019766679be2fbae070a8c4f085eb99c",
+        "result": {
+          "path": "/tmp/readiness-config-device13-pair/pair-result.json",
+          "sha256": "dfb60e6a0415c04f0a4f755fc009fd41e4a2e0efeacccb89cb334dc2a5a690ef"
+        },
+        "proof": {
+          "path": "/tmp/readiness-config-device13-execution/proof.json",
+          "sha256": "fffc60b805c4282789d9cfe7b1321f969fca773aa9626cd46c47f319d359ec2a"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-config-device13-date-correction/result-review.json",
+          "sha256": "88ee0805ba1b862404bfded809ee5c5ce2ce2ec10768aebd2d456e376f77e9ac"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": false,
+        "derivedComparison": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-corrected-comparison.json",
+          "sha256": "04fe3d74e7bfe343643bae17b8e60b8b65d675978c2c87ca1993006ee69deefe"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-derived-receipt.json",
+          "sha256": "2ae100c91b75f5e9640832ac3479ac528f28b979e859cf767d2d2fbc35cb3020"
+        },
+        "derivation": "Existing explicit date/connection/keep-alive transport policy only; all26 raw Dates validated against exact request intervals; all body/status/other headers unchanged."
+      },
+      {
+        "id": "device-mats-list",
+        "urlTemplate": "/api/v1/pressure-mats",
+        "declarationIds": [
+          "decl-f433f2e75e07e1ca90b8723c-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-config-device13-reviewed-transport-policy",
+        "fixtureSha256": "9246e76b705ed088d27e0c1d9474b186be792e33ed3bb009a50b8fa8785ec226",
+        "manifestSha256": "b45e8b105c4c02a7c8419b940e28cfca019766679be2fbae070a8c4f085eb99c",
+        "result": {
+          "path": "/tmp/readiness-config-device13-pair/pair-result.json",
+          "sha256": "dfb60e6a0415c04f0a4f755fc009fd41e4a2e0efeacccb89cb334dc2a5a690ef"
+        },
+        "proof": {
+          "path": "/tmp/readiness-config-device13-execution/proof.json",
+          "sha256": "fffc60b805c4282789d9cfe7b1321f969fca773aa9626cd46c47f319d359ec2a"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-config-device13-date-correction/result-review.json",
+          "sha256": "88ee0805ba1b862404bfded809ee5c5ce2ce2ec10768aebd2d456e376f77e9ac"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": false,
+        "derivedComparison": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-corrected-comparison.json",
+          "sha256": "04fe3d74e7bfe343643bae17b8e60b8b65d675978c2c87ca1993006ee69deefe"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-derived-receipt.json",
+          "sha256": "2ae100c91b75f5e9640832ac3479ac528f28b979e859cf767d2d2fbc35cb3020"
+        },
+        "derivation": "Existing explicit date/connection/keep-alive transport policy only; all26 raw Dates validated against exact request intervals; all body/status/other headers unchanged."
+      },
+      {
+        "id": "device-mat-configured",
+        "urlTemplate": "/api/v1/pressure-mats/:id",
+        "declarationIds": [
+          "decl-c2915f77df9374ca64b36c21-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-config-device13-reviewed-transport-policy",
+        "fixtureSha256": "9246e76b705ed088d27e0c1d9474b186be792e33ed3bb009a50b8fa8785ec226",
+        "manifestSha256": "b45e8b105c4c02a7c8419b940e28cfca019766679be2fbae070a8c4f085eb99c",
+        "result": {
+          "path": "/tmp/readiness-config-device13-pair/pair-result.json",
+          "sha256": "dfb60e6a0415c04f0a4f755fc009fd41e4a2e0efeacccb89cb334dc2a5a690ef"
+        },
+        "proof": {
+          "path": "/tmp/readiness-config-device13-execution/proof.json",
+          "sha256": "fffc60b805c4282789d9cfe7b1321f969fca773aa9626cd46c47f319d359ec2a"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-config-device13-date-correction/result-review.json",
+          "sha256": "88ee0805ba1b862404bfded809ee5c5ce2ce2ec10768aebd2d456e376f77e9ac"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": false,
+        "derivedComparison": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-corrected-comparison.json",
+          "sha256": "04fe3d74e7bfe343643bae17b8e60b8b65d675978c2c87ca1993006ee69deefe"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-derived-receipt.json",
+          "sha256": "2ae100c91b75f5e9640832ac3479ac528f28b979e859cf767d2d2fbc35cb3020"
+        },
+        "derivation": "Existing explicit date/connection/keep-alive transport policy only; all26 raw Dates validated against exact request intervals; all body/status/other headers unchanged."
+      },
+      {
+        "id": "device-mat-defaults",
+        "urlTemplate": "/api/v1/pressure-mats/:id",
+        "declarationIds": [
+          "decl-c2915f77df9374ca64b36c21-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-config-device13-reviewed-transport-policy",
+        "fixtureSha256": "9246e76b705ed088d27e0c1d9474b186be792e33ed3bb009a50b8fa8785ec226",
+        "manifestSha256": "b45e8b105c4c02a7c8419b940e28cfca019766679be2fbae070a8c4f085eb99c",
+        "result": {
+          "path": "/tmp/readiness-config-device13-pair/pair-result.json",
+          "sha256": "dfb60e6a0415c04f0a4f755fc009fd41e4a2e0efeacccb89cb334dc2a5a690ef"
+        },
+        "proof": {
+          "path": "/tmp/readiness-config-device13-execution/proof.json",
+          "sha256": "fffc60b805c4282789d9cfe7b1321f969fca773aa9626cd46c47f319d359ec2a"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-config-device13-date-correction/result-review.json",
+          "sha256": "88ee0805ba1b862404bfded809ee5c5ce2ce2ec10768aebd2d456e376f77e9ac"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": false,
+        "derivedComparison": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-corrected-comparison.json",
+          "sha256": "04fe3d74e7bfe343643bae17b8e60b8b65d675978c2c87ca1993006ee69deefe"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-derived-receipt.json",
+          "sha256": "2ae100c91b75f5e9640832ac3479ac528f28b979e859cf767d2d2fbc35cb3020"
+        },
+        "derivation": "Existing explicit date/connection/keep-alive transport policy only; all26 raw Dates validated against exact request intervals; all body/status/other headers unchanged."
+      },
+      {
+        "id": "device-mat-absent",
+        "urlTemplate": "/api/v1/pressure-mats/:id",
+        "declarationIds": [
+          "decl-c2915f77df9374ca64b36c21-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-config-device13-reviewed-transport-policy",
+        "fixtureSha256": "9246e76b705ed088d27e0c1d9474b186be792e33ed3bb009a50b8fa8785ec226",
+        "manifestSha256": "b45e8b105c4c02a7c8419b940e28cfca019766679be2fbae070a8c4f085eb99c",
+        "result": {
+          "path": "/tmp/readiness-config-device13-pair/pair-result.json",
+          "sha256": "dfb60e6a0415c04f0a4f755fc009fd41e4a2e0efeacccb89cb334dc2a5a690ef"
+        },
+        "proof": {
+          "path": "/tmp/readiness-config-device13-execution/proof.json",
+          "sha256": "fffc60b805c4282789d9cfe7b1321f969fca773aa9626cd46c47f319d359ec2a"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-config-device13-date-correction/result-review.json",
+          "sha256": "88ee0805ba1b862404bfded809ee5c5ce2ce2ec10768aebd2d456e376f77e9ac"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": false,
+        "derivedComparison": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-corrected-comparison.json",
+          "sha256": "04fe3d74e7bfe343643bae17b8e60b8b65d675978c2c87ca1993006ee69deefe"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-derived-receipt.json",
+          "sha256": "2ae100c91b75f5e9640832ac3479ac528f28b979e859cf767d2d2fbc35cb3020"
+        },
+        "derivation": "Existing explicit date/connection/keep-alive transport policy only; all26 raw Dates validated against exact request intervals; all body/status/other headers unchanged."
+      },
+      {
+        "id": "device-eink-stored",
+        "urlTemplate": "/api/v1/eink/:id/status",
+        "declarationIds": [
+          "decl-156af58e7e4305889a27830f-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-config-device13-reviewed-transport-policy",
+        "fixtureSha256": "9246e76b705ed088d27e0c1d9474b186be792e33ed3bb009a50b8fa8785ec226",
+        "manifestSha256": "b45e8b105c4c02a7c8419b940e28cfca019766679be2fbae070a8c4f085eb99c",
+        "result": {
+          "path": "/tmp/readiness-config-device13-pair/pair-result.json",
+          "sha256": "dfb60e6a0415c04f0a4f755fc009fd41e4a2e0efeacccb89cb334dc2a5a690ef"
+        },
+        "proof": {
+          "path": "/tmp/readiness-config-device13-execution/proof.json",
+          "sha256": "fffc60b805c4282789d9cfe7b1321f969fca773aa9626cd46c47f319d359ec2a"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-config-device13-date-correction/result-review.json",
+          "sha256": "88ee0805ba1b862404bfded809ee5c5ce2ce2ec10768aebd2d456e376f77e9ac"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": false,
+        "derivedComparison": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-corrected-comparison.json",
+          "sha256": "04fe3d74e7bfe343643bae17b8e60b8b65d675978c2c87ca1993006ee69deefe"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-derived-receipt.json",
+          "sha256": "2ae100c91b75f5e9640832ac3479ac528f28b979e859cf767d2d2fbc35cb3020"
+        },
+        "derivation": "Existing explicit date/connection/keep-alive transport policy only; all26 raw Dates validated against exact request intervals; all body/status/other headers unchanged."
+      },
+      {
+        "id": "device-eink-unreported",
+        "urlTemplate": "/api/v1/eink/:id/status",
+        "declarationIds": [
+          "decl-156af58e7e4305889a27830f-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-config-device13-reviewed-transport-policy",
+        "fixtureSha256": "9246e76b705ed088d27e0c1d9474b186be792e33ed3bb009a50b8fa8785ec226",
+        "manifestSha256": "b45e8b105c4c02a7c8419b940e28cfca019766679be2fbae070a8c4f085eb99c",
+        "result": {
+          "path": "/tmp/readiness-config-device13-pair/pair-result.json",
+          "sha256": "dfb60e6a0415c04f0a4f755fc009fd41e4a2e0efeacccb89cb334dc2a5a690ef"
+        },
+        "proof": {
+          "path": "/tmp/readiness-config-device13-execution/proof.json",
+          "sha256": "fffc60b805c4282789d9cfe7b1321f969fca773aa9626cd46c47f319d359ec2a"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-config-device13-date-correction/result-review.json",
+          "sha256": "88ee0805ba1b862404bfded809ee5c5ce2ce2ec10768aebd2d456e376f77e9ac"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": false,
+        "derivedComparison": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-corrected-comparison.json",
+          "sha256": "04fe3d74e7bfe343643bae17b8e60b8b65d675978c2c87ca1993006ee69deefe"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-derived-receipt.json",
+          "sha256": "2ae100c91b75f5e9640832ac3479ac528f28b979e859cf767d2d2fbc35cb3020"
+        },
+        "derivation": "Existing explicit date/connection/keep-alive transport policy only; all26 raw Dates validated against exact request intervals; all body/status/other headers unchanged."
+      },
+      {
+        "id": "remaining-auth-invite-parent",
+        "urlTemplate": "/api/v1/auth/invite/:token",
+        "declarationIds": [
+          "decl-5a808d01832f6b738a1659d5-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-config-device13-reviewed-transport-policy",
+        "fixtureSha256": "9246e76b705ed088d27e0c1d9474b186be792e33ed3bb009a50b8fa8785ec226",
+        "manifestSha256": "b45e8b105c4c02a7c8419b940e28cfca019766679be2fbae070a8c4f085eb99c",
+        "result": {
+          "path": "/tmp/readiness-config-device13-pair/pair-result.json",
+          "sha256": "dfb60e6a0415c04f0a4f755fc009fd41e4a2e0efeacccb89cb334dc2a5a690ef"
+        },
+        "proof": {
+          "path": "/tmp/readiness-config-device13-execution/proof.json",
+          "sha256": "fffc60b805c4282789d9cfe7b1321f969fca773aa9626cd46c47f319d359ec2a"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-config-device13-date-correction/result-review.json",
+          "sha256": "88ee0805ba1b862404bfded809ee5c5ce2ce2ec10768aebd2d456e376f77e9ac"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": false,
+        "derivedComparison": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-corrected-comparison.json",
+          "sha256": "04fe3d74e7bfe343643bae17b8e60b8b65d675978c2c87ca1993006ee69deefe"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-derived-receipt.json",
+          "sha256": "2ae100c91b75f5e9640832ac3479ac528f28b979e859cf767d2d2fbc35cb3020"
+        },
+        "derivation": "Existing explicit date/connection/keep-alive transport policy only; all26 raw Dates validated against exact request intervals; all body/status/other headers unchanged."
+      },
+      {
+        "id": "remaining-auth-invite-learner",
+        "urlTemplate": "/api/v1/auth/invite/:token",
+        "declarationIds": [
+          "decl-5a808d01832f6b738a1659d5-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-config-device13-reviewed-transport-policy",
+        "fixtureSha256": "9246e76b705ed088d27e0c1d9474b186be792e33ed3bb009a50b8fa8785ec226",
+        "manifestSha256": "b45e8b105c4c02a7c8419b940e28cfca019766679be2fbae070a8c4f085eb99c",
+        "result": {
+          "path": "/tmp/readiness-config-device13-pair/pair-result.json",
+          "sha256": "dfb60e6a0415c04f0a4f755fc009fd41e4a2e0efeacccb89cb334dc2a5a690ef"
+        },
+        "proof": {
+          "path": "/tmp/readiness-config-device13-execution/proof.json",
+          "sha256": "fffc60b805c4282789d9cfe7b1321f969fca773aa9626cd46c47f319d359ec2a"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-config-device13-date-correction/result-review.json",
+          "sha256": "88ee0805ba1b862404bfded809ee5c5ce2ce2ec10768aebd2d456e376f77e9ac"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": false,
+        "derivedComparison": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-corrected-comparison.json",
+          "sha256": "04fe3d74e7bfe343643bae17b8e60b8b65d675978c2c87ca1993006ee69deefe"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-derived-receipt.json",
+          "sha256": "2ae100c91b75f5e9640832ac3479ac528f28b979e859cf767d2d2fbc35cb3020"
+        },
+        "derivation": "Existing explicit date/connection/keep-alive transport policy only; all26 raw Dates validated against exact request intervals; all body/status/other headers unchanged."
+      },
+      {
+        "id": "remaining-auth-invite-missing",
+        "urlTemplate": "/api/v1/auth/invite/:token",
+        "declarationIds": [
+          "decl-5a808d01832f6b738a1659d5-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-config-device13-reviewed-transport-policy",
+        "fixtureSha256": "9246e76b705ed088d27e0c1d9474b186be792e33ed3bb009a50b8fa8785ec226",
+        "manifestSha256": "b45e8b105c4c02a7c8419b940e28cfca019766679be2fbae070a8c4f085eb99c",
+        "result": {
+          "path": "/tmp/readiness-config-device13-pair/pair-result.json",
+          "sha256": "dfb60e6a0415c04f0a4f755fc009fd41e4a2e0efeacccb89cb334dc2a5a690ef"
+        },
+        "proof": {
+          "path": "/tmp/readiness-config-device13-execution/proof.json",
+          "sha256": "fffc60b805c4282789d9cfe7b1321f969fca773aa9626cd46c47f319d359ec2a"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-config-device13-date-correction/result-review.json",
+          "sha256": "88ee0805ba1b862404bfded809ee5c5ce2ce2ec10768aebd2d456e376f77e9ac"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": false,
+        "derivedComparison": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-corrected-comparison.json",
+          "sha256": "04fe3d74e7bfe343643bae17b8e60b8b65d675978c2c87ca1993006ee69deefe"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-derived-receipt.json",
+          "sha256": "2ae100c91b75f5e9640832ac3479ac528f28b979e859cf767d2d2fbc35cb3020"
+        },
+        "derivation": "Existing explicit date/connection/keep-alive transport policy only; all26 raw Dates validated against exact request intervals; all body/status/other headers unchanged."
+      },
+      {
+        "id": "remaining-content-filter-default",
+        "urlTemplate": "/api/v1/content-filter/:ratingKey",
+        "declarationIds": [
+          "decl-1667f851350b7ed5343c97c5-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-config-device13-reviewed-transport-policy",
+        "fixtureSha256": "9246e76b705ed088d27e0c1d9474b186be792e33ed3bb009a50b8fa8785ec226",
+        "manifestSha256": "b45e8b105c4c02a7c8419b940e28cfca019766679be2fbae070a8c4f085eb99c",
+        "result": {
+          "path": "/tmp/readiness-config-device13-pair/pair-result.json",
+          "sha256": "dfb60e6a0415c04f0a4f755fc009fd41e4a2e0efeacccb89cb334dc2a5a690ef"
+        },
+        "proof": {
+          "path": "/tmp/readiness-config-device13-execution/proof.json",
+          "sha256": "fffc60b805c4282789d9cfe7b1321f969fca773aa9626cd46c47f319d359ec2a"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-config-device13-date-correction/result-review.json",
+          "sha256": "88ee0805ba1b862404bfded809ee5c5ce2ce2ec10768aebd2d456e376f77e9ac"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": false,
+        "derivedComparison": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-corrected-comparison.json",
+          "sha256": "04fe3d74e7bfe343643bae17b8e60b8b65d675978c2c87ca1993006ee69deefe"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-derived-receipt.json",
+          "sha256": "2ae100c91b75f5e9640832ac3479ac528f28b979e859cf767d2d2fbc35cb3020"
+        },
+        "derivation": "Existing explicit date/connection/keep-alive transport policy only; all26 raw Dates validated against exact request intervals; all body/status/other headers unchanged."
+      },
+      {
+        "id": "remaining-content-filter-strict",
+        "urlTemplate": "/api/v1/content-filter/:ratingKey",
+        "declarationIds": [
+          "decl-1667f851350b7ed5343c97c5-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-config-device13-reviewed-transport-policy",
+        "fixtureSha256": "9246e76b705ed088d27e0c1d9474b186be792e33ed3bb009a50b8fa8785ec226",
+        "manifestSha256": "b45e8b105c4c02a7c8419b940e28cfca019766679be2fbae070a8c4f085eb99c",
+        "result": {
+          "path": "/tmp/readiness-config-device13-pair/pair-result.json",
+          "sha256": "dfb60e6a0415c04f0a4f755fc009fd41e4a2e0efeacccb89cb334dc2a5a690ef"
+        },
+        "proof": {
+          "path": "/tmp/readiness-config-device13-execution/proof.json",
+          "sha256": "fffc60b805c4282789d9cfe7b1321f969fca773aa9626cd46c47f319d359ec2a"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-config-device13-date-correction/result-review.json",
+          "sha256": "88ee0805ba1b862404bfded809ee5c5ce2ce2ec10768aebd2d456e376f77e9ac"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": false,
+        "derivedComparison": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-corrected-comparison.json",
+          "sha256": "04fe3d74e7bfe343643bae17b8e60b8b65d675978c2c87ca1993006ee69deefe"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-config-device13-date-correction/config-device13-derived-receipt.json",
+          "sha256": "2ae100c91b75f5e9640832ac3479ac528f28b979e859cf767d2d2fbc35cb3020"
+        },
+        "derivation": "Existing explicit date/connection/keep-alive transport policy only; all26 raw Dates validated against exact request intervals; all body/status/other headers unchanged."
+      },
+      {
+        "id": "remaining-ping",
+        "urlTemplate": "/api/v1/ping",
+        "declarationIds": [
+          "decl-f5fc1c3c42f736ae76b5844d-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-status-model6-partial5-reviewed-native-clocks",
+        "fixtureSha256": "82b12537895d9936c4ef53c20de876395b6da0584f04cf502f2e77b1bba56f07",
+        "manifestSha256": "71ef7c4e226f87688e72db279720f340a54b792d5085468b54b4e160a01b005b",
+        "result": {
+          "path": "/tmp/readiness-status-model6-pair/pair-result.json",
+          "sha256": "d84a376e1fef46ed0681328390076a2177dcd0d845e0207f7a51d2b89aa633c0"
+        },
+        "proof": {
+          "path": "/tmp/readiness-status-model6-execution/proof.json",
+          "sha256": "9f7011add4495a12625015a4940e187b7629647475f35303413f2b884fb39965"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-status-model6-execution/result-review.json",
+          "sha256": "de83bec73e722686e8bfb1ed957a3344bb0c7d2884fe377e1fcdffa74aea5c97"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": false,
+        "derivedComparison": {
+          "path": "/tmp/readiness-status-model6-execution/derived-replay/comparison.json",
+          "sha256": "aebce22a82c9febf28417d09f4d1be296c0c699462dbaff698e5ef3006dc913e"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-status-model6-execution/derived-replay/receipt.json",
+          "sha256": "bca833e7f5d7074ef3c78d2776795c4b1ffe6266b9cb8fd0e77fbc61beef7a56"
+        },
+        "derivation": "Previously approved exact per-case generated clock validator over immutable raw response; all raw schema/time/ETag/CL validated. No changed requests or health500 replacement."
+      },
+      {
+        "id": "remaining-harvest-registry",
+        "urlTemplate": "/api/v1/harvest",
+        "declarationIds": [
+          "decl-1e497dd8e4eed2dbfa016ce3-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-status-model6-partial5-reviewed-native-clocks",
+        "fixtureSha256": "82b12537895d9936c4ef53c20de876395b6da0584f04cf502f2e77b1bba56f07",
+        "manifestSha256": "71ef7c4e226f87688e72db279720f340a54b792d5085468b54b4e160a01b005b",
+        "result": {
+          "path": "/tmp/readiness-status-model6-pair/pair-result.json",
+          "sha256": "d84a376e1fef46ed0681328390076a2177dcd0d845e0207f7a51d2b89aa633c0"
+        },
+        "proof": {
+          "path": "/tmp/readiness-status-model6-execution/proof.json",
+          "sha256": "9f7011add4495a12625015a4940e187b7629647475f35303413f2b884fb39965"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-status-model6-execution/result-review.json",
+          "sha256": "de83bec73e722686e8bfb1ed957a3344bb0c7d2884fe377e1fcdffa74aea5c97"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": true
+      },
+      {
+        "id": "remaining-harvest-todoist-status",
+        "urlTemplate": "/api/v1/harvest/status/:serviceId",
+        "declarationIds": [
+          "decl-4b3e4cdfb4896c6d8c69bcae-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-status-model6-partial5-reviewed-native-clocks",
+        "fixtureSha256": "82b12537895d9936c4ef53c20de876395b6da0584f04cf502f2e77b1bba56f07",
+        "manifestSha256": "71ef7c4e226f87688e72db279720f340a54b792d5085468b54b4e160a01b005b",
+        "result": {
+          "path": "/tmp/readiness-status-model6-pair/pair-result.json",
+          "sha256": "d84a376e1fef46ed0681328390076a2177dcd0d845e0207f7a51d2b89aa633c0"
+        },
+        "proof": {
+          "path": "/tmp/readiness-status-model6-execution/proof.json",
+          "sha256": "9f7011add4495a12625015a4940e187b7629647475f35303413f2b884fb39965"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-status-model6-execution/result-review.json",
+          "sha256": "de83bec73e722686e8bfb1ed957a3344bb0c7d2884fe377e1fcdffa74aea5c97"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": true
+      },
+      {
+        "id": "remaining-harvest-piano-status",
+        "urlTemplate": "/api/v1/harvest/status/:serviceId",
+        "declarationIds": [
+          "decl-4b3e4cdfb4896c6d8c69bcae-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-status-model6-partial5-reviewed-native-clocks",
+        "fixtureSha256": "82b12537895d9936c4ef53c20de876395b6da0584f04cf502f2e77b1bba56f07",
+        "manifestSha256": "71ef7c4e226f87688e72db279720f340a54b792d5085468b54b4e160a01b005b",
+        "result": {
+          "path": "/tmp/readiness-status-model6-pair/pair-result.json",
+          "sha256": "d84a376e1fef46ed0681328390076a2177dcd0d845e0207f7a51d2b89aa633c0"
+        },
+        "proof": {
+          "path": "/tmp/readiness-status-model6-execution/proof.json",
+          "sha256": "9f7011add4495a12625015a4940e187b7629647475f35303413f2b884fb39965"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-status-model6-execution/result-review.json",
+          "sha256": "de83bec73e722686e8bfb1ed957a3344bb0c7d2884fe377e1fcdffa74aea5c97"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": true
+      },
+      {
+        "id": "models-configured-metadata",
+        "urlTemplate": "/v1/models",
+        "declarationIds": [
+          "decl-f6b2311077a5148548dfbc67-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-status-model6-partial5-reviewed-native-clocks",
+        "fixtureSha256": "82b12537895d9936c4ef53c20de876395b6da0584f04cf502f2e77b1bba56f07",
+        "manifestSha256": "71ef7c4e226f87688e72db279720f340a54b792d5085468b54b4e160a01b005b",
+        "result": {
+          "path": "/tmp/readiness-status-model6-pair/pair-result.json",
+          "sha256": "d84a376e1fef46ed0681328390076a2177dcd0d845e0207f7a51d2b89aa633c0"
+        },
+        "proof": {
+          "path": "/tmp/readiness-status-model6-execution/proof.json",
+          "sha256": "9f7011add4495a12625015a4940e187b7629647475f35303413f2b884fb39965"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-status-model6-execution/result-review.json",
+          "sha256": "de83bec73e722686e8bfb1ed957a3344bb0c7d2884fe377e1fcdffa74aea5c97"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": false,
+        "derivedComparison": {
+          "path": "/tmp/readiness-status-model6-execution/derived-replay/comparison.json",
+          "sha256": "aebce22a82c9febf28417d09f4d1be296c0c699462dbaff698e5ef3006dc913e"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-status-model6-execution/derived-replay/receipt.json",
+          "sha256": "bca833e7f5d7074ef3c78d2776795c4b1ffe6266b9cb8fd0e77fbc61beef7a56"
+        },
+        "derivation": "Previously approved exact per-case generated clock validator over immutable raw response; all raw schema/time/ETag/CL validated. No changed requests or health500 replacement."
+      },
+      {
+        "id": "fitness-native-simulation-idle",
+        "urlTemplate": "/api/v1/fitness/simulate/status",
+        "declarationIds": [
+          "decl-852b26c557d3abd2974d6065-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-fitness-finance7-corrected-native-catalog",
+        "fixtureSha256": "6876ae75c2d4e753c58aa6a5aee36918091f2c71fa68898616e73517439795a9",
+        "manifestSha256": "91279ff77567fc731bbfe84d982168dd4694066818b66d18bd86d10a25ac00af",
+        "result": {
+          "path": "/tmp/readiness-fitness-finance7-revision2-pair/pair-result.json",
+          "sha256": "63790c8f839bca58b8e35aca646af4decdfe9b9e56844f561a0f6e23053727aa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-fitness-finance7-revision2-execution/proof.json",
+          "sha256": "b55580bc14a69e558793fe9e2aa386a45bceed3c10c2306db6dcb502ab799f23"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-fitness-finance7-revision2-execution/result-review.json",
+          "sha256": "d951f54483b0adbede10ef212336dacd55239dfbd3f52806d954771ed21edbb5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": true
+      },
+      {
+        "id": "fitness-configured-fan-status",
+        "urlTemplate": "/api/v1/fitness/equipment_fan/status",
+        "declarationIds": [
+          "decl-956d951fda3e78cb0659d5c7-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-fitness-finance7-corrected-native-catalog",
+        "fixtureSha256": "6876ae75c2d4e753c58aa6a5aee36918091f2c71fa68898616e73517439795a9",
+        "manifestSha256": "91279ff77567fc731bbfe84d982168dd4694066818b66d18bd86d10a25ac00af",
+        "result": {
+          "path": "/tmp/readiness-fitness-finance7-revision2-pair/pair-result.json",
+          "sha256": "63790c8f839bca58b8e35aca646af4decdfe9b9e56844f561a0f6e23053727aa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-fitness-finance7-revision2-execution/proof.json",
+          "sha256": "b55580bc14a69e558793fe9e2aa386a45bceed3c10c2306db6dcb502ab799f23"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-fitness-finance7-revision2-execution/result-review.json",
+          "sha256": "d951f54483b0adbede10ef212336dacd55239dfbd3f52806d954771ed21edbb5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": true
+      },
+      {
+        "id": "fitness-configured-led-status",
+        "urlTemplate": "/api/v1/fitness/zone_led/status",
+        "declarationIds": [
+          "decl-63710f468c0ff1cdef438cfe-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-fitness-finance7-corrected-native-catalog",
+        "fixtureSha256": "6876ae75c2d4e753c58aa6a5aee36918091f2c71fa68898616e73517439795a9",
+        "manifestSha256": "91279ff77567fc731bbfe84d982168dd4694066818b66d18bd86d10a25ac00af",
+        "result": {
+          "path": "/tmp/readiness-fitness-finance7-revision2-pair/pair-result.json",
+          "sha256": "63790c8f839bca58b8e35aca646af4decdfe9b9e56844f561a0f6e23053727aa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-fitness-finance7-revision2-execution/proof.json",
+          "sha256": "b55580bc14a69e558793fe9e2aa386a45bceed3c10c2306db6dcb502ab799f23"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-fitness-finance7-revision2-execution/result-review.json",
+          "sha256": "d951f54483b0adbede10ef212336dacd55239dfbd3f52806d954771ed21edbb5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": true
+      },
+      {
+        "id": "fitness-subscription-challenge",
+        "urlTemplate": "/api/v1/fitness/provider/webhook",
+        "declarationIds": [
+          "decl-c40bba72d2ed143f4c47926e-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-fitness-finance7-corrected-native-catalog",
+        "fixtureSha256": "6876ae75c2d4e753c58aa6a5aee36918091f2c71fa68898616e73517439795a9",
+        "manifestSha256": "91279ff77567fc731bbfe84d982168dd4694066818b66d18bd86d10a25ac00af",
+        "result": {
+          "path": "/tmp/readiness-fitness-finance7-revision2-pair/pair-result.json",
+          "sha256": "63790c8f839bca58b8e35aca646af4decdfe9b9e56844f561a0f6e23053727aa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-fitness-finance7-revision2-execution/proof.json",
+          "sha256": "b55580bc14a69e558793fe9e2aa386a45bceed3c10c2306db6dcb502ab799f23"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-fitness-finance7-revision2-execution/result-review.json",
+          "sha256": "d951f54483b0adbede10ef212336dacd55239dfbd3f52806d954771ed21edbb5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": true
+      },
+      {
+        "id": "fitness-native-led-metrics",
+        "urlTemplate": "/api/v1/fitness/zone_led/metrics",
+        "declarationIds": [
+          "decl-aff6c0e65dc6f5aab91f0b36-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-fitness-finance7-corrected-native-catalog",
+        "fixtureSha256": "6876ae75c2d4e753c58aa6a5aee36918091f2c71fa68898616e73517439795a9",
+        "manifestSha256": "91279ff77567fc731bbfe84d982168dd4694066818b66d18bd86d10a25ac00af",
+        "result": {
+          "path": "/tmp/readiness-fitness-finance7-revision2-pair/pair-result.json",
+          "sha256": "63790c8f839bca58b8e35aca646af4decdfe9b9e56844f561a0f6e23053727aa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-fitness-finance7-revision2-execution/proof.json",
+          "sha256": "b55580bc14a69e558793fe9e2aa386a45bceed3c10c2306db6dcb502ab799f23"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-fitness-finance7-revision2-execution/result-review.json",
+          "sha256": "d951f54483b0adbede10ef212336dacd55239dfbd3f52806d954771ed21edbb5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": true
+      },
+      {
+        "id": "finance-native-provider-availability",
+        "urlTemplate": "/api/v1/finance/metrics",
+        "declarationIds": [
+          "decl-cb3587e61001cdf2f304eb5c-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-fitness-finance7-corrected-native-catalog",
+        "fixtureSha256": "6876ae75c2d4e753c58aa6a5aee36918091f2c71fa68898616e73517439795a9",
+        "manifestSha256": "91279ff77567fc731bbfe84d982168dd4694066818b66d18bd86d10a25ac00af",
+        "result": {
+          "path": "/tmp/readiness-fitness-finance7-revision2-pair/pair-result.json",
+          "sha256": "63790c8f839bca58b8e35aca646af4decdfe9b9e56844f561a0f6e23053727aa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-fitness-finance7-revision2-execution/proof.json",
+          "sha256": "b55580bc14a69e558793fe9e2aa386a45bceed3c10c2306db6dcb502ab799f23"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-fitness-finance7-revision2-execution/result-review.json",
+          "sha256": "d951f54483b0adbede10ef212336dacd55239dfbd3f52806d954771ed21edbb5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": true
+      },
+      {
+        "id": "sync-retroarch-stored-status",
+        "urlTemplate": "/api/v1/sync/:source/status",
+        "declarationIds": [
+          "decl-c28f7e7b632431df6f18a9d6-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-62b08-fitness-finance7-corrected-native-catalog",
+        "fixtureSha256": "6876ae75c2d4e753c58aa6a5aee36918091f2c71fa68898616e73517439795a9",
+        "manifestSha256": "91279ff77567fc731bbfe84d982168dd4694066818b66d18bd86d10a25ac00af",
+        "result": {
+          "path": "/tmp/readiness-fitness-finance7-revision2-pair/pair-result.json",
+          "sha256": "63790c8f839bca58b8e35aca646af4decdfe9b9e56844f561a0f6e23053727aa"
+        },
+        "proof": {
+          "path": "/tmp/readiness-fitness-finance7-revision2-execution/proof.json",
+          "sha256": "b55580bc14a69e558793fe9e2aa386a45bceed3c10c2306db6dcb502ab799f23"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-fitness-finance7-revision2-execution/result-review.json",
+          "sha256": "d951f54483b0adbede10ef212336dacd55239dfbd3f52806d954771ed21edbb5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": true
       }
     ],
     "infrastructure": {
@@ -56756,6 +57483,7 @@
       "/api/v1/arcade-game-sessions/usage",
       "/api/v1/art/preset/:key",
       "/api/v1/auth/context",
+      "/api/v1/auth/invite/:token",
       "/api/v1/auth/setup-status",
       "/api/v1/automotive/places",
       "/api/v1/automotive/service-types",
@@ -56770,10 +57498,12 @@
       "/api/v1/calendar/events",
       "/api/v1/calendar/events/:date",
       "/api/v1/calendar/events/today",
+      "/api/v1/camera",
       "/api/v1/canvas/image/*splat",
       "/api/v1/config/content-prefixes",
       "/api/v1/config/player",
       "/api/v1/config/status",
+      "/api/v1/content-filter/:ratingKey",
       "/api/v1/content/:source/image/:id",
       "/api/v1/content/:source/info/:id{/:modifiers}",
       "/api/v1/content/aliases",
@@ -56793,6 +57523,7 @@
       "/api/v1/device/self/input",
       "/api/v1/donow/surfaces",
       "/api/v1/earnings/rules",
+      "/api/v1/eink/:id/status",
       "/api/v1/emulator/art/:system/:gameId/:kind",
       "/api/v1/emulator/engine/*splat",
       "/api/v1/emulator/library",
@@ -56818,24 +57549,30 @@
       "/api/v1/finance/data",
       "/api/v1/finance/data/daytoday",
       "/api/v1/finance/memos",
+      "/api/v1/finance/metrics",
       "/api/v1/finance/mortgage",
       "/api/v1/finance/pairs",
       "/api/v1/fitness",
       "/api/v1/fitness/cycle-races",
       "/api/v1/fitness/cycle-races/:raceId",
+      "/api/v1/fitness/equipment_fan/status",
       "/api/v1/fitness/fingerprints",
       "/api/v1/fitness/menu-music",
+      "/api/v1/fitness/provider/webhook",
       "/api/v1/fitness/resumable",
       "/api/v1/fitness/school-attempts/:workSessionId/plan",
       "/api/v1/fitness/sessions",
       "/api/v1/fitness/sessions/:sessionId",
       "/api/v1/fitness/sessions/dates",
+      "/api/v1/fitness/simulate/status",
       "/api/v1/fitness/skyline-glider/courses",
       "/api/v1/fitness/skyline-glider/runs/:runId",
       "/api/v1/fitness/voice_memo/artifacts",
       "/api/v1/fitness/workouts",
       "/api/v1/fitness/workouts/:id",
       "/api/v1/fitness/workouts/:id/run",
+      "/api/v1/fitness/zone_led/metrics",
+      "/api/v1/fitness/zone_led/status",
       "/api/v1/gaming/assets/:packId",
       "/api/v1/gaming/assets/:packId/:assetId/image",
       "/api/v1/gaming/catalog",
@@ -56854,6 +57591,8 @@
       "/api/v1/gratitude/selections/:category",
       "/api/v1/gratitude/snapshot/list",
       "/api/v1/gratitude/users",
+      "/api/v1/harvest",
+      "/api/v1/harvest/status/:serviceId",
       "/api/v1/health-dashboard/:userId",
       "/api/v1/health-dashboard/:userId/:date",
       "/api/v1/health/ai-usage",
@@ -56982,7 +57721,11 @@
       "/api/v1/piano/users/:userId/progress",
       "/api/v1/piano/users/:userId/studio",
       "/api/v1/piano/users/:userId/studio/:id",
+      "/api/v1/ping",
       "/api/v1/presentation/catalogs/:packId/scenes",
+      "/api/v1/pressure-mats",
+      "/api/v1/pressure-mats/:id",
+      "/api/v1/printer",
       "/api/v1/school/attempt-days",
       "/api/v1/school/attestations",
       "/api/v1/school/banks",
@@ -57073,7 +57816,9 @@
       "/api/v1/stream/ambient/:id",
       "/api/v1/stream/readalong/:collection{/*splat}",
       "/api/v1/stream/singalong/:collection/:id",
-      "/api/v1/weekly-review/recording/drafts"
+      "/api/v1/sync/:source/status",
+      "/api/v1/weekly-review/recording/drafts",
+      "/v1/models"
     ],
     "outsideEligibleAcceptedCaseTemplates": [
       "/api/v1/school/progress",
