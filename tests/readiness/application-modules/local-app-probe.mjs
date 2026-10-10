@@ -21,6 +21,7 @@ try {
   denied('private read', () => fs.readFileSync(path.join(process.env.PRE_DENIED_ROOT, 'private.env')));
   denied('host read', () => fs.readFileSync('/etc/hostname'));
   denied('source write', () => fs.openSync(path.join(sourceRoot, 'backend/src/app.mjs'), 'w'));
+  denied('test results cache read', () => fs.readFileSync(path.join(process.env.PRE_TOOLCHAIN_ROOT, 'node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/results.json')));
   fs.writeFileSync(path.join(scratch, 'permitted.txt'), 'synthetic');
   // The launcher supplies UTC; reviewed application reads must use the fixture's
   // explicit deployment timezone before any product module parses local dates.

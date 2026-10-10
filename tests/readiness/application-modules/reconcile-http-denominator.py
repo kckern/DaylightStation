@@ -1,5 +1,68 @@
 import json,hashlib,collections,os
-import argparse, pathlib
+import argparse, pathlib, re
+def conditional_request_admitted(records, case_id, method, request_path, fixture_sha256, manifest_sha256):
+ """Only an exact reviewed request and its same approved fixture/manifest pair."""
+ return any(any(c == {'id':case_id,'method':method,'path':request_path} for c in record['requestCases']) and any(p == {'fixtureSha256':fixture_sha256,'manifestSha256':manifest_sha256} for p in record['approvedPackets']) for record in records)
+
+def reconcile_conditional_reads(facts, eligibility, matrix, current_by_id):
+ """Derive case-scoped eligibility without changing any broad handler disposition."""
+ records=facts.get('conditionalReadAdmissions',[])
+ assert isinstance(records,list), 'Conditional admissions must be explicit reviewed records'
+ assert eligibility.get('conditionalReadAdmissions',[]) == records == matrix.get('conditionalReadAdmissions',[]), 'Conditional admission registries drifted'
+ eligible_by_id={d['declarationId']:d for d in eligibility['declarations']}
+ mounts={d['declarationId']:d for d in matrix['declarations']}
+ assert set(eligible_by_id)==set(mounts)==set(current_by_id), 'Conditional admission declaration closure differs'
+ broad={d['declarationId'] for d in eligibility['declarations'] if d['effectEligibility'] in ['eligible-finite-read','eligible-benign-process-effects','eligible-finite-existing-file-stream']}
+ handler_templates={t for d in matrix['declarations'] if d['declarationId'] in broad and d['status'].startswith('expected-bound') for t in d['urlTemplates']}
+ handler_conditional={t for d in matrix['declarations'] if d['declarationId'] in broad and d['status']=='expected-bound-conditional-construction' for t in d['urlTemplates']}
+ ids=set();conditional_templates=set();admitted_templates=set();request_ids=set();conditional_construction=set()
+ valid_hash=lambda h:isinstance(h,str) and re.fullmatch('[a-f0-9]{64}',h) is not None
+ for record in records:
+  admission_id=record['admissionId'];assert isinstance(admission_id,str) and admission_id and admission_id not in ids, 'Duplicate/invalid conditional admission';ids.add(admission_id)
+  declaration=record['declarationId'];assert declaration in current_by_id, 'Unknown conditional declaration'
+  d=eligible_by_id[declaration];mount=mounts[declaration];template=record['urlTemplate']
+  assert current_by_id[declaration]['method']=='get', 'Only explicit GET declarations can receive case-scoped admission'
+  assert d['effectEligibility'].startswith('blocked-'), 'Conditional admission must preserve blocked broad handler classification'
+  assert mount['status'].startswith('expected-bound') and template in mount['urlTemplates'], 'Conditional template has no reviewed expected mount'
+  assert template not in admitted_templates, 'Duplicate conditional template cannot inflate conditional denominator'
+  admitted_templates.add(template)
+  if template in handler_templates:
+   assert record.get('denominatorContribution')=='none-existing-template', 'Existing eligible URL requires explicit no-denominator-growth branch scope'
+  else:
+   assert record.get('denominatorContribution','new-template')=='new-template', 'New eligible URL must contribute exactly once'
+   conditional_templates.add(template)
+   if mount['status']=='expected-bound-conditional-construction':conditional_construction.add(template)
+  assert record['effectEligibility']=='eligible-finite-read-under-explicit-case-conditions' and record['noProductionAuthorization'] is True, 'Case-scoped admission is not production authorization'
+  assert isinstance(record['safetyPrerequisites'],str) and record['safetyPrerequisites'].strip(), 'Explicit query/config prerequisites required'
+  assert isinstance(record['scope'],str) and record['scope'].strip(), 'Explicit restricted scope required'
+  assert isinstance(record['diagnosticOnly'],bool), 'Diagnostic scope must remain explicit'
+  assert record['sourceProof'] and all(isinstance(p,str) and p.split(':',1)[0] in facts['sourceSha256'] for p in record['sourceProof']), 'Conditional source proof must bind existing verified dependency hashes'
+  review=record['independentReview'];assert isinstance(review['path'],str) and review['path'] and valid_hash(review['sha256']), 'Independent review evidence required'
+  assert valid_hash(record['sourceGuardSha256']), 'Selected source guard identity required'
+  packets=record['approvedPackets'];assert isinstance(packets,list) and packets, 'Exact approved fixture/manifest pairs required'
+  assert all(set(p)=={'fixtureSha256','manifestSha256'} and all(valid_hash(v) for v in p.values()) for p in packets), 'Invalid paired fixture/manifest hash'
+  assert len({(p['fixtureSha256'],p['manifestSha256']) for p in packets})==len(packets), 'Duplicate approved packet'
+  assert record['approvedFixtureSha256']==[p['fixtureSha256'] for p in packets] and record['approvedManifestSha256']==[p['manifestSha256'] for p in packets], 'Packet hash indexes drifted'
+  assert {'fixtureSha256':record['fixtureSha256'],'manifestSha256':record['manifestSha256']} in packets, 'Original reviewed packet must remain bound'
+  requests=record['requestCases'];assert isinstance(requests,list) and requests, 'Exact approved request cases required'
+  pattern='^'+re.sub(r':[A-Za-z][A-Za-z0-9_]*','[^/?#]+',re.escape(template).replace(r'\:',':'))+'$'
+  for c in requests:
+   assert set(c)=={'id','method','path'} and c['method']=='GET' and isinstance(c['id'],str) and c['id'] and c['id'] not in request_ids, 'Duplicate or non-GET approved request';request_ids.add(c['id'])
+   request_path=c['path'];assert isinstance(request_path,str) and request_path.startswith('/') and not request_path.startswith('//') and not any(b in request_path.lower() for b in ['#','\\']) and not any(b in request_path.split('?',1)[0].lower() for b in ['/../','/./','%2f','%5c','%2e']), 'Noncanonical approved request path'
+   assert re.fullmatch(pattern,request_path.split('?',1)[0]), 'Approved request does not bind its exact URL template'
+   assert conditional_request_admitted([record],c['id'],'GET',request_path,packets[0]['fixtureSha256'],packets[0]['manifestSha256']), 'Reviewed request pair not admitted'
+ for artifact in [eligibility,matrix]:
+  for d in artifact['declarations']:
+   expected=[r for r in records if r['declarationId']==d['declarationId']]
+   assert d.get('conditionalReadAdmissions',[])==expected, 'Per-declaration conditional metadata drifted'
+ total=handler_templates|conditional_templates;construction=handler_conditional|conditional_construction
+ derived={'potentialEligibleHandlerWideSourceURLTemplates':len(handler_templates),'potentialEligibleExplicitBranchConditionalSourceURLTemplates':len(conditional_templates),'potentialEligibleExpectedSourceURLTemplates':len(total),'potentialEligibleUnconditionalConstructionURLTemplates':len(total-construction),'potentialEligibleConditionalConstructionURLTemplates':len(construction)}
+ for key,value in derived.items():
+  if key in ['potentialEligibleHandlerWideSourceURLTemplates','potentialEligibleExplicitBranchConditionalSourceURLTemplates'] and not records and key not in matrix['counts']:continue
+  assert matrix['counts'][key]==value, 'Derived conditional denominator disagrees with matrix: '+key
+ if records:assert eligibility['counts']['explicitlyReviewedConditionalReadDeclarations']==len({r['declarationId'] for r in records})
+ return dict(derived,conditionalReadAdmissions=records,scope='Potential source-bound read branches only; exact approved case/query and same fixture+manifest pair required. Broad handler exclusions retained; no HTTP execution, independent correctness, or installed-live credit is created.')
+
 parser=argparse.ArgumentParser(description='Reconcile captured declarations with reviewed source effects and historical mount gaps; never probe HTTP')
 parser.add_argument('--source-root',required=True);parser.add_argument('--capture',required=True);parser.add_argument('--layer-receipt',required=True);parser.add_argument('--output-file',required=True);parser.add_argument('--update-mounted-inventory',action='store_true')
 args=parser.parse_args();os.chdir(pathlib.Path(args.source_root).resolve())
@@ -122,6 +185,17 @@ if os.path.exists(expectedMountPath):
  assert {r['declarationId'] for r in expectedMount['declarations']}==set(currentById), 'Expected mount matrix declaration coverage changed'
  for path,expected in expectedMount['sourceSha256'].items():
   assert hashlib.sha256(open(path,'rb').read()).hexdigest()==expected, 'Expected mount source changed: '+path
+ eligibilityPath=base+'http-readonly-eligibility.json'
+ if os.path.exists(eligibilityPath):
+  eligibility=json.load(open(eligibilityPath))
+  conditional=reconcile_conditional_reads(facts,eligibility,expectedMount,currentById)
+  artifact['conditionalReadAdmissions']=conditional['conditionalReadAdmissions']
+  artifact['derivedConditionalReadEligibility']={k:v for k,v in conditional.items() if k!='conditionalReadAdmissions'}
+  for row in artifact['GETDeclarations']:
+   approved=[r for r in conditional['conditionalReadAdmissions'] if r['declarationId']==row['declarationId']]
+   if approved:row['conditionalReadAdmissions']=approved
+ else:
+  assert not facts.get('conditionalReadAdmissions'), 'Conditional facts require complete readonly eligibility mirror'
  artifact['expectedInstalledMountAccounting']={'artifact':expectedMountPath,'referenceCommit':expectedMount['referenceCommit'],'counts':expectedMount['counts'],'evidenceKind':expectedMount['evidenceKind'],'scope':'Source-derived expected config-pinned graph; actual production environment/config/loading and optional construction proofs remain separate. No observed-live denominator or request authorization.'}
 open(args.output_file,'w').write(json.dumps(artifact,indent=2)+'\n')
 x['currentDenominatorReconciliation']={'artifact':base+'http-denominator-reconciliation.json','candidateCommit':s['ref'],'counts':counts,'historicalInventoryRetained':True,'knownRemainingMountGaps':'Current100 historical declarations have78 source mount/expansion bindings and22 source-unwired dispositions in reviewed production boot. No remaining record lacks a source disposition; installed-live presence and unresolved transitive effects remain unknown. Source-unwired is not a live absence claim.'}

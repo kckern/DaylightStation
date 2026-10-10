@@ -1,67 +1,40 @@
-import fs from 'node:fs';
-import test from 'node:test';
-import os from 'node:os';
-import path from 'node:path';
-import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
-import { DataServiceCalendarEventSource } from '../../../modules/calendar/server/adapters/DataServiceCalendarEventSource.mjs';
+import fs from 'node:fs';
+import path from 'node:path';
+import test from 'node:test';
+import vm from 'node:vm';
+import { createHash } from 'node:crypto';
+import { validateRawFixtures } from './raw-utf8-fixture.mjs';
 
-// Inspect the runner's actual array boundary without importing its boot entrypoint.
 const runner = fs.readFileSync(new URL('./run-local-app.mjs', import.meta.url), 'utf8');
-const literal = runner.match(/const reviewedArray = (\/.*\/).test\(relative\);/)[1];
-const reviewedArray = new RegExp(literal.slice(1, -1));
-test('Calendar array roots remain limited to stored current and legacy event paths', () => {
-  for (const name of ['data/household/calendar/calendar.yml', 'data/household-h1/calendar/calendar.yaml',
-    'data/household/apps/calendar.yml', 'data/household-h1/apps/calendar.yaml',
-    'data/household/finance/transaction.pairs.yml', 'data/household/gratitude/selections.gratitude.yml']) {
-    assert.ok(reviewedArray.test(name), name);
-  }
-  for (const name of ['data/system/config/auth.yml', 'data/household/hardware/devices.yml',
-    'data/household/calendar/events.yml', 'data/household/calendar/calendar/nested.yml',
-    'data/household/apps/calendar/config.yml', 'data/household/apps/other.yml',
-    'data/household-../calendar/calendar.yml', 'data/household/../calendar/calendar.yml',
-    '/data/household/calendar/calendar.yml', 'media/household/calendar/calendar.yml']) {
-    assert.equal(reviewedArray.test(name), false, name);
-  }
-});
-test('current Calendar array, including empty, prevents legacy fallback reads', () => {
-  for (const events of [[], [{ id: 'primary-event', start: { date: '2026-03-04' } }]]) {
-    const calls = [];
-    const source = new DataServiceCalendarEventSource({ dataService: { household: { read(key, hid) {
-      calls.push([key, hid]); assert.equal(key, 'calendar/calendar'); return events;
-    } } } });
-    assert.strictEqual(source.readEvents('h1'), events);
-    assert.deepEqual(calls, [['calendar/calendar', 'h1']]);
-  }
-});
-test('missing or mapping current backing uses populated legacy event array', () => {
-  for (const primary of [null, {}]) {
-    const legacy = [{ id: 'legacy-event', start: { dateTime: '2026-02-01T10:00:00-08:00' } }];
-    const calls = [];
-    const source = new DataServiceCalendarEventSource({ dataService: { household: { read(key, hid) {
-      calls.push([key, hid]); return key === 'calendar/calendar' ? primary : legacy;
-    } } } });
-    assert.strictEqual(source.readEvents('h1'), legacy);
-    assert.deepEqual(calls, [['calendar/calendar', 'h1'], ['apps/calendar', 'h1']]);
-  }
+const admission = runner.slice(runner.indexOf('assert.ok(prepared.fixtureFiles &&'), runner.indexOf('// Explicit runtime timezone'));
+const check = (relative, value) => vm.runInNewContext(admission, { assert, path, prepared: { fixtureFiles: { [relative]: value } } });
+const calendar = 'data/users/user_1/current/calendar.yml';
+
+test('Calendar JSON array admission is limited to the exact reviewed stored destination', () => {
+  check(calendar, [{ id: 'synthetic-calendar', startDateTime: '2099-01-01T09:00:00-08:00' }]);
+  for (const value of [null, 'scalar', 1, false]) assert.throws(() => check(calendar, value));
+  for (const relative of [
+    'data/users/user_2/current/calendar.yml', 'data/users/user_1/current/calendar.yaml',
+    'data/users/user_1/current/calendars.yml', 'data/users/user_1/calendar.yml',
+    'data/household/current/calendar.yml', 'data/content/current/calendar.yml',
+    'data/users/user_1/current/todoist.yml', 'data/users/user_1/current/../calendar.yml',
+    '/data/users/user_1/current/calendar.yml',
+  ]) assert.throws(() => check(relative, []));
 });
 
-test('invalid fixture timezone rejects before launcher or transport construction', () => {
-  const directory = path.dirname(fileURLToPath(import.meta.url));
-  const sourceRoot = path.resolve(directory, '../../..');
-  const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'calendar-timezone-control-'));
-  const fixed = JSON.parse(fs.readFileSync(path.join(directory, 'local-app-fixture.json')));
-  for (const timezone of [null, 3, 'UTC\nNODE_OPTIONS=bad', '../UTC', 'Not/A_Timezone']) {
-    const fixture = structuredClone(fixed);
-    fixture.fixtureFiles['data/system/config/system.yml'].timezone = timezone;
-    const file = path.join(outputRoot, 'fixture.json');
-    fs.writeFileSync(file, JSON.stringify(fixture));
-    const result = spawnSync(process.execPath, [path.join(directory, 'run-local-app.mjs'),
-      '--source-root', sourceRoot, '--tool-root', sourceRoot, '--output-root', outputRoot,
-      '--fixture', file, '--controls-only'], { encoding: 'utf8', timeout: 5000 });
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /fixture timezone required|Invalid time zone specified/);
-    assert.deepEqual(fs.readdirSync(outputRoot), ['fixture.json']);
-  }
+test('Calendar array admission preserves reviewed arrays and ordinary objects without granting raw bytes', () => {
+  for (const relative of [
+    'data/household/calendar/calendar.yml', 'data/household/apps/calendar.yml',
+    'data/users/user_1/lifelog/nutrition/food_catalog.yml', 'data/users/user_1/ceremony-records.yml',
+    'data/content/school/generated-banks/recipes.yml', 'data/users/user_1/apps/health/meals.yml',
+    'data/household/automotive/synthetic-array-car/service.yml',
+    'data/household/automotive/synthetic-array-car/documents.yml',
+  ]) check(relative, []);
+  for (const relative of [calendar, 'data/users/user_2/current/calendar.yml', 'data/users/user_1/current/todoist.yml']) check(relative, { entries: [] });
+  const bytes = Buffer.from('[]\n');
+  assert.throws(() => validateRawFixtures({ fixtureFiles: {}, rawUTF8Files: [{
+    destination: calendar, encoding: 'utf8', base64: bytes.toString('base64'), byteLength: bytes.length,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+  }] }));
 });

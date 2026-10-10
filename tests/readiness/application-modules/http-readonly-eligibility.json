@@ -44,7 +44,8 @@
     "historicalNonDeclarationCases": 1,
     "totalHistoricalCasesAccounted": 134,
     "verifiedCaseDeclarationLinks": 133,
-    "independentCorrectHistoricalCases": 125
+    "independentCorrectHistoricalCases": 125,
+    "explicitlyReviewedConditionalReadDeclarations": 11
   },
   "declarations": [
     {
@@ -18923,7 +18924,58 @@
         },
         "variantAccounting": "all-source-guard-prerequisites-preserved",
         "livePresenceObserved": false
-      }
+      },
+      "conditionalReadAdmissions": [
+        {
+          "admissionId": "critical-conditional-2053637ad71374f6",
+          "urlTemplate": "/api/v1/fitness",
+          "declarationId": "decl-aaf7f16ecfa8c62ff40005ce-0",
+          "scope": "Only exact reviewed authored fixture/query branches; historical broad handler effectEligibility remains blocked",
+          "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+          "requestCases": [
+            {
+              "id": "critical-fitness-bootstrap",
+              "method": "GET",
+              "path": "/api/v1/fitness"
+            }
+          ],
+          "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+          "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+          "safetyPrerequisites": "Exactly authored local dashboard/history config with plex.music_playlists=[]; content catalog enrichment returns immediately before provider method. Inline primary learner hydrates only localmembership. Do not generalize configured playlist IDs/Plexcollections/video.",
+          "sourceProof": [
+            "modules/fitness/server/adapters/ProviderFitnessContentCatalog.mjs:109-114",
+            "modules/fitness/server/application/services/FitnessContentService.mjs:10-16",
+            "modules/fitness/server/application/services/FitnessUserHydrator.mjs:50-55"
+          ],
+          "independentReview": {
+            "path": "/tmp/readiness-critical-school-fitness-pack/review.json",
+            "sha256": "7a72bc3dfb7270f8d48ce33a7337ad4a854c73c55a86eff408492c3e8c08e307"
+          },
+          "diagnosticOnly": false,
+          "noProductionAuthorization": true,
+          "approvedPackets": [
+            {
+              "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+              "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2"
+            },
+            {
+              "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+              "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+            }
+          ],
+          "approvedFixtureSha256": [
+            "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+            "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3"
+          ],
+          "approvedManifestSha256": [
+            "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+            "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+          ],
+          "packetBindingRule": "The same approvedPackets entry must match BOTH fixture and manifest hashes, plus exact request ID/method/path. Separate hash arrays are indexes only, not cross-product authorization.",
+          "sourceGuardSha256": "2669183eefc2839c606efd3c7737154eea2ed9355a3b414375eec8f87ce8d51b",
+          "mergedPacketReviewRequired": "/tmp/readiness-pending-pack-grouping/household-timeline-critical/HANDOFF.json"
+        }
+      ]
     },
     {
       "declarationId": "decl-8101735f5cf37fc0f8b0ac31-0",
@@ -19393,7 +19445,63 @@
         },
         "variantAccounting": "all-source-guard-prerequisites-preserved",
         "livePresenceObserved": false
-      }
+      },
+      "conditionalReadAdmissions": [
+        {
+          "admissionId": "critical-conditional-37072f21bf20c9e1",
+          "urlTemplate": "/api/v1/fitness/sessions",
+          "declarationId": "decl-cf42e87541e6ed8b3c759a51-0",
+          "scope": "Only exact reviewed authored fixture/query branches; historical broad handler effectEligibility remains blocked",
+          "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+          "requestCases": [
+            {
+              "id": "critical-fitness-session-list",
+              "method": "GET",
+              "path": "/api/v1/fitness/sessions?date=2026-10-09"
+            },
+            {
+              "id": "critical-fitness-session-list-ungrouped",
+              "method": "GET",
+              "path": "/api/v1/fitness/sessions?date=2026-10-09&group=none"
+            }
+          ],
+          "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+          "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+          "safetyPrerequisites": "GET exact date=2026-10-09; no since/relative query. QuerySessions date branch calls findByDate only, never rangeindex rebuild/save. Defaultgrouping two1h-separated singletonstoredWalk sessions; ActivityRegistry foreignsport guard returnsbefore Cycle/Skyline providers. Explicitgroup=none secondarycontract separately. StoredStrava field is synthetic historical displaymetadata, no providerimport or playback claim.",
+          "sourceProof": [
+            "modules/fitness/server/application/usecases/QuerySessions.mjs:78-89",
+            "modules/fitness/server/adapters/persistence/YamlSessionDatastore.mjs:384-398",
+            "modules/fitness/server/application/activities/ActivityRegistry.mjs:10-15"
+          ],
+          "independentReview": {
+            "path": "/tmp/readiness-critical-school-fitness-pack/review.json",
+            "sha256": "7a72bc3dfb7270f8d48ce33a7337ad4a854c73c55a86eff408492c3e8c08e307"
+          },
+          "diagnosticOnly": false,
+          "noProductionAuthorization": true,
+          "approvedPackets": [
+            {
+              "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+              "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2"
+            },
+            {
+              "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+              "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+            }
+          ],
+          "approvedFixtureSha256": [
+            "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+            "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3"
+          ],
+          "approvedManifestSha256": [
+            "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+            "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+          ],
+          "packetBindingRule": "The same approvedPackets entry must match BOTH fixture and manifest hashes, plus exact request ID/method/path. Separate hash arrays are indexes only, not cross-product authorization.",
+          "sourceGuardSha256": "2669183eefc2839c606efd3c7737154eea2ed9355a3b414375eec8f87ce8d51b",
+          "mergedPacketReviewRequired": "/tmp/readiness-pending-pack-grouping/household-timeline-critical/HANDOFF.json"
+        }
+      ]
     },
     {
       "declarationId": "decl-507f8d5ab6e303c2558f6857-0",
@@ -40372,7 +40480,58 @@
         },
         "variantAccounting": "all-source-guard-prerequisites-preserved",
         "livePresenceObserved": false
-      }
+      },
+      "conditionalReadAdmissions": [
+        {
+          "admissionId": "critical-conditional-6962445663692f32",
+          "urlTemplate": "/api/v1/school/catalogs",
+          "declarationId": "decl-08644b49bfae811a103e9800-0",
+          "scope": "Only exact reviewed authored fixture/query branches; historical broad handler effectEligibility remains blocked",
+          "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+          "requestCases": [
+            {
+              "id": "critical-school-authored-catalog",
+              "method": "GET",
+              "path": "/api/v1/school/catalogs?learnerId=user_1"
+            }
+          ],
+          "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+          "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+          "safetyPrerequisites": "Valid authored YAML catalog/document; explicit configured learner user_1 and assignedcourse rates. catalog.exercise_library omitted disables generatedcorpus source. Assignment get deletes process-local corruptCurrent marker only; no save/put/atomicwrite. Actual learner-scoped catalog and hydrated lesson tested, never teacherlessonpreview/launch/session.",
+          "sourceProof": [
+            "modules/school/server/adapters/persistence/YamlAssignmentStore.mjs:124-149",
+            "modules/school/server/application/catalog/BuildSchoolCatalog.mjs:54",
+            "modules/school/server/application/GetLearningCatalog.mjs:28-74"
+          ],
+          "independentReview": {
+            "path": "/tmp/readiness-critical-school-fitness-pack/review.json",
+            "sha256": "7a72bc3dfb7270f8d48ce33a7337ad4a854c73c55a86eff408492c3e8c08e307"
+          },
+          "diagnosticOnly": false,
+          "noProductionAuthorization": true,
+          "approvedPackets": [
+            {
+              "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+              "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2"
+            },
+            {
+              "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+              "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+            }
+          ],
+          "approvedFixtureSha256": [
+            "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+            "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3"
+          ],
+          "approvedManifestSha256": [
+            "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+            "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+          ],
+          "packetBindingRule": "The same approvedPackets entry must match BOTH fixture and manifest hashes, plus exact request ID/method/path. Separate hash arrays are indexes only, not cross-product authorization.",
+          "sourceGuardSha256": "2669183eefc2839c606efd3c7737154eea2ed9355a3b414375eec8f87ce8d51b",
+          "mergedPacketReviewRequired": "/tmp/readiness-pending-pack-grouping/household-timeline-critical/HANDOFF.json"
+        }
+      ]
     },
     {
       "declarationId": "decl-c61d7ee0dbd31c57306f4187-0",
@@ -40436,7 +40595,63 @@
         },
         "variantAccounting": "all-source-guard-prerequisites-preserved",
         "livePresenceObserved": false
-      }
+      },
+      "conditionalReadAdmissions": [
+        {
+          "admissionId": "critical-conditional-2ee4612e6868f607",
+          "urlTemplate": "/api/v1/school/catalogs/:catalogId/subjects/:subjectId/courses/:courseId/units/:unitId/lessons/:lessonId",
+          "declarationId": "decl-c61d7ee0dbd31c57306f4187-0",
+          "scope": "Only exact reviewed authored fixture/query branches; historical broad handler effectEligibility remains blocked",
+          "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+          "requestCases": [
+            {
+              "id": "critical-school-lesson-intro",
+              "method": "GET",
+              "path": "/api/v1/school/catalogs/synthetic-school/subjects/mathematics/courses/rates/units/walking/lessons/intro?learnerId=user_1"
+            },
+            {
+              "id": "critical-school-lesson-comparison",
+              "method": "GET",
+              "path": "/api/v1/school/catalogs/synthetic-school/subjects/mathematics/courses/rates/units/walking/lessons/compare?learnerId=user_1"
+            }
+          ],
+          "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+          "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+          "safetyPrerequisites": "Valid authored YAML catalog/document; explicit configured learner user_1 and assignedcourse rates. catalog.exercise_library omitted disables generatedcorpus source. Assignment get deletes process-local corruptCurrent marker only; no save/put/atomicwrite. Actual learner-scoped catalog and hydrated lesson tested, never teacherlessonpreview/launch/session.",
+          "sourceProof": [
+            "modules/school/server/adapters/persistence/YamlAssignmentStore.mjs:124-149",
+            "modules/school/server/application/catalog/BuildSchoolCatalog.mjs:54",
+            "modules/school/server/application/GetLearningCatalog.mjs:28-74"
+          ],
+          "independentReview": {
+            "path": "/tmp/readiness-critical-school-fitness-pack/review.json",
+            "sha256": "7a72bc3dfb7270f8d48ce33a7337ad4a854c73c55a86eff408492c3e8c08e307"
+          },
+          "diagnosticOnly": false,
+          "noProductionAuthorization": true,
+          "approvedPackets": [
+            {
+              "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+              "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2"
+            },
+            {
+              "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+              "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+            }
+          ],
+          "approvedFixtureSha256": [
+            "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+            "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3"
+          ],
+          "approvedManifestSha256": [
+            "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+            "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+          ],
+          "packetBindingRule": "The same approvedPackets entry must match BOTH fixture and manifest hashes, plus exact request ID/method/path. Separate hash arrays are indexes only, not cross-product authorization.",
+          "sourceGuardSha256": "2669183eefc2839c606efd3c7737154eea2ed9355a3b414375eec8f87ce8d51b",
+          "mergedPacketReviewRequired": "/tmp/readiness-pending-pack-grouping/household-timeline-critical/HANDOFF.json"
+        }
+      ]
     },
     {
       "declarationId": "decl-c0881c9cc63755c91d769dde-0",
@@ -40545,7 +40760,58 @@
         },
         "variantAccounting": "all-source-guard-prerequisites-preserved",
         "livePresenceObserved": false
-      }
+      },
+      "conditionalReadAdmissions": [
+        {
+          "admissionId": "critical-conditional-6e2f52674ae19311",
+          "urlTemplate": "/api/v1/school/certification",
+          "declarationId": "decl-74ce67c8fe6bf50db74c19c4-0",
+          "scope": "Only exact reviewed authored fixture/query branches; historical broad handler effectEligibility remains blocked",
+          "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+          "requestCases": [
+            {
+              "id": "critical-school-certification-diagnostic",
+              "method": "GET",
+              "path": "/api/v1/school/certification?address=synthetic-school%2Fmathematics%2Frates%2Fwalking%2Fintro&surface=screen-browser"
+            }
+          ],
+          "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+          "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+          "safetyPrerequisites": "Pure screenport certification of authored reader/examples capabilities; GetSurfaceCertification request-local bundle/row Maps only, no publicationmanifestwrite. Freshper-callbuilder; exactsurfacefilter. Mandatory diagnostic independentexpected200/full row; suspectedcomposedmissingselect may404 in bothroles, never credit404 correctness.",
+          "sourceProof": [
+            "modules/school/server/composition/lifecycle-runtime.mjs:734",
+            "modules/school/server/api/school.mjs:294",
+            "modules/school/server/application/surfaces/BuildSchoolSurfaceCertification.mjs:32-35"
+          ],
+          "independentReview": {
+            "path": "/tmp/readiness-critical-school-fitness-pack/review.json",
+            "sha256": "7a72bc3dfb7270f8d48ce33a7337ad4a854c73c55a86eff408492c3e8c08e307"
+          },
+          "diagnosticOnly": true,
+          "noProductionAuthorization": true,
+          "approvedPackets": [
+            {
+              "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+              "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2"
+            },
+            {
+              "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+              "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+            }
+          ],
+          "approvedFixtureSha256": [
+            "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+            "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3"
+          ],
+          "approvedManifestSha256": [
+            "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+            "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+          ],
+          "packetBindingRule": "The same approvedPackets entry must match BOTH fixture and manifest hashes, plus exact request ID/method/path. Separate hash arrays are indexes only, not cross-product authorization.",
+          "sourceGuardSha256": "2669183eefc2839c606efd3c7737154eea2ed9355a3b414375eec8f87ce8d51b",
+          "mergedPacketReviewRequired": "/tmp/readiness-pending-pack-grouping/household-timeline-critical/HANDOFF.json"
+        }
+      ]
     },
     {
       "declarationId": "decl-44bd288e922ffd7c7b26b6d2-0",
@@ -41574,7 +41840,56 @@
         },
         "variantAccounting": "all-source-guard-prerequisites-preserved",
         "livePresenceObserved": false
-      }
+      },
+      "conditionalReadAdmissions": [
+        {
+          "admissionId": "standing-conditional-646036ffcf60e2fb",
+          "urlTemplate": "/api/v1/school/report",
+          "declarationId": "decl-4413ff96adc59a78968484f1-0",
+          "scope": "Exact reviewed synthetic local School standing request branch; broad effectful handler remains excluded",
+          "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+          "requestCases": [
+            {
+              "id": "standing-report-learner",
+              "method": "GET",
+              "path": "/api/v1/school/report?userId=user_1&audience=learner"
+            },
+            {
+              "id": "standing-report-parent",
+              "method": "GET",
+              "path": "/api/v1/school/report?userId=user_1&audience=parent"
+            }
+          ],
+          "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+          "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+          "safetyPrerequisites": "No auth sid; lifecycle.enabled=true,virtualDevices=true; local schema-absent paper-only curriculum/document, no fitness-course units, no school materials config, no media/provider/program/launch/action refs; stored object session events and exact reviewed queue array only. JSON report-card/progress-report/format=json preview with previewOnly stubs; process-local memoization/corruption flags allowed, no persistent cache/provider/device/real session/ticket actions. Expiry admission and both roles checked. SAME reviewed fixture/manifest pair and exact case ID/method/query mandatory.",
+          "sourceProof": [
+            "modules/school/server/application/GetSchoolReport.mjs",
+            "modules/school/server/application/WorkSessionReporter.mjs",
+            "modules/school/server/application/SchoolService.mjs"
+          ],
+          "independentReview": {
+            "path": "/tmp/readiness-school-fitness-standing-group/review.json",
+            "sha256": "f56680136daa12fa700e1af2d2bb9dc42e32dcce1a1ad9fe17f4ca46b4460b8a"
+          },
+          "diagnosticOnly": false,
+          "noProductionAuthorization": true,
+          "approvedPackets": [
+            {
+              "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+              "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+            }
+          ],
+          "approvedFixtureSha256": [
+            "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e"
+          ],
+          "approvedManifestSha256": [
+            "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+          ],
+          "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
+          "denominatorContribution": "new-template"
+        }
+      ]
     },
     {
       "declarationId": "decl-784ca21ebccd6d688c4d762e-0",
@@ -42154,7 +42469,51 @@
         },
         "variantAccounting": "all-source-guard-prerequisites-preserved",
         "livePresenceObserved": false
-      }
+      },
+      "conditionalReadAdmissions": [
+        {
+          "admissionId": "standing-conditional-f321ca26a5912bdd",
+          "urlTemplate": "/api/v1/school/report-card",
+          "declarationId": "decl-f7efea901612200a42c3c0b1-0",
+          "scope": "Exact reviewed synthetic local School standing request branch; broad effectful handler remains excluded",
+          "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+          "requestCases": [
+            {
+              "id": "standing-report-card",
+              "method": "GET",
+              "path": "/api/v1/school/report-card?learnerId=user_1&periodId=synthetic-term"
+            }
+          ],
+          "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+          "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+          "safetyPrerequisites": "No auth sid; lifecycle.enabled=true,virtualDevices=true; local schema-absent paper-only curriculum/document, no fitness-course units, no school materials config, no media/provider/program/launch/action refs; stored object session events and exact reviewed queue array only. JSON report-card/progress-report/format=json preview with previewOnly stubs; process-local memoization/corruption flags allowed, no persistent cache/provider/device/real session/ticket actions. Expiry admission and both roles checked. SAME reviewed fixture/manifest pair and exact case ID/method/query mandatory.",
+          "sourceProof": [
+            "modules/school/server/application/usecases/GetReportCard.mjs",
+            "modules/school/server/application/FitnessCourseCurriculumCatalog.mjs",
+            "modules/school/server/composition/catalog-runtime.mjs"
+          ],
+          "independentReview": {
+            "path": "/tmp/readiness-school-fitness-standing-group/review.json",
+            "sha256": "f56680136daa12fa700e1af2d2bb9dc42e32dcce1a1ad9fe17f4ca46b4460b8a"
+          },
+          "diagnosticOnly": false,
+          "noProductionAuthorization": true,
+          "approvedPackets": [
+            {
+              "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+              "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+            }
+          ],
+          "approvedFixtureSha256": [
+            "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e"
+          ],
+          "approvedManifestSha256": [
+            "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+          ],
+          "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
+          "denominatorContribution": "new-template"
+        }
+      ]
     },
     {
       "declarationId": "decl-e0a62574526814636e5bb09d-0",
@@ -42749,7 +43108,51 @@
         },
         "variantAccounting": "all-source-guard-prerequisites-preserved",
         "livePresenceObserved": false
-      }
+      },
+      "conditionalReadAdmissions": [
+        {
+          "admissionId": "standing-conditional-7f381d1dcc57ace7",
+          "urlTemplate": "/api/v1/school/progress-report",
+          "declarationId": "decl-0fd7bb7f3487bb776fd9d1dd-0",
+          "scope": "Exact reviewed synthetic local School standing request branch; broad effectful handler remains excluded",
+          "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+          "requestCases": [
+            {
+              "id": "standing-progress-report",
+              "method": "GET",
+              "path": "/api/v1/school/progress-report?learnerId=user_1&periodId=synthetic-term"
+            }
+          ],
+          "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+          "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+          "safetyPrerequisites": "No auth sid; lifecycle.enabled=true,virtualDevices=true; local schema-absent paper-only curriculum/document, no fitness-course units, no school materials config, no media/provider/program/launch/action refs; stored object session events and exact reviewed queue array only. JSON report-card/progress-report/format=json preview with previewOnly stubs; process-local memoization/corruption flags allowed, no persistent cache/provider/device/real session/ticket actions. Expiry admission and both roles checked. SAME reviewed fixture/manifest pair and exact case ID/method/query mandatory.",
+          "sourceProof": [
+            "modules/school/server/application/usecases/GetProgressReport.mjs",
+            "modules/school/server/application/usecases/GetReportCard.mjs",
+            "modules/school/server/composition/catalog-runtime.mjs"
+          ],
+          "independentReview": {
+            "path": "/tmp/readiness-school-fitness-standing-group/review.json",
+            "sha256": "f56680136daa12fa700e1af2d2bb9dc42e32dcce1a1ad9fe17f4ca46b4460b8a"
+          },
+          "diagnosticOnly": false,
+          "noProductionAuthorization": true,
+          "approvedPackets": [
+            {
+              "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+              "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+            }
+          ],
+          "approvedFixtureSha256": [
+            "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e"
+          ],
+          "approvedManifestSha256": [
+            "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+          ],
+          "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
+          "denominatorContribution": "new-template"
+        }
+      ]
     },
     {
       "declarationId": "decl-dd3b41ad4e297f15dd212777-0",
@@ -44530,7 +44933,56 @@
         },
         "variantAccounting": "all-source-guard-prerequisites-preserved",
         "livePresenceObserved": false
-      }
+      },
+      "conditionalReadAdmissions": [
+        {
+          "admissionId": "standing-conditional-df96afc46319c043",
+          "urlTemplate": "/api/v1/school/review/learner/:learnerId",
+          "declarationId": "decl-34357f8f3292155ecb03b3ff-0",
+          "scope": "Exact reviewed synthetic local School standing request branch; broad effectful handler remains excluded",
+          "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+          "requestCases": [
+            {
+              "id": "standing-learner-feedback-default",
+              "method": "GET",
+              "path": "/api/v1/school/review/learner/user_1?limit=20"
+            },
+            {
+              "id": "standing-learner-feedback-limit-one",
+              "method": "GET",
+              "path": "/api/v1/school/review/learner/user_1?limit=1"
+            }
+          ],
+          "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+          "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+          "safetyPrerequisites": "No auth sid; lifecycle.enabled=true,virtualDevices=true; local schema-absent paper-only curriculum/document, no fitness-course units, no school materials config, no media/provider/program/launch/action refs; stored object session events and exact reviewed queue array only. JSON report-card/progress-report/format=json preview with previewOnly stubs; process-local memoization/corruption flags allowed, no persistent cache/provider/device/real session/ticket actions. Expiry admission and both roles checked. SAME reviewed fixture/manifest pair and exact case ID/method/query mandatory.",
+          "sourceProof": [
+            "modules/school/server/application/services/SchoolRecordsQueryService.mjs",
+            "modules/school/server/adapters/persistence/YamlReviewQueue.mjs",
+            "modules/school/server/application/CurriculumAccess.mjs"
+          ],
+          "independentReview": {
+            "path": "/tmp/readiness-school-fitness-standing-group/review.json",
+            "sha256": "f56680136daa12fa700e1af2d2bb9dc42e32dcce1a1ad9fe17f4ca46b4460b8a"
+          },
+          "diagnosticOnly": false,
+          "noProductionAuthorization": true,
+          "approvedPackets": [
+            {
+              "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+              "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+            }
+          ],
+          "approvedFixtureSha256": [
+            "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e"
+          ],
+          "approvedManifestSha256": [
+            "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+          ],
+          "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
+          "denominatorContribution": "new-template"
+        }
+      ]
     },
     {
       "declarationId": "decl-a8e172bb3b99f742a815dcd1-0",
@@ -45858,7 +46310,51 @@
         },
         "variantAccounting": "Concrete declaration guards recorded with polarity; factory construction/renderer prerequisites retain source conditions",
         "livePresenceObserved": false
-      }
+      },
+      "conditionalReadAdmissions": [
+        {
+          "admissionId": "standing-conditional-194aeb9278056d2e",
+          "urlTemplate": "/api/v1/school/lifecycle/learners/:learnerId/agenda/preview",
+          "declarationId": "decl-1800e657146d11c7e7deec31-0",
+          "scope": "Exact reviewed synthetic local School standing request branch; broad effectful handler remains excluded",
+          "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+          "requestCases": [
+            {
+              "id": "standing-agenda-json",
+              "method": "GET",
+              "path": "/api/v1/school/lifecycle/learners/user_1/agenda/preview?format=json&studyDay=2026-10-09"
+            }
+          ],
+          "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+          "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+          "safetyPrerequisites": "No auth sid; lifecycle.enabled=true,virtualDevices=true; local schema-absent paper-only curriculum/document, no fitness-course units, no school materials config, no media/provider/program/launch/action refs; stored object session events and exact reviewed queue array only. JSON report-card/progress-report/format=json preview with previewOnly stubs; process-local memoization/corruption flags allowed, no persistent cache/provider/device/real session/ticket actions. Expiry admission and both roles checked. SAME reviewed fixture/manifest pair and exact case ID/method/query mandatory.",
+          "sourceProof": [
+            "modules/school/server/application/PreviewSchoolStores.mjs",
+            "modules/school/server/application/usecases/BuildAgenda.mjs",
+            "modules/school/server/application/PlanProjection.mjs"
+          ],
+          "independentReview": {
+            "path": "/tmp/readiness-school-fitness-standing-group/review.json",
+            "sha256": "f56680136daa12fa700e1af2d2bb9dc42e32dcce1a1ad9fe17f4ca46b4460b8a"
+          },
+          "diagnosticOnly": false,
+          "noProductionAuthorization": true,
+          "approvedPackets": [
+            {
+              "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+              "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+            }
+          ],
+          "approvedFixtureSha256": [
+            "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e"
+          ],
+          "approvedManifestSha256": [
+            "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+          ],
+          "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
+          "denominatorContribution": "none-existing-template"
+        }
+      ]
     },
     {
       "declarationId": "decl-0415d976404e2229caf493b0-0",
@@ -46301,7 +46797,50 @@
         },
         "variantAccounting": "Concrete declaration guards recorded with polarity; factory construction/renderer prerequisites retain source conditions",
         "livePresenceObserved": false
-      }
+      },
+      "conditionalReadAdmissions": [
+        {
+          "admissionId": "standing-conditional-3e6a56b06190e413",
+          "urlTemplate": "/api/v1/school/lifecycle/sessions/:sessionId/events",
+          "declarationId": "decl-93b604b7ce495056d10192a5-0",
+          "scope": "Exact reviewed synthetic local School standing request branch; broad effectful handler remains excluded",
+          "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+          "requestCases": [
+            {
+              "id": "standing-session-events",
+              "method": "GET",
+              "path": "/api/v1/school/lifecycle/sessions/synthetic-completed-session/events"
+            }
+          ],
+          "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+          "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+          "safetyPrerequisites": "No auth sid; lifecycle.enabled=true,virtualDevices=true; local schema-absent paper-only curriculum/document, no fitness-course units, no school materials config, no media/provider/program/launch/action refs; stored object session events and exact reviewed queue array only. JSON report-card/progress-report/format=json preview with previewOnly stubs; process-local memoization/corruption flags allowed, no persistent cache/provider/device/real session/ticket actions. Expiry admission and both roles checked. SAME reviewed fixture/manifest pair and exact case ID/method/query mandatory.",
+          "sourceProof": [
+            "modules/school/server/application/services/SchoolLifecycleReadService.mjs",
+            "modules/school/server/adapters/persistence/YamlWorkSessionDatastore.mjs"
+          ],
+          "independentReview": {
+            "path": "/tmp/readiness-school-fitness-standing-group/review.json",
+            "sha256": "f56680136daa12fa700e1af2d2bb9dc42e32dcce1a1ad9fe17f4ca46b4460b8a"
+          },
+          "diagnosticOnly": false,
+          "noProductionAuthorization": true,
+          "approvedPackets": [
+            {
+              "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+              "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+            }
+          ],
+          "approvedFixtureSha256": [
+            "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e"
+          ],
+          "approvedManifestSha256": [
+            "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+          ],
+          "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
+          "denominatorContribution": "new-template"
+        }
+      ]
     },
     {
       "declarationId": "decl-6ce7687d59fd0d4647f128a6-0",
@@ -48265,7 +48804,9 @@
   "historicalUniqueComparatorAcceptances": 134,
   "openCorrectnessGates": [
     "Content-prefix consumer contract mismatch",
-    "Life feedback date-vs-timestamp baseline semantic failure"
+    "Life feedback date-vs-timestamp baseline semantic failure",
+    "School certification valid authored target: intended200 but original10d8 and candidate54b6 both404; baseline diagnostic, zero accepted case/template credit",
+    "School learner and parent reports drop valid pending-session since-date in both immutable6e and candidate54b6; two baseline diagnostics receive zero accepted credit"
   ],
   "readinessAccepted": false,
   "unmappedHistoricalPackCases": [],
@@ -48687,8 +49228,8 @@
     "counts": {
       "historicalLiveUniqueCases": 134,
       "historicalLiveIndependentContracts": 125,
-      "isolatedUniqueAcceptedCaseIds": 57,
-      "isolatedAcceptedOccurrences": 57,
+      "isolatedUniqueAcceptedCaseIds": 155,
+      "isolatedAcceptedOccurrences": 155,
       "isolatedReplayIdsAlreadyLive": [
         "health-catalog-food-not-found",
         "health-catalog-missing-query",
@@ -48711,6 +49252,28 @@
         "array-health-saved-meals-ordered",
         "array-health-templates-active",
         "array-health-templates-proposed",
+        "critical-fitness-bootstrap",
+        "critical-fitness-session-detail-park",
+        "critical-fitness-session-detail-river",
+        "critical-fitness-session-list",
+        "critical-fitness-session-list-ungrouped",
+        "critical-school-authored-catalog",
+        "critical-school-lesson-comparison",
+        "critical-school-lesson-intro",
+        "dashboard-health-date-populated",
+        "dashboard-health-date-sparse",
+        "dashboard-health-pending-scanner",
+        "dashboard-health-pending-web-scale",
+        "dashboard-health-range-absent",
+        "dashboard-health-range-bounded",
+        "dashboard-home-calendar-agenda",
+        "dashboard-home-calendar-limit",
+        "dashboard-home-events-stored",
+        "dashboard-home-todos-cleaned",
+        "dashboard-home-todos-limit",
+        "dashboard-piano-board-day",
+        "dashboard-school-code-upper",
+        "dashboard-school-code-zero",
         "following-auto-authored-place",
         "following-fitness-skyline-stored-run",
         "following-fitness-workout-run-projection",
@@ -48730,6 +49293,67 @@
         "gaming-filtered-experience-catalog",
         "gaming-party-catalog",
         "gaming-populated-environment",
+        "ledger-household-device-bounds",
+        "ledger-household-plays",
+        "ledger-household-time-limit",
+        "ledger-merged-screen-started-by",
+        "ledger-screen-started-by",
+        "reading-configured-aliases",
+        "reading-hymn-detail",
+        "reading-hymn-index",
+        "reading-poem-comfort",
+        "reading-poem-courage",
+        "reading-primary-detail",
+        "reading-primary-index",
+        "reading-scripture-synthetic-one",
+        "reading-scripture-synthetic-two",
+        "reading-talk-01",
+        "reading-talk-02",
+        "school-insights-populated-monitor",
+        "spend-cost-category-depth1",
+        "spend-cost-category-depth2",
+        "spend-cost-dashboard",
+        "spend-cost-dashboard-day",
+        "spend-cost-entries-first",
+        "spend-cost-entries-second",
+        "spend-cost-resources",
+        "spend-cost-users",
+        "spend-finance-compiled",
+        "spend-finance-overview",
+        "standing-agenda-json",
+        "standing-learner-feedback-default",
+        "standing-learner-feedback-limit-one",
+        "standing-lifecycle-sessions",
+        "standing-milestone",
+        "standing-pending-review",
+        "standing-progress-report",
+        "standing-report-card",
+        "standing-session-events",
+        "standing-session-review",
+        "stored-fitness-race-dates",
+        "stored-fitness-race-detail",
+        "stored-fitness-race-ghost-candidates",
+        "stored-fitness-races-date",
+        "stored-fitness-session-dates",
+        "stored-fitness-workout-synthetic-mobility",
+        "stored-fitness-workout-synthetic-strength",
+        "stored-fitness-workouts",
+        "surfaces-legacy-home-calendar",
+        "surfaces-legacy-home-events",
+        "surfaces-legacy-home-todos",
+        "surfaces-legacy-home-weather",
+        "surfaces-media-browse-config",
+        "surfaces-room-adjacency",
+        "surfaces-routine-catalog",
+        "surfaces-routine-flags",
+        "surfaces-routine-history",
+        "surfaces-routine-history-limit",
+        "surfaces-screen-alias-detail",
+        "surfaces-screen-detail",
+        "surfaces-screen-document",
+        "surfaces-screen-documents",
+        "surfaces-screen-registry",
+        "surfaces-screen-routines",
         "synthetic-board-game-day",
         "synthetic-chess-pinned-resume",
         "synthetic-config-status",
@@ -48748,13 +49372,28 @@
         "synthetic-school-remediation-detail",
         "synthetic-school-remediation-list",
         "synthetic-school-surface",
-        "synthetic-school-transcript"
+        "synthetic-school-transcript",
+        "timeline-health-all-mentions",
+        "timeline-health-dated-dashboard",
+        "timeline-health-metric-mention",
+        "timeline-health-period-mention",
+        "timeline-health-recent-mentions",
+        "timeline-health-today-dashboard",
+        "timeline-life-day",
+        "timeline-life-explicit-month",
+        "timeline-life-health-category",
+        "timeline-life-journal-category",
+        "timeline-life-prior-day",
+        "timeline-life-range",
+        "timeline-life-sources",
+        "timeline-lifelog-day",
+        "timeline-lifelog-sources"
       ],
-      "unionUniqueAcceptedCaseIds": 177,
-      "unionIndependentContracts": 168,
+      "unionUniqueAcceptedCaseIds": 275,
+      "unionIndependentContracts": 266,
       "newLiveTemplates": 2,
-      "isolatedDistinctTemplates": 48,
-      "newIsolatedTemplates": 41,
+      "isolatedDistinctTemplates": 119,
+      "newIsolatedTemplates": 112,
       "pendingNext15": {
         "cases": 15,
         "terminalResult": {
@@ -48787,6 +49426,51 @@
           "sha256": "149bafeb6281b74f9ea31dbb2e958f7e4e21bfaf001c25f0d553b111c6783a0f"
         },
         "acceptedCredit": 5
+      },
+      "completedDailyDashboard14": {
+        "cases": 14,
+        "templates": 8,
+        "terminalResult": {
+          "path": "/tmp/readiness-daily-dashboard-pair-run/pair-result.json",
+          "sha256": "2d98ff33cac3356246c9673699269953f2e220af71b0ba40e8e6aecbf1e964da"
+        },
+        "acceptedCredit": 14
+      },
+      "completedGrouped46": {
+        "executedCases": 46,
+        "observedTemplates": 36,
+        "acceptedCredit": 45,
+        "independentContracts": 45,
+        "healthyTemplates": 35,
+        "diagnosticCases": 1,
+        "diagnosticAcceptedCredit": 0
+      },
+      "completedStanding20": {
+        "executedCases": 20,
+        "observedTemplates": 15,
+        "acceptedCredit": 18,
+        "independentSuccessfulContracts": 18,
+        "acceptedParityTemplates": 14,
+        "diagnosticCases": 2,
+        "diagnosticAcceptedCredit": 0
+      },
+      "completedSpendReading21": {
+        "actualObservedCases": 21,
+        "acceptedCases": 21,
+        "successfulIndependentContracts": 21,
+        "acceptedParityTemplates": 14,
+        "derivedReceipts": [
+          {
+            "path": "/tmp/readiness-object-contract-key-correction/household-spend-derived-receipt.json",
+            "sha256": "4749a44a9be4e6cbb35cd7ab9a7a39d902d127af67efd7b4347e9feb996657dd"
+          },
+          {
+            "path": "/tmp/readiness-object-contract-key-correction/reading-singing-derived-receipt.json",
+            "sha256": "d3317548de2c69354815d5aaf8e429760ffe5d13511d2b10f2d168bfbd25c332"
+          }
+        ],
+        "noHTTPRerun": true,
+        "originalFailedOracleSyntaxComparisonsPreserved": true
       }
     },
     "cases": [
@@ -49414,6 +50098,1450 @@
           "decl-81f47d806662491e10554215-0"
         ],
         "provenance": "actual-isolated-original14beb-vs-uncommitted-pinned-main10d8-integrated-candidate"
+      },
+      {
+        "id": "dashboard-home-events-stored",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/home/events",
+        "declarationIds": [
+          "decl-831a0242db35f9b70935e4c2-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-postintegration54b6-candidate"
+      },
+      {
+        "id": "dashboard-home-todos-cleaned",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/home/todos",
+        "declarationIds": [
+          "decl-02ba129267818d08e7a95091-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-postintegration54b6-candidate"
+      },
+      {
+        "id": "dashboard-home-todos-limit",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/home/todos",
+        "declarationIds": [
+          "decl-02ba129267818d08e7a95091-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-postintegration54b6-candidate"
+      },
+      {
+        "id": "dashboard-health-date-populated",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/health/date/:date",
+        "declarationIds": [
+          "decl-278289e69b390e489541c3e4-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-postintegration54b6-candidate"
+      },
+      {
+        "id": "dashboard-health-date-sparse",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/health/date/:date",
+        "declarationIds": [
+          "decl-278289e69b390e489541c3e4-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-postintegration54b6-candidate"
+      },
+      {
+        "id": "dashboard-health-range-bounded",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/health/range",
+        "declarationIds": [
+          "decl-123b65da3987794a2ee5b372-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-postintegration54b6-candidate"
+      },
+      {
+        "id": "dashboard-health-range-absent",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/health/range",
+        "declarationIds": [
+          "decl-123b65da3987794a2ee5b372-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-postintegration54b6-candidate"
+      },
+      {
+        "id": "dashboard-health-pending-web-scale",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/health/nutrition/pending",
+        "declarationIds": [
+          "decl-41d822c766053587172d0246-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-postintegration54b6-candidate"
+      },
+      {
+        "id": "dashboard-health-pending-scanner",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/health/nutrition/pending",
+        "declarationIds": [
+          "decl-41d822c766053587172d0246-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-postintegration54b6-candidate"
+      },
+      {
+        "id": "dashboard-piano-board-day",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/piano/users/:userId/board-game-day",
+        "declarationIds": [
+          "decl-0d911da27fa8fe729a0b56a4-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-postintegration54b6-candidate"
+      },
+      {
+        "id": "dashboard-school-code-zero",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/continuation-code",
+        "declarationIds": [
+          "decl-c0881c9cc63755c91d769dde-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-postintegration54b6-candidate"
+      },
+      {
+        "id": "dashboard-school-code-upper",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/continuation-code",
+        "declarationIds": [
+          "decl-c0881c9cc63755c91d769dde-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-postintegration54b6-candidate"
+      },
+      {
+        "id": "dashboard-home-calendar-agenda",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/home/calendar",
+        "declarationIds": [
+          "decl-57d541684d06b44753518ddc-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-postintegration54b6-candidate"
+      },
+      {
+        "id": "dashboard-home-calendar-limit",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/home/calendar",
+        "declarationIds": [
+          "decl-57d541684d06b44753518ddc-0"
+        ],
+        "provenance": "actual-isolated-original14beb-vs-postintegration54b6-candidate"
+      },
+      {
+        "id": "surfaces-legacy-home-events",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/home-automation/events",
+        "declarationIds": [
+          "decl-831a0242db35f9b70935e4c2-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "surfaces-legacy-home-calendar",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/home-automation/calendar",
+        "declarationIds": [
+          "decl-57d541684d06b44753518ddc-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "surfaces-legacy-home-todos",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/home-automation/todos",
+        "declarationIds": [
+          "decl-02ba129267818d08e7a95091-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "surfaces-legacy-home-weather",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/home-automation/weather",
+        "declarationIds": [
+          "decl-d0d47b18754fc269b78b7bdc-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "surfaces-screen-registry",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/media/screens",
+        "declarationIds": [
+          "decl-331e71277ef5f0b75ebc971a-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "surfaces-screen-detail",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/media/screens/:id",
+        "declarationIds": [
+          "decl-ca2b3343439be36da52a5c48-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "surfaces-screen-alias-detail",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/media/screens/:id",
+        "declarationIds": [
+          "decl-ca2b3343439be36da52a5c48-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "surfaces-screen-routines",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/media/screens/:id/routines",
+        "declarationIds": [
+          "decl-e660fadc84134e1001c21ba9-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "surfaces-room-adjacency",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/media/screens/rooms/adjacency",
+        "declarationIds": [
+          "decl-38bc930335a89437be18b033-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "surfaces-routine-catalog",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/media/routines",
+        "declarationIds": [
+          "decl-4965dbbec7492f927a309fad-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "surfaces-routine-history",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/media/routines/history",
+        "declarationIds": [
+          "decl-1cb47ce8e540daa9001680c0-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "surfaces-routine-history-limit",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/media/routines/history",
+        "declarationIds": [
+          "decl-1cb47ce8e540daa9001680c0-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "surfaces-routine-flags",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/media/routines/flags",
+        "declarationIds": [
+          "decl-b6e559ea957c216fe04b6047-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "surfaces-screen-documents",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/screens",
+        "declarationIds": [
+          "decl-f6c56d5173ab0b4396fc07ab-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "surfaces-screen-document",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/screens/:screenId",
+        "declarationIds": [
+          "decl-38c1d4dfdee282968d7b24e0-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "surfaces-media-browse-config",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/media/config",
+        "declarationIds": [
+          "decl-12454bd2eafc9a4e8d8b2e6a-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "timeline-life-day",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/life/log/:username/:date",
+        "declarationIds": [
+          "decl-ad0e1314d676d1603d21eb01-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "timeline-life-prior-day",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/life/log/:username/:date",
+        "declarationIds": [
+          "decl-ad0e1314d676d1603d21eb01-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "timeline-life-range",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/life/log/:username/range",
+        "declarationIds": [
+          "decl-e04241d0d98b30b7cdd3861f-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "timeline-life-health-category",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/life/log/:username/category/:category",
+        "declarationIds": [
+          "decl-d0b7545e8ef72ad99636118d-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "timeline-life-journal-category",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/life/log/:username/category/:category",
+        "declarationIds": [
+          "decl-d0b7545e8ef72ad99636118d-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "timeline-life-explicit-month",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/life/log/:username/scope/:scope",
+        "declarationIds": [
+          "decl-f573b8a83a66f45e6c01db7e-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "timeline-life-sources",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/life/log/sources",
+        "declarationIds": [
+          "decl-33d65bd6ccf9dbcd343a5dcf-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "timeline-lifelog-day",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/lifelog/aggregate/:username/:date",
+        "declarationIds": [
+          "decl-187aaec554cf4dcb089d1531-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "timeline-lifelog-sources",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/lifelog/sources",
+        "declarationIds": [
+          "decl-e0fe20484d76ade16c0aaf7a-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "timeline-health-period-mention",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/health/mentions/periods",
+        "declarationIds": [
+          "decl-fe0173ca665af33762692fe9-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "timeline-health-metric-mention",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/health/mentions/metrics",
+        "declarationIds": [
+          "decl-f73206d7b32d3967d6661f2f-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "timeline-health-recent-mentions",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/health/mentions/recent-days",
+        "declarationIds": [
+          "decl-b47adfe26546218063f31b71-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "timeline-health-all-mentions",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/health/mentions/all",
+        "declarationIds": [
+          "decl-99a0047dcebe46860edc9ad0-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "timeline-health-dated-dashboard",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/health-dashboard/:userId/:date",
+        "declarationIds": [
+          "decl-0d4930367004b738c1565c5c-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "timeline-health-today-dashboard",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/health-dashboard/:userId",
+        "declarationIds": [
+          "decl-ceb595beeac4a6b1745b090e-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "critical-school-authored-catalog",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/catalogs",
+        "declarationIds": [
+          "decl-08644b49bfae811a103e9800-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2",
+        "conditionalReadAdmissionId": "critical-conditional-6962445663692f32"
+      },
+      {
+        "id": "critical-school-lesson-intro",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/catalogs/:catalogId/subjects/:subjectId/courses/:courseId/units/:unitId/lessons/:lessonId",
+        "declarationIds": [
+          "decl-c61d7ee0dbd31c57306f4187-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2",
+        "conditionalReadAdmissionId": "critical-conditional-2ee4612e6868f607"
+      },
+      {
+        "id": "critical-school-lesson-comparison",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/catalogs/:catalogId/subjects/:subjectId/courses/:courseId/units/:unitId/lessons/:lessonId",
+        "declarationIds": [
+          "decl-c61d7ee0dbd31c57306f4187-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2",
+        "conditionalReadAdmissionId": "critical-conditional-2ee4612e6868f607"
+      },
+      {
+        "id": "critical-fitness-bootstrap",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/fitness",
+        "declarationIds": [
+          "decl-aaf7f16ecfa8c62ff40005ce-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2",
+        "conditionalReadAdmissionId": "critical-conditional-2053637ad71374f6"
+      },
+      {
+        "id": "critical-fitness-session-list",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/fitness/sessions",
+        "declarationIds": [
+          "decl-cf42e87541e6ed8b3c759a51-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2",
+        "conditionalReadAdmissionId": "critical-conditional-37072f21bf20c9e1"
+      },
+      {
+        "id": "critical-fitness-session-list-ungrouped",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/fitness/sessions",
+        "declarationIds": [
+          "decl-cf42e87541e6ed8b3c759a51-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2",
+        "conditionalReadAdmissionId": "critical-conditional-37072f21bf20c9e1"
+      },
+      {
+        "id": "critical-fitness-session-detail-river",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/fitness/sessions/:sessionId",
+        "declarationIds": [
+          "decl-507f8d5ab6e303c2558f6857-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "critical-fitness-session-detail-park",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/fitness/sessions/:sessionId",
+        "declarationIds": [
+          "decl-507f8d5ab6e303c2558f6857-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+        "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      },
+      {
+        "id": "ledger-screen-started-by",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/media/screens/:id/started-by",
+        "declarationIds": [
+          "decl-d320879f2de010d9b20f02bf-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "d50d0f9f7650f012b6383bcda588710b84885cf0af1258d9679a21b00e27c47e",
+        "manifestSha256": "fae78d4fac6d49dc8033f8a5fd2d761083b23c0f5079026dc204a654cc311846"
+      },
+      {
+        "id": "ledger-merged-screen-started-by",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/media/screens/:id/started-by",
+        "declarationIds": [
+          "decl-d320879f2de010d9b20f02bf-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "d50d0f9f7650f012b6383bcda588710b84885cf0af1258d9679a21b00e27c47e",
+        "manifestSha256": "fae78d4fac6d49dc8033f8a5fd2d761083b23c0f5079026dc204a654cc311846"
+      },
+      {
+        "id": "ledger-household-plays",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/media/household/plays",
+        "declarationIds": [
+          "decl-99d6d333cb61511fbd1f961d-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "d50d0f9f7650f012b6383bcda588710b84885cf0af1258d9679a21b00e27c47e",
+        "manifestSha256": "fae78d4fac6d49dc8033f8a5fd2d761083b23c0f5079026dc204a654cc311846"
+      },
+      {
+        "id": "ledger-household-device-bounds",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/media/household/plays",
+        "declarationIds": [
+          "decl-99d6d333cb61511fbd1f961d-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "d50d0f9f7650f012b6383bcda588710b84885cf0af1258d9679a21b00e27c47e",
+        "manifestSha256": "fae78d4fac6d49dc8033f8a5fd2d761083b23c0f5079026dc204a654cc311846"
+      },
+      {
+        "id": "ledger-household-time-limit",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/media/household/plays",
+        "declarationIds": [
+          "decl-99d6d333cb61511fbd1f961d-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "d50d0f9f7650f012b6383bcda588710b84885cf0af1258d9679a21b00e27c47e",
+        "manifestSha256": "fae78d4fac6d49dc8033f8a5fd2d761083b23c0f5079026dc204a654cc311846"
+      },
+      {
+        "id": "school-insights-populated-monitor",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/progress/insights",
+        "declarationIds": [
+          "decl-6653b69227d1261fdc1c4b33-0"
+        ],
+        "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+        "fixtureSha256": "d50d0f9f7650f012b6383bcda588710b84885cf0af1258d9679a21b00e27c47e",
+        "manifestSha256": "fae78d4fac6d49dc8033f8a5fd2d761083b23c0f5079026dc204a654cc311846"
+      },
+      {
+        "id": "standing-report-card",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/report-card",
+        "declarationIds": [
+          "decl-f7efea901612200a42c3c0b1-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-reviewed-harness",
+        "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+        "conditionalReadAdmissionId": "standing-conditional-f321ca26a5912bdd"
+      },
+      {
+        "id": "standing-progress-report",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/progress-report",
+        "declarationIds": [
+          "decl-0fd7bb7f3487bb776fd9d1dd-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-reviewed-harness",
+        "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+        "conditionalReadAdmissionId": "standing-conditional-7f381d1dcc57ace7"
+      },
+      {
+        "id": "standing-milestone",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/milestones",
+        "declarationIds": [
+          "decl-b7f505fb3b74c7c4739003d6-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-reviewed-harness",
+        "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+      },
+      {
+        "id": "standing-agenda-json",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/lifecycle/learners/:learnerId/agenda/preview",
+        "declarationIds": [
+          "decl-1800e657146d11c7e7deec31-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-reviewed-harness",
+        "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+        "conditionalReadAdmissionId": "standing-conditional-194aeb9278056d2e"
+      },
+      {
+        "id": "standing-learner-feedback-default",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/review/learner/:learnerId",
+        "declarationIds": [
+          "decl-34357f8f3292155ecb03b3ff-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-reviewed-harness",
+        "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+        "conditionalReadAdmissionId": "standing-conditional-df96afc46319c043"
+      },
+      {
+        "id": "standing-learner-feedback-limit-one",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/review/learner/:learnerId",
+        "declarationIds": [
+          "decl-34357f8f3292155ecb03b3ff-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-reviewed-harness",
+        "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+        "conditionalReadAdmissionId": "standing-conditional-df96afc46319c043"
+      },
+      {
+        "id": "standing-lifecycle-sessions",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/lifecycle/learners/:learnerId/sessions",
+        "declarationIds": [
+          "decl-635471abee89832b4e47d40c-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-reviewed-harness",
+        "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+      },
+      {
+        "id": "standing-pending-review",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/lifecycle/review",
+        "declarationIds": [
+          "decl-e7b0142480464a60b07d7b60-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-reviewed-harness",
+        "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+      },
+      {
+        "id": "standing-session-review",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/lifecycle/sessions/:sessionId/review",
+        "declarationIds": [
+          "decl-938edb2c12358a65c3116e37-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-reviewed-harness",
+        "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+      },
+      {
+        "id": "standing-session-events",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/lifecycle/sessions/:sessionId/events",
+        "declarationIds": [
+          "decl-93b604b7ce495056d10192a5-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-reviewed-harness",
+        "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+        "conditionalReadAdmissionId": "standing-conditional-3e6a56b06190e413"
+      },
+      {
+        "id": "stored-fitness-workouts",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/fitness/workouts",
+        "declarationIds": [
+          "decl-f32eccd87138eadd1c5f90ec-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-reviewed-harness",
+        "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+      },
+      {
+        "id": "stored-fitness-workout-synthetic-strength",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/fitness/workouts/:id",
+        "declarationIds": [
+          "decl-c64318099ca5b8fc4ee6167b-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-reviewed-harness",
+        "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+      },
+      {
+        "id": "stored-fitness-workout-synthetic-mobility",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/fitness/workouts/:id",
+        "declarationIds": [
+          "decl-c64318099ca5b8fc4ee6167b-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-reviewed-harness",
+        "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+      },
+      {
+        "id": "stored-fitness-session-dates",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/fitness/sessions/dates",
+        "declarationIds": [
+          "decl-8fb15ae19f30e498ffe56c9d-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-reviewed-harness",
+        "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+      },
+      {
+        "id": "stored-fitness-race-detail",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/fitness/cycle-races/:raceId",
+        "declarationIds": [
+          "decl-a382bb1c82691d6589c418c3-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-reviewed-harness",
+        "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+      },
+      {
+        "id": "stored-fitness-races-date",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/fitness/cycle-races",
+        "declarationIds": [
+          "decl-93a49880eca2b41dd3cd8055-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-reviewed-harness",
+        "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+      },
+      {
+        "id": "stored-fitness-race-dates",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/fitness/cycle-races",
+        "declarationIds": [
+          "decl-93a49880eca2b41dd3cd8055-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-reviewed-harness",
+        "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+      },
+      {
+        "id": "stored-fitness-race-ghost-candidates",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/fitness/cycle-races",
+        "declarationIds": [
+          "decl-93a49880eca2b41dd3cd8055-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-reviewed-harness",
+        "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+      },
+      {
+        "id": "spend-cost-dashboard",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/cost/dashboard",
+        "declarationIds": [
+          "decl-359c7e7c3ae8ec9cd7d36138-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-guarded-captures-reviewed-key-only-offline-expectation-correction",
+        "fixtureSha256": "3adf07f1d9d4856f6193435076e9614a9e8ecad8e8dd7ece09841e402c23c4ff",
+        "manifestSha256": "6846b0225b678ba5b1d820555bc99c495dec32c0d47166c23ca38f50bdf78dad",
+        "correctedExpectationManifestSha256": "33d013f172b4af1eb02061572651bbe16a5d96758c1d13704a02bab96b73400e",
+        "derivedReceipt": {
+          "path": "/tmp/readiness-object-contract-key-correction/household-spend-derived-receipt.json",
+          "sha256": "4749a44a9be4e6cbb35cd7ab9a7a39d902d127af67efd7b4347e9feb996657dd"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "spend-cost-category-depth2",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/cost/spend/category",
+        "declarationIds": [
+          "decl-a1e4c9c15a5baa4eaa102f00-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-guarded-captures-reviewed-key-only-offline-expectation-correction",
+        "fixtureSha256": "3adf07f1d9d4856f6193435076e9614a9e8ecad8e8dd7ece09841e402c23c4ff",
+        "manifestSha256": "6846b0225b678ba5b1d820555bc99c495dec32c0d47166c23ca38f50bdf78dad",
+        "correctedExpectationManifestSha256": "33d013f172b4af1eb02061572651bbe16a5d96758c1d13704a02bab96b73400e",
+        "derivedReceipt": {
+          "path": "/tmp/readiness-object-contract-key-correction/household-spend-derived-receipt.json",
+          "sha256": "4749a44a9be4e6cbb35cd7ab9a7a39d902d127af67efd7b4347e9feb996657dd"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "spend-cost-category-depth1",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/cost/spend/category",
+        "declarationIds": [
+          "decl-a1e4c9c15a5baa4eaa102f00-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-guarded-captures-reviewed-key-only-offline-expectation-correction",
+        "fixtureSha256": "3adf07f1d9d4856f6193435076e9614a9e8ecad8e8dd7ece09841e402c23c4ff",
+        "manifestSha256": "6846b0225b678ba5b1d820555bc99c495dec32c0d47166c23ca38f50bdf78dad",
+        "correctedExpectationManifestSha256": "33d013f172b4af1eb02061572651bbe16a5d96758c1d13704a02bab96b73400e",
+        "derivedReceipt": {
+          "path": "/tmp/readiness-object-contract-key-correction/household-spend-derived-receipt.json",
+          "sha256": "4749a44a9be4e6cbb35cd7ab9a7a39d902d127af67efd7b4347e9feb996657dd"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "spend-cost-users",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/cost/spend/user",
+        "declarationIds": [
+          "decl-e614373290fad6f41316c143-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-guarded-captures-reviewed-key-only-offline-expectation-correction",
+        "fixtureSha256": "3adf07f1d9d4856f6193435076e9614a9e8ecad8e8dd7ece09841e402c23c4ff",
+        "manifestSha256": "6846b0225b678ba5b1d820555bc99c495dec32c0d47166c23ca38f50bdf78dad",
+        "correctedExpectationManifestSha256": "33d013f172b4af1eb02061572651bbe16a5d96758c1d13704a02bab96b73400e",
+        "derivedReceipt": {
+          "path": "/tmp/readiness-object-contract-key-correction/household-spend-derived-receipt.json",
+          "sha256": "4749a44a9be4e6cbb35cd7ab9a7a39d902d127af67efd7b4347e9feb996657dd"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "spend-cost-resources",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/cost/spend/resource",
+        "declarationIds": [
+          "decl-4051a58e533712ad0fc3abd4-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-guarded-captures-reviewed-key-only-offline-expectation-correction",
+        "fixtureSha256": "3adf07f1d9d4856f6193435076e9614a9e8ecad8e8dd7ece09841e402c23c4ff",
+        "manifestSha256": "6846b0225b678ba5b1d820555bc99c495dec32c0d47166c23ca38f50bdf78dad",
+        "correctedExpectationManifestSha256": "33d013f172b4af1eb02061572651bbe16a5d96758c1d13704a02bab96b73400e",
+        "derivedReceipt": {
+          "path": "/tmp/readiness-object-contract-key-correction/household-spend-derived-receipt.json",
+          "sha256": "4749a44a9be4e6cbb35cd7ab9a7a39d902d127af67efd7b4347e9feb996657dd"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "spend-cost-entries-first",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/cost/entries",
+        "declarationIds": [
+          "decl-ff7249ffa54424f034ee2292-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-guarded-captures-reviewed-key-only-offline-expectation-correction",
+        "fixtureSha256": "3adf07f1d9d4856f6193435076e9614a9e8ecad8e8dd7ece09841e402c23c4ff",
+        "manifestSha256": "6846b0225b678ba5b1d820555bc99c495dec32c0d47166c23ca38f50bdf78dad",
+        "correctedExpectationManifestSha256": "33d013f172b4af1eb02061572651bbe16a5d96758c1d13704a02bab96b73400e",
+        "derivedReceipt": {
+          "path": "/tmp/readiness-object-contract-key-correction/household-spend-derived-receipt.json",
+          "sha256": "4749a44a9be4e6cbb35cd7ab9a7a39d902d127af67efd7b4347e9feb996657dd"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "spend-cost-entries-second",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/cost/entries",
+        "declarationIds": [
+          "decl-ff7249ffa54424f034ee2292-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-guarded-captures-reviewed-key-only-offline-expectation-correction",
+        "fixtureSha256": "3adf07f1d9d4856f6193435076e9614a9e8ecad8e8dd7ece09841e402c23c4ff",
+        "manifestSha256": "6846b0225b678ba5b1d820555bc99c495dec32c0d47166c23ca38f50bdf78dad",
+        "correctedExpectationManifestSha256": "33d013f172b4af1eb02061572651bbe16a5d96758c1d13704a02bab96b73400e",
+        "derivedReceipt": {
+          "path": "/tmp/readiness-object-contract-key-correction/household-spend-derived-receipt.json",
+          "sha256": "4749a44a9be4e6cbb35cd7ab9a7a39d902d127af67efd7b4347e9feb996657dd"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "spend-cost-dashboard-day",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/cost/dashboard",
+        "declarationIds": [
+          "decl-359c7e7c3ae8ec9cd7d36138-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-guarded-captures-reviewed-key-only-offline-expectation-correction",
+        "fixtureSha256": "3adf07f1d9d4856f6193435076e9614a9e8ecad8e8dd7ece09841e402c23c4ff",
+        "manifestSha256": "6846b0225b678ba5b1d820555bc99c495dec32c0d47166c23ca38f50bdf78dad",
+        "correctedExpectationManifestSha256": "33d013f172b4af1eb02061572651bbe16a5d96758c1d13704a02bab96b73400e",
+        "derivedReceipt": {
+          "path": "/tmp/readiness-object-contract-key-correction/household-spend-derived-receipt.json",
+          "sha256": "4749a44a9be4e6cbb35cd7ab9a7a39d902d127af67efd7b4347e9feb996657dd"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "spend-finance-overview",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/finance",
+        "declarationIds": [
+          "decl-b98e8790797dd7f5ae27d617-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-guarded-captures-reviewed-key-only-offline-expectation-correction",
+        "fixtureSha256": "3adf07f1d9d4856f6193435076e9614a9e8ecad8e8dd7ece09841e402c23c4ff",
+        "manifestSha256": "6846b0225b678ba5b1d820555bc99c495dec32c0d47166c23ca38f50bdf78dad",
+        "correctedExpectationManifestSha256": "33d013f172b4af1eb02061572651bbe16a5d96758c1d13704a02bab96b73400e",
+        "derivedReceipt": {
+          "path": "/tmp/readiness-object-contract-key-correction/household-spend-derived-receipt.json",
+          "sha256": "4749a44a9be4e6cbb35cd7ab9a7a39d902d127af67efd7b4347e9feb996657dd"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "spend-finance-compiled",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/finance/data",
+        "declarationIds": [
+          "decl-d6ad1c2974969072e78575b6-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-guarded-captures-reviewed-key-only-offline-expectation-correction",
+        "fixtureSha256": "3adf07f1d9d4856f6193435076e9614a9e8ecad8e8dd7ece09841e402c23c4ff",
+        "manifestSha256": "6846b0225b678ba5b1d820555bc99c495dec32c0d47166c23ca38f50bdf78dad",
+        "correctedExpectationManifestSha256": "33d013f172b4af1eb02061572651bbe16a5d96758c1d13704a02bab96b73400e",
+        "derivedReceipt": {
+          "path": "/tmp/readiness-object-contract-key-correction/household-spend-derived-receipt.json",
+          "sha256": "4749a44a9be4e6cbb35cd7ab9a7a39d902d127af67efd7b4347e9feb996657dd"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "reading-hymn-detail",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/local-content/hymn/:number",
+        "declarationIds": [
+          "decl-5a0c7e9090c7950aa4e58b7c-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-guarded-captures-reviewed-key-only-offline-expectation-correction",
+        "fixtureSha256": "83b902862809eb230f3467f3b1ef1168d7f4d7204d65c6549dfd001bc7726a6c",
+        "manifestSha256": "65803e8340d9974c9f551a06db08aa820e0b9f2561f775cde5fc875cb508012c",
+        "correctedExpectationManifestSha256": "115954a268d460cc58a68c255e31ff037fcd19fdc9658ad2bb33c0ad64a1e9fc",
+        "derivedReceipt": {
+          "path": "/tmp/readiness-object-contract-key-correction/reading-singing-derived-receipt.json",
+          "sha256": "d3317548de2c69354815d5aaf8e429760ffe5d13511d2b10f2d168bfbd25c332"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "reading-primary-detail",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/local-content/primary/:number",
+        "declarationIds": [
+          "decl-f1dcd7499d4d67f8249f1fce-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-guarded-captures-reviewed-key-only-offline-expectation-correction",
+        "fixtureSha256": "83b902862809eb230f3467f3b1ef1168d7f4d7204d65c6549dfd001bc7726a6c",
+        "manifestSha256": "65803e8340d9974c9f551a06db08aa820e0b9f2561f775cde5fc875cb508012c",
+        "correctedExpectationManifestSha256": "115954a268d460cc58a68c255e31ff037fcd19fdc9658ad2bb33c0ad64a1e9fc",
+        "derivedReceipt": {
+          "path": "/tmp/readiness-object-contract-key-correction/reading-singing-derived-receipt.json",
+          "sha256": "d3317548de2c69354815d5aaf8e429760ffe5d13511d2b10f2d168bfbd25c332"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "reading-poem-comfort",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/local-content/poem/*splat",
+        "declarationIds": [
+          "decl-724be32df0ec9777883258c8-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-guarded-captures-reviewed-key-only-offline-expectation-correction",
+        "fixtureSha256": "83b902862809eb230f3467f3b1ef1168d7f4d7204d65c6549dfd001bc7726a6c",
+        "manifestSha256": "65803e8340d9974c9f551a06db08aa820e0b9f2561f775cde5fc875cb508012c",
+        "correctedExpectationManifestSha256": "115954a268d460cc58a68c255e31ff037fcd19fdc9658ad2bb33c0ad64a1e9fc",
+        "derivedReceipt": {
+          "path": "/tmp/readiness-object-contract-key-correction/reading-singing-derived-receipt.json",
+          "sha256": "d3317548de2c69354815d5aaf8e429760ffe5d13511d2b10f2d168bfbd25c332"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "reading-poem-courage",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/local-content/poem/*splat",
+        "declarationIds": [
+          "decl-724be32df0ec9777883258c8-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-guarded-captures-reviewed-key-only-offline-expectation-correction",
+        "fixtureSha256": "83b902862809eb230f3467f3b1ef1168d7f4d7204d65c6549dfd001bc7726a6c",
+        "manifestSha256": "65803e8340d9974c9f551a06db08aa820e0b9f2561f775cde5fc875cb508012c",
+        "correctedExpectationManifestSha256": "115954a268d460cc58a68c255e31ff037fcd19fdc9658ad2bb33c0ad64a1e9fc",
+        "derivedReceipt": {
+          "path": "/tmp/readiness-object-contract-key-correction/reading-singing-derived-receipt.json",
+          "sha256": "d3317548de2c69354815d5aaf8e429760ffe5d13511d2b10f2d168bfbd25c332"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "reading-scripture-synthetic-one",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/local-content/scripture/*splat",
+        "declarationIds": [
+          "decl-45f75bdddf3f1cc125e0f7f1-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-guarded-captures-reviewed-key-only-offline-expectation-correction",
+        "fixtureSha256": "83b902862809eb230f3467f3b1ef1168d7f4d7204d65c6549dfd001bc7726a6c",
+        "manifestSha256": "65803e8340d9974c9f551a06db08aa820e0b9f2561f775cde5fc875cb508012c",
+        "correctedExpectationManifestSha256": "115954a268d460cc58a68c255e31ff037fcd19fdc9658ad2bb33c0ad64a1e9fc",
+        "derivedReceipt": {
+          "path": "/tmp/readiness-object-contract-key-correction/reading-singing-derived-receipt.json",
+          "sha256": "d3317548de2c69354815d5aaf8e429760ffe5d13511d2b10f2d168bfbd25c332"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "reading-scripture-synthetic-two",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/local-content/scripture/*splat",
+        "declarationIds": [
+          "decl-45f75bdddf3f1cc125e0f7f1-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-guarded-captures-reviewed-key-only-offline-expectation-correction",
+        "fixtureSha256": "83b902862809eb230f3467f3b1ef1168d7f4d7204d65c6549dfd001bc7726a6c",
+        "manifestSha256": "65803e8340d9974c9f551a06db08aa820e0b9f2561f775cde5fc875cb508012c",
+        "correctedExpectationManifestSha256": "115954a268d460cc58a68c255e31ff037fcd19fdc9658ad2bb33c0ad64a1e9fc",
+        "derivedReceipt": {
+          "path": "/tmp/readiness-object-contract-key-correction/reading-singing-derived-receipt.json",
+          "sha256": "d3317548de2c69354815d5aaf8e429760ffe5d13511d2b10f2d168bfbd25c332"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "reading-talk-01",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/local-content/talk/*splat",
+        "declarationIds": [
+          "decl-b9e342184620a35848e805d9-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-guarded-captures-reviewed-key-only-offline-expectation-correction",
+        "fixtureSha256": "83b902862809eb230f3467f3b1ef1168d7f4d7204d65c6549dfd001bc7726a6c",
+        "manifestSha256": "65803e8340d9974c9f551a06db08aa820e0b9f2561f775cde5fc875cb508012c",
+        "correctedExpectationManifestSha256": "115954a268d460cc58a68c255e31ff037fcd19fdc9658ad2bb33c0ad64a1e9fc",
+        "derivedReceipt": {
+          "path": "/tmp/readiness-object-contract-key-correction/reading-singing-derived-receipt.json",
+          "sha256": "d3317548de2c69354815d5aaf8e429760ffe5d13511d2b10f2d168bfbd25c332"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "reading-talk-02",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/local-content/talk/*splat",
+        "declarationIds": [
+          "decl-b9e342184620a35848e805d9-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-guarded-captures-reviewed-key-only-offline-expectation-correction",
+        "fixtureSha256": "83b902862809eb230f3467f3b1ef1168d7f4d7204d65c6549dfd001bc7726a6c",
+        "manifestSha256": "65803e8340d9974c9f551a06db08aa820e0b9f2561f775cde5fc875cb508012c",
+        "correctedExpectationManifestSha256": "115954a268d460cc58a68c255e31ff037fcd19fdc9658ad2bb33c0ad64a1e9fc",
+        "derivedReceipt": {
+          "path": "/tmp/readiness-object-contract-key-correction/reading-singing-derived-receipt.json",
+          "sha256": "d3317548de2c69354815d5aaf8e429760ffe5d13511d2b10f2d168bfbd25c332"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "reading-hymn-index",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/local-content/collection/:name",
+        "declarationIds": [
+          "decl-3b3427db974201a9fc52547d-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-guarded-captures-reviewed-key-only-offline-expectation-correction",
+        "fixtureSha256": "83b902862809eb230f3467f3b1ef1168d7f4d7204d65c6549dfd001bc7726a6c",
+        "manifestSha256": "65803e8340d9974c9f551a06db08aa820e0b9f2561f775cde5fc875cb508012c",
+        "correctedExpectationManifestSha256": "115954a268d460cc58a68c255e31ff037fcd19fdc9658ad2bb33c0ad64a1e9fc",
+        "derivedReceipt": {
+          "path": "/tmp/readiness-object-contract-key-correction/reading-singing-derived-receipt.json",
+          "sha256": "d3317548de2c69354815d5aaf8e429760ffe5d13511d2b10f2d168bfbd25c332"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "reading-primary-index",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/local-content/collection/:name",
+        "declarationIds": [
+          "decl-3b3427db974201a9fc52547d-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-guarded-captures-reviewed-key-only-offline-expectation-correction",
+        "fixtureSha256": "83b902862809eb230f3467f3b1ef1168d7f4d7204d65c6549dfd001bc7726a6c",
+        "manifestSha256": "65803e8340d9974c9f551a06db08aa820e0b9f2561f775cde5fc875cb508012c",
+        "correctedExpectationManifestSha256": "115954a268d460cc58a68c255e31ff037fcd19fdc9658ad2bb33c0ad64a1e9fc",
+        "derivedReceipt": {
+          "path": "/tmp/readiness-object-contract-key-correction/reading-singing-derived-receipt.json",
+          "sha256": "d3317548de2c69354815d5aaf8e429760ffe5d13511d2b10f2d168bfbd25c332"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "reading-configured-aliases",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/content/aliases",
+        "declarationIds": [
+          "decl-0d67a5c554f47a0a664dcaea-0"
+        ],
+        "provenance": "actual-isolated-original6e-vs-candidate54b6-guarded-captures-reviewed-key-only-offline-expectation-correction",
+        "fixtureSha256": "83b902862809eb230f3467f3b1ef1168d7f4d7204d65c6549dfd001bc7726a6c",
+        "manifestSha256": "65803e8340d9974c9f551a06db08aa820e0b9f2561f775cde5fc875cb508012c",
+        "correctedExpectationManifestSha256": "115954a268d460cc58a68c255e31ff037fcd19fdc9658ad2bb33c0ad64a1e9fc",
+        "derivedReceipt": {
+          "path": "/tmp/readiness-object-contract-key-correction/reading-singing-derived-receipt.json",
+          "sha256": "d3317548de2c69354815d5aaf8e429760ffe5d13511d2b10f2d168bfbd25c332"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
       }
     ],
     "infrastructure": {
@@ -49482,5 +51610,633 @@
     },
     "globalSourceEffectReaudit": false,
     "freshEvidenceScope": "353 matching named JS assertions eachrole, one confined production build, one repeated ChessGET versusactual10d8 and five storedGETs versusactual14beb, bothwith actualintegratedcandidatebytes; no177case latestmain replay"
-  }
+  },
+  "conditionalReadAdmissions": [
+    {
+      "admissionId": "critical-conditional-6962445663692f32",
+      "urlTemplate": "/api/v1/school/catalogs",
+      "declarationId": "decl-08644b49bfae811a103e9800-0",
+      "scope": "Only exact reviewed authored fixture/query branches; historical broad handler effectEligibility remains blocked",
+      "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+      "requestCases": [
+        {
+          "id": "critical-school-authored-catalog",
+          "method": "GET",
+          "path": "/api/v1/school/catalogs?learnerId=user_1"
+        }
+      ],
+      "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+      "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+      "safetyPrerequisites": "Valid authored YAML catalog/document; explicit configured learner user_1 and assignedcourse rates. catalog.exercise_library omitted disables generatedcorpus source. Assignment get deletes process-local corruptCurrent marker only; no save/put/atomicwrite. Actual learner-scoped catalog and hydrated lesson tested, never teacherlessonpreview/launch/session.",
+      "sourceProof": [
+        "modules/school/server/adapters/persistence/YamlAssignmentStore.mjs:124-149",
+        "modules/school/server/application/catalog/BuildSchoolCatalog.mjs:54",
+        "modules/school/server/application/GetLearningCatalog.mjs:28-74"
+      ],
+      "independentReview": {
+        "path": "/tmp/readiness-critical-school-fitness-pack/review.json",
+        "sha256": "7a72bc3dfb7270f8d48ce33a7337ad4a854c73c55a86eff408492c3e8c08e307"
+      },
+      "diagnosticOnly": false,
+      "noProductionAuthorization": true,
+      "approvedPackets": [
+        {
+          "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+          "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2"
+        },
+        {
+          "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+          "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+        }
+      ],
+      "approvedFixtureSha256": [
+        "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+        "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3"
+      ],
+      "approvedManifestSha256": [
+        "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+        "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      ],
+      "packetBindingRule": "The same approvedPackets entry must match BOTH fixture and manifest hashes, plus exact request ID/method/path. Separate hash arrays are indexes only, not cross-product authorization.",
+      "sourceGuardSha256": "2669183eefc2839c606efd3c7737154eea2ed9355a3b414375eec8f87ce8d51b",
+      "mergedPacketReviewRequired": "/tmp/readiness-pending-pack-grouping/household-timeline-critical/HANDOFF.json"
+    },
+    {
+      "admissionId": "critical-conditional-2ee4612e6868f607",
+      "urlTemplate": "/api/v1/school/catalogs/:catalogId/subjects/:subjectId/courses/:courseId/units/:unitId/lessons/:lessonId",
+      "declarationId": "decl-c61d7ee0dbd31c57306f4187-0",
+      "scope": "Only exact reviewed authored fixture/query branches; historical broad handler effectEligibility remains blocked",
+      "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+      "requestCases": [
+        {
+          "id": "critical-school-lesson-intro",
+          "method": "GET",
+          "path": "/api/v1/school/catalogs/synthetic-school/subjects/mathematics/courses/rates/units/walking/lessons/intro?learnerId=user_1"
+        },
+        {
+          "id": "critical-school-lesson-comparison",
+          "method": "GET",
+          "path": "/api/v1/school/catalogs/synthetic-school/subjects/mathematics/courses/rates/units/walking/lessons/compare?learnerId=user_1"
+        }
+      ],
+      "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+      "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+      "safetyPrerequisites": "Valid authored YAML catalog/document; explicit configured learner user_1 and assignedcourse rates. catalog.exercise_library omitted disables generatedcorpus source. Assignment get deletes process-local corruptCurrent marker only; no save/put/atomicwrite. Actual learner-scoped catalog and hydrated lesson tested, never teacherlessonpreview/launch/session.",
+      "sourceProof": [
+        "modules/school/server/adapters/persistence/YamlAssignmentStore.mjs:124-149",
+        "modules/school/server/application/catalog/BuildSchoolCatalog.mjs:54",
+        "modules/school/server/application/GetLearningCatalog.mjs:28-74"
+      ],
+      "independentReview": {
+        "path": "/tmp/readiness-critical-school-fitness-pack/review.json",
+        "sha256": "7a72bc3dfb7270f8d48ce33a7337ad4a854c73c55a86eff408492c3e8c08e307"
+      },
+      "diagnosticOnly": false,
+      "noProductionAuthorization": true,
+      "approvedPackets": [
+        {
+          "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+          "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2"
+        },
+        {
+          "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+          "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+        }
+      ],
+      "approvedFixtureSha256": [
+        "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+        "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3"
+      ],
+      "approvedManifestSha256": [
+        "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+        "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      ],
+      "packetBindingRule": "The same approvedPackets entry must match BOTH fixture and manifest hashes, plus exact request ID/method/path. Separate hash arrays are indexes only, not cross-product authorization.",
+      "sourceGuardSha256": "2669183eefc2839c606efd3c7737154eea2ed9355a3b414375eec8f87ce8d51b",
+      "mergedPacketReviewRequired": "/tmp/readiness-pending-pack-grouping/household-timeline-critical/HANDOFF.json"
+    },
+    {
+      "admissionId": "critical-conditional-2053637ad71374f6",
+      "urlTemplate": "/api/v1/fitness",
+      "declarationId": "decl-aaf7f16ecfa8c62ff40005ce-0",
+      "scope": "Only exact reviewed authored fixture/query branches; historical broad handler effectEligibility remains blocked",
+      "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+      "requestCases": [
+        {
+          "id": "critical-fitness-bootstrap",
+          "method": "GET",
+          "path": "/api/v1/fitness"
+        }
+      ],
+      "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+      "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+      "safetyPrerequisites": "Exactly authored local dashboard/history config with plex.music_playlists=[]; content catalog enrichment returns immediately before provider method. Inline primary learner hydrates only localmembership. Do not generalize configured playlist IDs/Plexcollections/video.",
+      "sourceProof": [
+        "modules/fitness/server/adapters/ProviderFitnessContentCatalog.mjs:109-114",
+        "modules/fitness/server/application/services/FitnessContentService.mjs:10-16",
+        "modules/fitness/server/application/services/FitnessUserHydrator.mjs:50-55"
+      ],
+      "independentReview": {
+        "path": "/tmp/readiness-critical-school-fitness-pack/review.json",
+        "sha256": "7a72bc3dfb7270f8d48ce33a7337ad4a854c73c55a86eff408492c3e8c08e307"
+      },
+      "diagnosticOnly": false,
+      "noProductionAuthorization": true,
+      "approvedPackets": [
+        {
+          "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+          "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2"
+        },
+        {
+          "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+          "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+        }
+      ],
+      "approvedFixtureSha256": [
+        "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+        "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3"
+      ],
+      "approvedManifestSha256": [
+        "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+        "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      ],
+      "packetBindingRule": "The same approvedPackets entry must match BOTH fixture and manifest hashes, plus exact request ID/method/path. Separate hash arrays are indexes only, not cross-product authorization.",
+      "sourceGuardSha256": "2669183eefc2839c606efd3c7737154eea2ed9355a3b414375eec8f87ce8d51b",
+      "mergedPacketReviewRequired": "/tmp/readiness-pending-pack-grouping/household-timeline-critical/HANDOFF.json"
+    },
+    {
+      "admissionId": "critical-conditional-37072f21bf20c9e1",
+      "urlTemplate": "/api/v1/fitness/sessions",
+      "declarationId": "decl-cf42e87541e6ed8b3c759a51-0",
+      "scope": "Only exact reviewed authored fixture/query branches; historical broad handler effectEligibility remains blocked",
+      "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+      "requestCases": [
+        {
+          "id": "critical-fitness-session-list",
+          "method": "GET",
+          "path": "/api/v1/fitness/sessions?date=2026-10-09"
+        },
+        {
+          "id": "critical-fitness-session-list-ungrouped",
+          "method": "GET",
+          "path": "/api/v1/fitness/sessions?date=2026-10-09&group=none"
+        }
+      ],
+      "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+      "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+      "safetyPrerequisites": "GET exact date=2026-10-09; no since/relative query. QuerySessions date branch calls findByDate only, never rangeindex rebuild/save. Defaultgrouping two1h-separated singletonstoredWalk sessions; ActivityRegistry foreignsport guard returnsbefore Cycle/Skyline providers. Explicitgroup=none secondarycontract separately. StoredStrava field is synthetic historical displaymetadata, no providerimport or playback claim.",
+      "sourceProof": [
+        "modules/fitness/server/application/usecases/QuerySessions.mjs:78-89",
+        "modules/fitness/server/adapters/persistence/YamlSessionDatastore.mjs:384-398",
+        "modules/fitness/server/application/activities/ActivityRegistry.mjs:10-15"
+      ],
+      "independentReview": {
+        "path": "/tmp/readiness-critical-school-fitness-pack/review.json",
+        "sha256": "7a72bc3dfb7270f8d48ce33a7337ad4a854c73c55a86eff408492c3e8c08e307"
+      },
+      "diagnosticOnly": false,
+      "noProductionAuthorization": true,
+      "approvedPackets": [
+        {
+          "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+          "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2"
+        },
+        {
+          "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+          "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+        }
+      ],
+      "approvedFixtureSha256": [
+        "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+        "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3"
+      ],
+      "approvedManifestSha256": [
+        "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+        "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      ],
+      "packetBindingRule": "The same approvedPackets entry must match BOTH fixture and manifest hashes, plus exact request ID/method/path. Separate hash arrays are indexes only, not cross-product authorization.",
+      "sourceGuardSha256": "2669183eefc2839c606efd3c7737154eea2ed9355a3b414375eec8f87ce8d51b",
+      "mergedPacketReviewRequired": "/tmp/readiness-pending-pack-grouping/household-timeline-critical/HANDOFF.json"
+    },
+    {
+      "admissionId": "critical-conditional-6e2f52674ae19311",
+      "urlTemplate": "/api/v1/school/certification",
+      "declarationId": "decl-74ce67c8fe6bf50db74c19c4-0",
+      "scope": "Only exact reviewed authored fixture/query branches; historical broad handler effectEligibility remains blocked",
+      "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+      "requestCases": [
+        {
+          "id": "critical-school-certification-diagnostic",
+          "method": "GET",
+          "path": "/api/v1/school/certification?address=synthetic-school%2Fmathematics%2Frates%2Fwalking%2Fintro&surface=screen-browser"
+        }
+      ],
+      "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+      "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+      "safetyPrerequisites": "Pure screenport certification of authored reader/examples capabilities; GetSurfaceCertification request-local bundle/row Maps only, no publicationmanifestwrite. Freshper-callbuilder; exactsurfacefilter. Mandatory diagnostic independentexpected200/full row; suspectedcomposedmissingselect may404 in bothroles, never credit404 correctness.",
+      "sourceProof": [
+        "modules/school/server/composition/lifecycle-runtime.mjs:734",
+        "modules/school/server/api/school.mjs:294",
+        "modules/school/server/application/surfaces/BuildSchoolSurfaceCertification.mjs:32-35"
+      ],
+      "independentReview": {
+        "path": "/tmp/readiness-critical-school-fitness-pack/review.json",
+        "sha256": "7a72bc3dfb7270f8d48ce33a7337ad4a854c73c55a86eff408492c3e8c08e307"
+      },
+      "diagnosticOnly": true,
+      "noProductionAuthorization": true,
+      "approvedPackets": [
+        {
+          "fixtureSha256": "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+          "manifestSha256": "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2"
+        },
+        {
+          "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+          "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+        }
+      ],
+      "approvedFixtureSha256": [
+        "62c76f55dfa08a67b2ccafe9e07e2fe60037eb736b0d08c2cfc3a68b204489db",
+        "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3"
+      ],
+      "approvedManifestSha256": [
+        "d583413b6c71cda0694a84cf38985957c87f9b5b434912fbe14054a554e5ddc2",
+        "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2"
+      ],
+      "packetBindingRule": "The same approvedPackets entry must match BOTH fixture and manifest hashes, plus exact request ID/method/path. Separate hash arrays are indexes only, not cross-product authorization.",
+      "sourceGuardSha256": "2669183eefc2839c606efd3c7737154eea2ed9355a3b414375eec8f87ce8d51b",
+      "mergedPacketReviewRequired": "/tmp/readiness-pending-pack-grouping/household-timeline-critical/HANDOFF.json"
+    },
+    {
+      "admissionId": "standing-conditional-646036ffcf60e2fb",
+      "urlTemplate": "/api/v1/school/report",
+      "declarationId": "decl-4413ff96adc59a78968484f1-0",
+      "scope": "Exact reviewed synthetic local School standing request branch; broad effectful handler remains excluded",
+      "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+      "requestCases": [
+        {
+          "id": "standing-report-learner",
+          "method": "GET",
+          "path": "/api/v1/school/report?userId=user_1&audience=learner"
+        },
+        {
+          "id": "standing-report-parent",
+          "method": "GET",
+          "path": "/api/v1/school/report?userId=user_1&audience=parent"
+        }
+      ],
+      "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+      "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+      "safetyPrerequisites": "No auth sid; lifecycle.enabled=true,virtualDevices=true; local schema-absent paper-only curriculum/document, no fitness-course units, no school materials config, no media/provider/program/launch/action refs; stored object session events and exact reviewed queue array only. JSON report-card/progress-report/format=json preview with previewOnly stubs; process-local memoization/corruption flags allowed, no persistent cache/provider/device/real session/ticket actions. Expiry admission and both roles checked. SAME reviewed fixture/manifest pair and exact case ID/method/query mandatory.",
+      "sourceProof": [
+        "modules/school/server/application/GetSchoolReport.mjs",
+        "modules/school/server/application/WorkSessionReporter.mjs",
+        "modules/school/server/application/SchoolService.mjs"
+      ],
+      "independentReview": {
+        "path": "/tmp/readiness-school-fitness-standing-group/review.json",
+        "sha256": "f56680136daa12fa700e1af2d2bb9dc42e32dcce1a1ad9fe17f4ca46b4460b8a"
+      },
+      "diagnosticOnly": false,
+      "noProductionAuthorization": true,
+      "approvedPackets": [
+        {
+          "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+          "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+        }
+      ],
+      "approvedFixtureSha256": [
+        "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e"
+      ],
+      "approvedManifestSha256": [
+        "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+      ],
+      "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
+      "denominatorContribution": "new-template"
+    },
+    {
+      "admissionId": "standing-conditional-f321ca26a5912bdd",
+      "urlTemplate": "/api/v1/school/report-card",
+      "declarationId": "decl-f7efea901612200a42c3c0b1-0",
+      "scope": "Exact reviewed synthetic local School standing request branch; broad effectful handler remains excluded",
+      "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+      "requestCases": [
+        {
+          "id": "standing-report-card",
+          "method": "GET",
+          "path": "/api/v1/school/report-card?learnerId=user_1&periodId=synthetic-term"
+        }
+      ],
+      "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+      "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+      "safetyPrerequisites": "No auth sid; lifecycle.enabled=true,virtualDevices=true; local schema-absent paper-only curriculum/document, no fitness-course units, no school materials config, no media/provider/program/launch/action refs; stored object session events and exact reviewed queue array only. JSON report-card/progress-report/format=json preview with previewOnly stubs; process-local memoization/corruption flags allowed, no persistent cache/provider/device/real session/ticket actions. Expiry admission and both roles checked. SAME reviewed fixture/manifest pair and exact case ID/method/query mandatory.",
+      "sourceProof": [
+        "modules/school/server/application/usecases/GetReportCard.mjs",
+        "modules/school/server/application/FitnessCourseCurriculumCatalog.mjs",
+        "modules/school/server/composition/catalog-runtime.mjs"
+      ],
+      "independentReview": {
+        "path": "/tmp/readiness-school-fitness-standing-group/review.json",
+        "sha256": "f56680136daa12fa700e1af2d2bb9dc42e32dcce1a1ad9fe17f4ca46b4460b8a"
+      },
+      "diagnosticOnly": false,
+      "noProductionAuthorization": true,
+      "approvedPackets": [
+        {
+          "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+          "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+        }
+      ],
+      "approvedFixtureSha256": [
+        "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e"
+      ],
+      "approvedManifestSha256": [
+        "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+      ],
+      "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
+      "denominatorContribution": "new-template"
+    },
+    {
+      "admissionId": "standing-conditional-7f381d1dcc57ace7",
+      "urlTemplate": "/api/v1/school/progress-report",
+      "declarationId": "decl-0fd7bb7f3487bb776fd9d1dd-0",
+      "scope": "Exact reviewed synthetic local School standing request branch; broad effectful handler remains excluded",
+      "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+      "requestCases": [
+        {
+          "id": "standing-progress-report",
+          "method": "GET",
+          "path": "/api/v1/school/progress-report?learnerId=user_1&periodId=synthetic-term"
+        }
+      ],
+      "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+      "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+      "safetyPrerequisites": "No auth sid; lifecycle.enabled=true,virtualDevices=true; local schema-absent paper-only curriculum/document, no fitness-course units, no school materials config, no media/provider/program/launch/action refs; stored object session events and exact reviewed queue array only. JSON report-card/progress-report/format=json preview with previewOnly stubs; process-local memoization/corruption flags allowed, no persistent cache/provider/device/real session/ticket actions. Expiry admission and both roles checked. SAME reviewed fixture/manifest pair and exact case ID/method/query mandatory.",
+      "sourceProof": [
+        "modules/school/server/application/usecases/GetProgressReport.mjs",
+        "modules/school/server/application/usecases/GetReportCard.mjs",
+        "modules/school/server/composition/catalog-runtime.mjs"
+      ],
+      "independentReview": {
+        "path": "/tmp/readiness-school-fitness-standing-group/review.json",
+        "sha256": "f56680136daa12fa700e1af2d2bb9dc42e32dcce1a1ad9fe17f4ca46b4460b8a"
+      },
+      "diagnosticOnly": false,
+      "noProductionAuthorization": true,
+      "approvedPackets": [
+        {
+          "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+          "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+        }
+      ],
+      "approvedFixtureSha256": [
+        "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e"
+      ],
+      "approvedManifestSha256": [
+        "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+      ],
+      "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
+      "denominatorContribution": "new-template"
+    },
+    {
+      "admissionId": "standing-conditional-194aeb9278056d2e",
+      "urlTemplate": "/api/v1/school/lifecycle/learners/:learnerId/agenda/preview",
+      "declarationId": "decl-1800e657146d11c7e7deec31-0",
+      "scope": "Exact reviewed synthetic local School standing request branch; broad effectful handler remains excluded",
+      "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+      "requestCases": [
+        {
+          "id": "standing-agenda-json",
+          "method": "GET",
+          "path": "/api/v1/school/lifecycle/learners/user_1/agenda/preview?format=json&studyDay=2026-10-09"
+        }
+      ],
+      "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+      "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+      "safetyPrerequisites": "No auth sid; lifecycle.enabled=true,virtualDevices=true; local schema-absent paper-only curriculum/document, no fitness-course units, no school materials config, no media/provider/program/launch/action refs; stored object session events and exact reviewed queue array only. JSON report-card/progress-report/format=json preview with previewOnly stubs; process-local memoization/corruption flags allowed, no persistent cache/provider/device/real session/ticket actions. Expiry admission and both roles checked. SAME reviewed fixture/manifest pair and exact case ID/method/query mandatory.",
+      "sourceProof": [
+        "modules/school/server/application/PreviewSchoolStores.mjs",
+        "modules/school/server/application/usecases/BuildAgenda.mjs",
+        "modules/school/server/application/PlanProjection.mjs"
+      ],
+      "independentReview": {
+        "path": "/tmp/readiness-school-fitness-standing-group/review.json",
+        "sha256": "f56680136daa12fa700e1af2d2bb9dc42e32dcce1a1ad9fe17f4ca46b4460b8a"
+      },
+      "diagnosticOnly": false,
+      "noProductionAuthorization": true,
+      "approvedPackets": [
+        {
+          "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+          "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+        }
+      ],
+      "approvedFixtureSha256": [
+        "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e"
+      ],
+      "approvedManifestSha256": [
+        "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+      ],
+      "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
+      "denominatorContribution": "none-existing-template"
+    },
+    {
+      "admissionId": "standing-conditional-df96afc46319c043",
+      "urlTemplate": "/api/v1/school/review/learner/:learnerId",
+      "declarationId": "decl-34357f8f3292155ecb03b3ff-0",
+      "scope": "Exact reviewed synthetic local School standing request branch; broad effectful handler remains excluded",
+      "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+      "requestCases": [
+        {
+          "id": "standing-learner-feedback-default",
+          "method": "GET",
+          "path": "/api/v1/school/review/learner/user_1?limit=20"
+        },
+        {
+          "id": "standing-learner-feedback-limit-one",
+          "method": "GET",
+          "path": "/api/v1/school/review/learner/user_1?limit=1"
+        }
+      ],
+      "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+      "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+      "safetyPrerequisites": "No auth sid; lifecycle.enabled=true,virtualDevices=true; local schema-absent paper-only curriculum/document, no fitness-course units, no school materials config, no media/provider/program/launch/action refs; stored object session events and exact reviewed queue array only. JSON report-card/progress-report/format=json preview with previewOnly stubs; process-local memoization/corruption flags allowed, no persistent cache/provider/device/real session/ticket actions. Expiry admission and both roles checked. SAME reviewed fixture/manifest pair and exact case ID/method/query mandatory.",
+      "sourceProof": [
+        "modules/school/server/application/services/SchoolRecordsQueryService.mjs",
+        "modules/school/server/adapters/persistence/YamlReviewQueue.mjs",
+        "modules/school/server/application/CurriculumAccess.mjs"
+      ],
+      "independentReview": {
+        "path": "/tmp/readiness-school-fitness-standing-group/review.json",
+        "sha256": "f56680136daa12fa700e1af2d2bb9dc42e32dcce1a1ad9fe17f4ca46b4460b8a"
+      },
+      "diagnosticOnly": false,
+      "noProductionAuthorization": true,
+      "approvedPackets": [
+        {
+          "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+          "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+        }
+      ],
+      "approvedFixtureSha256": [
+        "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e"
+      ],
+      "approvedManifestSha256": [
+        "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+      ],
+      "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
+      "denominatorContribution": "new-template"
+    },
+    {
+      "admissionId": "standing-conditional-3e6a56b06190e413",
+      "urlTemplate": "/api/v1/school/lifecycle/sessions/:sessionId/events",
+      "declarationId": "decl-93b604b7ce495056d10192a5-0",
+      "scope": "Exact reviewed synthetic local School standing request branch; broad effectful handler remains excluded",
+      "effectEligibility": "eligible-finite-read-under-explicit-case-conditions",
+      "requestCases": [
+        {
+          "id": "standing-session-events",
+          "method": "GET",
+          "path": "/api/v1/school/lifecycle/sessions/synthetic-completed-session/events"
+        }
+      ],
+      "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+      "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+      "safetyPrerequisites": "No auth sid; lifecycle.enabled=true,virtualDevices=true; local schema-absent paper-only curriculum/document, no fitness-course units, no school materials config, no media/provider/program/launch/action refs; stored object session events and exact reviewed queue array only. JSON report-card/progress-report/format=json preview with previewOnly stubs; process-local memoization/corruption flags allowed, no persistent cache/provider/device/real session/ticket actions. Expiry admission and both roles checked. SAME reviewed fixture/manifest pair and exact case ID/method/query mandatory.",
+      "sourceProof": [
+        "modules/school/server/application/services/SchoolLifecycleReadService.mjs",
+        "modules/school/server/adapters/persistence/YamlWorkSessionDatastore.mjs"
+      ],
+      "independentReview": {
+        "path": "/tmp/readiness-school-fitness-standing-group/review.json",
+        "sha256": "f56680136daa12fa700e1af2d2bb9dc42e32dcce1a1ad9fe17f4ca46b4460b8a"
+      },
+      "diagnosticOnly": false,
+      "noProductionAuthorization": true,
+      "approvedPackets": [
+        {
+          "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+          "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+        }
+      ],
+      "approvedFixtureSha256": [
+        "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e"
+      ],
+      "approvedManifestSha256": [
+        "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+      ],
+      "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
+      "denominatorContribution": "new-template"
+    }
+  ],
+  "baselineDiagnosticFailures": [
+    {
+      "id": "critical-school-certification-diagnostic",
+      "accepted": false,
+      "independentContractAccepted": false,
+      "errors": [
+        {
+          "side": "reference",
+          "message": "unexpected status\n\n404 !== 200\n"
+        },
+        {
+          "side": "candidate",
+          "message": "unexpected status\n\n404 !== 200\n"
+        }
+      ],
+      "urlTemplate": "/api/v1/school/certification",
+      "declarationIds": [
+        "decl-74ce67c8fe6bf50db74c19c4-0"
+      ],
+      "provenance": "actual-isolated-original10d8-vs-candidate54b6-current-reviewed-harness",
+      "fixtureSha256": "b8de8c0ccca015a47ab31a971227e004c0f092bb050c0fcb60e3a550f0bbafc3",
+      "manifestSha256": "48ad32311792be4ef5354a674afc528bdf57be3e9022a2525a98ff092c937bf2",
+      "conditionalReadAdmissionId": "critical-conditional-6e2f52674ae19311",
+      "expectedStatus": 200,
+      "observedReferenceStatus": 404,
+      "observedCandidateStatus": 404,
+      "sameObservedFailureBody": true,
+      "correctnessAccepted": false,
+      "baselineFunctionalFailure": true,
+      "noAcceptedCoverageCredit": true,
+      "reviewedIndependentExpectationAccepted": true,
+      "observedIndependentContractAccepted": false,
+      "independentContractDisposition": "Reviewed intended200 expectation remains valid; both observed404 outcomes fail it and receive no accepted case/template credit.",
+      "independentExpectationReviewed": true,
+      "reviewedExpectationApproved": true,
+      "rawIndependentContractAccepted": true
+    },
+    {
+      "id": "standing-report-learner",
+      "accepted": false,
+      "independentContractAccepted": false,
+      "correctnessAccepted": false,
+      "errors": [
+        {
+          "side": "reference",
+          "message": "body value learners\n+ actual - expected\n... Skipped lines\n\n  [\n    {\n      id: 'user_1',\n      name: 'Synthetic Learner',\n      reports: [\n...\n            blocked: true,\n+           blockedReason: 'Waiting on a grown-up to mark it',\n+           detail: 'Handed in \u2014 waiting for a grown-up to mark it.',\n-           blockedReason: 'Waiting on a grown-up to mark it since 2026-10-09',\n-           detail: 'Handed in since 2026-10-09 \u2014 waiting for a grown-up to mark it.',\n            estimate: null,\n            label: 'Check Addition Practice'\n          },\n          program: 'coursework',\n          state: 'blocked',\n"
+        },
+        {
+          "side": "candidate",
+          "message": "body value learners\n+ actual - expected\n... Skipped lines\n\n  [\n    {\n      id: 'user_1',\n      name: 'Synthetic Learner',\n      reports: [\n...\n            blocked: true,\n+           blockedReason: 'Waiting on a grown-up to mark it',\n+           detail: 'Handed in \u2014 waiting for a grown-up to mark it.',\n-           blockedReason: 'Waiting on a grown-up to mark it since 2026-10-09',\n-           detail: 'Handed in since 2026-10-09 \u2014 waiting for a grown-up to mark it.',\n            estimate: null,\n            label: 'Check Addition Practice'\n          },\n          program: 'coursework',\n          state: 'blocked',\n"
+        }
+      ],
+      "urlTemplate": "/api/v1/school/report",
+      "declarationIds": [
+        "decl-4413ff96adc59a78968484f1-0"
+      ],
+      "provenance": "actual-isolated-original6e-vs-candidate54b6-reviewed-harness",
+      "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+      "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+      "conditionalReadAdmissionId": "standing-conditional-646036ffcf60e2fb",
+      "reviewedExpectationApproved": true,
+      "expectedStatus": 200,
+      "observedReferenceStatus": 200,
+      "observedCandidateStatus": 200,
+      "sameObservedFailureBody": true,
+      "baselineFunctionalFailure": true,
+      "noAcceptedCoverageCredit": true,
+      "failureMeaning": "Pending session timestamp is present in storage but omitted from planner entry; both report audiences lose intended since-date text",
+      "finding": {
+        "path": "/tmp/readiness-school-report-wait-date-finding/finding.json",
+        "sha256": "6cd57bf113c088049a796bff1a6294baa235613ad6bfc7c79e0931fcfe5b2940"
+      }
+    },
+    {
+      "id": "standing-report-parent",
+      "accepted": false,
+      "independentContractAccepted": false,
+      "correctnessAccepted": false,
+      "errors": [
+        {
+          "side": "reference",
+          "message": "body value learners\n+ actual - expected\n... Skipped lines\n\n  [\n    {\n      active: 1,\n      id: 'user_1',\n      name: 'Synthetic Learner',\n...\n            blocked: true,\n+           blockedReason: 'Waiting on a grown-up to mark it',\n+           detail: 'Handed in \u2014 waiting for a grown-up to mark it.',\n-           blockedReason: 'Waiting on a grown-up to mark it since 2026-10-09',\n-           detail: 'Handed in since 2026-10-09 \u2014 waiting for a grown-up to mark it.',\n            estimate: null,\n            label: 'Check Addition Practice'\n          },\n          program: 'coursework',\n          state: 'blocked',\n"
+        },
+        {
+          "side": "candidate",
+          "message": "body value learners\n+ actual - expected\n... Skipped lines\n\n  [\n    {\n      active: 1,\n      id: 'user_1',\n      name: 'Synthetic Learner',\n...\n            blocked: true,\n+           blockedReason: 'Waiting on a grown-up to mark it',\n+           detail: 'Handed in \u2014 waiting for a grown-up to mark it.',\n-           blockedReason: 'Waiting on a grown-up to mark it since 2026-10-09',\n-           detail: 'Handed in since 2026-10-09 \u2014 waiting for a grown-up to mark it.',\n            estimate: null,\n            label: 'Check Addition Practice'\n          },\n          program: 'coursework',\n          state: 'blocked',\n"
+        }
+      ],
+      "urlTemplate": "/api/v1/school/report",
+      "declarationIds": [
+        "decl-4413ff96adc59a78968484f1-0"
+      ],
+      "provenance": "actual-isolated-original6e-vs-candidate54b6-reviewed-harness",
+      "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+      "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+      "conditionalReadAdmissionId": "standing-conditional-646036ffcf60e2fb",
+      "reviewedExpectationApproved": true,
+      "expectedStatus": 200,
+      "observedReferenceStatus": 200,
+      "observedCandidateStatus": 200,
+      "sameObservedFailureBody": true,
+      "baselineFunctionalFailure": true,
+      "noAcceptedCoverageCredit": true,
+      "failureMeaning": "Pending session timestamp is present in storage but omitted from planner entry; both report audiences lose intended since-date text",
+      "finding": {
+        "path": "/tmp/readiness-school-report-wait-date-finding/finding.json",
+        "sha256": "6cd57bf113c088049a796bff1a6294baa235613ad6bfc7c79e0931fcfe5b2940"
+      }
+    }
+  ]
 }

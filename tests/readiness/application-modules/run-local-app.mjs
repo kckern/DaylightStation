@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { validateCaptureManifest, fetchTransport } from './api-comparator.mjs';
 import { validateRawFixtures, validateDirectoryFixtures } from './raw-utf8-fixture.mjs';
 
+import { validateTestMetadata, dependencyReadGrants, assertMetadataDenied } from './runtime-test-metadata.mjs';
+
 // Explicit local paths only; no default live origin, writable data mount or credentials.
 const options = {};
 for (let i = 2; i < process.argv.length; i++) {
@@ -53,7 +55,7 @@ for (const [relative, value] of Object.entries(prepared.fixtureFiles)) {
   const reviewedRecipeArray = relative === 'data/content/school/generated-banks/recipes.yml';
   // Exact synthetic stored-array destinations only; no raw or filesystem grant.
   const reviewedStoredArray = ["data/users/user_1/apps/health/meals.yml","data/household/automotive/synthetic-array-car/service.yml","data/household/automotive/synthetic-array-car/documents.yml"].includes(relative);
-  assert.ok(value && typeof value === 'object' && (!Array.isArray(value) || reviewedArray || reviewedRecipeArray || reviewedStoredArray), 'Only reviewed stored-data or exact School recipes paths may have an array root');
+  assert.ok(value && typeof value === 'object' && (!Array.isArray(value) || reviewedArray || reviewedRecipeArray || reviewedStoredArray || relative === "data/users/user_1/current/calendar.yml" || relative === "data/household/history/media-plays/2026-10-09.yml" || relative === "data/household/school/runtime/review/synthetic-review-session.yml"), 'Only reviewed stored-data or exact School recipes paths may have an array root');
 }
 // Explicit runtime timezone matches the reviewed deployment/config contract.
 const runtimeTimezone = prepared.fixtureFiles['data/system/config/system.yml']?.timezone;
@@ -73,6 +75,7 @@ fs.writeFileSync(path.join(scratch, 'probe-input.json'), JSON.stringify({ source
 const hash = file => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const jsonHash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const grants = new Map();
+const testMetadata=validateTestMetadata(toolRoot);
 const inventory = spawnSync('/usr/bin/git', ['ls-files', '-z'], { cwd: sourceRoot, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
 assert.equal(inventory.status, 0, 'Tracked source enumeration failed');
 const permitted = /^(backend\/(src|assets)|frontend\/src|shared|modules|capabilities)\/.+\.(mjs|js|cjs|jsx|json|ya?ml|scss|css|svg|png|jpg|jpeg|webp|txt|ttf|otf|html|glsl|glslp|musicxml|py)$/;
@@ -89,7 +92,7 @@ for (const relative of inventory.stdout.split('\0').filter(p => permitted.test(p
 for (const scope of ['', 'backend', 'frontend']) {
   grants.set(fs.realpathSync(path.join(sourceRoot, scope, 'package.json')), 'F');
   grants.set(fs.realpathSync(path.join(toolRoot, scope, 'package.json')), 'F');
-  grants.set(fs.realpathSync(path.join(toolRoot, scope, 'node_modules')), 'D');
+  for(const [file,kind] of dependencyReadGrants(fs.realpathSync(path.join(toolRoot, scope, 'node_modules')),testMetadata)) grants.set(file,kind);
 }
 for (const name of ['librt.so.1', 'libuuid.so.1', 'libresolv.so.2']) grants.set(fs.realpathSync('/lib/x86_64-linux-gnu/' + name), 'F');
 const libraries = spawnSync('/usr/bin/ldd', ['/usr/bin/pdftotext'], { encoding: 'utf8', timeout: 5000 });
@@ -99,12 +102,13 @@ const entryName = options['--controls-only'] ? 'local-http-controls.mjs' : 'loca
 for (const name of [entryName, 'transparent-loader.mjs']) {
   fs.copyFileSync(path.join(directory, name), path.join(run, name)); grants.set(path.join(run, name), 'F');
 }
+assertMetadataDenied([...grants],testMetadata);
 const manifest = path.join(run, 'read-allowlist.tsv');
 assert.ok([...grants.keys()].every(file => !/[\r\n\t]/.test(file)), 'Unsafe grant path');
 fs.writeFileSync(manifest, [...grants].sort().map(([file, kind]) => `${kind}\t${file}\n`).join(''));
 const sourceInputs = [...grants].filter(([file, kind]) => kind === 'F').map(([file]) => ({ file, sha256: hash(file) }));
 const workingTreeSha256 = jsonHash(sourceInputs.filter(row=>row.file.startsWith(sourceRoot+path.sep)).map(row=>({path:path.relative(sourceRoot,row.file).split(path.sep).join('/'),sha256:row.sha256})).sort((a,b)=>a.path.localeCompare(b.path)));
-for (const file of [fileURLToPath(import.meta.url), path.join(directory, 'api-comparator.mjs'), path.join(directory, 'raw-utf8-fixture.mjs'), path.join(directory, entryName), path.join(directory, 'transparent-loader.mjs'), fixtureFile, path.resolve(directory, '../../preimplementation/application-modules/tooling/landlock-runner.c'), ...['--manifest', '--targets'].filter(key => options[key]).map(key => fs.realpathSync(options[key]))]) {
+for (const file of [fileURLToPath(import.meta.url), path.join(directory, 'api-comparator.mjs'), path.join(directory, 'raw-utf8-fixture.mjs'), path.join(directory, 'runtime-test-metadata.mjs'), path.join(directory, entryName), path.join(directory, 'transparent-loader.mjs'), fixtureFile, path.resolve(directory, '../../preimplementation/application-modules/tooling/landlock-runner.c'), ...['--manifest', '--targets'].filter(key => options[key]).map(key => fs.realpathSync(options[key]))]) {
   if (!sourceInputs.some(row => row.file === file)) sourceInputs.push({ file, sha256: hash(file) });
 }
 const c = path.resolve(directory, '../../preimplementation/application-modules/tooling/landlock-runner.c');
@@ -180,8 +184,8 @@ const output = fs.existsSync(path.join(scratch, 'result.txt')) ? fs.readFileSync
 const resultPath = path.join(scratch, options['--controls-only'] ? 'controls.json' : 'boot-result.json');
 const proof = fs.existsSync(resultPath) ? JSON.parse(fs.readFileSync(resultPath, 'utf8')) : null;
 const cControls = ['socket(AF_UNIX): EPERM', 'anonymous IPC pair: permitted', 'non-TCP protocol: EPERM', 'socketpair: EPERM', 'ptrace: EPERM', 'mount: EPERM', 'unshare: EPERM'].every(marker => output.includes(marker));
-const required = ['private read', 'host read', 'source write', 'other TCP bind', 'AF_UNIX socket', 'outbound TCP connect', 'exact loopback TCP bind', 'actual HTTP response'];
-const controls = cControls && (options['--controls-only'] ? required.every(name => proof?.controls?.includes(name)) : ['private read', 'host read', 'source write'].every(name => output.includes(`BOOT CONTROL ${name}: denied`)));
+const required = ['private read', 'host read', 'source write', 'test results cache read', 'other TCP bind', 'AF_UNIX socket', 'outbound TCP connect', 'exact loopback TCP bind', 'actual HTTP response'];
+const controls = cControls && (options['--controls-only'] ? required.every(name => proof?.controls?.includes(name)) : ['private read', 'host read', 'source write', 'test results cache read'].every(name => output.includes(`BOOT CONTROL ${name}: denied`)));
 const protectedInputsUnchanged = sourceInputs.every(row => hash(row.file) === row.sha256);
 const completed = terminal.exitCode === 0 && proof?.completed === true && controls && protectedInputsUnchanged && !comparisonError;
 let capture = null;

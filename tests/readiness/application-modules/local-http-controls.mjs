@@ -10,6 +10,7 @@ const denied=(label,fn)=>{assert.throws(fn,e=>['EPERM','EACCES'].includes(e.code
 denied('private read',()=>fs.readFileSync(path.join(process.env.PRE_DENIED_ROOT,'private.env')));
 denied('host read',()=>fs.readFileSync('/etc/hostname'));
 denied('source write',()=>fs.openSync(path.join(sourceRoot,'backend/src/app.mjs'),'w'));
+denied('test results cache read', () => fs.readFileSync(path.join(process.env.PRE_TOOLCHAIN_ROOT, 'node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/results.json')));
 const deniedAsync=(label,start)=>new Promise((resolve,reject)=>{
  const object=start(); const timer=setTimeout(()=>reject(new Error(label+' timed out')),1500);
  object.once('error',e=>{clearTimeout(timer);if(!['EPERM','EACCES'].includes(e.code)){reject(e);return;}controls.push(label);resolve();});

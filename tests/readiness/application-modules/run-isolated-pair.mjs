@@ -9,6 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareCapturedApi, validateCaptureManifest } from './api-comparator.mjs';
 import { validateSelection, aggregateCases } from './run-readonly-suite.mjs';
 import { validateRawFixtures, validateDirectoryFixtures } from './raw-utf8-fixture.mjs';
+import { validateTestMetadata, skipTestMetadata } from './runtime-test-metadata.mjs';
 const directory=path.dirname(fileURLToPath(import.meta.url));
 const hash=file=>createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const jsonHash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -22,10 +23,10 @@ function sourceInventory(root) {
   names.push('package.json','backend/package.json','frontend/package.json');
   return names.sort((a,b)=>a.localeCompare(b)).map(p=>{const file=path.join(root,p);assert.equal(fs.realpathSync(file),file);assert.ok(fs.lstatSync(file).isFile());return {path:p,sha256:hash(file)};});
 }
-function treeInventory(roots) {
+export function treeInventory(roots,metadata) {
   const seen=new Set(),rows=[];
   const visit=file=>{
-    const real=fs.realpathSync(file);if(real!==file)rows.push({file,realpath:real});
+    const real=fs.realpathSync(file);if(skipTestMetadata(file,real,metadata))return;if(real!==file)rows.push({file,realpath:real});
     if(seen.has(real))return;seen.add(real);const stat=fs.statSync(real);
     if(stat.isDirectory()){const entries=fs.readdirSync(real).sort();rows.push({file:real,entries});for(const name of entries)visit(path.join(real,name));}
     else if(stat.isFile())rows.push({file:real,sha256:hash(real)});
@@ -35,7 +36,9 @@ function treeInventory(roots) {
 export function collectPairInputs({originalRoot,candidateRoot,toolRoot}) {
   const native=spawnSync('/usr/bin/ldd',['/usr/bin/pdftotext'],{encoding:'utf8',timeout:5000});assert.equal(native.status,0);
   const libraries=[...native.stdout.matchAll(/(?:=>\s+|^\s*)(\/[^\s]+)\s+\(/gm)].map(match=>fs.realpathSync(match[1]));
-  const runtime=treeInventory([...libraries,...['librt.so.1','libuuid.so.1','libresolv.so.2'].map(name=>fs.realpathSync('/lib/x86_64-linux-gnu/'+name)),fs.realpathSync(process.execPath),...['','backend','frontend'].flatMap(scope=>[path.join(toolRoot,scope,'package.json'),path.join(toolRoot,scope,'node_modules')])]);
+  const metadata=validateTestMetadata(toolRoot);
+  const runtime=treeInventory([...libraries,...['librt.so.1','libuuid.so.1','libresolv.so.2'].map(name=>fs.realpathSync('/lib/x86_64-linux-gnu/'+name)),fs.realpathSync(process.execPath),...['','backend','frontend'].flatMap(scope=>[path.join(toolRoot,scope,'package.json'),path.join(toolRoot,scope,'node_modules')])],metadata);
+  runtime.push(metadata);
   const harness=fs.readdirSync(directory).filter(p=>/\.(mjs|json|py)$/.test(p)).sort().map(p=>({file:path.join(directory,p),sha256:hash(path.join(directory,p))}));
   const launcher=path.resolve(directory,'../../preimplementation/application-modules/tooling/landlock-runner.c');harness.push({file:launcher,sha256:hash(launcher)});
   return {original:{sourceCommit:revision(originalRoot),inventory:sourceInventory(originalRoot)},candidate:{sourceCommit:revision(candidateRoot),inventory:sourceInventory(candidateRoot)},runtime,harness};

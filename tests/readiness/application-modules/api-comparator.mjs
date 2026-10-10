@@ -5,6 +5,115 @@ import { pathToFileURL } from 'node:url';
 
 const types = new Set(['string', 'number', 'boolean', 'array', 'object']);
 const kind = value => Array.isArray(value) ? 'array' : value === null ? 'null' : typeof value;
+
+function exactKeys(value, required, optional = []) {
+  assert.equal(kind(value), 'object');
+  assert.ok(Object.keys(value).every(key => [...required, ...optional].includes(key)), 'Unknown contract field');
+  for (const key of required) assert.ok(Object.hasOwn(value, key), 'Missing contract field: '+key);
+}
+function pointerTokens(pointer) {
+  assert.equal(typeof pointer, 'string');
+  assert.ok(pointer.startsWith('/') && pointer.length <= 512, 'Explicit non-root JSON pointer required');
+  const parts = pointer.slice(1).split('/');
+  assert.ok(parts.length <= 16);
+  return parts.map(part => {
+    assert.ok(!/~(?![01])/u.test(part), 'Invalid JSON pointer escape');
+    const token = part.replace(/~1/g, '/').replace(/~0/g, '~');
+    assert.ok(token.length > 0 && !['*','**','-','__proto__','prototype','constructor'].includes(token), 'Unsafe JSON pointer token');
+    return token;
+  });
+}
+function pointerLeaf(body, pointer) {
+  const tokens = pointerTokens(pointer);
+  let parent = body;
+  for (const token of tokens.slice(0, -1)) {
+    assert.ok(parent !== null && typeof parent === 'object');
+    if (Array.isArray(parent)) assert.match(token, /^(0|[1-9][0-9]*)$/u, 'Canonical array index required');
+    assert.ok(Object.hasOwn(parent, token), 'Missing own pointer segment');
+    parent = parent[token];
+  }
+  const key = tokens.at(-1);
+  assert.ok(parent !== null && typeof parent === 'object');
+  if (Array.isArray(parent)) assert.match(key, /^(0|[1-9][0-9]*)$/u, 'Canonical array index required');
+  assert.ok(Object.hasOwn(parent, key), 'Missing own pointer leaf');
+  return { parent, key, value:parent[key] };
+}
+const overlaps = (a,b) => a === b || a.startsWith(b+'/') || b.startsWith(a+'/');
+function validateTimestampContract(c) {
+  const pointers = c.expected.body.equalsPointers;
+  if (pointers !== undefined) {
+    assert.equal(c.expected.body.kind, 'json');
+    assert.equal(kind(pointers), 'object');
+    assert.ok(Object.keys(pointers).length > 0 && Object.keys(pointers).length <= 32);
+    for (const pointer of Object.keys(pointers)) pointerTokens(pointer);
+  }
+  const contract = c.timestampContract;
+  if (contract === undefined) return;
+  assert.equal(c.method, 'GET'); assert.equal(c.expected.body.kind, 'json');
+  exactKeys(contract, ['timestamps','durations'], ['etag']);
+  assert.ok(Array.isArray(contract.timestamps) && contract.timestamps.length > 0 && contract.timestamps.length <= 32);
+  assert.ok(Array.isArray(contract.durations) && contract.durations.length <= 32);
+  const stamps = new Map();
+  for (const stamp of contract.timestamps) {
+    exactKeys(stamp, ['pointer','format'], ['within']); pointerTokens(stamp.pointer);
+    assert.equal(stamp.format, 'canonical-iso-utc');
+    if (Object.hasOwn(stamp,'within')) assert.equal(stamp.within, 'request');
+    assert.ok(![...stamps.keys()].some(pointer => overlaps(pointer, stamp.pointer)), 'Overlapping timestamp exceptions');
+    stamps.set(stamp.pointer, stamp);
+    for (const pointer of Object.keys(pointers ?? {})) assert.ok(!overlaps(pointer, stamp.pointer), 'Cannot mask an independently expected pointer');
+    const top = pointerTokens(stamp.pointer)[0];
+    assert.ok(!Object.hasOwn(c.expected.body.equals, top), 'Cannot mask an independently expected value');
+    assert.ok(!(c.normalize?.jsonPaths ?? []).includes(top), 'Legacy parent normalization would hide timestamp contract');
+  }
+  const related = new Set(), edges = new Set();
+  for (const duration of contract.durations) {
+    exactKeys(duration, ['from','to','milliseconds']);
+    assert.ok(stamps.get(duration.from)?.within === 'request', 'Duration must start at observed timestamp');
+    assert.ok(stamps.has(duration.to) && duration.from !== duration.to, 'Duration endpoints required');
+    assert.ok(Number.isSafeInteger(duration.milliseconds) && duration.milliseconds > 0 && duration.milliseconds <= 90*86400000, 'Bounded positive exact duration required');
+    const edge = JSON.stringify([duration.from,duration.to]); assert.ok(!edges.has(edge), 'Duplicate duration'); edges.add(edge); related.add(duration.to);
+  }
+  for (const stamp of stamps.values()) assert.ok(stamp.within === 'request' || related.has(stamp.pointer), 'Unchecked timestamp exception');
+  assert.ok(!(c.normalize?.headers ?? []).includes('content-length'), 'Timestamp contract retains Content-Length');
+  if (contract.etag !== undefined) {
+    assert.equal(contract.etag, 'express-weak-raw-body');
+    assert.ok(!Object.hasOwn(c.expected.headers,'etag'), 'Required ETag remains exact');
+    assert.ok(!(c.normalize?.headers ?? []).includes('etag'), 'No unchecked ETag exception');
+  }
+}
+function observationInterval(response) {
+  const interval = response.observationInterval;
+  exactKeys(interval, ['startedAt','endedAt']);
+  assert.ok(Number.isSafeInteger(interval.startedAt) && Number.isSafeInteger(interval.endedAt) && interval.startedAt <= interval.endedAt, 'Invalid request observation interval');
+  return interval;
+}
+function inspectTimestamps(body, response, c, headers) {
+  const contract = c.timestampContract;
+  if (!contract) return;
+  const interval = observationInterval(response), times = new Map();
+  for (const stamp of contract.timestamps) {
+    const value = pointerLeaf(body, stamp.pointer).value;
+    assert.equal(typeof value, 'string');
+    assert.match(value, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u, 'Canonical ordinary-year UTC ISO required');
+    const ms = Date.parse(value); assert.ok(Number.isFinite(ms));
+    assert.equal(new Date(ms).toISOString(),value,'Invalid or noncanonical ISO timestamp');
+    if (stamp.within === 'request') assert.ok(interval.startedAt <= ms && ms <= interval.endedAt, 'Timestamp outside request observation interval');
+    times.set(stamp.pointer, ms);
+  }
+  for (const duration of contract.durations) assert.equal(times.get(duration.to)-times.get(duration.from), duration.milliseconds, 'Independent exact timestamp duration');
+  if (contract.etag !== undefined) {
+    assert.ok(headers['content-encoding'] === undefined || headers['content-encoding'] === 'identity', 'Raw body ETag requires unencoded response');
+    const bytes = Buffer.from(response.body, 'utf8');
+    assert.equal(headers['content-length'], String(bytes.length), 'Raw body Content-Length');
+    const hash = createHash('sha1').update(bytes).digest('base64').slice(0,27);
+    assert.equal(headers.etag, `W/"${bytes.length.toString(16)}-${hash}"`, 'Independent raw body Express weak ETag');
+    delete headers.etag; // Only after each role's raw body ETag has independently passed.
+  }
+  for (const stamp of contract.timestamps) {
+    const leaf = pointerLeaf(body,stamp.pointer); delete leaf.parent[leaf.key];
+  }
+}
+
 function validate(manifest, targets) {
   assert.equal(manifest?.schema, 'comparator-v1');
   assert.ok(Array.isArray(manifest.cases) && manifest.cases.length > 0);
@@ -67,6 +176,7 @@ function validateManifest(manifest, origin) {
       assert.match(e.body.sha256, /^[a-f0-9]{64}$/);
       assert.ok(e.headers['content-type'], 'Binary MIME required');
     } else assert.equal(typeof e.body.exact, 'string');
+    validateTimestampContract(c);
     const n = c.normalize ?? { jsonPaths: [], headers: [] };
     assert.ok(Array.isArray(n.jsonPaths) && Array.isArray(n.headers));
     for (const key of n.jsonPaths) {
@@ -93,6 +203,8 @@ function inspect(response, c) {
       if (type === 'string') assert.ok(body[key].length > 0);
     }
     for (const [key, value] of Object.entries(c.expected.body.equals)) assert.deepEqual(body[key], value, `body value ${key}`);
+    for (const [pointer, value] of Object.entries(c.expected.body.equalsPointers ?? {})) assert.deepEqual(pointerLeaf(body,pointer).value, value, 'body pointer value '+pointer);
+    inspectTimestamps(body,response,c,headers);
     for (const key of c.normalize?.jsonPaths ?? []) delete body[key];
   } else if (c.expected.body.kind === 'json-array') {
     body = JSON.parse(body);
@@ -198,6 +310,10 @@ export async function compareCapturedApi({ manifest, manifestSha256, pairNonce, 
       const row = capture.cases[i];
       assert.deepEqual(Object.keys(row).sort(), ['id','method','path','url','bodyKind','observed'].sort(), 'Unexpected captured request fields');
       for (const [key, value] of Object.entries({id:c.id,method:c.method,path:c.path,bodyKind:c.expected.body.kind,url:new URL(c.path,capture.url).href})) assert.equal(row[key],value,'Request linkage: '+key);
+      if (c.timestampContract) {
+        const interval = observationInterval(row.observed);
+        assert.ok(capture.startedAt <= interval.startedAt && interval.endedAt <= capture.endedAt, 'Request interval outside guarded role capture');
+      }
     }
     captures.push(capture);
   }
@@ -216,6 +332,7 @@ export async function compareCapturedApi({ manifest, manifestSha256, pairNonce, 
 }
 
 export async function fetchTransport({ url, method, bodyKind }) {
+  const startedAt = Date.now();
   const response = await fetch(url, { method, redirect: 'manual', signal: AbortSignal.timeout(5000) });
   // A fixed response limit keeps accidental stream endpoints out of this probe.
   const reader = response.body?.getReader();
@@ -229,7 +346,9 @@ export async function fetchTransport({ url, method, bodyKind }) {
     } finally { await reader.cancel(); }
   }
   const bytes = Buffer.concat(chunks);
-  return { status: response.status, headers: Object.fromEntries(response.headers),
+  const endedAt = Date.now();
+  assert.ok(startedAt <= endedAt, 'Request observation clock rolled backwards');
+  return { status: response.status, headers: Object.fromEntries(response.headers), observationInterval:{startedAt,endedAt},
     ...(bodyKind === 'binary' ? { bodyBase64: bytes.toString('base64') } : { body: bytes.toString('utf8') }) };
 
 }
