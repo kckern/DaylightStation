@@ -41858,11 +41858,31 @@
               "id": "standing-report-parent",
               "method": "GET",
               "path": "/api/v1/school/report?userId=user_1&audience=parent"
+            },
+            {
+              "id": "learner-home-report-learner",
+              "method": "GET",
+              "path": "/api/v1/school/report?userId=user_1&audience=learner"
+            },
+            {
+              "id": "learner-home-report-parent",
+              "method": "GET",
+              "path": "/api/v1/school/report?userId=user_1&audience=parent"
+            },
+            {
+              "id": "learner-home-report-sibling",
+              "method": "GET",
+              "path": "/api/v1/school/report?userId=user_2&audience=learner"
+            },
+            {
+              "id": "learner-home-report-household",
+              "method": "GET",
+              "path": "/api/v1/school/report?audience=parent"
             }
           ],
           "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
           "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
-          "safetyPrerequisites": "No auth sid; lifecycle.enabled=true,virtualDevices=true; local schema-absent paper-only curriculum/document, no fitness-course units, no school materials config, no media/provider/program/launch/action refs; stored object session events and exact reviewed queue array only. JSON report-card/progress-report/format=json preview with previewOnly stubs; process-local memoization/corruption flags allowed, no persistent cache/provider/device/real session/ticket actions. Expiry admission and both roles checked. SAME reviewed fixture/manifest pair and exact case ID/method/query mandatory.",
+          "safetyPrerequisites": "No auth sid; lifecycle.enabled=true,virtualDevices=true; local schema-absent paper-only curriculum/document, no fitness-course units, no school materials config, no media/provider/program/launch/action refs; stored object session events and exact reviewed queue array only. JSON report-card/progress-report/format=json preview with previewOnly stubs; process-local memoization/corruption flags allowed, no persistent cache/provider/device/real session/ticket actions. Expiry admission and both roles checked. SAME reviewed fixture/manifest pair and exact case ID/method/query mandatory. Additional exact learner-home packet: lifecycle.enabled=false means WorkSessionReporter is not constructed; no language corpus/enrollment or School materials/curriculum. Synthetic two-learner normal/invalidated attempt-shard reads and configured adult teacher/profile-only Fitness listing; genuine recently ended Fitness session read only. No auth sid, provider enrollment/device identify/resume/merge/write. Exact added request ID/method/query and SAME preferred/fallback fixture-manifest pair required; all old standing fixtures/requests/diagnostics retained.",
           "sourceProof": [
             "modules/school/server/application/GetSchoolReport.mjs",
             "modules/school/server/application/WorkSessionReporter.mjs",
@@ -41878,16 +41898,54 @@
             {
               "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
               "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+            },
+            {
+              "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+              "manifestSha256": "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1"
+            },
+            {
+              "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+              "manifestSha256": "29035274d7930c8b82b4f5fbed8e1565e8eeedaf9e492d9da9c3c8882bf95905"
             }
           ],
           "approvedFixtureSha256": [
-            "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e"
+            "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+            "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+            "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e"
           ],
           "approvedManifestSha256": [
-            "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+            "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+            "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1",
+            "29035274d7930c8b82b4f5fbed8e1565e8eeedaf9e492d9da9c3c8882bf95905"
           ],
           "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
-          "denominatorContribution": "new-template"
+          "denominatorContribution": "new-template",
+          "reviewedBranchExtensions": [
+            {
+              "name": "learner-home-quiz-report-join",
+              "requestCaseIds": [
+                "learner-home-report-learner",
+                "learner-home-report-parent",
+                "learner-home-report-sibling",
+                "learner-home-report-household"
+              ],
+              "approvedPackets": [
+                {
+                  "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+                  "manifestSha256": "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1"
+                },
+                {
+                  "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+                  "manifestSha256": "29035274d7930c8b82b4f5fbed8e1565e8eeedaf9e492d9da9c3c8882bf95905"
+                }
+              ],
+              "sourceGuardSha256": "c2cb701e3ecd3def5123df173eca169c743988bc5a30bfd24460658bc5a11236",
+              "packetHandoff": "/tmp/readiness-learner-home-pack/HANDOFF.json",
+              "reviewRequiredBeforeApply": "/tmp/readiness-learner-home-pack/review.json",
+              "effects": "Pure aggregate of stored quiz attempts; inert lifecycle excludes WorkSessionReporter and its caches/actions. Original baseline pending-date expectations untouched.",
+              "noDenominatorGrowth": true
+            }
+          ]
         }
       ]
     },
@@ -49228,8 +49286,8 @@
     "counts": {
       "historicalLiveUniqueCases": 134,
       "historicalLiveIndependentContracts": 125,
-      "isolatedUniqueAcceptedCaseIds": 157,
-      "isolatedAcceptedOccurrences": 157,
+      "isolatedUniqueAcceptedCaseIds": 265,
+      "isolatedAcceptedOccurrences": 265,
       "isolatedReplayIdsAlreadyLive": [
         "health-catalog-food-not-found",
         "health-catalog-missing-query",
@@ -49260,6 +49318,25 @@
         "critical-school-authored-catalog",
         "critical-school-lesson-comparison",
         "critical-school-lesson-intro",
+        "daily-catalogs-art-gallery",
+        "daily-catalogs-art-landscapes",
+        "daily-catalogs-art-morning",
+        "daily-catalogs-art-wide",
+        "daily-catalogs-browse",
+        "daily-catalogs-courses-language",
+        "daily-catalogs-courses-sentence-ladder",
+        "daily-catalogs-donow-surfaces",
+        "daily-catalogs-earn-rules",
+        "daily-catalogs-feed-workspace",
+        "daily-catalogs-headline-pages",
+        "daily-catalogs-headlines-books",
+        "daily-catalogs-headlines-local",
+        "daily-catalogs-headlines-science",
+        "daily-catalogs-preview-korean-all-input",
+        "daily-catalogs-preview-korean-default",
+        "daily-catalogs-preview-korean-english-input",
+        "daily-catalogs-preview-korean-microphone",
+        "daily-catalogs-vehicle-overview",
         "dashboard-health-date-populated",
         "dashboard-health-date-sparse",
         "dashboard-health-pending-scanner",
@@ -49274,6 +49351,29 @@
         "dashboard-piano-board-day",
         "dashboard-school-code-upper",
         "dashboard-school-code-zero",
+        "device-home-configuration",
+        "device-home-entitlement-detail",
+        "device-home-entitlements-all",
+        "device-home-entitlements-denied",
+        "device-home-entropy-home",
+        "device-home-entropy-home-automation",
+        "device-home-entropy-missing",
+        "device-home-entropy-practice",
+        "device-home-entropy-reading",
+        "device-home-entropy-report",
+        "device-home-entropy-tasks",
+        "device-home-fleet",
+        "device-home-presence-synthetic-reading-panel",
+        "device-home-presence-synthetic-unknown-panel",
+        "device-home-self-input-unidentified",
+        "device-home-session-synthetic-reading-panel",
+        "device-home-session-synthetic-unknown-panel",
+        "device-home-start-unobserved",
+        "device-home-state-all",
+        "device-home-state-detail",
+        "device-home-state-learner",
+        "device-home-status-home",
+        "device-home-status-home-automation",
         "following-auto-authored-place",
         "following-fitness-skyline-stored-run",
         "following-fitness-workout-run-projection",
@@ -49293,13 +49393,69 @@
         "gaming-filtered-experience-catalog",
         "gaming-party-catalog",
         "gaming-populated-environment",
+        "gaming-school-assets-candidate-not-published",
+        "gaming-school-assets-catalog",
+        "gaming-school-assets-flashcard-image",
+        "gaming-school-assets-image-tile.base",
+        "gaming-school-assets-image-tile.green",
+        "gaming-school-assets-party-media",
+        "gaming-school-assets-stored-effects",
+        "household-history-attempts-all",
+        "household-history-attempts-challenge",
+        "household-history-attempts-combined",
+        "household-history-attempts-context",
+        "household-history-attempts-exercise",
+        "household-history-attempts-limit",
+        "household-history-attempts-practice",
+        "household-history-household",
+        "household-history-list-detail-menus",
+        "household-history-list-detail-watchlists",
+        "household-history-list-overview",
+        "household-history-list-type-menus",
+        "household-history-list-type-programs",
+        "household-history-list-type-watchlists",
+        "household-history-login-context",
+        "household-history-member-user_1",
+        "household-history-member-user_2",
+        "household-history-member-user_3",
+        "household-history-pass-overrides",
+        "household-history-placement-user_1",
+        "household-history-placement-user_2",
+        "household-history-placement-user_3",
+        "household-history-setup-status",
         "integrated-admin-fitness-household-timezone",
         "integrated-admin-piano-household-timezone",
+        "learner-home-fitness-fingerprints",
+        "learner-home-report-household",
+        "learner-home-report-learner",
+        "learner-home-report-parent",
+        "learner-home-report-sibling",
+        "learner-home-results-cards",
+        "learner-home-results-math",
+        "learner-home-results-multibank",
+        "learner-home-results-other",
+        "learner-home-resumable-bare",
+        "learner-home-resumable-prefixed",
+        "learner-home-roster",
+        "learner-home-teachers",
         "ledger-household-device-bounds",
         "ledger-household-plays",
         "ledger-household-time-limit",
         "ledger-merged-screen-started-by",
         "ledger-screen-started-by",
+        "life-piano-briefing-user_2",
+        "life-piano-dashboard",
+        "life-piano-lesson-drill",
+        "life-piano-lesson-index",
+        "life-piano-lesson-missing",
+        "life-piano-plan-user_1",
+        "life-piano-plan-user_2",
+        "life-piano-priorities-default",
+        "life-piano-priorities-explicit",
+        "life-piano-schedule-ical",
+        "life-piano-schedule-json",
+        "life-piano-schedule-rss",
+        "life-piano-schedule-xml",
         "reading-configured-aliases",
         "reading-hymn-detail",
         "reading-hymn-index",
@@ -49340,6 +49496,16 @@
         "stored-fitness-workout-synthetic-mobility",
         "stored-fitness-workout-synthetic-strength",
         "stored-fitness-workouts",
+        "stored-history-events-all",
+        "stored-history-events-day",
+        "stored-history-events-motion",
+        "stored-history-fuel",
+        "stored-history-journeys-day",
+        "stored-history-journeys-default",
+        "stored-history-journeys-shuffles",
+        "stored-history-media-favourites",
+        "stored-history-media-queue",
+        "stored-history-media-removed",
         "surfaces-legacy-home-calendar",
         "surfaces-legacy-home-events",
         "surfaces-legacy-home-todos",
@@ -49391,11 +49557,11 @@
         "timeline-lifelog-day",
         "timeline-lifelog-sources"
       ],
-      "unionUniqueAcceptedCaseIds": 277,
-      "unionIndependentContracts": 268,
+      "unionUniqueAcceptedCaseIds": 385,
+      "unionIndependentContracts": 376,
       "newLiveTemplates": 2,
-      "isolatedDistinctTemplates": 120,
-      "newIsolatedTemplates": 113,
+      "isolatedDistinctTemplates": 179,
+      "newIsolatedTemplates": 172,
       "pendingNext15": {
         "cases": 15,
         "terminalResult": {
@@ -51619,6 +51785,3128 @@
           "path": "/tmp/readiness-admin-timezone-execution/result-review.json",
           "sha256": "4b5d3e9e83db5b9e3d91329ee4522be6ddc0510ad9d30b6042363f768f5c3e2e"
         }
+      },
+      {
+        "id": "household-history-household",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/admin/household",
+        "declarationIds": [
+          "decl-1639635f9e0d3c08734a34de-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "80ee90b3a3ca071d59e10843cca1811359111ce398d95caa05e26272c7735a41",
+        "manifestSha256": "201007f6261b16a3b5bd2a95fc3bf2bccac95d3ad3f74ebcdc4e42e874e7d42b",
+        "result": {
+          "path": "/tmp/readiness-household-piano-history23-pair/pair-result.json",
+          "sha256": "1982b473f5fedd0e4b3b34d82c77a5111d0731ce2008c8305b08fd77038aa47e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-piano-history-execution/proof.json",
+          "sha256": "a6da59f81b69151f7ffdb338565e3763cc6eff32c328593b5c31fb90cfe1b534"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-piano-history-execution/result-review.json",
+          "sha256": "44110a57aa648469fab0f9f3633df26ed10b8ede2b0d36b0c033de3a5e1533e1"
+        }
+      },
+      {
+        "id": "household-history-member-user_1",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/admin/household/members/:username",
+        "declarationIds": [
+          "decl-e666ac63fb3d6c67982d780f-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "80ee90b3a3ca071d59e10843cca1811359111ce398d95caa05e26272c7735a41",
+        "manifestSha256": "201007f6261b16a3b5bd2a95fc3bf2bccac95d3ad3f74ebcdc4e42e874e7d42b",
+        "result": {
+          "path": "/tmp/readiness-household-piano-history23-pair/pair-result.json",
+          "sha256": "1982b473f5fedd0e4b3b34d82c77a5111d0731ce2008c8305b08fd77038aa47e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-piano-history-execution/proof.json",
+          "sha256": "a6da59f81b69151f7ffdb338565e3763cc6eff32c328593b5c31fb90cfe1b534"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-piano-history-execution/result-review.json",
+          "sha256": "44110a57aa648469fab0f9f3633df26ed10b8ede2b0d36b0c033de3a5e1533e1"
+        }
+      },
+      {
+        "id": "household-history-member-user_2",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/admin/household/members/:username",
+        "declarationIds": [
+          "decl-e666ac63fb3d6c67982d780f-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "80ee90b3a3ca071d59e10843cca1811359111ce398d95caa05e26272c7735a41",
+        "manifestSha256": "201007f6261b16a3b5bd2a95fc3bf2bccac95d3ad3f74ebcdc4e42e874e7d42b",
+        "result": {
+          "path": "/tmp/readiness-household-piano-history23-pair/pair-result.json",
+          "sha256": "1982b473f5fedd0e4b3b34d82c77a5111d0731ce2008c8305b08fd77038aa47e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-piano-history-execution/proof.json",
+          "sha256": "a6da59f81b69151f7ffdb338565e3763cc6eff32c328593b5c31fb90cfe1b534"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-piano-history-execution/result-review.json",
+          "sha256": "44110a57aa648469fab0f9f3633df26ed10b8ede2b0d36b0c033de3a5e1533e1"
+        }
+      },
+      {
+        "id": "household-history-member-user_3",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/admin/household/members/:username",
+        "declarationIds": [
+          "decl-e666ac63fb3d6c67982d780f-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "80ee90b3a3ca071d59e10843cca1811359111ce398d95caa05e26272c7735a41",
+        "manifestSha256": "201007f6261b16a3b5bd2a95fc3bf2bccac95d3ad3f74ebcdc4e42e874e7d42b",
+        "result": {
+          "path": "/tmp/readiness-household-piano-history23-pair/pair-result.json",
+          "sha256": "1982b473f5fedd0e4b3b34d82c77a5111d0731ce2008c8305b08fd77038aa47e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-piano-history-execution/proof.json",
+          "sha256": "a6da59f81b69151f7ffdb338565e3763cc6eff32c328593b5c31fb90cfe1b534"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-piano-history-execution/result-review.json",
+          "sha256": "44110a57aa648469fab0f9f3633df26ed10b8ede2b0d36b0c033de3a5e1533e1"
+        }
+      },
+      {
+        "id": "household-history-login-context",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/auth/context",
+        "declarationIds": [
+          "decl-c7b4f1fd4574704b21d4b2e2-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "80ee90b3a3ca071d59e10843cca1811359111ce398d95caa05e26272c7735a41",
+        "manifestSha256": "201007f6261b16a3b5bd2a95fc3bf2bccac95d3ad3f74ebcdc4e42e874e7d42b",
+        "result": {
+          "path": "/tmp/readiness-household-piano-history23-pair/pair-result.json",
+          "sha256": "1982b473f5fedd0e4b3b34d82c77a5111d0731ce2008c8305b08fd77038aa47e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-piano-history-execution/proof.json",
+          "sha256": "a6da59f81b69151f7ffdb338565e3763cc6eff32c328593b5c31fb90cfe1b534"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-piano-history-execution/result-review.json",
+          "sha256": "44110a57aa648469fab0f9f3633df26ed10b8ede2b0d36b0c033de3a5e1533e1"
+        }
+      },
+      {
+        "id": "household-history-setup-status",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/auth/setup-status",
+        "declarationIds": [
+          "decl-8d2bc23be446d180110dfb5d-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "80ee90b3a3ca071d59e10843cca1811359111ce398d95caa05e26272c7735a41",
+        "manifestSha256": "201007f6261b16a3b5bd2a95fc3bf2bccac95d3ad3f74ebcdc4e42e874e7d42b",
+        "result": {
+          "path": "/tmp/readiness-household-piano-history23-pair/pair-result.json",
+          "sha256": "1982b473f5fedd0e4b3b34d82c77a5111d0731ce2008c8305b08fd77038aa47e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-piano-history-execution/proof.json",
+          "sha256": "a6da59f81b69151f7ffdb338565e3763cc6eff32c328593b5c31fb90cfe1b534"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-piano-history-execution/result-review.json",
+          "sha256": "44110a57aa648469fab0f9f3633df26ed10b8ede2b0d36b0c033de3a5e1533e1"
+        }
+      },
+      {
+        "id": "household-history-placement-user_1",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/piano/users/:userId/piano-challenge-profile",
+        "declarationIds": [
+          "decl-f776a3a36eacefd31575b780-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "80ee90b3a3ca071d59e10843cca1811359111ce398d95caa05e26272c7735a41",
+        "manifestSha256": "201007f6261b16a3b5bd2a95fc3bf2bccac95d3ad3f74ebcdc4e42e874e7d42b",
+        "result": {
+          "path": "/tmp/readiness-household-piano-history23-pair/pair-result.json",
+          "sha256": "1982b473f5fedd0e4b3b34d82c77a5111d0731ce2008c8305b08fd77038aa47e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-piano-history-execution/proof.json",
+          "sha256": "a6da59f81b69151f7ffdb338565e3763cc6eff32c328593b5c31fb90cfe1b534"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-piano-history-execution/result-review.json",
+          "sha256": "44110a57aa648469fab0f9f3633df26ed10b8ede2b0d36b0c033de3a5e1533e1"
+        }
+      },
+      {
+        "id": "household-history-placement-user_2",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/piano/users/:userId/piano-challenge-profile",
+        "declarationIds": [
+          "decl-f776a3a36eacefd31575b780-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "80ee90b3a3ca071d59e10843cca1811359111ce398d95caa05e26272c7735a41",
+        "manifestSha256": "201007f6261b16a3b5bd2a95fc3bf2bccac95d3ad3f74ebcdc4e42e874e7d42b",
+        "result": {
+          "path": "/tmp/readiness-household-piano-history23-pair/pair-result.json",
+          "sha256": "1982b473f5fedd0e4b3b34d82c77a5111d0731ce2008c8305b08fd77038aa47e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-piano-history-execution/proof.json",
+          "sha256": "a6da59f81b69151f7ffdb338565e3763cc6eff32c328593b5c31fb90cfe1b534"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-piano-history-execution/result-review.json",
+          "sha256": "44110a57aa648469fab0f9f3633df26ed10b8ede2b0d36b0c033de3a5e1533e1"
+        }
+      },
+      {
+        "id": "household-history-placement-user_3",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/piano/users/:userId/piano-challenge-profile",
+        "declarationIds": [
+          "decl-f776a3a36eacefd31575b780-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "80ee90b3a3ca071d59e10843cca1811359111ce398d95caa05e26272c7735a41",
+        "manifestSha256": "201007f6261b16a3b5bd2a95fc3bf2bccac95d3ad3f74ebcdc4e42e874e7d42b",
+        "result": {
+          "path": "/tmp/readiness-household-piano-history23-pair/pair-result.json",
+          "sha256": "1982b473f5fedd0e4b3b34d82c77a5111d0731ce2008c8305b08fd77038aa47e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-piano-history-execution/proof.json",
+          "sha256": "a6da59f81b69151f7ffdb338565e3763cc6eff32c328593b5c31fb90cfe1b534"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-piano-history-execution/result-review.json",
+          "sha256": "44110a57aa648469fab0f9f3633df26ed10b8ede2b0d36b0c033de3a5e1533e1"
+        }
+      },
+      {
+        "id": "household-history-attempts-all",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/piano/users/:userId/attempts",
+        "declarationIds": [
+          "decl-8ced6f6e5a96e4d4ff7a5133-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "80ee90b3a3ca071d59e10843cca1811359111ce398d95caa05e26272c7735a41",
+        "manifestSha256": "201007f6261b16a3b5bd2a95fc3bf2bccac95d3ad3f74ebcdc4e42e874e7d42b",
+        "result": {
+          "path": "/tmp/readiness-household-piano-history23-pair/pair-result.json",
+          "sha256": "1982b473f5fedd0e4b3b34d82c77a5111d0731ce2008c8305b08fd77038aa47e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-piano-history-execution/proof.json",
+          "sha256": "a6da59f81b69151f7ffdb338565e3763cc6eff32c328593b5c31fb90cfe1b534"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-piano-history-execution/result-review.json",
+          "sha256": "44110a57aa648469fab0f9f3633df26ed10b8ede2b0d36b0c033de3a5e1533e1"
+        }
+      },
+      {
+        "id": "household-history-attempts-limit",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/piano/users/:userId/attempts",
+        "declarationIds": [
+          "decl-8ced6f6e5a96e4d4ff7a5133-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "80ee90b3a3ca071d59e10843cca1811359111ce398d95caa05e26272c7735a41",
+        "manifestSha256": "201007f6261b16a3b5bd2a95fc3bf2bccac95d3ad3f74ebcdc4e42e874e7d42b",
+        "result": {
+          "path": "/tmp/readiness-household-piano-history23-pair/pair-result.json",
+          "sha256": "1982b473f5fedd0e4b3b34d82c77a5111d0731ce2008c8305b08fd77038aa47e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-piano-history-execution/proof.json",
+          "sha256": "a6da59f81b69151f7ffdb338565e3763cc6eff32c328593b5c31fb90cfe1b534"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-piano-history-execution/result-review.json",
+          "sha256": "44110a57aa648469fab0f9f3633df26ed10b8ede2b0d36b0c033de3a5e1533e1"
+        }
+      },
+      {
+        "id": "household-history-attempts-exercise",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/piano/users/:userId/attempts",
+        "declarationIds": [
+          "decl-8ced6f6e5a96e4d4ff7a5133-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "80ee90b3a3ca071d59e10843cca1811359111ce398d95caa05e26272c7735a41",
+        "manifestSha256": "201007f6261b16a3b5bd2a95fc3bf2bccac95d3ad3f74ebcdc4e42e874e7d42b",
+        "result": {
+          "path": "/tmp/readiness-household-piano-history23-pair/pair-result.json",
+          "sha256": "1982b473f5fedd0e4b3b34d82c77a5111d0731ce2008c8305b08fd77038aa47e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-piano-history-execution/proof.json",
+          "sha256": "a6da59f81b69151f7ffdb338565e3763cc6eff32c328593b5c31fb90cfe1b534"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-piano-history-execution/result-review.json",
+          "sha256": "44110a57aa648469fab0f9f3633df26ed10b8ede2b0d36b0c033de3a5e1533e1"
+        }
+      },
+      {
+        "id": "household-history-attempts-practice",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/piano/users/:userId/attempts",
+        "declarationIds": [
+          "decl-8ced6f6e5a96e4d4ff7a5133-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "80ee90b3a3ca071d59e10843cca1811359111ce398d95caa05e26272c7735a41",
+        "manifestSha256": "201007f6261b16a3b5bd2a95fc3bf2bccac95d3ad3f74ebcdc4e42e874e7d42b",
+        "result": {
+          "path": "/tmp/readiness-household-piano-history23-pair/pair-result.json",
+          "sha256": "1982b473f5fedd0e4b3b34d82c77a5111d0731ce2008c8305b08fd77038aa47e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-piano-history-execution/proof.json",
+          "sha256": "a6da59f81b69151f7ffdb338565e3763cc6eff32c328593b5c31fb90cfe1b534"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-piano-history-execution/result-review.json",
+          "sha256": "44110a57aa648469fab0f9f3633df26ed10b8ede2b0d36b0c033de3a5e1533e1"
+        }
+      },
+      {
+        "id": "household-history-attempts-challenge",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/piano/users/:userId/attempts",
+        "declarationIds": [
+          "decl-8ced6f6e5a96e4d4ff7a5133-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "80ee90b3a3ca071d59e10843cca1811359111ce398d95caa05e26272c7735a41",
+        "manifestSha256": "201007f6261b16a3b5bd2a95fc3bf2bccac95d3ad3f74ebcdc4e42e874e7d42b",
+        "result": {
+          "path": "/tmp/readiness-household-piano-history23-pair/pair-result.json",
+          "sha256": "1982b473f5fedd0e4b3b34d82c77a5111d0731ce2008c8305b08fd77038aa47e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-piano-history-execution/proof.json",
+          "sha256": "a6da59f81b69151f7ffdb338565e3763cc6eff32c328593b5c31fb90cfe1b534"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-piano-history-execution/result-review.json",
+          "sha256": "44110a57aa648469fab0f9f3633df26ed10b8ede2b0d36b0c033de3a5e1533e1"
+        }
+      },
+      {
+        "id": "household-history-attempts-context",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/piano/users/:userId/attempts",
+        "declarationIds": [
+          "decl-8ced6f6e5a96e4d4ff7a5133-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "80ee90b3a3ca071d59e10843cca1811359111ce398d95caa05e26272c7735a41",
+        "manifestSha256": "201007f6261b16a3b5bd2a95fc3bf2bccac95d3ad3f74ebcdc4e42e874e7d42b",
+        "result": {
+          "path": "/tmp/readiness-household-piano-history23-pair/pair-result.json",
+          "sha256": "1982b473f5fedd0e4b3b34d82c77a5111d0731ce2008c8305b08fd77038aa47e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-piano-history-execution/proof.json",
+          "sha256": "a6da59f81b69151f7ffdb338565e3763cc6eff32c328593b5c31fb90cfe1b534"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-piano-history-execution/result-review.json",
+          "sha256": "44110a57aa648469fab0f9f3633df26ed10b8ede2b0d36b0c033de3a5e1533e1"
+        }
+      },
+      {
+        "id": "household-history-attempts-combined",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/piano/users/:userId/attempts",
+        "declarationIds": [
+          "decl-8ced6f6e5a96e4d4ff7a5133-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "80ee90b3a3ca071d59e10843cca1811359111ce398d95caa05e26272c7735a41",
+        "manifestSha256": "201007f6261b16a3b5bd2a95fc3bf2bccac95d3ad3f74ebcdc4e42e874e7d42b",
+        "result": {
+          "path": "/tmp/readiness-household-piano-history23-pair/pair-result.json",
+          "sha256": "1982b473f5fedd0e4b3b34d82c77a5111d0731ce2008c8305b08fd77038aa47e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-piano-history-execution/proof.json",
+          "sha256": "a6da59f81b69151f7ffdb338565e3763cc6eff32c328593b5c31fb90cfe1b534"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-piano-history-execution/result-review.json",
+          "sha256": "44110a57aa648469fab0f9f3633df26ed10b8ede2b0d36b0c033de3a5e1533e1"
+        }
+      },
+      {
+        "id": "household-history-pass-overrides",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/pass-overrides",
+        "declarationIds": [
+          "decl-e55774e2d1a64af32dc23bf9-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "80ee90b3a3ca071d59e10843cca1811359111ce398d95caa05e26272c7735a41",
+        "manifestSha256": "201007f6261b16a3b5bd2a95fc3bf2bccac95d3ad3f74ebcdc4e42e874e7d42b",
+        "result": {
+          "path": "/tmp/readiness-household-piano-history23-pair/pair-result.json",
+          "sha256": "1982b473f5fedd0e4b3b34d82c77a5111d0731ce2008c8305b08fd77038aa47e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-piano-history-execution/proof.json",
+          "sha256": "a6da59f81b69151f7ffdb338565e3763cc6eff32c328593b5c31fb90cfe1b534"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-piano-history-execution/result-review.json",
+          "sha256": "44110a57aa648469fab0f9f3633df26ed10b8ede2b0d36b0c033de3a5e1533e1"
+        }
+      },
+      {
+        "id": "household-history-list-overview",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/admin/content/lists",
+        "declarationIds": [
+          "decl-c9911a93f2e30df1a5990bd6-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "80ee90b3a3ca071d59e10843cca1811359111ce398d95caa05e26272c7735a41",
+        "manifestSha256": "201007f6261b16a3b5bd2a95fc3bf2bccac95d3ad3f74ebcdc4e42e874e7d42b",
+        "result": {
+          "path": "/tmp/readiness-household-piano-history23-pair/pair-result.json",
+          "sha256": "1982b473f5fedd0e4b3b34d82c77a5111d0731ce2008c8305b08fd77038aa47e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-piano-history-execution/proof.json",
+          "sha256": "a6da59f81b69151f7ffdb338565e3763cc6eff32c328593b5c31fb90cfe1b534"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-piano-history-execution/result-review.json",
+          "sha256": "44110a57aa648469fab0f9f3633df26ed10b8ede2b0d36b0c033de3a5e1533e1"
+        }
+      },
+      {
+        "id": "household-history-list-type-menus",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/admin/content/lists/:type",
+        "declarationIds": [
+          "decl-da40b1b45573d81bec9bcf6b-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "80ee90b3a3ca071d59e10843cca1811359111ce398d95caa05e26272c7735a41",
+        "manifestSha256": "201007f6261b16a3b5bd2a95fc3bf2bccac95d3ad3f74ebcdc4e42e874e7d42b",
+        "result": {
+          "path": "/tmp/readiness-household-piano-history23-pair/pair-result.json",
+          "sha256": "1982b473f5fedd0e4b3b34d82c77a5111d0731ce2008c8305b08fd77038aa47e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-piano-history-execution/proof.json",
+          "sha256": "a6da59f81b69151f7ffdb338565e3763cc6eff32c328593b5c31fb90cfe1b534"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-piano-history-execution/result-review.json",
+          "sha256": "44110a57aa648469fab0f9f3633df26ed10b8ede2b0d36b0c033de3a5e1533e1"
+        }
+      },
+      {
+        "id": "household-history-list-type-watchlists",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/admin/content/lists/:type",
+        "declarationIds": [
+          "decl-da40b1b45573d81bec9bcf6b-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "80ee90b3a3ca071d59e10843cca1811359111ce398d95caa05e26272c7735a41",
+        "manifestSha256": "201007f6261b16a3b5bd2a95fc3bf2bccac95d3ad3f74ebcdc4e42e874e7d42b",
+        "result": {
+          "path": "/tmp/readiness-household-piano-history23-pair/pair-result.json",
+          "sha256": "1982b473f5fedd0e4b3b34d82c77a5111d0731ce2008c8305b08fd77038aa47e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-piano-history-execution/proof.json",
+          "sha256": "a6da59f81b69151f7ffdb338565e3763cc6eff32c328593b5c31fb90cfe1b534"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-piano-history-execution/result-review.json",
+          "sha256": "44110a57aa648469fab0f9f3633df26ed10b8ede2b0d36b0c033de3a5e1533e1"
+        }
+      },
+      {
+        "id": "household-history-list-type-programs",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/admin/content/lists/:type",
+        "declarationIds": [
+          "decl-da40b1b45573d81bec9bcf6b-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "80ee90b3a3ca071d59e10843cca1811359111ce398d95caa05e26272c7735a41",
+        "manifestSha256": "201007f6261b16a3b5bd2a95fc3bf2bccac95d3ad3f74ebcdc4e42e874e7d42b",
+        "result": {
+          "path": "/tmp/readiness-household-piano-history23-pair/pair-result.json",
+          "sha256": "1982b473f5fedd0e4b3b34d82c77a5111d0731ce2008c8305b08fd77038aa47e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-piano-history-execution/proof.json",
+          "sha256": "a6da59f81b69151f7ffdb338565e3763cc6eff32c328593b5c31fb90cfe1b534"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-piano-history-execution/result-review.json",
+          "sha256": "44110a57aa648469fab0f9f3633df26ed10b8ede2b0d36b0c033de3a5e1533e1"
+        }
+      },
+      {
+        "id": "household-history-list-detail-menus",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/admin/content/lists/:type/:name",
+        "declarationIds": [
+          "decl-9d62810284db6ae8b6629765-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "80ee90b3a3ca071d59e10843cca1811359111ce398d95caa05e26272c7735a41",
+        "manifestSha256": "201007f6261b16a3b5bd2a95fc3bf2bccac95d3ad3f74ebcdc4e42e874e7d42b",
+        "result": {
+          "path": "/tmp/readiness-household-piano-history23-pair/pair-result.json",
+          "sha256": "1982b473f5fedd0e4b3b34d82c77a5111d0731ce2008c8305b08fd77038aa47e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-piano-history-execution/proof.json",
+          "sha256": "a6da59f81b69151f7ffdb338565e3763cc6eff32c328593b5c31fb90cfe1b534"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-piano-history-execution/result-review.json",
+          "sha256": "44110a57aa648469fab0f9f3633df26ed10b8ede2b0d36b0c033de3a5e1533e1"
+        }
+      },
+      {
+        "id": "household-history-list-detail-watchlists",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/admin/content/lists/:type/:name",
+        "declarationIds": [
+          "decl-9d62810284db6ae8b6629765-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "80ee90b3a3ca071d59e10843cca1811359111ce398d95caa05e26272c7735a41",
+        "manifestSha256": "201007f6261b16a3b5bd2a95fc3bf2bccac95d3ad3f74ebcdc4e42e874e7d42b",
+        "result": {
+          "path": "/tmp/readiness-household-piano-history23-pair/pair-result.json",
+          "sha256": "1982b473f5fedd0e4b3b34d82c77a5111d0731ce2008c8305b08fd77038aa47e"
+        },
+        "proof": {
+          "path": "/tmp/readiness-household-piano-history-execution/proof.json",
+          "sha256": "a6da59f81b69151f7ffdb338565e3763cc6eff32c328593b5c31fb90cfe1b534"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-household-piano-history-execution/result-review.json",
+          "sha256": "44110a57aa648469fab0f9f3633df26ed10b8ede2b0d36b0c033de3a5e1533e1"
+        }
+      },
+      {
+        "id": "daily-catalogs-browse",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/list",
+        "declarationIds": [
+          "decl-cadcc10ae3f56c83d9ac72a0-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration-reviewed-offline-three-validator-derivation",
+        "fixtureSha256": "73d58dd8c604b543cf337b1653e38568029baedf3759b5bf5b89e2de44ca3ac7",
+        "manifestSha256": "c73002360cdc0d37b1911c3734042d06b39933cbd40034e30f9610530a28e262",
+        "result": {
+          "path": "/tmp/readiness-daily-catalogs19-pair/pair-result.json",
+          "sha256": "650f5ae07563e37ac2ebb979fd1060d183a4f4a150921267de9d362628014d77"
+        },
+        "proof": {
+          "path": "/tmp/readiness-daily-catalogs-execution/proof.json",
+          "sha256": "4f40c49af30894dbdc17515f206676976ebbbfbcf79e2f04686159f7127a3c7e"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-browse-contract-correction/derived-result-review.json",
+          "sha256": "e349a664bcc9176530927f3b555ce5d3b40bb7d90bda75b20c67992cf6cdc8da"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-browse-contract-correction/daily-catalogs-derived-receipt.json",
+          "sha256": "536eadb883f1f24e233f6db3273e3d8233e0e41b59f2073511173e4168e5b18e"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-browse-contract-correction/corrected-manifest.json",
+          "sha256": "0571b92056860333f01c54e97843480c67a69695e3fb92fa8074575a2c4ef26c"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true,
+        "originalFailedComparisonPreserved": true
+      },
+      {
+        "id": "daily-catalogs-art-morning",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/art/preset/:key",
+        "declarationIds": [
+          "decl-a3b475fdbfba6f832ad04d46-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration-reviewed-offline-three-validator-derivation",
+        "fixtureSha256": "73d58dd8c604b543cf337b1653e38568029baedf3759b5bf5b89e2de44ca3ac7",
+        "manifestSha256": "c73002360cdc0d37b1911c3734042d06b39933cbd40034e30f9610530a28e262",
+        "result": {
+          "path": "/tmp/readiness-daily-catalogs19-pair/pair-result.json",
+          "sha256": "650f5ae07563e37ac2ebb979fd1060d183a4f4a150921267de9d362628014d77"
+        },
+        "proof": {
+          "path": "/tmp/readiness-daily-catalogs-execution/proof.json",
+          "sha256": "4f40c49af30894dbdc17515f206676976ebbbfbcf79e2f04686159f7127a3c7e"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-browse-contract-correction/derived-result-review.json",
+          "sha256": "e349a664bcc9176530927f3b555ce5d3b40bb7d90bda75b20c67992cf6cdc8da"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-browse-contract-correction/daily-catalogs-derived-receipt.json",
+          "sha256": "536eadb883f1f24e233f6db3273e3d8233e0e41b59f2073511173e4168e5b18e"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-browse-contract-correction/corrected-manifest.json",
+          "sha256": "0571b92056860333f01c54e97843480c67a69695e3fb92fa8074575a2c4ef26c"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true,
+        "originalFailedComparisonPreserved": true
+      },
+      {
+        "id": "daily-catalogs-art-gallery",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/art/preset/:key",
+        "declarationIds": [
+          "decl-a3b475fdbfba6f832ad04d46-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration-reviewed-offline-three-validator-derivation",
+        "fixtureSha256": "73d58dd8c604b543cf337b1653e38568029baedf3759b5bf5b89e2de44ca3ac7",
+        "manifestSha256": "c73002360cdc0d37b1911c3734042d06b39933cbd40034e30f9610530a28e262",
+        "result": {
+          "path": "/tmp/readiness-daily-catalogs19-pair/pair-result.json",
+          "sha256": "650f5ae07563e37ac2ebb979fd1060d183a4f4a150921267de9d362628014d77"
+        },
+        "proof": {
+          "path": "/tmp/readiness-daily-catalogs-execution/proof.json",
+          "sha256": "4f40c49af30894dbdc17515f206676976ebbbfbcf79e2f04686159f7127a3c7e"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-browse-contract-correction/derived-result-review.json",
+          "sha256": "e349a664bcc9176530927f3b555ce5d3b40bb7d90bda75b20c67992cf6cdc8da"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-browse-contract-correction/daily-catalogs-derived-receipt.json",
+          "sha256": "536eadb883f1f24e233f6db3273e3d8233e0e41b59f2073511173e4168e5b18e"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-browse-contract-correction/corrected-manifest.json",
+          "sha256": "0571b92056860333f01c54e97843480c67a69695e3fb92fa8074575a2c4ef26c"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true,
+        "originalFailedComparisonPreserved": true
+      },
+      {
+        "id": "daily-catalogs-art-wide",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/art/preset/:key",
+        "declarationIds": [
+          "decl-a3b475fdbfba6f832ad04d46-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration-reviewed-offline-three-validator-derivation",
+        "fixtureSha256": "73d58dd8c604b543cf337b1653e38568029baedf3759b5bf5b89e2de44ca3ac7",
+        "manifestSha256": "c73002360cdc0d37b1911c3734042d06b39933cbd40034e30f9610530a28e262",
+        "result": {
+          "path": "/tmp/readiness-daily-catalogs19-pair/pair-result.json",
+          "sha256": "650f5ae07563e37ac2ebb979fd1060d183a4f4a150921267de9d362628014d77"
+        },
+        "proof": {
+          "path": "/tmp/readiness-daily-catalogs-execution/proof.json",
+          "sha256": "4f40c49af30894dbdc17515f206676976ebbbfbcf79e2f04686159f7127a3c7e"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-browse-contract-correction/derived-result-review.json",
+          "sha256": "e349a664bcc9176530927f3b555ce5d3b40bb7d90bda75b20c67992cf6cdc8da"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-browse-contract-correction/daily-catalogs-derived-receipt.json",
+          "sha256": "536eadb883f1f24e233f6db3273e3d8233e0e41b59f2073511173e4168e5b18e"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-browse-contract-correction/corrected-manifest.json",
+          "sha256": "0571b92056860333f01c54e97843480c67a69695e3fb92fa8074575a2c4ef26c"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true,
+        "originalFailedComparisonPreserved": true
+      },
+      {
+        "id": "daily-catalogs-art-landscapes",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/art/preset/:key",
+        "declarationIds": [
+          "decl-a3b475fdbfba6f832ad04d46-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration-reviewed-offline-three-validator-derivation",
+        "fixtureSha256": "73d58dd8c604b543cf337b1653e38568029baedf3759b5bf5b89e2de44ca3ac7",
+        "manifestSha256": "c73002360cdc0d37b1911c3734042d06b39933cbd40034e30f9610530a28e262",
+        "result": {
+          "path": "/tmp/readiness-daily-catalogs19-pair/pair-result.json",
+          "sha256": "650f5ae07563e37ac2ebb979fd1060d183a4f4a150921267de9d362628014d77"
+        },
+        "proof": {
+          "path": "/tmp/readiness-daily-catalogs-execution/proof.json",
+          "sha256": "4f40c49af30894dbdc17515f206676976ebbbfbcf79e2f04686159f7127a3c7e"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-browse-contract-correction/derived-result-review.json",
+          "sha256": "e349a664bcc9176530927f3b555ce5d3b40bb7d90bda75b20c67992cf6cdc8da"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-browse-contract-correction/daily-catalogs-derived-receipt.json",
+          "sha256": "536eadb883f1f24e233f6db3273e3d8233e0e41b59f2073511173e4168e5b18e"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-browse-contract-correction/corrected-manifest.json",
+          "sha256": "0571b92056860333f01c54e97843480c67a69695e3fb92fa8074575a2c4ef26c"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true,
+        "originalFailedComparisonPreserved": true
+      },
+      {
+        "id": "daily-catalogs-feed-workspace",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/feed/workspace",
+        "declarationIds": [
+          "decl-0c0a56d5d82d9bc0be9ffd47-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration-reviewed-offline-three-validator-derivation",
+        "fixtureSha256": "73d58dd8c604b543cf337b1653e38568029baedf3759b5bf5b89e2de44ca3ac7",
+        "manifestSha256": "c73002360cdc0d37b1911c3734042d06b39933cbd40034e30f9610530a28e262",
+        "result": {
+          "path": "/tmp/readiness-daily-catalogs19-pair/pair-result.json",
+          "sha256": "650f5ae07563e37ac2ebb979fd1060d183a4f4a150921267de9d362628014d77"
+        },
+        "proof": {
+          "path": "/tmp/readiness-daily-catalogs-execution/proof.json",
+          "sha256": "4f40c49af30894dbdc17515f206676976ebbbfbcf79e2f04686159f7127a3c7e"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-browse-contract-correction/derived-result-review.json",
+          "sha256": "e349a664bcc9176530927f3b555ce5d3b40bb7d90bda75b20c67992cf6cdc8da"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-browse-contract-correction/daily-catalogs-derived-receipt.json",
+          "sha256": "536eadb883f1f24e233f6db3273e3d8233e0e41b59f2073511173e4168e5b18e"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-browse-contract-correction/corrected-manifest.json",
+          "sha256": "0571b92056860333f01c54e97843480c67a69695e3fb92fa8074575a2c4ef26c"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true,
+        "originalFailedComparisonPreserved": true
+      },
+      {
+        "id": "daily-catalogs-headline-pages",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/feed/headlines/pages",
+        "declarationIds": [
+          "decl-0298ab6dd721c1ba0776ebbb-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration-reviewed-offline-three-validator-derivation",
+        "fixtureSha256": "73d58dd8c604b543cf337b1653e38568029baedf3759b5bf5b89e2de44ca3ac7",
+        "manifestSha256": "c73002360cdc0d37b1911c3734042d06b39933cbd40034e30f9610530a28e262",
+        "result": {
+          "path": "/tmp/readiness-daily-catalogs19-pair/pair-result.json",
+          "sha256": "650f5ae07563e37ac2ebb979fd1060d183a4f4a150921267de9d362628014d77"
+        },
+        "proof": {
+          "path": "/tmp/readiness-daily-catalogs-execution/proof.json",
+          "sha256": "4f40c49af30894dbdc17515f206676976ebbbfbcf79e2f04686159f7127a3c7e"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-browse-contract-correction/derived-result-review.json",
+          "sha256": "e349a664bcc9176530927f3b555ce5d3b40bb7d90bda75b20c67992cf6cdc8da"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-browse-contract-correction/daily-catalogs-derived-receipt.json",
+          "sha256": "536eadb883f1f24e233f6db3273e3d8233e0e41b59f2073511173e4168e5b18e"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-browse-contract-correction/corrected-manifest.json",
+          "sha256": "0571b92056860333f01c54e97843480c67a69695e3fb92fa8074575a2c4ef26c"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true,
+        "originalFailedComparisonPreserved": true
+      },
+      {
+        "id": "daily-catalogs-headlines-science",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/feed/headlines/:source",
+        "declarationIds": [
+          "decl-a0afd112459a611dc4dc6725-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration-reviewed-offline-three-validator-derivation",
+        "fixtureSha256": "73d58dd8c604b543cf337b1653e38568029baedf3759b5bf5b89e2de44ca3ac7",
+        "manifestSha256": "c73002360cdc0d37b1911c3734042d06b39933cbd40034e30f9610530a28e262",
+        "result": {
+          "path": "/tmp/readiness-daily-catalogs19-pair/pair-result.json",
+          "sha256": "650f5ae07563e37ac2ebb979fd1060d183a4f4a150921267de9d362628014d77"
+        },
+        "proof": {
+          "path": "/tmp/readiness-daily-catalogs-execution/proof.json",
+          "sha256": "4f40c49af30894dbdc17515f206676976ebbbfbcf79e2f04686159f7127a3c7e"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-browse-contract-correction/derived-result-review.json",
+          "sha256": "e349a664bcc9176530927f3b555ce5d3b40bb7d90bda75b20c67992cf6cdc8da"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-browse-contract-correction/daily-catalogs-derived-receipt.json",
+          "sha256": "536eadb883f1f24e233f6db3273e3d8233e0e41b59f2073511173e4168e5b18e"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-browse-contract-correction/corrected-manifest.json",
+          "sha256": "0571b92056860333f01c54e97843480c67a69695e3fb92fa8074575a2c4ef26c"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true,
+        "originalFailedComparisonPreserved": true
+      },
+      {
+        "id": "daily-catalogs-headlines-books",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/feed/headlines/:source",
+        "declarationIds": [
+          "decl-a0afd112459a611dc4dc6725-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration-reviewed-offline-three-validator-derivation",
+        "fixtureSha256": "73d58dd8c604b543cf337b1653e38568029baedf3759b5bf5b89e2de44ca3ac7",
+        "manifestSha256": "c73002360cdc0d37b1911c3734042d06b39933cbd40034e30f9610530a28e262",
+        "result": {
+          "path": "/tmp/readiness-daily-catalogs19-pair/pair-result.json",
+          "sha256": "650f5ae07563e37ac2ebb979fd1060d183a4f4a150921267de9d362628014d77"
+        },
+        "proof": {
+          "path": "/tmp/readiness-daily-catalogs-execution/proof.json",
+          "sha256": "4f40c49af30894dbdc17515f206676976ebbbfbcf79e2f04686159f7127a3c7e"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-browse-contract-correction/derived-result-review.json",
+          "sha256": "e349a664bcc9176530927f3b555ce5d3b40bb7d90bda75b20c67992cf6cdc8da"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-browse-contract-correction/daily-catalogs-derived-receipt.json",
+          "sha256": "536eadb883f1f24e233f6db3273e3d8233e0e41b59f2073511173e4168e5b18e"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-browse-contract-correction/corrected-manifest.json",
+          "sha256": "0571b92056860333f01c54e97843480c67a69695e3fb92fa8074575a2c4ef26c"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true,
+        "originalFailedComparisonPreserved": true
+      },
+      {
+        "id": "daily-catalogs-headlines-local",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/feed/headlines/:source",
+        "declarationIds": [
+          "decl-a0afd112459a611dc4dc6725-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration-reviewed-offline-three-validator-derivation",
+        "fixtureSha256": "73d58dd8c604b543cf337b1653e38568029baedf3759b5bf5b89e2de44ca3ac7",
+        "manifestSha256": "c73002360cdc0d37b1911c3734042d06b39933cbd40034e30f9610530a28e262",
+        "result": {
+          "path": "/tmp/readiness-daily-catalogs19-pair/pair-result.json",
+          "sha256": "650f5ae07563e37ac2ebb979fd1060d183a4f4a150921267de9d362628014d77"
+        },
+        "proof": {
+          "path": "/tmp/readiness-daily-catalogs-execution/proof.json",
+          "sha256": "4f40c49af30894dbdc17515f206676976ebbbfbcf79e2f04686159f7127a3c7e"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-browse-contract-correction/derived-result-review.json",
+          "sha256": "e349a664bcc9176530927f3b555ce5d3b40bb7d90bda75b20c67992cf6cdc8da"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-browse-contract-correction/daily-catalogs-derived-receipt.json",
+          "sha256": "536eadb883f1f24e233f6db3273e3d8233e0e41b59f2073511173e4168e5b18e"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-browse-contract-correction/corrected-manifest.json",
+          "sha256": "0571b92056860333f01c54e97843480c67a69695e3fb92fa8074575a2c4ef26c"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true,
+        "originalFailedComparisonPreserved": true
+      },
+      {
+        "id": "daily-catalogs-courses-language",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/language/courses",
+        "declarationIds": [
+          "decl-99f167eb44fc62a688f57e2f-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration-reviewed-offline-three-validator-derivation",
+        "fixtureSha256": "73d58dd8c604b543cf337b1653e38568029baedf3759b5bf5b89e2de44ca3ac7",
+        "manifestSha256": "c73002360cdc0d37b1911c3734042d06b39933cbd40034e30f9610530a28e262",
+        "result": {
+          "path": "/tmp/readiness-daily-catalogs19-pair/pair-result.json",
+          "sha256": "650f5ae07563e37ac2ebb979fd1060d183a4f4a150921267de9d362628014d77"
+        },
+        "proof": {
+          "path": "/tmp/readiness-daily-catalogs-execution/proof.json",
+          "sha256": "4f40c49af30894dbdc17515f206676976ebbbfbcf79e2f04686159f7127a3c7e"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-browse-contract-correction/derived-result-review.json",
+          "sha256": "e349a664bcc9176530927f3b555ce5d3b40bb7d90bda75b20c67992cf6cdc8da"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-browse-contract-correction/daily-catalogs-derived-receipt.json",
+          "sha256": "536eadb883f1f24e233f6db3273e3d8233e0e41b59f2073511173e4168e5b18e"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-browse-contract-correction/corrected-manifest.json",
+          "sha256": "0571b92056860333f01c54e97843480c67a69695e3fb92fa8074575a2c4ef26c"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true,
+        "originalFailedComparisonPreserved": true
+      },
+      {
+        "id": "daily-catalogs-courses-sentence-ladder",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/sentence-ladder/courses",
+        "declarationIds": [
+          "decl-99f167eb44fc62a688f57e2f-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration-reviewed-offline-three-validator-derivation",
+        "fixtureSha256": "73d58dd8c604b543cf337b1653e38568029baedf3759b5bf5b89e2de44ca3ac7",
+        "manifestSha256": "c73002360cdc0d37b1911c3734042d06b39933cbd40034e30f9610530a28e262",
+        "result": {
+          "path": "/tmp/readiness-daily-catalogs19-pair/pair-result.json",
+          "sha256": "650f5ae07563e37ac2ebb979fd1060d183a4f4a150921267de9d362628014d77"
+        },
+        "proof": {
+          "path": "/tmp/readiness-daily-catalogs-execution/proof.json",
+          "sha256": "4f40c49af30894dbdc17515f206676976ebbbfbcf79e2f04686159f7127a3c7e"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-browse-contract-correction/derived-result-review.json",
+          "sha256": "e349a664bcc9176530927f3b555ce5d3b40bb7d90bda75b20c67992cf6cdc8da"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-browse-contract-correction/daily-catalogs-derived-receipt.json",
+          "sha256": "536eadb883f1f24e233f6db3273e3d8233e0e41b59f2073511173e4168e5b18e"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-browse-contract-correction/corrected-manifest.json",
+          "sha256": "0571b92056860333f01c54e97843480c67a69695e3fb92fa8074575a2c4ef26c"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true,
+        "originalFailedComparisonPreserved": true
+      },
+      {
+        "id": "daily-catalogs-preview-korean-default",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/language/preview/:corpusId/day",
+        "declarationIds": [
+          "decl-bf2eadbf25699e3edef9803e-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration-reviewed-offline-three-validator-derivation",
+        "fixtureSha256": "73d58dd8c604b543cf337b1653e38568029baedf3759b5bf5b89e2de44ca3ac7",
+        "manifestSha256": "c73002360cdc0d37b1911c3734042d06b39933cbd40034e30f9610530a28e262",
+        "result": {
+          "path": "/tmp/readiness-daily-catalogs19-pair/pair-result.json",
+          "sha256": "650f5ae07563e37ac2ebb979fd1060d183a4f4a150921267de9d362628014d77"
+        },
+        "proof": {
+          "path": "/tmp/readiness-daily-catalogs-execution/proof.json",
+          "sha256": "4f40c49af30894dbdc17515f206676976ebbbfbcf79e2f04686159f7127a3c7e"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-browse-contract-correction/derived-result-review.json",
+          "sha256": "e349a664bcc9176530927f3b555ce5d3b40bb7d90bda75b20c67992cf6cdc8da"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-browse-contract-correction/daily-catalogs-derived-receipt.json",
+          "sha256": "536eadb883f1f24e233f6db3273e3d8233e0e41b59f2073511173e4168e5b18e"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-browse-contract-correction/corrected-manifest.json",
+          "sha256": "0571b92056860333f01c54e97843480c67a69695e3fb92fa8074575a2c4ef26c"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true,
+        "originalFailedComparisonPreserved": true
+      },
+      {
+        "id": "daily-catalogs-preview-korean-microphone",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/language/preview/:corpusId/day",
+        "declarationIds": [
+          "decl-bf2eadbf25699e3edef9803e-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration-reviewed-offline-three-validator-derivation",
+        "fixtureSha256": "73d58dd8c604b543cf337b1653e38568029baedf3759b5bf5b89e2de44ca3ac7",
+        "manifestSha256": "c73002360cdc0d37b1911c3734042d06b39933cbd40034e30f9610530a28e262",
+        "result": {
+          "path": "/tmp/readiness-daily-catalogs19-pair/pair-result.json",
+          "sha256": "650f5ae07563e37ac2ebb979fd1060d183a4f4a150921267de9d362628014d77"
+        },
+        "proof": {
+          "path": "/tmp/readiness-daily-catalogs-execution/proof.json",
+          "sha256": "4f40c49af30894dbdc17515f206676976ebbbfbcf79e2f04686159f7127a3c7e"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-browse-contract-correction/derived-result-review.json",
+          "sha256": "e349a664bcc9176530927f3b555ce5d3b40bb7d90bda75b20c67992cf6cdc8da"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-browse-contract-correction/daily-catalogs-derived-receipt.json",
+          "sha256": "536eadb883f1f24e233f6db3273e3d8233e0e41b59f2073511173e4168e5b18e"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-browse-contract-correction/corrected-manifest.json",
+          "sha256": "0571b92056860333f01c54e97843480c67a69695e3fb92fa8074575a2c4ef26c"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true,
+        "originalFailedComparisonPreserved": true
+      },
+      {
+        "id": "daily-catalogs-preview-korean-english-input",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/language/preview/:corpusId/day",
+        "declarationIds": [
+          "decl-bf2eadbf25699e3edef9803e-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration-reviewed-offline-three-validator-derivation",
+        "fixtureSha256": "73d58dd8c604b543cf337b1653e38568029baedf3759b5bf5b89e2de44ca3ac7",
+        "manifestSha256": "c73002360cdc0d37b1911c3734042d06b39933cbd40034e30f9610530a28e262",
+        "result": {
+          "path": "/tmp/readiness-daily-catalogs19-pair/pair-result.json",
+          "sha256": "650f5ae07563e37ac2ebb979fd1060d183a4f4a150921267de9d362628014d77"
+        },
+        "proof": {
+          "path": "/tmp/readiness-daily-catalogs-execution/proof.json",
+          "sha256": "4f40c49af30894dbdc17515f206676976ebbbfbcf79e2f04686159f7127a3c7e"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-browse-contract-correction/derived-result-review.json",
+          "sha256": "e349a664bcc9176530927f3b555ce5d3b40bb7d90bda75b20c67992cf6cdc8da"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-browse-contract-correction/daily-catalogs-derived-receipt.json",
+          "sha256": "536eadb883f1f24e233f6db3273e3d8233e0e41b59f2073511173e4168e5b18e"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-browse-contract-correction/corrected-manifest.json",
+          "sha256": "0571b92056860333f01c54e97843480c67a69695e3fb92fa8074575a2c4ef26c"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true,
+        "originalFailedComparisonPreserved": true
+      },
+      {
+        "id": "daily-catalogs-preview-korean-all-input",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/language/preview/:corpusId/day",
+        "declarationIds": [
+          "decl-bf2eadbf25699e3edef9803e-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration-reviewed-offline-three-validator-derivation",
+        "fixtureSha256": "73d58dd8c604b543cf337b1653e38568029baedf3759b5bf5b89e2de44ca3ac7",
+        "manifestSha256": "c73002360cdc0d37b1911c3734042d06b39933cbd40034e30f9610530a28e262",
+        "result": {
+          "path": "/tmp/readiness-daily-catalogs19-pair/pair-result.json",
+          "sha256": "650f5ae07563e37ac2ebb979fd1060d183a4f4a150921267de9d362628014d77"
+        },
+        "proof": {
+          "path": "/tmp/readiness-daily-catalogs-execution/proof.json",
+          "sha256": "4f40c49af30894dbdc17515f206676976ebbbfbcf79e2f04686159f7127a3c7e"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-browse-contract-correction/derived-result-review.json",
+          "sha256": "e349a664bcc9176530927f3b555ce5d3b40bb7d90bda75b20c67992cf6cdc8da"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-browse-contract-correction/daily-catalogs-derived-receipt.json",
+          "sha256": "536eadb883f1f24e233f6db3273e3d8233e0e41b59f2073511173e4168e5b18e"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-browse-contract-correction/corrected-manifest.json",
+          "sha256": "0571b92056860333f01c54e97843480c67a69695e3fb92fa8074575a2c4ef26c"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true,
+        "originalFailedComparisonPreserved": true
+      },
+      {
+        "id": "daily-catalogs-earn-rules",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/earnings/rules",
+        "declarationIds": [
+          "decl-a52ec67c21406f88a69a0236-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration-reviewed-offline-three-validator-derivation",
+        "fixtureSha256": "73d58dd8c604b543cf337b1653e38568029baedf3759b5bf5b89e2de44ca3ac7",
+        "manifestSha256": "c73002360cdc0d37b1911c3734042d06b39933cbd40034e30f9610530a28e262",
+        "result": {
+          "path": "/tmp/readiness-daily-catalogs19-pair/pair-result.json",
+          "sha256": "650f5ae07563e37ac2ebb979fd1060d183a4f4a150921267de9d362628014d77"
+        },
+        "proof": {
+          "path": "/tmp/readiness-daily-catalogs-execution/proof.json",
+          "sha256": "4f40c49af30894dbdc17515f206676976ebbbfbcf79e2f04686159f7127a3c7e"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-browse-contract-correction/derived-result-review.json",
+          "sha256": "e349a664bcc9176530927f3b555ce5d3b40bb7d90bda75b20c67992cf6cdc8da"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-browse-contract-correction/daily-catalogs-derived-receipt.json",
+          "sha256": "536eadb883f1f24e233f6db3273e3d8233e0e41b59f2073511173e4168e5b18e"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-browse-contract-correction/corrected-manifest.json",
+          "sha256": "0571b92056860333f01c54e97843480c67a69695e3fb92fa8074575a2c4ef26c"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true,
+        "originalFailedComparisonPreserved": true
+      },
+      {
+        "id": "daily-catalogs-donow-surfaces",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/donow/surfaces",
+        "declarationIds": [
+          "decl-9c03e43477920ccdd58b67e5-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration-reviewed-offline-three-validator-derivation",
+        "fixtureSha256": "73d58dd8c604b543cf337b1653e38568029baedf3759b5bf5b89e2de44ca3ac7",
+        "manifestSha256": "c73002360cdc0d37b1911c3734042d06b39933cbd40034e30f9610530a28e262",
+        "result": {
+          "path": "/tmp/readiness-daily-catalogs19-pair/pair-result.json",
+          "sha256": "650f5ae07563e37ac2ebb979fd1060d183a4f4a150921267de9d362628014d77"
+        },
+        "proof": {
+          "path": "/tmp/readiness-daily-catalogs-execution/proof.json",
+          "sha256": "4f40c49af30894dbdc17515f206676976ebbbfbcf79e2f04686159f7127a3c7e"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-browse-contract-correction/derived-result-review.json",
+          "sha256": "e349a664bcc9176530927f3b555ce5d3b40bb7d90bda75b20c67992cf6cdc8da"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-browse-contract-correction/daily-catalogs-derived-receipt.json",
+          "sha256": "536eadb883f1f24e233f6db3273e3d8233e0e41b59f2073511173e4168e5b18e"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-browse-contract-correction/corrected-manifest.json",
+          "sha256": "0571b92056860333f01c54e97843480c67a69695e3fb92fa8074575a2c4ef26c"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true,
+        "originalFailedComparisonPreserved": true
+      },
+      {
+        "id": "daily-catalogs-vehicle-overview",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/automotive/vehicles/:id",
+        "declarationIds": [
+          "decl-eb048ba66fda9517955ef748-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration-reviewed-offline-three-validator-derivation",
+        "fixtureSha256": "73d58dd8c604b543cf337b1653e38568029baedf3759b5bf5b89e2de44ca3ac7",
+        "manifestSha256": "c73002360cdc0d37b1911c3734042d06b39933cbd40034e30f9610530a28e262",
+        "result": {
+          "path": "/tmp/readiness-daily-catalogs19-pair/pair-result.json",
+          "sha256": "650f5ae07563e37ac2ebb979fd1060d183a4f4a150921267de9d362628014d77"
+        },
+        "proof": {
+          "path": "/tmp/readiness-daily-catalogs-execution/proof.json",
+          "sha256": "4f40c49af30894dbdc17515f206676976ebbbfbcf79e2f04686159f7127a3c7e"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-browse-contract-correction/derived-result-review.json",
+          "sha256": "e349a664bcc9176530927f3b555ce5d3b40bb7d90bda75b20c67992cf6cdc8da"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-browse-contract-correction/daily-catalogs-derived-receipt.json",
+          "sha256": "536eadb883f1f24e233f6db3273e3d8233e0e41b59f2073511173e4168e5b18e"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-browse-contract-correction/corrected-manifest.json",
+          "sha256": "0571b92056860333f01c54e97843480c67a69695e3fb92fa8074575a2c4ef26c"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true,
+        "originalFailedComparisonPreserved": true
+      },
+      {
+        "id": "stored-history-journeys-default",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/automotive/vehicles/:id/journeys",
+        "declarationIds": [
+          "decl-895599cf049d666cb0d6a71b-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "63f7a5562450dac7e7a413775b8338cb99c53831a299edf3459fcaf43b13b202",
+        "manifestSha256": "ce2a723307ffbfd2a9dfb317758d58d7899d7303b2e62a19c288d8cbad2c42d8",
+        "result": {
+          "path": "/tmp/readiness-stored-history10-pair/pair-result.json",
+          "sha256": "ae4ed796d6263749310f2b64dd305cc527cf0a1ae6b9e71ec2f445d38c70310c"
+        },
+        "proof": {
+          "path": "/tmp/readiness-stored-history-execution/proof.json",
+          "sha256": "c6c3236a08edccdfecd6ddad3ac8c744d0217eeb6cb673b2177d566578003a65"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-stored-history-execution/result-review.json",
+          "sha256": "2bb890ae3e1aff2c1dc49181e91d143548a7e667916bd0fdce708f543a1cbacc"
+        }
+      },
+      {
+        "id": "stored-history-journeys-shuffles",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/automotive/vehicles/:id/journeys",
+        "declarationIds": [
+          "decl-895599cf049d666cb0d6a71b-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "63f7a5562450dac7e7a413775b8338cb99c53831a299edf3459fcaf43b13b202",
+        "manifestSha256": "ce2a723307ffbfd2a9dfb317758d58d7899d7303b2e62a19c288d8cbad2c42d8",
+        "result": {
+          "path": "/tmp/readiness-stored-history10-pair/pair-result.json",
+          "sha256": "ae4ed796d6263749310f2b64dd305cc527cf0a1ae6b9e71ec2f445d38c70310c"
+        },
+        "proof": {
+          "path": "/tmp/readiness-stored-history-execution/proof.json",
+          "sha256": "c6c3236a08edccdfecd6ddad3ac8c744d0217eeb6cb673b2177d566578003a65"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-stored-history-execution/result-review.json",
+          "sha256": "2bb890ae3e1aff2c1dc49181e91d143548a7e667916bd0fdce708f543a1cbacc"
+        }
+      },
+      {
+        "id": "stored-history-journeys-day",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/automotive/vehicles/:id/journeys",
+        "declarationIds": [
+          "decl-895599cf049d666cb0d6a71b-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "63f7a5562450dac7e7a413775b8338cb99c53831a299edf3459fcaf43b13b202",
+        "manifestSha256": "ce2a723307ffbfd2a9dfb317758d58d7899d7303b2e62a19c288d8cbad2c42d8",
+        "result": {
+          "path": "/tmp/readiness-stored-history10-pair/pair-result.json",
+          "sha256": "ae4ed796d6263749310f2b64dd305cc527cf0a1ae6b9e71ec2f445d38c70310c"
+        },
+        "proof": {
+          "path": "/tmp/readiness-stored-history-execution/proof.json",
+          "sha256": "c6c3236a08edccdfecd6ddad3ac8c744d0217eeb6cb673b2177d566578003a65"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-stored-history-execution/result-review.json",
+          "sha256": "2bb890ae3e1aff2c1dc49181e91d143548a7e667916bd0fdce708f543a1cbacc"
+        }
+      },
+      {
+        "id": "stored-history-events-all",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/automotive/vehicles/:id/events",
+        "declarationIds": [
+          "decl-afe89a75ab9288ca35b82972-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "63f7a5562450dac7e7a413775b8338cb99c53831a299edf3459fcaf43b13b202",
+        "manifestSha256": "ce2a723307ffbfd2a9dfb317758d58d7899d7303b2e62a19c288d8cbad2c42d8",
+        "result": {
+          "path": "/tmp/readiness-stored-history10-pair/pair-result.json",
+          "sha256": "ae4ed796d6263749310f2b64dd305cc527cf0a1ae6b9e71ec2f445d38c70310c"
+        },
+        "proof": {
+          "path": "/tmp/readiness-stored-history-execution/proof.json",
+          "sha256": "c6c3236a08edccdfecd6ddad3ac8c744d0217eeb6cb673b2177d566578003a65"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-stored-history-execution/result-review.json",
+          "sha256": "2bb890ae3e1aff2c1dc49181e91d143548a7e667916bd0fdce708f543a1cbacc"
+        }
+      },
+      {
+        "id": "stored-history-events-motion",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/automotive/vehicles/:id/events",
+        "declarationIds": [
+          "decl-afe89a75ab9288ca35b82972-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "63f7a5562450dac7e7a413775b8338cb99c53831a299edf3459fcaf43b13b202",
+        "manifestSha256": "ce2a723307ffbfd2a9dfb317758d58d7899d7303b2e62a19c288d8cbad2c42d8",
+        "result": {
+          "path": "/tmp/readiness-stored-history10-pair/pair-result.json",
+          "sha256": "ae4ed796d6263749310f2b64dd305cc527cf0a1ae6b9e71ec2f445d38c70310c"
+        },
+        "proof": {
+          "path": "/tmp/readiness-stored-history-execution/proof.json",
+          "sha256": "c6c3236a08edccdfecd6ddad3ac8c744d0217eeb6cb673b2177d566578003a65"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-stored-history-execution/result-review.json",
+          "sha256": "2bb890ae3e1aff2c1dc49181e91d143548a7e667916bd0fdce708f543a1cbacc"
+        }
+      },
+      {
+        "id": "stored-history-events-day",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/automotive/vehicles/:id/events",
+        "declarationIds": [
+          "decl-afe89a75ab9288ca35b82972-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "63f7a5562450dac7e7a413775b8338cb99c53831a299edf3459fcaf43b13b202",
+        "manifestSha256": "ce2a723307ffbfd2a9dfb317758d58d7899d7303b2e62a19c288d8cbad2c42d8",
+        "result": {
+          "path": "/tmp/readiness-stored-history10-pair/pair-result.json",
+          "sha256": "ae4ed796d6263749310f2b64dd305cc527cf0a1ae6b9e71ec2f445d38c70310c"
+        },
+        "proof": {
+          "path": "/tmp/readiness-stored-history-execution/proof.json",
+          "sha256": "c6c3236a08edccdfecd6ddad3ac8c744d0217eeb6cb673b2177d566578003a65"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-stored-history-execution/result-review.json",
+          "sha256": "2bb890ae3e1aff2c1dc49181e91d143548a7e667916bd0fdce708f543a1cbacc"
+        }
+      },
+      {
+        "id": "stored-history-fuel",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/automotive/vehicles/:id/fuel",
+        "declarationIds": [
+          "decl-8e62fdeff34cde79b3c867aa-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "63f7a5562450dac7e7a413775b8338cb99c53831a299edf3459fcaf43b13b202",
+        "manifestSha256": "ce2a723307ffbfd2a9dfb317758d58d7899d7303b2e62a19c288d8cbad2c42d8",
+        "result": {
+          "path": "/tmp/readiness-stored-history10-pair/pair-result.json",
+          "sha256": "ae4ed796d6263749310f2b64dd305cc527cf0a1ae6b9e71ec2f445d38c70310c"
+        },
+        "proof": {
+          "path": "/tmp/readiness-stored-history-execution/proof.json",
+          "sha256": "c6c3236a08edccdfecd6ddad3ac8c744d0217eeb6cb673b2177d566578003a65"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-stored-history-execution/result-review.json",
+          "sha256": "2bb890ae3e1aff2c1dc49181e91d143548a7e667916bd0fdce708f543a1cbacc"
+        }
+      },
+      {
+        "id": "stored-history-media-queue",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/media/queue",
+        "declarationIds": [
+          "decl-79701036df813aaa7534f20c-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "63f7a5562450dac7e7a413775b8338cb99c53831a299edf3459fcaf43b13b202",
+        "manifestSha256": "ce2a723307ffbfd2a9dfb317758d58d7899d7303b2e62a19c288d8cbad2c42d8",
+        "result": {
+          "path": "/tmp/readiness-stored-history10-pair/pair-result.json",
+          "sha256": "ae4ed796d6263749310f2b64dd305cc527cf0a1ae6b9e71ec2f445d38c70310c"
+        },
+        "proof": {
+          "path": "/tmp/readiness-stored-history-execution/proof.json",
+          "sha256": "c6c3236a08edccdfecd6ddad3ac8c744d0217eeb6cb673b2177d566578003a65"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-stored-history-execution/result-review.json",
+          "sha256": "2bb890ae3e1aff2c1dc49181e91d143548a7e667916bd0fdce708f543a1cbacc"
+        }
+      },
+      {
+        "id": "stored-history-media-favourites",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/media/household/favourites",
+        "declarationIds": [
+          "decl-2b8cc8dd03df8e89a6f29557-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "63f7a5562450dac7e7a413775b8338cb99c53831a299edf3459fcaf43b13b202",
+        "manifestSha256": "ce2a723307ffbfd2a9dfb317758d58d7899d7303b2e62a19c288d8cbad2c42d8",
+        "result": {
+          "path": "/tmp/readiness-stored-history10-pair/pair-result.json",
+          "sha256": "ae4ed796d6263749310f2b64dd305cc527cf0a1ae6b9e71ec2f445d38c70310c"
+        },
+        "proof": {
+          "path": "/tmp/readiness-stored-history-execution/proof.json",
+          "sha256": "c6c3236a08edccdfecd6ddad3ac8c744d0217eeb6cb673b2177d566578003a65"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-stored-history-execution/result-review.json",
+          "sha256": "2bb890ae3e1aff2c1dc49181e91d143548a7e667916bd0fdce708f543a1cbacc"
+        }
+      },
+      {
+        "id": "stored-history-media-removed",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/media/household/removed",
+        "declarationIds": [
+          "decl-8116c0579289dbed1f3a3886-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "63f7a5562450dac7e7a413775b8338cb99c53831a299edf3459fcaf43b13b202",
+        "manifestSha256": "ce2a723307ffbfd2a9dfb317758d58d7899d7303b2e62a19c288d8cbad2c42d8",
+        "result": {
+          "path": "/tmp/readiness-stored-history10-pair/pair-result.json",
+          "sha256": "ae4ed796d6263749310f2b64dd305cc527cf0a1ae6b9e71ec2f445d38c70310c"
+        },
+        "proof": {
+          "path": "/tmp/readiness-stored-history-execution/proof.json",
+          "sha256": "c6c3236a08edccdfecd6ddad3ac8c744d0217eeb6cb673b2177d566578003a65"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-stored-history-execution/result-review.json",
+          "sha256": "2bb890ae3e1aff2c1dc49181e91d143548a7e667916bd0fdce708f543a1cbacc"
+        }
+      },
+      {
+        "id": "learner-home-roster",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/roster",
+        "declarationIds": [
+          "decl-0eb8783170508dfc4412630b-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+        "manifestSha256": "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1",
+        "result": {
+          "path": "/tmp/readiness-learner-home13-pair/pair-result.json",
+          "sha256": "cb9768c118e8a6a175d827394d96d3593014c3e9444cb63e13682dbe1bdbbe60"
+        },
+        "proof": {
+          "path": "/tmp/readiness-learner-home-execution/proof.json",
+          "sha256": "09d86462d3154b9e073f4f62e7f8c30c39b366103f86910de5bd8e7ae70e99aa"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-learner-home-execution/result-review.json",
+          "sha256": "d4027e70c073d6a31e31aaefd3ea83c5ba45e968ef5a51f6f9ff28c80f9c9699"
+        }
+      },
+      {
+        "id": "learner-home-teachers",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/teachers",
+        "declarationIds": [
+          "decl-e5fbe4709e6a926431392d14-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+        "manifestSha256": "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1",
+        "result": {
+          "path": "/tmp/readiness-learner-home13-pair/pair-result.json",
+          "sha256": "cb9768c118e8a6a175d827394d96d3593014c3e9444cb63e13682dbe1bdbbe60"
+        },
+        "proof": {
+          "path": "/tmp/readiness-learner-home-execution/proof.json",
+          "sha256": "09d86462d3154b9e073f4f62e7f8c30c39b366103f86910de5bd8e7ae70e99aa"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-learner-home-execution/result-review.json",
+          "sha256": "d4027e70c073d6a31e31aaefd3ea83c5ba45e968ef5a51f6f9ff28c80f9c9699"
+        }
+      },
+      {
+        "id": "learner-home-results-multibank",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/users/:userId/results",
+        "declarationIds": [
+          "decl-1a4ab44e34d8ac95b355cffc-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+        "manifestSha256": "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1",
+        "result": {
+          "path": "/tmp/readiness-learner-home13-pair/pair-result.json",
+          "sha256": "cb9768c118e8a6a175d827394d96d3593014c3e9444cb63e13682dbe1bdbbe60"
+        },
+        "proof": {
+          "path": "/tmp/readiness-learner-home-execution/proof.json",
+          "sha256": "09d86462d3154b9e073f4f62e7f8c30c39b366103f86910de5bd8e7ae70e99aa"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-learner-home-execution/result-review.json",
+          "sha256": "d4027e70c073d6a31e31aaefd3ea83c5ba45e968ef5a51f6f9ff28c80f9c9699"
+        }
+      },
+      {
+        "id": "learner-home-results-math",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/users/:userId/results",
+        "declarationIds": [
+          "decl-1a4ab44e34d8ac95b355cffc-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+        "manifestSha256": "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1",
+        "result": {
+          "path": "/tmp/readiness-learner-home13-pair/pair-result.json",
+          "sha256": "cb9768c118e8a6a175d827394d96d3593014c3e9444cb63e13682dbe1bdbbe60"
+        },
+        "proof": {
+          "path": "/tmp/readiness-learner-home-execution/proof.json",
+          "sha256": "09d86462d3154b9e073f4f62e7f8c30c39b366103f86910de5bd8e7ae70e99aa"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-learner-home-execution/result-review.json",
+          "sha256": "d4027e70c073d6a31e31aaefd3ea83c5ba45e968ef5a51f6f9ff28c80f9c9699"
+        }
+      },
+      {
+        "id": "learner-home-results-cards",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/users/:userId/results",
+        "declarationIds": [
+          "decl-1a4ab44e34d8ac95b355cffc-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+        "manifestSha256": "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1",
+        "result": {
+          "path": "/tmp/readiness-learner-home13-pair/pair-result.json",
+          "sha256": "cb9768c118e8a6a175d827394d96d3593014c3e9444cb63e13682dbe1bdbbe60"
+        },
+        "proof": {
+          "path": "/tmp/readiness-learner-home-execution/proof.json",
+          "sha256": "09d86462d3154b9e073f4f62e7f8c30c39b366103f86910de5bd8e7ae70e99aa"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-learner-home-execution/result-review.json",
+          "sha256": "d4027e70c073d6a31e31aaefd3ea83c5ba45e968ef5a51f6f9ff28c80f9c9699"
+        }
+      },
+      {
+        "id": "learner-home-results-other",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/users/:userId/results",
+        "declarationIds": [
+          "decl-1a4ab44e34d8ac95b355cffc-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+        "manifestSha256": "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1",
+        "result": {
+          "path": "/tmp/readiness-learner-home13-pair/pair-result.json",
+          "sha256": "cb9768c118e8a6a175d827394d96d3593014c3e9444cb63e13682dbe1bdbbe60"
+        },
+        "proof": {
+          "path": "/tmp/readiness-learner-home-execution/proof.json",
+          "sha256": "09d86462d3154b9e073f4f62e7f8c30c39b366103f86910de5bd8e7ae70e99aa"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-learner-home-execution/result-review.json",
+          "sha256": "d4027e70c073d6a31e31aaefd3ea83c5ba45e968ef5a51f6f9ff28c80f9c9699"
+        }
+      },
+      {
+        "id": "learner-home-report-learner",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/report",
+        "declarationIds": [
+          "decl-4413ff96adc59a78968484f1-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+        "manifestSha256": "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1",
+        "result": {
+          "path": "/tmp/readiness-learner-home13-pair/pair-result.json",
+          "sha256": "cb9768c118e8a6a175d827394d96d3593014c3e9444cb63e13682dbe1bdbbe60"
+        },
+        "proof": {
+          "path": "/tmp/readiness-learner-home-execution/proof.json",
+          "sha256": "09d86462d3154b9e073f4f62e7f8c30c39b366103f86910de5bd8e7ae70e99aa"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-learner-home-execution/result-review.json",
+          "sha256": "d4027e70c073d6a31e31aaefd3ea83c5ba45e968ef5a51f6f9ff28c80f9c9699"
+        }
+      },
+      {
+        "id": "learner-home-report-parent",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/report",
+        "declarationIds": [
+          "decl-4413ff96adc59a78968484f1-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+        "manifestSha256": "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1",
+        "result": {
+          "path": "/tmp/readiness-learner-home13-pair/pair-result.json",
+          "sha256": "cb9768c118e8a6a175d827394d96d3593014c3e9444cb63e13682dbe1bdbbe60"
+        },
+        "proof": {
+          "path": "/tmp/readiness-learner-home-execution/proof.json",
+          "sha256": "09d86462d3154b9e073f4f62e7f8c30c39b366103f86910de5bd8e7ae70e99aa"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-learner-home-execution/result-review.json",
+          "sha256": "d4027e70c073d6a31e31aaefd3ea83c5ba45e968ef5a51f6f9ff28c80f9c9699"
+        }
+      },
+      {
+        "id": "learner-home-report-sibling",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/report",
+        "declarationIds": [
+          "decl-4413ff96adc59a78968484f1-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+        "manifestSha256": "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1",
+        "result": {
+          "path": "/tmp/readiness-learner-home13-pair/pair-result.json",
+          "sha256": "cb9768c118e8a6a175d827394d96d3593014c3e9444cb63e13682dbe1bdbbe60"
+        },
+        "proof": {
+          "path": "/tmp/readiness-learner-home-execution/proof.json",
+          "sha256": "09d86462d3154b9e073f4f62e7f8c30c39b366103f86910de5bd8e7ae70e99aa"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-learner-home-execution/result-review.json",
+          "sha256": "d4027e70c073d6a31e31aaefd3ea83c5ba45e968ef5a51f6f9ff28c80f9c9699"
+        }
+      },
+      {
+        "id": "learner-home-report-household",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/report",
+        "declarationIds": [
+          "decl-4413ff96adc59a78968484f1-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+        "manifestSha256": "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1",
+        "result": {
+          "path": "/tmp/readiness-learner-home13-pair/pair-result.json",
+          "sha256": "cb9768c118e8a6a175d827394d96d3593014c3e9444cb63e13682dbe1bdbbe60"
+        },
+        "proof": {
+          "path": "/tmp/readiness-learner-home-execution/proof.json",
+          "sha256": "09d86462d3154b9e073f4f62e7f8c30c39b366103f86910de5bd8e7ae70e99aa"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-learner-home-execution/result-review.json",
+          "sha256": "d4027e70c073d6a31e31aaefd3ea83c5ba45e968ef5a51f6f9ff28c80f9c9699"
+        }
+      },
+      {
+        "id": "learner-home-fitness-fingerprints",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/fitness/fingerprints",
+        "declarationIds": [
+          "decl-d889ff1c933aea2a3d1aab7f-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+        "manifestSha256": "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1",
+        "result": {
+          "path": "/tmp/readiness-learner-home13-pair/pair-result.json",
+          "sha256": "cb9768c118e8a6a175d827394d96d3593014c3e9444cb63e13682dbe1bdbbe60"
+        },
+        "proof": {
+          "path": "/tmp/readiness-learner-home-execution/proof.json",
+          "sha256": "09d86462d3154b9e073f4f62e7f8c30c39b366103f86910de5bd8e7ae70e99aa"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-learner-home-execution/result-review.json",
+          "sha256": "d4027e70c073d6a31e31aaefd3ea83c5ba45e968ef5a51f6f9ff28c80f9c9699"
+        }
+      },
+      {
+        "id": "learner-home-resumable-prefixed",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/fitness/resumable",
+        "declarationIds": [
+          "decl-3684891216ecb82a0e3573a9-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+        "manifestSha256": "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1",
+        "result": {
+          "path": "/tmp/readiness-learner-home13-pair/pair-result.json",
+          "sha256": "cb9768c118e8a6a175d827394d96d3593014c3e9444cb63e13682dbe1bdbbe60"
+        },
+        "proof": {
+          "path": "/tmp/readiness-learner-home-execution/proof.json",
+          "sha256": "09d86462d3154b9e073f4f62e7f8c30c39b366103f86910de5bd8e7ae70e99aa"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-learner-home-execution/result-review.json",
+          "sha256": "d4027e70c073d6a31e31aaefd3ea83c5ba45e968ef5a51f6f9ff28c80f9c9699"
+        }
+      },
+      {
+        "id": "learner-home-resumable-bare",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/fitness/resumable",
+        "declarationIds": [
+          "decl-3684891216ecb82a0e3573a9-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+        "manifestSha256": "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1",
+        "result": {
+          "path": "/tmp/readiness-learner-home13-pair/pair-result.json",
+          "sha256": "cb9768c118e8a6a175d827394d96d3593014c3e9444cb63e13682dbe1bdbbe60"
+        },
+        "proof": {
+          "path": "/tmp/readiness-learner-home-execution/proof.json",
+          "sha256": "09d86462d3154b9e073f4f62e7f8c30c39b366103f86910de5bd8e7ae70e99aa"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-learner-home-execution/result-review.json",
+          "sha256": "d4027e70c073d6a31e31aaefd3ea83c5ba45e968ef5a51f6f9ff28c80f9c9699"
+        }
+      },
+      {
+        "id": "device-home-fleet",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/device",
+        "declarationIds": [
+          "decl-ceb9ead4ca06a44c3a60eed3-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "019e26cf150f21d8948900c55709405ffbb4600b38fafad4022f9925182b63f5",
+        "manifestSha256": "9cbacf1000af93b70072714448f4ff9d37cc725a8f75b05eed9ab86c1956941d",
+        "result": {
+          "path": "/tmp/readiness-device-home-state23-pair/pair-result.json",
+          "sha256": "cb349b76e2cc4c35ac0074e07ed1f94de268a2aa5346f52dd4e6010fa4b8ca73"
+        },
+        "proof": {
+          "path": "/tmp/readiness-device-home-state-execution/proof.json",
+          "sha256": "ea31958ec1119358e05f63b7333976fbda07311cb47da4e4bb19387445bc254f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-device-home-state-execution/result-review.json",
+          "sha256": "e1c9931abd56d890b55f003850a98d0ebe8758b68800a2f8b5a428062fa707e1"
+        }
+      },
+      {
+        "id": "device-home-configuration",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/device/config",
+        "declarationIds": [
+          "decl-d22489afeba63fcb7fc5911a-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "019e26cf150f21d8948900c55709405ffbb4600b38fafad4022f9925182b63f5",
+        "manifestSha256": "9cbacf1000af93b70072714448f4ff9d37cc725a8f75b05eed9ab86c1956941d",
+        "result": {
+          "path": "/tmp/readiness-device-home-state23-pair/pair-result.json",
+          "sha256": "cb349b76e2cc4c35ac0074e07ed1f94de268a2aa5346f52dd4e6010fa4b8ca73"
+        },
+        "proof": {
+          "path": "/tmp/readiness-device-home-state-execution/proof.json",
+          "sha256": "ea31958ec1119358e05f63b7333976fbda07311cb47da4e4bb19387445bc254f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-device-home-state-execution/result-review.json",
+          "sha256": "e1c9931abd56d890b55f003850a98d0ebe8758b68800a2f8b5a428062fa707e1"
+        }
+      },
+      {
+        "id": "device-home-self-input-unidentified",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/device/self/input",
+        "declarationIds": [
+          "decl-d3eebb0d68fe589c65f821d3-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "019e26cf150f21d8948900c55709405ffbb4600b38fafad4022f9925182b63f5",
+        "manifestSha256": "9cbacf1000af93b70072714448f4ff9d37cc725a8f75b05eed9ab86c1956941d",
+        "result": {
+          "path": "/tmp/readiness-device-home-state23-pair/pair-result.json",
+          "sha256": "cb349b76e2cc4c35ac0074e07ed1f94de268a2aa5346f52dd4e6010fa4b8ca73"
+        },
+        "proof": {
+          "path": "/tmp/readiness-device-home-state-execution/proof.json",
+          "sha256": "ea31958ec1119358e05f63b7333976fbda07311cb47da4e4bb19387445bc254f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-device-home-state-execution/result-review.json",
+          "sha256": "e1c9931abd56d890b55f003850a98d0ebe8758b68800a2f8b5a428062fa707e1"
+        }
+      },
+      {
+        "id": "device-home-presence-synthetic-reading-panel",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/device/:deviceId/presence",
+        "declarationIds": [
+          "decl-e6f28fad46dcbdf0efea03c9-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "019e26cf150f21d8948900c55709405ffbb4600b38fafad4022f9925182b63f5",
+        "manifestSha256": "9cbacf1000af93b70072714448f4ff9d37cc725a8f75b05eed9ab86c1956941d",
+        "result": {
+          "path": "/tmp/readiness-device-home-state23-pair/pair-result.json",
+          "sha256": "cb349b76e2cc4c35ac0074e07ed1f94de268a2aa5346f52dd4e6010fa4b8ca73"
+        },
+        "proof": {
+          "path": "/tmp/readiness-device-home-state-execution/proof.json",
+          "sha256": "ea31958ec1119358e05f63b7333976fbda07311cb47da4e4bb19387445bc254f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-device-home-state-execution/result-review.json",
+          "sha256": "e1c9931abd56d890b55f003850a98d0ebe8758b68800a2f8b5a428062fa707e1"
+        }
+      },
+      {
+        "id": "device-home-session-synthetic-reading-panel",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/device/:deviceId/session",
+        "declarationIds": [
+          "decl-5d996d0c9c2648da4f962d3d-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "019e26cf150f21d8948900c55709405ffbb4600b38fafad4022f9925182b63f5",
+        "manifestSha256": "9cbacf1000af93b70072714448f4ff9d37cc725a8f75b05eed9ab86c1956941d",
+        "result": {
+          "path": "/tmp/readiness-device-home-state23-pair/pair-result.json",
+          "sha256": "cb349b76e2cc4c35ac0074e07ed1f94de268a2aa5346f52dd4e6010fa4b8ca73"
+        },
+        "proof": {
+          "path": "/tmp/readiness-device-home-state-execution/proof.json",
+          "sha256": "ea31958ec1119358e05f63b7333976fbda07311cb47da4e4bb19387445bc254f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-device-home-state-execution/result-review.json",
+          "sha256": "e1c9931abd56d890b55f003850a98d0ebe8758b68800a2f8b5a428062fa707e1"
+        }
+      },
+      {
+        "id": "device-home-presence-synthetic-unknown-panel",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/device/:deviceId/presence",
+        "declarationIds": [
+          "decl-e6f28fad46dcbdf0efea03c9-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "019e26cf150f21d8948900c55709405ffbb4600b38fafad4022f9925182b63f5",
+        "manifestSha256": "9cbacf1000af93b70072714448f4ff9d37cc725a8f75b05eed9ab86c1956941d",
+        "result": {
+          "path": "/tmp/readiness-device-home-state23-pair/pair-result.json",
+          "sha256": "cb349b76e2cc4c35ac0074e07ed1f94de268a2aa5346f52dd4e6010fa4b8ca73"
+        },
+        "proof": {
+          "path": "/tmp/readiness-device-home-state-execution/proof.json",
+          "sha256": "ea31958ec1119358e05f63b7333976fbda07311cb47da4e4bb19387445bc254f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-device-home-state-execution/result-review.json",
+          "sha256": "e1c9931abd56d890b55f003850a98d0ebe8758b68800a2f8b5a428062fa707e1"
+        }
+      },
+      {
+        "id": "device-home-session-synthetic-unknown-panel",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/device/:deviceId/session",
+        "declarationIds": [
+          "decl-5d996d0c9c2648da4f962d3d-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "019e26cf150f21d8948900c55709405ffbb4600b38fafad4022f9925182b63f5",
+        "manifestSha256": "9cbacf1000af93b70072714448f4ff9d37cc725a8f75b05eed9ab86c1956941d",
+        "result": {
+          "path": "/tmp/readiness-device-home-state23-pair/pair-result.json",
+          "sha256": "cb349b76e2cc4c35ac0074e07ed1f94de268a2aa5346f52dd4e6010fa4b8ca73"
+        },
+        "proof": {
+          "path": "/tmp/readiness-device-home-state-execution/proof.json",
+          "sha256": "ea31958ec1119358e05f63b7333976fbda07311cb47da4e4bb19387445bc254f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-device-home-state-execution/result-review.json",
+          "sha256": "e1c9931abd56d890b55f003850a98d0ebe8758b68800a2f8b5a428062fa707e1"
+        }
+      },
+      {
+        "id": "device-home-start-unobserved",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/device/:deviceId/start-status",
+        "declarationIds": [
+          "decl-3350b0c1038e9b9b481c173c-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "019e26cf150f21d8948900c55709405ffbb4600b38fafad4022f9925182b63f5",
+        "manifestSha256": "9cbacf1000af93b70072714448f4ff9d37cc725a8f75b05eed9ab86c1956941d",
+        "result": {
+          "path": "/tmp/readiness-device-home-state23-pair/pair-result.json",
+          "sha256": "cb349b76e2cc4c35ac0074e07ed1f94de268a2aa5346f52dd4e6010fa4b8ca73"
+        },
+        "proof": {
+          "path": "/tmp/readiness-device-home-state-execution/proof.json",
+          "sha256": "ea31958ec1119358e05f63b7333976fbda07311cb47da4e4bb19387445bc254f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-device-home-state-execution/result-review.json",
+          "sha256": "e1c9931abd56d890b55f003850a98d0ebe8758b68800a2f8b5a428062fa707e1"
+        }
+      },
+      {
+        "id": "device-home-state-all",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/state-gates",
+        "declarationIds": [
+          "decl-8ecf59b70610cf5bce695e54-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "019e26cf150f21d8948900c55709405ffbb4600b38fafad4022f9925182b63f5",
+        "manifestSha256": "9cbacf1000af93b70072714448f4ff9d37cc725a8f75b05eed9ab86c1956941d",
+        "result": {
+          "path": "/tmp/readiness-device-home-state23-pair/pair-result.json",
+          "sha256": "cb349b76e2cc4c35ac0074e07ed1f94de268a2aa5346f52dd4e6010fa4b8ca73"
+        },
+        "proof": {
+          "path": "/tmp/readiness-device-home-state-execution/proof.json",
+          "sha256": "ea31958ec1119358e05f63b7333976fbda07311cb47da4e4bb19387445bc254f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-device-home-state-execution/result-review.json",
+          "sha256": "e1c9931abd56d890b55f003850a98d0ebe8758b68800a2f8b5a428062fa707e1"
+        }
+      },
+      {
+        "id": "device-home-state-learner",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/state-gates",
+        "declarationIds": [
+          "decl-8ecf59b70610cf5bce695e54-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "019e26cf150f21d8948900c55709405ffbb4600b38fafad4022f9925182b63f5",
+        "manifestSha256": "9cbacf1000af93b70072714448f4ff9d37cc725a8f75b05eed9ab86c1956941d",
+        "result": {
+          "path": "/tmp/readiness-device-home-state23-pair/pair-result.json",
+          "sha256": "cb349b76e2cc4c35ac0074e07ed1f94de268a2aa5346f52dd4e6010fa4b8ca73"
+        },
+        "proof": {
+          "path": "/tmp/readiness-device-home-state-execution/proof.json",
+          "sha256": "ea31958ec1119358e05f63b7333976fbda07311cb47da4e4bb19387445bc254f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-device-home-state-execution/result-review.json",
+          "sha256": "e1c9931abd56d890b55f003850a98d0ebe8758b68800a2f8b5a428062fa707e1"
+        }
+      },
+      {
+        "id": "device-home-state-detail",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/state-gates/:gateId",
+        "declarationIds": [
+          "decl-45dfbe4788dc1a3b98ef0fb2-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "019e26cf150f21d8948900c55709405ffbb4600b38fafad4022f9925182b63f5",
+        "manifestSha256": "9cbacf1000af93b70072714448f4ff9d37cc725a8f75b05eed9ab86c1956941d",
+        "result": {
+          "path": "/tmp/readiness-device-home-state23-pair/pair-result.json",
+          "sha256": "cb349b76e2cc4c35ac0074e07ed1f94de268a2aa5346f52dd4e6010fa4b8ca73"
+        },
+        "proof": {
+          "path": "/tmp/readiness-device-home-state-execution/proof.json",
+          "sha256": "ea31958ec1119358e05f63b7333976fbda07311cb47da4e4bb19387445bc254f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-device-home-state-execution/result-review.json",
+          "sha256": "e1c9931abd56d890b55f003850a98d0ebe8758b68800a2f8b5a428062fa707e1"
+        }
+      },
+      {
+        "id": "device-home-entitlements-all",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/entitlements",
+        "declarationIds": [
+          "decl-0f7fb8c253162cea67a0b742-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "019e26cf150f21d8948900c55709405ffbb4600b38fafad4022f9925182b63f5",
+        "manifestSha256": "9cbacf1000af93b70072714448f4ff9d37cc725a8f75b05eed9ab86c1956941d",
+        "result": {
+          "path": "/tmp/readiness-device-home-state23-pair/pair-result.json",
+          "sha256": "cb349b76e2cc4c35ac0074e07ed1f94de268a2aa5346f52dd4e6010fa4b8ca73"
+        },
+        "proof": {
+          "path": "/tmp/readiness-device-home-state-execution/proof.json",
+          "sha256": "ea31958ec1119358e05f63b7333976fbda07311cb47da4e4bb19387445bc254f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-device-home-state-execution/result-review.json",
+          "sha256": "e1c9931abd56d890b55f003850a98d0ebe8758b68800a2f8b5a428062fa707e1"
+        }
+      },
+      {
+        "id": "device-home-entitlements-denied",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/entitlements",
+        "declarationIds": [
+          "decl-0f7fb8c253162cea67a0b742-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "019e26cf150f21d8948900c55709405ffbb4600b38fafad4022f9925182b63f5",
+        "manifestSha256": "9cbacf1000af93b70072714448f4ff9d37cc725a8f75b05eed9ab86c1956941d",
+        "result": {
+          "path": "/tmp/readiness-device-home-state23-pair/pair-result.json",
+          "sha256": "cb349b76e2cc4c35ac0074e07ed1f94de268a2aa5346f52dd4e6010fa4b8ca73"
+        },
+        "proof": {
+          "path": "/tmp/readiness-device-home-state-execution/proof.json",
+          "sha256": "ea31958ec1119358e05f63b7333976fbda07311cb47da4e4bb19387445bc254f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-device-home-state-execution/result-review.json",
+          "sha256": "e1c9931abd56d890b55f003850a98d0ebe8758b68800a2f8b5a428062fa707e1"
+        }
+      },
+      {
+        "id": "device-home-entitlement-detail",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/entitlements/:capabilityId",
+        "declarationIds": [
+          "decl-1c054086f9cadbf4c29ab469-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "019e26cf150f21d8948900c55709405ffbb4600b38fafad4022f9925182b63f5",
+        "manifestSha256": "9cbacf1000af93b70072714448f4ff9d37cc725a8f75b05eed9ab86c1956941d",
+        "result": {
+          "path": "/tmp/readiness-device-home-state23-pair/pair-result.json",
+          "sha256": "cb349b76e2cc4c35ac0074e07ed1f94de268a2aa5346f52dd4e6010fa4b8ca73"
+        },
+        "proof": {
+          "path": "/tmp/readiness-device-home-state-execution/proof.json",
+          "sha256": "ea31958ec1119358e05f63b7333976fbda07311cb47da4e4bb19387445bc254f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-device-home-state-execution/result-review.json",
+          "sha256": "e1c9931abd56d890b55f003850a98d0ebe8758b68800a2f8b5a428062fa707e1"
+        }
+      },
+      {
+        "id": "device-home-entropy-report",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/entropy",
+        "declarationIds": [
+          "decl-7efb0186252a5407720572bf-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "019e26cf150f21d8948900c55709405ffbb4600b38fafad4022f9925182b63f5",
+        "manifestSha256": "9cbacf1000af93b70072714448f4ff9d37cc725a8f75b05eed9ab86c1956941d",
+        "result": {
+          "path": "/tmp/readiness-device-home-state23-pair/pair-result.json",
+          "sha256": "cb349b76e2cc4c35ac0074e07ed1f94de268a2aa5346f52dd4e6010fa4b8ca73"
+        },
+        "proof": {
+          "path": "/tmp/readiness-device-home-state-execution/proof.json",
+          "sha256": "ea31958ec1119358e05f63b7333976fbda07311cb47da4e4bb19387445bc254f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-device-home-state-execution/result-review.json",
+          "sha256": "e1c9931abd56d890b55f003850a98d0ebe8758b68800a2f8b5a428062fa707e1"
+        }
+      },
+      {
+        "id": "device-home-entropy-reading",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/entropy/:source",
+        "declarationIds": [
+          "decl-d760248db6e260180635eb7b-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "019e26cf150f21d8948900c55709405ffbb4600b38fafad4022f9925182b63f5",
+        "manifestSha256": "9cbacf1000af93b70072714448f4ff9d37cc725a8f75b05eed9ab86c1956941d",
+        "result": {
+          "path": "/tmp/readiness-device-home-state23-pair/pair-result.json",
+          "sha256": "cb349b76e2cc4c35ac0074e07ed1f94de268a2aa5346f52dd4e6010fa4b8ca73"
+        },
+        "proof": {
+          "path": "/tmp/readiness-device-home-state-execution/proof.json",
+          "sha256": "ea31958ec1119358e05f63b7333976fbda07311cb47da4e4bb19387445bc254f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-device-home-state-execution/result-review.json",
+          "sha256": "e1c9931abd56d890b55f003850a98d0ebe8758b68800a2f8b5a428062fa707e1"
+        }
+      },
+      {
+        "id": "device-home-entropy-practice",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/entropy/:source",
+        "declarationIds": [
+          "decl-d760248db6e260180635eb7b-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "019e26cf150f21d8948900c55709405ffbb4600b38fafad4022f9925182b63f5",
+        "manifestSha256": "9cbacf1000af93b70072714448f4ff9d37cc725a8f75b05eed9ab86c1956941d",
+        "result": {
+          "path": "/tmp/readiness-device-home-state23-pair/pair-result.json",
+          "sha256": "cb349b76e2cc4c35ac0074e07ed1f94de268a2aa5346f52dd4e6010fa4b8ca73"
+        },
+        "proof": {
+          "path": "/tmp/readiness-device-home-state-execution/proof.json",
+          "sha256": "ea31958ec1119358e05f63b7333976fbda07311cb47da4e4bb19387445bc254f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-device-home-state-execution/result-review.json",
+          "sha256": "e1c9931abd56d890b55f003850a98d0ebe8758b68800a2f8b5a428062fa707e1"
+        }
+      },
+      {
+        "id": "device-home-entropy-tasks",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/entropy/:source",
+        "declarationIds": [
+          "decl-d760248db6e260180635eb7b-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "019e26cf150f21d8948900c55709405ffbb4600b38fafad4022f9925182b63f5",
+        "manifestSha256": "9cbacf1000af93b70072714448f4ff9d37cc725a8f75b05eed9ab86c1956941d",
+        "result": {
+          "path": "/tmp/readiness-device-home-state23-pair/pair-result.json",
+          "sha256": "cb349b76e2cc4c35ac0074e07ed1f94de268a2aa5346f52dd4e6010fa4b8ca73"
+        },
+        "proof": {
+          "path": "/tmp/readiness-device-home-state-execution/proof.json",
+          "sha256": "ea31958ec1119358e05f63b7333976fbda07311cb47da4e4bb19387445bc254f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-device-home-state-execution/result-review.json",
+          "sha256": "e1c9931abd56d890b55f003850a98d0ebe8758b68800a2f8b5a428062fa707e1"
+        }
+      },
+      {
+        "id": "device-home-entropy-missing",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/entropy/:source",
+        "declarationIds": [
+          "decl-d760248db6e260180635eb7b-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "019e26cf150f21d8948900c55709405ffbb4600b38fafad4022f9925182b63f5",
+        "manifestSha256": "9cbacf1000af93b70072714448f4ff9d37cc725a8f75b05eed9ab86c1956941d",
+        "result": {
+          "path": "/tmp/readiness-device-home-state23-pair/pair-result.json",
+          "sha256": "cb349b76e2cc4c35ac0074e07ed1f94de268a2aa5346f52dd4e6010fa4b8ca73"
+        },
+        "proof": {
+          "path": "/tmp/readiness-device-home-state-execution/proof.json",
+          "sha256": "ea31958ec1119358e05f63b7333976fbda07311cb47da4e4bb19387445bc254f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-device-home-state-execution/result-review.json",
+          "sha256": "e1c9931abd56d890b55f003850a98d0ebe8758b68800a2f8b5a428062fa707e1"
+        }
+      },
+      {
+        "id": "device-home-entropy-home",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/home/entropy",
+        "declarationIds": [
+          "decl-de9bfd737ffe918383a2468c-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "019e26cf150f21d8948900c55709405ffbb4600b38fafad4022f9925182b63f5",
+        "manifestSha256": "9cbacf1000af93b70072714448f4ff9d37cc725a8f75b05eed9ab86c1956941d",
+        "result": {
+          "path": "/tmp/readiness-device-home-state23-pair/pair-result.json",
+          "sha256": "cb349b76e2cc4c35ac0074e07ed1f94de268a2aa5346f52dd4e6010fa4b8ca73"
+        },
+        "proof": {
+          "path": "/tmp/readiness-device-home-state-execution/proof.json",
+          "sha256": "ea31958ec1119358e05f63b7333976fbda07311cb47da4e4bb19387445bc254f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-device-home-state-execution/result-review.json",
+          "sha256": "e1c9931abd56d890b55f003850a98d0ebe8758b68800a2f8b5a428062fa707e1"
+        }
+      },
+      {
+        "id": "device-home-entropy-home-automation",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/home-automation/entropy",
+        "declarationIds": [
+          "decl-de9bfd737ffe918383a2468c-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "019e26cf150f21d8948900c55709405ffbb4600b38fafad4022f9925182b63f5",
+        "manifestSha256": "9cbacf1000af93b70072714448f4ff9d37cc725a8f75b05eed9ab86c1956941d",
+        "result": {
+          "path": "/tmp/readiness-device-home-state23-pair/pair-result.json",
+          "sha256": "cb349b76e2cc4c35ac0074e07ed1f94de268a2aa5346f52dd4e6010fa4b8ca73"
+        },
+        "proof": {
+          "path": "/tmp/readiness-device-home-state-execution/proof.json",
+          "sha256": "ea31958ec1119358e05f63b7333976fbda07311cb47da4e4bb19387445bc254f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-device-home-state-execution/result-review.json",
+          "sha256": "e1c9931abd56d890b55f003850a98d0ebe8758b68800a2f8b5a428062fa707e1"
+        }
+      },
+      {
+        "id": "life-piano-plan-user_1",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/life/plan",
+        "declarationIds": [
+          "decl-a3a773f6c6b2009bd843cfab-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-vs-108b-captures; source-reviewed-two-array-expectation-only-offline-derivation",
+        "fixtureSha256": "1c3a3cc02be7cc965086e44deea4d2c0e013661a5bbf9095fd0a6a349da68778",
+        "manifestSha256": "563848675d49d233786c2cfb93c7c092494b147691f81f4f21c7f2d43b430501",
+        "correctedExpectationManifestFileSha256": "a08a5082a45583d78dc3608d356c9eaa5c766cece7cc9a6ad961f85786084362",
+        "result": {
+          "path": "/tmp/readiness-life-priorities-correction/life-piano-derived-receipt.json",
+          "sha256": "83f20bbeb743af48ef8b1bc845248db502ee06676360e202e8d64ff6f7d15cb0"
+        },
+        "originalFailedPair": {
+          "path": "/tmp/readiness-life-piano13-pair/pair-result.json",
+          "sha256": "4f820dd82f677c5faccba73938ab86969c9cd0b0c99b64f9443f8226665fcc54"
+        },
+        "proof": {
+          "path": "/tmp/readiness-life-piano-execution/proof.json",
+          "sha256": "070161a1b550166d5ae913b366aa8c150f1a87cd5ed6d95996b1f8f41a9c6005"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-life-priorities-correction/derived-result-review.json",
+          "sha256": "f0a8a1fd04ed4143ce015b370d94a0a32ec83d2330955b22ee771bbbc833adff"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "life-piano-plan-user_2",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/life/plan",
+        "declarationIds": [
+          "decl-a3a773f6c6b2009bd843cfab-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-vs-108b-captures; source-reviewed-two-array-expectation-only-offline-derivation",
+        "fixtureSha256": "1c3a3cc02be7cc965086e44deea4d2c0e013661a5bbf9095fd0a6a349da68778",
+        "manifestSha256": "563848675d49d233786c2cfb93c7c092494b147691f81f4f21c7f2d43b430501",
+        "correctedExpectationManifestFileSha256": "a08a5082a45583d78dc3608d356c9eaa5c766cece7cc9a6ad961f85786084362",
+        "result": {
+          "path": "/tmp/readiness-life-priorities-correction/life-piano-derived-receipt.json",
+          "sha256": "83f20bbeb743af48ef8b1bc845248db502ee06676360e202e8d64ff6f7d15cb0"
+        },
+        "originalFailedPair": {
+          "path": "/tmp/readiness-life-piano13-pair/pair-result.json",
+          "sha256": "4f820dd82f677c5faccba73938ab86969c9cd0b0c99b64f9443f8226665fcc54"
+        },
+        "proof": {
+          "path": "/tmp/readiness-life-piano-execution/proof.json",
+          "sha256": "070161a1b550166d5ae913b366aa8c150f1a87cd5ed6d95996b1f8f41a9c6005"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-life-priorities-correction/derived-result-review.json",
+          "sha256": "f0a8a1fd04ed4143ce015b370d94a0a32ec83d2330955b22ee771bbbc833adff"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "life-piano-priorities-default",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/life/now",
+        "declarationIds": [
+          "decl-3837ea88bac9d4fc7f3de516-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-vs-108b-captures; source-reviewed-two-array-expectation-only-offline-derivation",
+        "fixtureSha256": "1c3a3cc02be7cc965086e44deea4d2c0e013661a5bbf9095fd0a6a349da68778",
+        "manifestSha256": "563848675d49d233786c2cfb93c7c092494b147691f81f4f21c7f2d43b430501",
+        "correctedExpectationManifestFileSha256": "a08a5082a45583d78dc3608d356c9eaa5c766cece7cc9a6ad961f85786084362",
+        "result": {
+          "path": "/tmp/readiness-life-priorities-correction/life-piano-derived-receipt.json",
+          "sha256": "83f20bbeb743af48ef8b1bc845248db502ee06676360e202e8d64ff6f7d15cb0"
+        },
+        "originalFailedPair": {
+          "path": "/tmp/readiness-life-piano13-pair/pair-result.json",
+          "sha256": "4f820dd82f677c5faccba73938ab86969c9cd0b0c99b64f9443f8226665fcc54"
+        },
+        "proof": {
+          "path": "/tmp/readiness-life-piano-execution/proof.json",
+          "sha256": "070161a1b550166d5ae913b366aa8c150f1a87cd5ed6d95996b1f8f41a9c6005"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-life-priorities-correction/derived-result-review.json",
+          "sha256": "f0a8a1fd04ed4143ce015b370d94a0a32ec83d2330955b22ee771bbbc833adff"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "life-piano-priorities-explicit",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/life/now",
+        "declarationIds": [
+          "decl-3837ea88bac9d4fc7f3de516-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-vs-108b-captures; source-reviewed-two-array-expectation-only-offline-derivation",
+        "fixtureSha256": "1c3a3cc02be7cc965086e44deea4d2c0e013661a5bbf9095fd0a6a349da68778",
+        "manifestSha256": "563848675d49d233786c2cfb93c7c092494b147691f81f4f21c7f2d43b430501",
+        "correctedExpectationManifestFileSha256": "a08a5082a45583d78dc3608d356c9eaa5c766cece7cc9a6ad961f85786084362",
+        "result": {
+          "path": "/tmp/readiness-life-priorities-correction/life-piano-derived-receipt.json",
+          "sha256": "83f20bbeb743af48ef8b1bc845248db502ee06676360e202e8d64ff6f7d15cb0"
+        },
+        "originalFailedPair": {
+          "path": "/tmp/readiness-life-piano13-pair/pair-result.json",
+          "sha256": "4f820dd82f677c5faccba73938ab86969c9cd0b0c99b64f9443f8226665fcc54"
+        },
+        "proof": {
+          "path": "/tmp/readiness-life-piano-execution/proof.json",
+          "sha256": "070161a1b550166d5ae913b366aa8c150f1a87cd5ed6d95996b1f8f41a9c6005"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-life-priorities-correction/derived-result-review.json",
+          "sha256": "f0a8a1fd04ed4143ce015b370d94a0a32ec83d2330955b22ee771bbbc833adff"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "life-piano-dashboard",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/life/now",
+        "declarationIds": [
+          "decl-3837ea88bac9d4fc7f3de516-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-vs-108b-captures; source-reviewed-two-array-expectation-only-offline-derivation",
+        "fixtureSha256": "1c3a3cc02be7cc965086e44deea4d2c0e013661a5bbf9095fd0a6a349da68778",
+        "manifestSha256": "563848675d49d233786c2cfb93c7c092494b147691f81f4f21c7f2d43b430501",
+        "correctedExpectationManifestFileSha256": "a08a5082a45583d78dc3608d356c9eaa5c766cece7cc9a6ad961f85786084362",
+        "result": {
+          "path": "/tmp/readiness-life-priorities-correction/life-piano-derived-receipt.json",
+          "sha256": "83f20bbeb743af48ef8b1bc845248db502ee06676360e202e8d64ff6f7d15cb0"
+        },
+        "originalFailedPair": {
+          "path": "/tmp/readiness-life-piano13-pair/pair-result.json",
+          "sha256": "4f820dd82f677c5faccba73938ab86969c9cd0b0c99b64f9443f8226665fcc54"
+        },
+        "proof": {
+          "path": "/tmp/readiness-life-piano-execution/proof.json",
+          "sha256": "070161a1b550166d5ae913b366aa8c150f1a87cd5ed6d95996b1f8f41a9c6005"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-life-priorities-correction/derived-result-review.json",
+          "sha256": "f0a8a1fd04ed4143ce015b370d94a0a32ec83d2330955b22ee771bbbc833adff"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "life-piano-briefing-user_2",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/life/now",
+        "declarationIds": [
+          "decl-3837ea88bac9d4fc7f3de516-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-vs-108b-captures; source-reviewed-two-array-expectation-only-offline-derivation",
+        "fixtureSha256": "1c3a3cc02be7cc965086e44deea4d2c0e013661a5bbf9095fd0a6a349da68778",
+        "manifestSha256": "563848675d49d233786c2cfb93c7c092494b147691f81f4f21c7f2d43b430501",
+        "correctedExpectationManifestFileSha256": "a08a5082a45583d78dc3608d356c9eaa5c766cece7cc9a6ad961f85786084362",
+        "result": {
+          "path": "/tmp/readiness-life-priorities-correction/life-piano-derived-receipt.json",
+          "sha256": "83f20bbeb743af48ef8b1bc845248db502ee06676360e202e8d64ff6f7d15cb0"
+        },
+        "originalFailedPair": {
+          "path": "/tmp/readiness-life-piano13-pair/pair-result.json",
+          "sha256": "4f820dd82f677c5faccba73938ab86969c9cd0b0c99b64f9443f8226665fcc54"
+        },
+        "proof": {
+          "path": "/tmp/readiness-life-piano-execution/proof.json",
+          "sha256": "070161a1b550166d5ae913b366aa8c150f1a87cd5ed6d95996b1f8f41a9c6005"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-life-priorities-correction/derived-result-review.json",
+          "sha256": "f0a8a1fd04ed4143ce015b370d94a0a32ec83d2330955b22ee771bbbc833adff"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "life-piano-schedule-json",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/life/schedule/:format",
+        "declarationIds": [
+          "decl-40328a8d41f09a02fd8f4c3d-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-vs-108b-captures; source-reviewed-two-array-expectation-only-offline-derivation",
+        "fixtureSha256": "1c3a3cc02be7cc965086e44deea4d2c0e013661a5bbf9095fd0a6a349da68778",
+        "manifestSha256": "563848675d49d233786c2cfb93c7c092494b147691f81f4f21c7f2d43b430501",
+        "correctedExpectationManifestFileSha256": "a08a5082a45583d78dc3608d356c9eaa5c766cece7cc9a6ad961f85786084362",
+        "result": {
+          "path": "/tmp/readiness-life-priorities-correction/life-piano-derived-receipt.json",
+          "sha256": "83f20bbeb743af48ef8b1bc845248db502ee06676360e202e8d64ff6f7d15cb0"
+        },
+        "originalFailedPair": {
+          "path": "/tmp/readiness-life-piano13-pair/pair-result.json",
+          "sha256": "4f820dd82f677c5faccba73938ab86969c9cd0b0c99b64f9443f8226665fcc54"
+        },
+        "proof": {
+          "path": "/tmp/readiness-life-piano-execution/proof.json",
+          "sha256": "070161a1b550166d5ae913b366aa8c150f1a87cd5ed6d95996b1f8f41a9c6005"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-life-priorities-correction/derived-result-review.json",
+          "sha256": "f0a8a1fd04ed4143ce015b370d94a0a32ec83d2330955b22ee771bbbc833adff"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "life-piano-schedule-ical",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/life/schedule/:format",
+        "declarationIds": [
+          "decl-40328a8d41f09a02fd8f4c3d-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-vs-108b-captures; source-reviewed-two-array-expectation-only-offline-derivation",
+        "fixtureSha256": "1c3a3cc02be7cc965086e44deea4d2c0e013661a5bbf9095fd0a6a349da68778",
+        "manifestSha256": "563848675d49d233786c2cfb93c7c092494b147691f81f4f21c7f2d43b430501",
+        "correctedExpectationManifestFileSha256": "a08a5082a45583d78dc3608d356c9eaa5c766cece7cc9a6ad961f85786084362",
+        "result": {
+          "path": "/tmp/readiness-life-priorities-correction/life-piano-derived-receipt.json",
+          "sha256": "83f20bbeb743af48ef8b1bc845248db502ee06676360e202e8d64ff6f7d15cb0"
+        },
+        "originalFailedPair": {
+          "path": "/tmp/readiness-life-piano13-pair/pair-result.json",
+          "sha256": "4f820dd82f677c5faccba73938ab86969c9cd0b0c99b64f9443f8226665fcc54"
+        },
+        "proof": {
+          "path": "/tmp/readiness-life-piano-execution/proof.json",
+          "sha256": "070161a1b550166d5ae913b366aa8c150f1a87cd5ed6d95996b1f8f41a9c6005"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-life-priorities-correction/derived-result-review.json",
+          "sha256": "f0a8a1fd04ed4143ce015b370d94a0a32ec83d2330955b22ee771bbbc833adff"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "life-piano-schedule-xml",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/life/schedule/:format",
+        "declarationIds": [
+          "decl-40328a8d41f09a02fd8f4c3d-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-vs-108b-captures; source-reviewed-two-array-expectation-only-offline-derivation",
+        "fixtureSha256": "1c3a3cc02be7cc965086e44deea4d2c0e013661a5bbf9095fd0a6a349da68778",
+        "manifestSha256": "563848675d49d233786c2cfb93c7c092494b147691f81f4f21c7f2d43b430501",
+        "correctedExpectationManifestFileSha256": "a08a5082a45583d78dc3608d356c9eaa5c766cece7cc9a6ad961f85786084362",
+        "result": {
+          "path": "/tmp/readiness-life-priorities-correction/life-piano-derived-receipt.json",
+          "sha256": "83f20bbeb743af48ef8b1bc845248db502ee06676360e202e8d64ff6f7d15cb0"
+        },
+        "originalFailedPair": {
+          "path": "/tmp/readiness-life-piano13-pair/pair-result.json",
+          "sha256": "4f820dd82f677c5faccba73938ab86969c9cd0b0c99b64f9443f8226665fcc54"
+        },
+        "proof": {
+          "path": "/tmp/readiness-life-piano-execution/proof.json",
+          "sha256": "070161a1b550166d5ae913b366aa8c150f1a87cd5ed6d95996b1f8f41a9c6005"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-life-priorities-correction/derived-result-review.json",
+          "sha256": "f0a8a1fd04ed4143ce015b370d94a0a32ec83d2330955b22ee771bbbc833adff"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "life-piano-schedule-rss",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/life/schedule/:format",
+        "declarationIds": [
+          "decl-40328a8d41f09a02fd8f4c3d-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-vs-108b-captures; source-reviewed-two-array-expectation-only-offline-derivation",
+        "fixtureSha256": "1c3a3cc02be7cc965086e44deea4d2c0e013661a5bbf9095fd0a6a349da68778",
+        "manifestSha256": "563848675d49d233786c2cfb93c7c092494b147691f81f4f21c7f2d43b430501",
+        "correctedExpectationManifestFileSha256": "a08a5082a45583d78dc3608d356c9eaa5c766cece7cc9a6ad961f85786084362",
+        "result": {
+          "path": "/tmp/readiness-life-priorities-correction/life-piano-derived-receipt.json",
+          "sha256": "83f20bbeb743af48ef8b1bc845248db502ee06676360e202e8d64ff6f7d15cb0"
+        },
+        "originalFailedPair": {
+          "path": "/tmp/readiness-life-piano13-pair/pair-result.json",
+          "sha256": "4f820dd82f677c5faccba73938ab86969c9cd0b0c99b64f9443f8226665fcc54"
+        },
+        "proof": {
+          "path": "/tmp/readiness-life-piano-execution/proof.json",
+          "sha256": "070161a1b550166d5ae913b366aa8c150f1a87cd5ed6d95996b1f8f41a9c6005"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-life-priorities-correction/derived-result-review.json",
+          "sha256": "f0a8a1fd04ed4143ce015b370d94a0a32ec83d2330955b22ee771bbbc833adff"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "life-piano-lesson-index",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/piano/lessons/:collection",
+        "declarationIds": [
+          "decl-20d50545cab9d70027eceef5-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-vs-108b-captures; source-reviewed-two-array-expectation-only-offline-derivation",
+        "fixtureSha256": "1c3a3cc02be7cc965086e44deea4d2c0e013661a5bbf9095fd0a6a349da68778",
+        "manifestSha256": "563848675d49d233786c2cfb93c7c092494b147691f81f4f21c7f2d43b430501",
+        "correctedExpectationManifestFileSha256": "a08a5082a45583d78dc3608d356c9eaa5c766cece7cc9a6ad961f85786084362",
+        "result": {
+          "path": "/tmp/readiness-life-priorities-correction/life-piano-derived-receipt.json",
+          "sha256": "83f20bbeb743af48ef8b1bc845248db502ee06676360e202e8d64ff6f7d15cb0"
+        },
+        "originalFailedPair": {
+          "path": "/tmp/readiness-life-piano13-pair/pair-result.json",
+          "sha256": "4f820dd82f677c5faccba73938ab86969c9cd0b0c99b64f9443f8226665fcc54"
+        },
+        "proof": {
+          "path": "/tmp/readiness-life-piano-execution/proof.json",
+          "sha256": "070161a1b550166d5ae913b366aa8c150f1a87cd5ed6d95996b1f8f41a9c6005"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-life-priorities-correction/derived-result-review.json",
+          "sha256": "f0a8a1fd04ed4143ce015b370d94a0a32ec83d2330955b22ee771bbbc833adff"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "life-piano-lesson-drill",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/piano/lessons/:collection/:id",
+        "declarationIds": [
+          "decl-1a1888d3edfd83978c3a236e-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-vs-108b-captures; source-reviewed-two-array-expectation-only-offline-derivation",
+        "fixtureSha256": "1c3a3cc02be7cc965086e44deea4d2c0e013661a5bbf9095fd0a6a349da68778",
+        "manifestSha256": "563848675d49d233786c2cfb93c7c092494b147691f81f4f21c7f2d43b430501",
+        "correctedExpectationManifestFileSha256": "a08a5082a45583d78dc3608d356c9eaa5c766cece7cc9a6ad961f85786084362",
+        "result": {
+          "path": "/tmp/readiness-life-priorities-correction/life-piano-derived-receipt.json",
+          "sha256": "83f20bbeb743af48ef8b1bc845248db502ee06676360e202e8d64ff6f7d15cb0"
+        },
+        "originalFailedPair": {
+          "path": "/tmp/readiness-life-piano13-pair/pair-result.json",
+          "sha256": "4f820dd82f677c5faccba73938ab86969c9cd0b0c99b64f9443f8226665fcc54"
+        },
+        "proof": {
+          "path": "/tmp/readiness-life-piano-execution/proof.json",
+          "sha256": "070161a1b550166d5ae913b366aa8c150f1a87cd5ed6d95996b1f8f41a9c6005"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-life-priorities-correction/derived-result-review.json",
+          "sha256": "f0a8a1fd04ed4143ce015b370d94a0a32ec83d2330955b22ee771bbbc833adff"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "life-piano-lesson-missing",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/piano/lessons/:collection/:id",
+        "declarationIds": [
+          "decl-1a1888d3edfd83978c3a236e-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-vs-108b-captures; source-reviewed-two-array-expectation-only-offline-derivation",
+        "fixtureSha256": "1c3a3cc02be7cc965086e44deea4d2c0e013661a5bbf9095fd0a6a349da68778",
+        "manifestSha256": "563848675d49d233786c2cfb93c7c092494b147691f81f4f21c7f2d43b430501",
+        "correctedExpectationManifestFileSha256": "a08a5082a45583d78dc3608d356c9eaa5c766cece7cc9a6ad961f85786084362",
+        "result": {
+          "path": "/tmp/readiness-life-priorities-correction/life-piano-derived-receipt.json",
+          "sha256": "83f20bbeb743af48ef8b1bc845248db502ee06676360e202e8d64ff6f7d15cb0"
+        },
+        "originalFailedPair": {
+          "path": "/tmp/readiness-life-piano13-pair/pair-result.json",
+          "sha256": "4f820dd82f677c5faccba73938ab86969c9cd0b0c99b64f9443f8226665fcc54"
+        },
+        "proof": {
+          "path": "/tmp/readiness-life-piano-execution/proof.json",
+          "sha256": "070161a1b550166d5ae913b366aa8c150f1a87cd5ed6d95996b1f8f41a9c6005"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-life-priorities-correction/derived-result-review.json",
+          "sha256": "f0a8a1fd04ed4143ce015b370d94a0a32ec83d2330955b22ee771bbbc833adff"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "gaming-school-assets-catalog",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/gaming/assets/:packId",
+        "declarationIds": [
+          "decl-c70de4897dba243da639cd28-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "3751b04e541919ad6666ab32245ff9ed0e366a3ea814fd92ad60e1a23f52ebdb",
+        "manifestSha256": "ebd4003240a98046fdde6335c3774bfc0fd3af4fc1a6a3f0f059db6d59e4fc04",
+        "result": {
+          "path": "/tmp/readiness-gaming-school-assets7-pair/pair-result.json",
+          "sha256": "d6c345fa15e499f1f1b5cdf450c266de6671fc36eefca94c9465f9c244d2ddf4"
+        },
+        "proof": {
+          "path": "/tmp/readiness-gaming-school-assets-execution/proof.json",
+          "sha256": "49ee2f862c2563c46352f825f40cfb5bb227f6b9e9e8c7ce37aec8bebfa3a1df"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-gaming-school-assets-execution/result-review.json",
+          "sha256": "636894623c856070885a5333f5edc96296489aa8ecb9bd47f3a0b4a227075f9d"
+        }
+      },
+      {
+        "id": "gaming-school-assets-image-tile.base",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/gaming/assets/:packId/:assetId/image",
+        "declarationIds": [
+          "decl-9bf460b0fdcef741c377d4d5-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "3751b04e541919ad6666ab32245ff9ed0e366a3ea814fd92ad60e1a23f52ebdb",
+        "manifestSha256": "ebd4003240a98046fdde6335c3774bfc0fd3af4fc1a6a3f0f059db6d59e4fc04",
+        "result": {
+          "path": "/tmp/readiness-gaming-school-assets7-pair/pair-result.json",
+          "sha256": "d6c345fa15e499f1f1b5cdf450c266de6671fc36eefca94c9465f9c244d2ddf4"
+        },
+        "proof": {
+          "path": "/tmp/readiness-gaming-school-assets-execution/proof.json",
+          "sha256": "49ee2f862c2563c46352f825f40cfb5bb227f6b9e9e8c7ce37aec8bebfa3a1df"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-gaming-school-assets-execution/result-review.json",
+          "sha256": "636894623c856070885a5333f5edc96296489aa8ecb9bd47f3a0b4a227075f9d"
+        }
+      },
+      {
+        "id": "gaming-school-assets-image-tile.green",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/gaming/assets/:packId/:assetId/image",
+        "declarationIds": [
+          "decl-9bf460b0fdcef741c377d4d5-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "3751b04e541919ad6666ab32245ff9ed0e366a3ea814fd92ad60e1a23f52ebdb",
+        "manifestSha256": "ebd4003240a98046fdde6335c3774bfc0fd3af4fc1a6a3f0f059db6d59e4fc04",
+        "result": {
+          "path": "/tmp/readiness-gaming-school-assets7-pair/pair-result.json",
+          "sha256": "d6c345fa15e499f1f1b5cdf450c266de6671fc36eefca94c9465f9c244d2ddf4"
+        },
+        "proof": {
+          "path": "/tmp/readiness-gaming-school-assets-execution/proof.json",
+          "sha256": "49ee2f862c2563c46352f825f40cfb5bb227f6b9e9e8c7ce37aec8bebfa3a1df"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-gaming-school-assets-execution/result-review.json",
+          "sha256": "636894623c856070885a5333f5edc96296489aa8ecb9bd47f3a0b4a227075f9d"
+        }
+      },
+      {
+        "id": "gaming-school-assets-candidate-not-published",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/gaming/assets/:packId/:assetId/image",
+        "declarationIds": [
+          "decl-9bf460b0fdcef741c377d4d5-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "3751b04e541919ad6666ab32245ff9ed0e366a3ea814fd92ad60e1a23f52ebdb",
+        "manifestSha256": "ebd4003240a98046fdde6335c3774bfc0fd3af4fc1a6a3f0f059db6d59e4fc04",
+        "result": {
+          "path": "/tmp/readiness-gaming-school-assets7-pair/pair-result.json",
+          "sha256": "d6c345fa15e499f1f1b5cdf450c266de6671fc36eefca94c9465f9c244d2ddf4"
+        },
+        "proof": {
+          "path": "/tmp/readiness-gaming-school-assets-execution/proof.json",
+          "sha256": "49ee2f862c2563c46352f825f40cfb5bb227f6b9e9e8c7ce37aec8bebfa3a1df"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-gaming-school-assets-execution/result-review.json",
+          "sha256": "636894623c856070885a5333f5edc96296489aa8ecb9bd47f3a0b4a227075f9d"
+        }
+      },
+      {
+        "id": "gaming-school-assets-party-media",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/gaming/media/*splat",
+        "declarationIds": [
+          "decl-4354438d861fd610153b46e6-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "3751b04e541919ad6666ab32245ff9ed0e366a3ea814fd92ad60e1a23f52ebdb",
+        "manifestSha256": "ebd4003240a98046fdde6335c3774bfc0fd3af4fc1a6a3f0f059db6d59e4fc04",
+        "result": {
+          "path": "/tmp/readiness-gaming-school-assets7-pair/pair-result.json",
+          "sha256": "d6c345fa15e499f1f1b5cdf450c266de6671fc36eefca94c9465f9c244d2ddf4"
+        },
+        "proof": {
+          "path": "/tmp/readiness-gaming-school-assets-execution/proof.json",
+          "sha256": "49ee2f862c2563c46352f825f40cfb5bb227f6b9e9e8c7ce37aec8bebfa3a1df"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-gaming-school-assets-execution/result-review.json",
+          "sha256": "636894623c856070885a5333f5edc96296489aa8ecb9bd47f3a0b4a227075f9d"
+        }
+      },
+      {
+        "id": "gaming-school-assets-stored-effects",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/gaming/sessions/:sessionId/effects",
+        "declarationIds": [
+          "decl-4828315906dc5e4d5933e5d7-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "3751b04e541919ad6666ab32245ff9ed0e366a3ea814fd92ad60e1a23f52ebdb",
+        "manifestSha256": "ebd4003240a98046fdde6335c3774bfc0fd3af4fc1a6a3f0f059db6d59e4fc04",
+        "result": {
+          "path": "/tmp/readiness-gaming-school-assets7-pair/pair-result.json",
+          "sha256": "d6c345fa15e499f1f1b5cdf450c266de6671fc36eefca94c9465f9c244d2ddf4"
+        },
+        "proof": {
+          "path": "/tmp/readiness-gaming-school-assets-execution/proof.json",
+          "sha256": "49ee2f862c2563c46352f825f40cfb5bb227f6b9e9e8c7ce37aec8bebfa3a1df"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-gaming-school-assets-execution/result-review.json",
+          "sha256": "636894623c856070885a5333f5edc96296489aa8ecb9bd47f3a0b4a227075f9d"
+        }
+      },
+      {
+        "id": "gaming-school-assets-flashcard-image",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/school/flashcards/assets/*assetId",
+        "declarationIds": [
+          "decl-ed81e6e2e9df76353cad8841-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration",
+        "fixtureSha256": "3751b04e541919ad6666ab32245ff9ed0e366a3ea814fd92ad60e1a23f52ebdb",
+        "manifestSha256": "ebd4003240a98046fdde6335c3774bfc0fd3af4fc1a6a3f0f059db6d59e4fc04",
+        "result": {
+          "path": "/tmp/readiness-gaming-school-assets7-pair/pair-result.json",
+          "sha256": "d6c345fa15e499f1f1b5cdf450c266de6671fc36eefca94c9465f9c244d2ddf4"
+        },
+        "proof": {
+          "path": "/tmp/readiness-gaming-school-assets-execution/proof.json",
+          "sha256": "49ee2f862c2563c46352f825f40cfb5bb227f6b9e9e8c7ce37aec8bebfa3a1df"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-gaming-school-assets-execution/result-review.json",
+          "sha256": "636894623c856070885a5333f5edc96296489aa8ecb9bd47f3a0b4a227075f9d"
+        }
+      },
+      {
+        "id": "device-home-status-home",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/home/status",
+        "declarationIds": [
+          "decl-465d141ea817aaee67e3ee53-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration; reviewed-static-and-checked-elapsed-offline-derivation",
+        "fixtureSha256": "019e26cf150f21d8948900c55709405ffbb4600b38fafad4022f9925182b63f5",
+        "manifestSha256": "9cbacf1000af93b70072714448f4ff9d37cc725a8f75b05eed9ab86c1956941d",
+        "result": {
+          "path": "/tmp/readiness-home-uptime-contract/home-status-derived-receipt.json",
+          "sha256": "5a33311d8550fdd0c8f626b140041c48e6a03bb9fa7d179ecc6e46ae50b279a2"
+        },
+        "proof": {
+          "path": "/tmp/readiness-device-home-state-execution/proof.json",
+          "sha256": "ea31958ec1119358e05f63b7333976fbda07311cb47da4e4bb19387445bc254f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-home-uptime-contract/derived-result-review.json",
+          "sha256": "b01fcb7adda9a2eedea5a9951b15889364f29968d7d84980476c82901e52a2c2"
+        },
+        "originalFailedPair": {
+          "path": "/tmp/readiness-device-home-state23-pair/pair-result.json",
+          "sha256": "cb349b76e2cc4c35ac0074e07ed1f94de268a2aa5346f52dd4e6010fa4b8ca73"
+        },
+        "correctedExpectationManifestFileSha256": "9f933697d7f6194bca080381bc44d85e116396cbcc90f1aa85f7002f10f10ccb",
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "device-home-status-home-automation",
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "urlTemplate": "/api/v1/home-automation/status",
+        "declarationIds": [
+          "decl-465d141ea817aaee67e3ee53-0"
+        ],
+        "provenance": "actual-isolated-pinned0c-original-vs-108b30-committed-mapped-integration; reviewed-static-and-checked-elapsed-offline-derivation",
+        "fixtureSha256": "019e26cf150f21d8948900c55709405ffbb4600b38fafad4022f9925182b63f5",
+        "manifestSha256": "9cbacf1000af93b70072714448f4ff9d37cc725a8f75b05eed9ab86c1956941d",
+        "result": {
+          "path": "/tmp/readiness-home-uptime-contract/home-status-derived-receipt.json",
+          "sha256": "5a33311d8550fdd0c8f626b140041c48e6a03bb9fa7d179ecc6e46ae50b279a2"
+        },
+        "proof": {
+          "path": "/tmp/readiness-device-home-state-execution/proof.json",
+          "sha256": "ea31958ec1119358e05f63b7333976fbda07311cb47da4e4bb19387445bc254f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-home-uptime-contract/derived-result-review.json",
+          "sha256": "b01fcb7adda9a2eedea5a9951b15889364f29968d7d84980476c82901e52a2c2"
+        },
+        "originalFailedPair": {
+          "path": "/tmp/readiness-device-home-state23-pair/pair-result.json",
+          "sha256": "cb349b76e2cc4c35ac0074e07ed1f94de268a2aa5346f52dd4e6010fa4b8ca73"
+        },
+        "correctedExpectationManifestFileSha256": "9f933697d7f6194bca080381bc44d85e116396cbcc90f1aa85f7002f10f10ccb",
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
       }
     ],
     "infrastructure": {
@@ -51960,11 +55248,31 @@
           "id": "standing-report-parent",
           "method": "GET",
           "path": "/api/v1/school/report?userId=user_1&audience=parent"
+        },
+        {
+          "id": "learner-home-report-learner",
+          "method": "GET",
+          "path": "/api/v1/school/report?userId=user_1&audience=learner"
+        },
+        {
+          "id": "learner-home-report-parent",
+          "method": "GET",
+          "path": "/api/v1/school/report?userId=user_1&audience=parent"
+        },
+        {
+          "id": "learner-home-report-sibling",
+          "method": "GET",
+          "path": "/api/v1/school/report?userId=user_2&audience=learner"
+        },
+        {
+          "id": "learner-home-report-household",
+          "method": "GET",
+          "path": "/api/v1/school/report?audience=parent"
         }
       ],
       "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
       "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
-      "safetyPrerequisites": "No auth sid; lifecycle.enabled=true,virtualDevices=true; local schema-absent paper-only curriculum/document, no fitness-course units, no school materials config, no media/provider/program/launch/action refs; stored object session events and exact reviewed queue array only. JSON report-card/progress-report/format=json preview with previewOnly stubs; process-local memoization/corruption flags allowed, no persistent cache/provider/device/real session/ticket actions. Expiry admission and both roles checked. SAME reviewed fixture/manifest pair and exact case ID/method/query mandatory.",
+      "safetyPrerequisites": "No auth sid; lifecycle.enabled=true,virtualDevices=true; local schema-absent paper-only curriculum/document, no fitness-course units, no school materials config, no media/provider/program/launch/action refs; stored object session events and exact reviewed queue array only. JSON report-card/progress-report/format=json preview with previewOnly stubs; process-local memoization/corruption flags allowed, no persistent cache/provider/device/real session/ticket actions. Expiry admission and both roles checked. SAME reviewed fixture/manifest pair and exact case ID/method/query mandatory. Additional exact learner-home packet: lifecycle.enabled=false means WorkSessionReporter is not constructed; no language corpus/enrollment or School materials/curriculum. Synthetic two-learner normal/invalidated attempt-shard reads and configured adult teacher/profile-only Fitness listing; genuine recently ended Fitness session read only. No auth sid, provider enrollment/device identify/resume/merge/write. Exact added request ID/method/query and SAME preferred/fallback fixture-manifest pair required; all old standing fixtures/requests/diagnostics retained.",
       "sourceProof": [
         "modules/school/server/application/GetSchoolReport.mjs",
         "modules/school/server/application/WorkSessionReporter.mjs",
@@ -51980,16 +55288,54 @@
         {
           "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
           "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+        },
+        {
+          "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+          "manifestSha256": "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1"
+        },
+        {
+          "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+          "manifestSha256": "29035274d7930c8b82b4f5fbed8e1565e8eeedaf9e492d9da9c3c8882bf95905"
         }
       ],
       "approvedFixtureSha256": [
-        "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e"
+        "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+        "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e"
       ],
       "approvedManifestSha256": [
-        "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+        "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+        "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1",
+        "29035274d7930c8b82b4f5fbed8e1565e8eeedaf9e492d9da9c3c8882bf95905"
       ],
       "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
-      "denominatorContribution": "new-template"
+      "denominatorContribution": "new-template",
+      "reviewedBranchExtensions": [
+        {
+          "name": "learner-home-quiz-report-join",
+          "requestCaseIds": [
+            "learner-home-report-learner",
+            "learner-home-report-parent",
+            "learner-home-report-sibling",
+            "learner-home-report-household"
+          ],
+          "approvedPackets": [
+            {
+              "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+              "manifestSha256": "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1"
+            },
+            {
+              "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+              "manifestSha256": "29035274d7930c8b82b4f5fbed8e1565e8eeedaf9e492d9da9c3c8882bf95905"
+            }
+          ],
+          "sourceGuardSha256": "c2cb701e3ecd3def5123df173eca169c743988bc5a30bfd24460658bc5a11236",
+          "packetHandoff": "/tmp/readiness-learner-home-pack/HANDOFF.json",
+          "reviewRequiredBeforeApply": "/tmp/readiness-learner-home-pack/review.json",
+          "effects": "Pure aggregate of stored quiz attempts; inert lifecycle excludes WorkSessionReporter and its caches/actions. Original baseline pending-date expectations untouched.",
+          "noDenominatorGrowth": true
+        }
+      ]
     },
     {
       "admissionId": "standing-conditional-f321ca26a5912bdd",

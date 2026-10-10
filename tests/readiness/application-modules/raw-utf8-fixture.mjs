@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -25,8 +26,13 @@ export function validateRawFixtures(fixture) {
     const memo = /^data\/household(?:-[A-Za-z0-9_-]+)?\/fitness\/voice-memos\/vm_[A-Za-z0-9]{16}\.json$/.test(destination);
     const languageCorpus = /^data\/content\/school\/language\/[A-Za-z0-9_-]+\.yml$/.test(destination);
     const promptAudio = /^media\/school\/language\/[A-Za-z0-9_-]+\/\d{4}-[A-Za-z]{2,8}\.mp3$/.test(destination);
+    const pianoLesson = ['media/docs/piano-lessons/synthetic-daily-lessons/index.yml', 'media/docs/piano-lessons/synthetic-daily-lessons/five-finger.yml'].includes(destination);
+    const gamingStored = ['media/games/_common/catalog/synthetic-read-assets.yml', 'data/household/gaming/effects/sessions/synthetic_asset-session.jsonl'].includes(destination);
+    const gamingSchoolImage = ['media/games/_common/synthetic-read-assets/tiles.png', 'media/games/party-games/synthetic-read-assets.png', 'media/school/language/synthetic-read-assets/words/en/star/image.png'].includes(destination);
+    if (row.mtimeMs !== undefined) assert.ok(binary && gamingSchoolImage && row.mtimeMs === 1759276800000, 'Unreviewed fixture mtime');
+    if (gamingSchoolImage) assert.equal(row.mtimeMs, 1759276800000, 'Exact image fixture mtime required');
     const cueAudio = destination === 'media/school/_ux/ding.mp3';
-    assert.ok(binary ? payload || asset || promptAudio || cueAudio : languageCorpus || producer || composer || deck || attempts || bypass || lexicon || manifest || race || memo, 'Unreviewed raw destination');
+    assert.ok(binary ? gamingSchoolImage || payload || asset || promptAudio || cueAudio : gamingStored || pianoLesson || languageCorpus || producer || composer || deck || attempts || bypass || lexicon || manifest || race || memo, 'Unreviewed raw destination');
     for (const match of [attempts, manifest, payload]) if (match) assert.ok(Object.hasOwn(fixture.fixtureFiles, 'data/users/' + match[1] + '/profile.yml'), 'Raw School user must have projected roster profile');
     if (composer) assert.ok(Object.hasOwn(fixture.fixtureFiles, 'data/users/' + composer[1] + '/profile.yml'), 'Raw composer user must have a projected roster profile');
     assert.ok(!seen.has(destination) && !Object.hasOwn(fixture.fixtureFiles, destination), 'Raw duplicate or JSON collision'); seen.add(destination);
@@ -75,3 +81,32 @@ export function validateDirectoryFixtures(fixture) {
   return {fixtureDirectories:dirs,metadataDirectories:metadata};
 }
 export const directoryFixturePins = fixture => validateDirectoryFixtures(fixture);
+
+// Parent-side setup for three exact synthetic image files; no source files or syscall policy changes.
+export function materializeTimedImageFixtures(fixture, scratch) {
+  validateRawFixtures(fixture);
+  assert.ok(path.isAbsolute(scratch) && fs.realpathSync(scratch) === scratch && fs.lstatSync(scratch).isDirectory(), 'Canonical private scratch required');
+  const selected = (fixture.rawBinaryFiles ?? []).filter(row => row.mtimeMs !== undefined);
+  for (const row of selected) {
+    const file = path.join(scratch, row.destination);
+    assert.ok(file.startsWith(scratch + path.sep) && !fs.existsSync(file), 'Timed fixture collision');
+    let parent = scratch;
+    for (const segment of row.destination.split('/').slice(0, -1)) {
+      parent = path.join(parent, segment);
+      if (fs.existsSync(parent)) assert.ok(fs.lstatSync(parent).isDirectory() && !fs.lstatSync(parent).isSymbolicLink(), 'Timed fixture symlink/parent collision');
+    }
+  }
+  const observed = [];
+  for (const row of selected) {
+    const file = path.join(scratch, row.destination);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, Buffer.from(row.base64, 'base64'), { flag: 'wx', mode: 0o600 });
+    fs.utimesSync(file, row.mtimeMs / 1000, row.mtimeMs / 1000);
+    const stat = fs.lstatSync(file);
+    assert.ok(stat.isFile() && !stat.isSymbolicLink() && fs.realpathSync(file) === file);
+    assert.equal(stat.size, row.byteLength); assert.equal(stat.mtimeMs, row.mtimeMs);
+    assert.equal(createHash('sha256').update(fs.readFileSync(file)).digest('hex'), row.sha256);
+    observed.push({ destination: row.destination, sha256: row.sha256, byteLength: stat.size, mtimeMs: stat.mtimeMs });
+  }
+  return observed;
+}

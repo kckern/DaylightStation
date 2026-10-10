@@ -39,3 +39,9 @@ for (const [relative, value] of Object.entries(prepared.fixtureFiles)) {
   assert.equal(accepts(validateJSONFixtures),accepts(old),destination+':'+JSON.stringify(value));
  }
 });
+test('Automotive stored history arrays require exactly the three reviewed synthetic destinations',()=>{
+ const exact=['data/household/automotive/log/synthetic-array-car/2026-10-01.yml','data/household/automotive/log/synthetic-array-car/2026-10-02.yml','data/household/automotive/synthetic-array-car/fuel.yml'];
+ for(const destination of exact){const fixture={fixtureFiles:{[destination]:[{fixture:true}]}};const before=JSON.stringify(fixture);validateJSONFixtures(fixture);assert.equal(JSON.stringify(fixture),before);for(const value of [null,0,'scalar'])assert.throws(()=>validateJSONFixtures({fixtureFiles:{[destination]:value}}));}
+ for(const destination of ['data/household/automotive/log/synthetic-array-car/2026-10-03.yml','data/household/automotive/log/other-car/2026-10-01.yml','data/household/automotive/log/synthetic-array-car/2026-10-01.yaml','data/household/automotive/other-car/fuel.yml','data/household/automotive/synthetic-array-car/fuel.yaml','data/household/automotive/synthetic-array-car/fuel-extra.yml','data/household/automotive/log/synthetic-array-car/trips/2026-10/trip-one.yml','data/household/automotive/log/synthetic-array-car/../2026-10-01.yml'])assert.throws(()=>validateJSONFixtures({fixtureFiles:{[destination]:[]}}),destination);
+ for(const destination of exact){const bytes=Buffer.from('- fixture: true\n');assert.throws(()=>validateRawFixtures({fixtureFiles:{},rawUTF8Files:[{destination,encoding:'utf8',sha256:createHash('sha256').update(bytes).digest('hex'),byteLength:bytes.length,base64:bytes.toString('base64')}]}),/Unreviewed raw destination/);}
+});

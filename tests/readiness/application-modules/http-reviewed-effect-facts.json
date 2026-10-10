@@ -18478,11 +18478,31 @@
           "id": "standing-report-parent",
           "method": "GET",
           "path": "/api/v1/school/report?userId=user_1&audience=parent"
+        },
+        {
+          "id": "learner-home-report-learner",
+          "method": "GET",
+          "path": "/api/v1/school/report?userId=user_1&audience=learner"
+        },
+        {
+          "id": "learner-home-report-parent",
+          "method": "GET",
+          "path": "/api/v1/school/report?userId=user_1&audience=parent"
+        },
+        {
+          "id": "learner-home-report-sibling",
+          "method": "GET",
+          "path": "/api/v1/school/report?userId=user_2&audience=learner"
+        },
+        {
+          "id": "learner-home-report-household",
+          "method": "GET",
+          "path": "/api/v1/school/report?audience=parent"
         }
       ],
       "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
       "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
-      "safetyPrerequisites": "No auth sid; lifecycle.enabled=true,virtualDevices=true; local schema-absent paper-only curriculum/document, no fitness-course units, no school materials config, no media/provider/program/launch/action refs; stored object session events and exact reviewed queue array only. JSON report-card/progress-report/format=json preview with previewOnly stubs; process-local memoization/corruption flags allowed, no persistent cache/provider/device/real session/ticket actions. Expiry admission and both roles checked. SAME reviewed fixture/manifest pair and exact case ID/method/query mandatory.",
+      "safetyPrerequisites": "No auth sid; lifecycle.enabled=true,virtualDevices=true; local schema-absent paper-only curriculum/document, no fitness-course units, no school materials config, no media/provider/program/launch/action refs; stored object session events and exact reviewed queue array only. JSON report-card/progress-report/format=json preview with previewOnly stubs; process-local memoization/corruption flags allowed, no persistent cache/provider/device/real session/ticket actions. Expiry admission and both roles checked. SAME reviewed fixture/manifest pair and exact case ID/method/query mandatory. Additional exact learner-home packet: lifecycle.enabled=false means WorkSessionReporter is not constructed; no language corpus/enrollment or School materials/curriculum. Synthetic two-learner normal/invalidated attempt-shard reads and configured adult teacher/profile-only Fitness listing; genuine recently ended Fitness session read only. No auth sid, provider enrollment/device identify/resume/merge/write. Exact added request ID/method/query and SAME preferred/fallback fixture-manifest pair required; all old standing fixtures/requests/diagnostics retained.",
       "sourceProof": [
         "modules/school/server/application/GetSchoolReport.mjs",
         "modules/school/server/application/WorkSessionReporter.mjs",
@@ -18498,16 +18518,54 @@
         {
           "fixtureSha256": "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
           "manifestSha256": "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+        },
+        {
+          "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+          "manifestSha256": "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1"
+        },
+        {
+          "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+          "manifestSha256": "29035274d7930c8b82b4f5fbed8e1565e8eeedaf9e492d9da9c3c8882bf95905"
         }
       ],
       "approvedFixtureSha256": [
-        "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e"
+        "879a30df3ba9e2306b1999b3a99be5343bf25515bbd2dcb67a58bfd5660f574e",
+        "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+        "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e"
       ],
       "approvedManifestSha256": [
-        "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55"
+        "5aa4b4d45c5688224e75855b395f2bf80d126dd7d3ff185f9a6adfe83e514c55",
+        "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1",
+        "29035274d7930c8b82b4f5fbed8e1565e8eeedaf9e492d9da9c3c8882bf95905"
       ],
       "sourceGuardSha256": "18cc0bc5fb2e30ff4409c8405c7de7f0d46b736f1af338358a0b1a37ab64d398",
-      "denominatorContribution": "new-template"
+      "denominatorContribution": "new-template",
+      "reviewedBranchExtensions": [
+        {
+          "name": "learner-home-quiz-report-join",
+          "requestCaseIds": [
+            "learner-home-report-learner",
+            "learner-home-report-parent",
+            "learner-home-report-sibling",
+            "learner-home-report-household"
+          ],
+          "approvedPackets": [
+            {
+              "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+              "manifestSha256": "bbfccdbb8e7e3c7845a9882ffad107154c8d53ba349ee49cf27fa4652e7e5ed1"
+            },
+            {
+              "fixtureSha256": "1ffbc78024563d2adee39bd8ed8e95b5bd62ffc9f3effa9747a2b3761460076e",
+              "manifestSha256": "29035274d7930c8b82b4f5fbed8e1565e8eeedaf9e492d9da9c3c8882bf95905"
+            }
+          ],
+          "sourceGuardSha256": "c2cb701e3ecd3def5123df173eca169c743988bc5a30bfd24460658bc5a11236",
+          "packetHandoff": "/tmp/readiness-learner-home-pack/HANDOFF.json",
+          "reviewRequiredBeforeApply": "/tmp/readiness-learner-home-pack/review.json",
+          "effects": "Pure aggregate of stored quiz attempts; inert lifecycle excludes WorkSessionReporter and its caches/actions. Original baseline pending-date expectations untouched.",
+          "noDenominatorGrowth": true
+        }
+      ]
     },
     {
       "admissionId": "standing-conditional-f321ca26a5912bdd",

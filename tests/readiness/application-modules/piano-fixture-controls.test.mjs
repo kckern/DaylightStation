@@ -42,3 +42,21 @@ test('finite raw fixture pack cannot exceed eight MiB', () => {
   assert.throws(() => validateRawFixtures(value));
   value.rawUTF8Files.pop(); assert.equal(validateRawFixtures(value).length, 8);
 });
+
+test('two synthetic lesson YAML destinations preserve exact admitted bytes', () => {
+  for (const destination of ['media/docs/piano-lessons/synthetic-daily-lessons/index.yml', 'media/docs/piano-lessons/synthetic-daily-lessons/five-finger.yml']) {
+    const value = fixture(); value.rawUTF8Files[0].destination = destination;
+    const before = JSON.stringify(value);
+    assert.equal(validateRawFixtures(value).length, 1);
+    assert.equal(JSON.stringify(value), before);
+  }
+});
+test('lesson fixture exception rejects sibling collections, filenames and binary encoding', () => {
+  for (const destination of ['media/docs/piano-lessons/synthetic-daily-lessons/other.yml', 'media/docs/piano-lessons/other/index.yml', 'media/docs/piano-lessons/synthetic-daily-lessons/index.yaml', 'media/docs/piano-lessons/synthetic-daily-lessons/../index.yml', 'media/docs/piano-lessons/synthetic-daily-lessons/index.mp3']) {
+    const value = fixture(); value.rawUTF8Files[0].destination = destination;
+    assert.throws(() => validateRawFixtures(value));
+  }
+  const value = fixture(); value.rawUTF8Files[0].destination = 'media/docs/piano-lessons/synthetic-daily-lessons/index.yml';
+  value.rawUTF8Files[0].encoding = 'binary';
+  assert.throws(() => validateRawFixtures(value));
+});

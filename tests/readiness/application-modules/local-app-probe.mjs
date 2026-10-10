@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -40,7 +41,16 @@ try {
   for (const row of [...rawUTF8Files, ...rawBinaryFiles]) {
     const file = path.join(scratch, row.destination);
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, Buffer.from(row.base64, 'base64'), { flag: 'wx', mode: 0o600 });
+    if (row.mtimeMs !== undefined) {
+      assert.ok(row.encoding === 'binary' && ['media/games/_common/synthetic-read-assets/tiles.png', 'media/games/party-games/synthetic-read-assets.png', 'media/school/language/synthetic-read-assets/words/en/star/image.png'].includes(row.destination));
+      assert.equal(row.mtimeMs, 1759276800000);
+      const stat = fs.lstatSync(file);
+      assert.ok(stat.isFile() && !stat.isSymbolicLink() && fs.realpathSync(file) === file);
+      assert.equal(stat.size, row.byteLength); assert.equal(stat.mtimeMs, row.mtimeMs);
+      assert.equal(createHash('sha256').update(fs.readFileSync(file)).digest('hex'), row.sha256);
+      result.timedImageFixtures ??= [];
+      result.timedImageFixtures.push({ destination: row.destination, sha256: row.sha256, byteLength: stat.size, mtimeMs: stat.mtimeMs });
+    } else fs.writeFileSync(file, Buffer.from(row.base64, 'base64'), { flag: 'wx', mode: 0o600 });
   }
   for (const relative of fixtureDirectories) fs.mkdirSync(path.join(scratch,relative),{recursive:true});
   // Exact names-only menu projection: payload paths remain absent. No other fs call

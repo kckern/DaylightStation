@@ -5,7 +5,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { validateCaptureManifest, fetchTransport } from './api-comparator.mjs';
-import { validateRawFixtures, validateDirectoryFixtures } from './raw-utf8-fixture.mjs';
+import { validateRawFixtures, validateDirectoryFixtures, materializeTimedImageFixtures } from './raw-utf8-fixture.mjs';
 
 import { validateTestMetadata, dependencyReadGrants, assertMetadataDenied } from './runtime-test-metadata.mjs';
 
@@ -54,7 +54,7 @@ for (const [relative, value] of Object.entries(prepared.fixtureFiles)) {
   // Exact metadata recipe source only; no dataset/raw path or resolution grant.
   const reviewedRecipeArray = relative === 'data/content/school/generated-banks/recipes.yml';
   // Exact synthetic stored-array destinations only; no raw or filesystem grant.
-  const reviewedStoredArray = ["data/users/user_1/apps/health/meals.yml","data/household/automotive/synthetic-array-car/service.yml","data/household/automotive/synthetic-array-car/documents.yml"].includes(relative);
+  const reviewedStoredArray = ["data/users/user_1/apps/health/meals.yml","data/household/automotive/synthetic-array-car/service.yml","data/household/automotive/synthetic-array-car/documents.yml","data/household/automotive/log/synthetic-array-car/2026-10-01.yml","data/household/automotive/log/synthetic-array-car/2026-10-02.yml","data/household/automotive/synthetic-array-car/fuel.yml"].includes(relative);
   assert.ok(value && typeof value === 'object' && (!Array.isArray(value) || reviewedArray || reviewedRecipeArray || reviewedStoredArray || relative === "data/users/user_1/current/calendar.yml" || relative === "data/household/history/media-plays/2026-10-09.yml" || relative === "data/household/school/runtime/review/synthetic-review-session.yml"), 'Only reviewed stored-data or exact School recipes paths may have an array root');
 }
 // Explicit runtime timezone matches the reviewed deployment/config contract.
@@ -63,12 +63,15 @@ assert.ok(typeof runtimeTimezone === 'string' && /^[A-Za-z_]+(?:\/[A-Za-z0-9_+-]
 new Intl.DateTimeFormat('en-US', { timeZone: runtimeTimezone }).format(0);
 // Keep credentials, services, integrations and devices synthetic and disabled.
 for (const relative of ['data/system/config/auth.yml', 'data/system/config/services.yml', 'data/system/config/adapters.yml', 'data/system/config/bots.yml', 'data/system/secrets.yml', 'data/household/integrations.yml', 'data/household/hardware/devices.yml']) {
-  assert.deepEqual(prepared.fixtureFiles[relative], fixed.fixtureFiles[relative], `Unsafe startup fixture change: ${relative}`);
+  // Exact synthetic descriptors only: no capabilities, providers, hosts, auth or activation.
+  const reviewedMetadataDevices = relative === 'data/household/hardware/devices.yml' && JSON.stringify(prepared.fixtureFiles[relative]) === "{\"devices\":{\"synthetic-reading-panel\":{\"type\":\"readiness-metadata\",\"name\":\"Reading Panel\",\"location\":\"Reading Room\",\"icon\":\"book\"},\"synthetic-fitness-panel\":{\"type\":\"readiness-metadata\",\"name\":\"Movement Panel\",\"location\":\"Exercise Room\",\"icon\":\"fitness\"}}}" && createHash('sha256').update(JSON.stringify(prepared)).digest('hex') === '17806e1d1d5a096f8b9dc08b9e946ef581e4cf96621c360f83c7a79f30bc1018';
+  if (!reviewedMetadataDevices) assert.deepEqual(prepared.fixtureFiles[relative], fixed.fixtureFiles[relative], `Unsafe startup fixture change: ${relative}`);
 }
 const run = fs.mkdtempSync(path.join(outputRoot, 'daylight-local-http-'));
 fs.chmodSync(run, 0o700);
 const scratch = path.join(run, 'scratch'), denied = path.join(run, 'denied');
 fs.mkdirSync(scratch); fs.mkdirSync(denied);
+materializeTimedImageFixtures(prepared, scratch);
 fs.writeFileSync(path.join(denied, 'private.env'), 'synthetic private sentinel\n', { mode: 0o600 });
 fs.writeFileSync(path.join(scratch, 'openssl.cnf'), '');
 fs.writeFileSync(path.join(scratch, 'probe-input.json'), JSON.stringify({ sourceRoot, fixtureFiles: prepared.fixtureFiles, rawUTF8Files, rawBinaryFiles, fixtureDirectories, metadataDirectories }), { mode: 0o600 });
