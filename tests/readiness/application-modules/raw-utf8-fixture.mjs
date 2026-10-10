@@ -6,12 +6,15 @@ import { createHash } from 'node:crypto';
 // Finite reviewed Piano, School, Language and Fitness data only. Bytes travel in the already pinned fixture;
 // the sandbox receives no new read, write or network grant.
 export function validateRawFixtures(fixture) {
+  validateFixedConfigMetadata(fixture);
   const rows = fixture.rawUTF8Files ?? [], binaryRows = fixture.rawBinaryFiles ?? [];
   assert.ok(Array.isArray(rows) && Array.isArray(binaryRows));
   const seen = new Set(); let total = 0;
   for (const row of [...rows, ...binaryRows]) {
     const binary = binaryRows.includes(row);
     const destination = row.destination;
+    const householdListImage = ['media/img/lists/synthetic-breakfast.png','media/img/lists/synthetic-reading.png','media/img/lists/synthetic-weekly.png'].includes(destination);
+    const householdListNote = destination === 'media/img/lists/synthetic-note.txt';
     assert.ok(typeof destination === 'string' && path.posix.normalize(destination) === destination && !destination.includes('\\'));
     const producer = /^data\/household(?:-[A-Za-z0-9_-]+)?\/piano\/producer\/(loops|crate|songs)\/[a-z0-9-]+\.yml$/.test(destination);
     const composer = /^data\/users\/([A-Za-z0-9_-]+)\/apps\/piano\/composer\/[a-z0-9-]+\.musicxml$/.exec(destination);
@@ -34,11 +37,20 @@ export function validateRawFixtures(fixture) {
     const gamingSchoolImage = ['media/games/_common/synthetic-read-assets/tiles.png', 'media/games/party-games/synthetic-read-assets.png', 'media/school/language/synthetic-read-assets/words/en/star/image.png'].includes(destination);
     const mediaNavigationImage = ["media/audio/readalong/synthetic-media-navigation/cover.png", "media/audio/readalong/synthetic-media-navigation/chapter/cover.png", "data/content/readalong/synthetic-media-navigation/icon.png"].includes(destination);
     const mediaNavigationAudio = ["media/audio/readalong/synthetic-media-navigation/chapter/0001-synthetic-reading.wav", "media/audio/singalong/synthetic-media-navigation/0001-synthetic-song.mp3"].includes(destination);
-    if (row.mtimeMs !== undefined) assert.ok(binary && (gamingSchoolImage || mediaNavigationImage) && row.mtimeMs === 1759276800000, 'Unreviewed fixture mtime');
-    if (gamingSchoolImage || mediaNavigationImage) assert.equal(row.mtimeMs, 1759276800000, 'Exact image fixture mtime required');
+    if (row.mtimeMs !== undefined) assert.ok(binary && (householdListImage || gamingSchoolImage || mediaNavigationImage) && row.mtimeMs === 1759276800000, 'Unreviewed fixture mtime');
+    if (householdListImage || gamingSchoolImage || mediaNavigationImage) assert.equal(row.mtimeMs, 1759276800000, 'Exact image fixture mtime required');
+    const healthAuditJournalPins = {"data/users/user_1/lifelog/nutrition/auditor-journal/2025-10.synthetic-readiness.jsonl":{"sha256":"a1e161acf8fff994007e6031ecd201c97e92de68e68006902105069998473230","byteLength":2134},"data/users/user_1/lifelog/nutrition/auditor-journal/2025-10.synthetic-secondary.jsonl":{"sha256":"4c071540f722283c390337b6af8226a187171582ef6d7b19d27e5bb8932ebfa3","byteLength":349}};
+    const healthAuditJournalText = Object.hasOwn(healthAuditJournalPins, destination) && row.sha256 === healthAuditJournalPins[destination].sha256 && row.byteLength === healthAuditJournalPins[destination].byteLength;
+    if (healthAuditJournalText) assert.ok(Object.hasOwn(fixture.fixtureFiles, "data/users/user_1/profile.yml"), "Reviewed audit journal requires projected owner");
+    const adminSceneIndexText = ["media/games/_common/catalog/synthetic-daily-scenes/catalog.yml","media/games/_common/catalog/synthetic-daily-scenes/scenes.yml","media/games/_common/catalog/synthetic-daily-scenes/reading-room.yml","media/games/_common/catalog/synthetic-daily-scenes/garden-path.yml","media/games/_common/catalog/synthetic-evening-scenes/catalog.yml","media/games/_common/catalog/synthetic-evening-scenes/scenes.yml","media/games/_common/catalog/synthetic-evening-scenes/quiet-room.yml"].includes(destination);
+    const emulatorStoredText = ["media/emulation/synthetic-daily-console/catalog.yml", "media/emulation/input.yml", "media/emulation/consoles.yml", "media/emulation/settings.yml", "media/emulation/_engine/loader.js", "media/emulation/_engine/localization/en.json"].includes(destination);
+    const schoolPosterJPEG = ["media/school/math/synthetic-poster-shapes/poster.jpg", "media/school/math/synthetic-poster-counting/poster.jpg", "media/school/programs/story-time/poster.jpg", "media/school/programs/word-ladder/poster.jpg", "media/school/programs/story-time/synthetic-evening/poster.jpg", "media/school/programs/word-ladder/synthetic-korean/poster.jpg"].includes(destination);
+    const emulatorStoredPNG = ["media/emulation/synthetic-daily-console/cover.png", "media/emulation/synthetic-daily-console/bezel.png", "media/emulation/synthetic-daily-console/logo.png"].includes(destination);
+    const emulatorOpaquePins = {"media/emulation/synthetic-daily-console/pocket-trail.gb":{"sha256":"2f620d39b3edbf55680f641997fe2a9da62c87e97e1a942ad2b277f8250a5bc2","byteLength":69},"media/emulation/synthetic-daily-console/saves/user_1/pocket-trail.srm":{"sha256":"11a1f8add11fcd631a88c6fa5db084b106ac653d82565e45319ea1d0a5ae40d9","byteLength":32},"media/emulation/synthetic-daily-console/states/user_2/pocket-trail/slot-1.state":{"sha256":"1108c1c7392c985392baa1835dc202a1d28356a8dd7033863c18336f7899a5fc","byteLength":31}};
+    const emulatorOpaque = Object.hasOwn(emulatorOpaquePins, destination) && row.sha256 === emulatorOpaquePins[destination].sha256 && row.byteLength === emulatorOpaquePins[destination].byteLength;
     const studyRecording = destination === "media/school/language/daily-korean/recordings/user_1/0002-KR.wav";
     const cueAudio = destination === 'media/school/_ux/ding.mp3';
-    assert.ok(binary ? householdStaticPNG || curationUsageImage || mediaNavigationImage || mediaNavigationAudio || studyRecording || gamingSchoolImage || payload || asset || promptAudio || cueAudio : curationUsageText || gamingStored || pianoLesson || languageCorpus || producer || composer || deck || attempts || bypass || lexicon || manifest || race || memo, 'Unreviewed raw destination');
+    assert.ok(binary ? householdListImage || schoolPosterJPEG || emulatorStoredPNG || emulatorOpaque || householdStaticPNG || curationUsageImage || mediaNavigationImage || mediaNavigationAudio || studyRecording || gamingSchoolImage || payload || asset || promptAudio || cueAudio : householdListNote || healthAuditJournalText || adminSceneIndexText || emulatorStoredText || curationUsageText || gamingStored || pianoLesson || languageCorpus || producer || composer || deck || attempts || bypass || lexicon || manifest || race || memo, 'Unreviewed raw destination');
     for (const match of [attempts, manifest, payload]) if (match) assert.ok(Object.hasOwn(fixture.fixtureFiles, 'data/users/' + match[1] + '/profile.yml'), 'Raw School user must have projected roster profile');
     if (composer) assert.ok(Object.hasOwn(fixture.fixtureFiles, 'data/users/' + composer[1] + '/profile.yml'), 'Raw composer user must have a projected roster profile');
     assert.ok(!seen.has(destination) && !Object.hasOwn(fixture.fixtureFiles, destination), 'Raw duplicate or JSON collision'); seen.add(destination);
@@ -50,7 +62,7 @@ export function validateRawFixtures(fixture) {
     assert.equal(createHash('sha256').update(bytes).digest('hex'), row.sha256, 'Raw byte hash mismatch');
     if (binary) {
       const extension = path.posix.extname(destination);
-      const signature = (studyRecording || destination === "media/audio/readalong/synthetic-media-navigation/chapter/0001-synthetic-reading.wav") ? bytes.length>=44 && bytes.subarray(0,4).toString('ascii')==='RIFF' && bytes.subarray(8,12).toString('ascii')==='WAVE' && bytes.readUInt32LE(4)+8===bytes.length
+      const signature = emulatorOpaque ? createHash('sha256').update(bytes).digest('hex') === emulatorOpaquePins[destination].sha256 : (studyRecording || destination === "media/audio/readalong/synthetic-media-navigation/chapter/0001-synthetic-reading.wav") ? bytes.length>=44 && bytes.subarray(0,4).toString('ascii')==='RIFF' && bytes.subarray(8,12).toString('ascii')==='WAVE' && bytes.readUInt32LE(4)+8===bytes.length
         : extension === '.png' ? bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))
         : extension === '.jpg' ? bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255
         : extension === '.mp3' && (bytes.subarray(0, 3).toString('ascii') === 'ID3' || bytes[0] === 255 && (bytes[1] & 224) === 224);
@@ -93,7 +105,7 @@ export const directoryFixturePins = fixture => validateDirectoryFixtures(fixture
 export function materializeTimedImageFixtures(fixture, scratch) {
   validateRawFixtures(fixture);
   assert.ok(path.isAbsolute(scratch) && fs.realpathSync(scratch) === scratch && fs.lstatSync(scratch).isDirectory(), 'Canonical private scratch required');
-  const selected = (fixture.rawBinaryFiles ?? []).filter(row => row.mtimeMs !== undefined);
+  const selected = [...(fixture.rawBinaryFiles ?? []).filter(row => row.mtimeMs !== undefined), ...validateFixedConfigMetadata(fixture).map(row=>({...row,base64:Buffer.from(JSON.stringify(fixture.fixtureFiles[row.destination],null,2)+'\n').toString('base64')}))];
   for (const row of selected) {
     const file = path.join(scratch, row.destination);
     assert.ok(file.startsWith(scratch + path.sep) && !fs.existsSync(file), 'Timed fixture collision');
@@ -116,4 +128,19 @@ export function materializeTimedImageFixtures(fixture, scratch) {
     observed.push({ destination: row.destination, sha256: row.sha256, byteLength: stat.size, mtimeMs: stat.mtimeMs });
   }
   return observed;
+}
+
+// One reviewed synthetic Admin packet only. Metadata belongs to fixture inputs, never response masks.
+export function validateFixedConfigMetadata(fixture) {
+  const rows=fixture.fixedConfigMetadata ?? [];
+  assert.ok(Array.isArray(rows),'Fixed configuration metadata must be an array');
+  if(!rows.length)return [];
+  assert.equal(createHash('sha256').update(JSON.stringify(fixture)).digest('hex'), 'a560a0bd7d863c7e4b8a27d7882b3584feda76121c1140c6ad10b2e00942b230', 'Unreviewed fixed configuration fixture');
+  assert.deepEqual(rows,[{"destination":"data/system/config/system.yml","sha256":"9415b5b5dd1d163436debe3f0a3a1864265b637a0942bbbbcc2331c78c164601","byteLength":259,"mtimeMs":1759276800000},{"destination":"data/household/household.yml","sha256":"e8165fc7033400356869ab33ae0d2598bb0ec9ef132ac5f5b5c15afa4f8f5b8c","byteLength":91,"mtimeMs":1759276800000},{"destination":"data/users/user_1/profile.yml","sha256":"c6c84ac068683e98f5db567c6b52e2405f6c8d7cca3086fbb998c4b401e14be4","byteLength":101,"mtimeMs":1759276800000},{"destination":"data/system/config/auth.yml","sha256":"1c7ac01924ad32cda69b8f41a2170c40f953d176f53368c8cc5575195febb3b6","byteLength":546,"mtimeMs":1759276800000},{"destination":"data/system/config/domains.yml","sha256":"4980a3c6aaeafd832c2624319116a71ec9916ad85b28f2f29b9ea53d8d9ad26d","byteLength":81,"mtimeMs":1759276800000},{"destination":"data/system/config/services.yml","sha256":"ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356","byteLength":3,"mtimeMs":1759276800000},{"destination":"data/system/config/adapters.yml","sha256":"ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356","byteLength":3,"mtimeMs":1759276800000},{"destination":"data/system/config/bots.yml","sha256":"ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356","byteLength":3,"mtimeMs":1759276800000},{"destination":"data/system/secrets.yml","sha256":"ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356","byteLength":3,"mtimeMs":1759276800000},{"destination":"data/household/integrations.yml","sha256":"34e7ffebf094aa2eea6f26daada6cd19a6967c0bd90eff554eb7bd9569334bda","byteLength":358,"mtimeMs":1759276800000},{"destination":"data/household/hardware/devices.yml","sha256":"698b1fb4670c582e6ca6c7ef252313f9f1ac91bb8e67d8821ac0d1aa7dad60a7","byteLength":20,"mtimeMs":1759276800000},{"destination":"data/household/fitness/config.yml","sha256":"06b41f18245c0d673782662d7f6539c0e903d80f195687c2175e6ab42e89bb92","byteLength":125,"mtimeMs":1759276800000},{"destination":"data/household/finance/config.yml","sha256":"7b4c09893f40bf260eef844a3ade0b9f6c5de991305023116537e01254268245","byteLength":125,"mtimeMs":1759276800000},{"destination":"data/household/gratitude/config.yml","sha256":"06324bd739beb6646aa90c26ee9e63cb7bc8852b544b1df9a0c218f42a0c59ad","byteLength":127,"mtimeMs":1759276800000},{"destination":"data/household/harvest/config.yml","sha256":"fc04460edaec5429f4ccc5bdc1cf31e6ff5f21cbd75c4f6bff5617a13db3088e","byteLength":126,"mtimeMs":1759276800000},{"destination":"data/household/media/app.yml","sha256":"b74b5fb1736641eacf01d65a54985b5790410114725cbe0f72ec5af6f1139996","byteLength":123,"mtimeMs":1759276800000},{"destination":"data/household/entropy/config.yml","sha256":"523db561862c8c07e94d5e0a4824fda2f3808aede3f4f261caf4d4c99160fa3d","byteLength":125,"mtimeMs":1759276800000},{"destination":"data/household/piano/config.yml","sha256":"33f8fc71f16f8a373393bdebac8d48f07f871e8627f238dd3bc45283ca9beb00","byteLength":123,"mtimeMs":1759276800000},{"destination":"data/system/config/readiness-display.yml","sha256":"b25360760fc83fb8748d8929ee177b598f527e1103e6569189c2c11f4dede886","byteLength":89,"mtimeMs":1759276800000},{"destination":"data/system/config/readiness-library.yml","sha256":"8172dcf2c7484a4530bdbe117be8f1384d2e575a8f95c0f8dffa45be14121dcd","byteLength":118,"mtimeMs":1759276800000}],'Exact configuration metadata rows required');
+  for(const row of rows){
+    assert.ok(Object.hasOwn(fixture.fixtureFiles,row.destination),'Metadata must address its authored JSON fixture');
+    const bytes=Buffer.from(JSON.stringify(fixture.fixtureFiles[row.destination],null,2)+'\n');
+    assert.equal(bytes.length,row.byteLength);assert.equal(createHash('sha256').update(bytes).digest('hex'),row.sha256);
+  }
+  return rows;
 }

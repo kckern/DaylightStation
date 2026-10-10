@@ -27920,62 +27920,6 @@
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
     {
-      "urlTemplate": "/api/v1/admin/apps",
-      "eligibleDeclarationIds": [
-        "decl-b87b2f4d005e4adcc2f3cbd3-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/admin/config/files",
-      "eligibleDeclarationIds": [
-        "decl-df5f815971d318a70d5fee03-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/admin/config/files{/*splat}",
-      "eligibleDeclarationIds": [
-        "decl-15e7c62735e61f7f8f347b1a-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/admin/household/devices",
-      "eligibleDeclarationIds": [
-        "decl-5fd739700e4608af70ca2227-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/admin/household/devices/:deviceId",
-      "eligibleDeclarationIds": [
-        "decl-5d2f84afa1f0b10c6e15081a-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/admin/images/list",
-      "eligibleDeclarationIds": [
-        "decl-5c0a5450cc8176ebd277cc81-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/admin/integrations",
-      "eligibleDeclarationIds": [
-        "decl-bef105a79af436455f70514e-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/admin/integrations/:provider",
-      "eligibleDeclarationIds": [
-        "decl-a0e19d91eb6670d3b10b05a8-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
       "urlTemplate": "/api/v1/ai",
       "eligibleDeclarationIds": [
         "decl-85b653f1b5c1624e44f5f4b9-0"
@@ -28070,62 +28014,6 @@
       "urlTemplate": "/api/v1/eink/:id/status",
       "eligibleDeclarationIds": [
         "decl-156af58e7e4305889a27830f-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/emulator/art/:system/:gameId/:kind",
-      "eligibleDeclarationIds": [
-        "decl-db3625f7f36777eb21cb0305-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/emulator/engine/*splat",
-      "eligibleDeclarationIds": [
-        "decl-547665392c9b90f12c788e6d-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/emulator/library",
-      "eligibleDeclarationIds": [
-        "decl-55eaf84d1a5c497141a1f603-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/emulator/logo/:system",
-      "eligibleDeclarationIds": [
-        "decl-bb4904f977fa5677dddad84e-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/emulator/rom/:system/:gameId",
-      "eligibleDeclarationIds": [
-        "decl-e938bebfabf9de922f40f3c3-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/emulator/save/:system/:gameId",
-      "eligibleDeclarationIds": [
-        "decl-3382632ead3c52458abbdbdd-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/emulator/saves/:system/:gameId",
-      "eligibleDeclarationIds": [
-        "decl-205a7a5a5ae8c13cf84d05c5-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/emulator/state/:system/:gameId/:slot",
-      "eligibleDeclarationIds": [
-        "decl-c598dae553dbdcfb2d788485-0"
       ],
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
@@ -28235,13 +28123,6 @@
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
     {
-      "urlTemplate": "/api/v1/health/nutrition/cleanup/journal",
-      "eligibleDeclarationIds": [
-        "decl-a1268e9817b2f3f5cb8826d0-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
       "urlTemplate": "/api/v1/health/nutrition/photos/:photoRef",
       "eligibleDeclarationIds": [
         "decl-9c2d4f1ce9732168d4b9697a-0"
@@ -28256,30 +28137,9 @@
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
     {
-      "urlTemplate": "/api/v1/homebot/health",
-      "eligibleDeclarationIds": [
-        "decl-91d3117cda0ca8b5f4baec08-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/journalist/health",
-      "eligibleDeclarationIds": [
-        "decl-32f74361339b3cf704851190-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
       "urlTemplate": "/api/v1/journalist/journal",
       "eligibleDeclarationIds": [
         "decl-6e48f7c281707918b2e9f971-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/life/health",
-      "eligibleDeclarationIds": [
-        "decl-7a39aff1a46e37e94aa2ddac-0"
       ],
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
@@ -28326,13 +28186,6 @@
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
     {
-      "urlTemplate": "/api/v1/nutribot/health",
-      "eligibleDeclarationIds": [
-        "decl-cec36157e783e2d6edccdc69-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
       "urlTemplate": "/api/v1/nutribot/report",
       "eligibleDeclarationIds": [
         "decl-af0ac9cb72d4148a7de90038-0"
@@ -28364,13 +28217,6 @@
       "urlTemplate": "/api/v1/playback-hub/config",
       "eligibleDeclarationIds": [
         "decl-28a35ab1d0688159eafe6312-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/presentation/catalogs/:packId/scenes",
-      "eligibleDeclarationIds": [
-        "decl-55022e607c7ad4462c782ffd-0"
       ],
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
@@ -28463,48 +28309,6 @@
       "urlTemplate": "/api/v1/school/rubiks-cube/users/:userId/courses/:courseId/packets/:packetId",
       "eligibleDeclarationIds": [
         "decl-cd58ad238d1b00627a3e3616-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/school/self-service/curriculum/:courseId/poster.jpg",
-      "eligibleDeclarationIds": [
-        "decl-c784842b8c3a8795728a9d7e-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/school/self-service/programs/:programId/:instanceId/poster.jpg",
-      "eligibleDeclarationIds": [
-        "decl-ffcf26e226659eaf671ceb60-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/school/self-service/programs/:programId/poster.jpg",
-      "eligibleDeclarationIds": [
-        "decl-9a5f24d4dc0219aea1e41fb9-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/school/teacher/curriculum/:courseId/poster.jpg",
-      "eligibleDeclarationIds": [
-        "decl-3409999b2c7535dcd7cb079e-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/school/teacher/programs/:programId/:instanceId/poster.jpg",
-      "eligibleDeclarationIds": [
-        "decl-4f80720e429c69f85f7b2701-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/school/teacher/programs/:programId/poster.jpg",
-      "eligibleDeclarationIds": [
-        "decl-4b57ce8492203e69be0ff5fe-0"
       ],
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
@@ -44598,17 +44402,25 @@
   "isolatedAndLiveEvidenceUnion": {
     "scope": "Separate historical-live and actual-source isolated executed coverage; source-template union only, no installed-live denominator",
     "historicalLiveEligibleTemplateLinks": 94,
-    "isolatedAdditionalEligibleTemplateLinks": 210,
-    "unionEligibleTemplatesWithExecutedCaseLinks": 304,
-    "unionEligibleTemplatesWithoutExecutedCaseLinks": 92,
+    "isolatedAdditionalEligibleTemplateLinks": 238,
+    "unionEligibleTemplatesWithExecutedCaseLinks": 332,
+    "unionEligibleTemplatesWithoutExecutedCaseLinks": 64,
     "isolatedOnlyTemplates": [
+      "/api/v1/admin/apps",
       "/api/v1/admin/apps/:appId/config",
       "/api/v1/admin/art/works",
+      "/api/v1/admin/config/files",
+      "/api/v1/admin/config/files{/*splat}",
       "/api/v1/admin/content/lists",
       "/api/v1/admin/content/lists/:type",
       "/api/v1/admin/content/lists/:type/:name",
       "/api/v1/admin/household",
+      "/api/v1/admin/household/devices",
+      "/api/v1/admin/household/devices/:deviceId",
       "/api/v1/admin/household/members/:username",
+      "/api/v1/admin/images/list",
+      "/api/v1/admin/integrations",
+      "/api/v1/admin/integrations/:provider",
       "/api/v1/admin/notifications/ledger",
       "/api/v1/admin/scheduler/jobs",
       "/api/v1/admin/scheduler/jobs/:id",
@@ -44648,6 +44460,14 @@
       "/api/v1/device/self/input",
       "/api/v1/donow/surfaces",
       "/api/v1/earnings/rules",
+      "/api/v1/emulator/art/:system/:gameId/:kind",
+      "/api/v1/emulator/engine/*splat",
+      "/api/v1/emulator/library",
+      "/api/v1/emulator/logo/:system",
+      "/api/v1/emulator/rom/:system/:gameId",
+      "/api/v1/emulator/save/:system/:gameId",
+      "/api/v1/emulator/saves/:system/:gameId",
+      "/api/v1/emulator/state/:system/:gameId/:slot",
       "/api/v1/entitlements",
       "/api/v1/entitlements/:capabilityId",
       "/api/v1/entropy",
@@ -44689,6 +44509,7 @@
       "/api/v1/health/mentions/metrics",
       "/api/v1/health/mentions/periods",
       "/api/v1/health/mentions/recent-days",
+      "/api/v1/health/nutrition/cleanup/journal",
       "/api/v1/health/nutrition/meals",
       "/api/v1/health/nutrition/pending",
       "/api/v1/health/nutrition/templates",
@@ -44706,6 +44527,9 @@
       "/api/v1/home/status",
       "/api/v1/home/todos",
       "/api/v1/home/weather",
+      "/api/v1/homebot/health",
+      "/api/v1/journalist/health",
+      "/api/v1/life/health",
       "/api/v1/life/log/:username/:date",
       "/api/v1/life/log/:username/category/:category",
       "/api/v1/life/log/:username/range",
@@ -44741,6 +44565,7 @@
       "/api/v1/media/screens/:id/routines",
       "/api/v1/media/screens/:id/started-by",
       "/api/v1/media/screens/rooms/adjacency",
+      "/api/v1/nutribot/health",
       "/api/v1/piano-games/:gameId/config",
       "/api/v1/piano-games/:gameId/ladder",
       "/api/v1/piano-games/chess/users/:userId/resumable",
@@ -44753,6 +44578,7 @@
       "/api/v1/piano/users/:userId/piano-challenge-profile",
       "/api/v1/piano/users/:userId/program-assignments",
       "/api/v1/piano/users/:userId/progress",
+      "/api/v1/presentation/catalogs/:packId/scenes",
       "/api/v1/school/banks",
       "/api/v1/school/card-ladder/stage",
       "/api/v1/school/catalogs",
@@ -44789,14 +44615,20 @@
       "/api/v1/school/report-card/frozen/versions",
       "/api/v1/school/review/learner/:learnerId",
       "/api/v1/school/rubiks-cube/preview",
+      "/api/v1/school/self-service/curriculum/:courseId/poster.jpg",
       "/api/v1/school/self-service/preview/:link",
+      "/api/v1/school/self-service/programs/:programId/:instanceId/poster.jpg",
+      "/api/v1/school/self-service/programs/:programId/poster.jpg",
       "/api/v1/school/sentence-ladder/preview/:corpusId/day",
       "/api/v1/school/sentence-ladder/recordings/:userId/:corpusId/:seq",
       "/api/v1/school/sentence-ladder/users/:userId/history",
       "/api/v1/school/surfaces/profile",
       "/api/v1/school/teacher/answer-sheets/:cardId",
       "/api/v1/school/teacher/curriculum-exceptions",
+      "/api/v1/school/teacher/curriculum/:courseId/poster.jpg",
       "/api/v1/school/teacher/learners/:learnerId/answer-sheets",
+      "/api/v1/school/teacher/programs/:programId/:instanceId/poster.jpg",
+      "/api/v1/school/teacher/programs/:programId/poster.jpg",
       "/api/v1/school/transcript",
       "/api/v1/school/word-ladder/stage",
       "/api/v1/screens",
@@ -44816,8 +44648,8 @@
     "counts": {
       "historicalLiveUniqueCases": 134,
       "historicalLiveIndependentContracts": 125,
-      "isolatedUniqueAcceptedCaseIds": 385,
-      "isolatedAcceptedOccurrences": 385,
+      "isolatedUniqueAcceptedCaseIds": 456,
+      "isolatedAcceptedOccurrences": 456,
       "isolatedReplayIdsAlreadyLive": [
         "health-catalog-food-not-found",
         "health-catalog-missing-query",
@@ -44835,6 +44667,37 @@
         "player-default-config"
       ],
       "isolatedNewCaseIds": [
+        "admin-config-scenes-app-entropy",
+        "admin-config-scenes-app-finance",
+        "admin-config-scenes-app-fitness",
+        "admin-config-scenes-app-gratitude",
+        "admin-config-scenes-app-media",
+        "admin-config-scenes-app-piano",
+        "admin-config-scenes-app-shopping",
+        "admin-config-scenes-apps",
+        "admin-config-scenes-file-household-entropy-config-yml",
+        "admin-config-scenes-file-household-finance-config-yml",
+        "admin-config-scenes-file-household-fitness-config-yml",
+        "admin-config-scenes-file-household-gratitude-config-yml",
+        "admin-config-scenes-file-household-harvest-config-yml",
+        "admin-config-scenes-file-household-integrations-yml",
+        "admin-config-scenes-file-household-media-app-yml",
+        "admin-config-scenes-file-household-piano-config-yml",
+        "admin-config-scenes-file-system-config-adapters-yml",
+        "admin-config-scenes-file-system-config-auth-yml",
+        "admin-config-scenes-file-system-config-bots-yml",
+        "admin-config-scenes-file-system-config-domains-yml",
+        "admin-config-scenes-file-system-config-readiness-display-yml",
+        "admin-config-scenes-file-system-config-readiness-library-yml",
+        "admin-config-scenes-file-system-config-services-yml",
+        "admin-config-scenes-file-system-config-system-yml",
+        "admin-config-scenes-files",
+        "admin-config-scenes-integration-synthetic-calendar",
+        "admin-config-scenes-integration-synthetic-library",
+        "admin-config-scenes-integration-synthetic-reading",
+        "admin-config-scenes-integrations",
+        "admin-config-scenes-scenes-synthetic-daily-scenes",
+        "admin-config-scenes-scenes-synthetic-evening-scenes",
         "agent-feed-annotations-alias",
         "agent-feed-annotations-all",
         "agent-feed-annotations-direct",
@@ -44926,6 +44789,17 @@
         "device-home-state-learner",
         "device-home-status-home",
         "device-home-status-home-automation",
+        "emulator-stored-battery",
+        "emulator-stored-bezel",
+        "emulator-stored-cover",
+        "emulator-stored-library",
+        "emulator-stored-loader",
+        "emulator-stored-locale-en",
+        "emulator-stored-locale-fallback",
+        "emulator-stored-logo",
+        "emulator-stored-rom",
+        "emulator-stored-save-users",
+        "emulator-stored-state",
         "following-auto-authored-place",
         "following-fitness-skyline-stored-run",
         "following-fitness-workout-run-projection",
@@ -44952,6 +44826,23 @@
         "gaming-school-assets-image-tile.green",
         "gaming-school-assets-party-media",
         "gaming-school-assets-stored-effects",
+        "health-audit-journal-captures",
+        "health-audit-journal-changed",
+        "health-audit-journal-edits-changed",
+        "health-audit-journal-local-day",
+        "health-audit-journal-page",
+        "health-audit-journal-range",
+        "health-status-life-default",
+        "health-status-life-explicit-user2",
+        "health-status-local-homebot",
+        "health-status-local-journalist",
+        "health-status-local-nutribot",
+        "household-device-images-devices",
+        "household-device-images-images",
+        "household-device-images-synthetic-hall-sensor",
+        "household-device-images-synthetic-kitchen-audio",
+        "household-device-images-synthetic-piano-display",
+        "household-device-images-synthetic-reading-tablet",
         "household-history-attempts-all",
         "household-history-attempts-challenge",
         "household-history-attempts-combined",
@@ -45092,6 +44983,18 @@
         "school-language-joins-sentence-ladder-recording",
         "school-language-joins-sheet-1234567",
         "school-language-joins-sheet-7654321",
+        "school-posters-self-service-course-counting",
+        "school-posters-self-service-course-shapes",
+        "school-posters-self-service-instance-canonical",
+        "school-posters-self-service-instance-legacy",
+        "school-posters-self-service-program-canonical",
+        "school-posters-self-service-program-legacy",
+        "school-posters-teacher-course-counting",
+        "school-posters-teacher-course-shapes",
+        "school-posters-teacher-instance-canonical",
+        "school-posters-teacher-instance-legacy",
+        "school-posters-teacher-program-canonical",
+        "school-posters-teacher-program-legacy",
         "school-preview-reading-completed",
         "school-preview-reading-partial",
         "school-stored-pending",
@@ -45207,11 +45110,11 @@
         "timeline-lifelog-day",
         "timeline-lifelog-sources"
       ],
-      "unionUniqueAcceptedCaseIds": 505,
-      "unionIndependentContracts": 496,
+      "unionUniqueAcceptedCaseIds": 576,
+      "unionIndependentContracts": 567,
       "newLiveTemplates": 2,
-      "isolatedDistinctTemplates": 234,
-      "newIsolatedTemplates": 227,
+      "isolatedDistinctTemplates": 262,
+      "newIsolatedTemplates": 255,
       "pendingNext15": {
         "cases": 15,
         "terminalResult": {
@@ -53835,6 +53738,1962 @@
         "independentContractAccepted": true,
         "correctnessAccepted": true,
         "errors": []
+      },
+      {
+        "id": "emulator-stored-library",
+        "urlTemplate": "/api/v1/emulator/library",
+        "declarationIds": [
+          "decl-55eaf84d1a5c497141a1f603-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-emulator-stored11",
+        "fixtureSha256": "5f0a1f05a9cb0ffbb8bdea4c646e3e485f129dcfef99f1d7ee429b87b6a60b7a",
+        "manifestSha256": "421807370e7b4d288eb546d71a320115f8a6d40c9e48969922f4a0ee71d8e31e",
+        "result": {
+          "path": "/tmp/readiness-emulator-stored-assets-pair/pair-result.json",
+          "sha256": "750c1329fe0f3c071e5e4a819581ffda722246e878ae7787dd9a7dca8ffc18bd"
+        },
+        "proof": {
+          "path": "/tmp/readiness-emulator-stored-assets-execution/proof.json",
+          "sha256": "cc07bfebffd0e2c6fb41dbc5a994f32c9d73aaf6b1d1742e6bbfcf46b4bd113c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-emulator-stored-assets-execution/result-review.json",
+          "sha256": "37e8afbed33482b690b1a0ea405868d7d210cdbb0f967825da2b6e58af347aa5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "emulator-stored-loader",
+        "urlTemplate": "/api/v1/emulator/engine/*splat",
+        "declarationIds": [
+          "decl-547665392c9b90f12c788e6d-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-emulator-stored11",
+        "fixtureSha256": "5f0a1f05a9cb0ffbb8bdea4c646e3e485f129dcfef99f1d7ee429b87b6a60b7a",
+        "manifestSha256": "421807370e7b4d288eb546d71a320115f8a6d40c9e48969922f4a0ee71d8e31e",
+        "result": {
+          "path": "/tmp/readiness-emulator-stored-assets-pair/pair-result.json",
+          "sha256": "750c1329fe0f3c071e5e4a819581ffda722246e878ae7787dd9a7dca8ffc18bd"
+        },
+        "proof": {
+          "path": "/tmp/readiness-emulator-stored-assets-execution/proof.json",
+          "sha256": "cc07bfebffd0e2c6fb41dbc5a994f32c9d73aaf6b1d1742e6bbfcf46b4bd113c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-emulator-stored-assets-execution/result-review.json",
+          "sha256": "37e8afbed33482b690b1a0ea405868d7d210cdbb0f967825da2b6e58af347aa5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "emulator-stored-locale-en",
+        "urlTemplate": "/api/v1/emulator/engine/*splat",
+        "declarationIds": [
+          "decl-547665392c9b90f12c788e6d-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-emulator-stored11",
+        "fixtureSha256": "5f0a1f05a9cb0ffbb8bdea4c646e3e485f129dcfef99f1d7ee429b87b6a60b7a",
+        "manifestSha256": "421807370e7b4d288eb546d71a320115f8a6d40c9e48969922f4a0ee71d8e31e",
+        "result": {
+          "path": "/tmp/readiness-emulator-stored-assets-pair/pair-result.json",
+          "sha256": "750c1329fe0f3c071e5e4a819581ffda722246e878ae7787dd9a7dca8ffc18bd"
+        },
+        "proof": {
+          "path": "/tmp/readiness-emulator-stored-assets-execution/proof.json",
+          "sha256": "cc07bfebffd0e2c6fb41dbc5a994f32c9d73aaf6b1d1742e6bbfcf46b4bd113c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-emulator-stored-assets-execution/result-review.json",
+          "sha256": "37e8afbed33482b690b1a0ea405868d7d210cdbb0f967825da2b6e58af347aa5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "emulator-stored-locale-fallback",
+        "urlTemplate": "/api/v1/emulator/engine/*splat",
+        "declarationIds": [
+          "decl-547665392c9b90f12c788e6d-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-emulator-stored11",
+        "fixtureSha256": "5f0a1f05a9cb0ffbb8bdea4c646e3e485f129dcfef99f1d7ee429b87b6a60b7a",
+        "manifestSha256": "421807370e7b4d288eb546d71a320115f8a6d40c9e48969922f4a0ee71d8e31e",
+        "result": {
+          "path": "/tmp/readiness-emulator-stored-assets-pair/pair-result.json",
+          "sha256": "750c1329fe0f3c071e5e4a819581ffda722246e878ae7787dd9a7dca8ffc18bd"
+        },
+        "proof": {
+          "path": "/tmp/readiness-emulator-stored-assets-execution/proof.json",
+          "sha256": "cc07bfebffd0e2c6fb41dbc5a994f32c9d73aaf6b1d1742e6bbfcf46b4bd113c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-emulator-stored-assets-execution/result-review.json",
+          "sha256": "37e8afbed33482b690b1a0ea405868d7d210cdbb0f967825da2b6e58af347aa5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "emulator-stored-logo",
+        "urlTemplate": "/api/v1/emulator/logo/:system",
+        "declarationIds": [
+          "decl-bb4904f977fa5677dddad84e-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-emulator-stored11",
+        "fixtureSha256": "5f0a1f05a9cb0ffbb8bdea4c646e3e485f129dcfef99f1d7ee429b87b6a60b7a",
+        "manifestSha256": "421807370e7b4d288eb546d71a320115f8a6d40c9e48969922f4a0ee71d8e31e",
+        "result": {
+          "path": "/tmp/readiness-emulator-stored-assets-pair/pair-result.json",
+          "sha256": "750c1329fe0f3c071e5e4a819581ffda722246e878ae7787dd9a7dca8ffc18bd"
+        },
+        "proof": {
+          "path": "/tmp/readiness-emulator-stored-assets-execution/proof.json",
+          "sha256": "cc07bfebffd0e2c6fb41dbc5a994f32c9d73aaf6b1d1742e6bbfcf46b4bd113c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-emulator-stored-assets-execution/result-review.json",
+          "sha256": "37e8afbed33482b690b1a0ea405868d7d210cdbb0f967825da2b6e58af347aa5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "emulator-stored-cover",
+        "urlTemplate": "/api/v1/emulator/art/:system/:gameId/:kind",
+        "declarationIds": [
+          "decl-db3625f7f36777eb21cb0305-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-emulator-stored11",
+        "fixtureSha256": "5f0a1f05a9cb0ffbb8bdea4c646e3e485f129dcfef99f1d7ee429b87b6a60b7a",
+        "manifestSha256": "421807370e7b4d288eb546d71a320115f8a6d40c9e48969922f4a0ee71d8e31e",
+        "result": {
+          "path": "/tmp/readiness-emulator-stored-assets-pair/pair-result.json",
+          "sha256": "750c1329fe0f3c071e5e4a819581ffda722246e878ae7787dd9a7dca8ffc18bd"
+        },
+        "proof": {
+          "path": "/tmp/readiness-emulator-stored-assets-execution/proof.json",
+          "sha256": "cc07bfebffd0e2c6fb41dbc5a994f32c9d73aaf6b1d1742e6bbfcf46b4bd113c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-emulator-stored-assets-execution/result-review.json",
+          "sha256": "37e8afbed33482b690b1a0ea405868d7d210cdbb0f967825da2b6e58af347aa5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "emulator-stored-bezel",
+        "urlTemplate": "/api/v1/emulator/art/:system/:gameId/:kind",
+        "declarationIds": [
+          "decl-db3625f7f36777eb21cb0305-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-emulator-stored11",
+        "fixtureSha256": "5f0a1f05a9cb0ffbb8bdea4c646e3e485f129dcfef99f1d7ee429b87b6a60b7a",
+        "manifestSha256": "421807370e7b4d288eb546d71a320115f8a6d40c9e48969922f4a0ee71d8e31e",
+        "result": {
+          "path": "/tmp/readiness-emulator-stored-assets-pair/pair-result.json",
+          "sha256": "750c1329fe0f3c071e5e4a819581ffda722246e878ae7787dd9a7dca8ffc18bd"
+        },
+        "proof": {
+          "path": "/tmp/readiness-emulator-stored-assets-execution/proof.json",
+          "sha256": "cc07bfebffd0e2c6fb41dbc5a994f32c9d73aaf6b1d1742e6bbfcf46b4bd113c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-emulator-stored-assets-execution/result-review.json",
+          "sha256": "37e8afbed33482b690b1a0ea405868d7d210cdbb0f967825da2b6e58af347aa5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "emulator-stored-rom",
+        "urlTemplate": "/api/v1/emulator/rom/:system/:gameId",
+        "declarationIds": [
+          "decl-e938bebfabf9de922f40f3c3-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-emulator-stored11",
+        "fixtureSha256": "5f0a1f05a9cb0ffbb8bdea4c646e3e485f129dcfef99f1d7ee429b87b6a60b7a",
+        "manifestSha256": "421807370e7b4d288eb546d71a320115f8a6d40c9e48969922f4a0ee71d8e31e",
+        "result": {
+          "path": "/tmp/readiness-emulator-stored-assets-pair/pair-result.json",
+          "sha256": "750c1329fe0f3c071e5e4a819581ffda722246e878ae7787dd9a7dca8ffc18bd"
+        },
+        "proof": {
+          "path": "/tmp/readiness-emulator-stored-assets-execution/proof.json",
+          "sha256": "cc07bfebffd0e2c6fb41dbc5a994f32c9d73aaf6b1d1742e6bbfcf46b4bd113c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-emulator-stored-assets-execution/result-review.json",
+          "sha256": "37e8afbed33482b690b1a0ea405868d7d210cdbb0f967825da2b6e58af347aa5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "emulator-stored-battery",
+        "urlTemplate": "/api/v1/emulator/save/:system/:gameId",
+        "declarationIds": [
+          "decl-3382632ead3c52458abbdbdd-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-emulator-stored11",
+        "fixtureSha256": "5f0a1f05a9cb0ffbb8bdea4c646e3e485f129dcfef99f1d7ee429b87b6a60b7a",
+        "manifestSha256": "421807370e7b4d288eb546d71a320115f8a6d40c9e48969922f4a0ee71d8e31e",
+        "result": {
+          "path": "/tmp/readiness-emulator-stored-assets-pair/pair-result.json",
+          "sha256": "750c1329fe0f3c071e5e4a819581ffda722246e878ae7787dd9a7dca8ffc18bd"
+        },
+        "proof": {
+          "path": "/tmp/readiness-emulator-stored-assets-execution/proof.json",
+          "sha256": "cc07bfebffd0e2c6fb41dbc5a994f32c9d73aaf6b1d1742e6bbfcf46b4bd113c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-emulator-stored-assets-execution/result-review.json",
+          "sha256": "37e8afbed33482b690b1a0ea405868d7d210cdbb0f967825da2b6e58af347aa5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "emulator-stored-state",
+        "urlTemplate": "/api/v1/emulator/state/:system/:gameId/:slot",
+        "declarationIds": [
+          "decl-c598dae553dbdcfb2d788485-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-emulator-stored11",
+        "fixtureSha256": "5f0a1f05a9cb0ffbb8bdea4c646e3e485f129dcfef99f1d7ee429b87b6a60b7a",
+        "manifestSha256": "421807370e7b4d288eb546d71a320115f8a6d40c9e48969922f4a0ee71d8e31e",
+        "result": {
+          "path": "/tmp/readiness-emulator-stored-assets-pair/pair-result.json",
+          "sha256": "750c1329fe0f3c071e5e4a819581ffda722246e878ae7787dd9a7dca8ffc18bd"
+        },
+        "proof": {
+          "path": "/tmp/readiness-emulator-stored-assets-execution/proof.json",
+          "sha256": "cc07bfebffd0e2c6fb41dbc5a994f32c9d73aaf6b1d1742e6bbfcf46b4bd113c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-emulator-stored-assets-execution/result-review.json",
+          "sha256": "37e8afbed33482b690b1a0ea405868d7d210cdbb0f967825da2b6e58af347aa5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "emulator-stored-save-users",
+        "urlTemplate": "/api/v1/emulator/saves/:system/:gameId",
+        "declarationIds": [
+          "decl-205a7a5a5ae8c13cf84d05c5-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-emulator-stored11",
+        "fixtureSha256": "5f0a1f05a9cb0ffbb8bdea4c646e3e485f129dcfef99f1d7ee429b87b6a60b7a",
+        "manifestSha256": "421807370e7b4d288eb546d71a320115f8a6d40c9e48969922f4a0ee71d8e31e",
+        "result": {
+          "path": "/tmp/readiness-emulator-stored-assets-pair/pair-result.json",
+          "sha256": "750c1329fe0f3c071e5e4a819581ffda722246e878ae7787dd9a7dca8ffc18bd"
+        },
+        "proof": {
+          "path": "/tmp/readiness-emulator-stored-assets-execution/proof.json",
+          "sha256": "cc07bfebffd0e2c6fb41dbc5a994f32c9d73aaf6b1d1742e6bbfcf46b4bd113c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-emulator-stored-assets-execution/result-review.json",
+          "sha256": "37e8afbed33482b690b1a0ea405868d7d210cdbb0f967825da2b6e58af347aa5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-apps",
+        "urlTemplate": "/api/v1/admin/apps",
+        "declarationIds": [
+          "decl-b87b2f4d005e4adcc2f3cbd3-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-files",
+        "urlTemplate": "/api/v1/admin/config/files",
+        "declarationIds": [
+          "decl-df5f815971d318a70d5fee03-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-file-system-config-adapters-yml",
+        "urlTemplate": "/api/v1/admin/config/files{/*splat}",
+        "declarationIds": [
+          "decl-15e7c62735e61f7f8f347b1a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-file-system-config-auth-yml",
+        "urlTemplate": "/api/v1/admin/config/files{/*splat}",
+        "declarationIds": [
+          "decl-15e7c62735e61f7f8f347b1a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-file-system-config-bots-yml",
+        "urlTemplate": "/api/v1/admin/config/files{/*splat}",
+        "declarationIds": [
+          "decl-15e7c62735e61f7f8f347b1a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-file-system-config-domains-yml",
+        "urlTemplate": "/api/v1/admin/config/files{/*splat}",
+        "declarationIds": [
+          "decl-15e7c62735e61f7f8f347b1a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-file-system-config-readiness-display-yml",
+        "urlTemplate": "/api/v1/admin/config/files{/*splat}",
+        "declarationIds": [
+          "decl-15e7c62735e61f7f8f347b1a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-file-system-config-readiness-library-yml",
+        "urlTemplate": "/api/v1/admin/config/files{/*splat}",
+        "declarationIds": [
+          "decl-15e7c62735e61f7f8f347b1a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-file-system-config-services-yml",
+        "urlTemplate": "/api/v1/admin/config/files{/*splat}",
+        "declarationIds": [
+          "decl-15e7c62735e61f7f8f347b1a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-file-system-config-system-yml",
+        "urlTemplate": "/api/v1/admin/config/files{/*splat}",
+        "declarationIds": [
+          "decl-15e7c62735e61f7f8f347b1a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-file-household-entropy-config-yml",
+        "urlTemplate": "/api/v1/admin/config/files{/*splat}",
+        "declarationIds": [
+          "decl-15e7c62735e61f7f8f347b1a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-file-household-finance-config-yml",
+        "urlTemplate": "/api/v1/admin/config/files{/*splat}",
+        "declarationIds": [
+          "decl-15e7c62735e61f7f8f347b1a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-file-household-fitness-config-yml",
+        "urlTemplate": "/api/v1/admin/config/files{/*splat}",
+        "declarationIds": [
+          "decl-15e7c62735e61f7f8f347b1a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-file-household-gratitude-config-yml",
+        "urlTemplate": "/api/v1/admin/config/files{/*splat}",
+        "declarationIds": [
+          "decl-15e7c62735e61f7f8f347b1a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-file-household-harvest-config-yml",
+        "urlTemplate": "/api/v1/admin/config/files{/*splat}",
+        "declarationIds": [
+          "decl-15e7c62735e61f7f8f347b1a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-file-household-media-app-yml",
+        "urlTemplate": "/api/v1/admin/config/files{/*splat}",
+        "declarationIds": [
+          "decl-15e7c62735e61f7f8f347b1a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-file-household-piano-config-yml",
+        "urlTemplate": "/api/v1/admin/config/files{/*splat}",
+        "declarationIds": [
+          "decl-15e7c62735e61f7f8f347b1a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-file-household-integrations-yml",
+        "urlTemplate": "/api/v1/admin/config/files{/*splat}",
+        "declarationIds": [
+          "decl-15e7c62735e61f7f8f347b1a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-app-fitness",
+        "urlTemplate": "/api/v1/admin/apps/:appId/config",
+        "declarationIds": [
+          "decl-6516e19799b120ecdc562fd0-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-app-finance",
+        "urlTemplate": "/api/v1/admin/apps/:appId/config",
+        "declarationIds": [
+          "decl-6516e19799b120ecdc562fd0-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-app-gratitude",
+        "urlTemplate": "/api/v1/admin/apps/:appId/config",
+        "declarationIds": [
+          "decl-6516e19799b120ecdc562fd0-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-app-shopping",
+        "urlTemplate": "/api/v1/admin/apps/:appId/config",
+        "declarationIds": [
+          "decl-6516e19799b120ecdc562fd0-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-app-media",
+        "urlTemplate": "/api/v1/admin/apps/:appId/config",
+        "declarationIds": [
+          "decl-6516e19799b120ecdc562fd0-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-app-entropy",
+        "urlTemplate": "/api/v1/admin/apps/:appId/config",
+        "declarationIds": [
+          "decl-6516e19799b120ecdc562fd0-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-app-piano",
+        "urlTemplate": "/api/v1/admin/apps/:appId/config",
+        "declarationIds": [
+          "decl-6516e19799b120ecdc562fd0-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-integrations",
+        "urlTemplate": "/api/v1/admin/integrations",
+        "declarationIds": [
+          "decl-bef105a79af436455f70514e-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-integration-synthetic-library",
+        "urlTemplate": "/api/v1/admin/integrations/:provider",
+        "declarationIds": [
+          "decl-a0e19d91eb6670d3b10b05a8-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-integration-synthetic-calendar",
+        "urlTemplate": "/api/v1/admin/integrations/:provider",
+        "declarationIds": [
+          "decl-a0e19d91eb6670d3b10b05a8-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-integration-synthetic-reading",
+        "urlTemplate": "/api/v1/admin/integrations/:provider",
+        "declarationIds": [
+          "decl-a0e19d91eb6670d3b10b05a8-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-scenes-synthetic-daily-scenes",
+        "urlTemplate": "/api/v1/presentation/catalogs/:packId/scenes",
+        "declarationIds": [
+          "decl-55022e607c7ad4462c782ffd-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "admin-config-scenes-scenes-synthetic-evening-scenes",
+        "urlTemplate": "/api/v1/presentation/catalogs/:packId/scenes",
+        "declarationIds": [
+          "decl-55022e607c7ad4462c782ffd-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-admin-config-scenes31",
+        "fixtureSha256": "02b2f4d9b1e5e3baee77825cb7ae30891612988c343b96c125654b4ef8ca410a",
+        "manifestSha256": "591102b6ffa3a202b95ba62234edf2235545a2416820c3914fcac48f5e5ed70e",
+        "result": {
+          "path": "/tmp/readiness-admin-config-scenes-pair/pair-result.json",
+          "sha256": "60a67ba94de70083fbbf7c262f2f7373f5f2d8c089783012c27daf3f0a2101b7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/proof.json",
+          "sha256": "19c83e3568b88c11fb82a3685e7dff5ea754d80f5c710d80d96f533e606f1f7c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-admin-config-scenes-execution/result-review.json",
+          "sha256": "65a64045294caa8af6af0105fb1b99830140bdf82ddca13a9206238aff490949"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "school-posters-teacher-course-shapes",
+        "urlTemplate": "/api/v1/school/teacher/curriculum/:courseId/poster.jpg",
+        "declarationIds": [
+          "decl-3409999b2c7535dcd7cb079e-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-school-posters12",
+        "fixtureSha256": "0bb875c3c4678f6cbe13162a6e329b37e55f1e39f1dc4d470e1144a5c7874598",
+        "manifestSha256": "86901e8a41190fa86b03ce4d664ebadcdd5163471130ae7c1c045b3d81bad413",
+        "result": {
+          "path": "/tmp/readiness-school-posters-pair/pair-result.json",
+          "sha256": "a4da22a6a315f10c2a4d6ec19a82fce02cc5921500ba040d1d78f659bbf0b5ee"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-posters-execution/proof.json",
+          "sha256": "e7737beb933a8cd0c6f6fc6bfdf2531b2f3e7fffb728e2fd379787ee7be8ee1f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-posters-execution/result-review.json",
+          "sha256": "c6323edaeb51b375be9abcd8e0721f79b369b45df4cdde00b066d3e5aa75c69c"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "school-posters-teacher-course-counting",
+        "urlTemplate": "/api/v1/school/teacher/curriculum/:courseId/poster.jpg",
+        "declarationIds": [
+          "decl-3409999b2c7535dcd7cb079e-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-school-posters12",
+        "fixtureSha256": "0bb875c3c4678f6cbe13162a6e329b37e55f1e39f1dc4d470e1144a5c7874598",
+        "manifestSha256": "86901e8a41190fa86b03ce4d664ebadcdd5163471130ae7c1c045b3d81bad413",
+        "result": {
+          "path": "/tmp/readiness-school-posters-pair/pair-result.json",
+          "sha256": "a4da22a6a315f10c2a4d6ec19a82fce02cc5921500ba040d1d78f659bbf0b5ee"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-posters-execution/proof.json",
+          "sha256": "e7737beb933a8cd0c6f6fc6bfdf2531b2f3e7fffb728e2fd379787ee7be8ee1f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-posters-execution/result-review.json",
+          "sha256": "c6323edaeb51b375be9abcd8e0721f79b369b45df4cdde00b066d3e5aa75c69c"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "school-posters-teacher-program-canonical",
+        "urlTemplate": "/api/v1/school/teacher/programs/:programId/poster.jpg",
+        "declarationIds": [
+          "decl-4b57ce8492203e69be0ff5fe-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-school-posters12",
+        "fixtureSha256": "0bb875c3c4678f6cbe13162a6e329b37e55f1e39f1dc4d470e1144a5c7874598",
+        "manifestSha256": "86901e8a41190fa86b03ce4d664ebadcdd5163471130ae7c1c045b3d81bad413",
+        "result": {
+          "path": "/tmp/readiness-school-posters-pair/pair-result.json",
+          "sha256": "a4da22a6a315f10c2a4d6ec19a82fce02cc5921500ba040d1d78f659bbf0b5ee"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-posters-execution/proof.json",
+          "sha256": "e7737beb933a8cd0c6f6fc6bfdf2531b2f3e7fffb728e2fd379787ee7be8ee1f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-posters-execution/result-review.json",
+          "sha256": "c6323edaeb51b375be9abcd8e0721f79b369b45df4cdde00b066d3e5aa75c69c"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "school-posters-teacher-program-legacy",
+        "urlTemplate": "/api/v1/school/teacher/programs/:programId/poster.jpg",
+        "declarationIds": [
+          "decl-4b57ce8492203e69be0ff5fe-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-school-posters12",
+        "fixtureSha256": "0bb875c3c4678f6cbe13162a6e329b37e55f1e39f1dc4d470e1144a5c7874598",
+        "manifestSha256": "86901e8a41190fa86b03ce4d664ebadcdd5163471130ae7c1c045b3d81bad413",
+        "result": {
+          "path": "/tmp/readiness-school-posters-pair/pair-result.json",
+          "sha256": "a4da22a6a315f10c2a4d6ec19a82fce02cc5921500ba040d1d78f659bbf0b5ee"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-posters-execution/proof.json",
+          "sha256": "e7737beb933a8cd0c6f6fc6bfdf2531b2f3e7fffb728e2fd379787ee7be8ee1f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-posters-execution/result-review.json",
+          "sha256": "c6323edaeb51b375be9abcd8e0721f79b369b45df4cdde00b066d3e5aa75c69c"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "school-posters-teacher-instance-canonical",
+        "urlTemplate": "/api/v1/school/teacher/programs/:programId/:instanceId/poster.jpg",
+        "declarationIds": [
+          "decl-4f80720e429c69f85f7b2701-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-school-posters12",
+        "fixtureSha256": "0bb875c3c4678f6cbe13162a6e329b37e55f1e39f1dc4d470e1144a5c7874598",
+        "manifestSha256": "86901e8a41190fa86b03ce4d664ebadcdd5163471130ae7c1c045b3d81bad413",
+        "result": {
+          "path": "/tmp/readiness-school-posters-pair/pair-result.json",
+          "sha256": "a4da22a6a315f10c2a4d6ec19a82fce02cc5921500ba040d1d78f659bbf0b5ee"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-posters-execution/proof.json",
+          "sha256": "e7737beb933a8cd0c6f6fc6bfdf2531b2f3e7fffb728e2fd379787ee7be8ee1f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-posters-execution/result-review.json",
+          "sha256": "c6323edaeb51b375be9abcd8e0721f79b369b45df4cdde00b066d3e5aa75c69c"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "school-posters-teacher-instance-legacy",
+        "urlTemplate": "/api/v1/school/teacher/programs/:programId/:instanceId/poster.jpg",
+        "declarationIds": [
+          "decl-4f80720e429c69f85f7b2701-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-school-posters12",
+        "fixtureSha256": "0bb875c3c4678f6cbe13162a6e329b37e55f1e39f1dc4d470e1144a5c7874598",
+        "manifestSha256": "86901e8a41190fa86b03ce4d664ebadcdd5163471130ae7c1c045b3d81bad413",
+        "result": {
+          "path": "/tmp/readiness-school-posters-pair/pair-result.json",
+          "sha256": "a4da22a6a315f10c2a4d6ec19a82fce02cc5921500ba040d1d78f659bbf0b5ee"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-posters-execution/proof.json",
+          "sha256": "e7737beb933a8cd0c6f6fc6bfdf2531b2f3e7fffb728e2fd379787ee7be8ee1f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-posters-execution/result-review.json",
+          "sha256": "c6323edaeb51b375be9abcd8e0721f79b369b45df4cdde00b066d3e5aa75c69c"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "school-posters-self-service-course-shapes",
+        "urlTemplate": "/api/v1/school/self-service/curriculum/:courseId/poster.jpg",
+        "declarationIds": [
+          "decl-c784842b8c3a8795728a9d7e-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-school-posters12",
+        "fixtureSha256": "0bb875c3c4678f6cbe13162a6e329b37e55f1e39f1dc4d470e1144a5c7874598",
+        "manifestSha256": "86901e8a41190fa86b03ce4d664ebadcdd5163471130ae7c1c045b3d81bad413",
+        "result": {
+          "path": "/tmp/readiness-school-posters-pair/pair-result.json",
+          "sha256": "a4da22a6a315f10c2a4d6ec19a82fce02cc5921500ba040d1d78f659bbf0b5ee"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-posters-execution/proof.json",
+          "sha256": "e7737beb933a8cd0c6f6fc6bfdf2531b2f3e7fffb728e2fd379787ee7be8ee1f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-posters-execution/result-review.json",
+          "sha256": "c6323edaeb51b375be9abcd8e0721f79b369b45df4cdde00b066d3e5aa75c69c"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "school-posters-self-service-course-counting",
+        "urlTemplate": "/api/v1/school/self-service/curriculum/:courseId/poster.jpg",
+        "declarationIds": [
+          "decl-c784842b8c3a8795728a9d7e-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-school-posters12",
+        "fixtureSha256": "0bb875c3c4678f6cbe13162a6e329b37e55f1e39f1dc4d470e1144a5c7874598",
+        "manifestSha256": "86901e8a41190fa86b03ce4d664ebadcdd5163471130ae7c1c045b3d81bad413",
+        "result": {
+          "path": "/tmp/readiness-school-posters-pair/pair-result.json",
+          "sha256": "a4da22a6a315f10c2a4d6ec19a82fce02cc5921500ba040d1d78f659bbf0b5ee"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-posters-execution/proof.json",
+          "sha256": "e7737beb933a8cd0c6f6fc6bfdf2531b2f3e7fffb728e2fd379787ee7be8ee1f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-posters-execution/result-review.json",
+          "sha256": "c6323edaeb51b375be9abcd8e0721f79b369b45df4cdde00b066d3e5aa75c69c"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "school-posters-self-service-program-canonical",
+        "urlTemplate": "/api/v1/school/self-service/programs/:programId/poster.jpg",
+        "declarationIds": [
+          "decl-9a5f24d4dc0219aea1e41fb9-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-school-posters12",
+        "fixtureSha256": "0bb875c3c4678f6cbe13162a6e329b37e55f1e39f1dc4d470e1144a5c7874598",
+        "manifestSha256": "86901e8a41190fa86b03ce4d664ebadcdd5163471130ae7c1c045b3d81bad413",
+        "result": {
+          "path": "/tmp/readiness-school-posters-pair/pair-result.json",
+          "sha256": "a4da22a6a315f10c2a4d6ec19a82fce02cc5921500ba040d1d78f659bbf0b5ee"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-posters-execution/proof.json",
+          "sha256": "e7737beb933a8cd0c6f6fc6bfdf2531b2f3e7fffb728e2fd379787ee7be8ee1f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-posters-execution/result-review.json",
+          "sha256": "c6323edaeb51b375be9abcd8e0721f79b369b45df4cdde00b066d3e5aa75c69c"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "school-posters-self-service-program-legacy",
+        "urlTemplate": "/api/v1/school/self-service/programs/:programId/poster.jpg",
+        "declarationIds": [
+          "decl-9a5f24d4dc0219aea1e41fb9-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-school-posters12",
+        "fixtureSha256": "0bb875c3c4678f6cbe13162a6e329b37e55f1e39f1dc4d470e1144a5c7874598",
+        "manifestSha256": "86901e8a41190fa86b03ce4d664ebadcdd5163471130ae7c1c045b3d81bad413",
+        "result": {
+          "path": "/tmp/readiness-school-posters-pair/pair-result.json",
+          "sha256": "a4da22a6a315f10c2a4d6ec19a82fce02cc5921500ba040d1d78f659bbf0b5ee"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-posters-execution/proof.json",
+          "sha256": "e7737beb933a8cd0c6f6fc6bfdf2531b2f3e7fffb728e2fd379787ee7be8ee1f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-posters-execution/result-review.json",
+          "sha256": "c6323edaeb51b375be9abcd8e0721f79b369b45df4cdde00b066d3e5aa75c69c"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "school-posters-self-service-instance-canonical",
+        "urlTemplate": "/api/v1/school/self-service/programs/:programId/:instanceId/poster.jpg",
+        "declarationIds": [
+          "decl-ffcf26e226659eaf671ceb60-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-school-posters12",
+        "fixtureSha256": "0bb875c3c4678f6cbe13162a6e329b37e55f1e39f1dc4d470e1144a5c7874598",
+        "manifestSha256": "86901e8a41190fa86b03ce4d664ebadcdd5163471130ae7c1c045b3d81bad413",
+        "result": {
+          "path": "/tmp/readiness-school-posters-pair/pair-result.json",
+          "sha256": "a4da22a6a315f10c2a4d6ec19a82fce02cc5921500ba040d1d78f659bbf0b5ee"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-posters-execution/proof.json",
+          "sha256": "e7737beb933a8cd0c6f6fc6bfdf2531b2f3e7fffb728e2fd379787ee7be8ee1f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-posters-execution/result-review.json",
+          "sha256": "c6323edaeb51b375be9abcd8e0721f79b369b45df4cdde00b066d3e5aa75c69c"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "school-posters-self-service-instance-legacy",
+        "urlTemplate": "/api/v1/school/self-service/programs/:programId/:instanceId/poster.jpg",
+        "declarationIds": [
+          "decl-ffcf26e226659eaf671ceb60-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-school-posters12",
+        "fixtureSha256": "0bb875c3c4678f6cbe13162a6e329b37e55f1e39f1dc4d470e1144a5c7874598",
+        "manifestSha256": "86901e8a41190fa86b03ce4d664ebadcdd5163471130ae7c1c045b3d81bad413",
+        "result": {
+          "path": "/tmp/readiness-school-posters-pair/pair-result.json",
+          "sha256": "a4da22a6a315f10c2a4d6ec19a82fce02cc5921500ba040d1d78f659bbf0b5ee"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-posters-execution/proof.json",
+          "sha256": "e7737beb933a8cd0c6f6fc6bfdf2531b2f3e7fffb728e2fd379787ee7be8ee1f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-posters-execution/result-review.json",
+          "sha256": "c6323edaeb51b375be9abcd8e0721f79b369b45df4cdde00b066d3e5aa75c69c"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "household-device-images-devices",
+        "urlTemplate": "/api/v1/admin/household/devices",
+        "declarationIds": [
+          "decl-5fd739700e4608af70ca2227-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-devices-images-health12",
+        "fixtureSha256": "777e70c159a5ac2a66341b93859d816024fc29034553ceff3d090e637dbfe67f",
+        "manifestSha256": "1ab1496218ad34e4c9ee8caa5b6abc4e1ba102bd8b1a479526ceb34d32bcd819",
+        "result": {
+          "path": "/tmp/readiness-devices-images-health-pair/pair-result.json",
+          "sha256": "697eb450f33e7997ef60324d8b15a294f81b1f537c4a5e194c27b7ec31ea0fd5"
+        },
+        "proof": {
+          "path": "/tmp/readiness-devices-images-health-execution/proof.json",
+          "sha256": "f0808885b2019fe913489ed0d33972d464749582ca3a6bb6a75ed95f251c8987"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-devices-images-health-execution/result-review.json",
+          "sha256": "c52117cb5b473fc8248f00868ce74cd0195c2d309a15887fc41a9313e66ce47c"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "household-device-images-synthetic-reading-tablet",
+        "urlTemplate": "/api/v1/admin/household/devices/:deviceId",
+        "declarationIds": [
+          "decl-5d2f84afa1f0b10c6e15081a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-devices-images-health12",
+        "fixtureSha256": "777e70c159a5ac2a66341b93859d816024fc29034553ceff3d090e637dbfe67f",
+        "manifestSha256": "1ab1496218ad34e4c9ee8caa5b6abc4e1ba102bd8b1a479526ceb34d32bcd819",
+        "result": {
+          "path": "/tmp/readiness-devices-images-health-pair/pair-result.json",
+          "sha256": "697eb450f33e7997ef60324d8b15a294f81b1f537c4a5e194c27b7ec31ea0fd5"
+        },
+        "proof": {
+          "path": "/tmp/readiness-devices-images-health-execution/proof.json",
+          "sha256": "f0808885b2019fe913489ed0d33972d464749582ca3a6bb6a75ed95f251c8987"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-devices-images-health-execution/result-review.json",
+          "sha256": "c52117cb5b473fc8248f00868ce74cd0195c2d309a15887fc41a9313e66ce47c"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "household-device-images-synthetic-piano-display",
+        "urlTemplate": "/api/v1/admin/household/devices/:deviceId",
+        "declarationIds": [
+          "decl-5d2f84afa1f0b10c6e15081a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-devices-images-health12",
+        "fixtureSha256": "777e70c159a5ac2a66341b93859d816024fc29034553ceff3d090e637dbfe67f",
+        "manifestSha256": "1ab1496218ad34e4c9ee8caa5b6abc4e1ba102bd8b1a479526ceb34d32bcd819",
+        "result": {
+          "path": "/tmp/readiness-devices-images-health-pair/pair-result.json",
+          "sha256": "697eb450f33e7997ef60324d8b15a294f81b1f537c4a5e194c27b7ec31ea0fd5"
+        },
+        "proof": {
+          "path": "/tmp/readiness-devices-images-health-execution/proof.json",
+          "sha256": "f0808885b2019fe913489ed0d33972d464749582ca3a6bb6a75ed95f251c8987"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-devices-images-health-execution/result-review.json",
+          "sha256": "c52117cb5b473fc8248f00868ce74cd0195c2d309a15887fc41a9313e66ce47c"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "household-device-images-synthetic-kitchen-audio",
+        "urlTemplate": "/api/v1/admin/household/devices/:deviceId",
+        "declarationIds": [
+          "decl-5d2f84afa1f0b10c6e15081a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-devices-images-health12",
+        "fixtureSha256": "777e70c159a5ac2a66341b93859d816024fc29034553ceff3d090e637dbfe67f",
+        "manifestSha256": "1ab1496218ad34e4c9ee8caa5b6abc4e1ba102bd8b1a479526ceb34d32bcd819",
+        "result": {
+          "path": "/tmp/readiness-devices-images-health-pair/pair-result.json",
+          "sha256": "697eb450f33e7997ef60324d8b15a294f81b1f537c4a5e194c27b7ec31ea0fd5"
+        },
+        "proof": {
+          "path": "/tmp/readiness-devices-images-health-execution/proof.json",
+          "sha256": "f0808885b2019fe913489ed0d33972d464749582ca3a6bb6a75ed95f251c8987"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-devices-images-health-execution/result-review.json",
+          "sha256": "c52117cb5b473fc8248f00868ce74cd0195c2d309a15887fc41a9313e66ce47c"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "household-device-images-synthetic-hall-sensor",
+        "urlTemplate": "/api/v1/admin/household/devices/:deviceId",
+        "declarationIds": [
+          "decl-5d2f84afa1f0b10c6e15081a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-devices-images-health12",
+        "fixtureSha256": "777e70c159a5ac2a66341b93859d816024fc29034553ceff3d090e637dbfe67f",
+        "manifestSha256": "1ab1496218ad34e4c9ee8caa5b6abc4e1ba102bd8b1a479526ceb34d32bcd819",
+        "result": {
+          "path": "/tmp/readiness-devices-images-health-pair/pair-result.json",
+          "sha256": "697eb450f33e7997ef60324d8b15a294f81b1f537c4a5e194c27b7ec31ea0fd5"
+        },
+        "proof": {
+          "path": "/tmp/readiness-devices-images-health-execution/proof.json",
+          "sha256": "f0808885b2019fe913489ed0d33972d464749582ca3a6bb6a75ed95f251c8987"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-devices-images-health-execution/result-review.json",
+          "sha256": "c52117cb5b473fc8248f00868ce74cd0195c2d309a15887fc41a9313e66ce47c"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "household-device-images-images",
+        "urlTemplate": "/api/v1/admin/images/list",
+        "declarationIds": [
+          "decl-5c0a5450cc8176ebd277cc81-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-devices-images-health12",
+        "fixtureSha256": "777e70c159a5ac2a66341b93859d816024fc29034553ceff3d090e637dbfe67f",
+        "manifestSha256": "1ab1496218ad34e4c9ee8caa5b6abc4e1ba102bd8b1a479526ceb34d32bcd819",
+        "result": {
+          "path": "/tmp/readiness-devices-images-health-pair/pair-result.json",
+          "sha256": "697eb450f33e7997ef60324d8b15a294f81b1f537c4a5e194c27b7ec31ea0fd5"
+        },
+        "proof": {
+          "path": "/tmp/readiness-devices-images-health-execution/proof.json",
+          "sha256": "f0808885b2019fe913489ed0d33972d464749582ca3a6bb6a75ed95f251c8987"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-devices-images-health-execution/result-review.json",
+          "sha256": "c52117cb5b473fc8248f00868ce74cd0195c2d309a15887fc41a9313e66ce47c"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "health-audit-journal-range",
+        "urlTemplate": "/api/v1/health/nutrition/cleanup/journal",
+        "declarationIds": [
+          "decl-a1268e9817b2f3f5cb8826d0-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-devices-images-health12",
+        "fixtureSha256": "777e70c159a5ac2a66341b93859d816024fc29034553ceff3d090e637dbfe67f",
+        "manifestSha256": "1ab1496218ad34e4c9ee8caa5b6abc4e1ba102bd8b1a479526ceb34d32bcd819",
+        "result": {
+          "path": "/tmp/readiness-devices-images-health-pair/pair-result.json",
+          "sha256": "697eb450f33e7997ef60324d8b15a294f81b1f537c4a5e194c27b7ec31ea0fd5"
+        },
+        "proof": {
+          "path": "/tmp/readiness-devices-images-health-execution/proof.json",
+          "sha256": "f0808885b2019fe913489ed0d33972d464749582ca3a6bb6a75ed95f251c8987"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-devices-images-health-execution/result-review.json",
+          "sha256": "c52117cb5b473fc8248f00868ce74cd0195c2d309a15887fc41a9313e66ce47c"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "health-audit-journal-local-day",
+        "urlTemplate": "/api/v1/health/nutrition/cleanup/journal",
+        "declarationIds": [
+          "decl-a1268e9817b2f3f5cb8826d0-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-devices-images-health12",
+        "fixtureSha256": "777e70c159a5ac2a66341b93859d816024fc29034553ceff3d090e637dbfe67f",
+        "manifestSha256": "1ab1496218ad34e4c9ee8caa5b6abc4e1ba102bd8b1a479526ceb34d32bcd819",
+        "result": {
+          "path": "/tmp/readiness-devices-images-health-pair/pair-result.json",
+          "sha256": "697eb450f33e7997ef60324d8b15a294f81b1f537c4a5e194c27b7ec31ea0fd5"
+        },
+        "proof": {
+          "path": "/tmp/readiness-devices-images-health-execution/proof.json",
+          "sha256": "f0808885b2019fe913489ed0d33972d464749582ca3a6bb6a75ed95f251c8987"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-devices-images-health-execution/result-review.json",
+          "sha256": "c52117cb5b473fc8248f00868ce74cd0195c2d309a15887fc41a9313e66ce47c"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "health-audit-journal-captures",
+        "urlTemplate": "/api/v1/health/nutrition/cleanup/journal",
+        "declarationIds": [
+          "decl-a1268e9817b2f3f5cb8826d0-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-devices-images-health12",
+        "fixtureSha256": "777e70c159a5ac2a66341b93859d816024fc29034553ceff3d090e637dbfe67f",
+        "manifestSha256": "1ab1496218ad34e4c9ee8caa5b6abc4e1ba102bd8b1a479526ceb34d32bcd819",
+        "result": {
+          "path": "/tmp/readiness-devices-images-health-pair/pair-result.json",
+          "sha256": "697eb450f33e7997ef60324d8b15a294f81b1f537c4a5e194c27b7ec31ea0fd5"
+        },
+        "proof": {
+          "path": "/tmp/readiness-devices-images-health-execution/proof.json",
+          "sha256": "f0808885b2019fe913489ed0d33972d464749582ca3a6bb6a75ed95f251c8987"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-devices-images-health-execution/result-review.json",
+          "sha256": "c52117cb5b473fc8248f00868ce74cd0195c2d309a15887fc41a9313e66ce47c"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "health-audit-journal-changed",
+        "urlTemplate": "/api/v1/health/nutrition/cleanup/journal",
+        "declarationIds": [
+          "decl-a1268e9817b2f3f5cb8826d0-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-devices-images-health12",
+        "fixtureSha256": "777e70c159a5ac2a66341b93859d816024fc29034553ceff3d090e637dbfe67f",
+        "manifestSha256": "1ab1496218ad34e4c9ee8caa5b6abc4e1ba102bd8b1a479526ceb34d32bcd819",
+        "result": {
+          "path": "/tmp/readiness-devices-images-health-pair/pair-result.json",
+          "sha256": "697eb450f33e7997ef60324d8b15a294f81b1f537c4a5e194c27b7ec31ea0fd5"
+        },
+        "proof": {
+          "path": "/tmp/readiness-devices-images-health-execution/proof.json",
+          "sha256": "f0808885b2019fe913489ed0d33972d464749582ca3a6bb6a75ed95f251c8987"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-devices-images-health-execution/result-review.json",
+          "sha256": "c52117cb5b473fc8248f00868ce74cd0195c2d309a15887fc41a9313e66ce47c"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "health-audit-journal-edits-changed",
+        "urlTemplate": "/api/v1/health/nutrition/cleanup/journal",
+        "declarationIds": [
+          "decl-a1268e9817b2f3f5cb8826d0-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-devices-images-health12",
+        "fixtureSha256": "777e70c159a5ac2a66341b93859d816024fc29034553ceff3d090e637dbfe67f",
+        "manifestSha256": "1ab1496218ad34e4c9ee8caa5b6abc4e1ba102bd8b1a479526ceb34d32bcd819",
+        "result": {
+          "path": "/tmp/readiness-devices-images-health-pair/pair-result.json",
+          "sha256": "697eb450f33e7997ef60324d8b15a294f81b1f537c4a5e194c27b7ec31ea0fd5"
+        },
+        "proof": {
+          "path": "/tmp/readiness-devices-images-health-execution/proof.json",
+          "sha256": "f0808885b2019fe913489ed0d33972d464749582ca3a6bb6a75ed95f251c8987"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-devices-images-health-execution/result-review.json",
+          "sha256": "c52117cb5b473fc8248f00868ce74cd0195c2d309a15887fc41a9313e66ce47c"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "health-audit-journal-page",
+        "urlTemplate": "/api/v1/health/nutrition/cleanup/journal",
+        "declarationIds": [
+          "decl-a1268e9817b2f3f5cb8826d0-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-35f4-devices-images-health12",
+        "fixtureSha256": "777e70c159a5ac2a66341b93859d816024fc29034553ceff3d090e637dbfe67f",
+        "manifestSha256": "1ab1496218ad34e4c9ee8caa5b6abc4e1ba102bd8b1a479526ceb34d32bcd819",
+        "result": {
+          "path": "/tmp/readiness-devices-images-health-pair/pair-result.json",
+          "sha256": "697eb450f33e7997ef60324d8b15a294f81b1f537c4a5e194c27b7ec31ea0fd5"
+        },
+        "proof": {
+          "path": "/tmp/readiness-devices-images-health-execution/proof.json",
+          "sha256": "f0808885b2019fe913489ed0d33972d464749582ca3a6bb6a75ed95f251c8987"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-devices-images-health-execution/result-review.json",
+          "sha256": "c52117cb5b473fc8248f00868ce74cd0195c2d309a15887fc41a9313e66ce47c"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "health-status-local-homebot",
+        "urlTemplate": "/api/v1/homebot/health",
+        "declarationIds": [
+          "decl-91d3117cda0ca8b5f4baec08-0"
+        ],
+        "provenance": "original-guarded-Status5-captures-with-reviewed-exact-generated-trace-contract",
+        "fixtureSha256": "3aec37b506f85428698baa937375e5c4574fda17462874d6c717b8b0bb4dda3d",
+        "manifestSha256": "13e833309c78a60c6e4bbc962c638ab3e5e9c216f42e68e3ce6445bdb935514a",
+        "result": {
+          "path": "/tmp/readiness-health-status-pair/pair-result.json",
+          "sha256": "36d77657983341c4436f2c7535b825c1c3a4e7ed691300cac5b76f9a23ccc1b4"
+        },
+        "proof": {
+          "path": "/tmp/readiness-health-status-execution/proof.json",
+          "sha256": "f9c6d6e1c01e09d6cbe314d3832db86636b29b4fbc5e82adb337c83cf6cf172c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-health-status-execution/result-review.json",
+          "sha256": "a9f2870c0375a0bfa82c15254e1e87e234ee00c85df83dc05c3ec3141e72b423"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "derivedComparison": {
+          "path": "/tmp/readiness-nutribot-trace-contract/corrected-comparison.json",
+          "sha256": "b1e6a73135468e71de25976470fd81edff63215177f2b1a6cf0d76ecd2c5005b"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-nutribot-trace-contract/derived-receipt.json",
+          "sha256": "2684d644b9f98063a49f96dfa1f57268b25bf4e51fb19a284161d2f8bcf8b383"
+        },
+        "derivedResultReview": {
+          "path": "/tmp/readiness-nutribot-trace-contract/derived-result-review.json",
+          "sha256": "beccda6ed26ae687817a24dd6a5dce710f9e8216bfd10a9d5dfbf42083605a75"
+        },
+        "originalManifest": {
+          "path": "/tmp/readiness-health-status-selection/manifest.json",
+          "sha256": "13e833309c78a60c6e4bbc962c638ab3e5e9c216f42e68e3ce6445bdb935514a"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-nutribot-trace-contract/corrected-manifest.json",
+          "sha256": "ee9521d686af065a09e93dd6ccba5337e5c306e76310e190b4a552819c6c8bb3"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "health-status-local-journalist",
+        "urlTemplate": "/api/v1/journalist/health",
+        "declarationIds": [
+          "decl-32f74361339b3cf704851190-0"
+        ],
+        "provenance": "original-guarded-Status5-captures-with-reviewed-exact-generated-trace-contract",
+        "fixtureSha256": "3aec37b506f85428698baa937375e5c4574fda17462874d6c717b8b0bb4dda3d",
+        "manifestSha256": "13e833309c78a60c6e4bbc962c638ab3e5e9c216f42e68e3ce6445bdb935514a",
+        "result": {
+          "path": "/tmp/readiness-health-status-pair/pair-result.json",
+          "sha256": "36d77657983341c4436f2c7535b825c1c3a4e7ed691300cac5b76f9a23ccc1b4"
+        },
+        "proof": {
+          "path": "/tmp/readiness-health-status-execution/proof.json",
+          "sha256": "f9c6d6e1c01e09d6cbe314d3832db86636b29b4fbc5e82adb337c83cf6cf172c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-health-status-execution/result-review.json",
+          "sha256": "a9f2870c0375a0bfa82c15254e1e87e234ee00c85df83dc05c3ec3141e72b423"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "derivedComparison": {
+          "path": "/tmp/readiness-nutribot-trace-contract/corrected-comparison.json",
+          "sha256": "b1e6a73135468e71de25976470fd81edff63215177f2b1a6cf0d76ecd2c5005b"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-nutribot-trace-contract/derived-receipt.json",
+          "sha256": "2684d644b9f98063a49f96dfa1f57268b25bf4e51fb19a284161d2f8bcf8b383"
+        },
+        "derivedResultReview": {
+          "path": "/tmp/readiness-nutribot-trace-contract/derived-result-review.json",
+          "sha256": "beccda6ed26ae687817a24dd6a5dce710f9e8216bfd10a9d5dfbf42083605a75"
+        },
+        "originalManifest": {
+          "path": "/tmp/readiness-health-status-selection/manifest.json",
+          "sha256": "13e833309c78a60c6e4bbc962c638ab3e5e9c216f42e68e3ce6445bdb935514a"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-nutribot-trace-contract/corrected-manifest.json",
+          "sha256": "ee9521d686af065a09e93dd6ccba5337e5c306e76310e190b4a552819c6c8bb3"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "health-status-local-nutribot",
+        "urlTemplate": "/api/v1/nutribot/health",
+        "declarationIds": [
+          "decl-cec36157e783e2d6edccdc69-0"
+        ],
+        "provenance": "original-guarded-Status5-captures-with-reviewed-exact-generated-trace-contract",
+        "fixtureSha256": "3aec37b506f85428698baa937375e5c4574fda17462874d6c717b8b0bb4dda3d",
+        "manifestSha256": "13e833309c78a60c6e4bbc962c638ab3e5e9c216f42e68e3ce6445bdb935514a",
+        "result": {
+          "path": "/tmp/readiness-health-status-pair/pair-result.json",
+          "sha256": "36d77657983341c4436f2c7535b825c1c3a4e7ed691300cac5b76f9a23ccc1b4"
+        },
+        "proof": {
+          "path": "/tmp/readiness-health-status-execution/proof.json",
+          "sha256": "f9c6d6e1c01e09d6cbe314d3832db86636b29b4fbc5e82adb337c83cf6cf172c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-health-status-execution/result-review.json",
+          "sha256": "a9f2870c0375a0bfa82c15254e1e87e234ee00c85df83dc05c3ec3141e72b423"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "derivedComparison": {
+          "path": "/tmp/readiness-nutribot-trace-contract/corrected-comparison.json",
+          "sha256": "b1e6a73135468e71de25976470fd81edff63215177f2b1a6cf0d76ecd2c5005b"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-nutribot-trace-contract/derived-receipt.json",
+          "sha256": "2684d644b9f98063a49f96dfa1f57268b25bf4e51fb19a284161d2f8bcf8b383"
+        },
+        "derivedResultReview": {
+          "path": "/tmp/readiness-nutribot-trace-contract/derived-result-review.json",
+          "sha256": "beccda6ed26ae687817a24dd6a5dce710f9e8216bfd10a9d5dfbf42083605a75"
+        },
+        "originalManifest": {
+          "path": "/tmp/readiness-health-status-selection/manifest.json",
+          "sha256": "13e833309c78a60c6e4bbc962c638ab3e5e9c216f42e68e3ce6445bdb935514a"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-nutribot-trace-contract/corrected-manifest.json",
+          "sha256": "ee9521d686af065a09e93dd6ccba5337e5c306e76310e190b4a552819c6c8bb3"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "health-status-life-default",
+        "urlTemplate": "/api/v1/life/health",
+        "declarationIds": [
+          "decl-7a39aff1a46e37e94aa2ddac-0"
+        ],
+        "provenance": "original-guarded-Status5-captures-with-reviewed-exact-generated-trace-contract",
+        "fixtureSha256": "3aec37b506f85428698baa937375e5c4574fda17462874d6c717b8b0bb4dda3d",
+        "manifestSha256": "13e833309c78a60c6e4bbc962c638ab3e5e9c216f42e68e3ce6445bdb935514a",
+        "result": {
+          "path": "/tmp/readiness-health-status-pair/pair-result.json",
+          "sha256": "36d77657983341c4436f2c7535b825c1c3a4e7ed691300cac5b76f9a23ccc1b4"
+        },
+        "proof": {
+          "path": "/tmp/readiness-health-status-execution/proof.json",
+          "sha256": "f9c6d6e1c01e09d6cbe314d3832db86636b29b4fbc5e82adb337c83cf6cf172c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-health-status-execution/result-review.json",
+          "sha256": "a9f2870c0375a0bfa82c15254e1e87e234ee00c85df83dc05c3ec3141e72b423"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "derivedComparison": {
+          "path": "/tmp/readiness-nutribot-trace-contract/corrected-comparison.json",
+          "sha256": "b1e6a73135468e71de25976470fd81edff63215177f2b1a6cf0d76ecd2c5005b"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-nutribot-trace-contract/derived-receipt.json",
+          "sha256": "2684d644b9f98063a49f96dfa1f57268b25bf4e51fb19a284161d2f8bcf8b383"
+        },
+        "derivedResultReview": {
+          "path": "/tmp/readiness-nutribot-trace-contract/derived-result-review.json",
+          "sha256": "beccda6ed26ae687817a24dd6a5dce710f9e8216bfd10a9d5dfbf42083605a75"
+        },
+        "originalManifest": {
+          "path": "/tmp/readiness-health-status-selection/manifest.json",
+          "sha256": "13e833309c78a60c6e4bbc962c638ab3e5e9c216f42e68e3ce6445bdb935514a"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-nutribot-trace-contract/corrected-manifest.json",
+          "sha256": "ee9521d686af065a09e93dd6ccba5337e5c306e76310e190b4a552819c6c8bb3"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
+      },
+      {
+        "id": "health-status-life-explicit-user2",
+        "urlTemplate": "/api/v1/life/health",
+        "declarationIds": [
+          "decl-7a39aff1a46e37e94aa2ddac-0"
+        ],
+        "provenance": "original-guarded-Status5-captures-with-reviewed-exact-generated-trace-contract",
+        "fixtureSha256": "3aec37b506f85428698baa937375e5c4574fda17462874d6c717b8b0bb4dda3d",
+        "manifestSha256": "13e833309c78a60c6e4bbc962c638ab3e5e9c216f42e68e3ce6445bdb935514a",
+        "result": {
+          "path": "/tmp/readiness-health-status-pair/pair-result.json",
+          "sha256": "36d77657983341c4436f2c7535b825c1c3a4e7ed691300cac5b76f9a23ccc1b4"
+        },
+        "proof": {
+          "path": "/tmp/readiness-health-status-execution/proof.json",
+          "sha256": "f9c6d6e1c01e09d6cbe314d3832db86636b29b4fbc5e82adb337c83cf6cf172c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-health-status-execution/result-review.json",
+          "sha256": "a9f2870c0375a0bfa82c15254e1e87e234ee00c85df83dc05c3ec3141e72b423"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "derivedComparison": {
+          "path": "/tmp/readiness-nutribot-trace-contract/corrected-comparison.json",
+          "sha256": "b1e6a73135468e71de25976470fd81edff63215177f2b1a6cf0d76ecd2c5005b"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-nutribot-trace-contract/derived-receipt.json",
+          "sha256": "2684d644b9f98063a49f96dfa1f57268b25bf4e51fb19a284161d2f8bcf8b383"
+        },
+        "derivedResultReview": {
+          "path": "/tmp/readiness-nutribot-trace-contract/derived-result-review.json",
+          "sha256": "beccda6ed26ae687817a24dd6a5dce710f9e8216bfd10a9d5dfbf42083605a75"
+        },
+        "originalManifest": {
+          "path": "/tmp/readiness-health-status-selection/manifest.json",
+          "sha256": "13e833309c78a60c6e4bbc962c638ab3e5e9c216f42e68e3ce6445bdb935514a"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-nutribot-trace-contract/corrected-manifest.json",
+          "sha256": "ee9521d686af065a09e93dd6ccba5337e5c306e76310e190b4a552819c6c8bb3"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true
       }
     ],
     "infrastructure": {
@@ -54093,13 +55952,21 @@
       "scope": "Existing historical134 request/receipt links only; no new execution/case credit or current source guarantee."
     },
     "eligibleExecutedTemplateUnion": [
+      "/api/v1/admin/apps",
       "/api/v1/admin/apps/:appId/config",
       "/api/v1/admin/art/works",
+      "/api/v1/admin/config/files",
+      "/api/v1/admin/config/files{/*splat}",
       "/api/v1/admin/content/lists",
       "/api/v1/admin/content/lists/:type",
       "/api/v1/admin/content/lists/:type/:name",
       "/api/v1/admin/household",
+      "/api/v1/admin/household/devices",
+      "/api/v1/admin/household/devices/:deviceId",
       "/api/v1/admin/household/members/:username",
+      "/api/v1/admin/images/list",
+      "/api/v1/admin/integrations",
+      "/api/v1/admin/integrations/:provider",
       "/api/v1/admin/notifications/ledger",
       "/api/v1/admin/scheduler/jobs",
       "/api/v1/admin/scheduler/jobs/:id",
@@ -54147,6 +56014,14 @@
       "/api/v1/device/self/input",
       "/api/v1/donow/surfaces",
       "/api/v1/earnings/rules",
+      "/api/v1/emulator/art/:system/:gameId/:kind",
+      "/api/v1/emulator/engine/*splat",
+      "/api/v1/emulator/library",
+      "/api/v1/emulator/logo/:system",
+      "/api/v1/emulator/rom/:system/:gameId",
+      "/api/v1/emulator/save/:system/:gameId",
+      "/api/v1/emulator/saves/:system/:gameId",
+      "/api/v1/emulator/state/:system/:gameId/:slot",
       "/api/v1/entitlements",
       "/api/v1/entitlements/:capabilityId",
       "/api/v1/entropy",
@@ -54216,6 +56091,7 @@
       "/api/v1/health/nutrition/catalog",
       "/api/v1/health/nutrition/catalog/:id",
       "/api/v1/health/nutrition/catalog/recent",
+      "/api/v1/health/nutrition/cleanup/journal",
       "/api/v1/health/nutrition/meals",
       "/api/v1/health/nutrition/observations",
       "/api/v1/health/nutrition/pending",
@@ -54236,6 +56112,9 @@
       "/api/v1/home/status",
       "/api/v1/home/todos",
       "/api/v1/home/weather",
+      "/api/v1/homebot/health",
+      "/api/v1/journalist/health",
+      "/api/v1/life/health",
       "/api/v1/life/log/:username/:date",
       "/api/v1/life/log/:username/category/:category",
       "/api/v1/life/log/:username/range",
@@ -54283,6 +56162,7 @@
       "/api/v1/media/screens/:id/routines",
       "/api/v1/media/screens/:id/started-by",
       "/api/v1/media/screens/rooms/adjacency",
+      "/api/v1/nutribot/health",
       "/api/v1/piano-games/:gameId/config",
       "/api/v1/piano-games/:gameId/ladder",
       "/api/v1/piano-games/chess/config",
@@ -54319,6 +56199,7 @@
       "/api/v1/piano/users/:userId/progress",
       "/api/v1/piano/users/:userId/studio",
       "/api/v1/piano/users/:userId/studio/:id",
+      "/api/v1/presentation/catalogs/:packId/scenes",
       "/api/v1/school/attempt-days",
       "/api/v1/school/attestations",
       "/api/v1/school/banks",
@@ -54367,7 +56248,10 @@
       "/api/v1/school/review/learner/:learnerId",
       "/api/v1/school/roster",
       "/api/v1/school/rubiks-cube/preview",
+      "/api/v1/school/self-service/curriculum/:courseId/poster.jpg",
       "/api/v1/school/self-service/preview/:link",
+      "/api/v1/school/self-service/programs/:programId/:instanceId/poster.jpg",
+      "/api/v1/school/self-service/programs/:programId/poster.jpg",
       "/api/v1/school/sentence-ladder/audio/:corpusId/:seq/:lang",
       "/api/v1/school/sentence-ladder/courses",
       "/api/v1/school/sentence-ladder/cue/:name",
@@ -54379,7 +56263,10 @@
       "/api/v1/school/teacher/answer-sheets/:cardId",
       "/api/v1/school/teacher/artifacts/:artifactId",
       "/api/v1/school/teacher/curriculum-exceptions",
+      "/api/v1/school/teacher/curriculum/:courseId/poster.jpg",
       "/api/v1/school/teacher/learners/:learnerId/answer-sheets",
+      "/api/v1/school/teacher/programs/:programId/:instanceId/poster.jpg",
+      "/api/v1/school/teacher/programs/:programId/poster.jpg",
       "/api/v1/school/teachers",
       "/api/v1/school/transcript",
       "/api/v1/school/users/:userId/results",

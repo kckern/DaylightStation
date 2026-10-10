@@ -6,7 +6,7 @@ import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
 
 const scratch = process.env.PRE_RUN_ROOT;
-const { sourceRoot, fixtureFiles, rawUTF8Files = [], rawBinaryFiles = [], fixtureDirectories = [], metadataDirectories = [] } = JSON.parse(fs.readFileSync(path.join(scratch, 'probe-input.json'), 'utf8'));
+const { sourceRoot, fixtureFiles, rawUTF8Files = [], rawBinaryFiles = [], fixtureDirectories = [], metadataDirectories = [], fixedConfigMetadata = [] } = JSON.parse(fs.readFileSync(path.join(scratch, 'probe-input.json'), 'utf8'));
 const resultFile = path.join(scratch, 'boot-result.json');
 const result = { scope: 'Actual assembled app with synthetic configs and loopback HTTP; scheduler/MQTT disabled, no production data/provider/Docker/auth/shutdown certification', readinessAccepted: false, completed: false, phases: [], errors: [], termination: null };
 const save = () => fs.writeFileSync(resultFile, JSON.stringify(result, null, 2));
@@ -36,13 +36,22 @@ try {
   for (const [relative, value] of Object.entries(fixtureFiles)) {
     const file = path.join(scratch, relative);
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n');
+    const metadata=fixedConfigMetadata.find(row=>row.destination===relative);
+    if(metadata){
+      assert.equal(metadata.mtimeMs,1759276800000);
+      const bytes=Buffer.from(JSON.stringify(value,null,2)+'\n');const stat=fs.lstatSync(file);
+      assert.ok(stat.isFile()&&!stat.isSymbolicLink()&&fs.realpathSync(file)===file);
+      assert.equal(bytes.length,metadata.byteLength);assert.equal(stat.size,metadata.byteLength);assert.equal(stat.mtimeMs,metadata.mtimeMs);
+      assert.equal(createHash('sha256').update(bytes).digest('hex'),metadata.sha256);
+      assert.equal(createHash('sha256').update(fs.readFileSync(file)).digest('hex'),metadata.sha256);
+      result.fixedConfigMetadata ??= [];result.fixedConfigMetadata.push({...metadata});
+    } else fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n');
   }
   for (const row of [...rawUTF8Files, ...rawBinaryFiles]) {
     const file = path.join(scratch, row.destination);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     if (row.mtimeMs !== undefined) {
-      assert.ok(row.encoding === 'binary' && ["media/games/_common/synthetic-read-assets/tiles.png", "media/games/party-games/synthetic-read-assets.png", "media/school/language/synthetic-read-assets/words/en/star/image.png", "media/audio/readalong/synthetic-media-navigation/cover.png", "media/audio/readalong/synthetic-media-navigation/chapter/cover.png", "data/content/readalong/synthetic-media-navigation/icon.png"].includes(row.destination));
+      assert.ok(row.encoding === 'binary' && ["media/img/lists/synthetic-breakfast.png", "media/img/lists/synthetic-reading.png", "media/img/lists/synthetic-weekly.png", "media/games/_common/synthetic-read-assets/tiles.png", "media/games/party-games/synthetic-read-assets.png", "media/school/language/synthetic-read-assets/words/en/star/image.png", "media/audio/readalong/synthetic-media-navigation/cover.png", "media/audio/readalong/synthetic-media-navigation/chapter/cover.png", "data/content/readalong/synthetic-media-navigation/icon.png"].includes(row.destination));
       assert.equal(row.mtimeMs, 1759276800000);
       const stat = fs.lstatSync(file);
       assert.ok(stat.isFile() && !stat.isSymbolicLink() && fs.realpathSync(file) === file);

@@ -49,8 +49,9 @@ if(captureExpectations) {validateCaptureManifest(captureExpectations,studyFixtur
 const publishedUnitRequired=captureExpectations?lessonReadinessRequired(captureExpectations,studyFixtureFileSha256):false;
 const rawUTF8Files = validateRawFixtures(prepared);
 const rawBinaryFiles = prepared.rawBinaryFiles ?? [];
+const fixedConfigMetadata = prepared.fixedConfigMetadata ?? [];
 const {fixtureDirectories, metadataDirectories} = validateDirectoryFixtures(prepared);
-const fixtureIdentity = rawUTF8Files.length || rawBinaryFiles.length || fixtureDirectories.length || metadataDirectories.length ? { fixtureFiles: prepared.fixtureFiles, rawUTF8Files, ...(rawBinaryFiles.length ? { rawBinaryFiles } : {}), ...(fixtureDirectories.length ? {fixtureDirectories} : {}), ...(metadataDirectories.length ? {metadataDirectories} : {}) } : prepared.fixtureFiles;
+const fixtureIdentity = fixedConfigMetadata.length || rawUTF8Files.length || rawBinaryFiles.length || fixtureDirectories.length || metadataDirectories.length ? { fixtureFiles: prepared.fixtureFiles, rawUTF8Files, ...(fixedConfigMetadata.length ? {fixedConfigMetadata} : {}), ...(rawBinaryFiles.length ? { rawBinaryFiles } : {}), ...(fixtureDirectories.length ? {fixtureDirectories} : {}), ...(metadataDirectories.length ? {metadataDirectories} : {}) } : prepared.fixtureFiles;
 const fixed = JSON.parse(fs.readFileSync(path.join(directory, 'local-app-fixture.json'), 'utf8'));
 assert.ok(prepared.fixtureFiles && typeof prepared.fixtureFiles === 'object');
 for (const [relative, value] of Object.entries(prepared.fixtureFiles)) {
@@ -69,9 +70,11 @@ new Intl.DateTimeFormat('en-US', { timeZone: runtimeTimezone }).format(0);
 // Keep credentials, services, integrations and devices synthetic and disabled.
 for (const relative of ['data/system/config/auth.yml', 'data/system/config/services.yml', 'data/system/config/adapters.yml', 'data/system/config/bots.yml', 'data/system/secrets.yml', 'data/household/integrations.yml', 'data/household/hardware/devices.yml']) {
   // Exact synthetic descriptors only: no capabilities, providers, hosts, auth or activation.
+  const reviewedHouseholdDeviceImages = relative === 'data/household/hardware/devices.yml' && JSON.stringify(prepared.fixtureFiles[relative]) === "{\"devices\":{\"synthetic-reading-tablet\":{\"type\":\"readiness-metadata\",\"label\":\"Reading Tablet\",\"enabled\":false,\"room\":\"study\"},\"synthetic-piano-display\":{\"type\":\"readiness-metadata\",\"label\":\"Piano Display\",\"enabled\":false,\"room\":\"music\"},\"synthetic-kitchen-audio\":{\"type\":\"readiness-metadata\",\"label\":\"Kitchen Audio\",\"enabled\":false,\"room\":\"kitchen\"},\"synthetic-hall-sensor\":{\"type\":\"readiness-metadata\",\"enabled\":false,\"room\":\"hall\",\"threshold\":2.5}}}" && createHash('sha256').update(JSON.stringify(prepared)).digest('hex') === '0734cf9f772fae34ad902de6c938cfc084b847c277b7d143b11e1f3778231734';
   const reviewedMetadataDevices = relative === 'data/household/hardware/devices.yml' && JSON.stringify(prepared.fixtureFiles[relative]) === "{\"devices\":{\"synthetic-reading-panel\":{\"type\":\"readiness-metadata\",\"name\":\"Reading Panel\",\"location\":\"Reading Room\",\"icon\":\"book\"},\"synthetic-fitness-panel\":{\"type\":\"readiness-metadata\",\"name\":\"Movement Panel\",\"location\":\"Exercise Room\",\"icon\":\"fitness\"}}}" && createHash('sha256').update(JSON.stringify(prepared)).digest('hex') === '17806e1d1d5a096f8b9dc08b9e946ef581e4cf96621c360f83c7a79f30bc1018';
   const reviewedInertWeeklyImmich = relative === 'data/system/config/services.yml' && JSON.stringify(prepared.fixtureFiles[relative]) === "{\"immich\":{\"readiness\":\"http://readiness-immich.invalid:9\"}}" && JSON.stringify(prepared.fixtureFiles['data/household/auth/immich.yml']) === "{\"token\":\"SYNTHETIC-READINESS-IMMICH-NOT-A-REAL-TOKEN\"}" && createHash('sha256').update(JSON.stringify(prepared)).digest('hex') === '6624753a47feb863894060de1d18757ed5cde3af10560e59a7b59d4f5d01386f';
-  if (!reviewedMetadataDevices && !reviewedInertWeeklyImmich) assert.deepEqual(prepared.fixtureFiles[relative], fixed.fixtureFiles[relative], `Unsafe startup fixture change: ${relative}`);
+  const reviewedInertAdminMetadata = relative === 'data/household/integrations.yml' && JSON.stringify(prepared.fixtureFiles[relative]) === "{\"readiness_catalogs\":[{\"provider\":\"synthetic-library\",\"enabled\":false,\"label\":\"Family Library\"},{\"provider\":\"synthetic-calendar\",\"enabled\":false,\"label\":\"Family Calendar\"},{\"provider\":\"synthetic-reading\",\"enabled\":false,\"label\":\"Reading Shelf\"}]}" && createHash('sha256').update(JSON.stringify(prepared)).digest('hex') === 'a560a0bd7d863c7e4b8a27d7882b3584feda76121c1140c6ad10b2e00942b230';
+  if (!reviewedHouseholdDeviceImages && !reviewedInertAdminMetadata && !reviewedMetadataDevices && !reviewedInertWeeklyImmich) assert.deepEqual(prepared.fixtureFiles[relative], fixed.fixtureFiles[relative], `Unsafe startup fixture change: ${relative}`);
 }
 const run = fs.mkdtempSync(path.join(outputRoot, 'daylight-local-http-'));
 fs.chmodSync(run, 0o700);
@@ -80,7 +83,7 @@ fs.mkdirSync(scratch); fs.mkdirSync(denied);
 materializeTimedImageFixtures(prepared, scratch);
 fs.writeFileSync(path.join(denied, 'private.env'), 'synthetic private sentinel\n', { mode: 0o600 });
 fs.writeFileSync(path.join(scratch, 'openssl.cnf'), '');
-fs.writeFileSync(path.join(scratch, 'probe-input.json'), JSON.stringify({ sourceRoot, fixtureFiles: prepared.fixtureFiles, rawUTF8Files, rawBinaryFiles, fixtureDirectories, metadataDirectories }), { mode: 0o600 });
+fs.writeFileSync(path.join(scratch, 'probe-input.json'), JSON.stringify({ sourceRoot, fixtureFiles: prepared.fixtureFiles, rawUTF8Files, rawBinaryFiles, fixtureDirectories, metadataDirectories, fixedConfigMetadata }), { mode: 0o600 });
 const hash = file => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const jsonHash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const grants = new Map();
