@@ -199,7 +199,7 @@ export function VideoPlayer({
     preset: upscaleEffects
   });
 
-  // WebGL CRT path. useUpscaleEffects still owns the decision (<480p source,
+  // WebGL CRT path. useUpscaleEffects still owns the decision (sub-SD: <640 wide and <480 tall,
   // stabilized, not looping); this only swaps how the effect is drawn. The CSS
   // overlay stays as the fallback for no-WebGL and refused texture uploads.
   const crtCanvasRef = useRef(null);
