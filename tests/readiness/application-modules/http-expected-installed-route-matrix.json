@@ -27920,13 +27920,6 @@
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
     {
-      "urlTemplate": "/api/v1/ai",
-      "eligibleDeclarationIds": [
-        "decl-85b653f1b5c1624e44f5f4b9-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
       "urlTemplate": "/api/v1/ai/metrics",
       "eligibleDeclarationIds": [
         "decl-bc0840355f03e5cf78f6f36d-0"
@@ -27937,13 +27930,6 @@
       "urlTemplate": "/api/v1/arcade-game-sessions/devices/:deviceId",
       "eligibleDeclarationIds": [
         "decl-3c9175818434ed1b92226646-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/arcade-game-sessions/grants/:userId",
-      "eligibleDeclarationIds": [
-        "decl-ec2bfae29840e3a49ba85341-0"
       ],
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
@@ -27962,13 +27948,6 @@
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
     {
-      "urlTemplate": "/api/v1/arcade-game-sessions/placement",
-      "eligibleDeclarationIds": [
-        "decl-476e52e7d0a0c6dd55f27888-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
       "urlTemplate": "/api/v1/auth/invite/:token",
       "eligibleDeclarationIds": [
         "decl-5a808d01832f6b738a1659d5-0"
@@ -27979,13 +27958,6 @@
       "urlTemplate": "/api/v1/camera",
       "eligibleDeclarationIds": [
         "decl-77ce39d8690c058bdcabb46c-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/canvas/image/*splat",
-      "eligibleDeclarationIds": [
-        "decl-0982e229d9c7172880749bf9-0"
       ],
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
@@ -28004,13 +27976,6 @@
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
     {
-      "urlTemplate": "/api/v1/dev/proxy_status",
-      "eligibleDeclarationIds": [
-        "decl-cdb94c19d85e3201b07013e6-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
       "urlTemplate": "/api/v1/eink/:id/status",
       "eligibleDeclarationIds": [
         "decl-156af58e7e4305889a27830f-0"
@@ -28021,13 +27986,6 @@
       "urlTemplate": "/api/v1/entropy/status",
       "eligibleDeclarationIds": [
         "decl-f36b39fc83d8f15e50d76fb7-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/feedback/:app/:id/audio",
-      "eligibleDeclarationIds": [
-        "decl-cfce0bbe89aa1124a91cd1a2-0"
       ],
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
@@ -28056,13 +28014,6 @@
       "urlTemplate": "/api/v1/fitness/receipt/:sessionId",
       "eligibleDeclarationIds": [
         "decl-d39b0f5794ee6b128b7c64c0-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/fitness/school-attempts/:workSessionId/plan",
-      "eligibleDeclarationIds": [
-        "decl-e6a50794118f04ce8a8c4f98-0"
       ],
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
@@ -28123,13 +28074,6 @@
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
     {
-      "urlTemplate": "/api/v1/health/nutrition/photos/:photoRef",
-      "eligibleDeclarationIds": [
-        "decl-9c2d4f1ce9732168d4b9697a-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
       "urlTemplate": "/api/v1/health/status",
       "eligibleDeclarationIds": [
         "decl-4fcbcc11eed069bb408c5513-0"
@@ -28168,13 +28112,6 @@
       "urlTemplate": "/api/v1/local/search",
       "eligibleDeclarationIds": [
         "decl-4d53f7997ead467bbe018fb0-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/local/stream{/*splat}",
-      "eligibleDeclarationIds": [
-        "decl-63696345f7a1c6a031a20081-0"
       ],
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
@@ -28256,23 +28193,9 @@
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
     {
-      "urlTemplate": "/api/v1/school/books/:learnerId/shelf",
-      "eligibleDeclarationIds": [
-        "decl-afb714a27acf8ac56ec4ea57-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
       "urlTemplate": "/api/v1/school/certification",
       "eligibleDeclarationIds": [
         "decl-74ce67c8fe6bf50db74c19c4-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/school/language-reels/media/:reelId",
-      "eligibleDeclarationIds": [
-        "decl-1c3a96070d4eccda2972321e-0"
       ],
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
@@ -28285,30 +28208,9 @@
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
     {
-      "urlTemplate": "/api/v1/school/lifecycle/media/targets",
-      "eligibleDeclarationIds": [
-        "decl-a54c84542a83ea83185d6ded-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
       "urlTemplate": "/api/v1/school/lifecycle/sessions/stale",
       "eligibleDeclarationIds": [
         "decl-5ddb1885388339a60225b19a-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/school/reading/session",
-      "eligibleDeclarationIds": [
-        "decl-30e022aefa7adb133ce4955e-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/school/rubiks-cube/users/:userId/courses/:courseId/packets/:packetId",
-      "eligibleDeclarationIds": [
-        "decl-cd58ad238d1b00627a3e3616-0"
       ],
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
@@ -28320,23 +28222,9 @@
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
     {
-      "urlTemplate": "/api/v1/shutdown/status",
-      "eligibleDeclarationIds": [
-        "decl-23a9a6c4f1313eae4829578e-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
       "urlTemplate": "/api/v1/status",
       "eligibleDeclarationIds": [
         "decl-a4d2543fcbc54595e2475d2f-0"
-      ],
-      "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
-    },
-    {
-      "urlTemplate": "/api/v1/stream/ambient/:id",
-      "eligibleDeclarationIds": [
-        "decl-0118ca502b2a37b1afc21a24-0"
       ],
       "remaining": "Independent fixture/branch expectation and current checkpoint proof required"
     },
@@ -44402,9 +44290,9 @@
   "isolatedAndLiveEvidenceUnion": {
     "scope": "Separate historical-live and actual-source isolated executed coverage; source-template union only, no installed-live denominator",
     "historicalLiveEligibleTemplateLinks": 94,
-    "isolatedAdditionalEligibleTemplateLinks": 238,
-    "unionEligibleTemplatesWithExecutedCaseLinks": 332,
-    "unionEligibleTemplatesWithoutExecutedCaseLinks": 64,
+    "isolatedAdditionalEligibleTemplateLinks": 254,
+    "unionEligibleTemplatesWithExecutedCaseLinks": 348,
+    "unionEligibleTemplatesWithoutExecutedCaseLinks": 48,
     "isolatedOnlyTemplates": [
       "/api/v1/admin/apps",
       "/api/v1/admin/apps/:appId/config",
@@ -44429,7 +44317,10 @@
       "/api/v1/agents",
       "/api/v1/agents/:agentId/assignments",
       "/api/v1/agents/:agentId/memory/:userId",
+      "/api/v1/ai",
       "/api/v1/arcade-game-sessions/devices/:deviceId/history",
+      "/api/v1/arcade-game-sessions/grants/:userId",
+      "/api/v1/arcade-game-sessions/placement",
       "/api/v1/arcade-game-sessions/usage",
       "/api/v1/art/preset/:key",
       "/api/v1/auth/context",
@@ -44441,6 +44332,7 @@
       "/api/v1/automotive/vehicles/:id/fuel",
       "/api/v1/automotive/vehicles/:id/journeys",
       "/api/v1/automotive/vehicles/:id/service",
+      "/api/v1/canvas/image/*splat",
       "/api/v1/config/status",
       "/api/v1/content/:source/image/:id",
       "/api/v1/content/:source/info/:id{/:modifiers}",
@@ -44452,6 +44344,7 @@
       "/api/v1/cost/spend/category",
       "/api/v1/cost/spend/resource",
       "/api/v1/cost/spend/user",
+      "/api/v1/dev/proxy_status",
       "/api/v1/device",
       "/api/v1/device/:deviceId/presence",
       "/api/v1/device/:deviceId/session",
@@ -44476,11 +44369,13 @@
       "/api/v1/feed/headlines/:source",
       "/api/v1/feed/headlines/pages",
       "/api/v1/feed/workspace",
+      "/api/v1/feedback/:app/:id/audio",
       "/api/v1/finance",
       "/api/v1/finance/data",
       "/api/v1/fitness",
       "/api/v1/fitness/fingerprints",
       "/api/v1/fitness/resumable",
+      "/api/v1/fitness/school-attempts/:workSessionId/plan",
       "/api/v1/fitness/sessions",
       "/api/v1/fitness/sessions/:sessionId",
       "/api/v1/fitness/skyline-glider/runs/:runId",
@@ -44512,6 +44407,7 @@
       "/api/v1/health/nutrition/cleanup/journal",
       "/api/v1/health/nutrition/meals",
       "/api/v1/health/nutrition/pending",
+      "/api/v1/health/nutrition/photos/:photoRef",
       "/api/v1/health/nutrition/templates",
       "/api/v1/health/range",
       "/api/v1/home-automation/calendar",
@@ -44552,6 +44448,7 @@
       "/api/v1/local-content/scripture/*splat",
       "/api/v1/local-content/talk/*splat",
       "/api/v1/local/browse{/*splat}",
+      "/api/v1/local/stream{/*splat}",
       "/api/v1/media/config",
       "/api/v1/media/household/favourites",
       "/api/v1/media/household/plays",
@@ -44580,12 +44477,14 @@
       "/api/v1/piano/users/:userId/progress",
       "/api/v1/presentation/catalogs/:packId/scenes",
       "/api/v1/school/banks",
+      "/api/v1/school/books/:learnerId/shelf",
       "/api/v1/school/card-ladder/stage",
       "/api/v1/school/catalogs",
       "/api/v1/school/catalogs/:catalogId/subjects/:subjectId/courses/:courseId/units/:unitId/lessons/:lessonId",
       "/api/v1/school/continuation-code",
       "/api/v1/school/flashcards/assets/*assetId",
       "/api/v1/school/geography/decks",
+      "/api/v1/school/language-reels/media/:reelId",
       "/api/v1/school/language/preview/:corpusId/day",
       "/api/v1/school/language/recordings/:userId/:corpusId/:seq",
       "/api/v1/school/language/users/:userId/history",
@@ -44593,6 +44492,7 @@
       "/api/v1/school/lifecycle/direct-launch/programs",
       "/api/v1/school/lifecycle/learners/:learnerId/agenda/preview",
       "/api/v1/school/lifecycle/learners/:learnerId/sessions",
+      "/api/v1/school/lifecycle/media/targets",
       "/api/v1/school/lifecycle/review",
       "/api/v1/school/lifecycle/sessions/:sessionId/events",
       "/api/v1/school/lifecycle/sessions/:sessionId/review",
@@ -44606,6 +44506,7 @@
       "/api/v1/school/progress/options",
       "/api/v1/school/reading/events",
       "/api/v1/school/reading/read-status",
+      "/api/v1/school/reading/session",
       "/api/v1/school/reading/summary",
       "/api/v1/school/remediation",
       "/api/v1/school/remediation/:sessionId",
@@ -44615,6 +44516,7 @@
       "/api/v1/school/report-card/frozen/versions",
       "/api/v1/school/review/learner/:learnerId",
       "/api/v1/school/rubiks-cube/preview",
+      "/api/v1/school/rubiks-cube/users/:userId/courses/:courseId/packets/:packetId",
       "/api/v1/school/self-service/curriculum/:courseId/poster.jpg",
       "/api/v1/school/self-service/preview/:link",
       "/api/v1/school/self-service/programs/:programId/:instanceId/poster.jpg",
@@ -44633,6 +44535,7 @@
       "/api/v1/school/word-ladder/stage",
       "/api/v1/screens",
       "/api/v1/screens/:screenId",
+      "/api/v1/shutdown/status",
       "/api/v1/state-gates",
       "/api/v1/state-gates/:gateId",
       "/api/v1/state-gates/transitions",
@@ -44641,6 +44544,7 @@
       "/api/v1/static/equipment/:id",
       "/api/v1/static/img/*splat",
       "/api/v1/static/users/:id",
+      "/api/v1/stream/ambient/:id",
       "/api/v1/stream/readalong/:collection{/*splat}",
       "/api/v1/stream/singalong/:collection/:id",
       "/api/v1/weekly-review/recording/drafts"
@@ -44648,8 +44552,8 @@
     "counts": {
       "historicalLiveUniqueCases": 134,
       "historicalLiveIndependentContracts": 125,
-      "isolatedUniqueAcceptedCaseIds": 456,
-      "isolatedAcceptedOccurrences": 456,
+      "isolatedUniqueAcceptedCaseIds": 486,
+      "isolatedAcceptedOccurrences": 486,
       "isolatedReplayIdsAlreadyLive": [
         "health-catalog-food-not-found",
         "health-catalog-missing-query",
@@ -44709,6 +44613,10 @@
         "agent-feed-memory-health-coach-user_1",
         "agent-feed-memory-health-coach-user_2",
         "agent-feed-memory-lifeplan-guide-user_1",
+        "arcade-grants-clamped",
+        "arcade-grants-positive",
+        "arcade-placement-all",
+        "arcade-placement-etched",
         "array-auto-document-records",
         "array-auto-service-records",
         "array-health-saved-meals-ordered",
@@ -44800,6 +44708,8 @@
         "emulator-stored-rom",
         "emulator-stored-save-users",
         "emulator-stored-state",
+        "fitness-stored-accepted-plan",
+        "fitness-stored-prepared-plan",
         "following-auto-authored-place",
         "following-fitness-skyline-stored-run",
         "following-fitness-workout-run-projection",
@@ -44958,9 +44868,16 @@
         "reading-scripture-synthetic-two",
         "reading-talk-01",
         "reading-talk-02",
+        "runtime-status-ai",
+        "runtime-status-dev",
+        "runtime-status-expired-shutdown",
         "school-bank-browser-all",
         "school-bank-browser-assigned",
         "school-bank-browser-generic",
+        "school-generated-session-family",
+        "school-generated-session-headset",
+        "school-generated-shelf-user_1",
+        "school-generated-shelf-user_2",
         "school-insights-populated-monitor",
         "school-language-joins-cross-recording",
         "school-language-joins-denied-cross-corpus",
@@ -44997,6 +44914,10 @@
         "school-posters-teacher-program-legacy",
         "school-preview-reading-completed",
         "school-preview-reading-partial",
+        "school-remaining-cube-issued",
+        "school-remaining-cube-verified",
+        "school-remaining-reel-900001",
+        "school-remaining-reel-900002",
         "school-stored-pending",
         "school-stored-progress",
         "school-stored-progress-filter",
@@ -45046,6 +44967,19 @@
         "stored-history-media-favourites",
         "stored-history-media-queue",
         "stored-history-media-removed",
+        "stored-media-ambient",
+        "stored-media-canvas-garden",
+        "stored-media-canvas-room",
+        "stored-media-feedback-fitness",
+        "stored-media-feedback-school",
+        "stored-media-local-audio",
+        "stored-media-local-image",
+        "stored-media-photo-cross-user-query",
+        "stored-media-photo-cross-user-query-thumbnail",
+        "stored-media-photo-fallback",
+        "stored-media-photo-original",
+        "stored-media-photo-thumbnail",
+        "stored-media-school-targets",
         "surfaces-legacy-home-calendar",
         "surfaces-legacy-home-events",
         "surfaces-legacy-home-todos",
@@ -45110,11 +45044,11 @@
         "timeline-lifelog-day",
         "timeline-lifelog-sources"
       ],
-      "unionUniqueAcceptedCaseIds": 576,
-      "unionIndependentContracts": 567,
+      "unionUniqueAcceptedCaseIds": 606,
+      "unionIndependentContracts": 597,
       "newLiveTemplates": 2,
-      "isolatedDistinctTemplates": 262,
-      "newIsolatedTemplates": 255,
+      "isolatedDistinctTemplates": 278,
+      "newIsolatedTemplates": 271,
       "pendingNext15": {
         "cases": 15,
         "terminalResult": {
@@ -55694,6 +55628,846 @@
         },
         "correctedManifestWasUsedDuringHTTP": false,
         "noHTTPRerun": true
+      },
+      {
+        "id": "stored-media-canvas-room",
+        "urlTemplate": "/api/v1/canvas/image/*splat",
+        "declarationIds": [
+          "decl-0982e229d9c7172880749bf9-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-stored-media12-ambient-prefix-failure-retained",
+        "fixtureSha256": "fc0a10eac4f86ae1a0607e93cc2f884b624d0ed65f1381f2c04a9d112d03fe76",
+        "manifestSha256": "39df0e5c8eea9713f9c452b7d0db8d86648857d56ec6ccde81fdae2c88e34c0f",
+        "result": {
+          "path": "/tmp/readiness-stored-media-pair/pair-result.json",
+          "sha256": "bdc1dd2d0ddb0b85451d95a3403926d9a0289950334eeb8ba41ef7ef54f01719"
+        },
+        "proof": {
+          "path": "/tmp/readiness-stored-media-execution/proof.json",
+          "sha256": "9a916ffabbcccca65c17f28cdb789c2ff144cc3355f3f691c1b3fcc3b85de64f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-stored-media-execution/result-review.json",
+          "sha256": "797207ee00d1c137fea5c32f894ad8471d0fb4e5d3e2709331322a924498fff5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "stored-media-canvas-garden",
+        "urlTemplate": "/api/v1/canvas/image/*splat",
+        "declarationIds": [
+          "decl-0982e229d9c7172880749bf9-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-stored-media12-ambient-prefix-failure-retained",
+        "fixtureSha256": "fc0a10eac4f86ae1a0607e93cc2f884b624d0ed65f1381f2c04a9d112d03fe76",
+        "manifestSha256": "39df0e5c8eea9713f9c452b7d0db8d86648857d56ec6ccde81fdae2c88e34c0f",
+        "result": {
+          "path": "/tmp/readiness-stored-media-pair/pair-result.json",
+          "sha256": "bdc1dd2d0ddb0b85451d95a3403926d9a0289950334eeb8ba41ef7ef54f01719"
+        },
+        "proof": {
+          "path": "/tmp/readiness-stored-media-execution/proof.json",
+          "sha256": "9a916ffabbcccca65c17f28cdb789c2ff144cc3355f3f691c1b3fcc3b85de64f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-stored-media-execution/result-review.json",
+          "sha256": "797207ee00d1c137fea5c32f894ad8471d0fb4e5d3e2709331322a924498fff5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "stored-media-feedback-school",
+        "urlTemplate": "/api/v1/feedback/:app/:id/audio",
+        "declarationIds": [
+          "decl-cfce0bbe89aa1124a91cd1a2-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-stored-media12-ambient-prefix-failure-retained",
+        "fixtureSha256": "fc0a10eac4f86ae1a0607e93cc2f884b624d0ed65f1381f2c04a9d112d03fe76",
+        "manifestSha256": "39df0e5c8eea9713f9c452b7d0db8d86648857d56ec6ccde81fdae2c88e34c0f",
+        "result": {
+          "path": "/tmp/readiness-stored-media-pair/pair-result.json",
+          "sha256": "bdc1dd2d0ddb0b85451d95a3403926d9a0289950334eeb8ba41ef7ef54f01719"
+        },
+        "proof": {
+          "path": "/tmp/readiness-stored-media-execution/proof.json",
+          "sha256": "9a916ffabbcccca65c17f28cdb789c2ff144cc3355f3f691c1b3fcc3b85de64f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-stored-media-execution/result-review.json",
+          "sha256": "797207ee00d1c137fea5c32f894ad8471d0fb4e5d3e2709331322a924498fff5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "stored-media-feedback-fitness",
+        "urlTemplate": "/api/v1/feedback/:app/:id/audio",
+        "declarationIds": [
+          "decl-cfce0bbe89aa1124a91cd1a2-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-stored-media12-ambient-prefix-failure-retained",
+        "fixtureSha256": "fc0a10eac4f86ae1a0607e93cc2f884b624d0ed65f1381f2c04a9d112d03fe76",
+        "manifestSha256": "39df0e5c8eea9713f9c452b7d0db8d86648857d56ec6ccde81fdae2c88e34c0f",
+        "result": {
+          "path": "/tmp/readiness-stored-media-pair/pair-result.json",
+          "sha256": "bdc1dd2d0ddb0b85451d95a3403926d9a0289950334eeb8ba41ef7ef54f01719"
+        },
+        "proof": {
+          "path": "/tmp/readiness-stored-media-execution/proof.json",
+          "sha256": "9a916ffabbcccca65c17f28cdb789c2ff144cc3355f3f691c1b3fcc3b85de64f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-stored-media-execution/result-review.json",
+          "sha256": "797207ee00d1c137fea5c32f894ad8471d0fb4e5d3e2709331322a924498fff5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "stored-media-photo-original",
+        "urlTemplate": "/api/v1/health/nutrition/photos/:photoRef",
+        "declarationIds": [
+          "decl-9c2d4f1ce9732168d4b9697a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-stored-media12-ambient-prefix-failure-retained",
+        "fixtureSha256": "fc0a10eac4f86ae1a0607e93cc2f884b624d0ed65f1381f2c04a9d112d03fe76",
+        "manifestSha256": "39df0e5c8eea9713f9c452b7d0db8d86648857d56ec6ccde81fdae2c88e34c0f",
+        "result": {
+          "path": "/tmp/readiness-stored-media-pair/pair-result.json",
+          "sha256": "bdc1dd2d0ddb0b85451d95a3403926d9a0289950334eeb8ba41ef7ef54f01719"
+        },
+        "proof": {
+          "path": "/tmp/readiness-stored-media-execution/proof.json",
+          "sha256": "9a916ffabbcccca65c17f28cdb789c2ff144cc3355f3f691c1b3fcc3b85de64f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-stored-media-execution/result-review.json",
+          "sha256": "797207ee00d1c137fea5c32f894ad8471d0fb4e5d3e2709331322a924498fff5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "stored-media-photo-thumbnail",
+        "urlTemplate": "/api/v1/health/nutrition/photos/:photoRef",
+        "declarationIds": [
+          "decl-9c2d4f1ce9732168d4b9697a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-stored-media12-ambient-prefix-failure-retained",
+        "fixtureSha256": "fc0a10eac4f86ae1a0607e93cc2f884b624d0ed65f1381f2c04a9d112d03fe76",
+        "manifestSha256": "39df0e5c8eea9713f9c452b7d0db8d86648857d56ec6ccde81fdae2c88e34c0f",
+        "result": {
+          "path": "/tmp/readiness-stored-media-pair/pair-result.json",
+          "sha256": "bdc1dd2d0ddb0b85451d95a3403926d9a0289950334eeb8ba41ef7ef54f01719"
+        },
+        "proof": {
+          "path": "/tmp/readiness-stored-media-execution/proof.json",
+          "sha256": "9a916ffabbcccca65c17f28cdb789c2ff144cc3355f3f691c1b3fcc3b85de64f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-stored-media-execution/result-review.json",
+          "sha256": "797207ee00d1c137fea5c32f894ad8471d0fb4e5d3e2709331322a924498fff5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "stored-media-photo-fallback",
+        "urlTemplate": "/api/v1/health/nutrition/photos/:photoRef",
+        "declarationIds": [
+          "decl-9c2d4f1ce9732168d4b9697a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-stored-media12-ambient-prefix-failure-retained",
+        "fixtureSha256": "fc0a10eac4f86ae1a0607e93cc2f884b624d0ed65f1381f2c04a9d112d03fe76",
+        "manifestSha256": "39df0e5c8eea9713f9c452b7d0db8d86648857d56ec6ccde81fdae2c88e34c0f",
+        "result": {
+          "path": "/tmp/readiness-stored-media-pair/pair-result.json",
+          "sha256": "bdc1dd2d0ddb0b85451d95a3403926d9a0289950334eeb8ba41ef7ef54f01719"
+        },
+        "proof": {
+          "path": "/tmp/readiness-stored-media-execution/proof.json",
+          "sha256": "9a916ffabbcccca65c17f28cdb789c2ff144cc3355f3f691c1b3fcc3b85de64f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-stored-media-execution/result-review.json",
+          "sha256": "797207ee00d1c137fea5c32f894ad8471d0fb4e5d3e2709331322a924498fff5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "stored-media-photo-cross-user-query",
+        "urlTemplate": "/api/v1/health/nutrition/photos/:photoRef",
+        "declarationIds": [
+          "decl-9c2d4f1ce9732168d4b9697a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-stored-media12-ambient-prefix-failure-retained",
+        "fixtureSha256": "fc0a10eac4f86ae1a0607e93cc2f884b624d0ed65f1381f2c04a9d112d03fe76",
+        "manifestSha256": "39df0e5c8eea9713f9c452b7d0db8d86648857d56ec6ccde81fdae2c88e34c0f",
+        "result": {
+          "path": "/tmp/readiness-stored-media-pair/pair-result.json",
+          "sha256": "bdc1dd2d0ddb0b85451d95a3403926d9a0289950334eeb8ba41ef7ef54f01719"
+        },
+        "proof": {
+          "path": "/tmp/readiness-stored-media-execution/proof.json",
+          "sha256": "9a916ffabbcccca65c17f28cdb789c2ff144cc3355f3f691c1b3fcc3b85de64f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-stored-media-execution/result-review.json",
+          "sha256": "797207ee00d1c137fea5c32f894ad8471d0fb4e5d3e2709331322a924498fff5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "stored-media-photo-cross-user-query-thumbnail",
+        "urlTemplate": "/api/v1/health/nutrition/photos/:photoRef",
+        "declarationIds": [
+          "decl-9c2d4f1ce9732168d4b9697a-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-stored-media12-ambient-prefix-failure-retained",
+        "fixtureSha256": "fc0a10eac4f86ae1a0607e93cc2f884b624d0ed65f1381f2c04a9d112d03fe76",
+        "manifestSha256": "39df0e5c8eea9713f9c452b7d0db8d86648857d56ec6ccde81fdae2c88e34c0f",
+        "result": {
+          "path": "/tmp/readiness-stored-media-pair/pair-result.json",
+          "sha256": "bdc1dd2d0ddb0b85451d95a3403926d9a0289950334eeb8ba41ef7ef54f01719"
+        },
+        "proof": {
+          "path": "/tmp/readiness-stored-media-execution/proof.json",
+          "sha256": "9a916ffabbcccca65c17f28cdb789c2ff144cc3355f3f691c1b3fcc3b85de64f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-stored-media-execution/result-review.json",
+          "sha256": "797207ee00d1c137fea5c32f894ad8471d0fb4e5d3e2709331322a924498fff5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "stored-media-local-audio",
+        "urlTemplate": "/api/v1/local/stream{/*splat}",
+        "declarationIds": [
+          "decl-63696345f7a1c6a031a20081-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-stored-media12-ambient-prefix-failure-retained",
+        "fixtureSha256": "fc0a10eac4f86ae1a0607e93cc2f884b624d0ed65f1381f2c04a9d112d03fe76",
+        "manifestSha256": "39df0e5c8eea9713f9c452b7d0db8d86648857d56ec6ccde81fdae2c88e34c0f",
+        "result": {
+          "path": "/tmp/readiness-stored-media-pair/pair-result.json",
+          "sha256": "bdc1dd2d0ddb0b85451d95a3403926d9a0289950334eeb8ba41ef7ef54f01719"
+        },
+        "proof": {
+          "path": "/tmp/readiness-stored-media-execution/proof.json",
+          "sha256": "9a916ffabbcccca65c17f28cdb789c2ff144cc3355f3f691c1b3fcc3b85de64f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-stored-media-execution/result-review.json",
+          "sha256": "797207ee00d1c137fea5c32f894ad8471d0fb4e5d3e2709331322a924498fff5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "stored-media-local-image",
+        "urlTemplate": "/api/v1/local/stream{/*splat}",
+        "declarationIds": [
+          "decl-63696345f7a1c6a031a20081-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-stored-media12-ambient-prefix-failure-retained",
+        "fixtureSha256": "fc0a10eac4f86ae1a0607e93cc2f884b624d0ed65f1381f2c04a9d112d03fe76",
+        "manifestSha256": "39df0e5c8eea9713f9c452b7d0db8d86648857d56ec6ccde81fdae2c88e34c0f",
+        "result": {
+          "path": "/tmp/readiness-stored-media-pair/pair-result.json",
+          "sha256": "bdc1dd2d0ddb0b85451d95a3403926d9a0289950334eeb8ba41ef7ef54f01719"
+        },
+        "proof": {
+          "path": "/tmp/readiness-stored-media-execution/proof.json",
+          "sha256": "9a916ffabbcccca65c17f28cdb789c2ff144cc3355f3f691c1b3fcc3b85de64f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-stored-media-execution/result-review.json",
+          "sha256": "797207ee00d1c137fea5c32f894ad8471d0fb4e5d3e2709331322a924498fff5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "stored-media-school-targets",
+        "urlTemplate": "/api/v1/school/lifecycle/media/targets",
+        "declarationIds": [
+          "decl-a54c84542a83ea83185d6ded-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-stored-media12-ambient-prefix-failure-retained",
+        "fixtureSha256": "fc0a10eac4f86ae1a0607e93cc2f884b624d0ed65f1381f2c04a9d112d03fe76",
+        "manifestSha256": "39df0e5c8eea9713f9c452b7d0db8d86648857d56ec6ccde81fdae2c88e34c0f",
+        "result": {
+          "path": "/tmp/readiness-stored-media-pair/pair-result.json",
+          "sha256": "bdc1dd2d0ddb0b85451d95a3403926d9a0289950334eeb8ba41ef7ef54f01719"
+        },
+        "proof": {
+          "path": "/tmp/readiness-stored-media-execution/proof.json",
+          "sha256": "9a916ffabbcccca65c17f28cdb789c2ff144cc3355f3f691c1b3fcc3b85de64f"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-stored-media-execution/result-review.json",
+          "sha256": "797207ee00d1c137fea5c32f894ad8471d0fb4e5d3e2709331322a924498fff5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "runtime-status-ai",
+        "urlTemplate": "/api/v1/ai",
+        "declarationIds": [
+          "decl-85b653f1b5c1624e44f5f4b9-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-runtime-status3",
+        "fixtureSha256": "9cbeb7be11f7466e966a2b8916c95a5eede5859527b7d4079e2a71b5f8faeeab",
+        "manifestSha256": "23e604926adf85deb78b7f9eb3b31525150ad9a34c30b4a2c89b30399d4384be",
+        "result": {
+          "path": "/tmp/readiness-runtime-status-pair/pair-result.json",
+          "sha256": "f0aca20032e4f6699155a5a3178cf38ec6b5f93914f2792e2683194b0c912c66"
+        },
+        "proof": {
+          "path": "/tmp/readiness-runtime-status-execution/proof.json",
+          "sha256": "af71ac7512ce5ff8ff4cc13bcebc5052ec3d828c6397fd9323b4df16b7da2d32"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-runtime-status-execution/result-review.json",
+          "sha256": "a5cfe99e2f31a7e013448833e119e3c29a07eb7a9d36f06dd54427f19e3ac171"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "runtime-status-dev",
+        "urlTemplate": "/api/v1/dev/proxy_status",
+        "declarationIds": [
+          "decl-cdb94c19d85e3201b07013e6-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-runtime-status3",
+        "fixtureSha256": "9cbeb7be11f7466e966a2b8916c95a5eede5859527b7d4079e2a71b5f8faeeab",
+        "manifestSha256": "23e604926adf85deb78b7f9eb3b31525150ad9a34c30b4a2c89b30399d4384be",
+        "result": {
+          "path": "/tmp/readiness-runtime-status-pair/pair-result.json",
+          "sha256": "f0aca20032e4f6699155a5a3178cf38ec6b5f93914f2792e2683194b0c912c66"
+        },
+        "proof": {
+          "path": "/tmp/readiness-runtime-status-execution/proof.json",
+          "sha256": "af71ac7512ce5ff8ff4cc13bcebc5052ec3d828c6397fd9323b4df16b7da2d32"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-runtime-status-execution/result-review.json",
+          "sha256": "a5cfe99e2f31a7e013448833e119e3c29a07eb7a9d36f06dd54427f19e3ac171"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "runtime-status-expired-shutdown",
+        "urlTemplate": "/api/v1/shutdown/status",
+        "declarationIds": [
+          "decl-23a9a6c4f1313eae4829578e-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-runtime-status3",
+        "fixtureSha256": "9cbeb7be11f7466e966a2b8916c95a5eede5859527b7d4079e2a71b5f8faeeab",
+        "manifestSha256": "23e604926adf85deb78b7f9eb3b31525150ad9a34c30b4a2c89b30399d4384be",
+        "result": {
+          "path": "/tmp/readiness-runtime-status-pair/pair-result.json",
+          "sha256": "f0aca20032e4f6699155a5a3178cf38ec6b5f93914f2792e2683194b0c912c66"
+        },
+        "proof": {
+          "path": "/tmp/readiness-runtime-status-execution/proof.json",
+          "sha256": "af71ac7512ce5ff8ff4cc13bcebc5052ec3d828c6397fd9323b4df16b7da2d32"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-runtime-status-execution/result-review.json",
+          "sha256": "a5cfe99e2f31a7e013448833e119e3c29a07eb7a9d36f06dd54427f19e3ac171"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "arcade-placement-all",
+        "urlTemplate": "/api/v1/arcade-game-sessions/placement",
+        "declarationIds": [
+          "decl-476e52e7d0a0c6dd55f27888-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-arcade4-corrected-numeric-ambient1",
+        "fixtureSha256": "027b3aec7f5c2ffda35f5d4f54fa0b60876b9f93303312fb271d2e6dba926ced",
+        "manifestSha256": "e718cd7ff82f80576ea4699a0eb0630411c7b24faa0ba24ed0c3369c023e628a",
+        "result": {
+          "path": "/tmp/readiness-arcade-ambient-pair/pair-result.json",
+          "sha256": "8c5a799dc3881d8af8acc6f9f1bfd8efe7f87cfa6d7dc9c477e2875d239cbdcf"
+        },
+        "proof": {
+          "path": "/tmp/readiness-arcade-ambient-execution/proof.json",
+          "sha256": "d4d96bf70de92cee81c4db642dbb03d17340bcc894afad2ca2b1be4f65f13693"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-arcade-ambient-execution/result-review.json",
+          "sha256": "9577fbcafd5bc54324997f9ac3f3d62ef8964841997117932bc76286507c737d"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "arcade-placement-etched",
+        "urlTemplate": "/api/v1/arcade-game-sessions/placement",
+        "declarationIds": [
+          "decl-476e52e7d0a0c6dd55f27888-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-arcade4-corrected-numeric-ambient1",
+        "fixtureSha256": "027b3aec7f5c2ffda35f5d4f54fa0b60876b9f93303312fb271d2e6dba926ced",
+        "manifestSha256": "e718cd7ff82f80576ea4699a0eb0630411c7b24faa0ba24ed0c3369c023e628a",
+        "result": {
+          "path": "/tmp/readiness-arcade-ambient-pair/pair-result.json",
+          "sha256": "8c5a799dc3881d8af8acc6f9f1bfd8efe7f87cfa6d7dc9c477e2875d239cbdcf"
+        },
+        "proof": {
+          "path": "/tmp/readiness-arcade-ambient-execution/proof.json",
+          "sha256": "d4d96bf70de92cee81c4db642dbb03d17340bcc894afad2ca2b1be4f65f13693"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-arcade-ambient-execution/result-review.json",
+          "sha256": "9577fbcafd5bc54324997f9ac3f3d62ef8964841997117932bc76286507c737d"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "arcade-grants-positive",
+        "urlTemplate": "/api/v1/arcade-game-sessions/grants/:userId",
+        "declarationIds": [
+          "decl-ec2bfae29840e3a49ba85341-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-arcade4-corrected-numeric-ambient1",
+        "fixtureSha256": "027b3aec7f5c2ffda35f5d4f54fa0b60876b9f93303312fb271d2e6dba926ced",
+        "manifestSha256": "e718cd7ff82f80576ea4699a0eb0630411c7b24faa0ba24ed0c3369c023e628a",
+        "result": {
+          "path": "/tmp/readiness-arcade-ambient-pair/pair-result.json",
+          "sha256": "8c5a799dc3881d8af8acc6f9f1bfd8efe7f87cfa6d7dc9c477e2875d239cbdcf"
+        },
+        "proof": {
+          "path": "/tmp/readiness-arcade-ambient-execution/proof.json",
+          "sha256": "d4d96bf70de92cee81c4db642dbb03d17340bcc894afad2ca2b1be4f65f13693"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-arcade-ambient-execution/result-review.json",
+          "sha256": "9577fbcafd5bc54324997f9ac3f3d62ef8964841997117932bc76286507c737d"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "arcade-grants-clamped",
+        "urlTemplate": "/api/v1/arcade-game-sessions/grants/:userId",
+        "declarationIds": [
+          "decl-ec2bfae29840e3a49ba85341-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-arcade4-corrected-numeric-ambient1",
+        "fixtureSha256": "027b3aec7f5c2ffda35f5d4f54fa0b60876b9f93303312fb271d2e6dba926ced",
+        "manifestSha256": "e718cd7ff82f80576ea4699a0eb0630411c7b24faa0ba24ed0c3369c023e628a",
+        "result": {
+          "path": "/tmp/readiness-arcade-ambient-pair/pair-result.json",
+          "sha256": "8c5a799dc3881d8af8acc6f9f1bfd8efe7f87cfa6d7dc9c477e2875d239cbdcf"
+        },
+        "proof": {
+          "path": "/tmp/readiness-arcade-ambient-execution/proof.json",
+          "sha256": "d4d96bf70de92cee81c4db642dbb03d17340bcc894afad2ca2b1be4f65f13693"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-arcade-ambient-execution/result-review.json",
+          "sha256": "9577fbcafd5bc54324997f9ac3f3d62ef8964841997117932bc76286507c737d"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "stored-media-ambient",
+        "urlTemplate": "/api/v1/stream/ambient/:id",
+        "declarationIds": [
+          "decl-0118ca502b2a37b1afc21a24-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-arcade4-corrected-numeric-ambient1",
+        "fixtureSha256": "027b3aec7f5c2ffda35f5d4f54fa0b60876b9f93303312fb271d2e6dba926ced",
+        "manifestSha256": "e718cd7ff82f80576ea4699a0eb0630411c7b24faa0ba24ed0c3369c023e628a",
+        "result": {
+          "path": "/tmp/readiness-arcade-ambient-pair/pair-result.json",
+          "sha256": "8c5a799dc3881d8af8acc6f9f1bfd8efe7f87cfa6d7dc9c477e2875d239cbdcf"
+        },
+        "proof": {
+          "path": "/tmp/readiness-arcade-ambient-execution/proof.json",
+          "sha256": "d4d96bf70de92cee81c4db642dbb03d17340bcc894afad2ca2b1be4f65f13693"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-arcade-ambient-execution/result-review.json",
+          "sha256": "9577fbcafd5bc54324997f9ac3f3d62ef8964841997117932bc76286507c737d"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "school-remaining-cube-issued",
+        "urlTemplate": "/api/v1/school/rubiks-cube/users/:userId/courses/:courseId/packets/:packetId",
+        "declarationIds": [
+          "decl-cd58ad238d1b00627a3e3616-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-source-valid-cube-and-local-reels4",
+        "fixtureSha256": "6a425d57e2542cd7f3f9d2696e073807b455f8c71f6b8baceaae00de5b1356aa",
+        "manifestSha256": "681ae54aabba26611954c76ab085d82c180a3e448841134c501dfe69c3a0eea1",
+        "result": {
+          "path": "/tmp/readiness-school-remaining-pair/pair-result.json",
+          "sha256": "c34064326c071d2d67222a80fc72d69bcf392bde8d076a985f658498faff0dd5"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-remaining-execution/proof.json",
+          "sha256": "e3b4d423783b91aa04583714c4347274be87f4bf8689e55706db0e7570eb6ad2"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-remaining-execution/result-review.json",
+          "sha256": "332450318bf126bb2b5af16545c1a6a30fce3c7888e51cf6992a618e0a63a06e"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "school-remaining-cube-verified",
+        "urlTemplate": "/api/v1/school/rubiks-cube/users/:userId/courses/:courseId/packets/:packetId",
+        "declarationIds": [
+          "decl-cd58ad238d1b00627a3e3616-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-source-valid-cube-and-local-reels4",
+        "fixtureSha256": "6a425d57e2542cd7f3f9d2696e073807b455f8c71f6b8baceaae00de5b1356aa",
+        "manifestSha256": "681ae54aabba26611954c76ab085d82c180a3e448841134c501dfe69c3a0eea1",
+        "result": {
+          "path": "/tmp/readiness-school-remaining-pair/pair-result.json",
+          "sha256": "c34064326c071d2d67222a80fc72d69bcf392bde8d076a985f658498faff0dd5"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-remaining-execution/proof.json",
+          "sha256": "e3b4d423783b91aa04583714c4347274be87f4bf8689e55706db0e7570eb6ad2"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-remaining-execution/result-review.json",
+          "sha256": "332450318bf126bb2b5af16545c1a6a30fce3c7888e51cf6992a618e0a63a06e"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "school-remaining-reel-900001",
+        "urlTemplate": "/api/v1/school/language-reels/media/:reelId",
+        "declarationIds": [
+          "decl-1c3a96070d4eccda2972321e-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-source-valid-cube-and-local-reels4",
+        "fixtureSha256": "6a425d57e2542cd7f3f9d2696e073807b455f8c71f6b8baceaae00de5b1356aa",
+        "manifestSha256": "681ae54aabba26611954c76ab085d82c180a3e448841134c501dfe69c3a0eea1",
+        "result": {
+          "path": "/tmp/readiness-school-remaining-pair/pair-result.json",
+          "sha256": "c34064326c071d2d67222a80fc72d69bcf392bde8d076a985f658498faff0dd5"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-remaining-execution/proof.json",
+          "sha256": "e3b4d423783b91aa04583714c4347274be87f4bf8689e55706db0e7570eb6ad2"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-remaining-execution/result-review.json",
+          "sha256": "332450318bf126bb2b5af16545c1a6a30fce3c7888e51cf6992a618e0a63a06e"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "school-remaining-reel-900002",
+        "urlTemplate": "/api/v1/school/language-reels/media/:reelId",
+        "declarationIds": [
+          "decl-1c3a96070d4eccda2972321e-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-source-valid-cube-and-local-reels4",
+        "fixtureSha256": "6a425d57e2542cd7f3f9d2696e073807b455f8c71f6b8baceaae00de5b1356aa",
+        "manifestSha256": "681ae54aabba26611954c76ab085d82c180a3e448841134c501dfe69c3a0eea1",
+        "result": {
+          "path": "/tmp/readiness-school-remaining-pair/pair-result.json",
+          "sha256": "c34064326c071d2d67222a80fc72d69bcf392bde8d076a985f658498faff0dd5"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-remaining-execution/proof.json",
+          "sha256": "e3b4d423783b91aa04583714c4347274be87f4bf8689e55706db0e7570eb6ad2"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-remaining-execution/result-review.json",
+          "sha256": "332450318bf126bb2b5af16545c1a6a30fce3c7888e51cf6992a618e0a63a06e"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": []
+      },
+      {
+        "id": "school-generated-shelf-user_1",
+        "urlTemplate": "/api/v1/school/books/:learnerId/shelf",
+        "declarationIds": [
+          "decl-afb714a27acf8ac56ec4ea57-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-generated-school4-fitness-stored2",
+        "fixtureSha256": "b4fbaa868b877ea66aa27cd66e0a75fddc188548657a96d854103795aa2fbd59",
+        "manifestSha256": "35680affda3105ec6f921029aaf109866fc4be26edc52573a57ad0d101d487e9",
+        "result": {
+          "path": "/tmp/readiness-school-generated-fitness6-pair/pair-result.json",
+          "sha256": "baa1c2d8e633c7e1ab5fc5472ba7f251677f652fb96076cd2c5c80af49f69ed6"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-generated-fitness6-execution/proof.json",
+          "sha256": "2f95a7f5dbc65cf16249ba4515844dd8b6c1a83b612aa2842839214a4e08623c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-generated-fitness6-execution/result-review.json",
+          "sha256": "8098df6ae0a71f5a817b8b6fb35836f38887595a281d8f62a8c24362aa9d832a"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": true,
+        "derivedComparison": {
+          "path": "/tmp/readiness-school-generated-fitness6-execution/derived-replay/comparison.json",
+          "sha256": "101ec7b447dcb83776ffb532c9f4739606c6152feed76d5a770f31bb32ce56d3"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-school-generated-fitness6-execution/derived-replay/receipt.json",
+          "sha256": "917705d5634c3ff7be4f3cc5348263e64ac259b08f0b95f0c26c4017d001beb5"
+        },
+        "derivation": "Exact source-clock validation before only four native School generated-field substitutions; stable Fitness2 unchanged; original raw failures preserved"
+      },
+      {
+        "id": "school-generated-shelf-user_2",
+        "urlTemplate": "/api/v1/school/books/:learnerId/shelf",
+        "declarationIds": [
+          "decl-afb714a27acf8ac56ec4ea57-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-generated-school4-fitness-stored2",
+        "fixtureSha256": "b4fbaa868b877ea66aa27cd66e0a75fddc188548657a96d854103795aa2fbd59",
+        "manifestSha256": "35680affda3105ec6f921029aaf109866fc4be26edc52573a57ad0d101d487e9",
+        "result": {
+          "path": "/tmp/readiness-school-generated-fitness6-pair/pair-result.json",
+          "sha256": "baa1c2d8e633c7e1ab5fc5472ba7f251677f652fb96076cd2c5c80af49f69ed6"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-generated-fitness6-execution/proof.json",
+          "sha256": "2f95a7f5dbc65cf16249ba4515844dd8b6c1a83b612aa2842839214a4e08623c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-generated-fitness6-execution/result-review.json",
+          "sha256": "8098df6ae0a71f5a817b8b6fb35836f38887595a281d8f62a8c24362aa9d832a"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": true,
+        "derivedComparison": {
+          "path": "/tmp/readiness-school-generated-fitness6-execution/derived-replay/comparison.json",
+          "sha256": "101ec7b447dcb83776ffb532c9f4739606c6152feed76d5a770f31bb32ce56d3"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-school-generated-fitness6-execution/derived-replay/receipt.json",
+          "sha256": "917705d5634c3ff7be4f3cc5348263e64ac259b08f0b95f0c26c4017d001beb5"
+        },
+        "derivation": "Exact source-clock validation before only four native School generated-field substitutions; stable Fitness2 unchanged; original raw failures preserved"
+      },
+      {
+        "id": "school-generated-session-family",
+        "urlTemplate": "/api/v1/school/reading/session",
+        "declarationIds": [
+          "decl-30e022aefa7adb133ce4955e-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-generated-school4-fitness-stored2",
+        "fixtureSha256": "b4fbaa868b877ea66aa27cd66e0a75fddc188548657a96d854103795aa2fbd59",
+        "manifestSha256": "35680affda3105ec6f921029aaf109866fc4be26edc52573a57ad0d101d487e9",
+        "result": {
+          "path": "/tmp/readiness-school-generated-fitness6-pair/pair-result.json",
+          "sha256": "baa1c2d8e633c7e1ab5fc5472ba7f251677f652fb96076cd2c5c80af49f69ed6"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-generated-fitness6-execution/proof.json",
+          "sha256": "2f95a7f5dbc65cf16249ba4515844dd8b6c1a83b612aa2842839214a4e08623c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-generated-fitness6-execution/result-review.json",
+          "sha256": "8098df6ae0a71f5a817b8b6fb35836f38887595a281d8f62a8c24362aa9d832a"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": false,
+        "derivedComparison": {
+          "path": "/tmp/readiness-school-generated-fitness6-execution/derived-replay/comparison.json",
+          "sha256": "101ec7b447dcb83776ffb532c9f4739606c6152feed76d5a770f31bb32ce56d3"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-school-generated-fitness6-execution/derived-replay/receipt.json",
+          "sha256": "917705d5634c3ff7be4f3cc5348263e64ac259b08f0b95f0c26c4017d001beb5"
+        },
+        "derivation": "Exact source-clock validation before only four native School generated-field substitutions; stable Fitness2 unchanged; original raw failures preserved"
+      },
+      {
+        "id": "school-generated-session-headset",
+        "urlTemplate": "/api/v1/school/reading/session",
+        "declarationIds": [
+          "decl-30e022aefa7adb133ce4955e-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-generated-school4-fitness-stored2",
+        "fixtureSha256": "b4fbaa868b877ea66aa27cd66e0a75fddc188548657a96d854103795aa2fbd59",
+        "manifestSha256": "35680affda3105ec6f921029aaf109866fc4be26edc52573a57ad0d101d487e9",
+        "result": {
+          "path": "/tmp/readiness-school-generated-fitness6-pair/pair-result.json",
+          "sha256": "baa1c2d8e633c7e1ab5fc5472ba7f251677f652fb96076cd2c5c80af49f69ed6"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-generated-fitness6-execution/proof.json",
+          "sha256": "2f95a7f5dbc65cf16249ba4515844dd8b6c1a83b612aa2842839214a4e08623c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-generated-fitness6-execution/result-review.json",
+          "sha256": "8098df6ae0a71f5a817b8b6fb35836f38887595a281d8f62a8c24362aa9d832a"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": false,
+        "derivedComparison": {
+          "path": "/tmp/readiness-school-generated-fitness6-execution/derived-replay/comparison.json",
+          "sha256": "101ec7b447dcb83776ffb532c9f4739606c6152feed76d5a770f31bb32ce56d3"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-school-generated-fitness6-execution/derived-replay/receipt.json",
+          "sha256": "917705d5634c3ff7be4f3cc5348263e64ac259b08f0b95f0c26c4017d001beb5"
+        },
+        "derivation": "Exact source-clock validation before only four native School generated-field substitutions; stable Fitness2 unchanged; original raw failures preserved"
+      },
+      {
+        "id": "fitness-stored-prepared-plan",
+        "urlTemplate": "/api/v1/fitness/school-attempts/:workSessionId/plan",
+        "declarationIds": [
+          null
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-generated-school4-fitness-stored2",
+        "fixtureSha256": "b4fbaa868b877ea66aa27cd66e0a75fddc188548657a96d854103795aa2fbd59",
+        "manifestSha256": "35680affda3105ec6f921029aaf109866fc4be26edc52573a57ad0d101d487e9",
+        "result": {
+          "path": "/tmp/readiness-school-generated-fitness6-pair/pair-result.json",
+          "sha256": "baa1c2d8e633c7e1ab5fc5472ba7f251677f652fb96076cd2c5c80af49f69ed6"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-generated-fitness6-execution/proof.json",
+          "sha256": "2f95a7f5dbc65cf16249ba4515844dd8b6c1a83b612aa2842839214a4e08623c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-generated-fitness6-execution/result-review.json",
+          "sha256": "8098df6ae0a71f5a817b8b6fb35836f38887595a281d8f62a8c24362aa9d832a"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": true,
+        "derivedComparison": {
+          "path": "/tmp/readiness-school-generated-fitness6-execution/derived-replay/comparison.json",
+          "sha256": "101ec7b447dcb83776ffb532c9f4739606c6152feed76d5a770f31bb32ce56d3"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-school-generated-fitness6-execution/derived-replay/receipt.json",
+          "sha256": "917705d5634c3ff7be4f3cc5348263e64ac259b08f0b95f0c26c4017d001beb5"
+        },
+        "derivation": "Exact source-clock validation before only four native School generated-field substitutions; stable Fitness2 unchanged; original raw failures preserved"
+      },
+      {
+        "id": "fitness-stored-accepted-plan",
+        "urlTemplate": "/api/v1/fitness/school-attempts/:workSessionId/plan",
+        "declarationIds": [
+          null
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-d3f50-generated-school4-fitness-stored2",
+        "fixtureSha256": "b4fbaa868b877ea66aa27cd66e0a75fddc188548657a96d854103795aa2fbd59",
+        "manifestSha256": "35680affda3105ec6f921029aaf109866fc4be26edc52573a57ad0d101d487e9",
+        "result": {
+          "path": "/tmp/readiness-school-generated-fitness6-pair/pair-result.json",
+          "sha256": "baa1c2d8e633c7e1ab5fc5472ba7f251677f652fb96076cd2c5c80af49f69ed6"
+        },
+        "proof": {
+          "path": "/tmp/readiness-school-generated-fitness6-execution/proof.json",
+          "sha256": "2f95a7f5dbc65cf16249ba4515844dd8b6c1a83b612aa2842839214a4e08623c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-generated-fitness6-execution/result-review.json",
+          "sha256": "8098df6ae0a71f5a817b8b6fb35836f38887595a281d8f62a8c24362aa9d832a"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": true,
+        "derivedComparison": {
+          "path": "/tmp/readiness-school-generated-fitness6-execution/derived-replay/comparison.json",
+          "sha256": "101ec7b447dcb83776ffb532c9f4739606c6152feed76d5a770f31bb32ce56d3"
+        },
+        "derivedReceipt": {
+          "path": "/tmp/readiness-school-generated-fitness6-execution/derived-replay/receipt.json",
+          "sha256": "917705d5634c3ff7be4f3cc5348263e64ac259b08f0b95f0c26c4017d001beb5"
+        },
+        "derivation": "Exact source-clock validation before only four native School generated-field substitutions; stable Fitness2 unchanged; original raw failures preserved"
       }
     ],
     "infrastructure": {
@@ -55975,7 +56749,10 @@
       "/api/v1/agents",
       "/api/v1/agents/:agentId/assignments",
       "/api/v1/agents/:agentId/memory/:userId",
+      "/api/v1/ai",
       "/api/v1/arcade-game-sessions/devices/:deviceId/history",
+      "/api/v1/arcade-game-sessions/grants/:userId",
+      "/api/v1/arcade-game-sessions/placement",
       "/api/v1/arcade-game-sessions/usage",
       "/api/v1/art/preset/:key",
       "/api/v1/auth/context",
@@ -55993,6 +56770,7 @@
       "/api/v1/calendar/events",
       "/api/v1/calendar/events/:date",
       "/api/v1/calendar/events/today",
+      "/api/v1/canvas/image/*splat",
       "/api/v1/config/content-prefixes",
       "/api/v1/config/player",
       "/api/v1/config/status",
@@ -56006,6 +56784,7 @@
       "/api/v1/cost/spend/category",
       "/api/v1/cost/spend/resource",
       "/api/v1/cost/spend/user",
+      "/api/v1/dev/proxy_status",
       "/api/v1/device",
       "/api/v1/device/:deviceId/presence",
       "/api/v1/device/:deviceId/session",
@@ -56032,6 +56811,7 @@
       "/api/v1/feed/workspace",
       "/api/v1/feedback",
       "/api/v1/feedback/:app/:id",
+      "/api/v1/feedback/:app/:id/audio",
       "/api/v1/finance",
       "/api/v1/finance/budgets",
       "/api/v1/finance/budgets/:budgetId",
@@ -56046,6 +56826,7 @@
       "/api/v1/fitness/fingerprints",
       "/api/v1/fitness/menu-music",
       "/api/v1/fitness/resumable",
+      "/api/v1/fitness/school-attempts/:workSessionId/plan",
       "/api/v1/fitness/sessions",
       "/api/v1/fitness/sessions/:sessionId",
       "/api/v1/fitness/sessions/dates",
@@ -56095,6 +56876,7 @@
       "/api/v1/health/nutrition/meals",
       "/api/v1/health/nutrition/observations",
       "/api/v1/health/nutrition/pending",
+      "/api/v1/health/nutrition/photos/:photoRef",
       "/api/v1/health/nutrition/templates",
       "/api/v1/health/range",
       "/api/v1/health/weight",
@@ -56149,6 +56931,7 @@
       "/api/v1/local-content/scripture/*splat",
       "/api/v1/local-content/talk/*splat",
       "/api/v1/local/browse{/*splat}",
+      "/api/v1/local/stream{/*splat}",
       "/api/v1/media/config",
       "/api/v1/media/household/favourites",
       "/api/v1/media/household/plays",
@@ -56203,6 +56986,7 @@
       "/api/v1/school/attempt-days",
       "/api/v1/school/attestations",
       "/api/v1/school/banks",
+      "/api/v1/school/books/:learnerId/shelf",
       "/api/v1/school/card-ladder/stage",
       "/api/v1/school/catalogs",
       "/api/v1/school/catalogs/:catalogId/subjects/:subjectId/courses/:courseId/units/:unitId/lessons/:lessonId",
@@ -56212,6 +56996,7 @@
       "/api/v1/school/flashcards/:deckId",
       "/api/v1/school/flashcards/assets/*assetId",
       "/api/v1/school/geography/decks",
+      "/api/v1/school/language-reels/media/:reelId",
       "/api/v1/school/language/audio/:corpusId/:seq/:lang",
       "/api/v1/school/language/courses",
       "/api/v1/school/language/cue/:name",
@@ -56222,6 +57007,7 @@
       "/api/v1/school/lifecycle/direct-launch/programs",
       "/api/v1/school/lifecycle/learners/:learnerId/agenda/preview",
       "/api/v1/school/lifecycle/learners/:learnerId/sessions",
+      "/api/v1/school/lifecycle/media/targets",
       "/api/v1/school/lifecycle/review",
       "/api/v1/school/lifecycle/sessions/:sessionId/events",
       "/api/v1/school/lifecycle/sessions/:sessionId/review",
@@ -56238,6 +57024,7 @@
       "/api/v1/school/progress/options",
       "/api/v1/school/reading/events",
       "/api/v1/school/reading/read-status",
+      "/api/v1/school/reading/session",
       "/api/v1/school/reading/summary",
       "/api/v1/school/remediation",
       "/api/v1/school/remediation/:sessionId",
@@ -56248,6 +57035,7 @@
       "/api/v1/school/review/learner/:learnerId",
       "/api/v1/school/roster",
       "/api/v1/school/rubiks-cube/preview",
+      "/api/v1/school/rubiks-cube/users/:userId/courses/:courseId/packets/:packetId",
       "/api/v1/school/self-service/curriculum/:courseId/poster.jpg",
       "/api/v1/school/self-service/preview/:link",
       "/api/v1/school/self-service/programs/:programId/:instanceId/poster.jpg",
@@ -56273,6 +57061,7 @@
       "/api/v1/school/word-ladder/stage",
       "/api/v1/screens",
       "/api/v1/screens/:screenId",
+      "/api/v1/shutdown/status",
       "/api/v1/state-gates",
       "/api/v1/state-gates/:gateId",
       "/api/v1/state-gates/transitions",
@@ -56281,6 +57070,7 @@
       "/api/v1/static/equipment/:id",
       "/api/v1/static/img/*splat",
       "/api/v1/static/users/:id",
+      "/api/v1/stream/ambient/:id",
       "/api/v1/stream/readalong/:collection{/*splat}",
       "/api/v1/stream/singalong/:collection/:id",
       "/api/v1/weekly-review/recording/drafts"
