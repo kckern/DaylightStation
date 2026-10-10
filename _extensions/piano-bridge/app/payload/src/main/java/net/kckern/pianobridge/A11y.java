@@ -181,4 +181,100 @@ public final class A11y {
         }
         return false;
     }
+
+    /**
+     * Every node with text in the active window, for remote operation of a system
+     * screen (2026-10-09: the tablet's timezone had to be put back through
+     * Settings with ADB off). Each entry: text, desc, clickable, scrollable, id.
+     */
+    public static org.json.JSONArray screenText() {
+        org.json.JSONArray out = new org.json.JSONArray();
+        AccessibilityService s = svc;
+        if (s == null) return out;
+        try {
+            AccessibilityNodeInfo root = s.getRootInActiveWindow();
+            if (root != null) {
+                out.put(new org.json.JSONObject().put("window", String.valueOf(root.getPackageName())));
+                collect(root, out, 0);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "screenText failed: " + e.getMessage());
+        }
+        return out;
+    }
+
+    private static void collect(AccessibilityNodeInfo n, org.json.JSONArray out, int depth) throws org.json.JSONException {
+        if (n == null || depth > 40 || out.length() > 400) return;
+        CharSequence t = n.getText(); CharSequence d = n.getContentDescription();
+        if ((t != null && t.length() > 0) || (d != null && d.length() > 0) || n.isScrollable()) {
+            org.json.JSONObject o = new org.json.JSONObject();
+            if (t != null) o.put("text", t.toString());
+            if (d != null) o.put("desc", d.toString());
+            if (n.isClickable()) o.put("clickable", true);
+            if (n.isScrollable()) o.put("scrollable", true);
+            if (n.isCheckable()) o.put("checked", n.isChecked());
+            if (n.getViewIdResourceName() != null) o.put("id", n.getViewIdResourceName());
+            out.put(o);
+        }
+        for (int i = 0; i < n.getChildCount(); i++) collect(n.getChild(i), out, depth + 1);
+    }
+
+    /** Click the node whose text or description EQUALS {@code label} (case-insensitive). */
+    public static boolean clickExact(String label) {
+        AccessibilityService s = svc;
+        if (s == null) return false;
+        try {
+            AccessibilityNodeInfo root = s.getRootInActiveWindow();
+            return root != null && clickExactIn(root, label.trim().toLowerCase());
+        } catch (Exception e) {
+            Log.w(TAG, "clickExact failed: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private static boolean clickExactIn(AccessibilityNodeInfo n, String label) {
+        if (n == null) return false;
+        CharSequence t = n.getText(); CharSequence d = n.getContentDescription();
+        boolean match = (t != null && t.toString().trim().toLowerCase().equals(label))
+                || (d != null && d.toString().trim().toLowerCase().equals(label));
+        if (match) {
+            AccessibilityNodeInfo c = n;
+            for (int up = 0; c != null && up < 6; up++) {
+                if (c.isClickable()) return c.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+                c = c.getParent();
+            }
+        }
+        for (int i = 0; i < n.getChildCount(); i++) if (clickExactIn(n.getChild(i), label)) return true;
+        return false;
+    }
+
+    /** Scroll the first scrollable node forward (backward=true to go back). */
+    public static boolean scroll(boolean backward) {
+        AccessibilityService s = svc;
+        if (s == null) return false;
+        try {
+            AccessibilityNodeInfo root = s.getRootInActiveWindow();
+            AccessibilityNodeInfo sc = firstScrollable(root);
+            return sc != null && sc.performAction(backward
+                    ? AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD : AccessibilityNodeInfo.ACTION_SCROLL_FORWARD);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static AccessibilityNodeInfo firstScrollable(AccessibilityNodeInfo n) {
+        if (n == null) return null;
+        if (n.isScrollable()) return n;
+        for (int i = 0; i < n.getChildCount(); i++) {
+            AccessibilityNodeInfo f = firstScrollable(n.getChild(i));
+            if (f != null) return f;
+        }
+        return null;
+    }
+
+    /** Press BACK. */
+    public static boolean back() {
+        AccessibilityService s = svc;
+        return s != null && s.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK);
+    }
 }

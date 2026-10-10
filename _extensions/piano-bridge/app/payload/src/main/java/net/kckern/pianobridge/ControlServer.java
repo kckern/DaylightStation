@@ -120,7 +120,7 @@ public class ControlServer extends NanoWSD {
     }
 
     /** Which payload built this server — so "who is answering :8770" is never ambiguous. */
-    public static final String BUILT_BY = "p24-foreground-launch";
+    public static final String BUILT_BY = "p25-a11y-remote";
 
     @Override
     protected WebSocket openWebSocket(IHTTPSession handshake) {
@@ -168,6 +168,7 @@ public class ControlServer extends NanoWSD {
                             .put("GET /kiosk                  (WebView watchdog verdict + recovery counters)")
                             .put("POST /kiosk/beat            (page heartbeat ingest: {fps,visibility,url})")
                             .put("GET /kiosk/settings         (FKB kiosk-settings drift guard: verdict, repairs, disarm)")
+                            .put("GET /a11y/screen | POST /a11y/click?text=&exact=1 | POST /a11y/scroll?back=0 | POST /a11y/back  (operate a system screen remotely)")
                             .put("POST /kiosk/settings/check   (force one drift pass NOW, bypassing the install hold)")
                             .put("POST /kiosk/settings/disarm?minutes=60  (stop repairing drift + foreground recall while fiddling; max 1h)")
                             .put("POST /kiosk/settings/rearm   (re-arm the drift guard now)")
@@ -581,6 +582,28 @@ public class ControlServer extends NanoWSD {
                     return json(ShellExec.run("ps -A -o PID,TID,USER,%CPU,RSS,NAME 2>/dev/null || ps", 5000));
                 case "/info":
                     return json(DeviceProbe.info(service.getContext()));
+                case "/a11y/screen": {
+                    // Remote eyes on a system screen: every text node in the active window.
+                    return json(ok().put("a11yBound", A11y.isConnected()).put("nodes", A11y.screenText()));
+                }
+                case "/a11y/click": {
+                    // Remote hands: click by exact text (exact=1, default) or substring.
+                    if (method != NanoHTTPD.Method.POST) return json(err("POST only"));
+                    String text = strParam(session, "text", null);
+                    if (text == null) return json(err("missing text"));
+                    boolean exact = !"0".equals(strParam(session, "exact", "1"));
+                    Diag.log(TAG, "/a11y/click " + (exact ? "exact " : "contains ") + text
+                            + " (from " + session.getRemoteIpAddress() + ")");
+                    return json(ok().put("clicked", exact ? A11y.clickExact(text) : A11y.clickText(text)));
+                }
+                case "/a11y/scroll": {
+                    if (method != NanoHTTPD.Method.POST) return json(err("POST only"));
+                    return json(ok().put("scrolled", A11y.scroll("1".equals(strParam(session, "back", "0")))));
+                }
+                case "/a11y/back": {
+                    if (method != NanoHTTPD.Method.POST) return json(err("POST only"));
+                    return json(ok().put("back", A11y.back()));
+                }
                 case "/getsetting": {
                     String key = strParam(session, "key", null);
                     if (key == null) return json(err("missing key"));
