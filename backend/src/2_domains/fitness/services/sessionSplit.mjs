@@ -175,8 +175,12 @@ export function recomputeSummaryForPart({ series, slugs, events, intervalMs, rin
     const rings = readRingSeries(series, slug);
     const hrValid = hr.filter(v => v != null && v > 0);
     // Require a minimum of real HR samples — a one-or-two-reading blip from a
-    // strap that connected briefly is not a participant in this part.
-    if (hrValid.length < minHrSamples) continue;
+    // strap that connected briefly is not a participant in this part. Its rings
+    // were still earned, though, and the split's totals must reconcile.
+    if (hrValid.length < minHrSamples) {
+      totalRings += [...rings].reverse().find(v => v != null) || 0;
+      continue;
+    }
 
     const stats = computeParticipantStats({ hr, zones, rings, intervalSeconds, participant: {} });
     const zoneMinutes = {};

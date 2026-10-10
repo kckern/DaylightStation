@@ -323,6 +323,8 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
       choiceSizePt: styles.body.sizePt,
       choiceLeadingPt: styles.body.leadingPt,
       choiceGapPt: density === 'compact' ? 2 : 3,
+      /** Clear space between adjacent choice columns; a full-width label otherwise abuts the next. */
+      choiceColumnGutterPt: 8,
       // Padding on each row of a `layout: compact` omr response. `measure.mjs`
       // reads this for EVERY compact row; it existed only on
       // `documentPdfTheme` — where its own comment notes it is never read,
